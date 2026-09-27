@@ -67,7 +67,7 @@ public class MobileTabsTests : PinnedDataDirectory
         Assert.Equal(MobileTabs.Default, MobileTabs.Parse(["NotATab"]));
         Assert.Equal(new[] { MobileTab.Songs, MobileTab.Queue },
             MobileTabs.Parse(["Songs", "Bogus", "Songs", "Queue"]));
-        Assert.Equal(MobileTabs.MaxShown, MobileTabs.Parse(MobileTabs.All.Select(t => t.ToString())).Count);
+        Assert.Equal(MobileTabs.All, MobileTabs.Parse(MobileTabs.All.Select(t => t.ToString())));
     }
 
     // Settings lists the bar first, in its order, then what is not in it.
@@ -99,6 +99,17 @@ public class MobileTabsTests : PinnedDataDirectory
     }
 
     [AvaloniaFact]
+    public void Turning_the_names_off_is_remembered()
+    {
+        using var scope = Build();
+        Assert.True(scope.Mobile.ShowTabLabels);
+
+        scope.Mobile.ShowTabLabels = false;
+
+        Assert.False(scope.Parts.AppSettings.MobileTabLabels);
+    }
+
+    [AvaloniaFact]
     public void Moving_a_tab_reorders_the_bar_and_is_remembered()
     {
         using var scope = Build();
@@ -112,14 +123,16 @@ public class MobileTabsTests : PinnedDataDirectory
         Assert.Equal(expected.Select(t => t.ToString()), scope.Parts.AppSettings.MobileTabs);
     }
 
-    // Six is what fits the oval, and a bar of none is no way to get anywhere.
+    // All seven fit, drawn smaller (MobileTabBarLayoutTests); a bar of none
+    // is no way to get anywhere.
     [AvaloniaFact]
-    public void The_bar_holds_six_at_most_and_one_at_least()
+    public void The_bar_holds_every_tab_at_most_and_one_at_least()
     {
         using var scope = Build();
         var mobile = scope.Mobile;
 
-        Assert.False(Row(mobile, MobileTab.RecentlyAdded).CanToggle);
+        mobile.ToggleTabShownCommand.Execute(Row(mobile, MobileTab.RecentlyAdded));
+        Assert.Equal(7, mobile.VisibleTabs.Count);
         mobile.ToggleTabShownCommand.Execute(Row(mobile, MobileTab.RecentlyAdded));
         Assert.DoesNotContain(MobileTab.RecentlyAdded, mobile.VisibleTabs);
 

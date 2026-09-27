@@ -133,6 +133,38 @@
          icons a faded red that still read as lit. The one showing keeps the
          primary red every icon is drawn in, and its label and the Songs note
          follow it. -->
+    <!-- Seven tabs are narrower columns than six can have (MobileTabs.MaxShown):
+         at 375 the oval gives each about 47px. So with all seven in the bar
+         (.compact, set by LayOutTabs) the circle comes down to 46 and the
+         label to 10pt, which is what keeps "Playlists" on one line, and the
+         icons are drawn at 85% - by a render transform, so each still takes
+         its 24px of layout and nothing under it moves. -->
+    <Style Selector="Button.tab TextBlock">
+      <Setter Property="FontSize" Value="11" />
+    </Style>
+    <Style Selector="Button.tab.compact">
+      <Setter Property="Width" Value="46" />
+      <Setter Property="Height" Value="46" />
+    </Style>
+    <Style Selector="Button.tab.compact TextBlock">
+      <Setter Property="FontSize" Value="10" />
+    </Style>
+    <Style Selector="Button.tab.compact :is(Control).tabIcon">
+      <Setter Property="RenderTransform" Value="scale(0.85)" />
+    </Style>
+    <!-- Names turned off in Settings (.iconsOnly): the oval keeps its height
+         and the icons grow into the room the names leave - a third bigger,
+         32px in the 52px circle, or 28px in a full bar's 46px one. A render
+         transform again, so the layout under them is the same either way. -->
+    <Style Selector="Button.tab.iconsOnly TextBlock">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector="Button.tab.iconsOnly :is(Control).tabIcon">
+      <Setter Property="RenderTransform" Value="scale(1.33)" />
+    </Style>
+    <Style Selector="Button.tab.compact.iconsOnly :is(Control).tabIcon">
+      <Setter Property="RenderTransform" Value="scale(1.15)" />
+    </Style>
     <Style Selector="Button.tab Path">
       <Setter Property="Fill" Value="{DynamicResource AppPrimaryBrush}" />
     </Style>
@@ -498,7 +530,8 @@
           Margin="12,0"
           SizeChanged="TabBar_SizeChanged"
           ColumnDefinitions="3*,194*,3*">
-    <Border Grid.Column="1"
+    <Border x:Name="TabOval"
+            Grid.Column="1"
             Classes="floating"
             Height="64"
             BoxShadow="0 0 16 1.6 #4D000000"
@@ -509,8 +542,8 @@
               Classes.current="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=RecentlyAdded}"
               Command="{Binding SelectTabCommand}" CommandParameter="RecentlyAdded">
         <StackPanel HorizontalAlignment="Center" Spacing="2">
-          <materialIcons:MaterialIcon Kind="ClockPlusOutline" Width="27" Height="27" Margin="-1.5" HorizontalAlignment="Center" />
-          <TextBlock Text="Recent" FontSize="11" HorizontalAlignment="Center" />
+          <materialIcons:MaterialIcon Classes="tabIcon" Kind="ClockPlusOutline" Width="27" Height="27" Margin="-1.5" HorizontalAlignment="Center" />
+          <TextBlock Text="Recent" HorizontalAlignment="Center" />
         </StackPanel>
       </Button>
       <Button x:Name="SongsTab" Classes="pill tab"
@@ -519,33 +552,33 @@
         <StackPanel HorizontalAlignment="Center" Spacing="2">
           <!-- SongNoteGeometry (App.axaml). Its fill comes from the Button.tab
                styles above, red when the tab is showing and grey when not. -->
-          <Path Data="{StaticResource SongNoteGeometry}"
+          <Path Classes="tabIcon" Data="{StaticResource SongNoteGeometry}"
                 Stretch="Uniform" Width="24" Height="24" HorizontalAlignment="Center" />
-          <TextBlock x:Name="SongsLabel" Text="Songs" FontSize="11" HorizontalAlignment="Center" />
+          <TextBlock x:Name="SongsLabel" Text="Songs" HorizontalAlignment="Center" />
         </StackPanel>
       </Button>
       <Button x:Name="AlbumsTab" Classes="pill tab"
               Classes.current="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=Albums}"
               Command="{Binding SelectTabCommand}" CommandParameter="Albums">
         <StackPanel HorizontalAlignment="Center" Spacing="2">
-          <materialIcons:MaterialIcon Kind="Album" Width="29" Height="29" Margin="-2.5" HorizontalAlignment="Center" />
-          <TextBlock Text="Albums" FontSize="11" HorizontalAlignment="Center" />
+          <materialIcons:MaterialIcon Classes="tabIcon" Kind="Album" Width="29" Height="29" Margin="-2.5" HorizontalAlignment="Center" />
+          <TextBlock Text="Albums" HorizontalAlignment="Center" />
         </StackPanel>
       </Button>
       <Button x:Name="ArtistsTab" Classes="pill tab"
               Classes.current="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=Artists}"
               Command="{Binding SelectTabCommand}" CommandParameter="Artists">
         <StackPanel HorizontalAlignment="Center" Spacing="2">
-          <materialIcons:MaterialIcon Kind="Account" Width="36" Height="36" Margin="-6" HorizontalAlignment="Center" />
-          <TextBlock Text="Artists" FontSize="11" HorizontalAlignment="Center" />
+          <materialIcons:MaterialIcon Classes="tabIcon" Kind="Account" Width="36" Height="36" Margin="-6" HorizontalAlignment="Center" />
+          <TextBlock Text="Artists" HorizontalAlignment="Center" />
         </StackPanel>
       </Button>
       <Button x:Name="PlaylistsTab" Classes="pill tab"
               Classes.current="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=Playlists}"
               Command="{Binding SelectTabCommand}" CommandParameter="Playlists">
         <StackPanel HorizontalAlignment="Center" Spacing="2">
-          <materialIcons:MaterialIcon Kind="PlaylistPlay" Width="30" Height="30" Margin="-3" HorizontalAlignment="Center" />
-          <TextBlock Text="Playlists" FontSize="11" HorizontalAlignment="Center" />
+          <materialIcons:MaterialIcon Classes="tabIcon" Kind="PlaylistPlay" Width="30" Height="30" Margin="-3" HorizontalAlignment="Center" />
+          <TextBlock Text="Playlists" HorizontalAlignment="Center" />
         </StackPanel>
       </Button>
       <!-- What plays next - MobileMainViewModel.QueueRows. The glyph spans
@@ -554,8 +587,8 @@
               Classes.current="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=Queue}"
               Command="{Binding SelectTabCommand}" CommandParameter="Queue">
         <StackPanel HorizontalAlignment="Center" Spacing="2">
-          <materialIcons:MaterialIcon Kind="PlaylistMusic" Width="29" Height="29" Margin="-2.5" HorizontalAlignment="Center" />
-          <TextBlock Text="Queue" FontSize="11" HorizontalAlignment="Center" />
+          <materialIcons:MaterialIcon Classes="tabIcon" Kind="PlaylistMusic" Width="29" Height="29" Margin="-2.5" HorizontalAlignment="Center" />
+          <TextBlock Text="Queue" HorizontalAlignment="Center" />
         </StackPanel>
       </Button>
       <!-- Keeps SearchTab_Click: tapping the tab while already on Search
@@ -566,8 +599,8 @@
               Command="{Binding SelectTabCommand}" CommandParameter="Search"
               Click="SearchTab_Click">
         <StackPanel HorizontalAlignment="Center" Spacing="2">
-          <materialIcons:MaterialIcon Kind="Magnify" Width="33" Height="33" Margin="-4.5" HorizontalAlignment="Center" />
-          <TextBlock Text="Search" FontSize="11" HorizontalAlignment="Center" />
+          <materialIcons:MaterialIcon Classes="tabIcon" Kind="Magnify" Width="33" Height="33" Margin="-4.5" HorizontalAlignment="Center" />
+          <TextBlock Text="Search" HorizontalAlignment="Center" />
         </StackPanel>
       </Button>
     </Grid>

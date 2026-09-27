@@ -27,6 +27,23 @@ public partial class MobileMainViewModel
         }
     }
 
+    // Whether each tab has its name under its icon - Settings' switch, kept
+    // in AppSettings.MobileTabLabels.
+    private bool _showTabLabels = true;
+
+    public bool ShowTabLabels
+    {
+        get => _showTabLabels;
+        set
+        {
+            if (_showTabLabels == value)
+                return;
+            _showTabLabels = value;
+            OnPropertyChanged();
+            Main.PersistMobileTabLabels(value);
+        }
+    }
+
     // Settings' list: the tabs in the bar first, in bar order, then the rest.
     public ObservableCollection<MobileTabSettingRow> TabSettingRows { get; } = new();
 
@@ -77,8 +94,8 @@ public partial class MobileMainViewModel
     }
 
     // Shown tabs go to the end of the bar; a hidden one leaves it. The bar
-    // keeps at least one tab and at most MobileTabs.MaxShown - the rows say
-    // so by greying the box out (CanToggle), and this refuses the same.
+    // keeps at least one tab - the last row says so by greying its box out
+    // (CanToggle), and this refuses the same.
     private void ToggleTabShown(MobileTabSettingRow? row)
     {
         if (row == null)
@@ -90,7 +107,7 @@ public partial class MobileMainViewModel
             if (tabs.Count > 1)
                 tabs.Remove(row.Tab);
         }
-        else if (tabs.Count < MobileTabs.MaxShown)
+        else
         {
             tabs.Add(row.Tab);
         }
@@ -166,7 +183,7 @@ public partial class MobileMainViewModel
             TabSettingRows.Add(new MobileTabSettingRow(
                 tab,
                 IsShown: false,
-                CanToggle: shown < MobileTabs.MaxShown,
+                CanToggle: true,
                 CanMoveUp: false,
                 CanMoveDown: false));
         }

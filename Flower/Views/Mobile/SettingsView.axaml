@@ -93,13 +93,16 @@
            bottom here being left to right there. The ones not in the bar are
            listed after, unticked, in a fixed order. Moving is two arrows
            rather than a drag: seven rows are not worth a gesture that fights
-           the page's own scrolling. The bar holds six at most and keeps one at
-           least, and a box that cannot be changed for that reason is greyed
-           out (MobileTabSettingRow.CanToggle). -->
+           the page's own scrolling. The bar keeps one tab at least, and the
+           box that cannot be unticked for that reason is greyed out
+           (MobileTabSettingRow.CanToggle). -->
       <StackPanel Classes="section">
         <TextBlock Classes="section-header" Text="TABS"/>
-        <TextBlock Text="Ticked tabs show in the bar, in this order. Up to six."
+        <TextBlock Text="Ticked tabs show in the bar, in this order. With all seven, they are drawn a little smaller."
                    FontSize="13" Opacity="0.6" TextWrapping="Wrap"/>
+        <CheckBox IsChecked="{Binding ShowTabLabels}" Margin="0,4,0,4">
+          <TextBlock Text="Show names under the icons" FontSize="15"/>
+        </CheckBox>
 
         <ItemsControl ItemsSource="{Binding TabSettingRows}">
           <ItemsControl.ItemTemplate>

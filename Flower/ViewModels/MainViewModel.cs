@@ -532,6 +532,14 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         SaveSettings();
     }
 
+    public bool MobileTabLabelsSetting => _appSettings.MobileTabLabels;
+
+    public void PersistMobileTabLabels(bool value)
+    {
+        _appSettings.MobileTabLabels = value;
+        SaveSettings();
+    }
+
     // ── Busy state ────────────────────────────────────────────────────
 
     // The counter itself lives in BusyState, shared with the collaborators

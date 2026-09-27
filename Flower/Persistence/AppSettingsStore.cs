@@ -70,6 +70,9 @@ namespace Flower.Persistence
         // MobileTabs.Default.
         public List<string>? MobileTabs { get; set; }
 
+        // Whether those tabs have their names under their icons.
+        public bool MobileTabLabels { get; set; } = true;
+
         // Whether the track list keeps its album-art well - see
         // ColumnManager.ShowAlbumArt, which is what reads and writes this, and
         // ColumnSelectorWindow, where it sits alongside the columns proper.

@@ -19,20 +19,21 @@ public static class MobileTabs
     ];
 
     // Recently Added is left out: the Albums grid can already be sorted by
-    // date added from its own menu, and the bar has room for six.
+    // date added from its own menu, and six tabs are drawn at full size.
     public static readonly IReadOnlyList<MobileTab> Default =
     [
         MobileTab.Albums, MobileTab.Artists, MobileTab.Songs,
         MobileTab.Playlists, MobileTab.Queue, MobileTab.Search,
     ];
 
-    // What the oval holds with every label on one line on a 375px phone -
-    // MobileTabBarLayoutTests measures it. A seventh would clip "Playlists".
-    public const int MaxShown = 6;
+    // What the oval holds at full size with every label on one line on a
+    // 375px phone. Past it the tabs are drawn smaller (Button.tab.compact in
+    // MobileMainView.axaml) - MobileTabBarLayoutTests measures both.
+    public const int RoomyShown = 6;
 
     // A saved choice, cleaned: names that are no longer tabs and repeats are
-    // dropped, anything past MaxShown is cut, and nothing left at all is the
-    // default rather than a bar with no tabs.
+    // dropped, and nothing left at all is the default rather than a bar with
+    // no tabs.
     public static IReadOnlyList<MobileTab> Parse(IEnumerable<string>? saved)
     {
         if (saved == null)
@@ -45,7 +46,7 @@ public static class MobileTabs
                 tabs.Add(tab);
         }
 
-        return tabs.Count == 0 ? Default : tabs.Take(MaxShown).ToList();
+        return tabs.Count == 0 ? Default : tabs;
     }
 
     // The label under the tab's icon, and its name in Settings.

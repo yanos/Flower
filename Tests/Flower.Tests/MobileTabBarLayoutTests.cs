@@ -45,7 +45,7 @@ public class MobileTabBarLayoutTests : PinnedDataDirectory
 
         private readonly MainViewModelHarness.MobileParts _parts;
 
-        public Harness(double width)
+        public Harness(double width, System.Collections.Generic.IReadOnlyList<MobileTab>? tabs = null, bool labels = true)
         {
             var tracks = Enumerable.Range(0, 20).Select(i => new Track
             {
@@ -54,7 +54,8 @@ public class MobileTabBarLayoutTests : PinnedDataDirectory
             }).ToList();
 
             // The bar the app ships with, since this is about how it looks.
-            _parts = MainViewModelHarness.BuildMobile(new Library(tracks), new MainPlaylist(tracks), tabs: MobileTabs.Default);
+            _parts = MainViewModelHarness.BuildMobile(new Library(tracks), new MainPlaylist(tracks), tabs: tabs ?? MobileTabs.Default);
+            _parts.Mobile.ShowTabLabels = labels;
             View = new MobileMainView { DataContext = Vm };
             // TestAppBuilder runs a bare Application with no theme, so without
             // this nothing has a control template and the tree comes back
@@ -93,14 +94,13 @@ public class MobileTabBarLayoutTests : PinnedDataDirectory
             .OrderBy(b => InWindow(b).X)
             .ToList();
 
-        // The one Border given a height of its own - Border.floating is 40,
-        // and the tab oval overrides it to fit a label under each icon.
-        public Border Oval => Window.GetVisualDescendants().OfType<Border>().Single(b => b.Height == 64);
+        public Border Oval => Window.GetVisualDescendants().OfType<Border>().Single(b => b.Name == "TabOval");
 
         // The mini player's, which is 56 tall. Still in the tree while nothing
         // is playing, just not visible. So is the filter oval, drawn to the
         // same shape.
-        public Border MiniPlayer => Window.GetVisualDescendants().OfType<Border>().Single(b => b.Height == 56 && b.Name != "FilterOval");
+        public Border MiniPlayer => Window.GetVisualDescendants().OfType<Border>()
+            .Single(b => b.Height == 56 && b.Name is not ("FilterOval" or "TabOval"));
 
         public Rect InWindow(Visual control) =>
             new(control.TranslatePoint(default, Window) ?? default, control.Bounds.Size);
@@ -128,6 +128,43 @@ public class MobileTabBarLayoutTests : PinnedDataDirectory
             h.Tabs.Select(t => Harness.LabelOf(t).Text));
     }
 
+    // Seven are drawn smaller than six, not squeezed into the same size: the
+    // three tests above measure that they still fit, this that it is the
+    // seventh that does it.
+    [AvaloniaFact]
+    public void Only_a_full_bar_draws_its_tabs_smaller()
+    {
+        using var six = new Harness(NarrowPhone);
+        Assert.All(six.Tabs, t => Assert.DoesNotContain("compact", t.Classes));
+        six.Vm.ToggleTabShownCommand.Execute(six.Vm.TabSettingRows.Single(r => r.Tab == MobileTab.RecentlyAdded));
+        six.Layout(NarrowPhone);
+
+        Assert.Equal(7, six.Tabs.Count);
+        Assert.All(six.Tabs, t => Assert.Contains("compact", t.Classes));
+        Assert.All(six.Tabs, t => Assert.Equal(10, Harness.LabelOf(t).FontSize));
+    }
+
+    // Names off: no label under any icon, the icons drawn bigger into the
+    // room the names leave, and the oval exactly the size it was.
+    [AvaloniaFact]
+    public void With_names_off_the_icons_grow_and_the_oval_stays_the_same()
+    {
+        using var h = new Harness(NarrowPhone);
+        var withNames = h.Oval.Bounds.Size;
+
+        h.Vm.ShowTabLabels = false;
+        h.Layout(NarrowPhone);
+
+        Assert.All(h.Tabs, t => Assert.False(Harness.LabelOf(t).IsVisible));
+        Assert.All(h.Tabs, t =>
+        {
+            var icon = t.GetVisualDescendants().OfType<Control>().First(c => c.Classes.Contains("tabIcon"));
+            Assert.True(icon.RenderTransform is ScaleTransform { ScaleX: > 1 } ||
+                        icon.RenderTransform?.Value.M11 > 1, $"{Harness.LabelOf(t).Text}'s icon was not enlarged");
+        });
+        Assert.Equal(withNames, h.Oval.Bounds.Size);
+    }
+
     // The bar is the user's to arrange in Settings: what it shows follows the
     // choice at once, and a tab taken out is out of the tree, not just hidden.
     [AvaloniaFact]
@@ -147,11 +184,13 @@ public class MobileTabBarLayoutTests : PinnedDataDirectory
     // Six circles in a row that was drawn for five: each has to keep its own
     // column, or two of them light up as one smear on a press.
     [AvaloniaTheory]
-    [InlineData(NarrowPhone)]
-    [InlineData(LargePhone)]
-    public void No_tab_overlaps_the_one_beside_it(double width)
+    [InlineData(NarrowPhone, false)]
+    [InlineData(LargePhone, false)]
+    [InlineData(NarrowPhone, true)]
+    [InlineData(LargePhone, true)]
+    public void No_tab_overlaps_the_one_beside_it(double width, bool allSeven)
     {
-        using var h = new Harness(width);
+        using var h = new Harness(width, allSeven ? MobileTabs.All : null);
         var tabs = h.Tabs;
 
         for (var i = 1; i < tabs.Count; i++)
@@ -166,11 +205,13 @@ public class MobileTabBarLayoutTests : PinnedDataDirectory
     // And the row as a whole has to stay inside the oval it is drawn in,
     // rather than hanging off its rounded ends.
     [AvaloniaTheory]
-    [InlineData(NarrowPhone)]
-    [InlineData(LargePhone)]
-    public void The_row_of_tabs_fits_inside_the_oval(double width)
+    [InlineData(NarrowPhone, false)]
+    [InlineData(LargePhone, false)]
+    [InlineData(NarrowPhone, true)]
+    [InlineData(LargePhone, true)]
+    public void The_row_of_tabs_fits_inside_the_oval(double width, bool allSeven)
     {
-        using var h = new Harness(width);
+        using var h = new Harness(width, allSeven ? MobileTabs.All : null);
         var tabs = h.Tabs;
         var oval = h.InWindow(h.Oval);
 
@@ -185,11 +226,13 @@ public class MobileTabBarLayoutTests : PinnedDataDirectory
     // "Playlists" does not throw - it just draws a clipped word. Measuring
     // what the text wants is the only way to see it.
     [AvaloniaTheory]
-    [InlineData(NarrowPhone)]
-    [InlineData(LargePhone)]
-    public void Every_label_fits_its_tab_without_being_clipped(double width)
+    [InlineData(NarrowPhone, false)]
+    [InlineData(LargePhone, false)]
+    [InlineData(NarrowPhone, true)]
+    [InlineData(LargePhone, true)]
+    public void Every_label_fits_its_tab_without_being_clipped(double width, bool allSeven)
     {
-        using var h = new Harness(width);
+        using var h = new Harness(width, allSeven ? MobileTabs.All : null);
 
         foreach (var tab in h.Tabs)
         {

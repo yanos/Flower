@@ -1955,6 +1955,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         RebuildAlbumGrid();
         RebuildArtistAlbumGrid();
         _visibleTabs = MobileTabs.Parse(Main.MobileTabsSetting);
+        _showTabLabels = Main.MobileTabLabelsSetting;
         _selectedTab = _visibleTabs[0];
         RebuildTabSettingRows();
         ApplyTabSelection();

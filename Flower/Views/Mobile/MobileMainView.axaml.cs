@@ -260,18 +260,21 @@ public partial class MobileMainView : UserControl
 
     private void TabsSource_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(MobileMainViewModel.VisibleTabs))
+        if (e.PropertyName is nameof(MobileMainViewModel.VisibleTabs) or nameof(MobileMainViewModel.ShowTabLabels))
             LayOutTabs();
     }
 
     private void LayOutTabs()
     {
         var tabs = _tabsSource?.VisibleTabs ?? MobileTabs.Default;
+        var labels = _tabsSource?.ShowTabLabels ?? true;
         TabGrid.Children.Clear();
         TabGrid.ColumnDefinitions.Clear();
         for (var i = 0; i < tabs.Count; i++)
         {
             var button = TabButton(tabs[i]);
+            button.Classes.Set("compact", tabs.Count > MobileTabs.RoomyShown);
+            button.Classes.Set("iconsOnly", !labels);
             TabGrid.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
             Grid.SetColumn(button, i);
             TabGrid.Children.Add(button);
