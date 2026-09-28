@@ -139,6 +139,15 @@
         </ItemsControl>
       </StackPanel>
 
+      <StackPanel Classes="section">
+        <TextBlock Classes="section-header" Text="ALBUMS"/>
+        <CheckBox IsChecked="{Binding ShowAlbumButtons}" Margin="0,4,0,4">
+          <TextBlock Text="Show buttons under the album art" FontSize="15"/>
+        </CheckBox>
+        <TextBlock Text="Without them, a tap on a song plays the album from there, and shuffle, add to playlist and download are in the menu at the top of the screen."
+                   FontSize="13" Opacity="0.6" TextWrapping="Wrap"/>
+      </StackPanel>
+
       <!-- The one server this device syncs with - desktop's equivalent is
            ServerPickerView, embedded in Settings' Devices tab. Everything here
            is about that server; reaching a different one is the next section

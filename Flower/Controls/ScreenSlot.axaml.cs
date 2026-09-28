@@ -456,8 +456,15 @@ public partial class ScreenSlot : UserControl
     private Button MenuRow(ScreenMenuEntry entry)
     {
         var row = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"), ColumnSpacing = 14 };
-        row.Children.Add(new MaterialIcon { Kind = entry.Icon, Width = 20, Height = 20, VerticalAlignment = VerticalAlignment.Center });
+        var icon = new MaterialIcon { Kind = entry.Icon, Width = 20, Height = 20, VerticalAlignment = VerticalAlignment.Center };
+        row.Children.Add(icon);
         var label = new TextBlock { Text = entry.Label, FontSize = 16, VerticalAlignment = VerticalAlignment.Center };
+        // Red, like the same entries on the song and album menus.
+        if (entry.IsDestructive)
+        {
+            icon[!MaterialIcon.ForegroundProperty] = new DynamicResourceExtension("AppErrorBrush");
+            label[!TextBlock.ForegroundProperty] = new DynamicResourceExtension("AppErrorBrush");
+        }
         Grid.SetColumn(label, 1);
         row.Children.Add(label);
         // The sort in use says which way it runs; picking it again turns it

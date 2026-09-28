@@ -87,6 +87,22 @@
           </StackPanel>
         </Button>
 
+        <!-- Every song here, into the queue that is playing - see
+             MobileMainViewModel.AlbumActionTargetTracks for their order. -->
+        <Button Classes="action" Command="{Binding PlayNextAlbumActionTargetCommand}">
+          <StackPanel Orientation="Horizontal" Spacing="14">
+            <materialIcons:MaterialIcon Kind="PlaylistPlay" Width="22" Height="22" />
+            <TextBlock Text="Play Next" FontSize="16" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+
+        <Button Classes="action" Command="{Binding AddAlbumActionTargetToQueueCommand}">
+          <StackPanel Orientation="Horizontal" Spacing="14">
+            <materialIcons:MaterialIcon Kind="PlaylistMusic" Width="22" Height="22" />
+            <TextBlock Text="Add to Queue" FontSize="16" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+
         <Button Classes="action" Command="{Binding AddAlbumActionTargetToPlaylistCommand}">
           <StackPanel Orientation="Horizontal" Spacing="14">
             <materialIcons:MaterialIcon Kind="PlaylistPlus" Width="22" Height="22" />

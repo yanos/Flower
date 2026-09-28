@@ -57,6 +57,10 @@
              (confirmed on a real device as album art flashing in on every
              row of a revealed album screen mid swipe-forward, then
              disappearing once the transition committed and resynced it). -->
+        <!-- The grip itself is the row's own answer (CanBeDragged), false
+             only for the song playing at the head of the Queue, which nothing
+             moves ahead of - its column stays, so its art lines up with the
+             rows under it. -->
         <Border Grid.Column="0"
                 Classes="dragHandle"
                 IsVisible="{Binding $parent[views:ITrackRowHost].IsPlaylistMode}"
@@ -64,7 +68,8 @@
                 Width="32"
                 HorizontalAlignment="Center"
                 VerticalAlignment="Center">
-          <materialIcons:MaterialIcon Kind="DragHorizontalVariant" Width="20" Height="20" Opacity="0.5" />
+          <materialIcons:MaterialIcon Kind="DragHorizontalVariant" Width="20" Height="20" Opacity="0.5"
+                                      IsVisible="{Binding CanBeDragged}" />
         </Border>
         <!-- Hidden while viewing one album's own track list - its header
              (see IsShowingAlbumTrackList/CurrentAlbumHeader) already shows

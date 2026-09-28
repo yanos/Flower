@@ -67,7 +67,7 @@ public class MobileScreenMenuTests : PinnedDataDirectory
         vm.SelectTabCommand.Execute(nameof(MobileTab.Songs));
         await WaitForRows(vm, 4);
 
-        Assert.Equal(["Name", "Artist", "Album", "Year", "Date Added", "Shuffle", "Settings"], Labels(vm));
+        Assert.Equal(["Name", "Artist", "Album", "Year", "Date Added", "Shuffle", "Delete Local Files", "Settings"], Labels(vm));
         Assert.Equal(ListSortDirection.Ascending, Entry(vm, "Name").Direction);
         Assert.Null(Entry(vm, "Year").Direction);
     }
@@ -95,7 +95,7 @@ public class MobileScreenMenuTests : PinnedDataDirectory
         vm.SelectTabCommand.Execute(nameof(MobileTab.Albums));
         await WaitFor(() => vm.AlbumGridRows.Count > 0);
 
-        Assert.Equal(["Name", "Artist", "Year", "Date Added", "Shuffle", "Settings"], Labels(vm));
+        Assert.Equal(["Name", "Artist", "Year", "Date Added", "Shuffle", "Delete Local Files", "Settings"], Labels(vm));
         Entry(vm, "Year").Invoke();
 
         Assert.Equal(["Propeller", "Bee Thousand", "Alien Lanes"],
@@ -149,24 +149,25 @@ public class MobileScreenMenuTests : PinnedDataDirectory
         vm.SelectAlbumOrArtistCommand.Execute("Bee Thousand");
         await WaitForRows(vm, 2);
 
-        Assert.Equal(["Shuffle", "Add to Playlist", "Settings"], Labels(vm));
+        Assert.Equal(["Shuffle", "Play Next", "Add to Queue", "Add to Playlist", "Delete Local Files", "Settings"], Labels(vm));
         Entry(vm, "Add to Playlist").Invoke();
         Assert.True(vm.IsShowingAddToPlaylist);
     }
 
-    // Every screen can shuffle what it shows. Search has nothing to show
-    // until something is typed, so until then it has only Settings.
+    // Every screen can shuffle what it shows, and delete the files of it this
+    // phone has. Search has nothing to show until something is typed, so
+    // until then it has only Settings.
     [AvaloniaFact]
-    public void Recently_added_and_search_have_only_shuffle_and_settings()
+    public void Recently_added_and_search_have_only_shuffle_delete_and_settings()
     {
         var vm = Build();
         vm.SelectTabCommand.Execute(nameof(MobileTab.RecentlyAdded));
-        Assert.Equal(["Shuffle", "Settings"], Labels(vm));
+        Assert.Equal(["Shuffle", "Delete Local Files", "Settings"], Labels(vm));
 
         vm.SelectTabCommand.Execute(nameof(MobileTab.Search));
         Assert.Equal(["Settings"], Labels(vm));
         vm.SearchQuery = "Maps";
-        Assert.Equal(["Shuffle", "Settings"], Labels(vm));
+        Assert.Equal(["Shuffle", "Delete Local Files", "Settings"], Labels(vm));
 
         Entry(vm, "Settings").Invoke();
         Assert.True(vm.IsShowingSettings);

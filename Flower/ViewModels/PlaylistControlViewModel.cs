@@ -372,6 +372,7 @@ namespace Flower.ViewModels
             // isn't (the queue changed under a track that keeps playing),
             // ResolveQueueIndex searches the new list instead.
             _queueIndex = -1;
+            _linedUpCount = 0;
             OnPropertyChanged(nameof(CurrentPlaylist));
         }
 
@@ -407,6 +408,160 @@ namespace Flower.ViewModels
             }
 
             return -1;
+        }
+
+        // ── Lining songs up ───────────────────────────────────────────────
+        //
+        // Play Next and Add to Queue: songs put into the queue that is playing
+        // rather than replacing it. The queue is replaced whole on every
+        // change rather than edited in place, because it is not always a list
+        // of the queue's own - before anything has played it is MainPlaylist,
+        // the library itself - and a Playlist's Tracks are copy-on-write
+        // anyway (see Playlist._tracks).
+
+        // How many entries straight after the playing one were put there by
+        // Play Next or Add to Queue - the songs the user lined up, which play
+        // in the order they were lined up even under shuffle. Without this,
+        // Play Next with shuffle on put a song after the current one in a
+        // list shuffle never walks in order, and the next song was still a
+        // roll of the dice. Shrinks by one as each of them starts, and is
+        // forgotten on a jump elsewhere or a new queue.
+        private int _linedUpCount;
+
+        /// <summary>The number of entries after the playing one that were lined up
+        /// by hand and play next in order, shuffle or not.</summary>
+        public int LinedUpCount => _linedUpCount;
+
+        /// <summary>Puts <paramref name="tracks"/> straight after the song playing,
+        /// ahead of anything lined up before them.</summary>
+        public void PlayNext(IReadOnlyList<Track> tracks) => LineUp(tracks, next: true);
+
+        /// <summary>Puts <paramref name="tracks"/> at the end of the queue - or,
+        /// under shuffle, where the queue has no end to speak of, after whatever
+        /// else has been lined up.</summary>
+        public void AddToQueue(IReadOnlyList<Track> tracks) => LineUp(tracks, next: false);
+
+        private void LineUp(IReadOnlyList<Track> tracks, bool next)
+        {
+            if (tracks.Count == 0)
+                return;
+
+            // Nothing playing: there is nothing for these to come after, and
+            // the queue as it stands was never lined up by anyone - so they
+            // become the queue, and start.
+            if (CurrentlyPlayingTrack is not { } current)
+            {
+                SetCurrentPlaylist(new Playlist("Now Playing Queue", new List<Track>(tracks)));
+                Play(tracks[0], 0);
+                return;
+            }
+
+            var queue = new List<Track>(_currentPlaylist.Tracks);
+            var index = ResolveQueueIndex(current);
+
+            // Playing something the queue does not hold (the queue was replaced
+            // under it): the song playing is put back at the head of a queue of
+            // its own, so there is a place to come after.
+            if (index < 0)
+            {
+                queue = [current];
+                index = 0;
+                _linedUpCount = 0;
+            }
+
+            int at;
+            if (next)
+                at = index + 1;
+            else if (IsShuffleEnabled)
+                at = index + 1 + _linedUpCount;
+            else
+                at = queue.Count;
+
+            queue.InsertRange(at, tracks);
+            if (at <= index + 1 + _linedUpCount)
+                _linedUpCount += tracks.Count;
+
+            _logger.LogInformation("Lined up {Count} songs to play {Where}", tracks.Count, next ? "next" : "last");
+            ReplaceQueueKeepingPlace(queue, index);
+        }
+
+        /// <summary>Moves the entry at <paramref name="from"/> to sit before the
+        /// one at <paramref name="insertBefore"/>, or at the end when that is the
+        /// queue's length - both as slots in <see cref="CurrentPlaylist"/>, since
+        /// a queue can hold one song twice. The song playing stays where it is,
+        /// and nothing moves in front of it.</summary>
+        public void MoveQueueEntry(int from, int insertBefore)
+        {
+            var queue = new List<Track>(_currentPlaylist.Tracks);
+            var index = QueueIndex;
+            if (from < 0 || from >= queue.Count || from == index)
+                return;
+            if (insertBefore <= index || insertBefore > queue.Count)
+                return;
+            if (insertBefore == from || insertBefore == from + 1)
+                return;
+
+            // The lined-up block keeps its own length as songs cross into or out
+            // of it - see _linedUpCount.
+            var blockEnd = index + 1 + _linedUpCount;
+            var wasInBlock = index >= 0 && from > index && from < blockEnd;
+            // Dropped right after the last of them is still among them for a
+            // song that was, and just after them for one that was not.
+            var landsInBlock = index >= 0 && (insertBefore < blockEnd || (wasInBlock && insertBefore == blockEnd));
+            if (wasInBlock && !landsInBlock)
+                _linedUpCount--;
+            else if (!wasInBlock && landsInBlock)
+                _linedUpCount++;
+
+            var track = queue[from];
+            queue.RemoveAt(from);
+            var target = insertBefore > from ? insertBefore - 1 : insertBefore;
+            queue.Insert(target, track);
+
+            // Only something moved from before the playing song to after it
+            // shifts it - a move behind it, or between two songs after it,
+            // leaves its slot alone.
+            if (index >= 0 && from < index)
+                index--;
+
+            ReplaceQueueKeepingPlace(queue, index);
+        }
+
+        /// <summary>Takes the entry at <paramref name="slot"/> out of the queue.
+        /// Not the song playing, which is left to Next or Stop.</summary>
+        public void RemoveQueueEntry(int slot)
+        {
+            var queue = new List<Track>(_currentPlaylist.Tracks);
+            var index = QueueIndex;
+            if (slot < 0 || slot >= queue.Count || slot == index)
+                return;
+
+            if (index >= 0 && slot > index && slot <= index + _linedUpCount)
+                _linedUpCount--;
+            queue.RemoveAt(slot);
+            if (index >= 0 && slot < index)
+                index--;
+
+            ReplaceQueueKeepingPlace(queue, index);
+        }
+
+        // A new queue with the song playing still at its own slot in it, and
+        // the song after it armed again: what plays next is exactly what an
+        // edit here changes, and the gapless pipeline has already decoded ahead
+        // into whatever it was before.
+        private void ReplaceQueueKeepingPlace(List<Track> queue, int index)
+        {
+            // Not SetCurrentPlaylist, which forgets the place: the change is
+            // announced with the place already kept, so whatever rebuilds off
+            // it finds the playing song at its own slot rather than at the
+            // first copy of it.
+            _currentPlaylist = new Playlist("Now Playing Queue", queue);
+            _queueIndex = index;
+            OnPropertyChanged(nameof(LinedUpCount));
+            OnPropertyChanged(nameof(CurrentPlaylist));
+
+            if (CurrentlyPlayingTrack is { } current && !_parkedAtQueueTop)
+                ArmUpcoming(GetUpcomingEntry(current, _queueIndex).Track);
         }
 
         public void ToggleRepeat()
@@ -457,6 +612,11 @@ namespace Flower.ViewModels
             var tracks = _currentPlaylist.Tracks;
             if (tracks.Count == 0)
                 return (null, -1);
+
+            // What was lined up by hand plays in the order it was lined up,
+            // shuffle or not - see _linedUpCount.
+            if (IsShuffleEnabled && _linedUpCount > 0 && currentIndex >= 0 && currentIndex + 1 < tracks.Count)
+                return (tracks[currentIndex + 1], currentIndex + 1);
 
             if (IsShuffleEnabled && tracks.Count > 1)
             {
@@ -550,9 +710,20 @@ namespace Flower.ViewModels
             // that is what the queue holds. ResolveForPlayback's copy keeps
             // Track.Id, so this stays correct either way, but doing it first
             // makes that independent of the copy's behaviour.
+            var previousIndex = _queueIndex;
             _queueIndex = queueIndex >= 0 && queueIndex < _currentPlaylist.Tracks.Count && _currentPlaylist.Tracks[queueIndex] == track
                 ? queueIndex
                 : IndexOfInQueue(track);
+
+            // Moving on into the songs lined up by hand uses up the ones passed;
+            // a jump anywhere else - back, or past the end of them - leaves
+            // nothing lined up. Starting the same slot again (repeat) is neither.
+            if (_linedUpCount > 0 && _queueIndex != previousIndex)
+            {
+                var step = _queueIndex - previousIndex;
+                _linedUpCount = previousIndex >= 0 && step > 0 && step <= _linedUpCount ? _linedUpCount - step : 0;
+                OnPropertyChanged(nameof(LinedUpCount));
+            }
 
             // Every start of playback ages out any earlier one still waiting on
             // a stream URL - see StartWhenResolved.

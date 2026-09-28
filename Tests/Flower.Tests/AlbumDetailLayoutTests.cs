@@ -278,6 +278,33 @@ public class AlbumDetailLayoutTests : PinnedDataDirectory
         window.Close();
     }
 
+    // Settings can take the round buttons out from between the art and the
+    // songs, and the songs move up into the room they leave - in both
+    // layouts, the words being one template either way up.
+    [AvaloniaTheory]
+    [InlineData(390)]
+    [InlineData(844)]
+    public void The_buttons_under_the_art_can_be_turned_off(double width)
+    {
+        using var scope = BuildInAlbum();
+        var (window, _) = Show(scope.Mobile, width);
+        var songWithButtons = InWindow(window, TextBlockSaying(window, "Song 0")).Y;
+        Assert.Contains(AlbumButtonRows(window), r => r.IsEffectivelyVisible);
+
+        scope.Mobile.ShowAlbumButtons = false;
+        Layout(window, width);
+
+        Assert.DoesNotContain(AlbumButtonRows(window), r => r.IsEffectivelyVisible);
+        Assert.True(InWindow(window, TextBlockSaying(window, "Song 0")).Y < songWithButtons,
+            "the songs did not move up into the room the buttons left");
+        Assert.False(scope.Parts.AppSettings.MobileAlbumButtons);
+
+        window.Close();
+    }
+
+    private static IEnumerable<StackPanel> AlbumButtonRows(Window window) =>
+        window.GetVisualDescendants().OfType<StackPanel>().Where(p => p.Classes.Contains("albumActions"));
+
     private static TextBlock TextBlockSaying(Window window, string text) =>
         window.GetVisualDescendants().OfType<TextBlock>().First(t => t.Text == text && t.IsEffectivelyVisible);
 

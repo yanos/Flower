@@ -44,6 +44,25 @@ public partial class MobileMainViewModel
         }
     }
 
+    // Whether an album's screen has its row of buttons under the art -
+    // Settings' switch, kept in AppSettings.MobileAlbumButtons. A playlist's
+    // screen keeps its row either way: its pencil is the one thing in it the
+    // header menu does not also offer.
+    private bool _showAlbumButtons = true;
+
+    public bool ShowAlbumButtons
+    {
+        get => _showAlbumButtons;
+        set
+        {
+            if (_showAlbumButtons == value)
+                return;
+            _showAlbumButtons = value;
+            OnPropertyChanged();
+            Main.PersistMobileAlbumButtons(value);
+        }
+    }
+
     // Settings' list: the tabs in the bar first, in bar order, then the rest.
     public ObservableCollection<MobileTabSettingRow> TabSettingRows { get; } = new();
 

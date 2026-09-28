@@ -258,7 +258,15 @@ public partial class AlbumGridRowControl : UserControl
         removeFromLibraryItem.Click += async (_, _) =>
             await LibraryRemovalDialog.RemoveAsync(TopLevel.GetTopLevel(this), selectedTracks);
 
+        var playNextItem = new MenuItem { Header = "Play Next" };
+        playNextItem.Click += (_, _) => vm.PlayNext(selectedTracks);
+        var addToQueueItem = new MenuItem { Header = "Add to Queue" };
+        addToQueueItem.Click += (_, _) => vm.AddToQueue(selectedTracks);
+
         var menu = new ContextMenu();
+        menu.Items.Add(playNextItem);
+        menu.Items.Add(addToQueueItem);
+        menu.Items.Add(new Separator());
         menu.Items.Add(getInfoItem);
         menu.Items.Add(addToPlaylistItem);
         menu.Items.Add(locateFileItem);

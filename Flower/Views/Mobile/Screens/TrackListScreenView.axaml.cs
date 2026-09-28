@@ -15,15 +15,6 @@ namespace Flower.Views.Mobile.Screens;
 
 public partial class TrackListScreenView : UserControl, ITrackRowHost
 {
-    // Touch drag-to-reorder for the playlist track list: the desktop equivalent
-    // (MusicListView) starts dragging immediately anywhere on the row with a small
-    // 4px threshold, which fights normal touch scrolling. Here dragging only starts
-    // from a dedicated handle icon, with a larger threshold before it visually kicks in.
-    private const double DragThreshold = 10.0;
-    private TrackRowViewModel? _draggedRow;
-    private double _dragStartY;
-    private bool _isDragging;
-
     // The rows/header this instance actually renders - deliberately NOT a
     // direct binding to Main.Rows/AlbumDetailRows/CurrentAlbumHeader on the
     // shared MobileMainViewModel (see the XAML's own comment). While this is
@@ -219,15 +210,13 @@ public partial class TrackListScreenView : UserControl, ITrackRowHost
     {
         InitializeComponent();
 
-        // TrackRowTemplate's drag handle can't wire these via XAML event
-        // attributes (it's a class-less ResourceDictionary - see the
-        // template's own comment), so they're attached here instead, tunnel
-        // routed off the ListBox itself and keyed off e.Source - the same
-        // technique MobileMainView.axaml.cs already uses for its swipe gesture.
-        TrackListBox.AddHandler(PointerPressedEvent, DragHandle_PointerPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
-        TrackListBox.AddHandler(PointerMovedEvent, DragHandle_PointerMoved, RoutingStrategies.Tunnel, handledEventsToo: true);
-        TrackListBox.AddHandler(PointerReleasedEvent, DragHandle_PointerReleased, RoutingStrategies.Tunnel, handledEventsToo: true);
-        TrackListBox.AddHandler(PointerCaptureLostEvent, DragHandle_PointerCaptureLost, RoutingStrategies.Tunnel, handledEventsToo: true);
+        // Drag-to-reorder, for a playlist's tracks - the handle it starts
+        // from is only on screen in IsPlaylistMode.
+        _ = new TrackRowDragReorder(TrackListBox, this, DropIndicator, (dragged, insertBefore) =>
+        {
+            if (DataContext is MobileMainViewModel vm)
+                vm.ReorderCurrentPlaylistTrack(dragged.Track, insertBefore?.Track);
+        });
 
         // Songs are sorted on their title's sort-as value with punctuation
         // stripped (TrackListBuilder), so the letter is worked out the same way.
@@ -295,100 +284,5 @@ public partial class TrackListScreenView : UserControl, ITrackRowHost
         DisplayRows = IsAlbumMode ? _observedVm.AlbumDetailRows : _observedVm.Main.Rows;
         DisplayHeader = _observedVm.CurrentAlbumHeader;
         ListHeader = _observedVm.CurrentPlaylistHeader;
-    }
-
-    private void DragHandle_PointerPressed(object? sender, PointerPressedEventArgs e)
-    {
-        if (e.Source is not Border { Classes: { } classes } handle || !classes.Contains("dragHandle"))
-            return;
-        if (handle.DataContext is not TrackRowViewModel row)
-            return;
-        if (!e.GetCurrentPoint(handle).Properties.IsLeftButtonPressed)
-            return;
-
-        _draggedRow = row;
-        _dragStartY = e.GetPosition(TrackListBox).Y;
-        _isDragging = false;
-        e.Pointer.Capture(handle);
-        e.Handled = true;
-    }
-
-    private void DragHandle_PointerMoved(object? sender, PointerEventArgs e)
-    {
-        if (_draggedRow == null)
-            return;
-        var y = e.GetPosition(TrackListBox).Y;
-
-        if (!_isDragging)
-        {
-            if (Math.Abs(y - _dragStartY) < DragThreshold)
-                return;
-            _isDragging = true;
-            DropIndicator.IsVisible = true;
-        }
-
-        int index = InsertionIndexAt(y);
-        DropIndicator.Margin = new Thickness(0, IndicatorOffsetFor(index), 0, 0);
-    }
-
-    private void DragHandle_PointerReleased(object? sender, PointerReleasedEventArgs e)
-    {
-        // Only a release that ends a drag of ours. This handler tunnels over
-        // the whole list, so it sees every release inside it - and a playlist's
-        // header lives inside it too (ScreenScroll.Header), buttons and all.
-        // Releasing the capture on a press that was never a drag took the
-        // pointer off whatever the finger was on before that control's own
-        // release handler ran, and a Button that has lost capture raises no
-        // Click: the header's play, shuffle, add-to-playlist and download did
-        // nothing at all on a playlist, while the same markup worked on an
-        // album, whose header is not inside a list.
-        if (_draggedRow == null)
-            return;
-
-        if (_isDragging && _draggedRow != null && DataContext is MobileMainViewModel vm)
-        {
-            int index = InsertionIndexAt(e.GetPosition(TrackListBox).Y);
-            var insertBefore = TrackListBox.ContainerFromIndex(index)?.DataContext as TrackRowViewModel;
-            if (insertBefore != _draggedRow)
-                vm.ReorderCurrentPlaylistTrack(_draggedRow.Track, insertBefore?.Track);
-        }
-        e.Pointer.Capture(null);
-        EndDrag();
-    }
-
-    private void DragHandle_PointerCaptureLost(object? sender, PointerCaptureLostEventArgs e) => EndDrag();
-
-    private void EndDrag()
-    {
-        _draggedRow = null;
-        _isDragging = false;
-        DropIndicator.IsVisible = false;
-    }
-
-    // Hit-tests realized row containers directly rather than assuming a fixed row
-    // height, since mobile rows (unlike desktop's uniform MusicListView) size to content.
-    private int InsertionIndexAt(double listY)
-    {
-        int count = TrackListBox.ItemCount;
-        for (int i = 0; i < count; i++)
-        {
-            if (TrackListBox.ContainerFromIndex(i) is not Control container)
-                continue;
-            var top = container.TranslatePoint(new Point(0, 0), TrackListBox)?.Y ?? 0;
-            if (listY < top + container.Bounds.Height / 2)
-                return i;
-        }
-        return count;
-    }
-
-    private double IndicatorOffsetFor(int index)
-    {
-        var container = TrackListBox.ContainerFromIndex(index)
-            ?? (index > 0 ? TrackListBox.ContainerFromIndex(index - 1) : null);
-        if (container == null)
-            return 0;
-
-        var topLeft = container.TranslatePoint(new Point(0, 0), this) ?? default;
-        return index >= TrackListBox.ItemCount ? topLeft.Y + container.Bounds.Height : topLeft.Y;
     }
 }

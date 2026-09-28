@@ -23,22 +23,37 @@
        off the effective viewport, which the StackPanel around it does not
        change, and a queue can be the whole library.
 
+       Rows are dragged by their handle like a playlist's (TrackRowDragReorder),
+       all but the song playing, which heads the list.
+
        No pull-down filter (MobileNavigationFrame.CanFilter): the queue is in
        the order it plays in, and a filtered one would hide what is next. -->
-  <ScrollViewer Classes="screenScroll">
-    <StackPanel>
-      <controls:ScreenTitle />
-      <TextBlock Text="{Binding QueueCaption}"
-                 IsVisible="{Binding QueueCaption, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
-                 FontSize="13" Opacity="0.55" TextWrapping="Wrap"
-                 Margin="16,0,16,8" />
-      <ItemsControl ItemsSource="{Binding QueueRows}" ItemTemplate="{StaticResource TrackRowTemplate}">
-        <ItemsControl.ItemsPanel>
-          <ItemsPanelTemplate>
-            <VirtualizingStackPanel />
-          </ItemsPanelTemplate>
-        </ItemsControl.ItemsPanel>
-      </ItemsControl>
-    </StackPanel>
-  </ScrollViewer>
+  <Panel>
+    <ScrollViewer Classes="screenScroll">
+      <StackPanel>
+        <controls:ScreenTitle />
+        <TextBlock Text="{Binding QueueCaption}"
+                   IsVisible="{Binding QueueCaption, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
+                   FontSize="13" Opacity="0.55" TextWrapping="Wrap"
+                   Margin="16,0,16,8" />
+        <ItemsControl x:Name="QueueList"
+                      ItemsSource="{Binding QueueRows}" ItemTemplate="{StaticResource TrackRowTemplate}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <VirtualizingStackPanel />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+        </ItemsControl>
+      </StackPanel>
+    </ScrollViewer>
+
+    <!-- Where a dragged row will land -->
+    <Border x:Name="DropIndicator"
+            Height="2"
+            Background="{DynamicResource AppAccentBrush}"
+            HorizontalAlignment="Stretch"
+            VerticalAlignment="Top"
+            IsHitTestVisible="False"
+            IsVisible="False" />
+  </Panel>
 </UserControl>

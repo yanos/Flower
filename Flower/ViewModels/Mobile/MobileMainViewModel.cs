@@ -1426,14 +1426,13 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     }
 
     // PlayAlbum's counterpart for an album that is not the screen showing:
-    // the queue is the album rather than the rows on screen.
+    // the queue is the album rather than the rows on screen. Worked out before
+    // the menu closes, since closing it forgets which playlist it was over.
     private void PlayAlbumActionTarget(bool shuffle)
     {
-        var tile = AlbumActionTarget;
+        var tracks = AlbumActionTargetTracks();
         ActiveSheet = MobileSheet.None;
-        if (tile == null)
-            return;
-        PlayTracks(InAlbumOrder(tile), shuffle);
+        PlayTracks(tracks, shuffle);
     }
 
     // Plays these songs as the queue: from the first in order, or with
@@ -1552,8 +1551,12 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     private IReadOnlyList<Track> DeleteTargets =>
         _albumDeleteTargets ?? (ActionTarget is { } track ? [track] : []);
 
+    // What those files are named for in the title - the album, artist or
+    // screen they were deleted from - or null to leave it at a count.
+    private string? _deleteTargetsName;
+
     public string ConfirmDeleteFileTitle => _albumDeleteTargets is { } files
-        ? $"Delete {files.Count} local {(files.Count == 1 ? "file" : "files")} of \"{AlbumActionTarget?.Name}\"?"
+        ? $"Delete {files.Count} local {(files.Count == 1 ? "file" : "files")}{(_deleteTargetsName is { } name ? $" of \"{name}\"" : "")}?"
         : $"Delete \"{ActionTarget?.Title}\"?";
 
     public string ConfirmDeleteFileMessage => (_albumDeleteTargets != null, IsRecoverableDownload) switch
@@ -1688,9 +1691,10 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         CancelRemoveFromLibraryCommand = new RelayCommand(() => ActiveSheet = MobileSheet.None);
     }
 
-    private void ConfirmDeleting(IReadOnlyList<Track>? albumFiles)
+    private void ConfirmDeleting(IReadOnlyList<Track>? albumFiles, string? of = null)
     {
         _albumDeleteTargets = albumFiles;
+        _deleteTargetsName = of;
         OnPropertyChanged(nameof(IsRecoverableDownload));
         OnPropertyChanged(nameof(ConfirmDeleteFileTitle));
         OnPropertyChanged(nameof(ConfirmDeleteFileMessage));
@@ -1956,6 +1960,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         RebuildArtistAlbumGrid();
         _visibleTabs = MobileTabs.Parse(Main.MobileTabsSetting);
         _showTabLabels = Main.MobileTabLabelsSetting;
+        _showAlbumButtons = Main.MobileAlbumButtonsSetting;
         _selectedTab = _visibleTabs[0];
         RebuildTabSettingRows();
         ApplyTabSelection();
@@ -2126,6 +2131,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             _actionRow = row;
             _playlistTargets = null;
             ActionTarget = row.Track;
+            OnPropertyChanged(nameof(CanRemoveActionTargetFromQueue));
             ActiveSheet = MobileSheet.TrackActions;
         });
         OpenAlbumActionsCommand = new RelayCommand<AlbumTileViewModel>(tile =>
@@ -2211,9 +2217,9 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         ShuffleAlbumActionTargetCommand = new RelayCommand(() => PlayAlbumActionTarget(shuffle: true));
         AddAlbumActionTargetToPlaylistCommand = new RelayCommand(() =>
         {
-            if (AlbumActionTarget is not { } tile)
+            if (AlbumActionTarget == null)
                 return;
-            _playlistTargets = InAlbumOrder(tile);
+            _playlistTargets = AlbumActionTargetTracks();
             ActiveSheet = MobileSheet.AddToPlaylist;
         });
         // Closes the menu first, like the track menu's Download: the batch
@@ -2229,13 +2235,14 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         // menu without passing through None, so AlbumActionTarget is still set
         // for its title.
         InitializeLibraryRemovalCommands();
+        InitializeQueueCommands();
         DeleteAlbumActionTargetLocalFilesCommand = new RelayCommand(() =>
         {
             if (AlbumActionTarget is not { } tile)
                 return;
             var files = tile.Tracks.Where(t => t.Path != null).ToList();
             if (files.Count > 0)
-                ConfirmDeleting(files);
+                ConfirmDeleting(files, of: tile.Name);
         });
         ViewTrackInfoCommand = new RelayCommand(() =>
         {

@@ -58,6 +58,32 @@
           </Button>
         </Grid>
 
+        <!-- Into the queue that is playing rather than in place of it: straight
+             after the song playing, or at the end. See
+             PlaylistControlViewModel.PlayNext/AddToQueue. -->
+        <Button Classes="action" Command="{Binding PlayNextActionTargetCommand}">
+          <StackPanel Orientation="Horizontal" Spacing="14">
+            <materialIcons:MaterialIcon Kind="PlaylistPlay" Width="22" Height="22" />
+            <TextBlock Text="Play Next" FontSize="16" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+
+        <Button Classes="action" Command="{Binding AddActionTargetToQueueCommand}">
+          <StackPanel Orientation="Horizontal" Spacing="14">
+            <materialIcons:MaterialIcon Kind="PlaylistMusic" Width="22" Height="22" />
+            <TextBlock Text="Add to Queue" FontSize="16" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+
+        <!-- Only on the Queue's own rows, and not on the song playing. -->
+        <Button Classes="action" Command="{Binding RemoveActionTargetFromQueueCommand}"
+                IsVisible="{Binding CanRemoveActionTargetFromQueue}">
+          <StackPanel Orientation="Horizontal" Spacing="14">
+            <materialIcons:MaterialIcon Kind="PlaylistRemove" Width="22" Height="22" />
+            <TextBlock Text="Remove from Queue" FontSize="16" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+
         <Button Classes="action" Command="{Binding ViewTrackInfoCommand}">
           <StackPanel Orientation="Horizontal" Spacing="14">
             <materialIcons:MaterialIcon Kind="InformationOutline" Width="22" Height="22" />

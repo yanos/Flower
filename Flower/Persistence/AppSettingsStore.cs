@@ -73,6 +73,12 @@ namespace Flower.Persistence
         // Whether those tabs have their names under their icons.
         public bool MobileTabLabels { get; set; } = true;
 
+        // Whether an album's screen on a phone has its row of round buttons
+        // (play, shuffle, add to playlist, download) between the art and the
+        // songs. Everything in it is also in the screen's header menu, and a
+        // tap on a song plays the album from there.
+        public bool MobileAlbumButtons { get; set; } = true;
+
         // Whether the track list keeps its album-art well - see
         // ColumnManager.ShowAlbumArt, which is what reads and writes this, and
         // ColumnSelectorWindow, where it sits alongside the columns proper.

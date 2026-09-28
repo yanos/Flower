@@ -26,8 +26,9 @@ public enum MobileSortScreen { Songs, Albums, ArtistAlbums }
 // the moment it is opened, so nothing about it has to stay live.
 //
 // Direction is set on the one sort entry in use, and says which way it runs;
-// null on every other entry.
-public sealed record ScreenMenuEntry(string Label, MaterialIconKind Icon, Action Invoke, ListSortDirection? Direction = null);
+// null on every other entry. IsDestructive draws it in red.
+public sealed record ScreenMenuEntry(string Label, MaterialIconKind Icon, Action Invoke,
+    ListSortDirection? Direction = null, bool IsDestructive = false);
 
 // Entries under an optional small heading, drawn with a divider above every
 // section but the first.
@@ -198,6 +199,52 @@ public partial class MobileMainViewModel
     private static List<Track> TracksOf(FilterableAlbumGrid grid) =>
         grid.Rows.SelectMany(r => r.Tiles).SelectMany(t => t.Tracks).ToList();
 
+    // What takes songs off this device, in a section of its own above
+    // Settings, each through the same confirmation its song and album
+    // counterparts use - which is where the count is spelled out, and so the
+    // guard against clearing a whole library from the Songs tab by mistake.
+    //
+    // Delete Local Files once anything on screen has a file here. Remove from
+    // Library wherever the album menu would offer it: not on a playlist, or
+    // the list of them, for the reason CanRemoveAlbumActionTargetFromLibrary
+    // gives - there it reads as deleting the playlist, and takes every song
+    // in it out of the library instead.
+    private List<ScreenMenuEntry> DestructiveEntries(MobileNavigationFrame frame)
+    {
+        var entries = new List<ScreenMenuEntry>();
+        var tracks = TracksOnScreen(frame);
+
+        if (tracks.Any(t => t.Path != null))
+            entries.Add(new ScreenMenuEntry("Delete Local Files", MaterialIconKind.TrashCanOutline, () =>
+            {
+                var files = TracksOnScreen(frame).Where(t => t.Path != null).ToList();
+                if (files.Count > 0)
+                    ConfirmDeleting(files, of: ScreenName(frame));
+            }, IsDestructive: true));
+
+        var onAPlaylist = frame.IsPlaylistTrackList || frame.ScreenKind == MobileScreenKind.PlaylistPicker;
+        if (!onAPlaylist && _libraryRemoval?.Removable(tracks).Count > 0)
+            entries.Add(new ScreenMenuEntry("Remove from Library", MaterialIconKind.MusicNoteOff,
+                () => ConfirmRemovingFromLibrary(TracksOnScreen(frame)), IsDestructive: true));
+
+        return entries;
+    }
+
+    // What the delete confirmation calls the screen's songs: the album's name
+    // over an album, which has no title of its own (see MobileNavigationFrame
+    // .Title), and the screen's title elsewhere.
+    private string? ScreenName(MobileNavigationFrame frame) =>
+        frame.IsAlbumTrackList ? CurrentAlbumHeader?.Name
+        : string.IsNullOrEmpty(frame.Title) ? null
+        : frame.Title;
+
+    // Play Next and Add to Queue over a screen's songs, worked out when picked.
+    private IEnumerable<ScreenMenuEntry> QueueEntries(Func<IReadOnlyList<Track>> tracks) =>
+    [
+        new ScreenMenuEntry("Play Next", MaterialIconKind.PlaylistPlay, () => LineUp(tracks(), next: true)),
+        new ScreenMenuEntry("Add to Queue", MaterialIconKind.PlaylistMusic, () => LineUp(tracks(), next: false)),
+    ];
+
     /// <summary>
     /// The header menu for <paramref name="frame"/>'s screen, built as it
     /// opens. Only ever asked of the live screen - the one kept behind it for a
@@ -226,6 +273,8 @@ public partial class MobileMainViewModel
                 () => PlayTracks(TracksOnScreen(frame), shuffle: true)));
         if (frame.IsTrackList && Main.Rows.Count > 0)
         {
+            // The album or playlist on screen, in the order it shows.
+            actions.AddRange(QueueEntries(() => CurrentTrackRows.Select(r => r.Track).ToList()));
             actions.Add(new ScreenMenuEntry("Add to Playlist", MaterialIconKind.PlaylistPlus,
                 () => OpenAlbumAddToPlaylistCommand.Execute(null)));
             if (Main.CanForceSync && DownloadAllIndicator.IsDownloadable && !DownloadAllIndicator.IsDownloading)
@@ -238,6 +287,7 @@ public partial class MobileMainViewModel
                  && frame.SelectedArtistName is { } artist
                  && BuildArtistTile(artist) is { } tile)
         {
+            actions.AddRange(QueueEntries(() => InAlbumOrder(tile)));
             actions.Add(new ScreenMenuEntry("Add to Playlist", MaterialIconKind.PlaylistPlus, () =>
             {
                 ActionTarget = null;
@@ -255,6 +305,10 @@ public partial class MobileMainViewModel
             actions.Add(downloadAll);
         if (actions.Count > 0)
             sections.Add(new ScreenMenuSection(null, actions));
+
+        var destructive = DestructiveEntries(frame);
+        if (destructive.Count > 0)
+            sections.Add(new ScreenMenuSection(null, destructive));
 
         sections.Add(new ScreenMenuSection(null,
             [new ScreenMenuEntry("Settings", MaterialIconKind.Cog, () => OpenSettingsCommand.Execute(null))]));

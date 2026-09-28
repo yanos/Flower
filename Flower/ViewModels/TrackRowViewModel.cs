@@ -286,6 +286,12 @@ public class TrackRowViewModel : DownloadIndicatorViewModel
         }
     }
 
+    // False for the one row a reorderable list will not move: the song
+    // playing, at the head of the phone's Queue, which everything else in it
+    // is queued behind. Set once, when that list builds the row, so it needs
+    // no change notification. See MobileMainViewModel.RebuildQueueRows.
+    public bool CanBeDragged { get; set; } = true;
+
     // ── Album art (lazy, async) ───────────────────────────────────────────────
 
     private Bitmap? _albumArt;

@@ -540,6 +540,14 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         SaveSettings();
     }
 
+    public bool MobileAlbumButtonsSetting => _appSettings.MobileAlbumButtons;
+
+    public void PersistMobileAlbumButtons(bool value)
+    {
+        _appSettings.MobileAlbumButtons = value;
+        SaveSettings();
+    }
+
     // ── Busy state ────────────────────────────────────────────────────
 
     // The counter itself lives in BusyState, shared with the collaborators
@@ -1876,6 +1884,12 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // it with its own copy of this until now.
     public void SetPlayQueue(IEnumerable<Track> tracks) =>
         _playlistControlViewModel.SetCurrentPlaylist(new Playlist("Now Playing Queue", new List<Track>(tracks)));
+
+    // Into the queue that is playing, rather than in place of it - see
+    // PlaylistControlViewModel.PlayNext/AddToQueue.
+    public void PlayNext(IReadOnlyList<Track> tracks) => _playlistControlViewModel.PlayNext(tracks);
+
+    public void AddToQueue(IReadOnlyList<Track> tracks) => _playlistControlViewModel.AddToQueue(tracks);
 
     // ── Sidebar ───────────────────────────────────────────────────────────────
 

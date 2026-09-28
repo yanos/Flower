@@ -684,6 +684,15 @@ public partial class MainView : UserControl
             // Reuses the same IsEditing/RenameBox flow CreatePlaylistWithTrack
             // already drops a freshly-created playlist into - see
             // RenameBox_Loaded/KeyDown/LostFocus and CommitRename below.
+            var playNextItem = new MenuItem { Header = "Play Next" };
+            playNextItem.Click += (_, _) => vm.PlayNext(playlist.Tracks.ToList());
+            _sidebarItemMenu.Items.Add(playNextItem);
+
+            var addToQueueItem = new MenuItem { Header = "Add to Queue" };
+            addToQueueItem.Click += (_, _) => vm.AddToQueue(playlist.Tracks.ToList());
+            _sidebarItemMenu.Items.Add(addToQueueItem);
+            _sidebarItemMenu.Items.Add(new Separator());
+
             var renameItem = new MenuItem { Header = "Rename Playlist" };
             renameItem.Click += (_, _) => BeginRename(item);
             _sidebarItemMenu.Items.Add(renameItem);
@@ -1024,7 +1033,17 @@ public partial class MainView : UserControl
         _removeFromLibraryItem.Click += async (_, _) =>
             await LibraryRemovalDialog.RemoveAsync(TopLevel.GetTopLevel(this), MusicList.SelectedTracks);
 
+        // The selection in the order the list shows it, not the order it was
+        // clicked in.
+        var playNextItem = new MenuItem { Header = "Play Next" };
+        playNextItem.Click += (_, _) => _viewModel?.PlayNext(SelectedTracksInListOrder());
+        var addToQueueItem = new MenuItem { Header = "Add to Queue" };
+        addToQueueItem.Click += (_, _) => _viewModel?.AddToQueue(SelectedTracksInListOrder());
+
         _trackMenu = new ContextMenu();
+        _trackMenu.Items.Add(playNextItem);
+        _trackMenu.Items.Add(addToQueueItem);
+        _trackMenu.Items.Add(new Separator());
         _trackMenu.Items.Add(getInfoItem);
         _trackMenu.Items.Add(_addToPlaylistItem);
         _trackMenu.Items.Add(locateFileItem);
@@ -1036,6 +1055,14 @@ public partial class MainView : UserControl
 
     private void PopulateAddToPlaylistMenu(IReadOnlyList<Track> tracks)
         => PopulateAddToPlaylistMenu(_addToPlaylistItem, tracks);
+
+    private List<Track> SelectedTracksInListOrder()
+    {
+        // Rows rather than tracks, so a playlist holding one song twice
+        // queues the copy that was selected and not both.
+        var selected = MusicList.SelectedRows.ToHashSet();
+        return _viewModel?.Rows.Where(selected.Contains).Select(r => r.Track).ToList() ?? [];
+    }
 
     // Shared by the track list's own _trackMenu (via the overload above) and
     // BuildAlbumContextMenu below - same New Playlist / existing-playlists
@@ -1093,8 +1120,16 @@ public partial class MainView : UserControl
         UpdateDownloadItem(downloadItem, tracks, "Download Album");
         downloadItem.Click += (_, _) => StartDownload(tracks);
 
+        var playNextItem = new MenuItem { Header = "Play Next" };
+        playNextItem.Click += (_, _) => _viewModel?.PlayNext(tracks);
+        var addToQueueItem = new MenuItem { Header = "Add to Queue" };
+        addToQueueItem.Click += (_, _) => _viewModel?.AddToQueue(tracks);
+
         var menu = new ContextMenu();
         menu.Items.Add(playItem);
+        menu.Items.Add(playNextItem);
+        menu.Items.Add(addToQueueItem);
+        menu.Items.Add(new Separator());
         menu.Items.Add(getInfoItem);
         menu.Items.Add(addToPlaylistItem);
         menu.Items.Add(downloadItem);
