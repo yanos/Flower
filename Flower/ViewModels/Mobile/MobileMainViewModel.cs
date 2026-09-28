@@ -646,17 +646,23 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     public IReadOnlyList<ArtistPickerRow> ArtistPickerItems =>
         _artistPickerFilter == null ? _artistPickerRows : _filteredArtistPickerItems;
 
-    // Counted the way RebuildArtistAlbumGrid groups them - the artist's
-    // tracks with an album, by album name alone - so the number on the row
-    // is the number of tiles behind it.
+    // Albums counted the way RebuildArtistAlbumGrid groups them - the
+    // artist's tracks with an album, by album name alone - so the number on
+    // the row is the number of tiles behind it. Songs are all of theirs,
+    // album or not.
     private void RebuildArtistPickerRows()
     {
-        var albumCounts = Main.Library.Tracks
-            .Where(t => t.Artists != null && !string.IsNullOrEmpty(t.Album))
+        var byArtist = Main.Library.Tracks
+            .Where(t => t.Artists != null)
             .GroupBy(t => t.Artists!)
-            .ToDictionary(g => g.Key, g => g.Select(t => t.Album).Distinct().Count());
+            .ToDictionary(g => g.Key, g => g.ToList());
         _artistPickerRows = Main.SubListItems
-            .Select(name => new ArtistPickerRow(name, albumCounts.GetValueOrDefault(name)))
+            .Select(name => byArtist.TryGetValue(name, out var tracks)
+                ? new ArtistPickerRow(name,
+                    tracks.Where(t => !string.IsNullOrEmpty(t.Album)).Select(t => t.Album).Distinct().Count(),
+                    tracks.Count,
+                    ArtistPickerRow.AlbumsByPlays(tracks))
+                : new ArtistPickerRow(name, 0, 0, []))
             .ToList();
         RefreshArtistPickerItems();
     }
@@ -1416,7 +1422,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         var tile = new AlbumTileViewModel
         {
             Name = artist,
-            Artist = $"{albums} {(albums == 1 ? "album" : "albums")} · {tracks.Count} {(tracks.Count == 1 ? "song" : "songs")}",
+            Artist = ArtistPickerRow.Summary(albums, tracks.Count),
             RepresentativeTrack = tracks.MaxBy(t => t.DateAdded)!,
             MostRecentlyAdded = tracks.Max(t => t.DateAdded),
             Tracks = tracks,

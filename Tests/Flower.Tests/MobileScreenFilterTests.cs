@@ -17,6 +17,7 @@ using Flower.Models;
 using Flower.Tests.TestSupport;
 using Flower.ViewModels.Mobile;
 using Flower.Views.Mobile;
+using Flower.Views.Mobile.Screens;
 using Material.Icons;
 using Material.Icons.Avalonia;
 
@@ -121,9 +122,9 @@ public class MobileScreenFilterTests : PinnedDataDirectory
 
     // Each artist row says how many albums a tap on it opens onto - counted
     // by album name, the way that artist's grid groups them, so two songs off
-    // one album are one.
+    // one album are one - and how many songs they have.
     [AvaloniaFact]
-    public void An_artist_row_counts_the_albums_behind_it()
+    public void An_artist_row_counts_the_albums_and_songs_behind_it()
     {
         var tracks = new List<Track>
         {
@@ -138,24 +139,29 @@ public class MobileScreenFilterTests : PinnedDataDirectory
         WaitUntil(() => mobile.ArtistPickerItems.Count == 2, "the artist list");
 
         Assert.Equal(
-            [new ArtistPickerRow("David Bowie", 2), new ArtistPickerRow("Radiohead", 1)],
-            mobile.ArtistPickerItems);
+            [("David Bowie", 2, 3), ("Radiohead", 1, 1)],
+            mobile.ArtistPickerItems.Select(r => (r.Name, r.AlbumCount, r.SongCount)));
 
         // Said in words, not as a bare number beside the name.
-        Assert.Equal("2 albums", mobile.ArtistPickerItems[0].AlbumCountText);
-        Assert.Equal("1 album", mobile.ArtistPickerItems[1].AlbumCountText);
-        Assert.Equal("No albums", new ArtistPickerRow("Loose Singles", 0).AlbumCountText);
+        Assert.Equal("2 albums · 3 songs", mobile.ArtistPickerItems[0].SummaryText);
+        Assert.Equal("1 album · 1 song", mobile.ArtistPickerItems[1].SummaryText);
+        Assert.Equal("No albums · 2 songs", ArtistPickerRow.Summary(0, 2));
 
-        // Right-aligned: the count ends at the row's right edge, not after the name.
+        // On the line under the name, the way a song's artist is under its title.
         var window = ShowView(mobile);
-        var count = window.GetVisualDescendants().OfType<TextBlock>().First(t => t.Text == "2 albums");
-        var countRight = count.TranslatePoint(new Point(count.Bounds.Width, 0), window)!.Value.X;
-        Assert.InRange(countRight, window.Width - 40, window.Width);
+        var texts = window.GetVisualDescendants().OfType<ArtistPickerScreenView>().Single()
+            .GetVisualDescendants().OfType<TextBlock>().ToList();
+        var name = texts.First(t => t.Text == "David Bowie");
+        var summary = texts.First(t => t.Text == "2 albums · 3 songs");
+        Assert.True(summary.TranslatePoint(default, window)!.Value.Y > name.TranslatePoint(default, window)!.Value.Y);
+        Assert.Equal(
+            name.TranslatePoint(default, window)!.Value.X,
+            summary.TranslatePoint(default, window)!.Value.X);
         window.Close();
 
         mobile.ScreenFilter = "radio";
         WaitUntil(() => mobile.ArtistPickerItems.Count == 1, "the artists narrowing");
-        Assert.Equal(new ArtistPickerRow("Radiohead", 1), mobile.ArtistPickerItems[0]);
+        Assert.Equal("Radiohead", mobile.ArtistPickerItems[0].Name);
     }
 
     [AvaloniaFact]

@@ -7,8 +7,7 @@
              Background="{DynamicResource AppBackgroundBrush}">
 
   <!-- Artist name picker, with the A-Z bar in a column of its own beside
-       it rather than over it: a row's album count is right-aligned, and the
-       bar would sit on top of it. -->
+       it rather than over it, so it never sits on top of a name. -->
   <Grid ColumnDefinitions="*,Auto">
     <ListBox x:Name="Artists" Classes="screenScroll" Background="Transparent"
              ItemsSource="{Binding ArtistPickerItems}"
@@ -16,19 +15,26 @@
              SelectionMode="Single">
       <ListBox.ItemTemplate>
         <DataTemplate x:DataType="vm:ArtistPickerRow">
-          <Button Classes="pickerRow"
+          <Button Classes="trackRow"
                   Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).SelectArtistCommand}"
                   CommandParameter="{Binding Name}"
                   controls:LongPress.Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).OpenArtistActionsCommand}"
                   controls:LongPress.CommandParameter="{Binding Name}">
-            <!-- The album count, right-aligned: how many tiles a tap opens. -->
-            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-              <TextBlock Text="{Binding Name}" FontSize="16" TextTrimming="CharacterEllipsis" />
-              <TextBlock Grid.Column="1"
-                         Text="{Binding AlbumCountText}"
-                         FontSize="14"
-                         Opacity="0.5"
-                         VerticalAlignment="Center" />
+            <!-- Laid out like a song row on the Queue, less its drag handle:
+                 the artist's cover where the art goes (see
+                 ArtistPickerRow.LoadCoversAsync), their name above, and how much of
+                 theirs there is below. -->
+            <Grid ColumnDefinitions="Auto,*">
+              <controls:ArtistCollageView Covers="{Binding CoverArt}"
+                                          Width="40" Height="40"
+                                          Margin="0,0,10,0" />
+              <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                <TextBlock Text="{Binding Name}" FontSize="16" TextTrimming="CharacterEllipsis" />
+                <TextBlock Text="{Binding SummaryText}"
+                           FontSize="13"
+                           Opacity="0.65"
+                           TextTrimming="CharacterEllipsis" />
+              </StackPanel>
             </Grid>
           </Button>
         </DataTemplate>
