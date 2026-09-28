@@ -1,6 +1,9 @@
 using System;
+using System.Threading.Tasks;
 
 using Avalonia.Threading;
+
+using Flower.Models;
 
 using Microsoft.Extensions.Logging;
 
@@ -19,16 +22,19 @@ namespace Flower.Services
     {
         private readonly PlaylistControlViewModel _playlistControl;
         private readonly IAudioManager _audioManager;
+        private readonly AlbumArtLoader _artLoader;
         private readonly ILogger<NowPlayingIntegrationService> _logger;
         private readonly IPlatformNowPlaying? _platform;
 
         public NowPlayingIntegrationService(
             PlaylistControlViewModel playlistControl,
             IAudioManager audioManager,
+            AlbumArtLoader artLoader,
             ILogger<NowPlayingIntegrationService> logger)
         {
             _playlistControl = playlistControl;
             _audioManager = audioManager;
+            _artLoader = artLoader;
             _logger = logger;
             _platform = PlatformNowPlaying.Current;
 
@@ -98,17 +104,50 @@ namespace Flower.Services
                 return;
             }
 
-            byte[]? artwork = null;
+            // Whatever art is already on this device: the file's own for a
+            // song that is here, the disk cache for one streamed from the
+            // server. It used to be the file's alone, so a streamed song - no
+            // file, and a stream URL for a Path - showed a blank card.
+            var artwork = ArtOnThisDevice(track);
+            PublishMetadata(track, artwork);
+
+            // A streamed song whose album has never been on screen has nothing
+            // in the cache yet. Fetch it the way a tile would, and fill the
+            // card in if the song is still the one playing when it arrives.
+            if (artwork == null && !AlbumArtLoader.IsLocalFile(track))
+                FillInRemoteArtAsync(track).Forget(_logger, "Now-playing art fetch");
+        }
+
+        private async Task FillInRemoteArtAsync(Track track)
+        {
+            if (await _artLoader.LoadAsync(track) == null)
+                return;
+
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (!ReferenceEquals(_playlistControl.CurrentlyPlayingTrack, track))
+                    return;
+                if (ArtOnThisDevice(track) is { } artwork)
+                    PublishMetadata(track, artwork);
+            });
+        }
+
+        private byte[]? ArtOnThisDevice(Track track)
+        {
             try
             {
-                artwork = AlbumArtLoader.TryGetLocalArtBytes(track);
+                return AlbumArtLoader.TryGetArt(track)?.Bytes;
             }
             catch (Exception ex)
             {
                 _logger.LogDebug(ex, "Could not load art for now-playing metadata ({Path})", LogPath.Short(track.Path));
+                return null;
             }
+        }
 
-            _platform.UpdateMetadata(new NowPlayingMetadata
+        private void PublishMetadata(Track track, byte[]? artwork)
+        {
+            _platform!.UpdateMetadata(new NowPlayingMetadata
             {
                 Title = track.Title,
                 Artist = track.Artists,
