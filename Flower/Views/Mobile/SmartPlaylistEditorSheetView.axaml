@@ -69,7 +69,7 @@
                    Opacity="0.6"
                    Margin="20,20,20,6" />
         <!-- Virtualized inside the page's own scroller, as the album grids
-             are (RecentlyAddedScreenView): a loose rule matches most of a
+             are (AlbumGridScreenView): a loose rule matches most of a
              library, and laying out every row of that froze the page. -->
         <ItemsControl ItemsSource="{Binding SmartPlaylistPreviewRows}"
                       ItemTemplate="{StaticResource TrackRowTemplate}">

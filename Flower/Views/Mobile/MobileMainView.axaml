@@ -538,12 +538,12 @@
             CornerRadius="32"
             Padding="4,0">
     <Grid x:Name="TabGrid">
-      <Button x:Name="RecentlyAddedTab" Classes="pill tab"
-              Classes.current="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=RecentlyAdded}"
-              Command="{Binding SelectTabCommand}" CommandParameter="RecentlyAdded">
+      <Button x:Name="HomeTab" Classes="pill tab"
+              Classes.current="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=Home}"
+              Command="{Binding SelectTabCommand}" CommandParameter="Home">
         <StackPanel HorizontalAlignment="Center" Spacing="2">
-          <materialIcons:MaterialIcon Classes="tabIcon" Kind="ClockPlusOutline" Width="27" Height="27" Margin="-1.5" HorizontalAlignment="Center" />
-          <TextBlock Text="Recent" HorizontalAlignment="Center" />
+          <materialIcons:MaterialIcon Classes="tabIcon" Kind="HomeOutline" Width="27" Height="27" Margin="-1.5" HorizontalAlignment="Center" />
+          <TextBlock Text="Home" HorizontalAlignment="Center" />
         </StackPanel>
       </Button>
       <Button x:Name="SongsTab" Classes="pill tab"

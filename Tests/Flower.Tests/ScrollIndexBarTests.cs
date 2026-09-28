@@ -333,38 +333,6 @@ public class ScrollIndexBarTests : PinnedDataDirectory
         window.Close();
     }
 
-    // Recently Added is in date order, so its bar is dots and scrubs the
-    // scroll itself: the ends of the bar are the ends of the list.
-    [AvaloniaFact]
-    public void The_dots_on_Recently_Added_scrub_the_whole_scroll()
-    {
-        using var parts = Build();
-        var vm = parts.Mobile;
-        var window = Show(new RecentlyAddedScreenView { DataContext = vm });
-        var bar = Bar(window);
-        Assert.Null(bar.IndexOfLetter);
-        var scroller = window.GetVisualDescendants().OfType<ScrollViewer>().First();
-        // Read when asked, not once: the grid re-lays itself out around the
-        // bar's column once the bar appears, which moves its length.
-        double Max() => scroller.Extent.Height - scroller.Viewport.Height;
-        var (top, bottom) = bar.Span;
-
-        window.MouseDown(OnBar(window, bar, bottom + 20), MouseButton.Left);
-        Pump();
-        Assert.Equal(Max(), scroller.Offset.Y, precision: 0);
-
-        window.MouseMove(OnBar(window, bar, (top + bottom) / 2), RawInputModifiers.LeftMouseButton);
-        Pump();
-        Assert.Equal(Max() / 2, scroller.Offset.Y, precision: 0);
-
-        window.MouseMove(OnBar(window, bar, top - 20), RawInputModifiers.LeftMouseButton);
-        Pump();
-        Assert.Equal(0, scroller.Offset.Y, precision: 0);
-
-        window.MouseUp(OnBar(window, bar, top), MouseButton.Left);
-        window.Close();
-    }
-
     // A handful of albums fits on the screen; a bar to jump around it would
     // be clutter, and on Songs and Artists it would cost the rows their width.
     [AvaloniaFact]

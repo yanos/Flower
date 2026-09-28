@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace Flower.ViewModels.Mobile;
 
 // One row of album tiles backing the album grids' item source (see
-// MobileMainViewModel's RecentlyAddedAlbumRows/AlbumGridRows). Grouping tiles
+// MobileMainViewModel's AlbumGridRows/ArtistAlbumGridRows). Grouping tiles
 // into rows lets the grid use a real virtualizing panel
 // (VirtualizingStackPanel, one row per item) while still rendering as a
 // multi-column grid - a flat collection in a plain UniformGrid isn't

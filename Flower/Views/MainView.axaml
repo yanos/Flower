@@ -5,6 +5,7 @@
              xmlns:vm="clr-namespace:Flower.ViewModels"
              xmlns:controls="clr-namespace:Flower.Controls"
              xmlns:usercontrols="clr-namespace:Flower.UserControls"
+             xmlns:views="clr-namespace:Flower.Views"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:avc="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
              xmlns:services="clr-namespace:Flower.Services;assembly=Flower.Core"
@@ -279,20 +280,16 @@
                    SelectionChanged="SubList_SelectionChanged"/>
         </Border>
 
-        <!-- Album art tile grid - Albums and Recently Added both use this,
-             alphabetical vs. by-recency (see MainViewModel.AlbumGridTiles/
-             RecentlyAddedGridTiles). Spans both columns - unlike the track
-             list, this view never has a sub-list pane alongside it. Clicking
-             a tile expands that album's songs in place (ExpandedKey/
+        <!-- Album art tile grid for Albums, alphabetical (see
+             MainViewModel.AlbumGridTiles). Spans both columns - unlike the
+             track list, this view never has a sub-list pane alongside it.
+             Clicking a tile expands that album's songs in place (ExpandedKey/
              ExpandedTracks - see AlbumGridRowControl for the actual
              expand/collapse animation) rather than navigating to a separate
-             track-list view, so both grids stay visible the whole time; only
-             one album across either grid can be expanded at once
-             (MainViewModel.ExpandedAlbumKey is shared by both). Both
-             instances also get the full multi-select + drag-to-playlist
-             gesture (the old SubList's own gesture, restored here) - see
-             MainView.axaml.cs's AlbumGrid_Pointer* handlers, shared by both
-             rather than being an Albums-only feature. -->
+             track-list view, so the grid stays visible the whole time. It also
+             gets the full multi-select + drag-to-playlist gesture (the old
+             SubList's own gesture, restored here) - see MainView.axaml.cs's
+             AlbumGrid_Pointer* handlers. -->
         <controls:AlbumGridView x:Name="AlbumGrid"
                                 Grid.Column="0" Grid.ColumnSpan="2"
                                 IsVisible="{Binding IsShowingAlbumGrid}"
@@ -302,19 +299,15 @@
                                 ExpandedTracks="{Binding ExpandedAlbumTracks}"
                                 Availability="{Binding Availability}"
                                 CurrentlyPlayingTrackId="{Binding CurrentlyPlayingTrack.Id}"/>
-        <controls:AlbumGridView x:Name="RecentlyAddedGrid"
-                                Grid.Column="0" Grid.ColumnSpan="2"
-                                IsVisible="{Binding IsShowingRecentlyAddedGrid}"
-                                ItemsSource="{Binding RecentlyAddedGridTiles}"
-                                SelectedNames="{Binding SelectedSubItems}"
-                                ExpandedKey="{Binding ExpandedAlbumKey}"
-                                ExpandedTracks="{Binding ExpandedAlbumTracks}"
-                                Availability="{Binding Availability}"
-                                CurrentlyPlayingTrackId="{Binding CurrentlyPlayingTrack.Id}"/>
 
-        <!-- Custom track list - Songs/Artists/Playlists only now; Albums/
-             Recently Added show their songs inline via the grids above
-             instead. Hidden (not just covered) when showing device detail -
+        <!-- Home: Continue Playing, Recently Played, Recently Added - see
+             HomeViewModel. -->
+        <Panel Grid.Column="0" Grid.ColumnSpan="2" IsVisible="{Binding IsShowingHome}">
+          <views:HomeView DataContext="{Binding Home}"/>
+        </Panel>
+
+        <!-- Custom track list - Songs/Artists/Playlists only now; Albums
+             shows its songs inline via the grid above instead. Hidden (not just covered) when showing device detail -
              MusicListView draws its own column-header row internally, and
              the panels that replace it only inset by their own Margin,
              leaving that header row visible peeking above it otherwise. -->

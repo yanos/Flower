@@ -443,7 +443,7 @@ public class ScreenStackPanelSwipeTests : PinnedDataDirectory
         h.Swipe(PastThreshold);
         h.LetEasingFinish();
 
-        Assert.Equal(MobileTab.RecentlyAdded, h.Vm.SelectedTab);
+        Assert.Equal(MobileTab.Home, h.Vm.SelectedTab);
     }
 
     // Recognised as horizontal, but not far enough on release to page.
@@ -464,11 +464,11 @@ public class ScreenStackPanelSwipeTests : PinnedDataDirectory
     public void Tab_paging_stops_at_the_first_and_last_tab()
     {
         using var h = new Harness();
-        h.SelectTab(MobileTab.RecentlyAdded);
+        h.SelectTab(MobileTab.Home);
 
         h.Swipe(PastThreshold);
         Harness.Pump();
-        Assert.Equal(MobileTab.RecentlyAdded, h.Vm.SelectedTab);
+        Assert.Equal(MobileTab.Home, h.Vm.SelectedTab);
 
         h.SelectTab(MobileTab.Search);
 

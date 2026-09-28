@@ -54,10 +54,7 @@ public partial class AlbumGridView : UserControl
     // The one tile (if any) currently expanded inline - see
     // MainViewModel.ExpandedAlbumKey.
     //
-    // A tile, not an album name: Recently Added splits a various-artists
-    // compilation into one tile per contributor, all sharing the album name, so
-    // matching on the name expanded every one of them together. See
-    // AlbumTileKey.
+    // A tile, not an album name - see AlbumTileKey.
     public static readonly StyledProperty<AlbumTileKey?> ExpandedKeyProperty =
         AvaloniaProperty.Register<AlbumGridView, AlbumTileKey?>(nameof(ExpandedKey));
 
@@ -267,6 +264,15 @@ public partial class AlbumGridView : UserControl
     // MusicListView.GetScrollOffsetY/SetScrollOffsetY, just wrapping this
     // control's own Scroller instead.
     public double GetScrollOffsetY() => Scroller.Offset.Y;
+
+    // Brings the row holding this tile into view - an album opened from Home
+    // (see MainViewModel.ShowAlbumAsync).
+    public void ScrollToTile(AlbumTileKey key)
+    {
+        var index = _rows.FindIndex(r => r.Tiles.Any(t => t.Key == key));
+        if (index >= 0)
+            RowsList.ScrollIntoView(index);
+    }
 
     public void SetScrollOffsetY(double y)
     {

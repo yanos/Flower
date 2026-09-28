@@ -274,13 +274,14 @@ public static class MainViewModelHarness
     }
 
     // The bar the mobile tests were written against, from before it was the
-    // user's to choose: opening on Recently Added, with every tab to the right
+    // user's to choose: opening on its first tab (Home now, Recently Added
+    // then), with every tab to the right
     // of it in the order they read. Most of those tests are about navigation -
     // which side a tab arrives from, what a swipe pages to - and that is still
     // what they check; which tabs the app ships with is MobileTabsTests'.
     public static readonly IReadOnlyList<MobileTab> SuiteTabs =
     [
-        MobileTab.RecentlyAdded, MobileTab.Songs, MobileTab.Albums,
+        MobileTab.Home, MobileTab.Songs, MobileTab.Albums,
         MobileTab.Artists, MobileTab.Playlists, MobileTab.Search,
     ];
 

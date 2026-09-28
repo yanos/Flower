@@ -14,15 +14,16 @@ public static class MobileTabs
     // Every tab there is, in the order Settings lists the ones not shown.
     public static readonly IReadOnlyList<MobileTab> All =
     [
-        MobileTab.RecentlyAdded, MobileTab.Albums, MobileTab.Artists, MobileTab.Songs,
+        MobileTab.Home, MobileTab.Albums, MobileTab.Artists, MobileTab.Songs,
         MobileTab.Playlists, MobileTab.Queue, MobileTab.Search,
     ];
 
-    // Recently Added is left out: the Albums grid can already be sorted by
-    // date added from its own menu, and six tabs are drawn at full size.
+    // Home first, so it is where the app opens - the first tab in the bar is.
+    // Seven is one past what is drawn at full size, so the bar starts compact;
+    // any tab can be taken out of it in Settings.
     public static readonly IReadOnlyList<MobileTab> Default =
     [
-        MobileTab.Albums, MobileTab.Artists, MobileTab.Songs,
+        MobileTab.Home, MobileTab.Albums, MobileTab.Artists, MobileTab.Songs,
         MobileTab.Playlists, MobileTab.Queue, MobileTab.Search,
     ];
 
@@ -50,11 +51,7 @@ public static class MobileTabs
     }
 
     // The label under the tab's icon, and its name in Settings.
-    public static string Label(MobileTab tab) => tab switch
-    {
-        MobileTab.RecentlyAdded => "Recent",
-        _ => tab.ToString(),
-    };
+    public static string Label(MobileTab tab) => tab.ToString();
 }
 
 // One line of Settings' tab list: whether the tab is in the bar, and where.

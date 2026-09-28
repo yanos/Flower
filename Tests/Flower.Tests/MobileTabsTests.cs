@@ -40,15 +40,15 @@ public class MobileTabsTests : PinnedDataDirectory
         mobile.TabSettingRows.Single(r => r.Tab == tab);
 
     [AvaloniaFact]
-    public void Out_of_the_box_the_bar_has_no_recent_tab_and_opens_on_albums()
+    public void Out_of_the_box_the_bar_has_every_tab_and_opens_on_home()
     {
         using var scope = Build();
 
         Assert.Equal(
-            new[] { MobileTab.Albums, MobileTab.Artists, MobileTab.Songs, MobileTab.Playlists, MobileTab.Queue, MobileTab.Search },
+            new[] { MobileTab.Home, MobileTab.Albums, MobileTab.Artists, MobileTab.Songs, MobileTab.Playlists, MobileTab.Queue, MobileTab.Search },
             scope.Mobile.VisibleTabs);
-        Assert.Equal(MobileTab.Albums, scope.Mobile.SelectedTab);
-        Assert.True(scope.Mobile.IsShowingAlbumGrid);
+        Assert.Equal(MobileTab.Home, scope.Mobile.SelectedTab);
+        Assert.True(scope.Mobile.IsShowingHome);
     }
 
     [AvaloniaFact]
@@ -74,12 +74,12 @@ public class MobileTabsTests : PinnedDataDirectory
     [AvaloniaFact]
     public void Settings_lists_the_bar_in_order_then_the_rest()
     {
-        using var scope = Build();
+        using var scope = Build([MobileTab.Albums, MobileTab.Artists, MobileTab.Songs, MobileTab.Playlists, MobileTab.Queue, MobileTab.Search]);
 
         Assert.Equal(
-            new[] { MobileTab.Albums, MobileTab.Artists, MobileTab.Songs, MobileTab.Playlists, MobileTab.Queue, MobileTab.Search, MobileTab.RecentlyAdded },
+            new[] { MobileTab.Albums, MobileTab.Artists, MobileTab.Songs, MobileTab.Playlists, MobileTab.Queue, MobileTab.Search, MobileTab.Home },
             scope.Mobile.TabSettingRows.Select(r => r.Tab));
-        Assert.False(Row(scope.Mobile, MobileTab.RecentlyAdded).IsShown);
+        Assert.False(Row(scope.Mobile, MobileTab.Home).IsShown);
         Assert.False(Row(scope.Mobile, MobileTab.Albums).CanMoveUp);
         Assert.False(Row(scope.Mobile, MobileTab.Search).CanMoveDown);
     }
@@ -91,9 +91,10 @@ public class MobileTabsTests : PinnedDataDirectory
         var mobile = scope.Mobile;
 
         mobile.ToggleTabShownCommand.Execute(Row(mobile, MobileTab.Playlists));
-        mobile.ToggleTabShownCommand.Execute(Row(mobile, MobileTab.RecentlyAdded));
+        mobile.ToggleTabShownCommand.Execute(Row(mobile, MobileTab.Home));
+        mobile.ToggleTabShownCommand.Execute(Row(mobile, MobileTab.Home));
 
-        var expected = new[] { MobileTab.Albums, MobileTab.Artists, MobileTab.Songs, MobileTab.Queue, MobileTab.Search, MobileTab.RecentlyAdded };
+        var expected = new[] { MobileTab.Albums, MobileTab.Artists, MobileTab.Songs, MobileTab.Queue, MobileTab.Search, MobileTab.Home };
         Assert.Equal(expected, mobile.VisibleTabs);
         Assert.Equal(expected.Select(t => t.ToString()), scope.Parts.AppSettings.MobileTabs);
     }
@@ -118,7 +119,7 @@ public class MobileTabsTests : PinnedDataDirectory
         mobile.MoveTabUpCommand.Execute(Row(mobile, MobileTab.Songs));
         mobile.MoveTabDownCommand.Execute(Row(mobile, MobileTab.Albums));
 
-        var expected = new[] { MobileTab.Songs, MobileTab.Albums, MobileTab.Artists, MobileTab.Playlists, MobileTab.Queue, MobileTab.Search };
+        var expected = new[] { MobileTab.Home, MobileTab.Songs, MobileTab.Albums, MobileTab.Artists, MobileTab.Playlists, MobileTab.Queue, MobileTab.Search };
         Assert.Equal(expected, mobile.VisibleTabs);
         Assert.Equal(expected.Select(t => t.ToString()), scope.Parts.AppSettings.MobileTabs);
     }
@@ -131,10 +132,9 @@ public class MobileTabsTests : PinnedDataDirectory
         using var scope = Build();
         var mobile = scope.Mobile;
 
-        mobile.ToggleTabShownCommand.Execute(Row(mobile, MobileTab.RecentlyAdded));
         Assert.Equal(7, mobile.VisibleTabs.Count);
-        mobile.ToggleTabShownCommand.Execute(Row(mobile, MobileTab.RecentlyAdded));
-        Assert.DoesNotContain(MobileTab.RecentlyAdded, mobile.VisibleTabs);
+        mobile.ToggleTabShownCommand.Execute(Row(mobile, MobileTab.Home));
+        Assert.DoesNotContain(MobileTab.Home, mobile.VisibleTabs);
 
         foreach (var tab in mobile.VisibleTabs.Skip(1).ToList())
             mobile.ToggleTabShownCommand.Execute(Row(mobile, tab));
@@ -185,7 +185,7 @@ public class MobileTabsTests : PinnedDataDirectory
 
         mobile.ToggleTabShownCommand.Execute(Row(mobile, MobileTab.Songs));
 
-        Assert.Equal(MobileTab.Albums, mobile.SelectedTab);
+        Assert.Equal(MobileTab.Home, mobile.SelectedTab);
         Assert.False(mobile.CanGoBack);
     }
 

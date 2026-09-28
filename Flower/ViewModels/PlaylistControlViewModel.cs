@@ -132,9 +132,14 @@ namespace Flower.ViewModels
             // dependencies are: the browser head registers no peer stack at all
             // (see App.axaml.cs), and a container cannot inject what is not
             // registered. Null simply means placeholders cannot be played here.
-            IStreamUrlResolver? streamUrlResolver = null)
+            IStreamUrlResolver? streamUrlResolver = null,
+            // Defaulted to one of its own over no store, so a test that builds
+            // this class directly still has a shelf to read - it just is not
+            // written anywhere.
+            AlbumProgressTracker? albumProgress = null)
         {
             _streamUrlResolver = streamUrlResolver;
+            AlbumProgress = albumProgress ?? new AlbumProgressTracker(library);
             _audioManager = audioManager;
             _currentPlaylist = playlist;
             _library = library;
@@ -157,8 +162,10 @@ namespace Flower.ViewModels
             // being reported.
             _subscriptions.Add<EventHandler>((s, e) =>
             {
+                var time = _audioManager.Time;
                 if (_positionTrack != null)
-                    _lastKnownTimeMs = _audioManager.Time;
+                    _lastKnownTimeMs = time;
+                AlbumProgress.UpdatePosition(time);
             },
                 h => _audioManager.PositionChanged += h, h => _audioManager.PositionChanged -= h);
 
@@ -169,6 +176,7 @@ namespace Flower.ViewModels
             _subscriptions.Add<EventHandler>((s, e) => Dispatcher.UIThread.Post(() =>
             {
                 LeavePlayingTrack();
+                AlbumProgress.Flush();
                 _parkedAtQueueTop = false;
                 OnPropertyChanged(nameof(IsPlaying));
                 CurrentlyPlayingTrack = null;
@@ -190,6 +198,7 @@ namespace Flower.ViewModels
             _subscriptions.Add<EventHandler>((s, e) =>
             {
                 SaveResumePosition();
+                AlbumProgress.Flush();
                 OnPropertyChanged(nameof(IsPlaying));
             },
                 h => _audioManager.Paused += h, h => _audioManager.Paused -= h);
@@ -272,6 +281,11 @@ namespace Flower.ViewModels
                             // if it is ever turned back on.
                             if (hadResumePosition)
                                 _library.RecordResumePosition(finishedTrack, null);
+
+                            // Off this thread too, since it can mean grouping
+                            // the library into albums. Racing the next song's
+                            // start is harmless - see TrackFinished.
+                            AlbumProgress.TrackFinished(finishedTrack);
                         }
                         catch (Exception ex)
                         {
@@ -356,6 +370,11 @@ namespace Flower.ViewModels
         // consumes it yet - see docs/ARCHITECTURE-REVIEW.md - so today the Log
         // window is where a failed track shows up.
         public event EventHandler<TrackFailedEventArgs>? PlaybackFailed;
+
+        // The Home screen's Continue Playing shelf - which albums are part-way
+        // through, and where. Fed from here because every start, end and pause
+        // already passes through this class.
+        public AlbumProgressTracker AlbumProgress { get; }
 
         // The queue Next/Previous/auto-advance walk. Exposed read-only so a
         // test can assert what a view actually anchored it to - see
@@ -697,7 +716,10 @@ namespace Flower.ViewModels
         // the queue advancing on its own - see IAudioManager.Play. Every
         // public caller is a gesture, so it defaults that way and only the
         // auto-advance handlers pass false.
-        public void Play(Track track, int queueIndex, bool immediate = true)
+        //
+        // startAt starts the track part-way through rather than at the top -
+        // Continue Playing picking an album up where it was left.
+        public void Play(Track track, int queueIndex, bool immediate = true, TimeSpan? startAt = null)
         {
             // A gesture is the user saying "try again", so it starts the count
             // of consecutive failures over - otherwise a source that came back
@@ -739,7 +761,7 @@ namespace Flower.ViewModels
             var pending = ResolveForPlaybackAsync(track);
             if (!pending.IsCompleted)
             {
-                StartWhenResolved(pending, generation, immediate);
+                StartWhenResolved(pending, generation, immediate, startAt);
                 return;
             }
 
@@ -755,12 +777,23 @@ namespace Flower.ViewModels
                 return;
             }
 
-            Start(playable, immediate);
+            Start(playable, immediate, startAt);
+        }
+
+        // Makes tracks the queue and starts the one at index, part-way through
+        // it when startAt says so - an album picked back up from the shelf.
+        public void PlayQueueFrom(IReadOnlyList<Track> tracks, int index, TimeSpan startAt)
+        {
+            if (index < 0 || index >= tracks.Count)
+                return;
+
+            SetCurrentPlaylist(new Playlist("Now Playing Queue", new List<Track>(tracks)));
+            Play(tracks[index], index, startAt: startAt > TimeSpan.Zero ? startAt : null);
         }
 
         // Everything after the track is known to be playable. Split out only so
         // the deferred path below can rejoin here rather than restating it.
-        private void Start(Track track, bool immediate)
+        private void Start(Track track, bool immediate, TimeSpan? startAt)
         {
             _logger.LogInformation("Playing {Title} by {Artist} ({Path})", track.Title, track.Artists, LogPath.Short(track.Path));
 
@@ -769,6 +802,11 @@ namespace Flower.ViewModels
             // matters.
             LeavePlayingTrack();
 
+            // Before Play, like everything else here about the song being
+            // left: a position reported by the new one must not be written
+            // down as the old one's.
+            AlbumProgress.TrackStarted(track, IsShuffleEnabled);
+
             _parkedAtQueueTop = false;
             SelectedTrack = track;
             CurrentlyPlayingTrack = track;
@@ -776,7 +814,7 @@ namespace Flower.ViewModels
             // Both worked out before Play, not after: Play can raise Playing
             // synchronously on some heads, and ApplyPendingSeek reads _pendingSeek
             // from that handler.
-            _pendingSeek = ResumeTargetFor(track);
+            _pendingSeek = startAt ?? ResumeTargetFor(track);
             _positionTrack = track.RememberPlaybackPosition ? track : null;
             _lastKnownTimeMs = 0;
 
@@ -805,7 +843,7 @@ namespace Flower.ViewModels
         // resolve safe: pressing Next twice while the first URL is still in
         // flight must not have the first track suddenly take over once it
         // arrives - only the most recent request may still start something.
-        private void StartWhenResolved(Task<Track?> pending, int generation, bool immediate)
+        private void StartWhenResolved(Task<Track?> pending, int generation, bool immediate, TimeSpan? startAt)
         {
             _ = pending.ContinueWith(resolved => Dispatcher.UIThread.Post(() =>
             {
@@ -816,7 +854,7 @@ namespace Flower.ViewModels
                 }
 
                 if (resolved.IsCompletedSuccessfully && resolved.Result is { } playable)
-                    Start(playable, immediate);
+                    Start(playable, immediate, startAt);
                 else
                     LogUnplayable(null, resolved);
             }));
@@ -1023,7 +1061,7 @@ namespace Flower.ViewModels
             // Position is a fraction of.
             var lengthMs = _audioManager.Length > 0
                 ? _audioManager.Length
-                : (long)(_positionTrack?.Duration.TotalMilliseconds ?? 0);
+                : (long)((_positionTrack ?? CurrentlyPlayingTrack)?.Duration.TotalMilliseconds ?? 0);
 
             if (lengthMs <= 0)
                 return;
@@ -1052,7 +1090,11 @@ namespace Flower.ViewModels
         //
         // Wired in App.axaml.cs - the desktop window's Closing, and the
         // activatable lifetime's Deactivated on mobile.
-        public void SavePlaybackState() => SaveResumePosition();
+        public void SavePlaybackState()
+        {
+            SaveResumePosition();
+            AlbumProgress.Flush(synchronously: true);
+        }
 
         private void SaveResumePosition()
         {

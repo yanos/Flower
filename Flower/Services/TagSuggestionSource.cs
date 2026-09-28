@@ -11,7 +11,7 @@ namespace Flower.Services;
 // retyping an existing name reuse the exact existing spelling instead of
 // accidentally introducing a near-duplicate (e.g. "Beatles" vs "The
 // Beatles"), which would otherwise silently fragment album/artist grouping
-// elsewhere in the app (AlbumGridBuilder, RecentlyAddedAlbumsBuilder, sync).
+// elsewhere in the app (AlbumGridBuilder, CatalogIdentity, sync).
 public static class TagSuggestionSource
 {
     // Union of Artists + AlbumArtists, not just one or the other - both fields

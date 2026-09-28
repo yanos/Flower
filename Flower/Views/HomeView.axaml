@@ -1,0 +1,177 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:Flower.Controls"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:vm="clr-namespace:Flower.ViewModels"
+             xmlns:mvm="clr-namespace:Flower.ViewModels.Mobile"
+             x:Class="Flower.Views.HomeView"
+             x:DataType="vm:HomeViewModel">
+
+  <!-- Desktop's Home: three shelves, each a single row that scrolls sideways
+       (see HomeViewModel for what is on them). The phone's is
+       HomeScreenView - the same shelves, but tapped and long-pressed rather
+       than clicked and right-clicked, and inside the phone's own screen
+       scroller. A vertical wheel over a shelf reaches the page: a shelf has
+       nothing to scroll that way, and ScrollViewer lets such a wheel chain on
+       to the one around it. -->
+  <UserControl.Styles>
+    <Style Selector="TextBlock.shelfTitle">
+      <Setter Property="FontSize" Value="18" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Margin" Value="8,0,0,0" />
+    </Style>
+    <Style Selector="Button.homeTile">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="8" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="VerticalAlignment" Value="Top" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="Button.homeTile:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundListLowBrush}" />
+    </Style>
+    <Style Selector="Button.homeTile:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundListMediumBrush}" />
+    </Style>
+    <Style Selector="StackPanel.dimmed">
+      <Setter Property="Opacity" Value="0.5" />
+    </Style>
+    <!-- The play glyph over a Continue Playing cover only shows on hover:
+         the bar under the cover already says what the tile is for. -->
+    <Style Selector="Button.homeTile Border.resumeGlyph">
+      <Setter Property="Opacity" Value="0" />
+    </Style>
+    <Style Selector="Button.homeTile:pointerover Border.resumeGlyph">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
+  </UserControl.Styles>
+
+  <Grid>
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+      <StackPanel Margin="16,20,0,24" Spacing="28">
+
+        <StackPanel Spacing="8" IsVisible="{Binding HasContinuePlaying}">
+          <TextBlock Classes="shelfTitle" Text="Continue Playing" />
+          <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+            <ItemsControl ItemsSource="{Binding ContinuePlaying}" Margin="0,0,16,8">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <StackPanel Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:ContinuePlayingItemViewModel">
+                  <Button Classes="homeTile"
+                          Command="{Binding Home.ResumeCommand}"
+                          CommandParameter="{Binding}"
+                          ToolTip.Tip="Continue where you left off">
+                    <Button.ContextMenu>
+                      <ContextMenu>
+                        <MenuItem Header="Continue Playing"
+                                  Command="{Binding Home.ResumeCommand}"
+                                  CommandParameter="{Binding}" />
+                        <MenuItem Header="Show Album"
+                                  Command="{Binding Home.OpenAlbumCommand}"
+                                  CommandParameter="{Binding Tile}" />
+                        <Separator />
+                        <MenuItem Header="Remove from Continue Playing"
+                                  Command="{Binding Home.ForgetCommand}"
+                                  CommandParameter="{Binding}" />
+                      </ContextMenu>
+                    </Button.ContextMenu>
+                    <StackPanel Width="160" Spacing="6" Classes.dimmed="{Binding Tile.IsUnavailable}">
+                      <Panel>
+                        <controls:AlbumArtView AlbumArt="{Binding Tile.AlbumArt}" Width="160" Height="160" />
+                        <Border Classes="resumeGlyph"
+                                Width="44" Height="44" CornerRadius="22"
+                                Margin="0,0,8,8"
+                                HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                                Background="{DynamicResource AppAccentBrush}">
+                          <materialIcons:MaterialIcon Kind="Play" Width="26" Height="26" Foreground="White" />
+                        </Border>
+                      </Panel>
+                      <ProgressBar MinWidth="0" Minimum="0" Maximum="1" Value="{Binding Progress}"
+                                   Height="4" MinHeight="4" CornerRadius="2"
+                                   Foreground="{DynamicResource AppAccentBrush}" />
+                      <StackPanel Spacing="1">
+                        <TextBlock Text="{Binding Tile.Name}" FontSize="13" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding Tile.Artist}" FontSize="11" Opacity="0.6" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding Detail}" FontSize="11" Opacity="0.6" TextTrimming="CharacterEllipsis" />
+                      </StackPanel>
+                    </StackPanel>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+        </StackPanel>
+
+        <StackPanel Spacing="8" IsVisible="{Binding HasRecentlyPlayed}">
+          <TextBlock Classes="shelfTitle" Text="Recently Played" />
+          <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+            <ItemsControl ItemsSource="{Binding RecentlyPlayed}" Margin="0,0,16,8">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <StackPanel Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="mvm:AlbumTileViewModel">
+                  <Button Classes="homeTile"
+                          Command="{Binding $parent[UserControl].((vm:HomeViewModel)DataContext).OpenAlbumCommand}"
+                          CommandParameter="{Binding}">
+                    <StackPanel Width="160" Spacing="6" Classes.dimmed="{Binding IsUnavailable}">
+                      <controls:AlbumArtView AlbumArt="{Binding AlbumArt}" Width="160" Height="160" />
+                      <StackPanel Spacing="1">
+                        <TextBlock Text="{Binding Name}" FontSize="13" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding Artist}" FontSize="11" Opacity="0.6" TextTrimming="CharacterEllipsis" />
+                      </StackPanel>
+                    </StackPanel>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+        </StackPanel>
+
+        <StackPanel Spacing="8" IsVisible="{Binding HasRecentlyAdded}">
+          <TextBlock Classes="shelfTitle" Text="Recently Added" />
+          <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+            <ItemsControl ItemsSource="{Binding RecentlyAdded}" Margin="0,0,16,8">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <StackPanel Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="mvm:AlbumTileViewModel">
+                  <Button Classes="homeTile"
+                          Command="{Binding $parent[UserControl].((vm:HomeViewModel)DataContext).OpenAlbumCommand}"
+                          CommandParameter="{Binding}">
+                    <StackPanel Width="160" Spacing="6" Classes.dimmed="{Binding IsUnavailable}">
+                      <controls:AlbumArtView AlbumArt="{Binding AlbumArt}" Width="160" Height="160" />
+                      <StackPanel Spacing="1">
+                        <TextBlock Text="{Binding Name}" FontSize="13" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding Artist}" FontSize="11" Opacity="0.6" TextTrimming="CharacterEllipsis" />
+                      </StackPanel>
+                    </StackPanel>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+        </StackPanel>
+      </StackPanel>
+    </ScrollViewer>
+
+    <StackPanel IsVisible="{Binding IsEmpty}"
+                HorizontalAlignment="Center" VerticalAlignment="Center"
+                Spacing="8" Opacity="0.6" MaxWidth="360">
+      <materialIcons:MaterialIcon Kind="HomeOutline" Width="40" Height="40" />
+      <TextBlock Text="Nothing here yet" FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center" />
+      <TextBlock Text="Albums you play and albums you add will show up here."
+                 FontSize="13" TextWrapping="Wrap" TextAlignment="Center" />
+    </StackPanel>
+  </Grid>
+</UserControl>

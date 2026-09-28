@@ -13,6 +13,7 @@ namespace Flower.Persistence
     [JsonSerializable(typeof(DeviceKeyMaterial))]
     [JsonSerializable(typeof(List<TrustedPeer>), TypeInfoPropertyName = "TrustedPeerList")]
     [JsonSerializable(typeof(List<DeniedPeer>), TypeInfoPropertyName = "DeniedPeerList")]
+    [JsonSerializable(typeof(Dictionary<string, List<Flower.Services.AlbumProgressDto>>), TypeInfoPropertyName = "AlbumProgressShelves")]
     internal partial class FlowerCoreJsonContext : JsonSerializerContext
     {
     }

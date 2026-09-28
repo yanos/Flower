@@ -22,13 +22,14 @@ using Flower.Services;
 namespace Flower.ViewModels.Mobile;
 
 // Which of these the bar shows, and in what order, is the user's to choose in
-// Settings - see MobileTabs, which also holds the default. RecentlyAdded is an
-// album grid ordered by recency. Songs/Albums/Artists/Playlists mirror
+// Settings - see MobileTabs, which also holds the default. Home is the shelves
+// of what was played and added lately - see HomeViewModel, shared with
+// desktop. Songs/Albums/Artists/Playlists mirror
 // desktop's sidebar sections. Queue is what plays next - see QueueRows. Search
 // is mobile-only (desktop has no equivalent standalone tab - its search box
 // works over whichever sidebar section is already selected) - see
 // IsShowingSearchPrompt.
-public enum MobileTab { RecentlyAdded, Songs, Albums, Artists, Playlists, Queue, Search }
+public enum MobileTab { Home, Songs, Albums, Artists, Playlists, Queue, Search }
 
 // Which way a newly-navigated-to screen should arrive on screen. Read (and
 // cleared) by ScreenStackPanel on every navigation - see
@@ -60,11 +61,9 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     // (virtualization), and AlbumGridColumns below for how wide a row is.
     // Each held with every tile it has under whatever the screen's filter
     // shows of them - see FilterableAlbumGrid.
-    private readonly FilterableAlbumGrid _recentlyAddedGrid = new();
     private readonly FilterableAlbumGrid _albumGrid = new();
     private readonly FilterableAlbumGrid _artistAlbumGrid = new();
 
-    public ObservableCollection<AlbumGridRow> RecentlyAddedAlbumRows => _recentlyAddedGrid.Rows;
     public ObservableCollection<AlbumGridRow> AlbumGridRows => _albumGrid.Rows;
 
     // One artist's own albums (Artists tab, one level in - see IsShowingArtistAlbumGrid),
@@ -72,7 +71,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     // library updates while it's set.
     public ObservableCollection<AlbumGridRow> ArtistAlbumGridRows => _artistAlbumGrid.Rows;
 
-    // How many tiles the three grids above put on a row, pushed in from the
+    // How many tiles the two grids above put on a row, pushed in from the
     // views by AlbumGridColumnSizing as their measured width changes - a phone
     // rotated into landscape fits five where portrait fits two. Re-chunks
     // whatever is already built rather than waiting for the next library
@@ -88,7 +87,6 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
                 return;
 
             _albumGridColumns = value;
-            _recentlyAddedGrid.Rechunk(value);
             _albumGrid.Rechunk(value);
             _artistAlbumGrid.Rechunk(value);
         }
@@ -126,7 +124,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     public ICommand SelectSearchAlbumCommand { get; }
     public ICommand SelectSearchArtistCommand { get; }
     public ICommand SelectArtistAlbumCommand { get; }
-    public ICommand SelectRecentlyAddedAlbumCommand { get; }
+    public ICommand SelectHomeAlbumCommand { get; }
     public ICommand SelectPlaylistCommand { get; }
     public ICommand BackCommand { get; }
     public ICommand PlayTrackCommand { get; }
@@ -477,7 +475,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     // from Main.SelectedSubItem being non-null — it's tracked here instead.
     private bool _hasDrilledIn;
 
-    // Artists gets an extra level Albums/Playlists/RecentlyAdded don't: name
+    // Artists gets an extra level Albums/Playlists don't: name
     // picker -> that artist's own album grid -> one album's tracks, rather than
     // straight from the name picker into every song by that artist as one flat
     // list. _selectedArtistName is non-null for both of the latter two screens;
@@ -485,14 +483,13 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     private string? _selectedArtistName;
     private bool _hasDrilledIntoArtistAlbum;
 
-    // Albums gets its own art-tile grid (same presentation as Recently Added,
-    // see AlbumGridBuilder); Artists stays a plain name list - there is no
+    // Albums gets its own art-tile grid (see AlbumGridBuilder); Artists stays a plain name list - there is no
     // single representative image for an artist the way there is for an album.
     public bool IsShowingAlbumGrid => SelectedTab == MobileTab.Albums && !_hasDrilledIn;
     public bool IsShowingArtistPicker => SelectedTab == MobileTab.Artists && !_hasDrilledIn;
     public bool IsShowingArtistAlbumGrid => SelectedTab == MobileTab.Artists && _hasDrilledIn && !_hasDrilledIntoArtistAlbum;
     public bool IsShowingPlaylistPicker => SelectedTab == MobileTab.Playlists && !_hasDrilledIn;
-    public bool IsShowingRecentlyAddedAlbums => SelectedTab == MobileTab.RecentlyAdded && !_hasDrilledIn;
+    public bool IsShowingHome => SelectedTab == MobileTab.Home && !_hasDrilledIn;
     public bool IsShowingQueue => SelectedTab == MobileTab.Queue;
 
     // ── Pull-down filter ──────────────────────────────────────────────
@@ -619,9 +616,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     {
         _screenFilterCts?.Cancel();
         var filter = ActiveScreenFilter;
-        if (IsShowingRecentlyAddedAlbums)
-            _recentlyAddedGrid.ApplyFilter(filter, AlbumGridColumns);
-        else if (IsShowingAlbumGrid)
+        if (IsShowingAlbumGrid)
             _albumGrid.ApplyFilter(filter, AlbumGridColumns);
         else if (IsShowingArtistAlbumGrid)
             _artistAlbumGrid.ApplyFilter(filter, AlbumGridColumns);
@@ -807,7 +802,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
 
     public bool IsShowingTrackList =>
         !IsShowingAlbumGrid && !IsShowingArtistPicker && !IsShowingArtistAlbumGrid
-        && !IsShowingPlaylistPicker && !IsShowingRecentlyAddedAlbums && !IsShowingQueue
+        && !IsShowingPlaylistPicker && !IsShowingHome && !IsShowingQueue
         && SelectedTab != MobileTab.Search;
     public bool CanGoBack => _navigationHistory.Count > 0;
 
@@ -818,7 +813,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
 
     // The track list is showing one specific album's songs - true whether
     // reached via the Albums tab's own grid, an artist's album grid
-    // (SelectArtistAlbum), or a Recently Added tile (SelectRecentlyAddedAlbum) -
+    // (SelectArtistAlbum), or a cover on Home (SelectHomeAlbum) -
     // all three re-point Main.SelectedSidebarItem at the Albums sidebar item
     // and Main.SelectedSubItem at the album name, the same way Albums' own
     // in-place drill-in does. Drives the album header (CurrentAlbumHeader)
@@ -841,8 +836,8 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         IsShowingAlbumTrackList ? Main.Rows : Array.Empty<TrackRowViewModel>();
 
     // Art/name/artist/year for IsShowingAlbumTrackList's header - reuses
-    // AlbumTileViewModel (the same shape the Albums/Recently Added grids'
-    // tiles already are) rather than a bespoke type, so its lazy AlbumArt
+    // AlbumTileViewModel (the same shape the album grids' tiles already
+    // are) rather than a bespoke type, so its lazy AlbumArt
     // loading (see AlbumTileViewModel.LoadArtAsync) works identically. Cached
     // by album name rather than rebuilt on every access - a fresh
     // AlbumTileViewModel instance on every binding pass would restart art
@@ -1366,8 +1361,16 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             OnPropertyChanged(nameof(CanDownloadAlbumActionTarget));
             OnPropertyChanged(nameof(CanDeleteAlbumActionTargetLocalFiles));
             OnPropertyChanged(nameof(CanRemoveAlbumActionTargetFromLibrary));
+            OnPropertyChanged(nameof(CanForgetAlbumActionTargetProgress));
         }
     }
+
+    // Shown for an album on Home's Continue Playing shelf: the one way to take
+    // it off without playing it to the end.
+    public bool CanForgetAlbumActionTargetProgress =>
+        AlbumActionTarget is { } tile && Main.Home.IsContinuing(tile);
+
+    public ICommand ForgetAlbumActionTargetProgressCommand { get; private set; } = null!;
 
     // The playlist row whose "..." raised that same menu, and null whenever
     // it was raised over an album. The menu is one sheet for both because
@@ -1761,7 +1764,6 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         (IsShowingArtistPicker && ArtistPickerItems.Count == 0) ||
         (IsShowingArtistAlbumGrid && ArtistAlbumGridRows.Count == 0) ||
         (IsShowingPlaylistPicker && PlaylistPickerItems.Count == 0 && !IsNamingNewPlaylist) ||
-        (IsShowingRecentlyAddedAlbums && RecentlyAddedAlbumRows.Count == 0) ||
         (IsShowingQueue && QueueRows.Count == 0) ||
         IsShowingSearchPrompt ||
         (IsShowingSearchResults && !HasSearchAlbumResults && !HasSearchArtistResults && !HasSearchSongResults) ||
@@ -1780,7 +1782,6 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     // Download All indicator.
     private void RebuildLibraryDerivedState()
     {
-        RebuildRecentlyAddedAlbums();
         RebuildAlbumGrid();
         RebuildArtistAlbumGrid();
         // An edit can move a song to another album without changing which
@@ -1961,7 +1962,6 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         },
             h => Main.ReachabilityChanged += h, h => Main.ReachabilityChanged -= h);
         RebuildPlaylistPicker();
-        RebuildRecentlyAddedAlbums();
         RebuildAlbumGrid();
         RebuildArtistAlbumGrid();
         _visibleTabs = MobileTabs.Parse(Main.MobileTabsSetting);
@@ -1970,6 +1970,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         _selectedTab = _visibleTabs[0];
         RebuildTabSettingRows();
         ApplyTabSelection();
+        Main.Home.IsActive = IsShowingHome;
 
         RefreshSearchSuggestions();
         ClearRecentSearchesCommand = new RelayCommand(Main.ClearRecentSearches);
@@ -2036,7 +2037,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             SelectArtistCore(name);
         });
         SelectArtistAlbumCommand = new RelayCommand<string>(SelectArtistAlbum);
-        SelectRecentlyAddedAlbumCommand = new RelayCommand<string>(SelectRecentlyAddedAlbum);
+        SelectHomeAlbumCommand = new RelayCommand<AlbumTileViewModel>(SelectHomeAlbum);
         SelectPlaylistCommand = new RelayCommand<SidebarItem>(SelectPlaylist);
         BackCommand = new RelayCommand(async () => await GoBack());
         // Takes the row rather than its Track: the row's position in the list
@@ -2242,6 +2243,13 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         // for its title.
         InitializeLibraryRemovalCommands();
         InitializeQueueCommands();
+        ForgetAlbumActionTargetProgressCommand = new RelayCommand(() =>
+        {
+            var tile = AlbumActionTarget;
+            ActiveSheet = MobileSheet.None;
+            if (tile != null)
+                Main.Home.Forget(tile);
+        });
         DeleteAlbumActionTargetLocalFilesCommand = new RelayCommand(() =>
         {
             if (AlbumActionTarget is not { } tile)
@@ -2533,16 +2541,12 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         var reachable = Main.IsPairedServerReachable;
         // Every tile, not only the ones a filter is showing: one filtered out
         // now is on screen again the moment the filter is cleared.
-        TrackAvailability.Apply(_recentlyAddedGrid.Tiles, fingerprint, reachable);
         TrackAvailability.Apply(_albumGrid.Tiles, fingerprint, reachable);
         TrackAvailability.Apply(_artistAlbumGrid.Tiles, fingerprint, reachable);
         TrackAvailability.Apply(SearchAlbumResults, fingerprint, reachable);
         if (CurrentDetailHeader is { } header)
             TrackAvailability.Apply([header], fingerprint, reachable);
     }
-
-    private void RebuildRecentlyAddedAlbums() =>
-        RefillAlbumRows(_recentlyAddedGrid, RecentlyAddedAlbumsBuilder.Build(Main.Library.Tracks));
 
     private void RebuildAlbumGrid() =>
         RefillAlbumRows(_albumGrid, InGridOrder(AlbumGridBuilder.Build(Main.Library.Tracks), MobileSortScreen.Albums));
@@ -2729,7 +2733,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             _totalMatchingAlbums > MaxSearchResultsPerSection ||
             _totalMatchingArtists > MaxSearchResultsPerSection;
 
-    // Search deliberately maps to no sidebar item (same as RecentlyAdded/
+    // Search deliberately maps to no sidebar item (same as Home and
     // Playlists) - it renders entirely from its own SearchQuery-driven
     // SearchAlbumResults/SearchArtistResults/SearchSongResults, scanning
     // Main.Library.Tracks directly (see RebuildSearchResultsAsync) rather
@@ -2792,9 +2796,9 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     // without that, RaiseNavigationChanged would already have made the track
     // list visible showing the PREVIOUS scope's tracks for up to the debounce's
     // delay before the correct, newly-scoped list appeared. And
-    // includeGridTiles: false because mobile never reads Main.AlbumGridTiles/
-    // RecentlyAddedGridTiles at all - it has its own AlbumGridRows/
-    // RecentlyAddedAlbumRows - so building two full-library tile grids on every
+    // includeGridTiles: false because mobile never reads Main.AlbumGridTiles
+    // at all - it has its own AlbumGridRows - so building a full-library tile
+    // grid on every
     // drill-in was pure wasted work, confirmed on a real device as a large
     // chunk of the pause after tapping Back.
     //
@@ -2849,7 +2853,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     }
 
     // A tile in that artist's album grid -> that album's tracks, reusing the
-    // Albums tab's own filtering the same way SelectRecentlyAddedAlbum does
+    // Albums tab's own filtering the same way SelectHomeAlbum does
     // (see its comment) rather than a separate artist+album-scoped track list.
     private void SelectArtistAlbum(string? albumName)
     {
@@ -2860,19 +2864,18 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             .Forget(_logger, "Artist album drill-in");
     }
 
-    // Tapping a tile in the Recently Added grid drills into that album's
-    // tracks by reusing the Albums tab's own filtering (Main.SelectedSidebarItem
-    // set to the Albums sidebar item, then SelectedSubItem to the album name) -
-    // ApplyTabSelection does not do this for MobileTab.RecentlyAdded itself
-    // (the un-drilled-in grid renders its own RecentlyAddedAlbumRows collection,
-    // not Main.Rows), so it is set explicitly here instead. SelectedTab stays
-    // RecentlyAdded so Back returns to this grid, not to the Albums picker.
-    private void SelectRecentlyAddedAlbum(string? albumName)
+    // Tapping a cover on Home drills into that album's tracks by reusing the
+    // Albums tab's own filtering (Main.SelectedSidebarItem set to the Albums
+    // sidebar item, then SelectedSubItem to the album name) - Home's own
+    // screen renders from Main.Home's shelves, not Main.Rows, so it is set
+    // explicitly here instead. SelectedTab stays Home so Back returns to the
+    // shelves, not to the Albums grid.
+    private void SelectHomeAlbum(AlbumTileViewModel? album)
     {
-        if (albumName == null)
+        if (album == null)
             return;
         PushHistory();
-        DrillIntoAsync(AlbumsScope, albumName).Forget(_logger, "Recently Added drill-in");
+        DrillIntoAsync(AlbumsScope, album.Name).Forget(_logger, "Home album drill-in");
     }
 
     private void SelectPlaylist(SidebarItem? item)
@@ -2976,7 +2979,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         // TrackList screen by definition), Back/Forward can land on ANY
         // screen kind - and only TrackList actually reads Main.Rows (every
         // other kind - AlbumGrid/ArtistPicker/ArtistAlbumGrid/
-        // PlaylistPicker/RecentlyAdded/SearchResults - renders from its own
+        // PlaylistPicker/Home/SearchResults - renders from its own
         // separate collection instead, see MobileNavigationFrame.Classify).
         // Rebuilding Main.Rows on the way to one of those was pure wasted
         // work (a full filter+sort+row-construction+reachability-scan pass
@@ -3074,7 +3077,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         OnPropertyChanged(nameof(IsShowingArtistPicker));
         OnPropertyChanged(nameof(IsShowingArtistAlbumGrid));
         OnPropertyChanged(nameof(IsShowingPlaylistPicker));
-        OnPropertyChanged(nameof(IsShowingRecentlyAddedAlbums));
+        OnPropertyChanged(nameof(IsShowingHome));
         OnPropertyChanged(nameof(IsShowingQueue));
         OnPropertyChanged(nameof(IsShowingSearchPrompt));
         OnPropertyChanged(nameof(IsShowingSearchResults));
@@ -3100,6 +3103,13 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             _searchResultsCts?.Cancel();
         if (IsShowingQueue && _queueRowsStale)
             RebuildQueueRows();
+        // After Main's own say on it, which follows the sidebar: Home maps to
+        // no sidebar item here, so Main always reads it as hidden. Not
+        // Main's Home row on purpose - with no sidebar item, Main.Rows holds
+        // the whole library in the Songs scope, so the first tap on Songs
+        // from Home finds its list already built rather than arriving empty
+        // and filling in mid-slide (ScreenStackPanelEntranceTests).
+        Main.Home.IsActive = IsShowingHome;
         // Before NavigationChanged, so the screen is already cut by its own
         // filter when ScreenStackPanel puts its scroll position back.
         ApplyScreenFilter();

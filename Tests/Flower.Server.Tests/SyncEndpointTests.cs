@@ -1181,4 +1181,140 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
             await trustedPeers.RevokeAsync(device.Fingerprint);
         }
     }
+
+    // ── Continue Playing (POST /album-progress) ───────────────────────────
+
+    private static string AlbumExchange(params AlbumProgressDto[] albums) =>
+        JsonSerializer.Serialize(new AlbumProgressExchangeDto([.. albums]));
+
+    private static List<AlbumProgressDto> Albums(string body) =>
+        JsonSerializer.Deserialize<AlbumProgressExchangeDto>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!.Albums;
+
+    // The owner's phone and desktop are the pair this exists to join: an
+    // album put down on one is where the other finds it.
+    [Fact]
+    public async Task The_owners_devices_share_one_continue_playing_shelf()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        using var phone = await AdminDeviceAsync(trustedPeers);
+        using var desktop = await AdminDeviceAsync(trustedPeers);
+        var album = "al-" + Guid.NewGuid().ToString("N")[..16];
+
+        try
+        {
+            var (sent, _, _) = await SendAsync(phone, "POST", "/api/flower/v1/album-progress", "10.0.4.1",
+                body: AlbumExchange(new AlbumProgressDto(album, "track-7", 95, DateTimeOffset.UtcNow)));
+            Assert.Equal(HttpStatusCode.OK, sent);
+
+            var (status, body, _) = await SendAsync(desktop, "POST", "/api/flower/v1/album-progress", "10.0.4.2",
+                body: AlbumExchange());
+
+            Assert.Equal(HttpStatusCode.OK, status);
+            var entry = Albums(body).Single(a => a.AlbumId == album);
+            Assert.Equal("track-7", entry.TrackId);
+            Assert.Equal(95, entry.PositionSeconds);
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(phone.Fingerprint);
+            await trustedPeers.RevokeAsync(desktop.Fingerprint);
+        }
+    }
+
+    // Flower has devices, not accounts, so "whose shelf" follows the line the
+    // rest of the protocol draws: a listener's phone neither sees the owner's
+    // cassette nor moves it.
+    [Fact]
+    public async Task A_listeners_shelf_is_their_own()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        using var owner = await AdminDeviceAsync(trustedPeers);
+        using var listener = await TrustedDeviceAsync(trustedPeers);
+        var ownersAlbum = "al-" + Guid.NewGuid().ToString("N")[..16];
+        var listenersAlbum = "al-" + Guid.NewGuid().ToString("N")[..16];
+
+        try
+        {
+            await SendAsync(owner, "POST", "/api/flower/v1/album-progress", "10.0.4.3",
+                body: AlbumExchange(new AlbumProgressDto(ownersAlbum, "t1", 10, DateTimeOffset.UtcNow)));
+
+            var (_, listenerBody, _) = await SendAsync(listener, "POST", "/api/flower/v1/album-progress", "10.0.4.4",
+                body: AlbumExchange(new AlbumProgressDto(listenersAlbum, "t2", 20, DateTimeOffset.UtcNow)));
+            var (_, ownerBody, _) = await SendAsync(owner, "POST", "/api/flower/v1/album-progress", "10.0.4.3",
+                body: AlbumExchange());
+
+            Assert.DoesNotContain(Albums(listenerBody), a => a.AlbumId == ownersAlbum);
+            Assert.Contains(Albums(listenerBody), a => a.AlbumId == listenersAlbum);
+            Assert.DoesNotContain(Albums(ownerBody), a => a.AlbumId == listenersAlbum);
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(owner.Fingerprint);
+            await trustedPeers.RevokeAsync(listener.Fingerprint);
+        }
+    }
+
+    // Last write wins per album, removals included: a device that finished the
+    // album takes it off everywhere, and one still holding an older place
+    // cannot put it back.
+    [Fact]
+    public async Task A_newer_removal_beats_an_older_place_on_the_shelf()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        using var device = await AdminDeviceAsync(trustedPeers);
+        var album = "al-" + Guid.NewGuid().ToString("N")[..16];
+        var now = DateTimeOffset.UtcNow;
+
+        try
+        {
+            await SendAsync(device, "POST", "/api/flower/v1/album-progress", "10.0.4.5",
+                body: AlbumExchange(new AlbumProgressDto(album, null, 0, now)));
+
+            var (_, body, _) = await SendAsync(device, "POST", "/api/flower/v1/album-progress", "10.0.4.5",
+                body: AlbumExchange(new AlbumProgressDto(album, "t3", 50, now.AddMinutes(-5))));
+
+            Assert.True(Albums(body).Single(a => a.AlbumId == album).IsRemoval);
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    [Fact]
+    public async Task A_malformed_shelf_is_refused()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        using var device = await TrustedDeviceAsync(trustedPeers);
+
+        try
+        {
+            var (badJson, _, _) = await SendAsync(device, "POST", "/api/flower/v1/album-progress", "10.0.4.6",
+                body: "{ not json");
+            var (negative, _, _) = await SendAsync(device, "POST", "/api/flower/v1/album-progress", "10.0.4.6",
+                body: AlbumExchange(new AlbumProgressDto("al-x", "t", -1, DateTimeOffset.UtcNow)));
+
+            Assert.Equal(HttpStatusCode.BadRequest, badJson);
+            Assert.Equal(HttpStatusCode.BadRequest, negative);
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    [Fact]
+    public async Task An_unsigned_shelf_exchange_is_refused()
+    {
+        var context = await server.Server.SendAsync(c =>
+        {
+            c.Request.Method = "POST";
+            c.Request.Path = "/api/flower/v1/album-progress";
+            c.Connection.RemoteIpAddress = IPAddress.Parse("10.0.4.7");
+            c.Request.ContentType = "application/json";
+            c.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(AlbumExchange()));
+        });
+
+        Assert.Equal(StatusCodes.Status403Forbidden, context.Response.StatusCode);
+    }
 }

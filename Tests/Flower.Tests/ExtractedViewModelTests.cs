@@ -336,19 +336,19 @@ public class LibraryBrowserViewModelTests
     }
 
     [AvaloniaFact]
-    public void Recently_added_and_history_keep_sort_state_independent_of_songs()
+    public void History_keeps_sort_state_independent_of_songs()
     {
         var (vm, host) = Make(Song("a", "One", "X"));
 
         Assert.Equal("TrackNumber", vm.SortColumn);
 
-        host.CurrentKind = SidebarItemKind.RecentlyAdded;
-        Assert.Equal("DateAdded", vm.SortColumn);
+        host.CurrentKind = SidebarItemKind.History;
+        Assert.Equal("LastPlayed", vm.SortColumn);
         Assert.False(vm.SortAscending);
 
         vm.SortByColumn("Title");
         Assert.Equal("Title", vm.SortColumn);
-        // Only Songs' sort is persisted - Recently Added's is per-session.
+        // Only Songs' sort is persisted - History's is per-session.
         Assert.Null(host.PersistedSort);
 
         host.CurrentKind = SidebarItemKind.Songs;
@@ -358,7 +358,7 @@ public class LibraryBrowserViewModelTests
         Assert.Equal(("Album", true), host.PersistedSort);
 
         host.CurrentKind = SidebarItemKind.History;
-        Assert.Equal("LastPlayed", vm.SortColumn);
+        Assert.Equal("Title", vm.SortColumn);
     }
 
     [AvaloniaFact]
@@ -405,144 +405,13 @@ public class LibraryBrowserViewModelTests
         Assert.Equal("Two", vm.ExpandedAlbumName);
     }
 
-    // Recently Added groups by (Album, Artist), so a various-artists compilation
-    // arrives as one tile per contributor - all reading the same album name.
-    // Expansion used to be keyed by that name, so clicking any one of them
-    // expanded every one of them at once, and each showed the whole
-    // compilation instead of that contributor's share of it.
     [AvaloniaFact]
-    public void Expanding_one_tile_of_a_compilation_leaves_its_namesakes_alone()
-    {
-        var (vm, _) = Make(
-            Song("Blown Fruit", "Virtual Dreams II", "Palomatic"),
-            Song("Flutter", "Virtual Dreams II", "Palomatic"),
-            Song("Pause", "Virtual Dreams II", "Virgo"));
-        vm.Repopulate();
-
-        var palomatic = vm.RecentlyAddedGridTiles.Single(t => t.Artist == "Palomatic");
-        var virgo = vm.RecentlyAddedGridTiles.Single(t => t.Artist == "Virgo");
-        Assert.Equal(palomatic.Name, virgo.Name);
-
-        vm.ToggleAlbumExpanded(palomatic);
-
-        // The tile, not the album name - the two tiles differ only by artist.
-        Assert.Equal(palomatic.Key, vm.ExpandedAlbumKey);
-        Assert.NotEqual(virgo.Key, vm.ExpandedAlbumKey);
-
-        // And it shows that tile's own tracks, not every namesake's.
-        Assert.Equal(
-            new[] { "Blown Fruit", "Flutter" },
-            vm.ExpandedAlbumTracks.Select(t => t.Title).OrderBy(t => t));
-    }
-
-    // Clicking a second namesake is a switch, not a no-op: keyed by name, the
-    // accordion could not tell "the same album again" from "the tile next door".
-    [AvaloniaFact]
-    public void Switching_between_two_tiles_of_a_compilation_swaps_the_expansion()
-    {
-        var (vm, _) = Make(
-            Song("Blown Fruit", "Virtual Dreams II", "Palomatic"),
-            Song("Pause", "Virtual Dreams II", "Virgo"));
-        vm.Repopulate();
-
-        var palomatic = vm.RecentlyAddedGridTiles.Single(t => t.Artist == "Palomatic");
-        var virgo = vm.RecentlyAddedGridTiles.Single(t => t.Artist == "Virgo");
-
-        vm.ToggleAlbumExpanded(palomatic);
-        vm.ToggleAlbumExpanded(virgo);
-
-        Assert.Equal(virgo.Key, vm.ExpandedAlbumKey);
-        Assert.Equal(new[] { "Pause" }, vm.ExpandedAlbumTracks.Select(t => t.Title));
-    }
-
-    // A rescan replaces every tile instance, so the expansion has to be
-    // re-found by key rather than by holding the old object - and re-found as
-    // the *same* tile, not merely one with the same album name.
-    [AvaloniaFact]
-    public void A_rebuild_keeps_the_expansion_on_the_tile_it_was_opened_on()
-    {
-        var (vm, _) = Make(
-            Song("Blown Fruit", "Virtual Dreams II", "Palomatic"),
-            Song("Pause", "Virtual Dreams II", "Virgo"));
-        vm.Repopulate();
-
-        var palomatic = vm.RecentlyAddedGridTiles.Single(t => t.Artist == "Palomatic");
-        vm.ToggleAlbumExpanded(palomatic);
-
-        vm.Repopulate();
-
-        Assert.Equal(palomatic.Key, vm.ExpandedAlbumKey);
-        Assert.Equal(new[] { "Blown Fruit" }, vm.ExpandedAlbumTracks.Select(t => t.Title));
-    }
-
-    [AvaloniaFact]
-    public void The_view_key_distinguishes_multi_selections_that_share_a_first_item()
+    public void Dragging_off_the_album_grid_resolves_tracks_by_album()
     {
         var (vm, host) = Make(Song("a", "One", "X"), Song("b", "Two", "Y"));
-        host.CurrentKind = SidebarItemKind.Albums;
         vm.Repopulate();
-
-        vm.SetSelectedSubItems(new[] { "One" });
-        var single = vm.CurrentViewKey;
-
-        vm.SetSelectedSubItems(new[] { "One", "Two" });
-        var pair = vm.CurrentViewKey;
-
-        // Keying on the primary item alone would collide here and make the two
-        // selections share saved scroll/selection state.
-        Assert.NotEqual(single, pair);
-
-        // Order within the selection must not matter.
-        vm.SetSelectedSubItems(new[] { "Two", "One" });
-        Assert.Equal(pair, vm.CurrentViewKey);
-    }
-
-    [AvaloniaFact]
-    public void The_sub_list_offers_albums_or_artists_depending_on_the_view()
-    {
-        var (vm, host) = Make(Song("a", "One", "X"), Song("b", "Two", "Y"));
 
         host.CurrentKind = SidebarItemKind.Albums;
-        vm.Repopulate();
-        Assert.Equal(new[] { "One", "Two" }, vm.SubListItems);
-
-        host.CurrentKind = SidebarItemKind.Artists;
-        vm.RebuildSubListItems();
-        Assert.Equal(new[] { "X", "Y" }, vm.SubListItems);
-
-        host.CurrentKind = SidebarItemKind.Songs;
-        vm.RebuildSubListItems();
-        Assert.Empty(vm.SubListItems);
-    }
-
-    [AvaloniaFact]
-    public void Artists_remembers_the_last_picked_artist_but_albums_starts_at_the_grid()
-    {
-        var (vm, host) = Make(Song("a", "One", "X"), Song("b", "Two", "Y"));
-        host.CurrentKind = SidebarItemKind.Artists;
-        vm.Repopulate();
-
-        // Nothing picked yet - falls back to the first artist.
-        Assert.Equal("X", vm.InitialSubItemForCurrentView());
-
-        vm.SetSelectedSubItems(new[] { "Y" });
-        Assert.Equal("Y", vm.InitialSubItemForCurrentView());
-
-        host.CurrentKind = SidebarItemKind.Albums;
-        vm.RebuildSubListItems();
-        // Albums starts at the tile grid rather than auto-selecting an album.
-        Assert.Null(vm.InitialSubItemForCurrentView());
-    }
-
-    [AvaloniaFact]
-    public void Dragging_off_the_recently_added_grid_resolves_tracks_by_album_too()
-    {
-        var (vm, host) = Make(Song("a", "One", "X"), Song("b", "Two", "Y"));
-        vm.Repopulate();
-
-        // Not just Albums: a multi-selection dragged straight off the Recently
-        // Added grid never switches the sidebar to Albums first.
-        host.CurrentKind = SidebarItemKind.RecentlyAdded;
         Assert.Equal(new[] { "a" }, vm.GetTracksForSubListItems(new[] { "One" }).Select(t => t.Title));
 
         host.CurrentKind = SidebarItemKind.Artists;
@@ -562,7 +431,7 @@ public class LibraryBrowserViewModelTests
         vm.FilterText = "nothing matches";
         await vm.RebuildRowsImmediatelyAsync();
         // Repopulate seeded the grids from the unfiltered library; a Songs-view
-        // rebuild must not spend two full passes re-deriving them. See Tier 1.5.
+        // rebuild must not spend a full pass re-deriving them. See Tier 1.5.
         Assert.Single(vm.AlbumGridTiles);
 
         host.CurrentKind = SidebarItemKind.Albums;

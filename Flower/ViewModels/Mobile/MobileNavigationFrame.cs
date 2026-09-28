@@ -14,7 +14,7 @@ namespace Flower.ViewModels.Mobile;
 // need a second parallel notion of "what screen is this."
 public enum MobileScreenKind
 {
-    RecentlyAdded,
+    Home,
     AlbumGrid,
     ArtistPicker,
     ArtistAlbumGrid,
@@ -84,7 +84,7 @@ public sealed record MobileNavigationFrame(
                 ? SelectedArtistName
                 : HasDrilledIn
                     ? (SidebarItem?.Name ?? Tab.ToString())
-                    : Tab == MobileTab.RecentlyAdded ? "Recently Added" : Tab.ToString();
+                    : Tab.ToString();
 
     // The Search tab's own always-visible box replaces the title there - see
     // MobileMainViewModel.IsShowingSearchTabBox's own former doc comment.
@@ -92,8 +92,9 @@ public sealed record MobileNavigationFrame(
 
     // Whether pulling this screen down opens its filter oval. Not on Search,
     // whose box is already a search, nor on the Queue, which is in the order
-    // it plays in and short of the one thing a filter would hide.
-    public bool CanFilter => ScreenKind is not (MobileScreenKind.SearchResults or MobileScreenKind.Queue);
+    // it plays in and short of the one thing a filter would hide, nor on
+    // Home, whose shelves are a dozen covers each.
+    public bool CanFilter => ScreenKind is not (MobileScreenKind.SearchResults or MobileScreenKind.Queue or MobileScreenKind.Home);
 
     // Whether this frame's TrackList (if any) is showing one album's own
     // tracks vs. a flat Songs/playlist list - mirrors
@@ -139,8 +140,8 @@ public sealed record MobileNavigationFrame(
             return MobileScreenKind.ArtistAlbumGrid;
         if (tab == MobileTab.Playlists && !hasDrilledIn)
             return MobileScreenKind.PlaylistPicker;
-        if (tab == MobileTab.RecentlyAdded && !hasDrilledIn)
-            return MobileScreenKind.RecentlyAdded;
+        if (tab == MobileTab.Home && !hasDrilledIn)
+            return MobileScreenKind.Home;
         return MobileScreenKind.TrackList;
     }
 }

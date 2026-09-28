@@ -156,13 +156,14 @@ public class MobileScreenMenuTests : PinnedDataDirectory
 
     // Every screen can shuffle what it shows, and delete the files of it this
     // phone has. Search has nothing to show until something is typed, so
-    // until then it has only Settings.
+    // until then it has only Settings - and Home, whose shelves are shortcuts
+    // rather than a set of songs, never has anything else.
     [AvaloniaFact]
-    public void Recently_added_and_search_have_only_shuffle_delete_and_settings()
+    public void Home_and_search_have_only_settings_until_there_is_something_to_act_on()
     {
         var vm = Build();
-        vm.SelectTabCommand.Execute(nameof(MobileTab.RecentlyAdded));
-        Assert.Equal(["Shuffle", "Delete Local Files", "Settings"], Labels(vm));
+        vm.SelectTabCommand.Execute(nameof(MobileTab.Home));
+        Assert.Equal(["Settings"], Labels(vm));
 
         vm.SelectTabCommand.Execute(nameof(MobileTab.Search));
         Assert.Equal(["Settings"], Labels(vm));

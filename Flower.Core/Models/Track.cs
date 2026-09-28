@@ -105,7 +105,7 @@ namespace Flower.Models
         // but AlbumArtists was left blank, a literal "Various Artists" so every
         // track in the compilation still resolves to the same grouping key; then
         // falls back to the per-track Artists for an ordinary single-artist
-        // album with neither tag populated. See RecentlyAddedAlbumsBuilder/
+        // album with neither tag populated. See CatalogIdentity/
         // AlbumGridBuilder/LibraryDtoMapper, which all group or label
         // albums by this rather than by Artists directly - otherwise a various-
         // artists compilation (same Album, differing per-track Artists) would

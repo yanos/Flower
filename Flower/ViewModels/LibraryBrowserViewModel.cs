@@ -31,14 +31,14 @@ public interface ILibraryBrowseHost
     bool IsPairedServerReachable { get; }
 
     // Persist a sort choice into AppSettings. Only Songs' sort is persisted -
-    // Recently Added's and History's are per-session, same as they always were.
+    // History's is per-session, same as it always was.
     void PersistSort(string column, bool ascending);
     void PersistSortArtistAlbumsByYear(bool value);
 }
 
 // Everything about *displaying* the library: the flat row list, the search
-// filter, the three independent sort states, the album/Recently Added tile
-// grids, the Artists sub-list, and the status bar summarising them. Split out
+// filter, the two independent sort states, the album tile grid, the Artists
+// sub-list, and the status bar summarising them. Split out
 // of MainViewModel, where it was one of six unrelated jobs (see
 // docs/ARCHITECTURE-REVIEW.md Tier 4.2).
 public sealed class LibraryBrowserViewModel : ViewModelBase
@@ -102,24 +102,18 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
     private string _sortColumn    = "TrackNumber";
     private bool   _sortAscending = true;
 
-    // Recently Added has its own independent sort state (defaulting to newest-first)
-    // rather than sharing Songs/Albums/Artists' single sort column - so clicking a
-    // header there doesn't change what Songs is sorted by, and vice versa.
-    private string _recentlyAddedSortColumn    = "DateAdded";
-    private bool   _recentlyAddedSortAscending = false;
-
-    // History gets the same independent-sort-state treatment as Recently Added,
-    // and for the same reason - defaults to newest-played-first rather than
-    // sharing/clobbering Songs' sort column.
+    // History has its own independent sort state (defaulting to
+    // newest-played-first) rather than sharing Songs/Albums/Artists' single
+    // sort column - so clicking a header there doesn't change what Songs is
+    // sorted by, and vice versa.
     private string _historySortColumn    = "LastPlayed";
     private bool   _historySortAscending = false;
 
-    private bool IsViewingRecentlyAdded => _host.CurrentKind == SidebarItemKind.RecentlyAdded;
     private bool IsViewingHistory => _host.CurrentKind == SidebarItemKind.History;
 
-    public string SortColumn => IsViewingRecentlyAdded ? _recentlyAddedSortColumn : IsViewingHistory ? _historySortColumn : _sortColumn;
+    public string SortColumn => IsViewingHistory ? _historySortColumn : _sortColumn;
 
-    public bool SortAscending => IsViewingRecentlyAdded ? _recentlyAddedSortAscending : IsViewingHistory ? _historySortAscending : _sortAscending;
+    public bool SortAscending => IsViewingHistory ? _historySortAscending : _sortAscending;
 
     // Restores the persisted Songs sort at startup - AppSettings is read by
     // MainViewModel, which owns the settings object.
@@ -174,20 +168,6 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         if (columnId == null)
             return;
 
-        if (IsViewingRecentlyAdded)
-        {
-            if (_recentlyAddedSortColumn == columnId)
-                _recentlyAddedSortAscending = !_recentlyAddedSortAscending;
-            else
-            {
-                _recentlyAddedSortColumn    = columnId;
-                _recentlyAddedSortAscending = true;
-            }
-            NotifySortChanged();
-            ScheduleFilter();
-            return;
-        }
-
         if (IsViewingHistory)
         {
             if (_historySortColumn == columnId)
@@ -214,8 +194,8 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         _host.PersistSort(_sortColumn, _sortAscending);
     }
 
-    // Recently Added and History carry their own independent sort state, so
-    // switching to or from either changes what SortColumn/SortAscending report
+    // History carries its own independent sort state, so switching to or
+    // from it changes what SortColumn/SortAscending report
     // without anything actually being re-sorted - MainViewModel calls this on
     // every sidebar selection change for that reason.
     public void NotifySortChanged()
@@ -241,18 +221,15 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         }
     }
 
-    // ── Expanded album (inline within either tile grid) ───────────────────
+    // ── Expanded album (inline within the tile grid) ──────────────────────
 
-    // The one album (if any) currently expanded inline within whichever grid
-    // is showing - see AlbumGridView/AlbumGridRowControl for the actual
+    // The one album (if any) currently expanded inline within the grid - see AlbumGridView/AlbumGridRowControl for the actual
     // expand/collapse rendering+animation. Deliberately independent of
     // SelectedSubItems (Ctrl/Shift multi-select for drag-to-playlist, see
     // MainView.axaml.cs's AlbumGrid_PointerPressed) - a plain click toggles
     // this and never touches multi-select; Ctrl/Shift-click never touches this.
     //
-    // Keyed by tile rather than by album name, because in Recently Added a
-    // various-artists compilation is one tile per contributor and they all
-    // share a name - see AlbumTileKey.
+    // Keyed by tile rather than by album name - see AlbumTileKey.
     private AlbumTileKey? _expandedAlbumKey;
     public AlbumTileKey? ExpandedAlbumKey
     {
@@ -280,10 +257,8 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
     }
 
     // Accordion behavior - clicking the already-expanded album collapses it;
-    // clicking a different one switches straight to it. Both Albums' and
-    // Recently Added's tiles route through here (see AlbumGrid_PointerPressed),
-    // independent of which grid the click came from - the same album showing
-    // up in both is exactly the same album either way.
+    // clicking a different one switches straight to it (see
+    // AlbumGrid_PointerPressed).
     public void ToggleAlbumExpanded(AlbumTileViewModel? tile)
     {
         if (tile == null)
@@ -299,7 +274,7 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         ExpandedAlbumTracks = ExpandedTracksFor(tile);
     }
 
-    // Every fresh visit to Albums/Recently Added starts with nothing expanded,
+    // Every fresh visit to Albums starts with nothing expanded,
     // never a remembered one - matches mobile, where switching tabs and back
     // always starts at the flat grid too.
     public void CollapseExpandedAlbum()
@@ -309,12 +284,9 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
     }
 
     // The tile's own tracks, in disc/track order. Taken from the tile rather
-    // than re-derived by filtering the library on the album name, which is what
-    // this used to do: a Recently Added tile stands for one contributor's share
-    // of a compilation, and filtering by name would hand back every
-    // contributor's - the same wrong list the old name-keyed expansion showed
-    // under every tile at once. The tile already carries exactly the tracks its
-    // grid grouped into it, so there is nothing to reconstruct.
+    // than re-derived by filtering the library on the album name: the tile
+    // already carries exactly the tracks its grid grouped into it, so there is
+    // nothing to reconstruct.
     public static ObservableCollection<Track> ExpandedTracksFor(AlbumTileViewModel tile) =>
         new(tile.Tracks
             .OrderBy(t => t.DiscNumber)
@@ -322,9 +294,9 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
 
     // ── Tile grids ────────────────────────────────────────────────────────
 
-    // Rebuilt in Repopulate (every LibraryChanged, and every TrackChanged that reshapes) - see AlbumGridBuilder/
-    // RecentlyAddedAlbumsBuilder, the same shared builders mobile's own grids
-    // use. Alphabetical for Albums, by-recency for Recently Added. Reassigned
+    // Rebuilt in Repopulate (every LibraryChanged, and every TrackChanged that
+    // reshapes) - see AlbumGridBuilder, the same shared builder mobile's own
+    // grid uses. Alphabetical. Reassigned
     // wholesale rather than Clear()+Add() in a loop - same reasoning as
     // SubListItems below: one PropertyChanged per rebuild instead of one per
     // item, which matters on a library with a thousand-plus albums.
@@ -335,37 +307,26 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         private set { _albumGridTiles = value; OnPropertyChanged(); }
     }
 
-    private ObservableCollection<AlbumTileViewModel> _recentlyAddedGridTiles = new();
-    public ObservableCollection<AlbumTileViewModel> RecentlyAddedGridTiles
-    {
-        get => _recentlyAddedGridTiles;
-        private set { _recentlyAddedGridTiles = value; OnPropertyChanged(); }
-    }
-
-    // Both grids at once, through the merge that keeps a tile the user is
+    // Through the merge that keeps a tile the user is
     // looking at - and, more to the point, one whose album download is still
     // running - rather than replacing it with an equivalent-looking fresh
     // instance. See AlbumTileMerge, and TrackRowMerge for the row-list
     // original. Retired tiles are disposed for the same reason retired rows
     // are: an abandoned spinner otherwise keeps its animation-clock
     // subscription, and the tile behind it, alive forever.
-    private void SetTiles(IReadOnlyList<AlbumTileViewModel> albums, IReadOnlyList<AlbumTileViewModel> recent)
+    private void SetTiles(IReadOnlyList<AlbumTileViewModel> albums)
     {
         var mergedAlbums = AlbumTileMerge.Apply(AlbumGridTiles, albums, out var retiredAlbums);
-        var mergedRecent = AlbumTileMerge.Apply(RecentlyAddedGridTiles, recent, out var retiredRecent);
 
         AlbumGridTiles = new ObservableCollection<AlbumTileViewModel>(mergedAlbums);
-        RecentlyAddedGridTiles = new ObservableCollection<AlbumTileViewModel>(mergedRecent);
 
         foreach (var tile in retiredAlbums)
-            tile.Dispose();
-        foreach (var tile in retiredRecent)
             tile.Dispose();
     }
 
     private void RebuildAlbumGrids()
     {
-        SetTiles(AlbumGridBuilder.Build(_allTracks), RecentlyAddedAlbumsBuilder.Build(_allTracks));
+        SetTiles(AlbumGridBuilder.Build(_allTracks));
         ApplyTileAvailability();
 
         // An expanded album's tracks came from a tile built against the
@@ -374,15 +335,12 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         // change (a rescan, a download completing, a tag edit) leaves the
         // expansion showing stale Track references.
         //
-        // Both grids are searched because only one is on screen and this does
-        // not know which; the key identifies at most one tile in either.
         // Nothing matching means the album stopped existing under that name or
         // artist, which collapses it rather than leaving an expansion attached
         // to a tile that is no longer there.
         if (_expandedAlbumKey is { } expanded)
         {
-            var tile = AlbumGridTiles.Concat(RecentlyAddedGridTiles)
-                .FirstOrDefault(t => t.Key == expanded);
+            var tile = AlbumGridTiles.FirstOrDefault(t => t.Key == expanded);
             if (tile == null)
                 CollapseExpandedAlbum();
             else
@@ -482,12 +440,7 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         var set = new HashSet<string>(items);
         return _host.CurrentKind switch
         {
-            // RecentlyAdded here too, not just Albums - dragging a
-            // multi-selection straight off the Recently Added grid (without
-            // a plain click ever switching the sidebar to Albums first - see
-            // SelectAlbumTile) still needs to resolve to real tracks by album
-            // name, same as Albums' own grid does.
-            SidebarItemKind.Albums or SidebarItemKind.RecentlyAdded
+            SidebarItemKind.Albums
                 => _allTracks.Where(t => t.Album != null && set.Contains(t.Album)),
             SidebarItemKind.Artists => _allTracks.Where(t => t.Artists != null && set.Contains(t.Artists)),
             _ => Enumerable.Empty<Track>()
@@ -508,7 +461,9 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
                 => _allTracks.Where(t => t.Artists != null && _selectedSubItems.Contains(t.Artists)).ToList(),
             SidebarItemKind.Artists
                 => new List<Track>(),
-            SidebarItemKind.Device
+            // Home draws its shelves from the library itself (HomeViewModel),
+            // so a row per track would be built for nothing.
+            SidebarItemKind.Device or SidebarItemKind.Home
                 => new List<Track>(),
             // Never-played tracks would otherwise just clutter the bottom/top of
             // a "newest played first" sort with a meaningless null - History only
@@ -531,8 +486,8 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         SidebarItemKind.Albums        => $"album:{string.Join('\u0001', _selectedSubItems.OrderBy(s => s))}",
         SidebarItemKind.Artists       => $"artist:{string.Join('\u0001', _selectedSubItems.OrderBy(s => s))}",
         SidebarItemKind.Playlist      => $"playlist:{_host.CurrentPlaylist?.Name}",
-        SidebarItemKind.RecentlyAdded => "recently-added",
         SidebarItemKind.History       => "history",
+        SidebarItemKind.Home          => "home",
         _                             => "songs"
     };
 
@@ -611,7 +566,7 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         var text       = _filterText;
         // Playlists have a user-defined (drag-reorderable) track order rather
         // than a sortable one, so ignore the column sort while viewing one.
-        // Recently Added uses its own independent sort state (see SortColumn).
+        // History uses its own independent sort state (see SortColumn).
         var sortCol    = _host.CurrentKind == SidebarItemKind.Playlist ? "PlaylistOrder" : SortColumn;
         var sortAsc    = SortAscending;
         var playing    = _host.CurrentlyPlayingTrack;
@@ -623,34 +578,32 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         var pairedServerFingerprint = _host.PairedServerFingerprint;
         var pairedServerReachable   = _host.IsPairedServerReachable;
 
-        // Albums/Recently Added show a tile grid instead of Rows built straight
+        // Albums shows a tile grid instead of Rows built straight
         // from _allTracks, not from GetBaseTracksForFilter's (mostly
         // Albums-view-irrelevant) result - so without this, FilterText had no
-        // effect on either grid at all. Rebuilt here, alongside Rows, on every
+        // effect on the grid at all. Rebuilt here, alongside Rows, on every
         // filter/sort/view change rather than only on a rescan (see
         // RebuildAlbumGrids), so typing in the search box while on Albums
         // actually narrows the grid.
         //
-        // includeGridTiles=false skips both builds entirely - mobile (the
+        // includeGridTiles=false skips the build entirely - mobile (the
         // only caller that passes false, via RebuildRowsImmediatelyAsync)
-        // has its own separate AlbumGridRows/RecentlyAddedAlbumRows on
-        // MobileMainViewModel (rebuilt only on library changes, not on every
-        // navigation - see RebuildAlbumGrid/RebuildRecentlyAddedAlbums
-        // there) and never reads AlbumGridTiles/RecentlyAddedGridTiles at
-        // all, so building two full-library tile grids on every single
+        // has its own separate AlbumGridRows on MobileMainViewModel (rebuilt
+        // only on library changes, not on every navigation - see
+        // RebuildAlbumGrid there) and never reads AlbumGridTiles at all, so
+        // building a full-library tile grid on every single
         // drill-in/back-navigation was pure wasted work there - confirmed on
         // a real device as a large chunk of the pause after tapping Back.
         // Desktop got the same treatment mobile already had, just derived
-        // rather than passed in: the two tile grids are only ever *painted* on
-        // the Albums and Recently Added views, yet every rebuild built both -
-        // two full passes over the whole library, discarded unread, on every
-        // keystroke and every drill-in while viewing Songs, Artists or a
-        // playlist. Switching to either grid view runs MainViewModel's
+        // rather than passed in: the tile grid is only ever *painted* on the
+        // Albums view, yet every rebuild built it - a full pass over the whole
+        // library, discarded unread, on every keystroke and every drill-in
+        // while viewing Songs, Artists or a playlist. Switching to Albums runs MainViewModel's
         // OnSidebarSelectionChanged, which rebuilds through here again, so they
-        // are always built before the view that reads them appears. See
+        // is always built before the view that reads it appears. See
         // ARCHITECTURE-REVIEW Tier 1.5.
         var buildGrids = includeGridTiles &&
-            _host.CurrentKind is SidebarItemKind.Albums or SidebarItemKind.RecentlyAdded;
+            _host.CurrentKind is SidebarItemKind.Albums;
 
         // A scope left since nothing it is built from changed comes back as it
         // was, synchronously: no plan, no new rows. Returning to Songs from an
@@ -659,7 +612,7 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         // meanwhile been rebuilt for the album and the Songs rows discarded.
         // Playlists and History are always rebuilt - their contents change
         // (a reorder, a play) without anything in the signature moving - and
-        // so is any rebuild that also builds the tile grids, which are not kept.
+        // so is any rebuild that also builds the tile grid, which is not kept.
         var scopeKey  = CurrentViewKey;
         var signature = new RowsSignature(allTracks, libraryChangeToken, text, sortCol, sortAsc, _sortArtistAlbumsByYear, pairedServerFingerprint, pairedServerReachable);
         var cached    = CachedScope(scopeKey);
@@ -685,17 +638,14 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         // that rows are reused rather than reallocated (see TrackRowMerge):
         // ApplyPlan writes to instances that are live and bound, and raises
         // PropertyChanged on them.
-        var (plan, albumTiles, recentTiles) = await Task.Run(() =>
+        var (plan, albumTiles) = await Task.Run(() =>
         {
             var builtPlan = TrackListBuilder.Plan(baseTracks, text, sortCol, sortAsc, playing, _sortArtistAlbumsByYear, pairedServerFingerprint, pairedServerReachable);
             if (!buildGrids)
-                return (builtPlan, (List<AlbumTileViewModel>?)null, (List<AlbumTileViewModel>?)null);
+                return (builtPlan, (List<AlbumTileViewModel>?)null);
 
             var filteredForGrids = TrackListBuilder.Filter(allTracks, text).ToList();
-            return (
-                builtPlan,
-                AlbumGridBuilder.Build(filteredForGrids),
-                RecentlyAddedAlbumsBuilder.Build(filteredForGrids));
+            return (builtPlan, AlbumGridBuilder.Build(filteredForGrids));
         }, token);
 
         if (token.IsCancellationRequested)
@@ -737,7 +687,7 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
             row.Dispose();
         if (buildGrids)
         {
-            SetTiles(albumTiles!, recentTiles!);
+            SetTiles(albumTiles!);
             ApplyTileAvailability();
         }
         OnPropertyChanged(nameof(StatusBarText));
@@ -805,7 +755,7 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
     // Bypasses ScheduleFilter's own 250ms debounce - meant for a single,
     // discrete navigation action (mobile drilling into a specific album/
     // playlist - see MobileMainViewModel's SelectAlbumOrArtistCore/
-    // SelectArtistAlbum/SelectRecentlyAddedAlbum/SelectPlaylist) rather than
+    // SelectArtistAlbum/SelectHomeAlbum/SelectPlaylist) rather than
     // a rapid-fire one like typing a search query or desktop's own sub-list
     // multi-select drag, which still want the debounce and so still go
     // through SelectedSubItem's own setter/ScheduleFilter as before.
@@ -818,8 +768,8 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
     // follow-up work (see GoToCurrentlyPlayingTrackAsync) can skip it.
     //
     // includeGridTiles defaults to true so the one desktop caller
-    // (GoToCurrentlyPlayingTrackAsync, which can run while Albums/Recently
-    // Added is the active sidebar view) keeps getting fresh grid tiles
+    // (GoToCurrentlyPlayingTrackAsync, which can run while Albums is the
+    // active sidebar view) keeps getting fresh grid tiles
     // without having to know to ask for them - mobile's 5 call sites pass
     // false explicitly instead, since mobile never reads them at all.
     public async Task<bool> RebuildRowsImmediatelyAsync(bool includeGridTiles = true)
@@ -871,8 +821,8 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         ApplyTileAvailability();
     }
 
-    // The tile grids are rebuilt far less often than the rows are (only on a
-    // library change, or on entering one of the two views that paint them),
+    // The tile grid is rebuilt far less often than the rows are (only on a
+    // library change, or on entering the view that paints it),
     // so they need re-marking on their own whenever the server's reachability
     // moves under them - otherwise a grid built while the server was up stays
     // at full strength for as long as it is left on screen. Reads the host
@@ -881,6 +831,5 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
     private void ApplyTileAvailability()
     {
         TrackAvailability.Apply(AlbumGridTiles, _host.PairedServerFingerprint, _host.IsPairedServerReachable);
-        TrackAvailability.Apply(RecentlyAddedGridTiles, _host.PairedServerFingerprint, _host.IsPairedServerReachable);
     }
 }

@@ -283,7 +283,7 @@ public partial class MobileMainView : UserControl
 
     private Button TabButton(MobileTab tab) => tab switch
     {
-        MobileTab.RecentlyAdded => RecentlyAddedTab,
+        MobileTab.Home => HomeTab,
         MobileTab.Songs => SongsTab,
         MobileTab.Albums => AlbumsTab,
         MobileTab.Artists => ArtistsTab,

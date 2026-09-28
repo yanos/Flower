@@ -9,8 +9,8 @@
              x:Class="Flower.Views.Mobile.AlbumActionsView"
              x:DataType="vm:MobileMainViewModel">
 
-  <!-- The album menu, raised by a long press on a cover in the Albums,
-       Recently Added and an artist's album grids - and on an artist's name,
+  <!-- The album menu, raised by a long press on a cover in the Albums grid,
+       an artist's album grid and Home's shelves - and on an artist's name,
        where it acts on every album of theirs at once. The same card as a song's
        menu (TrackActionsView): the art and name of what it acts on at the top,
        dismissed by the X beside them or a tap on the backdrop. Its actions are
@@ -115,6 +115,15 @@
           <StackPanel Orientation="Horizontal" Spacing="14">
             <materialIcons:MaterialIcon Kind="CloudDownloadOutline" Width="22" Height="22" />
             <TextBlock Text="Download All" FontSize="16" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+
+        <!-- An album on Home's Continue Playing shelf comes off it here. -->
+        <Button Classes="action" Command="{Binding ForgetAlbumActionTargetProgressCommand}"
+                IsVisible="{Binding CanForgetAlbumActionTargetProgress}">
+          <StackPanel Orientation="Horizontal" Spacing="14">
+            <materialIcons:MaterialIcon Kind="PlaylistRemove" Width="22" Height="22" />
+            <TextBlock Text="Remove from Continue Playing" FontSize="16" VerticalAlignment="Center" />
           </StackPanel>
         </Button>
 

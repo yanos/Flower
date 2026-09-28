@@ -20,9 +20,8 @@ namespace Flower.Controls;
 /// <summary>
 /// The thin strip down the right edge of mobile's long lists that jumps the list
 /// to a place in it: A-Z on the alphabetical ones (Songs, Albums, Artists), and
-/// a column of dots on Recently Added, which is in date order and so has no
-/// letter to go to - there the dots are a scrubber over the whole scroll. The
-/// Albums and Artists lists are dots too while sorted by anything else.
+/// a column of dots on a list in any other order, which has no letter to go
+/// to - there the dots are a scrubber over the whole scroll.
 /// Touching it jumps, and dragging along it keeps jumping.
 /// </summary>
 /// <remarks>

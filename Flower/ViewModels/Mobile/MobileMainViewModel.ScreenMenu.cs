@@ -17,7 +17,7 @@ public enum MobileSortOrder { Name, Artist, Album, Year, DateAdded, MostPlayed }
 // The screens that can be sorted at all, and so the keys their choice is kept
 // under (AppSettings.MobileSorts). Everything else comes in an order that is
 // the point of it: an album is its track order, a playlist is the order it
-// was made in, and Recently Added is newest first by definition.
+// was made in, and Home's shelves are most recent first by definition.
 public enum MobileSortScreen { Songs, Albums, ArtistAlbums, Artists }
 
 // One row of a screen's header menu (ScreenSlot's hamburger). A plain action
@@ -247,7 +247,6 @@ public partial class MobileMainViewModel
     {
         MobileScreenKind.TrackList => Main.Rows.Select(r => r.Track).ToList(),
         MobileScreenKind.AlbumGrid => TracksOf(_albumGrid),
-        MobileScreenKind.RecentlyAdded => TracksOf(_recentlyAddedGrid),
         MobileScreenKind.ArtistAlbumGrid => TracksOf(_artistAlbumGrid),
         MobileScreenKind.ArtistPicker => ArtistPickerItems.Select(r => r.Name).ToHashSet() is var artists
             ? Main.Library.Tracks.Where(t => t.Artists != null && artists.Contains(t.Artists)).ToList()

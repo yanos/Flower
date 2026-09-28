@@ -59,7 +59,7 @@ public sealed class ScreenControlFactory
 
     private static Control Create(MobileScreenKind kind) => kind switch
     {
-        MobileScreenKind.RecentlyAdded => new RecentlyAddedScreenView(),
+        MobileScreenKind.Home => new HomeScreenView(),
         MobileScreenKind.AlbumGrid => new AlbumGridScreenView(),
         MobileScreenKind.ArtistPicker => new ArtistPickerScreenView(),
         MobileScreenKind.ArtistAlbumGrid => new ArtistAlbumGridScreenView(),

@@ -6,11 +6,11 @@ using Flower.ViewModels.Mobile;
 
 namespace Flower.Services;
 
-// Data behind mobile's Albums tab grid (see MobileMainViewModel.AlbumGridItems) -
-// same art-tile presentation as the Recently Added grid, but grouped by Album
-// name alone and ordered alphabetically, matching MainViewModel.RebuildSubListItems'
-// existing Albums case (the plain-text picker this grid replaces on mobile) rather
-// than RecentlyAddedAlbumsBuilder's (Album, EffectiveAlbumArtist) grouping.
+// Data behind the Albums grid (see MobileMainViewModel.AlbumGridRows and
+// MainViewModel.AlbumGridTiles) - grouped by Album name alone and ordered
+// alphabetically, matching MainViewModel.RebuildSubListItems' existing Albums
+// case (the plain-text picker this grid replaced) rather than the (album
+// artist, album) grouping LibrarySnapshot and Home's shelves use.
 public static class AlbumGridBuilder
 {
     public static List<AlbumTileViewModel> Build(IEnumerable<Track> tracks) =>
@@ -21,7 +21,7 @@ public static class AlbumGridBuilder
             {
                 var representative = g.OrderByDescending(t => t.DateAdded).First();
 
-                // Grouped by Album name alone here (unlike RecentlyAddedAlbumsBuilder),
+                // Grouped by Album name alone here (unlike LibrarySnapshot),
                 // so a single group can legitimately span several distinct
                 // EffectiveAlbumArtist values - a various-artists compilation. Labeling
                 // it with just the representative track's own artist would be

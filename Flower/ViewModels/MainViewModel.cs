@@ -445,6 +445,10 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // MobileMainViewModel all bind through this ViewModel.
     public LibraryBrowserViewModel Browser { get; } = null!;
 
+    // The Home screen's shelves - Continue Playing, Recently Played, Recently
+    // Added. Shared with the phone, whose Home tab binds the same instance.
+    public HomeViewModel Home { get; } = null!;
+
     public ObservableCollection<TrackRowViewModel> Rows => Browser.Rows;
     public IReadOnlyList<Track> DisplayedTracks         => Browser.DisplayedTracks;
     public string StatusBarText                         => Browser.StatusBarText;
@@ -465,7 +469,6 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     }
 
     public ObservableCollection<AlbumTileViewModel> AlbumGridTiles         => Browser.AlbumGridTiles;
-    public ObservableCollection<AlbumTileViewModel> RecentlyAddedGridTiles => Browser.RecentlyAddedGridTiles;
 
     public AlbumTileKey? ExpandedAlbumKey                 => Browser.ExpandedAlbumKey;
     public string? ExpandedAlbumName                     => Browser.ExpandedAlbumName;
@@ -602,18 +605,19 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // different picker UI in front of it for Albums now.
     public bool IsSubListVisible => _selectedSidebarItem?.Kind == SidebarItemKind.Artists;
 
-    // Album art tile grid - shown instead of the track list while on Albums/
-    // Recently Added, mirroring mobile's own Albums/Recently Added tabs (see
-    // MobileMainViewModel.AlbumGridRows/RecentlyAddedAlbumRows). Unlike the
-    // old plain-text SubList this replaced, an album's songs are shown
-    // in-place (see ExpandedAlbumName below) rather than by navigating to a
-    // separate track-list view, so both of these are unconditional - always
-    // true while on their respective sidebar item.
+    // Album art tile grid - shown instead of the track list while on Albums,
+    // mirroring mobile's own Albums tab (see MobileMainViewModel.AlbumGridRows).
+    // Unlike the old plain-text SubList this replaced, an album's songs are
+    // shown in-place (see ExpandedAlbumName below) rather than by navigating
+    // to a separate track-list view, so this is unconditional - always true
+    // while on Albums.
     public bool IsShowingAlbumGrid => _selectedSidebarItem?.Kind == SidebarItemKind.Albums;
-    public bool IsShowingRecentlyAddedGrid => _selectedSidebarItem?.Kind == SidebarItemKind.RecentlyAdded;
+
+    // The Home shelves (see HomeViewModel) in place of any list.
+    public bool IsShowingHome => _selectedSidebarItem?.Kind == SidebarItemKind.Home;
 
     public bool IsShowingTrackList =>
-        !IsShowingDeviceDetail && !IsShowingAlbumGrid && !IsShowingRecentlyAddedGrid && !IsShowingServerSettings;
+        !IsShowingDeviceDetail && !IsShowingAlbumGrid && !IsShowingHome && !IsShowingServerSettings;
 
     public bool IsShowingDeviceDetail => _selectedSidebarItem?.Kind == SidebarItemKind.Device;
 
@@ -1412,6 +1416,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         Library   = new Library(new List<Track>());
         Browser   = new LibraryBrowserViewModel(Library, this, AppLogging.CreateTypedLogger<LibraryBrowserViewModel>());
         Playlists = new PlaylistManagementViewModel(Library, _sidebarItems, this);
+        Home      = new HomeViewModel(Library, new AlbumProgressTracker(Library), null);
         Downloads = CreateDownloadRunner();
     }
 #pragma warning restore CS8618
@@ -1503,6 +1508,13 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
         Playlists = new PlaylistManagementViewModel(library, _sidebarItems, this);
         Downloads = CreateDownloadRunner();
+
+        // Where a cover tapped on it leads is the view's to decide - the Albums
+        // grid here (ShowAlbumAsync, wired by MainView), an album screen on a
+        // phone (MobileMainViewModel) - so nothing here answers AlbumOpened.
+        Home = new HomeViewModel(library, playlistControlViewModel.AlbumProgress, playlistControlViewModel,
+            () => (PairedServerFingerprint, IsPairedServerReachable));
+
         _subscriptions.Add<EventHandler<DeletePlaylistConfirmationEventArgs>>(
             (_, e) => DeletePlaylistConfirmationRequested?.Invoke(this, e),
             h => Playlists.DeleteConfirmationRequested += h, h => Playlists.DeleteConfirmationRequested -= h);
@@ -1615,6 +1627,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             h => _busy.Changed += h, h => _busy.Changed -= h);
 
         BuildSidebarItems();
+        Home.IsActive = IsShowingHome;
         Browser.Repopulate();
 
         // Everything here runs on the UI thread, not just the rebuilds. Both
@@ -1705,6 +1718,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             // After the row's glyph, which IsSelectedServerReachable reads.
             NotifyPairButtonPropertiesChanged();
             Browser.ApplyTrackAvailability(PairedServerFingerprint, reachability.IsReachable);
+            Home.ApplyAvailability();
             ReachabilityChanged?.Invoke(this, EventArgs.Empty);
         },
                 h => reachability.Changed += h, h => reachability.Changed -= h);
@@ -1778,6 +1792,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public void Dispose()
     {
         _subscriptions.Dispose();
+        Home.Dispose();
         Sync.Dispose();
     }
 
@@ -1802,7 +1817,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         _playlistControlViewModel.Play(track, queueIndex);
     }
 
-    // Double-click on an album tile in the Albums/Recently Added grid (see
+    // Double-click on an album tile in the Albums grid (see
     // MainView.axaml.cs's AlbumGrid_PointerPressed) - queues the whole album
     // in track order and starts playing from the first track, and makes sure
     // it ends up expanded rather than toggling closed (unlike a plain click's
@@ -1822,11 +1837,38 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         _playlistControlViewModel.Play(tracks[0], 0);
     }
 
+    // A cover tapped on Home: the album, open, in the Albums grid - the same
+    // place a click on it there leads, so there is one way an album is shown
+    // on desktop rather than a second screen for albums reached from Home.
+    // Matched by name, which is what the Albums grid groups by.
+    public async Task ShowAlbumAsync(AlbumTileViewModel album)
+    {
+        if (_sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Albums) is not { } albums)
+            return;
+
+        if (!string.IsNullOrEmpty(FilterText))
+            FilterText = null;
+        SelectedSidebarItem = albums;
+        if (!await RebuildRowsImmediatelyAsync())
+            return;
+
+        if (AlbumGridTiles.FirstOrDefault(t => t.Name == album.Name) is not { } tile)
+            return;
+
+        if (Browser.ExpandedAlbumKey != tile.Key)
+            Browser.ToggleAlbumExpanded(tile);
+        AlbumRevealRequested?.Invoke(this, tile.Key);
+    }
+
+    // The Albums grid should scroll the tile with this key into view - see
+    // ShowAlbumAsync.
+    public event EventHandler<AlbumTileKey>? AlbumRevealRequested;
+
     // Enter/double-click on an individual track row inside the inline-
     // expanded album (AlbumGridRowControl), as opposed to double-clicking
     // the album tile itself (PlayAlbum above). Deliberately does NOT go
     // through PlayTrack/SyncPlayQueueToCurrentView: that sources the queue
-    // from DisplayedTracks, which for the Albums/Recently Added grid
+    // from DisplayedTracks, which for the Albums grid
     // is driven by _selectedSubItems - the Ctrl/Shift multi-select used for
     // drag-to-playlist (see ExpandedAlbumName's remarks), not by which
     // album is actually expanded on screen. Left-over multi-selected tiles
@@ -1897,7 +1939,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     {
         _sidebarItems.Clear();
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.Header,        "Library"));
-        _sidebarItems.Add(new SidebarItem(SidebarItemKind.RecentlyAdded, "Recently Added", MaterialIconKind.ClockPlusOutline));
+        _sidebarItems.Add(new SidebarItem(SidebarItemKind.Home,    "Home",    MaterialIconKind.HomeOutline));
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.History, "History", MaterialIconKind.ClockTimeEightOutline));
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.Songs,   "Songs",   MaterialIconKind.Music));
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.Albums,  "Albums",  MaterialIconKind.Album));
@@ -1945,12 +1987,11 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
         // Restores whichever view (see AppSettings.LastSidebarKind/
         // LastPlaylistName's own doc comment) the user was on when the app
-        // last closed, falling back to Songs the same way this always did -
-        // on a genuine first run, when the saved view no longer exists (a
+        // last closed, falling back to Home - on a genuine first run, when the saved view no longer exists (a
         // deleted playlist), or when nothing was ever saved at all.
         var restored = ResolveLastSidebarItem();
         WasLastViewRestored = restored != null;
-        _selectedSidebarItem = restored ?? _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Songs);
+        _selectedSidebarItem = restored ?? _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Home);
         OnPropertyChanged(nameof(SelectedSidebarItem));
     }
 
@@ -1978,7 +2019,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         // SaveLastView below, which only ever writes one of these four), but
         // guarded anyway since this reads straight back out of a JSON file a
         // user could hand-edit.
-        return kind is SidebarItemKind.Songs or SidebarItemKind.Albums or SidebarItemKind.Artists or SidebarItemKind.RecentlyAdded or SidebarItemKind.History
+        return kind is SidebarItemKind.Songs or SidebarItemKind.Albums or SidebarItemKind.Artists or SidebarItemKind.Home or SidebarItemKind.History
             ? _sidebarItems.FirstOrDefault(i => i.Kind == kind)
             : null;
     }
@@ -1986,7 +2027,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // Called from MainView.axaml.cs (MainWindow.Closing, alongside the window
     // geometry save) with whichever scroll offset is relevant to the view
     // showing at that moment (MusicListView's or one of the album grids',
-    // depending on IsShowingAlbumGrid/IsShowingRecentlyAddedGrid) - this
+    // depending on IsShowingAlbumGrid) - this
     // class has no visibility into either control's own scroll position
     // itself. Synchronous Save, not SaveAsync, for the same reason
     // MainWindow.SaveWindowGeometry uses it: the process may exit before an
@@ -2185,7 +2226,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
         OnPropertyChanged(nameof(IsSubListVisible));
         OnPropertyChanged(nameof(IsShowingAlbumGrid));
-        OnPropertyChanged(nameof(IsShowingRecentlyAddedGrid));
+        OnPropertyChanged(nameof(IsShowingHome));
+        Home.IsActive = IsShowingHome;
         OnPropertyChanged(nameof(IsShowingTrackList));
         OnPropertyChanged(nameof(IsShowingDeviceDetail));
         OnPropertyChanged(nameof(IsShowingServerSettings));
@@ -2205,8 +2247,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         ServerSettingsError = null;
         NotifyPairButtonPropertiesChanged();
         RefreshSelectedServerSettings();
-        // Recently Added carries its own independent sort state (see SortColumn),
-        // so switching to/from it changes what these computed properties report.
+        // History carries its own independent sort state (see SortColumn), so
+        // switching to/from it changes what these computed properties report.
         Browser.NotifySortChanged();
         Browser.RebuildSubListItems();
         _renamePlaylistCommand?.NotifyCanExecuteChanged();

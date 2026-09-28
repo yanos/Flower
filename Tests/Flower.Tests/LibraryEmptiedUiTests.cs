@@ -48,21 +48,20 @@ public class LibraryEmptiedUiTests : PinnedDataDirectory
     }
 
     [AvaloniaFact]
-    public async Task Emptying_the_library_clears_the_recently_added_grid()
+    public async Task Emptying_the_library_clears_the_album_grid()
     {
         var library = new Library(new List<Track> { T("A"), T("B"), T("C") });
         var mainPlaylist = new MainPlaylist(library.Tracks);
         var vm = Own(MainViewModelHarness.Build(library, mainPlaylist)).Main;
 
-        vm.SelectedSidebarItem = vm.SidebarItems.Single(i => i.Kind == SidebarItemKind.RecentlyAdded);
+        vm.SelectedSidebarItem = vm.SidebarItems.Single(i => i.Kind == SidebarItemKind.Albums);
         await vm.RebuildRowsImmediatelyAsync();
-        Assert.NotEmpty(vm.RecentlyAddedGridTiles);
+        Assert.NotEmpty(vm.AlbumGridTiles);
 
         library.UpdateTracks(new List<Track>());
-        for (var i = 0; i < 20 && vm.RecentlyAddedGridTiles.Count > 0; i++)
+        for (var i = 0; i < 20 && vm.AlbumGridTiles.Count > 0; i++)
             await Task.Delay(50);
 
-        Assert.Empty(vm.RecentlyAddedGridTiles);
         Assert.Empty(vm.AlbumGridTiles);
     }
 

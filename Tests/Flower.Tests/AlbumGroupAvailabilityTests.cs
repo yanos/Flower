@@ -130,9 +130,9 @@ public class AlbumGroupAvailabilityTests
     }
 
     [Fact]
-    public void Recently_added_tiles_carry_their_tracks_too()
+    public void Home_shelf_tiles_carry_their_tracks_too()
     {
-        var tiles = RecentlyAddedAlbumsBuilder.Build([Placeholder("One", "Gone"), Placeholder("Two", "Gone")]);
+        var tiles = HomeShelves.RecentlyAdded(LibrarySnapshot.Build([Placeholder("One", "Gone"), Placeholder("Two", "Gone")]), 12);
 
         TrackAvailability.Apply(tiles, Server, pairedServerReachable: false);
 

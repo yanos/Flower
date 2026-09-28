@@ -190,7 +190,7 @@ public class MobileNavigationTransitionTests : PinnedDataDirectory
 
         scope.Mobile.BackCommand.Execute(null);
         WaitUntil(() => scope.Mobile.IsShowingNowPlaying);
-        Assert.Equal(MobileTab.RecentlyAdded, scope.Mobile.SelectedTab);
+        Assert.Equal(MobileTab.Home, scope.Mobile.SelectedTab);
     }
 
     // The tab the sheet was raised from is the screen already under it, so
@@ -207,7 +207,7 @@ public class MobileNavigationTransitionTests : PinnedDataDirectory
         var navigations = 0;
         scope.Mobile.NavigationChanged += (_, _) => navigations++;
 
-        scope.Mobile.SelectTabCommand.Execute(nameof(MobileTab.RecentlyAdded));
+        scope.Mobile.SelectTabCommand.Execute(nameof(MobileTab.Home));
         Dispatcher.UIThread.RunJobs();
 
         Assert.False(scope.Mobile.IsShowingNowPlaying);

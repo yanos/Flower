@@ -23,13 +23,13 @@ public class MobileNavigationFrameTests
         => new(tab, hasDrilledIn, artistName, hasDrilledIntoArtistAlbum, sidebarItem, subItem, searchQuery, null, frozenRows, null, MobileSheet.None);
 
     // Mirrors MobileMainViewModel's IsShowingAlbumGrid/IsShowingArtistPicker/
-    // IsShowingArtistAlbumGrid/IsShowingPlaylistPicker/IsShowingRecentlyAddedAlbums/
+    // IsShowingArtistAlbumGrid/IsShowingPlaylistPicker/IsShowingHome/
     // IsShowingTrackList exactly - if these two ever drift, ScreenStackPanel
     // would show the wrong screen for what the live boolean properties say
     // is on screen.
     [Theory]
-    [InlineData(MobileTab.RecentlyAdded, false, false, MobileScreenKind.RecentlyAdded)]
-    [InlineData(MobileTab.RecentlyAdded, true, false, MobileScreenKind.TrackList)]
+    [InlineData(MobileTab.Home, false, false, MobileScreenKind.Home)]
+    [InlineData(MobileTab.Home, true, false, MobileScreenKind.TrackList)]
     [InlineData(MobileTab.Songs, false, false, MobileScreenKind.TrackList)]
     [InlineData(MobileTab.Albums, false, false, MobileScreenKind.AlbumGrid)]
     [InlineData(MobileTab.Albums, true, false, MobileScreenKind.TrackList)]
@@ -71,8 +71,8 @@ public class MobileNavigationFrameTests
     public void ScopeKey_is_stable_for_screens_with_only_one_possible_instance()
     {
         Assert.Equal(
-            Frame(MobileTab.RecentlyAdded).ScopeKey,
-            Frame(MobileTab.RecentlyAdded).ScopeKey);
+            Frame(MobileTab.Home).ScopeKey,
+            Frame(MobileTab.Home).ScopeKey);
         Assert.Equal(
             Frame(MobileTab.Search, searchQuery: "one").ScopeKey,
             Frame(MobileTab.Search, searchQuery: "two").ScopeKey);
@@ -88,7 +88,7 @@ public class MobileNavigationFrameTests
     // Mirrors MobileMainViewModel's former ScreenTitle exactly - see
     // MobileNavigationFrame.Title's own doc comment for why this moved here.
     [Theory]
-    [InlineData(MobileTab.RecentlyAdded, false, null, "Recently Added")]
+    [InlineData(MobileTab.Home, false, null, "Home")]
     [InlineData(MobileTab.Songs, false, null, "Songs")]
     [InlineData(MobileTab.Search, false, null, "")]
     public void Title_matches_expected_for_undrilled_tabs(MobileTab tab, bool hasDrilledIn, string? artistName, string expected)
@@ -147,7 +147,7 @@ public class MobileNavigationFrameTests
         var history = new Stack<MobileNavigationFrame>();
         Assert.Empty(history);
 
-        history.Push(Frame(MobileTab.RecentlyAdded));
+        history.Push(Frame(MobileTab.Home));
         Assert.Single(history);
 
         history.Push(Frame(MobileTab.Albums, hasDrilledIn: true, subItem: "Dawn"));
@@ -158,7 +158,7 @@ public class MobileNavigationFrameTests
         Assert.Single(history);
 
         var last = history.Pop();
-        Assert.Equal(MobileScreenKind.RecentlyAdded, last.ScreenKind);
+        Assert.Equal(MobileScreenKind.Home, last.ScreenKind);
         Assert.Empty(history);
     }
 

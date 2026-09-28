@@ -216,6 +216,7 @@ builder.Services.AddSingleton<StreamTicketService>();
 builder.Services.AddSingleton<LibraryRescanCoordinator>();
 builder.Services.AddSingleton<NonceReplayGuard>();
 builder.Services.AddSingleton<TrustedPeerStore>();
+builder.Services.AddSingleton<AlbumProgressLedger>();
 builder.Services.AddSingleton<LibraryManifestCache>();
 builder.Services.AddSingleton<PlayReportService>();
 // Where a paired device's pushed log snapshot lands (SyncEndpoints'

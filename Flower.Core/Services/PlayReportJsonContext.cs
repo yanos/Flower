@@ -13,6 +13,7 @@ namespace Flower.Services;
     PropertyNameCaseInsensitive = true)]
 [JsonSerializable(typeof(PlayReportDto))]
 [JsonSerializable(typeof(TrackStateReportDto))]
+[JsonSerializable(typeof(AlbumProgressExchangeDto))]
 public partial class PlayReportJsonContext : JsonSerializerContext
 {
 }

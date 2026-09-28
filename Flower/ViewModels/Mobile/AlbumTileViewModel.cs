@@ -15,11 +15,12 @@ namespace Flower.ViewModels.Mobile;
 // single tile rather than a single album: the inline expansion (see
 // LibraryBrowserViewModel.ExpandedAlbumKey).
 //
-// An album name alone will not do it, and that is not a corner case. Recently
-// Added groups by (Album, Artist), so a various-artists compilation is one tile
-// per contributor - a dozen tiles reading "Virtual Dreams II", differing only
-// in the artist underneath. Keyed by name, clicking any one of them expanded
-// every one of them at once, each showing the whole compilation.
+// An album name alone will not do it, and that is not a corner case. Home's
+// shelves group by album artist and album (LibrarySnapshot), so a
+// various-artists compilation can be one tile per contributor - a dozen tiles
+// reading "Virtual Dreams II", differing only in the artist underneath. Keyed
+// by name, clicking any one of them expanded every one of them at once, each
+// showing the whole compilation.
 //
 // Artist is part of the key rather than a tiebreaker because it is exactly what
 // the grouping that produced the tile split on. The Albums grid, which groups
@@ -28,10 +29,10 @@ namespace Flower.ViewModels.Mobile;
 // one per grid.
 public readonly record struct AlbumTileKey(string Name, string? Artist);
 
-// One tile in mobile's album grids - both the "Recently Added" grid (grouped
-// by (Album, Artist), ordered by recency - see RecentlyAddedAlbumsBuilder) and
-// the Albums tab's own grid (grouped by Album name alone to match desktop's
-// existing Albums sidebar logic, ordered alphabetically - see AlbumGridBuilder).
+// One album cover - in the Albums grid (grouped by Album name alone to match
+// desktop's existing Albums sidebar logic, ordered alphabetically - see
+// AlbumGridBuilder), and on Home's shelves (grouped by album artist and album,
+// see HomeShelves).
 // MostRecentlyAdded is the max DateAdded among an album's tracks.
 // RepresentativeTrack is whichever of the album's tracks was added most
 // recently - its embedded art is what the tile shows.
@@ -107,8 +108,8 @@ public sealed class AlbumTileViewModel : DownloadIndicatorViewModel
         set { if (_isUnavailable != value) { _isUnavailable = value; OnPropertyChanged(); } }
     }
 
-    // Desktop-only for now (multi-select + drag-to-playlist on the Albums/
-    // Recently Added grids - see AlbumGridView/MainView.axaml.cs) - unused,
+    // Desktop-only for now (multi-select + drag-to-playlist on the Albums
+    // grid - see AlbumGridView/MainView.axaml.cs) - unused,
     // always false, on mobile, same as TrackRowViewModel.IsSelected is a
     // plain mutable property on a per-rebuild-fresh instance, not something
     // tracked separately by the view.

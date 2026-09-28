@@ -208,6 +208,7 @@ public partial class App : Application
             .AddSingleton<TrustedPeerStore>()
             .AddSingleton<PlaylistSyncStateStore>()
             .AddSingleton<ServerStarBaselineStore>()
+            .AddSingleton<AlbumProgressStore>()
             .AddSingleton(InMemoryLogStore.Instance)
             // A week of this device's own logs on disk, so what gets pushed to
             // the paired server is not limited to what one process's memory
@@ -299,6 +300,7 @@ public partial class App : Application
             // split out of it that run long operations - see BusyState.
             .AddSingleton<BusyState>()
             .AddSingleton<ITunesImportCoordinator>()
+            .AddSingleton<AlbumProgressTracker>()
 
             // ViewModels are singletons because they hold app-lifetime state,
             // not because they cannot be let go of any more: every one of them
@@ -384,7 +386,20 @@ public partial class App : Application
             .AddSingleton<IStreamUrlResolver, PeerStreamUrlResolver>()
             // Album art resolves against the same peer, by the same rule, and
             // so belongs on the same branch - see ICoverArtUrlResolver.
-            .AddSingleton<ICoverArtUrlResolver, PeerCoverArtUrlResolver>();
+            .AddSingleton<ICoverArtUrlResolver, PeerCoverArtUrlResolver>()
+            // Continue Playing, kept in step with the listener's other devices
+            // through the paired server, while there is one to reach.
+            .AddSingleton(sp =>
+            {
+                var reachability = sp.GetRequiredService<PairedServerReachability>();
+                return new AlbumProgressSyncService(
+                    sp.GetRequiredService<Library>(),
+                    sp.GetRequiredService<AlbumProgressTracker>(),
+                    sp.GetRequiredService<IPeerCredentials>(),
+                    PeerHttpClient.Create(TimeSpan.FromSeconds(30)),
+                    () => reachability.IsReachable && reachability.PairedServerDevice is { } server ? server.Url("/") : null,
+                    sp.GetRequiredService<ILogger<AlbumProgressSyncService>>());
+            });
     }
 
     // Everything the browser head has instead of the peer-to-peer stack above.
@@ -484,7 +499,17 @@ public partial class App : Application
                 sp.GetRequiredService<HttpClient>(),
                 origin.ToString(),
                 sp.GetRequiredService<IPeerCredentials>(),
-                sp.GetRequiredService<ILogger<Importer.OriginPlayReporter>>()));
+                sp.GetRequiredService<ILogger<Importer.OriginPlayReporter>>()))
+
+            // Continue Playing, which for a tab is also the only thing that
+            // outlives a refresh - see AlbumProgressSyncService.
+            .AddSingleton(sp => new AlbumProgressSyncService(
+                sp.GetRequiredService<Library>(),
+                sp.GetRequiredService<AlbumProgressTracker>(),
+                sp.GetRequiredService<IPeerCredentials>(),
+                sp.GetRequiredService<HttpClient>(),
+                () => origin,
+                sp.GetRequiredService<ILogger<AlbumProgressSyncService>>()));
     }
 
     // The one platform fork the audio pipeline needs.
@@ -727,11 +752,26 @@ public partial class App : Application
         // deactivated (Avalonia raises Deactivated for backgrounding, which is
         // as close to "about to be killed" as iOS/Android ever get).
         var playbackControls = provider.GetRequiredService<PlaylistControlViewModel>();
+
+        // Constructed eagerly, for the same reason as NowPlayingIntegrationService
+        // below: nothing else asks for it, and its exchanges have to start.
+        // Absent where no head registered one (a test's container).
+        var albumProgressSync = provider.GetService<AlbumProgressSyncService>();
+        if (albumProgressSync != null)
+            mainViewModel.Home.Shown += (_, _) => _ = albumProgressSync.ExchangeNowAsync();
+
         if (mainView is Window mainWindowForShutdown)
         {
             mainWindowForShutdown.Closing += (_, _) =>
             {
                 playbackControls.SavePlaybackState();
+
+                // Where the album got to, told to the server before the
+                // process goes - bounded like the push below, and on the pool
+                // for the same reason PushTrackStateNowAsync is: its
+                // continuations must not queue behind this blocked thread.
+                if (albumProgressSync is { } sync)
+                    Task.Run(sync.ExchangeNowAsync).Wait(TimeSpan.FromSeconds(2));
 
                 // And the paired server told, which on a desktop cannot be left
                 // to the push SavePlaybackState sets off: that one is posted to a
@@ -742,7 +782,14 @@ public partial class App : Application
             };
         }
         if (TryGetFeature(typeof(IActivatableLifetime)) is IActivatableLifetime activatable)
-            activatable.Deactivated += (_, _) => playbackControls.SavePlaybackState();
+            activatable.Deactivated += (_, _) =>
+            {
+                playbackControls.SavePlaybackState();
+                // Now rather than after the usual debounce: a phone put in a
+                // pocket may not run anything a second from now, and this is
+                // exactly when the listener is likely to carry on elsewhere.
+                _ = albumProgressSync?.ExchangeNowAsync();
+            };
 
         // Constructed eagerly (nothing else references it) so its
         // subscriptions to PlaylistControlViewModel/IAudioManager start

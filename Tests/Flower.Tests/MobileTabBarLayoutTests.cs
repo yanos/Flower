@@ -37,6 +37,11 @@ public class MobileTabBarLayoutTests : PinnedDataDirectory
     private const double NarrowPhone = 375;
     private const double LargePhone = 430;
 
+    // The most the bar draws at full size (MobileTabs.RoomyShown): the
+    // default without Home, which is what the full-size measurements need.
+    private static readonly IReadOnlyList<MobileTab> SixTabs =
+        MobileTabs.Default.Where(t => t != MobileTab.Home).ToList();
+
     private sealed class Harness : IDisposable
     {
         public Window Window { get; }
@@ -119,12 +124,12 @@ public class MobileTabBarLayoutTests : PinnedDataDirectory
     [AvaloniaTheory]
     [InlineData(NarrowPhone)]
     [InlineData(LargePhone)]
-    public void The_default_six_tabs_are_in_the_bar_in_reading_order(double width)
+    public void The_default_tabs_are_in_the_bar_in_reading_order(double width)
     {
         using var h = new Harness(width);
 
         Assert.Equal(
-            new[] { "Albums", "Artists", "Songs", "Playlists", "Queue", "Search" },
+            new[] { "Home", "Albums", "Artists", "Songs", "Playlists", "Queue", "Search" },
             h.Tabs.Select(t => Harness.LabelOf(t).Text));
     }
 
@@ -134,9 +139,9 @@ public class MobileTabBarLayoutTests : PinnedDataDirectory
     [AvaloniaFact]
     public void Only_a_full_bar_draws_its_tabs_smaller()
     {
-        using var six = new Harness(NarrowPhone);
+        using var six = new Harness(NarrowPhone, SixTabs);
         Assert.All(six.Tabs, t => Assert.DoesNotContain("compact", t.Classes));
-        six.Vm.ToggleTabShownCommand.Execute(six.Vm.TabSettingRows.Single(r => r.Tab == MobileTab.RecentlyAdded));
+        six.Vm.ToggleTabShownCommand.Execute(six.Vm.TabSettingRows.Single(r => r.Tab == MobileTab.Home));
         six.Layout(NarrowPhone);
 
         Assert.Equal(7, six.Tabs.Count);
@@ -177,7 +182,7 @@ public class MobileTabBarLayoutTests : PinnedDataDirectory
         h.Layout(NarrowPhone);
 
         Assert.Equal(
-            new[] { "Albums", "Songs", "Artists", "Playlists", "Search" },
+            new[] { "Home", "Albums", "Songs", "Artists", "Playlists", "Search" },
             h.Tabs.Select(t => Harness.LabelOf(t).Text));
     }
 
@@ -190,7 +195,7 @@ public class MobileTabBarLayoutTests : PinnedDataDirectory
     [InlineData(LargePhone, true)]
     public void No_tab_overlaps_the_one_beside_it(double width, bool allSeven)
     {
-        using var h = new Harness(width, allSeven ? MobileTabs.All : null);
+        using var h = new Harness(width, allSeven ? MobileTabs.All : SixTabs);
         var tabs = h.Tabs;
 
         for (var i = 1; i < tabs.Count; i++)
@@ -211,7 +216,7 @@ public class MobileTabBarLayoutTests : PinnedDataDirectory
     [InlineData(LargePhone, true)]
     public void The_row_of_tabs_fits_inside_the_oval(double width, bool allSeven)
     {
-        using var h = new Harness(width, allSeven ? MobileTabs.All : null);
+        using var h = new Harness(width, allSeven ? MobileTabs.All : SixTabs);
         var tabs = h.Tabs;
         var oval = h.InWindow(h.Oval);
 
@@ -232,7 +237,7 @@ public class MobileTabBarLayoutTests : PinnedDataDirectory
     [InlineData(LargePhone, true)]
     public void Every_label_fits_its_tab_without_being_clipped(double width, bool allSeven)
     {
-        using var h = new Harness(width, allSeven ? MobileTabs.All : null);
+        using var h = new Harness(width, allSeven ? MobileTabs.All : SixTabs);
 
         foreach (var tab in h.Tabs)
         {

@@ -222,6 +222,9 @@ public static class SyncEndpoints
         sync.MapPost("/track-state",
             (HttpContext context, Library library, TrustedPeerStore trustedPeers) =>
                 ReportTrackState(context, library, trustedPeers, logger));
+        sync.MapPost("/album-progress",
+            (HttpContext context, AlbumProgressLedger ledger, TrustedPeerStore trustedPeers) =>
+                ExchangeAlbumProgress(context, ledger, trustedPeers, logger));
         sync.MapPost("/log/report",
             (HttpContext context, ClientLogStore logs) => ReportLog(context, logs, logger));
         // What this server already holds for the caller, so a client that has
@@ -542,6 +545,41 @@ public static class SyncEndpoints
         context.Response.Headers[TrackStateReportHeaders.LibraryToken] = library.ChangeToken;
 
         return Results.NoContent();
+    }
+
+    // The Continue Playing shelf - see AlbumProgressProtocol. Whose shelf a
+    // request reads and writes is decided here from the fingerprint the
+    // signature proved, never from the body: every admin device shares the
+    // owner's, and any other device has one to itself, so a listener's phone
+    // can neither read nor move the owner's cassette.
+    private static async Task<IResult> ExchangeAlbumProgress(
+        HttpContext context, AlbumProgressLedger ledger, TrustedPeerStore trustedPeers, ILogger logger)
+    {
+        if (context.Items[AuthenticatedFingerprintKey] is not string fingerprint || fingerprint.Length == 0)
+            return Results.StatusCode(StatusCodes.Status401Unauthorized);
+
+        using var reader = new StreamReader(context.Request.Body);
+        AlbumProgressExchangeDto? exchange;
+        try
+        {
+            exchange = JsonSerializer.Deserialize<AlbumProgressExchangeDto>(
+                await reader.ReadToEndAsync(context.RequestAborted), JsonOptions);
+        }
+        catch (JsonException)
+        {
+            return Results.BadRequest();
+        }
+
+        if (exchange?.Albums is not { } albums || albums.Count > AlbumProgressProtocol.MaxEntries
+            || albums.Any(a => string.IsNullOrEmpty(a.AlbumId) || a.AlbumId.Length > 64
+                || a.TrackId?.Length > 64 || !double.IsFinite(a.PositionSeconds) || a.PositionSeconds < 0))
+            return Results.BadRequest();
+
+        var shelf = trustedPeers.IsAdmin(fingerprint) ? AlbumProgressLedger.OwnerShelf : fingerprint;
+        var merged = ledger.Exchange(shelf, albums);
+
+        logger.LogDebug("Exchanged album progress with {Fingerprint}: {Sent} sent, {Held} held", fingerprint, albums.Count, merged.Count);
+        return Results.Json(new AlbumProgressExchangeDto(merged), JsonOptions);
     }
 }
 

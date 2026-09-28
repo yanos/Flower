@@ -99,24 +99,18 @@ public partial class MainView : UserControl
         SubList.PointerCaptureLost += SubList_PointerCaptureLost;
 
         // Same gesture as SubList above (click/Ctrl-toggle/Shift-range select,
-        // drag onto a sidebar playlist), retargeted at the tile grids - see
-        // AlbumGrid_PointerPressed. Both AlbumGrid and RecentlyAddedGrid share
-        // this exact handler set (they're the same gesture over two different
-        // tile orderings, not two different features - see that method's own
-        // doc comment); neither is a stock control with native selection to
-        // suppress, so plain Bubble wiring is enough, no Tunnel trick needed.
-        foreach (var grid in new[] { AlbumGrid, RecentlyAddedGrid })
-        {
-            grid.PointerPressed += AlbumGrid_PointerPressed;
-            grid.PointerMoved += AlbumGrid_PointerMoved;
-            grid.PointerReleased += AlbumGrid_PointerReleased;
-            grid.PointerCaptureLost += AlbumGrid_PointerCaptureLost;
-            // AlbumTileControl handles no pointer gesture of its own except its
-            // download button (see its own doc comment) - right-click bubbles
-            // up from whichever tile the pointer landed on the same way the
-            // four handlers above do, resolved the same way via HitTestTile.
-            grid.ContextRequested += AlbumGrid_ContextRequested;
-        }
+        // drag onto a sidebar playlist), retargeted at the tile grid - see
+        // AlbumGrid_PointerPressed. Not a stock control with native selection
+        // to suppress, so plain Bubble wiring is enough, no Tunnel trick needed.
+        AlbumGrid.PointerPressed += AlbumGrid_PointerPressed;
+        AlbumGrid.PointerMoved += AlbumGrid_PointerMoved;
+        AlbumGrid.PointerReleased += AlbumGrid_PointerReleased;
+        AlbumGrid.PointerCaptureLost += AlbumGrid_PointerCaptureLost;
+        // AlbumTileControl handles no pointer gesture of its own except its
+        // download button (see its own doc comment) - right-click bubbles
+        // up from whichever tile the pointer landed on the same way the
+        // four handlers above do, resolved the same way via HitTestTile.
+        AlbumGrid.ContextRequested += AlbumGrid_ContextRequested;
 
         // Cmd/Ctrl+, (Settings) must work regardless of which control currently
         // has focus, so it's handled at the MainView root rather than scoped to MusicList.
@@ -136,6 +130,8 @@ public partial class MainView : UserControl
             _viewModel.LogWindowRequested -= OnLogWindowRequested;
             _viewModel.EqualizerWindowRequested -= OnEqualizerWindowRequested;
             _viewModel.NavigateToTrackRequested -= OnNavigateToTrackRequested;
+            _viewModel.AlbumRevealRequested -= OnAlbumRevealRequested;
+            _viewModel.Home.AlbumOpened -= OnHomeAlbumOpened;
             _viewModel.PlaylistConflictRequested -= OnPlaylistConflictRequested;
             _viewModel.RenamePlaylistRequested -= OnRenamePlaylistRequested;
             _viewModel.DeletePlaylistConfirmationRequested -= OnDeletePlaylistConfirmationRequested;
@@ -154,6 +150,8 @@ public partial class MainView : UserControl
             _viewModel.LogWindowRequested += OnLogWindowRequested;
             _viewModel.EqualizerWindowRequested += OnEqualizerWindowRequested;
             _viewModel.NavigateToTrackRequested += OnNavigateToTrackRequested;
+            _viewModel.AlbumRevealRequested += OnAlbumRevealRequested;
+            _viewModel.Home.AlbumOpened += OnHomeAlbumOpened;
             _viewModel.PlaylistConflictRequested += OnPlaylistConflictRequested;
             _viewModel.RenamePlaylistRequested += OnRenamePlaylistRequested;
             _viewModel.DeletePlaylistConfirmationRequested += OnDeletePlaylistConfirmationRequested;
@@ -201,7 +199,6 @@ public partial class MainView : UserControl
         {
             _subListGesture = null;
             _albumGridGesture = null;
-            _recentlyAddedGridGesture = null;
             return;
         }
 
@@ -213,12 +210,6 @@ public partial class MainView : UserControl
 
         _albumGridGesture = new NameSelectionDragGesture(
             () => vm.AlbumGridTiles.Select(t => t.Name).ToList(),
-            () => vm.SelectedSubItems,
-            vm.SetSelectedSubItems,
-            selectOnPlainPress: false);
-
-        _recentlyAddedGridGesture = new NameSelectionDragGesture(
-            () => vm.RecentlyAddedGridTiles.Select(t => t.Name).ToList(),
             () => vm.SelectedSubItems,
             vm.SetSelectedSubItems,
             selectOnPlainPress: false);
@@ -322,21 +313,12 @@ public partial class MainView : UserControl
     // drag payload through the same MainViewModel.GetTracksForSubListItems
     // both share.
 
-    // Shared by both AlbumGrid and RecentlyAddedGrid - they're the same
-    // gesture (see SubList_PointerPressed's doc comment for the base
-    // rationale) over two different tile orderings, not two different
-    // features. Both instances are wired to this same handler set (see the
-    // constructor), and `sender`/pointer capture tell them apart - a plain
-    // click on either activates via the same MainViewModel.ToggleAlbumExpandedCommand,
-    // which is shared by both grids too (only one album can be expanded at a
-    // time, regardless of which grid it was clicked in). Each grid gets its
-    // own NameSelectionDragGesture, because a Shift+click range only means
-    // anything against one particular ordering - Albums is alphabetical,
-    // Recently Added is by-recency (see MainViewModel.AlbumGridTiles/
-    // RecentlyAddedGridTiles) - even though the selection they both drive is
-    // the one shared MainViewModel.SelectedSubItems.
+    // The same gesture as SubList's (see SubList_PointerPressed's doc comment
+    // for the base rationale) - a plain click activates via
+    // MainViewModel.ToggleAlbumExpandedCommand, and a Shift+click range runs
+    // over the grid's alphabetical order (see MainViewModel.AlbumGridTiles),
+    // driving MainViewModel.SelectedSubItems.
     private NameSelectionDragGesture? _albumGridGesture;
-    private NameSelectionDragGesture? _recentlyAddedGridGesture;
 
     // A plain (unmodified) press on a not-yet-selected tile might still turn
     // into a drag - see AlbumGrid_PointerMoved/Released. Toggling the
@@ -349,12 +331,12 @@ public partial class MainView : UserControl
 
     // Which tile that deferred click was on. The gesture only remembers a name,
     // which is all selection and drag need - but expanding needs the tile
-    // itself, since in Recently Added several tiles share one album name (see
-    // AlbumTileKey).
+    // itself (see AlbumTileKey).
     private AlbumTileViewModel? _albumGridPendingTile;
 
     private NameSelectionDragGesture? GestureFor(AlbumGridView grid) =>
-        ReferenceEquals(grid, AlbumGrid) ? _albumGridGesture : _recentlyAddedGridGesture;
+        ReferenceEquals(grid, AlbumGrid) ? _albumGridGesture : null;
+
 
     private void AlbumGrid_PointerPressed(object? sender, PointerPressedEventArgs e)
     {
@@ -489,7 +471,7 @@ public partial class MainView : UserControl
         }
 
         // Keyed off the *old* key's own string shape (not the ViewModel's
-        // current IsShowingAlbumGrid/IsShowingRecentlyAddedGrid, which by
+        // current IsShowingAlbumGrid, which by
         // this point already reflect the *new* selection) so the outgoing
         // view's scroll is read from whichever control actually owned it.
         if (_currentViewKey != null)
@@ -519,19 +501,16 @@ public partial class MainView : UserControl
 
     // CurrentViewKey's own prefix (see MainViewModel.CurrentViewKey) already
     // unambiguously says which control owns a given view's scroll - "album:"
-    // for AlbumGrid, "recently-added" for RecentlyAddedGrid, anything else
-    // (Songs/Artists/a Playlist) for MusicList - so that string, not the
-    // ViewModel's current IsShowingAlbumGrid/IsShowingRecentlyAddedGrid
+    // for AlbumGrid, anything else (Songs/Artists/a Playlist) for MusicList -
+    // so that string, not the ViewModel's current IsShowingAlbumGrid
     // (which can already reflect a *different*, newer selection by the time
     // this runs - see ApplyRows above), is what these two switch on.
     private double GetScrollOffsetYForKey(string key) =>
         key.StartsWith("album:", StringComparison.Ordinal) ? AlbumGrid.GetScrollOffsetY()
-        : key == "recently-added" ? RecentlyAddedGrid.GetScrollOffsetY()
         : MusicList.GetScrollOffsetY();
 
-    // Deferred a frame for the two grids, not called inline like MusicList's
-    // own SetScrollOffsetY - AlbumGridTiles/RecentlyAddedGridTiles (the
-    // grids' own ItemsSource) are reassigned a few lines *after* Rows in
+    // Deferred a frame for the grid, not called inline like MusicList's
+    // own SetScrollOffsetY - AlbumGridTiles (the grid's own ItemsSource) are reassigned a few lines *after* Rows in
     // MainViewModel.RebuildRowsAsync, so at the exact moment this runs
     // (triggered by Rows' own PropertyChanged) the grid's tiles are still the
     // *previous* view's - setting scroll now would just be clobbered once
@@ -542,8 +521,6 @@ public partial class MainView : UserControl
     {
         if (key.StartsWith("album:", StringComparison.Ordinal))
             Dispatcher.UIThread.Post(() => AlbumGrid.SetScrollOffsetY(offsetY));
-        else if (key == "recently-added")
-            Dispatcher.UIThread.Post(() => RecentlyAddedGrid.SetScrollOffsetY(offsetY));
         else
             MusicList.SetScrollOffsetY(offsetY);
     }
@@ -1228,7 +1205,7 @@ public partial class MainView : UserControl
         // Space play/pause, reachable from anywhere in MainView - MusicList's
         // own tunnel handler (MusicList_KeyDown) only fires while focus is
         // somewhere inside MusicList, so this is the fallback for focus on
-        // the sidebar, Albums/Recently Added grids, Artists sub-list, etc.
+        // the sidebar, the Albums grid, the Artists sub-list, etc.
         // (same reasoning as the Cmd/Ctrl+I fallback below). Skipped while a
         // TextBox has focus (search box, playlist rename) so Space still
         // types a literal space there instead of toggling playback.
@@ -1238,14 +1215,14 @@ public partial class MainView : UserControl
             _viewModel?.PlayOrPauseFromCurrentView();
             e.Handled = true;
         }
-        // Cmd/Ctrl+I on Albums/Recently Added - MusicList's own tunnel handler
+        // Cmd/Ctrl+I on Albums - MusicList's own tunnel handler
         // (MusicList_KeyDown) can't fire here since MusicList is hidden and
         // never has focus while a grid is showing, so it's only reachable at
         // this root level. Deliberately scoped to just the grid views - the
         // track-list case is left alone so MusicList_KeyDown still owns it,
         // unchanged, exactly as before this handler existed.
         else if (e.Key == Key.I && e.KeyModifiers == PlatformShortcuts.Primary &&
-                 _viewModel is { IsShowingAlbumGrid: true } or { IsShowingRecentlyAddedGrid: true })
+                 _viewModel is { IsShowingAlbumGrid: true })
         {
             OpenTrackInfoForSelectedAlbums();
             e.Handled = true;
@@ -1253,6 +1230,14 @@ public partial class MainView : UserControl
     }
 
     private void OnNavigateToTrackRequested(object? sender, Track track) => MusicList.ScrollToTrack(track);
+
+    private void OnHomeAlbumOpened(object? sender, AlbumTileViewModel album) =>
+        _viewModel?.ShowAlbumAsync(album).Forget(AppLogging.CreateTypedLogger<MainView>(), "Opening an album from Home");
+
+    // Posted for the same reason RestoreScrollOffsetForKey is: the grid's
+    // tiles arrive just after the rows that raised this.
+    private void OnAlbumRevealRequested(object? sender, AlbumTileKey key) =>
+        Dispatcher.UIThread.Post(() => AlbumGrid.ScrollToTile(key));
 
     private void OnSettingsRequested(object? sender, EventArgs e) => OpenSettingsWindow();
 
@@ -1407,18 +1392,16 @@ public partial class MainView : UserControl
             infoWindow.Show();
     }
 
-    // Cmd/Ctrl+I on Albums/Recently Added (see MainView_PreviewKeyDown). Which
-    // tracks that acts on is AlbumTrackInfoSelection.Resolve's decision - see
-    // its own doc comment for the precedence rules; all that's left here is
-    // reading the two grids' expanded-row selection and opening the window.
+    // Cmd/Ctrl+I on Albums (see MainView_PreviewKeyDown). Which tracks that
+    // acts on is AlbumTrackInfoSelection.Resolve's decision - see its own doc
+    // comment for the precedence rules; all that's left here is reading the
+    // grid's expanded-row selection and opening the window.
     private void OpenTrackInfoForSelectedAlbums()
     {
         if (_viewModel is not MainViewModel vm)
             return;
 
         var songSelection = AlbumGrid.GetExpandedRowSelectedTracks();
-        if (songSelection.Count == 0)
-            songSelection = RecentlyAddedGrid.GetExpandedRowSelectedTracks();
 
         var target = AlbumTrackInfoSelection.Resolve(
             songSelection,
