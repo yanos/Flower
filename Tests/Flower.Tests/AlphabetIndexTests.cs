@@ -58,6 +58,23 @@ public class AlphabetIndexTests
     public void Past_the_last_letter_in_use_lands_on_the_last_entry() =>
         Assert.Equal(5, IndexOf('Z'));
 
+    // Z to A: a letter still lands on its first entry, an empty one on the
+    // next letter down the list - which is the one before it in the alphabet -
+    // and # is at the bottom.
+    [Fact]
+    public void A_list_sorted_z_to_a_lands_the_same_way_turned_round()
+    {
+        var reversed = Enumerable.Reverse(Names).ToList();
+        int Reversed(char letter) =>
+            AlphabetIndex.FirstIndexFor(reversed, n => AlphabetIndex.LetterOf(n, false), letter, descending: true);
+
+        Assert.Equal(0, Reversed('M'));
+        Assert.Equal(3, Reversed('A'));
+        Assert.Equal(2, Reversed('C'));
+        Assert.Equal(0, Reversed('Z'));
+        Assert.Equal(5, Reversed('#'));
+    }
+
     [Fact]
     public void An_empty_list_has_nowhere_to_land() =>
         Assert.Equal(-1, AlphabetIndex.FirstIndexFor(new List<string>(), n => AlphabetIndex.LetterOf(n, false), 'A'));

@@ -233,6 +233,41 @@ public class ScrollIndexBarTests : PinnedDataDirectory
         window.Close();
     }
 
+    // Songs by artist go by the artist's letter, Z to A when turned round, and
+    // by year have only dots.
+    [AvaloniaFact]
+    public void The_songs_bar_follows_the_songs_sort()
+    {
+        using var parts = Build();
+        var vm = parts.Mobile;
+        vm.SelectTabCommand.Execute(nameof(MobileTab.Songs));
+        WaitFor(() => vm.Main.Rows.Count == UsedLetters.Length * 6);
+        var view = new TrackListScreenView { DataContext = vm };
+        var window = Show(view);
+        view.ObserveLive(vm);
+        Pump();
+        var bar = Bar(window);
+        var list = window.GetVisualDescendants().OfType<ListBox>().Single(l => l.Name == "TrackListBox");
+        void Sort(string label, Func<bool> done)
+        {
+            vm.BuildScreenMenu(vm.CurrentFrame).SelectMany(s => s.Entries).Single(e => e.Label == label).Invoke();
+            WaitFor(done);
+            Pump();
+        }
+
+        Sort("Artist", () => vm.Main.Rows[0].Track.Artists!.StartsWith('A'));
+        Sort("Artist", () => vm.Main.Rows[0].Track.Artists!.StartsWith('Y'));
+        Assert.True(bar.ShowsLetters);
+        Assert.True(bar.LettersDescending);
+        Tap(window, OnBar(window, bar, bar.YOf('K')));
+        var first = vm.Main.Rows.Select((r, i) => (r, i)).First(r => r.r.Track.Artists!.StartsWith('K')).i;
+        Assert.Equal(0, DistanceFromTop(list, bar, first), precision: 0);
+
+        Sort("Year", () => true);
+        Assert.False(bar.ShowsLetters);
+        window.Close();
+    }
+
     [AvaloniaFact]
     public void Touching_a_letter_on_Artists_brings_its_first_artist_to_the_top()
     {
@@ -248,6 +283,53 @@ public class ScrollIndexBarTests : PinnedDataDirectory
 
         var first = vm.ArtistPickerItems.Select((r, i) => (r, i)).First(r => r.r.Name.StartsWith('K')).i;
         Assert.Equal(0, DistanceFromTop(list, bar, first), precision: 0);
+        window.Close();
+    }
+
+    // Name turned round runs Z to A, and so does the bar: a letter still
+    // brings its first album to the top.
+    [AvaloniaFact]
+    public void The_album_grid_sorted_z_to_a_has_its_letters_turned_round()
+    {
+        using var parts = Build();
+        var vm = parts.Mobile;
+        vm.SelectTabCommand.Execute(nameof(MobileTab.Albums));
+        var window = Show(new AlbumGridScreenView { DataContext = vm });
+        var bar = Bar(window);
+        var rows = window.GetVisualDescendants().OfType<ItemsControl>().First(i => i.Name == "Rows");
+
+        vm.BuildScreenMenu(vm.CurrentFrame).SelectMany(s => s.Entries).Single(e => e.Label == "Name").Invoke();
+        Pump();
+        Assert.True(bar.ShowsLetters);
+        Assert.True(bar.LettersDescending);
+        Assert.True(bar.YOf('Z') < bar.YOf('A'));
+
+        Tap(window, OnBar(window, bar, bar.YOf('G')));
+
+        Assert.Equal(0, DistanceFromTop(rows, bar, RowWith(vm, 'G')), precision: 0);
+        window.Close();
+    }
+
+    // Sorted by year the grid has no letter to go to, so the bar turns to dots
+    // and scrubs the scroll the way Recently Added's does.
+    [AvaloniaFact]
+    public void The_album_grid_sorted_by_year_has_dots()
+    {
+        using var parts = Build();
+        var vm = parts.Mobile;
+        vm.SelectTabCommand.Execute(nameof(MobileTab.Albums));
+        var window = Show(new AlbumGridScreenView { DataContext = vm });
+        var bar = Bar(window);
+        Assert.True(bar.ShowsLetters);
+
+        vm.BuildScreenMenu(vm.CurrentFrame).SelectMany(s => s.Entries).Single(e => e.Label == "Year").Invoke();
+        Pump();
+        Assert.False(bar.ShowsLetters);
+
+        var scroller = window.GetVisualDescendants().OfType<ScrollViewer>().First();
+        var (_, bottom) = bar.Span;
+        Tap(window, OnBar(window, bar, bottom - 1));
+        Assert.Equal(scroller.Extent.Height - scroller.Viewport.Height, scroller.Offset.Y, precision: 0);
         window.Close();
     }
 

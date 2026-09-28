@@ -21,15 +21,16 @@ namespace Flower.Controls;
 /// The thin strip down the right edge of mobile's long lists that jumps the list
 /// to a place in it: A-Z on the alphabetical ones (Songs, Albums, Artists), and
 /// a column of dots on Recently Added, which is in date order and so has no
-/// letter to go to - there the dots are a scrubber over the whole scroll.
+/// letter to go to - there the dots are a scrubber over the whole scroll. The
+/// Albums and Artists lists are dots too while sorted by anything else.
 /// Touching it jumps, and dragging along it keeps jumping.
 /// </summary>
 /// <remarks>
 /// <para>
 /// The bar owns the gesture and the scrolling; the one thing it cannot know is
 /// where a letter is in a given list, which is <see cref="IndexOfLetter"/>, set
-/// by the screen. Letters mode is <see cref="IndexOfLetter"/> being set; with
-/// none, it is dots.
+/// by the screen. Letters mode is <see cref="IndexOfLetter"/> being set and
+/// <see cref="ShowsLetters"/> true; otherwise it is dots.
 /// </para>
 /// <para>
 /// A list with nothing to scroll gets no bar at all: it measures to zero width,
@@ -47,6 +48,12 @@ public class ScrollIndexBar : Control
 {
     public static readonly StyledProperty<ItemsControl?> TargetProperty =
         AvaloniaProperty.Register<ScrollIndexBar, ItemsControl?>(nameof(Target));
+
+    public static readonly StyledProperty<bool> ShowsLettersProperty =
+        AvaloniaProperty.Register<ScrollIndexBar, bool>(nameof(ShowsLetters), true);
+
+    public static readonly StyledProperty<bool> LettersDescendingProperty =
+        AvaloniaProperty.Register<ScrollIndexBar, bool>(nameof(LettersDescending));
 
     public static readonly StyledProperty<IBrush?> ForegroundProperty =
         AvaloniaProperty.Register<ScrollIndexBar, IBrush?>(nameof(Foreground), Brushes.Gray);
@@ -85,7 +92,7 @@ public class ScrollIndexBar : Control
 
     static ScrollIndexBar()
     {
-        AffectsRender<ScrollIndexBar>(ForegroundProperty, ActiveBackgroundProperty,
+        AffectsRender<ScrollIndexBar>(ShowsLettersProperty, LettersDescendingProperty, ForegroundProperty, ActiveBackgroundProperty,
             BubbleBackgroundProperty, BubbleForegroundProperty);
     }
 
@@ -104,6 +111,30 @@ public class ScrollIndexBar : Control
         get => GetValue(TargetProperty);
         set => SetValue(TargetProperty, value);
     }
+
+    /// <summary>
+    /// Whether the list is in an order <see cref="IndexOfLetter"/> can find a
+    /// letter in. False turns the bar to dots while it stays false - the same
+    /// list sorted by year, say - without the screen giving up its lookup.
+    /// </summary>
+    public bool ShowsLetters
+    {
+        get => GetValue(ShowsLettersProperty);
+        set => SetValue(ShowsLettersProperty, value);
+    }
+
+    /// <summary>
+    /// Whether the list runs Z to A, so the bar does too: Z at the top and #
+    /// at the bottom, where a reversed sort puts them.
+    /// </summary>
+    public bool LettersDescending
+    {
+        get => GetValue(LettersDescendingProperty);
+        set => SetValue(LettersDescendingProperty, value);
+    }
+
+    private IReadOnlyList<char> Letters =>
+        LettersDescending ? AlphabetIndex.LettersDescending : AlphabetIndex.Letters;
 
     public IBrush? Foreground
     {
@@ -135,7 +166,7 @@ public class ScrollIndexBar : Control
     /// </summary>
     public Func<char, int>? IndexOfLetter { get; set; }
 
-    private bool IsDotted => IndexOfLetter == null;
+    private bool IsDotted => IndexOfLetter == null || !ShowsLetters;
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
@@ -221,12 +252,12 @@ public class ScrollIndexBar : Control
     private (int Slots, double SlotHeight, double Top) Layout()
     {
         var height = Bounds.Height;
-        var letters = AlphabetIndex.Letters.Count;
+        var letters = Letters.Count;
         var fit = (int)Math.Floor(height / MinSlotHeight);
         var slots = Math.Max(1, Math.Min(letters, fit));
 
         // Squeezed, every other slot is a dot standing for the letters skipped,
-        // and the last slot must be a letter: an odd count keeps Z on the bar.
+        // and the last slot must be a letter: an odd count keeps the last letter on the bar.
         if (slots < letters && slots % 2 == 0)
             slots--;
 
@@ -300,7 +331,7 @@ public class ScrollIndexBar : Control
     internal double YOf(char letter)
     {
         var (slots, slotHeight, top) = Layout();
-        var letters = AlphabetIndex.Letters;
+        var letters = Letters;
         var index = Math.Max(0, IndexOf(letters, letter));
         return top + (index + 0.5) * slots * slotHeight / letters.Count;
     }
@@ -329,12 +360,12 @@ public class ScrollIndexBar : Control
     {
         _scrubY = y;
         var fraction = FractionAt(y);
-        if (IndexOfLetter is { } indexOf)
+        if (!IsDotted && IndexOfLetter is { } indexOf)
         {
             // Every letter can be reached even when the bar is too short to
             // draw them all: the finger maps onto the whole alphabet, not onto
             // what is drawn.
-            var letters = AlphabetIndex.Letters;
+            var letters = Letters;
             var letter = letters[Math.Min(letters.Count - 1, (int)(fraction * letters.Count))];
             if (letter != _currentLetter)
             {
@@ -406,7 +437,7 @@ public class ScrollIndexBar : Control
             context.DrawRectangle(active, null, pill, width / 2, width / 2);
         }
 
-        var letters = AlphabetIndex.Letters;
+        var letters = Letters;
         var squeezed = slots < letters.Count;
         for (var i = 0; i < slots; i++)
         {
@@ -418,7 +449,7 @@ public class ScrollIndexBar : Control
             }
 
             // Spread across the whole alphabet, so squeezed the first and last
-            // slots are still # and Z and the ones between are evenly spaced.
+            // slots are still the first and last letters and the ones between are evenly spaced.
             var letter = squeezed
                 ? letters[(int)Math.Round(i * (letters.Count - 1) / (double)(slots - 1))]
                 : letters[i];
@@ -426,7 +457,7 @@ public class ScrollIndexBar : Control
                 new Point(width / 2, centreY));
         }
 
-        if (_isScrubbing && _currentLetter is { } current)
+        if (_isScrubbing && !IsDotted && _currentLetter is { } current)
             DrawBubble(context, current, _scrubY);
     }
 

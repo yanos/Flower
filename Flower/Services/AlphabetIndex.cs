@@ -19,6 +19,10 @@ public static class AlphabetIndex
     // the bar says so by putting # at the top of itself.
     public static IReadOnlyList<char> Letters { get; } = "#ABCDEFGHIJKLMNOPQRSTUVWXYZ".ToCharArray();
 
+    // The same letters for a list sorted Z to A, where the # entries have gone
+    // to the bottom.
+    public static IReadOnlyList<char> LettersDescending { get; } = "ZYXWVUTSRQPONMLKJIHGFEDCBA#".ToCharArray();
+
     /// <summary>
     /// The letter <paramref name="text"/> is filed under.
     /// </summary>
@@ -53,10 +57,13 @@ public static class AlphabetIndex
     /// when nothing is - under the nearest letter after it, so touching an
     /// empty letter still moves the list the way the finger moved. Past the
     /// last letter anything is filed under, that is the last item. -1 for an
-    /// empty list.
+    /// empty list. <paramref name="descending"/> for a list running Z to A,
+    /// where "after" is further back in the alphabet.
     /// </summary>
-    public static int FirstIndexFor<T>(IReadOnlyList<T> items, Func<T, char> letterOf, char letter)
+    public static int FirstIndexFor<T>(IReadOnlyList<T> items, Func<T, char> letterOf, char letter, bool descending = false)
     {
+        // Z to A is A to Z with the ranks turned round.
+        int RankOf(char c) => descending ? -AlphabetIndex.RankOf(c) : AlphabetIndex.RankOf(c);
         var target = RankOf(letter);
         var best = -1;
         var bestRank = int.MaxValue;

@@ -656,14 +656,14 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             .Where(t => t.Artists != null)
             .GroupBy(t => t.Artists!)
             .ToDictionary(g => g.Key, g => g.ToList());
-        _artistPickerRows = Main.SubListItems
+        _artistPickerRows = InArtistOrder(Main.SubListItems
             .Select(name => byArtist.TryGetValue(name, out var tracks)
                 ? new ArtistPickerRow(name,
                     tracks.Where(t => !string.IsNullOrEmpty(t.Album)).Select(t => t.Album).Distinct().Count(),
                     tracks.Count,
                     AlbumCollage.ByAlbumName(tracks))
                 : new ArtistPickerRow(name, 0, 0, AlbumCollage.Empty))
-            .ToList();
+            .ToList(), byArtist);
         RefreshArtistPickerItems();
     }
 

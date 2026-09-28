@@ -88,6 +88,8 @@
         </ItemsControl>
       </StackPanel>
     </ScrollViewer>
-    <controls:ScrollIndexBar x:Name="IndexBar" Grid.Column="1" Target="{Binding #Rows}" />
+    <controls:ScrollIndexBar x:Name="IndexBar" Grid.Column="1" Target="{Binding #Rows}"
+                             ShowsLetters="{Binding AlbumGridIsAlphabetical}"
+                             LettersDescending="{Binding AlbumGridRunsZToA}" />
   </Grid>
 </UserControl>

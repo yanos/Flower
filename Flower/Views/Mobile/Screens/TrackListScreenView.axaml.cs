@@ -218,10 +218,15 @@ public partial class TrackListScreenView : UserControl, ITrackRowHost
                 vm.ReorderCurrentPlaylistTrack(dragged.Track, insertBefore?.Track);
         });
 
-        // Songs are sorted on their title's sort-as value with punctuation
-        // stripped (TrackListBuilder), so the letter is worked out the same way.
-        IndexBar.IndexOfLetter = letter => AlphabetIndex.FirstIndexFor(
-            DisplayRows, r => AlphabetIndex.LetterOf(r.Track.TitleSortValue, skipPunctuation: true), letter);
+        // Songs are sorted on the sort-as value of their title, artist or album
+        // with punctuation stripped (TrackListBuilder), so the letter is worked
+        // out the same way. Only ever asked while live: a frozen screen is the
+        // one behind, and cannot be touched.
+        IndexBar.IndexOfLetter = letter => _observedVm is { } vm
+            ? AlphabetIndex.FirstIndexFor(DisplayRows,
+                r => AlphabetIndex.LetterOf(vm.SongLetterText(r.Track), skipPunctuation: true), letter,
+                descending: vm.SongsRunZToA)
+            : -1;
     }
 
     // Called by ScreenStackPanel whenever this instance is the CURRENT
@@ -281,6 +286,10 @@ public partial class TrackListScreenView : UserControl, ITrackRowHost
         IsAlbumMode = _observedVm.IsShowingAlbumTrackList;
         IsPlaylistMode = _observedVm.IsShowingPlaylistTracks;
         IsSongsMode = _observedVm.SelectedTab == MobileTab.Songs && !IsAlbumMode;
+        // Letters while sorted on a name, dots on Year or Date Added. Left as
+        // they were on Freeze: the sort cannot change behind a pushed screen.
+        IndexBar.ShowsLetters = _observedVm.SongsAreAlphabetical;
+        IndexBar.LettersDescending = _observedVm.SongsRunZToA;
         DisplayRows = IsAlbumMode ? _observedVm.AlbumDetailRows : _observedVm.Main.Rows;
         DisplayHeader = _observedVm.CurrentAlbumHeader;
         ListHeader = _observedVm.CurrentPlaylistHeader;

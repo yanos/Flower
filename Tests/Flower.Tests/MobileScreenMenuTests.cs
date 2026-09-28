@@ -207,6 +207,67 @@ public class MobileScreenMenuTests : PinnedDataDirectory
         Assert.Equal(["Quality of Armor"], vm.PlaylistControl.CurrentPlaylist.Tracks.Select(t => t.Title));
     }
 
+    // The artist list is sortable too: by name, by how often each artist's
+    // songs have been played, and by their newest song - the last two from the
+    // top, and the index bar goes to dots for either. Name turned round keeps
+    // its letters, Z first.
+    [AvaloniaFact]
+    public async Task Artists_sort_by_name_most_played_and_date_added()
+    {
+        Track Song(string artist, int plays, int addedDay) => new()
+        {
+            Title = artist + " song",
+            Album = artist + " album",
+            Artists = artist,
+            Path = "/music/" + artist + ".flac",
+            PlayCount = plays,
+            DateAdded = Epoch.AddDays(addedDay),
+        };
+        var library = new Library([Song("Built to Spill", 3, 2), Song("Autechre", 1, 3), Song("Cocteau Twins", 7, 1)]);
+        var vm = Own(MainViewModelHarness.BuildMobile(library, new MainPlaylist(new List<Track>()))).Mobile;
+        vm.SelectTabCommand.Execute(nameof(MobileTab.Artists));
+        await WaitFor(() => vm.ArtistPickerItems.Count == 3);
+        IEnumerable<string> Names() => vm.ArtistPickerItems.Select(r => r.Name);
+
+        Assert.Equal(["Name", "Most Played", "Date Added", "Shuffle", "Delete Local Files", "Settings"], Labels(vm));
+        Assert.Equal(["Autechre", "Built to Spill", "Cocteau Twins"], Names());
+        Assert.True(vm.ArtistPickerIsAlphabetical);
+
+        Entry(vm, "Most Played").Invoke();
+        Assert.Equal(["Cocteau Twins", "Built to Spill", "Autechre"], Names());
+        Assert.Equal(ListSortDirection.Descending, Entry(vm, "Most Played").Direction);
+        Assert.False(vm.ArtistPickerIsAlphabetical);
+
+        Entry(vm, "Date Added").Invoke();
+        Assert.Equal(["Autechre", "Built to Spill", "Cocteau Twins"], Names());
+
+        Entry(vm, "Name").Invoke();
+        Assert.True(vm.ArtistPickerIsAlphabetical);
+        Assert.False(vm.ArtistPickerRunsZToA);
+        Entry(vm, "Name").Invoke();
+        Assert.Equal(["Cocteau Twins", "Built to Spill", "Autechre"], Names());
+        Assert.True(vm.ArtistPickerIsAlphabetical);
+        Assert.True(vm.ArtistPickerRunsZToA);
+    }
+
+    // The album grid's bar is letters while it runs A to Z on a name - the
+    // album's or the artist's - and dots otherwise.
+    [AvaloniaFact]
+    public async Task The_album_grid_is_alphabetical_only_by_name_or_artist()
+    {
+        var vm = Build();
+        vm.SelectTabCommand.Execute(nameof(MobileTab.Albums));
+        await WaitFor(() => vm.AlbumGridRows.Count > 0);
+        Assert.True(vm.AlbumGridIsAlphabetical);
+
+        Entry(vm, "Artist").Invoke();
+        Assert.True(vm.AlbumGridIsAlphabetical);
+        Entry(vm, "Year").Invoke();
+        Assert.False(vm.AlbumGridIsAlphabetical);
+        Entry(vm, "Date Added").Invoke();
+        Assert.False(vm.AlbumGridIsAlphabetical);
+    }
+
     private static async Task WaitFor(Func<bool> condition, int timeoutMs = 3000)
     {
         for (var waited = 0; waited < timeoutMs && !condition(); waited += 20)

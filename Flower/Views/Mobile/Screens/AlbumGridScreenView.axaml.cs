@@ -16,8 +16,9 @@ public partial class AlbumGridScreenView : UserControl
     }
 
     // The bar scrolls rows, and a row holds several albums, so the letter is
-    // found among the albums and answered with the row it is in.
-    // AlbumGridBuilder sorts on the raw name, hence no skipping punctuation.
+    // found among the albums and answered with the row it is in - by name or
+    // by artist, whichever the grid is sorted on. Both are sorted on their
+    // TrackListBuilder.SortKey, which drops punctuation, so the letter does too.
     private int RowOfLetter(char letter)
     {
         if (DataContext is not MobileMainViewModel vm)
@@ -30,7 +31,8 @@ public partial class AlbumGridScreenView : UserControl
                 tiles.Add((tile, row));
         }
 
-        var index = AlphabetIndex.FirstIndexFor(tiles, t => AlphabetIndex.LetterOf(t.Tile.Name, skipPunctuation: false), letter);
+        var index = AlphabetIndex.FirstIndexFor(tiles, t => AlphabetIndex.LetterOf(vm.AlbumGridLetterText(t.Tile), skipPunctuation: true), letter,
+            descending: vm.AlbumGridRunsZToA);
         return index < 0 ? -1 : tiles[index].Row;
     }
 }

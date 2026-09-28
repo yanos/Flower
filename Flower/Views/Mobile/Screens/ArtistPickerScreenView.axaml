@@ -40,6 +40,8 @@
         </DataTemplate>
       </ListBox.ItemTemplate>
     </ListBox>
-    <controls:ScrollIndexBar x:Name="IndexBar" Grid.Column="1" Target="{Binding #Artists}" />
+    <controls:ScrollIndexBar x:Name="IndexBar" Grid.Column="1" Target="{Binding #Artists}"
+                             ShowsLetters="{Binding ArtistPickerIsAlphabetical}"
+                             LettersDescending="{Binding ArtistPickerRunsZToA}" />
   </Grid>
 </UserControl>

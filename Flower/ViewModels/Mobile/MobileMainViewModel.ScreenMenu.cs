@@ -12,14 +12,13 @@ namespace Flower.ViewModels.Mobile;
 
 // The orders a phone screen can be put in from its header menu. Not every
 // screen offers every one - see MobileMainViewModel.SortsFor.
-public enum MobileSortOrder { Name, Artist, Album, Year, DateAdded }
+public enum MobileSortOrder { Name, Artist, Album, Year, DateAdded, MostPlayed }
 
 // The screens that can be sorted at all, and so the keys their choice is kept
 // under (AppSettings.MobileSorts). Everything else comes in an order that is
 // the point of it: an album is its track order, a playlist is the order it
-// was made in, Recently Added is newest first by definition, and the artist
-// list is a name list with nothing else to go by.
-public enum MobileSortScreen { Songs, Albums, ArtistAlbums }
+// was made in, and Recently Added is newest first by definition.
+public enum MobileSortScreen { Songs, Albums, ArtistAlbums, Artists }
 
 // One row of a screen's header menu (ScreenSlot's hamburger). A plain action
 // rather than a command: the menu is built for the screen it is opened on, at
@@ -53,11 +52,16 @@ public partial class MobileMainViewModel
     // Every album here is by the one artist the screen is for.
     private static readonly MobileSortOrder[] ArtistAlbumSorts =
         [MobileSortOrder.Name, MobileSortOrder.Year, MobileSortOrder.DateAdded];
+    // An artist has no one year, but they do have a newest song and a count
+    // of how often theirs have been played.
+    private static readonly MobileSortOrder[] ArtistSorts =
+        [MobileSortOrder.Name, MobileSortOrder.MostPlayed, MobileSortOrder.DateAdded];
 
     private static IReadOnlyList<MobileSortOrder> SortsFor(MobileSortScreen screen) => screen switch
     {
         MobileSortScreen.Songs => SongSorts,
         MobileSortScreen.Albums => AlbumSorts,
+        MobileSortScreen.Artists => ArtistSorts,
         _ => ArtistAlbumSorts,
     };
 
@@ -66,6 +70,7 @@ public partial class MobileMainViewModel
         MobileScreenKind.TrackList when frame.Tab == MobileTab.Songs && !frame.HasDrilledIn => MobileSortScreen.Songs,
         MobileScreenKind.AlbumGrid => MobileSortScreen.Albums,
         MobileScreenKind.ArtistAlbumGrid => MobileSortScreen.ArtistAlbums,
+        MobileScreenKind.ArtistPicker => MobileSortScreen.Artists,
         _ => null,
     };
 
@@ -85,9 +90,10 @@ public partial class MobileMainViewModel
 
     // Which way an order runs when it is first picked: names from A, years
     // oldest first, which is how a library reads as a history, and Date Added
-    // newest first, the only way anyone asks for it. Picking it again turns it
-    // round (ChooseSort).
-    private static bool NaturallyAscending(MobileSortOrder order) => order != MobileSortOrder.DateAdded;
+    // and Most Played from the top, the only way anyone asks for either.
+    // Picking it again turns it round (ChooseSort).
+    private static bool NaturallyAscending(MobileSortOrder order) =>
+        order is not (MobileSortOrder.DateAdded or MobileSortOrder.MostPlayed);
 
     private static string LabelFor(MobileSortOrder order) => order switch
     {
@@ -95,6 +101,7 @@ public partial class MobileMainViewModel
         MobileSortOrder.Artist => "Artist",
         MobileSortOrder.Album => "Album",
         MobileSortOrder.Year => "Year",
+        MobileSortOrder.MostPlayed => "Most Played",
         _ => "Date Added",
     };
 
@@ -104,6 +111,7 @@ public partial class MobileMainViewModel
         MobileSortOrder.Artist => MaterialIconKind.AccountMusicOutline,
         MobileSortOrder.Album => MaterialIconKind.Album,
         MobileSortOrder.Year => MaterialIconKind.CalendarBlankOutline,
+        MobileSortOrder.MostPlayed => MaterialIconKind.TrendingUp,
         _ => MaterialIconKind.ClockOutline,
     };
 
@@ -140,9 +148,59 @@ public partial class MobileMainViewModel
         };
     }
 
-    private static IOrderedEnumerable<AlbumTileViewModel> Order<TKey>(
-        IEnumerable<AlbumTileViewModel> tiles, Func<AlbumTileViewModel, TKey> key, bool ascending) =>
-        ascending ? tiles.OrderBy(key) : tiles.OrderByDescending(key);
+    private static IOrderedEnumerable<T> Order<T, TKey>(
+        IEnumerable<T> items, Func<T, TKey> key, bool ascending) =>
+        ascending ? items.OrderBy(key) : items.OrderByDescending(key);
+
+    // The artist list in the order its screen was given. Names come in
+    // alphabetical already (SubListItems), so only turning them round is
+    // work; the other two keep that order among artists that tie.
+    private List<ArtistPickerRow> InArtistOrder(List<ArtistPickerRow> rows, Dictionary<string, List<Track>> byArtist)
+    {
+        var (order, ascending) = SortOf(MobileSortScreen.Artists);
+        IEnumerable<Track> TracksOf(ArtistPickerRow row) => byArtist.GetValueOrDefault(row.Name) ?? [];
+        return order switch
+        {
+            MobileSortOrder.MostPlayed => Order(rows, r => TracksOf(r).Sum(t => t.TotalPlayCount), ascending).ToList(),
+            MobileSortOrder.DateAdded => Order(rows, r => TracksOf(r).Select(t => t.DateAdded).DefaultIfEmpty().Max(), ascending).ToList(),
+            _ when !ascending => Enumerable.Reverse(rows).ToList(),
+            _ => rows,
+        };
+    }
+
+    // Whether a screen's list is sorted on something with a letter, and so
+    // whether its index bar can be letters (ScrollIndexBar.ShowsLetters). Any
+    // other order - a year, a date, a count - has no letter to jump to, and
+    // the bar is dots, a scrubber over the whole scroll. The ZToA pair turns
+    // the bar round with a reversed sort (ScrollIndexBar.LettersDescending).
+    public bool AlbumGridIsAlphabetical =>
+        SortOf(MobileSortScreen.Albums).Order is MobileSortOrder.Name or MobileSortOrder.Artist;
+
+    public bool AlbumGridRunsZToA => AlbumGridIsAlphabetical && !SortOf(MobileSortScreen.Albums).Ascending;
+
+    public bool ArtistPickerIsAlphabetical =>
+        SortOf(MobileSortScreen.Artists).Order == MobileSortOrder.Name;
+
+    public bool ArtistPickerRunsZToA => ArtistPickerIsAlphabetical && !SortOf(MobileSortScreen.Artists).Ascending;
+
+    public bool SongsAreAlphabetical =>
+        SortOf(MobileSortScreen.Songs).Order is MobileSortOrder.Name or MobileSortOrder.Artist or MobileSortOrder.Album;
+
+    public bool SongsRunZToA => SongsAreAlphabetical && !SortOf(MobileSortScreen.Songs).Ascending;
+
+    // What a song is filed under on the bar: the sort-as value of whatever the
+    // list is sorted on, as TrackListBuilder sorts it.
+    public string? SongLetterText(Track track) => SortOf(MobileSortScreen.Songs).Order switch
+    {
+        MobileSortOrder.Artist => track.ArtistsSortValue,
+        MobileSortOrder.Album => track.AlbumSortValue,
+        _ => track.TitleSortValue,
+    };
+
+    // What an album on the grid is filed under on the bar: its artist when the
+    // grid is sorted by artist, its own name otherwise.
+    public string? AlbumGridLetterText(AlbumTileViewModel tile) =>
+        SortOf(MobileSortScreen.Albums).Order == MobileSortOrder.Artist ? tile.Artist : tile.Name;
 
     // An album's earliest year - a reissue's bonus tracks carry the reissue's.
     private static string? YearOf(AlbumTileViewModel tile) =>
@@ -160,9 +218,18 @@ public partial class MobileMainViewModel
             case MobileSortScreen.Songs:
                 UseTheSortThisScreenWants(flatSongs: true);
                 Main.RebuildRowsImmediatelyAsync(includeGridTiles: false).Forget(_logger, "Songs re-sort");
+                OnPropertyChanged(nameof(SongsAreAlphabetical));
+                OnPropertyChanged(nameof(SongsRunZToA));
                 break;
             case MobileSortScreen.Albums:
                 RebuildAlbumGrid();
+                OnPropertyChanged(nameof(AlbumGridIsAlphabetical));
+                OnPropertyChanged(nameof(AlbumGridRunsZToA));
+                break;
+            case MobileSortScreen.Artists:
+                RebuildArtistPickerRows();
+                OnPropertyChanged(nameof(ArtistPickerIsAlphabetical));
+                OnPropertyChanged(nameof(ArtistPickerRunsZToA));
                 break;
             case MobileSortScreen.ArtistAlbums:
                 RebuildArtistAlbumGrid();
