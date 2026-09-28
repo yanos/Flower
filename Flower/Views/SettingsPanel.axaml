@@ -463,7 +463,7 @@
                 </ListBox.Styles>
                 <ListBox.ItemTemplate>
                   <DataTemplate x:DataType="vm:TrustedPeerRow">
-                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" Margin="4,2">
+                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto" Margin="4,2">
                       <!-- Read-only. A server records the name each device
                            reported for itself at pairing time and has no override
                            to write, so there is nothing here to edit - see
@@ -476,17 +476,20 @@
                       <TextBlock Grid.Row="1" Grid.Column="0"
                                  Text="{Binding ApprovedAtDisplay}"
                                  Opacity="0.6" FontSize="11" Margin="4,1,0,0"/>
+                      <TextBlock Grid.Row="2" Grid.Column="0"
+                                 Text="{Binding LastSeenDisplay}"
+                                 Opacity="0.6" FontSize="11" Margin="4,1,0,0"/>
 
                       <!-- Confirmed inline rather than in a modal: this list also
                            renders in the browser, where Avalonia is single-view
                            and there is no Window to own a dialog - which used to
                            make Forget silently do nothing there. -->
-                      <Button Grid.Row="0" Grid.RowSpan="2" Grid.Column="1"
+                      <Button Grid.Row="0" Grid.RowSpan="3" Grid.Column="1"
                               Content="Forget"
                               Padding="10,4" VerticalAlignment="Center" Margin="8,0,0,0"
                               IsVisible="{Binding IsNotConfirmingForget}"
                               Click="ForgetButton_Click"/>
-                      <StackPanel Grid.Row="0" Grid.RowSpan="2" Grid.Column="1"
+                      <StackPanel Grid.Row="0" Grid.RowSpan="3" Grid.Column="1"
                                   Orientation="Horizontal" Spacing="6"
                                   VerticalAlignment="Center" Margin="8,0,0,0"
                                   IsVisible="{Binding IsConfirmingForget}">
@@ -647,7 +650,11 @@
                      Background="Transparent">
               <ListBox.ItemTemplate>
                 <DataTemplate x:DataType="vm:LogSourceRow">
-                  <TextBlock Text="{Binding Name}" Margin="8,6" FontWeight="Medium" TextTrimming="CharacterEllipsis"/>
+                  <StackPanel Margin="8,6">
+                    <TextBlock Text="{Binding Name}" FontWeight="Medium" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Text="{Binding Detail}" IsVisible="{Binding Detail, Converter={x:Static ObjectConverters.IsNotNull}}"
+                               Opacity="0.6" FontSize="11" Margin="0,1,0,0" TextTrimming="CharacterEllipsis"/>
+                  </StackPanel>
                 </DataTemplate>
               </ListBox.ItemTemplate>
             </ListBox>

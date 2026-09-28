@@ -115,6 +115,8 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
                 Alias = d.Alias,
                 ApprovedAt = d.ApprovedAt,
                 IsAdmin = d.IsAdmin,
+                LastSeenAt = d.LastSeenAt,
+                HasLog = d.HasLog,
             })
             .ToList();
 

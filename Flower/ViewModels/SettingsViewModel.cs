@@ -919,8 +919,16 @@ public sealed partial class SettingsViewModel : ViewModelBase
         // and clearing the list to rebuild it identically would drop the
         // selection through null on the way: a refetched log and a lost place
         // in it, to end up exactly where it already was.
+        //
+        // Only devices with a log to read. A roster collects pairings nobody
+        // uses any more - every reinstall of the app is a new key and a new
+        // row - and a picker listing each of them, to open onto "nothing has
+        // arrived from this device", is mostly noise. The Devices tab still
+        // lists everyone, which is where forgetting them happens.
         var sources = new List<LogSourceRow> { new("This server", null) };
-        sources.AddRange(Devices.Select(device => new LogSourceRow(device.Alias, device.Fingerprint)));
+        sources.AddRange(Devices
+            .Where(device => device.HasLog)
+            .Select(device => new LogSourceRow(device.Alias, device.Fingerprint, device.LastSeenDisplay)));
         if (!LogSources.SequenceEqual(sources))
         {
             LogSources.Clear();

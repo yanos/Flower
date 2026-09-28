@@ -21,7 +21,15 @@ namespace Flower.Persistence
     // phone, and the only thing that distinguishes it is this bool. Defaults to
     // false so the flag has to be granted deliberately, by redeeming a code
     // that was itself issued as admin-granting.
-    public sealed record TrustedPeer(string Fingerprint, string Alias, DateTimeOffset ApprovedAt, string PublicKey, bool IsAdmin = false);
+    //
+    // LastSeenAt is when this fingerprint last got a request past the signature
+    // gate, to within MarkSeen's resolution. It is what tells an operator which
+    // of three rows called "iPhone" is the phone in their pocket and which two
+    // are reinstalls that each paired with a fresh key and left the old one
+    // behind. Null for an entry written before it was recorded.
+    public sealed record TrustedPeer(
+        string Fingerprint, string Alias, DateTimeOffset ApprovedAt, string PublicKey, bool IsAdmin = false,
+        DateTimeOffset? LastSeenAt = null);
 
     public sealed record DeniedPeer(string Fingerprint, string Alias, DateTimeOffset DeniedAt);
 
@@ -118,7 +126,8 @@ namespace Flower.Persistence
             try
             {
                 var peers = Load().Where(p => p.Fingerprint != fingerprint).ToList();
-                peers.Add(new TrustedPeer(fingerprint, alias, DateTimeOffset.UtcNow, publicKey, isAdmin));
+                var now = DateTimeOffset.UtcNow;
+                peers.Add(new TrustedPeer(fingerprint, alias, now, publicKey, isAdmin, LastSeenAt: now));
                 await SaveAsync(peers);
 
                 var denied = LoadDenied().Where(p => p.Fingerprint != fingerprint).ToList();
@@ -189,6 +198,62 @@ namespace Flower.Persistence
             finally
             {
                 _writeLock.Release();
+            }
+        }
+
+        // How stale a recorded LastSeenAt may get before a request rewrites it.
+        // Every verified request lands here, and a phone mid-album makes one
+        // every few seconds, so recording each would be a write of the whole
+        // roster file per stream chunk. "Last seen" only has to separate a
+        // device in use from one abandoned days ago.
+        public static readonly TimeSpan LastSeenResolution = TimeSpan.FromMinutes(5);
+
+        // Called for every request that verified against this roster. The
+        // common case - seen within the last few minutes - answers from the
+        // cached list without a lock or a write; otherwise the write goes off on
+        // its own, because the caller is a request that has already been let in
+        // and has no reason to wait on a file.
+        public void MarkSeen(string fingerprint, DateTimeOffset now)
+        {
+            if (!IsSeenStale(Load(), fingerprint, now))
+                return;
+
+            _ = RecordSeenAsync(fingerprint, now);
+        }
+
+        private static bool IsSeenStale(List<TrustedPeer> peers, string fingerprint, DateTimeOffset now) =>
+            peers.FirstOrDefault(p => p.Fingerprint == fingerprint) is { } known &&
+            (known.LastSeenAt is not { } seen || now - seen >= LastSeenResolution);
+
+        // Internal rather than private so a test can await the write MarkSeen
+        // fires and forgets.
+        internal async Task RecordSeenAsync(string fingerprint, DateTimeOffset now)
+        {
+            try
+            {
+                await _writeLock.WaitAsync();
+                try
+                {
+                    // Re-checked under the lock, for the same revival race as
+                    // RenameAsync - and because a burst of requests all finding
+                    // the value stale queue up here, and only the first should
+                    // write.
+                    var peers = Load();
+                    if (!IsSeenStale(peers, fingerprint, now))
+                        return;
+
+                    await SaveAsync(peers
+                        .Select(p => p.Fingerprint == fingerprint ? p with { LastSeenAt = now } : p)
+                        .ToList());
+                }
+                finally
+                {
+                    _writeLock.Release();
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not record that {Fingerprint} was seen.", fingerprint);
             }
         }
 

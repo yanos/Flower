@@ -65,11 +65,14 @@ public static class DeviceSignatureAuth
         HttpRequest request, byte[] body, TrustedPeerStore trustedPeers, NonceReplayGuard replayGuard,
         ILogger? logger = null)
     {
+        var now = DateTimeOffset.UtcNow;
         var result = PeerSignatureAuth.AuthenticateTrustedPeer(
-            ToSignedRequest(request, body), trustedPeers.GetPublicKey, replayGuard, DateTimeOffset.UtcNow);
+            ToSignedRequest(request, body), trustedPeers.GetPublicKey, replayGuard, now);
 
         if (result.Failure != PeerAuthFailure.None)
             LogRefusal(request, result.Failure, logger);
+        else
+            trustedPeers.MarkSeen(result.Fingerprint!, now);
 
         return result;
     }

@@ -18,7 +18,8 @@ using Flower.Services;
 namespace Flower.Server.Endpoints;
 
 public sealed record PairingCodeResponse(string Code, DateTimeOffset ExpiresAt, bool GrantsAdmin, string Invite, string BrowserUrl);
-public sealed record TrustedDeviceResponse(string Fingerprint, string Alias, DateTimeOffset ApprovedAt, bool IsAdmin);
+public sealed record TrustedDeviceResponse(
+    string Fingerprint, string Alias, DateTimeOffset ApprovedAt, bool IsAdmin, DateTimeOffset? LastSeenAt, bool HasLog);
 public sealed record CoverArtWriteResponse(int Written, int Total);
 public sealed record LibraryStatusResponse(bool Rescanning, int TrackCount, DateTimeOffset? LastCompletedAt, string? LastError);
 public sealed record LogEntryResponse(DateTimeOffset Timestamp, string Level, string? SourceContext, string Message, string? Exception);
@@ -177,10 +178,11 @@ public static class AdminEndpoints
                 new PairingCodeResponse(code, expiresAt, grantsAdmin, invite.ToString(), browserUrl), jsonOptions);
         });
 
-        authenticated.MapGet("/devices", (TrustedPeerStore store) =>
+        authenticated.MapGet("/devices", (TrustedPeerStore store, ClientLogStore logs) =>
         {
             var devices = store.Load()
-                .Select(p => new TrustedDeviceResponse(p.Fingerprint, p.Alias, p.ApprovedAt, p.IsAdmin))
+                .Select(p => new TrustedDeviceResponse(
+                    p.Fingerprint, p.Alias, p.ApprovedAt, p.IsAdmin, p.LastSeenAt, logs.Has(p.Fingerprint)))
                 .ToList();
             return Results.Json(devices, jsonOptions);
         });

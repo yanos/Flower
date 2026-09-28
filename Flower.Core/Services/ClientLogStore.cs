@@ -129,6 +129,14 @@ public sealed class ClientLogStore
         }
     }
 
+    // Whether this device has ever pushed a log here - without reading a week
+    // of it, which is what Get costs. For listing whose logs there are to open.
+    public bool Has(string fingerprint)
+    {
+        lock (_lock)
+            return FindDeviceDirectory(fingerprint) != null;
+    }
+
     public IReadOnlyList<ClientLogSnapshot> All()
     {
         lock (_lock)

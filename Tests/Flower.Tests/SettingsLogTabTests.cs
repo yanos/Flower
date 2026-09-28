@@ -115,8 +115,8 @@ public class SettingsLogTabTests
 
     private SettingsViewModel _panel = null!;
 
-    private static TrustedPeerRow Device(string fingerprint, string alias) =>
-        new() { Fingerprint = fingerprint, Alias = alias, ApprovedAt = DateTimeOffset.UtcNow };
+    private static TrustedPeerRow Device(string fingerprint, string alias, bool hasLog = true) =>
+        new() { Fingerprint = fingerprint, Alias = alias, ApprovedAt = DateTimeOffset.UtcNow, HasLog = hasLog };
 
     private static List<InMemoryLogEntry> Lines(params string[] messages) =>
         messages.Select(m => new InMemoryLogEntry(DateTimeOffset.UtcNow, "Information", null, m, null)).ToList();
@@ -167,6 +167,35 @@ public class SettingsLogTabTests
         Assert.Equal("Alias1", panel.LogSources[1].Name);
         Assert.Equal("fp-2", panel.LogSources[2].Fingerprint);
         Assert.Same(panel.LogSources[0], panel.SelectedLogSource);
+    }
+
+    // Every reinstall of the app pairs again under a new key, so a roster keeps
+    // rows nobody will ever send a log from. The picker is for reading logs, and
+    // a row that can only open onto "nothing has arrived" is not one.
+    [Fact]
+    public async Task A_device_that_has_never_sent_a_log_is_not_listed()
+    {
+        var panel = await MakeAsync(Device("fp-live", "iPhone"), Device("fp-stale", "iPhone", hasLog: false));
+
+        Assert.Equal([null, "fp-live"], panel.LogSources.Select(s => s.Fingerprint));
+    }
+
+    // Two devices called "iPhone" have to be told apart somehow, and when each
+    // was last heard from is what separates the one in use from the one left
+    // behind.
+    [Fact]
+    public async Task A_device_row_says_when_it_was_last_seen()
+    {
+        var seen = new DateTimeOffset(2026, 9, 28, 14, 5, 0, TimeSpan.Zero);
+        var device = Device("fp-1", "iPhone");
+        var panel = await MakeAsync(new TrustedPeerRow
+        {
+            Fingerprint = device.Fingerprint, Alias = device.Alias, ApprovedAt = device.ApprovedAt,
+            HasLog = true, LastSeenAt = seen,
+        });
+
+        Assert.Null(panel.LogSources[0].Detail);
+        Assert.Equal($"Last seen {seen.LocalDateTime:g}", panel.LogSources[1].Detail);
     }
 
     [Fact]

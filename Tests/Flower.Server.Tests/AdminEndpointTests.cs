@@ -473,6 +473,37 @@ public class AdminEndpointTests(FlowerServerFixture server) : IClassFixture<Flow
         }
     }
 
+    // What the Devices and Logs tabs need to tell one "iPhone" from another: when
+    // each was last let in, and whether it has a log to open at all.
+    [Fact]
+    public async Task The_device_list_says_who_was_last_seen_and_who_has_a_log()
+    {
+        using var admin = await NewAdminAsync();
+        var peers = server.Services.GetRequiredService<TrustedPeerStore>();
+        await peers.ApproveAsync("fp-with-log", "iPhone", "pubkey-with-log");
+        server.Services.GetRequiredService<ClientLogStore>().SetSnapshot(
+            "fp-with-log", "iPhone",
+            [new LogEntryDto(DateTimeOffset.UtcNow, "Information", null, "hello", null)],
+            DateTimeOffset.UtcNow);
+
+        try
+        {
+            var context = await SignedAsync(admin, "GET", "/api/admin/devices");
+
+            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+            var devices = await ReadAsync<List<TrustedDeviceResponse>>(context);
+            var self = devices.Single(d => d.Fingerprint == admin.Fingerprint);
+            Assert.NotNull(self.LastSeenAt);
+            Assert.False(self.HasLog);
+            Assert.True(devices.Single(d => d.Fingerprint == "fp-with-log").HasLog);
+        }
+        finally
+        {
+            await peers.RevokeAsync(admin.Fingerprint);
+            await peers.RevokeAsync("fp-with-log");
+        }
+    }
+
     // 404 rather than an empty list: "nothing has arrived from this device" and
     // "this device logged nothing" are different answers, and only the first is
     // worth telling the reader to wait about.

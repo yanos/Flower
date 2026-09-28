@@ -23,7 +23,8 @@ namespace Flower.Services;
 // for the settings pair, which is the one shape both sides had started *editing*
 // in step with each other, and which now lives in Flower.Core beside the other
 // contracts both hosts share (Services/ServerAdminContracts.cs).
-public sealed record AdminDeviceDto(string Fingerprint, string Alias, DateTimeOffset ApprovedAt, bool IsAdmin);
+public sealed record AdminDeviceDto(
+    string Fingerprint, string Alias, DateTimeOffset ApprovedAt, bool IsAdmin, DateTimeOffset? LastSeenAt, bool HasLog);
 public sealed record AdminPairingCodeDto(string Code, DateTimeOffset ExpiresAt, bool GrantsAdmin, string Invite, string BrowserUrl);
 public sealed record AdminLibraryStatusDto(bool Rescanning, int TrackCount, DateTimeOffset? LastCompletedAt, string? LastError);
 public sealed record AdminLogEntryDto(DateTimeOffset Timestamp, string Level, string? SourceContext, string Message, string? Exception);

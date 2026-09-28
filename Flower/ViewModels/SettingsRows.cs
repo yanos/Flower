@@ -64,6 +64,18 @@ public sealed class TrustedPeerRow : ViewModelBase
     public string ApprovedAtDisplay =>
         IsAdmin ? $"Administrator - approved {ApprovedAt.LocalDateTime:g}" : $"Approved {ApprovedAt.LocalDateTime:g}";
 
+    // When the server last let a request from this device in (see
+    // TrustedPeer.LastSeenAt). The one thing that tells two rows with the same
+    // name apart: a reinstalled app pairs again under a new key and the old row
+    // stays behind, still called "iPhone", and never seen again.
+    public DateTimeOffset? LastSeenAt { get; init; }
+
+    public string LastSeenDisplay => LastSeenAt is { } seen ? $"Last seen {seen.LocalDateTime:g}" : "Not seen yet";
+
+    // Whether this device has pushed a log to the server - which decides
+    // whether it gets a row in the Logs tab at all.
+    public bool HasLog { get; init; }
+
     // Set while this row is asking "forget this device?" in place. An inline
     // confirmation rather than a modal: this list is rendered both in a desktop
     // window and in the browser, where Avalonia is single-view and there is no
@@ -103,7 +115,9 @@ public sealed class DeniedPeerRow
 // device on its roster. A null Fingerprint is the server - it answers its own
 // admin route rather than one keyed by fingerprint, and it is the row the tab
 // lands on.
-public sealed record LogSourceRow(string Name, string? Fingerprint);
+// Detail is the line under the name; see TrustedPeerRow.LastSeenDisplay for why
+// a device's row needs one.
+public sealed record LogSourceRow(string Name, string? Fingerprint, string? Detail = null);
 
 // How an origin names the server, which is what the General tab groups the
 // address list by: an IPv6 literal and the IPv4 one beside it are the same
