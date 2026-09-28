@@ -232,9 +232,14 @@ jobs:
       # catch compile breaks, and not something to carry into a build that
       # ships. Any TFM is one image update away from disagreeing with the
       # runner's default Xcode again, since the check wants exact equality.
+      # Signed ad hoc (CodesignKey=-), because the runner has no signing
+      # identity and Flower.iOS carries a real entitlement - the Keychain group
+      # KeychainSecureStore needs - which a simulator build still has to sign
+      # in. An empty Entitlements.plist needed no signature at all, which is
+      # why this only started failing when the group was added.
       - name: Build Flower.iOS
         if: matrix.kind == 'ios-build'
-        run: dotnet build Flower.iOS/Flower.iOS.csproj --configuration Release -p:RuntimeIdentifier=iossimulator-arm64 -p:ValidateXcodeVersion=false
+        run: dotnet build Flower.iOS/Flower.iOS.csproj --configuration Release -p:RuntimeIdentifier=iossimulator-arm64 -p:ValidateXcodeVersion=false -p:CodesignKey=-
 
       # The decode-checks runner no leg runs any more - the iOS test leg runs
       # the same checks inside the suite - but it is still the one to put on a physical phone
