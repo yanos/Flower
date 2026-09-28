@@ -27,25 +27,40 @@ public class TrackRowMergeTests : IDisposable
     // Counts how often a row asks for its art, which is the whole cost reuse
     // exists to avoid. Returning null is enough - AlbumArt's state machine
     // treats a null result as "loaded, there is none" exactly like a bitmap.
-    private sealed class CountingArtLoader : AlbumArtLoader
+    //
+    // Only for tracks this class made (see T). The collection keeps the other
+    // counting classes out, but not every view test in the suite, and any of
+    // them showing a row, a tile or a collage asks the same process-wide
+    // loader for art while it is installed here.
+    private sealed class CountingArtLoader(IReadOnlySet<Guid> ours) : AlbumArtLoader(null, null, NullLogger<AlbumArtLoader>.Instance)
     {
-        public CountingArtLoader() : base(null, null, NullLogger<AlbumArtLoader>.Instance) { }
         public int Loads { get; private set; }
         public override Task<Bitmap?> LoadAsync(Track track)
         {
-            Loads++;
+            if (ours.Contains(track.Id))
+                Loads++;
             return Task.FromResult<Bitmap?>(null);
         }
     }
 
     private readonly AlbumArtLoader _previousLoader = AlbumArtLoader.Current;
-    private readonly CountingArtLoader _art = new();
+    private readonly HashSet<Guid> _ours = new();
+    private readonly CountingArtLoader _art;
 
-    public TrackRowMergeTests() => AlbumArtLoader.Current = _art;
+    public TrackRowMergeTests()
+    {
+        _art = new CountingArtLoader(_ours);
+        AlbumArtLoader.Current = _art;
+    }
+
     public void Dispose() => AlbumArtLoader.Current = _previousLoader;
 
-    private static Track T(string title, string album = "Album", string? path = "/music/x.mp3", Guid id = default) =>
-        new() { Id = id == default ? Guid.NewGuid() : id, Title = title, Album = album, Artists = "Artist", Path = path };
+    private Track T(string title, string album = "Album", string? path = "/music/x.mp3", Guid id = default)
+    {
+        var track = new Track { Id = id == default ? Guid.NewGuid() : id, Title = title, Album = album, Artists = "Artist", Path = path };
+        _ours.Add(track.Id);
+        return track;
+    }
 
     private static List<TrackRowViewModel> Build(IEnumerable<Track> tracks, IReadOnlyList<TrackRowViewModel>? previous, out List<TrackRowViewModel> retired) =>
         TrackRowMerge.Apply(previous, TrackListBuilder.Plan(tracks, null, "Title", true), out retired);
@@ -265,7 +280,7 @@ public class TrackRowMergeTests : IDisposable
 
     // ── TryApplyInPlace ───────────────────────────────────────────────────
 
-    private static List<Track> Tracks(int count) =>
+    private List<Track> Tracks(int count) =>
         Enumerable.Range(0, count).Select(i => T($"Song {i}")).ToList();
 
     private static List<TrackRowViewModel> PlaylistRows(IEnumerable<Track> order, IReadOnlyList<TrackRowViewModel>? previous = null) =>

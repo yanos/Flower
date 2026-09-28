@@ -29,25 +29,38 @@ namespace Flower.Tests;
 [Collection("AlbumArtLoader")]
 public class AlbumTileMergeTests : IDisposable
 {
-    private sealed class CountingArtLoader : AlbumArtLoader
+    // Only for tracks this class made (see T) - see TrackRowMergeTests'
+    // counter, which has the same problem with every view test outside this
+    // collection that shows art while the counter is installed.
+    private sealed class CountingArtLoader(IReadOnlySet<Guid> ours) : AlbumArtLoader(null, null, NullLogger<AlbumArtLoader>.Instance)
     {
-        public CountingArtLoader() : base(null, null, NullLogger<AlbumArtLoader>.Instance) { }
         public int Loads { get; private set; }
         public override Task<Bitmap?> LoadAsync(Track track)
         {
-            Loads++;
+            if (ours.Contains(track.Id))
+                Loads++;
             return Task.FromResult<Bitmap?>(null);
         }
     }
 
     private readonly AlbumArtLoader _previousLoader = AlbumArtLoader.Current;
-    private readonly CountingArtLoader _art = new();
+    private readonly HashSet<Guid> _ours = new();
+    private readonly CountingArtLoader _art;
 
-    public AlbumTileMergeTests() => AlbumArtLoader.Current = _art;
+    public AlbumTileMergeTests()
+    {
+        _art = new CountingArtLoader(_ours);
+        AlbumArtLoader.Current = _art;
+    }
+
     public void Dispose() => AlbumArtLoader.Current = _previousLoader;
 
-    private static Track T(string album, string artist = "Artist", string? path = "/music/x.mp3", string title = "Song") =>
-        new() { Title = title, Album = album, Artists = artist, Path = path, DateAdded = DateTimeOffset.UnixEpoch };
+    private Track T(string album, string artist = "Artist", string? path = "/music/x.mp3", string title = "Song")
+    {
+        var track = new Track { Title = title, Album = album, Artists = artist, Path = path, DateAdded = DateTimeOffset.UnixEpoch };
+        _ours.Add(track.Id);
+        return track;
+    }
 
     private static List<AlbumTileViewModel> Build(IEnumerable<Track> tracks, IReadOnlyList<AlbumTileViewModel>? previous, out List<AlbumTileViewModel> retired) =>
         AlbumTileMerge.Apply(previous, AlbumGridBuilder.Build(tracks), out retired);
