@@ -57,6 +57,10 @@ public class SettingsLogTabTests
         // on a two-second poll does.
         public bool ServerLogFails { get; set; }
 
+        // Holds every server-log read open until released, so a test can have a
+        // reader-asked read and a poll in flight at once.
+        public TaskCompletionSource? ServerLogGate { get; set; }
+
         // Sequenced by position, which is all InMemoryLogStore's own numbering
         // amounts to for a log that is only ever appended to: everything past
         // afterSequence, and the index of the last line as the cursor to come
@@ -67,13 +71,16 @@ public class SettingsLogTabTests
         public Task<string> RestoreRemovedFilesAsync(IReadOnlyList<string> paths, CancellationToken ct = default) =>
             Task.FromResult("");
 
-        public Task<LogSlice> LoadLogAsync(int limit, long afterSequence, CancellationToken ct = default)
+        public async Task<LogSlice> LoadLogAsync(int limit, long afterSequence, CancellationToken ct = default)
         {
+            if (ServerLogGate is { } gate)
+                await gate.Task;
+
             if (ServerLogFails)
                 throw new InvalidOperationException("the server went away");
 
             var entries = ServerLog.Skip((int)(afterSequence + 1)).ToList();
-            return Task.FromResult(new LogSlice(ServerLog.Count - 1, entries));
+            return new LogSlice(ServerLog.Count - 1, entries);
         }
 
         public async Task<IReadOnlyList<InMemoryLogEntry>?> LoadDeviceLogAsync(string fingerprint, int limit, CancellationToken ct = default)
@@ -307,6 +314,36 @@ public class SettingsLogTabTests
         Assert.Equal(2, panel.LogViewer.DisplayLines.Count);
         Assert.Contains("first", panel.LogViewer.DisplayLines[0]);
         Assert.Contains("second", panel.LogViewer.DisplayLines[1]);
+    }
+
+    // A full read of a remote server's log can take longer than the two seconds
+    // between ticks, and the tick used to go out from the same cursor - so it
+    // brought back the whole buffer a second time and appended it underneath
+    // the copy the full read had just painted. Whichever read lands second has
+    // to see that the cursor moved while it was away, and drop its answer.
+    [AvaloniaFact]
+    public async Task A_poll_racing_a_full_read_does_not_show_the_log_twice()
+    {
+        _backend.ServerLog = Lines("first", "second");
+        var panel = await MakeAsync();
+
+        var gate = new TaskCompletionSource();
+        _backend.ServerLogGate = gate;
+        var refresh = panel.RefreshLogCommand.ExecuteAsync(null);
+        var poll = panel.FollowLogAsync();
+        _backend.ServerLogGate = null;
+        gate.SetResult();
+        await Task.WhenAll(refresh, poll);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(2, panel.LogViewer.DisplayLines.Count);
+
+        _backend.ServerLog.AddRange(Lines("third"));
+        await panel.FollowLogAsync();
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(3, panel.LogViewer.DisplayLines.Count);
+        Assert.Contains("third", panel.LogViewer.DisplayLines[2]);
     }
 
     // The reader may be scrolled somewhere in the middle of a long log. A tick

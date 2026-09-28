@@ -829,9 +829,16 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     private async Task ReadServerLogAsync(int requestId)
     {
-        var slice = await _backend.LoadLogAsync(LogLimit, _logSequence);
+        var after = _logSequence;
+        var slice = await _backend.LoadLogAsync(LogLimit, after);
         if (requestId != _logRequestId)
             return; // The selection moved on while this was in flight.
+
+        // Another read from the same cursor landed first - a poll ticking while
+        // a slow full read was still out, or the other way round. Its lines are
+        // already on screen, so these are the same lines again.
+        if (after != _logSequence)
+            return;
 
         _logSequence = slice.LastSequence;
 
