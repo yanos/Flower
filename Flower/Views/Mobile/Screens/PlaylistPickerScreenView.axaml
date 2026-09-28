@@ -46,27 +46,37 @@
       <ItemsControl ItemsSource="{Binding PlaylistPickerItems}">
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="svm:SidebarItem">
+            <!-- Laid out like a song row on the Queue, less its drag handle
+                 (see ArtistPickerScreenView, which is the same row): the
+                 playlist's cover where the art goes (see
+                 SidebarItem.PlaylistCover), its name above, how many songs
+                 and how long they run below, and the row's own menu past
+                 that. The side inset stays the picker rows' 16 rather than a
+                 song row's 8, so the cover lines up under New Playlist's
+                 circled plus. -->
             <Button Classes="pickerRow"
+                    Padding="16,4,8,4"
                     Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).SelectPlaylistCommand}"
                     CommandParameter="{Binding}">
-              <!-- Name on the left, what is in it on the right, and the row's
-                   own menu past that. The name takes the star column so a long
-                   one is trimmed rather than pushing the count off the screen,
-                   and the count is never trimmed: it is the shorter of the two
-                   and the one that stops meaning anything when it is cut. -->
-              <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="12">
-                <materialIcons:MaterialIcon Grid.Column="0" Kind="PlaylistPlay" Width="22" Height="22" VerticalAlignment="Center" />
-                <TextBlock Grid.Column="1" Text="{Binding Name}"
-                           IsVisible="{Binding !IsEditing}"
-                           FontSize="16" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+              <Grid ColumnDefinitions="Auto,*,Auto">
+                <controls:AlbumCollageView Grid.Column="0"
+                                           Covers="{Binding PlaylistCover.CoverArt}"
+                                           Width="40" Height="40"
+                                           Margin="0,0,10,0" />
+                <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center"
+                            IsVisible="{Binding !IsEditing}">
+                  <TextBlock Text="{Binding Name}" FontSize="16" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Text="{Binding PlaylistSummary}"
+                             FontSize="13"
+                             Opacity="0.65"
+                             TextTrimming="CharacterEllipsis" />
+                </StackPanel>
                 <!-- Renaming in place, raised from this row's own menu. The
                      name is bound live and committed on Enter or on losing
                      focus (see the code-behind), which is the desktop
                      sidebar's rename in the same two gestures a phone has -
-                     and, underneath, literally the same SidebarRenameService.
-                     Spans the count as well as the name: a box the width of a
-                     name with nothing typed in it yet is a sliver. -->
-                <controls:TextInput Grid.Column="1" Grid.ColumnSpan="2"
+                     and, underneath, literally the same SidebarRenameService. -->
+                <controls:TextInput Grid.Column="1"
                                     Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                     IsVisible="{Binding IsEditing}"
                                     FontSize="16"
@@ -74,13 +84,10 @@
                                     Loaded="RenameBox_Loaded"
                                     KeyDown="RenameBox_KeyDown"
                                     LostFocus="RenameBox_LostFocus" />
-                <TextBlock Grid.Column="2" Text="{Binding PlaylistSummary}"
-                           IsVisible="{Binding !IsEditing}"
-                           FontSize="13" Opacity="0.55" VerticalAlignment="Center" />
                 <!-- The same glyph, in the same corner, as a song row's own
                      menu (TrackRowTemplate) - and it opens the same sheet the
                      album menu is, over this playlist. -->
-                <Button Grid.Column="3"
+                <Button Grid.Column="2"
                         Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).OpenPlaylistActionsCommand}"
                         CommandParameter="{Binding}"
                         Background="Transparent"

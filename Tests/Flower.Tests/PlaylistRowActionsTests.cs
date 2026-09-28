@@ -11,6 +11,7 @@ using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 
+using Flower.Controls;
 using Flower.Models;
 using Flower.Tests.TestSupport;
 using Flower.ViewModels;
@@ -247,10 +248,11 @@ public class PlaylistRowActionsTests : PinnedDataDirectory
         window.Close();
     }
 
-    // On the screen itself: the count sits between the name and the menu, and
-    // the menu is the last thing before the edge of the row.
+    // On the screen itself the row reads like a song on the Queue: the cover
+    // first, the name with the count under it, and the menu the last thing
+    // before the edge of the row.
     [AvaloniaFact]
-    public void The_count_and_the_menu_are_on_the_right_of_the_row()
+    public void The_count_is_under_the_name_and_the_menu_on_the_right()
     {
         var vm = Build(out _, T("A", 3), T("B", 4));
 
@@ -265,9 +267,12 @@ public class PlaylistRowActionsTests : PinnedDataDirectory
         var name = Visible<TextBlock>(window, t => t.Text == "Road trip");
         var summary = Visible<TextBlock>(window, t => t.Text == "2 songs  ·  7:00");
         var menu = Visible<MaterialIcon>(window, i => i.Kind == MaterialIconKind.DotsVertical);
+        var cover = Visible<AlbumCollageView>(window, _ => true);
 
-        Assert.True(Right(window, name) <= Left(window, summary), "the count is not right of the name");
-        Assert.True(Right(window, summary) <= Left(window, menu), "the menu is not right of the count");
+        Assert.True(Right(window, cover) <= Left(window, name), "the cover is not left of the name");
+        Assert.Equal(Left(window, name), Left(window, summary), 1);
+        Assert.True(Top(window, name) + name.Bounds.Height <= Top(window, summary) + 1, "the count is not under the name");
+        Assert.True(Right(window, name) <= Left(window, menu), "the menu is not right of the name");
 
         window.Close();
     }
@@ -277,6 +282,9 @@ public class PlaylistRowActionsTests : PinnedDataDirectory
 
     private static double Left(Window window, Visual control) =>
         control.TranslatePoint(default, window)?.X ?? 0;
+
+    private static double Top(Window window, Visual control) =>
+        control.TranslatePoint(default, window)?.Y ?? 0;
 
     private static double Right(Window window, Visual control) =>
         Left(window, control) + control.Bounds.Width;

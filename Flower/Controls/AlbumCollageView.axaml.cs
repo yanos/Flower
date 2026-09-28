@@ -8,12 +8,13 @@ using Avalonia.Media.Imaging;
 
 namespace Flower.Controls;
 
-// An artist's cover, made of their albums' - see ArtistPickerRow.LoadCoversAsync
-// for which albums, and ArtistCollageSurface for how they are laid out.
-public partial class ArtistCollageView : UserControl
+// A cover made of several albums' - an artist's, a playlist's. See
+// AlbumCollage for which albums, and AlbumCollageSurface for how they are
+// laid out.
+public partial class AlbumCollageView : UserControl
 {
     public static readonly StyledProperty<IReadOnlyList<Bitmap>?> CoversProperty =
-        AvaloniaProperty.Register<ArtistCollageView, IReadOnlyList<Bitmap>?>(nameof(Covers));
+        AvaloniaProperty.Register<AlbumCollageView, IReadOnlyList<Bitmap>?>(nameof(Covers));
 
     public IReadOnlyList<Bitmap>? Covers
     {
@@ -21,7 +22,7 @@ public partial class ArtistCollageView : UserControl
         set => SetValue(CoversProperty, value);
     }
 
-    public ArtistCollageView()
+    public AlbumCollageView()
     {
         InitializeComponent();
     }
@@ -34,17 +35,17 @@ public partial class ArtistCollageView : UserControl
 // UniformToFill does; a half is its cover laid over the whole square and cut
 // along the line, so each shows its own half of the art rather than the whole
 // of it squashed into a triangle.
-public sealed class ArtistCollageSurface : Control
+public sealed class AlbumCollageSurface : Control
 {
     public static readonly StyledProperty<IReadOnlyList<Bitmap>?> CoversProperty =
-        AvaloniaProperty.Register<ArtistCollageSurface, IReadOnlyList<Bitmap>?>(nameof(Covers));
+        AvaloniaProperty.Register<AlbumCollageSurface, IReadOnlyList<Bitmap>?>(nameof(Covers));
 
-    public static readonly DirectProperty<ArtistCollageSurface, bool> HasArtProperty =
-        AvaloniaProperty.RegisterDirect<ArtistCollageSurface, bool>(nameof(HasArt), o => o.HasArt);
+    public static readonly DirectProperty<AlbumCollageSurface, bool> HasArtProperty =
+        AvaloniaProperty.RegisterDirect<AlbumCollageSurface, bool>(nameof(HasArt), o => o.HasArt);
 
-    static ArtistCollageSurface()
+    static AlbumCollageSurface()
     {
-        AffectsRender<ArtistCollageSurface>(CoversProperty);
+        AffectsRender<AlbumCollageSurface>(CoversProperty);
     }
 
     public IReadOnlyList<Bitmap>? Covers

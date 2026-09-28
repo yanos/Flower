@@ -143,15 +143,11 @@ public class NewPlaylistEntryTests : PinnedDataDirectory
         Assert.True(entryAt.Y + entry.Bounds.Height <= rowAt.Y);
 
         // Ranged left with the rows: the circled plus starts where a playlist
-        // row's own glyph does.
+        // row's cover does.
         var circle = Assert.Single(entry.GetVisualDescendants().OfType<Border>(),
             b => b.Classes.Contains("floating"));
-        // The row's leading glyph, not its trailing "..." - see
-        // PlaylistPickerScreenView, where a row now ends in its own menu.
-        var rowGlyph = window.GetVisualDescendants().OfType<MaterialIcon>()
-            .Single(i => i.Kind == Material.Icons.MaterialIconKind.PlaylistPlay
-                         && !i.GetVisualAncestors().OfType<NewPlaylistEntry>().Any());
-        Assert.Equal(rowGlyph.TranslatePoint(default, window)!.Value.X,
+        var rowCover = Assert.Single(window.GetVisualDescendants().OfType<AlbumCollageView>());
+        Assert.Equal(rowCover.TranslatePoint(default, window)!.Value.X,
             circle.TranslatePoint(default, window)!.Value.X, 1);
 
         window.Close();

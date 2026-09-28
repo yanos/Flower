@@ -55,7 +55,24 @@ public class SidebarItem : ViewModelBase
     public string PlaylistSummary =>
         Playlist is { } playlist ? PlaylistSummaryText.For(playlist.Tracks) : "";
 
-    public void NotifyPlaylistSummaryChanged() => OnPropertyChanged(nameof(PlaylistSummary));
+    // A playlist's cover, made of the most played albums among its songs -
+    // what the phone's Playlists tab shows where a song row's art goes. Built
+    // on first read, so a desktop sidebar that never binds it never groups a
+    // playlist's albums, let alone reads their art.
+    private AlbumCollage? _playlistCover;
+    public AlbumCollage PlaylistCover =>
+        _playlistCover ??= Playlist is { } playlist ? AlbumCollage.ByAlbumAndArtist(playlist.Tracks) : AlbumCollage.Empty;
+
+    // The songs in it changed: what it says about them, and which albums its
+    // cover is made of.
+    public void NotifyPlaylistSummaryChanged()
+    {
+        OnPropertyChanged(nameof(PlaylistSummary));
+        if (_playlistCover == null)
+            return;
+        _playlistCover = null;
+        OnPropertyChanged(nameof(PlaylistCover));
+    }
 
     public bool IsHeader => Kind == SidebarItemKind.Header;
     public bool IsSelectable => !IsHeader;

@@ -22,10 +22,10 @@
                   controls:LongPress.CommandParameter="{Binding Name}">
             <!-- Laid out like a song row on the Queue, less its drag handle:
                  the artist's cover where the art goes (see
-                 ArtistPickerRow.LoadCoversAsync), their name above, and how much of
+                 AlbumCollage), their name above, and how much of
                  theirs there is below. -->
             <Grid ColumnDefinitions="Auto,*">
-              <controls:ArtistCollageView Covers="{Binding CoverArt}"
+              <controls:AlbumCollageView Covers="{Binding Cover.CoverArt}"
                                           Width="40" Height="40"
                                           Margin="0,0,10,0" />
               <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">

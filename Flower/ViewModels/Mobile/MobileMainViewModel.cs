@@ -661,8 +661,8 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
                 ? new ArtistPickerRow(name,
                     tracks.Where(t => !string.IsNullOrEmpty(t.Album)).Select(t => t.Album).Distinct().Count(),
                     tracks.Count,
-                    ArtistPickerRow.AlbumsByPlays(tracks))
-                : new ArtistPickerRow(name, 0, 0, []))
+                    AlbumCollage.ByAlbumName(tracks))
+                : new ArtistPickerRow(name, 0, 0, AlbumCollage.Empty))
             .ToList();
         RefreshArtistPickerItems();
     }
@@ -1899,8 +1899,8 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         _subscriptions.Add<NotifyCollectionChangedEventHandler>((_, _) => RebuildPlaylistPicker(),
             h => Main.SidebarItems.CollectionChanged += h, h => Main.SidebarItems.CollectionChanged -= h);
         // A song added to (or dragged within, or removed from) a playlist
-        // changes what its row says on the right without changing which rows
-        // there are, so the collection above never hears about it.
+        // changes what its row says and the cover it shows without changing
+        // which rows there are, so the collection above never hears about it.
         _subscriptions.Add<EventHandler>((_, _) => Dispatcher.UIThread.Post(RefreshPlaylistSummaries),
             h => Main.Library.PlaylistsChanged += h, h => Main.Library.PlaylistsChanged -= h);
         // Mobile's answer to "really delete this playlist?" - desktop's is a

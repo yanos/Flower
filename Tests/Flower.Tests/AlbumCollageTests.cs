@@ -9,7 +9,7 @@ using Avalonia.Media.Imaging;
 
 using Flower.Models;
 using Flower.Services;
-using Flower.ViewModels.Mobile;
+using Flower.ViewModels;
 
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -17,15 +17,15 @@ using Xunit;
 
 namespace Flower.Tests;
 
-// The cover on an Artists tab row (ArtistPickerRow.LoadCoversAsync): the most
-// played of the artist's albums that have art, four of them when there are
+// The cover on an Artists or Playlists tab row (AlbumCollage): the most
+// played of the albums with art among its songs, four of them when there are
 // four, the top two split along the diagonal when there are two or three, and
 // the one when there is one.
 //
 // In the AlbumArtLoader collection because it installs its own loader - see
 // AlbumTileMergeTests.
 [Collection("AlbumArtLoader")]
-public class ArtistCoverTests : IDisposable
+public class AlbumCollageTests : IDisposable
 {
     // Art for every album but the ones named bare, one bitmap per album so a
     // test can tell which album a cover came from.
@@ -63,7 +63,7 @@ public class ArtistCoverTests : IDisposable
     {
         var loader = new FakeArtLoader(bare.ToHashSet());
         AlbumArtLoader.Current = loader;
-        var covers = await ArtistPickerRow.LoadCoversAsync(ArtistPickerRow.AlbumsByPlays(tracks));
+        var covers = await AlbumCollage.LoadCoversAsync(AlbumCollage.ByAlbumName(tracks).AlbumsInPlayOrder);
         return (covers.Select(c => loader.AlbumOf[c]).ToArray(), loader.Loads);
     }
 
@@ -118,5 +118,39 @@ public class ArtistCoverTests : IDisposable
         var (covers, loads) = await CoverOf([new Track { Title = "Loose", Artists = "X" }]);
         Assert.Empty(covers);
         Assert.Equal(0, loads);
+    }
+
+    // A playlist can hold two albums with one name - they are two albums,
+    // told apart by who made them, where an artist's own are grouped by name.
+    [Fact]
+    public void A_playlist_tells_same_named_albums_apart_by_their_artist()
+    {
+        List<Track> tracks =
+        [
+            new() { Title = "a", Album = "Greatest Hits", Artists = "Queen", PlayCount = 2 },
+            new() { Title = "b", Album = "Greatest Hits", Artists = "ABBA", PlayCount = 1 },
+        ];
+
+        Assert.Equal(["Queen", "ABBA"], AlbumCollage.ByAlbumAndArtist(tracks).AlbumsInPlayOrder.Select(t => t.Artists));
+        Assert.Single(AlbumCollage.ByAlbumName(tracks).AlbumsInPlayOrder);
+    }
+
+    // A song added to a playlist can change which albums are its most played,
+    // so the row's cover is rebuilt along with what the row says.
+    [Fact]
+    public void A_playlists_cover_follows_its_songs()
+    {
+        var playlist = new Playlist("Mix", [new Track { Title = "a", Album = "One", Artists = "X" }]);
+        var row = new SidebarItem(SidebarItemKind.Playlist, "Mix", playlist: playlist);
+        var raised = new List<string?>();
+        row.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        Assert.Equal(["One"], row.PlaylistCover.AlbumsInPlayOrder.Select(t => t.Album));
+
+        playlist.InsertTrack(1, new Track { Title = "b", Album = "Two", Artists = "X", PlayCount = 5 });
+        row.NotifyPlaylistSummaryChanged();
+
+        Assert.Contains(nameof(SidebarItem.PlaylistCover), raised);
+        Assert.Equal(["Two", "One"], row.PlaylistCover.AlbumsInPlayOrder.Select(t => t.Album));
     }
 }

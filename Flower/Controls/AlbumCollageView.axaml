@@ -1,11 +1,11 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:Flower.Controls"
-             x:Class="Flower.Controls.ArtistCollageView"
+             x:Class="Flower.Controls.AlbumCollageView"
              x:Name="Root">
 
   <!-- AlbumArtView's frame around several covers instead of one - see
-       ArtistCollageSurface for how they are laid out. The note placeholder
+       AlbumCollageSurface for how they are laid out. The note placeholder
        shows until there is at least one cover to draw, and stays for an
        artist none of whose albums has art. -->
   <Border Background="Transparent"
@@ -19,7 +19,7 @@
         <controls:AlbumArtPlaceholder HorizontalAlignment="Stretch"
                                        VerticalAlignment="Stretch"
                                        IsVisible="{Binding !#Surface.HasArt}"/>
-        <controls:ArtistCollageSurface x:Name="Surface"
+        <controls:AlbumCollageSurface x:Name="Surface"
                                        Covers="{Binding #Root.Covers}"/>
       </Panel>
     </Border>
