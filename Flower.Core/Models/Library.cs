@@ -1630,14 +1630,29 @@ namespace Flower.Models
         // debounce/poll cadence PlaylistSyncService uses, independent of the user -
         // would otherwise tear down and recreate every row, mid-rename or not, on
         // every single poll even when nothing actually changed.
-        public void ReplacePlaylists(List<Playlist> playlists)
+        public void ReplacePlaylists(List<Playlist> playlists) => ReplacePlaylists(_ => playlists);
+
+        // The same, for a set worked out from an earlier read of this one:
+        // compose is handed the set as it is now, under the lock, and returns
+        // the set to install. A sync session plans, may wait on a conflict
+        // prompt, and can run off the UI thread altogether, so what the user
+        // did in between has to be laid over its merge at the moment of the
+        // swap rather than overwritten by it - see PlaylistSessionOverlay.
+        // Swapping the merge in wholesale is how a deleted playlist came
+        // straight back.
+        //
+        // compose runs under the lock: it must only compute, never touch the
+        // library or raise anything. Returns the set installed.
+        public List<Playlist> ReplacePlaylists(Func<IReadOnlyList<Playlist>, List<Playlist>> compose)
         {
+            List<Playlist> installed;
             lock (_lock)
             {
-                if (PlaylistsUnchanged(Playlists, playlists))
-                    return;
+                installed = compose(Playlists);
+                if (PlaylistsUnchanged(Playlists, installed))
+                    return installed;
 
-                SwapPlaylists(new List<Playlist>(playlists));
+                SwapPlaylists(new List<Playlist>(installed));
             }
 
             // Outside the lock: both of these run arbitrary subscriber code
@@ -1646,6 +1661,7 @@ namespace Flower.Models
             // deadlock or, worse, observe a half-applied state.
             PlaylistsUpdated?.Invoke(this, EventArgs.Empty);
             RaisePlaylistsChanged();
+            return installed;
         }
 
         // Installs a new playlist list, moving the Playlist.Changed subscription

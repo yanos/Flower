@@ -634,6 +634,140 @@ public class SyncScenarioTests : PinnedDataDirectory
         Assert.Empty(client.Library.Playlists);
     }
 
+    // A session plans from the playlists as they were when it began, and can
+    // be a while getting to its write - waiting on a conflict prompt, as
+    // here, or running off the UI thread while the user carries on. Writing
+    // its merge over the set wholesale put back a playlist deleted in the
+    // meantime, at once; and because it was back, the sync the delete had
+    // scheduled found nothing deleted to send, so it took a second delete.
+    [Fact]
+    public async Task A_playlist_deleted_while_a_session_is_merging_stays_deleted()
+    {
+        var a = ServerTrack("A");
+        var b = ServerTrack("B");
+        using var server = new SimulatedFlowerServer([a, b]);
+        var client = NewClient();
+        await client.PullLibraryAsync(server);
+        client.Library.AddPlaylist(new Playlist("Doomed", [client.Single("A")]));
+        client.Library.AddPlaylist(new Playlist("Contested", [client.Single("A")]));
+        await client.SyncPlaylistsAsync(server);
+
+        // Both sides edit "Contested", so the next session stops to ask - and
+        // while it waits for the answer, "Doomed" is deleted here.
+        await Task.Delay(5);
+        client.Playlist("Contested").AppendTrack(client.Single("B"));
+        server.Library.Playlists.Single(p => p.Name == "Contested").Name = "Contested on server";
+        client.PlaylistSync.ConflictDetected += (_, e) =>
+        {
+            client.Library.RemovePlaylist(client.Playlist("Doomed"));
+            e.Resolution.SetResult(PlaylistConflictChoice.KeepLocal);
+        };
+        await client.SyncPlaylistsAsync(server);
+
+        Assert.DoesNotContain(client.Library.Playlists, p => p.Name == "Doomed");
+
+        // The session the delete scheduled takes it to the server.
+        await client.SyncPlaylistsAsync(server);
+        Assert.DoesNotContain(server.Library.Playlists, p => p.Name == "Doomed");
+        Assert.DoesNotContain(client.Library.Playlists, p => p.Name == "Doomed");
+    }
+
+    // The other half of the same write: a playlist made while a session is
+    // merging is not in what the session planned from, and was wiped by it.
+    [Fact]
+    public async Task A_playlist_created_while_a_session_is_merging_is_kept_and_sent_up()
+    {
+        var a = ServerTrack("A");
+        var b = ServerTrack("B");
+        using var server = new SimulatedFlowerServer([a, b]);
+        var client = NewClient();
+        await client.PullLibraryAsync(server);
+        client.Library.AddPlaylist(new Playlist("Contested", [client.Single("A")]));
+        await client.SyncPlaylistsAsync(server);
+
+        await Task.Delay(5);
+        client.Playlist("Contested").AppendTrack(client.Single("B"));
+        server.Library.Playlists.Single(p => p.Name == "Contested").Name = "Contested on server";
+        client.PlaylistSync.ConflictDetected += (_, e) =>
+        {
+            client.Library.AddPlaylist(new Playlist("Fresh", [client.Single("B")]));
+            e.Resolution.SetResult(PlaylistConflictChoice.KeepLocal);
+        };
+        await client.SyncPlaylistsAsync(server);
+
+        Assert.Contains(client.Library.Playlists, p => p.Name == "Fresh");
+        Assert.Contains(server.Library.Playlists, p => p.Name == "Fresh");
+    }
+
+    // A playlist edited on the server, which this session is taking - and
+    // edited here too while the session waits on another playlist. Taking
+    // the server's copy would throw the edit here away; the two are
+    // combined instead, on both sides.
+    [Fact]
+    public async Task A_playlist_edited_here_while_a_session_takes_the_servers_edit_keeps_both()
+    {
+        var (server, client) = await TwoPlaylistsAgreedAsync();
+        using var owned = server;
+
+        server.Library.Playlists.Single(p => p.Name == "Mix").AppendTrack(server.Library.Tracks.Single(t => t.Title == "C"));
+        client.PlaylistSync.ConflictDetected += (_, e) =>
+        {
+            client.Playlist("Mix").AppendTrack(client.Single("D"));
+            e.Resolution.SetResult(PlaylistConflictChoice.KeepLocal);
+        };
+        await client.SyncPlaylistsAsync(server);
+
+        Assert.Equal(["A", "C", "D"], Titles(client.Playlist("Mix")));
+        Assert.Equal(["A", "C", "D"], Titles(server.Library.Playlists.Single(p => p.Name == "Mix")));
+    }
+
+    // The same, with edits that cannot both be kept - renamed differently on
+    // each side. Nothing is decided for the user: this device keeps its own
+    // edit without pushing it, and the next session asks.
+    [Fact]
+    public async Task Edits_that_cannot_be_combined_are_left_for_the_next_session_to_ask_about()
+    {
+        var (server, client) = await TwoPlaylistsAgreedAsync();
+        using var owned = server;
+
+        server.Library.Playlists.Single(p => p.Name == "Mix").Name = "Server name";
+        var asked = new List<string>();
+        client.PlaylistSync.ConflictDetected += (_, e) =>
+        {
+            asked.Add(e.Remote.Name);
+            if (e.Local.Name == "Contested")
+                client.Playlist("Mix").Name = "Phone name";
+            e.Resolution.SetResult(PlaylistConflictChoice.KeepLocal);
+        };
+        await client.SyncPlaylistsAsync(server);
+
+        Assert.Contains(client.Library.Playlists, p => p.Name == "Phone name");
+        Assert.Contains(server.Library.Playlists, p => p.Name == "Server name");
+
+        asked.Clear();
+        await client.SyncPlaylistsAsync(server);
+
+        Assert.Equal(["Server name"], asked);
+    }
+
+    // Two playlists both sides agree on, then "Contested" edited on both - so
+    // the next session stops to ask about it, which is the window the tests
+    // above make their edits in.
+    private async Task<(SimulatedFlowerServer Server, Client Client)> TwoPlaylistsAgreedAsync()
+    {
+        var server = new SimulatedFlowerServer(new[] { "A", "B", "C", "D" }.Select(t => ServerTrack(t)));
+        var client = NewClient();
+        await client.PullLibraryAsync(server);
+        client.Library.AddPlaylist(new Playlist("Mix", [client.Single("A")]));
+        client.Library.AddPlaylist(new Playlist("Contested", [client.Single("A")]));
+        await client.SyncPlaylistsAsync(server);
+
+        await Task.Delay(5);
+        client.Playlist("Contested").AppendTrack(client.Single("B"));
+        server.Library.Playlists.Single(p => p.Name == "Contested").Name = "Contested on server";
+        return (server, client);
+    }
+
     // Two phones, one server. Each edits a different playlist; neither edit
     // may cost the other.
     [Fact]

@@ -179,8 +179,15 @@ public class PlaylistSyncService
 
         var baselines = _syncStateStore.LoadBaselines(device.Fingerprint);
         var index = new PlaylistTrackIndex(_library.Tracks);
+        // What the merge is worked out from, kept so it can be laid over
+        // whatever the user does before it is installed - see
+        // PlaylistSessionOverlay. Taken now: the playlists themselves are
+        // edited in place, so a later read would see those edits as the
+        // version planned from.
+        var plannedFrom = _library.Playlists;
+        var planned = plannedFrom.ToDictionary(p => p.Id, PlannedPlaylist.Of);
         var decisions = PlaylistSyncPlanner.Plan(
-            _library.Playlists,
+            plannedFrom,
             remotePlaylists,
             id => baselines.TryGetValue(id, out var v) ? v : null,
             index);
@@ -228,13 +235,46 @@ public class PlaylistSyncService
             newBaselines[decision.PlaylistId] = resolved.UpdatedAt;
         }
 
-        // Persisted by Library.PlaylistsChanged.
-        _library.ReplacePlaylists(finalPlaylists);
+        // Persisted by Library.PlaylistsChanged. Laid over what the user did
+        // while this session ran (PlaylistSessionOverlay): a playlist deleted
+        // here mid-session keeps the baseline just agreed, so the next session
+        // reads it as deleted here and tells the server; one created
+        // mid-session has none yet, and goes up as new.
+        PlaylistSessionResult result = null!;
+        _library.ReplacePlaylists(current =>
+        {
+            result = PlaylistSessionOverlay.Apply(finalPlaylists, planned, current);
+            return result.Installed;
+        });
+        var installed = result.Installed;
+
+        // An edit made here mid-session and combined with the other side's
+        // is a new version, and is agreed once the push below lands.
+        foreach (var playlist in installed.Where(p => result.Merged.Contains(p.Id)))
+            newBaselines[playlist.Id] = playlist.UpdatedAt;
+
+        // One that could not be combined is not agreed at all: its baseline
+        // goes back to what it was, so the session the edit scheduled finds
+        // both sides changed and asks which to keep - see ConflictDetected.
+        foreach (var id in result.HeldBack)
+        {
+            _logger.LogInformation(
+                "Playlist sync with {Alias}: \"{Name}\" was edited here while the session ran and cannot be combined with their edit - left for the next session to ask about",
+                device.Alias, installed.First(p => p.Id == id).Name);
+            if (baselines.TryGetValue(id, out var agreed))
+                newBaselines[id] = agreed;
+            else
+                newBaselines.Remove(id);
+        }
+
         await _syncStateStore.SaveBaselinesAsync(device.Fingerprint, newBaselines);
 
         try
         {
-            var manifest = PlaylistSyncMapper.ToManifest(_deviceIdentity.Fingerprint, finalPlaylists, deletedHere);
+            // Held back from the push too: the server takes a copy newer than
+            // its own, which this is, and the other edit would go unasked.
+            var pushed = installed.Where(p => !result.HeldBack.Contains(p.Id)).ToList();
+            var manifest = PlaylistSyncMapper.ToManifest(_deviceIdentity.Fingerprint, pushed, deletedHere);
             var bodyBytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(manifest, FlowerJsonContext.Default.PlaylistSyncManifestDto));
             const string postPath = "/api/flower/v1/playlists/apply";
             using var content = new ByteArrayContent(bodyBytes);
@@ -244,7 +284,7 @@ public class PlaylistSyncService
             using var postResponse = await Http.SendAsync(postRequest);
             postResponse.EnsureSuccessStatusCode();
             _logger.LogInformation("Playlist sync with {Alias}: pushed {Count} playlist(s) to their /apply successfully",
-                device.Alias, finalPlaylists.Count);
+                device.Alias, installed.Count);
         }
         catch (Exception ex)
         {
