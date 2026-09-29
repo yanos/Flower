@@ -49,9 +49,11 @@ done
 # beside the deployment is the one read, and every -f it was started with.
 if [ "$up" = true ]; then
   # Stopped counts: a deployment taken down to make way for this is still the
-  # one meant. The project name is pinned in docker-compose.yml.
+  # one meant. The project name is pinned in docker-compose.yml. .Label rather
+  # than index .Labels: docker ps hands its template the labels as one
+  # comma-joined string, which index refuses.
   deployment=$(docker ps -a --filter label=com.docker.compose.project=flower \
-    --format '{{ index .Labels "com.docker.compose.project.working_dir" }}|{{ index .Labels "com.docker.compose.project.config_files" }}' \
+    --format '{{ .Label "com.docker.compose.project.working_dir" }}|{{ .Label "com.docker.compose.project.config_files" }}' \
     | head -n 1)
 
   if [ -n "$deployment" ]; then
