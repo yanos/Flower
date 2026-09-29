@@ -4,6 +4,8 @@
 #
 #   scripts/build-server-image.sh              # build flower-server:local
 #   scripts/build-server-image.sh --up         # ...and restart the flower deployment on it
+#   scripts/build-server-image.sh --up ~/docker/flower
+#                                              # ...the deployment in that directory
 #   scripts/build-server-image.sh --no-web-ui  # skip the browser UI (minutes faster)
 #
 # The image is tagged flower-server:local, never ghcr.io/yanos/flower-server:latest:
@@ -13,14 +15,22 @@
 #
 #   FLOWER_IMAGE=flower-server:local docker compose up -d
 #
-# run where the existing deployment was started, with the compose files it was
-# started with. Docker records both on the container, and they are rarely this
-# clone's docker/: the deployment is set up once, somewhere with a .env naming
-# the music folder and whichever overrides (caddy, cloudflared) it needs, and a
-# clone checked out to build from has neither. With no deployment to find, it is
-# this clone's docker/, with docker-compose.non-linux.yml added anywhere but
-# Linux, where host networking cannot work. Either way the configuration is
-# checked before the build, so a missing .env costs seconds rather than a build.
+# run where the deployment lives - which is rarely this clone's docker/: the
+# deployment is set up once, somewhere with a .env naming the music folder (or
+# a compose file of its own) and whichever overrides it needs, and a clone
+# checked out to build from has neither. In order:
+#
+#   - a directory given after --up: compose is run from inside it, exactly as
+#     `docker compose up -d` typed there would be, compose file and .env and
+#     all. The one form that needs no container to exist.
+#   - the existing flower container's own record of the directory and compose
+#     files it was started with. Stopped counts; `docker compose down` removes
+#     the container and that record with it, which is what the form above is for.
+#   - this clone's docker/, with docker-compose.non-linux.yml added anywhere but
+#     Linux, where host networking cannot work.
+#
+# Either way the configuration is checked before the build, so a missing .env
+# costs seconds rather than a build.
 #
 # It runs against the same data volume as the published image - that is the
 # point, a new server tried on the real pairings and library - and going back
@@ -34,51 +44,78 @@ cd "$(dirname "$0")/.."
 
 image=flower-server:local
 up=false
+up_dir=
 web_ui=true
 
-for arg in "$@"; do
-  case "$arg" in
-    --up) up=true ;;
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --up)
+      up=true
+      # The directory is optional, so only a next argument that is not itself
+      # a flag is taken as one.
+      if [ $# -gt 1 ] && [ "${2#-}" = "$2" ]; then
+        up_dir=$2
+        shift
+      fi
+      ;;
     --no-web-ui) web_ui=false ;;
     -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0 ;;
-    *) echo "unknown argument: $arg (see --help)" >&2; exit 2 ;;
+    *) echo "unknown argument: $1 (see --help)" >&2; exit 2 ;;
   esac
+  shift
 done
 
-# Where --up restarts, as compose arguments: --project-directory so the .env
-# beside the deployment is the one read, and every -f it was started with.
-if [ "$up" = true ]; then
-  # Stopped counts: a deployment taken down to make way for this is still the
-  # one meant. The project name is pinned in docker-compose.yml. .Label rather
-  # than index .Labels: docker ps hands its template the labels as one
-  # comma-joined string, which index refuses.
-  deployment=$(docker ps -a --filter label=com.docker.compose.project=flower \
-    --format '{{ .Label "com.docker.compose.project.working_dir" }}|{{ .Label "com.docker.compose.project.config_files" }}' \
-    | head -n 1)
+# Where --up restarts: the directory compose runs from, and any arguments that
+# name its files. Empty arguments mean compose finds them itself, the way it
+# does for someone typing `docker compose up -d` in that directory.
+workdir=
+compose=()
 
-  if [ -n "$deployment" ]; then
-    workdir=${deployment%%|*}
-    IFS=, read -r -a files <<< "${deployment#*|}"
-    echo "restarting the deployment started from $workdir"
-  else
-    workdir=$PWD/docker
-    files=("$workdir/docker-compose.yml")
-    if [ "$(uname)" != Linux ]; then
-      files+=("$workdir/docker-compose.non-linux.yml")
+# ${compose[@]+...} rather than "${compose[@]}": macOS still ships bash 3.2,
+# where an empty array under set -u is an unbound variable.
+run_compose() {
+  (cd "$workdir" && FLOWER_IMAGE="$image" docker compose ${compose[@]+"${compose[@]}"} "$@")
+}
+
+if [ "$up" = true ]; then
+  if [ -n "$up_dir" ]; then
+    if [ ! -d "$up_dir" ]; then
+      echo "error: $up_dir is not a directory" >&2
+      exit 2
     fi
-    echo "no flower deployment found; starting one from $workdir"
+    workdir=$(cd "$up_dir" && pwd)
+    echo "restarting the deployment in $workdir"
+  else
+    # The project name is pinned in docker-compose.yml. .Label rather than
+    # index .Labels: docker ps hands its template the labels as one
+    # comma-joined string, which index refuses.
+    deployment=$(docker ps -a --filter label=com.docker.compose.project=flower \
+      --format '{{ .Label "com.docker.compose.project.working_dir" }}|{{ .Label "com.docker.compose.project.config_files" }}' \
+      | head -n 1)
+
+    if [ -n "$deployment" ]; then
+      workdir=${deployment%%|*}
+      IFS=, read -r -a files <<< "${deployment#*|}"
+      echo "restarting the deployment started from $workdir"
+    else
+      workdir=$PWD/docker
+      files=("$workdir/docker-compose.yml")
+      if [ "$(uname)" != Linux ]; then
+        files+=("$workdir/docker-compose.non-linux.yml")
+      fi
+      echo "no flower deployment found; starting one from $workdir (pass --up <dir> to name another)"
+    fi
+
+    for file in "${files[@]}"; do
+      if [ ! -f "$file" ]; then
+        echo "error: $file, which the deployment was started with, no longer exists" >&2
+        exit 1
+      fi
+      compose+=(-f "$file")
+    done
   fi
 
-  compose=(--project-directory "$workdir")
-  for file in "${files[@]}"; do
-    if [ ! -f "$file" ]; then
-      echo "error: $file, which the deployment was started with, no longer exists" >&2
-      exit 1
-    fi
-    compose+=(-f "$file")
-  done
-
-  if ! FLOWER_IMAGE="$image" docker compose "${compose[@]}" config --quiet; then
+  if ! run_compose config --quiet; then
     echo "error: the compose configuration in $workdir does not resolve (is there a .env there?) - nothing built" >&2
     exit 1
   fi
@@ -110,9 +147,11 @@ fi
 echo "built $image"
 
 if [ "$up" = true ]; then
-  FLOWER_IMAGE="$image" docker compose "${compose[@]}" up -d
+  run_compose up -d
   echo "running $image - back to the published image with:"
-  printf '  docker compose'
-  printf ' %q' "${compose[@]}"
+  printf '  cd %q && docker compose' "$workdir"
+  if [ ${#compose[@]} -gt 0 ]; then
+    printf ' %q' "${compose[@]}"
+  fi
   printf ' up -d\n'
 fi
