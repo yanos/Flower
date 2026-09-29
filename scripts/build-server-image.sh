@@ -3,7 +3,7 @@
 # so a server change can be run in Docker without cutting a tag.
 #
 #   scripts/build-server-image.sh              # build flower-server:local
-#   scripts/build-server-image.sh --up         # ...and restart docker/'s deployment on it
+#   scripts/build-server-image.sh --up         # ...and restart the flower deployment on it
 #   scripts/build-server-image.sh --no-web-ui  # skip the browser UI (minutes faster)
 #
 # The image is tagged flower-server:local, never ghcr.io/yanos/flower-server:latest:
@@ -13,10 +13,18 @@
 #
 #   FLOWER_IMAGE=flower-server:local docker compose up -d
 #
-# with docker-compose.non-linux.yml added anywhere but Linux, where host
-# networking cannot work. It runs against the same data volume as the published image - that is
-# the point, a new server tried on the real pairings and library - and going
-# back is a plain `docker compose up -d` from docker/.
+# run where the existing deployment was started, with the compose files it was
+# started with. Docker records both on the container, and they are rarely this
+# clone's docker/: the deployment is set up once, somewhere with a .env naming
+# the music folder and whichever overrides (caddy, cloudflared) it needs, and a
+# clone checked out to build from has neither. With no deployment to find, it is
+# this clone's docker/, with docker-compose.non-linux.yml added anywhere but
+# Linux, where host networking cannot work. Either way the configuration is
+# checked before the build, so a missing .env costs seconds rather than a build.
+#
+# It runs against the same data volume as the published image - that is the
+# point, a new server tried on the real pairings and library - and going back
+# is the same command without FLOWER_IMAGE, which it prints at the end.
 #
 # The version comes from MinVer reading .git, same as the release build, so the
 # image reports the height past the last tag (0.3.1-alpha.0.1, say) rather
@@ -36,6 +44,43 @@ for arg in "$@"; do
     *) echo "unknown argument: $arg (see --help)" >&2; exit 2 ;;
   esac
 done
+
+# Where --up restarts, as compose arguments: --project-directory so the .env
+# beside the deployment is the one read, and every -f it was started with.
+if [ "$up" = true ]; then
+  # Stopped counts: a deployment taken down to make way for this is still the
+  # one meant. The project name is pinned in docker-compose.yml.
+  deployment=$(docker ps -a --filter label=com.docker.compose.project=flower \
+    --format '{{ index .Labels "com.docker.compose.project.working_dir" }}|{{ index .Labels "com.docker.compose.project.config_files" }}' \
+    | head -n 1)
+
+  if [ -n "$deployment" ]; then
+    workdir=${deployment%%|*}
+    IFS=, read -r -a files <<< "${deployment#*|}"
+    echo "restarting the deployment started from $workdir"
+  else
+    workdir=$PWD/docker
+    files=("$workdir/docker-compose.yml")
+    if [ "$(uname)" != Linux ]; then
+      files+=("$workdir/docker-compose.non-linux.yml")
+    fi
+    echo "no flower deployment found; starting one from $workdir"
+  fi
+
+  compose=(--project-directory "$workdir")
+  for file in "${files[@]}"; do
+    if [ ! -f "$file" ]; then
+      echo "error: $file, which the deployment was started with, no longer exists" >&2
+      exit 1
+    fi
+    compose+=(-f "$file")
+  done
+
+  if ! FLOWER_IMAGE="$image" docker compose "${compose[@]}" config --quiet; then
+    echo "error: the compose configuration in $workdir does not resolve (is there a .env there?) - nothing built" >&2
+    exit 1
+  fi
+fi
 
 build_args=(--build-arg INCLUDE_WEB_UI="$web_ui")
 
@@ -63,11 +108,9 @@ fi
 echo "built $image"
 
 if [ "$up" = true ]; then
-  compose=(-f docker-compose.yml)
-  if [ "$(uname)" != Linux ]; then
-    compose+=(-f docker-compose.non-linux.yml)
-  fi
-  cd docker
   FLOWER_IMAGE="$image" docker compose "${compose[@]}" up -d
-  echo "running $image - back to the published image with: cd docker && docker compose ${compose[*]} up -d"
+  echo "running $image - back to the published image with:"
+  printf '  docker compose'
+  printf ' %q' "${compose[@]}"
+  printf ' up -d\n'
 fi
