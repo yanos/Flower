@@ -60,6 +60,12 @@ public sealed class OriginLibraryImporter(
     // did not say, which is read as no.
     public bool? OriginCallerIsAdmin { get; private set; }
 
+    // Who the origin server said it is, on the same handshake. Every track
+    // this imports carries it as its origin, which is what makes it the
+    // server a browser tab's tracks are streamed from - see
+    // MainViewModel.BrowserOriginFingerprint. Null until it has answered.
+    public string? OriginFingerprint { get; private set; }
+
     // Raised once the /info handshake has answered, before the catalog is
     // fetched: the two flags above are what a browser tab needs to decide what
     // to show, and waiting for a whole library to arrive first would leave it
@@ -116,6 +122,7 @@ public sealed class OriginLibraryImporter(
         var info = await response.Content.ReadFromJsonAsync(SyncProtocolJsonContext.Default.SyncInfoResponseDto);
         OriginTrustsThisClient = info?.TrustsCaller;
         OriginCallerIsAdmin = info?.CallerIsAdmin;
+        OriginFingerprint = string.IsNullOrEmpty(info?.Fingerprint) ? null : info.Fingerprint;
         HandshakeAnswered?.Invoke();
 
         if (string.IsNullOrEmpty(info?.Fingerprint))

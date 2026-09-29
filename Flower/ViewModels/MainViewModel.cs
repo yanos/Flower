@@ -258,7 +258,22 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // track rows. Everything else in the app gets availability already
     // computed onto its rows/tiles (TrackAvailability.Apply) and has no need
     // of this.
-    public TrackAvailabilityContext Availability => new(PairedServerFingerprint, IsPairedServerReachable);
+    public TrackAvailabilityContext Availability => new(StreamingServerFingerprint, IsStreamingServerReachable);
+
+    // The server a streamed track plays from, and whether it can right now -
+    // what every row's and tile's dimming is worked out against. The paired
+    // server everywhere but a browser tab, which pairs with nothing through
+    // PeerSyncCoordinator and so has no paired server or reachability at all:
+    // its server is the origin it was loaded from, and asked through those
+    // two instead, every track in it read as a placeholder with nobody to
+    // stream it and the whole library came up greyed out. Counted as
+    // reachable for as long as the tab is open - a tab whose origin has gone
+    // cannot do anything else either, and has no second address to wait on.
+    private string? StreamingServerFingerprint => BrowserOriginFingerprint ?? PairedServerFingerprint;
+    private bool IsStreamingServerReachable => BrowserOriginFingerprint != null || IsPairedServerReachable;
+
+    string? ILibraryBrowseHost.PairedServerFingerprint => StreamingServerFingerprint;
+    bool ILibraryBrowseHost.IsPairedServerReachable => IsStreamingServerReachable;
 
     // Gates mobile SettingsView's "Server not reachable" line - separate
     // from IsPairedServerReachable's own negation so it only shows once
@@ -792,6 +807,25 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             _isCheckingBrowserPairing = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(CoversBrowserPage));
+        }
+    }
+
+    // The server this tab was loaded from, once it has said who it is: the
+    // one server a tab's tracks can stream from - see
+    // StreamingServerFingerprint.
+    private string? _browserOriginFingerprint;
+    public string? BrowserOriginFingerprint
+    {
+        get => _browserOriginFingerprint;
+        set
+        {
+            if (_browserOriginFingerprint == value)
+                return;
+            _browserOriginFingerprint = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(Availability));
+            Browser.ApplyTrackAvailability(StreamingServerFingerprint, IsStreamingServerReachable);
+            Home.ApplyAvailability();
         }
     }
 
@@ -1513,7 +1547,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         // grid here (ShowAlbumAsync, wired by MainView), an album screen on a
         // phone (MobileMainViewModel) - so nothing here answers AlbumOpened.
         Home = new HomeViewModel(library, playlistControlViewModel.AlbumProgress, playlistControlViewModel,
-            () => (PairedServerFingerprint, IsPairedServerReachable));
+            () => (StreamingServerFingerprint, IsStreamingServerReachable));
 
         _subscriptions.Add<EventHandler<DeletePlaylistConfirmationEventArgs>>(
             (_, e) => DeletePlaylistConfirmationRequested?.Invoke(this, e),
@@ -1717,7 +1751,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             _deviceSidebar.SyncPairedServerRow();
             // After the row's glyph, which IsSelectedServerReachable reads.
             NotifyPairButtonPropertiesChanged();
-            Browser.ApplyTrackAvailability(PairedServerFingerprint, reachability.IsReachable);
+            Browser.ApplyTrackAvailability(StreamingServerFingerprint, IsStreamingServerReachable);
             Home.ApplyAvailability();
             ReachabilityChanged?.Invoke(this, EventArgs.Empty);
         },

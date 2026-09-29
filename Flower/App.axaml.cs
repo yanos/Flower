@@ -1047,9 +1047,11 @@ public partial class App : Application
         var cannotPair = Ioc.Default.GetService<BrowserPeerCredentials>()?.UnauthenticatedReason;
         var unpaired = origin.OriginTrustsThisClient == false;
         var admin = origin.OriginCallerIsAdmin == true;
+        var originFingerprint = origin.OriginFingerprint;
 
         Dispatcher.UIThread.Post(() =>
         {
+            mainViewModel.BrowserOriginFingerprint = originFingerprint;
             mainViewModel.BrowserCannotPairReason = cannotPair;
             mainViewModel.IsBrowserUnpaired = unpaired;
             mainViewModel.IsBrowserAdmin = admin;

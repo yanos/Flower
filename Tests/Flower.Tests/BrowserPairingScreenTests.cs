@@ -157,4 +157,35 @@ public class BrowserPairingScreenTests : PinnedDataDirectory
 
         Assert.Equal(SidebarItemKind.Songs, vm.SelectedSidebarItem?.Kind);
     }
+
+    // Every track a tab has is a placeholder for one of the origin's files,
+    // and a tab pairs with nothing the way a device does, so it has no paired
+    // server to be reachable. Asked about that, the whole library came up
+    // greyed out as if the server were down, while it played. The origin is
+    // the tab's server once it has said who it is.
+    [AvaloniaFact]
+    public async Task A_tabs_songs_are_at_full_strength_once_the_origin_has_said_who_it_is()
+    {
+        const string origin = "origin-fingerprint";
+        var tracks = new List<Track>
+        {
+            new() { Title = "a", Album = "Alb", Artists = "Art", OriginDeviceFingerprint = origin },
+            new() { Title = "b", Album = "Alb", Artists = "Art", OriginDeviceFingerprint = origin },
+        };
+        var vm = Own(MainViewModelHarness.Build(new Library(tracks), new MainPlaylist(tracks))).Main;
+        vm.SelectedSidebarItem = vm.SidebarItems.Single(i => i.Kind == SidebarItemKind.Songs);
+        await vm.RebuildRowsImmediatelyAsync();
+
+        Assert.All(vm.Rows, row => Assert.True(row.IsUnavailable));
+
+        vm.BrowserOriginFingerprint = origin;
+
+        Assert.All(vm.Rows, row => Assert.False(row.IsUnavailable));
+        Assert.All(vm.Rows, row => Assert.False(row.IsAlbumGroupUnavailable));
+
+        // And rows built afterwards, which is the usual order: the handshake
+        // answers before the catalog arrives.
+        await vm.RebuildRowsImmediatelyAsync();
+        Assert.All(vm.Rows, row => Assert.False(row.IsUnavailable));
+    }
 }
