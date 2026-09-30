@@ -72,6 +72,22 @@
         <controls:TextInput Text="{Binding Main.DeviceAlias, UpdateSourceTrigger=LostFocus}"
                             controls:SoftKeyboard.ReopenOnTap="True"/>
 
+        <!-- Radio buttons rather than desktop's ComboBox: each choice is one
+             tap, with no popup to open first. Stacked, since three side by
+             side do not fit the width of a small phone. -->
+        <TextBlock Text="Theme" FontSize="13" Opacity="0.6" Margin="0,10,0,0"/>
+        <StackPanel>
+          <RadioButton GroupName="Theme" IsChecked="{Binding ThemeFollowsSystem}">
+            <TextBlock Text="Follow System" FontSize="15"/>
+          </RadioButton>
+          <RadioButton GroupName="Theme" IsChecked="{Binding ThemeIsLight}">
+            <TextBlock Text="Light" FontSize="15"/>
+          </RadioButton>
+          <RadioButton GroupName="Theme" IsChecked="{Binding ThemeIsDark}">
+            <TextBlock Text="Dark" FontSize="15"/>
+          </RadioButton>
+        </StackPanel>
+
         <StackPanel IsVisible="{Binding HasMediaPermissionPrompt}" Margin="0,10,0,0" Spacing="8">
           <StackPanel IsVisible="{Binding !HasMediaPermission}" Spacing="8">
             <TextBlock Text="Flower can't see your music. Allow access in Settings."
