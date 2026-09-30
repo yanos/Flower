@@ -35,7 +35,7 @@
        only in the four rounded corners. -->
   <DataTemplate x:Key="AlbumArtTemplate" x:DataType="vm:AlbumTileViewModel">
     <Border CornerRadius="16"
-            BoxShadow="0 4 16 0 #40000000">
+            BoxShadow="{DynamicResource AppCoverShadow}">
       <controls:SquareAlbumArtView AlbumArt="{Binding AlbumArt}"
                                    ArtCornerRadius="16"
                                    Classes.dimmed="{Binding IsUnavailable}" />
@@ -163,14 +163,8 @@
            its own, so there is nothing to draw and nothing shows. -->
       <Border Margin="{DynamicResource ScreenBackdropBleed}"
               ClipToBounds="True"
-              IsHitTestVisible="False">
-        <Border.OpacityMask>
-          <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
-            <GradientStop Color="#FF000000" Offset="0" />
-            <GradientStop Color="#C0000000" Offset="0.5" />
-            <GradientStop Color="#00000000" Offset="1" />
-          </LinearGradientBrush>
-        </Border.OpacityMask>
+              IsHitTestVisible="False"
+              OpacityMask="{DynamicResource AppBackdropFadeMask}">
         <Image Source="{Binding AlbumArt, Converter={x:Static services:TinyArtConverter.Instance}}"
                Stretch="UniformToFill"
                Opacity="0.6"

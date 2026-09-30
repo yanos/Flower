@@ -23,7 +23,7 @@
     <Setter Property="BorderThickness" Value="1" />
     <!-- Just enough to lift the circle off the page: a darker or wider one
          read as a halo round every button. -->
-    <Setter Property="BoxShadow" Value="0 1 4 0 #1A000000" />
+    <Setter Property="BoxShadow" Value="{DynamicResource AppButtonShadow}" />
   </Style>
 
   <!-- CornerRadius is what rounds the pressed and hover highlight: Fluent paints

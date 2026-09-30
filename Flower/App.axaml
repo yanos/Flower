@@ -34,13 +34,11 @@
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <!-- Soft, muted app-wide palette - see Theme.axaml for the full
-                     rationale (default FluentTheme dark is near-black/near-white,
-                     which reads harshly; this is a Nord-inspired dark-grey +
-                     pastel-accent scheme instead, closer to a terminal color
-                     theme). Every control below reads these instead of a raw hex
-                     color, and instead of FluentTheme's own System* keys, so the
-                     whole app repaints from editing one file. -->
+                <!-- The design palette, light and dark (warm neutrals and a
+                     coral accent) - see Theme.axaml, the one file that holds
+                     a colour value. Every control below reads its keys
+                     instead of a raw hex colour, so the whole app repaints
+                     from one palette. -->
                 <ResourceInclude Source="avares://Flower/Theme.axaml"/>
             </ResourceDictionary.MergedDictionaries>
 

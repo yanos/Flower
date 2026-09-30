@@ -10,6 +10,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
+using Avalonia.Markup.Xaml.MarkupExtensions;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Threading;
@@ -205,7 +206,6 @@ public partial class MusicListView : UserControl
     private readonly Border _dropIndicator = new()
     {
         Height              = 2,
-        Background          = GetAccentBrush(),
         IsVisible           = false,
         IsHitTestVisible    = false,
         HorizontalAlignment = HorizontalAlignment.Stretch,
@@ -221,7 +221,6 @@ public partial class MusicListView : UserControl
     private readonly Border _columnDropIndicator = new()
     {
         Width               = 2,
-        Background          = GetAccentBrush(),
         IsVisible           = false,
         IsHitTestVisible    = false,
         HorizontalAlignment = HorizontalAlignment.Left,
@@ -262,6 +261,11 @@ public partial class MusicListView : UserControl
     public MusicListView()
     {
         InitializeComponent();
+        // The drop indicators are built in field initializers, which cannot
+        // bind; their colour is bound here instead, to the resource rather
+        // than a copy of it, so it follows the theme like everything else.
+        _dropIndicator[!Border.BackgroundProperty] = new DynamicResourceExtension("AppAccentBrush");
+        _columnDropIndicator[!Border.BackgroundProperty] = new DynamicResourceExtension("AppAccentBrush");
         // The one container read left in this layer, and deliberately so: this
         // control is instantiated by XAML (MainView.axaml), which offers no
         // constructor to inject through and no DataContext until well after
@@ -414,7 +418,6 @@ public partial class MusicListView : UserControl
     private void BuildHeader()
     {
         _headerPanel = new StackPanel { Orientation = Orientation.Horizontal };
-        var separatorBrush = GetSeparatorBrush();
 
         // Spacer for the art well, matching the row grid's own first column
         // (see TrackRowControl.BuildCells) - zero-wide when the art is turned
@@ -422,7 +425,7 @@ public partial class MusicListView : UserControl
         _headerPanel.Children.Add(new Border { Width = _columnManager.ArtColumnWidth });
 
         foreach (var col in _columnManager.VisibleColumns)
-            _headerPanel.Children.Add(MakeHeaderCell(col, separatorBrush));
+            _headerPanel.Children.Add(MakeHeaderCell(col));
 
         // _headerHost is a single, stable Grid reused across every BuildHeader()
         // call (which can happen several times in a row - e.g. Reorder() changes
@@ -539,33 +542,13 @@ public partial class MusicListView : UserControl
         _columnDropIndicator.IsVisible = false;
     }
 
-    private static IBrush GetSeparatorBrush()
-    {
-        if (Application.Current?.TryFindResource("SystemControlForegroundBaseMediumLowBrush", out var res) == true &&
-            res is IBrush brush)
-            return brush;
-        return Brushes.Gray;
-    }
-
-    // Field initializers (see _dropIndicator/_columnDropIndicator above) run
-    // once per MusicListView instance, well after app startup, so
-    // Application.Current is always available here - same one-time (not live-
-    // reactive to a theme change) resolution GetSeparatorBrush already uses.
-    private static IBrush GetAccentBrush()
-    {
-        if (Application.Current?.TryFindResource("AppAccentBrush", out var res) == true &&
-            res is IBrush brush)
-            return brush;
-        return Brushes.DodgerBlue;
-    }
-
     // MusicListView.axaml sets x:CompileBindings="False" - its columns are
     // built and rebound dynamically from ColumnManager's runtime-configurable
     // definitions, so a compile-time binding path isn't available here. The
     // path used (col.Width) is a real property on MusicColumnDefinition, kept
     // alive by direct references elsewhere, so trimming it away isn't a risk.
     [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Binding path is a real property on MusicColumnDefinition, kept alive by direct references elsewhere in the codebase.")]
-    private Control MakeHeaderCell(MusicColumnDefinition col, IBrush separatorBrush)
+    private Control MakeHeaderCell(MusicColumnDefinition col)
     {
         // Sort arrow
         var arrow = new TextBlock
@@ -611,10 +594,10 @@ public partial class MusicListView : UserControl
         var separator = new Border
         {
             Width               = 1,
-            Background          = separatorBrush,
             HorizontalAlignment = HorizontalAlignment.Right,
             IsHitTestVisible    = false,
         };
+        separator[!Border.BackgroundProperty] = new DynamicResourceExtension("SystemControlForegroundBaseMediumLowBrush");
 
         var outer = new Grid
         {

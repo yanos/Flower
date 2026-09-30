@@ -35,7 +35,7 @@
   <Grid>
     <!-- Dimmed backdrop; tapping it dismisses the sheet -->
     <Button Command="{Binding CloseSheetCommand}"
-            Background="#66000000"
+            Background="{DynamicResource AppScrimBrush}"
             BorderThickness="0"
             HorizontalAlignment="Stretch"
             VerticalAlignment="Stretch" />

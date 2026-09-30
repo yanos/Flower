@@ -22,7 +22,7 @@
     <!-- No backdrop-tap-to-dismiss, same as ConfirmDeleteFileView: this can
          delete files, on this phone and on the server, and should not be
          answered by an unattended tap. -->
-    <Border Background="#66000000" />
+    <Border Background="{DynamicResource AppScrimBrush}" />
 
     <Border VerticalAlignment="Bottom"
             controls:SlidingSheet.IsCard="True"

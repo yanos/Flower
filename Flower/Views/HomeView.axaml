@@ -88,7 +88,7 @@
                                 Margin="0,0,8,8"
                                 HorizontalAlignment="Right" VerticalAlignment="Bottom"
                                 Background="{DynamicResource AppAccentBrush}">
-                          <materialIcons:MaterialIcon Kind="Play" Width="26" Height="26" Foreground="White" />
+                          <materialIcons:MaterialIcon Kind="Play" Width="26" Height="26" Foreground="{DynamicResource AppOnPrimaryBrush}" />
                         </Border>
                       </Panel>
                       <ProgressBar MinWidth="0" Minimum="0" Maximum="1" Value="{Binding Progress}"

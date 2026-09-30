@@ -25,18 +25,19 @@
   <UserControl.Resources>
     <conv:PlayOrPauseConverter x:Key="PlayOrPauseConverter" />
 
-    <!-- Fluent's slider brushes, white on the tinted sheet: the filled part
-         and the thumb solid, the rest of the rail a faint white. Nearer than
-         Theme.axaml's, so these win for both sliders in here. -->
-    <SolidColorBrush x:Key="SliderTrackValueFill" Color="White" />
-    <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Color="#E6FFFFFF" />
-    <SolidColorBrush x:Key="SliderTrackValueFillPressed" Color="#CCFFFFFF" />
-    <SolidColorBrush x:Key="SliderThumbBackground" Color="White" />
-    <SolidColorBrush x:Key="SliderThumbBackgroundPointerOver" Color="#E6FFFFFF" />
-    <SolidColorBrush x:Key="SliderThumbBackgroundPressed" Color="#CCFFFFFF" />
-    <SolidColorBrush x:Key="SliderTrackFill" Color="#40FFFFFF" />
-    <SolidColorBrush x:Key="SliderTrackFillPointerOver" Color="#4DFFFFFF" />
-    <SolidColorBrush x:Key="SliderTrackFillPressed" Color="#4DFFFFFF" />
+    <!-- Fluent's slider brushes, on the colour for things over a cover's
+         colour (PaletteOnArt, Theme.axaml, at AppOnArt*'s strengths): the
+         filled part and the thumb solid, the rest of the rail faint. Nearer
+         than Theme.axaml's own, so these win for both sliders in here. -->
+    <SolidColorBrush x:Key="SliderTrackValueFill" Color="{DynamicResource PaletteOnArt}" />
+    <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Color="{DynamicResource PaletteOnArt}" Opacity="0.8" />
+    <SolidColorBrush x:Key="SliderTrackValueFillPressed" Color="{DynamicResource PaletteOnArt}" Opacity="0.8" />
+    <SolidColorBrush x:Key="SliderThumbBackground" Color="{DynamicResource PaletteOnArt}" />
+    <SolidColorBrush x:Key="SliderThumbBackgroundPointerOver" Color="{DynamicResource PaletteOnArt}" Opacity="0.8" />
+    <SolidColorBrush x:Key="SliderThumbBackgroundPressed" Color="{DynamicResource PaletteOnArt}" Opacity="0.8" />
+    <SolidColorBrush x:Key="SliderTrackFill" Color="{DynamicResource PaletteOnArt}" Opacity="0.25" />
+    <SolidColorBrush x:Key="SliderTrackFillPointerOver" Color="{DynamicResource PaletteOnArt}" Opacity="0.25" />
+    <SolidColorBrush x:Key="SliderTrackFillPressed" Color="{DynamicResource PaletteOnArt}" Opacity="0.25" />
   </UserControl.Resources>
 
   <UserControl.Styles>
@@ -44,16 +45,16 @@
          repeat say off by being half as bright, since there is no second
          colour here to say on with. -->
     <Style Selector="layout|NowPlayingBodyPanel materialIcons|MaterialIcon">
-      <Setter Property="Foreground" Value="White" />
+      <Setter Property="Foreground" Value="{DynamicResource AppOnArtBrush}" />
     </Style>
     <Style Selector="materialIcons|MaterialIcon.transportToggle">
-      <Setter Property="Foreground" Value="#80FFFFFF" />
+      <Setter Property="Foreground" Value="{DynamicResource AppOnArtMutedBrush}" />
     </Style>
     <Style Selector="materialIcons|MaterialIcon.transportToggle.active">
-      <Setter Property="Foreground" Value="White" />
+      <Setter Property="Foreground" Value="{DynamicResource AppOnArtBrush}" />
     </Style>
     <Style Selector="Button.pill.circle Border.ring">
-      <Setter Property="BorderBrush" Value="#99FFFFFF" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppOnArtRingBrush}" />
     </Style>
 
     <!-- Fluent's Slider reserves 15px above and below its 20px track (the
@@ -138,7 +139,7 @@
          upright, side by side when the phone is turned, with the cover always
          a square off the short edge. Two children in that order and nothing
          else - the panel owns every size and position here. -->
-    <layout:NowPlayingBodyPanel Grid.Row="1" Margin="24,0" TextElement.Foreground="White">
+    <layout:NowPlayingBodyPanel Grid.Row="1" Margin="24,0" TextElement.Foreground="{DynamicResource AppOnArtBrush}">
       <!-- Tapping the art jumps to that track's album (closing this sheet) -
            see GoToCurrentlyPlayingAlbumCommand. -->
       <!-- The shadow is cast from outside the Button: Fluent's Button clips its
@@ -150,7 +151,7 @@
            own - left to its default it would collapse to nothing and the slot
            would sit empty. -->
       <Border CornerRadius="16"
-              BoxShadow="0 8 24 0 #30000000">
+              BoxShadow="{DynamicResource AppCoverShadow}">
         <Button Command="{Binding GoToCurrentlyPlayingAlbumCommand}"
                 HorizontalAlignment="Stretch"
                 VerticalAlignment="Stretch"
@@ -181,7 +182,7 @@
                      FontFamily="{DynamicResource AppDisplayFontFamily}"
                      FontSize="28"
                      FontWeight="SemiBold"
-                     Foreground="White"
+                     Foreground="{DynamicResource AppOnArtBrush}"
                      HorizontalAlignment="Center"
                      TextAlignment="Center"
                      TextTrimming="CharacterEllipsis" />

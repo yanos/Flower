@@ -54,17 +54,19 @@ public class ScrollIndexBar : Control
     public static readonly StyledProperty<bool> LettersDescendingProperty =
         AvaloniaProperty.Register<ScrollIndexBar, bool>(nameof(LettersDescending));
 
+    // No default colours: the host styles all four from the theme (the phone's
+    // are in MobileMainView.axaml), and an unstyled bar simply draws nothing.
     public static readonly StyledProperty<IBrush?> ForegroundProperty =
-        AvaloniaProperty.Register<ScrollIndexBar, IBrush?>(nameof(Foreground), Brushes.Gray);
+        AvaloniaProperty.Register<ScrollIndexBar, IBrush?>(nameof(Foreground));
 
     public static readonly StyledProperty<IBrush?> ActiveBackgroundProperty =
         AvaloniaProperty.Register<ScrollIndexBar, IBrush?>(nameof(ActiveBackground));
 
     public static readonly StyledProperty<IBrush?> BubbleBackgroundProperty =
-        AvaloniaProperty.Register<ScrollIndexBar, IBrush?>(nameof(BubbleBackground), Brushes.DimGray);
+        AvaloniaProperty.Register<ScrollIndexBar, IBrush?>(nameof(BubbleBackground));
 
     public static readonly StyledProperty<IBrush?> BubbleForegroundProperty =
-        AvaloniaProperty.Register<ScrollIndexBar, IBrush?>(nameof(BubbleForeground), Brushes.White);
+        AvaloniaProperty.Register<ScrollIndexBar, IBrush?>(nameof(BubbleForeground));
 
     // Wide enough for a thumb to find without looking, narrow enough to leave
     // the list its width. The letters are drawn in the middle of it.

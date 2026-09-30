@@ -82,9 +82,9 @@
                           <Border Width="40" Height="40" CornerRadius="20"
                                   Margin="0,0,8,8"
                                   HorizontalAlignment="Right" VerticalAlignment="Bottom"
-                                  BoxShadow="0 1 4 0 #26000000"
+                                  BoxShadow="{DynamicResource AppButtonShadow}"
                                   Background="{DynamicResource AppAccentBrush}">
-                            <materialIcons:MaterialIcon Kind="Play" Width="24" Height="24" Foreground="White" />
+                            <materialIcons:MaterialIcon Kind="Play" Width="24" Height="24" Foreground="{DynamicResource AppOnPrimaryBrush}" />
                           </Border>
                         </Panel>
                         <ProgressBar MinWidth="0" Minimum="0" Maximum="1" Value="{Binding Progress}"

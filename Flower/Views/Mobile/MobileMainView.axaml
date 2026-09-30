@@ -492,7 +492,7 @@
     <Border Grid.Column="1"
             Classes="floating"
             Height="56"
-            BoxShadow="0 4 20 0 #2E000000"
+            BoxShadow="{DynamicResource AppOvalShadow}"
             CornerRadius="28"
             Padding="6,0,8,0">
       <Grid ColumnDefinitions="*,Auto,Auto">
@@ -572,7 +572,7 @@
             Grid.Column="1"
             Classes="floating"
             Height="64"
-            BoxShadow="0 4 20 0 #2E000000"
+            BoxShadow="{DynamicResource AppOvalShadow}"
             CornerRadius="32"
             Padding="4,0">
     <Grid x:Name="TabGrid">

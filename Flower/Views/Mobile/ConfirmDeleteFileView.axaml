@@ -23,7 +23,7 @@
          ConfirmPairServerView - a destructive, sometimes-unrecoverable action
          (see IsRecoverableDownload) should not be dismissible by an
          unattended tap; Cancel below is the only way out other than Delete. -->
-    <Border Background="#66000000" />
+    <Border Background="{DynamicResource AppScrimBrush}" />
 
     <Border VerticalAlignment="Bottom"
             controls:SlidingSheet.IsCard="True"

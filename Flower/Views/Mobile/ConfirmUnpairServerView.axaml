@@ -25,7 +25,7 @@
   </UserControl.Styles>
 
   <Grid>
-    <Border Background="#66000000" />
+    <Border Background="{DynamicResource AppScrimBrush}" />
 
     <Border VerticalAlignment="Bottom"
             controls:SlidingSheet.IsCard="True"

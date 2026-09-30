@@ -24,7 +24,7 @@
          an unattended dismissal should not silently start replacing this
          device's library view, so the explicit Cancel button below is the
          only way out other than the pair button. -->
-    <Border Background="#66000000" />
+    <Border Background="{DynamicResource AppScrimBrush}" />
 
     <!-- The keyboard comes up over the bottom of the screen, which is exactly
          where this sheet sits - and the code box is the first thing it covers.

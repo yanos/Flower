@@ -230,7 +230,7 @@
             BorderBrush="{DynamicResource AppPrimaryBorderBrush}"
             BorderThickness="1"
             CornerRadius="12"
-            BoxShadow="0 4 16 0 #33000000"
+            BoxShadow="{DynamicResource AppDropdownShadow}"
             ClipToBounds="True">
       <!-- This slot's own box, not IsSearchDropdownOpen: the screen kept alive
            beside this one for a swipe is a ScreenSlot too, and would open its

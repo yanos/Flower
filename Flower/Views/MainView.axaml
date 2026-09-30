@@ -486,7 +486,7 @@
               BorderThickness="1"
               CornerRadius="6"
               Padding="10,6"
-              BoxShadow="0 2 8 0 #40000000">
+              BoxShadow="{DynamicResource AppDropdownShadow}">
         <StackPanel Orientation="Horizontal" Spacing="6">
           <materialIcons:MaterialIcon Kind="MusicNote" Width="14" Height="14" VerticalAlignment="Center"/>
           <TextBlock x:Name="DragGhostText"
