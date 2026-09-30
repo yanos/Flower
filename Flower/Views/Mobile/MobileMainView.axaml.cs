@@ -156,11 +156,26 @@ public partial class MobileMainView : UserControl
     //
     // A mini player tucked under the tab oval follows it too, or one that
     // appeared while the sheet was up would be left where the stack used to be.
+    //
+    // The top is also the status bar's height: the screens run up under it
+    // (ScreenStackBleed), so a list starts that much further down to begin
+    // below the header rather than under the clock.
     private void BottomChrome_SizeChanged(object? sender, SizeChangedEventArgs e)
     {
-        Resources["ScreenScrollInset"] = new Thickness(0, ScreenSlot.HeaderHeight + ScreenSlot.ContentGap, 0, e.NewSize.Height + BottomChromeClearance);
+        _bottomChromeHeight = e.NewSize.Height;
+        UpdateScreenScrollInset();
         if (NowPlayingSheet.IsOpen && _miniPlayerEasing == null)
             _miniPlayerTransform.Y = MiniPlayerTuckDepth;
+    }
+
+    private double _bottomChromeHeight;
+    private double _statusBarHeight;
+
+    private void UpdateScreenScrollInset()
+    {
+        var top = _statusBarHeight + ScreenSlot.HeaderHeight + ScreenSlot.ContentGap;
+        Resources["ScreenScrollInset"] = new Thickness(0, top, 0, _bottomChromeHeight + BottomChromeClearance);
+        Resources["ScreenBackdropBleed"] = new Thickness(0, -top, 0, 0);
     }
 
     // The Now Playing sheet runs under the tab oval, so its content stops this
@@ -221,6 +236,15 @@ public partial class MobileMainView : UserControl
     private void ApplySafeArea(Thickness safeArea)
     {
         Padding = new Thickness(safeArea.Left, safeArea.Top, safeArea.Right, 0);
+
+        // The screens alone run back up under the status bar, so what they
+        // show scrolls on beneath the clock rather than stopping at a strip
+        // of background; the sheets keep the padding above. Each screen then
+        // puts its header, and the start of its list, back below it.
+        _statusBarHeight = safeArea.Top;
+        Resources["ScreenStackBleed"] = new Thickness(0, -safeArea.Top, 0, 0);
+        Resources["StatusBarInset"] = new Thickness(0, safeArea.Top, 0, 0);
+        UpdateScreenScrollInset();
         // Not the whole bottom inset: the home indicator is a thin line at the
         // very bottom of that inset, so the oval can come most of the way down
         // into it before it crowds it. On a phone with no inset at all it

@@ -50,7 +50,7 @@
                           CommandParameter="{Binding Name}"
                           controls:LongPress.Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).OpenAlbumActionsCommand}"
                           controls:LongPress.CommandParameter="{Binding}">
-                    <StackPanel Spacing="6" HorizontalAlignment="Stretch"
+                    <StackPanel Spacing="2" HorizontalAlignment="Stretch"
                                 Classes.dimmed="{Binding IsUnavailable}">
                       <controls:SquareAlbumArtView AlbumArt="{Binding AlbumArt}" ArtCornerRadius="10" />
                       <!-- Explicit LineHeights, not the font default: Inter has no CJK
@@ -76,7 +76,7 @@
                         <Button Grid.Row="1" Grid.Column="1" Classes="pill" Padding="4" Margin="4,-7,0,-2"
                                 Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).OpenAlbumActionsCommand}"
                                 CommandParameter="{Binding}">
-                          <materialIcons:MaterialIcon Kind="DotsHorizontal" Width="20" Height="20" Opacity="0.6" />
+                          <materialIcons:MaterialIcon Kind="DotsVertical" Width="20" Height="20" Opacity="0.6" />
                         </Button>
                       </Grid>
                     </StackPanel>

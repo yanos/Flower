@@ -65,8 +65,16 @@
     </Style>
   </UserControl.Styles>
 
-  <Grid RowDefinitions="52,*">
-    <ContentControl Grid.Row="0" Grid.RowSpan="2" x:Name="ContentHost" />
+  <!-- The screen fills the whole slot, which on a phone runs up under the
+       status bar (MobileMainView pulls the stack up behind it), so a list
+       scrolls on past the header and under the clock rather than stopping at
+       a strip of background. Everything drawn over it - the header band and
+       the recent-searches dropdown - is pushed back down by the status bar's
+       height (StatusBarInset), so none of it sits under the clock itself. -->
+  <Panel>
+  <ContentControl x:Name="ContentHost" />
+
+  <Grid RowDefinitions="52,*" Margin="{DynamicResource StatusBarInset}">
 
     <!-- No title in the band: it is the first line of the screen's own
          scroller, under the back button, and moves with the list
@@ -279,4 +287,5 @@
       </StackPanel>
     </Border>
   </Grid>
+  </Panel>
 </UserControl>

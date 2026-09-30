@@ -44,7 +44,9 @@
         </StackPanel>
       </Button>
 
-      <ItemsControl ItemsSource="{Binding PlaylistPickerItems}">
+      <!-- Set apart from the two rows above: those make a playlist, these
+           are the playlists. -->
+      <ItemsControl ItemsSource="{Binding PlaylistPickerItems}" Margin="0,16,0,0">
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="svm:SidebarItem">
             <!-- Laid out like a song row on the Queue, less its drag handle

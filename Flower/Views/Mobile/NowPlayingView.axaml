@@ -8,26 +8,52 @@
              xmlns:conv="clr-namespace:Flower.Converters"
              xmlns:controls="clr-namespace:Flower.UserControls"
              xmlns:layout="clr-namespace:Flower.Controls"
+             xmlns:services="clr-namespace:Flower.Services"
              mc:Ignorable="d"
              x:Class="Flower.Views.Mobile.NowPlayingView"
              x:DataType="vm:MobileMainViewModel"
-             Background="{DynamicResource AppBackgroundBrush}"
+             Background="{Binding CurrentlyPlaying.AlbumArt, Converter={x:Static services:ArtSheetBrushConverter.Instance}}"
              Padding="{DynamicResource NowPlayingBottomInset}">
+
+  <!-- The sheet is washed in the cover's own colour, darkened until white
+       reads on it and a little lighter at the top than the bottom
+       (ArtBackdrop.SheetBrush), in either theme - so everything on it is
+       white rather than the app's red and ink: the words, the transport, and
+       both sliders (their brushes are overridden just below). The two round
+       buttons at the top keep their own white circles. -->
 
   <UserControl.Resources>
     <conv:PlayOrPauseConverter x:Key="PlayOrPauseConverter" />
+
+    <!-- Fluent's slider brushes, white on the tinted sheet: the filled part
+         and the thumb solid, the rest of the rail a faint white. Nearer than
+         Theme.axaml's, so these win for both sliders in here. -->
+    <SolidColorBrush x:Key="SliderTrackValueFill" Color="White" />
+    <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Color="#E6FFFFFF" />
+    <SolidColorBrush x:Key="SliderTrackValueFillPressed" Color="#CCFFFFFF" />
+    <SolidColorBrush x:Key="SliderThumbBackground" Color="White" />
+    <SolidColorBrush x:Key="SliderThumbBackgroundPointerOver" Color="#E6FFFFFF" />
+    <SolidColorBrush x:Key="SliderThumbBackgroundPressed" Color="#CCFFFFFF" />
+    <SolidColorBrush x:Key="SliderTrackFill" Color="#40FFFFFF" />
+    <SolidColorBrush x:Key="SliderTrackFillPointerOver" Color="#4DFFFFFF" />
+    <SolidColorBrush x:Key="SliderTrackFillPressed" Color="#4DFFFFFF" />
   </UserControl.Resources>
 
   <UserControl.Styles>
-    <!-- The app-wide highlight color (AppAccentBrush), the same one an
-         active pill icon and the playing row use. -->
-    <!-- Off is the grey of a disabled control: every icon is red now, so
-         dimming one only left it a fainter red that still read as on. -->
+    <!-- Every icon on the tinted part of the sheet is white. Shuffle and
+         repeat say off by being half as bright, since there is no second
+         colour here to say on with. -->
+    <Style Selector="layout|NowPlayingBodyPanel materialIcons|MaterialIcon">
+      <Setter Property="Foreground" Value="White" />
+    </Style>
     <Style Selector="materialIcons|MaterialIcon.transportToggle">
-      <Setter Property="Foreground" Value="{DynamicResource AppTextDisabledBrush}" />
+      <Setter Property="Foreground" Value="#80FFFFFF" />
     </Style>
     <Style Selector="materialIcons|MaterialIcon.transportToggle.active">
-      <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}" />
+      <Setter Property="Foreground" Value="White" />
+    </Style>
+    <Style Selector="Button.pill.circle Border.ring">
+      <Setter Property="BorderBrush" Value="#99FFFFFF" />
     </Style>
 
     <!-- Fluent's Slider reserves 15px above and below its 20px track (the
@@ -40,6 +66,18 @@
          same 28px of occupied height without constraining what draws inside
          it - the whole thumb is painted, it just overhangs, and nothing in
          this sheet clips. -->
+    <!-- The seek bar's two halves are separate pieces that meet at the
+         thumb's square box, so rounding both ends of each (the Slider's own
+         CornerRadius) left a notch either side of the round thumb. Only the
+         outer ends are rounded: square where each piece meets the thumb, the
+         circle covers the join. -->
+    <Style Selector="Slider.seek /template/ RepeatButton#PART_DecreaseButton /template/ Border#TrackBackground">
+      <Setter Property="CornerRadius" Value="3,0,0,3" />
+    </Style>
+    <Style Selector="Slider.seek /template/ RepeatButton#PART_IncreaseButton /template/ Border#TrackBackground">
+      <Setter Property="CornerRadius" Value="0,3,3,0" />
+    </Style>
+
     <Style Selector="Slider.tight">
       <Setter Property="Margin" Value="0,-11" />
       <Setter Property="Padding" Value="0" />
@@ -53,6 +91,9 @@
        back and menu buttons over every screen (ScreenSlot's header band),
        inset from the window edge, so the 24px inset belongs to the rows below
        it rather than to the whole sheet. -->
+  <!-- Below the status bar: the sheet itself runs up under it (MobileMainView
+       pulls it up by ScreenStackBleed) so the colour reaches the top edge. -->
+  <Panel Margin="{DynamicResource StatusBarInset}">
   <Grid RowDefinitions="Auto,*" Margin="0,0,0,10">
 
     <!-- Top bar: collapse only - no "Now Playing" label, the sheet's own
@@ -97,7 +138,7 @@
          upright, side by side when the phone is turned, with the cover always
          a square off the short edge. Two children in that order and nothing
          else - the panel owns every size and position here. -->
-    <layout:NowPlayingBodyPanel Grid.Row="1" Margin="24,0">
+    <layout:NowPlayingBodyPanel Grid.Row="1" Margin="24,0" TextElement.Foreground="White">
       <!-- Tapping the art jumps to that track's album (closing this sheet) -
            see GoToCurrentlyPlayingAlbumCommand. -->
       <!-- The shadow is cast from outside the Button: Fluent's Button clips its
@@ -132,15 +173,15 @@
            above, so the slack falls between the names and the seek bar and the
            transport block stays bottom-aligned as it was. -->
       <Grid RowDefinitions="Auto,*,Auto,Auto,Auto" VerticalAlignment="Stretch">
-        <!-- The title in the display serif and the accent red: on this screen
-             the song is the subject, not one row among many. Cormorant's small
+        <!-- The title in the display serif, white on the cover's colour: on
+             this screen the song is the subject, not one row among many. Cormorant's small
              x-height is why it is 28 where Inter would be 22. -->
         <StackPanel Grid.Row="0" Spacing="2" HorizontalAlignment="Center">
           <TextBlock Text="{Binding CurrentlyPlaying.CurrentlyPlayingTrack.Title}"
                      FontFamily="{DynamicResource AppDisplayFontFamily}"
                      FontSize="28"
                      FontWeight="SemiBold"
-                     Foreground="{DynamicResource AppAccentBrush}"
+                     Foreground="White"
                      HorizontalAlignment="Center"
                      TextAlignment="Center"
                      TextTrimming="CharacterEllipsis" />
@@ -156,9 +197,17 @@
              default template reserves room for a tick bar it hasn't got,
              which reads as a gap. -->
         <StackPanel Grid.Row="2" Margin="0,8,0,0">
-          <Slider Classes="tight"
+          <!-- Thicker than Fluent's rail, with round ends: this is the one
+               bar on the screen, and at the default it read as a hairline
+               under the words. The volume slider below keeps the default,
+               being secondary. -->
+          <Slider Classes="tight seek"
                   Minimum="0" Maximum="1"
-                  Value="{Binding CurrentlyPlaying.SeekPosition}" />
+                  Value="{Binding CurrentlyPlaying.SeekPosition}">
+            <Slider.Resources>
+              <x:Double x:Key="SliderTrackThemeHeight">6</x:Double>
+            </Slider.Resources>
+          </Slider>
           <Grid ColumnDefinitions="*,*">
             <TextBlock Grid.Column="0" Text="{Binding CurrentlyPlaying.ElapsedTime}" FontSize="14" Opacity="0.65" VerticalAlignment="Center" />
             <TextBlock Grid.Column="1" Text="{Binding CurrentlyPlaying.TotalTime}" FontSize="14" Opacity="0.65" HorizontalAlignment="Right" VerticalAlignment="Center" />
@@ -240,4 +289,5 @@
       </Grid>
     </layout:NowPlayingBodyPanel>
   </Grid>
+  </Panel>
 </UserControl>

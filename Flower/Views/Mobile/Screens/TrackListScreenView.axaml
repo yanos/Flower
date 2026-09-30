@@ -2,6 +2,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:Flower.Controls"
              xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
+             xmlns:conv="clr-namespace:Flower.Converters"
+             xmlns:services="clr-namespace:Flower.Services"
              x:Class="Flower.Views.Mobile.Screens.TrackListScreenView"
              x:DataType="vm:MobileMainViewModel"
              x:Name="Root"
@@ -128,7 +130,22 @@
            navigate generally, not just within an album (the same bug, in the
            same shape, that motivated AlbumDetailRows in the first place - see
            TrackListScreenView.axaml.cs's ObserveLive/Freeze). -->
-      <ScrollViewer Grid.Column="1" Classes="screenScroll" controls:RubberBandScroll.IsEnabled="True">
+      <!-- What a pull down past the top of the album opens up. The pull moves
+           the whole scroller down (RubberBandScroll's RenderTransform), so
+           the room above it is outside it, where nothing it holds can draw -
+           and it was plain background over a blurred backdrop that ended in
+           a hard line. This fills exactly that room, as tall as the pull,
+           with the colour the backdrop's top row is (ArtBackdrop.TopEdgeColor)
+           at the backdrop's own opacity, so the backdrop seems to carry on.
+           Only in the stacked layout, the one with a backdrop. -->
+      <Border Grid.Column="1"
+              VerticalAlignment="Top"
+              IsHitTestVisible="False"
+              IsVisible="{Binding !#Root.IsWideAlbumLayout}"
+              Opacity="0.6"
+              Height="{Binding #AlbumScroll.((TranslateTransform)RenderTransform).Y, Converter={x:Static conv:NonNegativeConverter.Instance}, FallbackValue=0}"
+              Background="{Binding #Root.DisplayHeader.AlbumArt, Converter={x:Static services:TopEdgeBrushConverter.Instance}}" />
+      <ScrollViewer x:Name="AlbumScroll" Grid.Column="1" Classes="screenScroll" controls:RubberBandScroll.IsEnabled="True">
         <StackPanel>
           <!-- Blank over an album, however it was reached, and this
                collapses - see MobileNavigationFrame.Title. -->

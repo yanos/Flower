@@ -24,6 +24,17 @@
       <conv:PlayOrPauseConverter x:Key="PlayOrPauseConverter" />
       <!-- Replaced from the code-behind as BottomChrome's height changes. -->
       <Thickness x:Key="ScreenScrollInset">0,64,0,100</Thickness>
+      <!-- The status bar's height, and the same pulled the other way: the
+           screen stack runs up under the status bar by the second, and each
+           screen's header keeps clear of it by the first. Replaced from the
+           code-behind with the safe area. -->
+      <Thickness x:Key="StatusBarInset">0,0,0,0</Thickness>
+      <!-- ScreenScrollInset's top, pulled the other way: how far above its
+           own top a screen's header backdrop reaches to start at the very top
+           of the screen (AlbumHeaderTemplate). Kept in step from the
+           code-behind. -->
+      <Thickness x:Key="ScreenBackdropBleed">0,-64,0,0</Thickness>
+      <Thickness x:Key="ScreenStackBleed">0,0,0,0</Thickness>
       <!-- The tab oval's height and bottom margin, which the Now Playing
            sheet keeps its content clear of - replaced from the code-behind. -->
       <Thickness x:Key="NowPlayingBottomInset">0,0,0,84</Thickness>
@@ -369,7 +380,7 @@
            Each slot carries its own sliding header - the back and settings
            buttons, and the Search tab's box (see ScreenSlot) - so all of it
            moves with its screen. -->
-      <controls:ScreenStackPanel x:Name="ScreenStack" />
+      <controls:ScreenStackPanel x:Name="ScreenStack" Margin="{DynamicResource ScreenStackBleed}" />
 
       <!-- Empty state: shown instead of a blank screen when the current list has nothing in it.
            The host is hidden while the screen stack is moving (ScreenStackPanel.Moving/Settled,
@@ -433,8 +444,12 @@
          off to the left by the album coming in behind it. The tab oval stays
          over it (BottomChrome is declared after it, and before every other
          sheet), so the tabs are one tap away from the song too. -->
+    <!-- Pulled up under the status bar like the screens (ScreenStackBleed):
+         the sheet is washed in the cover's colour, and a strip of plain
+         background above it would cut that off at the clock. -->
     <controls:SlidingSheet x:Name="NowPlayingSheet"
                             Grid.Row="0" Grid.RowSpan="3"
+                            Margin="{DynamicResource ScreenStackBleed}"
                             IsOpen="{Binding IsShowingNowPlaying}"
                             DismissCommand="{Binding CloseSheetCommand}"
                             ExitsForward="{Binding NowPlayingExitsForward}"
@@ -465,20 +480,18 @@
          rounded end. The star columns centre it at 97% of the width between
          its margins, and pass touches either side through to the list, as the
          tab oval's do - and that oval takes this same margin and this same
-         97%, so neither number can move here without moving there. Neither
-         oval has the red rim the round buttons do; both take the same soft
-         shadow below instead (see this one's Border). -->
+         97%, so neither number can move here without moving there. Both
+         ovals take the round buttons' red rim and the same soft shadow below
+         (see this one's Border). -->
     <Grid IsVisible="{Binding CurrentlyPlaying.CurrentlyPlayingTrack, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
           x:Name="MiniPlayerHost"
           Margin="12,0"
           ColumnDefinitions="3*,194*,3*">
-    <!-- No red rim, unlike every other oval: this one carries the most in it
-         (art, two lines, two buttons), and the rim around all that read as a
-         frame. A soft shadow alone lifts it off the list. -->
+    <!-- Ringed like every other oval (Border.floating's pixel of the primary
+         red), over a soft shadow that lifts it off the list. -->
     <Border Grid.Column="1"
             Classes="floating"
             Height="56"
-            BorderThickness="0"
             BoxShadow="0 4 20 0 #2E000000"
             CornerRadius="28"
             Padding="6,0,8,0">
@@ -554,13 +567,11 @@
           Margin="12,0"
           SizeChanged="TabBar_SizeChanged"
           ColumnDefinitions="3*,194*,3*">
-    <!-- No rim, like the mini player above it: a soft shadow below is all
-         that lifts either off the list. -->
+    <!-- Ringed and shadowed the same as the mini player above it. -->
     <Border x:Name="TabOval"
             Grid.Column="1"
             Classes="floating"
             Height="64"
-            BorderThickness="0"
             BoxShadow="0 4 20 0 #2E000000"
             CornerRadius="32"
             Padding="4,0">

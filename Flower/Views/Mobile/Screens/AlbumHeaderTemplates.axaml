@@ -3,6 +3,7 @@
                     xmlns:controls="clr-namespace:Flower.Controls"
                     xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
                     xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
+                    xmlns:services="clr-namespace:Flower.Services"
                     xmlns:screens="clr-namespace:Flower.Views.Mobile.Screens">
 
   <!-- What a track list of one thing's songs says about that thing, above the
@@ -26,16 +27,17 @@
        sets a Width and the art follows. -->
   <!-- Lifted off the page by a shadow, which is drawn by a Border round the
        art rather than by the art itself: AlbumArtView clips its content to
-       its corners, and a shadow is outside them. Same 4px radius as
-       AlbumArtView's own outer Border, so the shadow follows the rounded
-       corners instead of squaring them off. Every ContentControl that hosts
+       its corners, and a shadow is outside them. The same 16px radius as the
+       art's own (ArtCornerRadius), and as Now Playing's cover, so the shadow
+       follows the rounded corners instead of squaring them off. Every ContentControl that hosts
        this template turns ClipToBounds off: a ContentControl clips by
        default, at exactly the art's square, which left the shadow showing
        only in the four rounded corners. -->
   <DataTemplate x:Key="AlbumArtTemplate" x:DataType="vm:AlbumTileViewModel">
-    <Border CornerRadius="4"
+    <Border CornerRadius="16"
             BoxShadow="0 4 16 0 #40000000">
       <controls:SquareAlbumArtView AlbumArt="{Binding AlbumArt}"
+                                   ArtCornerRadius="16"
                                    Classes.dimmed="{Binding IsUnavailable}" />
     </Border>
   </DataTemplate>
@@ -148,15 +150,42 @@
        enough to be the page's subject and narrow enough to leave songs
        showing under it. -->
   <DataTemplate x:Key="AlbumHeaderTemplate" x:DataType="vm:AlbumTileViewModel">
-    <StackPanel>
-      <ContentControl Content="{Binding}"
-                      ContentTemplate="{StaticResource AlbumArtTemplate}"
-                      ClipToBounds="False"
-                      Width="240" Margin="24,4,24,12"
-                      HorizontalAlignment="Center" />
-      <ContentControl Classes="albumText"
-                      Content="{Binding}"
-                      ContentTemplate="{StaticResource AlbumTextTemplate}" />
-    </StackPanel>
+    <Panel>
+      <!-- The cover again, behind all of it: stretched across the page and
+           blurred, fading out below the words. It reaches up past the top of
+           the header by the scroller's own inset (ScreenBackdropBleed), under
+           the back button and the status bar, so the page starts in it
+           rather than below a strip of plain background - and scrolls away
+           with the header like the rest of it.
+           The blur is a 16px copy of the cover drawn large with a smooth
+           upscale (ArtBackdrop.Tiny), not a blur effect, which the phone
+           would redraw on every frame of a scroll. A playlist has no cover of
+           its own, so there is nothing to draw and nothing shows. -->
+      <Border Margin="{DynamicResource ScreenBackdropBleed}"
+              ClipToBounds="True"
+              IsHitTestVisible="False">
+        <Border.OpacityMask>
+          <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
+            <GradientStop Color="#FF000000" Offset="0" />
+            <GradientStop Color="#C0000000" Offset="0.5" />
+            <GradientStop Color="#00000000" Offset="1" />
+          </LinearGradientBrush>
+        </Border.OpacityMask>
+        <Image Source="{Binding AlbumArt, Converter={x:Static services:TinyArtConverter.Instance}}"
+               Stretch="UniformToFill"
+               Opacity="0.6"
+               RenderOptions.BitmapInterpolationMode="HighQuality" />
+      </Border>
+      <StackPanel>
+        <ContentControl Content="{Binding}"
+                        ContentTemplate="{StaticResource AlbumArtTemplate}"
+                        ClipToBounds="False"
+                        Width="240" Margin="24,4,24,12"
+                        HorizontalAlignment="Center" />
+        <ContentControl Classes="albumText"
+                        Content="{Binding}"
+                        ContentTemplate="{StaticResource AlbumTextTemplate}" />
+      </StackPanel>
+    </Panel>
   </DataTemplate>
 </ResourceDictionary>

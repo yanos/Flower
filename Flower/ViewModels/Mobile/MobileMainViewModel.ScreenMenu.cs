@@ -334,6 +334,12 @@ public partial class MobileMainViewModel
         // Download All goes last, right above Settings, wherever it appears.
         var actions = new List<ScreenMenuEntry>();
         ScreenMenuEntry? downloadAll = null;
+        // A playlist's pencil, first: the one thing its screen offers that an
+        // album's does not - its name if it is a plain one, its rules if it is
+        // smart (EditCurrentPlaylistCommand decides which).
+        if (frame.IsPlaylistTrackList && CanEditCurrentPlaylist)
+            actions.Add(new ScreenMenuEntry("Edit", MaterialIconKind.Pencil,
+                () => EditCurrentPlaylistCommand.Execute(null)));
         if (TracksOnScreen(frame).Count > 0)
             actions.Add(new ScreenMenuEntry("Shuffle", MaterialIconKind.Shuffle,
                 () => PlayTracks(TracksOnScreen(frame), shuffle: true)));
