@@ -32,13 +32,12 @@
     </Style>
     <!-- Centred under the art, the words answer to the screen, so they are
          inset evenly. Ranged left beside it they answer to the song titles
-         below instead, and take their left inset from the row: the 8 of
-         Button.trackRow's own horizontal Padding (see MobileMainView.axaml),
-         which is all that stands ahead of a title inside an album. Change it
-         there and this one follows - AlbumDetailLayoutTests.The_album_name_lines_up_with_the_
-         song_titles measures the two against each other. Both live here
-         rather than on the use site because a local Margin would outrank
-         them. -->
+         below instead, and take their left inset from the row: the 24 of
+         Grid.albumTracks' row Padding (below), which is all that stands ahead
+         of a title inside an album. Change one and change the other -
+         AlbumDetailLayoutTests.The_album_name_lines_up_with_the_song_titles
+         measures the two against each other. Both live here rather than on
+         the use site because a local Margin would outrank them. -->
     <Style Selector="ContentControl.albumText">
       <Setter Property="Margin" Value="12,4,12,16" />
     </Style>
@@ -52,29 +51,18 @@
       <Setter Property="HorizontalAlignment" Value="Left" />
     </Style>
     <Style Selector="ContentControl.albumText.beside">
-      <Setter Property="Margin" Value="8,4,12,16" />
+      <Setter Property="Margin" Value="24,4,12,16" />
     </Style>
 
-    <!-- A row with no artist line under the title is a single line of text,
-         but it kept the height of two: the trailing "..." button is a 20px
-         icon in 6px of padding, 32 tall on its own, which is what the row
-         measured to either way. So the tightening has to take that button
-         with it, or hiding the artist reclaims nothing.
-
-         The button's own padding is trimmed in the template itself (a local
-         value there would beat any setter here anyway), so all this has left
-         to do is close the gap above and below.
-
-         Here rather than in MobileMainView.axaml's own trackRow styles
-         because "dense" is set from ITrackRowHost.ShowsRowArtist, which is
-         this screen's question to answer - and being the nearer StyleHost,
-         these win over that file's Padding for the rows it applies to. Only
-         the vertical half is this style's own business: the 8 has to stay
-         equal to the horizontal padding over there, since it is what the
-         album text's margin above is measured against, and a dense row is
-         still a row in the same list as a tall one. -->
-    <Style Selector="Button.trackRow.dense">
-      <Setter Property="Padding" Value="8,3" />
+    <!-- Under an album's (or a playlist's) header the songs are set in from
+         the edge, in line with the header's own breathing room, rather than
+         the 8 a flat list uses to buy its titles width: these rows carry no
+         art, so there is width to spare. Less on the right, where the "..."
+         button's own padding already stands off the edge. No vertical
+         padding, like every track row - see Button.trackRow in
+         MobileMainView.axaml. -->
+    <Style Selector="Grid.albumTracks Button.trackRow">
+      <Setter Property="Padding" Value="24,0,16,0" />
     </Style>
   </UserControl.Styles>
 
@@ -87,7 +75,7 @@
        (The wide layout pins the art again, deliberately, but not the
        words - see the album Grid.) -->
   <Panel>
-    <Grid IsVisible="{Binding #Root.IsAlbumMode}" ColumnDefinitions="Auto,*">
+    <Grid Classes="albumTracks" IsVisible="{Binding #Root.IsAlbumMode}" ColumnDefinitions="Auto,*">
       <!-- Turned sideways (or on a tablet) the art moves out of the scroll
            and pins to the left, sized to fill the height it is given
            (PinnedArtSize in the code-behind), with the album name and the

@@ -24,7 +24,7 @@
     <StackPanel>
       <controls:ScreenTitle />
 
-      <controls:NewPlaylistEntry />
+      <controls:NewPlaylistEntry IsLarge="True" />
 
       <!-- Under New Playlist, and drawn the same way so the two read as a
            pair - the same circled plus, since both rows make something and
@@ -34,12 +34,13 @@
       <Button Classes="pickerRow"
               IsVisible="{Binding CanCreateSmartPlaylist}"
               Command="{Binding NewSmartPlaylistCommand}">
-        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Left">
-          <Border Classes="floating" Width="26" Height="26" CornerRadius="13" BoxShadow="0 1 4 0 #28000000">
-            <materialIcons:MaterialIcon Kind="Plus" Width="16" Height="16"
+        <!-- NewPlaylistEntry's large sizes (IsLarge), restated. -->
+        <StackPanel Orientation="Horizontal" Spacing="14" HorizontalAlignment="Left">
+          <Border Classes="floating" Width="36" Height="36" CornerRadius="18">
+            <materialIcons:MaterialIcon Kind="Plus" Width="20" Height="20"
                                         HorizontalAlignment="Center" VerticalAlignment="Center" />
           </Border>
-          <TextBlock Text="New Smart Playlist" FontSize="16" VerticalAlignment="Center" />
+          <TextBlock Text="New Smart Playlist" FontSize="17" VerticalAlignment="Center" />
         </StackPanel>
       </Button>
 
@@ -51,23 +52,31 @@
                  playlist's cover where the art goes (see
                  SidebarItem.PlaylistCover), its name above, how many songs
                  and how long they run below, and the row's own menu past
-                 that. The side inset stays the picker rows' 16 rather than a
-                 song row's 8, so the cover lines up under New Playlist's
-                 circled plus. -->
+                 that. 16 in on the left, so the cover lines up under New
+                 Playlist's circled plus and with the screen's title. No
+                 vertical padding: the cover carries the row's room above and
+                 below, so the rule under the words lies on the row's bottom
+                 edge, halfway between one playlist and the next (the same
+                 arrangement as a song row - see TrackRowTemplate). -->
             <Button Classes="pickerRow"
-                    Padding="16,4,8,4"
+                    Padding="16,0,8,0"
                     Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).SelectPlaylistCommand}"
                     CommandParameter="{Binding}">
               <Grid ColumnDefinitions="Auto,*,Auto">
+                <Border Grid.Column="1" Grid.ColumnSpan="2"
+                        BorderBrush="{DynamicResource AppDividerBrush}"
+                        BorderThickness="0,0,0,1"
+                        IsHitTestVisible="False" />
                 <controls:AlbumCollageView Grid.Column="0"
                                            Covers="{Binding PlaylistCover.CoverArt}"
-                                           Width="40" Height="40"
-                                           Margin="0,0,10,0" />
-                <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center"
+                                           ArtCornerRadius="6"
+                                           Width="64" Height="64"
+                                           Margin="0,12,14,12" />
+                <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Center"
                             IsVisible="{Binding !IsEditing}">
-                  <TextBlock Text="{Binding Name}" FontSize="16" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Text="{Binding Name}" FontSize="17" TextTrimming="CharacterEllipsis" />
                   <TextBlock Text="{Binding PlaylistSummary}"
-                             FontSize="13"
+                             FontSize="15"
                              Opacity="0.65"
                              TextTrimming="CharacterEllipsis" />
                 </StackPanel>
@@ -79,7 +88,7 @@
                 <controls:TextInput Grid.Column="1"
                                     Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                     IsVisible="{Binding IsEditing}"
-                                    FontSize="16"
+                                    FontSize="17"
                                     VerticalAlignment="Center"
                                     Loaded="RenameBox_Loaded"
                                     KeyDown="RenameBox_KeyDown"
@@ -94,7 +103,7 @@
                         BorderThickness="0"
                         Padding="2,4"
                         VerticalAlignment="Center">
-                  <materialIcons:MaterialIcon Kind="DotsVertical" Width="20" Height="20" Opacity="0.6" />
+                  <materialIcons:MaterialIcon Kind="DotsVertical" Width="24" Height="24" Opacity="0.6" />
                 </Button>
               </Grid>
             </Button>

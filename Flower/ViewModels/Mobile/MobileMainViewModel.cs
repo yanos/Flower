@@ -104,7 +104,10 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     // track rows for a broad one-letter query froze the UI in practice.
     private const int MaxSearchResultsPerSection = 40;
     public ObservableCollection<AlbumTileViewModel> SearchAlbumResults { get; } = new();
-    public ObservableCollection<string> SearchArtistResults { get; } = new();
+    // The Artists tab's own row, so a result carries the same collage of the
+    // artist's covers and the same counts - built for the result rather than
+    // looked up in that tab's list, which only exists while it is filled.
+    public ObservableCollection<ArtistPickerRow> SearchArtistResults { get; } = new();
     public ObservableCollection<TrackRowViewModel> SearchSongResults { get; } = new();
 
     // True if any section actually had more matches than the cap - drives a
@@ -2690,6 +2693,24 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
                 .OrderBy(a => a)
                 .ToList();
 
+            // Counted and covered the way RebuildArtistPickerRows does it, for
+            // the shown ones only: one pass over the library, not one per
+            // artist.
+            var shownArtists = allArtists.Take(MaxSearchResultsPerSection).Select(a => a!).ToList();
+            var shownSet = shownArtists.ToHashSet();
+            var byArtist = tracks
+                .Where(t => t.Artists != null && shownSet.Contains(t.Artists))
+                .GroupBy(t => t.Artists!)
+                .ToDictionary(g => g.Key, g => g.ToList());
+            var artistRows = shownArtists
+                .Select(name => byArtist.TryGetValue(name, out var mine)
+                    ? new ArtistPickerRow(name,
+                        mine.Where(t => !string.IsNullOrEmpty(t.Album)).Select(t => t.Album).Distinct().Count(),
+                        mine.Count,
+                        AlbumCollage.ByAlbumName(mine))
+                    : new ArtistPickerRow(name, 0, 0, AlbumCollage.Empty))
+                .ToList();
+
             // See TrackAvailability - passed straight in so these rows are
             // correct from construction, same as Main.Rows itself
             // (MainViewModel.RebuildRowsAsync); SearchSongResults below is a
@@ -2701,7 +2722,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
                 pairedServerFingerprint: pairedServerFingerprint, pairedServerReachable: pairedServerReachable);
 
             return (allAlbums.Take(MaxSearchResultsPerSection).ToList(), allAlbums.Count,
-                    allArtists.Take(MaxSearchResultsPerSection).ToList(), allArtists.Count,
+                    artistRows, allArtists.Count,
                     allSongRows.Take(MaxSearchResultsPerSection).ToList(), allSongRows.Count);
         }, token);
 
@@ -2714,7 +2735,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
 
         SearchArtistResults.Clear();
         foreach (var artist in artists)
-            SearchArtistResults.Add(artist!);
+            SearchArtistResults.Add(artist);
 
         SearchSongResults.Clear();
         foreach (var row in songs)

@@ -30,6 +30,14 @@
        a volume fill - and is Primary Soft in dark, where Primary itself is too
        dim against the background to read as lit. AppPrimaryBrush is the fill
        of a primary button, the same red in both. -->
+  <!-- The display face: a song's title where it is the subject of the screen
+       (Now Playing), set in a serif against Inter everywhere else. Bundled
+       rather than named, since no platform ships it; subset to Latin,
+       Latin Extended and Vietnamese (1MB down to 180KB) because a title in
+       any other script falls back to the system either way. OFL - the licence
+       sits beside the font. -->
+  <FontFamily x:Key="AppDisplayFontFamily">avares://Flower/Assets/Fonts#Cormorant Garamond</FontFamily>
+
   <ResourceDictionary.ThemeDictionaries>
 
     <ResourceDictionary x:Key="Dark">

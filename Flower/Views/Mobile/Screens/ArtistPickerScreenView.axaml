@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:Flower.Controls"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
              x:Class="Flower.Views.Mobile.Screens.ArtistPickerScreenView"
              x:DataType="vm:MobileMainViewModel"
@@ -15,26 +16,46 @@
              SelectionMode="Single">
       <ListBox.ItemTemplate>
         <DataTemplate x:DataType="vm:ArtistPickerRow">
+          <!-- Its own padding rather than the track row's: no vertical
+               padding, so the rule under each row is the row's own bottom
+               edge and sits exactly halfway between two names; 16 on the
+               left so the covers line up with the screen's title. -->
           <Button Classes="trackRow"
+                  Padding="16,0,8,0"
                   Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).SelectArtistCommand}"
                   CommandParameter="{Binding Name}"
                   controls:LongPress.Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).OpenArtistActionsCommand}"
                   controls:LongPress.CommandParameter="{Binding Name}">
-            <!-- Laid out like a song row on the Queue, less its drag handle:
-                 the artist's cover where the art goes (see
-                 AlbumCollage), their name above, and how much of
-                 theirs there is below. -->
-            <Grid ColumnDefinitions="Auto,*">
-              <controls:AlbumCollageView Covers="{Binding Cover.CoverArt}"
-                                          Width="40" Height="40"
-                                          Margin="0,0,10,0" />
-              <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
-                <TextBlock Text="{Binding Name}" FontSize="16" TextTrimming="CharacterEllipsis" />
-                <TextBlock Text="{Binding SummaryText}"
-                           FontSize="13"
-                           Opacity="0.65"
-                           TextTrimming="CharacterEllipsis" />
-              </StackPanel>
+            <!-- The artist's cover (see AlbumCollage), their name above,
+                 how much of theirs there is below, and a chevron: the row
+                 opens a screen rather than playing anything. The rule runs
+                 under the words and the chevron only, the way a list inset
+                 behind its pictures does, so the covers read as a column. -->
+            <Grid ColumnDefinitions="Auto,*" Height="60">
+              <controls:AlbumCollageView Grid.Column="0"
+                                          Covers="{Binding Cover.CoverArt}"
+                                          ArtCornerRadius="6"
+                                          Width="48" Height="48"
+                                          Margin="0,0,14,0" />
+              <Border Grid.Column="1"
+                      BorderBrush="{DynamicResource AppDividerBrush}"
+                      BorderThickness="0,0,0,1">
+                <Grid ColumnDefinitions="*,Auto">
+                  <StackPanel Grid.Column="0" Spacing="1" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Name}" FontSize="17" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{Binding SummaryText}"
+                               FontSize="14"
+                               Opacity="0.6"
+                               TextTrimming="CharacterEllipsis" />
+                  </StackPanel>
+                  <materialIcons:MaterialIcon Grid.Column="1"
+                                              Kind="ChevronRight"
+                                              Width="24" Height="24"
+                                              Opacity="0.7"
+                                              Margin="8,0,0,0"
+                                              VerticalAlignment="Center" />
+                </Grid>
+              </Border>
             </Grid>
           </Button>
         </DataTemplate>

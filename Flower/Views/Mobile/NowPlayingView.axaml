@@ -11,7 +11,7 @@
              mc:Ignorable="d"
              x:Class="Flower.Views.Mobile.NowPlayingView"
              x:DataType="vm:MobileMainViewModel"
-             Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
+             Background="{DynamicResource AppBackgroundBrush}"
              Padding="{DynamicResource NowPlayingBottomInset}">
 
   <UserControl.Resources>
@@ -100,39 +100,52 @@
     <layout:NowPlayingBodyPanel Grid.Row="1" Margin="24,0">
       <!-- Tapping the art jumps to that track's album (closing this sheet) -
            see GoToCurrentlyPlayingAlbumCommand. -->
-      <!-- Stretch explicitly: the panel hands this button a square to fill,
-           and a track with no art yet has nothing to give the button a size of
-           its own - left to its default it would collapse to nothing and the
-           slot would sit empty. -->
-      <Button Command="{Binding GoToCurrentlyPlayingAlbumCommand}"
-              HorizontalAlignment="Stretch"
-              VerticalAlignment="Stretch"
-              HorizontalContentAlignment="Stretch"
-              VerticalContentAlignment="Stretch"
-              Background="Transparent"
-              BorderThickness="0"
-              Padding="0">
-        <Border Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
-                CornerRadius="8"
-                ClipToBounds="True">
-          <Image Source="{Binding CurrentlyPlaying.AlbumArt}" Stretch="UniformToFill" />
-        </Border>
-      </Button>
+      <!-- The shadow is cast from outside the Button: Fluent's Button clips its
+           content to its own rectangle, which cut the shadow off square at the
+           cover's bottom corners. The inner Border is the one that clips, to
+           round the cover itself. -->
+      <!-- Stretch explicitly: the panel hands this a square to fill, and a
+           track with no art yet has nothing to give the button a size of its
+           own - left to its default it would collapse to nothing and the slot
+           would sit empty. -->
+      <Border CornerRadius="16"
+              BoxShadow="0 8 24 0 #30000000">
+        <Button Command="{Binding GoToCurrentlyPlayingAlbumCommand}"
+                HorizontalAlignment="Stretch"
+                VerticalAlignment="Stretch"
+                HorizontalContentAlignment="Stretch"
+                VerticalContentAlignment="Stretch"
+                Background="Transparent"
+                BorderThickness="0"
+                CornerRadius="16"
+                Padding="0">
+          <Border Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
+                  CornerRadius="16"
+                  ClipToBounds="True">
+            <Image Source="{Binding CurrentlyPlaying.AlbumArt}" Stretch="UniformToFill" />
+          </Border>
+        </Button>
+      </Border>
 
       <!-- The song's name and its album go first, hard under the cover, which
            is what they are about - the star row is under them now rather than
            above, so the slack falls between the names and the seek bar and the
            transport block stays bottom-aligned as it was. -->
       <Grid RowDefinitions="Auto,*,Auto,Auto,Auto" VerticalAlignment="Stretch">
+        <!-- The title in the display serif and the accent red: on this screen
+             the song is the subject, not one row among many. Cormorant's small
+             x-height is why it is 28 where Inter would be 22. -->
         <StackPanel Grid.Row="0" Spacing="2" HorizontalAlignment="Center">
           <TextBlock Text="{Binding CurrentlyPlaying.CurrentlyPlayingTrack.Title}"
-                     FontSize="20"
+                     FontFamily="{DynamicResource AppDisplayFontFamily}"
+                     FontSize="28"
                      FontWeight="SemiBold"
+                     Foreground="{DynamicResource AppAccentBrush}"
                      HorizontalAlignment="Center"
                      TextAlignment="Center"
                      TextTrimming="CharacterEllipsis" />
           <TextBlock Text="{Binding CurrentlyPlaying.Subtitle}"
-                     FontSize="14"
+                     FontSize="16"
                      Opacity="0.65"
                      HorizontalAlignment="Center"
                      TextAlignment="Center"
@@ -147,8 +160,8 @@
                   Minimum="0" Maximum="1"
                   Value="{Binding CurrentlyPlaying.SeekPosition}" />
           <Grid ColumnDefinitions="*,*">
-            <TextBlock Grid.Column="0" Text="{Binding CurrentlyPlaying.ElapsedTime}" FontSize="12" Opacity="0.65" VerticalAlignment="Center" />
-            <TextBlock Grid.Column="1" Text="{Binding CurrentlyPlaying.TotalTime}" FontSize="12" Opacity="0.65" HorizontalAlignment="Right" VerticalAlignment="Center" />
+            <TextBlock Grid.Column="0" Text="{Binding CurrentlyPlaying.ElapsedTime}" FontSize="14" Opacity="0.65" VerticalAlignment="Center" />
+            <TextBlock Grid.Column="1" Text="{Binding CurrentlyPlaying.TotalTime}" FontSize="14" Opacity="0.65" HorizontalAlignment="Right" VerticalAlignment="Center" />
           </Grid>
         </StackPanel>
 
@@ -157,43 +170,43 @@
              repeat toggles on the same line out at either edge. The two
              toggles are the same button, so the middle column is centred on
              the sheet as well as between them. -->
-        <Grid Grid.Row="3" ColumnDefinitions="Auto,*,Auto" Margin="0,4,0,0">
+        <Grid Grid.Row="3" ColumnDefinitions="Auto,*,Auto" Margin="0,12,0,0">
           <Button Grid.Column="0"
                   Command="{Binding ToggleShuffleCommand}"
                   Background="Transparent" BorderThickness="0" Padding="6"
                   VerticalAlignment="Center">
-            <materialIcons:MaterialIcon Kind="Shuffle" Width="18" Height="18"
+            <materialIcons:MaterialIcon Kind="Shuffle" Width="24" Height="24"
                                          Classes="transportToggle"
                                          Classes.active="{Binding CurrentlyPlaying.IsShuffleEnabled}" />
           </Button>
           <StackPanel Grid.Column="1"
                       Orientation="Horizontal"
-                      Spacing="12"
+                      Spacing="28"
                       HorizontalAlignment="Center">
             <Button Command="{Binding PreviousTrackCommand}"
                     Background="Transparent" BorderThickness="0"
                     VerticalAlignment="Center">
-              <materialIcons:MaterialIcon Kind="Rewind" Width="32" Height="32" />
+              <materialIcons:MaterialIcon Kind="Rewind" Width="28" Height="28" />
             </Button>
             <Button Classes="pill circle"
                     Command="{Binding ToggleMiniPlayerCommand}"
-                    Width="64" Height="64">
+                    Width="60" Height="60">
               <Border Classes="ring">
                 <materialIcons:MaterialIcon Kind="{Binding PlaylistControl.IsPlaying, Converter={StaticResource PlayOrPauseConverter}}"
-                                             Width="32" Height="32" />
+                                             Width="28" Height="28" />
               </Border>
             </Button>
             <Button Command="{Binding NextTrackCommand}"
                     Background="Transparent" BorderThickness="0"
                     VerticalAlignment="Center">
-              <materialIcons:MaterialIcon Kind="FastForward" Width="32" Height="32" />
+              <materialIcons:MaterialIcon Kind="FastForward" Width="28" Height="28" />
             </Button>
           </StackPanel>
           <Button Grid.Column="2"
                   Command="{Binding ToggleRepeatCommand}"
                   Background="Transparent" BorderThickness="0" Padding="6"
                   VerticalAlignment="Center">
-            <materialIcons:MaterialIcon Kind="Repeat" Width="18" Height="18"
+            <materialIcons:MaterialIcon Kind="Repeat" Width="24" Height="24"
                                          Classes="transportToggle"
                                          Classes.active="{Binding CurrentlyPlaying.IsRepeatEnabled}" />
           </Button>
@@ -204,7 +217,7 @@
              drives, so the two never disagree - but drawn as a plain Slider
              rather than reusing desktop's VolumeControl, whose 10px thumb and
              3px rail are a mouse target, not a finger one. -->
-        <Grid Grid.Row="4" ColumnDefinitions="Auto,*,Auto" Margin="0,8,0,0"
+        <Grid Grid.Row="4" ColumnDefinitions="Auto,*,Auto" Margin="0,16,0,0"
               DataContext="{Binding Main.Volume}"
               x:CompileBindings="True" x:DataType="vm2:VolumeControlViewModel">
           <materialIcons:MaterialIcon Grid.Column="0"

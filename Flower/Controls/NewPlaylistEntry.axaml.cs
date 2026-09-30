@@ -28,6 +28,18 @@ public partial class NewPlaylistEntry : UserControl
         set => SetValue(RowPaddingProperty, value);
     }
 
+    // The Playlists tab's size: a bigger circle and bigger words, beside rows
+    // whose covers are 64 across. The add-to-playlist sheet keeps the small
+    // one, whose circle and gap are what its own rows' text lines up with.
+    public static readonly StyledProperty<bool> IsLargeProperty =
+        AvaloniaProperty.Register<NewPlaylistEntry, bool>(nameof(IsLarge));
+
+    public bool IsLarge
+    {
+        get => GetValue(IsLargeProperty);
+        set => SetValue(IsLargeProperty, value);
+    }
+
     public NewPlaylistEntry()
     {
         InitializeComponent();

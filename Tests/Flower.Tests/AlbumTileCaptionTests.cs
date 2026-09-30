@@ -26,26 +26,39 @@ namespace Flower.Tests;
 /// </summary>
 public sealed class AlbumTileCaptionTests
 {
-    private const double TitleLineHeight = 21;
-    private const double ArtistLineHeight = 18;
-    private const double LineOverlap = 3;
-
-    private static StackPanel Caption(string name, string artist)
+    // Two captions in use, each pinned on its own: the album grids' (the
+    // Albums tab and an artist's albums), and the Home shelves' (whose styles
+    // are HomeScreenView's StackPanel.caption).
+    public static TheoryData<CaptionSpec> Specs => new()
     {
-        var caption = new StackPanel { Spacing = -LineOverlap };
+        new CaptionSpec("album grid", 17, 14, 29, 24, 5, FontWeight.Medium),
+        new CaptionSpec("home shelf", 16, 14, 27, 23, 4, FontWeight.SemiBold),
+    };
+
+    public sealed record CaptionSpec(
+        string Where, double TitleSize, double ArtistSize,
+        double TitleLineHeight, double ArtistLineHeight, double LineOverlap,
+        FontWeight TitleWeight)
+    {
+        public override string ToString() => Where;
+    }
+
+    private static StackPanel Caption(CaptionSpec spec, string name, string artist)
+    {
+        var caption = new StackPanel { Spacing = -spec.LineOverlap };
         caption.Children.Add(new TextBlock
         {
             Text = name,
-            FontSize = 13,
-            LineHeight = TitleLineHeight,
-            FontWeight = FontWeight.Medium,
+            FontSize = spec.TitleSize,
+            LineHeight = spec.TitleLineHeight,
+            FontWeight = spec.TitleWeight,
             TextTrimming = TextTrimming.CharacterEllipsis,
         });
         caption.Children.Add(new TextBlock
         {
             Text = artist,
-            FontSize = 11,
-            LineHeight = ArtistLineHeight,
+            FontSize = spec.ArtistSize,
+            LineHeight = spec.ArtistLineHeight,
             Opacity = 0.6,
             TextTrimming = TextTrimming.CharacterEllipsis,
         });
@@ -53,22 +66,24 @@ public sealed class AlbumTileCaptionTests
         return caption;
     }
 
-    [AvaloniaFact]
-    public void A_cjk_caption_is_the_same_height_as_a_latin_one()
+    [AvaloniaTheory]
+    [MemberData(nameof(Specs))]
+    public void A_cjk_caption_is_the_same_height_as_a_latin_one(CaptionSpec spec)
     {
-        var latin = Caption("Noble and Godlike in Ruin", "Deerhoof");
-        var japanese = Caption("星間性交", "telepathテレパシー能力者");
+        var latin = Caption(spec, "Noble and Godlike in Ruin", "Deerhoof");
+        var japanese = Caption(spec, "星間性交", "telepathテレパシー能力者");
 
         Assert.Equal(latin.DesiredSize.Height, japanese.DesiredSize.Height);
     }
 
-    [AvaloniaFact]
-    public void A_caption_is_a_fixed_height_whatever_it_says()
+    [AvaloniaTheory]
+    [MemberData(nameof(Specs))]
+    public void A_caption_is_a_fixed_height_whatever_it_says(CaptionSpec spec)
     {
-        const double expected = TitleLineHeight + ArtistLineHeight - LineOverlap;
+        var expected = spec.TitleLineHeight + spec.ArtistLineHeight - spec.LineOverlap;
 
-        Assert.Equal(expected, Caption("Noble and Godlike in Ruin", "Deerhoof").DesiredSize.Height);
-        Assert.Equal(expected, Caption("星間性交", "telepathテレパシー能力者").DesiredSize.Height);
+        Assert.Equal(expected, Caption(spec, "Noble and Godlike in Ruin", "Deerhoof").DesiredSize.Height);
+        Assert.Equal(expected, Caption(spec, "星間性交", "telepathテレパシー能力者").DesiredSize.Height);
     }
 
     /// <summary>
@@ -76,11 +91,12 @@ public sealed class AlbumTileCaptionTests
     /// sit in; a LineHeight under what the fallback face actually needs would
     /// squeeze the glyphs rather than align them.
     /// </summary>
-    [AvaloniaFact]
-    public void The_pinned_heights_clear_what_cjk_glyphs_need_unpinned()
+    [AvaloniaTheory]
+    [MemberData(nameof(Specs))]
+    public void The_pinned_heights_clear_what_cjk_glyphs_need_unpinned(CaptionSpec spec)
     {
-        var title = new TextBlock { Text = "星間性交", FontSize = 13 };
-        var artist = new TextBlock { Text = "telepathテレパシー能力者", FontSize = 11 };
+        var title = new TextBlock { Text = "星間性交", FontSize = spec.TitleSize, FontWeight = spec.TitleWeight };
+        var artist = new TextBlock { Text = "telepathテレパシー能力者", FontSize = spec.ArtistSize };
         title.Measure(new Size(170, double.PositiveInfinity));
         artist.Measure(new Size(170, double.PositiveInfinity));
 
@@ -89,9 +105,9 @@ public sealed class AlbumTileCaptionTests
         // this one is the whole question, and a failure that reports half of it
         // costs a round-trip through CI to learn the other half.
         Assert.True(
-            title.DesiredSize.Height <= TitleLineHeight && artist.DesiredSize.Height <= ArtistLineHeight,
-            $"a pinned caption squeezes this machine's CJK fallback: title needs "
-            + $"{title.DesiredSize.Height} of {TitleLineHeight}, artist needs "
-            + $"{artist.DesiredSize.Height} of {ArtistLineHeight}");
+            title.DesiredSize.Height <= spec.TitleLineHeight && artist.DesiredSize.Height <= spec.ArtistLineHeight,
+            $"a pinned {spec.Where} caption squeezes this machine's CJK fallback: title needs "
+            + $"{title.DesiredSize.Height} of {spec.TitleLineHeight}, artist needs "
+            + $"{artist.DesiredSize.Height} of {spec.ArtistLineHeight}");
     }
 }

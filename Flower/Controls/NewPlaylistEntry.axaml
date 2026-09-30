@@ -20,7 +20,64 @@
        empty one creates nothing at all: see MobileMainViewModel's
        BeginCreatePlaylistCommand/CommitNewPlaylistCommand, and the
        code-behind for what commits it. -->
-  <Panel>
+  <!-- Sizes live here rather than on the elements, so .large can change them
+       (a local value would outrank any style). -->
+  <UserControl.Styles>
+    <Style Selector="StackPanel.startRow">
+      <Setter Property="Spacing" Value="8" />
+    </Style>
+    <Style Selector="Border.plusCircle">
+      <Setter Property="Width" Value="26" />
+      <Setter Property="Height" Value="26" />
+      <Setter Property="CornerRadius" Value="13" />
+    </Style>
+    <Style Selector="materialIcons|MaterialIcon.plusGlyph">
+      <Setter Property="Width" Value="16" />
+      <Setter Property="Height" Value="16" />
+    </Style>
+    <Style Selector="TextBlock.startLabel">
+      <Setter Property="FontSize" Value="16" />
+    </Style>
+    <Style Selector="TextBox.nameBox">
+      <Setter Property="FontSize" Value="16" />
+    </Style>
+    <Style Selector="Grid.editorRow">
+      <Setter Property="ColumnSpacing" Value="12" />
+    </Style>
+    <Style Selector="Border.editorSlot">
+      <Setter Property="Width" Value="22" />
+    </Style>
+
+    <!-- The Playlists tab's: the circle about half a cover across, and the
+         box's glyph centred in a slot as wide as a cover, so a name being
+         typed sits where the rows below have theirs. -->
+    <Style Selector="Panel.large StackPanel.startRow">
+      <Setter Property="Spacing" Value="14" />
+    </Style>
+    <Style Selector="Panel.large Border.plusCircle">
+      <Setter Property="Width" Value="36" />
+      <Setter Property="Height" Value="36" />
+      <Setter Property="CornerRadius" Value="18" />
+    </Style>
+    <Style Selector="Panel.large materialIcons|MaterialIcon.plusGlyph">
+      <Setter Property="Width" Value="20" />
+      <Setter Property="Height" Value="20" />
+    </Style>
+    <Style Selector="Panel.large TextBlock.startLabel">
+      <Setter Property="FontSize" Value="17" />
+    </Style>
+    <Style Selector="Panel.large TextBox.nameBox">
+      <Setter Property="FontSize" Value="17" />
+    </Style>
+    <Style Selector="Panel.large Grid.editorRow">
+      <Setter Property="ColumnSpacing" Value="14" />
+    </Style>
+    <Style Selector="Panel.large Border.editorSlot">
+      <Setter Property="Width" Value="64" />
+    </Style>
+  </UserControl.Styles>
+
+  <Panel Classes.large="{Binding #Root.IsLarge}">
     <Button x:Name="StartButton"
             Classes="pickerRow"
             Padding="{Binding #Root.RowPadding}"
@@ -30,25 +87,29 @@
            than the glyph it stands beside, starting at the same left edge and
            leaving the words at the same place - so "New Playlist" and every
            playlist name below it begin on one line. -->
-      <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Left">
+      <StackPanel Classes="startRow" Orientation="Horizontal" HorizontalAlignment="Left">
         <!-- The app's own circle - the floating oval every round thing on the
              phone is (Styles/IconButtons.axaml), at the size of the glyph
              beside a playlist name rather than of a button. -->
-        <Border Classes="floating" Width="26" Height="26" CornerRadius="13" BoxShadow="0 1 4 0 #28000000">
-          <materialIcons:MaterialIcon Kind="Plus" Width="16" Height="16"
+        <Border Classes="floating plusCircle">
+          <materialIcons:MaterialIcon Classes="plusGlyph" Kind="Plus"
                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
         </Border>
-        <TextBlock Text="New Playlist" FontSize="16" VerticalAlignment="Center" />
+        <TextBlock Classes="startLabel" Text="New Playlist" VerticalAlignment="Center" />
       </StackPanel>
     </Button>
 
     <!-- Lined up with the rows under it: the same glyph in the same place, so
          the box sits exactly where the name it is about to have will. -->
     <Grid x:Name="EditorRow"
-          ColumnDefinitions="Auto,*" ColumnSpacing="12"
+          Classes="editorRow"
+          ColumnDefinitions="Auto,*"
           Margin="{Binding #Root.RowPadding}"
           IsVisible="{Binding IsNamingNewPlaylist}">
-      <materialIcons:MaterialIcon Grid.Column="0" Kind="PlaylistPlay" Width="22" Height="22" VerticalAlignment="Center" />
+      <Border Grid.Column="0" Classes="editorSlot">
+        <materialIcons:MaterialIcon Kind="PlaylistPlay" Width="22" Height="22"
+                                    HorizontalAlignment="Center" VerticalAlignment="Center" />
+      </Border>
       <!-- PropertyChanged rather than a TextBox's own default of LostFocus:
            the box is dismissed by losing focus, and on that default it wrote
            its text back into the ViewModel on the way out - which put a
@@ -57,9 +118,9 @@
            of them from an Escape. -->
       <controls:TextInput Grid.Column="1"
                           x:Name="NameBox"
+                          Classes="nameBox"
                           Text="{Binding NewPlaylistName, UpdateSourceTrigger=PropertyChanged}"
                           PlaceholderText="Playlist Name"
-                          FontSize="16"
                           VerticalAlignment="Center"
                           KeyDown="NameBox_KeyDown"
                           LostFocus="NameBox_LostFocus" />

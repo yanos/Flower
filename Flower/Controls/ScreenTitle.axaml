@@ -14,11 +14,17 @@
        a kept-alive back or forward screen shows its own rather than the live
        one's (see MobileNavigationFrame.Title). Blank over an album's tracks and
        on Search, where the line collapses and takes no room: the album's name
-       is right there in large type, and Search has its box in the band. -->
+       is right there in large type, and Search has its box in the band.
+
+       Set in the display serif and the accent red, like the album's name and
+       the song's on Now Playing: the serif is what a heading is in this app,
+       Inter what everything under it is. -->
   <TextBlock Text="{Binding $parent[controls:ScreenSlot].Frame.Title}"
              IsVisible="{Binding $parent[controls:ScreenSlot].Frame.Title, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
-             FontSize="22"
+             FontFamily="{DynamicResource AppDisplayFontFamily}"
+             FontSize="34"
              FontWeight="SemiBold"
+             Foreground="{DynamicResource AppAccentBrush}"
              Margin="16,0,16,8"
              TextTrimming="CharacterEllipsis" />
 </UserControl>

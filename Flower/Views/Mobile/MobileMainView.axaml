@@ -130,7 +130,8 @@
       <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
     <!-- The tabs not showing are grey rather than dimmed: dimming left their
-         icons a faded red that still read as lit. The one showing keeps the
+         icons a faded red that still read as lit. The muted grey rather than
+         the disabled one, which is paler: these are tabs you can press. The one showing keeps the
          primary red every icon is drawn in, and its label and the Songs note
          follow it. -->
     <!-- Seven tabs are narrower columns than six can have (MobileTabs.MaxShown):
@@ -140,7 +141,7 @@
          icons are drawn at 85% - by a render transform, so each still takes
          its 24px of layout and nothing under it moves. -->
     <Style Selector="Button.tab TextBlock">
-      <Setter Property="FontSize" Value="11" />
+      <Setter Property="FontSize" Value="12" />
     </Style>
     <Style Selector="Button.tab.compact">
       <Setter Property="Width" Value="46" />
@@ -165,6 +166,18 @@
     <Style Selector="Button.tab.compact.iconsOnly :is(Control).tabIcon">
       <Setter Property="RenderTransform" Value="scale(1.15)" />
     </Style>
+    <!-- Every icon on a button, on the phone, is a solid glyph without the
+         hairline rim App.axaml gives icons app-wide: the back and menu
+         circles, the tabs, the round action buttons, the rows' own menus. On
+         a button the glyph already has its circle or its row to be read
+         against, and the rim only made it look outlined. The second style is
+         the Songs tab's note, a bare Path rather than a MaterialIcon. -->
+    <Style Selector="Button materialIcons|MaterialIcon /template/ Path">
+      <Setter Property="StrokeThickness" Value="0" />
+    </Style>
+    <Style Selector="Button Path">
+      <Setter Property="StrokeThickness" Value="0" />
+    </Style>
     <Style Selector="Button.tab Path">
       <Setter Property="Fill" Value="{DynamicResource AppPrimaryBrush}" />
     </Style>
@@ -172,13 +185,13 @@
       <Setter Property="Foreground" Value="{DynamicResource AppPrimaryBrush}" />
     </Style>
     <Style Selector="Button.tab:not(.current) materialIcons|MaterialIcon">
-      <Setter Property="Foreground" Value="{DynamicResource AppTextDisabledBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource AppTextMutedBrush}" />
     </Style>
     <Style Selector="Button.tab:not(.current) TextBlock">
-      <Setter Property="Foreground" Value="{DynamicResource AppTextDisabledBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource AppTextMutedBrush}" />
     </Style>
     <Style Selector="Button.tab:not(.current) Path">
-      <Setter Property="Fill" Value="{DynamicResource AppTextDisabledBrush}" />
+      <Setter Property="Fill" Value="{DynamicResource AppTextMutedBrush}" />
     </Style>
     <!-- The mini player and the tab oval float over the bottom of the screens
          (BottomChrome below), so every screen's scroller keeps that much room
@@ -279,15 +292,22 @@
                      Button.trackRow:pressed /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="Transparent" />
     </Style>
-    <!-- Narrower left/right inset than the picker rows above (16): a song row
-         carries art, a title, a download icon, a duration and a menu across
-         one phone width, and the 8px on each side buys the title more of it
-         than the margin was doing. The vertical half is untouched - it is what
-         makes the row a comfortable tap. TrackListScreenView's album header
-         uses this number to line its text up with the titles, so changing it
-         here moves that too (see the margin on ContentControl.albumText.beside). -->
+    <!-- 16 on the left, so the covers line up with the screen's title and
+         with the Artists page's; 8 on the right, where the "..." button's own
+         padding already stands off the edge - a song row carries art, a
+         title, a download icon, a duration and a menu across one phone
+         width, and the title needs what is left. The vertical half is untouched - it is what
+         makes the row a comfortable tap. Under an album's or a playlist's
+         header, where rows carry no art, TrackListScreenView sets them further
+         in (Grid.albumTracks) and lines the header's text up with that
+         instead.
+         No vertical padding: a row's height is its own content's - the art
+         and the words each carry their margin above and below (see
+         TrackRowTemplate) - so the rule under it lies on its bottom edge,
+         halfway between one song and the next, rather than inside padding
+         that would put it nearer one of them. -->
     <Style Selector="Button.trackRow">
-      <Setter Property="Padding" Value="8,4" />
+      <Setter Property="Padding" Value="16,0,8,0" />
     </Style>
     <!-- The currently playing song, said the one way it is said on every
          list on every platform: weight, and nothing else. Desktop marks its
@@ -445,19 +465,23 @@
          rounded end. The star columns centre it at 97% of the width between
          its margins, and pass touches either side through to the list, as the
          tab oval's do - and that oval takes this same margin and this same
-         97%, so neither number can move here without moving there. Both ovals
-         take a shadow with no offset, rather than the floating pill's downward
-         one, so it rings the whole oval over the list scrolling behind it. -->
+         97%, so neither number can move here without moving there. Neither
+         oval has the red rim the round buttons do; both take the same soft
+         shadow below instead (see this one's Border). -->
     <Grid IsVisible="{Binding CurrentlyPlaying.CurrentlyPlayingTrack, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
           x:Name="MiniPlayerHost"
           Margin="12,0"
           ColumnDefinitions="3*,194*,3*">
+    <!-- No red rim, unlike every other oval: this one carries the most in it
+         (art, two lines, two buttons), and the rim around all that read as a
+         frame. A soft shadow alone lifts it off the list. -->
     <Border Grid.Column="1"
             Classes="floating"
             Height="56"
-            BoxShadow="0 0 16 1.6 #4D000000"
+            BorderThickness="0"
+            BoxShadow="0 4 20 0 #2E000000"
             CornerRadius="28"
-            Padding="8,0,6,0">
+            Padding="6,0,8,0">
       <Grid ColumnDefinitions="*,Auto,Auto">
         <!-- The art is part of the row rather than a button of its own, so a
              tap on it opens Now Playing like the rest of the row does - the
@@ -470,19 +494,19 @@
                 VerticalContentAlignment="Center">
           <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
             <Border Grid.Column="0"
-                    Width="40" Height="40"
+                    Width="44" Height="44"
                     Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
-                    CornerRadius="20"
+                    CornerRadius="22"
                     ClipToBounds="True">
               <Image Source="{Binding CurrentlyPlaying.AlbumArt}" Stretch="UniformToFill" />
             </Border>
             <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
               <TextBlock Text="{Binding CurrentlyPlaying.CurrentlyPlayingTrack.Title}"
-                         FontSize="15"
+                         FontSize="16"
                          FontWeight="Medium"
                          TextTrimming="CharacterEllipsis" />
               <TextBlock Text="{Binding CurrentlyPlaying.CurrentlyPlayingTrack.Artists}"
-                         FontSize="12"
+                         FontSize="13"
                          Opacity="0.65"
                          TextTrimming="CharacterEllipsis" />
             </StackPanel>
@@ -494,14 +518,14 @@
                 Padding="8"
                 VerticalAlignment="Center">
           <materialIcons:MaterialIcon Kind="{Binding PlaylistControl.IsPlaying, Converter={StaticResource PlayOrPauseConverter}}"
-                                       Width="26" Height="26" />
+                                       Width="28" Height="28" />
         </Button>
         <Button Grid.Column="2"
                 Classes="pill"
                 Command="{Binding NextTrackCommand}"
                 Padding="8"
                 VerticalAlignment="Center">
-          <materialIcons:MaterialIcon Kind="FastForward" Width="26" Height="26" />
+          <materialIcons:MaterialIcon Kind="FastForward" Width="28" Height="28" />
         </Button>
       </Grid>
     </Border>
@@ -530,11 +554,14 @@
           Margin="12,0"
           SizeChanged="TabBar_SizeChanged"
           ColumnDefinitions="3*,194*,3*">
+    <!-- No rim, like the mini player above it: a soft shadow below is all
+         that lifts either off the list. -->
     <Border x:Name="TabOval"
             Grid.Column="1"
             Classes="floating"
             Height="64"
-            BoxShadow="0 0 16 1.6 #4D000000"
+            BorderThickness="0"
+            BoxShadow="0 4 20 0 #2E000000"
             CornerRadius="32"
             Padding="4,0">
     <Grid x:Name="TabGrid">
@@ -542,7 +569,7 @@
               Classes.current="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=Home}"
               Command="{Binding SelectTabCommand}" CommandParameter="Home">
         <StackPanel HorizontalAlignment="Center" Spacing="2">
-          <materialIcons:MaterialIcon Classes="tabIcon" Kind="HomeOutline" Width="27" Height="27" Margin="-1.5" HorizontalAlignment="Center" />
+          <materialIcons:MaterialIcon Classes="tabIcon" Kind="Home" Width="27" Height="27" Margin="-1.5" HorizontalAlignment="Center" />
           <TextBlock Text="Home" HorizontalAlignment="Center" />
         </StackPanel>
       </Button>

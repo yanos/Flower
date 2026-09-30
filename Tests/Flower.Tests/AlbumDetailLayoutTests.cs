@@ -92,10 +92,10 @@ public class AlbumDetailLayoutTests : PinnedDataDirectory
     // is the number the album text's own margin is chosen to match.
     //
     // The rows measured by the alignment test below don't actually reach it:
-    // an album's rows are "dense" (no artist line), and TrackListScreenView
-    // declares that style itself, so it comes along with the view. This is the
-    // fallback any non-dense row would take, and it is here so a row that
-    // stops being dense doesn't start measuring FluentTheme's padding instead.
+    // an album's rows sit in TrackListScreenView's Grid.albumTracks, whose
+    // padding style comes along with the view. This is the fallback a row
+    // outside it would take, so one that moves out doesn't start measuring
+    // FluentTheme's padding instead.
     private static Style TrackRowPadding()
     {
         var style = new Style(x => x.OfType<Button>().Class("trackRow"));

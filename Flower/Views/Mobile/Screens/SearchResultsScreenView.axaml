@@ -21,22 +21,49 @@
        ScrollViewer+StackPanel rather than TrackListScreenView's virtualized
        ListBox - search results are bounded by the query, not the whole
        library, so virtualization isn't worth the extra complexity here. -->
+  <UserControl.Styles>
+    <!-- Each section's name: Inter at the size of the rows under it,
+         set apart by weight and a greyer tone rather than by being small. -->
+    <Style Selector="TextBlock.sectionHeader">
+      <Setter Property="FontSize" Value="16" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Opacity" Value="0.7" />
+      <Setter Property="Margin" Value="16,16,16,6" />
+    </Style>
+    <!-- The chevron at the end of an artist or album row: those two open a
+         screen, where a song row plays. -->
+    <Style Selector="materialIcons|MaterialIcon.drillIn">
+      <Setter Property="Width" Value="24" />
+      <Setter Property="Height" Value="24" />
+      <Setter Property="Opacity" Value="0.6" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Margin" Value="8,0,0,0" />
+    </Style>
+  </UserControl.Styles>
+
   <ScrollViewer Classes="screenScroll" controls:RubberBandScroll.IsEnabled="True">
     <StackPanel>
       <StackPanel IsVisible="{Binding HasSearchArtistResults}">
-        <TextBlock Text="Artists" FontSize="13" FontWeight="SemiBold" Opacity="0.55" Margin="16,14,16,4" />
+        <TextBlock Classes="sectionHeader" Text="Artists" />
         <ItemsControl ItemsSource="{Binding SearchArtistResults}">
           <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="system:String">
+            <!-- The artist's cover is the collage the Artists tab draws for
+                 them, made round: a person, where an album is square. -->
+            <DataTemplate x:DataType="vm:ArtistPickerRow">
               <Button Classes="pickerRow"
                       Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).SelectSearchArtistCommand}"
-                      CommandParameter="{Binding}"
+                      CommandParameter="{Binding Name}"
                       controls:LongPress.Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).OpenArtistActionsCommand}"
-                      controls:LongPress.CommandParameter="{Binding}">
-                <StackPanel Orientation="Horizontal" Spacing="12">
-                  <materialIcons:MaterialIcon Kind="Account" Width="22" Height="22" VerticalAlignment="Center" />
-                  <TextBlock Text="{Binding}" FontSize="16" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                </StackPanel>
+                      controls:LongPress.CommandParameter="{Binding Name}">
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+                  <controls:AlbumCollageView Grid.Column="0"
+                                              Covers="{Binding Cover.CoverArt}"
+                                              ArtCornerRadius="28"
+                                              Width="56" Height="56" />
+                  <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="17"
+                             VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                  <materialIcons:MaterialIcon Grid.Column="2" Classes="drillIn" Kind="ChevronRight" />
+                </Grid>
               </Button>
             </DataTemplate>
           </ItemsControl.ItemTemplate>
@@ -44,21 +71,24 @@
       </StackPanel>
 
       <StackPanel IsVisible="{Binding HasSearchAlbumResults}">
-        <TextBlock Text="Albums" FontSize="13" FontWeight="SemiBold" Opacity="0.55" Margin="16,14,16,4" />
+        <TextBlock Classes="sectionHeader" Text="Albums" />
         <ItemsControl ItemsSource="{Binding SearchAlbumResults}">
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="vm:AlbumTileViewModel">
               <Button Classes="pickerRow"
                       Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).SelectSearchAlbumCommand}"
                       CommandParameter="{Binding Name}">
-                <StackPanel Orientation="Horizontal" Spacing="12"
-                            Classes.dimmed="{Binding IsUnavailable}">
-                  <controls:AlbumArtView AlbumArt="{Binding AlbumArt}" Width="40" Height="40" />
-                  <StackPanel Spacing="2" VerticalAlignment="Center">
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14"
+                      Classes.dimmed="{Binding IsUnavailable}">
+                  <controls:AlbumArtView Grid.Column="0" AlbumArt="{Binding AlbumArt}"
+                                         ArtCornerRadius="8"
+                                         Width="64" Height="64" />
+                  <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
                     <TextBlock Text="{Binding Name}" FontSize="16" TextTrimming="CharacterEllipsis" />
-                    <TextBlock Text="{Binding Artist}" FontSize="13" Opacity="0.65" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{Binding Artist}" FontSize="14" Opacity="0.65" TextTrimming="CharacterEllipsis" />
                   </StackPanel>
-                </StackPanel>
+                  <materialIcons:MaterialIcon Grid.Column="2" Classes="drillIn" Kind="ChevronRight" />
+                </Grid>
               </Button>
             </DataTemplate>
           </ItemsControl.ItemTemplate>
@@ -66,7 +96,7 @@
       </StackPanel>
 
       <StackPanel IsVisible="{Binding HasSearchSongResults}">
-        <TextBlock Text="Songs" FontSize="13" FontWeight="SemiBold" Opacity="0.55" Margin="16,14,16,4" />
+        <TextBlock Classes="sectionHeader" Text="Songs" />
         <ItemsControl ItemsSource="{Binding SearchSongResults}" ItemTemplate="{StaticResource TrackRowTemplate}" />
       </StackPanel>
 

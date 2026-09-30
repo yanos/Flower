@@ -8,11 +8,15 @@
        AlbumCollageSurface for how they are laid out. The note placeholder
        shows until there is at least one cover to draw, and stays for an
        artist none of whose albums has art. -->
-  <Border Background="Transparent"
+  <!-- Both radii are set from ArtCornerRadius in the code-behind, as
+       AlbumArtView's are; the 4 and 3 here are its default. -->
+  <Border x:Name="Frame"
+          Background="Transparent"
           BorderBrush="{DynamicResource AppBorderBrush}"
           BorderThickness="1"
           CornerRadius="4">
-    <Border Background="Transparent"
+    <Border x:Name="ClipBorder"
+            Background="Transparent"
             CornerRadius="3"
             ClipToBounds="True">
       <Panel>

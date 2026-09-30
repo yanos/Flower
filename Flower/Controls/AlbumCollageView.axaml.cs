@@ -22,9 +22,32 @@ public partial class AlbumCollageView : UserControl
         set => SetValue(CoversProperty, value);
     }
 
+    // The same knob as AlbumArtView's: 4 by default, half the width for a
+    // round one (Search's artist results).
+    public static readonly StyledProperty<double> ArtCornerRadiusProperty =
+        AvaloniaProperty.Register<AlbumCollageView, double>(nameof(ArtCornerRadius), 4);
+
+    public double ArtCornerRadius
+    {
+        get => GetValue(ArtCornerRadiusProperty);
+        set => SetValue(ArtCornerRadiusProperty, value);
+    }
+
     public AlbumCollageView()
     {
         InitializeComponent();
+    }
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+
+        if (change.Property != ArtCornerRadiusProperty)
+            return;
+
+        var radius = ArtCornerRadius;
+        Frame.CornerRadius = new CornerRadius(radius);
+        ClipBorder.CornerRadius = new CornerRadius(System.Math.Max(0, radius - 1));
     }
 }
 

@@ -97,7 +97,7 @@ public class NowPlayingLayoutTests : PinnedDataDirectory
     {
         var laid = LayOut(390, 844);
 
-        Assert.Equal(laid.Art.Height * 0.15, laid.Art.Top, 1);
+        Assert.Equal(laid.Art.Height * 0.05, laid.Art.Top, 1);
     }
 
     // What the words are about is the picture directly above them, so they go

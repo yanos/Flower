@@ -66,17 +66,22 @@
     <StackPanel Spacing="2" Classes.dimmed="{Binding IsUnavailable}">
       <!-- A playlist's name turns into a box in place when its pencil is
            pressed (see controls:PlaylistNameEditor); an album's never does,
-           since it has no row to be renamed through. -->
+           since it has no row to be renamed through.
+           Set like the song's title on Now Playing - the display serif, in
+           the accent red - since this is the one place the album is the
+           subject rather than a tile among many. -->
       <TextBlock Classes="albumName"
                  Text="{Binding Name}"
                  IsVisible="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).CurrentPlaylistItem.IsEditing, Converter={x:Static BoolConverters.Not}, FallbackValue=True}"
-                 FontSize="20" FontWeight="Bold"
+                 FontFamily="{DynamicResource AppDisplayFontFamily}"
+                 FontSize="28" FontWeight="SemiBold"
+                 Foreground="{DynamicResource AppAccentBrush}"
                  TextWrapping="Wrap" />
       <controls:PlaylistNameEditor DataContext="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).CurrentPlaylistItem}"
                                    IsVisible="{Binding IsEditing, FallbackValue=False}"
                                    CommitCommand="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).CommitPlaylistRenameCommand}" />
       <TextBlock Text="{Binding Artist}"
-                 FontSize="15" Opacity="0.7"
+                 FontSize="16" Opacity="0.7"
                  TextWrapping="Wrap" />
       <!-- Hidden on an album when Settings says so (ShowAlbumButtons); a
            playlist keeps it, its pencil being in no menu. Read off the host

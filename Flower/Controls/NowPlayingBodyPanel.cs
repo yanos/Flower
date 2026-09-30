@@ -29,10 +29,11 @@ public class NowPlayingBodyPanel : Panel
     // the boundary.
     private const double LandscapeAspect = 1.2;
 
-    // The portrait cap the fixed 280px square used to be. Landscape is capped
-    // the same way, so a tall-enough sheet never blows the cover up past the
-    // size the design was drawn at.
-    private const double MaxArtSide = 280;
+    // Big enough that the cover all but fills a phone's width inside the
+    // sheet's 24px margins - the design gives the art the screen - and no
+    // bigger, so a tablet or a tall desktop window does not blow it up past
+    // that. Landscape is capped the same way.
+    private const double MaxArtSide = 340;
 
     // Between the art and the controls, whichever side it is on.
     private const double Gap = 16;
@@ -46,7 +47,9 @@ public class NowPlayingBodyPanel : Panel
     // which left the sheet top-heavy and the slack pooled below the transport.
     // A share of the art rather than of the sheet, so the drop stays in
     // proportion to the thing being dropped on a small screen as on a large one.
-    private const double PortraitArtDrop = 0.15;
+    // Only just clear of it now: at 0.15 the cover and the names under it sat
+    // low enough that the sheet read as starting halfway down.
+    private const double PortraitArtDrop = 0.05;
 
     protected override Size MeasureOverride(Size availableSize)
     {

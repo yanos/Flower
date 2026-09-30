@@ -21,7 +21,9 @@
     <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundChromeMediumBrush}" />
     <Setter Property="BorderBrush" Value="{DynamicResource AppPrimaryBorderBrush}" />
     <Setter Property="BorderThickness" Value="1" />
-    <Setter Property="BoxShadow" Value="0 2 8 0 #28000000" />
+    <!-- Just enough to lift the circle off the page: a darker or wider one
+         read as a halo round every button. -->
+    <Setter Property="BoxShadow" Value="0 1 4 0 #1A000000" />
   </Style>
 
   <!-- CornerRadius is what rounds the pressed and hover highlight: Fluent paints

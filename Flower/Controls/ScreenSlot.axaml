@@ -39,7 +39,7 @@
       <Setter Property="MinHeight" Value="0" />
       <Setter Property="VerticalAlignment" Value="Center" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
-      <Setter Property="FontSize" Value="15" />
+      <Setter Property="FontSize" Value="16" />
     </Style>
     <Style Selector="TextBox.inOval /template/ Border#PART_BorderElement, TextBox.inOval:pointerover /template/ Border#PART_BorderElement, TextBox.inOval:focus /template/ Border#PART_BorderElement">
       <Setter Property="Background" Value="Transparent" />
@@ -88,7 +88,6 @@
               Grid.Column="0"
               Classes="floating"
               Width="40"
-              BoxShadow="0 0 16 1.6 #4D000000"
               IsVisible="{Binding #Root.ShowsBackButton}">
         <Button Classes="pill"
                 Click="BackButton_Click"
@@ -113,7 +112,6 @@
               Classes="floating"
               Height="40"
               Margin="10,0"
-              BoxShadow="0 0 16 1.6 #4D000000"
               CornerRadius="20"
               Padding="14,0,2,0">
         <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
@@ -126,7 +124,7 @@
           <materialIcons:MaterialIcon Grid.Column="0"
                                       Kind="Magnify"
                                       IsVisible="{Binding #Root.Frame.IsSearchScreen, FallbackValue=False}"
-                                      Width="18" Height="18"
+                                      Width="20" Height="20"
                                       Opacity="0.6"
                                       VerticalAlignment="Center" />
           <!-- No clear button of its own: the x at the end is the one way
@@ -190,8 +188,7 @@
       <Border x:Name="MenuPill"
               Grid.Column="2"
               Classes="floating"
-              Width="40"
-              BoxShadow="0 0 16 1.6 #4D000000">
+              Width="40">
         <Button x:Name="MenuButton"
                 Classes="pill"
                 HorizontalAlignment="Center">

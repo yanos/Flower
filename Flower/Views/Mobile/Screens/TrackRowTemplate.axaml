@@ -29,12 +29,20 @@
     <Button Classes="trackRow"
             Classes.playing="{Binding IsCurrentlyPlaying}"
             Classes.placeholder="{Binding IsUnavailable}"
-            Classes.dense="{Binding !$parent[views:ITrackRowHost].ShowsRowArtist}"
             Command="{Binding $parent[UserControl].((mvm:MobileMainViewModel)DataContext).PlayTrackCommand}"
             CommandParameter="{Binding}"
             controls:LongPress.Command="{Binding $parent[UserControl].((mvm:MobileMainViewModel)DataContext).OpenTrackActionsCommand}"
             controls:LongPress.CommandParameter="{Binding}">
       <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto">
+        <!-- The rule between one song and the next, along this row's bottom
+             edge (the row has no vertical padding - see Button.trackRow in
+             MobileMainView.axaml). From the words on, not under the art, so
+             the covers read as a column; drawn first, so everything else is
+             on top of it. -->
+        <Border Grid.Column="2" Grid.ColumnSpan="4"
+                BorderBrush="{DynamicResource AppDividerBrush}"
+                BorderThickness="0,0,0,1"
+                IsHitTestVisible="False" />
         <!-- Pointer wiring for drag-to-reorder is NOT attached here as XAML
              event attributes - this file is a class-less ResourceDictionary
              (no x:Class), so the XAML compiler has no code-behind type to
@@ -74,14 +82,19 @@
         <!-- Hidden while viewing one album's own track list - its header
              (see IsShowingAlbumTrackList/CurrentAlbumHeader) already shows
              the art once, full-size, above the list. -->
+        <!-- The art and the words each carry the row's room above and below
+             (8), which is what sets its height: 68 with art, and only as tall
+             as the words where there is none - an album's own list, where a
+             title alone makes a short row. -->
         <controls:AlbumArtView Grid.Column="1"
                                 AlbumArt="{Binding AlbumArt}"
                                 IsVisible="{Binding !$parent[views:ITrackRowHost].IsAlbumMode}"
-                                Width="40" Height="40"
-                                Margin="0,0,10,0" />
-        <StackPanel Grid.Column="2" Spacing="2" VerticalAlignment="Center">
+                                ArtCornerRadius="6"
+                                Width="52" Height="52"
+                                Margin="0,8,14,8" />
+        <StackPanel Grid.Column="2" Spacing="2" Margin="0,8" VerticalAlignment="Center">
           <TextBlock Text="{Binding Track.Title}"
-                     FontSize="16"
+                     FontSize="17"
                      TextTrimming="CharacterEllipsis" />
           <!-- Dropped when every row in this view carries the same artist -
                an album's tracks, or a single-artist playlist - where it was
@@ -90,7 +103,7 @@
                list (see ITrackRowHost.ShowsRowArtist). -->
           <TextBlock Text="{Binding Track.Artists}"
                      IsVisible="{Binding $parent[views:ITrackRowHost].ShowsRowArtist}"
-                     FontSize="13"
+                     FontSize="15"
                      Opacity="0.65"
                      TextTrimming="CharacterEllipsis" />
         </StackPanel>
@@ -118,7 +131,7 @@
              side, and the left one is short by the same 3, so the glyph
              itself sits where it would with no padding at all. -->
         <controls:TrackDownloadButton Grid.Column="3"
-                                      IconSize="16"
+                                      IconSize="24"
                                       IconPadding="3"
                                       Command="{Binding $parent[UserControl].((mvm:MobileMainViewModel)DataContext).DownloadTrackCommand}"
                                       CommandParameter="{Binding}"
@@ -144,11 +157,11 @@
              circle ends one pixel short of the longest time's ink. -->
         <Panel Grid.Column="4" VerticalAlignment="Center">
           <TextBlock Text="9:59:59"
-                     FontSize="13"
+                     FontSize="15"
                      FontWeight="Bold"
                      Opacity="0" />
           <TextBlock Text="{Binding DurationDisplay}"
-                     FontSize="13"
+                     FontSize="15"
                      Opacity="0.65"
                      HorizontalAlignment="Right" />
         </Panel>
@@ -179,7 +192,7 @@
                 BorderThickness="0"
                 Padding="2,4,2,4"
                 VerticalAlignment="Center">
-          <materialIcons:MaterialIcon Kind="DotsVertical" Width="20" Height="20" Opacity="0.6" />
+          <materialIcons:MaterialIcon Kind="DotsVertical" Width="24" Height="24" Opacity="0.6" />
         </Button>
       </Grid>
     </Button>

@@ -21,7 +21,11 @@
        "worked" wherever the Image/placeholder itself happened to paint,
        leaving the corner-radius margins and any unloaded-art gap dead to
        clicks. -->
-  <Border Background="Transparent"
+  <!-- Both radii are set from ArtCornerRadius in the code-behind, the inner
+       one a pixel less so it sits inside the outline; the 4 and 3 here are
+       its default. -->
+  <Border x:Name="Frame"
+          Background="Transparent"
           BorderBrush="{DynamicResource AppBorderBrush}"
           BorderThickness="1"
           CornerRadius="4">
