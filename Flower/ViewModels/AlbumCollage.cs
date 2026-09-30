@@ -14,7 +14,7 @@ using Flower.Services;
 namespace Flower.ViewModels;
 
 // A cover for something that holds several albums - an artist, a playlist -
-// made of the art of the most played of them (see AlbumCollageView for how
+// made of the art of the most played of them (see AlbumArtView for how
 // it is drawn). Built from the songs it stands for; the art is only read once
 // something binds CoverArt.
 public sealed class AlbumCollage : ObservableObject

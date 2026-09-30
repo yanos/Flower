@@ -74,6 +74,34 @@
   <Panel>
   <ContentControl x:Name="ContentHost" />
 
+  <!-- The header band's blur: what the screen is showing under the status
+       bar and the back and menu buttons, drawn again blurred, over the page
+       colour, and faded out down the band (AppHeaderBlurMask) - so a list
+       scrolled up under the header loses its detail gradually, and is soft
+       behind the buttons and the clock. A copy (VisualBrush of ContentHost)
+       rather than a backdrop filter, which Avalonia does not have for the
+       app's own content. As tall as the status bar and the band, plus the
+       fade's own length below them (HeaderBlurHeight, from MobileMainView);
+       and not hit-testable, so everything it covers still takes touches. -->
+  <Panel VerticalAlignment="Top"
+         Height="{DynamicResource HeaderBlurHeight}"
+         IsHitTestVisible="False"
+         ClipToBounds="True"
+         OpacityMask="{DynamicResource AppHeaderBlurMask}">
+    <Border Background="{DynamicResource AppBackgroundBrush}" />
+    <Rectangle>
+      <Rectangle.Fill>
+        <VisualBrush Visual="{Binding #ContentHost}"
+                     Stretch="None"
+                     AlignmentX="Left"
+                     AlignmentY="Top" />
+      </Rectangle.Fill>
+      <Rectangle.Effect>
+        <BlurEffect Radius="18" />
+      </Rectangle.Effect>
+    </Rectangle>
+  </Panel>
+
   <Grid RowDefinitions="52,*" Margin="{DynamicResource StatusBarInset}">
 
     <!-- No title in the band: it is the first line of the screen's own

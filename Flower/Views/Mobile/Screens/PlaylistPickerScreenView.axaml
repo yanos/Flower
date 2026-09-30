@@ -69,7 +69,7 @@
                         BorderBrush="{DynamicResource AppDividerBrush}"
                         BorderThickness="0,0,0,1"
                         IsHitTestVisible="False" />
-                <controls:AlbumCollageView Grid.Column="0"
+                <controls:AlbumArtView Grid.Column="0"
                                            Covers="{Binding PlaylistCover.CoverArt}"
                                            ArtCornerRadius="6"
                                            Width="64" Height="64"

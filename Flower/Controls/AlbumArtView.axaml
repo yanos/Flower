@@ -4,39 +4,41 @@
              x:Class="Flower.Controls.AlbumArtView"
              x:Name="Root">
 
-  <!-- Single shared "cover art" presentation: a rounded outline around either
-       the track's art or the AlbumArtPlaceholder note glyph when there is
-       none. Used by the main track list rows, the currently playing control,
+  <!-- The one cover control, wherever a cover is drawn: a rounded outline
+       around the track's or album's art, several albums' art as a collage
+       for what holds several (an artist, a playlist - Covers), or the
+       AlbumArtPlaceholder note glyph when there is neither. Used by the main track list rows, the currently playing control,
        and the Track Info window, so the outline/placeholder look only ever
        needs to change in one place. Stretch defaults to UniformToFill (crop
        to fill a square cell); Track Info sets it to Uniform instead so
-       non-square art isn't cropped. Theme-aware AppBorderBrush, not a
-       hardcoded black - a 50%-opacity black outline (the old value) all but
-       disappeared against dark art or the dark theme's own near-black
-       background, leaving art edges with no visible definition at all. -->
-  <!-- Background="Transparent" on both Borders below isn't decorative - a
+       non-square art isn't cropped. The outline is AppArtOutlineBrush, the
+       theme's text colour faint - dark on the light theme, light on the dark
+       one - so it defines a cover's edge against either background. -->
+  <!-- Background="Transparent" on the Border below isn't decorative - a
        Border with neither Background nor a painted BorderBrush region under
        the pointer doesn't hit-test at all in Avalonia, so without this,
        clicking this control (e.g. an album tile in AlbumGridView) only
        "worked" wherever the Image/placeholder itself happened to paint,
        leaving the corner-radius margins and any unloaded-art gap dead to
        clicks. -->
-  <!-- Both radii are set from ArtCornerRadius in the code-behind, the inner
-       one a pixel less so it sits inside the outline; the 4 and 3 here are
-       its default. -->
-  <Border x:Name="Frame"
+  <!-- One rounded shape, clipping both the art and the placeholder, with
+       the outline drawn over its edge rather than around it. The outline used
+       to be a Border of its own around a clip a pixel smaller: a cover then
+       showed at the inner radius inside a light ring, while the placeholder -
+       filled in the ring's own colour - merged with the ring and showed at the
+       outer one, so the two looked like different controls. Both radii come
+       from ArtCornerRadius in the code-behind; 4 is its default. -->
+  <Border x:Name="ClipBorder"
           Background="Transparent"
-          BorderBrush="{DynamicResource AppBorderBrush}"
-          BorderThickness="1"
-          CornerRadius="4">
-    <Border x:Name="ClipBorder"
-            Background="Transparent"
-            CornerRadius="3"
-            ClipToBounds="True">
+          CornerRadius="4"
+          ClipToBounds="True">
       <Panel>
-        <controls:AlbumArtPlaceholder HorizontalAlignment="Stretch"
-                                       VerticalAlignment="Stretch"
-                                       IsVisible="{Binding #Root.AlbumArt, Converter={x:Static ObjectConverters.IsNull}}"/>
+        <!-- Which of the three shows - the note, one cover, or several - is
+             the code-behind's to say (UpdateLayers): it hangs on whether the
+             collage has anything loaded yet, which only it knows. -->
+        <controls:AlbumArtPlaceholder x:Name="Placeholder"
+                                       HorizontalAlignment="Stretch"
+                                       VerticalAlignment="Stretch"/>
         <!-- Image lives inside a Canvas, and its size is bound explicitly to
              ClipBorder's own rendered bounds rather than left to flow
              normally. A bare Image measures to its source bitmap's own
@@ -48,7 +50,8 @@
              window. A Canvas never reports its children's size to its own
              parent, so wiring the Image's size to ClipBorder.Bounds here
              keeps it exactly cell-sized no matter how large the source is. -->
-        <Canvas IsVisible="{Binding #Root.AlbumArt, Converter={x:Static ObjectConverters.IsNotNull}}"
+        <Canvas x:Name="ArtCanvas"
+                IsVisible="False"
                 HorizontalAlignment="Stretch"
                 VerticalAlignment="Stretch">
           <Image Source="{Binding #Root.AlbumArt}"
@@ -56,7 +59,17 @@
                  Width="{Binding #ClipBorder.Bounds.Width}"
                  Height="{Binding #ClipBorder.Bounds.Height}"/>
         </Canvas>
+        <!-- Several covers, for what holds several albums - an artist, a
+             playlist (see AlbumCollage for which, AlbumCollageSurface for how
+             they are laid out). -->
+        <controls:AlbumCollageSurface x:Name="Surface"
+                                       Covers="{Binding #Root.Covers}"
+                                       IsVisible="False"/>
+        <Border x:Name="Outline"
+                BorderBrush="{DynamicResource AppArtOutlineBrush}"
+                BorderThickness="1"
+                CornerRadius="4"
+                IsHitTestVisible="False"/>
       </Panel>
-    </Border>
   </Border>
 </UserControl>

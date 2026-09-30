@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
@@ -25,6 +27,18 @@ public partial class AlbumArtView : UserControl
         set => SetValue(ArtCornerRadiusProperty, value);
     }
 
+    // Several covers instead of one, for what holds several albums: drawn as
+    // a collage (AlbumCollageSurface) in place of AlbumArt. See AlbumCollage
+    // for which albums.
+    public static readonly StyledProperty<IReadOnlyList<Bitmap>?> CoversProperty =
+        AvaloniaProperty.Register<AlbumArtView, IReadOnlyList<Bitmap>?>(nameof(Covers));
+
+    public IReadOnlyList<Bitmap>? Covers
+    {
+        get => GetValue(CoversProperty);
+        set => SetValue(CoversProperty, value);
+    }
+
     public Bitmap? AlbumArt
     {
         get => GetValue(AlbumArtProperty);
@@ -40,17 +54,40 @@ public partial class AlbumArtView : UserControl
     public AlbumArtView()
     {
         InitializeComponent();
+        Surface.PropertyChanged += (_, e) =>
+        {
+            if (e.Property == AlbumCollageSurface.HasArtProperty)
+                UpdateLayers();
+        };
+        UpdateLayers();
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
 
+        if (change.Property == AlbumArtProperty || change.Property == CoversProperty)
+        {
+            UpdateLayers();
+            return;
+        }
+
         if (change.Property != ArtCornerRadiusProperty)
             return;
 
-        var radius = ArtCornerRadius;
-        Frame.CornerRadius = new CornerRadius(radius);
-        ClipBorder.CornerRadius = new CornerRadius(System.Math.Max(0, radius - 1));
+        var radius = new CornerRadius(ArtCornerRadius);
+        ClipBorder.CornerRadius = radius;
+        Outline.CornerRadius = radius;
+    }
+
+    // The collage if it has any art loaded, else the single cover, else the
+    // note - one of the three, never two stacked.
+    private void UpdateLayers()
+    {
+        var collage = Surface.HasArt;
+        var single = !collage && AlbumArt != null;
+        Surface.IsVisible = collage;
+        ArtCanvas.IsVisible = single;
+        Placeholder.IsVisible = !collage && !single;
     }
 }

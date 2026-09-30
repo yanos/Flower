@@ -8,54 +8,11 @@ using Avalonia.Media.Imaging;
 
 namespace Flower.Controls;
 
-// A cover made of several albums' - an artist's, a playlist's. See
-// AlbumCollage for which albums, and AlbumCollageSurface for how they are
-// laid out.
-public partial class AlbumCollageView : UserControl
-{
-    public static readonly StyledProperty<IReadOnlyList<Bitmap>?> CoversProperty =
-        AvaloniaProperty.Register<AlbumCollageView, IReadOnlyList<Bitmap>?>(nameof(Covers));
-
-    public IReadOnlyList<Bitmap>? Covers
-    {
-        get => GetValue(CoversProperty);
-        set => SetValue(CoversProperty, value);
-    }
-
-    // The same knob as AlbumArtView's: 4 by default, half the width for a
-    // round one (Search's artist results).
-    public static readonly StyledProperty<double> ArtCornerRadiusProperty =
-        AvaloniaProperty.Register<AlbumCollageView, double>(nameof(ArtCornerRadius), 4);
-
-    public double ArtCornerRadius
-    {
-        get => GetValue(ArtCornerRadiusProperty);
-        set => SetValue(ArtCornerRadiusProperty, value);
-    }
-
-    public AlbumCollageView()
-    {
-        InitializeComponent();
-    }
-
-    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
-    {
-        base.OnPropertyChanged(change);
-
-        if (change.Property != ArtCornerRadiusProperty)
-            return;
-
-        var radius = ArtCornerRadius;
-        Frame.CornerRadius = new CornerRadius(radius);
-        ClipBorder.CornerRadius = new CornerRadius(System.Math.Max(0, radius - 1));
-    }
-}
-
 // Draws the covers into one square: one fills it, two split it along the
 // diagonal from the top-right corner to the bottom-left one (the first above
 // the line), and four take a quarter each, first to last left to right, top
-// to bottom. A quarter is its cover cropped to fill it, the way AlbumArtView's
-// UniformToFill does; a half is its cover laid over the whole square and cut
+// to bottom. A quarter is its cover cropped to fill it, the way a single cover's
+// UniformToFill is; a half is its cover laid over the whole square and cut
 // along the line, so each shows its own half of the art rather than the whole
 // of it squashed into a triangle.
 public sealed class AlbumCollageSurface : Control
@@ -77,8 +34,8 @@ public sealed class AlbumCollageSurface : Control
         set => SetValue(CoversProperty, value);
     }
 
-    // Whether there is anything to draw: false leaves the frame's placeholder
-    // showing.
+    // Whether there is anything to draw: false leaves AlbumArtView's
+    // placeholder showing.
     private bool _hasArt;
     public bool HasArt
     {

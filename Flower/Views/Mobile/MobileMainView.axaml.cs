@@ -191,6 +191,10 @@ public partial class MobileMainView : UserControl
 
     private IInsetsManager? _insets;
 
+    // How far below the header band its blur carries on fading out, so the
+    // blur ends in the list rather than at the band's edge.
+    private const double HeaderBlurFade = 24;
+
     // The phone would lay this view out inside the safe area, leaving a strip
     // between the tab bar and the bottom of the screen. So the view takes the
     // whole screen and applies the insets itself: top, left and right as its
@@ -244,6 +248,7 @@ public partial class MobileMainView : UserControl
         _statusBarHeight = safeArea.Top;
         Resources["ScreenStackBleed"] = new Thickness(0, -safeArea.Top, 0, 0);
         Resources["StatusBarInset"] = new Thickness(0, safeArea.Top, 0, 0);
+        Resources["HeaderBlurHeight"] = safeArea.Top + ScreenSlot.HeaderHeight + HeaderBlurFade;
         UpdateScreenScrollInset();
         // Not the whole bottom inset: the home indicator is a thin line at the
         // very bottom of that inset, so the oval can come most of the way down

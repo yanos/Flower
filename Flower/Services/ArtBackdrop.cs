@@ -33,11 +33,12 @@ public static class ArtBackdrop
     private static readonly ConditionalWeakTable<Bitmap, object> TopEdges = new();
 
     // What Now Playing falls back to with no cover to take a colour from: the
-    // theme's own deep accent (Theme.axaml), darkened the way a cover's
+    // theme's pressed accent - the palette's Deep Coral - (Theme.axaml),
+    // darkened the way a cover's
     // colour is.
     public static Color FallbackTint =>
         Application.Current is { } app
-        && app.TryGetResource("PaletteAccentDeep", app.ActualThemeVariant, out var value)
+        && app.TryGetResource("PaletteAccentPressed", app.ActualThemeVariant, out var value)
         && value is Color color
             ? color
             : default;

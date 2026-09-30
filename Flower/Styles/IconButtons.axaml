@@ -60,4 +60,31 @@
     <Setter Property="BorderBrush" Value="{DynamicResource AppPrimaryBorderBrush}" />
     <Setter Property="Padding" Value="3.5" />
   </Style>
+
+  <!-- An accent-filled button - the one action a sheet is asking for. The
+     accent at rest, its hover and pressed states under the pointer and the
+     finger, and the text that reads on it throughout. On the template's
+     presenter, which is where Fluent paints its own hover and pressed
+     backgrounds - a Background set on the Button itself was replaced by
+     Fluent's grey the moment it was pointed at or pressed. -->
+  <Style Selector="Button.primary">
+    <Setter Property="Foreground" Value="{DynamicResource AppOnPrimaryBrush}" />
+  </Style>
+  <Style Selector="Button.primary /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource AppPrimaryBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource AppOnPrimaryBrush}" />
+  </Style>
+  <Style Selector="Button.primary:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource AppAccentHoverBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource AppOnPrimaryBrush}" />
+  </Style>
+  <Style Selector="Button.primary:pressed /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource AppAccentPressedBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource AppOnPrimaryBrush}" />
+  </Style>
+  <!-- These presenter styles outrank Fluent's own disabled one, which would
+       otherwise grey it: disabled, it is the same button at half strength. -->
+  <Style Selector="Button.primary:disabled">
+    <Setter Property="Opacity" Value="0.5" />
+  </Style>
 </Styles>

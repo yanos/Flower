@@ -56,7 +56,7 @@
                       controls:LongPress.Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).OpenArtistActionsCommand}"
                       controls:LongPress.CommandParameter="{Binding Name}">
                 <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
-                  <controls:AlbumCollageView Grid.Column="0"
+                  <controls:AlbumArtView Grid.Column="0"
                                               Covers="{Binding Cover.CoverArt}"
                                               ArtCornerRadius="28"
                                               Width="56" Height="56" />

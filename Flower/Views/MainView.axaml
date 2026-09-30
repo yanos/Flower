@@ -206,7 +206,7 @@
                                MinHeight="0"
                                Padding="4,0"
                                MinWidth="80"
-                               SelectionBrush="{DynamicResource AppAccentMutedBrush}"
+                               SelectionBrush="{DynamicResource AppAccentSoftBrush}"
                                SelectionForegroundBrush="{DynamicResource AppTextPrimaryBrush}"
                                Loaded="RenameBox_Loaded"
                                KeyDown="RenameBox_KeyDown"

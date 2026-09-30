@@ -23,7 +23,7 @@
     </Style>
   </UserControl.Styles>
 
-  <Border Background="{DynamicResource AppElevatedSurfaceBrush}"
+  <Border Background="{DynamicResource AppSurfaceBrush}"
           BorderBrush="{DynamicResource AppBorderBrush}"
           BorderThickness="1"
           CornerRadius="6"

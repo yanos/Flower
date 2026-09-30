@@ -616,6 +616,7 @@ public partial class App : Application
         // Before any window is created, so the very first frame already
         // renders in the saved variant instead of flashing OS-default then
         // switching.
+        AppTheme.ApplyPalette(this);
         AppTheme.Apply(appSettings.ThemePreference);
 
         var library = provider.GetRequiredService<Library>();

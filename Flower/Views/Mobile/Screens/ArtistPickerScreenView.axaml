@@ -32,7 +32,7 @@
                  under the words and the chevron only, the way a list inset
                  behind its pictures does, so the covers read as a column. -->
             <Grid ColumnDefinitions="Auto,*" Height="60">
-              <controls:AlbumCollageView Grid.Column="0"
+              <controls:AlbumArtView Grid.Column="0"
                                           Covers="{Binding Cover.CoverArt}"
                                           ArtCornerRadius="6"
                                           Width="48" Height="48"

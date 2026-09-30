@@ -67,11 +67,9 @@
                    Foreground="{DynamicResource AppWarningBrush}"
                    FontSize="13" TextWrapping="Wrap" />
 
-        <Button Classes="peerAction" Content="{Binding ConfirmPairServerActionLabel}"
+        <Button Classes="peerAction primary" Content="{Binding ConfirmPairServerActionLabel}"
                 Command="{Binding ConfirmPairServerCommand}"
-                IsEnabled="{Binding IsConfirmPairServerEnabled}"
-                Background="{DynamicResource AppPrimaryBrush}"
-                Foreground="{DynamicResource AppOnPrimaryBrush}" />
+                IsEnabled="{Binding IsConfirmPairServerEnabled}" />
         <Button Classes="peerAction" Content="Cancel" Command="{Binding CancelPairServerCommand}"
                 Background="Transparent" />
       </StackPanel>

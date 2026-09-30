@@ -7,57 +7,51 @@ body,
     height: 100%;
 }
 
-/* HTML styles for the splash screen */
+/* The palette, for what the browser draws before the app does: the page
+   behind the canvas and the splash screen. These cannot read Theme.axaml,
+   so they restate its values - keep them in step with its Palette*
+   colours (Background, TextPrimary, Accent) for each variant. */
+:root {
+    --flower-background: #FEFBF8;
+    --flower-text: #1A1314;
+    --flower-accent: #EF2D46;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --flower-background: #151112;
+        --flower-text: #F6EFEC;
+        --flower-accent: #F13A4F;
+    }
+}
+
+/* The page itself, so there is no white flash before the app paints in a
+   dark browser. */
+html,
+body {
+    background: var(--flower-background);
+    color: var(--flower-text);
+}
+
+/* The splash screen, while the app loads: its name in the accent, in a
+   serif like the app's own titles (the bundled Cormorant Garamond is not
+   loaded yet at this point, so the browser's serif stands in). */
 .avalonia-splash {
     position: absolute;
     height: 100%;
     width: 100%;
-    background: white;
-    font-family: 'Outfit', sans-serif;
+    background: var(--flower-background);
+    font-family: 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
     justify-content: center;
     align-items: center;
     display: flex;
     pointer-events: none;
 }
 
-/* Light theme styles */
-@media (prefers-color-scheme: light) {
-    .avalonia-splash {
-        background: white;
-    }
-
-    .avalonia-splash h2 {
-        color: #1b2a4e;
-    }
-
-    .avalonia-splash a {
-        color: #0D6EFD;
-    }
-}
-
-@media (prefers-color-scheme: dark) {
-    .avalonia-splash {
-        background: #1b2a4e;
-    }
-
-    .avalonia-splash h2 {
-        color: white;
-    }
-
-    .avalonia-splash a {
-        color: white;
-    }
-}
-
 .avalonia-splash h2 {
-    font-weight: 400;
-    font-size: 1.5rem;
-}
-
-.avalonia-splash a {
-    text-decoration: none;
+    color: var(--flower-accent);
+    font-weight: 600;
     font-size: 2.5rem;
-    display: block;   
 }
 
 .avalonia-splash.splash-close {

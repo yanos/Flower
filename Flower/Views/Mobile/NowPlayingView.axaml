@@ -161,11 +161,10 @@
                 BorderThickness="0"
                 CornerRadius="16"
                 Padding="0">
-          <Border Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
-                  CornerRadius="16"
-                  ClipToBounds="True">
-            <Image Source="{Binding CurrentlyPlaying.AlbumArt}" Stretch="UniformToFill" />
-          </Border>
+          <!-- The one cover control, as every cover in the app is - the note
+               when there is no art included. -->
+          <layout:AlbumArtView AlbumArt="{Binding CurrentlyPlaying.AlbumArt}"
+                               ArtCornerRadius="16" />
         </Button>
       </Border>
 

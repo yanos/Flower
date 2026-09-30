@@ -29,6 +29,10 @@
            screen's header keeps clear of it by the first. Replaced from the
            code-behind with the safe area. -->
       <Thickness x:Key="StatusBarInset">0,0,0,0</Thickness>
+      <!-- How tall each screen's header blur is (ScreenSlot): the status
+           bar, the header band, and the fade below them. Replaced from the
+           code-behind with the safe area. -->
+      <x:Double x:Key="HeaderBlurHeight">76</x:Double>
       <!-- ScreenScrollInset's top, pulled the other way: how far above its
            own top a screen's header backdrop reaches to start at the very top
            of the screen (AlbumHeaderTemplate). Kept in step from the
@@ -277,7 +281,7 @@
       <Setter Property="Margin" Value="{DynamicResource ScreenScrollInset}" />
       <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}" />
       <Setter Property="ActiveBackground" Value="{DynamicResource AppAccentSoftBrush}" />
-      <Setter Property="BubbleBackground" Value="{DynamicResource AppElevatedSurfaceBrush}" />
+      <Setter Property="BubbleBackground" Value="{DynamicResource AppSurfaceBrush}" />
       <Setter Property="BubbleForeground" Value="{DynamicResource AppTextPrimaryBrush}" />
     </Style>
     <!-- Border.floating and Button.pill, the floating controls over the top of
@@ -506,13 +510,11 @@
                 HorizontalContentAlignment="Stretch"
                 VerticalContentAlignment="Center">
           <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
-            <Border Grid.Column="0"
-                    Width="44" Height="44"
-                    Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
-                    CornerRadius="22"
-                    ClipToBounds="True">
-              <Image Source="{Binding CurrentlyPlaying.AlbumArt}" Stretch="UniformToFill" />
-            </Border>
+            <!-- The one cover control, made round: half its width. -->
+            <controls:AlbumArtView Grid.Column="0"
+                                   Width="44" Height="44"
+                                   ArtCornerRadius="22"
+                                   AlbumArt="{Binding CurrentlyPlaying.AlbumArt}" />
             <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
               <TextBlock Text="{Binding CurrentlyPlaying.CurrentlyPlayingTrack.Title}"
                          FontSize="16"

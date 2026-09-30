@@ -146,7 +146,7 @@ public class NewPlaylistEntryTests : PinnedDataDirectory
         // row's cover does.
         var circle = Assert.Single(entry.GetVisualDescendants().OfType<Border>(),
             b => b.Classes.Contains("floating"));
-        var rowCover = Assert.Single(window.GetVisualDescendants().OfType<AlbumCollageView>());
+        var rowCover = Assert.Single(window.GetVisualDescendants().OfType<AlbumArtView>());
         Assert.Equal(rowCover.TranslatePoint(default, window)!.Value.X,
             circle.TranslatePoint(default, window)!.Value.X, 1);
 

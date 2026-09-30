@@ -2,18 +2,24 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
   <!-- The app's colours, in three layers, and the only file in the app that
-       holds a colour value:
+       holds a colour value - bar one copy: the browser head's loading page
+       (Flower.Web/wwwroot/app.css) is drawn before this file is read, and
+       restates the background, text and accent colours for itself.
 
        1. The palette (Palette*), per theme variant: the design's own named
-          colours - Background, Accent and Accent Deep, the two text colours,
-          Surface and Divider, the two icon neutrals - plus the few roles it
+          colours - Background, the Accent and its hover and pressed states,
+          the two text colours, Surface and Divider, the two icon neutrals -
+          plus the few roles it
           does not name (what reads on the accent, what reads on a sheet tinted
           with a cover's colour, the status colours, the scrim behind a card).
           Change one here and everything drawn in that role follows.
 
-       2. FluentTheme's own System*Color keys, per variant, each an alias of a
-          palette colour, so what Fluent draws for itself (buttons, menus,
-          scrollbars) is drawn in the same colours.
+       2. FluentTheme's own colours: set from these same palette colours at
+          startup, through Fluent's Palettes (AppTheme.ApplyPalette), so what
+          Fluent draws for itself (check boxes, menus, scrollbars) matches.
+          Only its accent shades are aliased here, to the hover and pressed
+          accents, which its Palettes would otherwise derive by a rule of
+          its own.
 
        3. Every brush anything names - the app's own App* roles and the Fluent
           brushes the views use directly - defined once for both variants, each
@@ -39,7 +45,10 @@
       <!-- The design palette ("Flower Home - Color Palette"). -->
       <Color x:Key="PaletteBackground">#FEFBF8</Color>
       <Color x:Key="PaletteAccent">#EF2D46</Color>
-      <Color x:Key="PaletteAccentDeep">#D21F36</Color>
+      <!-- A control's accent under the pointer, and while it is pressed -
+           the latter is the palette's Deep Coral. -->
+      <Color x:Key="PaletteAccentHover">#E52943</Color>
+      <Color x:Key="PaletteAccentPressed">#D21F36</Color>
       <Color x:Key="PaletteTextPrimary">#1A1314</Color>
       <Color x:Key="PaletteTextSecondary">#6E6566</Color>
       <Color x:Key="PaletteSurface">#F5EEEB</Color>
@@ -55,42 +64,22 @@
       <Color x:Key="PaletteWarning">#E0A12E</Color>
       <Color x:Key="PaletteError">#D64545</Color>
 
-      <!-- FluentTheme's base palette, on the design's. -->
-      <StaticResource x:Key="SystemAccentColor" ResourceKey="PaletteAccent" />
-      <StaticResource x:Key="SystemAccentColorDark1" ResourceKey="PaletteAccentDeep" />
-      <StaticResource x:Key="SystemAccentColorDark2" ResourceKey="PaletteAccentDeep" />
-      <StaticResource x:Key="SystemAccentColorDark3" ResourceKey="PaletteAccentDeep" />
-      <StaticResource x:Key="SystemAccentColorLight1" ResourceKey="PaletteAccent" />
-      <StaticResource x:Key="SystemAccentColorLight2" ResourceKey="PaletteAccent" />
-      <StaticResource x:Key="SystemAccentColorLight3" ResourceKey="PaletteAccent" />
-      <StaticResource x:Key="SystemAltHighColor" ResourceKey="PaletteBackground" />
-      <StaticResource x:Key="SystemAltMediumHighColor" ResourceKey="PaletteSurface" />
-      <StaticResource x:Key="SystemAltMediumColor" ResourceKey="PaletteSurface" />
-      <StaticResource x:Key="SystemAltMediumLowColor" ResourceKey="PaletteDivider" />
-      <StaticResource x:Key="SystemAltLowColor" ResourceKey="PaletteDivider" />
-      <StaticResource x:Key="SystemBaseHighColor" ResourceKey="PaletteTextPrimary" />
-      <StaticResource x:Key="SystemBaseMediumHighColor" ResourceKey="PaletteTextSecondary" />
-      <StaticResource x:Key="SystemBaseMediumColor" ResourceKey="PaletteIconInactive" />
-      <StaticResource x:Key="SystemBaseMediumLowColor" ResourceKey="PaletteIconDisabled" />
-      <StaticResource x:Key="SystemBaseLowColor" ResourceKey="PaletteDivider" />
-      <StaticResource x:Key="SystemChromeHighColor" ResourceKey="PaletteDivider" />
-      <StaticResource x:Key="SystemChromeMediumColor" ResourceKey="PaletteSurface" />
-      <StaticResource x:Key="SystemChromeMediumLowColor" ResourceKey="PaletteSurface" />
-      <StaticResource x:Key="SystemChromeLowColor" ResourceKey="PaletteBackground" />
-      <StaticResource x:Key="SystemChromeAltLowColor" ResourceKey="PaletteTextSecondary" />
-      <StaticResource x:Key="SystemChromeDisabledHighColor" ResourceKey="PaletteDivider" />
-      <StaticResource x:Key="SystemChromeDisabledLowColor" ResourceKey="PaletteIconDisabled" />
-      <StaticResource x:Key="SystemChromeGrayColor" ResourceKey="PaletteIconInactive" />
-      <StaticResource x:Key="SystemListLowColor" ResourceKey="PaletteSurface" />
-      <StaticResource x:Key="SystemListMediumColor" ResourceKey="PaletteDivider" />
-      <StaticResource x:Key="SystemRegionColor" ResourceKey="PaletteBackground" />
+      <!-- Fluent's accent shades, as the palette's hover and pressed
+           accents: its Palettes (AppTheme.ApplyPalette) set the rest of its
+           colours and would derive these from the accent by its own rule. -->
+      <StaticResource x:Key="SystemAccentColorDark1" ResourceKey="PaletteAccentHover" />
+      <StaticResource x:Key="SystemAccentColorDark2" ResourceKey="PaletteAccentPressed" />
+      <StaticResource x:Key="SystemAccentColorDark3" ResourceKey="PaletteAccentPressed" />
     </ResourceDictionary>
 
     <ResourceDictionary x:Key="Dark">
       <!-- The design palette ("Flower Home - Dark Theme Color Palette"). -->
       <Color x:Key="PaletteBackground">#151112</Color>
       <Color x:Key="PaletteAccent">#F13A4F</Color>
-      <Color x:Key="PaletteAccentDeep">#D6283E</Color>
+      <!-- A control's accent under the pointer, and while it is pressed -
+           the latter is the palette's Deep Coral. -->
+      <Color x:Key="PaletteAccentHover">#E93248</Color>
+      <Color x:Key="PaletteAccentPressed">#D6283E</Color>
       <Color x:Key="PaletteTextPrimary">#F6EFEC</Color>
       <Color x:Key="PaletteTextSecondary">#B7A8A8</Color>
       <Color x:Key="PaletteSurface">#21191B</Color>
@@ -106,35 +95,12 @@
       <Color x:Key="PaletteWarning">#E0A82E</Color>
       <Color x:Key="PaletteError">#E0524D</Color>
 
-      <!-- FluentTheme's base palette, on the design's. -->
-      <StaticResource x:Key="SystemAccentColor" ResourceKey="PaletteAccent" />
-      <StaticResource x:Key="SystemAccentColorDark1" ResourceKey="PaletteAccentDeep" />
-      <StaticResource x:Key="SystemAccentColorDark2" ResourceKey="PaletteAccentDeep" />
-      <StaticResource x:Key="SystemAccentColorDark3" ResourceKey="PaletteAccentDeep" />
-      <StaticResource x:Key="SystemAccentColorLight1" ResourceKey="PaletteAccent" />
-      <StaticResource x:Key="SystemAccentColorLight2" ResourceKey="PaletteAccent" />
-      <StaticResource x:Key="SystemAccentColorLight3" ResourceKey="PaletteAccent" />
-      <StaticResource x:Key="SystemAltHighColor" ResourceKey="PaletteBackground" />
-      <StaticResource x:Key="SystemAltMediumHighColor" ResourceKey="PaletteSurface" />
-      <StaticResource x:Key="SystemAltMediumColor" ResourceKey="PaletteSurface" />
-      <StaticResource x:Key="SystemAltMediumLowColor" ResourceKey="PaletteDivider" />
-      <StaticResource x:Key="SystemAltLowColor" ResourceKey="PaletteDivider" />
-      <StaticResource x:Key="SystemBaseHighColor" ResourceKey="PaletteTextPrimary" />
-      <StaticResource x:Key="SystemBaseMediumHighColor" ResourceKey="PaletteTextSecondary" />
-      <StaticResource x:Key="SystemBaseMediumColor" ResourceKey="PaletteIconInactive" />
-      <StaticResource x:Key="SystemBaseMediumLowColor" ResourceKey="PaletteIconDisabled" />
-      <StaticResource x:Key="SystemBaseLowColor" ResourceKey="PaletteDivider" />
-      <StaticResource x:Key="SystemChromeHighColor" ResourceKey="PaletteDivider" />
-      <StaticResource x:Key="SystemChromeMediumColor" ResourceKey="PaletteSurface" />
-      <StaticResource x:Key="SystemChromeMediumLowColor" ResourceKey="PaletteSurface" />
-      <StaticResource x:Key="SystemChromeLowColor" ResourceKey="PaletteBackground" />
-      <StaticResource x:Key="SystemChromeAltLowColor" ResourceKey="PaletteTextSecondary" />
-      <StaticResource x:Key="SystemChromeDisabledHighColor" ResourceKey="PaletteDivider" />
-      <StaticResource x:Key="SystemChromeDisabledLowColor" ResourceKey="PaletteIconDisabled" />
-      <StaticResource x:Key="SystemChromeGrayColor" ResourceKey="PaletteIconInactive" />
-      <StaticResource x:Key="SystemListLowColor" ResourceKey="PaletteSurface" />
-      <StaticResource x:Key="SystemListMediumColor" ResourceKey="PaletteDivider" />
-      <StaticResource x:Key="SystemRegionColor" ResourceKey="PaletteBackground" />
+      <!-- Fluent's accent shades, as the palette's hover and pressed
+           accents: its Palettes (AppTheme.ApplyPalette) set the rest of its
+           colours and would derive these from the accent by its own rule. -->
+      <StaticResource x:Key="SystemAccentColorDark1" ResourceKey="PaletteAccentHover" />
+      <StaticResource x:Key="SystemAccentColorDark2" ResourceKey="PaletteAccentPressed" />
+      <StaticResource x:Key="SystemAccentColorDark3" ResourceKey="PaletteAccentPressed" />
     </ResourceDictionary>
 
   </ResourceDictionary.ThemeDictionaries>
@@ -144,17 +110,21 @@
   <SolidColorBrush x:Key="AppBackgroundBrush" Color="{DynamicResource PaletteBackground}" />
   <!-- Cards, the mini player and tab bar, sheets, text boxes. -->
   <SolidColorBrush x:Key="AppSurfaceBrush" Color="{DynamicResource PaletteSurface}" />
-  <SolidColorBrush x:Key="AppElevatedSurfaceBrush" Color="{DynamicResource PaletteSurface}" />
   <!-- The square standing in for a missing cover: a step off the surface it
        sits on, so it still reads as a square there. -->
   <SolidColorBrush x:Key="AppPlaceholderBrush" Color="{DynamicResource PaletteDivider}" />
   <SolidColorBrush x:Key="AppBorderBrush" Color="{DynamicResource PaletteDivider}" />
+  <!-- The hairline over a cover's edge (AlbumArtView): the text colour, faint,
+       so it reads as the cover's edge over art and placeholder alike. In the
+       divider colour instead it matched the page, not the cover: over art it
+       looked like background and cut the corner in, over the placeholder -
+       the same colour - it vanished, and the two showed different corners. -->
+  <SolidColorBrush x:Key="AppArtOutlineBrush" Color="{DynamicResource PaletteTextPrimary}" Opacity="0.12" />
   <SolidColorBrush x:Key="AppDividerBrush" Color="{DynamicResource PaletteDivider}" />
   <!-- The unfilled part of the desktop volume bar. -->
   <SolidColorBrush x:Key="AppTrackBrush" Color="{DynamicResource PaletteDivider}" />
 
   <SolidColorBrush x:Key="AppTextPrimaryBrush" Color="{DynamicResource PaletteTextPrimary}" />
-  <SolidColorBrush x:Key="AppTextSecondaryBrush" Color="{DynamicResource PaletteTextSecondary}" />
   <!-- An icon or label at rest (a tab not showing, a toggle off). -->
   <SolidColorBrush x:Key="AppTextMutedBrush" Color="{DynamicResource PaletteIconInactive}" />
   <SolidColorBrush x:Key="AppTextDisabledBrush" Color="{DynamicResource PaletteIconDisabled}" />
@@ -164,12 +134,14 @@
        the views use both, the one for a fill and the other for a highlight. -->
   <SolidColorBrush x:Key="AppPrimaryBrush" Color="{DynamicResource PaletteAccent}" />
   <SolidColorBrush x:Key="AppAccentBrush" Color="{DynamicResource PaletteAccent}" />
-  <SolidColorBrush x:Key="AppAccentDeepBrush" Color="{DynamicResource PaletteAccentDeep}" />
+  <!-- An accent-filled control under the pointer, and while it is pressed
+       (Button.primary, Styles/IconButtons.axaml). -->
+  <SolidColorBrush x:Key="AppAccentHoverBrush" Color="{DynamicResource PaletteAccentHover}" />
+  <SolidColorBrush x:Key="AppAccentPressedBrush" Color="{DynamicResource PaletteAccentPressed}" />
   <!-- The accent at half strength, for the rim of every oval: at full
        strength a one-pixel ring outshouted the icon inside it. -->
   <SolidColorBrush x:Key="AppPrimaryBorderBrush" Color="{DynamicResource PaletteAccent}" Opacity="0.5" />
   <SolidColorBrush x:Key="AppAccentSoftBrush" Color="{DynamicResource PaletteAccent}" Opacity="0.2" />
-  <SolidColorBrush x:Key="AppAccentMutedBrush" Color="{DynamicResource PaletteAccent}" Opacity="0.2" />
   <SolidColorBrush x:Key="AppOnPrimaryBrush" Color="{DynamicResource PaletteOnAccent}" />
 
   <!-- A hairline around every icon (App.axaml): the text colour, faint, so
@@ -185,13 +157,12 @@
 
   <!-- On a sheet washed in a cover's colour (Now Playing - see
        ArtBackdrop.SheetBrush), which is dark whatever the theme: the words
-       and the filled controls, the same faint for what is off or unfilled,
-       and a ring between the two. -->
+       and the filled controls, the same faint for what is off, and a ring
+       between the two. (Its sliders' brushes are NowPlayingView's own, on
+       PaletteOnArt.) -->
   <SolidColorBrush x:Key="AppOnArtBrush" Color="{DynamicResource PaletteOnArt}" />
-  <SolidColorBrush x:Key="AppOnArtPressedBrush" Color="{DynamicResource PaletteOnArt}" Opacity="0.8" />
   <SolidColorBrush x:Key="AppOnArtMutedBrush" Color="{DynamicResource PaletteOnArt}" Opacity="0.5" />
   <SolidColorBrush x:Key="AppOnArtRingBrush" Color="{DynamicResource PaletteOnArt}" Opacity="0.6" />
-  <SolidColorBrush x:Key="AppOnArtRailBrush" Color="{DynamicResource PaletteOnArt}" Opacity="0.25" />
 
   <!-- ── Shadows ─────────────────────────────────────────────────────── -->
 
@@ -211,6 +182,17 @@
   <LinearGradientBrush x:Key="AppBackdropFadeMask" StartPoint="0%,0%" EndPoint="0%,100%">
     <GradientStop Color="#FF000000" Offset="0" />
     <GradientStop Color="#C0000000" Offset="0.5" />
+    <GradientStop Color="#00000000" Offset="1" />
+  </LinearGradientBrush>
+
+  <!-- The blur behind each screen's header band (ScreenSlot): fully there
+       at the top of the screen, fading to nothing a little below the back
+       button, so a list scrolling up under the header goes soft gradually
+       rather than at a line. -->
+  <LinearGradientBrush x:Key="AppHeaderBlurMask" StartPoint="0%,0%" EndPoint="0%,100%">
+    <GradientStop Color="#FF000000" Offset="0" />
+    <GradientStop Color="#E6000000" Offset="0.45" />
+    <GradientStop Color="#80000000" Offset="0.75" />
     <GradientStop Color="#00000000" Offset="1" />
   </LinearGradientBrush>
 
@@ -234,25 +216,25 @@
   <SolidColorBrush x:Key="SystemControlForegroundBaseMediumLowBrush" Color="{DynamicResource PaletteIconDisabled}" />
   <SolidColorBrush x:Key="SystemControlForegroundBaseLowBrush" Color="{DynamicResource PaletteDivider}" />
 
-  <!-- Every text box's outline, in the accent: half strength at rest, full
-       under the pointer and while the caret is in it. Named outright because
+  <!-- Every text box's outline, in the accent: half strength at rest, the
+       hover accent under the pointer, full while the caret is in it. Named outright because
        Fluent resolves its own text-box brushes inside its own dictionary,
        where the aliases above never reach, so a focused box came out the
        platform's blue. -->
   <SolidColorBrush x:Key="TextControlBorderBrush" Color="{DynamicResource PaletteAccent}" Opacity="0.5" />
-  <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="{DynamicResource PaletteAccent}" />
+  <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="{DynamicResource PaletteAccentHover}" />
   <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="{DynamicResource PaletteAccent}" />
 
   <!-- Fluent's Slider - the seek bars and the phone's volume: filled and
-       thumbed in the accent, deepening under the pointer and the press, and
-       disabled-grey when disabled. Named outright for the same reason as the
-       text boxes'. -->
+       thumbed in the accent, its hover and pressed states under the pointer
+       and the press, and disabled-grey when disabled. Named outright for the
+       same reason as the text boxes'. -->
   <SolidColorBrush x:Key="SliderTrackValueFill" Color="{DynamicResource PaletteAccent}" />
-  <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Color="{DynamicResource PaletteAccentDeep}" />
-  <SolidColorBrush x:Key="SliderTrackValueFillPressed" Color="{DynamicResource PaletteAccentDeep}" />
+  <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Color="{DynamicResource PaletteAccentHover}" />
+  <SolidColorBrush x:Key="SliderTrackValueFillPressed" Color="{DynamicResource PaletteAccentPressed}" />
   <SolidColorBrush x:Key="SliderTrackValueFillDisabled" Color="{DynamicResource PaletteIconDisabled}" />
   <SolidColorBrush x:Key="SliderThumbBackground" Color="{DynamicResource PaletteAccent}" />
-  <SolidColorBrush x:Key="SliderThumbBackgroundPointerOver" Color="{DynamicResource PaletteAccentDeep}" />
-  <SolidColorBrush x:Key="SliderThumbBackgroundPressed" Color="{DynamicResource PaletteAccentDeep}" />
+  <SolidColorBrush x:Key="SliderThumbBackgroundPointerOver" Color="{DynamicResource PaletteAccentHover}" />
+  <SolidColorBrush x:Key="SliderThumbBackgroundPressed" Color="{DynamicResource PaletteAccentPressed}" />
   <SolidColorBrush x:Key="SliderThumbBackgroundDisabled" Color="{DynamicResource PaletteIconDisabled}" />
 </ResourceDictionary>
