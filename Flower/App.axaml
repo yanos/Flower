@@ -163,5 +163,18 @@
         <Style Selector="TextBlock.placeholderGlyph">
             <Setter Property="Foreground" Value="{DynamicResource AppPrimaryBrush}"/>
         </Style>
+        <!-- An icon on a button pointed at or pressed takes the hover or
+             pressed accent, whatever colour it rests in - the button's own
+             highlight behind it is Fluent's, set in Theme.axaml. Last in this
+             list so it outranks every icon colour above it; a view that
+             colours its own icons nearer than this states its own pressed
+             colour beside them (the tab bar, the player's shuffle and repeat,
+             Now Playing). -->
+        <Style Selector=":is(Button):pointerover materialIcons|MaterialIcon">
+            <Setter Property="Foreground" Value="{DynamicResource AppAccentHoverBrush}"/>
+        </Style>
+        <Style Selector=":is(Button):pressed materialIcons|MaterialIcon">
+            <Setter Property="Foreground" Value="{DynamicResource AppAccentPressedBrush}"/>
+        </Style>
     </Application.Styles>
 </Application>

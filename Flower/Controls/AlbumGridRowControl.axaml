@@ -104,7 +104,7 @@
                   <Panel Margin="4,3">
                     <Border IsVisible="{Binding IsHovered}"
                             IsHitTestVisible="False"
-                            Background="{DynamicResource SystemControlBackgroundListLowBrush}"
+                            Background="{DynamicResource AppAccentHoverSoftBrush}"
                             CornerRadius="5"/>
                     <Border IsVisible="{Binding IsSelected}"
                             IsHitTestVisible="False"
@@ -174,7 +174,7 @@
                   <Panel Margin="4,3">
                     <Border IsVisible="{Binding IsHovered}"
                             IsHitTestVisible="False"
-                            Background="{DynamicResource SystemControlBackgroundListLowBrush}"
+                            Background="{DynamicResource AppAccentHoverSoftBrush}"
                             CornerRadius="5"/>
                     <Border IsVisible="{Binding IsSelected}"
                             IsHitTestVisible="False"

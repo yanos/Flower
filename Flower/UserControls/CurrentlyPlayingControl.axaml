@@ -21,6 +21,14 @@
     <Style Selector="materialIcons|MaterialIcon.transportToggle.active">
       <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}"/>
     </Style>
+    <!-- Pointed at and pressed, on or off, the hover and pressed accents -
+         restated here because the two above are nearer than App.axaml's. -->
+    <Style Selector=":is(Button):pointerover materialIcons|MaterialIcon.transportToggle">
+      <Setter Property="Foreground" Value="{DynamicResource AppAccentHoverBrush}"/>
+    </Style>
+    <Style Selector=":is(Button):pressed materialIcons|MaterialIcon.transportToggle">
+      <Setter Property="Foreground" Value="{DynamicResource AppAccentPressedBrush}"/>
+    </Style>
   </UserControl.Styles>
 
   <Border Background="{DynamicResource AppSurfaceBrush}"

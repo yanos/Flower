@@ -53,6 +53,13 @@
     <Style Selector="materialIcons|MaterialIcon.transportToggle.active">
       <Setter Property="Foreground" Value="{DynamicResource AppOnArtBrush}" />
     </Style>
+    <!-- Pressed, on the cover's colour: the white dims rather than turning
+         the pressed accent, which would not read against a red or pink sheet.
+         The two round buttons at the top are off the tint and take the
+         app-wide pressed accent (App.axaml). -->
+    <Style Selector="layout|NowPlayingBodyPanel :is(Button):pressed materialIcons|MaterialIcon">
+      <Setter Property="Foreground" Value="{DynamicResource AppOnArtRingBrush}" />
+    </Style>
     <Style Selector="Button.pill.circle Border.ring">
       <Setter Property="BorderBrush" Value="{DynamicResource AppOnArtRingBrush}" />
     </Style>

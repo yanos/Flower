@@ -29,10 +29,10 @@
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
     </Style>
     <Style Selector="Button.homeTile:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundListLowBrush}" />
+      <Setter Property="Background" Value="{DynamicResource AppAccentHoverSoftBrush}" />
     </Style>
     <Style Selector="Button.homeTile:pressed /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundListMediumBrush}" />
+      <Setter Property="Background" Value="{DynamicResource AppAccentPressedSoftBrush}" />
     </Style>
     <Style Selector="StackPanel.dimmed">
       <Setter Property="Opacity" Value="0.5" />

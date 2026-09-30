@@ -135,9 +135,17 @@
          them moved. Which is the whole point of sizing them this way - the
          alternative, growing the icons by growing their boxes, would have
          pushed the labels down and the oval out. -->
+    <!-- A tab's highlight - the soft pill behind the one showing, and the
+         press - is a rounded square round its icon and name, and a circle
+         when there are no names (.iconsOnly, below). -->
+    <!-- A little taller than wide, so the pill has room above the icon and
+         below the name: the width is what seven tabs across a narrow phone
+         allow, the height is not. The oval (TabOval) leaves 8 round it and
+         12 more at either end, so no pill comes near the oval's rim. -->
     <Style Selector="Button.tab">
       <Setter Property="Width" Value="52" />
-      <Setter Property="Height" Value="52" />
+      <Setter Property="Height" Value="56" />
+      <Setter Property="CornerRadius" Value="14" />
       <Setter Property="Padding" Value="0" />
       <Setter Property="HorizontalAlignment" Value="Center" />
       <Setter Property="VerticalAlignment" Value="Center" />
@@ -151,27 +159,41 @@
          follow it. -->
     <!-- Seven tabs are narrower columns than six can have (MobileTabs.MaxShown):
          at 375 the oval gives each about 47px. So with all seven in the bar
-         (.compact, set by LayOutTabs) the circle comes down to 46 and the
-         label to 10pt, which is what keeps "Playlists" on one line, and the
-         icons are drawn at 85% - by a render transform, so each still takes
-         its 24px of layout and nothing under it moves. -->
+         (.compact, set by LayOutTabs) each tab comes down to 45, and the
+         name and the glyph shrink with it (below) - "Playlists" still on one
+         line. -->
+    <!-- The names are the design's size (drawn with all seven): 10.5pt in a
+         45px tab, 12pt in six tabs' 52px. The glyphs are a little bigger
+         than it drew them - about 22px in the narrow tab and the full 24 in
+         the wide one - which still fits the pill with room to spare. By a
+         render transform, so each still takes its 24px of layout and nothing
+         under it moves. -->
     <Style Selector="Button.tab TextBlock">
       <Setter Property="FontSize" Value="12" />
     </Style>
     <Style Selector="Button.tab.compact">
-      <Setter Property="Width" Value="46" />
-      <Setter Property="Height" Value="46" />
+      <Setter Property="Width" Value="45" />
+      <Setter Property="Height" Value="52" />
     </Style>
     <Style Selector="Button.tab.compact TextBlock">
-      <Setter Property="FontSize" Value="10" />
+      <Setter Property="FontSize" Value="10.5" />
     </Style>
     <Style Selector="Button.tab.compact :is(Control).tabIcon">
-      <Setter Property="RenderTransform" Value="scale(0.85)" />
+      <Setter Property="RenderTransform" Value="scale(0.92)" />
     </Style>
     <!-- Names turned off in Settings (.iconsOnly): the oval keeps its height
          and the icons grow into the room the names leave - a third bigger,
-         32px in the 52px circle, or 28px in a full bar's 46px one. A render
+         32px in the 52px circle, or 28px in a full bar's 45px one. A render
          transform again, so the layout under them is the same either way. -->
+    <!-- Square again with no names under the icons, so the highlight is a
+         circle rather than a capsule. -->
+    <Style Selector="Button.tab.iconsOnly">
+      <Setter Property="Height" Value="52" />
+      <Setter Property="CornerRadius" Value="9999" />
+    </Style>
+    <Style Selector="Button.tab.compact.iconsOnly">
+      <Setter Property="Height" Value="45" />
+    </Style>
     <Style Selector="Button.tab.iconsOnly TextBlock">
       <Setter Property="IsVisible" Value="False" />
     </Style>
@@ -199,6 +221,15 @@
     <Style Selector="Button.tab.current TextBlock">
       <Setter Property="Foreground" Value="{DynamicResource AppPrimaryBrush}" />
     </Style>
+    <!-- The soft pill behind the tab showing: the accent, faint, as the
+         button's own Background, which Fluent's template paints at rest and
+         replaces with its pressed tint (Theme.axaml) while the tab is held.
+         Not a style on the template's presenter: one there outranked the
+         tap-to-dismiss check's view of the press (DismissKeyboardOnEmptyTap)
+         and a tap on the Search tab put the search box down. -->
+    <Style Selector="Button.tab.current">
+      <Setter Property="Background" Value="{DynamicResource AppAccentSoftBrush}" />
+    </Style>
     <Style Selector="Button.tab:not(.current) materialIcons|MaterialIcon">
       <Setter Property="Foreground" Value="{DynamicResource AppTextMutedBrush}" />
     </Style>
@@ -207,6 +238,17 @@
     </Style>
     <Style Selector="Button.tab:not(.current) Path">
       <Setter Property="Fill" Value="{DynamicResource AppTextMutedBrush}" />
+    </Style>
+    <!-- Pressed, a tab - on or not - is the pressed accent, icon, note and
+         name alike. After the resting colours, so it wins over them. -->
+    <Style Selector="Button.tab:pressed materialIcons|MaterialIcon">
+      <Setter Property="Foreground" Value="{DynamicResource AppAccentPressedBrush}" />
+    </Style>
+    <Style Selector="Button.tab:pressed TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource AppAccentPressedBrush}" />
+    </Style>
+    <Style Selector="Button.tab:pressed Path">
+      <Setter Property="Fill" Value="{DynamicResource AppAccentPressedBrush}" />
     </Style>
     <!-- The mini player and the tab oval float over the bottom of the screens
          (BottomChrome below), so every screen's scroller keeps that much room
@@ -573,10 +615,10 @@
     <Border x:Name="TabOval"
             Grid.Column="1"
             Classes="floating"
-            Height="64"
+            Height="68"
             BoxShadow="{DynamicResource AppOvalShadow}"
-            CornerRadius="32"
-            Padding="4,0">
+            CornerRadius="34"
+            Padding="12,0">
     <Grid x:Name="TabGrid">
       <Button x:Name="HomeTab" Classes="pill tab"
               Classes.current="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=Home}"

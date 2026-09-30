@@ -196,6 +196,88 @@
     <GradientStop Color="#00000000" Offset="1" />
   </LinearGradientBrush>
 
+  <!-- ── Pointer-over and pressed, on every control Fluent draws ────────── -->
+  <!-- Every control, when pointed at or pressed, in the palette's hover and
+       pressed accents: a control that fills with the accent when on (a
+       checked box, a toggle switch, a radio button's ring) deepens to them,
+       and one that is plain at rest (a button, a menu row, a tab, a combo
+       box) takes them faintly behind it, and the pressed one on its text.
+       Fluent keeps a brush per control per state and fills them with its own
+       greys, so each is named here; the app's own icon buttons do the same
+       through App.axaml's Button:pointerover / Button:pressed icon rules. -->
+  <SolidColorBrush x:Key="AppAccentHoverSoftBrush" Color="{DynamicResource PaletteAccentHover}" Opacity="0.12" />
+  <SolidColorBrush x:Key="AppAccentPressedSoftBrush" Color="{DynamicResource PaletteAccentPressed}" Opacity="0.22" />
+  <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="{DynamicResource PaletteAccentHover}" Opacity="0.12" />
+  <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="{DynamicResource PaletteAccentPressed}" Opacity="0.22" />
+  <SolidColorBrush x:Key="ButtonForegroundPressed" Color="{DynamicResource PaletteAccentPressed}" />
+  <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="{DynamicResource PaletteAccentHover}" />
+  <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="{DynamicResource PaletteAccentPressed}" />
+  <SolidColorBrush x:Key="RepeatButtonBackgroundPointerOver" Color="{DynamicResource PaletteAccentHover}" Opacity="0.12" />
+  <SolidColorBrush x:Key="RepeatButtonBackgroundPressed" Color="{DynamicResource PaletteAccentPressed}" Opacity="0.22" />
+  <SolidColorBrush x:Key="RepeatButtonForegroundPressed" Color="{DynamicResource PaletteAccentPressed}" />
+  <SolidColorBrush x:Key="RepeatButtonBorderBrushPointerOver" Color="{DynamicResource PaletteAccentHover}" />
+  <SolidColorBrush x:Key="RepeatButtonBorderBrushPressed" Color="{DynamicResource PaletteAccentPressed}" />
+  <SolidColorBrush x:Key="ToggleButtonBackgroundPointerOver" Color="{DynamicResource PaletteAccentHover}" Opacity="0.12" />
+  <SolidColorBrush x:Key="ToggleButtonBackgroundPressed" Color="{DynamicResource PaletteAccentPressed}" Opacity="0.22" />
+  <SolidColorBrush x:Key="ToggleButtonForegroundPressed" Color="{DynamicResource PaletteAccentPressed}" />
+  <SolidColorBrush x:Key="ToggleButtonBorderBrushPointerOver" Color="{DynamicResource PaletteAccentHover}" />
+  <SolidColorBrush x:Key="ToggleButtonBorderBrushPressed" Color="{DynamicResource PaletteAccentPressed}" />
+  <SolidColorBrush x:Key="ToggleButtonBackgroundCheckedPointerOver" Color="{DynamicResource PaletteAccentHover}" />
+  <SolidColorBrush x:Key="ToggleButtonBackgroundCheckedPressed" Color="{DynamicResource PaletteAccentPressed}" />
+  <SolidColorBrush x:Key="ToggleButtonBorderBrushCheckedPointerOver" Color="{DynamicResource PaletteAccentHover}" />
+  <SolidColorBrush x:Key="ToggleButtonBorderBrushCheckedPressed" Color="{DynamicResource PaletteAccentPressed}" />
+  <SolidColorBrush x:Key="SplitButtonBackgroundPointerOver" Color="{DynamicResource PaletteAccentHover}" Opacity="0.12" />
+  <SolidColorBrush x:Key="SplitButtonBackgroundPressed" Color="{DynamicResource PaletteAccentPressed}" Opacity="0.22" />
+  <SolidColorBrush x:Key="SplitButtonForegroundPressed" Color="{DynamicResource PaletteAccentPressed}" />
+  <SolidColorBrush x:Key="SplitButtonBorderBrushPointerOver" Color="{DynamicResource PaletteAccentHover}" />
+  <SolidColorBrush x:Key="SplitButtonBorderBrushPressed" Color="{DynamicResource PaletteAccentPressed}" />
+  <SolidColorBrush x:Key="SplitButtonBackgroundCheckedPointerOver" Color="{DynamicResource PaletteAccentHover}" />
+  <SolidColorBrush x:Key="SplitButtonBackgroundCheckedPressed" Color="{DynamicResource PaletteAccentPressed}" />
+  <SolidColorBrush x:Key="HyperlinkButtonForegroundPointerOver" Color="{DynamicResource PaletteAccentHover}" />
+  <SolidColorBrush x:Key="HyperlinkButtonForegroundPressed" Color="{DynamicResource PaletteAccentPressed}" />
+  <SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="{DynamicResource PaletteAccentHover}" Opacity="0.12" />
+  <SolidColorBrush x:Key="ComboBoxBackgroundPressed" Color="{DynamicResource PaletteAccentPressed}" Opacity="0.22" />
+  <SolidColorBrush x:Key="ComboBoxBorderBrushPointerOver" Color="{DynamicResource PaletteAccentHover}" />
+  <SolidColorBrush x:Key="ComboBoxBorderBrushPressed" Color="{DynamicResource PaletteAccentPressed}" />
+  <SolidColorBrush x:Key="ComboBoxItemBackgroundPointerOver" Color="{DynamicResource PaletteAccentHover}" Opacity="0.12" />
+  <SolidColorBrush x:Key="ComboBoxItemBackgroundPressed" Color="{DynamicResource PaletteAccentPressed}" Opacity="0.22" />
+  <SolidColorBrush x:Key="ComboBoxItemBackgroundSelectedPointerOver" Color="{DynamicResource PaletteAccentHover}" Opacity="0.12" />
+  <SolidColorBrush x:Key="ComboBoxItemBackgroundSelectedPressed" Color="{DynamicResource PaletteAccentPressed}" Opacity="0.22" />
+  <SolidColorBrush x:Key="ComboBoxItemForegroundPressed" Color="{DynamicResource PaletteAccentPressed}" />
+  <SolidColorBrush x:Key="MenuFlyoutItemBackgroundPointerOver" Color="{DynamicResource PaletteAccentHover}" Opacity="0.12" />
+  <SolidColorBrush x:Key="MenuFlyoutItemBackgroundPressed" Color="{DynamicResource PaletteAccentPressed}" Opacity="0.22" />
+  <SolidColorBrush x:Key="MenuFlyoutItemForegroundPressed" Color="{DynamicResource PaletteAccentPressed}" />
+  <SolidColorBrush x:Key="TabItemHeaderBackgroundUnselectedPointerOver" Color="{DynamicResource PaletteAccentHover}" Opacity="0.12" />
+  <SolidColorBrush x:Key="TabItemHeaderBackgroundUnselectedPressed" Color="{DynamicResource PaletteAccentPressed}" Opacity="0.22" />
+  <SolidColorBrush x:Key="TabItemHeaderBackgroundSelectedPointerOver" Color="{DynamicResource PaletteAccentHover}" Opacity="0.12" />
+  <SolidColorBrush x:Key="TabItemHeaderBackgroundSelectedPressed" Color="{DynamicResource PaletteAccentPressed}" Opacity="0.22" />
+  <SolidColorBrush x:Key="TabItemHeaderForegroundUnselectedPressed" Color="{DynamicResource PaletteAccentPressed}" />
+  <SolidColorBrush x:Key="TabItemHeaderForegroundSelectedPressed" Color="{DynamicResource PaletteAccentPressed}" />
+  <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillCheckedPointerOver" Color="{DynamicResource PaletteAccentHover}" />
+  <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillCheckedPressed" Color="{DynamicResource PaletteAccentPressed}" />
+  <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeCheckedPointerOver" Color="{DynamicResource PaletteAccentHover}" />
+  <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeCheckedPressed" Color="{DynamicResource PaletteAccentPressed}" />
+  <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeUncheckedPointerOver" Color="{DynamicResource PaletteAccentHover}" />
+  <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeUncheckedPressed" Color="{DynamicResource PaletteAccentPressed}" />
+  <SolidColorBrush x:Key="RadioButtonOuterEllipseCheckedFillPointerOver" Color="{DynamicResource PaletteAccentHover}" />
+  <SolidColorBrush x:Key="RadioButtonOuterEllipseCheckedFillPressed" Color="{DynamicResource PaletteAccentPressed}" />
+  <SolidColorBrush x:Key="RadioButtonOuterEllipseCheckedStrokePointerOver" Color="{DynamicResource PaletteAccentHover}" />
+  <SolidColorBrush x:Key="RadioButtonOuterEllipseCheckedStrokePressed" Color="{DynamicResource PaletteAccentPressed}" />
+  <SolidColorBrush x:Key="RadioButtonOuterEllipseStrokePointerOver" Color="{DynamicResource PaletteAccentHover}" />
+  <SolidColorBrush x:Key="RadioButtonOuterEllipseStrokePressed" Color="{DynamicResource PaletteAccentPressed}" />
+  <SolidColorBrush x:Key="ToggleSwitchFillOnPointerOver" Color="{DynamicResource PaletteAccentHover}" />
+  <SolidColorBrush x:Key="ToggleSwitchFillOnPressed" Color="{DynamicResource PaletteAccentPressed}" />
+  <SolidColorBrush x:Key="ToggleSwitchStrokeOnPointerOver" Color="{DynamicResource PaletteAccentHover}" />
+  <SolidColorBrush x:Key="ToggleSwitchStrokeOnPressed" Color="{DynamicResource PaletteAccentPressed}" />
+  <SolidColorBrush x:Key="ToggleSwitchStrokeOffPointerOver" Color="{DynamicResource PaletteAccentHover}" />
+  <SolidColorBrush x:Key="ToggleSwitchStrokeOffPressed" Color="{DynamicResource PaletteAccentPressed}" />
+  <SolidColorBrush x:Key="ScrollBarThumbFillPointerOver" Color="{DynamicResource PaletteAccentHover}" />
+  <SolidColorBrush x:Key="ScrollBarThumbFillPressed" Color="{DynamicResource PaletteAccentPressed}" />
+  <SolidColorBrush x:Key="TextControlButtonBackgroundPointerOver" Color="{DynamicResource PaletteAccentHover}" Opacity="0.12" />
+  <SolidColorBrush x:Key="TextControlButtonBackgroundPressed" Color="{DynamicResource PaletteAccentPressed}" Opacity="0.22" />
+  <SolidColorBrush x:Key="TextControlButtonForegroundPressed" Color="{DynamicResource PaletteAccentPressed}" />
+  <SolidColorBrush x:Key="SystemControlHighlightListMediumBrush" Color="{DynamicResource PaletteAccentPressed}" Opacity="0.22" />
+
   <!-- ── Fluent brushes the app sets ─────────────────────────────────── -->
   <!-- Fluent resolves these from its own colours when it loads, so the
        aliases above never reach them; the views name several directly. -->
@@ -212,7 +294,9 @@
   <SolidColorBrush x:Key="SystemControlBackgroundBaseLowBrush" Color="{DynamicResource PaletteDivider}" />
   <SolidColorBrush x:Key="SystemControlBackgroundListLowBrush" Color="{DynamicResource PaletteSurface}" />
   <SolidColorBrush x:Key="SystemControlBackgroundListMediumBrush" Color="{DynamicResource PaletteDivider}" />
-  <SolidColorBrush x:Key="SystemControlHighlightListLowBrush" Color="{DynamicResource PaletteSurface}" />
+  <!-- A list row under the pointer (Fluent's ListBoxItem - the desktop
+       sidebar): the hover accent, faint. -->
+  <SolidColorBrush x:Key="SystemControlHighlightListLowBrush" Color="{DynamicResource PaletteAccentHover}" Opacity="0.12" />
   <SolidColorBrush x:Key="SystemControlForegroundBaseMediumLowBrush" Color="{DynamicResource PaletteIconDisabled}" />
   <SolidColorBrush x:Key="SystemControlForegroundBaseLowBrush" Color="{DynamicResource PaletteDivider}" />
 

@@ -62,7 +62,7 @@
     <!-- Hover background (column 1 only — stops before the art) -->
     <Border Grid.Column="1"
             x:Name="HoverBorder"
-            Background="{DynamicResource SystemControlHighlightListLowBrush}"
+            Background="{DynamicResource AppAccentHoverSoftBrush}"
             IsVisible="False"
             IsHitTestVisible="False"/>
     <!-- Selection background (column 1 only). Matches the sidebar's playlist

@@ -44,7 +44,7 @@
             CornerRadius="6"/>
     <Border x:Name="HoverBorder"
             IsVisible="False"
-            Background="{DynamicResource SystemControlBackgroundListLowBrush}"
+            Background="{DynamicResource AppAccentHoverSoftBrush}"
             CornerRadius="6"/>
     <!-- Bottom margin is 16 (not the 8 on every other side) - the extra 8px
          is reserved unconditionally (not just when expanded) so the caret

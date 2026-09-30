@@ -67,6 +67,14 @@ public class MobileTabBarLayoutTests : PinnedDataDirectory
             // empty - see AlbumDetailLayoutTests.
             Window = new Window { Width = width, Height = 800 };
             Window.Styles.Add(new FluentTheme());
+            // The app's colours too: the tab showing is drawn on a brush of
+            // Theme.axaml's, and without it that tab has no background at all
+            // - which leaves it nothing to be hit on, and a tap on it falls
+            // through to the list behind.
+            Window.Resources.MergedDictionaries.Add(new Avalonia.Markup.Xaml.Styling.ResourceInclude(new System.Uri("avares://Flower/"))
+            {
+                Source = new System.Uri("avares://Flower/Theme.axaml"),
+            });
             Window.Content = View;
             Window.Show();
             Layout(width);
@@ -146,7 +154,7 @@ public class MobileTabBarLayoutTests : PinnedDataDirectory
 
         Assert.Equal(7, six.Tabs.Count);
         Assert.All(six.Tabs, t => Assert.Contains("compact", t.Classes));
-        Assert.All(six.Tabs, t => Assert.Equal(10, Harness.LabelOf(t).FontSize));
+        Assert.All(six.Tabs, t => Assert.Equal(10.5, Harness.LabelOf(t).FontSize));
     }
 
     // Names off: no label under any icon, the icons drawn bigger into the
