@@ -12,9 +12,10 @@ using Xunit;
 
 namespace Flower.Tests;
 
-// Which tabs a phone's bar shows, and in what order, is chosen in Settings -
-// and that order is also what a tap and a swipe read left and right from. The
-// Queue tab is here too, being the one tab the choice brought with it.
+// Which tabs a phone's bar shows, and in what order, is chosen on Settings'
+// Navigation Bar page - and that order is also what a tap and a swipe read
+// left and right from. The Queue tab is here too, being the one tab the
+// choice brought with it.
 [Collection("PlatformDataDirectory")]
 public class MobileTabsTests : PinnedDataDirectory
 {
@@ -37,7 +38,7 @@ public class MobileTabsTests : PinnedDataDirectory
     }
 
     private static MobileTabSettingRow Row(MobileMainViewModel mobile, MobileTab tab) =>
-        mobile.TabSettingRows.Single(r => r.Tab == tab);
+        mobile.VisibleTabRows.Concat(mobile.HiddenTabRows).Single(r => r.Tab == tab);
 
     [AvaloniaFact]
     public void Out_of_the_box_the_bar_has_every_tab_and_opens_on_home()
@@ -70,18 +71,20 @@ public class MobileTabsTests : PinnedDataDirectory
         Assert.Equal(MobileTabs.All, MobileTabs.Parse(MobileTabs.All.Select(t => t.ToString())));
     }
 
-    // Settings lists the bar first, in its order, then what is not in it.
+    // The Navigation Bar page lists the bar in its order, then what is not in
+    // it, in the order MobileTabs.All gives them.
     [AvaloniaFact]
-    public void Settings_lists_the_bar_in_order_then_the_rest()
+    public void The_page_lists_the_bar_in_order_then_the_rest()
     {
-        using var scope = Build([MobileTab.Albums, MobileTab.Artists, MobileTab.Songs, MobileTab.Playlists, MobileTab.Queue, MobileTab.Search]);
+        using var scope = Build([MobileTab.Search, MobileTab.Albums, MobileTab.Songs]);
 
-        Assert.Equal(
-            new[] { MobileTab.Albums, MobileTab.Artists, MobileTab.Songs, MobileTab.Playlists, MobileTab.Queue, MobileTab.Search, MobileTab.Home },
-            scope.Mobile.TabSettingRows.Select(r => r.Tab));
-        Assert.False(Row(scope.Mobile, MobileTab.Home).IsShown);
-        Assert.False(Row(scope.Mobile, MobileTab.Albums).CanMoveUp);
-        Assert.False(Row(scope.Mobile, MobileTab.Search).CanMoveDown);
+        Assert.Equal(new[] { MobileTab.Search, MobileTab.Albums, MobileTab.Songs },
+            scope.Mobile.VisibleTabRows.Select(r => r.Tab));
+        Assert.All(scope.Mobile.VisibleTabRows, r => Assert.True(r.IsShown));
+        Assert.Equal(new[] { MobileTab.Home, MobileTab.Artists, MobileTab.Playlists, MobileTab.Queue },
+            scope.Mobile.HiddenTabRows.Select(r => r.Tab));
+        Assert.All(scope.Mobile.HiddenTabRows, r => Assert.False(r.IsShown));
+        Assert.True(scope.Mobile.HasHiddenTabs);
     }
 
     [AvaloniaFact]
@@ -110,18 +113,55 @@ public class MobileTabsTests : PinnedDataDirectory
         Assert.False(scope.Parts.AppSettings.MobileTabLabels);
     }
 
+    // A drop names where the tab lands in the bar as it will be, the tab
+    // counted in its new place - so down and up are the same arithmetic.
     [AvaloniaFact]
-    public void Moving_a_tab_reorders_the_bar_and_is_remembered()
+    public void Dropping_a_tab_reorders_the_bar_and_is_remembered()
     {
         using var scope = Build();
         var mobile = scope.Mobile;
 
-        mobile.MoveTabUpCommand.Execute(Row(mobile, MobileTab.Songs));
-        mobile.MoveTabDownCommand.Execute(Row(mobile, MobileTab.Albums));
+        mobile.MoveTab(MobileTab.Playlists, 1);
+        mobile.MoveTab(MobileTab.Home, 2);
 
-        var expected = new[] { MobileTab.Home, MobileTab.Songs, MobileTab.Albums, MobileTab.Artists, MobileTab.Playlists, MobileTab.Queue, MobileTab.Search };
+        var expected = new[] { MobileTab.Playlists, MobileTab.Albums, MobileTab.Home, MobileTab.Artists, MobileTab.Songs, MobileTab.Queue, MobileTab.Search };
         Assert.Equal(expected, mobile.VisibleTabs);
+        Assert.Equal(expected, mobile.VisibleTabRows.Select(r => r.Tab));
         Assert.Equal(expected.Select(t => t.ToString()), scope.Parts.AppSettings.MobileTabs);
+    }
+
+    // Only the bar is ordered: a tab outside it goes back in by its switch.
+    [AvaloniaFact]
+    public void Dropping_a_tab_not_in_the_bar_changes_nothing()
+    {
+        using var scope = Build([MobileTab.Albums, MobileTab.Songs]);
+
+        scope.Mobile.MoveTab(MobileTab.Queue, 0);
+
+        Assert.Equal(new[] { MobileTab.Albums, MobileTab.Songs }, scope.Mobile.VisibleTabs);
+    }
+
+    // The page is pushed over Settings, so it goes wherever Settings goes.
+    [AvaloniaFact]
+    public void The_navigation_bar_page_opens_over_settings_and_closes_with_it()
+    {
+        using var scope = Build();
+        var mobile = scope.Mobile;
+
+        mobile.OpenNavigationBarSettingsCommand.Execute(null);
+        Assert.False(mobile.IsShowingNavigationBarSettings);
+
+        mobile.OpenSettingsCommand.Execute(null);
+        mobile.OpenNavigationBarSettingsCommand.Execute(null);
+        Assert.True(mobile.IsShowingNavigationBarSettings);
+
+        mobile.CloseNavigationBarSettingsCommand.Execute(null);
+        Assert.False(mobile.IsShowingNavigationBarSettings);
+        Assert.True(mobile.IsShowingSettings);
+
+        mobile.OpenNavigationBarSettingsCommand.Execute(null);
+        mobile.CloseSheetCommand.Execute(null);
+        Assert.False(mobile.IsShowingNavigationBarSettings);
     }
 
     // All seven fit, drawn smaller (MobileTabBarLayoutTests); a bar of none
@@ -173,7 +213,7 @@ public class MobileTabsTests : PinnedDataDirectory
         Assert.Equal(MobileTab.Queue, mobile.SelectedTab);
     }
 
-    // Taking the tab on screen out of the bar, from Settings over it, lands
+    // Taking the tab on screen out of the bar, from the page over it, lands
     // on the first tab left - with nothing to go back to, since back would be
     // the tab just removed.
     [AvaloniaFact]

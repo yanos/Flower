@@ -10,7 +10,8 @@ namespace Flower.ViewModels.Mobile;
 
 // ── Tab bar ───────────────────────────────────────────────────────────
 //
-// Which tabs the bar shows and in what order, chosen in Settings. The bar is
+// Which tabs the bar shows and in what order, chosen on the Navigation Bar
+// page Settings opens (NavigationBarSettingsView). The bar is
 // a left-to-right strip, so this order is also what a tap and a swipe read
 // direction from - see IsRightOf and SwipeBack/SwipeForward.
 public partial class MobileMainViewModel
@@ -27,8 +28,8 @@ public partial class MobileMainViewModel
         }
     }
 
-    // Whether each tab has its name under its icon - Settings' switch, kept
-    // in AppSettings.MobileTabLabels.
+    // Whether each tab has its name under its icon - the Navigation Bar
+    // page's switch, kept in AppSettings.MobileTabLabels.
     private bool _showTabLabels = true;
 
     public bool ShowTabLabels
@@ -63,17 +64,44 @@ public partial class MobileMainViewModel
         }
     }
 
-    // Settings' list: the tabs in the bar first, in bar order, then the rest.
-    public ObservableCollection<MobileTabSettingRow> TabSettingRows { get; } = new();
+    // The Navigation Bar page's two lists: the tabs in the bar, in bar order,
+    // and the rest, in MobileTabs.All's.
+    public ObservableCollection<MobileTabSettingRow> VisibleTabRows { get; } = new();
+    public ObservableCollection<MobileTabSettingRow> HiddenTabRows { get; } = new();
+
+    public bool HasHiddenTabs => HiddenTabRows.Count > 0;
 
     private ICommand? _toggleTabShownCommand;
     public ICommand ToggleTabShownCommand => _toggleTabShownCommand ??= new RelayCommand<MobileTabSettingRow>(ToggleTabShown);
 
-    private ICommand? _moveTabUpCommand;
-    public ICommand MoveTabUpCommand => _moveTabUpCommand ??= new RelayCommand<MobileTabSettingRow>(row => MoveTab(row, -1));
+    // The Navigation Bar page, pushed over Settings from its "Customize
+    // Navigation Bar" row. A flag beside ActiveSheet rather than a sheet of its
+    // own, because it stacks on Settings instead of taking its place: back
+    // from here is Settings, not the library. Settings going away for any
+    // reason takes it too (see ActiveSheet).
+    private bool _isShowingNavigationBarSettings;
 
-    private ICommand? _moveTabDownCommand;
-    public ICommand MoveTabDownCommand => _moveTabDownCommand ??= new RelayCommand<MobileTabSettingRow>(row => MoveTab(row, 1));
+    public bool IsShowingNavigationBarSettings
+    {
+        get => _isShowingNavigationBarSettings;
+        private set
+        {
+            if (_isShowingNavigationBarSettings == value)
+                return;
+            _isShowingNavigationBarSettings = value;
+            OnPropertyChanged();
+        }
+    }
+
+    private ICommand? _openNavigationBarSettingsCommand;
+    public ICommand OpenNavigationBarSettingsCommand => _openNavigationBarSettingsCommand ??= new RelayCommand(() =>
+    {
+        if (ActiveSheet == MobileSheet.Settings)
+            IsShowingNavigationBarSettings = true;
+    });
+
+    private ICommand? _closeNavigationBarSettingsCommand;
+    public ICommand CloseNavigationBarSettingsCommand => _closeNavigationBarSettingsCommand ??= new RelayCommand(() => IsShowingNavigationBarSettings = false);
 
     // -1 for a tab the bar does not show - reachable all the same, by a jump
     // from Search or Now Playing into Albums or Artists.
@@ -113,7 +141,7 @@ public partial class MobileMainViewModel
     }
 
     // Shown tabs go to the end of the bar; a hidden one leaves it. The bar
-    // keeps at least one tab - the last row says so by greying its box out
+    // keeps at least one tab - the last row says so by greying its switch out
     // (CanToggle), and this refuses the same.
     private void ToggleTabShown(MobileTabSettingRow? row)
     {
@@ -134,19 +162,16 @@ public partial class MobileMainViewModel
         ApplyVisibleTabs(tabs);
     }
 
-    private void MoveTab(MobileTabSettingRow? row, int by)
+    // A drop on the Navigation Bar page: `tab` now sits at `index` of the bar,
+    // counted as the bar is after it has been lifted out. Only a tab already
+    // in the bar moves - showing one is its switch, which puts it at the end.
+    public void MoveTab(MobileTab tab, int index)
     {
-        if (row == null)
-            return;
-
         var tabs = _visibleTabs.ToList();
-        var from = tabs.IndexOf(row.Tab);
-        var to = from + by;
-        if (from < 0 || to < 0 || to >= tabs.Count)
+        if (!tabs.Remove(tab))
             return;
 
-        tabs.RemoveAt(from);
-        tabs.Insert(to, row.Tab);
+        tabs.Insert(Math.Clamp(index, 0, tabs.Count), tab);
         ApplyVisibleTabs(tabs);
     }
 
@@ -159,15 +184,15 @@ public partial class MobileMainViewModel
         }
 
         // Always, even when nothing changed: a refused toggle has already
-        // flipped its CheckBox, and new rows are what put it back.
+        // flipped its switch, and new rows are what put it back.
         RebuildTabSettingRows();
 
         if (PositionInBar(_selectedTab) < 0 && !_hasDrilledIn)
             LeaveHiddenTab();
     }
 
-    // The tab on screen was just taken out of the bar, from Settings, over
-    // it. Its screen goes too, for the first tab left - as a fresh start
+    // The tab on screen was just taken out of the bar, from the Navigation Bar
+    // page over it. Its screen goes too, for the first tab left - as a fresh start
     // rather than a navigation, since Back into a tab the user just removed
     // is somewhere they asked not to be.
     private void LeaveHiddenTab()
@@ -185,26 +210,14 @@ public partial class MobileMainViewModel
 
     private void RebuildTabSettingRows()
     {
-        TabSettingRows.Clear();
-        var shown = _visibleTabs.Count;
-        for (var i = 0; i < shown; i++)
-        {
-            TabSettingRows.Add(new MobileTabSettingRow(
-                _visibleTabs[i],
-                IsShown: true,
-                CanToggle: shown > 1,
-                CanMoveUp: i > 0,
-                CanMoveDown: i < shown - 1));
-        }
+        VisibleTabRows.Clear();
+        foreach (var tab in _visibleTabs)
+            VisibleTabRows.Add(new MobileTabSettingRow(tab, IsShown: true, CanToggle: _visibleTabs.Count > 1));
 
+        HiddenTabRows.Clear();
         foreach (var tab in MobileTabs.All.Where(t => !_visibleTabs.Contains(t)))
-        {
-            TabSettingRows.Add(new MobileTabSettingRow(
-                tab,
-                IsShown: false,
-                CanToggle: true,
-                CanMoveUp: false,
-                CanMoveDown: false));
-        }
+            HiddenTabRows.Add(new MobileTabSettingRow(tab, IsShown: false, CanToggle: true));
+
+        OnPropertyChanged(nameof(HasHiddenTabs));
     }
 }

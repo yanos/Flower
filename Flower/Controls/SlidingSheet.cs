@@ -451,12 +451,14 @@ public sealed class SlidingSheet : ContentControl
     // dismissing the screen underneath is not an edge case there, it is the
     // control the user reaches for most. So a gesture that starts on any
     // range control (the seek bar, a scrollbar thumb) is that control's, and
-    // this never looks at it again.
+    // this never looks at it again. So is one that starts on a row's drag
+    // handle (.dragHandle): the Navigation Bar page's rows are dragged by it,
+    // and a drag that wanders right must still be moving the row.
     private bool StartedOnADraggableControl(Visual? source)
     {
         for (var visual = source; visual != null && !ReferenceEquals(visual, this); visual = visual.GetVisualParent())
         {
-            if (visual is RangeBase)
+            if (visual is RangeBase || visual is StyledElement { Classes: var classes } && classes.Contains("dragHandle"))
                 return true;
         }
 

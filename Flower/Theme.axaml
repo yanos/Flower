@@ -125,6 +125,8 @@
   <SolidColorBrush x:Key="AppTrackBrush" Color="{DynamicResource PaletteDivider}" />
 
   <SolidColorBrush x:Key="AppTextPrimaryBrush" Color="{DynamicResource PaletteTextPrimary}" />
+  <!-- A line explaining the one above it (a page's subtitle). -->
+  <SolidColorBrush x:Key="AppTextSecondaryBrush" Color="{DynamicResource PaletteTextSecondary}" />
   <!-- An icon or label at rest (a tab not showing, a toggle off). -->
   <SolidColorBrush x:Key="AppTextMutedBrush" Color="{DynamicResource PaletteIconInactive}" />
   <SolidColorBrush x:Key="AppTextDisabledBrush" Color="{DynamicResource PaletteIconDisabled}" />
@@ -271,6 +273,15 @@
   <SolidColorBrush x:Key="ToggleSwitchStrokeOnPressed" Color="{DynamicResource PaletteAccentPressed}" />
   <SolidColorBrush x:Key="ToggleSwitchStrokeOffPointerOver" Color="{DynamicResource PaletteAccentHover}" />
   <SolidColorBrush x:Key="ToggleSwitchStrokeOffPressed" Color="{DynamicResource PaletteAccentPressed}" />
+  <!-- A switch that is off is a filled grey track, not Fluent's outline: the
+     knob is the same white on it as on the accent, so on and off differ by the
+     track's colour and the knob's side and nothing else. -->
+  <SolidColorBrush x:Key="ToggleSwitchFillOff" Color="{DynamicResource PaletteIconDisabled}" />
+  <SolidColorBrush x:Key="ToggleSwitchStrokeOff" Color="{DynamicResource PaletteIconDisabled}" />
+  <SolidColorBrush x:Key="ToggleSwitchKnobFillOff" Color="{DynamicResource PaletteOnAccent}" />
+  <SolidColorBrush x:Key="ToggleSwitchKnobFillOffPointerOver" Color="{DynamicResource PaletteOnAccent}" />
+  <SolidColorBrush x:Key="ToggleSwitchKnobFillOffPressed" Color="{DynamicResource PaletteOnAccent}" />
+  <SolidColorBrush x:Key="ToggleSwitchKnobFillOn" Color="{DynamicResource PaletteOnAccent}" />
   <SolidColorBrush x:Key="ScrollBarThumbFillPointerOver" Color="{DynamicResource PaletteAccentHover}" />
   <SolidColorBrush x:Key="ScrollBarThumbFillPressed" Color="{DynamicResource PaletteAccentPressed}" />
   <SolidColorBrush x:Key="TextControlButtonBackgroundPointerOver" Color="{DynamicResource PaletteAccentHover}" Opacity="0.12" />

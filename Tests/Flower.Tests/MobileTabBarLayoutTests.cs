@@ -149,7 +149,7 @@ public class MobileTabBarLayoutTests : PinnedDataDirectory
     {
         using var six = new Harness(NarrowPhone, SixTabs);
         Assert.All(six.Tabs, t => Assert.DoesNotContain("compact", t.Classes));
-        six.Vm.ToggleTabShownCommand.Execute(six.Vm.TabSettingRows.Single(r => r.Tab == MobileTab.Home));
+        six.Vm.ToggleTabShownCommand.Execute(six.Vm.HiddenTabRows.Single(r => r.Tab == MobileTab.Home));
         six.Layout(NarrowPhone);
 
         Assert.Equal(7, six.Tabs.Count);
@@ -178,15 +178,14 @@ public class MobileTabBarLayoutTests : PinnedDataDirectory
         Assert.Equal(withNames, h.Oval.Bounds.Size);
     }
 
-    // The bar is the user's to arrange in Settings: what it shows follows the
+    // The bar is the user's to arrange on Settings' Navigation Bar page: what it shows follows the
     // choice at once, and a tab taken out is out of the tree, not just hidden.
     [AvaloniaFact]
     public void The_bar_follows_the_tabs_chosen_in_settings()
     {
         using var h = new Harness(NarrowPhone);
-        var songs = h.Vm.TabSettingRows.Single(r => r.Tab == MobileTab.Songs);
-        h.Vm.MoveTabUpCommand.Execute(songs);
-        h.Vm.ToggleTabShownCommand.Execute(h.Vm.TabSettingRows.Single(r => r.Tab == MobileTab.Queue));
+        h.Vm.MoveTab(MobileTab.Songs, 2);
+        h.Vm.ToggleTabShownCommand.Execute(h.Vm.VisibleTabRows.Single(r => r.Tab == MobileTab.Queue));
         h.Layout(NarrowPhone);
 
         Assert.Equal(

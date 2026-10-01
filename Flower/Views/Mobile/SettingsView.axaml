@@ -27,9 +27,18 @@
       <Setter Property="Opacity" Value="0.6" />
       <Setter Property="Margin" Value="0,0,0,2" />
     </Style>
-    <!-- A tab not in the bar reads as off. -->
-    <Style Selector="TextBlock.dimmed">
-      <Setter Property="Opacity" Value="0.5" />
+    <!-- A row that opens a page of its own: ringed like the app's other
+         ovals, a chevron saying it goes somewhere. -->
+    <Style Selector="Button.pageLink">
+      <Setter Property="Background" Value="{DynamicResource AppBackgroundBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppPrimaryBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="16" />
+      <Setter Property="Padding" Value="16,0,12,0" />
+      <Setter Property="Height" Value="56" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
   </UserControl.Styles>
 
@@ -88,6 +97,21 @@
           </RadioButton>
         </StackPanel>
 
+        <!-- Which tabs the bar at the bottom shows, and in what order, is a
+             page of its own (NavigationBarSettingsView): a list of seven with
+             switches and handles is more than this one should carry. -->
+        <Button Classes="pageLink"
+                Command="{Binding OpenNavigationBarSettingsCommand}"
+                Margin="0,14,0,0">
+          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+            <materialIcons:MaterialIcon Grid.Column="0" Kind="PlaylistMusic" Width="26" Height="26"/>
+            <TextBlock Grid.Column="1" Text="Customize Navigation Bar" FontSize="16" FontWeight="Medium"
+                       VerticalAlignment="Center"/>
+            <materialIcons:MaterialIcon Grid.Column="2" Kind="ChevronRight" Width="22" Height="22"
+                                        Foreground="{DynamicResource AppTextMutedBrush}"/>
+          </Grid>
+        </Button>
+
         <StackPanel IsVisible="{Binding HasMediaPermissionPrompt}" Margin="0,10,0,0" Spacing="8">
           <StackPanel IsVisible="{Binding !HasMediaPermission}" Spacing="8">
             <TextBlock Text="Flower can't see your music. Allow access in Settings."
@@ -103,56 +127,6 @@
                      FontSize="14"
                      Opacity="0.5" />
         </StackPanel>
-      </StackPanel>
-
-      <!-- The tab bar: which tabs it shows, ticked, and in what order, top to
-           bottom here being left to right there. The ones not in the bar are
-           listed after, unticked, in a fixed order. Moving is two arrows
-           rather than a drag: seven rows are not worth a gesture that fights
-           the page's own scrolling. The bar keeps one tab at least, and the
-           box that cannot be unticked for that reason is greyed out
-           (MobileTabSettingRow.CanToggle). -->
-      <StackPanel Classes="section">
-        <TextBlock Classes="section-header" Text="TABS"/>
-        <TextBlock Text="Ticked tabs show in the bar, in this order. With all seven, they are drawn a little smaller."
-                   FontSize="13" Opacity="0.6" TextWrapping="Wrap"/>
-        <CheckBox IsChecked="{Binding ShowTabLabels}" Margin="0,4,0,4">
-          <TextBlock Text="Show names under the icons" FontSize="15"/>
-        </CheckBox>
-
-        <ItemsControl ItemsSource="{Binding TabSettingRows}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="vm:MobileTabSettingRow">
-              <Grid ColumnDefinitions="Auto,*,Auto,Auto" Height="44">
-                <CheckBox Grid.Column="0"
-                          IsChecked="{Binding IsShown, Mode=OneWay}"
-                          IsEnabled="{Binding CanToggle}"
-                          Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).ToggleTabShownCommand}"
-                          CommandParameter="{Binding}"
-                          VerticalAlignment="Center"/>
-                <TextBlock Grid.Column="1" Text="{Binding Label}"
-                           Classes.dimmed="{Binding !IsShown}"
-                           FontSize="15" VerticalAlignment="Center"/>
-                <Button Grid.Column="2" Classes="pill"
-                        IsVisible="{Binding IsShown}"
-                        IsEnabled="{Binding CanMoveUp}"
-                        Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).MoveTabUpCommand}"
-                        CommandParameter="{Binding}"
-                        Padding="8" VerticalAlignment="Center">
-                  <materialIcons:MaterialIcon Kind="ChevronUp" Width="20" Height="20"/>
-                </Button>
-                <Button Grid.Column="3" Classes="pill"
-                        IsVisible="{Binding IsShown}"
-                        IsEnabled="{Binding CanMoveDown}"
-                        Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).MoveTabDownCommand}"
-                        CommandParameter="{Binding}"
-                        Padding="8" VerticalAlignment="Center">
-                  <materialIcons:MaterialIcon Kind="ChevronDown" Width="20" Height="20"/>
-                </Button>
-              </Grid>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
       </StackPanel>
 
       <StackPanel Classes="section">

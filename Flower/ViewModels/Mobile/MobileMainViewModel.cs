@@ -1026,6 +1026,10 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             if (_activeSheet == MobileSheet.SmartPlaylistEditor)
                 FinishSmartPlaylistEdit(saved: false);
             _activeSheet = value;
+            // The Navigation Bar page is pushed over Settings, so it cannot
+            // outlast it.
+            if (value != MobileSheet.Settings)
+                IsShowingNavigationBarSettings = false;
             if (value == MobileSheet.None)
             {
                 EndNamingNewPlaylist();

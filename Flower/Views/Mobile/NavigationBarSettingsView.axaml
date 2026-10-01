@@ -1,0 +1,219 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             mc:Ignorable="d"
+             x:Class="Flower.Views.Mobile.NavigationBarSettingsView"
+             x:DataType="vm:MobileMainViewModel"
+             Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
+             Padding="{DynamicResource SheetBottomInset}">
+
+  <!-- Which tabs the bar at the bottom shows, and in what order: the ones in
+       it on top, in bar order (top to bottom here is left to right there), and
+       the rest under them. A switch takes a tab out of the bar or puts it back
+       at the end; the bar's own rows are dragged by their handle to reorder
+       them (the code-behind). Every change is made as it happens - Done only
+       closes the page, as its back arrow does. -->
+
+  <UserControl.Styles>
+    <Style Selector="TextBlock.section-header">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="LetterSpacing" Value="0.8" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{DynamicResource AppTextMutedBrush}" />
+      <Setter Property="Margin" Value="4,24,0,8" />
+    </Style>
+    <!-- Each list is a card lighter than the page, the rows on it split by a
+         hairline that starts past the handle. -->
+    <Style Selector="Border.card">
+      <Setter Property="Background" Value="{DynamicResource AppBackgroundBrush}" />
+      <Setter Property="CornerRadius" Value="14" />
+      <Setter Property="BoxShadow" Value="{DynamicResource AppButtonShadow}" />
+    </Style>
+    <Style Selector="ItemsControl.tabRows ContentPresenter:nth-child(1) Border.divider">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+
+    <Style Selector="Border.tabRow">
+      <Setter Property="Height" Value="50" />
+      <Setter Property="CornerRadius" Value="14" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="Border.tabRow materialIcons|MaterialIcon.tabIcon">
+      <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}" />
+    </Style>
+    <Style Selector="Border.tabRow Path.tabIcon">
+      <Setter Property="Fill" Value="{DynamicResource AppTextPrimaryBrush}" />
+    </Style>
+    <Style Selector="Border.tabRow materialIcons|MaterialIcon.grip">
+      <Setter Property="Foreground" Value="{DynamicResource AppTextMutedBrush}" />
+    </Style>
+
+    <!-- The row under the finger (.lifted, from the code-behind): raised off
+         the card on a shadow, ringed and washed in the accent, its handle and
+         icon in the accent too. Opaque underneath the wash, since it passes
+         over the rows it is being dragged across. -->
+    <Style Selector="Border.tabRow.lifted">
+      <Setter Property="Background" Value="{DynamicResource AppBackgroundBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppPrimaryBorderBrush}" />
+      <Setter Property="BoxShadow" Value="{DynamicResource AppOvalShadow}" />
+    </Style>
+    <Style Selector="Border.tabRow.lifted Panel.wash">
+      <Setter Property="Background" Value="{DynamicResource AppAccentHoverSoftBrush}" />
+    </Style>
+    <Style Selector="Border.tabRow.lifted Border.divider">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector="Border.tabRow.lifted materialIcons|MaterialIcon.tabIcon, Border.tabRow.lifted materialIcons|MaterialIcon.grip">
+      <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}" />
+    </Style>
+    <Style Selector="Border.tabRow.lifted Path.tabIcon">
+      <Setter Property="Fill" Value="{DynamicResource AppAccentBrush}" />
+    </Style>
+
+    <!-- A bare switch: Fluent's ToggleSwitch sets aside room for "On" and
+         "Off" beside the track, which here would only push it off the row's
+         right edge. -->
+    <Style Selector="ToggleSwitch">
+      <Setter Property="OnContent" Value="{x:Null}" />
+      <Setter Property="OffContent" Value="{x:Null}" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+  </UserControl.Styles>
+
+  <UserControl.Resources>
+    <x:Double x:Key="ToggleSwitchThemeMinWidth">0</x:Double>
+
+    <!-- One tab: its handle (in the bar only - the rest have no order), its
+         icon as the bar draws it, its name and its switch. The switch reaches
+         back up to the page for its command, since each row's own DataContext
+         is the row. The last tab in the bar greys its switch out
+         (CanToggle): a bar of none is no way to get anywhere. -->
+    <DataTemplate x:Key="TabRowTemplate" x:DataType="vm:MobileTabSettingRow">
+      <Border Classes="tabRow">
+        <Panel Classes="wash">
+          <Border Classes="divider"
+                  Height="1"
+                  Margin="50,0,0,0"
+                  VerticalAlignment="Top"
+                  Background="{DynamicResource AppDividerBrush}"
+                  IsHitTestVisible="False" />
+          <Grid ColumnDefinitions="Auto,Auto,*,Auto" Margin="0,0,14,0">
+            <Border Grid.Column="0"
+                    Classes="dragHandle"
+                    Width="44"
+                    Background="Transparent">
+              <materialIcons:MaterialIcon Classes="grip"
+                                          Kind="DragHorizontalVariant"
+                                          Width="20" Height="20"
+                                          IsVisible="{Binding IsShown}"
+                                          IsHitTestVisible="False" />
+            </Border>
+            <Panel Grid.Column="1" Width="22" Height="22" VerticalAlignment="Center">
+              <materialIcons:MaterialIcon Classes="tabIcon"
+                                          Kind="{Binding Icon}"
+                                          IsVisible="{Binding !UsesSongNote}"
+                                          Width="{Binding IconSize}" Height="{Binding IconSize}"
+                                          Margin="{Binding IconMargin}" />
+              <Path Classes="tabIcon"
+                    Data="{StaticResource SongNoteGeometry}"
+                    IsVisible="{Binding UsesSongNote}"
+                    Stretch="Uniform" />
+            </Panel>
+            <TextBlock Grid.Column="2"
+                       Text="{Binding Label}"
+                       FontSize="16"
+                       Margin="14,0,0,0"
+                       VerticalAlignment="Center" />
+            <ToggleSwitch Grid.Column="3"
+                          IsChecked="{Binding IsShown, Mode=OneWay}"
+                          IsEnabled="{Binding CanToggle}"
+                          Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).ToggleTabShownCommand}"
+                          CommandParameter="{Binding}" />
+          </Grid>
+        </Panel>
+      </Border>
+    </DataTemplate>
+  </UserControl.Resources>
+
+  <Grid RowDefinitions="Auto,*,Auto">
+
+    <!-- Settings' own back button, at the same spot. -->
+    <Grid Grid.Row="0" Height="52" Margin="12,4,16,4">
+      <Border Classes="floating" Width="40" HorizontalAlignment="Left">
+        <Button Classes="pill"
+                Command="{Binding CloseNavigationBarSettingsCommand}"
+                HorizontalAlignment="Center">
+          <materialIcons:MaterialIcon Kind="ArrowLeft" Width="20" Height="20" />
+        </Button>
+      </Border>
+    </Grid>
+
+    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+      <StackPanel Margin="16,4,16,16">
+        <!-- A heading, so the serif and the accent red - see ScreenTitle. -->
+        <TextBlock Text="Navigation Bar"
+                   FontFamily="{DynamicResource AppDisplayFontFamily}"
+                   FontSize="34"
+                   FontWeight="SemiBold"
+                   Foreground="{DynamicResource AppAccentBrush}"
+                   Margin="4,0,0,4" />
+        <TextBlock Text="Choose which sections to display and reorder them."
+                   FontSize="15"
+                   Foreground="{DynamicResource AppTextSecondaryBrush}"
+                   TextWrapping="Wrap"
+                   Margin="4,0,0,0" />
+
+        <TextBlock Classes="section-header" Text="VISIBLE SECTIONS" />
+        <Border Classes="card">
+          <ItemsControl x:Name="VisibleList"
+                        Classes="tabRows"
+                        ItemsSource="{Binding VisibleTabRows}"
+                        ItemTemplate="{StaticResource TabRowTemplate}" />
+        </Border>
+
+        <StackPanel IsVisible="{Binding HasHiddenTabs}">
+          <TextBlock Classes="section-header" Text="HIDDEN SECTIONS" />
+          <Border Classes="card">
+            <ItemsControl Classes="tabRows"
+                          ItemsSource="{Binding HiddenTabRows}"
+                          ItemTemplate="{StaticResource TabRowTemplate}" />
+          </Border>
+        </StackPanel>
+
+        <TextBlock Classes="section-header" Text="LABELS" />
+        <Border Classes="card">
+          <Grid ColumnDefinitions="*,Auto" Height="50" Margin="16,0,14,0">
+            <TextBlock Grid.Column="0"
+                       Text="Show names under the icons"
+                       FontSize="16"
+                       VerticalAlignment="Center" />
+            <ToggleSwitch Grid.Column="1" IsChecked="{Binding ShowTabLabels}" />
+          </Grid>
+        </Border>
+        <TextBlock Text="With all seven sections, the bar draws them a little smaller."
+                   FontSize="13"
+                   Foreground="{DynamicResource AppTextMutedBrush}"
+                   TextWrapping="Wrap"
+                   Margin="4,8,0,0" />
+      </StackPanel>
+    </ScrollViewer>
+
+    <Button Grid.Row="2"
+            Classes="primary"
+            Content="Done"
+            Command="{Binding CloseNavigationBarSettingsCommand}"
+            HorizontalAlignment="Stretch"
+            HorizontalContentAlignment="Center"
+            VerticalContentAlignment="Center"
+            Height="50"
+            CornerRadius="25"
+            FontSize="16"
+            FontWeight="SemiBold"
+            Margin="16,8,16,16" />
+  </Grid>
+</UserControl>

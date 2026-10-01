@@ -589,7 +589,7 @@
     </Grid>
 
     <!-- Tab oval. Which tabs it holds and in what order is the user's choice
-         (Settings, MobileMainViewModel.VisibleTabs): every tab is declared
+         (Settings' Navigation Bar page, MobileMainViewModel.VisibleTabs): every tab is declared
          below, and the code-behind (LayOutTabs) puts the chosen ones into
          TabGrid's columns in order and leaves the rest out of the tree. The
          first is the one the app opens on. The same
@@ -722,6 +722,14 @@
                             IsOpen="{Binding IsShowingSettings}"
                             DismissCommand="{Binding CloseSheetCommand}">
       <views:SettingsView />
+    </controls:SlidingSheet>
+    <!-- Settings' Navigation Bar page, pushed over it from the right like any
+         screen, and so left by its back arrow or a rightward swipe - either
+         of which lands back on Settings, still open underneath. -->
+    <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"
+                            IsOpen="{Binding IsShowingNavigationBarSettings}"
+                            DismissCommand="{Binding CloseNavigationBarSettingsCommand}">
+      <views:NavigationBarSettingsView />
     </controls:SlidingSheet>
     <!-- The smart playlist rule editor, a pushed screen for the same reason
          Settings is: it is a page of its own, reached from the Playlists tab's
