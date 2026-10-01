@@ -8,21 +8,15 @@
          and the rest resolve their net10.0 assets unchanged, and AVKit/AppKit
          become reachable on top. See docs/AIRPLAY-BLUETOOTH-PLAN.md Phase 2. -->
     <TargetFramework>net10.0-macos</TargetFramework>
-    <!-- AVRoutePickerView is macOS 10.15; 12.0 is the floor Flower already
-         needs elsewhere and keeps the analyzer from demanding version guards
-         around ordinary modern API. -->
-    <SupportedOSPlatformVersion>12.0</SupportedOSPlatformVersion>
+    <!-- The oldest macOS the 27.0 workload builds for (Sonoma). It was 12.0
+         until that workload, which refuses anything lower; nothing in this
+         head needs newer than 10.15 (AVRoutePickerView). An older Mac still
+         runs Flower.Desktop, without the Apple frameworks. -->
+    <SupportedOSPlatformVersion>14.0</SupportedOSPlatformVersion>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <StartupObject>Flower.MacOS.Program</StartupObject>
 
-    <!-- Xcode 27 is ahead of the newest .NET for macOS workload (26.5), which
-         refuses to build against anything but Xcode 26.6. Nothing in the
-         build actually needs 26.6 - with the check off, 27.0 builds this head
-         cleanly - so the check is off, rather than every machine keeping an
-         old Xcode beside the current one. Delete this once a workload that
-         names Xcode 27 is published (`dotnet workload update`). -->
-    <ValidateXcodeVersion>false</ValidateXcodeVersion>
     <ApplicationTitle>Flower</ApplicationTitle>
 
     <!-- The bundle is Flower.MacOS.app, named after the assembly rather than

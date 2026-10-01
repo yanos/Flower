@@ -53,7 +53,7 @@ export SIMCTL_CHILD_FLOWER_TEST_ARGS="${FLOWER_TEST_ARGS:-}"
 # CI runner, which is slower, and is there to turn a hang into a failure rather
 # than to be reached.
 ios_simulator_run \
-  Tests/Flower.Tests.iOS/bin/Release/net10.0-ios26.5/iossimulator-arm64/Flower.Tests.iOS.app \
+  Tests/Flower.Tests.iOS/bin/Release/net10.0-ios27.0/iossimulator-arm64/Flower.Tests.iOS.app \
   com.yanos.flower.tests flower-tests.log 'FLOWER-TESTS ' 1200 summarize
 
 if [ "$IOS_TALLY" != "FLOWER-TESTS exit 0" ]; then

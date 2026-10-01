@@ -36,7 +36,7 @@ ios_simulator_build Tests/Flower.DeviceChecks.iOS/Flower.DeviceChecks.iOS.csproj
 export SIMCTL_CHILD_FLOWER_REQUIRE_DECODERS=FFmpeg
 
 ios_simulator_run \
-  Tests/Flower.DeviceChecks.iOS/bin/Release/net10.0-ios26.5/iossimulator-arm64/Flower.DeviceChecks.iOS.app \
+  Tests/Flower.DeviceChecks.iOS/bin/Release/net10.0-ios27.0/iossimulator-arm64/Flower.DeviceChecks.iOS.app \
   com.yanos.flower.devicechecks flower-checks.log 'FLOWER-CHECKS ' 180
 
 if ! echo "$IOS_TALLY" | grep -q ', 0 failed'; then

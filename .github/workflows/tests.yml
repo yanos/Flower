@@ -42,18 +42,18 @@ jobs:
           - name: build and test Flower.Tests, Flower.Server.Tests (macos-26)
             kind: desktop-test
             runner: macos-26
-          - name: build and test Flower.Tests (ios-26)
+          - name: build and test Flower.Tests (ios-27)
             kind: ios-test
-            runner: macos-26
+            runner: xcode-27
           - name: build Flower.Desktop (linux-ubuntu-24.04)
             kind: desktop-build
             runner: ubuntu-24.04
-          - name: build Flower.MacOS (macos-26)
+          - name: build Flower.MacOS (macos-27)
             kind: macos-build
-            runner: macos-26
-          - name: build Flower.iOS, Flower.DeviceChecks.iOS (ios-26)
+            runner: xcode-27
+          - name: build Flower.iOS, Flower.DeviceChecks.iOS (ios-27)
             kind: ios-build
-            runner: macos-26
+            runner: xcode-27
           - name: build Flower.Android (android-36)
             kind: android-build
             runner: ubuntu-24.04
@@ -145,15 +145,10 @@ jobs:
       # in reach, so every Apple-framework call in the app is code that only
       # this build can check.
       #
-      # No ValidateXcodeVersion=false here, deliberately, even though this head
-      # hits the same check the iOS builds turn off. Flower.MacOS's TFM is
-      # unversioned (net10.0-macos), so it takes whatever macOS pack the SDK
-      # ships - 26.5 today - which wants Xcode 26.6. On iOS that check is a
-      # formality and turning it off costs nothing. Here it is load-bearing:
-      # with the check disabled the build gets as far as ILLink and fails with
-      # MM0179, needing the macOS 26.5 SDK headers for real. Disabling it would
-      # only trade a clear message for an obscure one - and a head that cannot
-      # be built is a head that cannot ship.
+      # On the xcode-27 image, like the iOS legs: the macOS workload the .NET
+      # SDK installs is 27.0, which builds against the macOS 27 SDK for real
+      # (MM0179 without its headers) and checks for exactly Xcode 27.0 - and
+      # the macos-26 image has no Xcode 27 at all.
       - name: Install macOS workload
         if: matrix.kind == 'macos-build'
         run: dotnet workload install macos
@@ -189,49 +184,27 @@ jobs:
         if: matrix.kind == 'ios-test' || matrix.kind == 'ios-build'
         run: dotnet workload install ios
 
-      # Flower.Tests.iOS targets net10.0-ios26.5, same as Flower.iOS, so it
-      # hits the same _ValidateXcodeVersion equality check the Flower.iOS build
-      # disables - see the long note on that step. The script takes no build
-      # arguments, but MSBuild reads environment variables as properties, so
-      # this reaches its `dotnet build` unchanged.
-      #
       # The script's `rm -rf obj bin` costs nothing on a fresh runner; it is
-      # there for a developer's incremental build, which reliably launches
-      # into a Mono AOT crash that reads exactly like a failing test.
-      # IOS_SIMULATOR_RUNTIME is what makes "ios-26" in this leg's name true:
-      # the script runs on an iOS 26 simulator, and fails rather than quietly
+      # there for a developer's incremental build, which used to launch into
+      # a Mono AOT crash that reads exactly like a failing test.
+      # IOS_SIMULATOR_RUNTIME is what makes "ios-27" in this leg's name true:
+      # the script runs on an iOS 27 simulator, and fails rather than quietly
       # picking another when the image has none.
       - name: Run tests on a simulator
         if: matrix.kind == 'ios-test'
         env:
-          ValidateXcodeVersion: 'false'
-          IOS_SIMULATOR_RUNTIME: '26'
+          IOS_SIMULATOR_RUNTIME: '27'
         run: scripts/ios-tests.sh
 
-      # ValidateXcodeVersion=false keeps this at minutes rather than a quarter
-      # of an hour, and the chain behind it is worth writing down because none
-      # of it is visible from here.
+      # The iOS legs run on the xcode-27 image because the workload wants
+      # it: the 27.0 packs (net10.0-ios27.0) check for exactly Xcode 27.0,
+      # and the macos-26 image stops at 26.6. Its own default Xcode is 27, with
+      # the matching simulator runtime preinstalled - the pairing that once
+      # cost a ~10-15 minute `xcodebuild -downloadPlatform iOS` per push when
+      # a pinned Xcode and the image's runtimes disagreed
+      # (actions/runner-images#13317). The image is still a preview, so its
+      # capacity can queue a leg that macos-26 would have started at once.
       #
-      # Flower.iOS targets net10.0-ios26.5, which selects the
-      # Microsoft.iOS.Sdk.net10.0_26.5 pack, whose _RecommendedXcodeVersion is
-      # 26.6. Xamarin.Shared.Sdk.targets' _ValidateXcodeVersion compares
-      # major.minor for *equality*, not "at least" - so the build accepts
-      # Xcode 26.6.x and nothing else, whichever side of the runner image's
-      # default that lands on. This used to be pinned, and then had to spend
-      # ~10-15 minutes on `xcodebuild -downloadPlatform iOS` for every single
-      # push, because the image's preinstalled simulator runtimes are matched
-      # to its newer default Xcodes and actool will not compile an asset
-      # catalog without a matching one (actions/runner-images#13317). A
-      # multi-gigabyte download, uncached, to satisfy a version equality check.
-      #
-      # Turning the check off lets the runner use its own default Xcode, whose
-      # runtime is already installed, and nothing is skipped: the asset catalog
-      # still compiles, so this still builds what it always built. What it
-      # gives up is the guarantee that the Xcode underneath is the one
-      # Microsoft blessed for this pack - acceptable for a gate that exists to
-      # catch compile breaks, and not something to carry into a build that
-      # ships. Any TFM is one image update away from disagreeing with the
-      # runner's default Xcode again, since the check wants exact equality.
       # Signed ad hoc (CodesignKey=-), because the runner has no signing
       # identity and Flower.iOS carries a real entitlement - the Keychain group
       # KeychainSecureStore needs - which a simulator build still has to sign
@@ -239,7 +212,7 @@ jobs:
       # why this only started failing when the group was added.
       - name: Build Flower.iOS
         if: matrix.kind == 'ios-build'
-        run: dotnet build Flower.iOS/Flower.iOS.csproj --configuration Release -p:RuntimeIdentifier=iossimulator-arm64 -p:ValidateXcodeVersion=false -p:CodesignKey=-
+        run: dotnet build Flower.iOS/Flower.iOS.csproj --configuration Release -p:RuntimeIdentifier=iossimulator-arm64 -p:CodesignKey=-
 
       # The decode-checks runner no leg runs any more - the iOS test leg runs
       # the same checks inside the suite - but it is still the one to put on a physical phone
@@ -247,7 +220,7 @@ jobs:
       # compiles is a project that silently rots.
       - name: Build Flower.DeviceChecks.iOS
         if: matrix.kind == 'ios-build'
-        run: dotnet build Tests/Flower.DeviceChecks.iOS/Flower.DeviceChecks.iOS.csproj --configuration Release -p:ValidateXcodeVersion=false
+        run: dotnet build Tests/Flower.DeviceChecks.iOS/Flower.DeviceChecks.iOS.csproj --configuration Release
 
       - name: Install Android workload
         if: matrix.kind == 'android-build'

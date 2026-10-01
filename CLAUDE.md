@@ -148,8 +148,10 @@ Playback position (`GaplessAudioManager.Time`/`Position`, the seek bar) is drive
 ### The suite on iOS
 
 `scripts/ios-tests.sh` runs `Flower.Tests`, unchanged, on an iOS Simulator, and
-CI's `build and test Flower.Tests (ios-26)` leg is that script, held to an iOS
-26 simulator by `IOS_SIMULATOR_RUNTIME`. `Flower.Tests` stays plain `net10.0`:
+CI's `build and test Flower.Tests (ios-27)` leg is that script, held to an iOS
+27 simulator by `IOS_SIMULATOR_RUNTIME` on GitHub's `xcode-27` image - the
+iOS 27.0 workload (`net10.0-ios27.0`) wants exactly Xcode 27, which the
+`macos-26` image does not have. `Flower.Tests` stays plain `net10.0`:
 `Tests/Flower.Tests.iOS` is an app that references it the way `Flower.iOS`
 references `Flower` and runs xunit in-process, so what differs from the desktop
 run is exactly the platform - Mono with no JIT, a sandboxed filesystem, the iOS
@@ -293,7 +295,7 @@ and probes when even that hint will not open the stream.
 
 CI runs these per-OS in the three desktop test legs - they need
 nothing the fast suite does not already build - and on an iOS Simulator inside
-`build and test Flower.Tests (ios-26)`, which runs the whole suite there (see "The suite on iOS" above);
+`build and test Flower.Tests (ios-27)`, which runs the whole suite there (see "The suite on iOS" above);
 `Flower.DeviceChecks.iOS` is only compiled in CI now, and stays the runner to
 put on a physical phone. The mobile two are a head apiece
 (`Flower.DeviceChecks.iOS`, `Flower.DeviceChecks.Android`) driven by a script

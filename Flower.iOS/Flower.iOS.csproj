@@ -1,18 +1,12 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0-ios26.5</TargetFramework>
-    <SupportedOSPlatformVersion>12.2</SupportedOSPlatformVersion>
+    <TargetFramework>net10.0-ios27.0</TargetFramework>
+    <!-- The oldest iOS this workload builds for: the 27.0 SDK and Xcode 27
+         both stop at 15.0, which leaves out the iPhone 6 and older. -->
+    <SupportedOSPlatformVersion>15.0</SupportedOSPlatformVersion>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-
-    <!-- Xcode 27 is ahead of the newest .NET for iOS workload (26.5), which
-         refuses to build against anything but Xcode 26.6. Nothing in the
-         build actually needs 26.6 - with the check off, 27.0 builds this head
-         cleanly - so the check is off, rather than every machine keeping an
-         old Xcode beside the current one. Delete this once a workload that
-         names Xcode 27 is published (`dotnet workload update`). -->
-    <ValidateXcodeVersion>false</ValidateXcodeVersion>
 
     <!-- Device is the default, but an explicitly passed RID wins, so the
          Simulator is just `-r iossimulator-arm64` (or the IDE's device

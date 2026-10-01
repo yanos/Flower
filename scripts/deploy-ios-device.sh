@@ -81,7 +81,7 @@ DEVICE_ID="$IOS_DEVICE_ID"
 # the device is already covered, which is every run but the first for a phone.
 scripts/register-ios-device.sh "$IOS_DEVICE_UDID"
 
-APP_PATH="Flower.iOS/bin/Release/net10.0-ios26.5/ios-arm64/Flower.iOS.app"
+APP_PATH="Flower.iOS/bin/Release/net10.0-ios27.0/ios-arm64/Flower.iOS.app"
 
 if [ "$BUILD" -eq 1 ]; then
   echo "==> Cleaning obj/bin (see this script's header comment for why)"

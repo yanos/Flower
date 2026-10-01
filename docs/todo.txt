@@ -14,27 +14,18 @@ external services
  lyric service
  
 short term
- recent icon without the plus sign
  option to toggle each log category (level, category, timestamp) 
  Event bus?
  no utf on the web version
  add an issue link in about box
  write a readme
  folder in playlist
- 
- 
-build:
- dotnet target doesnt check the provisioning profile at the correct place, needs to be copied over.
- script to make the provisioning profile.
 
-  
-details:
- queue song:
-  lock screen widget should stay with the queue song
-  
- mobile:
-  do an investigation as to why there's almost always a problem with a stale build on ios when launching through Rider. We made a script to build and launch on my device because of that, but it would be much simplier if i could just use rider.
-  ios editing not native 
+Connecting the Claude Chrome extension (optional now, but useful for web UI problems like this):
+1. Install it from https://claude.ai/chrome in the Chrome you use.
+2. Sign in to claude.ai in that Chrome with the same account as Claude Code.
+3. Restart Chrome if this is the first install.
+4. Say so here and I'll check it's connected. When I use it, I open my own tab and don't touch yours.
 
 ----
 1. The identity guard — and a second copy of it
