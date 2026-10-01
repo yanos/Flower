@@ -24,7 +24,7 @@ public partial class SettingsView : UserControl
         // The decoder's own versions under the app's: which FFmpeg is playing
         // is the first thing to ask about a track that will not.
         VersionTextBlock.Text = DecoderVersion.Display is { } decoder
-            ? $"Version {AppVersion.Display}\n{decoder}"
+            ? $"Version {AppVersion.Display} · {decoder}"
             : $"Version {AppVersion.Display}";
 
         AttachedToVisualTree += (_, _) => Hook();

@@ -144,6 +144,9 @@
        strength a one-pixel ring outshouted the icon inside it. -->
   <SolidColorBrush x:Key="AppPrimaryBorderBrush" Color="{DynamicResource PaletteAccent}" Opacity="0.5" />
   <SolidColorBrush x:Key="AppAccentSoftBrush" Color="{DynamicResource PaletteAccent}" Opacity="0.2" />
+  <!-- The faintest wash of the accent, behind something rather than under a
+       finger: a settings row's icon disc, the pairing code's box. -->
+  <SolidColorBrush x:Key="AppAccentTintBrush" Color="{DynamicResource PaletteAccent}" Opacity="0.1" />
   <SolidColorBrush x:Key="AppOnPrimaryBrush" Color="{DynamicResource PaletteOnAccent}" />
 
   <!-- A hairline around every icon (App.axaml): the text colour, faint, so

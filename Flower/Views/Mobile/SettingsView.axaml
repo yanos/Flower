@@ -14,398 +14,592 @@
              Padding="{DynamicResource SheetBottomInset}">
 
   <UserControl.Styles>
-    <Style Selector="StackPanel.section">
-      <Setter Property="Margin" Value="20,4,20,20" />
-      <Setter Property="Spacing" Value="6" />
+    <!-- Each section is a card lighter than the page, as on the Navigation
+         Bar page: a heading in small capitals at its top, then rows that each
+         lead with an icon in a disc of the accent. -->
+    <Style Selector="Border.card">
+      <Setter Property="Background" Value="{DynamicResource AppBackgroundBrush}" />
+      <Setter Property="CornerRadius" Value="18" />
+      <Setter Property="BoxShadow" Value="{DynamicResource AppButtonShadow}" />
+      <Setter Property="Padding" Value="16" />
+      <Setter Property="Margin" Value="16,0,16,14" />
     </Style>
     <!-- Capitals are typed into each header's Text: Avalonia has no text
          transform to do it here. -->
     <Style Selector="TextBlock.section-header">
-      <Setter Property="FontSize" Value="15" />
-      <Setter Property="LetterSpacing" Value="0.8" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="LetterSpacing" Value="1.2" />
       <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Opacity" Value="0.6" />
-      <Setter Property="Margin" Value="0,0,0,2" />
+      <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
-    <!-- A row that opens a page of its own: ringed like the app's other
-         ovals, a chevron saying it goes somewhere. -->
-    <Style Selector="Button.pageLink">
-      <Setter Property="Background" Value="{DynamicResource AppBackgroundBrush}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AppPrimaryBorderBrush}" />
-      <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="16" />
-      <Setter Property="Padding" Value="16,0,12,0" />
-      <Setter Property="Height" Value="56" />
+    <Style Selector="Border.badge">
+      <Setter Property="Width" Value="44" />
+      <Setter Property="Height" Value="44" />
+      <Setter Property="CornerRadius" Value="22" />
+      <Setter Property="Background" Value="{DynamicResource AppAccentTintBrush}" />
+      <Setter Property="VerticalAlignment" Value="Top" />
+    </Style>
+    <Style Selector="Border.badge > materialIcons|MaterialIcon">
+      <Setter Property="Width" Value="22" />
+      <Setter Property="Height" Value="22" />
+      <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}" />
+    </Style>
+    <!-- The smaller disc beside a section's own heading, for the sections
+         that are one action rather than a list of rows. -->
+    <Style Selector="Border.badge.small">
+      <Setter Property="Width" Value="34" />
+      <Setter Property="Height" Value="34" />
+      <Setter Property="CornerRadius" Value="17" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.badge.small > materialIcons|MaterialIcon">
+      <Setter Property="Width" Value="18" />
+      <Setter Property="Height" Value="18" />
+    </Style>
+    <Style Selector="Border.divider">
+      <Setter Property="Height" Value="1" />
+      <Setter Property="Background" Value="{DynamicResource AppDividerBrush}" />
+    </Style>
+    <Style Selector="TextBlock.rowTitle">
+      <Setter Property="FontSize" Value="16" />
+      <Setter Property="FontWeight" Value="Medium" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style Selector="TextBlock.note, SelectableTextBlock.note">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style Selector="TextBlock.warning, SelectableTextBlock.warning">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Foreground" Value="{DynamicResource AppWarningBrush}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+
+    <!-- A secondary action: a grey fill rather than Fluent's outlined box.
+         .danger is the same shape washed in the accent, for Unpair. -->
+    <Style Selector="Button.soft">
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Padding" Value="14,9" />
+      <Setter Property="FontWeight" Value="Medium" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.soft.danger">
+      <Setter Property="Background" Value="{DynamicResource AppAccentTintBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}" />
+    </Style>
+    <Style Selector="Button.soft materialIcons|MaterialIcon">
+      <Setter Property="Width" Value="18" />
+      <Setter Property="Height" Value="18" />
+    </Style>
+    <Style Selector="Button.primary.action">
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Padding" Value="16,11" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <!-- A card that is itself the button, opening a page of its own: the
+         press lights the whole card. -->
+    <Style Selector="Button.cardLink">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="18" />
+      <Setter Property="Padding" Value="16" />
       <Setter Property="HorizontalAlignment" Value="Stretch" />
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
+
+    <Style Selector="RadioButton">
+      <Setter Property="FontSize" Value="16" />
+    </Style>
+
+    <!-- A bare switch, as on the Navigation Bar page: Fluent's ToggleSwitch
+         sets aside room for "On" and "Off" beside the track. -->
+    <Style Selector="ToggleSwitch">
+      <Setter Property="OnContent" Value="{x:Null}" />
+      <Setter Property="OffContent" Value="{x:Null}" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
   </UserControl.Styles>
+
+  <UserControl.Resources>
+    <x:Double x:Key="ToggleSwitchThemeMinWidth">0</x:Double>
+  </UserControl.Resources>
 
   <Grid RowDefinitions="Auto,*">
 
     <!-- The same round back button MobileMainView floats over its screens,
-         and at the same spot (Border.floating and Button.pill are styled
-         there): a 40px circle 12 in, the title 8 past it at 60. -->
-    <Grid Grid.Row="0" ColumnDefinitions="Auto,*" Height="52" Margin="12,4,16,4">
-      <Border Grid.Column="0" Classes="floating" Width="40">
+         and at the same spot (Border.floating and Button.pill are styled in
+         Styles/IconButtons.axaml): a 40px circle 12 in. The title is on its
+         own line under it, in the scroller, as on every screen. -->
+    <Grid Grid.Row="0" Height="52" Margin="12,4,16,4">
+      <Border Classes="floating" Width="40" HorizontalAlignment="Left">
         <Button Classes="pill"
                 Command="{Binding CloseSheetCommand}"
                 HorizontalAlignment="Center">
           <materialIcons:MaterialIcon Kind="ArrowLeft" Width="20" Height="20" />
         </Button>
       </Border>
-      <TextBlock Grid.Column="1"
-                 Text="Settings"
-                 FontSize="22"
-                 FontWeight="SemiBold"
-                 VerticalAlignment="Center"
-                 Margin="8,0,0,0" />
     </Grid>
 
-    <!-- Scrolls because the content is now taller than a small phone. The
-         diagnostics block below is the last thing on the screen and would
-         otherwise simply be unreachable on a 13 mini. -->
+    <!-- Scrolls because the content is taller than a small phone. The
+         diagnostics card is the last thing on the screen and would otherwise
+         simply be unreachable on a 13 mini. -->
     <ScrollViewer x:Name="ContentScroller" Grid.Row="1" VerticalScrollBarVisibility="Auto"
                   controls:SoftKeyboard.AvoidOcclusion="True">
-    <StackPanel Margin="0,8,0,0">
+    <StackPanel Margin="0,4,0,16">
 
-      <!-- Four headed sections rather than one flat run of blocks: the sheet
-           grew past a phone's height, and "which of these is about the server I
-           am on, and which is about adding another one" is not answerable from
+      <!-- A heading, so the serif and the accent red - see ScreenTitle. -->
+      <TextBlock Text="Settings"
+                 FontFamily="{DynamicResource AppDisplayFontFamily}"
+                 FontSize="40"
+                 FontWeight="SemiBold"
+                 Foreground="{DynamicResource AppAccentBrush}"
+                 Margin="20,0,20,14" />
+
+      <!-- Headed cards rather than one flat run of blocks: the sheet grew past
+           a phone's height, and "which of these is about the server I am on,
+           and which is about adding another one" is not answerable from
            spacing alone. -->
-      <StackPanel Classes="section">
-        <TextBlock Classes="section-header" Text="GENERAL"/>
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <TextBlock Classes="section-header" Text="GENERAL" />
 
-        <TextBlock Text="Device Name" FontSize="13" Opacity="0.6"/>
-        <controls:TextInput Text="{Binding Main.DeviceAlias, UpdateSourceTrigger=LostFocus}"
-                            controls:SoftKeyboard.ReopenOnTap="True"/>
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14">
+            <Border Grid.Column="0" Classes="badge">
+              <materialIcons:MaterialIcon Kind="Cellphone" />
+            </Border>
+            <StackPanel Grid.Column="1" Spacing="8">
+              <TextBlock Classes="rowTitle" Text="Device name" Margin="0,10,0,0" />
+              <controls:TextInput Text="{Binding Main.DeviceAlias, UpdateSourceTrigger=LostFocus}"
+                                  controls:SoftKeyboard.ReopenOnTap="True" />
+            </StackPanel>
+          </Grid>
 
-        <!-- Radio buttons rather than desktop's ComboBox: each choice is one
-             tap, with no popup to open first. Stacked, since three side by
-             side do not fit the width of a small phone. -->
-        <TextBlock Text="Theme" FontSize="13" Opacity="0.6" Margin="0,10,0,0"/>
-        <StackPanel>
-          <RadioButton GroupName="Theme" IsChecked="{Binding ThemeFollowsSystem}">
-            <TextBlock Text="Follow System" FontSize="15"/>
-          </RadioButton>
-          <RadioButton GroupName="Theme" IsChecked="{Binding ThemeIsLight}">
-            <TextBlock Text="Light" FontSize="15"/>
-          </RadioButton>
-          <RadioButton GroupName="Theme" IsChecked="{Binding ThemeIsDark}">
-            <TextBlock Text="Dark" FontSize="15"/>
-          </RadioButton>
+          <Border Classes="divider" Margin="58,4,0,4" />
+
+          <!-- Radio buttons rather than desktop's ComboBox: each choice is one
+               tap, with no popup to open first. Stacked, since three side by
+               side do not fit the width of a small phone. -->
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14">
+            <Border Grid.Column="0" Classes="badge">
+              <materialIcons:MaterialIcon Kind="WeatherSunny" />
+            </Border>
+            <StackPanel Grid.Column="1">
+              <TextBlock Classes="rowTitle" Text="Appearance" Margin="0,10,0,6" />
+              <RadioButton GroupName="Theme" IsChecked="{Binding ThemeFollowsSystem}" Content="Use system setting" />
+              <RadioButton GroupName="Theme" IsChecked="{Binding ThemeIsLight}" Content="Light" />
+              <RadioButton GroupName="Theme" IsChecked="{Binding ThemeIsDark}" Content="Dark" />
+            </StackPanel>
+          </Grid>
+
+          <StackPanel IsVisible="{Binding HasMediaPermissionPrompt}" Spacing="12">
+            <Border Classes="divider" Margin="58,4,0,4" />
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14">
+              <Border Grid.Column="0" Classes="badge">
+                <materialIcons:MaterialIcon Kind="MusicNote" />
+              </Border>
+              <StackPanel Grid.Column="1" Spacing="8" VerticalAlignment="Center">
+                <StackPanel IsVisible="{Binding !HasMediaPermission}" Spacing="8">
+                  <TextBlock Classes="note"
+                             Text="Flower can't see your music. Allow access in Settings." />
+                  <Button Classes="soft" Content="Open Settings"
+                          Command="{Binding OpenAppSettingsCommand}" />
+                </StackPanel>
+                <TextBlock IsVisible="{Binding HasMediaPermission}"
+                           Classes="note"
+                           Text="Music access allowed." />
+              </StackPanel>
+            </Grid>
+          </StackPanel>
         </StackPanel>
+      </Border>
 
-        <!-- Which tabs the bar at the bottom shows, and in what order, is a
-             page of its own (NavigationBarSettingsView): a list of seven with
-             switches and handles is more than this one should carry. -->
-        <Button Classes="pageLink"
-                Command="{Binding OpenNavigationBarSettingsCommand}"
-                Margin="0,14,0,0">
+      <!-- Which tabs the bar at the bottom shows, and in what order, is a
+           page of its own (NavigationBarSettingsView): a list of seven with
+           switches and handles is more than this one should carry. -->
+      <Border Classes="card" Padding="0">
+        <Button Classes="cardLink" Command="{Binding OpenNavigationBarSettingsCommand}">
           <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
-            <materialIcons:MaterialIcon Grid.Column="0" Kind="PlaylistMusic" Width="26" Height="26"/>
-            <TextBlock Grid.Column="1" Text="Customize Navigation Bar" FontSize="16" FontWeight="Medium"
-                       VerticalAlignment="Center"/>
+            <Border Grid.Column="0" Classes="badge" VerticalAlignment="Center">
+              <materialIcons:MaterialIcon Kind="PlaylistMusic" />
+            </Border>
+            <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+              <TextBlock Classes="rowTitle" Text="Customize navigation bar" />
+              <TextBlock Classes="note" Text="Choose which tabs appear and in what order." />
+            </StackPanel>
             <materialIcons:MaterialIcon Grid.Column="2" Kind="ChevronRight" Width="22" Height="22"
-                                        Foreground="{DynamicResource AppTextMutedBrush}"/>
+                                        Foreground="{DynamicResource AppAccentBrush}" />
           </Grid>
         </Button>
+      </Border>
 
-        <StackPanel IsVisible="{Binding HasMediaPermissionPrompt}" Margin="0,10,0,0" Spacing="8">
-          <StackPanel IsVisible="{Binding !HasMediaPermission}" Spacing="8">
-            <TextBlock Text="Flower can't see your music. Allow access in Settings."
-                       FontSize="14"
-                       Opacity="0.7"
-                       TextWrapping="Wrap" />
-            <Button Command="{Binding OpenAppSettingsCommand}" HorizontalAlignment="Left">
-              <TextBlock Text="Open Settings" FontSize="14" />
-            </Button>
-          </StackPanel>
-          <TextBlock IsVisible="{Binding HasMediaPermission}"
-                     Text="Music access allowed."
-                     FontSize="14"
-                     Opacity="0.5" />
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <TextBlock Classes="section-header" Text="ALBUM ACTIONS" />
+          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+            <Border Grid.Column="0" Classes="badge" VerticalAlignment="Center">
+              <materialIcons:MaterialIcon Kind="Album" />
+            </Border>
+            <TextBlock Grid.Column="1" Classes="rowTitle" FontWeight="Normal"
+                       Text="Show action buttons below album cover"
+                       VerticalAlignment="Center" />
+            <ToggleSwitch Grid.Column="2" IsChecked="{Binding ShowAlbumButtons}" />
+          </Grid>
+          <TextBlock Classes="note"
+                     Text="If off, tapping a song plays the album from there, and shuffle, download and add to playlist are in the menu at the top of the screen." />
         </StackPanel>
-      </StackPanel>
-
-      <StackPanel Classes="section">
-        <TextBlock Classes="section-header" Text="ALBUMS"/>
-        <CheckBox IsChecked="{Binding ShowAlbumButtons}" Margin="0,4,0,4">
-          <TextBlock Text="Show buttons under the album art" FontSize="15"/>
-        </CheckBox>
-        <TextBlock Text="Without them, a tap on a song plays the album from there, and shuffle, add to playlist and download are in the menu at the top of the screen."
-                   FontSize="13" Opacity="0.6" TextWrapping="Wrap"/>
-      </StackPanel>
+      </Border>
 
       <!-- The one server this device syncs with - desktop's equivalent is
            ServerPickerView, embedded in Settings' Devices tab. Everything here
-           is about that server; reaching a different one is the next section
-           down. -->
-      <StackPanel Classes="section">
-        <TextBlock Classes="section-header" Text="SERVER"/>
+           is about that server; reaching a different one is Add Server. -->
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <TextBlock Classes="section-header" Text="SERVER" />
 
-        <Grid IsVisible="{Binding Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
-              ColumnDefinitions="*,Auto">
-          <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-            <!-- Only once the paired server has actually accepted this
-                 device (see MainViewModel.IsPairedServerTrustConfirmed) -
-                 not just pointed at, which is PairedServerAlias alone (see
-                 the "waiting" spinner below). -->
-            <!-- Desktop's sidebar carries the same three states in the same
-                 glyph; here the unreachable one keeps its explanatory line
-                 below as well, since a phone off the network is the common
-                 case and a bare icon would not say why. -->
-            <controls:ConnectionStatusIcon
-                IsConnected="{Binding Main.IsPairedServerTrustConfirmed}"
-                IsBusy="{Binding Main.IsPairedServerBusy}"
-                IsUnreachable="{Binding Main.ShowPairedServerUnreachableWarning}"
-                IconSize="16"
-                VerticalAlignment="Center"/>
-            <!-- How fresh the synced library is sits directly under the name it
-                 is about (see MainViewModel.LastSyncedDisplay); several lines
-                 further down it read as a fact about the section rather than
-                 about this server. Desktop's picker stacks the same two. -->
-            <StackPanel VerticalAlignment="Center">
-              <TextBlock Text="{Binding Main.PairedServerAlias}" FontWeight="Medium"/>
-              <TextBlock IsVisible="{Binding Main.LastSyncedDisplay, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
-                         Text="{Binding Main.LastSyncedDisplay}"
-                         Opacity="0.6" FontSize="12" Margin="0,1,0,0"/>
+          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14"
+                IsVisible="{Binding Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}">
+            <Border Grid.Column="0" Classes="badge" VerticalAlignment="Center">
+              <materialIcons:MaterialIcon Kind="Database" />
+            </Border>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+              <TextBlock Text="{Binding Main.PairedServerAlias}"
+                         FontSize="17" FontWeight="Medium"
+                         TextTrimming="CharacterEllipsis" />
+              <!-- How fresh the synced library is sits directly under the name
+                   it is about (see MainViewModel.LastSyncedDisplay), led by the
+                   server's standing: connected only once the server has
+                   actually accepted this device (see
+                   MainViewModel.IsPairedServerTrustConfirmed), not just been
+                   pointed at. Desktop's sidebar carries the same three states
+                   in the same glyph. -->
+              <StackPanel Orientation="Horizontal" Spacing="5">
+                <controls:ConnectionStatusIcon
+                    IsConnected="{Binding Main.IsPairedServerTrustConfirmed}"
+                    IsBusy="{Binding Main.IsPairedServerBusy}"
+                    IsUnreachable="{Binding Main.ShowPairedServerUnreachableWarning}"
+                    IconSize="13"
+                    VerticalAlignment="Center" />
+                <TextBlock IsVisible="{Binding Main.LastSyncedDisplay, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
+                           Text="{Binding Main.LastSyncedDisplay}"
+                           Classes="note" TextWrapping="NoWrap"
+                           TextTrimming="CharacterEllipsis"
+                           VerticalAlignment="Center" />
+              </StackPanel>
+              <!-- Pairing requested but not yet approved by the server - see
+                   MainViewModel.IsPairedServerAwaitingApproval. -->
+              <TextBlock Text="Waiting for approval…"
+                         Classes="note"
+                         IsVisible="{Binding Main.IsPairedServerAwaitingApproval}" />
+              <!-- Kept in words as well as the glyph: a phone off the network
+                   is the common case, and a bare icon would not say why. See
+                   MainViewModel.ShowPairedServerUnreachableWarning. -->
+              <TextBlock IsVisible="{Binding Main.ShowPairedServerUnreachableWarning}"
+                         Classes="warning"
+                         Text="Can't reach server" />
             </StackPanel>
-            <!-- Pairing requested but not yet approved by the server - see
-                 MainViewModel.IsPairedServerAwaitingApproval. -->
-            <TextBlock Text="Waiting for approval…"
-                       Opacity="0.6" FontSize="12"
-                       VerticalAlignment="Center"
-                       IsVisible="{Binding Main.IsPairedServerAwaitingApproval}"/>
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+              <Button Classes="soft" Content="Sync now"
+                      Command="{Binding ForceSyncCommand}" IsEnabled="{Binding Main.CanForceSync}" />
+              <Button Classes="soft danger" Content="Unpair"
+                      Command="{Binding UnpairServerCommand}" />
+            </StackPanel>
+          </Grid>
+
+          <TextBlock IsVisible="{Binding Main.LastForceSyncResult, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
+                     Text="{Binding Main.LastForceSyncResult}"
+                     Classes="note" Margin="58,0,0,0" />
+          <!-- How the server is being reached, when it is not the ordinary
+               at-home case - see MainViewModel.PairedServerRouteDescription. A
+               silent fallback to a relayed tailnet path is otherwise
+               indistinguishable from a fast local one. -->
+          <TextBlock IsVisible="{Binding Main.PairedServerRouteDescription, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
+                     Text="{Binding Main.PairedServerRouteDescription}"
+                     Classes="note" Margin="58,0,0,0" />
+
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14"
+                IsVisible="{Binding Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNullOrEmpty}}">
+            <Border Grid.Column="0" Classes="badge" VerticalAlignment="Center">
+              <materialIcons:MaterialIcon Kind="Database" />
+            </Border>
+            <TextBlock Grid.Column="1" Classes="note" FontSize="15"
+                       Text="Not paired" VerticalAlignment="Center" />
+          </Grid>
+
+          <!-- On by default, same as desktop: whoever runs the server is the
+               one who ends up diagnosing a phone, and a phone's owner cannot be
+               asked to find a log file. Directly under the server it names,
+               since that is the server the logs go to - and hidden with no
+               server, since there is nowhere for them to go. See
+               AppSettings.ShareLogsWithPairedServer. -->
+          <StackPanel Spacing="12"
+                      IsVisible="{Binding Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}">
+            <Border Classes="divider" Margin="58,0,0,0" />
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+              <Border Grid.Column="0" Classes="badge" VerticalAlignment="Center">
+                <materialIcons:MaterialIcon Kind="FileDocumentOutline" />
+              </Border>
+              <TextBlock Grid.Column="1" Classes="rowTitle" FontWeight="Normal"
+                         Text="Send diagnostic logs to server"
+                         VerticalAlignment="Center" />
+              <ToggleSwitch Grid.Column="2" IsChecked="{Binding Main.ShareLogsWithPairedServer}" />
+            </Grid>
           </StackPanel>
-          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
-            <Button Content="Sync Now" Command="{Binding ForceSyncCommand}" IsEnabled="{Binding Main.CanForceSync}"/>
-            <Button Content="Unpair" Command="{Binding UnpairServerCommand}"/>
+        </StackPanel>
+      </Border>
+
+      <!-- Adding another phone or laptop to this server, without needing a
+           desktop or a browser to do it - shown only if this device is paired
+           with a Flower.Server that is reachable right now *and* that server
+           counts this device as one of its administrators (see
+           MainViewModel.CanInviteDeviceToPairedServer). A listener's phone sees
+           nothing here rather than a button the server can only refuse. -->
+      <Border Classes="card" IsVisible="{Binding Main.CanInviteDeviceToPairedServer}">
+        <StackPanel Spacing="10">
+          <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,0,0,4">
+            <Border Classes="badge small">
+              <materialIcons:MaterialIcon Kind="LinkVariant" />
+            </Border>
+            <TextBlock Classes="section-header" Text="PAIR A DEVICE" />
           </StackPanel>
-        </Grid>
-        <!-- See MainViewModel.ShowPairedServerUnreachableWarning - desktop's
-             equivalent is the sidebar's own check/exclamation glyph next to
-             the paired server's row. -->
-        <TextBlock IsVisible="{Binding Main.ShowPairedServerUnreachableWarning}"
-                   Text="Can't reach server"
-                   Foreground="{DynamicResource AppWarningBrush}"
-                   FontSize="12" Margin="0,2,0,0"/>
-        <TextBlock IsVisible="{Binding Main.LastForceSyncResult, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
-                   Text="{Binding Main.LastForceSyncResult}"
-                   Opacity="0.6" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
-        <TextBlock IsVisible="{Binding Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNullOrEmpty}}"
-                   Text="Not paired" Opacity="0.5" FontSize="14"/>
 
-        <!-- How the server is being reached, when it is not the ordinary
-             at-home case - see MainViewModel.PairedServerRouteDescription. A
-             silent fallback to a relayed tailnet path is otherwise
-             indistinguishable from a fast local one. -->
-        <TextBlock IsVisible="{Binding Main.PairedServerRouteDescription, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
-                   Text="{Binding Main.PairedServerRouteDescription}"
-                   Opacity="0.6" FontSize="12" Margin="0,2,0,0"/>
-
-        <!-- On by default, same as desktop: whoever runs the server is the one
-             who ends up diagnosing a phone, and a phone's owner cannot be asked
-             to find a log file. Directly under the server it names, since that
-             is the server the logs go to - and hidden with no server, since
-             there is nowhere for them to go. See
-             AppSettings.ShareLogsWithPairedServer. -->
-        <CheckBox Content="Send logs to server"
-                  IsVisible="{Binding Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
-                  IsChecked="{Binding Main.ShareLogsWithPairedServer}"
-                  Margin="0,6,0,0"/>
-
-        <!-- Adding another phone or laptop to this server, without needing a
-             desktop or a browser to do it - shown only if this device is
-             paired with a Flower.Server that is reachable right now *and* that
-             server counts this device as one of its administrators (see
-             MainViewModel.CanInviteDeviceToPairedServer). A listener's phone
-             sees nothing here rather than a button the server can only
-             refuse. -->
-        <StackPanel IsVisible="{Binding Main.CanInviteDeviceToPairedServer}" Spacing="6" Margin="0,12,0,0">
-          <!-- The checkbox rides alongside the button rather than under it:
-               it is what the button is about to issue, not a separate setting,
+          <!-- The checkbox rides alongside the button rather than under it: it
+               is what the button is about to issue, not a separate setting,
                and a phone's width has room for both. More than one device may
                be an administrator - an owner's own desktop and their own phone
                both being one is the expected shape. See
                MainViewModel.PairingCodeGrantsAdmin. -->
-          <StackPanel Orientation="Horizontal" Spacing="12">
-            <Button Content="Generate Pairing Code"
+          <WrapPanel ItemSpacing="14" LineSpacing="8">
+            <Button Classes="primary action"
+                    Content="Create pairing code"
                     Command="{Binding InviteDeviceCommand}"
-                    IsEnabled="{Binding !Main.IsIssuingPairingCode}"/>
-            <CheckBox Content="Administrator"
+                    IsEnabled="{Binding !Main.IsIssuingPairingCode}" />
+            <CheckBox Content="Grant administrator access"
                       IsChecked="{Binding Main.PairingCodeGrantsAdmin}"
-                      VerticalAlignment="Center"/>
-          </StackPanel>
+                      VerticalAlignment="Center" />
+          </WrapPanel>
           <!-- Shown whether or not the box is ticked, because what pairing
                costs is the decision being made here and a warning that only
                appears once the dangerous option is already chosen has arrived
                too late to inform it. The ordinary grant is not nothing either -
                a listener's playlists replace the server's - so both halves are
                stated rather than only the administrator one. -->
-          <TextBlock Text="The new device can play everything and edit shared playlists. An administrator can also change server settings and manage devices."
-                     FontSize="12" Opacity="0.5" TextWrapping="Wrap"/>
+          <TextBlock Classes="note"
+                     Text="Paired devices can play everything and edit shared playlists. Administrators can also change server settings and manage devices." />
+
           <!-- Copying is the actual gesture on a phone - the code goes into a
                message to whoever is holding the other device, and a selection
-               drag on a 20pt monospace string is not how anyone does that. The
-               button shares the code's own visibility so the two appear
-               together.
-               A Grid rather than a horizontal StackPanel because the two have
-               to share a centre line: the code's box is taller than the
-               button's and centring each within its own is what left them
-               looking offset from one another. -->
-          <Grid ColumnDefinitions="Auto,Auto"
-                IsVisible="{Binding Main.IssuedPairingCode, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}">
-            <Border Grid.Column="0"
-                    Background="{DynamicResource SystemControlBackgroundBaseLowBrush}"
-                    CornerRadius="6" Padding="10,4" Margin="0,0,12,0"
-                    VerticalAlignment="Stretch">
-              <SelectableTextBlock Text="{Binding Main.IssuedPairingCode}"
-                                   FontFamily="monospace" FontSize="20" FontWeight="SemiBold"
-                                   VerticalAlignment="Center"/>
-            </Border>
-            <Button Grid.Column="1" Content="Copy"
-                    Click="CopyPairingCodeButton_Click"
-                    VerticalAlignment="Stretch" VerticalContentAlignment="Center"/>
-          </Grid>
-          <TextBlock IsVisible="{Binding Main.IssuedPairingCode, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
-                     Text="Enter this code on the new device. Works once."
-                     FontSize="12" Opacity="0.5" TextWrapping="Wrap"/>
+               drag across it is not how anyone does that. The button shares
+               the code's own visibility so the two appear together, and the
+               two stretch to one height so they share a centre line. -->
+          <StackPanel Spacing="6" Margin="0,6,0,0"
+                      IsVisible="{Binding Main.IssuedPairingCode, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+              <Border Grid.Column="0"
+                      Background="{DynamicResource AppAccentTintBrush}"
+                      CornerRadius="10" Padding="16,8">
+                <SelectableTextBlock Text="{Binding Main.IssuedPairingCode}"
+                                     FontSize="24" FontWeight="Bold" LetterSpacing="2"
+                                     VerticalAlignment="Center" />
+              </Border>
+              <Button Grid.Column="1" Classes="soft"
+                      Click="CopyPairingCodeButton_Click"
+                      VerticalAlignment="Stretch">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <materialIcons:MaterialIcon Kind="ContentCopy" />
+                  <TextBlock Text="Copy code" VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+            </Grid>
+            <TextBlock Classes="note" Text="Enter this code on the new device. Valid for one use." />
+          </StackPanel>
+
           <!-- The link is the safer of the two renderings, so it is offered
-               rather than hidden behind the code: a device given the whole
-               link checks that it reached the server the link came from, and a
+               rather than hidden behind the code: a device given the whole link
+               checks that it reached the server the link came from, and a
                device given five characters trusts whatever answers. See
-               PairingEntry.
-               It gets the same Copy button as the code, and needs it more: a
-               flower:// link is not something anyone retypes, and on a phone a
-               selection drag across a wrapped monospace string is worse still. -->
-          <Grid ColumnDefinitions="*,Auto"
-                IsVisible="{Binding Main.IssuedPairingInvite, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}">
-            <SelectableTextBlock Grid.Column="0" Text="{Binding Main.IssuedPairingInvite}"
-                                 FontFamily="monospace" FontSize="11"
-                                 Margin="0,0,12,0"
-                                 Opacity="0.7" TextWrapping="Wrap"
-                                 VerticalAlignment="Center"/>
-            <Button Grid.Column="1" Content="Copy link"
-                    Click="CopyPairingInviteButton_Click"
-                    VerticalAlignment="Center"/>
-          </Grid>
-          <TextBlock IsVisible="{Binding Main.IssuedPairingInvite, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
-                     Text="Or send this link instead - it's safer, as it only pairs with this server."
-                     FontSize="12" Opacity="0.5" TextWrapping="Wrap"/>
+               PairingEntry. It gets the same Copy button as the code, and needs
+               it more: a flower:// link is not something anyone retypes. Two
+               lines of it are shown, which is enough to say what it is. -->
+          <StackPanel Spacing="6" Margin="0,6,0,0"
+                      IsVisible="{Binding Main.IssuedPairingInvite, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+              <Border Grid.Column="0"
+                      BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1"
+                      CornerRadius="10" Padding="12,8">
+                <SelectableTextBlock Text="{Binding Main.IssuedPairingInvite}"
+                                     FontFamily="monospace" FontSize="12"
+                                     Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                     TextWrapping="Wrap" MaxLines="2"
+                                     TextTrimming="CharacterEllipsis"
+                                     VerticalAlignment="Center" />
+              </Border>
+              <Button Grid.Column="1" Classes="soft"
+                      Click="CopyPairingInviteButton_Click"
+                      VerticalAlignment="Stretch">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <materialIcons:MaterialIcon Kind="ContentCopy" />
+                  <TextBlock Text="Copy link" VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+            </Grid>
+            <TextBlock Classes="note" Text="Or share this link instead - it's safer, as it only pairs with this server." />
+          </StackPanel>
+
           <SelectableTextBlock IsVisible="{Binding Main.IssuedPairingCodeError, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
-                     Text="{Binding Main.IssuedPairingCodeError}"
-                     Foreground="{DynamicResource AppWarningBrush}"
-                     FontSize="12" TextWrapping="Wrap"/>
+                               Text="{Binding Main.IssuedPairingCodeError}"
+                               Classes="warning" />
         </StackPanel>
-      </StackPanel>
+      </Border>
 
-      <StackPanel Classes="section">
-        <TextBlock Classes="section-header" Text="ADD SERVER"/>
+      <Border Classes="card">
+        <StackPanel Spacing="10">
+          <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,0,0,4">
+            <Border Classes="badge small">
+              <materialIcons:MaterialIcon Kind="Plus" />
+            </Border>
+            <TextBlock Classes="section-header" Text="ADD SERVER" />
+          </StackPanel>
 
-        <!-- Bootstrap only: a server this phone has never shared a network
-             with, and so could never discover. A server paired with at home
-             reports its own addresses and keeps working away from home without
-             anything being typed - see docs/REMOTE-ACCESS-PLAN.md. -->
-        <Grid ColumnDefinitions="*,Auto">
-          <controls:TextInput Grid.Column="0" Text="{Binding ManualServerAddress}"
-                              PlaceholderText="my-server.tail1234.ts.net:4533"
-                              controls:SoftKeyboard.ReopenOnTap="True"
-                              FontSize="14" Margin="0,0,8,0"/>
-          <Button Grid.Column="1" Content="Add" Command="{Binding AddManualServerCommand}"/>
-        </Grid>
-        <TextBlock IsVisible="{Binding ManualServerStatus, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
-                   Text="{Binding ManualServerStatus}"
-                   Opacity="0.6" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
+          <!-- Bootstrap only: a server this phone has never shared a network
+               with, and so could never discover. A server paired with at home
+               reports its own addresses and keeps working away from home
+               without anything being typed - see docs/REMOTE-ACCESS-PLAN.md. -->
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+            <controls:TextInput Grid.Column="0" Text="{Binding ManualServerAddress}"
+                                PlaceholderText="my-server.tail1234.ts.net:4533"
+                                controls:SoftKeyboard.ReopenOnTap="True"
+                                FontSize="14" />
+            <Button Grid.Column="1" Classes="soft" Content="Add"
+                    Command="{Binding AddManualServerCommand}"
+                    VerticalAlignment="Stretch" MinWidth="64"
+                    HorizontalContentAlignment="Center" />
+          </Grid>
+          <TextBlock IsVisible="{Binding ManualServerStatus, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
+                     Text="{Binding ManualServerStatus}"
+                     Classes="note" />
 
-        <ItemsControl ItemsSource="{Binding Main.ManualServerAddresses}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="x:String">
-              <Grid ColumnDefinitions="*,Auto" Margin="0,4">
-                <TextBlock Grid.Column="0" Text="{Binding}" Opacity="0.7" FontSize="12"
-                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                <Button Grid.Column="1" Content="Remove"
-                        Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).RemoveManualServerCommand}"
-                        CommandParameter="{Binding}"/>
-              </Grid>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-
-        <!-- Flower servers seen on this network right now (mDNS), each one
-             offering to pair with it - tapping Pair opens the code sheet, the
-             same flow the desktop sidebar runs.
-             Hidden outright once this phone is paired with something, rather
-             than shown with every button greyed out: switching servers takes
-             an explicit unpair first (Unpair above), so a list whose every row
-             is dead only invites the question of what it was for.
-             Rows reach back up to the page's own root DataContext
-             (MobileMainViewModel) for the command, since each row's own
-             DataContext here is a DiscoveredDevice instead. -->
-        <StackPanel Margin="0,8,0,0" Spacing="4"
-                    IsVisible="{Binding Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNullOrEmpty}}">
-          <TextBlock Text="Nearby servers" FontSize="13" Opacity="0.6"/>
-          <TextBlock Text="None found on this Wi-Fi."
-                     FontSize="12" Opacity="0.5" TextWrapping="Wrap"
-                     IsVisible="{Binding !Main.HasAvailableServers}"/>
-          <ItemsControl ItemsSource="{Binding Main.AvailableServers}">
+          <ItemsControl ItemsSource="{Binding Main.ManualServerAddresses}">
             <ItemsControl.ItemTemplate>
-              <DataTemplate x:DataType="services:DiscoveredDevice">
+              <DataTemplate x:DataType="x:String">
                 <Grid ColumnDefinitions="*,Auto" Margin="0,4">
-                  <TextBlock Grid.Column="0" Text="{Binding Alias}" VerticalAlignment="Center"/>
-                  <Button Grid.Column="1" Content="Pair"
-                          Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).PairWithServerCommand}"
-                          CommandParameter="{Binding}"/>
+                  <TextBlock Grid.Column="0" Text="{Binding}" Classes="note"
+                             TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                             VerticalAlignment="Center" />
+                  <Button Grid.Column="1" Classes="soft" Content="Remove"
+                          Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).RemoveManualServerCommand}"
+                          CommandParameter="{Binding}" />
                 </Grid>
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>
+
+          <!-- Flower servers seen on this network right now (mDNS), each one
+               offering to pair with it - tapping Pair opens the code sheet, the
+               same flow the desktop sidebar runs.
+               Hidden outright once this phone is paired with something, rather
+               than shown with every button greyed out: switching servers takes
+               an explicit unpair first (Unpair above), so a list whose every
+               row is dead only invites the question of what it was for.
+               Rows reach back up to the page's own root DataContext
+               (MobileMainViewModel) for the command, since each row's own
+               DataContext here is a DiscoveredDevice instead. -->
+          <StackPanel Spacing="4" Margin="0,6,0,0"
+                      IsVisible="{Binding Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNullOrEmpty}}">
+            <TextBlock Classes="rowTitle" FontSize="15" Text="Nearby servers" />
+            <TextBlock Classes="note" Text="None found on this Wi-Fi."
+                       IsVisible="{Binding !Main.HasAvailableServers}" />
+            <ItemsControl ItemsSource="{Binding Main.AvailableServers}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="services:DiscoveredDevice">
+                  <Grid ColumnDefinitions="*,Auto" Margin="0,4">
+                    <TextBlock Grid.Column="0" Text="{Binding Alias}" FontSize="15"
+                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                    <Button Grid.Column="1" Classes="soft" Content="Pair"
+                            Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).PairWithServerCommand}"
+                            CommandParameter="{Binding}" />
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
         </StackPanel>
-      </StackPanel>
+      </Border>
 
-      <!-- Which build this is, and what the process is costing: the two things
-           asked of a phone that is misbehaving, and neither is a setting.
-           The figures are polled once a second and only while this screen is
-           open (MobileMainViewModel.ActiveSheet starts/stops it) - a hot phone
-           and a stuttering track is a question about CPU and memory, and until
-           this existed there was no way to ask it from the device. -->
-      <StackPanel Classes="section" Margin="20,4,20,24">
-        <TextBlock Classes="section-header" Text="ADDITIONAL INFORMATION"/>
+      <!-- What the process is costing: asked of a phone that is misbehaving,
+           and not a setting. The figures are polled once a second and only
+           while this screen is open (MobileMainViewModel.ActiveSheet
+           starts/stops it) - a hot phone and a stuttering track is a question
+           about CPU and memory, and until this existed there was no way to ask
+           it from the device. -->
+      <Border Classes="card">
+        <StackPanel Spacing="10">
+          <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,0,0,4">
+            <Border Classes="badge small">
+              <materialIcons:MaterialIcon Kind="CogOutline" />
+            </Border>
+            <TextBlock Classes="section-header" Text="TECHNICAL DETAILS" />
+          </StackPanel>
 
-        <!-- Both columns in one font and centred on their row: a monospace
-             value beside a proportional label is two different line boxes,
-             and top-aligned they sat visibly out of line with each other. -->
-        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
-          <Grid.Styles>
-            <Style Selector="TextBlock">
-              <Setter Property="FontSize" Value="14" />
-              <Setter Property="VerticalAlignment" Value="Center" />
-              <Setter Property="Margin" Value="0,2" />
-            </Style>
-            <Style Selector="TextBlock.label">
-              <Setter Property="Opacity" Value="0.55" />
-              <Setter Property="Margin" Value="0,2,14,2" />
-            </Style>
-          </Grid.Styles>
-          <TextBlock Grid.Row="0" Grid.Column="0" Classes="label" Text="CPU" />
-          <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Resources.CpuText}" />
+          <!-- Both columns in one font and centred on their row: a monospace
+               value beside a proportional label is two different line boxes,
+               and top-aligned they sat visibly out of line with each other. -->
+          <StackPanel>
+            <StackPanel.Styles>
+              <Style Selector="Grid.detail">
+                <Setter Property="Height" Value="34" />
+              </Style>
+              <Style Selector="Grid.detail > TextBlock">
+                <Setter Property="FontSize" Value="15" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+              </Style>
+              <Style Selector="Grid.detail > TextBlock.label">
+                <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}" />
+              </Style>
+            </StackPanel.Styles>
+            <Grid Classes="detail" ColumnDefinitions="110,*">
+              <TextBlock Grid.Column="0" Classes="label" Text="CPU" />
+              <TextBlock Grid.Column="1" Text="{Binding Resources.CpuText}" />
+            </Grid>
+            <Border Classes="divider" />
+            <Grid Classes="detail" ColumnDefinitions="110,*">
+              <TextBlock Grid.Column="0" Classes="label" Text="Memory" />
+              <TextBlock Grid.Column="1" Text="{Binding Resources.MemoryText}" />
+            </Grid>
+            <Border Classes="divider" />
+            <Grid Classes="detail" ColumnDefinitions="110,*">
+              <TextBlock Grid.Column="0" Classes="label" Text="Heap" />
+              <TextBlock Grid.Column="1" Text="{Binding Resources.HeapText}" />
+            </Grid>
+            <Border Classes="divider" />
+            <Grid Classes="detail" ColumnDefinitions="110,*">
+              <TextBlock Grid.Column="0" Classes="label" Text="GC" />
+              <TextBlock Grid.Column="1" Text="{Binding Resources.GcText}" />
+            </Grid>
+            <Border Classes="divider" />
+            <Grid Classes="detail" ColumnDefinitions="110,*">
+              <TextBlock Grid.Column="0" Classes="label" Text="Threads" />
+              <TextBlock Grid.Column="1" Text="{Binding Resources.ThreadsText}" />
+            </Grid>
+          </StackPanel>
+        </StackPanel>
+      </Border>
 
-          <TextBlock Grid.Row="1" Grid.Column="0" Classes="label" Text="Memory" />
-          <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Resources.MemoryText}" />
-
-          <TextBlock Grid.Row="2" Grid.Column="0" Classes="label" Text="Heap" />
-          <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Resources.HeapText}" />
-
-          <TextBlock Grid.Row="3" Grid.Column="0" Classes="label" Text="GC" />
-          <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding Resources.GcText}" />
-
-          <TextBlock Grid.Row="4" Grid.Column="0" Classes="label" Text="Threads" />
-          <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding Resources.ThreadsText}" />
-        </Grid>
-
-        <TextBlock x:Name="VersionTextBlock" FontSize="12" Opacity="0.5" Margin="0,8,0,0"/>
-      </StackPanel>
+      <!-- Which build this is, under everything rather than in a card: it is
+           read, not changed. -->
+      <TextBlock x:Name="VersionTextBlock"
+                 FontSize="12"
+                 Foreground="{DynamicResource AppTextMutedBrush}"
+                 TextAlignment="Center" TextWrapping="Wrap"
+                 Margin="20,2,20,8" />
     </StackPanel>
     </ScrollViewer>
   </Grid>
