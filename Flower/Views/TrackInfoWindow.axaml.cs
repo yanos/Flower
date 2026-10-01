@@ -12,8 +12,6 @@ using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 
-using CommunityToolkit.Mvvm.DependencyInjection;
-
 using Material.Icons;
 
 using Microsoft.Extensions.Logging;
@@ -24,6 +22,7 @@ using Flower.Logging;
 using Flower.Models;
 using Flower.Persistence;
 using Flower.Services;
+using Flower.ViewModels;
 
 namespace Flower.Views;
 
@@ -33,13 +32,14 @@ public partial class TrackInfoWindow : Window
 
     // Only meaningful in single-track/navigable mode (see the two constructors below).
     private readonly IReadOnlyList<Track> _tracks = Array.Empty<Track>();
+    // Handed in by whoever opens this window, which already has it, rather
+    // than looked up in the container (docs/ARCHITECTURE-REVIEW.md Tier 2.3):
+    // the library it edits, and what a cover change needs (ArtEditorFor). The
+    // logger is the one exception: a Window has no constructor the container
+    // reaches, which is exactly the case AppLogging's typed-logger helper
+    // exists for.
+    private readonly MainViewModel _main;
     private readonly Library _library;
-    // Handed in by whoever opens this window, alongside the Library it edits -
-    // both come off the MainViewModel that caller already has, rather than
-    // from a second lookup in the container (docs/ARCHITECTURE-REVIEW.md
-    // Tier 2.3). The logger is the one exception: a Window has no constructor
-    // the container reaches, which is exactly the case AppLogging's
-    // typed-logger helper exists for.
     private readonly ILogger<TrackInfoWindow> _logger = AppLogging.CreateTypedLogger<TrackInfoWindow>();
     private int _index;
 
@@ -69,11 +69,12 @@ public partial class TrackInfoWindow : Window
 
     // Single-track mode: tracks/index is the full displayed list, so Prev/Next
     // can browse through it one at a time.
-    public TrackInfoWindow(IReadOnlyList<Track> tracks, int index, Library library)
+    public TrackInfoWindow(IReadOnlyList<Track> tracks, int index, MainViewModel main)
     {
         InitializeComponent();
         _tracks    = tracks;
-        _library   = library;
+        _main      = main;
+        _library   = main.Library;
         _index     = index;
         PopulateSuggestions();
         BuildFields();
@@ -86,10 +87,11 @@ public partial class TrackInfoWindow : Window
 
     // Batch mode: edit this exact set of tracks together. No Prev/Next - there's
     // no "next" when editing a fixed set as one.
-    public TrackInfoWindow(IReadOnlyList<Track> editTracks, Library library)
+    public TrackInfoWindow(IReadOnlyList<Track> editTracks, MainViewModel main)
     {
         InitializeComponent();
-        _library    = library;
+        _main       = main;
+        _library    = main.Library;
         _editTracks = editTracks;
         PopulateSuggestions();
         BuildFields();
@@ -512,28 +514,7 @@ public partial class TrackInfoWindow : Window
     // device is no longer paired with, a mixed selection - falls back to the
     // plain path display, which already has a "Multiple values" answer for the
     // mixed case.
-    //
-    // Read off AppSettings through the container rather than handed in, for the
-    // same reason the logger above is: a Window has no constructor the
-    // container reaches, and threading a fourth argument through all six call
-    // sites to name one label is not worth it.
-    private string? PairedServerSourceName()
-    {
-        if (_editTracks.Count == 0)
-            return null;
-
-        var settings = Ioc.Default.GetService<AppSettings>();
-        if (settings?.PairedServerFingerprint is not { Length: > 0 } fingerprint)
-            return null;
-
-        foreach (var track in _editTracks)
-        {
-            if (track.Path != null || track.OriginDeviceFingerprint != fingerprint)
-                return null;
-        }
-
-        return string.IsNullOrWhiteSpace(settings.PairedServerAlias) ? "Server" : settings.PairedServerAlias;
-    }
+    private string? PairedServerSourceName() => _main.PairedServerSourceName(_editTracks);
 
     // Shows the first selected track's art (embedded tag picture, falling back
     // to a cover/folder image file - see AlbumArtLoader). For a batch selection
@@ -666,7 +647,7 @@ public partial class TrackInfoWindow : Window
     //
     // Unlike every other field in this window, artwork is not staged and
     // applied on OK: a change here writes the picture into the tag immediately
-    // (ApplyArtChangeAsync). Two reasons. The tag write is a whole-file rewrite
+    // (AlbumArtEditor). Two reasons. The tag write is a whole-file rewrite
     // of megabytes, not a string assignment, so batching it behind OK would make
     // Cancel look free while the expensive part still had to happen; and the
     // preview the user is looking at *is* the file's art once it is written, so
@@ -676,81 +657,15 @@ public partial class TrackInfoWindow : Window
     //
     // "The file" is not always one of this device's: a track that only exists on
     // the paired server is written by asking that server to do it - see
-    // ServerArtAlbumIds.
+    // AlbumArtEditor.ServerAlbumIds.
 
-    // The tracks a write can land on directly: a file on this disk to embed a
-    // picture into. A placeholder that only exists on the paired server has
-    // none, and is handled by ServerArtAlbumIds below instead.
-    private List<Track> ArtWriteTargets() =>
-        [.. _editTracks.Where(AlbumArtLoader.IsLocalFile)];
+    // Rebuilt per call because _editTracks is replaced on every Navigate();
+    // it holds nothing but the list it is given.
+    private AlbumArtEditor ArtEditor() => _main.ArtEditorFor(_editTracks, _logger);
 
-    // ── Artwork on the paired server ───────────────────────────────────────
-    //
-    // The other half of "replace this cover": the track being looked at has no
-    // local file, because it lives on the server this device is paired with.
-    // Rather than refuse (which is what the tab did until now - "there's no
-    // local file to write artwork into"), an admin device asks the server to do
-    // the write, over the same signed admin surface the settings screen uses.
-    // See AdminEndpoints' /cover-art routes for why that is an admin route
-    // rather than one a listener could reach.
-    //
-    // Addressed by album id, not by track: art is served per album on the way
-    // out (LibraryDtoMapper's CoverArt field, and PeerCoverArtUrlResolver asks
-    // for exactly this id), so writing into one track's file would leave the
-    // album still serving whichever other file the read path reached first.
-    // Distinct, because a batch selection can span albums.
-    private List<string> ServerArtAlbumIds()
-    {
-        if (_editTracks.Count == 0 || ArtWriteTargets().Count > 0 || PairedServerSourceName() == null)
-            return [];
+    private List<Track> ArtWriteTargets() => ArtEditor().LocalTargets();
 
-        // PeerTrackResolver owns "may this device still ask that peer for this
-        // track" - the same rule the art fetch goes through. No resolver, no
-        // credentials, or a peer that is not reachable right now all mean the
-        // same thing here: nothing to send the picture to.
-        if (Ioc.Default.GetService<PeerTrackResolver>()?.Resolve(_editTracks[0]) == null)
-            return [];
-        if (Ioc.Default.GetService<IPeerCredentials>() == null)
-            return [];
-
-        return [.. _editTracks.Select(CatalogIdentity.AlbumIdFor).Distinct(StringComparer.Ordinal)];
-    }
-
-    // Runs one admin call per album the selection covers, and reports how many
-    // files the server said it rewrote. A ServerAdminException carries the
-    // server's own words ("This device is paired, but is not an administrator
-    // of that server.") which is exactly what the tab should show.
-    private async Task<(int Written, string? Error)> ApplyServerArtAsync(
-        IReadOnlyList<string> albumIds, Func<ServerAdminClient, string, Task<CoverArtWriteDto>> apply)
-    {
-        var device = Ioc.Default.GetService<PeerTrackResolver>()?.Resolve(_editTracks[0]);
-        var credentials = Ioc.Default.GetService<IPeerCredentials>();
-        if (device == null || credentials == null)
-            return (0, "That server isn't reachable right now.");
-
-        // PeerHttpClient rather than a bare one, for the same reason the art
-        // fetch uses it: this is the same peer on the same origin, under the
-        // same accepted-certificate rule. Generous timeout - the server is
-        // rewriting whole audio files, one per track on the album.
-        using var http = PeerHttpClient.Create(TimeSpan.FromMinutes(2));
-        var client = new ServerAdminClient(http, device.BaseUri, ServerAdminClient.SignWith(credentials), logger: _logger);
-
-        var written = 0;
-        foreach (var albumId in albumIds)
-        {
-            try
-            {
-                written += (await apply(client, albumId)).Written;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Could not change the album art for {AlbumId} on {Server}", albumId, device.BaseUri);
-                return (written, ex is ServerAdminException ? ex.Message : "Could not reach that server.");
-            }
-        }
-
-        return (written, null);
-    }
+    private List<string> ServerArtAlbumIds() => ArtEditor().ServerAlbumIds();
 
     private void SetUpArtworkDropTarget()
     {
@@ -831,63 +746,27 @@ public partial class TrackInfoWindow : Window
         await WriteArtAsync(bytes, mimeType);
     }
 
-    // Embeds a picture in the selected tracks' own files, or - when they only
-    // exist on the paired server - asks that server to do the same to its
-    // (AlbumArtWriter is the shared implementation of the write itself, so the
-    // two paths cannot disagree about how a picture goes into a tag).
     private Task WriteArtAsync(byte[] bytes, string mimeType) =>
-        ApplyArtChangeAsync(
-            path => AlbumArtWriter.TryWrite(path, bytes, mimeType, _logger),
-            (client, albumId) => client.SetCoverArtAsync(albumId, bytes, mimeType),
-            "The artwork couldn't be written to");
+        ApplyArtChangeAsync(editor => editor.WriteAsync(bytes, mimeType));
 
-    // The counterpart: takes the picture back out. Not a confirmation-guarded
-    // action even though it destroys data, for the same reason Change is not -
-    // it is one explicit click on a button that says what it does, on a file
-    // the user is already editing the tags of, and the way back is to drop the
-    // old image in again (which is why Open Full Size and dragging the art out
-    // both exist before this button does).
+    // Not a confirmation-guarded action even though it destroys data, for the
+    // same reason Change is not - it is one explicit click on a button that
+    // says what it does, on a file the user is already editing the tags of,
+    // and the way back is to drop the old image in again (which is why Open
+    // Full Size and dragging the art out both exist before this button does).
     private Task RemoveArtAsync() =>
-        ApplyArtChangeAsync(
-            path => AlbumArtWriter.TryRemove(path, _logger),
-            (client, albumId) => client.RemoveCoverArtAsync(albumId),
-            "The artwork couldn't be removed from");
+        ApplyArtChangeAsync(editor => editor.RemoveAsync());
 
-    private async Task ApplyArtChangeAsync(
-        Func<string, bool> writeLocal,
-        Func<ServerAdminClient, string, Task<CoverArtWriteDto>> writeServer,
-        string failureVerb)
+    private async Task ApplyArtChangeAsync(Func<AlbumArtEditor, Task<string?>> change)
     {
-        var targets = ArtWriteTargets();
-        var albumIds = ServerArtAlbumIds();
-        if (targets.Count == 0 && albumIds.Count == 0)
+        var editor = ArtEditor();
+        if (!editor.CanWrite)
             return;
 
         ChangeArtButton.IsEnabled = false;
         RemoveArtButton.IsEnabled = false;
 
-        string? message = null;
-        if (targets.Count > 0)
-        {
-            var failed = await Task.Run(() => targets.Count(track => !writeLocal(track.Path!)));
-            if (failed > 0)
-                message = failed == targets.Count
-                    ? $"{failureVerb} the file."
-                    : $"{failureVerb} {failed} of {targets.Count} files.";
-        }
-        else
-        {
-            var (written, error) = await ApplyServerArtAsync(albumIds, writeServer);
-            message = error ?? (written == 0 ? "The server didn't change any files." : null);
-        }
-
-        // The cached bitmap was decoded from bytes that are no longer what the
-        // file (or the server) holds; without this every other view in the app
-        // keeps painting the old cover until the process restarts.
-        foreach (var track in _editTracks)
-            AlbumArtLoader.Invalidate(track);
-
-        _library.NotifyTracksChanged(_editTracks, TrackChange.Artwork);
+        var message = await change(editor);
         await LoadAlbumArtAsync();
 
         if (message != null)

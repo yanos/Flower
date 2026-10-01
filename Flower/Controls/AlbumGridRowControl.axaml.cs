@@ -307,7 +307,7 @@ public partial class AlbumGridRowControl : UserControl
         TrackInfoWindow infoWindow;
         if (selectedTracks.Count > 1)
         {
-            infoWindow = new TrackInfoWindow(selectedTracks, vm.Library) { ShowInTaskbar = false };
+            infoWindow = new TrackInfoWindow(selectedTracks, vm) { ShowInTaskbar = false };
         }
         else
         {
@@ -318,7 +318,7 @@ public partial class AlbumGridRowControl : UserControl
             var index = tracks.IndexOf(track);
             if (index < 0)
                 index = 0;
-            infoWindow = new TrackInfoWindow(tracks, index, vm.Library) { ShowInTaskbar = false };
+            infoWindow = new TrackInfoWindow(tracks, index, vm) { ShowInTaskbar = false };
         }
 
         if (TopLevel.GetTopLevel(this) is Window owner)

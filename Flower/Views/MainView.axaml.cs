@@ -1372,7 +1372,7 @@ public partial class MainView : UserControl
         if (selected.Count > 1)
         {
             // Batch mode: edit the whole multi-selection together, no Prev/Next.
-            infoWindow = new TrackInfoWindow(selected, vm.Library) { ShowInTaskbar = false };
+            infoWindow = new TrackInfoWindow(selected, vm) { ShowInTaskbar = false };
         }
         else
         {
@@ -1382,7 +1382,7 @@ public partial class MainView : UserControl
             var index  = tracks.ToList().IndexOf(track);
             if (index < 0)
                 index = 0;
-            infoWindow = new TrackInfoWindow(tracks, index, vm.Library) { ShowInTaskbar = false };
+            infoWindow = new TrackInfoWindow(tracks, index, vm) { ShowInTaskbar = false };
             infoWindow.TrackNavigated += (_, t) => MusicList.SelectedTrack = t;
         }
 
@@ -1413,8 +1413,8 @@ public partial class MainView : UserControl
             return;
 
         var infoWindow = target.FocusIndex is { } index
-            ? new TrackInfoWindow(target.Tracks, index, vm.Library) { ShowInTaskbar = false }
-            : new TrackInfoWindow(target.Tracks, vm.Library) { ShowInTaskbar = false };
+            ? new TrackInfoWindow(target.Tracks, index, vm) { ShowInTaskbar = false }
+            : new TrackInfoWindow(target.Tracks, vm) { ShowInTaskbar = false };
 
         if (TopLevel.GetTopLevel(this) is Window owner)
             infoWindow.Show(owner);

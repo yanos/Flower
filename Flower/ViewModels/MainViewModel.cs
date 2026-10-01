@@ -47,6 +47,11 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // OpenSelectedServerSettingsAsync). Null on Flower.Web/WASM, same as
     // _deviceIdentity - see the constructor's note on the sync-stack parameters.
     private readonly DeviceSigningKey? _signingKey;
+
+    // Kept for ArtEditorFor: changing the cover of a song that lives on the
+    // paired server means finding that server and signing a request to it.
+    private readonly PeerTrackResolver? _peerTrackResolver;
+    private readonly IPeerCredentials? _peerCredentials;
     private PairedServerReachability? _reachability;
     private AppSettingsStore? _appSettingsStore;
 
@@ -57,6 +62,18 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public PeerSyncCoordinator Sync { get; } = null!;
 
     public bool IsSyncing => Sync.IsSyncing;
+
+    // Changing a cover, for the desktop Track Info window. Here because this
+    // holds what that needs: the library, and the paired server and the
+    // credentials to reach it.
+    public AlbumArtEditor ArtEditorFor(IReadOnlyList<Track> tracks, ILogger logger) =>
+        new(tracks, Library, _appSettings, _peerTrackResolver, _peerCredentials, logger);
+
+    // The paired server's name when every one of these tracks is one of its
+    // songs rather than a file here; null otherwise. Track Info names it where
+    // a file path would go.
+    public string? PairedServerSourceName(IReadOnlyList<Track> tracks) =>
+        AlbumArtEditor.PairedServerSourceName(tracks, _appSettings);
 
     public void ScheduleContentSync() => Sync.ScheduleContentSync();
 
@@ -1504,7 +1521,11 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         // Trailing + defaulted for the same reason as log above: nothing in a
         // MainViewModel test needs smart playlists recomputing, and the rule
         // editor is the only thing that asks for this.
-        SmartPlaylistRefresher? smartPlaylists = null)
+        SmartPlaylistRefresher? smartPlaylists = null,
+        // Trailing + defaulted for the same reason: only a cover change on a
+        // server's song signs with it (ArtEditorFor). The container hands in
+        // whichever this head has - a device key, or the browser's pairing.
+        IPeerCredentials? peerCredentials = null)
     {
         Library                = library;
         SmartPlaylists         = smartPlaylists;
@@ -1521,6 +1542,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         _reachability          = reachability;
         _deviceIdentity        = deviceIdentity;
         _signingKey            = signingKey;
+        _peerTrackResolver     = peerTrackResolver;
+        _peerCredentials       = peerCredentials;
         DeviceNicknames        = deviceNicknameStore;
         NetworkDiscovery       = networkDiscovery;
         _appSettingsStore      = appSettingsStore;
