@@ -12,160 +12,316 @@
              Padding="{DynamicResource SheetBottomInset}">
 
   <UserControl.Styles>
-    <Style Selector="TextBlock.lbl">
-      <Setter Property="FontSize" Value="12" />
-      <Setter Property="Opacity" Value="0.45" />
-      <Setter Property="Margin" Value="0,10,0,2" />
+    <!-- Cards as on Settings: lighter than the page, rounded, each headed by
+         an accent glyph and a heading in small capitals. -->
+    <Style Selector="Border.card">
+      <Setter Property="Background" Value="{DynamicResource AppBackgroundBrush}" />
+      <Setter Property="CornerRadius" Value="18" />
+      <Setter Property="BoxShadow" Value="{DynamicResource AppButtonShadow}" />
+      <Setter Property="Padding" Value="14,14,14,16" />
+      <Setter Property="Margin" Value="16,0,16,14" />
     </Style>
-    <Style Selector="TextBlock.sectionHeader">
-      <Setter Property="FontSize" Value="11" />
+    <Style Selector="TextBlock.section-header">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="LetterSpacing" Value="1.2" />
       <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="LetterSpacing" Value="0.8" />
-      <Setter Property="Opacity" Value="0.4" />
-      <Setter Property="Margin" Value="0,20,0,2" />
+      <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
-    <Style Selector=":is(TextBox).val">
+    <Style Selector="StackPanel.heading">
+      <Setter Property="Orientation" Value="Horizontal" />
+      <Setter Property="Spacing" Value="10" />
+      <Setter Property="Margin" Value="2,0,0,2" />
+    </Style>
+    <Style Selector="StackPanel.heading > materialIcons|MaterialIcon">
+      <Setter Property="Width" Value="18" />
+      <Setter Property="Height" Value="18" />
+      <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <!-- A field's name, to the left of its box. -->
+    <Style Selector="TextBlock.lbl">
       <Setter Property="FontSize" Value="15" />
-      <Setter Property="Padding" Value="8,6" />
+      <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
-    <Style Selector="TextBlock.val">
-      <Setter Property="FontSize" Value="14" />
-      <Setter Property="Margin" Value="0,0,0,2" />
+    <!-- The name beside a box several lines tall sits on its first line. -->
+    <Style Selector="TextBlock.lbl.top">
+      <Setter Property="VerticalAlignment" Value="Top" />
+      <Setter Property="Margin" Value="0,10,0,0" />
+    </Style>
+    <Style Selector="TextBox.val">
+      <Setter Property="FontSize" Value="16" />
+      <Setter Property="MinHeight" Value="42" />
+      <Setter Property="Padding" Value="12,9" />
+      <Setter Property="CornerRadius" Value="9" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="Background" Value="{DynamicResource AppBackgroundBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}" />
+    </Style>
+    <!-- The clear button only on the field being typed in: on a form this
+         dense, one beside every filled field is a column of crosses, and in
+         the narrow number boxes it takes half the room. -->
+    <!-- TextBox rather than TextInput in the selector, because TextInput
+         styles as a TextBox (its StyleKeyOverride) and a TextInput selector
+         would match nothing; every .val box on this sheet is a TextInput. -->
+    <Style Selector="TextBox.val">
+      <Setter Property="controls:TextInput.ShowsClearButton" Value="False" />
+    </Style>
+    <Style Selector="TextBox.val:focus">
+      <Setter Property="controls:TextInput.ShowsClearButton" Value="True" />
+    </Style>
+    <Style Selector="TextBox.val.multi">
+      <Setter Property="AcceptsReturn" Value="True" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="VerticalContentAlignment" Value="Top" />
+      <Setter Property="MinHeight" Value="76" />
+    </Style>
+
+    <!-- The read-only figures in the two cards at the foot of the sheet. -->
+    <Style Selector="TextBlock.figureLabel">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}" />
+    </Style>
+    <Style Selector="TextBlock.figure">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="TextWrapping" Value="Wrap" />
     </Style>
   </UserControl.Styles>
 
   <Grid RowDefinitions="Auto,*">
 
-    <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Height="52" Margin="4,4,16,4">
-      <Button Grid.Column="0"
-              Click="Cancel_Click"
-              Background="Transparent" BorderThickness="0" Padding="10">
-        <materialIcons:MaterialIcon Kind="ChevronDown" Width="26" Height="26" />
-      </Button>
-      <TextBlock Grid.Column="1" Text="Track Info" FontSize="15" FontWeight="SemiBold"
-                 HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.7" />
-      <Button Grid.Column="2"
-              Click="Save_Click"
-              Background="Transparent" BorderThickness="0" Padding="10">
-        <TextBlock Text="Save" FontSize="15" FontWeight="SemiBold" />
-      </Button>
-    </Grid>
+    <!-- A round chevron and a round check facing it, as on the smart
+         playlist editor: 40px circles 12 in from either edge. The check is
+         Save; the chevron leaves without saving. The title is centred on the
+         sheet between them. -->
+    <Panel Grid.Row="0" Height="60" Margin="12,4,12,4">
+      <TextBlock Text="Track Info"
+                 FontFamily="{DynamicResource AppDisplayFontFamily}"
+                 FontSize="32"
+                 FontWeight="SemiBold"
+                 Foreground="{DynamicResource AppAccentBrush}"
+                 HorizontalAlignment="Center" VerticalAlignment="Center" />
+      <Border Classes="floating" Width="40" HorizontalAlignment="Left">
+        <Button Classes="pill"
+                Click="Cancel_Click"
+                HorizontalAlignment="Center">
+          <materialIcons:MaterialIcon Kind="ChevronDown" Width="22" Height="22" />
+        </Button>
+      </Border>
+      <Border Classes="floating" Width="40" HorizontalAlignment="Right">
+        <Button x:Name="SaveButton"
+                Classes="pill"
+                Click="Save_Click"
+                HorizontalAlignment="Center">
+          <materialIcons:MaterialIcon Kind="Check" Width="20" Height="20" />
+        </Button>
+      </Border>
+    </Panel>
 
-    <ScrollViewer Grid.Row="1">
-      <StackPanel Margin="20,0,20,32">
+    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                  controls:SoftKeyboard.AvoidOcclusion="True">
+      <StackPanel Margin="0,4,0,16">
 
-        <TextBlock Text="Title" Classes="lbl" />
-        <controls:TextInput x:Name="TitleBox" Classes="val" FontSize="18" FontWeight="SemiBold" />
+        <!-- The cover beside what it is the cover of. The three lines follow
+             the boxes below as they are typed in, so the card always shows
+             what Save would write. -->
+        <Border Classes="card">
+          <Grid ColumnDefinitions="128,*" ColumnSpacing="14">
+            <controls:AlbumArtView x:Name="ArtView" Grid.Column="0"
+                                   Width="128" Height="128" ArtCornerRadius="12" />
+            <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
+              <TextBlock x:Name="AlbumHeading"
+                         Text="{Binding #AlbumBox.Text}"
+                         FontSize="18" FontWeight="SemiBold"
+                         TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis" />
+              <TextBlock x:Name="ArtistHeading"
+                         Text="{Binding #ArtistBox.Text}"
+                         FontSize="15"
+                         Foreground="{DynamicResource AppTextSecondaryBrush}"
+                         TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
+              <TextBlock x:Name="YearHeading"
+                         Text="{Binding #YearBox.Text}"
+                         FontSize="14"
+                         Foreground="{DynamicResource AppTextMutedBrush}" />
+            </StackPanel>
+          </Grid>
+        </Border>
 
-        <TextBlock Text="Artist" Classes="lbl" />
-        <controls:TextInput x:Name="ArtistBox" Classes="val" />
-
-        <TextBlock Text="Album" Classes="lbl" />
-        <controls:TextInput x:Name="AlbumBox" Classes="val" />
-
-        <TextBlock Text="ALBUM" Classes="sectionHeader" />
-        <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" Margin="0,0,0,4">
-          <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,4,0">
-            <TextBlock Text="Track #" Classes="lbl" />
-            <controls:TextInput x:Name="TrackNumBox" Classes="val" />
+        <Border Classes="card">
+          <StackPanel Spacing="10">
+            <StackPanel Classes="heading">
+              <materialIcons:MaterialIcon Kind="MusicNote" />
+              <TextBlock Classes="section-header" Text="BASIC INFORMATION" />
+            </StackPanel>
+            <Grid ColumnDefinitions="88,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="10">
+              <TextBlock Grid.Row="0" Classes="lbl" Text="Title" />
+              <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="TitleBox" Classes="val" />
+              <TextBlock Grid.Row="1" Classes="lbl" Text="Artist" />
+              <controls:TextInput Grid.Row="1" Grid.Column="1" x:Name="ArtistBox" Classes="val" />
+              <TextBlock Grid.Row="2" Classes="lbl" Text="Album" />
+              <controls:TextInput Grid.Row="2" Grid.Column="1" x:Name="AlbumBox" Classes="val" />
+            </Grid>
           </StackPanel>
-          <StackPanel Grid.Row="0" Grid.Column="1" Margin="4,0,0,0">
-            <TextBlock Text="of" Classes="lbl" />
-            <controls:TextInput x:Name="TrackTotalBox" Classes="val" />
+        </Border>
+
+        <Border Classes="card">
+          <StackPanel Spacing="10">
+            <StackPanel Classes="heading">
+              <materialIcons:MaterialIcon Kind="FormatListBulleted" />
+              <TextBlock Classes="section-header" Text="TRACK DETAILS" />
+            </StackPanel>
+            <Grid ColumnDefinitions="88,*,40,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="10">
+              <TextBlock Grid.Row="0" Classes="lbl" Text="Track #" />
+              <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="TrackNumBox" Classes="val" />
+              <TextBlock Grid.Row="0" Grid.Column="2" Classes="lbl" Text="of" HorizontalAlignment="Center" />
+              <controls:TextInput Grid.Row="0" Grid.Column="3" x:Name="TrackTotalBox" Classes="val" />
+
+              <TextBlock Grid.Row="1" Classes="lbl" Text="Disc #" />
+              <controls:TextInput Grid.Row="1" Grid.Column="1" x:Name="DiscNumBox" Classes="val" />
+              <TextBlock Grid.Row="1" Grid.Column="2" Classes="lbl" Text="of" HorizontalAlignment="Center" />
+              <controls:TextInput Grid.Row="1" Grid.Column="3" x:Name="DiscTotalBox" Classes="val" />
+
+              <TextBlock Grid.Row="2" Classes="lbl" Text="Year" />
+              <controls:TextInput Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" x:Name="YearBox" Classes="val" />
+
+              <!-- Typed like any other field, with the library's own genres a
+                   tap away on the chevron - so picking one reuses its exact
+                   spelling, as the desktop's suggestions do for artists. -->
+              <TextBlock Grid.Row="3" Classes="lbl" Text="Genre" />
+              <Panel Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="3">
+                <controls:TextInput x:Name="GenreBox" Classes="val" ShowsClearButton="False" Padding="12,9,44,9" />
+                <Button x:Name="GenreMenuButton"
+                        HorizontalAlignment="Right" VerticalAlignment="Center"
+                        Margin="0,0,4,0" Padding="8"
+                        Background="Transparent" BorderThickness="0"
+                        Click="GenreMenu_Click">
+                  <materialIcons:MaterialIcon Kind="ChevronDown" Width="20" Height="20"
+                                              Foreground="{DynamicResource AppTextSecondaryBrush}" />
+                </Button>
+              </Panel>
+            </Grid>
           </StackPanel>
-          <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,4,0">
-            <TextBlock Text="Disc #" Classes="lbl" />
-            <controls:TextInput x:Name="DiscNumBox" Classes="val" />
+        </Border>
+
+        <Border Classes="card">
+          <StackPanel Spacing="10">
+            <StackPanel Classes="heading">
+              <materialIcons:MaterialIcon Kind="Waveform" />
+              <TextBlock Classes="section-header" Text="MUSICAL DETAILS" />
+            </StackPanel>
+            <Grid ColumnDefinitions="88,*,52,*" RowDefinitions="Auto,Auto" RowSpacing="10">
+              <TextBlock Grid.Row="0" Classes="lbl" Text="BPM" />
+              <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="BpmBox" Classes="val" />
+              <TextBlock Grid.Row="0" Grid.Column="2" Classes="lbl" Text="Key" HorizontalAlignment="Center" />
+              <controls:TextInput Grid.Row="0" Grid.Column="3" x:Name="KeyBox" Classes="val" />
+
+              <TextBlock Grid.Row="1" Classes="lbl" Text="Grouping" />
+              <controls:TextInput Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" x:Name="GroupingBox" Classes="val" />
+            </Grid>
           </StackPanel>
-          <StackPanel Grid.Row="1" Grid.Column="1" Margin="4,0,0,0">
-            <TextBlock Text="of" Classes="lbl" />
-            <controls:TextInput x:Name="DiscTotalBox" Classes="val" />
+        </Border>
+
+        <Border Classes="card">
+          <StackPanel Spacing="10">
+            <StackPanel Classes="heading">
+              <materialIcons:MaterialIcon Kind="AccountMultiple" />
+              <TextBlock Classes="section-header" Text="PEOPLE" />
+            </StackPanel>
+            <Grid ColumnDefinitions="108,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="10">
+              <TextBlock Grid.Row="0" Classes="lbl" Text="Album Artist" />
+              <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="AlbumArtistBox" Classes="val" />
+              <TextBlock Grid.Row="1" Classes="lbl" Text="Composer" />
+              <controls:TextInput Grid.Row="1" Grid.Column="1" x:Name="ComposerBox" Classes="val" />
+              <TextBlock Grid.Row="2" Classes="lbl" Text="Conductor" />
+              <controls:TextInput Grid.Row="2" Grid.Column="1" x:Name="ConductorBox" Classes="val" />
+              <TextBlock Grid.Row="3" Classes="lbl" Text="Remixed By" />
+              <controls:TextInput Grid.Row="3" Grid.Column="1" x:Name="RemixedByBox" Classes="val" />
+            </Grid>
           </StackPanel>
+        </Border>
+
+        <Border Classes="card">
+          <StackPanel Spacing="10">
+            <StackPanel Classes="heading">
+              <materialIcons:MaterialIcon Kind="FileDocument" />
+              <TextBlock Classes="section-header" Text="DESCRIPTIONS" />
+            </StackPanel>
+            <Grid ColumnDefinitions="108,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="10">
+              <TextBlock Grid.Row="0" Classes="lbl" Text="Subtitle" />
+              <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="SubtitleBox" Classes="val" />
+              <TextBlock Grid.Row="1" Classes="lbl top" Text="Description" />
+              <controls:TextInput Grid.Row="1" Grid.Column="1" x:Name="DescriptionBox" Classes="val multi" />
+              <TextBlock Grid.Row="2" Classes="lbl top" Text="Comment" />
+              <controls:TextInput Grid.Row="2" Grid.Column="1" x:Name="CommentBox" Classes="val multi" />
+              <TextBlock Grid.Row="3" Classes="lbl" Text="Publisher" />
+              <controls:TextInput Grid.Row="3" Grid.Column="1" x:Name="PublisherBox" Classes="val" />
+              <TextBlock Grid.Row="4" Classes="lbl" Text="Copyright" />
+              <controls:TextInput Grid.Row="4" Grid.Column="1" x:Name="CopyrightBox" Classes="val" />
+              <TextBlock Grid.Row="5" Classes="lbl" Text="ISRC" />
+              <controls:TextInput Grid.Row="5" Grid.Column="1" x:Name="ISRCBox" Classes="val" />
+            </Grid>
+          </StackPanel>
+        </Border>
+
+        <Border Classes="card">
+          <StackPanel Spacing="10">
+            <StackPanel Classes="heading">
+              <materialIcons:MaterialIcon Kind="FormatQuoteOpen" />
+              <TextBlock Classes="section-header" Text="LYRICS" />
+            </StackPanel>
+            <controls:TextInput x:Name="LyricsBox" Classes="val multi" MinHeight="100" />
+          </StackPanel>
+        </Border>
+
+        <!-- Read-only, side by side: Flower's own record of what has been
+             listened to (as in the desktop window's Listening section), and
+             what the file is. -->
+        <Grid ColumnDefinitions="2*,3*" ColumnSpacing="10" Margin="16,0,16,14">
+          <Border Grid.Column="0" Classes="card" Margin="0">
+            <StackPanel Spacing="4">
+              <StackPanel Classes="heading" Margin="2,0,0,10">
+                <materialIcons:MaterialIcon Kind="Headphones" />
+                <TextBlock Classes="section-header" Text="LISTENING" />
+              </StackPanel>
+              <TextBlock Classes="lbl" Text="Play Count" />
+              <TextBlock x:Name="PlayCountValue" FontSize="22" Margin="0,0,0,10" />
+              <TextBlock Classes="lbl" Text="Last Played" />
+              <TextBlock x:Name="LastPlayedValue" FontSize="15" TextWrapping="Wrap" />
+            </StackPanel>
+          </Border>
+
+          <Border Grid.Column="1" Classes="card" Margin="0">
+            <StackPanel>
+              <StackPanel Classes="heading" Margin="2,0,0,10">
+                <materialIcons:MaterialIcon Kind="CogOutline" />
+                <TextBlock Classes="section-header" Text="TECHNICAL" />
+              </StackPanel>
+              <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" RowSpacing="4"
+                    RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto">
+                <TextBlock Grid.Row="0" Classes="figureLabel" Text="Duration" />
+                <TextBlock Grid.Row="0" Grid.Column="1" x:Name="DurationValue" Classes="figure" />
+                <TextBlock Grid.Row="1" Classes="figureLabel" Text="Codec" />
+                <TextBlock Grid.Row="1" Grid.Column="1" x:Name="CodecValue" Classes="figure" />
+                <TextBlock Grid.Row="2" Classes="figureLabel" Text="Bit Rate" />
+                <TextBlock Grid.Row="2" Grid.Column="1" x:Name="BitrateValue" Classes="figure" />
+                <TextBlock Grid.Row="3" Classes="figureLabel" Text="Sample Rate" />
+                <TextBlock Grid.Row="3" Grid.Column="1" x:Name="SampleRateValue" Classes="figure" />
+                <TextBlock Grid.Row="4" Classes="figureLabel" Text="Channels" />
+                <TextBlock Grid.Row="4" Grid.Column="1" x:Name="ChannelsValue" Classes="figure" />
+                <TextBlock Grid.Row="5" Classes="figureLabel" Text="Bit Depth" />
+                <TextBlock Grid.Row="5" Grid.Column="1" x:Name="BitDepthValue" Classes="figure" />
+                <!-- "Source" and the server's name for a song that lives on
+                     the paired server, which has no file here to name. -->
+                <TextBlock Grid.Row="6" x:Name="FileLabel" Classes="figureLabel" Text="File" />
+                <TextBlock Grid.Row="6" Grid.Column="1" x:Name="PathValue" Classes="figure" FontSize="11" />
+                <TextBlock Grid.Row="7" Classes="figureLabel" Text="Date Added" />
+                <TextBlock Grid.Row="7" Grid.Column="1" x:Name="DateAddedValue" Classes="figure" />
+              </Grid>
+            </StackPanel>
+          </Border>
         </Grid>
-
-        <TextBlock Text="Year" Classes="lbl" />
-        <controls:TextInput x:Name="YearBox" Classes="val" />
-
-        <TextBlock Text="Genre" Classes="lbl" />
-        <controls:TextInput x:Name="GenreBox" Classes="val" />
-
-        <TextBlock Text="BPM" Classes="lbl" />
-        <controls:TextInput x:Name="BpmBox" Classes="val" />
-
-        <TextBlock Text="Key" Classes="lbl" />
-        <controls:TextInput x:Name="KeyBox" Classes="val" />
-
-        <TextBlock Text="Grouping" Classes="lbl" />
-        <controls:TextInput x:Name="GroupingBox" Classes="val" />
-
-        <TextBlock Text="PEOPLE" Classes="sectionHeader" />
-        <TextBlock Text="Album Artist" Classes="lbl" />
-        <controls:TextInput x:Name="AlbumArtistBox" Classes="val" />
-
-        <TextBlock Text="Composer" Classes="lbl" />
-        <controls:TextInput x:Name="ComposerBox" Classes="val" />
-
-        <TextBlock Text="Conductor" Classes="lbl" />
-        <controls:TextInput x:Name="ConductorBox" Classes="val" />
-
-        <TextBlock Text="Remixed By" Classes="lbl" />
-        <controls:TextInput x:Name="RemixedByBox" Classes="val" />
-
-        <TextBlock Text="DESCRIPTIONS" Classes="sectionHeader" />
-        <TextBlock Text="Subtitle" Classes="lbl" />
-        <controls:TextInput x:Name="SubtitleBox" Classes="val" />
-
-        <TextBlock Text="Description" Classes="lbl" />
-        <controls:TextInput x:Name="DescriptionBox" Classes="val" AcceptsReturn="True" MinHeight="48" TextWrapping="Wrap" />
-
-        <TextBlock Text="Comment" Classes="lbl" />
-        <controls:TextInput x:Name="CommentBox" Classes="val" AcceptsReturn="True" MinHeight="48" TextWrapping="Wrap" />
-
-        <TextBlock Text="Publisher" Classes="lbl" />
-        <controls:TextInput x:Name="PublisherBox" Classes="val" />
-
-        <TextBlock Text="Copyright" Classes="lbl" />
-        <controls:TextInput x:Name="CopyrightBox" Classes="val" />
-
-        <TextBlock Text="ISRC" Classes="lbl" />
-        <controls:TextInput x:Name="ISRCBox" Classes="val" />
-
-        <TextBlock Text="LYRICS" Classes="sectionHeader" />
-        <controls:TextInput x:Name="LyricsBox" Classes="val" AcceptsReturn="True" MinHeight="80" TextWrapping="Wrap" />
-
-        <!-- Flower's own record of what has been listened to rather than
-             tags, so read-only, as in the desktop window's Listening section. -->
-        <TextBlock Text="LISTENING" Classes="sectionHeader" />
-        <TextBlock Text="Play Count" Classes="lbl" />
-        <TextBlock x:Name="PlayCountValue" Classes="val" />
-
-        <TextBlock Text="Last Played" Classes="lbl" />
-        <TextBlock x:Name="LastPlayedValue" Classes="val" />
-
-        <TextBlock Text="TECHNICAL" Classes="sectionHeader" />
-        <TextBlock Text="Duration" Classes="lbl" />
-        <TextBlock x:Name="DurationValue" Classes="val" />
-
-        <TextBlock Text="Codec" Classes="lbl" />
-        <TextBlock x:Name="CodecValue" Classes="val" />
-
-        <TextBlock Text="Bit Rate" Classes="lbl" />
-        <TextBlock x:Name="BitrateValue" Classes="val" />
-
-        <TextBlock Text="Sample Rate" Classes="lbl" />
-        <TextBlock x:Name="SampleRateValue" Classes="val" />
-
-        <TextBlock Text="Channels" Classes="lbl" />
-        <TextBlock x:Name="ChannelsValue" Classes="val" />
-
-        <TextBlock Text="Bit Depth" Classes="lbl" />
-        <TextBlock x:Name="BitDepthValue" Classes="val" />
-
-        <TextBlock Text="File" Classes="lbl" />
-        <TextBlock x:Name="PathValue" Classes="val" FontSize="11" Opacity="0.6" TextWrapping="Wrap" />
-
-        <TextBlock Text="Date Added" Classes="lbl" />
-        <TextBlock x:Name="DateAddedValue" Classes="val" />
 
       </StackPanel>
     </ScrollViewer>

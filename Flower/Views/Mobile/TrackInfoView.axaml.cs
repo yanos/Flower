@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel;
 using System.Globalization;
+using System.Threading.Tasks;
 
 using Avalonia.Controls;
 using Avalonia.Interactivity;
@@ -13,6 +14,7 @@ using Flower.Converters;
 using Flower.Logging;
 using Flower.Models;
 using Flower.Persistence;
+using Flower.Services;
 using Flower.ViewModels.Mobile;
 
 namespace Flower.Views.Mobile;
@@ -33,6 +35,7 @@ public partial class TrackInfoView : UserControl
     // exactly the case AppLogging's typed-logger helper exists for.
     private readonly ILogger<TrackInfoView> _logger = AppLogging.CreateTypedLogger<TrackInfoView>();
     private Track? _track;
+    private int _artRequestId; // guards against a stale track's art load winning a race
 
     public TrackInfoView()
     {
@@ -102,8 +105,46 @@ public partial class TrackInfoView : UserControl
         ChannelsValue.Text   = track.Channels switch { 1 => "Mono", 2 => "Stereo", > 2 => $"{track.Channels} channels", _ => "—" };
         BitDepthValue.Text   = track.BitsPerSample > 0 ? $"{track.BitsPerSample}-bit" : "—";
 
-        PathValue.Text = track.Path ?? "—";
+        // A song that lives on the paired server has no file here to name, so
+        // it names the server instead, as the desktop window does.
+        var serverName = (DataContext as MobileMainViewModel)?.Main.PairedServerSourceName([track]);
+        FileLabel.Text = serverName != null ? "Source" : "File";
+        PathValue.Text = serverName ?? track.Path ?? "—";
         DateAddedValue.Text = track.DateAdded.LocalDateTime.ToString("MMM d, yyyy");
+
+        GenreMenuButton.IsVisible = DataContext is MobileMainViewModel vm
+            && TagSuggestionSource.DistinctGenres(vm.Main.Library.Tracks).Count > 0;
+
+        _ = LoadAlbumArtAsync(track);
+    }
+
+    private async Task LoadAlbumArtAsync(Track track)
+    {
+        var requestId = ++_artRequestId;
+        ArtView.AlbumArt = null;
+        var bitmap = await AlbumArtLoader.Current.LoadAsync(track);
+        if (requestId == _artRequestId)
+            ArtView.AlbumArt = bitmap;
+    }
+
+    // ── Genre ──────────────────────────────────────────────────────────────
+
+    // Built on each open rather than once: a genre typed into another song a
+    // minute ago belongs in the list now.
+    private void GenreMenu_Click(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MobileMainViewModel vm)
+            return;
+
+        var flyout = new MenuFlyout { Placement = PlacementMode.BottomEdgeAlignedRight };
+        foreach (var genre in TagSuggestionSource.DistinctGenres(vm.Main.Library.Tracks))
+        {
+            var item = new MenuItem { Header = genre };
+            item.Click += (_, _) => GenreBox.Text = genre;
+            flyout.Items.Add(item);
+        }
+
+        flyout.ShowAt(GenreMenuButton);
     }
 
     private void Cancel_Click(object? sender, RoutedEventArgs e)

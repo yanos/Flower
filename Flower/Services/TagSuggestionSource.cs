@@ -34,4 +34,14 @@ public static class TagSuggestionSource
             .Distinct()
             .OrderBy(a => a, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
+
+    // For the phone's Track Info genre menu, which has no autocomplete box to
+    // put suggestions in and offers the whole list behind a chevron instead.
+    public static List<string> DistinctGenres(IEnumerable<Track> tracks) =>
+        tracks.Select(t => t.Genre)
+            .Where(g => !string.IsNullOrWhiteSpace(g))
+            .Select(g => g!)
+            .Distinct()
+            .OrderBy(g => g, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
 }
