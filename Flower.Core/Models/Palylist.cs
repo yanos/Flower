@@ -4,6 +4,8 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
+using Flower.Services;
+
 namespace Flower.Models
 {
     public class Playlist
@@ -86,6 +88,14 @@ namespace Flower.Models
 
         public bool IsSmart => _rules != null;
 
+        // Whose playlist this is on a server shared by several listeners - see
+        // Listeners. Always Listeners.Owner on a client, whose playlists are
+        // its own user's; on a server, the fingerprint of the non-admin device
+        // that made it. Fixed for the life of the playlist: a listener's
+        // playlists are only ever written through that listener's own pushes,
+        // so nothing moves one between listeners.
+        public string Listener { get; }
+
         // Copy-on-write, never mutated in place, for the same reason
         // Library.Playlists is: the save triggered by Changed runs on a
         // threadpool thread (App.axaml.cs) and enumerates this while the UI
@@ -154,9 +164,11 @@ namespace Flower.Models
             string? comment = null,
             bool isPublic = false,
             DateTimeOffset? createdAt = null,
-            SmartPlaylistRules? rules = null)
+            SmartPlaylistRules? rules = null,
+            string listener = Listeners.Owner)
         {
             Id = id;
+            Listener = listener;
             _name = name;
             _comment = comment;
             _isPublic = isPublic;

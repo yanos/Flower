@@ -215,6 +215,23 @@ public class StoreRoundTripTests : IDisposable
         Assert.Equal(new[] { "A", "B" }, loaded[0].Tracks.Select(t => t.Title));
     }
 
+    // Whose playlist it is, on a server (see Listeners): written once with
+    // the row and read back, and a later save of the same playlist cannot
+    // move it to another listener.
+    [Fact]
+    public void A_playlists_listener_round_trips_through_the_repository()
+    {
+        var track = new Track { Title = "A", Path = "/music/a.mp3" };
+        var guests = new Playlist(Guid.NewGuid(), "A guest's", [track], DateTimeOffset.UtcNow, listener: "5306d3aa");
+        var owners = new Playlist("The owner's", [track]);
+
+        PlaylistRepo().Save([guests, owners]);
+
+        var loaded = new PlaylistStore().Load([track]).ToDictionary(p => p.Name);
+        Assert.Equal("5306d3aa", loaded["A guest's"].Listener);
+        Assert.Equal(Flower.Services.Listeners.Owner, loaded["The owner's"].Listener);
+    }
+
     [Fact]
     public async Task PlaylistStore_Load_skips_tracks_no_longer_present_in_the_library()
     {
@@ -1663,6 +1680,35 @@ public class StoreRoundTripTests : IDisposable
             Assert.Equal("Kept", kept.ExecuteScalar());
         }
 
+        Assert.Equal(SqliteMigrations.LatestVersion, SqliteMigrations.ReadVersion(migrated));
+    }
+
+    // Every playlist a server held before listeners existed becomes the
+    // owner's - the only listener all of them can be said to belong to.
+    [Fact]
+    public void A_version_ten_database_gives_every_existing_playlist_to_the_owner()
+    {
+        var path = Path.Combine(PlatformDataDirectory.Current!, "pre-listener.db");
+
+        using (var connection = new SqliteConnection($"Data Source={path}"))
+        {
+            connection.Open();
+            using var setup = connection.CreateCommand();
+            setup.CommandText =
+                Schema.V1 + Schema.V2 + Schema.V3 + Schema.V4 + Schema.V5 + Schema.V6
+                + Schema.V8 + Schema.V9 + Schema.V10
+                + "INSERT INTO playlists (id, name, updated_at) VALUES ('abc', 'Kept', 0);"
+                + "PRAGMA user_version = 10;";
+            setup.ExecuteNonQuery();
+        }
+
+        using var migrated = new FlowerDb(path).Open();
+        using var kept = migrated.CreateCommand();
+        kept.CommandText = "SELECT name, listener FROM playlists;";
+        using var reader = kept.ExecuteReader();
+        Assert.True(reader.Read());
+        Assert.Equal("Kept", reader.GetString(0));
+        Assert.Equal(Flower.Services.Listeners.Owner, reader.GetString(1));
         Assert.Equal(SqliteMigrations.LatestVersion, SqliteMigrations.ReadVersion(migrated));
     }
 

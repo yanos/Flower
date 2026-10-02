@@ -30,14 +30,34 @@ public sealed class ClientLogStore
 {
     public static readonly TimeSpan Retention = TimeSpan.FromDays(7);
 
+    // What one push may add, and what one device may hold - see
+    // docs/TRUST-BOUNDARY-PLAN.md step 1. Retention bounded a device's log by
+    // age and nothing else, so any paired device could fill the server's disk
+    // for a week. A phone's own archive runs to about 50 MB of these lines a
+    // week (see Append), so the cap leaves an honest device well over twice
+    // that; past it the oldest days go first, as they would at the end of the
+    // week anyway.
+    //
+    // A push over the per-report limit keeps its oldest lines and drops the
+    // rest, rather than being refused: the watermark this answers with then
+    // names the last line kept, and the device sends the remainder next -
+    // see LibrarySyncService.NextLogReport, which sends no more than this.
+    public const int MaxEntriesPerReport = 5000;
+    public const long MaxBytesPerDevice = 128L * 1024 * 1024;
+
     private const string MetadataFileName = "device.json";
     private const string LogFilePattern = "*.logs.jsonl";
 
     private readonly object _lock = new();
     private readonly string _rootDirectory;
 
-    public ClientLogStore(string rootDirectory)
+    private readonly long _maxBytesPerDevice;
+
+    // maxBytesPerDevice is for tests, which cannot write 128 MB to prove a
+    // cap; everything else takes the default.
+    public ClientLogStore(string rootDirectory, long maxBytesPerDevice = MaxBytesPerDevice)
     {
+        _maxBytesPerDevice = maxBytesPerDevice;
         _rootDirectory = Path.GetFullPath(rootDirectory);
         Directory.CreateDirectory(_rootDirectory);
         lock (_lock)
@@ -61,21 +81,35 @@ public sealed class ClientLogStore
             var known = history.Select(EventId).ToHashSet(StringComparer.Ordinal);
             var cutoff = receivedAt.Subtract(Retention);
 
-            var accepted = entries
-                .Where(entry => entry.Timestamp >= cutoff && known.Add(EventId(entry)))
-                .ToList();
+            // Nothing more for a device already holding all it may, until its
+            // oldest day rolls off. Only a device logging far past any real
+            // phone's volume - or writing junk on purpose - gets here.
+            var accepted = DeviceBytes(directory) >= _maxBytesPerDevice
+                ? []
+                : Ordered(entries)
+                    .Where(entry => entry.Timestamp >= cutoff && known.Add(EventId(entry)))
+                    .Take(MaxEntriesPerReport)
+                    .ToList();
 
             foreach (var group in accepted.GroupBy(entry => LogFileName(entry.Timestamp)))
             {
                 AppendEntries(Path.Combine(directory, group.Key), group);
             }
 
+            // Read back only when days were dropped: what is on disk is then
+            // the answer, accepted lines included. Otherwise the history read
+            // above plus what was appended is the same thing, without a second
+            // pass over the week.
+            var retained = DropOldestDaysPast(directory, _maxBytesPerDevice)
+                ? LoadEntries(directory, receivedAt)
+                : Ordered(history.Concat(accepted));
+
             AtomicJsonFile.Write(
                 Path.Combine(directory, MetadataFileName),
                 new ClientLogMetadata(fingerprint, alias, receivedAt),
                 ClientLogFileJsonContext.Default.ClientLogMetadata);
 
-            merged = new ClientLogSnapshot(fingerprint, alias, receivedAt, Ordered(history.Concat(accepted)));
+            merged = new ClientLogSnapshot(fingerprint, alias, receivedAt, retained);
         }
 
         SnapshotUpdated?.Invoke(this, fingerprint);
@@ -264,6 +298,31 @@ public sealed class ClientLogStore
         if (sanitized.Length == 0)
             sanitized = "device";
         return sanitized.Length <= maxLength ? sanitized : sanitized[..maxLength];
+    }
+
+    private static long DeviceBytes(string directory) =>
+        Directory.EnumerateFiles(directory, LogFilePattern).Sum(path => new FileInfo(path).Length);
+
+    // Deletes whole days, oldest first, until the device fits - never the
+    // newest day, which holds what was just written. Day files are named by
+    // date (LogFileName), so name order is age order. Returns whether any went.
+    private static bool DropOldestDaysPast(string directory, long limit)
+    {
+        var days = Directory.EnumerateFiles(directory, LogFilePattern)
+            .Select(path => new FileInfo(path))
+            .OrderBy(file => file.Name, StringComparer.Ordinal)
+            .ToList();
+
+        var total = days.Sum(file => file.Length);
+        var dropped = false;
+        for (var i = 0; i < days.Count - 1 && total > limit; i++)
+        {
+            total -= days[i].Length;
+            TryDeleteFile(days[i].FullName);
+            dropped = true;
+        }
+
+        return dropped;
     }
 
     private static string LogFileName(DateTimeOffset timestamp) =>

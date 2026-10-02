@@ -34,6 +34,43 @@ public class ClientLogStoreTests : PinnedDataDirectory
         Assert.Single(store.All());
     }
 
+    // docs/TRUST-BOUNDARY-PLAN.md step 1: one push adds at most
+    // MaxEntriesPerReport lines, its oldest, so the watermark it answers with
+    // names the last line kept and the device sends the rest next.
+    [Fact]
+    public void A_push_past_the_per_report_limit_keeps_its_oldest_lines()
+    {
+        var start = DateTimeOffset.UtcNow.AddHours(-1);
+        var entries = Enumerable.Range(0, ClientLogStore.MaxEntriesPerReport + 10)
+            .Select(i => Entry($"line {i}", start.AddMilliseconds(i)))
+            .Reverse()
+            .ToList();
+
+        var stored = Store().SetSnapshot("fp-1", "Alias1", entries, DateTimeOffset.UtcNow);
+
+        Assert.Equal(ClientLogStore.MaxEntriesPerReport, stored.Entries.Count);
+        Assert.Equal("line 0", stored.Entries[0].Message);
+        Assert.Equal($"line {ClientLogStore.MaxEntriesPerReport - 1}", stored.Entries[^1].Message);
+    }
+
+    // And one device holds at most so much: past it, whole days go, oldest
+    // first, never the day just written to.
+    [Fact]
+    public void A_device_past_its_size_limit_loses_its_oldest_days()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var store = new ClientLogStore(StorePath, maxBytesPerDevice: 4 * 1024);
+        var padding = new string('x', 1500);
+
+        store.SetSnapshot("fp-1", "Alias1", [Entry("three days ago " + padding, now.AddDays(-3))], now);
+        store.SetSnapshot("fp-1", "Alias1", [Entry("two days ago " + padding, now.AddDays(-2))], now);
+        var stored = store.SetSnapshot("fp-1", "Alias1", [Entry("today " + padding, now)], now);
+
+        Assert.DoesNotContain(stored.Entries, e => e.Message.StartsWith("three days ago"));
+        Assert.Contains(stored.Entries, e => e.Message.StartsWith("today"));
+        Assert.Equal(stored.Entries.Select(e => e.Message), store.Get("fp-1")!.Entries.Select(e => e.Message));
+    }
+
     [Fact]
     public void History_survives_reconstructing_the_store()
     {

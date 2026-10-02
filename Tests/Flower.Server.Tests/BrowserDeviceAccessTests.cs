@@ -249,7 +249,7 @@ public class BrowserDeviceAccessTests(FlowerServerFixture server) : IClassFixtur
 
             var (applied, _) = await AsBrowserAsync(
                 device, "POST", "/api/flower/v1/playlists/apply", "10.0.9.7", body: pushed);
-            Assert.Equal(HttpStatusCode.NoContent, applied);
+            Assert.Equal(HttpStatusCode.OK, applied);
 
             var (read, body) = await AsBrowserAsync(device, "GET", "/api/flower/v1/playlists", "10.0.9.7");
             Assert.Equal(HttpStatusCode.OK, read);

@@ -116,6 +116,12 @@ public sealed class SimulatedFlowerServer : IDisposable
         await context.Response.OutputStream.WriteAsync(bytes);
     }
 
+    // Whose playlists a request reads and writes, by the rule SyncEndpoints
+    // applies - from the caller's fingerprint and CallerIsAdmin, since this
+    // server checks no signature.
+    private string ListenerOf(HttpListenerContext context) =>
+        Listeners.For(context.Request.Headers["X-Flower-Fingerprint"] ?? "", CallerIsAdmin);
+
     // The admin filter's two refusals, for the upload routes. True when the
     // request may go on.
     private bool AdmitsAdmin(HttpListenerContext context)
@@ -158,7 +164,8 @@ public sealed class SimulatedFlowerServer : IDisposable
                     await ServeLibraryAsync(context);
                     return;
                 case ("GET", PlaylistsPath):
-                    await WriteJsonAsync(context, PlaylistSyncMapper.ToManifest(Fingerprint, Library.Playlists));
+                    await WriteJsonAsync(context, PlaylistSyncMapper.ToManifest(
+                        Fingerprint, PlaylistSyncMapper.For(Library.Playlists, ListenerOf(context))));
                     var after = AfterNextPlaylistsGet;
                     AfterNextPlaylistsGet = null;
                     after?.Invoke();
@@ -166,9 +173,9 @@ public sealed class SimulatedFlowerServer : IDisposable
                 case ("POST", ApplyPath):
                 {
                     var manifest = await ReadJsonAsync<PlaylistSyncManifestDto>(context);
-                    PlaylistSyncMapper.ApplyPushedManifest(Library, manifest!);
+                    var applied = PlaylistSyncMapper.ApplyPushedManifest(Library, manifest!, ListenerOf(context));
                     PlaylistApplyCount++;
-                    context.Response.StatusCode = 204;
+                    await WriteJsonAsync(context, new PlaylistApplyResponseDto(applied.Refused));
                     return;
                 }
                 case ("POST", TrackStatePath):

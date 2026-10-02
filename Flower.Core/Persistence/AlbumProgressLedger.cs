@@ -14,9 +14,9 @@ namespace Flower.Persistence
     // whole, with nothing to query.
     public sealed class AlbumProgressLedger
     {
-        // The shelf every admin device shares. A fingerprint is hex, so it can
-        // never collide with this.
-        public const string OwnerShelf = "owner";
+        // The shelf every admin device shares - the owner's listener (see
+        // Listeners). A fingerprint is hex, so it can never collide with this.
+        public const string OwnerShelf = Listeners.Owner;
 
         private readonly ILogger<AlbumProgressLedger> _logger;
         private readonly Func<DateTimeOffset> _now;

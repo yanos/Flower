@@ -46,6 +46,11 @@ public static class StreamTicketEndpoints
             if (string.IsNullOrWhiteSpace(id))
                 return Results.BadRequest(new { error = "A track id is required." });
 
+            // Kept with the ticket for its lifetime, so bounded like the event
+            // ids PlayReportDto bounds - a catalog id is far shorter.
+            if (id.Length > PlayReportDto.MaxIdLength)
+                return Results.BadRequest(new { error = "That is not a track id." });
+
             var (ticket, expiresAt) = tickets.Issue(id, auth.Fingerprint);
 
             // The whole point is a URL that can be dropped straight into an

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Flower.Services;
 
@@ -39,7 +40,22 @@ public sealed record PlayEventDto(
 // because the two halves of a single track's play are usually minutes apart
 // but the tail of one track and the head of the next are not, and because a
 // failed send has to be able to carry its backlog along with the next one.
-public sealed record PlayReportDto(List<PlayEventDto> Plays);
+public sealed record PlayReportDto(List<PlayEventDto> Plays)
+{
+    // What one report may carry. The reporter holds at most this many (see
+    // OriginPlayReporter.MaxQueued), so an honest batch never exceeds it, and
+    // the server refuses a report that does - every event is a dedupe entry
+    // it keeps for hours. Ids are a Guid's 32 hex characters from the
+    // reporter and a catalog id the server minted; 64 bounds both.
+    public const int MaxEvents = 500;
+    public const int MaxIdLength = 64;
+
+    // A method rather than a property, so the serializer does not put it on
+    // the wire.
+    public bool IsWithinLimits() =>
+        Plays.Count <= MaxEvents
+        && Plays.All(p => p.EventId is { Length: > 0 and <= MaxIdLength } && p.TrackId is { Length: <= MaxIdLength });
+}
 
 // POST /api/flower/v1/track-state - the same journey for a head that *does*
 // hold durable storage: a paired desktop or phone playing, starring and

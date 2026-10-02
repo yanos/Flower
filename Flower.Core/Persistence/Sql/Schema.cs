@@ -298,5 +298,18 @@ namespace Flower.Persistence.Sql
             ALTER TABLE tracks ADD COLUMN art_edited_at       INTEGER;
             ALTER TABLE tracks ADD COLUMN file_replaced_at    INTEGER;
             """;
+
+        // Whose playlist this is, on a server shared by an owner and a few
+        // listeners - see Listeners and Playlist.Listener. Every existing row
+        // becomes the owner's: until now any paired device could rewrite any
+        // playlist, so who made one was never recorded, and the owner is the
+        // only listener all of them can safely be said to belong to. A
+        // client's own database leaves the column at that default for good.
+        //
+        // A step, and guarded like V10, for the reason V6 gave: playlists are
+        // the one thing a delete-and-rescan cannot bring back.
+        public const string V11 = """
+            ALTER TABLE playlists ADD COLUMN listener TEXT NOT NULL DEFAULT 'owner';
+            """;
     }
 }

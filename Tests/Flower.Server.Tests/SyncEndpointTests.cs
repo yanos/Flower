@@ -255,10 +255,11 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
                 ]),
             ]);
 
-            var (applyStatus, _, _) = await SendAsync(
+            var (applyStatus, applyBody, _) = await SendAsync(
                 device, "POST", "/api/flower/v1/playlists/apply", "10.0.2.4",
                 body: JsonSerializer.Serialize(pushed));
-            Assert.Equal(HttpStatusCode.NoContent, applyStatus);
+            Assert.Equal(HttpStatusCode.OK, applyStatus);
+            Assert.Empty(JsonSerializer.Deserialize<PlaylistApplyResponseDto>(applyBody)!.Refused);
 
             var (getStatus, body, _) = await SendAsync(device, "GET", "/api/flower/v1/playlists", "10.0.2.4");
             Assert.Equal(HttpStatusCode.OK, getStatus);
@@ -272,6 +273,97 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
         {
             library.ReplacePlaylists([]);
             await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    // docs/TRUST-BOUNDARY-PLAN.md step 1: playlists belong to a listener. The
+    // owner's devices share one set; a guest's phone has its own, and can
+    // neither see the owner's nor change them - not by pushing one of their
+    // ids, not by naming one as deleted, and not with an UpdatedAt from the
+    // far future that would win any comparison.
+    [Fact]
+    public async Task A_guest_device_can_neither_read_nor_change_the_owners_playlists()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var library = server.Services.GetRequiredService<Library>();
+        using var owner = await AdminDeviceAsync(trustedPeers);
+        using var guest = await TrustedDeviceAsync(trustedPeers);
+        var track = server.Seeded[0];
+        var entry = new PlaylistSyncTrackDto(track.Title, track.Artists, track.Album, Track.RoundedSeconds(track.Duration));
+        var ownersId = Guid.NewGuid();
+        var anotherOfTheOwners = Guid.NewGuid();
+
+        try
+        {
+            var (ownerStatus, _, _) = await SendAsync(owner, "POST", "/api/flower/v1/playlists/apply", "10.0.2.20",
+                body: JsonSerializer.Serialize(new PlaylistSyncManifestDto(owner.Fingerprint,
+                [
+                    new PlaylistSyncPlaylistDto(ownersId, "The owner's", DateTimeOffset.UtcNow, [entry]),
+                    new PlaylistSyncPlaylistDto(anotherOfTheOwners, "Also the owner's", DateTimeOffset.UtcNow, [entry]),
+                ])));
+            Assert.Equal(HttpStatusCode.OK, ownerStatus);
+
+            // Not visible to the guest at all.
+            var (_, guestView, _) = await SendAsync(guest, "GET", "/api/flower/v1/playlists", "10.0.2.21");
+            Assert.Empty(JsonSerializer.Deserialize<PlaylistSyncManifestDto>(guestView)!.Playlists);
+
+            // A push naming the owner's id, newer than anything, and a delete
+            // of the other - both refused, both said so.
+            var (guestStatus, guestBody, _) = await SendAsync(guest, "POST", "/api/flower/v1/playlists/apply", "10.0.2.21",
+                body: JsonSerializer.Serialize(new PlaylistSyncManifestDto(guest.Fingerprint,
+                [
+                    new PlaylistSyncPlaylistDto(ownersId, "Renamed by a guest", DateTimeOffset.UtcNow.AddYears(50), []),
+                ], [anotherOfTheOwners])));
+            Assert.Equal(HttpStatusCode.OK, guestStatus);
+            var refused = JsonSerializer.Deserialize<PlaylistApplyResponseDto>(guestBody)!.Refused;
+            Assert.Equal(new[] { ownersId, anotherOfTheOwners }.Order(), refused.Order());
+
+            // And the owner's devices still see both, untouched.
+            var (_, ownerView, _) = await SendAsync(owner, "GET", "/api/flower/v1/playlists", "10.0.2.20");
+            var served = JsonSerializer.Deserialize<PlaylistSyncManifestDto>(ownerView)!.Playlists;
+            Assert.Equal(["Also the owner's", "The owner's"], served.Select(p => p.Name).Order());
+            Assert.Single(served.Single(p => p.Id == ownersId).Tracks);
+        }
+        finally
+        {
+            library.ReplacePlaylists([]);
+            await trustedPeers.RevokeAsync(owner.Fingerprint);
+            await trustedPeers.RevokeAsync(guest.Fingerprint);
+        }
+    }
+
+    // The other half: a guest does get a set of its own, kept under its
+    // fingerprint, which the owner's devices do not see in theirs.
+    [Fact]
+    public async Task A_guest_devices_own_playlists_are_kept_apart_from_the_owners()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var library = server.Services.GetRequiredService<Library>();
+        using var owner = await AdminDeviceAsync(trustedPeers);
+        using var guest = await TrustedDeviceAsync(trustedPeers);
+
+        try
+        {
+            var (status, _, _) = await SendAsync(guest, "POST", "/api/flower/v1/playlists/apply", "10.0.2.22",
+                body: JsonSerializer.Serialize(new PlaylistSyncManifestDto(guest.Fingerprint,
+                [
+                    new PlaylistSyncPlaylistDto(Guid.NewGuid(), "The guest's", DateTimeOffset.UtcNow, []),
+                ])));
+            Assert.Equal(HttpStatusCode.OK, status);
+
+            Assert.Equal(guest.Fingerprint, Assert.Single(library.Playlists).Listener);
+
+            var (_, guestView, _) = await SendAsync(guest, "GET", "/api/flower/v1/playlists", "10.0.2.22");
+            Assert.Equal("The guest's", Assert.Single(JsonSerializer.Deserialize<PlaylistSyncManifestDto>(guestView)!.Playlists).Name);
+
+            var (_, ownerView, _) = await SendAsync(owner, "GET", "/api/flower/v1/playlists", "10.0.2.23");
+            Assert.Empty(JsonSerializer.Deserialize<PlaylistSyncManifestDto>(ownerView)!.Playlists);
+        }
+        finally
+        {
+            library.ReplacePlaylists([]);
+            await trustedPeers.RevokeAsync(owner.Fingerprint);
+            await trustedPeers.RevokeAsync(guest.Fingerprint);
         }
     }
 
@@ -305,10 +397,11 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
                 new PlaylistSyncPlaylistDto(Guid.NewGuid(), "Recent Jazz", DateTimeOffset.UtcNow, [], rules),
             ]);
 
-            var (applyStatus, _, _) = await SendAsync(
+            var (applyStatus, applyBody, _) = await SendAsync(
                 device, "POST", "/api/flower/v1/playlists/apply", "10.0.2.4",
                 body: JsonSerializer.Serialize(pushed));
-            Assert.Equal(HttpStatusCode.NoContent, applyStatus);
+            Assert.Equal(HttpStatusCode.OK, applyStatus);
+            Assert.Empty(JsonSerializer.Deserialize<PlaylistApplyResponseDto>(applyBody)!.Refused);
 
             // Stored as a smart playlist on this side, not flattened to the
             // (empty) track list it arrived with.
@@ -336,7 +429,7 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
     {
         var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
         var library = server.Services.GetRequiredService<Library>();
-        using var device = await TrustedDeviceAsync(trustedPeers);
+        using var device = await AdminDeviceAsync(trustedPeers);
         var track = library.Tracks.First(t => t.Title == "Second Song");
         var countBefore = track.PlayCount;
 
@@ -376,7 +469,7 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
     {
         var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
         var library = server.Services.GetRequiredService<Library>();
-        using var device = await TrustedDeviceAsync(trustedPeers);
+        using var device = await AdminDeviceAsync(trustedPeers);
         var track = library.Tracks.First(t => t.Title == "Love Song");
         var countBefore = track.PlayCount;
 
@@ -414,7 +507,7 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
     {
         var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
         var library = server.Services.GetRequiredService<Library>();
-        using var device = await TrustedDeviceAsync(trustedPeers);
+        using var device = await AdminDeviceAsync(trustedPeers);
         var track = library.Tracks.First(t => t.Title == "Alpha Song");
         var countBefore = track.PlayCount;
 
@@ -439,6 +532,79 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
         }
     }
 
+    // A guest's tab, as against the owner's: its plays are its own, filed
+    // under its fingerprint the way a guest phone's /track-state count is,
+    // and nothing it reports moves this library's own count or History.
+    [Fact]
+    public async Task A_guest_devices_plays_are_filed_under_it_and_move_nothing_else()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var library = server.Services.GetRequiredService<Library>();
+        using var guest = await TrustedDeviceAsync(trustedPeers);
+        var track = library.Tracks.First(t => t.Title == "Second Song");
+        var countBefore = track.PlayCount;
+        var lastPlayedBefore = track.LastPlayedAt;
+
+        try
+        {
+            var report = new PlayReportDto(
+            [
+                new PlayEventDto(Guid.NewGuid().ToString("N"), track.Id.ToKey(),
+                    DateTimeOffset.UtcNow, Started: true, Completed: false),
+                new PlayEventDto(Guid.NewGuid().ToString("N"), track.Id.ToKey(),
+                    DateTimeOffset.UtcNow, Started: false, Completed: true),
+            ]);
+
+            var (status, _, _) = await SendAsync(
+                guest, "POST", "/api/flower/v1/plays", "10.0.2.24",
+                body: JsonSerializer.Serialize(report));
+
+            Assert.Equal(HttpStatusCode.NoContent, status);
+            Assert.Equal(1, track.RemotePlayCounts[guest.Fingerprint]);
+            Assert.Equal(countBefore, track.PlayCount);
+            Assert.Equal(lastPlayedBefore, track.LastPlayedAt);
+        }
+        finally
+        {
+            track.RemotePlayCounts.Remove(guest.Fingerprint);
+            await trustedPeers.RevokeAsync(guest.Fingerprint);
+        }
+    }
+
+    // Every event becomes an id this server remembers for hours, so a report
+    // is bounded - and so is the body that carries it, before it is read.
+    [Fact]
+    public async Task A_play_report_past_its_limits_is_refused()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var library = server.Services.GetRequiredService<Library>();
+        using var device = await AdminDeviceAsync(trustedPeers);
+        var trackId = library.Tracks.First().Id.ToKey();
+
+        try
+        {
+            var tooMany = new PlayReportDto(Enumerable.Range(0, PlayReportDto.MaxEvents + 1)
+                .Select(_ => new PlayEventDto(Guid.NewGuid().ToString("N"), trackId, DateTimeOffset.UtcNow, false, false))
+                .ToList());
+            var (manyStatus, _, _) = await SendAsync(device, "POST", "/api/flower/v1/plays", "10.0.2.25",
+                body: JsonSerializer.Serialize(tooMany));
+            Assert.Equal(HttpStatusCode.BadRequest, manyStatus);
+
+            var longId = new PlayReportDto([new PlayEventDto(new string('x', PlayReportDto.MaxIdLength + 1), trackId, DateTimeOffset.UtcNow, false, false)]);
+            var (longStatus, _, _) = await SendAsync(device, "POST", "/api/flower/v1/plays", "10.0.2.25",
+                body: JsonSerializer.Serialize(longId));
+            Assert.Equal(HttpStatusCode.BadRequest, longStatus);
+
+            var (bigStatus, _, _) = await SendAsync(device, "POST", "/api/flower/v1/plays", "10.0.2.25",
+                body: "\"" + new string('x', 300 * 1024) + "\"");
+            Assert.Equal(HttpStatusCode.RequestEntityTooLarge, bigStatus);
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
     // A tab whose library is stale, or one pointed at a different server's
     // track. Nothing to count it against, and nothing to fail over either -
     // the rest of the batch still lands.
@@ -447,7 +613,7 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
     {
         var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
         var library = server.Services.GetRequiredService<Library>();
-        using var device = await TrustedDeviceAsync(trustedPeers);
+        using var device = await AdminDeviceAsync(trustedPeers);
         var track = library.Tracks.First(t => t.Title == "Beta Song");
         var countBefore = track.PlayCount;
 

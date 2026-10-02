@@ -16,6 +16,7 @@ namespace Flower.Services;
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     PropertyNameCaseInsensitive = true)]
 [JsonSerializable(typeof(PlaylistSyncManifestDto))]
+[JsonSerializable(typeof(PlaylistApplyResponseDto))]
 public partial class PlaylistSyncJsonContext : JsonSerializerContext
 {
 }

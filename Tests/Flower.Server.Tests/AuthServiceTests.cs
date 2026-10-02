@@ -185,6 +185,24 @@ public class StreamTicketServiceTests
         Assert.False(service.TryRedeem(ticket, "", Now));
     }
 
+    // docs/TRUST-BOUNDARY-PLAN.md step 1: a device minting as fast as it
+    // likes holds MaxPerDevice tickets, not as many as it asked for - and
+    // the one it is about to use, the newest, is never the one dropped.
+    [Fact]
+    public void A_device_past_its_ticket_limit_loses_its_oldest_and_no_one_elses()
+    {
+        var service = new StreamTicketService();
+        var (others, _) = service.Issue("track-0", "fingerprint-b");
+        var minted = Enumerable.Range(0, StreamTicketService.MaxPerDevice + 1)
+            .Select(i => service.Issue($"track-{i}", "fingerprint-a").Ticket)
+            .ToList();
+
+        Assert.False(service.TryRedeem(minted[0], "track-0", Now));
+        Assert.True(service.TryRedeem(minted[1], "track-1", Now));
+        Assert.True(service.TryRedeem(minted[^1], $"track-{StreamTicketService.MaxPerDevice}", Now));
+        Assert.True(service.TryRedeem(others, "track-0", Now));
+    }
+
     [Fact]
     public void Revoking_a_peer_invalidates_the_tickets_it_minted_and_no_others()
     {

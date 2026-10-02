@@ -95,11 +95,36 @@ public static class SyncEndpoints
     private const string DownloadRoute = "/download";
     private const string DownloadPath = GroupPrefix + DownloadRoute;
 
-    // A playlist manifest for a large library, with a wide margin - the same
-    // ceiling Kestrel is capped at process-wide (see Program.cs), applied here
-    // as the route's own limit so a rejection is a 413 rather than a read that
-    // runs to 20 MB before failing.
+    // What each route may be sent, so a rejection is a 413 before the body is
+    // buffered rather than a read that runs to the process-wide ceiling first.
+    // Set from what a 16,000-track library actually produces (measured by
+    // serializing the real contracts, 2026-10-02), with a margin:
+    //
+    //   - /playlists/apply and /track-state keep the process-wide 20 MB
+    //     (Program.cs). A full track-state restatement is 5.3 MB at that size
+    //     with every owner field set, so a tighter cap would refuse a large
+    //     library's honest report, and every session after it.
+    //   - /log/report is 4 MB, twice what a client puts in one report (see
+    //     LibrarySyncService.NextLogReport).
+    //   - Everything else is 256 KB: 500 play events are 82 KB, a full
+    //     Continue Playing exchange 93 KB, a cover-art batch a few hundred
+    //     bytes, and the GETs carry nothing.
     private const long MaxBodyBytes = 20 * 1024 * 1024;
+    private const long MaxLogReportBytes = 4 * 1024 * 1024;
+    private const long MaxSmallBodyBytes = 256 * 1024;
+
+    private static long MaxBodyFor(PathString path)
+    {
+        if (path.Equals(GroupPrefix + "/playlists/apply", StringComparison.OrdinalIgnoreCase)
+            || path.Equals(GroupPrefix + "/track-state", StringComparison.OrdinalIgnoreCase))
+        {
+            return MaxBodyBytes;
+        }
+
+        return path.Equals(GroupPrefix + "/log/report", StringComparison.OrdinalIgnoreCase)
+            ? MaxLogReportBytes
+            : MaxSmallBodyBytes;
+    }
 
     // The wire format is whatever the client's FlowerJsonContext writes:
     // PascalCase (no naming policy) with nulls omitted. Reflection-based here
@@ -144,7 +169,8 @@ public static class SyncEndpoints
                 return RateLimitResponse.TooManyRequests(http);
             }
 
-            if (http.Request.ContentLength > MaxBodyBytes)
+            var maxBody = MaxBodyFor(http.Request.Path);
+            if (http.Request.ContentLength > maxBody)
                 return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
 
             // The body has to be buffered before the signature can cover it,
@@ -216,9 +242,11 @@ public static class SyncEndpoints
         // captured above reaches these three: a bare, non-generic ILogger is
         // not something the container can resolve as a handler parameter.
         sync.MapPost("/playlists/apply",
-            (HttpContext context, Library library) => ApplyPlaylists(context, library, logger));
+            (HttpContext context, Library library, TrustedPeerStore trustedPeers) =>
+                ApplyPlaylists(context, library, trustedPeers, logger));
         sync.MapPost("/plays",
-            (HttpContext context, PlayReportService plays) => ReportPlays(context, plays, logger));
+            (HttpContext context, PlayReportService plays, TrustedPeerStore trustedPeers) =>
+                ReportPlays(context, plays, trustedPeers, logger));
         sync.MapPost("/track-state",
             (HttpContext context, Library library, TrustedPeerStore trustedPeers) =>
                 ReportTrackState(context, library, trustedPeers, logger));
@@ -393,18 +421,45 @@ public static class SyncEndpoints
         return Results.Text(json, "application/json");
     }
 
-    private static IResult GetPlaylists(Library library, DeviceSigningKey signingKey) =>
-        Results.Text(
+    // The caller's listener's playlists and nobody else's - see Listeners. A
+    // guest device sees the playlists it made; every admin device sees the
+    // owner's.
+    private static IResult GetPlaylists(
+        HttpContext context, Library library, DeviceSigningKey signingKey, TrustedPeerStore trustedPeers)
+    {
+        if (ListenerOf(context, trustedPeers) is not { } listener)
+            return Results.StatusCode(StatusCodes.Status401Unauthorized);
+
+        return Results.Text(
             JsonSerializer.Serialize(
-                PlaylistSyncMapper.ToManifest(signingKey.Fingerprint, library.Playlists), JsonOptions),
+                PlaylistSyncMapper.ToManifest(signingKey.Fingerprint, PlaylistSyncMapper.For(library.Playlists, listener)),
+                JsonOptions),
             "application/json");
+    }
+
+    // Whose playlists and shelf a request reads and writes: decided from the
+    // fingerprint the signature proved, never from the body. Null only when
+    // the gate let nothing through by signature, which none of the routes
+    // asking does.
+    private static string? ListenerOf(HttpContext context, TrustedPeerStore trustedPeers) =>
+        context.Items[AuthenticatedFingerprintKey] is string { Length: > 0 } fingerprint
+            ? Listeners.For(fingerprint, trustedPeers.IsAdmin(fingerprint))
+            : null;
 
     // The initiator resolved every conflict before POSTing here (see
     // PlaylistSyncService), so no second merge runs on this end - but the push
     // is not taken wholesale either: see PlaylistSyncMapper.ApplyPushedManifest
     // for what is kept, and why.
-    private static async Task<IResult> ApplyPlaylists(HttpContext context, Library library, ILogger logger)
+    //
+    // Applied to the caller's listener alone (see Listeners): a guest device
+    // pushing ids that belong to the owner gets them back in Refused, and the
+    // owner's playlists are untouched.
+    private static async Task<IResult> ApplyPlaylists(
+        HttpContext context, Library library, TrustedPeerStore trustedPeers, ILogger logger)
     {
+        if (ListenerOf(context, trustedPeers) is not { } listener)
+            return Results.StatusCode(StatusCodes.Status401Unauthorized);
+
         using var reader = new StreamReader(context.Request.Body);
         var manifest = JsonSerializer.Deserialize<PlaylistSyncManifestDto>(
             await reader.ReadToEndAsync(context.RequestAborted), JsonOptions);
@@ -413,13 +468,13 @@ public static class SyncEndpoints
 
         // Persists itself, through the same PlaylistRepository the client's
         // own Library writes through.
-        var playlists = PlaylistSyncMapper.ApplyPushedManifest(library, manifest, logger);
+        var result = PlaylistSyncMapper.ApplyPushedManifest(library, manifest, listener, logger);
 
         logger.LogInformation(
-            "Applied {Count} playlist(s) pushed by {Fingerprint}",
-            playlists.Count, context.Items[AuthenticatedFingerprintKey]);
+            "Applied {Count} playlist(s) pushed by {Fingerprint} for listener {Listener}",
+            result.Installed.Count, context.Items[AuthenticatedFingerprintKey], listener);
 
-        return Results.NoContent();
+        return Results.Json(new PlaylistApplyResponseDto(result.Refused), JsonOptions);
     }
 
     // A browser tab's plays, counted here because there is nowhere else for
@@ -429,9 +484,12 @@ public static class SyncEndpoints
     // both sides that can keep one.
     //
     // Gated like every other route in this group, on a trusted peer's
-    // signature. Worth naming what a caller through it can do: inflate this
-    // server's play counts. That is a nuisance, not a disclosure, and it is
-    // bounded by being a paired device at all.
+    // signature - and then split by who signed. An admin's tab is the owner
+    // listening, and moves this library's own count; anyone else's plays are
+    // filed under that device (see PlayReportService.Apply). Any paired device
+    // used to be able to inflate the server's own counts through here, which
+    // docs/TRUST-BOUNDARY-PLAN.md step 1 closed.
+
     // A paired device's own recent log lines, pushed at the end of each sync
     // session it runs (see LibrarySyncService.PushLogSnapshotAsync). Overlapping
     // snapshots merge into the server's durable seven-day history. The whole
@@ -487,15 +545,29 @@ public static class SyncEndpoints
             : DeviceLogArchive.Watermark(entries[^1]);
 
     private static async Task<IResult> ReportPlays(
-        HttpContext context, PlayReportService plays, ILogger logger)
+        HttpContext context, PlayReportService plays, TrustedPeerStore trustedPeers, ILogger logger)
     {
+        if (context.Items[AuthenticatedFingerprintKey] is not string { Length: > 0 } fingerprint)
+            return Results.StatusCode(StatusCodes.Status401Unauthorized);
+
         using var reader = new StreamReader(context.Request.Body);
-        var report = JsonSerializer.Deserialize<PlayReportDto>(
-            await reader.ReadToEndAsync(context.RequestAborted), JsonOptions);
-        if (report == null)
+        PlayReportDto? report;
+        try
+        {
+            report = JsonSerializer.Deserialize<PlayReportDto>(
+                await reader.ReadToEndAsync(context.RequestAborted), JsonOptions);
+        }
+        catch (JsonException)
+        {
+            return Results.BadRequest();
+        }
+
+        // Bounded because every event becomes a dedupe entry this server keeps
+        // for hours - see PlayReportDto.MaxEvents.
+        if (report?.Plays == null || !report.IsWithinLimits())
             return Results.BadRequest();
 
-        var applied = plays.Apply(report, DateTimeOffset.UtcNow);
+        var applied = plays.Apply(report, fingerprint, trustedPeers.IsAdmin(fingerprint), DateTimeOffset.UtcNow);
 
         logger.LogInformation(
             "Applied {AppliedCount} of {ReportedCount} play event(s) reported by {Fingerprint}",
@@ -581,7 +653,7 @@ public static class SyncEndpoints
                 || a.TrackId?.Length > 64 || !double.IsFinite(a.PositionSeconds) || a.PositionSeconds < 0))
             return Results.BadRequest();
 
-        var shelf = trustedPeers.IsAdmin(fingerprint) ? AlbumProgressLedger.OwnerShelf : fingerprint;
+        var shelf = Listeners.For(fingerprint, trustedPeers.IsAdmin(fingerprint));
         var merged = ledger.Exchange(shelf, albums);
 
         logger.LogDebug("Exchanged album progress with {Fingerprint}: {Sent} sent, {Held} held", fingerprint, albums.Count, merged.Count);

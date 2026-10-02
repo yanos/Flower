@@ -50,7 +50,9 @@ public sealed class OriginPlayReporter(
     // past a long offline listening session at one or two events per track,
     // and small enough that it cannot grow into the reason the tab is slow.
     // Oldest first, because the newest plays are the ones still worth having.
-    private const int MaxQueued = 500;
+    // The same number the server allows in one report, so a backlog is always
+    // one report it will take.
+    private const int MaxQueued = PlayReportDto.MaxEvents;
 
     private readonly object _gate = new();
     private readonly List<PlayEventDto> _queued = new();

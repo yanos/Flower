@@ -1118,9 +1118,19 @@ public class LibrarySyncService
     public Task ArchiveOwnLogsAsync() =>
         Task.Run(() => _logArchive.Ingest(_deviceIdentity.Fingerprint, _deviceIdentity.Alias));
 
+    // One report's worth, and how many reports one session sends. The server
+    // takes at most ClientLogStore.MaxEntriesPerReport lines a report and
+    // refuses a body past its cap for this route (SyncEndpoints), so a backlog
+    // goes in pieces: a week of a phone's log is a few hundred thousand lines,
+    // which as one request was larger than the server would ever accept and
+    // failed on every session for good. The session limit keeps a long
+    // backlog from spending the sync budget the rest of the session needs;
+    // the next session carries on from wherever the server's watermark says.
+    private const int MaxLogReportBytes = 2 * 1024 * 1024;
+    private const int MaxLogReportsPerSession = 10;
+
     private async Task<bool> PushLogSnapshotAsync(DiscoveredDevice device)
     {
-        IReadOnlyList<LogEntryDto> entries;
         try
         {
             if (!_logWatermarks.TryGetValue(device.Fingerprint, out var watermark))
@@ -1129,38 +1139,45 @@ public class LibrarySyncService
                 _logWatermarks[device.Fingerprint] = watermark;
             }
 
-            entries = _logArchive.EntriesAfter(watermark);
-
-            // Nothing this peer is missing. Reported as success: "delivered
-            // everything there is" is exactly the state the caller's retry
-            // logic should treat as settled.
-            if (entries.Count == 0)
+            for (var round = 0; round < MaxLogReportsPerSession; round++)
             {
-                ClearLogPushFailures(device);
-                return true;
+                var entries = NextLogReport(_logArchive.EntriesAfter(watermark));
+
+                // Nothing this peer is missing. Reported as success: "delivered
+                // everything there is" is exactly the state the caller's retry
+                // logic should treat as settled.
+                if (entries.Count == 0)
+                    break;
+
+                var report = new LogReportDto(_deviceIdentity.Fingerprint, _deviceIdentity.Alias, DateTimeOffset.UtcNow, entries);
+                var bodyBytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(report, FlowerJsonContext.Default.LogReportDto));
+
+                using var request = new HttpRequestMessage(HttpMethod.Post, device.Url(LogReportPath));
+                await request.AddPeerCredentialsAsync(_credentials, bodyBytes);
+                request.Headers.ConnectionClose = true;
+                using var content = new ByteArrayContent(bodyBytes);
+                content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+                request.Content = content;
+
+                using var response = await Http.SendAsync(request);
+                response.EnsureSuccessStatusCode();
+
+                // Only now, and only on a 2xx. The server's own answer is preferred
+                // over what was sent, because the two can legitimately differ: it
+                // drops anything already past its retention window, and saying so
+                // stops the client waiting for a gap that will never be filled.
+                // Falling back to what was sent keeps an older server - or an empty
+                // body - from resetting the mark and replaying the week.
+                var next = await ReadWatermarkAsync(response) ?? DeviceLogArchive.WatermarkOf(entries);
+                _logWatermarks[device.Fingerprint] = next;
+
+                // A server that kept none of it - one holding all it will hold
+                // for this device - leaves the mark where it was. Asking again
+                // this session would only be told the same.
+                if (next == watermark)
+                    break;
+                watermark = next;
             }
-
-            var report = new LogReportDto(_deviceIdentity.Fingerprint, _deviceIdentity.Alias, DateTimeOffset.UtcNow, entries.ToList());
-            var bodyBytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(report, FlowerJsonContext.Default.LogReportDto));
-
-            using var request = new HttpRequestMessage(HttpMethod.Post, device.Url(LogReportPath));
-            await request.AddPeerCredentialsAsync(_credentials, bodyBytes);
-            request.Headers.ConnectionClose = true;
-            using var content = new ByteArrayContent(bodyBytes);
-            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
-            request.Content = content;
-
-            using var response = await Http.SendAsync(request);
-            response.EnsureSuccessStatusCode();
-
-            // Only now, and only on a 2xx. The server's own answer is preferred
-            // over what was sent, because the two can legitimately differ: it
-            // drops anything already past its retention window, and saying so
-            // stops the client waiting for a gap that will never be filled.
-            // Falling back to what was sent keeps an older server - or an empty
-            // body - from resetting the mark and replaying the week.
-            _logWatermarks[device.Fingerprint] =
-                await ReadWatermarkAsync(response) ?? DeviceLogArchive.WatermarkOf(entries);
 
             ClearLogPushFailures(device);
             return true;
@@ -1189,6 +1206,26 @@ public class LibrarySyncService
             _logPushParkedAt[device.Fingerprint] = _logArchive.LiveSequence;
             return false;
         }
+    }
+
+    // The oldest of what is pending, as much as one report carries - by line
+    // count, and by an estimate of size that is generous rather than exact,
+    // since serializing each line to measure it would cost more than the push.
+    // Always at least one line, so a single enormous one still goes.
+    private static List<LogEntryDto> NextLogReport(IReadOnlyList<LogEntryDto> pending)
+    {
+        var report = new List<LogEntryDto>();
+        long bytes = 0;
+        foreach (var entry in pending)
+        {
+            bytes += 256 + 2L * ((entry.Message?.Length ?? 0) + (entry.Exception?.Length ?? 0) + (entry.SourceContext?.Length ?? 0));
+            if (report.Count > 0 && (report.Count >= ClientLogStore.MaxEntriesPerReport || bytes > MaxLogReportBytes))
+                break;
+
+            report.Add(entry);
+        }
+
+        return report;
     }
 
     private void ClearLogPushFailures(DiscoveredDevice device)

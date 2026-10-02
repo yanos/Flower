@@ -241,6 +241,35 @@ public class LibrarySyncLogPushTests : IDisposable
         Assert.Equal(1, CountMarker(peer.Reports, second));
     }
 
+    // A backlog larger than one report goes in several, each under what the
+    // server accepts for /log/report - as one request it was refused outright
+    // and every later session sent it again. See
+    // docs/TRUST-BOUNDARY-PLAN.md step 1.
+    [Fact]
+    public async Task A_large_backlog_goes_in_reports_the_server_will_accept()
+    {
+        using var peer = StartPeer(_ => HttpStatusCode.OK);
+        using var key = TestSigningKey.Create();
+        var service = MakeService(key);
+        var device = DeviceFor(peer.Server);
+
+        var padding = new string('x', 2000);
+        var markers = Enumerable.Range(0, 1500).Select(_ => Guid.NewGuid().ToString()).ToList();
+        foreach (var marker in markers)
+        {
+            InMemoryLogStore.Instance.Add(new InMemoryLogEntry(
+                DateTimeOffset.Now, "Information", "Test", marker + padding, null));
+        }
+
+        Assert.True(await PushAsync(service, device));
+
+        Assert.True(peer.Reports.Count > 1);
+        Assert.All(peer.Reports, report => Assert.True(
+            JsonSerializer.SerializeToUtf8Bytes(report, FlowerJsonContext.Default.LogReportDto).Length < 4 * 1024 * 1024));
+        var delivered = peer.Reports.SelectMany(r => r.Entries).Select(e => e.Message).ToList();
+        Assert.All(markers, marker => Assert.Single(delivered, m => m == marker + padding));
+    }
+
     [Fact]
     public async Task A_push_with_nothing_new_makes_no_request_at_all()
     {

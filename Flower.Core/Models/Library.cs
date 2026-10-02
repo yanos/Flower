@@ -2027,6 +2027,41 @@ namespace Flower.Models
             return true;
         }
 
+        // RecordPlay's counterpart for a play reported as an event by a device
+        // that is not one of the owner's: a listener's browser tab. RecordPlay
+        // writes this library's own PlayCount and LastPlayed, which is the
+        // owner speaking for the library - a guest's tab doing that is the
+        // hole docs/TRUST-BOUNDARY-PLAN.md step 1 closes. So the play is filed
+        // where a guest's phone files its plays through /track-state: under
+        // its own fingerprint in RemotePlayCounts, one more each time.
+        //
+        // A finished play only. A start moves nothing a guest may move - it
+        // would stamp LastPlayed - so it is not a play here at all.
+        public bool RecordPlayFor(string? id, string deviceFingerprint)
+        {
+            if (string.IsNullOrEmpty(deviceFingerprint))
+                return false;
+
+            Track played;
+            lock (_lock)
+            {
+                if (Find(id) is not { } track)
+                    return false;
+
+                track.RemotePlayCounts[deviceFingerprint] = track.RemotePlayCounts.GetValueOrDefault(deviceFingerprint) + 1;
+                // So the next GET /library is not a 304 over a catalog whose
+                // counts have moved - see MergeReportedTrackState.
+                BumpChangeToken();
+                played = track;
+            }
+
+            // Upsert, for MergeReportedTrackState's reason: the remote counts
+            // live in their own child table, which UpdateStats does not write.
+            Persist(() => _store!.Upsert(played));
+            RaiseTrackChanged([played], TrackChange.PlayFinished, ChangeSource.Remote);
+            return true;
+        }
+
         // What another device knows about the tracks this one serves, stated
         // as that device's own current values rather than as the changes that
         // got there - see TrackStateDto, and Track.RemotePlayCounts for the

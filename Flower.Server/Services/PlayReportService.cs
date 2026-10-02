@@ -1,5 +1,3 @@
-using System.Collections.Concurrent;
-
 using Flower.Models;
 using Flower.Services;
 
@@ -22,20 +20,41 @@ public sealed class PlayReportService(Library library, ILogger<PlayReportService
     // nothing reuses one, this only bounds how long a retry stays free.
     private static readonly TimeSpan RetainFor = TimeSpan.FromHours(6);
 
-    // Deliberately not NonceReplayGuard, despite the identical shape. That one
+    // And how many one device may have remembered at once, oldest dropped
+    // first. Time alone did not bound it: a paired device choosing fresh ids
+    // could add a report's worth every request for six hours. Ten reporters'
+    // full backlogs, far past a tab's real traffic of a few events a track -
+    // and a device that runs past it only loses the retry-safety of its own
+    // oldest plays.
+    internal const int MaxRememberedPerDevice = PlayReportDto.MaxEvents * 10;
+
+    // Deliberately not NonceReplayGuard, despite the similar shape. That one
     // is a security control tied to SignatureVerifier's timestamp window and
     // must keep its own short retention; this is a correctness control for
     // non-idempotent increments and needs a far longer one. Sharing the
     // instance would have made either window wrong for the other.
-    private readonly ConcurrentDictionary<string, DateTimeOffset> _applied = new();
+    //
+    // Per device, so one device's ids can neither crowd out nor pre-empt
+    // another's.
+    private readonly Dictionary<string, Remembered> _applied = new(StringComparer.Ordinal);
+    private readonly object _lock = new();
+
+    private sealed class Remembered
+    {
+        public readonly Dictionary<string, DateTimeOffset> At = new(StringComparer.Ordinal);
+        public readonly Queue<string> Order = new();
+    }
 
     // The number of events that changed something, for the caller to log. An
     // event naming a track this server does not have, and one already applied,
     // are both fine and both simply do not count.
-    public int Apply(PlayReportDto report, DateTimeOffset now)
+    //
+    // deviceFingerprint is the one the signature proved. An admin device's
+    // plays are the owner's and land in this library's own PlayCount and
+    // LastPlayed, as every tab's used to; anyone else's are filed under the
+    // device that made them (Library.RecordPlayFor).
+    public int Apply(PlayReportDto report, string deviceFingerprint, bool callerIsAdmin, DateTimeOffset now)
     {
-        Prune(now);
-
         var applied = 0;
         foreach (var play in report.Plays)
         {
@@ -50,32 +69,51 @@ public sealed class PlayReportService(Library library, ILogger<PlayReportService
             if (change == default)
                 continue;
 
-            if (!_applied.TryAdd(play.EventId, now))
+            if (!TryRemember(deviceFingerprint, play.EventId, now))
             {
                 logger.LogDebug("Ignoring play event {EventId}, already applied", play.EventId);
                 continue;
             }
 
-            if (library.RecordPlay(play.TrackId, change))
+            var recorded = callerIsAdmin
+                ? library.RecordPlay(play.TrackId, change)
+                : change.HasFlag(TrackChange.PlayFinished) && library.RecordPlayFor(play.TrackId, deviceFingerprint);
+
+            if (recorded)
             {
                 applied++;
             }
             else
             {
                 logger.LogDebug(
-                    "Ignoring a play of {TrackId}: this server has no such track", play.TrackId);
+                    "Nothing to record for play event {EventId} of {TrackId}: no such track here, or a start from a device that is not an admin",
+                    play.EventId, play.TrackId);
             }
         }
 
         return applied;
     }
 
-    private void Prune(DateTimeOffset now)
+    private bool TryRemember(string fingerprint, string eventId, DateTimeOffset now)
     {
-        foreach (var (id, appliedAt) in _applied)
+        lock (_lock)
         {
-            if (now - appliedAt > RetainFor)
-                _applied.TryRemove(id, out _);
+            if (!_applied.TryGetValue(fingerprint, out var remembered))
+                _applied[fingerprint] = remembered = new Remembered();
+
+            // Oldest first in Order, so expiry and the size cap both trim from
+            // the front.
+            while (remembered.Order.TryPeek(out var oldest)
+                   && (remembered.Order.Count >= MaxRememberedPerDevice || now - remembered.At[oldest] > RetainFor))
+            {
+                remembered.At.Remove(remembered.Order.Dequeue());
+            }
+
+            if (!remembered.At.TryAdd(eventId, now))
+                return false;
+
+            remembered.Order.Enqueue(eventId);
+            return true;
         }
     }
 }

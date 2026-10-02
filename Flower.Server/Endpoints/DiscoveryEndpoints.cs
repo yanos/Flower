@@ -165,9 +165,18 @@ public static class DiscoveryEndpoints
                 // nothing: AdminEndpoints checks the same store itself on
                 // every request.
                 callerIsTrusted ? trustedPeers.IsAdmin(caller.Fingerprint!) : null,
-                // Library.PlaylistsToken - what tells a client that stayed
-                // open that a playlist changed on another device.
-                library.PlaylistsToken);
+                // What tells a client that stayed open that a playlist changed
+                // on another device - one of its own listener's, since those
+                // are the only ones it syncs (see Listeners). Library's own
+                // PlaylistsToken counts every listener's edits, so a guest
+                // renaming its own playlist would send every owner device off
+                // to re-sync theirs. Verified callers only, like the address
+                // list: nobody else has playlists here to watch.
+                callerIsTrusted
+                    ? PlaylistSyncMapper.TokenOf(PlaylistSyncMapper.For(
+                        library.Playlists,
+                        Listeners.For(caller.Fingerprint!, trustedPeers.IsAdmin(caller.Fingerprint!))))
+                    : null);
 
             return Results.Json(response, SyncProtocolJsonContext.Default.SyncInfoResponseDto);
         });

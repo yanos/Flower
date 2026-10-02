@@ -33,16 +33,47 @@ public sealed class StreamTicketService
     // something the user experiences.
     private static readonly TimeSpan TicketLifetime = TimeSpan.FromMinutes(15);
 
+    // How many one device may hold at once; minting one more drops its
+    // oldest. A tab plays one track and arms the next, and re-mints as a
+    // ticket nears expiry, so it holds a handful - while the lifetime alone
+    // bounded nothing, since a device asking as fast as it liked filled this
+    // table for fifteen minutes at a time. Dropping the oldest rather than
+    // refusing the newest keeps playback working for a device that does run
+    // past it: the ticket it is about to use is always the newest.
+    public const int MaxPerDevice = 32;
+
     private readonly ConcurrentDictionary<string, Ticket> _tickets = new();
 
-    private sealed record Ticket(string TrackId, string Fingerprint, DateTimeOffset ExpiresAt);
+    private readonly object _issueLock = new();
+
+    // Issue order, so "oldest" is exact: two tickets minted in one clock tick
+    // have the same time but never the same sequence.
+    private long _issued;
+
+    private sealed record Ticket(string TrackId, string Fingerprint, DateTimeOffset ExpiresAt, long Sequence);
 
     public (string Ticket, DateTimeOffset ExpiresAt) Issue(string trackId, string fingerprint)
     {
-        Prune();
+        var now = DateTimeOffset.UtcNow;
         var value = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
-        var expiresAt = DateTimeOffset.UtcNow + TicketLifetime;
-        _tickets[value] = new Ticket(trackId, fingerprint, expiresAt);
+        var expiresAt = now + TicketLifetime;
+
+        // Serialised so two mints by one device cannot both see room for
+        // themselves; redeeming stays lock-free.
+        lock (_issueLock)
+        {
+            Prune(now);
+
+            var held = _tickets
+                .Where(entry => entry.Value.Fingerprint == fingerprint)
+                .OrderBy(entry => entry.Value.Sequence)
+                .ToList();
+            foreach (var (oldest, _) in held.Take(Math.Max(0, held.Count - MaxPerDevice + 1)))
+                _tickets.TryRemove(oldest, out _);
+
+            _tickets[value] = new Ticket(trackId, fingerprint, expiresAt, ++_issued);
+        }
+
         return (value, expiresAt);
     }
 
@@ -56,7 +87,12 @@ public sealed class StreamTicketService
         if (!_tickets.TryGetValue(ticket, out var entry))
             return false;
         if (entry.ExpiresAt <= now)
+        {
+            // Pruned on the way past, so a table nobody mints into still
+            // empties.
+            _tickets.TryRemove(ticket, out _);
             return false;
+        }
 
         return string.Equals(entry.TrackId, trackId, StringComparison.Ordinal);
     }
@@ -76,9 +112,8 @@ public sealed class StreamTicketService
         return revoked;
     }
 
-    private void Prune()
+    private void Prune(DateTimeOffset now)
     {
-        var now = DateTimeOffset.UtcNow;
         foreach (var (value, entry) in _tickets)
         {
             if (entry.ExpiresAt <= now)

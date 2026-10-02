@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
+using Flower.Models;
 using Flower.Persistence;
 using Flower.Server.Configuration;
 using Flower.Server.Services;
@@ -289,6 +290,39 @@ public class DiscoveryEndpointTests(FlowerServerFixture server) : IClassFixture<
         finally
         {
             await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    // playlistsToken is per listener (see Listeners): a guest's own playlist
+    // changing moves the guest's token and leaves the owner's alone, so the
+    // owner's devices are not sent off to re-sync over an edit they will
+    // never see.
+    [Fact]
+    public async Task A_guests_playlist_edit_moves_only_the_guests_playlists_token()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var library = server.Services.GetRequiredService<Library>();
+        var owner = NewDevice();
+        var guest = NewDevice();
+        await trustedPeers.ApproveAsync(owner.Fingerprint, "Owner's desktop", owner.PublicKeyBase64, isAdmin: true);
+        await trustedPeers.ApproveAsync(guest.Fingerprint, "Guest's phone", guest.PublicKeyBase64, isAdmin: false);
+
+        try
+        {
+            var ownerBefore = (await GetInfoAsync(signer: owner)).Body.GetProperty("playlistsToken").GetString();
+            var guestBefore = (await GetInfoAsync(signer: guest)).Body.GetProperty("playlistsToken").GetString();
+
+            library.ReplacePlaylists(current =>
+                [.. current, new Playlist(Guid.NewGuid(), "The guest's", [], DateTimeOffset.UtcNow, listener: guest.Fingerprint)]);
+
+            Assert.Equal(ownerBefore, (await GetInfoAsync(signer: owner)).Body.GetProperty("playlistsToken").GetString());
+            Assert.NotEqual(guestBefore, (await GetInfoAsync(signer: guest)).Body.GetProperty("playlistsToken").GetString());
+        }
+        finally
+        {
+            library.ReplacePlaylists([]);
+            await trustedPeers.RevokeAsync(owner.Fingerprint);
+            await trustedPeers.RevokeAsync(guest.Fingerprint);
         }
     }
 

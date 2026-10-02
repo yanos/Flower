@@ -25,7 +25,7 @@ namespace Flower.Persistence.Sql
             var playlists = new List<PlaylistRow>();
             using (var command = connection.CreateCommand())
             {
-                command.CommandText = "SELECT id, name, updated_at, comment, is_public, created_at, rules FROM playlists;";
+                command.CommandText = "SELECT id, name, updated_at, comment, is_public, created_at, rules, listener FROM playlists;";
                 using var reader = command.ExecuteReader();
                 while (reader.Read())
                 {
@@ -39,7 +39,8 @@ namespace Flower.Persistence.Sql
                         // Null for every ordinary playlist, which is all of
                         // them until a smart one is created. An unreadable blob
                         // also reads as null - see SmartPlaylistRulesJson.Read.
-                        SmartPlaylistRulesJson.Read(reader.IsDBNull(6) ? null : reader.GetString(6))));
+                        SmartPlaylistRulesJson.Read(reader.IsDBNull(6) ? null : reader.GetString(6)),
+                        reader.GetString(7)));
                 }
             }
 
@@ -81,7 +82,8 @@ namespace Flower.Persistence.Sql
                     row.Comment,
                     row.IsPublic,
                     row.CreatedAt,
-                    row.Rules));
+                    row.Rules,
+                    row.Listener));
             }
 
             return result;
@@ -94,7 +96,8 @@ namespace Flower.Persistence.Sql
             string? Comment,
             bool IsPublic,
             DateTimeOffset CreatedAt,
-            SmartPlaylistRules? Rules);
+            SmartPlaylistRules? Rules,
+            string Listener);
 
         // Replaces the stored playlist set with the one given, in a single
         // transaction. Membership is rewritten wholesale per playlist rather
@@ -114,17 +117,17 @@ namespace Flower.Persistence.Sql
             {
                 upsert.Transaction = transaction;
                 upsert.CommandText = """
-                    INSERT INTO playlists (id, name, updated_at, comment, is_public, created_at, rules)
-                    VALUES ($id, $name, $updated_at, $comment, $is_public, $created_at, $rules)
+                    INSERT INTO playlists (id, name, updated_at, comment, is_public, created_at, rules, listener)
+                    VALUES ($id, $name, $updated_at, $comment, $is_public, $created_at, $rules, $listener)
                     ON CONFLICT (id) DO UPDATE SET
                         name = excluded.name,
                         updated_at = excluded.updated_at,
                         comment = excluded.comment,
                         is_public = excluded.is_public,
                         rules = excluded.rules;
-                    -- created_at is not in the DO UPDATE: it is set once, when
-                    -- the row is first written, and Playlist has no way to
-                    -- change it afterwards.
+                    -- created_at and listener are not in the DO UPDATE: each is
+                    -- set once, when the row is first written, and Playlist
+                    -- has no way to change either afterwards.
                     --
                     -- comment and is_public are, now that Playlist carries
                     -- them. They used to be insert-only for exactly the
@@ -139,6 +142,7 @@ namespace Flower.Persistence.Sql
                 var upsertIsPublic = upsert.Parameters.Add("$is_public", SqliteType.Integer);
                 var upsertCreatedAt = upsert.Parameters.Add("$created_at", SqliteType.Integer);
                 var upsertRules = upsert.Parameters.Add("$rules", SqliteType.Text);
+                var upsertListener = upsert.Parameters.Add("$listener", SqliteType.Text);
 
                 clear.Transaction = transaction;
                 clear.CommandText = "DELETE FROM playlist_tracks WHERE playlist_id = $playlist_id;";
@@ -172,6 +176,7 @@ namespace Flower.Persistence.Sql
                     upsertRules.Value = playlist.Rules is { } rules
                         ? SmartPlaylistRulesJson.Write(rules)
                         : (object)DBNull.Value;
+                    upsertListener.Value = playlist.Listener;
                     upsert.ExecuteNonQuery();
 
                     clearId.Value = id;

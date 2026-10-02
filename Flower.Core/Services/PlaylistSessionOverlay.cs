@@ -134,7 +134,7 @@ public static class PlaylistThreeWayMerge
         if (tracks == null)
             return null;
 
-        var result = new Playlist(ours.Id, name, tracks, ours.UpdatedAt, ours.Comment, ours.IsPublic, ours.CreatedAt);
+        var result = new Playlist(ours.Id, name, tracks, ours.UpdatedAt, ours.Comment, ours.IsPublic, ours.CreatedAt, listener: ours.Listener);
         // Newer than both, so the other side takes it from the push.
         result.MarkEditedAfter(ours.UpdatedAt > theirs.UpdatedAt ? ours.UpdatedAt : theirs.UpdatedAt);
         return result;

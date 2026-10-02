@@ -285,6 +285,17 @@ public class PlaylistSyncService
             postResponse.EnsureSuccessStatusCode();
             _logger.LogInformation("Playlist sync with {Alias}: pushed {Count} playlist(s) to their /apply successfully",
                 device.Alias, installed.Count);
+
+            // Logged, and nothing else: see PlaylistApplyResponseDto for why
+            // the next session, not this answer, is what drops them here.
+            var answer = JsonSerializer.Deserialize(
+                await postResponse.Content.ReadAsStringAsync(), PlaylistSyncJsonContext.Default.PlaylistApplyResponseDto);
+            if (answer?.Refused is { Count: > 0 } refused)
+            {
+                _logger.LogInformation(
+                    "Playlist sync with {Alias}: the server refused {Count} playlist(s) that belong to another listener on it ({PlaylistIds}); they will be dropped here on the next sync",
+                    device.Alias, refused.Count, string.Join(", ", refused));
+            }
         }
         catch (Exception ex)
         {

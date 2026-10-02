@@ -42,3 +42,21 @@ public sealed record PlaylistSyncPlaylistDto(
 // no newer than the one held is not taken.
 public sealed record PlaylistSyncManifestDto(
     string DeviceFingerprint, List<PlaylistSyncPlaylistDto> Playlists, List<Guid>? Deleted = null);
+
+// The answer to POST /api/flower/v1/playlists/apply. Refused names the pushed
+// or deleted ids the server did not apply because they belong to another
+// listener (see Listeners) - the owner's playlists, pushed by a guest device
+// that kept copies from before playlists were kept apart. Empty, never null,
+// from an honest push.
+//
+// Said rather than silently dropped so the refusal shows in the pushing
+// device's log. The device deletes nothing on the strength of it: its next
+// session reads those playlists as deleted on the server, which they are as
+// far as that listener is concerned, and drops them the ordinary way (see
+// PlaylistSyncPlanner) - so a forged answer cannot remove a playlist that the
+// server still has for this device.
+public sealed record PlaylistApplyResponseDto(List<Guid> Refused);
+
+// What ApplyPushedManifest did: the pushing listener's playlists as now
+// installed, and what it refused.
+public sealed record PlaylistApplyResult(List<Playlist> Installed, List<Guid> Refused);

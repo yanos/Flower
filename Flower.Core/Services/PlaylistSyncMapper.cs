@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 
 using Microsoft.Extensions.Logging;
 
@@ -56,7 +58,8 @@ public static class PlaylistSyncMapper
     public static Playlist ToPlaylist(PlaylistSyncPlaylistDto dto, IReadOnlyList<Track> localLibrary, ILogger? logger = null) =>
         ToPlaylist(dto, new PlaylistTrackIndex(localLibrary), logger);
 
-    public static Playlist ToPlaylist(PlaylistSyncPlaylistDto dto, PlaylistTrackIndex index, ILogger? logger = null)
+    public static Playlist ToPlaylist(
+        PlaylistSyncPlaylistDto dto, PlaylistTrackIndex index, ILogger? logger = null, string listener = Listeners.Owner)
     {
         var tracks = index.Resolve(dto.Tracks, out var unmatched);
         if (unmatched.Count > 0)
@@ -67,7 +70,7 @@ public static class PlaylistSyncMapper
                 string.Join("; ", unmatched.Select(t => $"{t.Artists} - {t.Title} [{t.Album}, {t.DurationSeconds}s]")));
         }
 
-        return new(dto.Id, dto.Name, tracks, dto.UpdatedAt, rules: dto.Rules);
+        return new(dto.Id, dto.Name, tracks, dto.UpdatedAt, rules: dto.Rules, listener: listener);
     }
 
     // What a server does with a manifest a device pushed to /playlists/apply,
@@ -91,33 +94,92 @@ public static class PlaylistSyncMapper
     //     timestamp, which the planner hands to whichever side has them for
     //     the same reason (see PlaylistSyncPlanner).
     //
-    // Returns the set installed.
-    public static List<Playlist> ApplyPushedManifest(Library library, PlaylistSyncManifestDto manifest, ILogger? logger = null)
+    //
+    // And a push only ever speaks for one listener (see Listeners): the
+    // owner's, from an admin device, or a non-admin device's own. Every other
+    // listener's playlists pass through untouched, and a pushed or deleted id
+    // that belongs to one of them is refused rather than applied - a guest
+    // naming the owner's playlist, whether it kept a copy from before
+    // playlists were kept apart or is simply hostile, changes nothing.
+    //
+    // Returns the pushing listener's playlists as installed, and the ids
+    // refused.
+    public static PlaylistApplyResult ApplyPushedManifest(
+        Library library, PlaylistSyncManifestDto manifest, string listener, ILogger? logger = null)
     {
         var index = new PlaylistTrackIndex(library.Tracks);
-        var held = library.Playlists.ToDictionary(p => p.Id);
         var deleted = manifest.Deleted?.ToHashSet() ?? [];
-        var pushedIds = new HashSet<Guid>();
+        var refused = new List<Guid>();
 
-        var result = new List<Playlist>();
-        foreach (var dto in manifest.Playlists)
+        var installed = library.ReplacePlaylists(current =>
         {
-            if (!pushedIds.Add(dto.Id))
-                continue;
+            var held = current.ToDictionary(p => p.Id);
+            var pushedIds = new HashSet<Guid>();
+            var result = new List<Playlist>();
 
-            result.Add(held.TryGetValue(dto.Id, out var current) && !Supersedes(dto, current)
-                ? current
-                : ToPlaylist(dto, index, logger));
+            foreach (var dto in manifest.Playlists)
+            {
+                if (!pushedIds.Add(dto.Id))
+                    continue;
+
+                if (held.TryGetValue(dto.Id, out var existing) && existing.Listener != listener)
+                {
+                    refused.Add(dto.Id);
+                    continue;
+                }
+
+                result.Add(existing != null && !Supersedes(dto, existing)
+                    ? existing
+                    : ToPlaylist(dto, index, logger, listener));
+            }
+
+            // Another listener's playlist is kept whatever the push said about
+            // it - including when the push named it, which is why this asks
+            // about the listener before it asks about pushedIds.
+            foreach (var playlist in current)
+            {
+                if (playlist.Listener != listener)
+                {
+                    if (deleted.Contains(playlist.Id) && !refused.Contains(playlist.Id))
+                        refused.Add(playlist.Id);
+                    result.Add(playlist);
+                }
+                else if (!pushedIds.Contains(playlist.Id) && !deleted.Contains(playlist.Id))
+                {
+                    result.Add(playlist);
+                }
+            }
+
+            return result;
+        });
+
+        if (refused.Count > 0)
+        {
+            logger?.LogWarning(
+                "Refused {Count} playlist(s) pushed for listener {Listener}: they belong to another listener ({PlaylistIds})",
+                refused.Count, listener, string.Join(", ", refused));
         }
 
-        foreach (var playlist in library.Playlists)
-        {
-            if (!pushedIds.Contains(playlist.Id) && !deleted.Contains(playlist.Id))
-                result.Add(playlist);
-        }
+        return new PlaylistApplyResult(installed.Where(p => p.Listener == listener).ToList(), refused);
+    }
 
-        library.ReplacePlaylists(result);
-        return result;
+    // What a GET /playlists answers with, and what a client's /info poll is
+    // told about: one listener's playlists, never the server's whole set.
+    public static List<Playlist> For(IEnumerable<Playlist> playlists, string listener) =>
+        playlists.Where(p => p.Listener == listener).ToList();
+
+    // A token that moves whenever one listener's playlists change, for /info's
+    // playlistsToken. Derived from the playlists rather than counted, because
+    // the counter Library keeps (PlaylistsToken) moves for every listener's
+    // edits, and a guest renaming its own playlist must not send the owner's
+    // devices off to re-sync theirs. UpdatedAt moves on every edit a sync
+    // carries (see Playlist.Touch), and the id list covers a delete.
+    public static string TokenOf(IEnumerable<Playlist> playlists)
+    {
+        var text = string.Join("\n", playlists
+            .Select(p => $"{p.Id:N}:{p.UpdatedAt.UtcTicks}")
+            .Order(StringComparer.Ordinal));
+        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text)))[..16];
     }
 
     private static bool Supersedes(PlaylistSyncPlaylistDto pushed, Playlist held) =>
