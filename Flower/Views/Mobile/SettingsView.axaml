@@ -352,6 +352,21 @@
                          VerticalAlignment="Center" />
               <ToggleSwitch Grid.Column="2" IsChecked="{Binding Main.ShareLogsWithPairedServer}" />
             </Grid>
+
+            <!-- Off by default: songs added on this phone go up to the server
+                 on its own network and wait otherwise, rather than spending a
+                 data plan unasked. See AppSettings.UploadWhenAwayFromHome. -->
+            <Border Classes="divider" Margin="58,0,0,0" />
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+              <Border Grid.Column="0" Classes="badge" VerticalAlignment="Center">
+                <materialIcons:MaterialIcon Kind="CloudUploadOutline" />
+              </Border>
+              <TextBlock Grid.Column="1" Classes="rowTitle" FontWeight="Normal"
+                         Text="Transfer songs over cellular"
+                         TextWrapping="Wrap"
+                         VerticalAlignment="Center" />
+              <ToggleSwitch Grid.Column="2" IsChecked="{Binding Main.UploadWhenAwayFromHome}" />
+            </Grid>
           </StackPanel>
         </StackPanel>
       </Border>

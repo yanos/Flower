@@ -158,9 +158,10 @@ public partial class TrackInfoWindow : Window
     // AutoCompleteBox doesn't inherit from TextBox, so a single typed Box
     // reference can't hold either.
     private sealed class EditableField(
-        Func<string> getText, Action<string> setText, Action<string?> setWatermark,
+        Func<string> getText, Action<string> setText, Action<string?> setWatermark, Action<bool> setEnabled,
         Func<Track, string> display, Action<Track, TagLib.Tag, string?> apply)
     {
+        public readonly Action<bool> SetEnabled = setEnabled;
         public readonly Func<string> GetText = getText;
         public readonly Action<string> SetText = setText;
         public readonly Action<string?> SetWatermark = setWatermark;
@@ -171,10 +172,10 @@ public partial class TrackInfoWindow : Window
     }
 
     private static EditableField FromTextBox(TextBox box, Func<Track, string> display, Action<Track, TagLib.Tag, string?> apply) =>
-        new(() => box.Text ?? "", v => box.Text = v, w => box.PlaceholderText = w, display, apply);
+        new(() => box.Text ?? "", v => box.Text = v, w => box.PlaceholderText = w, e => box.IsEnabled = e, display, apply);
 
     private static EditableField FromAutoComplete(AutoCompleteBox box, Func<Track, string> display, Action<Track, TagLib.Tag, string?> apply) =>
-        new(() => box.Text ?? "", v => box.Text = v, w => box.PlaceholderText = w, display, apply);
+        new(() => box.Text ?? "", v => box.Text = v, w => box.PlaceholderText = w, e => box.IsEnabled = e, display, apply);
 
     private static EditableField SimpleField(
         TextBox box, Func<Track, string?> get, Action<Track, string?> setTrack, Action<TagLib.Tag, string?> setTag) =>
@@ -233,8 +234,14 @@ public partial class TrackInfoWindow : Window
 
     private void Populate()
     {
+        // Tags are for whoever may edit them (MainViewModel.CanEditTagsOf):
+        // anyone, of a song of their own; an administrator, of the server's.
+        // Shown but not editable otherwise, rather than editable and ignored.
+        var editable = _editTracks.Count > 0 && _editTracks.All(_main.CanEditTagsOf);
+
         foreach (var field in _fields)
         {
+            field.SetEnabled(editable);
             var values = _editTracks.Select(field.Display).Distinct().ToList();
             if (values.Count == 1)
             {
@@ -380,8 +387,9 @@ public partial class TrackInfoWindow : Window
             UpdateResumePositionText();
 
             // The playback half works for anything (it is library state); the
-            // tag half needs a file to write into.
-            var writable = _editTracks.Count > 0 && _editTracks.All(t => t.Path != null);
+            // tag half needs somewhere for a tag to be written - a file here,
+            // or the paired server's (MainViewModel.CanEditTagsOf).
+            var writable = _editTracks.Count > 0 && _editTracks.All(_main.CanEditTagsOf);
             CompilationBox.IsEnabled = writable;
             TitleSortBox.IsEnabled = writable;
             ArtistSortBox.IsEnabled = writable;
@@ -390,7 +398,7 @@ public partial class TrackInfoWindow : Window
             OptionsUnavailableText.IsVisible = !writable;
             OptionsUnavailableText.Text = writable
                 ? ""
-                : "Compilation and the sort tags live in the file's own tags, and this track has no local file to write. "
+                : "Compilation and the sort tags live in the file's own tags, and this track has no file here or on a server this device administers. "
                   + "The playback options still apply - those are Flower's own, not tags.";
         }
         finally
@@ -602,10 +610,34 @@ public partial class TrackInfoWindow : Window
         if (dirty.Count == 0 && compilation == null)
             return;
 
+        // The tracks whose tags actually changed - which is what gets
+        // announced below, and so what is stamped as edited and sent to the
+        // paired server. A track the edit could not be applied to is not one.
+        var edited = new List<Track>();
         foreach (var track in _editTracks)
         {
-            if (track.Path is not string path)
+            // Not this device's to edit - a server's song, on a device that
+            // server has not made an administrator, file here or not.
+            if (!_main.CanEditTagsOf(track))
                 continue;
+
+            if (track.Path is not string path)
+            {
+                // No file here to write: a song that lives on the paired
+                // server. The edit is made to the track, and reaches the
+                // server's file from there (LibraryMirrorService).
+
+                // The fields apply themselves to a track and a TagLib tag
+                // together; with no file there is no tag, so they are given
+                // one nobody reads.
+                var nowhere = new TagLib.Id3v2.Tag();
+                foreach (var field in dirty)
+                    field.Apply(track, nowhere, field.GetText());
+                if (compilation is { } flag)
+                    track.IsCompilation = flag;
+                edited.Add(track);
+                continue;
+            }
 
             try
             {
@@ -616,6 +648,7 @@ public partial class TrackInfoWindow : Window
                 if (compilation is { } isCompilation && CompilationFlag.Write(tagFile, isCompilation))
                     track.IsCompilation = isCompilation;
                 tagFile.Save();
+                edited.Add(track);
             }
             catch (Exception ex)
             {
@@ -640,7 +673,7 @@ public partial class TrackInfoWindow : Window
         // MainViewModel.SyncITunesPlayCountAsync's comment on why passing
         // Tracks back into UpdateTracks as a "fresh scan" silently doubles
         // every placeholder track.
-        _library.NotifyTracksChanged(_editTracks, TrackChange.Tags);
+        _library.NotifyTracksChanged(edited, TrackChange.Tags);
     }
 
     // ── Artwork tab ────────────────────────────────────────────────────────

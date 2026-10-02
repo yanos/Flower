@@ -146,6 +146,12 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
 
     // The server starts its own rescan once the list has changed - see
     // AdminEndpoints' /library/removed/restore.
+    public async Task<string> DeleteRemovedFilesAsync(IReadOnlyList<string> paths, CancellationToken ct = default)
+    {
+        var response = await client.DeleteRemovedFilesAsync(new DeleteRemovedFilesRequestDto(paths.ToList()), ct);
+        return LocalSettingsBackend.DeletedMessage(response.Deleted, response.NotDeleted);
+    }
+
     public async Task<string> RestoreRemovedFilesAsync(IReadOnlyList<string> paths, CancellationToken ct = default) =>
         LocalSettingsBackend.RestoredMessage(
             (await client.RestoreRemovedFilesAsync(new RestoreRemovedFilesRequestDto(paths.ToList()), ct)).Restored);

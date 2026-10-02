@@ -44,6 +44,15 @@ public class SettingsRemovedSongsTests
             Removed.RemoveAll(r => paths.Contains(r.Path));
             return Task.FromResult($"Restored {paths.Count}");
         }
+
+        public List<string> Deleted { get; } = [];
+
+        public Task<string> DeleteRemovedFilesAsync(IReadOnlyList<string> paths, CancellationToken ct = default)
+        {
+            Deleted.AddRange(paths);
+            Removed.RemoveAll(r => paths.Contains(r.Path));
+            return Task.FromResult($"Deleted {paths.Count}");
+        }
     }
 
     private static RemovedFileRow Row(string path) => new(path, DateTimeOffset.UtcNow, StillOnDisk: true);
@@ -86,6 +95,47 @@ public class SettingsRemovedSongsTests
 
         Assert.Equal(2, backend.Restored.Count);
         Assert.False(viewModel.HasRemovedFiles);
+    }
+
+    // The one thing on the screen that cannot be taken back, beside a button
+    // that looks just like it: the first press only says what the second does.
+    [Fact]
+    public async Task Deleting_the_files_takes_two_presses_and_the_first_deletes_nothing()
+    {
+        var backend = new Backend();
+        backend.Removed.AddRange([Row("/music/A/One.mp3"), Row("/music/A/Two.mp3")]);
+        var viewModel = new SettingsViewModel(backend);
+        await viewModel.LoadAsync(TestContext.Current.CancellationToken);
+        Assert.Equal("Delete Files…", viewModel.DeleteRemovedFilesLabel);
+
+        await viewModel.DeleteAllRemovedFilesCommand.ExecuteAsync(null);
+
+        Assert.Empty(backend.Deleted);
+        Assert.Equal("Delete 2 files for good?", viewModel.DeleteRemovedFilesLabel);
+        Assert.True(viewModel.HasRemovedFiles);
+
+        await viewModel.DeleteAllRemovedFilesCommand.ExecuteAsync(null);
+
+        Assert.Equal(["/music/A/One.mp3", "/music/A/Two.mp3"], backend.Deleted);
+        Assert.False(viewModel.HasRemovedFiles);
+        Assert.Equal("Deleted 2", viewModel.StatusMessage);
+        Assert.Equal("Delete Files…", viewModel.DeleteRemovedFilesLabel);
+    }
+
+    // Doing something else in between is a change of mind.
+    [Fact]
+    public async Task Restoring_a_file_after_the_first_press_disarms_the_delete()
+    {
+        var backend = new Backend();
+        backend.Removed.AddRange([Row("/music/A/One.mp3"), Row("/music/A/Two.mp3")]);
+        var viewModel = new SettingsViewModel(backend);
+        await viewModel.LoadAsync(TestContext.Current.CancellationToken);
+        await viewModel.DeleteAllRemovedFilesCommand.ExecuteAsync(null);
+
+        await viewModel.RestoreRemovedFileCommand.ExecuteAsync(viewModel.RemovedFiles[0]);
+
+        Assert.Equal("Delete Files…", viewModel.DeleteRemovedFilesLabel);
+        Assert.Empty(backend.Deleted);
     }
 
     // The path is the server's when the panel is administering one, so the

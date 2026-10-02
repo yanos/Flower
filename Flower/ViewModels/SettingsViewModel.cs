@@ -241,6 +241,13 @@ public sealed partial class SettingsViewModel : ViewModelBase
         set => SetProperty(ref _shareLogsWithPairedServer, value);
     }
 
+    private bool _uploadWhenAwayFromHome;
+    public bool UploadWhenAwayFromHome
+    {
+        get => _uploadWhenAwayFromHome;
+        set => SetProperty(ref _uploadWhenAwayFromHome, value);
+    }
+
     private string _advertisedHost = "";
     public string AdvertisedHost
     {
@@ -436,6 +443,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
             SyncPlayCountFromITunes = _snapshot.SyncPlayCountFromITunes;
             SyncDateAddedFromITunes = _snapshot.SyncDateAddedFromITunes;
             ShareLogsWithPairedServer = _snapshot.ShareLogsWithPairedServer;
+            UploadWhenAwayFromHome = _snapshot.UploadWhenAwayFromHome;
             AdvertisedHost = _snapshot.AdvertisedHost;
             AdvertiseOnLan = _snapshot.AdvertiseOnLan;
             TrustTailscaleRange = _snapshot.TrustTailscaleRange;
@@ -524,6 +532,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
                 SyncPlayCountFromITunes = SyncPlayCountFromITunes,
                 SyncDateAddedFromITunes = SyncDateAddedFromITunes,
                 ShareLogsWithPairedServer = ShareLogsWithPairedServer,
+                UploadWhenAwayFromHome = UploadWhenAwayFromHome,
                 AdvertisedHost = AdvertisedHost,
                 AdvertiseOnLan = AdvertiseOnLan,
                 TrustTailscaleRange = TrustTailscaleRange,
@@ -597,12 +606,53 @@ public sealed partial class SettingsViewModel : ViewModelBase
         StatusMessage = message;
     });
 
+    // Every file on the list, deleted from disk for good - the library's
+    // manual clean-up. All of them or none: the list is what "no longer in
+    // the library" means, and a song worth keeping is one to Restore first.
+    //
+    // Two presses. The first only arms it and rewrites the button to say what
+    // the second will do, because this is the one thing on the screen that
+    // cannot be taken back, and it sits beside a button that looks just like
+    // it. A press rather than a dialog so it works the same in a window, on a
+    // phone and in a browser tab, which is three places this panel is shown.
+    private bool _deleteRemovedFilesArmed;
+
+    public string DeleteRemovedFilesLabel => !_deleteRemovedFilesArmed
+        ? "Delete Files…"
+        : RemovedFiles.Count == 1 ? "Delete 1 file for good?" : $"Delete {RemovedFiles.Count} files for good?";
+
+    private void DisarmDeleteRemovedFiles()
+    {
+        _deleteRemovedFilesArmed = false;
+        OnPropertyChanged(nameof(DeleteRemovedFilesLabel));
+    }
+
+    [RelayCommand]
+    private Task DeleteAllRemovedFilesAsync()
+    {
+        if (!_deleteRemovedFilesArmed)
+        {
+            _deleteRemovedFilesArmed = RemovedFiles.Count > 0;
+            OnPropertyChanged(nameof(DeleteRemovedFilesLabel));
+            return Task.CompletedTask;
+        }
+
+        return RunAsync(async ct =>
+        {
+            var paths = RemovedFiles.Select(r => r.Path).ToList();
+            var message = await _backend.DeleteRemovedFilesAsync(paths, ct);
+            await RefreshRemovedFilesAsync(ct);
+            StatusMessage = message;
+        });
+    }
+
     public async Task RefreshRemovedFilesAsync(CancellationToken ct = default)
     {
         RemovedFiles.Clear();
         foreach (var row in await _backend.LoadRemovedFilesAsync(ct))
             RemovedFiles.Add(row);
         OnPropertyChanged(nameof(HasRemovedFiles));
+        DisarmDeleteRemovedFiles();
     }
 
     // What the next code will grant, ticked beside the one button that issues

@@ -62,6 +62,21 @@ public partial class TrackInfoView : UserControl
     {
         _track = track;
 
+        // Shown but not editable when the song is not this phone's to edit,
+        // rather than editable and ignored on Save.
+        var editable = (DataContext as MobileMainViewModel)?.Main.CanEditTagsOf(track) == true;
+        foreach (var box in new Control[]
+                 {
+                     TitleBox, ArtistBox, AlbumBox, AlbumArtistBox, TrackNumBox, TrackTotalBox, DiscNumBox, DiscTotalBox,
+                     YearBox, GenreBox, BpmBox, KeyBox, GroupingBox, ComposerBox, ConductorBox, RemixedByBox, SubtitleBox,
+                     DescriptionBox, CommentBox, PublisherBox, CopyrightBox, ISRCBox, LyricsBox,
+                 })
+        {
+            box.IsEnabled = editable;
+        }
+
+        SaveButton.IsVisible = editable;
+
         TitleBox.Text  = track.Title ?? "";
         ArtistBox.Text = track.Artists ?? "";
         AlbumBox.Text  = track.Album ?? "";
@@ -112,7 +127,7 @@ public partial class TrackInfoView : UserControl
         PathValue.Text = serverName ?? track.Path ?? "—";
         DateAddedValue.Text = track.DateAdded.LocalDateTime.ToString("MMM d, yyyy");
 
-        GenreMenuButton.IsVisible = DataContext is MobileMainViewModel vm
+        GenreMenuButton.IsVisible = editable && DataContext is MobileMainViewModel vm
             && TagSuggestionSource.DistinctGenres(vm.Main.Library.Tracks).Count > 0;
 
         _ = LoadAlbumArtAsync(track);
@@ -160,49 +175,18 @@ public partial class TrackInfoView : UserControl
 
     private async System.Threading.Tasks.Task SaveChanges()
     {
-        if (_track?.Path is not string path || DataContext is not MobileMainViewModel vm)
+        if (_track == null || DataContext is not MobileMainViewModel vm)
             return;
 
-        try
-        {
-            using var tagFile = TagLib.File.Create(path);
-            var tag = tagFile.Tag;
-
-            tag.Title        = NullIfEmpty(TitleBox.Text);
-            tag.Performers    = SplitArray(ArtistBox.Text);
-            tag.Album         = NullIfEmpty(AlbumBox.Text);
-            tag.AlbumArtists  = SplitArray(AlbumArtistBox.Text);
-            tag.Track         = ParseUInt(TrackNumBox.Text);
-            tag.TrackCount    = ParseUInt(TrackTotalBox.Text);
-            tag.Disc          = ParseUInt(DiscNumBox.Text);
-            tag.DiscCount     = ParseUInt(DiscTotalBox.Text);
-            tag.Year          = ParseUInt(YearBox.Text);
-            tag.Genres        = NullIfEmpty(GenreBox.Text) is string g ? [g] : [];
-            tag.BeatsPerMinute = ParseUInt(BpmBox.Text);
-            tag.InitialKey    = NullIfEmpty(KeyBox.Text);
-            tag.Grouping      = NullIfEmpty(GroupingBox.Text);
-            tag.Composers     = SplitArray(ComposerBox.Text);
-            tag.Conductor     = NullIfEmpty(ConductorBox.Text);
-            tag.RemixedBy     = NullIfEmpty(RemixedByBox.Text);
-            tag.Subtitle      = NullIfEmpty(SubtitleBox.Text);
-            tag.Description   = NullIfEmpty(DescriptionBox.Text);
-            tag.Comment       = NullIfEmpty(CommentBox.Text);
-            tag.Publisher     = NullIfEmpty(PublisherBox.Text);
-            tag.Copyright     = NullIfEmpty(CopyrightBox.Text);
-            tag.ISRC          = NullIfEmpty(ISRCBox.Text);
-            tag.Lyrics        = NullIfEmpty(LyricsBox.Text);
-
-            tagFile.Save();
-        }
-        catch (Exception ex)
-        {
-            // Unlike the desktop TrackInfoWindow's SaveChanges, _track itself
-            // is only mutated below, after this try/catch - so a failed save
-            // here correctly leaves nothing to un-drift, just an edit the user
-            // otherwise has zero indication silently didn't stick.
-            _logger.LogWarning(ex, "Could not save tag edits to {Path}; this track's changes were not applied", path);
+        // Whether this is the phone's to edit at all (MainViewModel.
+        // CanEditTagsOf): a song of its own, or one of a server it
+        // administers. The second kind needs no file here - a song this phone
+        // only streams is edited on the track below and the edit sent up.
+        if (!vm.Main.CanEditTagsOf(_track))
             return;
-        }
+
+        if (_track.Path is string path && !WriteTagsToFile(path))
+            return;
 
         _track.Title          = NullIfEmpty(TitleBox.Text);
         _track.Artists        = NullIfEmpty(ArtistBox.Text);
@@ -234,6 +218,54 @@ public partial class TrackInfoView : UserControl
         // every placeholder track. The single-track form persists this one
         // row rather than the whole library.
         vm.Main.Library.NotifyTrackChanged(_track, TrackChange.Tags);
+    }
+
+    // The file half of a save: the boxes as they stand, written into the
+    // file's own tags. False when they could not be, in which case nothing
+    // else about the track is changed either.
+    private bool WriteTagsToFile(string path)
+    {
+        try
+        {
+            using var tagFile = TagLib.File.Create(path);
+            var tag = tagFile.Tag;
+
+            tag.Title        = NullIfEmpty(TitleBox.Text);
+            tag.Performers    = SplitArray(ArtistBox.Text);
+            tag.Album         = NullIfEmpty(AlbumBox.Text);
+            tag.AlbumArtists  = SplitArray(AlbumArtistBox.Text);
+            tag.Track         = ParseUInt(TrackNumBox.Text);
+            tag.TrackCount    = ParseUInt(TrackTotalBox.Text);
+            tag.Disc          = ParseUInt(DiscNumBox.Text);
+            tag.DiscCount     = ParseUInt(DiscTotalBox.Text);
+            tag.Year          = ParseUInt(YearBox.Text);
+            tag.Genres        = NullIfEmpty(GenreBox.Text) is string g ? [g] : [];
+            tag.BeatsPerMinute = ParseUInt(BpmBox.Text);
+            tag.InitialKey    = NullIfEmpty(KeyBox.Text);
+            tag.Grouping      = NullIfEmpty(GroupingBox.Text);
+            tag.Composers     = SplitArray(ComposerBox.Text);
+            tag.Conductor     = NullIfEmpty(ConductorBox.Text);
+            tag.RemixedBy     = NullIfEmpty(RemixedByBox.Text);
+            tag.Subtitle      = NullIfEmpty(SubtitleBox.Text);
+            tag.Description   = NullIfEmpty(DescriptionBox.Text);
+            tag.Comment       = NullIfEmpty(CommentBox.Text);
+            tag.Publisher     = NullIfEmpty(PublisherBox.Text);
+            tag.Copyright     = NullIfEmpty(CopyrightBox.Text);
+            tag.ISRC          = NullIfEmpty(ISRCBox.Text);
+            tag.Lyrics        = NullIfEmpty(LyricsBox.Text);
+
+            tagFile.Save();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            // Unlike the desktop TrackInfoWindow's SaveChanges, _track itself
+            // is only mutated below, after this try/catch - so a failed save
+            // here correctly leaves nothing to un-drift, just an edit the user
+            // otherwise has zero indication silently didn't stick.
+            _logger.LogWarning(ex, "Could not save tag edits to {Path}; this track's changes were not applied", path);
+            return false;
+        }
     }
 
     private static string? NullIfEmpty(string? s) =>

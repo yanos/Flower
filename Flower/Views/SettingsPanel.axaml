@@ -70,6 +70,18 @@
                      Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"
                      IsVisible="{Binding ShowsShareLogs}"/>
 
+          <!-- Off by default: on the server's own network an upload costs
+               nothing, away from it it costs a data plan or an afternoon (see
+               AppSettings.UploadWhenAwayFromHome). Shown wherever the logs
+               switch is, for the same reason - no server, nowhere to send. -->
+          <CheckBox Content="Transfer songs when away from home"
+                    Margin="0,16,0,0"
+                    IsChecked="{Binding UploadWhenAwayFromHome, Mode=TwoWay}"
+                    IsVisible="{Binding ShowsShareLogs}"/>
+          <TextBlock Text="Off: song files are sent to the server, and replaced versions fetched from it, only on its own network. On: also over cellular or a remote connection. Edits to tags and covers always go."
+                     Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"
+                     IsVisible="{Binding ShowsShareLogs}"/>
+
           <!-- "Where does my data live" is a general, not library-specific,
                question. Shown as a button on the machine you are sitting at, and
                as plain text for a server you are not - a file manager on this
@@ -329,14 +341,19 @@
                  can still have removed files of its own to bring back. Hidden
                  while there are none. -->
             <StackPanel Margin="0,24,0,0" Spacing="8" IsVisible="{Binding HasRemovedFiles}">
-              <Grid ColumnDefinitions="*,Auto">
+              <Grid ColumnDefinitions="*,Auto,Auto">
                 <StackPanel Spacing="2">
                   <TextBlock Text="Removed Songs" FontWeight="SemiBold"/>
-                  <TextBlock Text="Hidden from the library. The files are still on disk."
+                  <TextBlock Text="Hidden from the library. The files are still on disk until you delete them here."
                              FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
                 </StackPanel>
                 <Button Grid.Column="1" Content="Restore All" VerticalAlignment="Top" Margin="12,0,0,0"
                         Command="{Binding RestoreAllRemovedFilesCommand}"/>
+                <!-- The library's clean-up: nothing else deletes a removed
+                     song's file. Two presses - the first rewrites the label to
+                     say what the second does (SettingsViewModel). -->
+                <Button Grid.Column="2" Content="{Binding DeleteRemovedFilesLabel}" VerticalAlignment="Top" Margin="8,0,0,0"
+                        Command="{Binding DeleteAllRemovedFilesCommand}"/>
               </Grid>
 
               <Border MaxHeight="240"

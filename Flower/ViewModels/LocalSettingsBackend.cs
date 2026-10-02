@@ -47,6 +47,7 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
         SyncPlayCountFromITunes = ViewModel.SyncPlayCountFromITunes,
         SyncDateAddedFromITunes = ViewModel.SyncDateAddedFromITunes,
         ShareLogsWithPairedServer = ViewModel.ShareLogsWithPairedServer,
+        UploadWhenAwayFromHome = ViewModel.UploadWhenAwayFromHome,
         ITunesLibraryDescription = ITunesIntegration.DescribeSource(),
         AppleMusicFolder = Flower.Importer.Importer.TryResolveAppleMusicFolder(),
         DataDirectory = AppDataDirectory.Path,
@@ -81,6 +82,7 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
         ViewModel.SyncPlayCountFromITunes = draft.SyncPlayCountFromITunes;
         ViewModel.SyncDateAddedFromITunes = draft.SyncDateAddedFromITunes;
         ViewModel.ShareLogsWithPairedServer = draft.ShareLogsWithPairedServer;
+        ViewModel.UploadWhenAwayFromHome = draft.UploadWhenAwayFromHome;
 
         if (draft.LibraryPathsChanged)
             await ViewModel.SaveLibraryPathsAsync(draft.LibraryPaths.ToList());
@@ -156,6 +158,18 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
             _ = ViewModel.RescanLibraryAsync();
         return Task.FromResult(RestoredMessage(restored));
     }
+
+    public Task<string> DeleteRemovedFilesAsync(IReadOnlyList<string> paths, CancellationToken ct = default)
+    {
+        var (deleted, notDeleted) = LibraryRemoval.DeleteRemovedFiles(
+            ViewModel.Library, paths, Flower.Importer.Importer.ScanRoots(ViewModel.LibraryPaths),
+            Flower.Logging.AppLogging.CreateTypedLogger<LocalSettingsBackend>());
+        return Task.FromResult(DeletedMessage(deleted, notDeleted));
+    }
+
+    internal static string DeletedMessage(int deleted, int notDeleted) =>
+        (deleted == 1 ? "Deleted 1 file for good." : $"Deleted {deleted} files for good.")
+        + (notDeleted == 0 ? "" : $" {notDeleted} could not be deleted and are still listed.");
 
     internal static string RestoredMessage(int restored) => restored switch
     {

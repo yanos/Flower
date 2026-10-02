@@ -64,6 +64,9 @@ public class SettingsRosterlessLoadTests
         public Task<string> RestoreRemovedFilesAsync(IReadOnlyList<string> paths, CancellationToken ct = default) =>
             Task.FromResult("");
 
+        public Task<string> DeleteRemovedFilesAsync(IReadOnlyList<string> paths, CancellationToken ct = default) =>
+            Task.FromResult("");
+
         public Task<LogSlice> LoadLogAsync(int limit, long afterSequence, CancellationToken ct = default) =>
             throw new NotSupportedException();
 

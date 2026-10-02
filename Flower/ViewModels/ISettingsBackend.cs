@@ -69,6 +69,7 @@ public sealed record SettingsSnapshot
     public bool SyncPlayCountFromITunes { get; init; }
     public bool SyncDateAddedFromITunes { get; init; }
     public bool ShareLogsWithPairedServer { get; init; }
+    public bool UploadWhenAwayFromHome { get; init; }
     public string AdvertisedHost { get; init; } = "";
     public bool AdvertiseOnLan { get; init; } = true;
     public bool TrustTailscaleRange { get; init; } = true;
@@ -140,6 +141,7 @@ public sealed record SettingsDraft
     public required bool SyncPlayCountFromITunes { get; init; }
     public required bool SyncDateAddedFromITunes { get; init; }
     public required bool ShareLogsWithPairedServer { get; init; }
+    public required bool UploadWhenAwayFromHome { get; init; }
     public required string AdvertisedHost { get; init; }
     public required bool AdvertiseOnLan { get; init; }
     public required bool TrustTailscaleRange { get; init; }
@@ -211,6 +213,11 @@ public interface ISettingsBackend
     // Takes them off that list and starts the rescan that brings the songs
     // back. Returns a sentence for the status line.
     Task<string> RestoreRemovedFilesAsync(IReadOnlyList<string> paths, CancellationToken ct = default);
+
+    // The other way off that list: the files are deleted from disk for good.
+    // Nothing else ever does this to a removed song's file - see
+    // LibraryRemoval.DeleteRemovedFiles. Returns a sentence for the status line.
+    Task<string> DeleteRemovedFilesAsync(IReadOnlyList<string> paths, CancellationToken ct = default);
 
     // One paired device's own log, as last pushed to the server at the end of a
     // sync (see AppSettings.ShareLogsWithPairedServer on the pushing side). The

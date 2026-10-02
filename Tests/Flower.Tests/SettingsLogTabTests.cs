@@ -71,6 +71,9 @@ public class SettingsLogTabTests
         public Task<string> RestoreRemovedFilesAsync(IReadOnlyList<string> paths, CancellationToken ct = default) =>
             Task.FromResult("");
 
+        public Task<string> DeleteRemovedFilesAsync(IReadOnlyList<string> paths, CancellationToken ct = default) =>
+            Task.FromResult("");
+
         public async Task<LogSlice> LoadLogAsync(int limit, long afterSequence, CancellationToken ct = default)
         {
             if (ServerLogGate is { } gate)
