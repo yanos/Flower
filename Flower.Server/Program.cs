@@ -201,7 +201,26 @@ builder.Services.AddSingleton(services => new Library(
     services.GetRequiredService<ILogger<Library>>(),
     services.GetRequiredService<TrackRepository>(),
     services.GetRequiredService<PlaylistRepository>(),
+    services.GetRequiredService<TrackRepository>(),
     services.GetRequiredService<TrackRepository>()));
+
+// Files arriving from an owner's device (AdminEndpoints' /library/uploads).
+// Staged under the data directory rather than beside the music: that is the
+// one place this process is always allowed to write, so a half-sent file never
+// sits in a folder a scan walks, and a read-only music mount is found out by
+// asking rather than by a partial file appearing in it.
+builder.Services.AddSingleton(services =>
+{
+    var options = services.GetRequiredService<IOptionsMonitor<FlowerServerOptions>>();
+    return new LibraryIngest(
+        services.GetRequiredService<Library>(),
+        // Re-read per upload, the way the rescan re-reads it: the folders are
+        // editable from the settings page.
+        () => options.CurrentValue.LibraryPaths,
+        Path.Combine(options.CurrentValue.DataDirectory, "uploads"),
+        new Flower.Importer.Importer(services.GetRequiredService<ILogger<Flower.Importer.Importer>>()),
+        services.GetRequiredService<ILogger<LibraryIngest>>());
+});
 
 builder.Services.AddScoped<LibraryImportService>();
 // Keeps smart playlists in step with the catalog. Registered on the server as

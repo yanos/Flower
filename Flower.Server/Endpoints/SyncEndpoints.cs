@@ -381,7 +381,13 @@ public static class SyncEndpoints
                 // than its own - see Track.RemotePlayCounts.
                 .Select(track => LibraryDtoMapper.ToTrackDto(track, signingKey.Fingerprint, options.CurrentValue.LibraryPaths))
                 .ToList();
-            return JsonSerializer.Serialize(new LibrarySyncManifestDto(signingKey.Fingerprint, songs), JsonOptions);
+            // What was removed on purpose, so a device holding its own copy of
+            // one drops it too - see LibrarySyncManifestDto.Removed.
+            var removed = library.RemovedTracks
+                .Where(r => r.Deliberate)
+                .Select(r => r.Track.Id.ToKey())
+                .ToList();
+            return JsonSerializer.Serialize(new LibrarySyncManifestDto(signingKey.Fingerprint, songs, removed), JsonOptions);
         });
 
         return Results.Text(json, "application/json");

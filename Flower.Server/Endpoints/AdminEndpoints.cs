@@ -76,6 +76,36 @@ public static class AdminEndpoints
     // poll loop, since nothing polls these routes.
     private static readonly RateLimiter RequestLimiter = new(max: 120, TimeSpan.FromSeconds(60));
 
+    // Uploads get a budget of their own, for the reason cover art and playback
+    // each got one on the sync surface (see SyncEndpoints): a device sending an
+    // album is two requests a song, back to back, and charged to the budget
+    // above it would lock the owner out of the settings page for as long as the
+    // album took. Wide, because the traffic is legitimate and fast on a LAN -
+    // a few megabytes a song at a hundred a second - and because what makes an
+    // upload request expensive to receive is closed off before the budget is
+    // even relevant: see the filter, which will not buffer a body for a caller
+    // that has not at least named an admin device.
+    private static readonly RateLimiter UploadLimiter = new(max: 3000, TimeSpan.FromSeconds(60));
+
+    private const string UploadsRoute = "/library/uploads";
+    private const string UploadsPath = "/api/admin" + UploadsRoute;
+    private const string MoveRoute = "/library/move";
+    private const string MovePath = "/api/admin" + MoveRoute;
+    private const string TagsRoute = "/library/tags";
+    private const string TagsPath = "/api/admin" + TagsRoute;
+    private const string ArtworkRoute = "/library/artwork";
+    private const string ArtworkPath = "/api/admin" + ArtworkRoute;
+
+    // What a device keeping this server's files in step with its own sends:
+    // files, and - one request a song - the news that a file has moved. A
+    // renamed album folder is as many of those as it has tracks, which is why
+    // moves are charged here and not to the settings page's budget.
+    private static bool IsUpload(PathString path) =>
+        path.StartsWithSegments(UploadsPath, StringComparison.OrdinalIgnoreCase)
+        || path.Equals(MovePath, StringComparison.OrdinalIgnoreCase)
+        || path.Equals(TagsPath, StringComparison.OrdinalIgnoreCase)
+        || path.Equals(ArtworkPath, StringComparison.OrdinalIgnoreCase);
+
     public static void MapAdminEndpoints(this WebApplication app)
     {
         var logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(AdminEndpoints));
@@ -89,12 +119,45 @@ public static class AdminEndpoints
         var authenticated = app.MapGroup("/api/admin").AddEndpointFilter(async (context, next) =>
         {
             var http = context.HttpContext;
-            if (!RequestLimiter.TryAcquire(RateLimiter.KeyFor(http.Connection.RemoteIpAddress), DateTimeOffset.UtcNow))
-                return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+            var isUpload = IsUpload(http.Request.Path);
+            if (!(isUpload ? UploadLimiter : RequestLimiter).TryAcquire(
+                    RateLimiter.KeyFor(http.Connection.RemoteIpAddress), DateTimeOffset.UtcNow))
+            {
+                // With a Retry-After on the upload plane, because the thing
+                // refused there is a program in the middle of a batch, and it
+                // waits exactly as long as it is told to.
+                return isUpload
+                    ? RateLimitResponse.TooManyRequests(http)
+                    : Results.StatusCode(StatusCodes.Status429TooManyRequests);
+            }
 
             var services = http.RequestServices;
             var trustedPeers = services.GetRequiredService<TrustedPeerStore>();
             var replayGuard = services.GetRequiredService<NonceReplayGuard>();
+
+            // An upload is the one request here whose body is megabytes by
+            // design, and everything below buffers the body before it checks
+            // the signature. So before that: is the fingerprint this request
+            // claims even an admin's? It proves nothing - a claim is a header -
+            // but it is a lookup rather than a read, and it means the only
+            // callers this server will hold eight megabytes for are ones that
+            // know which devices administer it. The signature still decides.
+            //
+            // The two refusals are the ones the full check below gives - 401
+            // for a device this server does not know, 403 for one it knows and
+            // has not made an admin - so a caller is told the same thing
+            // whichever check turned it away.
+            if (isUpload)
+            {
+                if (DeviceSignatureAuth.GetIdentityValue(http.Request, "X-Flower-Fingerprint") is not { Length: > 0 } claimed
+                    || trustedPeers.GetPublicKey(claimed) == null)
+                {
+                    return Results.Unauthorized();
+                }
+
+                if (!trustedPeers.IsAdmin(claimed))
+                    return Results.StatusCode(StatusCodes.Status403Forbidden);
+            }
 
             // Signed requests may now carry a body (PUT /settings does), so
             // it has to be buffered before the signature - which covers a
@@ -425,6 +488,175 @@ public static class AdminEndpoints
                 new LibraryRemovalResponseDto(result.Removed, result.FilesTrashed, result.FilesDeleted, result.FilesNotDeleted.Count), jsonOptions);
         });
 
+        // A file from an owner's device, taken into this library - see
+        // LibraryIngest, which is the whole of what happens and why the file
+        // arrives in pieces. These two routes only translate: a body into a
+        // call, and an outcome into a status the device can act on.
+        //
+        // The first names the file and learns where to start from; each PUT
+        // after it carries the next piece, and the one that completes the file
+        // answers with the song.
+        //
+        // Not while a scan is running. A device uploads what the catalog does
+        // not list, and a server part-way through its first scan lists almost
+        // nothing - of a folder that may well already hold every one of those
+        // songs. Taking files then would fill the library with second copies
+        // of music the scan was about to find. The device stops, and the
+        // catalog token moving when the scan ends is what starts it again.
+        authenticated.MapPost(UploadsRoute, async (HttpContext context, LibraryIngest ingest, LibraryRescanCoordinator rescans) =>
+        {
+            if (rescans.IsRunning)
+                return ScanInProgress(jsonOptions);
+
+            LibraryUploadRequestDto? request;
+            try
+            {
+                request = await JsonSerializer.DeserializeAsync<LibraryUploadRequestDto>(
+                    context.Request.Body, jsonOptions, context.RequestAborted);
+            }
+            catch (JsonException)
+            {
+                request = null;
+            }
+
+            if (request == null)
+                return Results.BadRequest(new { error = "Name the file to upload." });
+
+            var result = await ingest.BeginAsync(request, context.RequestAborted);
+            LogUpload(logger, context, request.RelativePath, result);
+            return ToResult(result, jsonOptions);
+        });
+
+        authenticated.MapPut(UploadsRoute + "/{uploadId}", async (
+            string uploadId, long offset, HttpContext context, LibraryIngest ingest, LibraryRescanCoordinator rescans) =>
+        {
+            if (rescans.IsRunning)
+                return ScanInProgress(jsonOptions);
+
+            // The filter buffers, and the signature covers, a body that
+            // states its length. One that does not was verified as empty, and
+            // bytes nobody signed are not written to a library folder.
+            if (context.Request.ContentLength is not > 0)
+                return Results.BadRequest(new { error = "A piece of the file is required, with its length." });
+
+            // Already in memory - the filter buffered it to check the
+            // signature - and already bounded by MaxBodyBytes there.
+            using var buffer = new MemoryStream();
+            await context.Request.Body.CopyToAsync(buffer, context.RequestAborted);
+
+            var result = await ingest.AppendAsync(
+                uploadId, offset, buffer.GetBuffer().AsMemory(0, (int)buffer.Length), context.RequestAborted);
+            LogUpload(logger, context, uploadId, result);
+            return ToResult(result, jsonOptions);
+        });
+
+        // An owner's device moved or renamed one of its own files; this
+        // server's copy follows - see LibraryIngest.MoveAsync. Kept from
+        // running during a scan for the reason an upload is: the scan would
+        // find one file missing and another new, and settle it differently.
+        authenticated.MapPost(MoveRoute, async (HttpContext context, LibraryIngest ingest, LibraryRescanCoordinator rescans) =>
+        {
+            if (rescans.IsRunning)
+                return ScanInProgress(jsonOptions);
+
+            LibraryMoveRequestDto? request;
+            try
+            {
+                request = await JsonSerializer.DeserializeAsync<LibraryMoveRequestDto>(
+                    context.Request.Body, jsonOptions, context.RequestAborted);
+            }
+            catch (JsonException)
+            {
+                request = null;
+            }
+
+            if (request is not { TrackId.Length: > 0, RelativePath.Length: > 0 })
+                return Results.BadRequest(new { error = "Name the song and where its file has moved to." });
+
+            var result = await ingest.MoveAsync(request, context.RequestAborted);
+            if (result.Outcome != IngestOutcome.Completed)
+            {
+                logger.LogInformation("Refused a move from {Fingerprint} ({TrackId}): {Outcome} - {Error}",
+                    context.Items[AdminFingerprintKey], request.TrackId, result.Outcome, result.Error);
+            }
+
+            return ToResult(result, jsonOptions);
+        });
+
+        // Tags edited on an owner's device - in Track Info, on a desktop or a
+        // phone, of a song it has a file for or one it only streams - written
+        // into this server's files, and from here served to every device (see
+        // TrackTags.ApplyEdits, and Track.TagsEditedAt for how they then
+        // travel). Not during a scan, which is busy reading the very tags
+        // this writes and would publish whichever it happened to read.
+        authenticated.MapPost(TagsRoute, async (HttpContext context, Library library, LibraryRescanCoordinator rescans) =>
+        {
+            if (rescans.IsRunning)
+                return ScanInProgress(jsonOptions);
+
+            LibraryTagEditsRequestDto? request;
+            try
+            {
+                request = await JsonSerializer.DeserializeAsync<LibraryTagEditsRequestDto>(
+                    context.Request.Body, jsonOptions, context.RequestAborted);
+            }
+            catch (JsonException)
+            {
+                request = null;
+            }
+
+            if (request?.Edits is not { Count: > 0 } edits || edits.Any(e => e?.Tags == null || string.IsNullOrEmpty(e.TrackId)))
+                return Results.BadRequest(new { error = "Name at least one song and its tags." });
+
+            var response = TrackTags.ApplyEdits(library, edits, logger);
+
+            logger.LogInformation(
+                "{Fingerprint} edited the tags of {Applied} of {Sent} song(s) ({NotWritten} could not be written)",
+                context.Items[AdminFingerprintKey], response.Applied, edits.Count, response.NotWritten.Count);
+            return Results.Json(response, jsonOptions);
+        });
+
+        // Artwork changed on an owner's device, for the songs it changed it on
+        // (TrackArtwork.ApplyEdit). The picture is the body; which songs and
+        // when are in the query, which the signature covers like the body.
+        // DELETE is the same statement about no picture at all.
+        authenticated.MapPut(ArtworkRoute, async (
+            HttpContext context, Library library, LibraryRescanCoordinator rescans, string? ids, string? editedAt) =>
+        {
+            if (rescans.IsRunning)
+                return ScanInProgress(jsonOptions);
+            if (ParseArtworkEdit(ids, editedAt) is not { } edit)
+                return Results.BadRequest(new { error = "Name the songs and when the artwork was changed." });
+
+            using var buffer = new MemoryStream();
+            await context.Request.Body.CopyToAsync(buffer, context.RequestAborted);
+            var bytes = buffer.ToArray();
+
+            // Sniffed rather than trusted, as the album route below does and
+            // for its reason: the type ends up inside the tag.
+            if (LocalAlbumArtReader.MimeTypeForBytes(bytes) is not { } mimeType)
+                return Results.BadRequest(new { error = "That body is not an image Flower can read." });
+
+            var response = TrackArtwork.ApplyEdit(library, edit.Ids, edit.At, new LocalAlbumArt(bytes, mimeType), logger);
+            logger.LogInformation("{Fingerprint} changed the artwork of {Applied} of {Sent} song(s)",
+                context.Items[AdminFingerprintKey], response.Applied, edit.Ids.Count);
+            return Results.Json(response, jsonOptions);
+        });
+
+        authenticated.MapDelete(ArtworkRoute, (
+            HttpContext context, Library library, LibraryRescanCoordinator rescans, string? ids, string? editedAt) =>
+        {
+            if (rescans.IsRunning)
+                return ScanInProgress(jsonOptions);
+            if (ParseArtworkEdit(ids, editedAt) is not { } edit)
+                return Results.BadRequest(new { error = "Name the songs and when the artwork was removed." });
+
+            var response = TrackArtwork.ApplyEdit(library, edit.Ids, edit.At, art: null, logger);
+            logger.LogInformation("{Fingerprint} removed the artwork of {Applied} of {Sent} song(s)",
+                context.Items[AdminFingerprintKey], response.Applied, edit.Ids.Count);
+            return Results.Json(response, jsonOptions);
+        });
+
         // The other half of Remove from Library: the files removed and kept,
         // and the way back for them. Restore touches no file - it only takes
         // paths off the list the scans consult - so the paths it is handed need
@@ -463,6 +695,38 @@ public static class AdminEndpoints
             logger.LogInformation("{Fingerprint} restored {Restored} removed file(s) to the library",
                 context.Items[AdminFingerprintKey], restored);
             return Results.Json(new RestoreRemovedFilesResponseDto(restored), jsonOptions);
+        });
+
+        // And the way out that frees the space: the files named are deleted
+        // for good. A removal never does this by itself - not one made here
+        // with the files kept, and not one that arrived from a device whose
+        // own copy was deleted - so this is the one place the owner says
+        // "those, permanently". Only paths on the list are touched (see
+        // LibraryRemoval.DeleteRemovedFiles), so nothing arrives from the wire
+        // that can reach a file an admin had not already removed.
+        authenticated.MapPost("/library/removed/delete", async (
+            HttpContext context, Library library, IOptionsMonitor<FlowerServerOptions> options) =>
+        {
+            DeleteRemovedFilesRequestDto? request;
+            try
+            {
+                request = await JsonSerializer.DeserializeAsync<DeleteRemovedFilesRequestDto>(
+                    context.Request.Body, jsonOptions, context.RequestAborted);
+            }
+            catch (JsonException)
+            {
+                request = null;
+            }
+
+            if (request?.Paths is not { Count: > 0 } paths)
+                return Results.BadRequest(new { error = "Name at least one file to delete." });
+
+            var (deleted, notDeleted) = LibraryRemoval.DeleteRemovedFiles(
+                library, paths, options.CurrentValue.LibraryPaths, logger);
+
+            logger.LogInformation("{Fingerprint} permanently deleted {Deleted} removed file(s) ({NotDeleted} could not be deleted)",
+                context.Items[AdminFingerprintKey], deleted, notDeleted);
+            return Results.Json(new DeleteRemovedFilesResponseDto(deleted, notDeleted), jsonOptions);
         });
 
         // Album art, written into the server's own files.
@@ -567,6 +831,20 @@ public static class AdminEndpoints
     // than an error: the files that took the new picture really do have it, and
     // telling the caller "failed" would invite it to retry a write that has
     // already half happened.
+    // Null for a request that names no song or no moment.
+    private static (List<string> Ids, DateTimeOffset At)? ParseArtworkEdit(string? ids, string? editedAt)
+    {
+        var parsed = (ids ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+        if (parsed.Count == 0
+            || !DateTimeOffset.TryParse(editedAt, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.RoundtripKind, out var at))
+        {
+            return null;
+        }
+
+        return (parsed, at);
+    }
+
     private static IResult WriteCoverArt(
         string id, Library library, ILogger logger, JsonSerializerOptions jsonOptions, Func<string, bool> write)
     {
@@ -575,11 +853,22 @@ public static class AdminEndpoints
             return Results.NotFound(new { error = "No track on this server has that id." });
 
         var written = 0;
+        var repainted = new List<(Track Track, DateTimeOffset EditedAt, string? FileStamp)>();
+        var now = DateTimeOffset.UtcNow;
         foreach (var candidate in candidates)
         {
             if (candidate.Path is { Length: > 0 } path && write(path))
+            {
                 written++;
+                repainted.Add((candidate, now, null));
+            }
         }
+
+        // Dated, so every device holding its own copy of one of these files
+        // fetches the new picture into it (Track.ArtEditedAt). Until this,
+        // changing a cover here changed it for whoever streamed the album and
+        // for nobody who had downloaded it.
+        library.ApplySyncedArt(repainted);
 
         if (written == 0)
             return Results.Json(new { error = "The artwork could not be written to any of those files." },
@@ -588,6 +877,43 @@ public static class AdminEndpoints
         logger.LogInformation("Album art for {Id} rewritten on {Written} of {Total} files.",
             id, written, candidates.Count);
         return Results.Json(new CoverArtWriteResponse(written, candidates.Count), jsonOptions);
+    }
+
+    // Each refusal as the status that says what to do about it: 400 and 409
+    // are about this file and final, 503 is about this server and worth
+    // stopping the whole batch for, 404 means begin again, and 422 means send
+    // it again.
+    private static IResult ToResult(IngestResult result, JsonSerializerOptions jsonOptions) => result.Outcome switch
+    {
+        IngestOutcome.Accepted or IngestOutcome.Completed when result.Moved != null => Results.Json(result.Moved, jsonOptions),
+        IngestOutcome.Accepted or IngestOutcome.Completed => Results.Json(result.Status, jsonOptions),
+        IngestOutcome.Conflict => Results.Json(new { error = result.Error }, jsonOptions, statusCode: StatusCodes.Status409Conflict),
+        IngestOutcome.Unavailable => Results.Json(new { error = result.Error }, jsonOptions, statusCode: StatusCodes.Status503ServiceUnavailable),
+        IngestOutcome.UnknownUpload => Results.Json(new { error = result.Error }, jsonOptions, statusCode: StatusCodes.Status404NotFound),
+        IngestOutcome.Corrupt => Results.Json(new { error = result.Error }, jsonOptions, statusCode: StatusCodes.Status422UnprocessableEntity),
+        _ => Results.BadRequest(new { error = result.Error }),
+    };
+
+    private static IResult ScanInProgress(JsonSerializerOptions jsonOptions) =>
+        Results.Json(
+            new { error = "This server is scanning its library; uploads wait until it has finished." },
+            jsonOptions, statusCode: StatusCodes.Status503ServiceUnavailable);
+
+    // A song arriving is worth a line; a piece of one is not. Refusals are
+    // logged whichever step they happen at, since a refusal is the end of
+    // that file's upload.
+    private static void LogUpload(ILogger logger, HttpContext context, string what, IngestResult result)
+    {
+        if (result.Outcome == IngestOutcome.Completed)
+        {
+            logger.LogInformation("{Fingerprint} uploaded {TrackId} to the library",
+                context.Items[AdminFingerprintKey], result.Status?.TrackId);
+        }
+        else if (result.Outcome != IngestOutcome.Accepted)
+        {
+            logger.LogInformation("Refused an upload from {Fingerprint} ({What}): {Outcome} - {Error}",
+                context.Items[AdminFingerprintKey], what, result.Outcome, result.Error);
+        }
     }
 
     internal const string AdminFingerprintKey = "Flower.AdminFingerprint";
