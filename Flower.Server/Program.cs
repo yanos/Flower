@@ -235,6 +235,15 @@ builder.Services.AddSingleton<SmartPlaylistRefresher>();
 builder.Services.AddSingleton<PairingCodeService>();
 builder.Services.AddSingleton<StreamTicketService>();
 builder.Services.AddSingleton<RequestGate>();
+
+// A route parameter the framework cannot bind is answered before any endpoint
+// filter runs - so before anyone is authenticated - and in Development that
+// answer is the exception's text. Off, it is a bare 400 that the refusal
+// fallback below turns into an invalid-request problem like any other; and
+// the routes avoid it in the first place by taking their parameters as
+// optional and checking them after the gate. See docs/TRUST-BOUNDARY-PLAN.md
+// step 3.
+builder.Services.Configure<Microsoft.AspNetCore.Routing.RouteHandlerOptions>(options => options.ThrowOnBadRequest = false);
 // Owns "a rescan is running", so the admin API can start one without two
 // operators racing two importers over the same folders.
 builder.Services.AddSingleton<LibraryRescanCoordinator>();
@@ -580,6 +589,17 @@ app.Use(async (context, next) =>
         return;
     }
     await next(context);
+});
+
+// Inside the LanGuard gate above, so nothing is said to a caller that gate
+// drops: every refusal under /api leaves as a problem document with a code a
+// client can act on - see Problems.FillEmptyRefusalAsync and
+// docs/TRUST-BOUNDARY-PLAN.md step 3. Most routes write their own; this is
+// for the ones that left with a bare status.
+app.Use(async (context, next) =>
+{
+    await next(context);
+    await Problems.FillEmptyRefusalAsync(context);
 });
 
 using (var scope = app.Services.CreateScope())

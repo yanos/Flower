@@ -157,24 +157,16 @@ public static class SyncEndpoints
             // .NET-for-WebAssembly cannot sign - it signs with a WebCrypto key
             // now like everything else (see BrowserPeerCredentials).
             var admitted = await gate.AdmitAsync(http, PlaneFor(http.Request.Path), MaxBodyFor(http.Request.Path), logger);
-            switch (admitted.Outcome)
-            {
-                case RequestGate.Outcome.LengthRequired:
-                    return Results.StatusCode(StatusCodes.Status411LengthRequired);
-                case RequestGate.Outcome.TooLarge:
-                    return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
-                case RequestGate.Outcome.Throttled:
-                    return RateLimitResponse.TooManyRequests(http);
-                // 403 only for a caller this server genuinely has no key on
-                // file for - a client treats that as "revoked" and unpairs
-                // itself. A signature that just failed to verify (commonly a
-                // stale timestamp, after the caller suspended mid-request) is
-                // a 401: this attempt failed, the pairing is untouched.
-                case RequestGate.Outcome.Unknown:
-                    return Results.StatusCode(StatusCodes.Status403Forbidden);
-                case RequestGate.Outcome.BadSignature:
-                    return Results.StatusCode(StatusCodes.Status401Unauthorized);
-            }
+
+            // Refused as a problem document whose code says why - see
+            // FlowerProblem. An unknown device is device-unknown, a 401 like
+            // every other authentication failure; it was this group's 403, and
+            // a client unpaired on that status alone, which a stale timestamp
+            // could never trigger but anything on the path answering 403
+            // could. The code is what a client reads now, and step 4 makes
+            // the server sign the one refusal a client may unpair on.
+            if (admitted.Outcome != RequestGate.Outcome.Admitted)
+                return Problems.ForGate(admitted, http);
 
             // Who the gate actually let through, for the handlers below to
             // attribute a write to. Not the same as the request's own
@@ -270,7 +262,7 @@ public static class SyncEndpoints
     {
         var ids = ReadBatchRequest(context);
         if (ids == null)
-            return Results.BadRequest();
+            return Problems.BadRequest();
 
         var entries = new List<(string Id, byte[] Bytes)>(ids.Count);
         var total = 0;
@@ -374,7 +366,7 @@ public static class SyncEndpoints
         HttpContext context, Library library, DeviceSigningKey signingKey, TrustedPeerStore trustedPeers)
     {
         if (ListenerOf(context, trustedPeers) is not { } listener)
-            return Results.StatusCode(StatusCodes.Status401Unauthorized);
+            return Problems.Of(StatusCodes.Status401Unauthorized, ProblemCodes.SignatureInvalid);
 
         return Results.Text(
             JsonSerializer.Serialize(
@@ -404,13 +396,13 @@ public static class SyncEndpoints
         HttpContext context, Library library, TrustedPeerStore trustedPeers, ILogger logger)
     {
         if (ListenerOf(context, trustedPeers) is not { } listener)
-            return Results.StatusCode(StatusCodes.Status401Unauthorized);
+            return Problems.Of(StatusCodes.Status401Unauthorized, ProblemCodes.SignatureInvalid);
 
         using var reader = new StreamReader(context.Request.Body);
         var manifest = JsonSerializer.Deserialize<PlaylistSyncManifestDto>(
             await reader.ReadToEndAsync(context.RequestAborted), JsonOptions);
         if (manifest == null)
-            return Results.BadRequest();
+            return Problems.BadRequest();
 
         // Persists itself, through the same PlaylistRepository the client's
         // own Library writes through.
@@ -455,10 +447,10 @@ public static class SyncEndpoints
         var report = JsonSerializer.Deserialize<LogReportDto>(
             await reader.ReadToEndAsync(context.RequestAborted), JsonOptions);
         if (report == null)
-            return Results.BadRequest();
+            return Problems.BadRequest();
 
         if (context.Items[AuthenticatedFingerprintKey] is not string fingerprint || fingerprint.Length == 0)
-            return Results.StatusCode(StatusCodes.Status401Unauthorized);
+            return Problems.Of(StatusCodes.Status401Unauthorized, ProblemCodes.SignatureInvalid);
 
         var stored = logs.SetSnapshot(fingerprint, report.Alias, report.Entries, DateTimeOffset.UtcNow);
 
@@ -477,7 +469,7 @@ public static class SyncEndpoints
     private static IResult GetLogWatermark(HttpContext context, ClientLogStore logs)
     {
         if (context.Items[AuthenticatedFingerprintKey] is not string fingerprint || fingerprint.Length == 0)
-            return Results.StatusCode(StatusCodes.Status401Unauthorized);
+            return Problems.Of(StatusCodes.Status401Unauthorized, ProblemCodes.SignatureInvalid);
 
         return Results.Json(WatermarkOf(logs.Get(fingerprint)?.Entries ?? []), JsonOptions);
     }
@@ -494,7 +486,7 @@ public static class SyncEndpoints
         HttpContext context, PlayReportService plays, TrustedPeerStore trustedPeers, ILogger logger)
     {
         if (context.Items[AuthenticatedFingerprintKey] is not string { Length: > 0 } fingerprint)
-            return Results.StatusCode(StatusCodes.Status401Unauthorized);
+            return Problems.Of(StatusCodes.Status401Unauthorized, ProblemCodes.SignatureInvalid);
 
         using var reader = new StreamReader(context.Request.Body);
         PlayReportDto? report;
@@ -505,13 +497,13 @@ public static class SyncEndpoints
         }
         catch (JsonException)
         {
-            return Results.BadRequest();
+            return Problems.BadRequest();
         }
 
         // Bounded because every event becomes a dedupe entry this server keeps
         // for hours - see PlayReportDto.MaxEvents.
         if (report?.Plays == null || !report.IsWithinLimits())
-            return Results.BadRequest();
+            return Problems.BadRequest();
 
         var applied = plays.Apply(report, fingerprint, trustedPeers.IsAdmin(fingerprint), DateTimeOffset.UtcNow);
 
@@ -552,10 +544,10 @@ public static class SyncEndpoints
         var report = JsonSerializer.Deserialize<TrackStateReportDto>(
             await reader.ReadToEndAsync(context.RequestAborted), JsonOptions);
         if (report == null)
-            return Results.BadRequest();
+            return Problems.BadRequest();
 
         if (context.Items[AuthenticatedFingerprintKey] is not string fingerprint || fingerprint.Length == 0)
-            return Results.StatusCode(StatusCodes.Status401Unauthorized);
+            return Problems.Of(StatusCodes.Status401Unauthorized, ProblemCodes.SignatureInvalid);
 
         var callerIsAdmin = trustedPeers.IsAdmin(fingerprint);
         var applied = library.MergeReportedTrackState(fingerprint, report.Tracks, callerIsAdmin);
@@ -580,7 +572,7 @@ public static class SyncEndpoints
         HttpContext context, AlbumProgressLedger ledger, TrustedPeerStore trustedPeers, ILogger logger)
     {
         if (context.Items[AuthenticatedFingerprintKey] is not string fingerprint || fingerprint.Length == 0)
-            return Results.StatusCode(StatusCodes.Status401Unauthorized);
+            return Problems.Of(StatusCodes.Status401Unauthorized, ProblemCodes.SignatureInvalid);
 
         using var reader = new StreamReader(context.Request.Body);
         AlbumProgressExchangeDto? exchange;
@@ -591,13 +583,13 @@ public static class SyncEndpoints
         }
         catch (JsonException)
         {
-            return Results.BadRequest();
+            return Problems.BadRequest();
         }
 
         if (exchange?.Albums is not { } albums || albums.Count > AlbumProgressProtocol.MaxEntries
             || albums.Any(a => string.IsNullOrEmpty(a.AlbumId) || a.AlbumId.Length > 64
                 || a.TrackId?.Length > 64 || !double.IsFinite(a.PositionSeconds) || a.PositionSeconds < 0))
-            return Results.BadRequest();
+            return Problems.BadRequest();
 
         var shelf = Listeners.For(fingerprint, trustedPeers.IsAdmin(fingerprint));
         var merged = ledger.Exchange(shelf, albums);

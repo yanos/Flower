@@ -74,7 +74,8 @@ public sealed partial class BrowserSigningKey
     public async Task<(string Signature, string Timestamp, string Nonce)> SignAsync(
         string method, string absolutePath, IEnumerable<(string Key, string Value)> query, byte[] body)
     {
-        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
+        // SignatureClock, as DeviceSigningKey does - see there.
+        var timestamp = SignatureClock.UtcNow.ToUnixTimeSeconds().ToString();
         var nonce = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
         var toSign = SignedRequestCanonicalizer.Build(method, absolutePath, query, body, timestamp, nonce);
         var signature = await Interop.SignAsync(Convert.ToBase64String(toSign));

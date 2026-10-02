@@ -177,24 +177,26 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
     }
 
     [Fact]
-    public async Task An_untrusted_device_gets_403_rather_than_the_catalog()
+    public async Task An_untrusted_device_is_refused_as_unknown_rather_than_given_the_catalog()
     {
         using var device = NewDevice();
 
-        var (status, _, _) = await SendAsync(device, "GET", "/api/flower/v1/library", "10.0.2.3");
+        var (status, body, _) = await SendAsync(device, "GET", "/api/flower/v1/library", "10.0.2.3");
 
-        Assert.Equal(HttpStatusCode.Forbidden, status);
+        Assert.Equal(HttpStatusCode.Unauthorized, status);
+        Assert.Equal(ProblemCodes.DeviceUnknown, FlowerProblem.TryRead(body)?.Code);
     }
 
-    // The 401/403 split, from the endpoint's side. A trusted peer whose
-    // signature has simply gone stale - a laptop that suspended with the
-    // request in flight and delivered it many minutes later - must not be
-    // answered like a revoked one: a client reads 403 off a sync route as
-    // "this server has revoked me" and unpairs itself permanently, which is
-    // how a real pairing was lost. See
-    // PeerSignatureAuth.AuthenticateTrustedPeer.
+    // The split between a stale signature and an unknown device, from the
+    // endpoint's side. A trusted peer whose signature has simply gone stale - a
+    // laptop that suspended with the request in flight and delivered it many
+    // minutes later - must not be answered like a revoked one: a client reads
+    // device-unknown off a sync route as "this server has revoked me" and
+    // unpairs itself, which is how a real pairing was lost when the two were
+    // told apart by status alone. It is clock-skew, with the server's time so
+    // the client can correct its own (see SignatureClock).
     [Fact]
-    public async Task A_trusted_device_whose_signature_went_stale_gets_401_not_403()
+    public async Task A_trusted_device_whose_signature_went_stale_is_told_its_clock_is_out()
     {
         var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
         using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
@@ -226,6 +228,10 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
             }, TestContext.Current.CancellationToken);
 
             Assert.Equal(HttpStatusCode.Unauthorized, (HttpStatusCode)context.Response.StatusCode);
+            using var reader = new StreamReader(context.Response.Body);
+            var problem = FlowerProblem.TryRead(await reader.ReadToEndAsync(TestContext.Current.CancellationToken));
+            Assert.Equal(ProblemCodes.ClockSkew, problem?.Code);
+            Assert.True((problem!.ServerTime!.Value - DateTimeOffset.UtcNow).Duration() < TimeSpan.FromMinutes(1));
         }
         finally
         {
@@ -1199,7 +1205,7 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
             stranger, "POST", "/api/flower/v1/log/report", "10.0.2.10",
             body: JsonSerializer.Serialize(report));
 
-        Assert.Equal(HttpStatusCode.Forbidden, status);
+        Assert.Equal(HttpStatusCode.Unauthorized, status);
         Assert.Null(server.Services.GetRequiredService<ClientLogStore>().Get(stranger.Fingerprint));
     }
 
@@ -1481,6 +1487,6 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
             c.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(AlbumExchange()));
         });
 
-        Assert.Equal(StatusCodes.Status403Forbidden, context.Response.StatusCode);
+        Assert.Equal(StatusCodes.Status401Unauthorized, context.Response.StatusCode);
     }
 }

@@ -36,8 +36,10 @@ namespace Flower.Services;
 //
 // Signing at the client rather than in the URL fixes it for every request any
 // caller makes, without the pipeline below having to know it is authenticated
-// at all. See SeekableHttpStream's ProtocolErrorFor for the second half of the
-// fix: a protocol error must never again be mistaken for audio.
+// at all. The second half of the fix - a refusal must never be mistaken for
+// audio - is that Flower.Server refuses with a status and a problem document
+// (FlowerProblem) rather than the adapter's error envelope on a 200, and
+// SeekableHttpStream already treats any non-success status as a failure.
 public sealed class PeerCredentialsHandler(Func<IPeerCredentials?> credentials) : DelegatingHandler
 {
     public PeerCredentialsHandler(Func<IPeerCredentials?> credentials, HttpMessageHandler inner)
@@ -50,14 +52,33 @@ public sealed class PeerCredentialsHandler(Func<IPeerCredentials?> credentials) 
         // browser, which authenticates its media requests with a stream ticket
         // in the URL instead (see StreamTicketService). Sending the request
         // untouched is right there: it is already carrying what it needs.
-        if (credentials() is { } peer && request.RequestUri is { } uri)
+        if (credentials() is not { } peer || request.RequestUri is not { } uri)
+            return await base.SendAsync(request, cancellationToken);
+
+        request.RequestUri = WithoutIdentityParams(uri);
+        await request.AddPeerCredentialsAsync(peer);
+        var response = await base.SendAsync(request, cancellationToken);
+
+        // Once more, signed in the server's time, when the server said this
+        // device's clock is out (see SignatureClock). Only here, because only
+        // here is the signing this handler's own to redo; and only for a
+        // request with no body, which is every one this handler signs - a
+        // track's probe, body and reopens - and the only kind that can be
+        // sent twice without re-reading its content.
+        if (request.Content == null && await SignatureClockHandler.ObserveAsync(response, cancellationToken))
         {
-            request.RequestUri = WithoutIdentityParams(uri);
+            response.Dispose();
+            foreach (var name in request.Headers.Select(h => h.Key).Where(IsCredential).ToList())
+                request.Headers.Remove(name);
             await request.AddPeerCredentialsAsync(peer);
+            response = await base.SendAsync(request, cancellationToken);
         }
 
-        return await base.SendAsync(request, cancellationToken);
+        return response;
     }
+
+    private static bool IsCredential(string header) =>
+        header.StartsWith("X-Flower-", StringComparison.OrdinalIgnoreCase);
 
     // Drops any credential set the URL was built with before signing it again.
     //

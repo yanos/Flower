@@ -77,7 +77,10 @@ public sealed class RequestGate(TrustedPeerStore trustedPeers, NonceReplayGuard 
         Throttled,
     }
 
-    public readonly record struct Result(Outcome Outcome, string? Fingerprint, byte[] Body);
+    // SignatureProblem says which part of a BadSignature failed, for the
+    // refusal to name (see Problems.BadSignature).
+    public readonly record struct Result(
+        Outcome Outcome, string? Fingerprint, byte[] Body, SignatureCheck SignatureProblem = SignatureCheck.Valid);
 
     public static readonly TimeSpan Window = TimeSpan.FromSeconds(60);
 
@@ -144,7 +147,7 @@ public sealed class RequestGate(TrustedPeerStore trustedPeers, NonceReplayGuard 
         if (auth.Failure != PeerAuthFailure.None)
         {
             _failures.TryAcquire(failureKey, now);
-            return new Result(Outcome.BadSignature, null, []);
+            return new Result(Outcome.BadSignature, null, [], auth.SignatureProblem);
         }
 
         if (!ChargeDevice(plane, auth.Fingerprint!, now))

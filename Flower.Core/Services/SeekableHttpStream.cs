@@ -376,21 +376,21 @@ public sealed class SeekableHttpStream : Stream
 
     // "This is a 200, and it is still not audio."
     //
-    // The Subsonic protocol answers a failed request with HTTP 200 and an error
-    // envelope in the body - "Wrong username or password" is a 200 - so
-    // EnsureSuccessStatusCode is not, on this surface, a check that anything
-    // went right. Without this, a refusal became roughly 130 bytes of JSON
-    // handed to a decoder as though it were the start of the track: the stream
-    // then ended far short of the length the probe had just established, which
-    // read as a cut connection, which reopened, which got the same JSON again.
-    // What the listener saw was an album skipping through itself in seconds,
-    // and what every log showed was a successful probe.
+    // A success on a stream route is audio bytes, so any textual body under a
+    // 2xx is something else being mistaken for one: a proxy's HTML sign-in
+    // page, a captive portal, anything on the path answering for the server.
+    // Without this such a body went to the decoder as the start of the track,
+    // the stream ended far short of the length the probe had established,
+    // which read as a cut connection, which reopened and got the same page
+    // again - an album skipping through itself in seconds, with a successful
+    // probe in every log.
     //
-    // Keyed on the content type rather than on parsing the body, because the
-    // rule is broader than Subsonic and does not depend on a shape: a success
-    // on a stream route is audio bytes, so any textual body under a 2xx is an
-    // error being mistaken for one - a proxy's HTML sign-in page and a
-    // captive portal land here too, and used to be decoded just as eagerly.
+    // It began as the answer to OpenSubsonic, which refused a request with an
+    // error envelope on an HTTP 200; this used to dig that envelope's message
+    // out. Flower.Server refuses with a status and a problem document now
+    // (FlowerProblem, docs/TRUST-BOUNDARY-PLAN.md step 3), so that half is
+    // gone and the rule it rested on stays: keyed on the content type rather
+    // than on parsing any one shape.
     private static async Task<string?> ProtocolErrorFor(
         HttpResponseMessage response, CancellationToken cancellationToken)
     {
@@ -401,7 +401,7 @@ public sealed class SeekableHttpStream : Stream
             return null;
 
         var body = await ReadPrefixAsync(response, cancellationToken);
-        var detail = SubsonicErrorMessage(body) ?? Summarize(body);
+        var detail = Summarize(body);
         return detail.Length > 0
             ? $"{(int)response.StatusCode} {mediaType} rather than audio: {detail}"
             : $"{(int)response.StatusCode} {mediaType} rather than audio";
@@ -440,29 +440,6 @@ public sealed class SeekableHttpStream : Stream
             // ever going to make the message nicer.
             return "";
         }
-    }
-
-    // Pulls the human-readable half out of a Subsonic error envelope, in either
-    // of the two encodings the protocol defines:
-    //   {"subsonic-response":{"status":"failed","error":{"code":40,"message":"..."}}}
-    //   <subsonic-response status="failed"><error code="40" message="..."/>
-    // Hand-rolled rather than parsed, because this runs on a failure path in
-    // the shared library and the answer is one string.
-    private static string? SubsonicErrorMessage(string body)
-    {
-        foreach (var opening in (string[])["\"message\":\"", "message=\""])
-        {
-            var at = body.IndexOf(opening, StringComparison.Ordinal);
-            if (at < 0)
-                continue;
-
-            var from = at + opening.Length;
-            var to = body.IndexOf('"', from);
-            if (to > from)
-                return body[from..to];
-        }
-
-        return null;
     }
 
     private static string Summarize(string body)

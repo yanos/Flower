@@ -28,7 +28,9 @@ public sealed class DeviceSigningKey : IDisposable
     public (string Signature, string Timestamp, string Nonce) Sign(
         string method, string absolutePath, IEnumerable<(string Key, string Value)> query, byte[] body)
     {
-        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
+        // SignatureClock, not the device's own: corrected from the server's
+        // clock-skew refusal when this device's clock is out.
+        var timestamp = SignatureClock.UtcNow.ToUnixTimeSeconds().ToString();
         var nonce = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
         var toSign = SignedRequestCanonicalizer.Build(method, absolutePath, query, body, timestamp, nonce);
         var signature = _ecdsa.SignData(toSign, HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation);

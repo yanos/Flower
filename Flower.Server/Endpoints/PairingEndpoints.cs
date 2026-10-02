@@ -53,18 +53,18 @@ public static class PairingEndpoints
                         key, suppressed == 0 ? "" : $" ({suppressed} more since the last one.)");
                 }
 
-                return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+                return RateLimitResponse.TooManyRequests(context);
             }
 
             using var bodyStream = new MemoryStream();
             await request.Body.CopyToAsync(bodyStream, cancellationToken: context.RequestAborted);
             if (bodyStream.Length > MaxBodyBytes)
-                return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+                return Problems.Of(StatusCodes.Status413PayloadTooLarge, ProblemCodes.TooLarge);
             var body = bodyStream.ToArray();
 
             var fingerprint = DeviceSignatureAuth.VerifySelfSigned(request, body, replayGuard, logger);
             if (fingerprint == null)
-                return Results.Unauthorized();
+                return Problems.Of(StatusCodes.Status401Unauthorized, ProblemCodes.SignatureInvalid);
 
             var code = DeviceSignatureAuth.GetIdentityValue(request, "X-Flower-PairingCode");
             // grantsAdmin comes back from the code itself, not from anything
@@ -81,7 +81,7 @@ public static class PairingEndpoints
                     "Rejected a pairing redemption from {RemoteAddress} by {Fingerprint}: "
                     + "the pairing code is invalid, expired, or already used.",
                     RemoteAddress(context), fingerprint);
-                return Results.BadRequest(new { error = "Invalid, expired, or already-used pairing code." });
+                return Problems.Of(StatusCodes.Status400BadRequest, ProblemCodes.PairingCodeInvalid);
             }
 
             var publicKeyBase64 = DeviceSignatureAuth.GetIdentityValue(request, "X-Flower-PublicKey")!;

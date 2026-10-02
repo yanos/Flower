@@ -119,7 +119,7 @@ public class BrowserDeviceAccessTests(FlowerServerFixture server) : IClassFixtur
         {
             // Before the code is spent, this key is nobody.
             var (before, _) = await AsBrowserAsync(device, "GET", "/api/flower/v1/library", "10.0.9.10");
-            Assert.Equal(HttpStatusCode.Forbidden, before);
+            Assert.Equal(HttpStatusCode.Unauthorized, before);
 
             var (code, _) = pairing.GenerateCode(grantsAdmin: true);
             var redeemed = await server.Server.SendAsync(c =>
@@ -210,7 +210,7 @@ public class BrowserDeviceAccessTests(FlowerServerFixture server) : IClassFixtur
             // reaching the handler at all is what the signature buys, and a 404
             // says it got there where a 403 would say the gate stopped it.
             Assert.Equal(HttpStatusCode.NotFound, signed);
-            Assert.Equal(HttpStatusCode.Forbidden, unsigned);
+            Assert.Equal(HttpStatusCode.Unauthorized, unsigned);
         }
         finally
         {
@@ -245,7 +245,7 @@ public class BrowserDeviceAccessTests(FlowerServerFixture server) : IClassFixtur
 
             var (refused, _) = await AsBrowserAsync(
                 null, "POST", "/api/flower/v1/playlists/apply", "10.0.9.7", body: pushed);
-            Assert.Equal(HttpStatusCode.Forbidden, refused);
+            Assert.Equal(HttpStatusCode.Unauthorized, refused);
 
             var (applied, _) = await AsBrowserAsync(
                 device, "POST", "/api/flower/v1/playlists/apply", "10.0.9.7", body: pushed);
@@ -274,7 +274,7 @@ public class BrowserDeviceAccessTests(FlowerServerFixture server) : IClassFixtur
 
         var (status, _) = await AsBrowserAsync(device, "GET", "/api/flower/v1/library", "10.0.9.3");
 
-        Assert.Equal(HttpStatusCode.Forbidden, status);
+        Assert.Equal(HttpStatusCode.Unauthorized, status);
     }
 
     // The negative that the whole change rests on. A session token used to open
@@ -302,7 +302,7 @@ public class BrowserDeviceAccessTests(FlowerServerFixture server) : IClassFixtur
 
         // 403 on the sync route because the caller presented no fingerprint this
         // server has a key for, which is the same answer an unknown signer gets.
-        Assert.Equal(StatusCodes.Status403Forbidden, library.Response.StatusCode);
+        Assert.Equal(StatusCodes.Status401Unauthorized, library.Response.StatusCode);
         Assert.Equal(StatusCodes.Status401Unauthorized, ticket.Response.StatusCode);
     }
 
@@ -313,7 +313,7 @@ public class BrowserDeviceAccessTests(FlowerServerFixture server) : IClassFixtur
         var (ticket, _) = await AsBrowserAsync(
             null, "POST", "/api/flower/v1/stream-tickets", "10.0.9.5", query: "?id=sg-7");
 
-        Assert.Equal(HttpStatusCode.Forbidden, library);
+        Assert.Equal(HttpStatusCode.Unauthorized, library);
         Assert.Equal(HttpStatusCode.Unauthorized, ticket);
     }
 }

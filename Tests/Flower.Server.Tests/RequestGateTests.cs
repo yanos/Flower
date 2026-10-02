@@ -111,7 +111,7 @@ public class RequestGateTests(FlowerServerFixture server) : IClassFixture<Flower
         const string sharedAddress = "10.0.7.4";
 
         for (var i = 0; i < 30; i++)
-            Assert.Equal(StatusCodes.Status403Forbidden, (await SendAsync("GET", "/api/flower/v1/library", sharedAddress)).Response.StatusCode);
+            Assert.Equal(StatusCodes.Status401Unauthorized, (await SendAsync("GET", "/api/flower/v1/library", sharedAddress)).Response.StatusCode);
 
         Assert.Equal(StatusCodes.Status429TooManyRequests, (await SendAsync("GET", "/api/flower/v1/library", sharedAddress)).Response.StatusCode);
         Assert.Equal(StatusCodes.Status200OK, (await SendAsync("GET", "/api/flower/v1/playlists", sharedAddress, device)).Response.StatusCode);
@@ -175,5 +175,79 @@ public class RequestGateTests(FlowerServerFixture server) : IClassFixture<Flower
     private sealed class HasBody : IHttpRequestBodyDetectionFeature
     {
         public bool CanHaveBody => true;
+    }
+}
+
+// docs/TRUST-BOUNDARY-PLAN.md step 3: every refusal under /api is a problem
+// document with a code, on every route this server maps - walked from the
+// routing table rather than listed, so a route added later is covered without
+// anyone remembering to add it here.
+public class RefusalContractTests(FlowerServerFixture server) : IClassFixture<FlowerServerFixture>
+{
+    [Fact]
+    public async Task Every_api_route_refuses_a_stranger_with_a_coded_problem()
+    {
+        var routes = server.Services.GetRequiredService<Microsoft.AspNetCore.Routing.EndpointDataSource>().Endpoints
+            .OfType<Microsoft.AspNetCore.Routing.RouteEndpoint>()
+            .Where(e => e.RoutePattern.RawText?.StartsWith("/api", StringComparison.Ordinal) == true)
+            .SelectMany(e => (e.Metadata.GetMetadata<Microsoft.AspNetCore.Routing.HttpMethodMetadata>()?.HttpMethods ?? ["GET"])
+                .Select(method => (Method: method, Path: System.Text.RegularExpressions.Regex.Replace(e.RoutePattern.RawText!, "{[^}]+}", "x"))))
+            .Distinct()
+            .ToList();
+
+        // The routing table is the thing under test; an empty one proves nothing.
+        Assert.True(routes.Count > 30, $"only {routes.Count} /api routes were found");
+
+        var address = 0;
+        foreach (var (method, path) in routes)
+        {
+            var context = await server.Server.SendAsync(c =>
+            {
+                c.Request.Method = method;
+                c.Request.Path = path;
+                c.Request.QueryString = new QueryString("?id=x");
+                c.Connection.RemoteIpAddress = IPAddress.Parse($"10.0.9.{100 + address}");
+            });
+            address++;
+
+            var status = context.Response.StatusCode;
+            if (path == SyncProtocol.InfoPath)
+            {
+                Assert.Equal(StatusCodes.Status200OK, status);
+                continue;
+            }
+
+            Assert.True(status >= 400, $"{method} {path} answered {status} to a stranger");
+            using var reader = new StreamReader(context.Response.Body);
+            var body = await reader.ReadToEndAsync();
+            Assert.True(FlowerProblem.ContentType == context.Response.ContentType?.Split(';')[0],
+                $"{method} {path} answered {status} as {context.Response.ContentType}: {body}");
+            var problem = FlowerProblem.TryRead(body);
+            Assert.True(problem is { Code.Length: > 0 }, $"{method} {path} refused without a code");
+
+            // A stranger is device-unknown everywhere a device signs, and the
+            // pairing route - which takes a key it has not seen - says the
+            // signature did not verify.
+            Assert.Equal(
+                path.EndsWith("/pair-redeem", StringComparison.Ordinal) ? ProblemCodes.SignatureInvalid : ProblemCodes.DeviceUnknown,
+                problem!.Code);
+        }
+    }
+
+    // The fallback under every route: a path nothing maps is still a coded
+    // refusal, not a bare status a client has to guess from.
+    [Fact]
+    public async Task An_unmapped_api_path_is_a_coded_not_found()
+    {
+        var context = await server.Server.SendAsync(c =>
+        {
+            c.Request.Method = "GET";
+            c.Request.Path = "/api/flower/v1/no-such-route";
+            c.Connection.RemoteIpAddress = IPAddress.Parse("10.0.9.99");
+        });
+
+        Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
+        using var reader = new StreamReader(context.Response.Body);
+        Assert.Equal(ProblemCodes.NotFound, FlowerProblem.TryRead(await reader.ReadToEndAsync())?.Code);
     }
 }

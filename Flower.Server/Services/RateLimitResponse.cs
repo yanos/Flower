@@ -26,6 +26,6 @@ public static class RateLimitResponse
     public static IResult TooManyRequests(HttpContext context)
     {
         context.Response.Headers.RetryAfter = RetryAfterSeconds.ToString(CultureInfo.InvariantCulture);
-        return Results.StatusCode(StatusCodes.Status429TooManyRequests);
+        return Problems.Of(StatusCodes.Status429TooManyRequests, Flower.Services.ProblemCodes.RateLimited);
     }
 }

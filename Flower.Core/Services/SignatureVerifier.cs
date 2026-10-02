@@ -16,27 +16,37 @@ public static class SignatureVerifier
     public static bool Verify(
         string method, string absolutePath, IEnumerable<(string Key, string Value)> query, byte[] body,
         string? timestamp, string? nonce, string? signatureBase64, string? publicKeyBase64,
+        DateTimeOffset now, NonceReplayGuard replayGuard, string fingerprint) =>
+        Check(method, absolutePath, query, body, timestamp, nonce, signatureBase64, publicKeyBase64,
+            now, replayGuard, fingerprint) == SignatureCheck.Valid;
+
+    // The same check, saying which part failed - the reason a refusal names
+    // (see FlowerProblem). The order is the order of the checks, so a stale
+    // request is reported as stale before anything else is said about it.
+    public static SignatureCheck Check(
+        string method, string absolutePath, IEnumerable<(string Key, string Value)> query, byte[] body,
+        string? timestamp, string? nonce, string? signatureBase64, string? publicKeyBase64,
         DateTimeOffset now, NonceReplayGuard replayGuard, string fingerprint)
     {
         if (string.IsNullOrEmpty(timestamp) || string.IsNullOrEmpty(nonce) ||
             string.IsNullOrEmpty(signatureBase64) || string.IsNullOrEmpty(publicKeyBase64))
-            return false;
+            return SignatureCheck.Invalid;
 
         if (!long.TryParse(timestamp, out var unixSeconds))
-            return false;
+            return SignatureCheck.Invalid;
         var requestTime = DateTimeOffset.FromUnixTimeSeconds(unixSeconds);
         if ((now - requestTime).Duration() > ClockSkewWindow)
-            return false;
+            return SignatureCheck.Stale;
 
         // Recorded before the signature itself is checked - a wrong/forged
         // signature still burns the nonce, which is fine: a legitimate
         // caller always generates a fresh nonce per attempt (see
         // DeviceSigningKey.Sign), so this never blocks a genuine retry.
         if (!replayGuard.TryRecord(fingerprint, nonce, now))
-            return false;
+            return SignatureCheck.Replayed;
 
         if (!TryParsePublicKey(publicKeyBase64, out var point))
-            return false;
+            return SignatureCheck.Invalid;
 
         byte[] signature;
         try
@@ -45,12 +55,14 @@ public static class SignatureVerifier
         }
         catch (FormatException)
         {
-            return false;
+            return SignatureCheck.Invalid;
         }
 
         using var ecdsa = ECDsa.Create(new ECParameters { Curve = ECCurve.NamedCurves.nistP256, Q = point });
         var toVerify = SignedRequestCanonicalizer.Build(method, absolutePath, query, body, timestamp, nonce);
-        return ecdsa.VerifyData(toVerify, signature, HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation);
+        return ecdsa.VerifyData(toVerify, signature, HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation)
+            ? SignatureCheck.Valid
+            : SignatureCheck.Invalid;
     }
 
     // Also used by the pair-redeem route to check
@@ -75,4 +87,17 @@ public static class SignatureVerifier
         point = new ECPoint { X = raw[1..33], Y = raw[33..65] };
         return true;
     }
+}
+
+// Why a signature did not verify, for the refusal to say so.
+public enum SignatureCheck
+{
+    Valid,
+    // Missing, malformed, or simply not this key's signature.
+    Invalid,
+    // The timestamp is outside ClockSkewWindow - usually a clock, sometimes a
+    // request delivered long after it was signed by a device that slept.
+    Stale,
+    // The nonce has been seen.
+    Replayed,
 }

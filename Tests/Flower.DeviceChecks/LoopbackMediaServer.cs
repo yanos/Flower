@@ -8,6 +8,8 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
+using Flower.Services;
+
 namespace Flower.DeviceChecks;
 
 // A one-file HTTP server on loopback, standing in for the Subsonic /stream
@@ -71,8 +73,8 @@ public sealed class LoopbackMediaServer : IDisposable
 
     // Requires every request to carry an X-Flower-Nonce - header or query
     // param - that this server has not seen before, exactly as
-    // NonceReplayGuard does on the real one, and answers a repeat with the
-    // Subsonic error envelope the real one sends.
+    // NonceReplayGuard does on the real one, and answers a repeat the way the
+    // real one does: 401, with a nonce-reused problem document (FlowerProblem).
     //
     // This is the shape that made a whole album unplayable on a phone while
     // every desktop test stayed green, and it stayed green because nothing
@@ -85,8 +87,15 @@ public sealed class LoopbackMediaServer : IDisposable
     //
     // Both halves of that are worth reproducing on the platform rather than
     // only in a unit test: that the client now signs per request, and that a
-    // 200 which is not audio is refused rather than decoded.
+    // 200 which is not audio is refused rather than decoded. The second is
+    // ServesAPortalPage now - the real server stopped answering a refusal
+    // with a 200 when the OpenSubsonic adapter went, and a captive portal or
+    // a proxy's sign-in page is what still does.
     public bool RequiresFreshNonce { get; set; }
+
+    // Answers every request with HTTP 200 and an HTML page, the way a captive
+    // portal or a proxy's sign-in page does: a success that is not audio.
+    public bool ServesAPortalPage { get; set; }
 
     private readonly HashSet<string> _seenNonces = [];
     private readonly Lock _nonceLock = new();
@@ -256,27 +265,37 @@ public sealed class LoopbackMediaServer : IDisposable
         }
     }
 
+    private static void WriteWhole(NetworkStream stream, Request request, string status, string contentType, byte[] body)
+    {
+        var head = Encoding.ASCII.GetBytes(
+            $"HTTP/1.1 {status}\r\nContent-Type: {contentType}\r\n"
+            + string.Create(CultureInfo.InvariantCulture, $"Content-Length: {body.Length}\r\n")
+            + "Connection: close\r\n\r\n");
+        stream.Write(head, 0, head.Length);
+        if (request.Method != "HEAD")
+            stream.Write(body, 0, body.Length);
+        stream.Flush();
+    }
+
     private void Respond(NetworkStream stream, Request request)
     {
         var content = _content;
 
-        // HTTP 200, not 401 - and that is the whole point of reproducing it.
-        // The Subsonic protocol carries its errors in the body of a success,
-        // so a client checking the status code learns nothing, and a client
-        // reading the body as audio decodes an error message.
         if (RequiresFreshNonce && !AcceptNonce(request.Nonce))
         {
-            var envelope = Encoding.UTF8.GetBytes(
-                "{\"subsonic-response\":{\"status\":\"failed\",\"version\":\"1.16.1\","
-                + "\"error\":{\"code\":40,\"message\":\"Wrong username or password.\"}}}");
-            var refusal = Encoding.ASCII.GetBytes(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\n"
-                + string.Create(CultureInfo.InvariantCulture, $"Content-Length: {envelope.Length}\r\n")
-                + "Connection: close\r\n\r\n");
-            stream.Write(refusal, 0, refusal.Length);
-            if (request.Method != "HEAD")
-                stream.Write(envelope, 0, envelope.Length);
-            stream.Flush();
+            WriteWhole(stream, request, "401 Unauthorized", FlowerProblem.ContentType,
+                Encoding.UTF8.GetBytes(FlowerProblem.Serialize(
+                    FlowerProblem.Create(401, ProblemCodes.NonceReused))));
+            return;
+        }
+
+        // HTTP 200, and that is the whole point of reproducing it: a client
+        // checking the status learns nothing, and one reading the body as
+        // audio decodes a web page.
+        if (ServesAPortalPage)
+        {
+            WriteWhole(stream, request, "200 OK", "text/html; charset=utf-8",
+                Encoding.UTF8.GetBytes("<html><body><h1>Sign in to continue</h1></body></html>"));
             return;
         }
 

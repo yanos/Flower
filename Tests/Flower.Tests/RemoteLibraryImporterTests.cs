@@ -171,10 +171,13 @@ public class RemoteLibraryImporterTests
 
         // The failure mode this guards: swallowing the refusal and returning an
         // empty list hands Library.MergeSyncedTracks an empty catalog, which
-        // prunes every placeholder learned from this origin. Throwing also lets
-        // LibrarySyncService tell 403 (revoked) from 401 (bad signature).
-        var thrown = await Assert.ThrowsAsync<HttpRequestException>(() => Importer(peer).ImportAsync());
+        // prunes every placeholder learned from this origin. Throwing with the
+        // server's reason also lets LibrarySyncService tell device-unknown
+        // (revoked) from every other refusal - and this one, a bare 403 with no
+        // problem document, carries no reason at all.
+        var thrown = await Assert.ThrowsAsync<PeerRefusedException>(() => Importer(peer).ImportAsync());
         Assert.Equal(HttpStatusCode.Forbidden, thrown.StatusCode);
+        Assert.Null(thrown.Code);
     }
 
     // Stands in for a credential that proves nothing - enough to exercise the

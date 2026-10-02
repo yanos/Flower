@@ -26,8 +26,8 @@ the client's source-generated context writes — no naming policy, so `Songs`,
 camelCase. Nulls are omitted everywhere except `/info`, which writes them — a
 `null` there is an answer (`trustsCaller`), not an absence.
 
-Anything else under `/api` is a 404 from the single-page fallback
-(`WebUiHosting`), which matches every method. That includes `HEAD` on the media
+Anything else under `/api` is a `404` (`not-found`) from the single-page
+fallback (`WebUiHosting`), which matches every method. That includes `HEAD` on the media
 routes: they are `MapGet` on purpose, so a client finds a track's length with a
 ranged GET rather than a HEAD.
 
@@ -154,16 +154,46 @@ against another id.
 
 ### How a refusal reads
 
-| Surface | No key on file for the fingerprint | Key on file, signature failed | Verified, not an admin |
-|---|---|---|---|
-| `/api/flower/v1/*` | `403` | `401` | — |
-| `/api/flower/v1/stream-tickets` | `401` | `401` | — |
-| `/api/admin/*` | `401` | `401` | `403` |
+Every refusal under `/api` is an RFC 9457 problem document,
+`application/problem+json`, with one member of Flower's own: `code`
+(`FlowerProblem.cs`).
 
-On the sync group the difference is load-bearing: a client reads `403` as "this
-server revoked me" and unpairs itself, and `401` as "this attempt failed, try
-again". A stale timestamp after a laptop slept mid-request must be the second.
-Note that `403` means something different on the admin surface.
+```json
+{ "type": "urn:flower:problem:clock-skew", "title": "The request's clock is too far from the server's.",
+  "status": 401, "code": "clock-skew", "serverTime": "2026-10-02T12:00:00+00:00" }
+```
+
+The status says what to do next and the code says why. Statuses mean the same
+on every surface: `401` is "authentication failed", `403` is "authenticated, and
+not allowed".
+
+| Status | `code` | Meaning | Client does |
+|---|---|---|---|
+| `400` | `invalid-request` | Malformed body or query; `detail` says what | Drop the request |
+| `400` | `pairing-code-invalid` | Code wrong, expired or used | Ask for the code again |
+| `401` | `device-unknown` | No key on file for the claimed fingerprint | The one refusal that may mean revoked |
+| `401` | `signature-invalid` | Key on file, signature wrong | Sign again |
+| `401` | `clock-skew` | Timestamp outside ±60s; carries `serverTime` | Correct the clock (`SignatureClock`) |
+| `401` | `nonce-reused` | Nonce already seen | A bug: sign every attempt afresh |
+| `403` | `not-admin` | Paired, and the route is an administrator's | Hide the control |
+| `404` | `not-found` | No such track, upload, device or route | Per route |
+| `409` | `conflict` | A different file is already at that path | Final for this file |
+| `411` | `length-required` | A body with no `Content-Length` | Send it with one |
+| `413` | `too-large` | Over the route's body cap | Drop the request |
+| `422` | `corrupt` | Upload bytes do not match the promised hash | Send again |
+| `429` | `rate-limited` | Over a budget; `Retry-After` is set | Wait that long |
+| `503` | `scanning` | A library scan is running | Pause; resume when the token moves |
+| `503` | `unavailable` | Nowhere to write, or similar | Stop the batch |
+| `500` | `server-error` | Something on the server failed | Report it |
+
+Clients act on the code. A sync service treats `device-unknown` alone as "this
+server revoked me". A stale timestamp after a laptop slept is `clock-skew`, and
+must never unpair anything. Every `HttpClient` that `PeerHttpClient` builds
+reads `serverTime` off a `clock-skew` refusal and signs with the corrected clock
+from then on. The media path, which signs its own requests, retries once at
+once. A route that left with a bare status is given a problem by its status in
+a fallback (`Problems.FillEmptyRefusalAsync`). A test walks the routing table to
+hold every route to this.
 
 ## Discovery
 
@@ -234,10 +264,10 @@ body is empty.
 | Status | Meaning |
 |---|---|
 | `200` | `{"fingerprint": "…", "isAdmin": false}` — the device is trusted. `isAdmin` comes from the code as issued, never from the caller |
-| `400` | `{"error": "Invalid, expired, or already-used pairing code."}` |
-| `401` | The proof of possession failed. The code is **not** consumed |
-| `413` | Body over 4 KB |
-| `429` | More than five attempts a minute from this address |
+| `400` | `pairing-code-invalid` |
+| `401` | `signature-invalid`: the proof of possession failed. The code is **not** consumed |
+| `413` | `too-large`: body over 4 KB |
+| `429` | `rate-limited`: more than five attempts a minute from this address |
 
 ## The device surface — `/api/flower/v1`
 
@@ -412,13 +442,15 @@ A ticket is a bearer token by necessity, so it is narrow: one track id, fifteen
 minutes, in memory only, and revoked with the device that minted it. It is
 deliberately **not** single-use — a media element makes a probe and then a
 range request per seek. A device holds at most 32; minting another drops its
-oldest. `400` without an id or with one over 64 characters, `401` for any
-signature failure.
+oldest. `400` without an id or with one over 64 characters; an authentication
+failure is the same `401` and code as anywhere else.
 
 ## The admin surface — `/api/admin`
 
 `AdminEndpoints.cs`. A paired device's signature **and** `IsAdmin` on that
-device. camelCase JSON; errors are `{"error": "…"}`. There is no login route.
+device. camelCase JSON; refusals are problem documents like everywhere else, with
+the server's own sentence in `detail`. A paired device that is not an admin gets
+`403 not-admin`. There is no login route.
 
 ### Devices and pairing
 
@@ -432,7 +464,7 @@ device. camelCase JSON; errors are `{"error": "…"}`. There is no login route.
 
 The invite's host is the one the request arrived on, unless `AdvertisedHost` is
 set. A revoked device learns of it from `trustsCaller: false` on its next
-`/info` poll, or a `403` on its next sync.
+`/info` poll, or a `401 device-unknown` on its next sync.
 
 ### Settings
 
@@ -517,11 +549,12 @@ the song keeps its id.
 
 | Status | Meaning | What to do |
 |---|---|---|
-| `400` | Bad path, unsupported type, piece that does not fit, not audio | Final for this file |
-| `404` | No such upload in progress | Begin again from step 1 |
-| `409` | A different file already sits at that path | Final; nothing is overwritten |
-| `422` | All bytes arrived and the hash does not match | Send it again |
-| `503` | Scan running, or nowhere writable | Stop the whole batch |
+| `400 invalid-request` | Bad path, unsupported type, piece that does not fit, not audio, no `offset` | Final for this file |
+| `404 not-found` | No such upload in progress | Begin again from step 1 |
+| `409 conflict` | A different file already sits at that path | Final; nothing is overwritten |
+| `422 corrupt` | All bytes arrived and the hash does not match | Send it again |
+| `503 scanning` | A library scan is running | Pause; resume when the token moves |
+| `503 unavailable` | Nowhere writable | Stop the whole batch |
 
 **Move.** `POST /library/move` with `{trackId, relativePath}` → 
 `{relativePath, libraryToken}`. Sent only for a recorded move, never inferred

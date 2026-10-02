@@ -57,7 +57,7 @@ public static class MediaEndpoints
             logger.LogWarning(
                 "Refusing to stream {Id} to {Peer}: no playable track with that id (unknown, or its file is gone)",
                 id, StreamPeer(context));
-            return Results.NotFound();
+            return Problems.NotFound();
         }
 
         var range = context.Request.Headers.Range.ToString();
@@ -114,7 +114,7 @@ public static class MediaEndpoints
     {
         var track = FindPlayable(id, library);
         return track is null
-            ? Results.NotFound()
+            ? Problems.NotFound()
             : Results.File(track.Path!, LibraryDtoMapper.ContentTypeOf(track),
                 fileDownloadName: Path.GetFileName(track.Path!), enableRangeProcessing: true);
     }
@@ -133,7 +133,7 @@ public static class MediaEndpoints
     internal static IResult GetCoverArt(string? id, Library library)
     {
         if (string.IsNullOrEmpty(id))
-            return Results.NotFound();
+            return Problems.NotFound();
 
         foreach (var candidate in CoverArtCandidates(id, library))
         {
@@ -144,7 +144,7 @@ public static class MediaEndpoints
                 return Results.Bytes(art.Bytes, art.MimeType);
         }
 
-        return Results.NotFound();
+        return Problems.NotFound();
     }
 
     // Which files an art request for this id is about: every track on an album

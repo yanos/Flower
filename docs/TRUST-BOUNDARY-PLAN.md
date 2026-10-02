@@ -1,6 +1,6 @@
 # Trust boundary: rogue clients, budgets, and what a refusal means
 
-**Status (2026-10-02): steps 1 and 2 done; steps 3–5 to go.** Steps 1 and 2 stand
+**Status (2026-10-02): steps 1–3 done; steps 4 and 5 to go.** Steps 1 and 2 stand
 alone; step 4 needs step 3. `docs/API.md` describes the server as it is today
 and is updated as each step lands, not before.
 
@@ -342,8 +342,46 @@ Client side:
   `SeekableHttpStream` read `code`, not the bare status.
 - `Classify` in `LibrarySyncService` maps codes to `SyncFailure`.
 
-**Done when** every non-2xx answer from every route in `API.md` carries a
-`code`, and a test enumerates the routes to prove it.
+**Done (2026-10-02).** The contract is `FlowerProblem` in `Flower.Core`, so both
+ends use one definition. The server writes it through `Problems`, and every
+refusal under `/api` that leaves without a body is filled in by status in a
+fallback. Where it differs from the above:
+
+- **`SeekableHttpStream.ProtocolErrorFor` stays; only its OpenSubsonic half is
+  gone.** The plan said to delete it, but its rule is "a 2xx with a textual body
+  is not audio", and that also catches a captive portal or a proxy's sign-in
+  page. Only the parsing of the old error envelope went. The device checks'
+  not-audio check moved to `LoopbackMediaServer.ServesAPortalPage`, and
+  `RequiresFreshNonce` now refuses with `401 nonce-reused`.
+- **A clock-skew refusal corrects the clock rather than retrying everywhere.**
+  `SignatureClock` holds an offset that both signers use, and a
+  `SignatureClockHandler` in every client `PeerHttpClient` builds sets it from
+  `serverTime`. So the next request goes through, and the sync loop's next tick
+  is the retry. Only `PeerCredentialsHandler`, which signs its own media
+  requests, sends the request again at once. Adding a retry to every call site
+  would have meant re-signing requests from outside the code that signed them.
+- **Found by the route-walking test:** minimal-API parameter binding runs
+  before endpoint filters. So `PUT /library/uploads/{id}` without an `offset`
+  answered a stranger `400` with the exception's text, before anyone was
+  authenticated. The required bound parameters (`offset`, the ticket `id`)
+  are optional now and checked after the gate. `ThrowOnBadRequest` is off, so
+  any binding failure left is a coded `400`, not exception text.
+- `fallback` codes never guess `device-unknown`. A bare 401 is read as
+  `signature-invalid` and a bare 403 as `not-admin`, the readings that cost a
+  client nothing.
+
+Tests, all passing:
+
+- every `/api` route in the routing table refuses a stranger with a coded
+  problem, `device-unknown` everywhere a device signs (`RefusalContractTests`,
+  server);
+- an unmapped `/api` path is a coded `404`;
+- a stale signature is `clock-skew` with the server's time;
+- `device-unknown` is the only refusal that reads as revoked; `clock-skew`,
+  `signature-invalid`, `nonce-reused` and a bare HTML `403` leave the pairing
+  alone; a `clock-skew` refusal corrects the client's clock; a signed media
+  request is sent again once in the corrected time (`RefusalContractTests`,
+  client).
 
 ## Step 4 — Only the pinned key revokes
 

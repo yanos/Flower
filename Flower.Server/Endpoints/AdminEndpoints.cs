@@ -132,7 +132,7 @@ public static class AdminEndpoints
                 && trustedPeers.GetPublicKey(claimed) != null
                 && !trustedPeers.IsAdmin(claimed))
             {
-                return Results.StatusCode(StatusCodes.Status403Forbidden);
+                return Problems.NotAdmin();
             }
 
             // Signed requests may carry a body (PUT /settings does), and the
@@ -144,28 +144,15 @@ public static class AdminEndpoints
             // see it.
             var admitted = await services.GetRequiredService<RequestGate>().AdmitAsync(
                 http, isUpload ? RequestGate.Plane.Upload : RequestGate.Plane.Admin, MaxBodyBytes, logger);
-            switch (admitted.Outcome)
-            {
-                case RequestGate.Outcome.LengthRequired:
-                    return Results.StatusCode(StatusCodes.Status411LengthRequired);
-                case RequestGate.Outcome.TooLarge:
-                    return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
-                // With a Retry-After, because what is refused here is most
-                // often a program in the middle of a batch, and it waits
-                // exactly as long as it is told to.
-                case RequestGate.Outcome.Throttled:
-                    return RateLimitResponse.TooManyRequests(http);
-                case RequestGate.Outcome.Unknown:
-                case RequestGate.Outcome.BadSignature:
-                    return Results.Unauthorized();
-            }
+            if (admitted.Outcome != RequestGate.Outcome.Admitted)
+                return Problems.ForGate(admitted, http);
 
             var fingerprint = admitted.Fingerprint!;
 
             // Authenticated as *a* peer is not authorized as an admin: a paired
             // phone can sign a perfectly valid request to these routes, and must
             // still be turned away.
-            // StatusCode(403), not Results.Forbid(): Forbid() runs the ASP.NET
+            // A 403 written here, not Results.Forbid(): Forbid() runs the ASP.NET
             // Core authentication stack's forbid handler, and this app registers
             // no authentication scheme at all - it authenticates by device
             // signature - so it throws rather than answering, turning every
@@ -181,7 +168,7 @@ public static class AdminEndpoints
                     + "the device is paired and verified, but is not an admin.",
                     http.Request.Method, http.Request.Path.Value, fingerprint,
                     http.Connection.RemoteIpAddress?.ToString() ?? "(unknown)");
-                return Results.StatusCode(StatusCodes.Status403Forbidden);
+                return Problems.NotAdmin();
             }
 
             http.Items[AdminFingerprintKey] = fingerprint;
@@ -237,7 +224,7 @@ public static class AdminEndpoints
             // wrong row than a deliberate act. Removing another admin is still
             // allowed.
             if (string.Equals(context.Items[AdminFingerprintKey] as string, fingerprint, StringComparison.Ordinal))
-                return Results.BadRequest(new { error = "A device cannot revoke itself." });
+                return Problems.BadRequest("A device cannot revoke itself.");
 
             await store.RevokeAsync(fingerprint);
             // Otherwise "revoke this device" would leave its already-minted
@@ -277,11 +264,11 @@ public static class AdminEndpoints
             }
             catch (JsonException ex)
             {
-                return Results.BadRequest(new { error = ex.Message });
+                return Problems.BadRequest(ex.Message);
             }
 
             if (update == null)
-                return Results.BadRequest(new { error = "A settings body is required." });
+                return Problems.BadRequest("A settings body is required.");
 
             var before = options.CurrentValue;
             var values = new Dictionary<string, JsonNode?>(StringComparer.Ordinal);
@@ -445,7 +432,7 @@ public static class AdminEndpoints
             }
 
             if (request?.TrackIds is not { Count: > 0 } ids)
-                return Results.BadRequest(new { error = "Name at least one track to remove." });
+                return Problems.BadRequest("Name at least one track to remove.");
 
             var tracks = ids
                 .Select(library.Find)
@@ -494,7 +481,7 @@ public static class AdminEndpoints
             }
 
             if (request == null)
-                return Results.BadRequest(new { error = "Name the file to upload." });
+                return Problems.BadRequest("Name the file to upload.");
 
             var result = await ingest.BeginAsync(request, context.RequestAborted);
             LogUpload(logger, context, request.RelativePath, result);
@@ -502,16 +489,22 @@ public static class AdminEndpoints
         });
 
         authenticated.MapPut(UploadsRoute + "/{uploadId}", async (
-            string uploadId, long offset, HttpContext context, LibraryIngest ingest, LibraryRescanCoordinator rescans) =>
+            string uploadId, long? offset, HttpContext context, LibraryIngest ingest, LibraryRescanCoordinator rescans) =>
         {
             if (rescans.IsRunning)
                 return ScanInProgress(jsonOptions);
 
-            // The filter buffers, and the signature covers, a body that
-            // states its length. One that does not was verified as empty, and
-            // bytes nobody signed are not written to a library folder.
+            // Optional in the signature and required here: a parameter the
+            // framework requires is bound - and refused - before the endpoint
+            // filter runs, so a stranger leaving it out was answered on its
+            // merits before anyone had asked who it was.
+            if (offset is not { } from)
+                return Problems.BadRequest("Say where this piece starts, as offset.");
+
+            // The gate refuses a body that does not state its length (411),
+            // and an empty one is no piece of a file.
             if (context.Request.ContentLength is not > 0)
-                return Results.BadRequest(new { error = "A piece of the file is required, with its length." });
+                return Problems.BadRequest("A piece of the file is required, with its length.");
 
             // Already in memory - the filter buffered it to check the
             // signature - and already bounded by MaxBodyBytes there.
@@ -519,7 +512,7 @@ public static class AdminEndpoints
             await context.Request.Body.CopyToAsync(buffer, context.RequestAborted);
 
             var result = await ingest.AppendAsync(
-                uploadId, offset, buffer.GetBuffer().AsMemory(0, (int)buffer.Length), context.RequestAborted);
+                uploadId, from, buffer.GetBuffer().AsMemory(0, (int)buffer.Length), context.RequestAborted);
             LogUpload(logger, context, uploadId, result);
             return ToResult(result, jsonOptions);
         });
@@ -545,7 +538,7 @@ public static class AdminEndpoints
             }
 
             if (request is not { TrackId.Length: > 0, RelativePath.Length: > 0 })
-                return Results.BadRequest(new { error = "Name the song and where its file has moved to." });
+                return Problems.BadRequest("Name the song and where its file has moved to.");
 
             var result = await ingest.MoveAsync(request, context.RequestAborted);
             if (result.Outcome != IngestOutcome.Completed)
@@ -580,7 +573,7 @@ public static class AdminEndpoints
             }
 
             if (request?.Edits is not { Count: > 0 } edits || edits.Any(e => e?.Tags == null || string.IsNullOrEmpty(e.TrackId)))
-                return Results.BadRequest(new { error = "Name at least one song and its tags." });
+                return Problems.BadRequest("Name at least one song and its tags.");
 
             var response = TrackTags.ApplyEdits(library, edits, logger);
 
@@ -600,7 +593,7 @@ public static class AdminEndpoints
             if (rescans.IsRunning)
                 return ScanInProgress(jsonOptions);
             if (ParseArtworkEdit(ids, editedAt) is not { } edit)
-                return Results.BadRequest(new { error = "Name the songs and when the artwork was changed." });
+                return Problems.BadRequest("Name the songs and when the artwork was changed.");
 
             using var buffer = new MemoryStream();
             await context.Request.Body.CopyToAsync(buffer, context.RequestAborted);
@@ -609,7 +602,7 @@ public static class AdminEndpoints
             // Sniffed rather than trusted, as the album route below does and
             // for its reason: the type ends up inside the tag.
             if (LocalAlbumArtReader.MimeTypeForBytes(bytes) is not { } mimeType)
-                return Results.BadRequest(new { error = "That body is not an image Flower can read." });
+                return Problems.BadRequest("That body is not an image Flower can read.");
 
             var response = TrackArtwork.ApplyEdit(library, edit.Ids, edit.At, new LocalAlbumArt(bytes, mimeType), logger);
             logger.LogInformation("{Fingerprint} changed the artwork of {Applied} of {Sent} song(s)",
@@ -623,7 +616,7 @@ public static class AdminEndpoints
             if (rescans.IsRunning)
                 return ScanInProgress(jsonOptions);
             if (ParseArtworkEdit(ids, editedAt) is not { } edit)
-                return Results.BadRequest(new { error = "Name the songs and when the artwork was removed." });
+                return Problems.BadRequest("Name the songs and when the artwork was removed.");
 
             var response = TrackArtwork.ApplyEdit(library, edit.Ids, edit.At, art: null, logger);
             logger.LogInformation("{Fingerprint} removed the artwork of {Applied} of {Sent} song(s)",
@@ -657,7 +650,7 @@ public static class AdminEndpoints
             }
 
             if (request?.Paths is not { Count: > 0 } paths)
-                return Results.BadRequest(new { error = "Name at least one file to restore." });
+                return Problems.BadRequest("Name at least one file to restore.");
 
             var restored = library.RestoreExcludedPaths(paths);
 
@@ -693,7 +686,7 @@ public static class AdminEndpoints
             }
 
             if (request?.Paths is not { Count: > 0 } paths)
-                return Results.BadRequest(new { error = "Name at least one file to delete." });
+                return Problems.BadRequest("Name at least one file to delete.");
 
             var (deleted, notDeleted) = LibraryRemoval.DeleteRemovedFiles(
                 library, paths, options.CurrentValue.LibraryPaths, logger);
@@ -721,7 +714,7 @@ public static class AdminEndpoints
         authenticated.MapPut("/cover-art", async (HttpContext context, Library library, string? id) =>
         {
             if (string.IsNullOrEmpty(id))
-                return Results.BadRequest(new { error = "An album or song id is required." });
+                return Problems.BadRequest("An album or song id is required.");
 
             var contentType = context.Request.ContentType?.Split(';')[0].Trim();
 
@@ -729,7 +722,7 @@ public static class AdminEndpoints
             await context.Request.Body.CopyToAsync(buffer, context.RequestAborted);
             var bytes = buffer.ToArray();
             if (bytes.Length == 0)
-                return Results.BadRequest(new { error = "An image body is required." });
+                return Problems.BadRequest("An image body is required.");
 
             // Sniffed rather than trusted, and the request is refused when the
             // two disagree with each other about nothing recognisable: the MIME
@@ -738,7 +731,7 @@ public static class AdminEndpoints
             // rather than fail here.
             var sniffed = LocalAlbumArtReader.MimeTypeForBytes(bytes);
             if (sniffed == null)
-                return Results.BadRequest(new { error = "That body is not an image Flower can read." });
+                return Problems.BadRequest("That body is not an image Flower can read.");
 
             var mimeType = sniffed;
             if (contentType != null && !string.Equals(contentType, sniffed, StringComparison.OrdinalIgnoreCase))
@@ -754,7 +747,7 @@ public static class AdminEndpoints
         // truncated in flight.
         authenticated.MapDelete("/cover-art", (Library library, string? id) =>
             string.IsNullOrEmpty(id)
-                ? Results.BadRequest(new { error = "An album or song id is required." })
+                ? Problems.BadRequest("An album or song id is required.")
                 : WriteCoverArt(id, library, logger, jsonOptions, path => AlbumArtWriter.TryRemove(path, logger)));
 
         // One paired device's rolling seven-day log, assembled from the
@@ -771,7 +764,7 @@ public static class AdminEndpoints
         authenticated.MapGet("/devices/{fingerprint}/logs", (string fingerprint, int? limit, ClientLogStore logs) =>
         {
             if (logs.Get(fingerprint) is not { } snapshot)
-                return Results.NotFound();
+                return Problems.NotFound();
 
             var take = Math.Clamp(limit ?? 500, 1, snapshot.Entries.Count == 0 ? 1 : snapshot.Entries.Count);
             var lines = snapshot.Entries
@@ -824,7 +817,7 @@ public static class AdminEndpoints
     {
         var candidates = MediaEndpoints.CoverArtCandidates(id, library);
         if (candidates.Count == 0)
-            return Results.NotFound(new { error = "No track on this server has that id." });
+            return Problems.NotFound("No track on this server has that id.");
 
         var written = 0;
         var repainted = new List<(Track Track, DateTimeOffset EditedAt, string? FileStamp)>();
@@ -845,8 +838,8 @@ public static class AdminEndpoints
         library.ApplySyncedArt(repainted);
 
         if (written == 0)
-            return Results.Json(new { error = "The artwork could not be written to any of those files." },
-                jsonOptions, statusCode: StatusCodes.Status500InternalServerError);
+            return Problems.Of(StatusCodes.Status500InternalServerError, ProblemCodes.ServerError,
+                "The artwork could not be written to any of those files.");
 
         logger.LogInformation("Album art for {Id} rewritten on {Written} of {Total} files.",
             id, written, candidates.Count);
@@ -861,17 +854,18 @@ public static class AdminEndpoints
     {
         IngestOutcome.Accepted or IngestOutcome.Completed when result.Moved != null => Results.Json(result.Moved, jsonOptions),
         IngestOutcome.Accepted or IngestOutcome.Completed => Results.Json(result.Status, jsonOptions),
-        IngestOutcome.Conflict => Results.Json(new { error = result.Error }, jsonOptions, statusCode: StatusCodes.Status409Conflict),
-        IngestOutcome.Unavailable => Results.Json(new { error = result.Error }, jsonOptions, statusCode: StatusCodes.Status503ServiceUnavailable),
-        IngestOutcome.UnknownUpload => Results.Json(new { error = result.Error }, jsonOptions, statusCode: StatusCodes.Status404NotFound),
-        IngestOutcome.Corrupt => Results.Json(new { error = result.Error }, jsonOptions, statusCode: StatusCodes.Status422UnprocessableEntity),
-        _ => Results.BadRequest(new { error = result.Error }),
+        IngestOutcome.Conflict => Problems.Of(StatusCodes.Status409Conflict, ProblemCodes.Conflict, result.Error),
+        IngestOutcome.Unavailable => Problems.Of(StatusCodes.Status503ServiceUnavailable, ProblemCodes.Unavailable, result.Error),
+        IngestOutcome.UnknownUpload => Problems.Of(StatusCodes.Status404NotFound, ProblemCodes.NotFound, result.Error),
+        IngestOutcome.Corrupt => Problems.Of(StatusCodes.Status422UnprocessableEntity, ProblemCodes.Corrupt, result.Error),
+        _ => Problems.BadRequest(result.Error),
     };
 
+    // Its own code rather than unavailable: this one passes by itself, and a
+    // device waits for the library token to move rather than for an operator.
     private static IResult ScanInProgress(JsonSerializerOptions jsonOptions) =>
-        Results.Json(
-            new { error = "This server is scanning its library; uploads wait until it has finished." },
-            jsonOptions, statusCode: StatusCodes.Status503ServiceUnavailable);
+        Problems.Of(StatusCodes.Status503ServiceUnavailable, ProblemCodes.Scanning,
+            "This server is scanning its library; uploads wait until it has finished.");
 
     // A song arriving is worth a line; a piece of one is not. Refusals are
     // logged whichever step they happen at, since a refusal is the end of

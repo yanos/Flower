@@ -59,7 +59,14 @@ public static class PeerHttpClient
         // also the one caller that has nothing to pin with - see
         // BrowserPeerCredentials - so there is nothing lost here either.
         if (OperatingSystem.IsBrowser())
-            return timeout is { } browserTimeout ? new HttpClient { Timeout = browserTimeout } : new HttpClient();
+        {
+            // SignatureClockHandler, here too: a tab's clock is a device's
+            // clock, and is as often wrong.
+            var browserClient = new HttpClient(new SignatureClockHandler(new HttpClientHandler()));
+            if (timeout is { } browserTimeout)
+                browserClient.Timeout = browserTimeout;
+            return browserClient;
+        }
 
         var handler = new HttpClientHandler
         {
@@ -67,7 +74,10 @@ public static class PeerHttpClient
                 IsAcceptable(certificate, errors),
         };
 
-        return timeout is { } value ? new HttpClient(handler) { Timeout = value } : new HttpClient(handler);
+        // Every client this builds reads a clock-skew refusal and corrects the
+        // clock it signs with - see SignatureClock.
+        var clocked = new SignatureClockHandler(handler);
+        return timeout is { } value ? new HttpClient(clocked) { Timeout = value } : new HttpClient(clocked);
     }
 
     // The same client, plus a fresh device signature on every request it makes.

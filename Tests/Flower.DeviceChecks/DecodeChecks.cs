@@ -615,7 +615,8 @@ public static class DecodeChecks
     // nonce baked into it is single-use on the server (NonceReplayGuard), so
     // the probe spent it and the body GET was refused as a replay. Because the
     // probe went first the track had a correct length and no audio, and because
-    // the refusal was Subsonic's HTTP 200 the client decoded the error message.
+    // the refusal then was OpenSubsonic's HTTP 200 the client decoded the error
+    // message.
     //
     // Neither half is visible from a desktop suite, and it is worth being
     // precise about why: the desktop head plays local files, so it never
@@ -640,17 +641,18 @@ public static class DecodeChecks
         AssertMatchesSource(wav, decoded);
     }
 
-    // The other half, from the other side: when a request really is refused,
-    // the refusal must not be mistaken for the track.
+    // The other half, from the other side: a success that is not the track
+    // must not be mistaken for it.
     //
-    // Nothing signs here, so every request is refused - and the refusal is a
-    // 200 carrying an error envelope, which is what the Subsonic protocol
-    // mandates and what makes EnsureSuccessStatusCode useless on this surface.
-    // A prepare that "succeeds" on 130 bytes of JSON is the bug; a prepare that
-    // fails is the fix.
+    // It used to be the refusal itself, which the OpenSubsonic adapter sent
+    // as a 200 carrying an error envelope. Flower.Server refuses with a
+    // status now (FlowerProblem), so what still answers a stream request
+    // with a 200 that is not audio is something in front of the server: a
+    // captive portal, a proxy's sign-in page. A prepare that "succeeds" on a
+    // web page is the bug; a prepare that fails is the fix.
     private static void ProtocolErrorIsNotAudio(DecoderUnderTest subject)
     {
-        using var server = new LoopbackMediaServer { RequiresFreshNonce = true };
+        using var server = new LoopbackMediaServer { ServesAPortalPage = true };
         var url = server.Serve(SyntheticWav.Build(ShortTrack, SyntheticWav.Ramp()), "api/flower/v1/stream?id=refused");
 
         var ring = new GaplessRingBuffer(64 * 1024);

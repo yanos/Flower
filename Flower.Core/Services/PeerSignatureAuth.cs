@@ -138,21 +138,21 @@ public static class PeerSignatureAuth
         if (publicKey == null)
             return new PeerAuthResult(null, PeerAuthFailure.NotTrusted);
 
-        return Verify(request, publicKey, fingerprint, replayGuard, now) == null
-            ? new PeerAuthResult(null, PeerAuthFailure.BadSignature)
-            : new PeerAuthResult(fingerprint, PeerAuthFailure.None);
+        var check = Check(request, publicKey, fingerprint, replayGuard, now);
+        return check == SignatureCheck.Valid
+            ? new PeerAuthResult(fingerprint, PeerAuthFailure.None)
+            : new PeerAuthResult(null, PeerAuthFailure.BadSignature, check);
     }
 
-    private static string? Verify(SignedRequest request, string publicKeyBase64, string fingerprint, NonceReplayGuard replayGuard, DateTimeOffset now)
-    {
-        var verified = SignatureVerifier.Verify(
+    private static string? Verify(SignedRequest request, string publicKeyBase64, string fingerprint, NonceReplayGuard replayGuard, DateTimeOffset now) =>
+        Check(request, publicKeyBase64, fingerprint, replayGuard, now) == SignatureCheck.Valid ? fingerprint : null;
+
+    private static SignatureCheck Check(SignedRequest request, string publicKeyBase64, string fingerprint, NonceReplayGuard replayGuard, DateTimeOffset now) =>
+        SignatureVerifier.Check(
             request.Method, request.Path, request.Query, request.Body,
             request.Identity("X-Flower-Timestamp"), request.Identity("X-Flower-Nonce"),
             request.Identity("X-Flower-Signature"), publicKeyBase64,
             now, replayGuard, fingerprint);
-
-        return verified ? fingerprint : null;
-    }
 }
 
 // Why a trusted-peer check refused a caller. See
@@ -172,4 +172,7 @@ public enum PeerAuthFailure
     BadSignature,
 }
 
-public readonly record struct PeerAuthResult(string? Fingerprint, PeerAuthFailure Failure);
+// SignatureProblem says which part of a BadSignature failed, for the refusal
+// to name (FlowerProblem); Valid otherwise.
+public readonly record struct PeerAuthResult(
+    string? Fingerprint, PeerAuthFailure Failure, SignatureCheck SignatureProblem = SignatureCheck.Valid);

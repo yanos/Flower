@@ -263,9 +263,10 @@ public class LibrarySyncService
             _logger.LogWarning(ex, "Library sync with {Alias} ({Fingerprint}): GET /library failed, aborting this sync attempt",
                 device.Alias, device.Fingerprint);
 
-            // See PlaylistSyncService's identical check - a 403 here means the same
-            // thing, just from this service's own (also trust-gated) first request.
-            if (ex is HttpRequestException { StatusCode: HttpStatusCode.Forbidden })
+            // See PlaylistSyncService's identical check - device-unknown here
+            // means the same thing, just from this service's own (also
+            // trust-gated) first request.
+            if (PeerResponses.IsDeviceUnknown(ex))
                 PeerTrustRejected?.Invoke(this, new PeerTrustRejectedEventArgs { Fingerprint = device.Fingerprint, Alias = device.Alias });
 
             return new LibrarySyncResult(false, 0, 0, Failure: Classify(ex));
@@ -1274,7 +1275,7 @@ public class LibrarySyncService
     private static SyncFailure Classify(Exception ex) => ex switch
     {
         HttpRequestException { StatusCode: HttpStatusCode.TooManyRequests } => SyncFailure.Throttled,
-        HttpRequestException { StatusCode: HttpStatusCode.Forbidden } => SyncFailure.NotTrusted,
+        PeerRefusedException { Code: ProblemCodes.DeviceUnknown } => SyncFailure.NotTrusted,
         HttpRequestException { StatusCode: not null } => SyncFailure.Refused,
         HttpRequestException => SyncFailure.Unreachable,
         TaskCanceledException => SyncFailure.Unreachable,

@@ -191,7 +191,9 @@ public class LibraryUploadEndpointTests(FlowerServerFixture server) : IClassFixt
         var (status, body) = await BeginAsync(admin, "../escaped.wav", Wav(4));
 
         Assert.Equal(HttpStatusCode.BadRequest, status);
-        Assert.Contains("error", body);
+        var problem = FlowerProblem.TryRead(body);
+        Assert.Equal(ProblemCodes.InvalidRequest, problem?.Code);
+        Assert.False(string.IsNullOrEmpty(problem?.Detail));
         Assert.False(File.Exists(Path.Combine(Path.GetDirectoryName(MusicFolder)!, "escaped.wav")));
     }
 

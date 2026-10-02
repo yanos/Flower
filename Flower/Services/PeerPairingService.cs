@@ -88,8 +88,8 @@ public class PeerPairingService
     // pair" on its own leaves the user with nowhere to go, and the four ways
     // this fails want four different next moves - retype the code, ask for a
     // fresh one, wait, or go check the server. The server phrases the common
-    // one itself (PairingEndpoints returns {"error": ...} for a bad code), so
-    // that text is preferred over anything invented here.
+    // one itself (PairingEndpoints refuses a bad code as pairing-code-invalid,
+    // see FlowerProblem), so that text is preferred over anything invented here.
     private static async Task<string> DescribeRejectionAsync(
         DiscoveredDevice device, HttpResponseMessage response, ILogger logger)
     {
@@ -110,12 +110,13 @@ public class PeerPairingService
     {
         try
         {
-            var body = await response.Content.ReadAsStringAsync();
-            if (string.IsNullOrWhiteSpace(body))
-                return null;
-            using var json = JsonDocument.Parse(body);
-            return json.RootElement.TryGetProperty("error", out var error) && error.ValueKind == JsonValueKind.String
-                ? error.GetString()
+            // A problem document (FlowerProblem): the server's own sentence
+            // when it wrote one, and for a bad code the title it gives that
+            // code. Every other refusal is described better by the status
+            // below than by a generic title.
+            var problem = FlowerProblem.TryRead(await response.Content.ReadAsStringAsync());
+            return problem?.Detail is { Length: > 0 } detail ? detail
+                : problem?.Code == ProblemCodes.PairingCodeInvalid ? problem.Title
                 : null;
         }
         catch (Exception ex)

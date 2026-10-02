@@ -244,15 +244,18 @@ scripts/android-device-checks.sh                                                
 Two checks are not about decoding at all. The first is authentication:
 `LoopbackMediaServer.RequiresFreshNonce` enforces the same single-use-nonce rule
 `NonceReplayGuard` does on the real server, and answers a repeat the way the
-server did when streams went through the OpenSubsonic adapter - an error
-envelope on an HTTP 200, which is the awkward shape the client still has to
-recognise (`SeekableHttpStream.ProtocolErrorFor`). It exists because a
-stream URL was signed once, at resolve time, and then fetched several times
-(probe, body, reopen), so the probe spent the nonce and the body GET was refused
-as a replay. The track got a correct length and ~130 bytes of JSON for audio.
-Nothing here could catch it while the loopback authenticated nothing, which is
-the general lesson: a check that cannot refuse a request cannot find a bug about
-being refused. See `PeerCredentialsHandler` and docs/CITED-DECISIONS.md #2c.
+server does: `401` with a `nonce-reused` problem document (`FlowerProblem`). It
+exists because a stream URL was signed once, at resolve time, and then fetched
+several times (probe, body, reopen), so the probe spent the nonce and the body
+GET was refused as a replay. Back then the refusal was the OpenSubsonic
+adapter's error envelope on an HTTP 200, so the track got a correct length and
+~130 bytes of JSON for audio. Nothing here could catch it while the loopback
+authenticated nothing, which is the general lesson: a check that cannot refuse a
+request cannot find a bug about being refused. See `PeerCredentialsHandler` and
+docs/CITED-DECISIONS.md #2c. A 200 that is not audio is still worth refusing - a
+captive portal or a proxy's sign-in page answers that way - so
+`SeekableHttpStream.ProtocolErrorFor` stays, and
+`LoopbackMediaServer.ServesAPortalPage` is the check that holds it to that.
 
 The second is a server answering 429. Being throttled
 is not a track failing, and the difference between waiting it out and treating

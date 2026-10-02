@@ -111,7 +111,7 @@ public class MediaEndpointTests(FlowerServerFixture server) : IClassFixture<Flow
     [InlineData("/api/flower/v1/download")]
     public async Task An_unsigned_request_reaches_neither(string path)
     {
-        Assert.Equal(HttpStatusCode.Forbidden, await GetAsync(path, $"?id={ASeededSongId}", "10.0.5.2"));
+        Assert.Equal(HttpStatusCode.Unauthorized, await GetAsync(path, $"?id={ASeededSongId}", "10.0.5.2"));
     }
 
     // The browser player's whole path: a tab signs for a ticket, and the
@@ -144,7 +144,7 @@ public class MediaEndpointTests(FlowerServerFixture server) : IClassFixture<Flow
 
         // Refused as an unknown caller: outside the media routes the ticket is
         // not consulted at all, so this is simply a request with no signature.
-        Assert.Equal(HttpStatusCode.Forbidden, status);
+        Assert.Equal(HttpStatusCode.Unauthorized, status);
     }
 
     // A ticket is scoped to the two media routes it was issued for, so it opens
@@ -160,7 +160,7 @@ public class MediaEndpointTests(FlowerServerFixture server) : IClassFixture<Flow
         var status = await GetAsync(
             "/api/flower/v1/library", $"?ticket={Uri.EscapeDataString(ticket)}", "10.0.5.5");
 
-        Assert.Equal(HttpStatusCode.Forbidden, status);
+        Assert.Equal(HttpStatusCode.Unauthorized, status);
     }
 
     // The route is MapGet, so a HEAD matches no endpoint and every client

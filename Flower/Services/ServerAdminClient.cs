@@ -302,22 +302,20 @@ public sealed class ServerAdminClient(
         return response;
     }
 
-    // The admin API answers a refusal with {"error": "..."} - worth showing, and
-    // worth falling back gracefully when the body is something else entirely (a
-    // proxy's HTML error page, an empty 403).
+    // The admin API answers a refusal with a problem document (FlowerProblem):
+    // its detail is the server's own sentence when it wrote one, and its code
+    // says which of the authentication failures this was - "not paired" and
+    // "your clock is out" want different next moves, and the status alone
+    // used to make them the same 401. Falls back gracefully when the body is
+    // something else entirely (a proxy's HTML error page).
     private async Task<string> DescribeFailureAsync(HttpResponseMessage response, CancellationToken ct)
     {
+        FlowerProblemDto? problem = null;
         try
         {
-            var text = await response.Content.ReadAsStringAsync(ct);
-            if (!string.IsNullOrWhiteSpace(text) && text.TrimStart().StartsWith('{'))
-            {
-                using var document = JsonDocument.Parse(text);
-                if (document.RootElement.TryGetProperty("error", out var error) && error.GetString() is { Length: > 0 } message)
-                    return message;
-            }
+            problem = FlowerProblem.TryRead(await response.Content.ReadAsStringAsync(ct));
         }
-        catch (Exception ex) when (ex is JsonException or HttpRequestException or OperationCanceledException)
+        catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException)
         {
             // Fall through to the status-only description below - but say so
             // first. What the caller ends up showing the user is a guess made
@@ -329,18 +327,31 @@ public sealed class ServerAdminClient(
                 (int)response.StatusCode);
         }
 
-        return response.StatusCode switch
+        if (problem?.Detail is { Length: > 0 } detail)
+            return detail;
+
+        return problem?.Code switch
         {
             // A caller that already knows why it could not authenticate gets to
-            // say so, because "not paired" is a guess made from the status code
-            // alone and is sometimes simply wrong: a browser tab in an insecure
+            // say so, because "not paired" is a guess made from the server's
+            // side and is sometimes simply wrong: a browser tab in an insecure
             // context never held a key to be paired *with*, and telling its user
             // to pair again sends them round a loop that cannot terminate. See
             // BrowserPeerCredentials and WebUiHosting.BrowserOriginFor.
-            HttpStatusCode.Unauthorized =>
+            ProblemCodes.DeviceUnknown =>
                 explainUnauthorized?.Invoke() ?? "This device is not paired with that server.",
-            HttpStatusCode.Forbidden => "This device is paired, but is not an administrator of that server.",
-            _ => $"The server refused the request ({(int)response.StatusCode} {response.ReasonPhrase}).",
+            ProblemCodes.NotAdmin => "This device is paired, but is not an administrator of that server.",
+            ProblemCodes.ClockSkew => "This device's clock is too far from the server's. It has been corrected; try again.",
+            ProblemCodes.SignatureInvalid or ProblemCodes.NonceReused =>
+                "The server did not accept this request's signature. Try again.",
+            { } => problem.Title,
+            null => response.StatusCode switch
+            {
+                HttpStatusCode.Unauthorized =>
+                    explainUnauthorized?.Invoke() ?? "This device is not paired with that server.",
+                HttpStatusCode.Forbidden => "This device is paired, but is not an administrator of that server.",
+                _ => $"The server refused the request ({(int)response.StatusCode} {response.ReasonPhrase}).",
+            },
         };
     }
 

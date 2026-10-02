@@ -116,11 +116,11 @@ public sealed class RemoteLibraryImporter : IMusicImporter
         (JsonTypeInfo<LibrarySyncManifestDto>)new JsonSerializerOptions(LibrarySyncJsonContext.Default.Options) { DefaultBufferSize = 1 << 20 }
             .GetTypeInfo(typeof(LibrarySyncManifestDto));
 
-    // Throws rather than swallowing: a 403 off this route means the peer has
-    // revoked us and a 401 means one request's signature was rejected, and only
-    // the caller knows what to do about either (see LibrarySyncService's own
-    // PeerTrustRejected handling, and "403 means revoked; a bad signature is
-    // 401" in SYNC-PLAN.md).
+    // Throws rather than swallowing, as a PeerRefusedException carrying the
+    // server's reason: device-unknown means the peer may have revoked us,
+    // anything else means this one request failed, and only the caller knows
+    // what to do about either (see LibrarySyncService's own PeerTrustRejected
+    // handling, and FlowerProblem).
     public async Task<RemoteLibraryFetch> FetchAsync(string? ifNoneMatch = null)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, $"{_baseUrl}{LibraryPath}");
@@ -145,7 +145,7 @@ public sealed class RemoteLibraryImporter : IMusicImporter
             return new RemoteLibraryFetch(NotModified: true, ifNoneMatch, [], new HashSet<string>());
         }
 
-        response.EnsureSuccessStatusCode();
+        await response.EnsureSuccessAsync();
 
         // Read off Headers.ETag when the value parses as one and off the raw
         // header when it does not - a weak or oddly-quoted tag we have to send

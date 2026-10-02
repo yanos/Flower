@@ -116,7 +116,7 @@ public class PublicAccessTests(PublicServerFixture publicServer, FlowerServerFix
         // further. A regression here would be invisible on a LAN and total on
         // the internet.
         Assert.Equal(
-            HttpStatusCode.Forbidden,
+            HttpStatusCode.Unauthorized,
             await GetAsync(publicServer.Server, LibraryPath, "127.0.0.1", forwardedFor: "203.0.113.7"));
     }
 }

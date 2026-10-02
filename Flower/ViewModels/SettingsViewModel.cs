@@ -1070,7 +1070,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
     private readonly ILogger<SettingsViewModel>? _logger;
 
     // The server's own words where it gave any (ServerAdminException carries the
-    // {"error": ...} body), the exception's otherwise.
+    // problem document's detail), the exception's otherwise.
     //
     // Logged as well as shown: ErrorMessage is a label in a panel the user is
     // about to close, so every failure to read or write server settings used to

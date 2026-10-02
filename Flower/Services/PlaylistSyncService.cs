@@ -17,9 +17,9 @@ namespace Flower.Services;
 
 public enum PlaylistConflictChoice { KeepLocal, KeepRemote }
 
-// Raised when the server answers 403 to a gated request - i.e. it has actively
-// decided this device is not (or no longer) trusted, as opposed to being merely
-// unreachable. Shared by PlaylistSyncService and LibrarySyncService, both of
+// Raised when the server refuses a gated request as device-unknown (see
+// FlowerProblem) - i.e. it has no key for this device, as opposed to being
+// merely unreachable or refusing one request's signature. Shared by PlaylistSyncService and LibrarySyncService, both of
 // which hit the same trust gate (see Flower.Server's SyncEndpoints) as the first
 // request of their own sync session. MainViewModel uses this to notice a paired
 // server has revoked (or
@@ -149,7 +149,7 @@ public class PlaylistSyncService
             using var getRequest = new HttpRequestMessage(HttpMethod.Get, device.Url(getPath));
             await AddSignedIdentityHeadersAsync(getRequest, body: []);
             using var getResponse = await Http.SendAsync(getRequest);
-            getResponse.EnsureSuccessStatusCode(); // Throws on a 403 from an unapproved trust gate - handled below like any other unreachable peer.
+            await getResponse.EnsureSuccessAsync(); // A refusal throws with the server's reason - see below.
             var json = await getResponse.Content.ReadAsStringAsync();
             var manifest = JsonSerializer.Deserialize(json, FlowerJsonContext.Default.PlaylistSyncManifestDto);
             remotePlaylists = manifest?.Playlists ?? new List<PlaylistSyncPlaylistDto>();
@@ -160,15 +160,16 @@ public class PlaylistSyncService
             _logger.LogWarning(ex, "Playlist sync with {Alias} ({Fingerprint}): GET /playlists failed, aborting this sync attempt",
                 device.Alias, device.Fingerprint);
 
-            // A 403 specifically means the peer is up and answered, but has actively
-            // decided not to trust us - distinct from every other failure above,
-            // which just means "couldn't tell." Notably distinct from a 401, which
-            // both peer servers answer a signature that did not verify with (a
+            // device-unknown specifically means the peer is up and answered, and
+            // has no key for this device - distinct from every other failure
+            // above, which just means "couldn't tell." Notably distinct from the
+            // other 401s, signature-invalid, clock-skew and nonce-reused (a
             // stale timestamp, most often, after this device suspended with the
-            // request in flight) - that one must never unpair anything, it just
-            // fails this attempt. See PeerTrustRejectedEventArgs and
-            // PeerSignatureAuth.AuthenticateTrustedPeer.
-            if (ex is HttpRequestException { StatusCode: HttpStatusCode.Forbidden })
+            // request in flight) - those must never unpair anything, they just
+            // fail this attempt. It used to be the status alone, 403, which
+            // anything on the path could answer; see FlowerProblem and
+            // PeerTrustRejectedEventArgs.
+            if (PeerResponses.IsDeviceUnknown(ex))
                 PeerTrustRejected?.Invoke(this, new PeerTrustRejectedEventArgs { Fingerprint = device.Fingerprint, Alias = device.Alias });
 
             return;
