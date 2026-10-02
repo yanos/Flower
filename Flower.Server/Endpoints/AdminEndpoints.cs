@@ -65,31 +65,22 @@ public sealed record LogSliceResponse(long LastSequence, IReadOnlyList<LogEntryR
 // thing standing between this server and a remote transport).
 public static class AdminEndpoints
 {
-    // The admin surface had no budget at all until docs/OPEN-INTERNET-REVIEW.md
-    // went looking for one. Severity is low - every route below is gated on a
-    // device signature or a live session, and an unknown fingerprint is refused
-    // by a dictionary lookup before any ECDSA verification happens, so a flood
-    // of unauthenticated requests is cheap to turn away. But this is the one
-    // surface where a single request triggers a rescan or writes settings, and
-    // "cheap to refuse" is an argument for a generous ceiling, not for none.
+    // Budgets are RequestGate's, charged per device once a request verifies
+    // (docs/TRUST-BOUNDARY-PLAN.md step 2): the admin plane at 120 a minute,
+    // sized for a person driving the settings page - which opens by fetching
+    // devices, settings and the log at once - and the upload plane at 3000.
     //
-    // Keyed by source IP, like every other pre-auth budget: the filter runs
-    // before authentication, so there is no verified identity to key by yet.
-    // Sized for a human driving the settings page - which opens by fetching
-    // devices, credentials, settings and the log at once - rather than for a
-    // poll loop, since nothing polls these routes.
-    private static readonly RateLimiter RequestLimiter = new(max: 120, TimeSpan.FromSeconds(60));
-
-    // Uploads get a budget of their own, for the reason cover art and playback
-    // each got one on the sync surface (see SyncEndpoints): a device sending an
-    // album is two requests a song, back to back, and charged to the budget
-    // above it would lock the owner out of the settings page for as long as the
-    // album took. Wide, because the traffic is legitimate and fast on a LAN -
-    // a few megabytes a song at a hundred a second - and because what makes an
-    // upload request expensive to receive is closed off before the budget is
-    // even relevant: see the filter, which will not buffer a body for a caller
-    // that has not at least named an admin device.
-    private static readonly RateLimiter UploadLimiter = new(max: 3000, TimeSpan.FromSeconds(60));
+    // Uploads have a budget of their own for the reason cover art and
+    // playback each have one on the sync surface: a device sending an album is
+    // two requests a song, back to back, and charged to the admin budget it
+    // would lock the owner out of the settings page for as long as the album
+    // took. Wide, because the traffic is legitimate and fast on a LAN, and
+    // because what makes an upload expensive to receive is closed off before
+    // the budget is even relevant: see the filter, which will not buffer a
+    // body for a caller that has not at least named an admin device.
+    //
+    // The admin surface had no budget at all until docs/OPEN-INTERNET-REVIEW.md
+    // went looking for one, and then it was keyed by source address.
 
     private const string UploadsRoute = "/library/uploads";
     private const string UploadsPath = "/api/admin" + UploadsRoute;
@@ -124,69 +115,52 @@ public static class AdminEndpoints
         {
             var http = context.HttpContext;
             var isUpload = IsUpload(http.Request.Path);
-            if (!(isUpload ? UploadLimiter : RequestLimiter).TryAcquire(
-                    RateLimiter.KeyFor(http.Connection.RemoteIpAddress), DateTimeOffset.UtcNow))
-            {
-                // With a Retry-After on the upload plane, because the thing
-                // refused there is a program in the middle of a batch, and it
-                // waits exactly as long as it is told to.
-                return isUpload
-                    ? RateLimitResponse.TooManyRequests(http)
-                    : Results.StatusCode(StatusCodes.Status429TooManyRequests);
-            }
-
             var services = http.RequestServices;
             var trustedPeers = services.GetRequiredService<TrustedPeerStore>();
-            var replayGuard = services.GetRequiredService<NonceReplayGuard>();
 
             // An upload is the one request here whose body is megabytes by
-            // design, and everything below buffers the body before it checks
-            // the signature. So before that: is the fingerprint this request
-            // claims even an admin's? It proves nothing - a claim is a header -
-            // but it is a lookup rather than a read, and it means the only
-            // callers this server will hold eight megabytes for are ones that
-            // know which devices administer it. The signature still decides.
-            //
-            // The two refusals are the ones the full check below gives - 401
-            // for a device this server does not know, 403 for one it knows and
-            // has not made an admin - so a caller is told the same thing
-            // whichever check turned it away.
-            if (isUpload)
+            // design, and the gate buffers a known device's body before it
+            // checks the signature. So before that: is the fingerprint this
+            // request claims an admin's? It proves nothing - a claim is a
+            // header - but it is a lookup rather than a read, and it means the
+            // only callers this server will hold eight megabytes for are ones
+            // that know which devices administer it. The signature still
+            // decides. A fingerprint with no key on file is the gate's to
+            // refuse, as a stranger.
+            if (isUpload
+                && DeviceSignatureAuth.GetIdentityValue(http.Request, "X-Flower-Fingerprint") is { Length: > 0 } claimed
+                && trustedPeers.GetPublicKey(claimed) != null
+                && !trustedPeers.IsAdmin(claimed))
             {
-                if (DeviceSignatureAuth.GetIdentityValue(http.Request, "X-Flower-Fingerprint") is not { Length: > 0 } claimed
-                    || trustedPeers.GetPublicKey(claimed) == null)
-                {
-                    return Results.Unauthorized();
-                }
-
-                if (!trustedPeers.IsAdmin(claimed))
-                    return Results.StatusCode(StatusCodes.Status403Forbidden);
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
             }
 
-            // Signed requests may now carry a body (PUT /settings does), so
-            // it has to be buffered before the signature - which covers a
-            // hash of it - can be checked. No handler below binds the body as
-            // a parameter, which is what makes this possible at all: minimal
-            // APIs bind parameters *before* endpoint filters run, so a
-            // body-bound parameter would have consumed the stream before this
-            // could ever see it.
-            byte[] body = [];
-            if (http.Request.ContentLength is > 0)
+            // Signed requests may carry a body (PUT /settings does), and the
+            // gate buffers it so the signature - which covers a hash of it -
+            // can be checked. No handler below binds the body as a parameter,
+            // which is what makes this possible at all: minimal APIs bind
+            // parameters *before* endpoint filters run, so a body-bound
+            // parameter would have consumed the stream before this could ever
+            // see it.
+            var admitted = await services.GetRequiredService<RequestGate>().AdmitAsync(
+                http, isUpload ? RequestGate.Plane.Upload : RequestGate.Plane.Admin, MaxBodyBytes, logger);
+            switch (admitted.Outcome)
             {
-                if (http.Request.ContentLength > MaxBodyBytes)
+                case RequestGate.Outcome.LengthRequired:
+                    return Results.StatusCode(StatusCodes.Status411LengthRequired);
+                case RequestGate.Outcome.TooLarge:
                     return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
-
-                http.Request.EnableBuffering();
-                using var buffer = new MemoryStream();
-                await http.Request.Body.CopyToAsync(buffer, http.RequestAborted);
-                body = buffer.ToArray();
-                http.Request.Body.Position = 0;
+                // With a Retry-After, because what is refused here is most
+                // often a program in the middle of a batch, and it waits
+                // exactly as long as it is told to.
+                case RequestGate.Outcome.Throttled:
+                    return RateLimitResponse.TooManyRequests(http);
+                case RequestGate.Outcome.Unknown:
+                case RequestGate.Outcome.BadSignature:
+                    return Results.Unauthorized();
             }
 
-            var fingerprint = DeviceSignatureAuth.VerifyTrustedPeer(
-                http.Request, body, trustedPeers, replayGuard, logger);
-            if (fingerprint == null)
-                return Results.Unauthorized();
+            var fingerprint = admitted.Fingerprint!;
 
             // Authenticated as *a* peer is not authorized as an admin: a paired
             // phone can sign a perfectly valid request to these routes, and must

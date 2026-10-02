@@ -80,8 +80,15 @@ public sealed class StreamTicketService
     // The track id check is the whole point: a ticket minted for one track must
     // not become a general-purpose key to the library, so an otherwise-valid
     // ticket presented against a different id fails exactly like a forged one.
-    public bool TryRedeem(string? ticket, string? trackId, DateTimeOffset now)
+    public bool TryRedeem(string? ticket, string? trackId, DateTimeOffset now) =>
+        TryRedeem(ticket, trackId, now, out _);
+
+    // The same, and which device the ticket was minted for - the one whose
+    // budget its playback is charged to, and the one a stream log line can
+    // name truthfully, since a ticketed request carries no signature of its own.
+    public bool TryRedeem(string? ticket, string? trackId, DateTimeOffset now, out string fingerprint)
     {
+        fingerprint = "";
         if (string.IsNullOrEmpty(ticket) || string.IsNullOrEmpty(trackId))
             return false;
         if (!_tickets.TryGetValue(ticket, out var entry))
@@ -94,7 +101,11 @@ public sealed class StreamTicketService
             return false;
         }
 
-        return string.Equals(entry.TrackId, trackId, StringComparison.Ordinal);
+        if (!string.Equals(entry.TrackId, trackId, StringComparison.Ordinal))
+            return false;
+
+        fingerprint = entry.Fingerprint;
+        return true;
     }
 
     // Called when a peer is revoked: the peer's signing key stops working

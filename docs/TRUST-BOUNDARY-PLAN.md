@@ -1,6 +1,6 @@
 # Trust boundary: rogue clients, budgets, and what a refusal means
 
-**Status (2026-10-02): step 1 done; steps 2–5 to go.** Steps 1 and 2 stand
+**Status (2026-10-02): steps 1 and 2 done; steps 3–5 to go.** Steps 1 and 2 stand
 alone; step 4 needs step 3. `docs/API.md` describes the server as it is today
 and is updated as each step lands, not before.
 
@@ -254,12 +254,50 @@ The routes outside the groups:
   media plane per device.
 - **`pair-redeem`:** stays at 5 a minute per address.
 
-**Done when** tests show:
+**Done (2026-10-02).** One `RequestGate`, a DI singleton, now runs the same
+checks for the sync group, the admin group, `/stream-tickets` and `/info`.
+The static per-address limiters it replaced were shared by every host a test
+run boots. Where it differs from the above:
 
-- listeners sharing one address do not share a budget;
-- failed signatures for a known fingerprint from one address do not refuse
-  that device from another;
-- `/info` and `/stream-tickets` return `429` past their budgets.
+- **It also refuses a body that does not state its length**, with `411` on
+  every signed route. Step 1 found that a chunked body was verified as empty
+  and then read, unsigned, by its handler.
+- **A stranger past its budget gets a `429`, not a dropped connection.** A
+  stranger on an allowed network is more often a tab that has not paired yet
+  than an attacker, and a dropped connection reads to it as "server down".
+  `LanGuard` still drops everyone outside the allowed networks.
+- **`/info` is budgeted in two halves**, because it answers strangers rather
+  than refusing them. An unsigned call, from a stranger or a client with no
+  key yet, is charged to the address (120 a minute). A signed one goes through
+  the failure budget and is then charged to the device. That device budget is
+  240 a minute, not 60. A client polls once per address it knows the server by,
+  every five seconds, and again on every network change. It reads a refusal as
+  "unreachable", which is worse than the traffic.
+- **`/stream-tickets` stays outside the sync group** but goes through the same
+  gate on the media plane. It keeps its `401` for an unknown device until step
+  3 settles what each code means.
+- **A ticketed stream is charged to the device that minted the ticket.**
+  `StreamTicketService.TryRedeem` now names it, which brings forward half of
+  step 5's ticket change.
+- **Not changed, and worth knowing:** the upload pre-check still answers
+  `403` to a request that merely *claims* the fingerprint of a known non-admin
+  device. That tells an unauthenticated caller whether a given fingerprint is an
+  admin, which `/info` is careful never to do. It is kept because it is what
+  stops a non-admin device's megabyte body from being buffered at all.
+- **An existing flaky test:** `The_log_is_readable_from_the_admin_api` fails
+  about one run in three on the step-1 tree as well. Another test's log line
+  lands between its two reads.
+
+Tests, all passing (`RequestGateTests`):
+
+- two devices behind one address do not share a budget;
+- failing signatures for a device from one address do not lock it out from
+  another;
+- a stranger flood from an address does not refuse a paired device there;
+- `/info` has a stranger budget that a paired device at the same address does
+  not share;
+- minting tickets is charged to the device's media budget;
+- a body that does not state its length is refused.
 
 ## Step 3 — One error contract
 

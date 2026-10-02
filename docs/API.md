@@ -51,22 +51,37 @@ read: 20 MB for `/playlists/apply` and `/track-state`, 4 MB for `/log/report`,
 256 KB for everything else. Over it is a `413`. The admin routes keep the
 20 MB ceiling, and `pair-redeem` caps at 4 KB.
 
-**Rate limits.** All keyed by source address, all applied before
-authentication:
+**Length.** A request with a body must state its `Content-Length`. One that
+does not (chunked on HTTP/1.1, an open HTTP/2 stream) gets `411` on every
+signed route. The signature covers the body only when its length is stated.
 
-| Budget | Routes | Limit | On refusal |
+**Rate limits** (`RequestGate`). A request that has verified is charged to its
+own device's budget for its plane. Only failing callers are counted by address,
+so devices behind one proxy, tunnel or CGNAT do not share a budget:
+
+| Budget | Keyed by | Routes | Limit |
 |---|---|---|---|
-| Pairing | `pair-redeem` | 5 / 60s | `429` |
-| Bulk | `/api/flower/v1/*` not listed below | 60 / 60s | `429`, `Retry-After: 60` |
-| Art | `/cover-art`, `/cover-art/batch` | 600 / 60s | `429`, `Retry-After: 60` |
-| Media | `/stream`, `/download` | 240 / 60s | `429`, `Retry-After: 60` |
-| Admin | `/api/admin/*` not listed below | 120 / 60s | `429` |
-| Mirror | `/api/admin/library/uploads*`, `/move`, `/tags`, `/artwork` | 3000 / 60s | `429`, `Retry-After: 60` |
+| Bulk | device | `/api/flower/v1/*` not listed below | 60 / 60s |
+| Art | device | `/cover-art`, `/cover-art/batch` | 600 / 60s |
+| Media | device | `/stream`, `/download`, `/stream-tickets` | 240 / 60s |
+| Admin | device | `/api/admin/*` not listed below | 120 / 60s |
+| Mirror | device | `/api/admin/library/uploads*`, `/move`, `/tags`, `/artwork` | 3000 / 60s |
+| Info | device | `/info`, signed | 240 / 60s |
+| Strangers | address | Any gated route, no fingerprint or none on file | 30 / 60s |
+| Failures | address + device | Any route, a signature that failed | 10 / 60s |
+| Anonymous info | address | `/info`, unsigned | 120 / 60s |
+| Pairing | address | `pair-redeem` | 5 / 60s |
 
-The planes are separate so that spending one cannot spend another — a
-cover-art burst sharing a budget with audio is how an album once stopped
-playing (`CITED-DECISIONS.md` #2b). `/info` and `/stream-tickets` are mapped
-outside both groups and are charged to no budget.
+Every refusal is `429` with `Retry-After: 60`. A request a stream ticket
+admitted is charged to the media budget of the device that minted the ticket.
+
+The order matters. A stranger is refused before its body is read, since that
+costs a lookup rather than a buffer and an ECDSA verify. A known device whose
+signature fails is counted per address *and* fingerprint, so someone who knows
+a device's fingerprint cannot lock that device out by failing on its behalf
+from elsewhere. The planes are separate so that spending one cannot spend
+another — a cover-art burst sharing a budget with audio is how an album once
+stopped playing (`CITED-DECISIONS.md` #2b).
 
 ## Authentication: a signed request
 

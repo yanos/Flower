@@ -61,7 +61,7 @@ public static class DiscoveryEndpoints
             HttpContext context, IOptionsMonitor<FlowerServerOptions> optionsMonitor,
             DeviceSigningKey signingKey, TrustedPeerStore trustedPeers, Library library,
             NonceReplayGuard replayGuard, IServer boundServer, PublicReachability publicReachability,
-            MdnsAdvertiser advertiser) =>
+            MdnsAdvertiser advertiser, RequestGate gate) =>
         {
             // Monitor, not IOptions, for the same reason Program.cs's LanGuard
             // gate uses one: both settings this reads - the alias and
@@ -77,10 +77,33 @@ public static class DiscoveryEndpoints
             // Read once per request rather than per use, so the two fields
             // below cannot come from different edits of the same file.
             var options = optionsMonitor.CurrentValue;
+            // Budgeted like everything else since docs/TRUST-BOUNDARY-PLAN.md
+            // step 2, which found this route answering without limit. It
+            // answers strangers rather than refusing them, so the halves are
+            // asked separately (see RequestGate): a caller that did not try to
+            // sign - a stranger, or a client before it has a key - is one
+            // address's anonymous budget, and a signed one is checked like any
+            // other and then charged to its own device.
+            var now = DateTimeOffset.UtcNow;
+            var claimed = DeviceSignatureAuth.GetIdentityValue(context.Request, "X-Flower-Fingerprint");
+            var signed = !string.IsNullOrEmpty(claimed)
+                && trustedPeers.GetPublicKey(claimed) != null
+                && !string.IsNullOrEmpty(DeviceSignatureAuth.GetIdentityValue(context.Request, "X-Flower-Signature"));
+
+            if (!signed && !gate.AdmitAnonymousInfo(context, now))
+                return RateLimitResponse.TooManyRequests(context);
+            if (signed && !gate.FailuresAllow(context, claimed!, now))
+                return RateLimitResponse.TooManyRequests(context);
+
             // GET, so the signed body is always empty.
             var caller = DeviceSignatureAuth.AuthenticateTrustedPeer(
                 context.Request, [], trustedPeers, replayGuard);
             var callerIsTrusted = caller.Failure == PeerAuthFailure.None;
+
+            if (signed && caller.Failure == PeerAuthFailure.BadSignature)
+                gate.NoteFailure(context, claimed!, now);
+            if (callerIsTrusted && !gate.ChargeDevice(RequestGate.Plane.Info, caller.Fingerprint!, now))
+                return RateLimitResponse.TooManyRequests(context);
             // Whether the caller said anything about itself at all, kept apart
             // from whether it proved it: AuthenticateTrustedPeer answers both
             // with NotTrusted, but a probe that claimed no identity has not been

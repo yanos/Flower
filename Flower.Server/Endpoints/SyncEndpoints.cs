@@ -40,50 +40,29 @@ namespace Flower.Server.Endpoints;
 // finds out from the 403 its next request gets).
 public static class SyncEndpoints
 {
-    // These are a handful of large requests per sync session, not a stream of
-    // small ones, so the budget is small and the window is long.
+    // The budgets for this group are RequestGate's, charged per device once a
+    // request has verified (docs/TRUST-BOUNDARY-PLAN.md step 2). Three planes,
+    // and the split is the point rather than the ceilings:
     //
-    // Sixty rather than the twenty this started at, because twenty turned out
-    // to be about four sync sessions and a session is not a rare event. One
-    // costs roughly five requests - the catalog, a playlist exchange, a
-    // track-state report, a log push - and a client opens one at launch, on
-    // every change to the server's library token, and whenever the user presses
-    // Sync Now. Restart the app a few times, which is a phone being
-    // backgrounded or an afternoon of debugging, and a client locks itself out
-    // of its own server while nothing at all is wrong; the client then reported
-    // that as "could not reach" and sent its owner to go and check the network.
-    // Keying is per source address, so this is a ceiling for one device rather
-    // than for the household.
+    //   - Bulk, sixty a minute: a handful of large requests per sync session.
+    //     Sixty rather than the twenty this started at, because twenty turned
+    //     out to be about four sessions, and a client opens one at launch, on
+    //     every change to the library token and on Sync Now - a phone being
+    //     backgrounded a few times locked itself out of its own server. The
+    //     client also backs off for a full window when refused (see
+    //     PeerSyncCoordinator.NoteThrottling).
+    //   - Art, six hundred: one request per album tile when a batch is not
+    //     available. Charged to bulk, the art throttled the sync - the 429
+    //     landed on GET /library.
+    //   - Media, two hundred and forty: a probe, a body GET and a reopen or
+    //     two per track, two tracks in flight with decode-ahead. Charged to
+    //     bulk, playing an album spent the sync budget several times over.
     //
-    // Still a ceiling worth having, and still far below what the art and media
-    // planes get: the point of this budget was never to make a legitimate sync
-    // ration itself, it was to stop an unauthenticated flood from costing the
-    // owner a catalog serialisation per request. Sixty a minute does that just
-    // as well as twenty. The client also now backs off for a full window when
-    // it is refused, instead of retrying into the refusal - see
-    // PeerSyncCoordinator.NoteThrottling, which is the half of this that
-    // actually stopped the loop.
-    private static readonly RateLimiter BulkLimiter = new(max: 60, TimeSpan.FromSeconds(60));
-
-    // Cover art is the exception in this group, and it must not be charged to
-    // the budget above: it is one small request per album tile, so a browser
-    // head painting an album grid spends twenty in the time it takes to scroll
-    // a screen - and then the 429 lands on GET /library, which is the one route
-    // in here that actually matters. The art throttled the sync. Generous
-    // because it has to be: a head's grid degrades to one tile at a time
-    // whenever a batch request fails.
-    private static readonly RateLimiter ArtLimiter = new(max: 600, TimeSpan.FromSeconds(60));
-
-    // Playback is the third plane, and it is here for the same reason art is:
-    // a bulk budget of sixty per minute is nothing like what streaming a track
-    // costs. One track is a probe plus a body GET plus a reopen or two on a
-    // phone changing networks, and decode-ahead has two tracks in flight at
-    // once - so playing an album would spend the sync budget several times
-    // over, and the 429 would land on whichever request came next.
-    private static readonly RateLimiter MediaLimiter = new(max: 240, TimeSpan.FromSeconds(60));
+    // Keyed by source address until step 2, which meant every listener behind
+    // one proxy shared each of them.
 
     // Composed from the same two pieces the route is mapped from, so renaming
-    // it can't silently drop cover art back onto BulkLimiter - the filter sees
+    // it can't silently drop cover art back onto the bulk plane - the filter sees
     // a whole path, MapGet sees a suffix, and they cannot disagree.
     private const string GroupPrefix = "/api/flower/v1";
     private const string CoverArtRoute = "/cover-art";
@@ -146,45 +125,8 @@ public static class SyncEndpoints
         {
             var http = context.HttpContext;
             var services = http.RequestServices;
-            var key = RateLimiter.KeyFor(http.Connection.RemoteIpAddress);
-            var limiter = LimiterFor(http.Request.Path);
+            var gate = services.GetRequiredService<RequestGate>();
             var now = DateTimeOffset.UtcNow;
-            if (!limiter.TryAcquire(key, now))
-            {
-                // Debug: a peer that syncs enthusiastically trips this without
-                // anything being wrong, and the caller is unauthenticated at
-                // this point, so this cannot distinguish a busy phone from a
-                // stranger. It is here so that "sync got slow" has a visible
-                // cause rather than none - and throttled, because being rate
-                // limited is precisely the state that repeats.
-                if (RateLimitLogThrottle.ShouldLog(key, now, out var suppressed))
-                {
-                    RateLimitLogThrottle.Prune(now);
-                    logger.LogDebug(
-                        "Rate-limited {Method} {Path} from {RemoteAddress}.{AlsoSuppressed}",
-                        http.Request.Method, http.Request.Path.Value, key,
-                        suppressed == 0 ? "" : $" ({suppressed} more since the last one.)");
-                }
-
-                return RateLimitResponse.TooManyRequests(http);
-            }
-
-            var maxBody = MaxBodyFor(http.Request.Path);
-            if (http.Request.ContentLength > maxBody)
-                return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
-
-            // The body has to be buffered before the signature can cover it,
-            // and before model binding consumes it - the signed bytes are the
-            // ones that arrived, not a re-serialization of what bound.
-            byte[] body = [];
-            if (http.Request.ContentLength is > 0)
-            {
-                http.Request.EnableBuffering();
-                using var buffer = new MemoryStream();
-                await http.Request.Body.CopyToAsync(buffer, http.RequestAborted);
-                body = buffer.ToArray();
-                http.Request.Body.Position = 0;
-            }
 
             // A stream ticket, for the media routes and nothing else. The
             // browser head signs every other request in this group with a
@@ -195,43 +137,51 @@ public static class SyncEndpoints
             //
             // Tried before the signature so a ticketed request never reaches
             // the signature path at all, and scoped by IsMedia so a ticket
-            // cannot be spent on the catalog, the playlists or the log.
-            if (IsMedia(http.Request.Path))
+            // cannot be spent on the catalog, the playlists or the log. A
+            // media GET carries no body, so there is nothing for a ticket to
+            // leave unsigned. Charged to the device that minted the ticket.
+            if (IsMedia(http.Request.Path)
+                && !RequestGate.HasUnstatedBody(http)
+                && services.GetRequiredService<StreamTicketService>().TryRedeem(
+                    http.Request.Query["ticket"].ToString(), http.Request.Query["id"].ToString(), now,
+                    out var minter))
             {
-                var tickets = services.GetRequiredService<StreamTicketService>();
-                if (tickets.TryRedeem(http.Request.Query["ticket"].ToString(),
-                                      http.Request.Query["id"].ToString(), now))
-                {
-                    return await next(context);
-                }
+                return gate.ChargeDevice(RequestGate.Plane.Media, minter, now)
+                    ? await next(context)
+                    : RateLimitResponse.TooManyRequests(http);
             }
 
-            var trustedPeers = services.GetRequiredService<TrustedPeerStore>();
-            var replayGuard = services.GetRequiredService<NonceReplayGuard>();
-            // 403 only for a caller this server genuinely has no key on file
-            // for - a client treats that as "revoked" and unpairs itself. A
-            // signature that just failed to verify (commonly a stale
-            // timestamp, after the caller suspended mid-request) is a 401:
-            // this attempt failed, the pairing is untouched.
-            //
             // A signature, and only a signature. The browser head pulls its
             // whole library through GET /library below and used to be admitted
             // here on an admin-session bearer token instead, because
             // .NET-for-WebAssembly cannot sign - it signs with a WebCrypto key
             // now like everything else (see BrowserPeerCredentials).
-            var auth = DeviceSignatureAuth.AuthenticateTrustedPeer(
-                http.Request, body, trustedPeers, replayGuard, logger);
-            if (auth.Failure == PeerAuthFailure.NotTrusted)
-                return Results.StatusCode(StatusCodes.Status403Forbidden);
-            if (auth.Failure != PeerAuthFailure.None)
-                return Results.StatusCode(StatusCodes.Status401Unauthorized);
+            var admitted = await gate.AdmitAsync(http, PlaneFor(http.Request.Path), MaxBodyFor(http.Request.Path), logger);
+            switch (admitted.Outcome)
+            {
+                case RequestGate.Outcome.LengthRequired:
+                    return Results.StatusCode(StatusCodes.Status411LengthRequired);
+                case RequestGate.Outcome.TooLarge:
+                    return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+                case RequestGate.Outcome.Throttled:
+                    return RateLimitResponse.TooManyRequests(http);
+                // 403 only for a caller this server genuinely has no key on
+                // file for - a client treats that as "revoked" and unpairs
+                // itself. A signature that just failed to verify (commonly a
+                // stale timestamp, after the caller suspended mid-request) is
+                // a 401: this attempt failed, the pairing is untouched.
+                case RequestGate.Outcome.Unknown:
+                    return Results.StatusCode(StatusCodes.Status403Forbidden);
+                case RequestGate.Outcome.BadSignature:
+                    return Results.StatusCode(StatusCodes.Status401Unauthorized);
+            }
 
             // Who the gate actually let through, for the handlers below to
             // attribute a write to. Not the same as the request's own
             // X-Flower-Fingerprint header, which is a claim rather than a
             // finding: this is the fingerprint whose signature actually
             // verified.
-            context.HttpContext.Items[AuthenticatedFingerprintKey] = auth.Fingerprint;
+            context.HttpContext.Items[AuthenticatedFingerprintKey] = admitted.Fingerprint;
 
             return await next(context);
         });
@@ -290,20 +240,18 @@ public static class SyncEndpoints
         sync.MapGet(DownloadRoute, MediaEndpoints.Download);
     }
 
-    // Three planes, and the split is the point rather than the ceilings: art
-    // and playback each got their own budget precisely so that spending one
-    // cannot spend another. Both cover-art routes share ArtLimiter - the batch
-    // one especially, since it exists so art stops competing with playback and
-    // putting it back in the general budget would undo exactly that.
-    private static RateLimiter LimiterFor(PathString path)
+    // Both cover-art routes are the art plane - the batch one especially,
+    // since it exists so art stops competing with playback, and putting it
+    // back in the bulk budget would undo exactly that.
+    private static RequestGate.Plane PlaneFor(PathString path)
     {
         if (path.Equals(CoverArtPath, StringComparison.OrdinalIgnoreCase) ||
             path.Equals(CoverArtBatchPath, StringComparison.OrdinalIgnoreCase))
         {
-            return ArtLimiter;
+            return RequestGate.Plane.Art;
         }
 
-        return IsMedia(path) ? MediaLimiter : BulkLimiter;
+        return IsMedia(path) ? RequestGate.Plane.Media : RequestGate.Plane.Bulk;
     }
 
     // The two routes a stream ticket may open, and the only ones. A ticket is
@@ -376,8 +324,6 @@ public static class SyncEndpoints
     {
         public List<string>? Ids { get; set; }
     }
-
-    private static readonly RefusalLogThrottle RateLimitLogThrottle = new();
 
     private const string AuthenticatedFingerprintKey = "flower.auth.fingerprint";
 

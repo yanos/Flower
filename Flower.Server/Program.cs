@@ -234,6 +234,7 @@ builder.Services.AddSingleton<LibraryWriteAccess>();
 builder.Services.AddSingleton<SmartPlaylistRefresher>();
 builder.Services.AddSingleton<PairingCodeService>();
 builder.Services.AddSingleton<StreamTicketService>();
+builder.Services.AddSingleton<RequestGate>();
 // Owns "a rescan is running", so the admin API can start one without two
 // operators racing two importers over the same folders.
 builder.Services.AddSingleton<LibraryRescanCoordinator>();
