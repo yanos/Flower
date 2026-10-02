@@ -21,7 +21,11 @@ public sealed record PairingCodeResponse(string Code, DateTimeOffset ExpiresAt, 
 public sealed record TrustedDeviceResponse(
     string Fingerprint, string Alias, DateTimeOffset ApprovedAt, bool IsAdmin, DateTimeOffset? LastSeenAt, bool HasLog);
 public sealed record CoverArtWriteResponse(int Written, int Total);
-public sealed record LibraryStatusResponse(bool Rescanning, int TrackCount, DateTimeOffset? LastCompletedAt, string? LastError);
+// UnwritableFolders is the library folders the last scan could not write to -
+// see LibraryWriteAccess. Empty on a server that can write to all of them.
+public sealed record LibraryStatusResponse(
+    bool Rescanning, int TrackCount, DateTimeOffset? LastCompletedAt, string? LastError,
+    IReadOnlyList<string> UnwritableFolders);
 public sealed record LogEntryResponse(DateTimeOffset Timestamp, string Level, string? SourceContext, string Message, string? Exception);
 
 // A device's pushed log, plus when it arrived - the timestamp matters here in
@@ -433,20 +437,16 @@ public static class AdminEndpoints
                 jsonOptions);
         });
 
-        authenticated.MapGet("/library", (LibraryRescanCoordinator rescans) =>
-            Results.Json(
-                new LibraryStatusResponse(rescans.IsRunning, rescans.TrackCount, rescans.LastCompletedAt, rescans.LastError),
-                jsonOptions));
+        authenticated.MapGet("/library", (LibraryRescanCoordinator rescans, LibraryWriteAccess writeAccess) =>
+            Results.Json(DescribeLibrary(rescans, writeAccess), jsonOptions));
 
         // Answered as soon as the scan is *started*, not when it finishes - a
         // full scan of a NAS share outlasts any sensible request timeout. The
         // page polls GET /library above for the rest.
-        authenticated.MapPost("/library/rescan", (LibraryRescanCoordinator rescans) =>
+        authenticated.MapPost("/library/rescan", (LibraryRescanCoordinator rescans, LibraryWriteAccess writeAccess) =>
         {
             rescans.TryStart();
-            return Results.Json(
-                new LibraryStatusResponse(rescans.IsRunning, rescans.TrackCount, rescans.LastCompletedAt, rescans.LastError),
-                jsonOptions);
+            return Results.Json(DescribeLibrary(rescans, writeAccess), jsonOptions);
         });
 
         // "Remove from Library" from an admin device - see LibraryRemoval, which
@@ -937,6 +937,9 @@ public static class AdminEndpoints
             array.Add(JsonValue.Create(value));
         return array;
     }
+
+    private static LibraryStatusResponse DescribeLibrary(LibraryRescanCoordinator rescans, LibraryWriteAccess writeAccess) =>
+        new(rescans.IsRunning, rescans.TrackCount, rescans.LastCompletedAt, rescans.LastError, writeAccess.UnwritableFolders);
 
     // The operator-editable half of FlowerServerOptions, as the shared wire
     // shape - DataDirectory, Version, Addresses and the public address ride

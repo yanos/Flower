@@ -304,6 +304,12 @@ If you would rather the server never touch your files, append `:ro` to the
 `/music` line. Everything read-only still works — scanning, streaming, pairing,
 playlists, play counts — and the four things above don't.
 
+Either way the server tells you which it is. When it cannot write to a music
+folder it logs one warning naming the folder, at startup and again whenever
+that changes, and an administrator's browser page carries a banner saying the
+same. On a server that is read-only on purpose the banner is only confirming
+what you chose: close it, and it stays closed until the page is next loaded.
+
 A file the server deletes on **Remove from Library** isn't gone for good: it
 goes to `/music/.Trash-1654/`, which is the freedesktop.org trash for that
 drive, and a scan never looks inside it. To restore a file, move it back out of

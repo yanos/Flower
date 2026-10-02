@@ -511,23 +511,7 @@ public sealed class LibraryIngest
         var folder = Path.GetDirectoryName(target);
         while (folder != null && !Directory.Exists(folder))
             folder = Path.GetDirectoryName(folder);
-        if (folder == null)
-            return false;
-
-        var probe = Path.Combine(folder, $".flower-write-check-{Guid.NewGuid():N}");
-        try
-        {
-            using (File.Create(probe))
-            {
-            }
-
-            File.Delete(probe);
-            return true;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return false;
-        }
+        return folder != null && LibraryFolders.CanWriteIn(folder);
     }
 
     private static async Task<bool> HasContentAsync(string path, long length, string sha256, CancellationToken ct)

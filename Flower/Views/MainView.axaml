@@ -23,9 +23,12 @@
       <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
+    <!-- Row 0 is the top bar and, under it, a banner that is there only when
+         there is something to say - stacked so the banner takes no row of its
+         own and the rows below keep their numbers. -->
+    <StackPanel Grid.Row="0">
     <!-- Top bar -->
-    <Border Grid.Row="0"
-            Padding="4,10,4,10"
+    <Border Padding="4,10,4,10"
             BorderThickness="0,0,0,1"
             BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
       <Grid>
@@ -60,6 +63,46 @@
           FilterText="{Binding FilterText}"/>
       </Grid>
     </Border>
+
+    <!-- An administrator's browser tab only: the server cannot write to its
+         music folders (see LibraryWriteWarning). Across the page rather than
+         on the settings screen, because what it warns about happens elsewhere
+         - on the owner's phone, as a refused upload or tag edit. The close
+         button is for a server that is read-only on purpose; it lasts until
+         the page is next loaded. -->
+    <Border x:Name="LibraryWriteWarningBanner"
+            IsVisible="{Binding HasServerLibraryWriteWarning}"
+            Padding="12,8,8,8"
+            BorderThickness="0,0,0,1"
+            BorderBrush="{DynamicResource AppWarningBrush}">
+      <Border.Background>
+        <SolidColorBrush Color="{DynamicResource PaletteWarning}" Opacity="0.14"/>
+      </Border.Background>
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <materialIcons:MaterialIcon Grid.Column="0"
+                                    Kind="AlertOutline"
+                                    Width="16" Height="16"
+                                    Margin="0,0,8,0"
+                                    VerticalAlignment="Center"
+                                    Foreground="{DynamicResource AppWarningBrush}"/>
+        <TextBlock Grid.Column="1"
+                   Text="{Binding ServerLibraryWriteWarning}"
+                   FontSize="12"
+                   TextWrapping="Wrap"
+                   VerticalAlignment="Center"/>
+        <Button Grid.Column="2"
+                Command="{Binding DismissServerLibraryWriteWarningCommand}"
+                ToolTip.Tip="Dismiss"
+                Background="Transparent"
+                BorderThickness="0"
+                Padding="4"
+                Margin="8,0,0,0"
+                VerticalAlignment="Center">
+          <materialIcons:MaterialIcon Kind="Close" Width="14" Height="14"/>
+        </Button>
+      </Grid>
+    </Border>
+    </StackPanel>
 
     <!-- Status bar -->
     <Border Grid.Row="2"

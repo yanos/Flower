@@ -29,6 +29,7 @@ public class LibraryImportService(
     PlaylistRepository playlists,
     Library library,
     IOptionsMonitor<FlowerServerOptions> options,
+    LibraryWriteAccess writeAccess,
     ILogger<Flower.Importer.Importer> importerLogger,
     ILogger<LibraryImportService> logger)
 {
@@ -66,6 +67,9 @@ public class LibraryImportService(
         // be ignored by the very rescan the browser triggers next.
         var settings = options.CurrentValue;
         var libraryPaths = await AdoptAppleMusicFolderAsync(settings, ct);
+        // Before the scan rather than after: on a NAS share the scan is minutes,
+        // and this is the line an owner wants at the top of a fresh log.
+        writeAccess.Check(libraryPaths);
         var imported = await importer.ImportAsync(libraryPaths);
         logger.LogInformation(
             "Importer found {Count} tracks across {PathCount} configured path(s)", imported.Count, libraryPaths.Count);

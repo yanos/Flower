@@ -1119,6 +1119,29 @@ public partial class App : Application
             mainViewModel.IsBrowserAdmin = admin;
             mainViewModel.IsCheckingBrowserPairing = false;
         });
+
+        // An administrator's tab only: the route is theirs alone, and a
+        // listener has no use for knowing how the owner mounted a disk.
+        if (admin)
+            _ = ReportLibraryWriteAccessAsync(mainViewModel);
+    }
+
+    // Whether the server can write to its music folders, asked once per page
+    // load and shown as a banner when it cannot - see LibraryWriteWarning.
+    // Best effort: a server that will not answer leaves the page without a
+    // banner, not with an error about a warning.
+    private static async Task ReportLibraryWriteAccessAsync(MainViewModel mainViewModel)
+    {
+        try
+        {
+            var status = await CreateOriginAdminClient().GetLibraryStatusAsync();
+            var warning = LibraryWriteWarning.For(status.UnwritableFolders);
+            Dispatcher.UIThread.Post(() => mainViewModel.ServerLibraryWriteWarning = warning);
+        }
+        catch (Exception ex)
+        {
+            AppLogging.CreateLogger("Flower.Browser").LogDebug(ex, "Could not ask the server whether it can write to its library");
+        }
     }
 
     // The pairing screen's two hooks, for the browser head only: spending a
@@ -1132,7 +1155,16 @@ public partial class App : Application
         mainViewModel.AfterBrowserPaired = BrowserLocation.Reload;
     }
 
-    internal static SettingsViewModel CreateOriginServerSettings()
+    internal static SettingsViewModel CreateOriginServerSettings() =>
+        new(
+            new RemoteServerSettingsBackend(CreateOriginAdminClient()),
+            Ioc.Default.GetRequiredService<AppSettings>(),
+            Ioc.Default.GetRequiredService<AppSettingsStore>(),
+            AppLogging.CreateTypedLogger<SettingsViewModel>());
+
+    // The admin API of the server this page was served from, signed with the
+    // tab's own key.
+    private static ServerAdminClient CreateOriginAdminClient()
     {
         // The fourth argument is why this page is worth special-casing at all: a
         // tab served over plain http to anything but localhost has no
@@ -1142,16 +1174,10 @@ public partial class App : Application
         // BrowserPeerCredentials knows the real reason; this hands it to whoever
         // shows the error.
         var browserCredentials = Ioc.Default.GetRequiredService<BrowserPeerCredentials>();
-        var client = new ServerAdminClient(
+        return new ServerAdminClient(
             Ioc.Default.GetRequiredService<HttpClient>(), BrowserLocation.Origin,
             ServerAdminClient.SignWith(browserCredentials),
             () => browserCredentials.UnauthenticatedReason,
             AppLogging.CreateTypedLogger<ServerAdminClient>());
-
-        return new SettingsViewModel(
-            new RemoteServerSettingsBackend(client),
-            Ioc.Default.GetRequiredService<AppSettings>(),
-            Ioc.Default.GetRequiredService<AppSettingsStore>(),
-            AppLogging.CreateTypedLogger<SettingsViewModel>());
     }
 }

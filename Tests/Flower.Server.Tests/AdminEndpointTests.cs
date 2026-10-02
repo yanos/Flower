@@ -418,6 +418,41 @@ public class AdminEndpointTests(FlowerServerFixture server) : IClassFixture<Flow
         }
     }
 
+    // What the admin's browser page turns into its banner: the folders the last
+    // scan could not write to, on the status route it already asks. The check
+    // itself is LibraryWriteAccessTests'; this is that the list reaches the wire,
+    // and is an empty list rather than nothing on a server with no such folder.
+    [Fact]
+    public async Task The_library_status_names_the_folders_the_server_cannot_write_to()
+    {
+        using var admin = await NewAdminAsync();
+        var writeAccess = server.Services.GetRequiredService<LibraryWriteAccess>();
+        var root = Directory.CreateTempSubdirectory("flower-admin-write-access").FullName;
+        var readOnly = LibraryWriteAccessTests.ReadOnlyFolder(root, "music");
+        try
+        {
+            writeAccess.Check([]);
+            var writable = await ReadAsync<LibraryStatusResponse>(await SignedAsync(admin, "GET", "/api/admin/library"));
+            Assert.NotNull(writable.UnwritableFolders);
+            Assert.Empty(writable.UnwritableFolders);
+
+            if (readOnly == null)
+                return;
+
+            writeAccess.Check([readOnly]);
+            var refused = await ReadAsync<LibraryStatusResponse>(await SignedAsync(admin, "GET", "/api/admin/library"));
+            Assert.Equal([readOnly], refused.UnwritableFolders);
+        }
+        finally
+        {
+            writeAccess.Check([]);
+            if (readOnly != null)
+                LibraryWriteAccessTests.MakeWritable(readOnly);
+            Directory.Delete(root, recursive: true);
+            await server.Services.GetRequiredService<TrustedPeerStore>().RevokeAsync(admin.Fingerprint);
+        }
+    }
+
     [Fact]
     public async Task The_log_is_readable_from_the_admin_api()
     {

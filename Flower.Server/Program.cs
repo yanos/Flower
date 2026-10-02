@@ -223,6 +223,10 @@ builder.Services.AddSingleton(services =>
 });
 
 builder.Services.AddScoped<LibraryImportService>();
+// What the last scan found out about writing to the library folders - see
+// LibraryWriteAccess. A singleton because the scan that fills it in is scoped
+// and gone long before the admin page asks.
+builder.Services.AddSingleton<LibraryWriteAccess>();
 // Keeps smart playlists in step with the catalog. Registered on the server as
 // well as in the app, and not only for symmetry: a listener's play reported in
 // over /api/flower/v1/plays is a smart-playlist input, and the server's own

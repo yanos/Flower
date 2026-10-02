@@ -26,7 +26,11 @@ namespace Flower.Services;
 public sealed record AdminDeviceDto(
     string Fingerprint, string Alias, DateTimeOffset ApprovedAt, bool IsAdmin, DateTimeOffset? LastSeenAt, bool HasLog);
 public sealed record AdminPairingCodeDto(string Code, DateTimeOffset ExpiresAt, bool GrantsAdmin, string Invite, string BrowserUrl);
-public sealed record AdminLibraryStatusDto(bool Rescanning, int TrackCount, DateTimeOffset? LastCompletedAt, string? LastError);
+// UnwritableFolders: the library folders the server found it cannot write to at
+// its last scan (LibraryWriteAccess). Null from a server that predates the field.
+public sealed record AdminLibraryStatusDto(
+    bool Rescanning, int TrackCount, DateTimeOffset? LastCompletedAt, string? LastError,
+    List<string>? UnwritableFolders = null);
 public sealed record AdminLogEntryDto(DateTimeOffset Timestamp, string Level, string? SourceContext, string Message, string? Exception);
 
 // One device's pushed log snapshot. ReceivedAt is load-bearing rather than

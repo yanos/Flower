@@ -5,8 +5,8 @@ using System.Linq;
 
 namespace Flower.Services;
 
-// Two questions about a library's folders that are asked on both hosts, by
-// everything that moves or deletes a file on the library's behalf.
+// Questions about a library's folders that are asked on both hosts, by
+// everything that writes, moves or deletes a file on the library's behalf.
 public static class LibraryFolders
 {
     // Case-insensitive off Linux, matching how the importer and
@@ -69,4 +69,39 @@ public static class LibraryFolders
             // remove. Either way it stays.
         }
     }
+
+    // Whether a file can be created in this folder, found out the only way that
+    // is true on every filesystem: by creating one. Permission bits do not
+    // answer it - a read-only mount shows a writable directory to a process
+    // that owns it, and an NFS export can refuse a user its own mode bits allow.
+    // The probe is named so that one left behind by a kill between the two
+    // lines says what it was.
+    public static bool CanWriteIn(string folder)
+    {
+        var probe = Path.Combine(folder, $".flower-write-check-{Guid.NewGuid():N}");
+        try
+        {
+            using (File.Create(probe))
+            {
+            }
+
+            File.Delete(probe);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    // The library folders this process cannot write to, of the ones that are
+    // there. A folder that does not exist is not on the list: it is a different
+    // problem (nothing is scanned from it either) and "cannot write" would
+    // misname it.
+    public static List<string> Unwritable(IEnumerable<string> roots) =>
+        roots
+            .Where(root => !string.IsNullOrWhiteSpace(root) && Directory.Exists(root))
+            .Distinct(StringComparer.Ordinal)
+            .Where(root => !CanWriteIn(root))
+            .ToList();
 }

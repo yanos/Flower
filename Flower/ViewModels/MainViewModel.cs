@@ -972,6 +972,31 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         }
     }
 
+    // What the server said about writing to its music folders, for an
+    // administrator's tab only - see LibraryWriteWarning. Null when there is
+    // nothing to say, and after the banner's own close button: a server left
+    // read-only on purpose should be able to stop being told so, and the page
+    // asks again on its next load.
+    private string? _serverLibraryWriteWarning;
+    public string? ServerLibraryWriteWarning
+    {
+        get => _serverLibraryWriteWarning;
+        set
+        {
+            if (_serverLibraryWriteWarning == value)
+                return;
+            _serverLibraryWriteWarning = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasServerLibraryWriteWarning));
+        }
+    }
+
+    public bool HasServerLibraryWriteWarning => !string.IsNullOrEmpty(_serverLibraryWriteWarning);
+
+    private RelayCommand? _dismissServerLibraryWriteWarningCommand;
+    public ICommand DismissServerLibraryWriteWarningCommand =>
+        _dismissServerLibraryWriteWarningCommand ??= new RelayCommand(() => ServerLibraryWriteWarning = null);
+
     // A page opened at #page=settings asks for the settings before the server
     // has said whether this tab may see them - see RequestServerSettingsPage.
     private bool _serverSettingsPageRequested;
