@@ -201,7 +201,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     // Whether the machine being configured - this device, or the server this page
     // administers - actually has an iTunes/Music.app library folder to integrate
-    // with. All three switches are gated on it: they are real, remembered settings,
+    // with. Every switch here is gated on it: they are real, remembered settings,
     // but with no folder found there is nothing for them to turn on, and a switch
     // that silently does nothing is worse than one that explains itself (see
     // ITunesUnavailableMessage, shown in its place).
@@ -209,10 +209,16 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     public bool CanIntegrateWithITunes => HasAppleMusicFolder && CanManageLibrary;
 
-    // The two per-track imports only mean anything while the integration as a
-    // whole is on. Disabled rather than unchecked, so each keeps whatever the user
-    // had already chosen for when it is switched back on.
-    public bool CanSyncFromITunes => IntegrateWithITunes && CanIntegrateWithITunes;
+    // On a server the two per-track imports only mean anything while the
+    // integration as a whole is on. Disabled rather than unchecked, so each keeps
+    // whatever had already been chosen for when it is switched back on.
+    //
+    // The app has no such switch (SettingsCapabilities.ITunesMasterSwitch), so
+    // there a Music.app library existing is all it takes - including after a no
+    // to the first-run question (ITunesLibraryOffer), which turned both off and
+    // is exactly the answer somebody comes here to change.
+    public bool CanSyncFromITunes =>
+        CanIntegrateWithITunes && (IntegrateWithITunes || !Capabilities.ITunesMasterSwitch);
 
     public bool ShowsITunesUnavailable => Capabilities.ITunesIntegration && !HasAppleMusicFolder;
 
@@ -1000,8 +1006,9 @@ public sealed partial class SettingsViewModel : ViewModelBase
         OnPropertyChanged(nameof(ShowsDeniedDevices));
     }
 
-    // Turning the iTunes integration on adds Music.app's media folder to the
-    // pending paths list immediately, so it shows up in the folders list right
+    // Turning the iTunes integration on - a server's switch; the app has none,
+    // see SettingsCapabilities.ITunesMasterSwitch - adds Music.app's media folder
+    // to the pending paths list immediately, so it shows up in the folders list right
     // here instead of only appearing on some later launch. Editing the pending
     // list rather than saving directly keeps it cancellable and routes it
     // through the same "did the paths change" rescan as Add/Remove Folder.
@@ -1015,8 +1022,8 @@ public sealed partial class SettingsViewModel : ViewModelBase
     // that folder in the first place, and the two per-track imports. A folder
     // already in the list is a folder the user has, and taking it back out is
     // the Remove Folder button's job, directly below it. Off is still what makes
-    // such a removal stick - see ITunesIntegration.ResolveMediaFolderToAdopt,
-    // which re-offers the folder on every load for as long as this is on.
+    // such a removal stick - see LibraryImportService.AdoptAppleMusicFolderAsync,
+    // which re-adopts the folder on every scan for as long as this is on.
     private void ApplyAppleMusicFolder()
     {
         if (!IsLoaded || !IntegrateWithITunes || _snapshot.AppleMusicFolder is not { } folder)

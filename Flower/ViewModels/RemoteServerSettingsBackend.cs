@@ -35,6 +35,7 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
         Log = true,
         ThemePicker = false,
         ITunesIntegration = true,
+        ITunesMasterSwitch = true,
         PairedServerPicker = false,
         TrustedDevices = true,
         RevealAppDataLocation = false,

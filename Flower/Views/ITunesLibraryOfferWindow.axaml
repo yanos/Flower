@@ -1,0 +1,49 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Flower.Views.ITunesLibraryOfferWindow"
+        Title="Apple Music Library"
+        Width="440"
+        SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False">
+  <StackPanel Margin="20" Spacing="14">
+    <TextBlock Text="Add your Apple Music/iTunes library?"
+               FontWeight="SemiBold"
+               FontSize="14"
+               TextWrapping="Wrap"/>
+    <StackPanel Spacing="6">
+      <TextBlock Text="Flower found a Music.app library on this Mac:"
+                 TextWrapping="Wrap"
+                 Opacity="0.75"
+                 FontSize="12"/>
+      <!-- A path has no spaces to break at, so it is trimmed rather than
+           wrapped, with the whole of it on hover. -->
+      <TextBlock x:Name="FolderText"
+                 TextTrimming="PathSegmentEllipsis"
+                 FontSize="12"/>
+      <TextBlock Text="Flower plays its songs from that folder. Any of this can be changed later in Settings > Library."
+                 TextWrapping="Wrap"
+                 Opacity="0.75"
+                 FontSize="12"/>
+    </StackPanel>
+
+    <!-- The same two imports as Settings > Library, and on by default for the
+         reason they are there - see MusicLibrarySettings. Both only mean
+         anything with the library added, so "Don't Add" ignores them. -->
+    <StackPanel Spacing="4">
+      <CheckBox x:Name="SyncPlayCountCheckBox"
+                Content="Sync play counts from Music.app on startup"
+                IsChecked="True"
+                FontSize="12"/>
+      <CheckBox x:Name="SyncDateAddedCheckBox"
+                Content="Sync date added from Music.app on startup"
+                IsChecked="True"
+                FontSize="12"/>
+    </StackPanel>
+
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <Button x:Name="DeclineButton" Content="Don't Add" Click="DeclineButton_Click" IsCancel="True"/>
+      <Button x:Name="AddButton" Content="Add to Library" Click="AddButton_Click" IsDefault="True"/>
+    </StackPanel>
+  </StackPanel>
+</Window>

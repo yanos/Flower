@@ -10,77 +10,64 @@ using Flower.Persistence;
 
 namespace Flower.Importer;
 
-// What MusicLibrarySettings' three iTunes switches actually *mean*, in one place
-// for both hosts. The two importers underneath already lived in Flower.Core and
-// were already shared; the policy around them - is the integration on, is there
-// a folder to adopt, which of the two imports should run - was not, and the app
-// and the server had begun to answer those questions in their own words (see
-// AppSettingsStore.Load and LibraryImportService.RescanAsync, both of which now
-// call in here instead).
+// The parts of the iTunes/Music.app integration that are the same on both
+// hosts, in one place. The two importers underneath already lived in Flower.Core
+// and were already shared; what sits on top of them - is there a folder to
+// adopt, which of the two imports does a scan run - is here so the app and the
+// server answer in the same words.
+//
+// *When* either happens is each host's own business and is not here: the server
+// gates all of it on FlowerServerOptions.IntegrateWithITunes
+// (LibraryImportService), and the app takes the folder only on a yes to its
+// first-run question (ITunesLibraryOffer) and runs each import off its own
+// switch.
 //
 // Static rather than a service: every method is a pure function of the settings
-// it is handed plus what is on disk, and both callers reach it from places with
-// no container to resolve out of (a settings load before DI exists; a scan on
-// its own scope). Loggers come in as parameters for the same reason - see
-// ITunesPlayCountImporter.Apply's own note on this.
+// it is handed plus what is on disk, and its callers reach it from places with
+// no container to resolve out of (a scan on its own scope). Loggers come in as
+// parameters for the same reason - see ITunesPlayCountImporter.Apply's own note
+// on this.
 public static class ITunesIntegration
 {
-    // Music.app's configured media folder, when the integration is on, the
-    // folder exists, and it is not already a library path - i.e. exactly when a
-    // caller should add it to `settings.LibraryPaths`. Null in every other case,
-    // including on hosts with no Music.app at all.
+    // Music.app's configured media folder, when the folder exists and is not
+    // already a library path - i.e. exactly when a caller that wants it should
+    // add it to `settings.LibraryPaths`. Null in every other case, including on
+    // hosts with no Music.app at all.
     //
-    // Returns the folder rather than adding it, because where "add" lands
-    // differs: the app appends to the AppSettings it is about to persist, the
-    // server appends to the path list it is about to scan and writes that back
-    // to flower-server.json. Both then have a folder the user can see and
-    // remove, which is the point - and removing it is the *only* thing that
-    // removes it: turning IntegrateWithITunes off stops this offering the folder
-    // again but deliberately leaves an already-adopted one in place (see
-    // SettingsViewModel.ApplyAppleMusicFolder). Dropping Music.app entirely is
-    // therefore both - uncheck, so this stops re-adding it, and remove the
-    // folder.
+    // Returns the folder rather than adding it, because "add" is the caller's:
+    // the server appends to the path list it is about to scan and writes that
+    // back to flower-server.json, where it is a folder the owner can see and
+    // remove.
     public static string? ResolveMediaFolderToAdopt(MusicLibrarySettings settings, ILogger? logger = null)
     {
-        if (!settings.IntegrateWithITunes)
-            return null;
-
         if (Importer.TryResolveAppleMusicFolder(logger) is not { } folder)
             return null;
 
         return settings.LibraryPaths.Contains(folder, StringComparer.OrdinalIgnoreCase) ? null : folder;
     }
 
-    // The two per-track imports only mean anything while the integration as a
-    // whole is on - which is the one rule both hosts kept restating. Exposed
-    // separately from ApplyImports below because the app does not run them the
-    // way the server does: each is a cooldown-guarded, busy-scoped job with its
-    // own status message (ITunesImportCoordinator), started from two different
-    // places, so the app needs the question answered without the doing.
-    public static bool ShouldSyncPlayCount(MusicLibrarySettings settings) =>
-        settings.IntegrateWithITunes && settings.SyncPlayCountFromITunes;
-
-    public static bool ShouldSyncDateAdded(MusicLibrarySettings settings) =>
-        settings.IntegrateWithITunes && settings.SyncDateAddedFromITunes;
-
-    // Runs whichever of the two the settings ask for, over tracks the caller
-    // holds. Both mutate Track objects in place and neither persists anything -
-    // the caller decides how to publish that (the server: one
+    // Runs whichever of the two imports the settings ask for, over tracks the
+    // caller holds. Both mutate Track objects in place and neither persists
+    // anything - the caller decides how to publish that (the server: one
     // Library.NotifyLibraryChanged after both).
     //
     // Returns whether anything ran, so a caller can skip that publish entirely
     // rather than issuing a whole-table rewrite for two no-ops.
+    //
+    // The app does not come through here: each of its imports is a
+    // cooldown-guarded, busy-scoped job with its own status message
+    // (ITunesImportCoordinator), started from two different places.
     public static bool ApplyImports(
         MusicLibrarySettings settings, IEnumerable<Track> tracks, ILogger? logger = null)
     {
         var ran = false;
 
-        if (ShouldSyncPlayCount(settings))
+        if (settings.SyncPlayCountFromITunes)
         {
             ITunesPlayCountImporter.Apply(tracks, logger);
             ran = true;
         }
-        if (ShouldSyncDateAdded(settings))
+        if (settings.SyncDateAddedFromITunes)
         {
             ITunesDateAddedImporter.Apply(tracks, logger);
             ran = true;

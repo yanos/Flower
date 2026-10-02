@@ -198,24 +198,49 @@
                   Margin="0,12,0,0"
                   IsEnabled="{Binding CanManageLibrary}">
 
-              <!-- Master switch for the whole Music.app integration (see
-                   AppSettings.IntegrateWithITunes / FlowerServerOptions.IntegrateWithITunes):
-                   with it off, Music.app's media folder is no longer auto-added to
-                   the library paths below and neither per-track import runs. A
-                   folder already in that list stays there, though - unchecking this
-                   stops Flower re-adding it, and the Remove button below is what
+              <!-- Master switch for the whole Music.app integration, on a server's
+                   settings only (FlowerServerOptions.IntegrateWithITunes): with it
+                   off, Music.app's media folder is no longer auto-added to the
+                   library paths below and neither per-track import runs. A folder
+                   already in that list stays there, though - unchecking this stops
+                   the server re-adding it, and the Remove button below is what
                    takes it out. The two sub-checkboxes stay visible but disabled,
                    keeping their own remembered values for when it is switched back
                    on.
 
-                   All three are disabled outright, with the note in row 4 in place of
-                   the source description, when the machine being configured has no
-                   Music.app library folder at all - see
+                   The app's own settings have no such switch - its first run asks
+                   instead (ITunesLibraryOffer) - so there the two imports are the
+                   top level: not indented, and usable whenever a Music.app library
+                   exists, whatever that question was answered with.
+
+                   Everything here is disabled outright, with the note in row 4 in
+                   place of the source description, when the machine being
+                   configured has no Music.app library folder at all - see
                    SettingsViewModel.HasAppleMusicFolder. -->
+              <Grid.Styles>
+                <Style Selector="CheckBox.itunesImport">
+                  <Setter Property="Margin" Value="0,4,0,0"/>
+                </Style>
+                <Style Selector="CheckBox.itunesImport.underMasterSwitch">
+                  <Setter Property="Margin" Value="20,4,0,0"/>
+                </Style>
+                <Style Selector="TextBlock.itunesSource">
+                  <Setter Property="Margin" Value="20,2,0,0"/>
+                </Style>
+                <Style Selector="TextBlock.itunesSource.underMasterSwitch">
+                  <Setter Property="Margin" Value="40,2,0,0"/>
+                </Style>
+              </Grid.Styles>
+
               <CheckBox Grid.Row="0"
                         Content="Use iTunes/Music.app library"
-                        IsChecked="{Binding IntegrateWithITunes, Mode=TwoWay}"
-                        IsVisible="{Binding Capabilities.ITunesIntegration}">
+                        IsChecked="{Binding IntegrateWithITunes, Mode=TwoWay}">
+                <CheckBox.IsVisible>
+                  <MultiBinding Converter="{x:Static BoolConverters.And}">
+                    <Binding Path="Capabilities.ITunesIntegration"/>
+                    <Binding Path="Capabilities.ITunesMasterSwitch"/>
+                  </MultiBinding>
+                </CheckBox.IsVisible>
                 <CheckBox.IsEnabled>
                   <MultiBinding Converter="{x:Static BoolConverters.And}">
                     <Binding Path="CanIntegrateWithITunes"/>
@@ -225,8 +250,9 @@
               </CheckBox>
 
               <CheckBox Grid.Row="1"
+                        Classes="itunesImport"
+                        Classes.underMasterSwitch="{Binding Capabilities.ITunesMasterSwitch}"
                         Content="Sync play count from iTunes/Music.app"
-                        Margin="20,4,0,0"
                         IsChecked="{Binding SyncPlayCountFromITunes, Mode=TwoWay}"
                         IsVisible="{Binding Capabilities.ITunesIntegration}">
                 <CheckBox.IsEnabled>
@@ -238,8 +264,9 @@
               </CheckBox>
 
               <CheckBox Grid.Row="2"
+                        Classes="itunesImport"
+                        Classes.underMasterSwitch="{Binding Capabilities.ITunesMasterSwitch}"
                         Content="Sync date added from iTunes/Music.app"
-                        Margin="20,4,0,0"
                         IsChecked="{Binding SyncDateAddedFromITunes, Mode=TwoWay}"
                         IsVisible="{Binding Capabilities.ITunesIntegration}">
                 <CheckBox.IsEnabled>
@@ -251,13 +278,15 @@
               </CheckBox>
 
               <TextBlock Grid.Row="3"
+                         Classes="itunesSource"
+                         Classes.underMasterSwitch="{Binding Capabilities.ITunesMasterSwitch}"
                          Text="{Binding ITunesLibraryDescription}"
-                         Margin="40,2,0,0" FontSize="11" Opacity="0.6"
+                         FontSize="11" Opacity="0.6"
                          TextTrimming="CharacterEllipsis"
                          IsEnabled="{Binding CanSyncFromITunes}"
                          IsVisible="{Binding CanIntegrateWithITunes}"/>
 
-              <!-- Why the three switches above are greyed out. Deliberately in the
+              <!-- Why the switches above are greyed out. Deliberately in the
                    same place the source description would have been, rather than
                    beside them: it answers the same question ("where would this read
                    from?") in the case where the answer is "nowhere". -->

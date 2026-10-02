@@ -97,10 +97,9 @@ public class LibraryImportService(
     }
 
     // Music.app's own media folder, adopted as a library path on the first scan
-    // that finds it. Whether there is one to adopt is ITunesIntegration's call -
-    // the identical question AppSettingsStore.Load asks before the app's own
-    // scan - and this is only what a server does with the answer: write it back
-    // to flower-server.json, so it is visible (and removable) in the settings
+    // that finds it, for as long as IntegrateWithITunes is on. Whether there is
+    // one to adopt is ITunesIntegration's call, and this is what a server does
+    // with the answer: write it back to flower-server.json, so it is visible (and removable) in the settings
     // page's folder list rather than a scan-time fallback nobody can see.
     // Removing it only stays removed because turning IntegrateWithITunes off is
     // what stops this offering it again.
@@ -112,6 +111,8 @@ public class LibraryImportService(
     private async Task<List<string>> AdoptAppleMusicFolderAsync(FlowerServerOptions settings, CancellationToken ct)
     {
         var paths = settings.LibraryPaths.ToList();
+        if (!settings.IntegrateWithITunes)
+            return paths;
         if (ITunesIntegration.ResolveMediaFolderToAdopt(settings, importerLogger) is not { } appleMusicFolder)
             return paths;
 
@@ -130,15 +131,19 @@ public class LibraryImportService(
     }
 
     // Play counts and Date Added from Music.app's own library, applied to the
-    // tracks the scan just reconciled. Which of the two run is
-    // ITunesIntegration's call, the same one the app's startup rescan makes;
-    // what is server-specific is only how the result gets published - both
+    // tracks the scan just reconciled - neither, with IntegrateWithITunes off,
+    // whatever the two remember individually. Which of the two run is otherwise
+    // ITunesIntegration's call; what is server-specific is the master switch
+    // and how the result gets published - both
     // importers mutate Track objects in place, so the one NotifyLibraryChanged
     // here is what persists them and invalidates the snapshot every client
     // reads through. Skipped entirely when neither ran, rather than issuing a
     // whole-table rewrite for two no-ops.
     private void ApplyITunesImports(FlowerServerOptions settings)
     {
+        if (!settings.IntegrateWithITunes)
+            return;
+
         if (ITunesIntegration.ApplyImports(settings, library.Tracks, logger))
             library.NotifyLibraryChanged();
     }

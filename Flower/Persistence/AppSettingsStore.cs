@@ -27,7 +27,7 @@ namespace Flower.Persistence
     }
 
     // Everything the app persists to settings.json. The library folders and the
-    // iTunes switches come from MusicLibrarySettings, which Flower.Server's own
+    // two iTunes imports come from MusicLibrarySettings, which Flower.Server's own
     // options type derives from as well - see there for why only that much is
     // shared and the rest of this stays app-only.
     public class AppSettings : MusicLibrarySettings
@@ -78,6 +78,12 @@ namespace Flower.Persistence
         // songs. Everything in it is also in the screen's header menu, and a
         // tap on a song plays the album from there.
         public bool MobileAlbumButtons { get; set; } = true;
+
+        // Set on a first run that found a Music.app library, and cleared by
+        // the answer to the question that run asks - see ITunesLibraryOffer.
+        // While it is set both imports are off, so nothing is taken from
+        // Music.app before somebody has said yes.
+        public bool ITunesLibraryOfferPending { get; set; }
 
         // Whether the track list keeps its album-art well - see
         // ColumnManager.ShowAlbumArt, which is what reads and writes this, and
@@ -293,14 +299,18 @@ namespace Flower.Persistence
             if (stored is null && _pairingBackup?.RestoreInto(settings) == true)
                 changed = true;
 
-            // Auto-register Apple Music's configured media folder, if found and not
-            // already present, so it shows up in Settings without the user having to
-            // browse for a folder they've already pointed Music.app at. When to do
-            // that is ITunesIntegration's call, not this store's - Flower.Server
-            // asks it the identical question before its own scan.
-            if (Importer.ITunesIntegration.ResolveMediaFolderToAdopt(settings, _logger) is { } appleMusicFolder)
+            // A first run that finds a Music.app library asks before taking it
+            // (ITunesLibraryOfferWindow, shown over the main window), and that
+            // question is the only way the folder gets in on its own. It used
+            // to be added here on every load for as long as a master switch
+            // was on; now it is a folder like any other once it is in the
+            // list, and Add Folder is how it comes back after a no. Only a Mac
+            // ever finds one, which is what keeps this to the desktop.
+            var offeredFolder = stored is null ? Importer.Importer.TryResolveAppleMusicFolder(_logger) : null;
+            if (offeredFolder != null)
             {
-                settings.LibraryPaths.Add(appleMusicFolder);
+                _logger.LogInformation("First run - found a Music.app library at {Folder}, to be offered rather than adopted", offeredFolder);
+                ITunesLibraryOffer.Arm(settings);
                 changed = true;
             }
 
@@ -314,10 +324,17 @@ namespace Flower.Persistence
             // iOS's own Documents directory is handled inside Importer, since its
             // absolute path can change across a reinstall and so must not be
             // persisted here.
+            //
+            // Nor when it would scan the Music.app library being offered above,
+            // which on a default Mac it would - that library lives under ~/Music.
+            // The library then starts empty, and stays empty on a no: the seed
+            // is not put back afterwards, since it holds the very songs that
+            // were just declined.
             if (stored is null && settings.LibraryPaths.Count == 0 &&
                 !OperatingSystem.IsIOS() && !OperatingSystem.IsAndroid() &&
                 Environment.GetFolderPath(Environment.SpecialFolder.MyMusic) is { Length: > 0 } musicFolder &&
-                Directory.Exists(musicFolder))
+                Directory.Exists(musicFolder) &&
+                !ITunesLibraryOffer.IsCoveredBy(offeredFolder, musicFolder))
             {
                 _logger.LogInformation("First run - seeding library folders with {MusicFolder}", musicFolder);
                 settings.LibraryPaths.Add(musicFolder);

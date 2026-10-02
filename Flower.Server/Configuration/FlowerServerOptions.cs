@@ -14,7 +14,7 @@ namespace Flower.Server.Configuration;
 // nothing in this system authenticates with a password at all.
 //
 // Derives from MusicLibrarySettings, which the app's own AppSettings derives
-// from too: the library folders and the three iTunes switches are the same
+// from too: the library folders and the two iTunes imports are the same
 // settings on both hosts, and were briefly declared (and defaulted, and
 // documented) twice. Everything left here is deployment configuration the app
 // has no equivalent of.
@@ -32,6 +32,29 @@ public sealed class FlowerServerOptions : MusicLibrarySettings
     // as an absolute path - so by the time this is bound it is never relative
     // and never empty, whatever was configured.
     public string DataDirectory { get; set; } = "";
+
+    // Master switch for every way this server reaches into a local
+    // iTunes/Music.app installation: adopting Music.app's own configured media
+    // folder as a library path (LibraryImportService.AdoptAppleMusicFolderAsync)
+    // and the two per-track imports MusicLibrarySettings declares. On by
+    // default - on a Mac with a Music.app library, having the server pick that
+    // library up on its own is what most people want; turning this off makes it
+    // stop reaching into Music.app - the folder is never offered again and the
+    // two imports go inert (they keep their own persisted values, they just
+    // stop being acted on).
+    //
+    // Turning it off does *not* take an already-adopted folder back out of
+    // LibraryPaths. Once adopted it is one of the library folders like any
+    // other, and only removing it there removes it - see SettingsViewModel.
+    // ApplyAppleMusicFolder, which used to do exactly that and so turned "stop
+    // importing play counts" into "empty my entire library".
+    //
+    // Server-only. The app had this switch too, and lost it when its first run
+    // started asking instead (ITunesLibraryOffer): a question answered once
+    // has nothing left for a switch to say, and the app's two imports are
+    // simply on or off. A server is set up from a config file by somebody who
+    // can read what it did there, and has nobody to ask.
+    public bool IntegrateWithITunes { get; set; } = true;
 
     // Host:port to put in a pairing invite's QR code, for deployments where
     // the address the request arrived on is not the address a new device

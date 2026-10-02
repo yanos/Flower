@@ -687,6 +687,10 @@ public partial class App : Application
 
         var mainViewModel = Ioc.Default.GetRequiredService<MainViewModel>();
 
+        // Completed unless a first-run question is on screen - see below. The
+        // startup rescan waits on it.
+        var firstRunQuestion = Task.CompletedTask;
+
         Control? mainView = null;
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
@@ -699,6 +703,49 @@ public partial class App : Application
             };
             desktop.MainWindow = window;
             mainView = window;
+
+            // A first run that found a Music.app library asks before using it
+            // (see ITunesLibraryOffer). Asked once the window is up, because a
+            // dialog needs a visible owner - and the rescan below is held
+            // until it is answered, so the one pass that follows scans the
+            // folder and runs the two imports exactly as was just chosen. A
+            // rescan started alongside the question would finish against the
+            // settings from before it, and a second one started by the answer
+            // would then race the first for which gets to write the library.
+            //
+            // A library that has stopped being found since the question was
+            // armed leaves it armed: there is nothing to offer this launch.
+            if (appSettings.ITunesLibraryOfferPending &&
+                Importer.Importer.TryResolveAppleMusicFolder(logger) is { } offeredFolder)
+            {
+                var answered = new TaskCompletionSource();
+                firstRunQuestion = answered.Task;
+                var settingsStore = provider.GetRequiredService<AppSettingsStore>();
+
+                async void AskAboutITunesLibrary(object? sender, EventArgs e)
+                {
+                    window.Opened -= AskAboutITunesLibrary;
+                    try
+                    {
+                        var answer = await ITunesLibraryOfferWindow.ShowAsync(window, offeredFolder);
+                        logger.LogInformation(
+                            "Music.app library offer answered: add {Add}, play counts {SyncPlayCount}, date added {SyncDateAdded}",
+                            answer != null, answer?.SyncPlayCount, answer?.SyncDateAdded);
+                        ITunesLibraryOffer.Apply(appSettings, offeredFolder, answer);
+                        await settingsStore.SaveAsync(appSettings);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogError(ex, "Asking about the Music.app library failed");
+                    }
+                    finally
+                    {
+                        answered.TrySetResult();
+                    }
+                }
+
+                window.Opened += AskAboutITunesLibrary;
+            }
 
             // Avalonia's DBus integration can tear down after the dispatcher
             // has already stopped, and its observers then throw an unhandled
@@ -883,6 +930,10 @@ public partial class App : Application
         _ = Task.Run(async () =>
         {
             var rescanLogger = AppLogging.CreateLogger("Flower.Rescan");
+            // Before the busy scope, not inside it: a spinner saying
+            // "Refreshing Library" behind an unanswered question would be
+            // describing work that has not started.
+            await firstRunQuestion;
             // Covers the whole sequence below, not just the two iTunes syncs'
             // own brief individual scopes - the rescan itself is the longest
             // part (~9s against a large real library) and previously had no
@@ -947,14 +998,17 @@ public partial class App : Application
                 // own save (either may run again later via its own Settings
                 // checkbox, independent of this startup rescan) and layer their
                 // own more specific BusyMessage on top of this outer scope's.
-                // Both gated on the master IntegrateWithITunes switch first -
-                // with it off, Flower ignores Music.app entirely, whatever
-                // these two remember individually. Asked of
-                // ITunesIntegration rather than spelled out here, because
-                // the server gates its own imports on the same rule.
-                if (isLocalImporter && Flower.Importer.ITunesIntegration.ShouldSyncPlayCount(appSettings))
+                //
+                // Not on a device paired to a server: its library is the
+                // server's, which runs these imports itself, and Settings
+                // disables both switches there (SettingsViewModel.
+                // CanManageLibrary) - so an import that ran here anyway would
+                // be one nobody could turn off. The same rule
+                // LocalSettingsBackend.SaveAsync applies to its own two.
+                var importsFromMusicApp = isLocalImporter && string.IsNullOrEmpty(appSettings.PairedServerFingerprint);
+                if (importsFromMusicApp && appSettings.SyncPlayCountFromITunes)
                     await mainViewModel.SyncITunesPlayCountAsync();
-                if (isLocalImporter && Flower.Importer.ITunesIntegration.ShouldSyncDateAdded(appSettings))
+                if (importsFromMusicApp && appSettings.SyncDateAddedFromITunes)
                     await mainViewModel.SyncITunesDateAddedAsync();
             }
             catch (Exception ex)

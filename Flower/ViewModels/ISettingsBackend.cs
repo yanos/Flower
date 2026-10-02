@@ -24,6 +24,12 @@ public sealed record SettingsCapabilities
     // and neither does a browser.
     public bool ITunesIntegration { get; init; }
 
+    // "Use iTunes/Music.app library", over the two imports. A server has it
+    // (FlowerServerOptions.IntegrateWithITunes) because it adopts Music.app's
+    // folder on its own and that switch is what stops it; the app asks once on
+    // its first run instead, so there the two imports stand alone.
+    public bool ITunesMasterSwitch { get; init; }
+
     // "Send logs to server", and the Devices tab's server picker: the
     // things that only mean something for a device that pairs *to* a server.
     // A Flower.Server does none of them - it is the thing being paired with.
@@ -65,6 +71,8 @@ public sealed record SettingsSnapshot
     public string Alias { get; init; } = "";
     public AppThemePreference ThemePreference { get; init; }
     public IReadOnlyList<string> LibraryPaths { get; init; } = [];
+    // A server's only - see SettingsCapabilities.ITunesMasterSwitch. The app's
+    // own backend leaves it unset here and ignores it in the draft.
     public bool IntegrateWithITunes { get; init; }
     public bool SyncPlayCountFromITunes { get; init; }
     public bool SyncDateAddedFromITunes { get; init; }

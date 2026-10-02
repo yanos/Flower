@@ -24,6 +24,10 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
     {
         ThemePicker = true,
         ITunesIntegration = true,
+        // The app has no master switch: its first run asks about the Music.app
+        // library instead (ITunesLibraryOffer), and the two imports are each
+        // simply on or off.
+        ITunesMasterSwitch = false,
         PairedServerPicker = true,
         TrustedDevices = false,
         RevealAppDataLocation = true,
@@ -43,7 +47,6 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
         Alias = ViewModel.DeviceAlias,
         ThemePreference = ViewModel.ThemePreference,
         LibraryPaths = ViewModel.LibraryPaths.ToList(),
-        IntegrateWithITunes = ViewModel.IntegrateWithITunes,
         SyncPlayCountFromITunes = ViewModel.SyncPlayCountFromITunes,
         SyncDateAddedFromITunes = ViewModel.SyncDateAddedFromITunes,
         ShareLogsWithPairedServer = ViewModel.ShareLogsWithPairedServer,
@@ -78,7 +81,6 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
             ViewModel.DeviceAlias = draft.Alias.Trim();
 
         ViewModel.ThemePreference = draft.ThemePreference;
-        ViewModel.IntegrateWithITunes = draft.IntegrateWithITunes;
         ViewModel.SyncPlayCountFromITunes = draft.SyncPlayCountFromITunes;
         ViewModel.SyncDateAddedFromITunes = draft.SyncDateAddedFromITunes;
         ViewModel.ShareLogsWithPairedServer = draft.ShareLogsWithPairedServer;
@@ -91,8 +93,8 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
         // disabled CheckBox still reports whatever it was set to before it went
         // disabled, so trusting IsChecked alone would let a paired device kick
         // off an iTunes import it is not supposed to run.
-        var syncPlayCount = CanManageLocalLibrary && draft.IntegrateWithITunes && draft.SyncPlayCountFromITunes;
-        var syncDateAdded = CanManageLocalLibrary && draft.IntegrateWithITunes && draft.SyncDateAddedFromITunes;
+        var syncPlayCount = CanManageLocalLibrary && draft.SyncPlayCountFromITunes;
+        var syncDateAdded = CanManageLocalLibrary && draft.SyncDateAddedFromITunes;
 
         // All three run unawaited, on purpose: the screen closes as soon as the
         // (fast) settings write lands, and the (potentially long) rescan/import

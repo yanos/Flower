@@ -72,6 +72,7 @@ public class SettingsITunesGatingTests
     private static readonly SettingsCapabilities ServerCapabilities = new()
     {
         ITunesIntegration = true,
+        ITunesMasterSwitch = true,
         ServerNetwork = true,
         PairingCodes = true,
         Log = true,
@@ -197,5 +198,50 @@ public class SettingsITunesGatingTests
 
         Assert.Contains(viewModel.LibraryPaths, row => row.Path == folder);
         Assert.Contains(viewModel.LibraryPaths, row => row.Path == "/music");
+    }
+
+    // ── The app's own settings: no master switch ──────────────────────────
+
+    // What LocalSettingsBackend declares: the two imports, and nothing over them.
+    private static readonly SettingsCapabilities AppCapabilities = new()
+    {
+        ITunesIntegration = true,
+        ITunesMasterSwitch = false,
+        PairedServerPicker = true,
+        ThemePicker = true,
+    };
+
+    // The state a "Don't Add" to the first-run question leaves behind
+    // (ITunesLibraryOffer.Apply): nothing taken, both imports off. Settings is
+    // where that answer gets changed, so neither switch may be greyed out by it.
+    [Fact]
+    public async Task The_apps_two_imports_are_usable_whenever_a_music_folder_exists_even_after_a_no()
+    {
+        var viewModel = await LoadAsync(AppCapabilities, new SettingsSnapshot
+        {
+            AppleMusicFolder = "/Users/x/Music/Music/Media.localized",
+            LibraryPaths = [],
+            SyncPlayCountFromITunes = false,
+            SyncDateAddedFromITunes = false,
+        });
+
+        Assert.True(viewModel.CanSyncFromITunes);
+        Assert.False(viewModel.SyncPlayCountFromITunes);
+        Assert.False(viewModel.SyncDateAddedFromITunes);
+        Assert.False(viewModel.ShowsITunesUnavailable);
+    }
+
+    [Fact]
+    public async Task The_apps_two_imports_are_disabled_with_no_music_folder_and_say_why()
+    {
+        var viewModel = await LoadAsync(AppCapabilities, new SettingsSnapshot
+        {
+            AppleMusicFolder = null,
+            SyncPlayCountFromITunes = true,
+            SyncDateAddedFromITunes = true,
+        });
+
+        Assert.False(viewModel.CanSyncFromITunes);
+        Assert.True(viewModel.ShowsITunesUnavailable);
     }
 }
