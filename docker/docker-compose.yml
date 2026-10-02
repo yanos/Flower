@@ -39,11 +39,15 @@ services:
       # Backup: docker compose cp flower:/data ./flower-backup
       - flower-data:/data
 
-      # Your music, read-only. No default, so a wrong path fails loudly
-      # instead of serving an empty library.
-      - ${FLOWER_MUSIC:?set FLOWER_MUSIC to your music folder, e.g. in a .env file beside this one}:/music:ro
+      # Your music. No default, so a wrong path fails loudly instead of
+      # serving an empty library.
+      # Writable, so admin devices can upload songs, move and re-tag them,
+      # and you can clean up removed ones (docs/SELF-HOSTING.md, "Songs that
+      # start on a device") - which also needs uid 1654 to be able to write
+      # there. Append :ro to make the server strictly read-only instead.
+      - ${FLOWER_MUSIC:?set FLOWER_MUSIC to your music folder, e.g. in a .env file beside this one}:/music
 
-    # Only if uid 1654 can't read your music (better: make it readable). If you
+    # Only if uid 1654 can't read or write your music (better: let it). If you
     # set this, hand the data volume over once:
     #   docker compose run --rm --user root --entrypoint chown flower -R 1000:1000 /data
     #

@@ -289,17 +289,102 @@ Two directories matter:
 | In the container | What it is |
 |---|---|
 | `/data` | Everything the server owns: `flower.db`, the device key, the trusted-device list, the logs, `flower-server.json`. Back this up — lose it and every paired device unpairs. |
-| `/music` | Your library, mounted read-only. The server scans and streams; it never writes here. |
+| `/music` | Your library. The server scans and streams it, and — for the admin actions below — writes to it. |
 
-Read-only means two admin actions can't reach your files: editing album art, and
-**Remove from Library** with "also delete the files" ticked. The song still leaves
-the library, for every device, but its file stays on disk; the server remembers
-the file and won't scan it back in. To let those actions write, drop the `:ro`
-from the `/music` line in `docker-compose.yml`, and make sure uid `1654` can
-write there. A file the server deletes isn't gone for good: it goes to
-`/music/.Trash-1654/`, which is the freedesktop.org trash for that drive, and a
-scan never looks inside it. To restore a file, move it back out of `files/` in
-that folder; to free the space, empty the folder.
+`/music` is mounted writable, and four things an admin can do need that: editing
+album art, **uploads** and the moves and re-tags that follow them (see "Songs
+that start on a device" below), **Remove from Library** with "also delete the
+files" ticked, and cleaning up removed songs. The server runs as uid `1654`, so
+that user needs write access to the folder — `sudo chown -R 1654 /srv/music`, or
+the `user:` line in `docker-compose.yml`. Where it can't write, nothing breaks:
+an upload is refused before anything is sent and the device says so in its log,
+and a removed song still leaves the library with its file left where it was.
+
+If you would rather the server never touch your files, append `:ro` to the
+`/music` line. Everything read-only still works — scanning, streaming, pairing,
+playlists, play counts — and the four things above don't.
+
+A file the server deletes on **Remove from Library** isn't gone for good: it
+goes to `/music/.Trash-1654/`, which is the freedesktop.org trash for that
+drive, and a scan never looks inside it. To restore a file, move it back out of
+`files/` in that folder; to free the space, empty the folder.
+
+### Songs that start on a device
+
+The server's music folder isn't the only way music gets into the library. A
+device you made an **admin** keeps the server's files in step with its own:
+
+- **A song it has that the server doesn't is uploaded**, to the same place under
+  the server's music folder that it has under the device's own —
+  `Artist/Album/01 Song.flac` there is `Artist/Album/01 Song.flac` here. With
+  several library folders configured, uploads go into the first one. If the
+  server already has a *different* file by that name, the upload is refused and
+  both files stay as they were.
+- **A file it moves or renames is moved on the server**, and then on every other
+  device whose copy was filed the same way — downloads always are. Only a change
+  travels: a device that has always filed an album differently from the server
+  doesn't reorganise the server by pairing with it, and isn't reorganised by it.
+- **A tag or a cover it edits reaches everyone.** Edit a song's tags or artwork
+  in Track Info on any admin device — a desktop or a phone, whether the song is
+  a file there, a download, or one it only streams — and the edit goes to the
+  server, is written into the server's file, and from there into every other
+  device's library *and* its copy of the file, if it has one. That includes a
+  listener's devices. The newest edit wins.
+- **A file it changes some other way is sent again** — a re-rip, tags edited in
+  another program — and replaces the server's copy and then every other copy:
+  each device that has the song as a file, downloaded or its own, fetches the
+  new one. The song keeps its plays, its star and its place in playlists.
+- **A song deleted from its disk is removed from the library — everywhere.** The
+  server stops serving it, and every other device drops it on its next sync,
+  including another admin device that has its own copy. Nothing is deleted from
+  any disk by this: the server's file, and any other device's own copy, stay
+  where they are, set aside from the library and from scans, and show up under
+  **Removed Songs** in that machine's settings. A copy a device had merely
+  *downloaded* from the server is the exception — that one is deleted, since it
+  was the server's song on loan.
+- **Date Added is the oldest any of your admin devices knows.** A library that
+  has lived on a desktop for years keeps its dates when the server first scans
+  the same files.
+
+A deletion is only passed on when the device's music folder is still there with
+other files in it. A drive that isn't plugged in, or a folder taken out of the
+device's settings, removes nothing — those songs simply turn into ones the
+device streams from the server.
+
+**Files only travel on your own network** unless you say otherwise. Away from
+home — over a tailnet, a forwarded port, a phone's cellular connection — a
+device still sends and receives deletions, moves, tag edits and covers, which
+are small, but holds its uploads, and the fetching of replaced files, until it
+is back. *Transfer songs when away from home* in the device's settings (off by
+default) lifts that.
+
+A listener's device sends none of this: its files stay its own, deleting one
+changes nothing on the server, and it can't edit the tags or artwork of the
+server's songs at all — only of songs that are purely its own, which stay on
+that device. It still *receives* everything an admin does.
+
+#### Removed Songs, and cleaning up
+
+**Settings → Library → Removed Songs** lists every file that is no longer in the
+library but is still on that machine's disk — on the server (open *Server
+Settings* from an admin device) and on each desktop. Two things can be done with
+them:
+
+- **Restore** puts a song back. On the server, that puts it back for everyone.
+- **Delete Files…** deletes them from disk for good. This is the only thing that
+  ever does: nothing a sync does deletes a file you own. It asks twice.
+
+The server also keeps a record of every song that leaves its library — removed
+by you, or simply no longer found by a scan. If the song comes back (restored
+from Removed Songs, the drive mounted again, a device uploading it), it comes
+back as the same song: same Date Added, same play counts, same star, still in
+the playlists it was in, and back on the other devices that had set their copies
+aside. The record lives in `flower.db` and is kept indefinitely, whether or not
+the file was deleted.
+
+Uploads are staged in `/data/uploads` until every byte has arrived and been
+checked, so an interrupted upload resumes rather than restarting, and a
+half-sent file never appears in your music folder.
 
 ### Why `/data` is a named volume
 
