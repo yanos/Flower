@@ -65,7 +65,17 @@ public sealed class AlbumArtEditor(
         return [.. tracks.Select(CatalogIdentity.AlbumIdFor).Distinct(StringComparer.Ordinal)];
     }
 
-    public bool CanWrite => LocalTargets().Count > 0 || ServerAlbumIds().Count > 0;
+    // Somewhere to write - and, for a song of the paired server's, the right
+    // to (SyncRolePolicy.MayEditSong): a cover is changed for everybody, so on
+    // a guest's device the server's songs are not this to change, downloaded
+    // copy or not.
+    public bool CanWrite =>
+        tracks.All(MayEdit) && (LocalTargets().Count > 0 || ServerAlbumIds().Count > 0);
+
+    private bool MayEdit(Track track) =>
+        SyncRolePolicy.MayEditSong(
+            track, settings.PairedServerFingerprint,
+            peerTrackResolver?.Resolve(track)?.WeAreAdmin ?? settings.PairedServerGrantsAdmin);
 
     // Embeds a picture in the tracks' own files, or - when they only exist on
     // the paired server - asks that server to do the same to its

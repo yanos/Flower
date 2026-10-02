@@ -1,3 +1,5 @@
+using Flower.Models;
+
 namespace Flower.Services;
 
 // Pure decision logic for who this device is allowed to talk to - see
@@ -26,4 +28,22 @@ public static class SyncRolePolicy
         !string.IsNullOrEmpty(peerFingerprint) &&
         !string.IsNullOrEmpty(pairedServerFingerprint) &&
         peerFingerprint == pairedServerFingerprint;
+
+    // Whether a song is one of the paired server's - a placeholder, a
+    // download, or a file of this device's own that the server also has. The
+    // library is the server's; what a device holds of it is a copy.
+    public static bool IsServersSong(Track track, string? pairedServerFingerprint) =>
+        track.OriginTrackId is { Length: > 0 } && MayRequestFrom(pairedServerFingerprint, track.OriginDeviceFingerprint);
+
+    // Whether this device may edit a song - its tags, its artwork.
+    //
+    // A song that is only this device's own is this device's to edit, given a
+    // file to write the edit into. A song of the server's is edited for
+    // everybody - the edit goes to the server and from there to every device's
+    // copy - so it is an administrator's to edit and nobody else's, whether or
+    // not this device happens to hold a file of it. A guest who could retitle
+    // their downloaded copy would have a title nobody else sees and the next
+    // sync takes away.
+    public static bool MayEditSong(Track track, string? pairedServerFingerprint, bool administersPairedServer) =>
+        IsServersSong(track, pairedServerFingerprint) ? administersPairedServer : track.Path != null;
 }

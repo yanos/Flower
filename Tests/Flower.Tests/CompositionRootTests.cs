@@ -85,6 +85,7 @@ public class CompositionRootTests : PinnedDataDirectory
             typeof(NetworkDiscoveryService), typeof(PlaylistSyncService),
             typeof(LibrarySyncService), typeof(LibraryDownloadService), typeof(PeerPairingService),
             typeof(PairedServerReachability), typeof(PeerTrackResolver),
+            typeof(LibraryMirrorService),
         }.Select(t => new object[] { t });
 
     [Theory]
@@ -272,7 +273,7 @@ public class CompositionRootTests : PinnedDataDirectory
             typeof(LibrarySyncService), typeof(LibraryDownloadService), typeof(PeerPairingService),
             typeof(PairedServerReachability), typeof(PeerTrackResolver),
             typeof(IStreamUrlResolver), typeof(ICoverArtUrlResolver), typeof(IPeerCredentials),
-            typeof(LibraryRemovalService),
+            typeof(LibraryRemovalService), typeof(LibraryMirrorService),
         ];
 
         var services = new ServiceCollection()

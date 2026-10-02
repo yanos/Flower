@@ -246,6 +246,9 @@ public partial class App : Application
                     sp.GetRequiredService<ILogger<Library>>(),
                     OperatingSystem.IsBrowser() ? null : sp.GetRequiredService<TrackRepository>(),
                     sp.GetRequiredService<PlaylistRepository>(),
+                    sp.GetRequiredService<TrackRepository>(),
+                    // Kept in a tab too, like the exclusions: a few rows, and
+                    // harmless where nothing persists.
                     sp.GetRequiredService<TrackRepository>());
 
                 // The app's answer to "is this placeholder's origin still
@@ -374,6 +377,10 @@ public partial class App : Application
             // "Remove from Library" - here because a song the paired server
             // serves is removed there first, which needs the peer stack.
             .AddSingleton<LibraryRemovalService>()
+            // The other direction of the same idea: this device's own files
+            // going to the server, and its own deletions following them there.
+            // Does nothing unless the server made this device an admin.
+            .AddSingleton<LibraryMirrorService>()
             // How this device proves who it is to a peer, for every signed call
             // into one (see IPeerCredentials). On this branch because it needs
             // the signing key, which the browser head has no way to produce.

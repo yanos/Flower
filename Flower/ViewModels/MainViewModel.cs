@@ -75,6 +75,19 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public string? PairedServerSourceName(IReadOnlyList<Track> tracks) =>
         AlbumArtEditor.PairedServerSourceName(tracks, _appSettings);
 
+    // Whether Track Info may edit this song - see SyncRolePolicy.MayEditSong
+    // for the rule. A song of this device's own, always; a song of the paired
+    // server's, only on a device that server made an administrator, and then
+    // whether or not there is a file of it here: the edit is sent to the
+    // server (LibraryMirrorService.PushTagEditsAsync), written into its file,
+    // and comes back to every device from there. Track Info used to accept an
+    // edit to a song with no file and silently drop it, and to let a guest
+    // retitle a downloaded copy that the next sync then put back.
+    public bool CanEditTagsOf(Track track) =>
+        SyncRolePolicy.MayEditSong(
+            track, _appSettings.PairedServerFingerprint,
+            _reachability?.PairedServerDevice?.WeAreAdmin ?? _appSettings.PairedServerGrantsAdmin);
+
     public void ScheduleContentSync() => Sync.ScheduleContentSync();
 
     public ICommand? OpenAppDataLocationCommand  { get; private set; }
@@ -228,6 +241,27 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             _appSettings.ShareLogsWithPairedServer = value;
             OnPropertyChanged();
             SaveSettings();
+        }
+    }
+
+    // Whether this device uploads its own songs to its paired server over a
+    // connection that is not the server's local network - off by default. See
+    // AppSettings.UploadWhenAwayFromHome. Persist-immediately, same as above.
+    public bool UploadWhenAwayFromHome
+    {
+        get => _appSettings.UploadWhenAwayFromHome;
+        set
+        {
+            if (_appSettings.UploadWhenAwayFromHome == value)
+                return;
+            _appSettings.UploadWhenAwayFromHome = value;
+            OnPropertyChanged();
+            SaveSettings();
+
+            // Turning it on is a reason to go and look: the songs that were
+            // waiting for home can go now.
+            if (value)
+                ScheduleContentSync();
         }
     }
 
@@ -1525,7 +1559,10 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         // Trailing + defaulted for the same reason: only a cover change on a
         // server's song signs with it (ArtEditorFor). The container hands in
         // whichever this head has - a device key, or the browser's pairing.
-        IPeerCredentials? peerCredentials = null)
+        IPeerCredentials? peerCredentials = null,
+        // Trailing + defaulted like the rest of the sync stack: only a head
+        // with files of its own and a server to send them to has one.
+        LibraryMirrorService? libraryMirrorService = null)
     {
         Library                = library;
         SmartPlaylists         = smartPlaylists;
@@ -1625,7 +1662,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             AppLogging.CreateTypedLogger<PeerSyncCoordinator>(),
             networkDiscovery, reachability, playlistSyncService, librarySyncService,
             libraryDownloadService, peerPairingService, peerTrackResolver, trustedPeerStore, deviceIdentity, signingKey,
-            Library);
+            Library, libraryMirrorService);
 
         _deviceSidebar = new DeviceSidebarSection(_sidebarItems, this, deviceNicknameStore, reachability, networkDiscovery);
 
@@ -1821,6 +1858,26 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         if (librarySyncService != null)
             _subscriptions.Add<EventHandler<PeerTrustRejectedEventArgs>>(HandlePeerTrustRejected,
                 h => librarySyncService.PeerTrustRejected += h, h => librarySyncService.PeerTrustRejected -= h);
+
+        // An upload round in the status bar, where a rescan and a download
+        // batch already say what they are doing. It can run for as long as an
+        // album takes to cross the network, and a spinner beside the server's
+        // name with no words next to it reads as a sync that has hung.
+        if (libraryMirrorService != null)
+        {
+            IDisposable? uploadBusy = null;
+            _subscriptions.Add<Action<int, int>>((done, total) => Dispatcher.UIThread.Post(() =>
+            {
+                // The new scope before the old one goes, so the indicator does
+                // not blink off between two songs (see BusyState on nesting).
+                var next = total > 0
+                    ? _busy.BeginScope($"Uploading song {done + 1} of {total} to {PairedServerAlias ?? "your server"}")
+                    : null;
+                uploadBusy?.Dispose();
+                uploadBusy = next;
+            }),
+                h => libraryMirrorService.UploadProgress += h, h => libraryMirrorService.UploadProgress -= h);
+        }
         _subscriptions.Add<PropertyChangedEventHandler>((_, e) =>
         {
             if (e.PropertyName == nameof(PlaylistControlViewModel.SelectedTrack))

@@ -120,6 +120,17 @@ namespace Flower.Persistence
         // request starts unconfirmed again).
         public bool PairedServerTrustConfirmed { get; set; }
 
+        // Whether the paired server last said this device is one of its
+        // administrators (DiscoveredDevice.WeAreAdmin, from /info). Remembered
+        // rather than only read live, because what it gates has to be decided
+        // offline too: whether this device may edit the server's songs at all
+        // (SyncRolePolicy.MayEditSong) is asked the moment Track Info opens,
+        // server in reach or not, and an owner's phone on a plane is still the
+        // owner's phone. Display and local-edit policy only - the server
+        // re-checks on every request, so a device that lies to itself about
+        // this gains nothing there.
+        public bool PairedServerGrantsAdmin { get; set; }
+
         // When a bulk sync with PairedServerFingerprint last actually succeeded.
         // Persisted rather than kept in memory because the question it answers -
         // "is what I'm looking at current?" - is asked right after a relaunch as
@@ -163,6 +174,24 @@ namespace Flower.Persistence
         // nothing else in the sync protocol exposes. Anyone who would rather
         // not hand that over, even to their own server, can say so.
         public bool ShareLogsWithPairedServer { get; set; } = true;
+
+        // Whether an admin device sends its own files to the paired server
+        // when it is reaching that server from somewhere other than the
+        // server's own network - over a tailnet, a forwarded port, a phone's
+        // cellular connection (see LibraryMirrorService).
+        //
+        // Off by default. On the LAN an upload is free and fast, and happens
+        // without anyone asking; away from it the same upload is an album's
+        // worth of somebody's data plan, or an afternoon over a relayed link,
+        // and that is a thing to opt into rather than discover on a bill.
+        // Nothing is lost by leaving it off: the files wait, and go up the
+        // next time the device is home.
+        //
+        // Only the files - in either direction: a new version of a song that
+        // this device has a copy of is fetched under the same rule. Telling
+        // the server a song was deleted, moved or retagged, or sending it a
+        // cover, is small, and goes over whatever connection there is.
+        public bool UploadWhenAwayFromHome { get; set; }
 
         // Log viewer preferences, remembered between launches the same way
         // IsRepeatEnabled/IsShuffleEnabled are - see LogViewerViewModel. Shared

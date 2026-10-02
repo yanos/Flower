@@ -127,9 +127,52 @@ public class LibrarySyncService
     public virtual bool CausedPeerLibraryToken(string fingerprint, string token) =>
         !string.IsNullOrEmpty(token) && _tokensThisDeviceCaused.GetValueOrDefault(fingerprint) == token;
 
+    // The other thing this device does that moves a peer's token: handing it a
+    // file (see LibraryMirrorService). Recorded for the reason a track-state
+    // report's is - an upload of a hundred songs is a hundred token changes,
+    // and each would otherwise read as news worth a whole catalog.
+    public void NoteLibraryTokenCausedHere(string fingerprint, string? token)
+    {
+        if (!string.IsNullOrEmpty(fingerprint) && !string.IsNullOrEmpty(token))
+            _tokensThisDeviceCaused[fingerprint] = token;
+    }
+
+    // Whether what this device holds about that peer's catalog is what the
+    // peer last served, merged against the library as it is now. False before
+    // the first pull of a session, and false again once the library changes
+    // underneath it.
+    //
+    // It is what stands between "a file the server does not have" and "a file
+    // nobody has asked the server about yet". Both look the same on the track -
+    // no origin - and only the first is something to upload.
+    public virtual bool HasCurrentCatalogFrom(string fingerprint) =>
+        !string.IsNullOrEmpty(fingerprint) && _lastSeenTokens.ContainsKey(fingerprint);
+
+    // Set around this service's own merge, on the thread doing it - which is
+    // the thread Library raises LibraryChanged on, synchronously - so the
+    // handler below can tell that change from everyone else's.
+    [ThreadStatic]
+    private static bool t_mergingPulledCatalog;
+
+    // A scan found files, or songs were removed: whatever was matched against
+    // the peer's catalog was matched against a library that no longer exists.
+    // Forgetting the tokens makes the next pull a real one rather than a 304,
+    // which is what re-runs the matching - a rescan's new files are compared
+    // with what the server has before any of them is offered to it.
+    private void OnLibraryChanged(object? sender, EventArgs e)
+    {
+        if (!t_mergingPulledCatalog)
+            _lastSeenTokens.Clear();
+    }
+
     private readonly Library _library;
     private readonly DeviceIdentity _deviceIdentity;
     private readonly IPeerCredentials _credentials;
+
+    // Kept for the one thing here that fetches a whole file - a new version
+    // of a song this device has a copy of (ApplyNewerFilesAsync) - which goes
+    // through PeerMediaClient like any other download.
+    private readonly DeviceSigningKey _signingKey;
     private readonly AppSettings _appSettings;
     private readonly ServerStarBaselineStore _starBaselines;
     private readonly DeviceLogArchive _logArchive;
@@ -153,11 +196,16 @@ public class LibrarySyncService
         // one would build it from exactly these three, which the container
         // already hands this service.
         _credentials = new SignedDeviceCredentials(deviceIdentity, signingKey);
+        _signingKey = signingKey;
         _appSettings = appSettings;
         _starBaselines = starBaselines;
         _logArchive = logArchive;
         _logger = logger;
         _importerLogger = importerLogger;
+
+        // For the life of the library, which is the life of this service: both
+        // are singletons of the same container.
+        library.LibraryChanged += OnLibraryChanged;
     }
 
     // Virtual for the same reason PeerTrackResolver.Resolve is: it is the seam
@@ -176,6 +224,7 @@ public class LibrarySyncService
             device.Alias, device.Fingerprint, device.BaseUri);
 
         List<Track> placeholders;
+        IReadOnlySet<string> removedAtServer;
         string? servedToken;
         int fetchedCount;
         try
@@ -196,10 +245,15 @@ public class LibrarySyncService
             {
                 _logger.LogTrace("Library sync with {Alias}: catalog unchanged since {Token}, nothing to merge",
                     device.Alias, fetch.ETag);
+                // Nothing new to merge - but a new version of a file that was
+                // held back for home last time is still owed, and this may be
+                // home.
+                await ApplyNewerFilesAsync(device, []);
                 return new LibrarySyncResult(true, 0, 0, Unchanged: true);
             }
 
             placeholders = fetch.Tracks;
+            removedAtServer = fetch.RemovedIds;
             servedToken = fetch.ETag;
             fetchedCount = placeholders.Count;
         }
@@ -224,8 +278,52 @@ public class LibrarySyncService
         // yet) must still prune every not-yet-downloaded placeholder this
         // device previously learned from it - see Library.MergeSyncedTracks.
         var beforeCount = _library.Tracks.Count;
-        var removedCount = _library.MergeSyncedTracks(
-            device.Fingerprint, placeholders, _starBaselines.Load(device.Fingerprint));
+        // Copies this device downloaded of songs the server has since removed.
+        // The merge below takes each out of the library and sets its file
+        // aside, as it does for any removed song - and for a download that is
+        // one step short. The file was never this device's own, only the
+        // server's song lent, and the server still has the original set aside
+        // for its owner to restore or delete; so the lent copy just goes,
+        // rather than sit on a phone that has no screen to clean it up from.
+        var lentAndRemoved = removedAtServer.Count == 0
+            ? []
+            : _library.Tracks
+                .Where(t => t is { IsLocallyDownloaded: true, Path: not null, OriginTrackId: not null }
+                            && t.OriginDeviceFingerprint == device.Fingerprint
+                            && removedAtServer.Contains(t.OriginTrackId))
+                .Select(t => t.Path!)
+                .ToList();
+
+        // What the server has changed about songs this device holds a file
+        // of - newer tags, newer artwork, a file moved - collected by the
+        // merge and carried out just below.
+        var fileWork = new SyncedFileWork();
+
+        int removedCount;
+        t_mergingPulledCatalog = true;
+        try
+        {
+            // An admin device keeps the older Date Added and tells the server
+            // (PushTrackStateAsync below), and lets go of its own copy of a
+            // song the server says was removed; everyone else mirrors the
+            // server's dates and keeps the files they imported themselves.
+            removedCount = _library.MergeSyncedTracks(
+                device.Fingerprint, placeholders, _starBaselines.Load(device.Fingerprint),
+                ownersDevice: device.WeAreAdmin, removedAtSource: removedAtServer,
+                fileWork: fileWork);
+        }
+        finally
+        {
+            t_mergingPulledCatalog = false;
+        }
+
+        DeleteLentCopies(lentAndRemoved);
+        ApplyMoves(fileWork.Moved);
+        await ApplyNewerFilesAsync(device, fileWork.NewerFile);
+        ApplyNewerTags(fileWork.NewerTags);
+        await ApplyNewerArtAsync(device, fileWork.NewerArt);
+        foreach (var track in fileWork.StaleArt)
+            AlbumArtLoader.Invalidate(track);
         // What the server said, now the baseline for the next pull - including
         // the tracks just merged the other way, whose local star the push below
         // is about to report and ApplyAsync will then record as agreed.
@@ -282,6 +380,314 @@ public class LibrarySyncService
             await PushLogSnapshotAsync(device);
 
         return new LibrarySyncResult(true, fetchedCount, addedCount);
+    }
+
+    // A file the server moved, moved here too - when this device's copy sat at
+    // the same place below its own folder that the server's did below its.
+    // That is the case for anything this device downloaded and for a library
+    // that mirrors the server's layout, and it is the only case in which
+    // "the same move" means anything: a copy this device has always filed
+    // somewhere else stays where its owner put it.
+    //
+    // The folder is found from the path itself - whatever is left of it once
+    // the server's old relative path is taken off the end - so this needs no
+    // list of library folders and works the same for a scanned file and for a
+    // download, which live in different places.
+    private void ApplyMoves(IReadOnlyList<(Track Local, string From, string To)> moves)
+    {
+        var comparison = OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        var moved = 0;
+        foreach (var (local, from, to) in moves)
+        {
+            if (local.Path is not { } path)
+                continue;
+
+            var suffix = "/" + from;
+            var normalized = path.Replace('\\', '/');
+            if (!normalized.EndsWith(suffix, comparison))
+                continue;
+
+            var root = path[..^from.Length].TrimEnd('/', '\\');
+            var target = System.IO.Path.Combine([root, .. to.Split('/')]);
+            try
+            {
+                // Nothing is overwritten. A name already taken here is a file
+                // of this device's that the server knows nothing about.
+                if (System.IO.File.Exists(target) || !System.IO.File.Exists(path))
+                    continue;
+
+                System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(target)!);
+                System.IO.File.Move(path, target);
+                _library.MoveTrack(local, target);
+                LibraryFolders.RemoveEmptyFolders(System.IO.Path.GetDirectoryName(path), root);
+                moved++;
+            }
+            catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException)
+            {
+                _logger.LogWarning(ex, "Could not move {Path} to follow the server's copy", LogPath.Short(path));
+            }
+        }
+
+        if (moved > 0)
+            _logger.LogInformation("Moved {Count} file(s) on this device to where the server now keeps them", moved);
+    }
+
+    // New versions this device still has to fetch, per server: found by a
+    // merge, and either fetched then or held here until the device is on the
+    // server's network. Kept across syncs because the merge that found them
+    // will not run again until the catalog next changes - an unchanged catalog
+    // is a 304, and a file that was waiting for home would wait for ever.
+    private readonly ConcurrentDictionary<string, List<(Track Local, Track Remote)>> _filesOwed = new();
+
+    // A song's file was replaced on the server by a new version, and this
+    // device has a copy of the old one: the new one is downloaded and put
+    // where the copy was, so that every copy of a song is the same file. A
+    // download or a file of this device's own alike - what a device holds of a
+    // server's song is a copy either way.
+    //
+    // A file is megabytes, so this keeps the rule uploads keep: on the
+    // server's own network, unless the user has said that files may travel
+    // from anywhere (AppSettings.UploadWhenAwayFromHome). Anything held back
+    // is fetched by the first sync that finds the device home.
+    //
+    // Not over a change of this device's own that is still waiting to go up.
+    // That copy is itself a newer version, about to replace the server's; the
+    // one made last wins, as it does for everything else here.
+    private async Task ApplyNewerFilesAsync(DiscoveredDevice device, IReadOnlyList<(Track Local, Track Remote)> found)
+    {
+        var owed = _filesOwed.GetOrAdd(device.Fingerprint, _ => []);
+        List<(Track Local, Track Remote)> pending;
+        lock (owed)
+        {
+            // The newest finding about a song replaces an older one.
+            foreach (var item in found)
+            {
+                owed.RemoveAll(o => o.Local.Id == item.Local.Id);
+                owed.Add(item);
+            }
+
+            pending = [.. owed];
+        }
+
+        if (pending.Count == 0)
+            return;
+
+        if (!LibraryMirrorService.IsOnLocalNetwork(device) && !_appSettings.UploadWhenAwayFromHome)
+        {
+            _logger.LogDebug("{Count} song(s) have a new version on {Alias}; waiting for its network to fetch them", pending.Count, device.Alias);
+            return;
+        }
+
+        var client = PeerMediaClientFactory.Create(device, _deviceIdentity, _appSettings, _signingKey);
+        var importer = new Flower.Importer.Importer(AppLogging.CreateTypedLogger<Flower.Importer.Importer>());
+        var replaced = 0;
+        foreach (var (local, remote) in pending)
+        {
+            var settled = true;
+            try
+            {
+                settled = await ReplaceWithNewerFileAsync(device, client, importer, local, remote);
+                if (settled)
+                    replaced++;
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.IO.IOException or UnauthorizedAccessException)
+            {
+                // Still owed. The part that arrived is kept, and the next
+                // attempt picks up from it (PeerMediaClient).
+                settled = false;
+                _logger.LogWarning(ex, "Could not fetch the new version of {Title} from {Alias}; will try again", local.Title, device.Alias);
+            }
+
+            if (settled)
+            {
+                lock (owed)
+                    owed.RemoveAll(o => o.Local.Id == local.Id);
+            }
+        }
+
+        if (replaced > 0)
+            _logger.LogInformation("Replaced {Count} file(s) on this device with the newer versions on {Alias}", replaced, device.Alias);
+    }
+
+    // True when there is nothing more to do about this song - replaced, or no
+    // longer something to replace.
+    private async Task<bool> ReplaceWithNewerFileAsync(
+        DiscoveredDevice device, PeerMediaClient client, Flower.Importer.Importer importer, Track local, Track remote)
+    {
+        var current = _library.Tracks.FirstOrDefault(t => t.Id == local.Id);
+        if (current?.Path is not { } path || remote.OriginTrackId is not { } id || remote.FileReplacedAt is not { } replacedAt
+            || current.OriginTrackId != id)
+        {
+            return true;
+        }
+
+        if (current.FileReplacedAt is { } have && have >= replacedAt)
+            return true;
+
+        // This device's own change to the file, not yet sent: see above.
+        if (device.WeAreAdmin && !current.IsLocallyDownloaded
+            && current.OriginFileStamp is { } sent && LibraryMirrorService.StampOf(path) != sent)
+        {
+            return true;
+        }
+
+        // Named for the version, so a part left over from fetching an older
+        // one is never resumed into this one.
+        var incoming = $"{path}.{replacedAt.UtcTicks}.incoming";
+        await client.DownloadTrackAsync(id, incoming);
+        System.IO.File.Move(incoming, path, overwrite: true);
+
+        // Read back the way a scan would, because that is what it now is: a
+        // different file at a path the library already knows. Everything the
+        // library knew about the song carries over; its tags, its length and
+        // its format are the new file's.
+        if (importer.ImportFile(path) is not { } scanned)
+        {
+            _logger.LogWarning("The new version of {Path} from {Alias} could not be read", LogPath.Short(path), device.Alias);
+            return false;
+        }
+
+        t_mergingPulledCatalog = true;
+        try
+        {
+            _library.AddScannedTrack(
+                scanned, tagsEditedAt: remote.TagsEditedAt, artEditedAt: remote.ArtEditedAt,
+                fileReplacedAt: replacedAt, fileStamp: LibraryMirrorService.StampOf(path));
+        }
+        finally
+        {
+            t_mergingPulledCatalog = false;
+        }
+
+        AlbumArtLoader.Invalidate(scanned);
+        return true;
+    }
+
+    private const string CoverArtPath = "/api/flower/v1/cover-art";
+
+    // Artwork somebody changed on another device, fetched from the server and
+    // put into this device's own copies of those songs. The file first, as for
+    // tags: a song told about a picture its file never got would be offered it
+    // by no later pull.
+    private async Task ApplyNewerArtAsync(DiscoveredDevice device, IReadOnlyList<(Track Local, Track Remote)> newer)
+    {
+        if (newer.Count == 0)
+            return;
+
+        var applied = new List<(Track Track, DateTimeOffset EditedAt, string? FileStamp)>();
+        foreach (var (local, remote) in newer)
+        {
+            if (local.Path is not { } path || remote.ArtEditedAt is not { } editedAt || remote.OriginTrackId is not { } id)
+                continue;
+
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, device.Url($"{CoverArtPath}?id={Uri.EscapeDataString(id)}"));
+                await request.AddPeerCredentialsAsync(_credentials, []);
+                using var response = await Http.SendAsync(request);
+
+                // No picture there is an answer too: it was removed.
+                bool written;
+                if (response.StatusCode == HttpStatusCode.NotFound)
+                {
+                    written = AlbumArtWriter.TryRemove(path, _logger);
+                }
+                else
+                {
+                    response.EnsureSuccessStatusCode();
+                    var bytes = await response.Content.ReadAsByteArrayAsync();
+                    var mimeType = LocalAlbumArtReader.MimeTypeForBytes(bytes)
+                                   ?? response.Content.Headers.ContentType?.MediaType ?? "image/jpeg";
+                    written = TrackArtwork.Same(LocalAlbumArtReader.EmbeddedIn(path), new LocalAlbumArt(bytes, mimeType))
+                              || AlbumArtWriter.TryWrite(path, bytes, mimeType, _logger);
+                }
+
+                if (!written)
+                    continue;
+
+                applied.Add((local, editedAt, LibraryMirrorService.StampOf(path)));
+                AlbumArtLoader.Invalidate(local);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.IO.IOException)
+            {
+                // Left as it was, and offered again by the next pull.
+                _logger.LogDebug(ex, "Could not fetch newer artwork for {Path}", LogPath.Short(path));
+            }
+        }
+
+        _library.ApplySyncedArt(applied);
+        if (applied.Count > 0)
+            _logger.LogInformation("Applied artwork changed on another device to {Count} song(s) on this one", applied.Count);
+    }
+
+    // Tags somebody edited on another device, written into this device's own
+    // copies of those songs - the last leg of an edit's journey: device,
+    // server, every other device.
+    //
+    // The file first. Its tags are what the next scan reads, so a library
+    // told about an edit its file never got would lose the edit at the next
+    // launch and - having recorded it as received - never be offered it
+    // again. A file that cannot be written is therefore left entirely alone,
+    // and is offered the same tags by the next pull.
+    private void ApplyNewerTags(IReadOnlyList<(Track Local, Track Remote)> newer)
+    {
+        if (newer.Count == 0)
+            return;
+
+        var applied = new List<(Track Track, TrackTagsDto Tags, DateTimeOffset EditedAt, string? FileStamp)>();
+        foreach (var (local, remote) in newer)
+        {
+            if (local.Path is not { } path || remote.TagsEditedAt is not { } editedAt)
+                continue;
+
+            var tags = TrackTags.Of(remote);
+            try
+            {
+                // Already what the file says - this device made the edit, or
+                // both made the same one. Only the date is news.
+                if (TrackTags.Of(local) != tags)
+                    TrackTags.WriteToFile(path, tags);
+
+                // What the file looks like now. Writing tags into it changed
+                // it, and it has not thereby become something to upload.
+                applied.Add((local, tags, editedAt, LibraryMirrorService.StampOf(path)));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not write the server's newer tags into {Path}; will try again on the next sync", LogPath.Short(path));
+            }
+        }
+
+        _library.ApplySyncedTags(applied);
+        if (applied.Count > 0)
+            _logger.LogInformation("Applied tags edited on another device to {Count} song(s) on this one", applied.Count);
+    }
+
+    private void DeleteLentCopies(IReadOnlyList<string> paths)
+    {
+        var deleted = new List<string>();
+        foreach (var path in paths)
+        {
+            // Only what the merge actually set aside: a download the merge
+            // kept, for whatever reason, is not this method's to second-guess.
+            if (!_library.IsExcludedPath(path))
+                continue;
+
+            try
+            {
+                System.IO.File.Delete(path);
+                deleted.Add(path);
+            }
+            catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException)
+            {
+                // Stays set aside, which is still out of the library.
+                _logger.LogDebug(ex, "Could not delete the downloaded copy at {Path} of a song the server removed", LogPath.Short(path));
+            }
+        }
+
+        _library.ForgetExcludedPaths(deleted);
+        if (deleted.Count > 0)
+            _logger.LogInformation("Deleted {Count} downloaded copy(ies) of songs the server removed", deleted.Count);
     }
 
     // What this device knows about the server's tracks that the server does
@@ -434,16 +840,17 @@ public class LibrarySyncService
         bool RememberPlaybackPosition,
         TimeSpan? ResumePosition,
         bool IgnoreWhenShuffling,
-        int VolumeAdjustment)
+        int VolumeAdjustment,
+        DateTimeOffset? DateAdded = null)
     {
         public static TrackStateSnapshot Of(Track track) => new(
             track.LastPlayedAt, track.Starred, track.RememberPlaybackPosition,
-            track.ResumePosition, track.IgnoreWhenShuffling, track.VolumeAdjustment);
+            track.ResumePosition, track.IgnoreWhenShuffling, track.VolumeAdjustment, track.DateAdded);
 
         public static TrackStateSnapshot Of(TrackStateDto entry) => new(
             entry.LastPlayedAt, entry.Starred, entry.RememberPlaybackPosition,
             entry.ResumePositionSeconds is { } seconds ? TimeSpan.FromSeconds(seconds) : null,
-            entry.IgnoreWhenShuffling, entry.VolumeAdjustment);
+            entry.IgnoreWhenShuffling, entry.VolumeAdjustment, entry.DateAdded);
 
         // Would telling the server this actually move it? Deliberately not
         // `!=` against what it served: the two sides have to agree about what
@@ -461,7 +868,14 @@ public class LibrarySyncService
             || IgnoreWhenShuffling != served.IgnoreWhenShuffling
             || VolumeAdjustment != served.VolumeAdjustment
             || MovesListeningForward(served)
-            || MovesPositionWithinTheSameListen(served);
+            || MovesPositionWithinTheSameListen(served)
+            || MovesDateAddedBack(served);
+
+        // The mirror image of the listening rule below: Date Added is a
+        // low-water mark there, so only an older one is news. A device that
+        // met the song later than the server did has nothing to add.
+        private bool MovesDateAddedBack(TrackStateSnapshot served) =>
+            DateAdded is { } mine && served.DateAdded is { } theirs && mine < theirs;
 
         // LastPlayedAt is a high-water mark there, so only a later one is
         // news - and a device that has never played the track has no opinion
@@ -554,7 +968,7 @@ public class LibrarySyncService
                     originTrackId, total,
                     track.LastPlayedAt, track.Starred, track.StarredAt,
                     track.RememberPlaybackPosition, track.ResumePosition?.TotalSeconds,
-                    track.IgnoreWhenShuffling, track.VolumeAdjustment)
+                    track.IgnoreWhenShuffling, track.VolumeAdjustment, track.DateAdded)
                 : new TrackStateDto(originTrackId, total));
         }
 
@@ -569,12 +983,46 @@ public class LibrarySyncService
     private void SeedKnownServerState(string peerFingerprint, IReadOnlyList<Track> served)
     {
         var known = _knownServerState.GetOrAdd(peerFingerprint, _ => new ConcurrentDictionary<string, TrackStateSnapshot>());
+        var tagEdits = new ConcurrentDictionary<string, DateTimeOffset>();
+        var artEdits = new ConcurrentDictionary<string, DateTimeOffset>();
         foreach (var track in served)
         {
-            if (track.OriginTrackId is { Length: > 0 } originTrackId)
-                known[originTrackId] = TrackStateSnapshot.Of(track);
+            if (track.OriginTrackId is not { Length: > 0 } originTrackId)
+                continue;
+
+            known[originTrackId] = TrackStateSnapshot.Of(track);
+            if (track.TagsEditedAt is { } editedAt)
+                tagEdits[originTrackId] = editedAt;
+            if (track.ArtEditedAt is { } repaintedAt)
+                artEdits[originTrackId] = repaintedAt;
         }
+
+        // Replaced whole, unlike the state above: a song absent from here is
+        // one the server has no edit for, and that is an answer too.
+        _knownServerTagEdits[peerFingerprint] = tagEdits;
+        _knownServerArtEdits[peerFingerprint] = artEdits;
     }
+
+    // The same for artwork.
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, DateTimeOffset>> _knownServerArtEdits = new();
+
+    public virtual DateTimeOffset? ServerArtEditedAt(string fingerprint, string trackId) =>
+        _knownServerArtEdits.TryGetValue(fingerprint, out var edits) && edits.TryGetValue(trackId, out var at) ? at : null;
+
+    public virtual void NoteServerArtEditedAt(string fingerprint, string trackId, DateTimeOffset editedAt) =>
+        _knownServerArtEdits.GetOrAdd(fingerprint, _ => new ConcurrentDictionary<string, DateTimeOffset>())[trackId] = editedAt;
+
+    // How new the tags are that a server holds for each of its songs, as of
+    // the last catalog it served and whatever this device has sent it since.
+    // What LibraryMirrorService compares a local edit against, to tell one
+    // still owed to the server from one the server already has.
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, DateTimeOffset>> _knownServerTagEdits = new();
+
+    public virtual DateTimeOffset? ServerTagsEditedAt(string fingerprint, string trackId) =>
+        _knownServerTagEdits.TryGetValue(fingerprint, out var edits) && edits.TryGetValue(trackId, out var at) ? at : null;
+
+    public virtual void NoteServerTagsEditedAt(string fingerprint, string trackId, DateTimeOffset editedAt) =>
+        _knownServerTagEdits.GetOrAdd(fingerprint, _ => new ConcurrentDictionary<string, DateTimeOffset>())[trackId] = editedAt;
 
     // Per-peer, in-memory, and per-track: the highest total this device has
     // successfully told that peer, and the last thing that peer said about the

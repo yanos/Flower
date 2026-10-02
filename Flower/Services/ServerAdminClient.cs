@@ -130,12 +130,62 @@ public sealed class ServerAdminClient(
         LibraryRemovalRequestDto request, CancellationToken ct = default) =>
         SendAsync<LibraryRemovalResponseDto>(HttpMethod.Post, "/api/admin/library/remove", request, ct);
 
+    // The two halves of handing the server a file - see LibraryIngest for the
+    // server's side of each and LibraryMirrorService for what drives them.
+    public Task<LibraryUploadStatusDto> BeginUploadAsync(
+        LibraryUploadRequestDto request, CancellationToken ct = default) =>
+        SendAsync<LibraryUploadStatusDto>(HttpMethod.Post, "/api/admin/library/uploads", request, ct);
+
+    public async Task<LibraryUploadStatusDto> UploadChunkAsync(
+        string uploadId, long offset, byte[] chunk, CancellationToken ct = default)
+    {
+        var path = $"/api/admin/library/uploads/{Uri.EscapeDataString(uploadId)}?offset={offset}";
+        var response = await SendAsync(HttpMethod.Put, path, chunk, "application/octet-stream", ct);
+        return await ReadJsonAsync<LibraryUploadStatusDto>(response, "PUT", path, ct);
+    }
+
     public Task<List<RemovedFileDto>> GetRemovedFilesAsync(CancellationToken ct = default) =>
         SendAsync<List<RemovedFileDto>>(HttpMethod.Get, "/api/admin/library/removed", null, ct);
 
     public Task<RestoreRemovedFilesResponseDto> RestoreRemovedFilesAsync(
         RestoreRemovedFilesRequestDto request, CancellationToken ct = default) =>
         SendAsync<RestoreRemovedFilesResponseDto>(HttpMethod.Post, "/api/admin/library/removed/restore", request, ct);
+
+    public Task<DeleteRemovedFilesResponseDto> DeleteRemovedFilesAsync(
+        DeleteRemovedFilesRequestDto request, CancellationToken ct = default) =>
+        SendAsync<DeleteRemovedFilesResponseDto>(HttpMethod.Post, "/api/admin/library/removed/delete", request, ct);
+
+    // An owner's device moved one of its own files; the server's copy follows.
+    public Task<LibraryMoveResponseDto> MoveInLibraryAsync(
+        LibraryMoveRequestDto request, CancellationToken ct = default) =>
+        SendAsync<LibraryMoveResponseDto>(HttpMethod.Post, "/api/admin/library/move", request, ct);
+
+    // Artwork changed on this device, for the songs it was changed on - the
+    // picture as the body, or none at all for a removal.
+    public async Task<LibraryArtEditResponseDto> SetArtworkAsync(
+        IReadOnlyList<string> trackIds, DateTimeOffset editedAt, byte[] bytes, string mimeType, CancellationToken ct = default)
+    {
+        var path = ArtworkPath(trackIds, editedAt);
+        var response = await SendAsync(HttpMethod.Put, path, bytes, mimeType, ct);
+        return await ReadJsonAsync<LibraryArtEditResponseDto>(response, "PUT", path, ct);
+    }
+
+    public async Task<LibraryArtEditResponseDto> RemoveArtworkAsync(
+        IReadOnlyList<string> trackIds, DateTimeOffset editedAt, CancellationToken ct = default)
+    {
+        var path = ArtworkPath(trackIds, editedAt);
+        var response = await SendAsync(HttpMethod.Delete, path, [], null, ct);
+        return await ReadJsonAsync<LibraryArtEditResponseDto>(response, "DELETE", path, ct);
+    }
+
+    private static string ArtworkPath(IReadOnlyList<string> trackIds, DateTimeOffset editedAt) =>
+        $"/api/admin/library/artwork?ids={Uri.EscapeDataString(string.Join(',', trackIds))}"
+        + $"&editedAt={Uri.EscapeDataString(editedAt.ToString("O", System.Globalization.CultureInfo.InvariantCulture))}";
+
+    // Tags edited on this device, for the server to write into its files.
+    public Task<LibraryTagEditsResponseDto> EditTagsAsync(
+        LibraryTagEditsRequestDto request, CancellationToken ct = default) =>
+        SendAsync<LibraryTagEditsResponseDto>(HttpMethod.Post, "/api/admin/library/tags", request, ct);
 
     public Task<AdminLogSliceDto> GetLogAsync(int limit, long after, CancellationToken ct = default) =>
         SendAsync<AdminLogSliceDto>(HttpMethod.Get, $"/api/admin/logs?limit={limit}&after={after}", null, ct);

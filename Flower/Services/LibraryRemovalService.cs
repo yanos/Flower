@@ -80,8 +80,8 @@ public class LibraryRemovalService(
             problems.Add($"{result.FilesNotDeleted.Count} file(s) on this device could not be deleted.");
         // The server removed those songs either way - they are out of its
         // catalog - so a file it could not delete is worth saying, not worth
-        // undoing the removal over. A read-only music folder is the usual
-        // reason: that is how docker-compose.yml mounts it.
+        // undoing the removal over. A music folder the server cannot write to
+        // is the usual reason - mounted read-only, or owned by another user.
         if (serverFilesNotDeleted > 0)
             problems.Add($"{serverFilesNotDeleted} file(s) on the server could not be deleted - its music folder may be read-only.");
 

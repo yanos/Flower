@@ -49,6 +49,10 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
     private readonly Library? _library;
     private readonly LibrarySyncService? _librarySyncService;
     private readonly LibraryDownloadService? _libraryDownloadService;
+
+    // The half of sync that moves this device's own files towards the server,
+    // for a device the server made an admin - see LibraryMirrorService.
+    private readonly LibraryMirrorService? _libraryMirrorService;
     private readonly PeerPairingService? _peerPairingService;
     private readonly PeerTrackResolver? _peerTrackResolver;
 
@@ -81,7 +85,8 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         TrustedPeerStore? trustedPeerStore = null,
         DeviceIdentity? deviceIdentity = null,
         DeviceSigningKey? signingKey = null,
-        Library? library = null)
+        Library? library = null,
+        LibraryMirrorService? libraryMirrorService = null)
     {
         _host                   = host;
         _appSettings            = appSettings;
@@ -93,6 +98,7 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         _playlistSyncService    = playlistSyncService;
         _librarySyncService     = librarySyncService;
         _libraryDownloadService = libraryDownloadService;
+        _libraryMirrorService   = libraryMirrorService;
         _peerPairingService     = peerPairingService;
         _peerTrackResolver      = peerTrackResolver;
         _trustedPeerStore       = trustedPeerStore;
@@ -173,7 +179,95 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
     // since a playlist sync and a library sync run concurrently per peer and
     // the spinner should stay up for the whole overlapping span, not flicker
     // between them.
-    public bool IsSyncing => _activeSyncCount > 0;
+    public bool IsSyncing => _activeSyncCount > 0 || _uploadsInFlight > 0;
+
+    // Rounds of LibraryMirrorService.UploadPendingAsync in flight. Its own
+    // count rather than part of _activeSyncCount, because the two mean
+    // different things to everything that reads them: a merge takes a moment
+    // and its LibraryChanged is this device's own echo, while an upload can
+    // take an afternoon, and a rescan that lands in the middle of one is a
+    // real change that must still schedule a sync (IsMergingOwnSync). Both
+    // keep the spinner up.
+    private int _uploadsInFlight;
+
+    // Tells the server about files that have gone from this device, ahead of
+    // the pull that follows - see LibraryMirrorService.ReportVanishedAsync on
+    // why that order. Never allowed to fail the sync it precedes.
+    private async Task ReportVanishedTracks(DiscoveredDevice device)
+    {
+        if (_libraryMirrorService == null)
+            return;
+
+        try
+        {
+            await _libraryMirrorService.ReportVanishedAsync(device);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not report deleted songs to {Alias}", device.Alias);
+        }
+    }
+
+    // Starts uploading whatever this device has that the server lacks, once a
+    // sync has said what the server has. Not awaited by the sync that starts
+    // it: a round is as long as the files are large, and "Sync Now" should
+    // answer when the catalog is merged, not when the last album has gone up.
+    private void StartUploads(DiscoveredDevice device, LibrarySyncResult result)
+    {
+        if (_libraryMirrorService == null || !result.Success || !device.WeAreAdmin)
+            return;
+
+        _ = UploadPendingAsync(device);
+    }
+
+    // Sends the server the tags edited on this device since it last had them.
+    // Awaited as part of the sync, unlike the uploads: it is one small
+    // request, and "I edited a title and pressed Sync Now" should mean the
+    // title has gone by the time the button says so. Not held up by an upload
+    // round either - an album going up for an hour does not make a retitle
+    // wait an hour.
+    private async Task PushTagEdits(DiscoveredDevice device, LibrarySyncResult result)
+    {
+        if (_libraryMirrorService == null || !result.Success || !device.WeAreAdmin)
+            return;
+
+        try
+        {
+            await _libraryMirrorService.PushTagEditsAsync(device);
+            await _libraryMirrorService.PushArtEditsAsync(device);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not send edited tags and artwork to {Alias}", device.Alias);
+        }
+    }
+
+    private async Task UploadPendingAsync(DiscoveredDevice device)
+    {
+        if (Interlocked.Increment(ref _uploadsInFlight) == 1)
+            Dispatcher.UIThread.Post(NotifyIsSyncingChanged);
+        try
+        {
+            var summary = await _libraryMirrorService!.UploadPendingAsync(device);
+
+            // What the server made of them - its album ids, a Date Added it
+            // had on record from before - and this device's plays of them,
+            // which had nowhere to be reported until the songs had ids there.
+            // One pull for the whole round, tracked like any other so its
+            // merge is not mistaken for a local change.
+            if (summary.Uploaded > 0)
+                RunTrackedSync(() => _librarySyncService?.SyncWithAsync(device) ?? Task.CompletedTask);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Uploading to {Alias} stopped unexpectedly", device.Alias);
+        }
+        finally
+        {
+            if (Interlocked.Decrement(ref _uploadsInFlight) == 0)
+                Dispatcher.UIThread.Post(NotifyIsSyncingChanged);
+        }
+    }
 
     private void RunTrackedSync(Func<Task> syncCall)
     {
@@ -698,6 +792,8 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
     // this.
     private async Task SyncLibraryAndConfirmTrust(DiscoveredDevice device)
     {
+        await ReportVanishedTracks(device);
+
         var result = await (_librarySyncService?.SyncWithAsync(device) ?? Task.FromResult(new LibrarySyncResult(false, 0, 0)));
         if (result.Success)
         {
@@ -707,6 +803,8 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
 
         NoteThrottling(device, result);
         await ResyncPlaylistsIfTracksArrived(device, result);
+        await PushTagEdits(device, result);
+        StartUploads(device, result);
     }
 
     // The playlist sync and the catalog pull start together, so the playlist
@@ -800,6 +898,7 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         _appSettings.PairedServerFingerprint = null;
         _appSettings.PairedServerAlias = null;
         _appSettings.PairedServerTrustConfirmed = false;
+        _appSettings.PairedServerGrantsAdmin = false;
         _appSettings.PairedServerLastSyncedAt = null;
         _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
         NotifyPairingChanged();
@@ -820,9 +919,23 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
     // sync attempt happens to land first.
     public void HandlePeerTrustChanged(DiscoveredDevice device)
     {
-        if (device.Fingerprint != PairedServerFingerprint || device.TrustsUs)
+        if (device.Fingerprint != PairedServerFingerprint)
             return;
-        HandleTrustRevoked(device.Alias, device.Fingerprint);
+
+        if (!device.TrustsUs)
+        {
+            HandleTrustRevoked(device.Alias, device.Fingerprint);
+            return;
+        }
+
+        // The same answer carries whether this device administers the server,
+        // which is remembered for the times the server is not there to ask -
+        // see AppSettings.PairedServerGrantsAdmin.
+        if (_appSettings.PairedServerGrantsAdmin != device.WeAreAdmin)
+        {
+            _appSettings.PairedServerGrantsAdmin = device.WeAreAdmin;
+            _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
+        }
     }
 
     // The 403 counterpart to HandlePeerTrustChanged above - wired to
@@ -966,6 +1079,8 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
             NotifyIsSyncingChanged();
         try
         {
+            await ReportVanishedTracks(device);
+
             var playlistTask = _playlistSyncService?.SyncWithAsync(device, forceInitiator: true) ?? Task.CompletedTask;
             var libraryTask = _librarySyncService?.SyncWithAsync(device) ?? Task.FromResult(new LibrarySyncResult(false, 0, 0));
             await Task.WhenAll(playlistTask, libraryTask);
@@ -978,6 +1093,8 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
             }
             NoteThrottling(device, libraryResult);
             await ResyncPlaylistsIfTracksArrived(device, libraryResult);
+            await PushTagEdits(device, libraryResult);
+            StartUploads(device, libraryResult);
 
             LastForceSyncResult = !libraryResult.Success
                 ? DescribeFailure(libraryResult.Failure, device.Alias)

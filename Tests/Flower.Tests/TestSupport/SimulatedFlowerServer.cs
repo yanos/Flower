@@ -31,6 +31,12 @@ public sealed class SimulatedFlowerServer : IDisposable
     public const string ApplyPath = "/api/flower/v1/playlists/apply";
     public const string TrackStatePath = "/api/flower/v1/track-state";
     public const string RemoveFromLibraryPath = "/api/admin/library/remove";
+    public const string UploadsPath = "/api/admin/library/uploads";
+    public const string MovePath = "/api/admin/library/move";
+    public const string TagsPath = "/api/admin/library/tags";
+    public const string ArtworkPath = "/api/admin/library/artwork";
+    public const string CoverArtPath = "/api/flower/v1/cover-art";
+    public const string DownloadPath = "/api/flower/v1/download";
 
     // The admin surface answers camelCase (AdminEndpoints' own options).
     private static readonly JsonSerializerOptions AdminJson = new(JsonSerializerDefaults.Web);
@@ -63,11 +69,69 @@ public sealed class SimulatedFlowerServer : IDisposable
     public List<string> Requests { get; } = new();
     public int PlaylistApplyCount { get; private set; }
 
-    public SimulatedFlowerServer(IEnumerable<Track> tracks, string fingerprint = "server-fp")
+    // Where this server keeps its music, when a test gives it somewhere - the
+    // folder an upload lands in (LibraryIngest) and the one RelativePath is
+    // relative to. Null leaves the server with paths that name no real file,
+    // which is all most scenarios need.
+    public string? MusicFolder { get; }
+
+    private readonly LibraryIngest? _ingest;
+
+    public SimulatedFlowerServer(IEnumerable<Track> tracks, string fingerprint = "server-fp", string? musicFolder = null)
     {
         Library = new Library(tracks.ToList());
         Fingerprint = fingerprint;
+        MusicFolder = musicFolder;
+        if (musicFolder != null)
+        {
+            Directory.CreateDirectory(musicFolder);
+            _ingest = new LibraryIngest(
+                Library, () => [musicFolder], musicFolder + "-staging",
+                new Flower.Importer.Importer(Microsoft.Extensions.Logging.Abstractions.NullLogger<Flower.Importer.Importer>.Instance),
+                Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance);
+        }
+
         _http = new FakePeerHttpServer(HandleAsync);
+    }
+
+    // AdminEndpoints.ToResult: the outcome as the status a device acts on.
+    private static async Task WriteIngestResultAsync(HttpListenerContext context, IngestResult result)
+    {
+        context.Response.StatusCode = result.Outcome switch
+        {
+            IngestOutcome.Accepted or IngestOutcome.Completed => 200,
+            IngestOutcome.Conflict => 409,
+            IngestOutcome.Unavailable => 503,
+            IngestOutcome.UnknownUpload => 404,
+            IngestOutcome.Corrupt => 422,
+            _ => 400,
+        };
+        var bytes = result.Moved != null
+            ? JsonSerializer.SerializeToUtf8Bytes(result.Moved, AdminJson)
+            : result.Status != null
+                ? JsonSerializer.SerializeToUtf8Bytes(result.Status, AdminJson)
+                : JsonSerializer.SerializeToUtf8Bytes(new { error = result.Error }, AdminJson);
+        context.Response.ContentType = "application/json";
+        context.Response.ContentLength64 = bytes.Length;
+        await context.Response.OutputStream.WriteAsync(bytes);
+    }
+
+    // The admin filter's two refusals, for the upload routes. True when the
+    // request may go on.
+    private bool AdmitsAdmin(HttpListenerContext context)
+    {
+        if (!AdminReachable || _ingest == null)
+        {
+            context.Response.StatusCode = 503;
+            return false;
+        }
+        if (!CallerIsAdmin)
+        {
+            context.Response.StatusCode = 403;
+            return false;
+        }
+
+        return true;
     }
 
     public DiscoveredDevice Device => new()
@@ -141,6 +205,105 @@ public sealed class SimulatedFlowerServer : IDisposable
                     await context.Response.OutputStream.WriteAsync(bytes);
                     return;
                 }
+                case ("POST", UploadsPath):
+                {
+                    if (!AdmitsAdmin(context))
+                        return;
+
+                    using var reader = new StreamReader(context.Request.InputStream);
+                    var request = JsonSerializer.Deserialize<LibraryUploadRequestDto>(await reader.ReadToEndAsync(), AdminJson)!;
+                    await WriteIngestResultAsync(context, await _ingest!.BeginAsync(request));
+                    return;
+                }
+                case ("POST", MovePath):
+                {
+                    if (!AdmitsAdmin(context))
+                        return;
+
+                    using var reader = new StreamReader(context.Request.InputStream);
+                    var request = JsonSerializer.Deserialize<LibraryMoveRequestDto>(await reader.ReadToEndAsync(), AdminJson)!;
+                    await WriteIngestResultAsync(context, await _ingest!.MoveAsync(request));
+                    return;
+                }
+                case ("PUT" or "DELETE", ArtworkPath):
+                {
+                    if (!AdmitsAdmin(context))
+                        return;
+
+                    using var body = new MemoryStream();
+                    await context.Request.InputStream.CopyToAsync(body);
+                    var ids = context.Request.QueryString["ids"]!.Split(',').ToList();
+                    var at = DateTimeOffset.Parse(context.Request.QueryString["editedAt"]!,
+                        System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind);
+                    var art = method == "PUT"
+                        ? new LocalAlbumArt(body.ToArray(), LocalAlbumArtReader.MimeTypeForBytes(body.ToArray()) ?? "image/png")
+                        : null;
+                    var bytes = JsonSerializer.SerializeToUtf8Bytes(
+                        TrackArtwork.ApplyEdit(Library, ids, at, art, Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance), AdminJson);
+                    context.Response.ContentType = "application/json";
+                    context.Response.ContentLength64 = bytes.Length;
+                    await context.Response.OutputStream.WriteAsync(bytes);
+                    return;
+                }
+                // MediaEndpoints.GetCoverArt, for a song id: the picture in
+                // that song's file, or 404.
+                case ("GET", CoverArtPath):
+                {
+                    var art = Library.Find(context.Request.QueryString["id"]) is { Path: { } file }
+                        ? LocalAlbumArtReader.ForFile(file)
+                        : null;
+                    if (art == null)
+                    {
+                        context.Response.StatusCode = 404;
+                        return;
+                    }
+
+                    context.Response.ContentType = art.MimeType;
+                    context.Response.ContentLength64 = art.Bytes.Length;
+                    await context.Response.OutputStream.WriteAsync(art.Bytes);
+                    return;
+                }
+                // MediaEndpoints.Download: the song's file, whole.
+                case ("GET", DownloadPath):
+                {
+                    if (Library.Find(context.Request.QueryString["id"]) is not { Path: { } file } || !File.Exists(file))
+                    {
+                        context.Response.StatusCode = 404;
+                        return;
+                    }
+
+                    var bytes = await File.ReadAllBytesAsync(file);
+                    context.Response.ContentType = "application/octet-stream";
+                    context.Response.ContentLength64 = bytes.Length;
+                    await context.Response.OutputStream.WriteAsync(bytes);
+                    return;
+                }
+                case ("POST", TagsPath):
+                {
+                    if (!AdmitsAdmin(context))
+                        return;
+
+                    using var reader = new StreamReader(context.Request.InputStream);
+                    var request = JsonSerializer.Deserialize<LibraryTagEditsRequestDto>(await reader.ReadToEndAsync(), AdminJson)!;
+                    var bytes = JsonSerializer.SerializeToUtf8Bytes(
+                        TrackTags.ApplyEdits(Library, request.Edits, Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance), AdminJson);
+                    context.Response.ContentType = "application/json";
+                    context.Response.ContentLength64 = bytes.Length;
+                    await context.Response.OutputStream.WriteAsync(bytes);
+                    return;
+                }
+                case ("PUT", _) when path.StartsWith(UploadsPath + "/", StringComparison.Ordinal):
+                {
+                    if (!AdmitsAdmin(context))
+                        return;
+
+                    using var body = new MemoryStream();
+                    await context.Request.InputStream.CopyToAsync(body);
+                    var uploadId = Uri.UnescapeDataString(path[(UploadsPath.Length + 1)..]);
+                    var offset = long.Parse(context.Request.QueryString["offset"]!);
+                    await WriteIngestResultAsync(context, await _ingest!.AppendAsync(uploadId, offset, body.ToArray()));
+                    return;
+                }
                 default:
                     context.Response.StatusCode = 404;
                     return;
@@ -166,9 +329,10 @@ public sealed class SimulatedFlowerServer : IDisposable
         var songs = Library.Snapshot.Albums
             .SelectMany(album => album.Tracks)
             .Where(track => track.Path != null)
-            .Select(track => LibraryDtoMapper.ToTrackDto(track, Fingerprint))
+            .Select(track => LibraryDtoMapper.ToTrackDto(track, Fingerprint, MusicFolder == null ? null : [MusicFolder]))
             .ToList();
-        await WriteJsonAsync(context, new LibrarySyncManifestDto(Fingerprint, songs));
+        var removed = Library.RemovedTracks.Where(r => r.Deliberate).Select(r => r.Track.Id.ToKey()).ToList();
+        await WriteJsonAsync(context, new LibrarySyncManifestDto(Fingerprint, songs, removed));
     }
 
     private static async Task WriteJsonAsync<T>(HttpListenerContext context, T value)

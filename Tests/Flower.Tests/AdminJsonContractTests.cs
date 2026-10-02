@@ -49,9 +49,14 @@ public class AdminJsonContractTests
     // exception - SetCoverArtAsync sends an image as the body itself, which is
     // the whole reason it takes bytes rather than a DTO wrapping them, so
     // there is no metadata for it to need.
+    //
+    // The artwork calls add two more of the query-string kind: the ids of the
+    // songs a picture is for, and when it was changed. Like the image itself
+    // they are the request rather than a body describing one.
     private static bool IsSerialized(Type type) =>
         type != typeof(CancellationToken) && !type.IsPrimitive
-        && type != typeof(string) && type != typeof(byte[]);
+        && type != typeof(string) && type != typeof(byte[])
+        && type != typeof(IReadOnlyList<string>) && type != typeof(DateTimeOffset);
 
     [Theory]
     [MemberData(nameof(WireTypes))]
