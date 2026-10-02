@@ -255,6 +255,78 @@ namespace Flower.Models
         // rather than through a proxy that something else is free to redefine.
         public bool IsLocallyDownloaded { get; set; }
 
+        // True for a file of this device's own that the paired server used to
+        // list and stopped listing - set where Library.MergeSyncedTracks clears
+        // the origin, and cleared again the moment a pull matches it.
+        //
+        // It exists because an admin device offers the server every file of
+        // its own the server lacks (see LibraryMirrorService), and "lacks" has
+        // two meanings that look identical once the origin is cleared: never
+        // had, and had and removed. A song the owner removed on the desktop
+        // would otherwise be handed straight back by the laptop that still
+        // holds a copy, and no removal would ever stay removed. The file is
+        // still this device's and still plays; it is only not offered.
+        public bool WithdrawnByOrigin { get; set; }
+
+        // Where this file was before a scan found it somewhere else, kept until
+        // the paired server has been told - null for a file that has not moved,
+        // or whose move the server already has. Set by Library.UpdateTracks when
+        // it recognises a file at a new path as one it already knew, and only
+        // for a file of this device's own that the server holds a copy of.
+        //
+        // It is the record of a *change*, which is what makes it different from
+        // simply comparing this device's path with the server's. Two machines
+        // that were each handed the same album long ago may file it differently,
+        // and neither layout is news; a file that was at one path yesterday and
+        // is at another today is. Only the second is sent (see
+        // LibraryMirrorService), so a device never reorganises a server's
+        // folders just by pairing with it.
+        public string? MovedFromPath { get; set; }
+
+        // What this device's file looked like - length and modification time -
+        // when the paired server last held the same bytes: stamped when the
+        // file was uploaded, or, for a song both already had, the first time
+        // the two were matched. A file that no longer looks like this has been
+        // changed here since - its tags edited, its artwork replaced, the file
+        // re-ripped - and is sent again (LibraryMirrorService). Tags live in
+        // the file, so sending the file is how a tag edit travels.
+        public string? OriginFileStamp { get; set; }
+
+        // When this song's tags were last edited by a person, in Flower, on any
+        // device - null for a song nobody has edited, whose tags are simply
+        // whatever its file arrived with.
+        //
+        // It is what lets a tag edit travel. Stamped where the edit is made
+        // (Library.NotifyTracksChanged), carried up to the paired server, and
+        // served from there with the catalog; every device then compares it
+        // with its own. A server's that is newer means the server's tags are
+        // the ones to have, and they are applied - to a placeholder's
+        // metadata, and into the file of a device that has one. A device's own
+        // that is newer is an edit still on its way up. The newest edit wins,
+        // whichever device made it.
+        public DateTimeOffset? TagsEditedAt { get; set; }
+
+        // The same for the artwork: when this song's picture was last changed
+        // by a person, in Flower, on any device. Travels the way TagsEditedAt
+        // does - stamped where the change is made, sent to the server with the
+        // picture, served with the catalog - and a device whose own is older
+        // fetches the picture and puts it into its copy of the file.
+        public DateTimeOffset? ArtEditedAt { get; set; }
+
+        // When the paired server's file for this song was last replaced by a
+        // new version of it - a re-rip, a re-encode, a file edited in another
+        // program - and, on a device, which of those versions its own copy is.
+        // Null for a song whose file is the one it has always been.
+        //
+        // The third date of the same kind, for the change the other two cannot
+        // describe: not "these tags" or "this picture" but "these bytes". A
+        // device whose copy is of an older version fetches the file again and
+        // puts it where its copy was (LibrarySyncService), so every copy of a
+        // song is the same file. Dated by the server, which is the only place
+        // a replacement happens (LibraryIngest), and handed back to the device
+        // that sent it so that it does not fetch its own file back.
+        public DateTimeOffset? FileReplacedAt { get; set; }
+
         // ── Per-track playback options ─────────────────────────────────────
         //
         // Flower's own state, not tags: none of the three has a standard tag

@@ -112,7 +112,9 @@ public sealed class SmartPlaylistRefresher : IDisposable
 
     private void OnTrackChanged(object? sender, TrackChangedEventArgs e)
     {
-        if (e.Change != TrackChange.ResumePosition)
+        // Neither is anything a rule can ask about: where a track was paused,
+        // and which server holds a copy of it.
+        if (e.Change is not (TrackChange.ResumePosition or TrackChange.Origin))
             Schedule();
     }
 

@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 using Microsoft.Data.Sqlite;
 
@@ -11,7 +13,7 @@ namespace Flower.Persistence.Sql
 {
     // Reading and writing tracks, shared by the client and Flower.Server - see
     // FlowerDb's remarks.
-    public sealed class TrackRepository(FlowerDb db) : ITrackStore, IExcludedPathStore
+    public sealed class TrackRepository(FlowerDb db) : ITrackStore, IExcludedPathStore, IRemovedTrackStore
     {
         // Every column in declaration order, reused by both the reader and the
         // upsert so the two cannot drift apart in ordering.
@@ -30,7 +32,7 @@ namespace Flower.Persistence.Sql
             is_locally_downloaded, origin_relative_path,
             title_sort, artists_sort, composers_sort,
             remember_playback_position, resume_position_ticks, ignore_when_shuffling, volume_adjustment,
-            encoder_profile
+            encoder_profile, withdrawn_by_origin, moved_from_path, origin_file_stamp, tags_edited_at, art_edited_at, file_replaced_at
             """;
 
         public List<Track> LoadAll()
@@ -257,6 +259,95 @@ namespace Flower.Persistence.Sql
             transaction.Commit();
         }
 
+        public IReadOnlyList<RemovedTrack> LoadRemovedTracks()
+        {
+            using var connection = db.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT removed_at, owed_to_origin, track, deliberate FROM removed_tracks;";
+            using var reader = command.ExecuteReader();
+            var removed = new List<RemovedTrack>();
+            while (reader.Read())
+            {
+                // A row that no longer parses is skipped rather than allowed
+                // to fail the load: the worst it costs is one song coming back
+                // as new.
+                Track? track;
+                try
+                {
+                    track = JsonSerializer.Deserialize(reader.GetString(2), RemovedTrackJsonContext.Default.Track);
+                }
+                catch (JsonException)
+                {
+                    continue;
+                }
+
+                if (track != null)
+                {
+                    removed.Add(new RemovedTrack(
+                        track, new DateTimeOffset(reader.GetInt64(0), TimeSpan.Zero),
+                        OwedToOrigin: reader.GetInt64(1) != 0, Deliberate: reader.GetInt64(3) != 0));
+                }
+            }
+
+            return removed;
+        }
+
+        public void SaveRemovedTracks(IReadOnlyCollection<RemovedTrack> removed)
+        {
+            if (removed.Count == 0)
+                return;
+
+            using var connection = db.Open();
+            using var transaction = connection.BeginTransaction();
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                INSERT INTO removed_tracks (id, removed_at, owed_to_origin, track, deliberate)
+                VALUES ($id, $removed_at, $owed_to_origin, $track, $deliberate)
+                ON CONFLICT (id) DO UPDATE SET
+                    removed_at = excluded.removed_at,
+                    owed_to_origin = excluded.owed_to_origin,
+                    track = excluded.track,
+                    deliberate = excluded.deliberate;
+                """;
+            var id = command.Parameters.Add("$id", SqliteType.Text);
+            var removedAt = command.Parameters.Add("$removed_at", SqliteType.Integer);
+            var owed = command.Parameters.Add("$owed_to_origin", SqliteType.Integer);
+            var track = command.Parameters.Add("$track", SqliteType.Text);
+            var deliberate = command.Parameters.Add("$deliberate", SqliteType.Integer);
+            foreach (var entry in removed)
+            {
+                deliberate.Value = entry.Deliberate ? 1 : 0;
+                id.Value = entry.Track.Id.ToKey();
+                removedAt.Value = entry.RemovedAt.UtcTicks;
+                owed.Value = entry.OwedToOrigin ? 1 : 0;
+                track.Value = JsonSerializer.Serialize(entry.Track, RemovedTrackJsonContext.Default.Track);
+                command.ExecuteNonQuery();
+            }
+
+            transaction.Commit();
+        }
+
+        public void DeleteRemovedTracks(IReadOnlyCollection<Guid> ids)
+        {
+            if (ids.Count == 0)
+                return;
+
+            using var connection = db.Open();
+            using var transaction = connection.BeginTransaction();
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = "DELETE FROM removed_tracks WHERE id = $id;";
+            var parameter = command.Parameters.Add("$id", SqliteType.Text);
+            foreach (var id in ids)
+            {
+                parameter.Value = id.ToKey();
+                command.ExecuteNonQuery();
+            }
+
+            transaction.Commit();
+        }
+
         private static void DeleteTracksNotIn(SqliteConnection connection, SqliteTransaction transaction, HashSet<Guid> keep)
         {
             // Collected first, then deleted by id: SQLite has no way to bind a
@@ -351,7 +442,7 @@ namespace Flower.Persistence.Sql
                 is_locally_downloaded, origin_relative_path,
                 title_sort, artists_sort, composers_sort,
                 remember_playback_position, resume_position_ticks, ignore_when_shuffling, volume_adjustment,
-                encoder_profile
+                encoder_profile, withdrawn_by_origin, moved_from_path, origin_file_stamp, tags_edited_at, art_edited_at, file_replaced_at
             ) VALUES (
                 $id, $path, $title, $subtitle, $artists, $album_artists, $is_compilation,
                 $album, $album_sort, $year, $track_number, $track_count, $disc_number, $disc_count,
@@ -365,7 +456,7 @@ namespace Flower.Persistence.Sql
                 $is_locally_downloaded, $origin_relative_path,
                 $title_sort, $artists_sort, $composers_sort,
                 $remember_playback_position, $resume_position_ticks, $ignore_when_shuffling, $volume_adjustment,
-                $encoder_profile
+                $encoder_profile, $withdrawn_by_origin, $moved_from_path, $origin_file_stamp, $tags_edited_at, $art_edited_at, $file_replaced_at
             )
             ON CONFLICT (id) DO UPDATE SET
                 path = excluded.path,
@@ -422,7 +513,13 @@ namespace Flower.Persistence.Sql
                 resume_position_ticks = excluded.resume_position_ticks,
                 ignore_when_shuffling = excluded.ignore_when_shuffling,
                 volume_adjustment = excluded.volume_adjustment,
-                encoder_profile = excluded.encoder_profile;
+                encoder_profile = excluded.encoder_profile,
+                withdrawn_by_origin = excluded.withdrawn_by_origin,
+                moved_from_path = excluded.moved_from_path,
+                origin_file_stamp = excluded.origin_file_stamp,
+                tags_edited_at = excluded.tags_edited_at,
+                art_edited_at = excluded.art_edited_at,
+                file_replaced_at = excluded.file_replaced_at;
             """;
 
         private static readonly string[] UpsertParameterNames =
@@ -439,7 +536,7 @@ namespace Flower.Persistence.Sql
             "$is_locally_downloaded", "$origin_relative_path",
             "$title_sort", "$artists_sort", "$composers_sort",
             "$remember_playback_position", "$resume_position_ticks", "$ignore_when_shuffling", "$volume_adjustment",
-            "$encoder_profile",
+            "$encoder_profile", "$withdrawn_by_origin", "$moved_from_path", "$origin_file_stamp", "$tags_edited_at", "$art_edited_at", "$file_replaced_at",
         ];
 
         // Parameters are added once and then only have their Value reassigned
@@ -517,6 +614,12 @@ namespace Flower.Persistence.Sql
             p["$resume_position_ticks"].Value = (object?)track.ResumePosition?.Ticks ?? DBNull.Value;
             p["$ignore_when_shuffling"].Value = track.IgnoreWhenShuffling ? 1 : 0;
             p["$volume_adjustment"].Value = track.VolumeAdjustment;
+            p["$withdrawn_by_origin"].Value = track.WithdrawnByOrigin ? 1 : 0;
+            p["$moved_from_path"].Value = Nullable(track.MovedFromPath);
+            p["$origin_file_stamp"].Value = Nullable(track.OriginFileStamp);
+            p["$tags_edited_at"].Value = (object?)track.TagsEditedAt?.UtcTicks ?? DBNull.Value;
+            p["$art_edited_at"].Value = (object?)track.ArtEditedAt?.UtcTicks ?? DBNull.Value;
+            p["$file_replaced_at"].Value = (object?)track.FileReplacedAt?.UtcTicks ?? DBNull.Value;
         }
 
         private static object Nullable(string? value) => (object?)value ?? DBNull.Value;
@@ -581,9 +684,24 @@ namespace Flower.Persistence.Sql
             IgnoreWhenShuffling = reader.GetInt64(53) != 0,
             VolumeAdjustment = (int)reader.GetInt64(54),
             EncoderProfile = Text(reader, 55),
+            WithdrawnByOrigin = reader.GetInt64(56) != 0,
+            MovedFromPath = Text(reader, 57),
+            OriginFileStamp = Text(reader, 58),
+            TagsEditedAt = reader.IsDBNull(59) ? null : new DateTimeOffset(reader.GetInt64(59), TimeSpan.Zero),
+            ArtEditedAt = reader.IsDBNull(60) ? null : new DateTimeOffset(reader.GetInt64(60), TimeSpan.Zero),
+            FileReplacedAt = reader.IsDBNull(61) ? null : new DateTimeOffset(reader.GetInt64(61), TimeSpan.Zero),
         };
 
         private static string? Text(SqliteDataReader reader, int ordinal) =>
             reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
+    }
+
+    // Source-generated, because this runs on a phone (no reflection under AOT)
+    // as well as on the server. Its own context rather than a line in
+    // FlowerCoreJsonContext, which writes indented: these are rows in a table,
+    // not files anyone opens.
+    [JsonSerializable(typeof(Track))]
+    internal partial class RemovedTrackJsonContext : JsonSerializerContext
+    {
     }
 }

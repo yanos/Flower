@@ -121,6 +121,67 @@ public class SqliteMigrationTests : IDisposable
         Assert.Equal(SqliteMigrations.LatestVersion, SqliteMigrations.ReadVersion(connection));
     }
 
+    // A database from before removed songs were kept on record, as every
+    // existing one is. The table is new, so nothing but the appended step
+    // creates it - the reconciling pass above only ever adds columns.
+    [Fact]
+    public void A_database_from_before_removed_songs_were_recorded_gains_the_table_and_the_column()
+    {
+        using var connection = OpenNew("before-records.db");
+        SqliteMigrations.Apply(connection);
+        Execute(connection, "DROP TABLE removed_tracks;");
+        Execute(connection, "ALTER TABLE tracks DROP COLUMN withdrawn_by_origin;");
+        Execute(connection, "ALTER TABLE tracks DROP COLUMN moved_from_path;");
+        Execute(connection, "ALTER TABLE tracks DROP COLUMN origin_file_stamp;");
+        Execute(connection, "ALTER TABLE tracks DROP COLUMN tags_edited_at;");
+        Execute(connection, "ALTER TABLE tracks DROP COLUMN art_edited_at;");
+        Execute(connection, "ALTER TABLE tracks DROP COLUMN file_replaced_at;");
+        Execute(connection, "INSERT INTO tracks (id, path, title, date_added) VALUES ('t1', '/music/a.mp3', 'A', 0);");
+        Execute(connection, "PRAGMA user_version = 8;");
+
+        SqliteMigrations.Apply(connection);
+
+        Assert.Equal(SqliteMigrations.LatestVersion, SqliteMigrations.ReadVersion(connection));
+        Assert.Contains("track", ColumnsOf(connection, "removed_tracks"));
+        Assert.Contains("deliberate", ColumnsOf(connection, "removed_tracks"));
+        Assert.Contains("withdrawn_by_origin", ColumnsOf(connection, "tracks"));
+        Assert.Contains("moved_from_path", ColumnsOf(connection, "tracks"));
+        Assert.Contains("origin_file_stamp", ColumnsOf(connection, "tracks"));
+        Assert.Contains("tags_edited_at", ColumnsOf(connection, "tracks"));
+        Assert.Contains("art_edited_at", ColumnsOf(connection, "tracks"));
+        Assert.Contains("file_replaced_at", ColumnsOf(connection, "tracks"));
+
+        using var read = connection.CreateCommand();
+        read.CommandText = "SELECT withdrawn_by_origin FROM tracks WHERE id = 't1';";
+        Assert.Equal(0L, read.ExecuteScalar());
+    }
+
+    // The same steps grew columns while they were still unreleased, so a
+    // database that ran the earlier text is stamped current and missing them.
+    // The reconciling pass is what brings it level - for a table an appended
+    // step created just as for V1.
+    [Fact]
+    public void A_database_that_ran_an_earlier_draft_of_those_steps_gains_what_they_grew()
+    {
+        using var connection = OpenNew("earlier-draft.db");
+        SqliteMigrations.Apply(connection);
+        Execute(connection, "ALTER TABLE removed_tracks DROP COLUMN deliberate;");
+        Execute(connection, "ALTER TABLE tracks DROP COLUMN moved_from_path;");
+        Execute(connection, "ALTER TABLE tracks DROP COLUMN origin_file_stamp;");
+        Execute(connection, "ALTER TABLE tracks DROP COLUMN tags_edited_at;");
+        Execute(connection, "ALTER TABLE tracks DROP COLUMN art_edited_at;");
+        Execute(connection, "ALTER TABLE tracks DROP COLUMN file_replaced_at;");
+
+        SqliteMigrations.Apply(connection);
+
+        Assert.Contains("tags_edited_at", ColumnsOf(connection, "tracks"));
+        Assert.Contains("art_edited_at", ColumnsOf(connection, "tracks"));
+        Assert.Contains("file_replaced_at", ColumnsOf(connection, "tracks"));
+        Assert.Contains("deliberate", ColumnsOf(connection, "removed_tracks"));
+        Assert.Contains("moved_from_path", ColumnsOf(connection, "tracks"));
+        Assert.Contains("origin_file_stamp", ColumnsOf(connection, "tracks"));
+    }
+
     // And it has to survive the round trip that matters: the repaired column is
     // NOT NULL DEFAULT '', so an ALTER that got the default wrong would add it
     // and then fail on the first insert - which is the same silent-empty-library

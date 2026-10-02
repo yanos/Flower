@@ -257,5 +257,46 @@ namespace Flower.Persistence.Sql
                 excluded_at INTEGER NOT NULL
             );
             """;
+
+        // Songs that left the library, kept (see Library's RemovedTrack) so
+        // that one coming back - the file restored from the trash, a drive
+        // mounted again, an upload from another device - is the song it was
+        // rather than a new one: same id, same Date Added, same plays and
+        // star. Without the row all of that went with the track, and a server
+        // whose music folder was missing for one scan came back with every
+        // song added today and played never.
+        //
+        // The track itself is JSON rather than the fifty columns over again.
+        // Nothing queries a removed track by column - they are loaded once,
+        // matched in memory by path and by tags, and written back whole - so a
+        // second copy of the tracks table would be a second column list to
+        // keep in step for no reader.
+        public const string V9 = """
+            CREATE TABLE IF NOT EXISTS removed_tracks (
+                id             TEXT    NOT NULL PRIMARY KEY,
+                removed_at     INTEGER NOT NULL,
+                owed_to_origin INTEGER NOT NULL DEFAULT 0,
+                track          TEXT    NOT NULL,
+
+                -- Removed because somebody said so, as against a scan no
+                -- longer finding the file. A server tells its devices about
+                -- the first kind and not the second (see RemovedTrack).
+                deliberate     INTEGER NOT NULL DEFAULT 0
+            );
+            """;
+
+        // See Track.WithdrawnByOrigin, MovedFromPath and OriginFileStamp - what
+        // a device needs to remember about its own files to keep a server's
+        // copies in step with them. A step of its own, and guarded in
+        // SqliteMigrations the way V5 is, since columns this small are exactly
+        // what gets folded into V1 later.
+        public const string V10 = """
+            ALTER TABLE tracks ADD COLUMN withdrawn_by_origin INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE tracks ADD COLUMN moved_from_path     TEXT;
+            ALTER TABLE tracks ADD COLUMN origin_file_stamp   TEXT;
+            ALTER TABLE tracks ADD COLUMN tags_edited_at      INTEGER;
+            ALTER TABLE tracks ADD COLUMN art_edited_at       INTEGER;
+            ALTER TABLE tracks ADD COLUMN file_replaced_at    INTEGER;
+            """;
     }
 }

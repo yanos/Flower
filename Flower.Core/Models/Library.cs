@@ -43,11 +43,20 @@ namespace Flower.Models
         // change, the app going away. Only the Resume At column shows it.
         ResumePosition = 128,
 
+        // When the track first entered the library - moved back by an owner's
+        // device that has known the song for longer (see
+        // Library.ApplyReportedOwnerState).
+        DateAdded = 256,
+
+        // Which server holds a copy, and under what id: an upload landing
+        // (see Library.RecordOrigin). Nothing a row draws.
+        Origin = 512,
+
         Plays = PlayStarted | PlayFinished,
 
         // What a paired device tells its server about a track - see
         // LibrarySyncService.PushTrackStateAsync.
-        TrackState = Plays | Starred | Options | ResumePosition,
+        TrackState = Plays | Starred | Options | ResumePosition | DateAdded,
 
         // What can move a track to another album, artist or sort position, or
         // change what its row draws beyond a cell or two. A subscriber showing
@@ -81,6 +90,33 @@ namespace Flower.Models
         public bool IsPlay => (Change & TrackChange.Plays) != 0;
     }
 
+    // What a pull finds that only somebody who handles files can finish - see
+    // Library.MergeSyncedTracks, which fills one of these, and
+    // LibrarySyncService, which acts on it. All three are the same situation:
+    // this device has a *file* of a song, and the source has since changed
+    // something about its own copy that this copy should follow.
+    public sealed class SyncedFileWork
+    {
+        // The source has a newer tag edit (Track.TagsEditedAt).
+        public List<(Track Local, Track Remote)> NewerTags { get; } = [];
+
+        // The source has newer artwork (Track.ArtEditedAt).
+        public List<(Track Local, Track Remote)> NewerArt { get; } = [];
+
+        // The source's file was replaced by a new version (Track.FileReplacedAt).
+        // A song listed here is in neither list above: the new file brings its
+        // tags and its picture with it.
+        public List<(Track Local, Track Remote)> NewerFile { get; } = [];
+
+        // The source moved its file: where it was below the source's library
+        // folder, and where it is now.
+        public List<(Track Local, string From, string To)> Moved { get; } = [];
+
+        // Songs with no file here whose artwork changed at the source - nothing
+        // to write, but whatever picture was cached for them is stale.
+        public List<Track> StaleArt { get; } = [];
+    }
+
     public class Library
     {
         private readonly ILogger<Library> _logger;
@@ -103,6 +139,12 @@ namespace Flower.Models
         // same reason UpdateTracks' path matching is.
         private readonly IExcludedPathStore? _excludedPathStore;
         private readonly Dictionary<string, DateTimeOffset> _excludedPaths = new(StringComparer.OrdinalIgnoreCase);
+
+        // Songs that have left the library, kept so that one coming back is
+        // the song it was - see RemovedTracks. Keyed by the id the track had,
+        // and guarded by _lock like Tracks.
+        private readonly IRemovedTrackStore? _removedTrackStore;
+        private readonly Dictionary<Guid, RemovedTrack> _removed = new();
 
         // Guards every read-modify-write of Tracks. EndReached fires on a LibVLC
         // callback thread (see CLAUDE.md's Binding Notes) while the startup/rescan
@@ -281,13 +323,15 @@ namespace Flower.Models
             ILogger<Library> logger,
             ITrackStore? store = null,
             IPlaylistStore? playlistStore = null,
-            IExcludedPathStore? excludedPathStore = null)
+            IExcludedPathStore? excludedPathStore = null,
+            IRemovedTrackStore? removedTrackStore = null)
         {
             Tracks = new List<Track>(tracks);
             _logger = logger;
             _store = store;
             _playlistStore = playlistStore;
             _excludedPathStore = excludedPathStore;
+            _removedTrackStore = removedTrackStore;
 
             // Caught rather than allowed to fail construction: the worst an
             // unreadable exclusion list costs is a removed file showing up
@@ -301,6 +345,17 @@ namespace Flower.Models
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Could not read the list of files removed from the library; a rescan may bring them back");
+            }
+
+            // Likewise: without them a returning song is merely new.
+            try
+            {
+                foreach (var removed in removedTrackStore?.LoadRemovedTracks() ?? [])
+                    _removed[removed.Track.Id] = removed;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Could not read the songs removed from the library; one that comes back will be treated as new");
             }
         }
 
@@ -331,7 +386,7 @@ namespace Flower.Models
 
         public void UpdateTracks(List<Track> tracks)
         {
-            int beforeCount, afterCount, carriedForwardCount;
+            int beforeCount, afterCount, carriedForwardCount, vanishedCount, revivedCount;
             lock (_lock)
             {
                 // Before anything else: a file removed on purpose is not a file
@@ -397,13 +452,30 @@ namespace Flower.Models
                     .GroupBy(t => t.SyncKey)
                     .ToDictionary(g => g.Key, g => g.First());
 
+                var unrecognized = new List<Track>();
                 foreach (var track in tracks)
                 {
                     if (track.Path != null && previousByPath.TryGetValue(track.Path, out var previous))
                         CarryForwardMutableState(previous, track);
                     else if (previousMissingByKey.Remove(track.SyncKey, out var previousMoved))
+                    {
                         CarryForwardMutableState(previousMoved, track);
+
+                        // A file of this device's own, found somewhere new,
+                        // that a paired server holds a copy of: the server is
+                        // owed the news - see Track.MovedFromPath. The first
+                        // place it was is the one kept, if it has moved twice
+                        // since the server heard.
+                        if (previousMoved is { Path: { } from, IsLocallyDownloaded: false, OriginTrackId.Length: > 0 })
+                            track.MovedFromPath ??= from;
+                    }
+                    else
+                        unrecognized.Add(track);
                 }
+
+                // A file nothing resident accounts for may still be one this
+                // library has had before - see RemovedTracks.
+                var revived = ReviveRemoved(unrecognized, tracks);
 
                 // For everything the scan is responsible for, the scan's result
                 // IS the library: a track it did not produce is a track that is
@@ -463,10 +535,27 @@ namespace Flower.Models
                     && (t.Path != null || HasSomewhereToComeFrom(t)))
                     .ToList();
 
+                var previousTracks = Tracks;
                 Tracks = tracks.Concat(carriedForwardSyncTracks).ToList();
                 InvalidateIndexes();
                 afterCount = Tracks.Count;
                 carriedForwardCount = carriedForwardSyncTracks.Count;
+
+                // What the scan no longer finds is kept on record rather than
+                // forgotten. Only files this scan was responsible for: a
+                // placeholder has nothing on disk to go missing, and a
+                // download dropped above is a duplicate of a file that is
+                // still here. A file the paired server knows is owed to it as
+                // news - see RemovedTrack.OwedToOrigin, and
+                // LibraryRemovalService for who decides whether to say so.
+                var surviving = new HashSet<Guid>(Tracks.Select(t => t.Id));
+                var vanished = previousTracks
+                    .Where(t => t.Path != null && !t.IsLocallyDownloaded && !surviving.Contains(t.Id))
+                    .ToList();
+                vanishedCount = vanished.Count;
+                revivedCount = revived.Count;
+                RememberRemoved(vanished, owedToOrigin: true, deliberate: false);
+                ForgetRemoved(revived);
 
                 RebindPlaylistTracks();
 
@@ -484,6 +573,11 @@ namespace Flower.Models
 
             _logger.LogInformation("Library updated: {FreshCount} track(s) from scan, {CarriedForwardCount} placeholder/downloaded track(s) carried forward, {TotalBefore} -> {TotalAfter}",
                 tracks.Count, carriedForwardCount, beforeCount, afterCount);
+            if (vanishedCount > 0 || revivedCount > 0)
+            {
+                _logger.LogInformation("{VanishedCount} song(s) are no longer on disk and were put on record; {RevivedCount} came back and were restored from it",
+                    vanishedCount, revivedCount);
+            }
 
             LibraryChanged?.Invoke(this, EventArgs.Empty);
         }
@@ -524,29 +618,75 @@ namespace Flower.Models
         // UpdateTracks). Returns how many of the paths were on the list.
         public int RestoreExcludedPaths(IReadOnlyCollection<string> paths)
         {
-            List<string> restored;
+            var restored = TakeOffExcludedList(paths);
+            if (restored > 0)
+                _logger.LogInformation("Restored {Count} removed file(s) to future scans", restored);
+            return restored;
+        }
+
+        // The same list, shortened for the opposite reason: the files are
+        // gone for good (see LibraryRemoval.DeleteRemovedFiles), so there is
+        // nothing left for a scan to be kept away from.
+        public int ForgetExcludedPaths(IReadOnlyCollection<string> paths) => TakeOffExcludedList(paths);
+
+        public bool IsExcludedPath(string path)
+        {
+            lock (_excludedPaths)
+                return _excludedPaths.ContainsKey(path);
+        }
+
+        private int TakeOffExcludedList(IReadOnlyCollection<string> paths)
+        {
+            List<string> taken;
             lock (_excludedPaths)
             {
-                restored = paths.Where(p => _excludedPaths.Remove(p)).ToList();
+                taken = paths.Where(p => _excludedPaths.Remove(p)).ToList();
             }
 
-            if (restored.Count == 0)
+            if (taken.Count == 0)
                 return 0;
 
             if (_excludedPathStore is { } exclusions)
             {
                 try
                 {
-                    exclusions.RemoveExcludedPaths(restored);
+                    exclusions.RemoveExcludedPaths(taken);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Could not forget {Count} removed file(s); they will be excluded again after a restart", restored.Count);
+                    _logger.LogError(ex, "Could not forget {Count} removed file(s); they will be excluded again after a restart", taken.Count);
                 }
             }
 
-            _logger.LogInformation("Restored {Count} removed file(s) to future scans", restored.Count);
-            return restored.Count;
+            return taken.Count;
+        }
+
+        // Callers hold _lock. The writing half of RemoveTracks' exclusions,
+        // for the other thing that removes a file from the library and leaves
+        // it on disk: a paired server saying the song is gone (MergeSyncedTracks).
+        private void ExcludePaths(IReadOnlyCollection<string> paths)
+        {
+            if (paths.Count == 0)
+                return;
+
+            var now = DateTimeOffset.UtcNow;
+            lock (_excludedPaths)
+            {
+                foreach (var path in paths)
+                    _excludedPaths[path] = now;
+            }
+
+            if (_excludedPathStore is { } exclusions)
+            {
+                try
+                {
+                    exclusions.AddExcludedPaths(paths);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Could not record {Count} removed file(s); a rescan may bring them back", paths.Count);
+                }
+            }
         }
 
         // Takes tracks out of the library on purpose - the user's "Remove from
@@ -580,29 +720,15 @@ namespace Flower.Models
                     Tracks = Tracks.Where(t => !ids.Contains(t.Id)).ToList();
                     InvalidateIndexes();
                     Persist(() => _store!.Delete(removed.Select(t => t.Id).ToList()));
+
+                    // Kept on record, so the song is itself again if it is
+                    // ever put back. Nothing is owed to a paired server: a
+                    // removal asked for is carried out there first (see
+                    // LibraryRemovalService).
+                    RememberRemoved(removed, owedToOrigin: false, deliberate: true);
                 }
 
-                if (excludePaths.Count > 0)
-                {
-                    var now = DateTimeOffset.UtcNow;
-                    lock (_excludedPaths)
-                    {
-                        foreach (var path in excludePaths)
-                            _excludedPaths[path] = now;
-                    }
-
-                    if (_excludedPathStore is { } exclusions)
-                    {
-                        try
-                        {
-                            exclusions.AddExcludedPaths(excludePaths);
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError(ex, "Could not record {Count} removed file(s); a rescan may bring them back", excludePaths.Count);
-                        }
-                    }
-                }
+                ExcludePaths(excludePaths);
             }
 
             if (removed.Count == 0)
@@ -620,6 +746,454 @@ namespace Flower.Models
                 removed.Count, excludePaths.Count);
             LibraryChanged?.Invoke(this, EventArgs.Empty);
             return removed;
+        }
+
+        // ── Removed songs ──────────────────────────────────────────────────
+        //
+        // A song that leaves the library is kept on record: removed on purpose
+        // (RemoveTracks), or simply no longer found by a scan (UpdateTracks).
+        // The record is what makes a song coming back the song it was - same
+        // Id, so the playlists and the paired devices that knew it by one
+        // still do; same Date Added; same plays, star and options. Without it
+        // every one of those went with the row, which is survivable for a
+        // deliberate delete and was a quiet disaster for the other kind: a
+        // server whose music folder failed to mount for one scan came back
+        // with every song added today, never played, and under an id no
+        // client had heard of.
+        //
+        // Kept indefinitely. A record is a row of text, nothing reads one
+        // unless a file turns up to claim it, and "re-added later" has no
+        // deadline anyone could name.
+
+        // Every song on record, for whoever reports them onward (see
+        // LibraryRemovalService) and for the tests.
+        public IReadOnlyList<RemovedTrack> RemovedTracks
+        {
+            get
+            {
+                lock (_lock)
+                    return _removed.Values.ToList();
+            }
+        }
+
+        // The paired server has been told about these, or turned out not to
+        // need telling - see RemovedTrack.OwedToOrigin.
+        public void SettleRemovedTracks(IReadOnlyCollection<Guid> ids)
+        {
+            var settled = new List<RemovedTrack>();
+            lock (_lock)
+            {
+                foreach (var id in ids)
+                {
+                    if (_removed.TryGetValue(id, out var removed) && removed.OwedToOrigin)
+                    {
+                        removed = removed with { OwedToOrigin = false };
+                        _removed[id] = removed;
+                        settled.Add(removed);
+                    }
+                }
+
+                PersistRemoved(store => store.SaveRemovedTracks(settled));
+            }
+        }
+
+        // Callers hold _lock. A copy is what goes on record, not the track:
+        // the instance may still be sitting in a playlist or the play queue,
+        // being played and counted, and the record is what the library knew
+        // at the moment the song left it.
+        private void RememberRemoved(IReadOnlyCollection<Track> tracks, bool owedToOrigin, bool deliberate)
+        {
+            if (tracks.Count == 0)
+                return;
+
+            var now = DateTimeOffset.UtcNow;
+            var added = new List<RemovedTrack>(tracks.Count);
+            foreach (var track in tracks)
+            {
+                var copy = track.Clone();
+                // A removal asked for is a fresh start for this question: put
+                // back, the file is one the user chose to have here again, and
+                // is offered to the server like any other. A file that merely
+                // went missing and returned is still the copy the server
+                // withdrew. See Track.WithdrawnByOrigin.
+                if (!owedToOrigin)
+                    copy.WithdrawnByOrigin = false;
+
+                var removed = new RemovedTrack(copy, now,
+                    owedToOrigin && track is { OriginTrackId.Length: > 0, OriginDeviceFingerprint.Length: > 0 },
+                    deliberate);
+                _removed[track.Id] = removed;
+                added.Add(removed);
+            }
+
+            PersistRemoved(store => store.SaveRemovedTracks(added));
+        }
+
+        // Callers hold _lock.
+        private void ForgetRemoved(IReadOnlyCollection<Guid> ids)
+        {
+            if (ids.Count == 0)
+                return;
+
+            foreach (var id in ids)
+                _removed.Remove(id);
+
+            PersistRemoved(store => store.DeleteRemovedTracks(ids));
+        }
+
+        private void PersistRemoved(Action<IRemovedTrackStore> write)
+        {
+            if (_removedTrackStore is not { } store)
+                return;
+
+            try
+            {
+                write(store);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Could not write the record of songs removed from the library");
+            }
+        }
+
+        // Restores whichever of these files the library has had before, and
+        // returns the ids of the records used up. alsoPresent is everything
+        // else about to be in the library, so an id is never handed out twice.
+        // Callers hold _lock.
+        private List<Guid> ReviveRemoved(IReadOnlyList<Track> tracks, IEnumerable<Track> alsoPresent)
+        {
+            var revived = new List<Guid>();
+            if (tracks.Count == 0 || _removed.Count == 0)
+                return revived;
+
+            var taken = new HashSet<Guid>(Tracks.Select(t => t.Id));
+            foreach (var present in alsoPresent)
+                taken.Add(present.Id);
+
+            var index = new RemovedTrackIndex(_removed.Values);
+            foreach (var track in tracks)
+            {
+                var removed = index.ClaimByPath(track) ?? index.ClaimByTags(track);
+                if (removed == null)
+                    continue;
+
+                RestoreRemovedState(removed.Track, track, taken);
+                revived.Add(removed.Track.Id);
+            }
+
+            return revived;
+        }
+
+        // The pulling half of the same idea: a catalog entry that is new to
+        // this library but not to this device. Only what is this device's own
+        // to say comes back - the id, and its own plays. Everything else on a
+        // placeholder is the source's answer and stays the source's.
+        // Callers hold _lock.
+        private List<Guid> ReviveRemovedAsPlaceholders(
+            IReadOnlyList<Track> placeholders, IReadOnlyList<Track> merged, string sourceFingerprint, bool ownersDevice)
+        {
+            var revived = new List<Guid>();
+            if (placeholders.Count == 0 || _removed.Count == 0)
+                return revived;
+
+            var taken = new HashSet<Guid>(merged.Select(t => t.Id));
+            var index = new RemovedTrackIndex(_removed.Values);
+            var backInFavour = new List<string>();
+            foreach (var placeholder in placeholders)
+            {
+                var removed = index.ClaimByOrigin(sourceFingerprint, placeholder.OriginTrackId) ?? index.ClaimByTags(placeholder);
+                if (removed == null)
+                    continue;
+
+                var was = removed.Track;
+                if (taken.Add(was.Id))
+                    placeholder.Id = was.Id;
+                placeholder.PlayCount = was.PlayCount;
+                placeholder.ImportedPlayCount = was.ImportedPlayCount;
+                MergeRemotePlayCounts(placeholder, was.RemotePlayCounts);
+                MergeLastPlayed(placeholder, was);
+                if (ownersDevice && was.DateAdded < placeholder.DateAdded)
+                    placeholder.DateAdded = was.DateAdded;
+                revived.Add(was.Id);
+
+                // The song is back in the source's library, so this device's
+                // own copy of it - set aside when the source removed it, if it
+                // was - is wanted again. Taken off the list here; the next scan
+                // finds the file and makes the placeholder a local song.
+                if (was.Path is { } setAside)
+                    backInFavour.Add(setAside);
+            }
+
+            if (backInFavour.Count > 0)
+                TakeOffExcludedList(backInFavour);
+
+            return revived;
+        }
+
+        // CarryForwardMutableState's list, from a record instead of from a
+        // resident track - minus the sync origin. Whatever the record says
+        // about which server had a copy is as old as the record; the next pull
+        // restates it if it is still true.
+        private static void RestoreRemovedState(Track was, Track track, HashSet<Guid> taken)
+        {
+            if (taken.Add(was.Id))
+                track.Id = was.Id;
+
+            // Whichever is older. A scanned file arrives saying "now", an
+            // uploaded one saying when its own device first had it, and the
+            // record may be older than either.
+            if (was.DateAdded < track.DateAdded)
+                track.DateAdded = was.DateAdded;
+            track.PlayCount                = was.PlayCount;
+            track.ImportedPlayCount        = was.ImportedPlayCount;
+            track.LastPlayedAt             = was.LastPlayedAt;
+            track.Starred                  = was.Starred;
+            track.StarredAt                = was.StarredAt;
+            track.RememberPlaybackPosition = was.RememberPlaybackPosition;
+            track.ResumePosition           = was.ResumePosition;
+            track.IgnoreWhenShuffling      = was.IgnoreWhenShuffling;
+            track.VolumeAdjustment         = was.VolumeAdjustment;
+            track.WithdrawnByOrigin        = was.WithdrawnByOrigin;
+            MergeRemotePlayCounts(track, was.RemotePlayCounts);
+        }
+
+        // Which record a returning song claims. By the path it had, first: a
+        // file back where it was is the plainest case there is. Then by what
+        // it is - the same tags and length, for a file put back somewhere
+        // else, or uploaded from a device that keeps it under another name.
+        // Never by tags for an untitled track, whose key is its duration and
+        // nothing more (see UpdateTracks). The newest record wins where
+        // several qualify, and each is claimed once.
+        private sealed class RemovedTrackIndex
+        {
+            private readonly Dictionary<string, RemovedTrack> _byPath = new(StringComparer.OrdinalIgnoreCase);
+            private readonly Dictionary<string, List<RemovedTrack>> _byKey = new();
+            private readonly Dictionary<(string, string), RemovedTrack> _byOrigin = new();
+            private readonly HashSet<Guid> _claimed = new();
+
+            public RemovedTrackIndex(IEnumerable<RemovedTrack> removed)
+            {
+                foreach (var entry in removed.OrderByDescending(r => r.RemovedAt))
+                {
+                    var track = entry.Track;
+                    if (track.Path != null)
+                        _byPath.TryAdd(track.Path, entry);
+
+                    if (track is { OriginDeviceFingerprint: { } origin, OriginTrackId: { Length: > 0 } originId })
+                        _byOrigin.TryAdd((origin, originId), entry);
+
+                    if (string.IsNullOrWhiteSpace(track.Title))
+                        continue;
+
+                    if (!_byKey.TryGetValue(track.SyncKey, out var sameKey))
+                        _byKey[track.SyncKey] = sameKey = new List<RemovedTrack>();
+                    sameKey.Add(entry);
+                }
+            }
+
+            public RemovedTrack? ClaimByPath(Track track) =>
+                track.Path != null && _byPath.TryGetValue(track.Path, out var removed) && _claimed.Add(removed.Track.Id)
+                    ? removed
+                    : null;
+
+            public RemovedTrack? ClaimByOrigin(string fingerprint, string? originTrackId) =>
+                originTrackId is { Length: > 0 }
+                && _byOrigin.TryGetValue((fingerprint, originTrackId), out var removed)
+                && _claimed.Add(removed.Track.Id)
+                    ? removed
+                    : null;
+
+            public RemovedTrack? ClaimByTags(Track track)
+            {
+                if (string.IsNullOrWhiteSpace(track.Title) || !_byKey.TryGetValue(track.SyncKey, out var sameKey))
+                    return null;
+
+                foreach (var removed in sameKey)
+                {
+                    if (_claimed.Add(removed.Track.Id))
+                        return removed;
+                }
+
+                return null;
+            }
+        }
+
+        // One file arriving other than by a scan finding it - an upload from
+        // an owner's device (see LibraryIngest). The single-track form of
+        // UpdateTracks: the same recognition of a file the library already
+        // has, the same restoring of one it has had before, without a scan of
+        // everything else to get there.
+        //
+        // knownSince is when the device it came from first had the song. The
+        // older of that and whatever this library already knew wins - see
+        // ApplyReportedOwnerState on why Date Added only moves backwards.
+        //
+        // tagsEditedAt is for a file whose tags are known to have been edited
+        // on the way here - a new version of a song, sent because its device's
+        // copy changed. It is stamped after the carry-forward, which would
+        // otherwise put the old date back.
+        //
+        // fileReplacedAt and fileStamp are for the same thing seen from either
+        // end: a new version of a song's file, put where the old one was. The
+        // server dates it; a device that fetched it records the date and what
+        // its copy now looks like (Track.OriginFileStamp), so that having been
+        // handed a file does not read as having changed one.
+        public Track AddScannedTrack(
+            Track track, DateTimeOffset? knownSince = null, DateTimeOffset? tagsEditedAt = null, DateTimeOffset? artEditedAt = null,
+            DateTimeOffset? fileReplacedAt = null, string? fileStamp = null)
+        {
+            lock (_lock)
+            {
+                var replaced = track.Path == null
+                    ? null
+                    : Tracks.FirstOrDefault(t => string.Equals(t.Path, track.Path, StringComparison.OrdinalIgnoreCase));
+
+                List<Guid> revived = [];
+                if (replaced != null)
+                    CarryForwardMutableState(replaced, track);
+                else
+                    revived = ReviveRemoved([track], []);
+
+                if (knownSince is { } since && since < track.DateAdded)
+                    track.DateAdded = since;
+                if (tagsEditedAt is { } edited)
+                    track.TagsEditedAt = edited;
+                if (artEditedAt is { } repainted)
+                    track.ArtEditedAt = repainted;
+                if (fileReplacedAt is { } replacedAt)
+                    track.FileReplacedAt = replacedAt;
+                if (fileStamp != null && track.OriginFileStamp != null)
+                    track.OriginFileStamp = fileStamp;
+
+                var next = new List<Track>(Tracks.Count + 1);
+                foreach (var existing in Tracks)
+                {
+                    if (!ReferenceEquals(existing, replaced))
+                        next.Add(existing);
+                }
+                next.Add(track);
+
+                Tracks = next;
+                InvalidateIndexes();
+                ForgetRemoved(revived);
+
+                // Only when an id that playlists may be holding has just
+                // changed hands; a brand-new song is in none of them.
+                if (replaced != null || revived.Count > 0)
+                    RebindPlaylistTracks();
+
+                Persist(() => _store!.Upsert(track));
+            }
+
+            LibraryChanged?.Invoke(this, EventArgs.Empty);
+            return track;
+        }
+
+        // The paired server now holds this device's file, under this id - what
+        // an upload leaves behind (see LibraryMirrorService). The same stamps
+        // MergeSyncedTracks puts on a local file the server also has, set here
+        // rather than waited for so that the file stops being "one the server
+        // lacks" the moment it is not.
+        //
+        // Resolved under the lock like a play is: an upload takes long enough
+        // for a rescan to have replaced every Track in the meantime.
+        //
+        // fileStamp is what the file looked like when it was sent (see
+        // Track.OriginFileStamp); null leaves the stamp alone, for a move,
+        // which changes where the file is and nothing about it.
+        public Track RecordOrigin(
+            Track track, string originFingerprint, string originTrackId, string? originRelativePath,
+            DateTimeOffset? originDateAdded, string? fileStamp = null, DateTimeOffset? tagsEditedAt = null,
+            DateTimeOffset? artEditedAt = null, DateTimeOffset? fileReplacedAt = null)
+        {
+            Track current;
+            lock (_lock)
+            {
+                current = ResolveCurrent(track);
+                current.OriginDeviceFingerprint = originFingerprint;
+                current.OriginTrackId = originTrackId;
+                current.OriginRelativePath = originRelativePath;
+                current.OriginFileExtension = current.Path is { } path
+                    ? System.IO.Path.GetExtension(path).TrimStart('.').ToLowerInvariant()
+                    : current.OriginFileExtension;
+                current.WithdrawnByOrigin = false;
+                current.MovedFromPath = null;
+                if (fileStamp != null)
+                    current.OriginFileStamp = fileStamp;
+                // What the server now dates this song's tags, when sending the
+                // file is what changed them there: this device's are the same
+                // tags, and are not older.
+                if (tagsEditedAt != null)
+                    current.TagsEditedAt = tagsEditedAt;
+                if (artEditedAt != null)
+                    current.ArtEditedAt = artEditedAt;
+                if (fileReplacedAt != null)
+                    current.FileReplacedAt = fileReplacedAt;
+                if (originDateAdded is { } theirs && theirs < current.DateAdded)
+                    current.DateAdded = theirs;
+                BumpChangeToken();
+            }
+
+            Persist(() => _store!.Upsert(current));
+            RaiseTrackChanged([current], TrackChange.Origin);
+            return current;
+        }
+
+        // What these files looked like when they were first matched with the
+        // server's copies, or a move that turned out not to be one: bookkeeping
+        // about this device's own files that nothing draws and no other device
+        // is told, so it is written and not announced. One rewrite for a
+        // library's worth - the first sync after pairing stamps every song the
+        // two already had in common - and a row each for a handful.
+        public void RecordOriginBookkeeping(IReadOnlyList<(Track Track, string? FileStamp, bool ClearMove)> entries)
+        {
+            if (entries.Count == 0)
+                return;
+
+            var changed = new List<Track>(entries.Count);
+            lock (_lock)
+            {
+                foreach (var (track, fileStamp, clearMove) in entries)
+                {
+                    var current = ResolveCurrent(track);
+                    if (fileStamp != null)
+                        current.OriginFileStamp = fileStamp;
+                    if (clearMove)
+                        current.MovedFromPath = null;
+                    changed.Add(current);
+                }
+
+                if (changed.Count > 32)
+                    Persist(() => _store!.ReplaceAll(Tracks));
+            }
+
+            if (changed.Count <= 32)
+            {
+                Persist(() =>
+                {
+                    foreach (var track in changed)
+                        _store!.Upsert(track);
+                });
+            }
+        }
+
+        // A song's file is somewhere else now - moved on the server because an
+        // owner's device moved its own (see LibraryIngest.MoveAsync). The same
+        // song in every other respect, which is the point of doing it here
+        // rather than letting a scan find a missing file and a new one.
+        public Track MoveTrack(Track track, string newPath)
+        {
+            Track current;
+            lock (_lock)
+            {
+                current = ResolveCurrent(track);
+                current.Path = newPath;
+                InvalidateIndexes();
+            }
+
+            Persist(() => _store!.Upsert(current));
+            RaiseTrackChanged([current], TrackChange.File);
+            return current;
         }
 
         // Whether a track with no local file still has an origin that could
@@ -661,6 +1235,11 @@ namespace Flower.Models
                 var kept = new List<Track>(Tracks.Count);
                 foreach (var track in Tracks)
                 {
+                    // "That server had this and dropped it" is a statement
+                    // about a pairing that is ending. The next server has not
+                    // been asked yet.
+                    track.WithdrawnByOrigin = false;
+
                     if (track.OriginDeviceFingerprint != originFingerprint)
                     {
                         kept.Add(track);
@@ -796,6 +1375,12 @@ namespace Flower.Models
             // deleting this file reversible" for the mobile download UI, and that
             // stays true of a downloaded file the scan happens to see.
             track.IsLocallyDownloaded     = previous.IsLocallyDownloaded;
+            track.WithdrawnByOrigin       = previous.WithdrawnByOrigin;
+            track.MovedFromPath           = previous.MovedFromPath;
+            track.OriginFileStamp         = previous.OriginFileStamp;
+            track.TagsEditedAt            = previous.TagsEditedAt;
+            track.ArtEditedAt             = previous.ArtEditedAt;
+            track.FileReplacedAt          = previous.FileReplacedAt;
             // Track Info's Options tab - Flower's own per-track playback state,
             // set by hand and unknowable to a scan of the file.
             track.RememberPlaybackPosition = previous.RememberPlaybackPosition;
@@ -861,14 +1446,55 @@ namespace Flower.Models
         // starBaseline is which of the source's tracks it said were starred
         // the last time this device and it agreed - see MergeStar. Null when
         // there has never been a pull from it, in which case its stars win.
+        //
+        // ownersDevice is true on a device the source made an admin - one of
+        // the owner's own, as against a guest's. Two things follow from it.
+        //
+        // It keeps whichever Date Added is older instead of taking the
+        // source's, and the push that follows the pull tells the source (see
+        // ApplyReportedOwnerState). The owner's desktop has usually known a
+        // song for longer than a server that scanned the same folder last
+        // month, and "when did this enter my library" has one right answer
+        // across the owner's devices - the earliest. Every other device
+        // mirrors the source, as before.
+        //
+        // And a song the source says was removed leaves this library too, even
+        // where this device has a file of its own for it - see removedAtSource.
+        //
+        // removedAtSource is the source's ids for the songs removed from its
+        // library on purpose (LibrarySyncManifestDto.Removed). A file here that
+        // was a copy of one is taken out of this library and set aside: off the
+        // list, kept on disk and kept out of scans, exactly as "Remove from
+        // Library" leaves a file, until Settings' Removed Songs restores it or
+        // deletes it. Always for a download, which was the source's song lent;
+        // for a file this device imported itself only when it is the owner's,
+        // since a guest's own copy is not the owner's to take away.
+        //
+        // fileWork collects the songs this device has a *file* of whose copy at
+        // the source has changed in a way this one should follow: newer tags
+        // (Track.TagsEditedAt), newer artwork (Track.ArtEditedAt), a file that
+        // moved. They are handed back rather than applied, because applying
+        // them means writing, moving or fetching a file, and files are the
+        // caller's business (see LibrarySyncService, and ApplySyncedTags for
+        // the library's half). A placeholder has no file and is simply
+        // refreshed, here.
+        //
+        // Deliberately not driven by a song merely being absent from the
+        // catalog. A server whose music folder failed to mount lists nothing,
+        // and "the catalog is empty" must not be read by every device as an
+        // instruction to drop its files. Absent and not named is the old case
+        // below: the file stays and stops being vouched for.
         public int MergeSyncedTracks(
-            string sourceDeviceFingerprint, IReadOnlyList<Track> incoming, IReadOnlySet<string>? starBaseline = null)
+            string sourceDeviceFingerprint, IReadOnlyList<Track> incoming, IReadOnlySet<string>? starBaseline = null,
+            bool ownersDevice = false, IReadOnlySet<string>? removedAtSource = null,
+            SyncedFileWork? fileWork = null)
         {
             int removedCount;
             lock (_lock)
             {
                 var matches = SyncedTrackMatcher.Match(Tracks, sourceDeviceFingerprint, incoming);
                 var claimed = new HashSet<Track>(ReferenceEqualityComparer.Instance);
+                var newcomers = new List<Track>();
 
                 var merged = new List<Track>(Tracks);
                 for (var i = 0; i < incoming.Count; i++)
@@ -877,14 +1503,40 @@ namespace Flower.Models
                     if (matches[i] is { } existing)
                     {
                         claimed.Add(existing);
+
+                        // The source's file is somewhere new since the last
+                        // pull. Noted before the line below forgets where it
+                        // was - a first match has no "was", and is not a move.
+                        if (existing is { Path: not null, OriginRelativePath: { } was }
+                            && existing.OriginTrackId == remote.OriginTrackId
+                            && remote.OriginRelativePath is { } now && was != now)
+                        {
+                            fileWork?.Moved.Add((existing, was, now));
+                        }
+
                         existing.OriginDeviceFingerprint = remote.OriginDeviceFingerprint;
                         existing.OriginTrackId = remote.OriginTrackId;
                         existing.OriginFileExtension = remote.OriginFileExtension;
                         existing.OriginRelativePath = remote.OriginRelativePath;
                         existing.OriginAlbumArtId = remote.OriginAlbumArtId;
-                        existing.DateAdded = remote.DateAdded;
+                        existing.WithdrawnByOrigin = false;
+                        if (!ownersDevice || remote.DateAdded < existing.DateAdded)
+                            existing.DateAdded = remote.DateAdded;
                         MergeRemotePlayCounts(existing, remote.RemotePlayCounts);
-                        RefreshPlaceholderMetadata(existing, remote);
+                        // A whole new file settles the other two: it has the
+                        // tags and the picture in it. A placeholder has no
+                        // file to replace and goes on to be refreshed.
+                        if (existing.Path != null
+                            && remote.FileReplacedAt is { } replacedAt
+                            && (existing.FileReplacedAt is not { } have || replacedAt > have))
+                        {
+                            fileWork?.NewerFile.Add((existing, remote));
+                        }
+                        else
+                        {
+                            MergeArt(existing, remote, ownersDevice, fileWork);
+                            MergeTags(existing, remote, ownersDevice, fileWork);
+                        }
                         // Before MergeLastPlayed: which side played last is
                         // what decides the options, and that has to be read
                         // before the server's date is taken.
@@ -897,7 +1549,18 @@ namespace Flower.Models
 
                     merged.Add(remote);
                     claimed.Add(remote);
+                    newcomers.Add(remote);
                 }
+
+                // A song this device has had before and no longer has a file
+                // for - one whose drive is unplugged, say - comes back as the
+                // source's placeholder with the id and the plays it had here,
+                // so the playlists holding it never notice it left. Whatever
+                // was still owed to the source about it is dropped with the
+                // record: the source evidently still has the song, and the
+                // user can see that it does.
+                var revived = ReviveRemovedAsPlaceholders(newcomers, merged, sourceDeviceFingerprint, ownersDevice);
+                ForgetRemoved(revived);
 
                 // Whatever of this source's the pull did not account for. A
                 // placeholder goes: the source was its only reason to exist. A
@@ -905,19 +1568,39 @@ namespace Flower.Models
                 // claiming the source has a copy, which it used to go on
                 // claiming indefinitely: the phone's delete-a-download warning
                 // then called deleting it reversible, of a song the server no
-                // longer had.
+                // longer had. It is also marked as withdrawn, so an admin
+                // device does not answer a removal by uploading its own copy
+                // back - see Track.WithdrawnByOrigin.
                 var stale = new HashSet<Track>(ReferenceEqualityComparer.Instance);
+                var setAside = new List<Track>();
                 foreach (var track in merged)
                 {
                     if (track.OriginDeviceFingerprint != sourceDeviceFingerprint || claimed.Contains(track))
                         continue;
 
                     if (track.Path == null)
+                    {
                         stale.Add(track);
+                    }
+                    else if ((ownersDevice || track.IsLocallyDownloaded)
+                             && track.OriginTrackId is { } originId && removedAtSource?.Contains(originId) == true)
+                    {
+                        stale.Add(track);
+                        setAside.Add(track);
+                    }
                     else
+                    {
                         ClearOrigin(track);
+                        track.WithdrawnByOrigin = true;
+                    }
                 }
                 merged.RemoveAll(stale.Contains);
+
+                // Removed there, so removed here: on record like any other
+                // removal, and the files left where they are, out of every
+                // scan's reach.
+                RememberRemoved(setAside, owedToOrigin: false, deliberate: true);
+                ExcludePaths(setAside.Select(t => t.Path!).ToList());
 
                 Tracks = merged;
                 InvalidateIndexes();
@@ -942,6 +1625,8 @@ namespace Flower.Models
             track.OriginFileExtension = null;
             track.OriginRelativePath = null;
             track.OriginAlbumArtId = null;
+            track.MovedFromPath = null;
+            track.OriginFileStamp = null;
         }
 
         // A matched track kept its original metadata forever: the merge above
@@ -973,6 +1658,15 @@ namespace Flower.Models
             if (existing.Path != null)
                 return;
 
+            // Every tag, where the source sent every tag (TrackDto.Tags, for a
+            // song somebody has edited); the fields below then restate the
+            // ones a catalog always carries.
+            if (remote.TagsEditedAt != null)
+                TrackTags.ApplyTo(existing, TrackTags.Of(remote));
+            existing.TagsEditedAt = remote.TagsEditedAt;
+            existing.ArtEditedAt = remote.ArtEditedAt;
+            existing.FileReplacedAt = remote.FileReplacedAt;
+
             // The key fields too, which a SyncKey match proves agree but a
             // match on the server's own id does not: that is how a title
             // fixed on the server reaches a placeholder that keeps its Id,
@@ -998,6 +1692,59 @@ namespace Flower.Models
             existing.ArtistsSort = remote.ArtistsSort;
             existing.AlbumSort = remote.AlbumSort;
             existing.ComposersSort = remote.ComposersSort;
+        }
+
+        // Whose tags a matched song ends up with. The newest edit wins
+        // (Track.TagsEditedAt), and "never edited" is older than any edit.
+        //
+        // Editing a server's song is an owner's act, so there are two kinds of
+        // device and they read the dates differently.
+        //
+        //  - An owner's device may have an edit of its own that the source has
+        //    not heard yet. Where its date is the newer one nothing is taken:
+        //    the edit is on its way up (LibraryMirrorService.PushTagEditsAsync),
+        //    and refreshing from the catalog now would undo it on screen until
+        //    the push lands.
+        //  - Any other device has no edits of the source's songs to protect -
+        //    it is not allowed to make one - so whatever the source says an
+        //    owner edited is simply what the song's tags are.
+        //
+        // A placeholder is refreshed here. A file is handed back to the caller
+        // to be written, and only when the source really has an edit: a song
+        // nobody has edited keeps whatever its file's last scan read, on every
+        // device, so pairing rewrites nothing.
+        private static void MergeTags(Track existing, Track remote, bool ownersDevice, SyncedFileWork? fileWork)
+        {
+            var mineIsNewer = ownersDevice
+                              && existing.TagsEditedAt is { } mine
+                              && (remote.TagsEditedAt is not { } theirs || mine > theirs);
+
+            if (existing.Path == null)
+            {
+                if (!mineIsNewer)
+                    RefreshPlaceholderMetadata(existing, remote);
+                return;
+            }
+
+            if (remote.TagsEditedAt != null && !mineIsNewer && existing.TagsEditedAt != remote.TagsEditedAt)
+                fileWork?.NewerTags.Add((existing, remote));
+        }
+
+        // The artwork counterpart, by the same reading of the same kind of
+        // date. Before MergeTags, which for a placeholder overwrites the date
+        // this compares.
+        private static void MergeArt(Track existing, Track remote, bool ownersDevice, SyncedFileWork? fileWork)
+        {
+            var mineIsNewer = ownersDevice
+                              && existing.ArtEditedAt is { } mine
+                              && (remote.ArtEditedAt is not { } theirs || mine > theirs);
+            if (mineIsNewer || remote.ArtEditedAt == null || existing.ArtEditedAt == remote.ArtEditedAt)
+                return;
+
+            if (existing.Path == null)
+                fileWork?.StaleArt.Add(existing);
+            else
+                fileWork?.NewerArt.Add((existing, remote));
         }
 
         // The per-track playback options (see Track's section of that name),
@@ -1428,6 +2175,18 @@ namespace Flower.Models
                 moved |= TrackChange.Options;
             }
 
+            // Backwards only. Date Added is the earliest this song is known to
+            // have been in the owner's library, on any of the owner's devices,
+            // which makes it a low-water mark the way LastPlayedAt below is a
+            // high-water one: an older date is news, a newer one is a device
+            // that met the song later. The same rule ITunesDateAddedImporter
+            // applies to Music.app's record, and for the same reason.
+            if (entry.DateAdded is { } reportedAdded && reportedAdded < track.DateAdded)
+            {
+                track.DateAdded = reportedAdded;
+                moved |= TrackChange.DateAdded;
+            }
+
             // Nothing to say about listening: a report from before this server's
             // own last-played, or from a device that has never played the track,
             // leaves both the timestamp and the position that rides with it alone.
@@ -1576,6 +2335,24 @@ namespace Flower.Models
             if (changed.Count == 0)
                 return;
 
+            // A tag edit made here, by a person, just now - which is the only
+            // thing this method is called with Tags for (Track Info, on either
+            // head). Stamped so the edit can travel: see Track.TagsEditedAt.
+            if ((change & TrackChange.Tags) != 0)
+            {
+                var now = DateTimeOffset.UtcNow;
+                foreach (var track in changed)
+                    track.TagsEditedAt = now;
+            }
+
+            // Likewise new artwork (AlbumArtEditor) - see Track.ArtEditedAt.
+            if ((change & TrackChange.Artwork) != 0)
+            {
+                var now = DateTimeOffset.UtcNow;
+                foreach (var track in changed)
+                    track.ArtEditedAt = now;
+            }
+
             if ((change & TrackChange.Reshaping) != 0)
                 InvalidateIndexes();
             else
@@ -1588,6 +2365,82 @@ namespace Flower.Models
             });
 
             RaiseTrackChanged(changed, change);
+        }
+
+        // Tags that were edited somewhere else, arriving: on a server, from an
+        // owner's device (TrackTags.ApplyEdits); on a device, from its server,
+        // for a song it has a file of (LibrarySyncService). The caller has
+        // already written them into the file where there is one - this is the
+        // library catching up with it.
+        //
+        // Announced as Remote. The edit is known where it came from, and a
+        // change announced as this device's own would be stamped as a new edit
+        // and sent straight back.
+        //
+        // FileStamp is what the file looks like now that the tags are in it,
+        // for a file whose changes this device uploads (Track.OriginFileStamp):
+        // the write changed the file, and it is still the same as the server's.
+        public void ApplySyncedTags(
+            IReadOnlyList<(Track Track, TrackTagsDto Tags, DateTimeOffset EditedAt, string? FileStamp)> edits)
+        {
+            if (edits.Count == 0)
+                return;
+
+            var changed = new List<Track>(edits.Count);
+            lock (_lock)
+            {
+                foreach (var (track, tags, editedAt, fileStamp) in edits)
+                {
+                    var current = ResolveCurrent(track);
+                    TrackTags.ApplyTo(current, tags);
+                    current.TagsEditedAt = editedAt;
+                    if (fileStamp != null && current.OriginFileStamp != null)
+                        current.OriginFileStamp = fileStamp;
+                    changed.Add(current);
+                }
+
+                InvalidateIndexes();
+            }
+
+            Persist(() =>
+            {
+                foreach (var track in changed)
+                    _store!.Upsert(track);
+            });
+
+            RaiseTrackChanged(changed, TrackChange.Tags, ChangeSource.Remote);
+        }
+
+        // The artwork counterpart: a picture changed somewhere else, already
+        // written into the file by the caller where there is one. Dated,
+        // persisted, and announced as Remote for the reason above.
+        public void ApplySyncedArt(IReadOnlyList<(Track Track, DateTimeOffset EditedAt, string? FileStamp)> edits)
+        {
+            if (edits.Count == 0)
+                return;
+
+            var changed = new List<Track>(edits.Count);
+            lock (_lock)
+            {
+                foreach (var (track, editedAt, fileStamp) in edits)
+                {
+                    var current = ResolveCurrent(track);
+                    current.ArtEditedAt = editedAt;
+                    if (fileStamp != null && current.OriginFileStamp != null)
+                        current.OriginFileStamp = fileStamp;
+                    changed.Add(current);
+                }
+
+                InvalidateIndexes();
+            }
+
+            Persist(() =>
+            {
+                foreach (var track in changed)
+                    _store!.Upsert(track);
+            });
+
+            RaiseTrackChanged(changed, TrackChange.Artwork, ChangeSource.Remote);
         }
 
         public void NotifyTrackChanged(Track changed, TrackChange change) => NotifyTracksChanged([changed], change);

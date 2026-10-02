@@ -20,7 +20,7 @@ namespace Flower.Importer;
 // the peer has nothing. A caller that cannot tell those apart will happily prune
 // a library it never re-read (see Library.MergeSyncedTracks), so the two are
 // kept distinct here rather than collapsed into an empty list.
-public readonly record struct RemoteLibraryFetch(bool NotModified, string? ETag, List<Track> Tracks);
+public readonly record struct RemoteLibraryFetch(bool NotModified, string? ETag, List<Track> Tracks, IReadOnlySet<string> RemovedIds);
 
 // The other IMusicImporter: a catalog pulled from a Flower host over the bulk
 // manifest endpoint, where Importer walks folders on disk. Every track it
@@ -142,7 +142,7 @@ public sealed class RemoteLibraryImporter : IMusicImporter
         if (response.StatusCode == HttpStatusCode.NotModified)
         {
             _logger.LogTrace("Remote library at {BaseUrl}: catalog unchanged since {Token}", _baseUrl, ifNoneMatch);
-            return new RemoteLibraryFetch(NotModified: true, ifNoneMatch, []);
+            return new RemoteLibraryFetch(NotModified: true, ifNoneMatch, [], new HashSet<string>());
         }
 
         response.EnsureSuccessStatusCode();
@@ -162,6 +162,6 @@ public sealed class RemoteLibraryImporter : IMusicImporter
             .ToList();
 
         _logger.LogInformation("Remote library at {BaseUrl}: fetched {SongCount} song(s)", _baseUrl, tracks.Count);
-        return new RemoteLibraryFetch(NotModified: false, servedToken, tracks);
+        return new RemoteLibraryFetch(NotModified: false, servedToken, tracks, (manifest?.Removed ?? []).ToHashSet());
     }
 }

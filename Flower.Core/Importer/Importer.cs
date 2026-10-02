@@ -15,7 +15,14 @@ namespace Flower.Importer
     public class Importer : IMusicImporter
     {
         private readonly ILogger<Importer> _logger;
-        private readonly HashSet<string> _validExtensions = [".mp3", ".m4a", ".wav", ".flac", ".alac"];
+        private static readonly HashSet<string> ValidExtensions =
+            new(StringComparer.OrdinalIgnoreCase) { ".mp3", ".m4a", ".wav", ".flac", ".alac" };
+
+        // Whether a scan would take this file at all, by its name alone - the
+        // same question an upload has to answer before accepting one (see
+        // LibraryIngest), so that nothing lands in a library folder that the
+        // next scan would walk straight past.
+        public static bool IsImportable(string fileName) => ValidExtensions.Contains(Path.GetExtension(fileName));
 
         public Importer(ILogger<Importer> logger)
         {
@@ -30,6 +37,27 @@ namespace Flower.Importer
             var tracks = new List<Track>();
             var seenFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+            var paths = ScanRoots(libraryPaths);
+            if (paths.Count == 0)
+            {
+                _logger.LogInformation("No library folders configured - nothing to scan");
+                return tracks;
+            }
+
+            foreach (var path in paths)
+            {
+                ImportFrom(path, tracks, seenFiles);
+            }
+
+            return tracks;
+        }
+
+        // The folders a scan of these settings actually walks - public because
+        // "which folder is this file under" is asked outside a scan too: what
+        // an upload calls the file on the server is its path below one of
+        // these (see LibraryMirrorService).
+        public static List<string> ScanRoots(IEnumerable<string>? libraryPaths)
+        {
             var configured = libraryPaths?
                 .Where(p => !string.IsNullOrWhiteSpace(p) && Directory.Exists(p))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -53,23 +81,12 @@ namespace Flower.Importer
             // choice, and its absolute path is deliberately not persisted - the
             // container UUID can change across a reinstall (see
             // Library.UpdateTracks' SyncKey fallback).
-            List<string> paths;
             if (configured is { Count: > 0 })
-                paths = configured;
-            else if (OperatingSystem.IsIOS())
-                paths = [Environment.GetFolderPath(Environment.SpecialFolder.Personal)];
-            else
-            {
-                _logger.LogInformation("No library folders configured - nothing to scan");
-                return tracks;
-            }
+                return configured;
+            if (OperatingSystem.IsIOS())
+                return [Environment.GetFolderPath(Environment.SpecialFolder.Personal)];
 
-            foreach (var path in paths)
-            {
-                ImportFrom(path, tracks, seenFiles);
-            }
-
-            return tracks;
+            return [];
         }
 
         // Anything below a folder whose name starts with a dot. Those are
@@ -96,7 +113,7 @@ namespace Flower.Importer
         private void ImportFrom(string path, List<Track> tracks, HashSet<string> seenFiles)
         {
             var files = Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories)
-                .Where(f => _validExtensions.Contains(Path.GetExtension(f).ToLower()))
+                .Where(IsImportable)
                 .Where(f => !IsUnderHiddenFolder(path, f));
 
             foreach (var file in files)
@@ -105,76 +122,87 @@ namespace Flower.Importer
                 if (!seenFiles.Add(file))
                     continue;
 
-                try
+                if (ImportFile(file) is { } track)
+                    tracks.Add(track);
+            }
+        }
+
+        // One file read into a Track, or null when it cannot be - the per-file
+        // half of a scan, and the whole of what an upload needs (see
+        // LibraryIngest), which has exactly one new file to read and no reason
+        // to walk the rest of the library to find it.
+        public Track? ImportFile(string file)
+        {
+            try
+            {
+                var tagFile = TagLib.File.Create(file);
+                var tag = tagFile.Tag;
+                var props = tagFile.Properties;
+                var technical = AudioTechnicalProperties.From(props);
+
+                return new Track
                 {
-                    var tagFile = TagLib.File.Create(file);
-                    var tag = tagFile.Tag;
-                    var props = tagFile.Properties;
-                    var technical = AudioTechnicalProperties.From(props);
+                    // Core identity
+                    Title         = tag.Title,
+                    TitleSort     = tag.TitleSort,
+                    Subtitle      = tag.Subtitle,
+                    Artists       = string.Join(", ", tag.Performers),
+                    ArtistsSort   = JoinOrNull(tag.PerformersSort),
+                    AlbumArtists  = string.Join(", ", tag.AlbumArtists),
+                    IsCompilation = CompilationFlag.Read(tagFile),
+                    Album         = tag.Album,
+                    AlbumSort     = tag.AlbumSort,
+                    Year          = tag.Year > 0 ? tag.Year.ToString() : null,
+                    TrackNumber   = tag.Track,
+                    TrackCount    = tag.TrackCount,
+                    DiscNumber    = tag.Disc,
+                    DiscCount     = tag.DiscCount,
 
-                    tracks.Add(new Track
-                    {
-                        // Core identity
-                        Title         = tag.Title,
-                        TitleSort     = tag.TitleSort,
-                        Subtitle      = tag.Subtitle,
-                        Artists       = string.Join(", ", tag.Performers),
-                        ArtistsSort   = JoinOrNull(tag.PerformersSort),
-                        AlbumArtists  = string.Join(", ", tag.AlbumArtists),
-                        IsCompilation = CompilationFlag.Read(tagFile),
-                        Album         = tag.Album,
-                        AlbumSort     = tag.AlbumSort,
-                        Year          = tag.Year > 0 ? tag.Year.ToString() : null,
-                        TrackNumber   = tag.Track,
-                        TrackCount    = tag.TrackCount,
-                        DiscNumber    = tag.Disc,
-                        DiscCount     = tag.DiscCount,
+                    // People
+                    Composers     = string.Join(", ", tag.Composers),
+                    ComposersSort = JoinOrNull(tag.ComposersSort),
+                    Conductor     = tag.Conductor,
+                    RemixedBy     = tag.RemixedBy,
 
-                        // People
-                        Composers     = string.Join(", ", tag.Composers),
-                        ComposersSort = JoinOrNull(tag.ComposersSort),
-                        Conductor     = tag.Conductor,
-                        RemixedBy     = tag.RemixedBy,
+                    // Classification
+                    Genre            = tag.FirstGenre,
+                    BeatsPerMinute   = tag.BeatsPerMinute,
+                    InitialKey       = tag.InitialKey,
+                    Grouping         = tag.Grouping,
+                    Publisher        = tag.Publisher,
+                    ISRC             = tag.ISRC,
 
-                        // Classification
-                        Genre            = tag.FirstGenre,
-                        BeatsPerMinute   = tag.BeatsPerMinute,
-                        InitialKey       = tag.InitialKey,
-                        Grouping         = tag.Grouping,
-                        Publisher        = tag.Publisher,
-                        ISRC             = tag.ISRC,
+                    // Descriptions
+                    Comment      = tag.Comment,
+                    Description  = tag.Description,
+                    Copyright    = tag.Copyright,
+                    Lyrics       = tag.Lyrics,
 
-                        // Descriptions
-                        Comment      = tag.Comment,
-                        Description  = tag.Description,
-                        Copyright    = tag.Copyright,
-                        Lyrics       = tag.Lyrics,
+                    // Audio technical
+                    Duration       = props?.Duration ?? TimeSpan.Zero,
+                    Bitrate        = technical.Bitrate,
+                    SampleRate     = technical.SampleRate,
+                    Channels       = technical.Channels,
+                    BitsPerSample  = technical.BitsPerSample,
+                    Codec          = technical.Codec,
+                    // A second, small read of the file's head (the first
+                    // MPEG frame - see EncodingProfile), because this is
+                    // not in the tag and TagLib's Properties describe the
+                    // decoded stream, not how it was produced.
+                    EncoderProfile = EncodingProfile.Describe(file),
 
-                        // Audio technical
-                        Duration       = props?.Duration ?? TimeSpan.Zero,
-                        Bitrate        = technical.Bitrate,
-                        SampleRate     = technical.SampleRate,
-                        Channels       = technical.Channels,
-                        BitsPerSample  = technical.BitsPerSample,
-                        Codec          = technical.Codec,
-                        // A second, small read of the file's head (the first
-                        // MPEG frame - see EncodingProfile), because this is
-                        // not in the tag and TagLib's Properties describe the
-                        // decoded stream, not how it was produced.
-                        EncoderProfile = EncodingProfile.Describe(file),
-
-                        Path = file
-                    });
-                }
-                catch (Exception ex)
-                {
-                    // Debug, not Warning - a handful of unreadable/DRM'd/corrupt
-                    // files scattered through a large real library is routine,
-                    // not something worth a warning per file, but still worth
-                    // being able to find in the log when "why isn't track X
-                    // showing up" comes up.
-                    _logger.LogTrace(ex, "Skipping unreadable file during import: {Path}", file);
-                }
+                    Path = file
+                };
+            }
+            catch (Exception ex)
+            {
+                // Debug, not Warning - a handful of unreadable/DRM'd/corrupt
+                // files scattered through a large real library is routine,
+                // not something worth a warning per file, but still worth
+                // being able to find in the log when "why isn't track X
+                // showing up" comes up.
+                _logger.LogTrace(ex, "Skipping unreadable file during import: {Path}", file);
+                return null;
             }
         }
 

@@ -29,7 +29,77 @@ public class LibraryRemovalTests : PinnedDataDirectory
         var repository = new TrackRepository(new FlowerDb(dbPath));
         if (seed != null)
             repository.ReplaceAll(seed);
-        return (new Library(repository.LoadAll(), NullLogger<Library>.Instance, repository, null, repository), repository);
+        return (new Library(repository.LoadAll(), NullLogger<Library>.Instance, repository, null, repository, repository), repository);
+    }
+
+    // The record of a removed song has to outlive the process, or it is only
+    // good for a file that returns before the next restart - and the case it
+    // exists for is a music folder that was missing when the server started.
+    [Fact]
+    public void A_song_that_went_missing_is_still_on_record_after_a_restart_and_comes_back_as_itself()
+    {
+        var dbPath = Path.Combine(DataDirectory, "flower.db");
+        var added = new DateTimeOffset(2017, 2, 3, 4, 5, 6, TimeSpan.Zero);
+        var original = File("/music/a.mp3", "A");
+        original.DateAdded = added;
+        original.PlayCount = 11;
+        original.Starred = true;
+        original.RemotePlayCounts["phone"] = 3;
+        original.OriginDeviceFingerprint = "server";
+        original.OriginTrackId = "s1";
+        var (library, _) = Open(dbPath, [original]);
+
+        library.UpdateTracks([]);
+        var (restarted, repository) = Open(dbPath);
+
+        var onRecord = Assert.Single(restarted.RemovedTracks);
+        Assert.True(onRecord.OwedToOrigin);
+        Assert.Equal("s1", onRecord.Track.OriginTrackId);
+
+        restarted.UpdateTracks([File("/music/a.mp3", "A")]);
+
+        var back = Assert.Single(repository.LoadAll());
+        Assert.Equal(original.Id, back.Id);
+        Assert.Equal(added, back.DateAdded);
+        Assert.Equal(11, back.PlayCount);
+        Assert.True(back.Starred);
+        Assert.Equal(3, back.RemotePlayCounts["phone"]);
+        Assert.Empty(repository.LoadRemovedTracks());
+    }
+
+    [Fact]
+    public void Settling_what_was_owed_to_the_server_survives_a_restart()
+    {
+        var dbPath = Path.Combine(DataDirectory, "flower.db");
+        var original = File("/music/a.mp3", "A");
+        original.OriginDeviceFingerprint = "server";
+        original.OriginTrackId = "s1";
+        var (library, _) = Open(dbPath, [original]);
+        library.UpdateTracks([]);
+
+        library.SettleRemovedTracks([original.Id]);
+        var (restarted, _) = Open(dbPath);
+
+        Assert.False(Assert.Single(restarted.RemovedTracks).OwedToOrigin);
+    }
+
+    // "The server had this and dropped it" has to be remembered for as long as
+    // the file is, or the next launch offers the song straight back.
+    [Fact]
+    public void A_copy_the_server_withdrew_is_still_marked_as_one_after_a_restart()
+    {
+        var dbPath = Path.Combine(DataDirectory, "flower.db");
+        var (library, _) = Open(dbPath, [File("/music/a.mp3", "A")]);
+        library.MergeSyncedTracks("server", [new Track
+        {
+            Title = "A", Artists = "Artist", Album = "Album", Duration = TimeSpan.FromSeconds(100),
+            OriginDeviceFingerprint = "server", OriginTrackId = "s1",
+        }]);
+        library.MergeSyncedTracks("server", []);
+
+        var (restarted, _) = Open(dbPath);
+
+        Assert.True(Assert.Single(restarted.Tracks).WithdrawnByOrigin);
     }
 
     [Fact]

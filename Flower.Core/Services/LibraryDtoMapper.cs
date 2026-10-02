@@ -126,7 +126,11 @@ public static class LibraryDtoMapper
             EncoderProfile: track.EncoderProfile,
             DiscNumber: track.DiscNumber > 0 ? (int)track.DiscNumber : null,
             DiscCount: track.DiscCount > 0 ? (int)track.DiscCount : null,
-            StarredAt: track.Starred ? track.StarredAt : null);
+            StarredAt: track.Starred ? track.StarredAt : null,
+            TagsEditedAt: track.TagsEditedAt,
+            Tags: track.TagsEditedAt != null ? TrackTags.Of(track) : null,
+            ArtEditedAt: track.ArtEditedAt,
+            FileReplacedAt: track.FileReplacedAt);
     }
 
     // The part of the file's path below whichever configured library folder it

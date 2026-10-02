@@ -55,6 +55,37 @@ namespace Flower.Models
     // A file removed from the library and kept on disk, and when.
     public sealed record ExcludedPath(string Path, DateTimeOffset ExcludedAt);
 
+    // A song that left the library, and what the library knew about it when it
+    // did - see Library.RemovedTracks. Track is the song as it was, Path and
+    // all, which is what a returning file is recognised by and restored from.
+    //
+    // OwedToOrigin is true while the paired server still has to be told. Only
+    // a file that went missing from under a scan sets it: a removal the user
+    // asked for tells the server before anything is removed here (see
+    // LibraryRemovalService), so by the time there is a record there is
+    // nothing left to say.
+    //
+    // Deliberate is true for a song somebody removed - here, or on a device
+    // whose removal this library was told of - and false for one a scan simply
+    // stopped finding. A server tells its devices about the first kind (see
+    // LibrarySyncManifestDto.Removed), so the song leaves their libraries too.
+    // It says nothing about the second: a music folder that failed to mount is
+    // not an instruction to every device to drop its own copies.
+    public sealed record RemovedTrack(
+        Track Track, DateTimeOffset RemovedAt, bool OwedToOrigin = false, bool Deliberate = false);
+
+    // Where those are kept. Read as well as written, like the exclusions:
+    // Library loads the set once, when it is built.
+    public interface IRemovedTrackStore
+    {
+        IReadOnlyList<RemovedTrack> LoadRemovedTracks();
+
+        // Insert or replace, by the track's id.
+        void SaveRemovedTracks(IReadOnlyCollection<RemovedTrack> removed);
+
+        void DeleteRemovedTracks(IReadOnlyCollection<Guid> ids);
+    }
+
     // The playlist half of the same idea. One method, because a playlist set
     // is small (tens, not thousands) and PlaylistRepository.Save is already an
     // upsert plus a delete-not-in inside one transaction - there is nothing a

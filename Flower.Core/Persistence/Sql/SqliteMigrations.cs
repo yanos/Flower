@@ -54,6 +54,8 @@ namespace Flower.Persistence.Sql
             new Migration(Schema.V6),
             new Migration(Schema.V7, connection => HasColumn(connection, "tracks", "origin_album_art_id")),
             new Migration(Schema.V8),
+            new Migration(Schema.V9),
+            new Migration(Schema.V10, connection => HasColumn(connection, "tracks", "withdrawn_by_origin")),
         ];
 
         public static int LatestVersion => Scripts.Count;

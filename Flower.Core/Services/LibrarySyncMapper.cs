@@ -22,102 +22,121 @@ public static class LibrarySyncMapper
     // it previously learned about us; our own play count is always authoritative
     // locally (Track.PlayCount, live-incremented) and must never be overwritten
     // by something arriving over sync.
-    public static Track ToPlaceholderTrack(TrackDto song, string originDeviceFingerprint, string ownFingerprint) => new Track
+    public static Track ToPlaceholderTrack(TrackDto song, string originDeviceFingerprint, string ownFingerprint)
     {
-        Title = song.Title,
-        Artists = song.Artist,
-        // Restores the sender's own EffectiveAlbumArtist, which this side would
-        // otherwise recompute from two fields that never crossed the wire and so
-        // always fell through to the per-track Artists - shattering every
-        // various-artists compilation into one album tile per contributor. See
-        // TrackDto.DisplayAlbumArtist.
-        //
-        // Only stored when it actually differs from this song's own artist, or
-        // when the song is a compilation. The sender's fallback ends at Artists
-        // for an ordinary single-artist album, so copying it unconditionally
-        // would stamp a redundant AlbumArtists tag identical to Artists onto the
-        // overwhelming majority of a library, for no change in grouping. A
-        // compilation is the exception, because its fallback does not end at
-        // Artists: left blank here, the flag below resolves it to "Various
-        // Artists" - which is wrong for a compilation tagged with the one artist
-        // on it, and filed four such albums on a real phone under a tile the
-        // server never showed. With both cases covered this reproduces the
-        // sender's EffectiveAlbumArtist in every branch: a real AlbumArtists tag
-        // comes back verbatim, a blank-tagged compilation comes back as the
-        // "Various Artists" its flag stands for, and an ordinary album falls
-        // through to Artists here the same way it did there.
-        AlbumArtists = string.IsNullOrWhiteSpace(song.DisplayAlbumArtist)
-                       || (song.DisplayAlbumArtist == song.Artist && !song.IsCompilation)
-            ? null
-            : song.DisplayAlbumArtist,
-        IsCompilation = song.IsCompilation,
-        Album = song.Album,
-        Duration = TimeSpan.FromSeconds(song.Duration ?? 0),
-        Genre = song.Genre,
-        TrackNumber = (uint)(song.Track is > 0 ? song.Track.Value : 0),
-        DiscNumber = (uint)(song.DiscNumber is > 0 ? song.DiscNumber.Value : 0),
-        DiscCount = (uint)(song.DiscCount is > 0 ? song.DiscCount.Value : 0),
-        Year = song.Year?.ToString(),
-        Path = null,
-        OriginDeviceFingerprint = originDeviceFingerprint,
-        // Kept verbatim - an OpenSubsonic id is opaque to a client, and this is
-        // what a later stream/download request is addressed with. See
-        // Track.OriginTrackId for what re-deriving it instead used to break.
-        OriginTrackId = song.Id,
-        OriginFileExtension = song.Suffix,
-        // The origin's own path below its library folder, which is what the
-        // download names the saved file after - see TrackDto.RelativePath. Null
-        // from a third-party server, which sends no such field; the download
-        // then falls back to the track id plus Suffix above, exactly as every
-        // download did before this existed.
-        OriginRelativePath = song.RelativePath,
-        OriginAlbumArtId = song.CoverArt,
-        RemotePlayCounts = (song.PlayCounts ?? new Dictionary<string, int>())
-            .Where(kv => kv.Key != ownFingerprint)
-            .ToDictionary(kv => kv.Key, kv => kv.Value),
-        // Falls back to the Track record's own "now" default (see Track.DateAdded)
-        // when talking to a third-party server that doesn't send this - see
-        // TrackDto.DateAdded's own doc comment for why this matters for Recently
-        // Added parity between a Client and its paired Server.
-        DateAdded = song.DateAdded ?? DateTimeOffset.UtcNow,
-        // Null from a third-party server, and null for a track nobody has
-        // played - both simply mean "not in History", which is what an unset
-        // LastPlayedAt already means.
-        LastPlayedAt = song.LastPlayed,
-        // Part of the real OpenSubsonic spec, unlike the two above, and served
-        // by this project's own server all along (LibraryDtoMapper.ToTrackDto) - it
-        // was simply never read here, so a star set on the server or from any
-        // third-party client was invisible to every Flower client. See
-        // Library.MergeStar for how it reaches a track this device already has.
-        Starred = song.Starred,
-        StarredAt = song.Starred ? song.StarredAt : null,
-        // What Track Info's Technical tab reads. A placeholder has no file to
-        // scan, so these can only ever be what the origin's own scan found;
-        // without them a library made entirely of synced placeholders showed an
-        // all-"-" Technical tab. BitRate crossed the wire all along and was
-        // simply not read here - the other three are new (see TrackDto).
-        Bitrate = song.BitRate ?? 0,
-        SampleRate = song.SamplingRate ?? 0,
-        Channels = song.ChannelCount ?? 0,
-        BitsPerSample = song.BitDepth ?? 0,
-        // Null from a third-party server, which has no such field; the Technical
-        // tab falls back to showing nothing for it, same as an unscanned file.
-        Codec = song.Codec,
-        // The origin's "sort as" tags. A placeholder has no file to read them
-        // off, so without these it would sort under its display text while the
-        // origin sorted it somewhere else entirely - see TrackDto.SortTitle.
-        TitleSort = song.SortTitle,
-        ArtistsSort = song.SortArtist,
-        AlbumSort = song.SortAlbum,
-        ComposersSort = song.SortComposer,
-        // Flower's own per-track options - see TrackDto.RememberPlaybackPosition.
-        // All four default to "off"/zero from a third-party server, which is
-        // also what a track nobody has configured looks like.
-        RememberPlaybackPosition = song.RememberPlaybackPosition,
-        ResumePosition = song.ResumePositionSeconds is { } seconds ? TimeSpan.FromSeconds(seconds) : null,
-        IgnoreWhenShuffling = song.IgnoreWhenShuffling,
-        VolumeAdjustment = song.VolumeAdjustment,
-        // See TrackDto.EncoderProfile - a placeholder has no file to parse it out of.
-        EncoderProfile = song.EncoderProfile,
-    };
+        var track = new Track
+        {
+            Title = song.Title,
+            Artists = song.Artist,
+            // Restores the sender's own EffectiveAlbumArtist, which this side would
+            // otherwise recompute from two fields that never crossed the wire and so
+            // always fell through to the per-track Artists - shattering every
+            // various-artists compilation into one album tile per contributor. See
+            // TrackDto.DisplayAlbumArtist.
+            //
+            // Only stored when it actually differs from this song's own artist, or
+            // when the song is a compilation. The sender's fallback ends at Artists
+            // for an ordinary single-artist album, so copying it unconditionally
+            // would stamp a redundant AlbumArtists tag identical to Artists onto the
+            // overwhelming majority of a library, for no change in grouping. A
+            // compilation is the exception, because its fallback does not end at
+            // Artists: left blank here, the flag below resolves it to "Various
+            // Artists" - which is wrong for a compilation tagged with the one artist
+            // on it, and filed four such albums on a real phone under a tile the
+            // server never showed. With both cases covered this reproduces the
+            // sender's EffectiveAlbumArtist in every branch: a real AlbumArtists tag
+            // comes back verbatim, a blank-tagged compilation comes back as the
+            // "Various Artists" its flag stands for, and an ordinary album falls
+            // through to Artists here the same way it did there.
+            AlbumArtists = string.IsNullOrWhiteSpace(song.DisplayAlbumArtist)
+                           || (song.DisplayAlbumArtist == song.Artist && !song.IsCompilation)
+                ? null
+                : song.DisplayAlbumArtist,
+            IsCompilation = song.IsCompilation,
+            Album = song.Album,
+            Duration = TimeSpan.FromSeconds(song.Duration ?? 0),
+            Genre = song.Genre,
+            TrackNumber = (uint)(song.Track is > 0 ? song.Track.Value : 0),
+            DiscNumber = (uint)(song.DiscNumber is > 0 ? song.DiscNumber.Value : 0),
+            DiscCount = (uint)(song.DiscCount is > 0 ? song.DiscCount.Value : 0),
+            Year = song.Year?.ToString(),
+            Path = null,
+            OriginDeviceFingerprint = originDeviceFingerprint,
+            // Kept verbatim - an OpenSubsonic id is opaque to a client, and this is
+            // what a later stream/download request is addressed with. See
+            // Track.OriginTrackId for what re-deriving it instead used to break.
+            OriginTrackId = song.Id,
+            OriginFileExtension = song.Suffix,
+            // The origin's own path below its library folder, which is what the
+            // download names the saved file after - see TrackDto.RelativePath. Null
+            // from a third-party server, which sends no such field; the download
+            // then falls back to the track id plus Suffix above, exactly as every
+            // download did before this existed.
+            OriginRelativePath = song.RelativePath,
+            OriginAlbumArtId = song.CoverArt,
+            RemotePlayCounts = (song.PlayCounts ?? new Dictionary<string, int>())
+                .Where(kv => kv.Key != ownFingerprint)
+                .ToDictionary(kv => kv.Key, kv => kv.Value),
+            // Falls back to the Track record's own "now" default (see Track.DateAdded)
+            // when talking to a third-party server that doesn't send this - see
+            // TrackDto.DateAdded's own doc comment for why this matters for Recently
+            // Added parity between a Client and its paired Server.
+            DateAdded = song.DateAdded ?? DateTimeOffset.UtcNow,
+            // Null from a third-party server, and null for a track nobody has
+            // played - both simply mean "not in History", which is what an unset
+            // LastPlayedAt already means.
+            LastPlayedAt = song.LastPlayed,
+            // Part of the real OpenSubsonic spec, unlike the two above, and served
+            // by this project's own server all along (LibraryDtoMapper.ToTrackDto) - it
+            // was simply never read here, so a star set on the server or from any
+            // third-party client was invisible to every Flower client. See
+            // Library.MergeStar for how it reaches a track this device already has.
+            Starred = song.Starred,
+            StarredAt = song.Starred ? song.StarredAt : null,
+            // What Track Info's Technical tab reads. A placeholder has no file to
+            // scan, so these can only ever be what the origin's own scan found;
+            // without them a library made entirely of synced placeholders showed an
+            // all-"-" Technical tab. BitRate crossed the wire all along and was
+            // simply not read here - the other three are new (see TrackDto).
+            Bitrate = song.BitRate ?? 0,
+            SampleRate = song.SamplingRate ?? 0,
+            Channels = song.ChannelCount ?? 0,
+            BitsPerSample = song.BitDepth ?? 0,
+            // Null from a third-party server, which has no such field; the Technical
+            // tab falls back to showing nothing for it, same as an unscanned file.
+            Codec = song.Codec,
+            // The origin's "sort as" tags. A placeholder has no file to read them
+            // off, so without these it would sort under its display text while the
+            // origin sorted it somewhere else entirely - see TrackDto.SortTitle.
+            TitleSort = song.SortTitle,
+            ArtistsSort = song.SortArtist,
+            AlbumSort = song.SortAlbum,
+            ComposersSort = song.SortComposer,
+            // Flower's own per-track options - see TrackDto.RememberPlaybackPosition.
+            // All four default to "off"/zero from a third-party server, which is
+            // also what a track nobody has configured looks like.
+            RememberPlaybackPosition = song.RememberPlaybackPosition,
+            ResumePosition = song.ResumePositionSeconds is { } seconds ? TimeSpan.FromSeconds(seconds) : null,
+            IgnoreWhenShuffling = song.IgnoreWhenShuffling,
+            VolumeAdjustment = song.VolumeAdjustment,
+            // See TrackDto.EncoderProfile - a placeholder has no file to parse it out of.
+            EncoderProfile = song.EncoderProfile,
+        };
+
+        // A song whose tags somebody has edited arrives with all of them (see
+        // TrackDto.Tags), and they replace the handful mapped above - the same
+        // values for those, plus every tag that has no field of its own on the
+        // wire. The title keeps its fallback: the server names an untitled
+        // song after its file, and the tags alone would leave it nameless.
+        if (song.Tags is { } tags)
+        {
+            TrackTags.ApplyTo(track, tags);
+            track.Title ??= song.Title;
+        }
+
+        track.TagsEditedAt = song.TagsEditedAt;
+        track.ArtEditedAt = song.ArtEditedAt;
+        track.FileReplacedAt = song.FileReplacedAt;
+        return track;
+    }
 }

@@ -154,4 +154,25 @@ public sealed record TrackDto(
     // When the star was set, alongside the bare flag above, so "Date Starred"
     // reads the same on a device that learned the star by sync as on the one
     // it was clicked on. Null when not starred.
-    System.DateTimeOffset? StarredAt = null);
+    System.DateTimeOffset? StarredAt = null,
+    // Flower-specific. When this song's tags were last edited by a person
+    // (Track.TagsEditedAt), and - only for a song that has been - the whole of
+    // what they now are. A receiving device whose own stamp is older takes
+    // them: into a placeholder's metadata, and into its own copy of the file
+    // if it has one. Sent whole rather than as the handful of fields above
+    // because an edit can touch any tag Track Info shows, and most of those
+    // have no field here; sent only for edited songs because for every other
+    // one the fields above are all a placeholder is ever shown with, and
+    // sixteen thousand copies of "no composer, no comment, no lyrics" are
+    // sixteen thousand too many.
+    System.DateTimeOffset? TagsEditedAt = null,
+    TrackTagsDto? Tags = null,
+    // Flower-specific. When this song's artwork was last changed by a person
+    // (Track.ArtEditedAt). Only the date: the picture is megabytes and has its
+    // own route, and a device that finds this newer than its own goes and
+    // fetches it.
+    System.DateTimeOffset? ArtEditedAt = null,
+    // Flower-specific. When this song's file was last replaced by a new
+    // version of it (Track.FileReplacedAt). A device whose own copy is of an
+    // older version downloads the file again.
+    System.DateTimeOffset? FileReplacedAt = null);

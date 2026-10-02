@@ -75,6 +75,11 @@ public sealed record PlayReportDto(List<PlayEventDto> Plays);
 //
 // TrackId is the server's id for the track (Track.OriginTrackId), for the same
 // reason PlayEventDto's is: the client's own Guid means nothing there.
+//
+// DateAdded is when the reporting device first had the song, and is the one
+// field here the server only ever moves backwards - see
+// Library.ApplyReportedOwnerState. Null from a device that is not an admin,
+// like the rest of the owner state, and from one that has nothing older to say.
 public sealed record TrackStateDto(
     string TrackId,
     int Count,
@@ -84,7 +89,8 @@ public sealed record TrackStateDto(
     bool RememberPlaybackPosition = false,
     double? ResumePositionSeconds = null,
     bool IgnoreWhenShuffling = false,
-    int VolumeAdjustment = 0);
+    int VolumeAdjustment = 0,
+    DateTimeOffset? DateAdded = null);
 
 // The fingerprint the report belongs to is deliberately absent: the server
 // files it under the one the request signature proved, because a body is

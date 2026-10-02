@@ -110,6 +110,26 @@ public static class LocalAlbumArtReader
     // with a logger of their own to hand and the third (a Minimal-API handler)
     // has none; a null one just means the best-effort failures below stay
     // silent, exactly as they were before.
+    // The picture inside this file's own tags, and nothing else - no cover.jpg
+    // from the folder it sits in. What "this file's artwork" means when the
+    // file is about to be compared with, or sent to stand in for, another copy
+    // of the same song: a folder image is not part of either.
+    public static LocalAlbumArt? EmbeddedIn(string path)
+    {
+        try
+        {
+            using var tagFile = TagLib.File.Create(path);
+            var pic = tagFile.Tag.Pictures.FirstOrDefault();
+            return pic?.Data?.Data is { Length: > 0 } data
+                ? new LocalAlbumArt(data, string.IsNullOrEmpty(pic.MimeType) ? "image/jpeg" : pic.MimeType)
+                : null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     public static LocalAlbumArt? ForFile(string? path, ILogger? logger = null)
     {
         if (string.IsNullOrEmpty(path))
