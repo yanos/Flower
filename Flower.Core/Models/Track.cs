@@ -369,8 +369,8 @@ namespace Flower.Models
         // volume is set to.
         public int VolumeAdjustment { get; set; }
 
-        // Stats. PlayCount is Flower's own count, incremented on natural
-        // end-of-track (see PlaylistControlViewModel); ImportedPlayCount comes
+        // Stats. PlayCount is Flower's own count, incremented once nine tenths
+        // of the track has been heard (see ListenMeter); ImportedPlayCount comes
         // from iTunes/Music.app's library export when that sync is enabled
         // (see ITunesPlayCountImporter) - kept as separate fields so re-running
         // (or disabling) the import can never clobber plays Flower itself
@@ -381,7 +381,7 @@ namespace Flower.Models
 
         // When this track last started playing (see PlaylistControlViewModel.Play,
         // via Library.RecordPlayed) - null if never played. Deliberately stamped at
-        // play-start, not on natural end-of-track like PlayCount above: "History"
+        // play-start, not once it has been heard like PlayCount above: "History"
         // (the sidebar view this drives) means "you played this", not "you sat
         // through the whole thing". Library.UpdateTracks carries it forward across
         // rescans the same way DateAdded/PlayCount are.

@@ -66,6 +66,10 @@ namespace Flower.ViewModels
         // fraction of an unknown length is a seek to nowhere.
         private TimeSpan? _pendingSeek;
 
+        // How much of the playing track has been heard, which is what a play
+        // count is counted on - see ListenMeter.
+        private readonly ListenMeter _listen;
+
         private readonly AppSettings _appSettings;
         private readonly AppSettingsStore _appSettingsStore;
 
@@ -136,10 +140,13 @@ namespace Flower.ViewModels
             // Defaulted to one of its own over no store, so a test that builds
             // this class directly still has a shelf to read - it just is not
             // written anywhere.
-            AlbumProgressTracker? albumProgress = null)
+            AlbumProgressTracker? albumProgress = null,
+            // Only ever passed by a test, which needs to own its clock.
+            ListenMeter? listenMeter = null)
         {
             _streamUrlResolver = streamUrlResolver;
             AlbumProgress = albumProgress ?? new AlbumProgressTracker(library);
+            _listen = listenMeter ?? new ListenMeter();
             _audioManager = audioManager;
             _currentPlaylist = playlist;
             _library = library;
@@ -166,6 +173,12 @@ namespace Flower.ViewModels
                 if (_positionTrack != null)
                     _lastKnownTimeMs = time;
                 AlbumProgress.UpdatePosition(time);
+
+                // The play is counted here, the moment enough of the track
+                // has been heard, rather than when it is left - so skipping on
+                // through a fade-out, stopping, or quitting does not lose it.
+                if (_listen.Observe(time) is { } heard)
+                    CountPlay(heard);
             },
                 h => _audioManager.PositionChanged += h, h => _audioManager.PositionChanged -= h);
 
@@ -199,6 +212,7 @@ namespace Flower.ViewModels
             {
                 SaveResumePosition();
                 AlbumProgress.Flush();
+                _listen.Suspend();
                 OnPropertyChanged(nameof(IsPlaying));
             },
                 h => _audioManager.Paused += h, h => _audioManager.Paused -= h);
@@ -250,6 +264,13 @@ namespace Flower.ViewModels
                     _positionTrack = null;
                     _lastKnownTimeMs = 0;
 
+                    // Reaching the end is not by itself a play - a track seeked
+                    // through gets here too - and a long one heard properly was
+                    // already counted at nine tenths. What is left for this to
+                    // say yes to is a track too short, or too badly tagged, to
+                    // have crossed that line before its decoder ran out.
+                    var playOwed = _listen.Finish(finishedTrack);
+
                     var next = GetUpcomingEntry(finishedTrack, ResolveQueueIndex(finishedTrack));
                     if (next.Track != null)
                     {
@@ -273,7 +294,8 @@ namespace Flower.ViewModels
                     {
                         try
                         {
-                            _library.IncrementPlayCount(finishedTrack);
+                            if (playOwed)
+                                _library.IncrementPlayCount(finishedTrack);
 
                             // Unconditionally once there is one, not only when
                             // the option is on: turning the option off should
@@ -353,6 +375,27 @@ namespace Flower.ViewModels
         // test can run it inline and assert straight after raising the event
         // instead of racing a threadpool item; nothing in the app changes it.
         public Action<Action> OffPlaybackThread { get; set; } = work => Task.Run(work);
+
+        // Enough of the track has been heard, part-way through it. Handed off
+        // like the end-of-track bookkeeping and for a version of the same
+        // reason: this is the position timer's thread, every other subscriber
+        // to PositionChanged is queued behind this one, and Library's lock is
+        // something a rescan can hold for a while - the seek bar should not
+        // freeze over a play count.
+        private void CountPlay(Track track)
+        {
+            OffPlaybackThread(() =>
+            {
+                try
+                {
+                    _library.IncrementPlayCount(track);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Counting a play failed for {Path}", LogPath.Short(track.Path));
+                }
+            });
+        }
 
         // Every event this class attaches to in its constructor, paired with
         // its teardown - see SubscriptionBag, and docs/ARCHITECTURE-REVIEW.md
@@ -817,6 +860,7 @@ namespace Flower.ViewModels
             _pendingSeek = startAt ?? ResumeTargetFor(track);
             _positionTrack = track.RememberPlaybackPosition ? track : null;
             _lastKnownTimeMs = 0;
+            _listen.Begin(track);
 
             _audioManager.Play(track, immediate);
             ApplyVolumeAdjustment(track);
@@ -827,9 +871,9 @@ namespace Flower.ViewModels
 
             // Drives the History sidebar view - see Track.LastPlayedAt/
             // Library.RecordPlayed for why this stamps here rather than
-            // alongside IncrementPlayCount in the EndReached handler below.
-            // Raises TrackChanged as a PlayStarted - same reasoning as
-            // the EndReached handler above.
+            // alongside IncrementPlayCount, which waits until the track has
+            // been heard (see ListenMeter). Raises TrackChanged as a
+            // PlayStarted - same reasoning as the EndReached handler above.
             _library.RecordPlayed(track);
         }
 
@@ -1067,6 +1111,7 @@ namespace Flower.ViewModels
                 return;
 
             _audioManager.Position = (float)Math.Clamp(target.TotalMilliseconds / lengthMs, 0d, 1d);
+            _listen.ResumedAt(target);
             _logger.LogDebug("Resuming at {Position}", target);
         }
 

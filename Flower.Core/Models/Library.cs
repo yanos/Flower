@@ -19,8 +19,8 @@ namespace Flower.Models
     //
     // The two halves of a play stay apart because Flower triggers them at
     // different moments - LastPlayedAt when a track starts (so History means
-    // "what I put on"), PlayCount when it ends naturally (so a skip does not
-    // count as a listen) - see Track.LastPlayedAt.
+    // "what I put on"), PlayCount once nine tenths of it has been heard (so a
+    // skip does not count as a listen) - see Track.LastPlayedAt.
     [Flags]
     public enum TrackChange
     {
@@ -2004,7 +2004,7 @@ namespace Flower.Models
         // per half.
         //
         // A caller that does distinguish them - a head reporting a start when
-        // playback begins and a finish when it ends naturally, so the far side
+        // playback begins and a finish once it has been heard, so the far side
         // ends up with the same History a local player would have had - passes
         // the half it means instead.
         //
