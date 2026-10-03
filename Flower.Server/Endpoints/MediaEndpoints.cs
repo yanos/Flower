@@ -94,18 +94,21 @@ public static class MediaEndpoints
     // Named rather than typed: ILogger<T> needs a T, and this class is static.
     private const string StreamLogCategory = "Flower.Server.Media.Stream";
 
-    // Who asked, in whichever currency the gate that admitted them accepts: a
-    // paired device's fingerprint, or - for a stream ticket, which names
-    // nobody - the address alone.
+    // Who asked, as the gate in front found it rather than as the request
+    // claims: the fingerprint whose signature verified, or the device a
+    // stream ticket was minted for. Never the X-Flower-Fingerprint header on
+    // a ticketed request, which nothing checks; and no longer a "u" query
+    // parameter, which was the OpenSubsonic adapter's username and outlived
+    // it here, read but never sent. See docs/TRUST-BOUNDARY-PLAN.md step 5.
     private static string StreamPeer(HttpContext context)
     {
         var address = context.Connection.RemoteIpAddress?.ToString() ?? "an unknown address";
 
-        if (DeviceSignatureAuth.GetIdentityValue(context.Request, "X-Flower-Fingerprint") is { Length: > 0 } fingerprint)
+        if (context.Items[SyncEndpoints.AuthenticatedFingerprintKey] is string { Length: > 0 } fingerprint)
             return $"{fingerprint} at {address}";
 
-        if (context.Request.Query["u"].ToString() is { Length: > 0 } username)
-            return $"{username} at {address}";
+        if (context.Items[SyncEndpoints.TicketMinterKey] is string { Length: > 0 } minter)
+            return $"{minter} (by ticket) at {address}";
 
         return address;
     }

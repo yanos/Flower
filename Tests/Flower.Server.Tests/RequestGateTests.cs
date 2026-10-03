@@ -301,3 +301,45 @@ internal static class SyncEndpointTestsKeys
         return new DeviceSigningKey(ecdsa, publicKeyRaw);
     }
 }
+
+// docs/TRUST-BOUNDARY-PLAN.md step 5: a stream's log line names who the gate
+// found, never what the request claims - so a ticketed request carrying
+// someone else's fingerprint in its header is logged as the device that
+// minted the ticket.
+public class StreamLogTests(FlowerServerFixture server) : IClassFixture<FlowerServerFixture>
+{
+    [Fact]
+    public async Task A_ticketed_stream_is_logged_as_the_device_that_minted_the_ticket()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        using var minter = SyncEndpointTestsKeys.NewDevice();
+        await trustedPeers.ApproveAsync(minter.Fingerprint, "Tab", minter.PublicKeyBase64, isAdmin: false);
+        var tickets = server.Services.GetRequiredService<Flower.Server.Services.StreamTicketService>();
+        const string trackId = "no-such-track-for-the-log";
+        var (ticket, _) = tickets.Issue(trackId, minter.Fingerprint);
+        var before = Flower.Logging.InMemoryLogStore.Instance.SnapshotAfter(Flower.Logging.InMemoryLogStore.BeforeFirstSequence).LastSequence;
+
+        try
+        {
+            await server.Server.SendAsync(c =>
+            {
+                c.Request.Method = "GET";
+                c.Request.Path = "/api/flower/v1/stream";
+                c.Request.QueryString = new QueryString($"?id={trackId}&ticket={ticket}&u=someone-else");
+                c.Connection.RemoteIpAddress = IPAddress.Parse("10.0.9.97");
+                c.Request.Headers["X-Flower-Fingerprint"] = "forged-fingerprint";
+            });
+
+            var line = Flower.Logging.InMemoryLogStore.Instance.SnapshotAfter(before).Entries
+                .Select(e => e.Message)
+                .Single(m => m.Contains(trackId));
+            Assert.Contains($"{minter.Fingerprint} (by ticket)", line);
+            Assert.DoesNotContain("forged-fingerprint", line);
+            Assert.DoesNotContain("someone-else", line);
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(minter.Fingerprint);
+        }
+    }
+}

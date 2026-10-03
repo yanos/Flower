@@ -1,8 +1,9 @@
 # Trust boundary: rogue clients, budgets, and what a refusal means
 
-**Status (2026-10-02): steps 1–4 done; step 5 to go.** Steps 1 and 2 stand
-alone; step 4 needs step 3. `docs/API.md` describes the server as it is today
-and is updated as each step lands, not before.
+**Status (2026-10-02): done.** All five steps landed, one commit each. Where a
+step turned out differently from what is written below, its "Done" note says
+so, and those notes are the most useful part of re-reading this. `docs/API.md`
+is the reference for the result; this file is why it is shaped that way.
 
 ## Why
 
@@ -462,6 +463,14 @@ Tests, all passing:
   the code as it then stands. Fold this plan's status into it, and mark this
   file done.
 
+**Done (2026-10-02).** The ticket half came early, in step 2, which needed
+`TryRedeem` to name the minter in order to charge playback to it. The sync
+filter now records that minter for the request, and `StreamPeer` logs either
+the fingerprint whose signature verified or the ticket's minter, marked
+"(by ticket)", never a header. `StreamLogTests` holds it to that with a forged
+header and a `u=` on a ticketed request. `API.md` was kept current step by
+step, and was read through once more against the code at the end.
+
 ## Not in this plan
 
 - **Per-listener history**, which would let a guest browser tab keep its own
@@ -473,6 +482,13 @@ Tests, all passing:
   with.
 - **A rogue admin device.** An admin is the owner. The defence is revoking that
   device from another admin device, which exists today.
+- **What a revoked guest leaves behind.** Its playlists stay on the server
+  under its fingerprint, as its Continue Playing shelf already did. Nothing
+  reads them, and revoking a device does not delete them.
+- **A guest re-paired as an admin.** Its listener changes from its fingerprint
+  to the owner's, so it no longer sees the playlists it kept as a guest. There
+  is no route that changes a device's admin flag, so the only way here is
+  re-pairing the same key with an admin code.
 
 Sources for the comparisons:
 

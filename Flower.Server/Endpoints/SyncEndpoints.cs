@@ -146,9 +146,15 @@ public static class SyncEndpoints
                     http.Request.Query["ticket"].ToString(), http.Request.Query["id"].ToString(), now,
                     out var minter))
             {
-                return gate.ChargeDevice(RequestGate.Plane.Media, minter, now)
-                    ? await next(context)
-                    : RateLimitResponse.TooManyRequests(http);
+                if (!gate.ChargeDevice(RequestGate.Plane.Media, minter, now))
+                    return RateLimitResponse.TooManyRequests(http);
+
+                // For the stream's log line: who the ticket was minted for,
+                // which is the one identity a ticketed request can truthfully
+                // be given - it carries no signature of its own, so any
+                // fingerprint header on it is a claim nothing checked.
+                http.Items[TicketMinterKey] = minter;
+                return await next(context);
             }
 
             // A signature, and only a signature. The browser head pulls its
@@ -317,7 +323,8 @@ public static class SyncEndpoints
         public List<string>? Ids { get; set; }
     }
 
-    private const string AuthenticatedFingerprintKey = "flower.auth.fingerprint";
+    internal const string AuthenticatedFingerprintKey = "flower.auth.fingerprint";
+    internal const string TicketMinterKey = "flower.auth.ticket-minter";
 
     // Conditional on Library.ChangeToken, served as the ETag: a client that
     // sends back the token it already holds gets a 304 and no body. Worth as much here as there - this is

@@ -1,10 +1,12 @@
 # The Flower API
 
 What `Flower.Server` answers over HTTP, and what a caller has to send to be
-answered. A reference, written from the code as it stood in October 2026 —
-`Flower.Server/Endpoints/` is the authority, and each section names the file it
-was read from. `SYNC-PLAN.md` holds the reasoning behind most of it;
-`SELF-HOSTING.md` is the operator's side.
+answered. A reference, written from the code as it stood in October 2026, after
+the trust-boundary work in `TRUST-BOUNDARY-PLAN.md`. `Flower.Server/Endpoints/`
+is the authority, and each section names the file it was read from.
+`SYNC-PLAN.md` holds the reasoning behind most of it; `SELF-HOSTING.md` is the
+operator's side; `TRUST-BOUNDARY-PLAN.md` is why the budgets, refusals and
+signed answers are shaped the way they are.
 
 There is one protocol and one server. A client never serves, there is no
 OpenSubsonic surface any more, and nothing here is versioned for compatibility:
@@ -72,8 +74,9 @@ so devices behind one proxy, tunnel or CGNAT do not share a budget:
 | Anonymous info | address | `/info`, unsigned | 120 / 60s |
 | Pairing | address | `pair-redeem` | 5 / 60s |
 
-Every refusal is `429` with `Retry-After: 60`. A request a stream ticket
-admitted is charged to the media budget of the device that minted the ticket.
+A request over any of these is refused `429 rate-limited` with
+`Retry-After: 60`. A request a stream ticket admitted is charged to the media
+budget of the device that minted the ticket.
 
 The order matters. A stranger is refused before its body is read, since that
 costs a lookup rather than a buffer and an ECDSA verify. A known device whose
@@ -218,8 +221,8 @@ not allowed".
 | `500` | `server-error` | Something on the server failed | Report it |
 
 Clients act on the code. A sync service treats `device-unknown` alone as "this
-server revoked me", and only when the server signed it (above). A stale timestamp after a laptop slept is `clock-skew`, and
-must never unpair anything. Every `HttpClient` that `PeerHttpClient` builds
+server revoked me", and only when the server signed it (above). A stale
+timestamp after a laptop slept is `clock-skew`, and must never unpair anything. Every `HttpClient` that `PeerHttpClient` builds
 reads `serverTime` off a `clock-skew` refusal and signs with the corrected clock
 from then on. The media path, which signs its own requests, retries once at
 once. A route that left with a bare status is given a problem by its status in
@@ -236,7 +239,8 @@ something is listening; the handshake says what.
 ### `GET /api/localsend/v2/info`
 
 Ungated, and optionally signed. Unsigned it answers a stranger with the
-server's identity; signed by a paired device it answers more.
+server's identity, on the address's anonymous budget; signed by a paired
+device it answers more, on that device's budget, and the answer is signed back.
 
 ```json
 {
@@ -259,8 +263,9 @@ server's identity; signed by a paired device it answers more.
 |---|---|
 | `alias` | The name actually announced, which differs from the configured one when another server already had it |
 | `fingerprint`, `publicKey` | What a client pins, and checks against a pairing invite's `fp` |
-| `trustsCaller` | `true` verified; `false` no key on file for the claimed fingerprint; `null` no identity claimed, or a signature that merely failed |
-| `libraryToken`, `playlistsToken` | Change tokens. Paired clients poll this route about every 5s and sync when one moves |
+| `trustsCaller` | `true` verified; `false` no key on file for the claimed fingerprint, believed by a client only when the answer is signed; `null` no identity claimed, or a signature that merely failed |
+| `libraryToken` | Change token for the catalog. Paired clients poll this route about every 5s and sync when it moves |
+| `playlistsToken` | Change token for the caller's listener's playlists, so a guest's edit does not move the owner's. **Verified callers only**, `null` otherwise |
 | `addresses` | Every origin the server believes it is reachable on, https first, the public one last. **Verified callers only**, `null` otherwise |
 | `callerIsAdmin` | **Verified callers only**, `null` otherwise. A hint for showing admin controls; it grants nothing |
 
@@ -311,7 +316,7 @@ PascalCase JSON.
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/library` | The whole catalog |
-| GET | `/playlists` | The server's playlists |
+| GET | `/playlists` | The caller's listener's playlists |
 | POST | `/playlists/apply` | A merged playlist set, pushed back |
 | POST | `/plays` | Play events from a head with no storage (a browser tab) |
 | POST | `/track-state` | Plays, stars and options from a head with storage |
