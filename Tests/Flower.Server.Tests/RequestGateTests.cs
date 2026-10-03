@@ -117,6 +117,47 @@ public class RequestGateTests(FlowerServerFixture server) : IClassFixture<Flower
         Assert.Equal(StatusCodes.Status200OK, (await SendAsync("GET", "/api/flower/v1/playlists", sharedAddress, device)).Response.StatusCode);
     }
 
+    // Naming a fingerprint with a signature that does not verify tells the
+    // caller nothing about that device's role: an admin's and a listener's
+    // are refused alike, on every admin route, uploads included. The upload
+    // routes used to answer a listener's fingerprint 403 before checking the
+    // signature, which told anyone which devices administer this server.
+    [Theory]
+    [InlineData("PUT", "/api/admin/library/uploads/x", "offset=0")]
+    [InlineData("POST", "/api/admin/library/move", "")]
+    [InlineData("GET", "/api/admin/devices", "")]
+    public async Task A_failed_signature_answers_the_same_whatever_the_role_of_the_device_it_names(
+        string method, string path, string query)
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        using var admin = NewDevice();
+        using var listener = NewDevice();
+        using var impostor = NewDevice();
+        await trustedPeers.ApproveAsync(admin.Fingerprint, "Owner", admin.PublicKeyBase64, isAdmin: true);
+        await trustedPeers.ApproveAsync(listener.Fingerprint, "Guest", listener.PublicKeyBase64, isAdmin: false);
+
+        try
+        {
+            async Task<(int Status, string? Code)> Probe(string claimed, string address)
+            {
+                var context = await SendAsync(method, path, address, impostor, claimed, query);
+                using var reader = new StreamReader(context.Response.Body);
+                return (context.Response.StatusCode, FlowerProblem.TryRead(await reader.ReadToEndAsync())?.Code);
+            }
+
+            var asAdmin = await Probe(admin.Fingerprint, "10.0.7.20");
+            var asListener = await Probe(listener.Fingerprint, "10.0.7.21");
+
+            Assert.Equal((StatusCodes.Status401Unauthorized, ProblemCodes.SignatureInvalid), asAdmin);
+            Assert.Equal(asAdmin, asListener);
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(admin.Fingerprint);
+            await trustedPeers.RevokeAsync(listener.Fingerprint);
+        }
+    }
+
     // The two routes that had no budget at all.
     [Fact]
     public async Task The_handshake_has_a_budget_for_strangers_that_a_paired_device_does_not_share()

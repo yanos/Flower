@@ -76,8 +76,9 @@ public static class AdminEndpoints
     // would lock the owner out of the settings page for as long as the album
     // took. Wide, because the traffic is legitimate and fast on a LAN, and
     // because what makes an upload expensive to receive is closed off before
-    // the budget is even relevant: see the filter, which will not buffer a
-    // body for a caller that has not at least named an admin device.
+    // the budget is even relevant: the gate reads no body for a fingerprint it
+    // has no key for, and allows a known one ten failed signatures a minute
+    // from any one address.
     //
     // The admin surface had no budget at all until docs/OPEN-INTERNET-REVIEW.md
     // went looking for one, and then it was keyed by source address.
@@ -118,23 +119,18 @@ public static class AdminEndpoints
             var services = http.RequestServices;
             var trustedPeers = services.GetRequiredService<TrustedPeerStore>();
 
-            // An upload is the one request here whose body is megabytes by
-            // design, and the gate buffers a known device's body before it
-            // checks the signature. So before that: is the fingerprint this
-            // request claims an admin's? It proves nothing - a claim is a
-            // header - but it is a lookup rather than a read, and it means the
-            // only callers this server will hold eight megabytes for are ones
-            // that know which devices administer it. The signature still
-            // decides. A fingerprint with no key on file is the gate's to
-            // refuse, as a stranger.
-            if (isUpload
-                && DeviceSignatureAuth.GetIdentityValue(http.Request, "X-Flower-Fingerprint") is { Length: > 0 } claimed
-                && trustedPeers.GetPublicKey(claimed) != null
-                && !trustedPeers.IsAdmin(claimed))
-            {
-                return Problems.NotAdmin();
-            }
-
+            // Nothing is decided here from the fingerprint a request claims,
+            // before its signature is checked. There used to be: an upload
+            // claiming a paired device that was not an admin was refused 403
+            // at once, to spare buffering its megabytes. That answer differed
+            // from the one an admin's fingerprint got (a 401, once the
+            // signature failed), so anyone could learn which devices
+            // administer this server by naming fingerprints with a junk
+            // signature - which /info is careful never to tell an unsigned
+            // caller. After docs/TRUST-BOUNDARY-PLAN.md step 2 it also bought
+            // little: the gate reads no body for a fingerprint it has no key
+            // for, and caps failed signatures per address and fingerprint.
+            // So not-admin is said only to a request that has proved who it is.
             // Signed requests may carry a body (PUT /settings does), and the
             // gate buffers it so the signature - which covers a hash of it -
             // can be checked. No handler below binds the body as a parameter,

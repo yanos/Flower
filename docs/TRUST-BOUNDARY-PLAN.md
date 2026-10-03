@@ -280,11 +280,17 @@ run boots. Where it differs from the above:
 - **A ticketed stream is charged to the device that minted the ticket.**
   `StreamTicketService.TryRedeem` now names it, which brings forward half of
   step 5's ticket change.
-- **Not changed, and worth knowing:** the upload pre-check still answers
-  `403` to a request that merely *claims* the fingerprint of a known non-admin
-  device. That tells an unauthenticated caller whether a given fingerprint is an
-  admin, which `/info` is careful never to do. It is kept because it is what
-  stops a non-admin device's megabyte body from being buffered at all.
+- **The upload pre-check, kept here and removed after step 5.** The upload
+  routes answered `403` to a request that merely *claimed* a known non-admin
+  fingerprint, before checking its signature, to spare buffering its body. An
+  admin's fingerprint got `401` once the signature failed, so naming
+  fingerprints with a junk signature told anyone which devices were admins,
+  which `/info` is careful never to do. Once this step's gate had capped failed
+  signatures, the pre-check spared little and spared nothing for an admin's
+  fingerprint, so it went. `not-admin` is now said only to a request whose
+  signature verified, and
+  `A_failed_signature_answers_the_same_whatever_the_role_of_the_device_it_names`
+  holds the upload routes to it.
 - **An existing flaky test:** `The_log_is_readable_from_the_admin_api` fails
   about one run in three on the step-1 tree as well. Another test's log line
   lands between its two reads.
