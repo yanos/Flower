@@ -16,6 +16,7 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.Input;
 
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 using Flower.Controls;
 using Flower.Importer;
@@ -1497,6 +1498,14 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // the non-nullable fields/properties below are never actually observed
     // unpopulated.
 #pragma warning disable CS8618
+    // The container's logger factory, for what this view model builds itself
+    // (Browser, Sync) and for the views it is handed to - TrackInfoWindow,
+    // MainView, the mobile TrackInfoView - which are built by XAML or by a
+    // view, have no constructor the container fills, and used to reach for
+    // AppLogging's static factory instead. The designer's constructor gets a
+    // factory that logs nothing.
+    public ILoggerFactory LoggerFactory { get; }
+
     public MainViewModel()
     {
         // The collaborators this class forwards to are constructed even here:
@@ -1505,8 +1514,9 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         // make the previewer throw on the first binding rather than render an
         // empty window. Over an empty Library, so nothing touches disk.
         _appSettings = new AppSettings();
+        LoggerFactory = NullLoggerFactory.Instance;
         Library   = new Library(new List<Track>());
-        Browser   = new LibraryBrowserViewModel(Library, this, AppLogging.CreateTypedLogger<LibraryBrowserViewModel>());
+        Browser   = new LibraryBrowserViewModel(Library, this, LoggerFactory.CreateLogger<LibraryBrowserViewModel>());
         Playlists = new PlaylistManagementViewModel(Library, _sidebarItems, this);
         Home      = new HomeViewModel(Library, new AlbumProgressTracker(Library), null);
         Downloads = CreateDownloadRunner();
@@ -1532,6 +1542,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         EqualizerViewModel equalizer,
         SidebarRenameService rename,
         ILogger<MainViewModel> logger,
+        ILoggerFactory loggerFactory,
         // Trailing + defaulted (not just nullable-typed) deliberately: these
         // don't exist at all on Flower.Web/WASM (no P2P sync stack there - see
         // DeviceSigningKey, which .NET-for-WASM's crypto backend cannot
@@ -1594,8 +1605,9 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         _busy                  = busy;
         ITunesImport           = iTunesImport;
         _logger                = logger;
+        LoggerFactory          = loggerFactory;
 
-        Browser = new LibraryBrowserViewModel(library, this, AppLogging.CreateTypedLogger<LibraryBrowserViewModel>(), animationClock);
+        Browser = new LibraryBrowserViewModel(library, this, LoggerFactory.CreateLogger<LibraryBrowserViewModel>(), animationClock);
         Browser.RestoreSort(
             appSettings.SortColumn ?? "TrackNumber",
             appSettings.SortColumn is null || appSettings.SortAscending,
@@ -1666,7 +1678,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
         Sync = new PeerSyncCoordinator(
             this, appSettings, appSettingsStore, deviceIdentityStore,
-            AppLogging.CreateTypedLogger<PeerSyncCoordinator>(),
+            LoggerFactory.CreateLogger<PeerSyncCoordinator>(),
             networkDiscovery, reachability, playlistSyncService, librarySyncService,
             libraryDownloadService, peerPairingService, peerTrackResolver, trustedPeerStore, deviceIdentity, signingKey,
             Library, libraryMirrorService);

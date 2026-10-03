@@ -188,8 +188,12 @@ public class LibrarySyncService
     // same meaning here.
     public event EventHandler<PeerTrustRejectedEventArgs>? PeerTrustRejected;
 
-    public LibrarySyncService(Library library, DeviceIdentity deviceIdentity, DeviceSigningKey signingKey, AppSettings appSettings, ServerStarBaselineStore starBaselines, DeviceLogArchive logArchive, ILogger<LibrarySyncService> logger, ILogger<RemoteLibraryImporter> importerLogger)
+    // For the importer this service builds to read the files it downloads.
+    private readonly ILogger<Flower.Importer.Importer> _scanLogger;
+
+    public LibrarySyncService(Library library, DeviceIdentity deviceIdentity, DeviceSigningKey signingKey, AppSettings appSettings, ServerStarBaselineStore starBaselines, DeviceLogArchive logArchive, ILogger<LibrarySyncService> logger, ILogger<RemoteLibraryImporter> importerLogger, ILogger<Flower.Importer.Importer> scanLogger)
     {
+        _scanLogger = scanLogger;
         _library = library;
         _deviceIdentity = deviceIdentity;
         // Constructed here rather than injected: every caller that could supply
@@ -480,7 +484,7 @@ public class LibrarySyncService
         }
 
         var client = PeerMediaClientFactory.Create(device, _deviceIdentity, _appSettings, _signingKey);
-        var importer = new Flower.Importer.Importer(AppLogging.CreateTypedLogger<Flower.Importer.Importer>());
+        var importer = new Flower.Importer.Importer(_scanLogger);
         var replaced = 0;
         foreach (var (local, remote) in pending)
         {

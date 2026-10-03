@@ -118,7 +118,7 @@ public class StarSyncTests : IDisposable
             new ServerStarBaselineStore(NullLogger<ServerStarBaselineStore>.Instance),
             TestLogArchive.InTempDirectory(),
             NullLogger<LibrarySyncService>.Instance,
-            NullLogger<RemoteLibraryImporter>.Instance);
+            NullLogger<RemoteLibraryImporter>.Instance, NullLogger<Flower.Importer.Importer>.Instance);
 
     [Fact]
     public async Task A_star_set_elsewhere_is_taken_by_the_next_pull_and_never_reported_back_as_an_unstar()

@@ -70,7 +70,7 @@ public class LibrarySyncLogPushTests : IDisposable
             new ServerStarBaselineStore(NullLogger<ServerStarBaselineStore>.Instance),
             new DeviceLogArchive(new ClientLogStore(Path.Combine(_tempHome, "logs", "devices")), InMemoryLogStore.Instance),
             logger,
-            NullLogger<RemoteLibraryImporter>.Instance);
+            NullLogger<RemoteLibraryImporter>.Instance, NullLogger<Flower.Importer.Importer>.Instance);
 
     // Writes into the live ring the way the app's Serilog sink does, so the
     // service's own failure lines are there to be mistaken for news.

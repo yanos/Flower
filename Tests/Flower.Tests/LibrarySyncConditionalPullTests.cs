@@ -58,7 +58,7 @@ public class LibrarySyncConditionalPullTests : IDisposable
             new ServerStarBaselineStore(NullLogger<ServerStarBaselineStore>.Instance),
             TestLogArchive.InTempDirectory(),
             NullLogger<LibrarySyncService>.Instance,
-            NullLogger<RemoteLibraryImporter>.Instance);
+            NullLogger<RemoteLibraryImporter>.Instance, NullLogger<Flower.Importer.Importer>.Instance);
 
     private const string LibraryPath = "/api/flower/v1/library";
 

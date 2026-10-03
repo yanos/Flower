@@ -55,7 +55,8 @@ public class LibraryMirrorScenarioTests : PinnedDataDirectory
                 new ServerStarBaselineStore(NullLogger<ServerStarBaselineStore>.Instance),
                 TestLogArchive.InTempDirectory(),
                 NullLogger<LibrarySyncService>.Instance,
-                NullLogger<RemoteLibraryImporter>.Instance);
+                NullLogger<RemoteLibraryImporter>.Instance,
+            NullLogger<Flower.Importer.Importer>.Instance);
         }
 
         private DeviceIdentity Identity => new() { Fingerprint = Key.Fingerprint, Alias = "Desktop" };

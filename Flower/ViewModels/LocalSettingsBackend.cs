@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -165,7 +166,7 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
     {
         var (deleted, notDeleted) = LibraryRemoval.DeleteRemovedFiles(
             ViewModel.Library, paths, Flower.Importer.Importer.ScanRoots(ViewModel.LibraryPaths),
-            Flower.Logging.AppLogging.CreateTypedLogger<LocalSettingsBackend>());
+            ViewModel.LoggerFactory.CreateLogger<LocalSettingsBackend>());
         return Task.FromResult(DeletedMessage(deleted, notDeleted));
     }
 

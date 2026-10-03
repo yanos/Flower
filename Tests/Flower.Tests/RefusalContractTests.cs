@@ -101,7 +101,8 @@ public class RefusalContractTests : IDisposable
             new ServerStarBaselineStore(NullLogger<ServerStarBaselineStore>.Instance),
             TestLogArchive.InTempDirectory(),
             NullLogger<LibrarySyncService>.Instance,
-            NullLogger<RemoteLibraryImporter>.Instance);
+            NullLogger<RemoteLibraryImporter>.Instance,
+            NullLogger<Flower.Importer.Importer>.Instance);
 
         var rejected = false;
         service.PeerTrustRejected += (_, _) => rejected = true;

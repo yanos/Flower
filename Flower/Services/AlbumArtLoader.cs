@@ -13,6 +13,7 @@ using System.Text.Json;
 using Avalonia.Media.Imaging;
 
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 using Flower.Logging;
 using Flower.Models;
@@ -42,14 +43,14 @@ public class AlbumArtLoader
     private static AlbumArtLoader? _current;
     public static AlbumArtLoader Current
     {
-        get => _current ??= new AlbumArtLoader(null, null, AppLogging.CreateTypedLogger<AlbumArtLoader>());
+        get => _current ??= new AlbumArtLoader(null, null, NullLogger<AlbumArtLoader>.Instance);
         set => _current = value;
     }
 
-    // Static because the pure helpers below (TryGetLocalArtBytes) are shared
-    // with callers that have no instance - see AppLogging's own doc comment on
-    // the loggers-for-non-DI-classes patterns it offers.
-    private static readonly ILogger StaticLogger = AppLogging.CreateLogger("Flower.Services.AlbumArtLoader");
+    // For the static helpers below (TryGetLocalArtBytes), which are shared with
+    // callers that have no instance: the logger of the instance App installs
+    // from the container, rather than a static one of their own.
+    private static ILogger StaticLogger => Current._logger;
 
     // Through PeerHttpClient rather than `new HttpClient()` so cover art is
     // fetched over the same accepted-certificate rule as everything else - this

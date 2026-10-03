@@ -15,6 +15,7 @@ using Avalonia.VisualTree;
 using CommunityToolkit.Mvvm.DependencyInjection;
 
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 using Flower.Controls;
 using Flower.Logging;
@@ -32,6 +33,12 @@ namespace Flower.Views;
 public partial class MainView : UserControl
 {
     private MainViewModel? _viewModel;
+
+    // From the container's factory the view model carries: this view is built
+    // by XAML, so nothing injects into it. Silent until it has a view model,
+    // which is before anything here has anything to say.
+    private ILogger Logger =>
+        _viewModel?.LoggerFactory.CreateLogger<MainView>() ?? NullLogger<MainView>.Instance;
 
     private ContextMenu _columnMenu = new();
     private ContextMenu _trackMenu  = new();
@@ -1232,7 +1239,7 @@ public partial class MainView : UserControl
     private void OnNavigateToTrackRequested(object? sender, Track track) => MusicList.ScrollToTrack(track);
 
     private void OnHomeAlbumOpened(object? sender, AlbumTileViewModel album) =>
-        _viewModel?.ShowAlbumAsync(album).Forget(AppLogging.CreateTypedLogger<MainView>(), "Opening an album from Home");
+        _viewModel?.ShowAlbumAsync(album).Forget(Logger, "Opening an album from Home");
 
     // Posted for the same reason RestoreScrollOffsetForKey is: the grid's
     // tiles arrive just after the rows that raised this.
@@ -1695,8 +1702,7 @@ public partial class MainView : UserControl
             // page is then empty, which is worse than a message and better than
             // a crash; the same failure at startup is only logged too (see
             // App.OpenServerSettingsFromUrl).
-            AppLogging.CreateTypedLogger<MainView>()
-                .LogWarning(ex, "Could not build the server settings page");
+            Logger.LogWarning(ex, "Could not build the server settings page");
         }
     }
 

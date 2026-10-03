@@ -128,7 +128,7 @@ public static class MainViewModelHarness
                    new ServerStarBaselineStore(NullLogger<ServerStarBaselineStore>.Instance),
                    TestLogArchive.InTempDirectory(),
                    NullLogger<LibrarySyncService>.Instance,
-                   NullLogger<RemoteLibraryImporter>.Instance) { }
+                   NullLogger<RemoteLibraryImporter>.Instance, NullLogger<Flower.Importer.Importer>.Instance) { }
 
         public LibrarySyncResult Result { get; set; } = new(Success: true, FetchedCount: 0, AddedCount: 0);
         public List<DiscoveredDevice> SyncedWith { get; } = new();
@@ -242,7 +242,8 @@ public static class MainViewModelHarness
             library, deviceIdentity, signingKey, appSettings,
                    new ServerStarBaselineStore(NullLogger<ServerStarBaselineStore>.Instance),
                    TestLogArchive.InTempDirectory(),
-            NullLogger<LibrarySyncService>.Instance, NullLogger<RemoteLibraryImporter>.Instance);
+            NullLogger<LibrarySyncService>.Instance, NullLogger<RemoteLibraryImporter>.Instance,
+            NullLogger<Flower.Importer.Importer>.Instance);
         var libraryDownloadService = new LibraryDownloadService(
             library, deviceIdentity, signingKey, appSettings,
             NullLogger<LibraryDownloadService>.Instance);
@@ -265,6 +266,7 @@ public static class MainViewModelHarness
             new EqualizerViewModel(audio, appSettings, appSettingsStore),
             new SidebarRenameService(deviceNicknameStore, NullLogger<SidebarRenameService>.Instance),
             NullLogger<MainViewModel>.Instance,
+            NullLoggerFactory.Instance,
             networkDiscovery, reachability, playlistSyncService, librarySyncService, libraryDownloadService,
             peerPairingService, peerTrackResolver, deviceIdentity, signingKey,
             smartPlaylists: smartPlaylists);

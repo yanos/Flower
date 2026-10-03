@@ -73,7 +73,8 @@ public class SyncScenarioTests : PinnedDataDirectory
                 new ServerStarBaselineStore(NullLogger<ServerStarBaselineStore>.Instance),
                 TestLogArchive.InTempDirectory(),
                 NullLogger<LibrarySyncService>.Instance,
-                NullLogger<RemoteLibraryImporter>.Instance);
+                NullLogger<RemoteLibraryImporter>.Instance,
+            NullLogger<Flower.Importer.Importer>.Instance);
             PlaylistSync = new PlaylistSyncService(
                 Library, identity, Key, new AppSettings(),
                 new PlaylistSyncStateStore(NullLogger<PlaylistSyncStateStore>.Instance),

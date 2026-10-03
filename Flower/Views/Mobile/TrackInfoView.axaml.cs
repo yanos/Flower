@@ -9,6 +9,7 @@ using Avalonia.Interactivity;
 using CommunityToolkit.Mvvm.DependencyInjection;
 
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 using Flower.Converters;
 using Flower.Logging;
@@ -30,10 +31,11 @@ public partial class TrackInfoView : UserControl
     // field for the same pattern.
     // This screen is instantiated by XAML and reaches its dependencies through
     // the ViewModel it is given, not through the container - see
-    // docs/ARCHITECTURE-REVIEW.md Tier 2.3. The logger is the one exception:
-    // there is no constructor for the container to inject one into, which is
-    // exactly the case AppLogging's typed-logger helper exists for.
-    private readonly ILogger<TrackInfoView> _logger = AppLogging.CreateTypedLogger<TrackInfoView>();
+    // docs/ARCHITECTURE-REVIEW.md Tier 2.3. The logger too, from the
+    // container's factory the main view model carries.
+    private ILogger _logger =>
+        (DataContext as MobileMainViewModel)?.Main.LoggerFactory.CreateLogger<TrackInfoView>()
+        ?? NullLogger<TrackInfoView>.Instance;
     private Track? _track;
     private int _artRequestId; // guards against a stale track's art load winning a race
 

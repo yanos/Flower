@@ -15,6 +15,7 @@ using Avalonia.Platform.Storage;
 using Material.Icons;
 
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 using Flower.Converters;
 using Flower.Importer;
@@ -35,12 +36,11 @@ public partial class TrackInfoWindow : Window
     // Handed in by whoever opens this window, which already has it, rather
     // than looked up in the container (docs/ARCHITECTURE-REVIEW.md Tier 2.3):
     // the library it edits, and what a cover change needs (ArtEditorFor). The
-    // logger is the one exception: a Window has no constructor the container
-    // reaches, which is exactly the case AppLogging's typed-logger helper
-    // exists for.
+    // logger comes the same way, from the container's factory the view model
+    // carries: a Window has no constructor the container reaches.
     private readonly MainViewModel _main;
     private readonly Library _library;
-    private readonly ILogger<TrackInfoWindow> _logger = AppLogging.CreateTypedLogger<TrackInfoWindow>();
+    private readonly ILogger<TrackInfoWindow> _logger = NullLogger<TrackInfoWindow>.Instance;
     private int _index;
 
     // The set of tracks being edited: exactly one in navigable mode (re-seeded
@@ -74,6 +74,7 @@ public partial class TrackInfoWindow : Window
         InitializeComponent();
         _tracks    = tracks;
         _main      = main;
+        _logger    = main.LoggerFactory.CreateLogger<TrackInfoWindow>();
         _library   = main.Library;
         _index     = index;
         PopulateSuggestions();
@@ -91,6 +92,7 @@ public partial class TrackInfoWindow : Window
     {
         InitializeComponent();
         _main       = main;
+        _logger     = main.LoggerFactory.CreateLogger<TrackInfoWindow>();
         _library    = main.Library;
         _editTracks = editTracks;
         PopulateSuggestions();
