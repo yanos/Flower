@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
+using System.Linq;
 using System.IO;
 using System.Net.Http;
 using System.Threading.Tasks;
@@ -961,6 +962,18 @@ public partial class App : Application
                 var freshTracks = library.WithoutExcluded(await importer.ImportAsync(appSettings.LibraryPaths));
                 rescanLogger.LogInformation("Startup rescan found {TrackCount} tracks in {ElapsedMs}ms", freshTracks.Count, stopwatch.ElapsedMilliseconds);
 
+                // A tab has no system fonts, so the ones this catalog's text
+                // needs - Japanese, emoji, whatever it contains - are fetched
+                // here, before the tracks reach the UI, so the rows are first
+                // laid out with them rather than as boxes to be redrawn. See
+                // BrowserFonts.
+                if (OperatingSystem.IsBrowser())
+                {
+                    await BrowserFonts.EnsureForAsync(
+                        freshTracks.SelectMany(t => new[] { t.Title, t.Artists, t.Album, t.AlbumArtists, t.Genre, t.Composers }),
+                        provider.GetRequiredService<HttpClient>(), BrowserLocation.Origin, rescanLogger);
+                }
+
                 // Update the playlist first so navigation is consistent when LibraryChanged fires
                 mainPlaylist.ReplaceAll(freshTracks);
                 // Persisted by UpdateTracks itself - see Library's
@@ -984,6 +997,15 @@ public partial class App : Application
                 if (provider.GetService<Importer.IPlaylistImporter>() is { } playlistImporter)
                 {
                     var remotePlaylists = await playlistImporter.ImportAsync(library.Tracks);
+                    // The same as the catalog's above, for a playlist called
+                    // something its songs are not.
+                    if (OperatingSystem.IsBrowser())
+                    {
+                        await BrowserFonts.EnsureForAsync(
+                            remotePlaylists.Select(p => p.Name),
+                            provider.GetRequiredService<HttpClient>(), BrowserLocation.Origin, rescanLogger);
+                    }
+
                     // Before the install, not after: ReplacePlaylists raises
                     // PlaylistsChanged exactly as a user's own edit does, and
                     // the writer below has no other way to tell the two apart -

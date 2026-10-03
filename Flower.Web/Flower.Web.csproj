@@ -21,4 +21,12 @@
   <ItemGroup>
     <ProjectReference Include="..\Flower\Flower.csproj" />
   </ItemGroup>
+
+  <!-- The symbols the app's own chrome uses and Inter does not carry (the ♫ on
+       the album art placeholder), bundled so they draw from the first frame.
+       The larger CJK and emoji fonts are not bundled: they are served from
+       wwwroot/fonts and fetched by script - see BrowserFonts. -->
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\Fonts\NotoSansSymbols-Regular.ttf" />
+  </ItemGroup>
 </Project>

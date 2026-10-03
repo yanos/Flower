@@ -129,6 +129,9 @@ public static class WebUiHosting
         provider.Mappings[".pdb"] = "application/octet-stream";
         provider.Mappings[".br"] = "application/octet-stream";
         provider.Mappings[".webcil"] = "application/octet-stream";
+        // The browser head's fonts, fetched by script (see BrowserFonts).
+        provider.Mappings[".otf"] = "font/otf";
+        provider.Mappings[".ttf"] = "font/ttf";
         return provider;
     }
 

@@ -1,3 +1,5 @@
+using System;
+
 using Avalonia;
 using Avalonia.Media;
 using Avalonia.Media.Fonts;
@@ -31,10 +33,17 @@ namespace Flower;
 // names can sit side by side and the first one that actually exists wins.
 public static class FlowerFonts
 {
+    // The browser has no system fonts to fall back to, so it gets its own list
+    // and the fonts behind it - see BrowserFonts.
     public static AppBuilder WithFlowerFonts(this AppBuilder builder) =>
-        builder
-            .WithInterFont()
-            .With(new FontManagerOptions { FontFallbacks = Fallbacks });
+        OperatingSystem.IsBrowser()
+            ? builder
+                .WithInterFont()
+                .ConfigureFonts(Services.BrowserFonts.Register)
+                .With(new FontManagerOptions { FontFallbacks = Services.BrowserFonts.Fallbacks })
+            : builder
+                .WithInterFont()
+                .With(new FontManagerOptions { FontFallbacks = Fallbacks });
 
     // Japanese first, deliberately. Japanese and Chinese share the Han block,
     // and nothing at this level knows which language a given string is in - the
