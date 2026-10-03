@@ -69,6 +69,10 @@ public static class ITunesLibraryOffer
             settings.LibraryPaths.Add(folder);
     }
 
+    // Through GetFullPath first, so both sides use this platform's separator:
+    // on Windows a path written with '/' - Music.app's own, or a test's - kept
+    // its slashes while the separator appended here was '\', so no folder ever
+    // read as inside another.
     private static string WithTrailingSeparator(string path) =>
-        path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
 }
