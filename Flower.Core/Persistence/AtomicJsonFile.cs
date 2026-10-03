@@ -67,13 +67,13 @@ namespace Flower.Persistence
         private static SemaphoreSlim WriteLockFor(string path) =>
             WriteLocks.GetOrAdd(Path.GetFullPath(path), _ => new SemaphoreSlim(1, 1));
 
-        public static void Write<T>(string path, T value, JsonTypeInfo<T> typeInfo, bool ownerOnly = false)
+        public static void Write<T>(string path, T value, JsonTypeInfo<T> typeInfo, bool ownerOnly = false, ILogger? logger = null)
         {
             var writeLock = WriteLockFor(path);
             writeLock.Wait();
             try
             {
-                WriteCore(path, value, typeInfo, ownerOnly);
+                WriteCore(path, value, typeInfo, ownerOnly, logger);
             }
             finally
             {
@@ -103,12 +103,12 @@ namespace Flower.Persistence
         // kilobytes.
         private static readonly JsonWriterOptions WriterOptions = new() { Indented = true };
 
-        private static void WriteCore<T>(string path, T value, JsonTypeInfo<T> typeInfo, bool ownerOnly)
+        private static void WriteCore<T>(string path, T value, JsonTypeInfo<T> typeInfo, bool ownerOnly, ILogger? logger)
         {
             var temp = PrepareWrite(path);
             using (var stream = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None))
             {
-                RestrictToOwner(temp, ownerOnly);
+                RestrictToOwner(temp, ownerOnly, logger);
                 using (var writer = new Utf8JsonWriter(stream, WriterOptions))
                 {
                     JsonSerializer.Serialize(writer, value, typeInfo);
@@ -121,18 +121,18 @@ namespace Flower.Persistence
                 stream.Flush(flushToDisk: true);
             }
 
-            Commit(temp, path);
-            RestrictToOwner(path, ownerOnly);
-            RestrictToOwner(BackupPath(path), ownerOnly);
+            Commit(temp, path, logger);
+            RestrictToOwner(path, ownerOnly, logger);
+            RestrictToOwner(BackupPath(path), ownerOnly, logger);
         }
 
-        public static async Task WriteAsync<T>(string path, T value, JsonTypeInfo<T> typeInfo, bool ownerOnly = false)
+        public static async Task WriteAsync<T>(string path, T value, JsonTypeInfo<T> typeInfo, bool ownerOnly = false, ILogger? logger = null)
         {
             var writeLock = WriteLockFor(path);
             await writeLock.WaitAsync();
             try
             {
-                await WriteAsyncCore(path, value, typeInfo, ownerOnly);
+                await WriteAsyncCore(path, value, typeInfo, ownerOnly, logger);
             }
             finally
             {
@@ -140,12 +140,12 @@ namespace Flower.Persistence
             }
         }
 
-        private static async Task WriteAsyncCore<T>(string path, T value, JsonTypeInfo<T> typeInfo, bool ownerOnly)
+        private static async Task WriteAsyncCore<T>(string path, T value, JsonTypeInfo<T> typeInfo, bool ownerOnly, ILogger? logger)
         {
             var temp = PrepareWrite(path);
             await using (var stream = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None))
             {
-                RestrictToOwner(temp, ownerOnly);
+                RestrictToOwner(temp, ownerOnly, logger);
                 await using (var writer = new Utf8JsonWriter(stream, WriterOptions))
                 {
                     JsonSerializer.Serialize(writer, value, typeInfo);
@@ -155,9 +155,9 @@ namespace Flower.Persistence
                 stream.Flush(flushToDisk: true);
             }
 
-            Commit(temp, path);
-            RestrictToOwner(path, ownerOnly);
-            RestrictToOwner(BackupPath(path), ownerOnly);
+            Commit(temp, path, logger);
+            RestrictToOwner(path, ownerOnly, logger);
+            RestrictToOwner(BackupPath(path), ownerOnly, logger);
         }
 
         // 0600 for files holding secrets (DeviceKeyStore's private key). Set on
@@ -166,12 +166,14 @@ namespace Flower.Persistence
         // Commit because File.Replace preserves the *target's* old mode, not
         // the temp file's. No-op on Windows, where the file inherits the
         // per-user profile directory's ACL and SetUnixFileMode throws.
-        // These two helpers are static and reached from methods that take no
-        // logger, so they use AppLogging's hatch rather than threading an
-        // ILogger through four public overloads for a best-effort chmod.
-        private static readonly ILogger Logger = AppLogging.CreateLogger(typeof(AtomicJsonFile).FullName!);
-
-        private static void RestrictToOwner(string path, bool ownerOnly)
+        // These two helpers take the caller's logger, threaded through Write
+        // and WriteAsync, rather than a static one: a static logger here was
+        // one host's in a process that runs several (every test class boots a
+        // server of its own), and silent on the server until something set the
+        // static up. A caller passing none gets silence, which is fine for a
+        // best-effort backup and is why the one caller that asks for ownerOnly
+        // - the device key - passes its own.
+        private static void RestrictToOwner(string path, bool ownerOnly, ILogger? logger)
         {
             if (!ownerOnly || OperatingSystem.IsWindows() || !File.Exists(path))
                 return;
@@ -189,7 +191,7 @@ namespace Flower.Persistence
                 // that hold secrets, so failing here leaves a private key
                 // readable by anything else on the machine, and that should not
                 // be the one thing about this process nobody can find out.
-                Logger.LogWarning(ex,
+                logger?.LogWarning(ex,
                     "Could not restrict {Path} to owner-only permissions; it may be readable by other users on this machine.",
                     path);
             }
@@ -262,7 +264,7 @@ namespace Flower.Persistence
             return TempPath(path);
         }
 
-        private static void Commit(string temp, string path)
+        private static void Commit(string temp, string path, ILogger? logger)
         {
             if (!File.Exists(path))
             {
@@ -283,12 +285,12 @@ namespace Flower.Persistence
                 // mounts) don't implement the replace-with-backup primitive.
                 // Copy-then-move still gives an atomic swap of the target; only
                 // the backup step degrades from atomic to best-effort.
-                TryCopy(path, BackupPath(path));
+                TryCopy(path, BackupPath(path), logger);
                 File.Move(temp, path, overwrite: true);
             }
         }
 
-        private static void TryCopy(string source, string destination)
+        private static void TryCopy(string source, string destination, ILogger? logger)
         {
             try
             {
@@ -300,7 +302,7 @@ namespace Flower.Persistence
                 // save. Debug rather than Warning - nothing is wrong yet; it
                 // only matters if the main file later needs recovering, and the
                 // recovery path says so loudly when that happens.
-                Logger.LogDebug(ex, "Could not refresh the backup copy at {Destination}.", destination);
+                logger?.LogDebug(ex, "Could not refresh the backup copy at {Destination}.", destination);
             }
         }
 

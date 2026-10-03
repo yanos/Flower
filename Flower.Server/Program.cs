@@ -82,11 +82,22 @@ builder.Configuration.AddInMemoryCollection(
 // operator set in appsettings.json - or on the command line - changed nothing.
 // LogLevelSettings translates it into the floor and the per-category overrides
 // Serilog does honour, so the familiar keys keep their familiar meaning.
+//
+// The logger and its live buffer belong to this host, not to the process: a
+// Serilog logger handed to AddSerilog with dispose: true, which the host
+// disposes - flushing the file - when it stops, and an InMemoryLogStore in the
+// container for the admin Logs tab to read. Both used to be process-wide
+// (Serilog's static Log.Logger, InMemoryLogStore.Instance), which is one of
+// each per process and not per server - and a test process runs a server per
+// test class. One stopping closed the logger the next was writing through, and
+// every server's lines landed in one buffer. See AppLogging.Build.
 var (logFloor, logOverrides) = LogLevelSettings.Read(builder.Configuration);
-var logFile = AppLogging.Initialize(
-    fileSizeLimitBytes: 32 * 1024 * 1024, minimumLevel: logFloor, categoryOverrides: logOverrides);
+var logStore = new InMemoryLogStore();
+var (serverLogger, logFile) = AppLogging.Build(
+    logStore, fileSizeLimitBytes: 32 * 1024 * 1024, minimumLevel: logFloor, categoryOverrides: logOverrides);
 builder.Logging.ClearProviders();
-builder.Logging.AddSerilog();
+builder.Logging.AddSerilog(serverLogger, dispose: true);
+builder.Services.AddSingleton(logStore);
 
 // Nothing in this process should ever accept a body larger than 20 MB (the
 // ceiling the app's own listener used, back when there were two) - before this,
@@ -103,15 +114,14 @@ builder.WebHost.ConfigureKestrel(kestrel => kestrel.Limits.MaxRequestBodySize = 
 // but it would also quietly create a second ECDsa over identical material and
 // invite the two to drift if the store ever gained caching.
 //
-// The logger comes from AppLogging's own factory rather than a LoggerFactory
-// built inline here: that one was never disposed, and it was a second factory
-// wrapping the very same Log.Logger this one does. Registering it also makes
-// AppLogging.CreateLogger<T>() work for the rest of this process - without
-// this call it returns NullLogger, so any Flower.Core class with a static
-// logger field was silently mute server-side while logging fine in the app.
-AppLogging.UseLoggerFactory(LoggerFactory.Create(logging => logging.AddSerilog()));
+// The key store's logger comes from this host's own Serilog logger: it runs
+// before the container exists, so it cannot be injected, and AppLogging's
+// static factory - which used to supply it - is the app's, not a server's.
+// Not disposed here, because disposing a factory built over a logger it does
+// not own leaves that logger alone anyway, and the host disposes it at the end.
+var bootstrapLogging = new Serilog.Extensions.Logging.SerilogLoggerFactory(serverLogger);
 var (deviceKey, devicePublicKeyRaw) = new DeviceKeyStore(
-    AppLogging.CreateTypedLogger<DeviceKeyStore>()).Load();
+    bootstrapLogging.CreateLogger<DeviceKeyStore>()).Load();
 
 // TLS, alongside the plain listener rather than instead of it.
 //
@@ -506,7 +516,7 @@ if (publicAccess)
     // 172.16/12 LAN is indistinguishable from here.
     if (string.IsNullOrWhiteSpace(advertised) && ServerAddressAdvice.LooksContainerised())
     {
-        var own = LocalAddresses.Own();
+        var own = LocalAddresses.Own(app.Logger);
         if (own.Count > 0 && own.TrueForAll(ServerAddressAdvice.IsDockerBridgeAddress))
         {
             app.Logger.LogWarning(
@@ -648,11 +658,10 @@ app.MapDiscoveryEndpoints();
 // Last, so its single-page fallback can only ever catch what no API route did.
 app.MapWebUi();
 
+// The logger is flushed and closed by the host as it stops (AddSerilog's
+// dispose: true, above), so there is nothing to shut down after this - and
+// nothing that could reach a logger some other host in this process is using.
 app.Run();
-
-// The last few lines of a run are buffered otherwise - same reason
-// MainWindow's Closing handler calls this in the app.
-AppLogging.Shutdown();
 
 // "localhost:4533" out of "http://0.0.0.0:4533" - the address to type into a
 // browser running on this machine. Null when there is nothing configured to

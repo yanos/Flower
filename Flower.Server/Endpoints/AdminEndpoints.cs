@@ -770,16 +770,16 @@ public static class AdminEndpoints
             return Results.Json(new DeviceLogResponse(snapshot.Fingerprint, snapshot.Alias, snapshot.ReceivedAt, lines), jsonOptions);
         });
 
-        // This server's own log, from the same in-memory buffer the app's Log
-        // window reads (AppLogging.Initialize wires the sink in Program.cs), so a
+        // This server's own log, from this host's in-memory buffer (Program.cs
+        // builds it and its sink with AppLogging.Build), so a
         // headless box can be diagnosed from a browser instead of by SSHing in to
         // tail a file.
         // after is the caller's cursor: omit it (or pass BeforeFirstSequence) for
         // the whole buffer, hand back the LastSequence of the previous response
         // to get only what has been logged since.
-        authenticated.MapGet("/logs", (int? limit, long? after) =>
+        authenticated.MapGet("/logs", (int? limit, long? after, InMemoryLogStore logStore) =>
         {
-            var slice = InMemoryLogStore.Instance.SnapshotAfter(after ?? InMemoryLogStore.BeforeFirstSequence);
+            var slice = logStore.SnapshotAfter(after ?? InMemoryLogStore.BeforeFirstSequence);
             var take = Math.Max(1, limit ?? 500);
             var lines = slice.Entries
                 .Skip(Math.Max(0, slice.Entries.Count - take))

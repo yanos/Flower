@@ -358,7 +358,10 @@ public class StreamLogTests(FlowerServerFixture server) : IClassFixture<FlowerSe
         var tickets = server.Services.GetRequiredService<Flower.Server.Services.StreamTicketService>();
         const string trackId = "no-such-track-for-the-log";
         var (ticket, _) = tickets.Issue(trackId, minter.Fingerprint);
-        var before = Flower.Logging.InMemoryLogStore.Instance.SnapshotAfter(Flower.Logging.InMemoryLogStore.BeforeFirstSequence).LastSequence;
+        // This server's own log, not the process's: every test class boots a
+        // server, and each now keeps its log to itself (AppLogging.Build).
+        var log = server.Services.GetRequiredService<Flower.Logging.InMemoryLogStore>();
+        var before = log.SnapshotAfter(Flower.Logging.InMemoryLogStore.BeforeFirstSequence).LastSequence;
 
         try
         {
@@ -371,7 +374,7 @@ public class StreamLogTests(FlowerServerFixture server) : IClassFixture<FlowerSe
                 c.Request.Headers["X-Flower-Fingerprint"] = "forged-fingerprint";
             });
 
-            var line = Flower.Logging.InMemoryLogStore.Instance.SnapshotAfter(before).Entries
+            var line = log.SnapshotAfter(before).Entries
                 .Select(e => e.Message)
                 .Single(m => m.Contains(trackId));
             Assert.Contains($"{minter.Fingerprint} (by ticket)", line);

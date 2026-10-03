@@ -151,8 +151,10 @@ namespace Flower.Persistence
             WriteSecure(material);
         }
 
-        private static void SaveFile(DeviceKeyMaterial material) =>
-            AtomicJsonFile.Write(StorePath, material, FlowerCoreJsonContext.Default.DeviceKeyMaterial, ownerOnly: true);
+        // With this store's logger, so a key file that could not be made
+        // owner-only is said out loud - see AtomicJsonFile.RestrictToOwner.
+        private void SaveFile(DeviceKeyMaterial material) =>
+            AtomicJsonFile.Write(StorePath, material, FlowerCoreJsonContext.Default.DeviceKeyMaterial, ownerOnly: true, logger: _logger);
 
         // Null when there is no secure store, nothing in it, or something in it
         // that is not a usable key - in which case the file is the answer, as

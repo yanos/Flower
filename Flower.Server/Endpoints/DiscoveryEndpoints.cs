@@ -177,7 +177,7 @@ public static class DiscoveryEndpoints
                 // its identity, and it is only ever of use to a peer that has
                 // paired - which is exactly the peer that can sign for it.
                 callerIsTrusted
-                    ? ReachableOrigins(boundServer, options, publicReachability.OriginFor(options))
+                    ? ReachableOrigins(boundServer, options, publicReachability.OriginFor(options), logger)
                     : null,
                 // Whether this caller is one of this server's administrators,
                 // on the same terms as TrustsCaller above: only a caller whose
@@ -231,13 +231,17 @@ public static class DiscoveryEndpoints
     // internet reaches this server at, when the operator has opened the door
     // and not said where it is themselves. Last, because every address above it
     // is cheaper to reach from anywhere it works at all.
-    internal static List<string> ReachableOrigins(IServer boundServer, FlowerServerOptions options, string? publicOrigin)
+    // logger is where "this machine's interfaces could not be read" is said -
+    // the one reason this list could come back empty that nothing else in the
+    // log would explain (see LocalAddresses).
+    internal static List<string> ReachableOrigins(
+        IServer boundServer, FlowerServerOptions options, string? publicOrigin, ILogger? logger = null)
     {
         var bound = boundServer.Features.Get<IServerAddressesFeature>()?.Addresses ?? [];
         var origins = new List<string>();
 
         if (MdnsAdvertiser.AdvertisablePort(bound, Uri.UriSchemeHttps) is { } httpsPort)
-            origins.AddRange(LocalAddresses.Reachable(httpsPort, advertisedHost: null, Uri.UriSchemeHttps));
+            origins.AddRange(LocalAddresses.Reachable(httpsPort, advertisedHost: null, Uri.UriSchemeHttps, logger));
 
         // AdvertisedHost travels with the plain listener only. It describes
         // whatever terminates in front of this server - a reverse proxy, a
@@ -247,7 +251,7 @@ public static class DiscoveryEndpoints
         // LocalAddresses honours over the one passed here.
         origins.AddRange(LocalAddresses.Reachable(
             MdnsAdvertiser.AdvertisablePort(bound, Uri.UriSchemeHttp) ?? SyncProtocol.DefaultPort,
-            options.AdvertisedHost));
+            options.AdvertisedHost, logger: logger));
 
         if (publicOrigin != null && !origins.Contains(publicOrigin, StringComparer.OrdinalIgnoreCase))
             origins.Add(publicOrigin);

@@ -72,6 +72,26 @@ namespace Flower.Logging
             LogEventLevel minimumLevel = LogEventLevel.Debug,
             IReadOnlyDictionary<string, LogEventLevel>? categoryOverrides = null)
         {
+            var (logger, path) = Build(InMemoryLogStore.Instance, fileSizeLimitBytes, minimumLevel, categoryOverrides);
+            Log.Logger = logger;
+            return path;
+        }
+
+        // The same sinks as a logger the caller owns, writing its live view
+        // into the store it is handed - for Flower.Server, where the logger
+        // belongs to the host rather than the process: AddSerilog(logger,
+        // dispose: true) gives it to the host's logging and disposes it with
+        // the host. A process can hold several hosts at once - every test class
+        // boots a server of its own - and Serilog's static Log.Logger made them
+        // share one: one host stopping closed the logger the next one was
+        // writing through, and every host's lines landed in one buffer, so a
+        // test reading "what this server logged" read every server's.
+        public static (Serilog.Core.Logger Logger, string Path) Build(
+            InMemoryLogStore store,
+            long? fileSizeLimitBytes = null,
+            LogEventLevel minimumLevel = LogEventLevel.Debug,
+            IReadOnlyDictionary<string, LogEventLevel>? categoryOverrides = null)
+        {
             Directory.CreateDirectory(LogsDirectory);
             DeleteOldLogs();
 
@@ -82,7 +102,7 @@ namespace Flower.Logging
             foreach (var (category, level) in categoryOverrides ?? EmptyOverrides)
                 configuration = configuration.MinimumLevel.Override(category, level);
 
-            Log.Logger = configuration
+            var logger = configuration
                 .Enrich.FromLogContext()
                 .WriteTo.File(path,
                     outputTemplate:
@@ -96,13 +116,14 @@ namespace Flower.Logging
                 // rather than only readable after the fact from the log file.
                 .WriteTo.Console(outputTemplate:
                     "{Timestamp:HH:mm:ss.fff} [{Level:u3}] {SourceContext}: {Message:lj}{NewLine}{Exception}")
-                // Feeds the in-app Log window's live view of this device and
-                // the snapshot LibrarySyncService pushes to a paired Server -
-                // see InMemoryLogStore/InMemoryLogEventSink.
-                .WriteTo.Sink(new InMemoryLogEventSink(InMemoryLogStore.Instance))
+                // Feeds the live view of this process's log: the app's Log
+                // window and the snapshot LibrarySyncService pushes to a paired
+                // Server, or the server's own admin Logs tab - see
+                // InMemoryLogStore/InMemoryLogEventSink.
+                .WriteTo.Sink(new InMemoryLogEventSink(store))
                 .CreateLogger();
 
-            return path;
+            return (logger, path);
         }
 
         // Backs every CreateLogger/CreateTypedLogger call below with the same

@@ -51,7 +51,9 @@ namespace Flower.Logging
         // at any moment. A test that needs "this store holds what I put in it
         // and nothing else" cannot use Instance at all; see
         // DeviceLogArchiveTests.
-        internal InMemoryLogStore()
+        // Public for Flower.Server, which gives each host a store of its own
+        // (see AppLogging.Build); the app uses Instance.
+        public InMemoryLogStore()
         {
         }
 

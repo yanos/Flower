@@ -44,7 +44,7 @@ public static class LocalAddresses
     // listener seen from different networks. An AdvertisedHost that names its
     // own scheme overrides it, because that one is not this listener at all -
     // it is whatever terminates TLS in front of it.
-    public static List<string> Reachable(int port, string? advertisedHost = null, string scheme = "http")
+    public static List<string> Reachable(int port, string? advertisedHost = null, string scheme = "http", ILogger? logger = null)
     {
         var addresses = new List<string>();
 
@@ -54,7 +54,7 @@ public static class LocalAddresses
         if (!string.IsNullOrWhiteSpace(advertisedHost))
             addresses.Add(AdvertisedOrigin(advertisedHost.Trim(), port, scheme));
 
-        foreach (var address in Own())
+        foreach (var address in Own(logger))
             addresses.Add(Format(address, port, scheme));
 
         return addresses.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
@@ -69,18 +69,18 @@ public static class LocalAddresses
     // would fail to validate at exactly the address a client was told to use,
     // and the two drifting apart is the kind of thing nobody notices until a
     // machine grows an interface.
-    public static List<IPAddress> Own()
+    public static List<IPAddress> Own(ILogger? logger = null)
     {
         var addresses = new List<IPAddress>();
 
-        foreach (var nic in SafeInterfaces())
+        foreach (var nic in SafeInterfaces(logger))
         {
             if (nic.OperationalStatus != OperationalStatus.Up)
                 continue;
             if (nic.NetworkInterfaceType == NetworkInterfaceType.Loopback)
                 continue;
 
-            foreach (var unicast in SafeUnicastAddresses(nic))
+            foreach (var unicast in SafeUnicastAddresses(nic, logger))
             {
                 if (!IsReportable(unicast.Address))
                     continue;
@@ -104,7 +104,7 @@ public static class LocalAddresses
     // because this compares interface addresses rather than a public one. What
     // it cannot distinguish is a container sharing the host's network namespace,
     // which is close enough to the same machine for the one thing this decides.
-    public static bool IsThisMachine(IPAddress? address)
+    public static bool IsThisMachine(IPAddress? address, ILogger? logger = null)
     {
         if (address == null)
             return false;
@@ -118,9 +118,9 @@ public static class LocalAddresses
         if (IPAddress.IsLoopback(address))
             return true;
 
-        foreach (var nic in SafeInterfaces())
+        foreach (var nic in SafeInterfaces(logger))
         {
-            foreach (var unicast in SafeUnicastAddresses(nic))
+            foreach (var unicast in SafeUnicastAddresses(nic, logger))
             {
                 // Bytes rather than IPAddress.Equals, which also compares an
                 // IPv6 scope id - and a scope id belongs to the interface that
@@ -191,11 +191,11 @@ public static class LocalAddresses
     // is a degraded server - a client falls back to discovering it on the LAN -
     // whereas throwing would take down the handshake every peer needs before it
     // can do anything at all.
-    // A static class with no constructor to inject into - the case
-    // AppLogging.CreateLogger exists for, same as RubberBandScroll's.
-    private static readonly ILogger Logger = AppLogging.CreateLogger(typeof(LocalAddresses).FullName!);
-
-    private static IEnumerable<NetworkInterface> SafeInterfaces()
+    // The caller's logger rather than a static one: a static logger is shared
+    // by every server in a process that runs several (every test class boots
+    // its own), and was silent on the server until something set it up. Each
+    // public method takes one, optionally; a caller with none gets silence.
+    private static IEnumerable<NetworkInterface> SafeInterfaces(ILogger? logger)
     {
         try
         {
@@ -208,14 +208,14 @@ public static class LocalAddresses
             // back to once mDNS stops reaching it. Returning [] keeps the
             // handshake alive, which is right - but it makes the server look
             // unreachable for a reason nothing else in the log would explain.
-            Logger.LogWarning(ex,
+            logger?.LogWarning(ex,
                 "Could not enumerate this machine's network interfaces; reporting no addresses. "
                 + "Clients will not be able to reach this server anywhere mDNS does not.");
             return [];
         }
     }
 
-    private static IEnumerable<UnicastIPAddressInformation> SafeUnicastAddresses(NetworkInterface nic)
+    private static IEnumerable<UnicastIPAddressInformation> SafeUnicastAddresses(NetworkInterface nic, ILogger? logger)
     {
         try
         {
@@ -227,7 +227,7 @@ public static class LocalAddresses
             // routine (a tunnel going down mid-enumeration, a virtual adapter),
             // and the others still answer. Only losing all of them, above, is
             // worth raising.
-            Logger.LogDebug(ex, "Could not read addresses for interface {Interface}; skipping it.", nic.Name);
+            logger?.LogDebug(ex, "Could not read addresses for interface {Interface}; skipping it.", nic.Name);
             return [];
         }
     }
