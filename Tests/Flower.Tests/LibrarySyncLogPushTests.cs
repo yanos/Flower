@@ -63,12 +63,20 @@ public class LibrarySyncLogPushTests : IDisposable
         MakeService(key, NullLogger<LibrarySyncService>.Instance);
 
     private LibrarySyncService MakeService(DeviceSigningKey key, ILogger<LibrarySyncService> logger) =>
+        MakeService(key, logger, InMemoryLogStore.Instance);
+
+    // live is the ring the archive drains. The process-wide one by default, the
+    // way the app's own sink feeds it; a test that floods it takes a ring of
+    // its own instead, or every test after it in the process inherits the
+    // flood as backlog - which is how the iOS simulator, whose order differs,
+    // counted five posts in a test that expects two.
+    private LibrarySyncService MakeService(DeviceSigningKey key, ILogger<LibrarySyncService> logger, InMemoryLogStore live) =>
         new(new Library([]),
             new DeviceIdentity { Fingerprint = key.Fingerprint, Alias = "Client" },
             key,
             new AppSettings { ShareLogsWithPairedServer = true },
             new ServerStarBaselineStore(NullLogger<ServerStarBaselineStore>.Instance),
-            new DeviceLogArchive(new ClientLogStore(Path.Combine(_tempHome, "logs", "devices")), InMemoryLogStore.Instance),
+            new DeviceLogArchive(new ClientLogStore(Path.Combine(_tempHome, "logs", "devices")), live),
             logger,
             NullLogger<RemoteLibraryImporter>.Instance, NullLogger<Flower.Importer.Importer>.Instance);
 
@@ -250,16 +258,14 @@ public class LibrarySyncLogPushTests : IDisposable
     {
         using var peer = StartPeer(_ => HttpStatusCode.OK);
         using var key = TestSigningKey.Create();
-        var service = MakeService(key);
+        var live = new InMemoryLogStore();
+        var service = MakeService(key, NullLogger<LibrarySyncService>.Instance, live);
         var device = DeviceFor(peer.Server);
 
         var padding = new string('x', 2000);
         var markers = Enumerable.Range(0, 1500).Select(_ => Guid.NewGuid().ToString()).ToList();
         foreach (var marker in markers)
-        {
-            InMemoryLogStore.Instance.Add(new InMemoryLogEntry(
-                DateTimeOffset.Now, "Information", "Test", marker + padding, null));
-        }
+            live.Add(new InMemoryLogEntry(DateTimeOffset.Now, "Information", "Test", marker + padding, null));
 
         Assert.True(await PushAsync(service, device));
 
