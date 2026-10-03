@@ -93,6 +93,14 @@ public sealed class FlowerServerFixture : WebApplicationFactory<Program>, IAsync
         // to be created and the startup rescan to run - before any test seeds
         // rows.
         _ = Services;
+
+        // The startup scan first. Program.cs starts it without awaiting it, and
+        // it reads this fixture's empty music folder: finishing after the seed
+        // below, it took the seeded tracks out again and logged doing so in the
+        // middle of whichever test was running - which is how
+        // The_log_is_readable_from_the_admin_api found three lines between two
+        // reads that should have had none.
+        await Services.GetRequiredService<LibraryRescanCoordinator>().Running;
         await SeedAsync();
     }
 

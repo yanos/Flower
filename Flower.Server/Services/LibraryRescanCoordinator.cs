@@ -31,6 +31,17 @@ public sealed class LibraryRescanCoordinator(
         }
     }
 
+    // The scan in flight, or a finished task when there is none - for a caller
+    // that has to wait for one rather than poll.
+    public Task Running
+    {
+        get
+        {
+            lock (_lock)
+                return _running ?? Task.CompletedTask;
+        }
+    }
+
     public DateTimeOffset? LastCompletedAt { get; private set; }
     public string? LastError { get; private set; }
     public int TrackCount => library.Tracks.Count;
