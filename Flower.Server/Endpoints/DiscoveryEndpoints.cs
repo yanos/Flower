@@ -201,7 +201,12 @@ public static class DiscoveryEndpoints
                         Listeners.For(caller.Fingerprint!, trustedPeers.IsAdmin(caller.Fingerprint!))))
                     : null);
 
-            return Results.Json(response, SyncProtocolJsonContext.Default.SyncInfoResponseDto);
+            // Signed, over the bytes sent, whenever the caller signed its
+            // request: trustsCaller: false is how a revoked device finds out,
+            // and a client unpairs on it only when this server's key - the one
+            // pinned at pairing - says so. See ServerResponseSignature.
+            return Problems.Signed(context, StatusCodes.Status200OK, "application/json",
+                JsonSerializer.Serialize(response, SyncProtocolJsonContext.Default.SyncInfoResponseDto));
         });
     }
 

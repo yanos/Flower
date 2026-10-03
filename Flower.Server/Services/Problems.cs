@@ -23,8 +23,31 @@ public static class Problems
     public static IResult NotAdmin() =>
         Of(StatusCodes.Status403Forbidden, ProblemCodes.NotAdmin);
 
-    public static IResult DeviceUnknown() =>
-        Of(StatusCodes.Status401Unauthorized, ProblemCodes.DeviceUnknown);
+    // The one refusal a client may unpair on, so the one this server signs -
+    // see ServerResponseSignature and docs/TRUST-BOUNDARY-PLAN.md step 4.
+    // Signed only when the request carried a nonce to bind the answer to,
+    // which every signed request does; an anonymous one has nothing to unpair.
+    public static IResult DeviceUnknown(HttpContext http) =>
+        Signed(http, StatusCodes.Status401Unauthorized, FlowerProblem.ContentType,
+            FlowerProblem.Serialize(FlowerProblem.Create(StatusCodes.Status401Unauthorized, ProblemCodes.DeviceUnknown)));
+
+    // An answer signed with this server's key over the exact bytes sent.
+    // UTF-8 without a preamble, the same bytes for the signature and the wire.
+    public static IResult Signed(HttpContext http, int status, string contentType, string content)
+    {
+        var bytes = Utf8.GetBytes(content);
+        if (DeviceSignatureAuth.GetIdentityValue(http.Request, "X-Flower-Nonce") is { Length: > 0 } nonce)
+        {
+            var key = http.RequestServices.GetRequiredService<DeviceSigningKey>();
+            var (signature, timestamp) = key.SignResponse(http.Request.Path.Value ?? "/", status, bytes, nonce);
+            http.Response.Headers[ServerResponseSignature.SignatureHeader] = signature;
+            http.Response.Headers[ServerResponseSignature.TimestampHeader] = timestamp;
+        }
+
+        return Results.Text(content, contentType, Utf8, status);
+    }
+
+    private static readonly UTF8Encoding Utf8 = new(encoderShouldEmitUTF8Identifier: false);
 
     // Which part of a signature failed, as the code a client acts on:
     // clock-skew carries the server's time so the client can correct its
@@ -42,7 +65,7 @@ public static class Problems
         RequestGate.Outcome.LengthRequired => Of(StatusCodes.Status411LengthRequired, ProblemCodes.LengthRequired),
         RequestGate.Outcome.TooLarge => Of(StatusCodes.Status413PayloadTooLarge, ProblemCodes.TooLarge),
         RequestGate.Outcome.Throttled => RateLimitResponse.TooManyRequests(http),
-        RequestGate.Outcome.Unknown => DeviceUnknown(),
+        RequestGate.Outcome.Unknown => DeviceUnknown(http),
         RequestGate.Outcome.BadSignature => BadSignature(result.SignatureProblem),
         _ => throw new ArgumentOutOfRangeException(nameof(result), result.Outcome, "Admitted is not a refusal."),
     };

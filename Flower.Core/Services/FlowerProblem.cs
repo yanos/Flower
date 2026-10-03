@@ -1,6 +1,7 @@
 using System;
 using System.Net;
 using System.Net.Http;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
@@ -155,12 +156,19 @@ public partial class FlowerProblemJsonContext : JsonSerializerContext
 // problem document, what it said. An HttpRequestException so everything that
 // already catches one - every sync path's "could not reach" handling - still
 // does, with the code now there for the callers that act on why.
-public sealed class PeerRefusedException(HttpStatusCode status, FlowerProblemDto? problem, string message)
+//
+// SignedByServer says the refusal carried a valid signature from the server
+// the caller named - its pinned key (ServerResponseSignature). Only a
+// device-unknown refusal is ever signed, since it is the only one a client
+// may act on destructively.
+public sealed class PeerRefusedException(HttpStatusCode status, FlowerProblemDto? problem, bool signedByServer, string message)
     : HttpRequestException(message, null, status)
 {
     public FlowerProblemDto? Problem { get; } = problem;
 
     public string? Code => Problem?.Code;
+
+    public bool SignedByServer { get; } = signedByServer;
 }
 
 public static class PeerResponses
@@ -168,16 +176,29 @@ public static class PeerResponses
     // EnsureSuccessStatusCode, keeping the reason. A response that is not a
     // problem document still throws, with Problem null - a proxy's error page
     // is a refusal too, just one that says nothing a client can act on.
-    public static async Task EnsureSuccessAsync(this HttpResponseMessage response, CancellationToken cancellationToken = default)
+    //
+    // serverPublicKey and serverFingerprint name the server the caller
+    // believes it is talking to, for a device-unknown refusal's signature to
+    // be checked against. Without them a refusal is read but never counts as
+    // signed.
+    public static async Task EnsureSuccessAsync(
+        this HttpResponseMessage response, string? serverPublicKey = null, string? serverFingerprint = null,
+        CancellationToken cancellationToken = default)
     {
         if (response.IsSuccessStatusCode)
             return;
 
         FlowerProblemDto? problem = null;
+        var signed = false;
         try
         {
             if (response.Content.Headers.ContentType?.MediaType == FlowerProblem.ContentType)
-                problem = FlowerProblem.TryRead(await response.Content.ReadAsStringAsync(cancellationToken));
+            {
+                var body = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+                problem = FlowerProblem.TryRead(Encoding.UTF8.GetString(body));
+                signed = problem?.Code == ProblemCodes.DeviceUnknown
+                         && ServerResponseSignature.IsSignedBy(response, body, serverPublicKey, serverFingerprint);
+            }
         }
         catch (HttpRequestException)
         {
@@ -186,12 +207,14 @@ public static class PeerResponses
 
         var described = problem == null ? "" : $" ({problem.Code}{(problem.Detail is { Length: > 0 } detail ? ": " + detail : "")})";
         throw new PeerRefusedException(
-            response.StatusCode, problem,
+            response.StatusCode, problem, signed,
             $"Response status code does not indicate success: {(int)response.StatusCode} ({response.ReasonPhrase}){described}.");
     }
 
-    // The refusal that can mean a pairing is over: no key on file for this
-    // device. Step 3 names it; step 4 makes the server sign it.
+    // The refusal that means a pairing is over: no key on file for this
+    // device, signed by the server's own pinned key (step 4). Unsigned, or
+    // signed by anything else, it is one failed request and nothing more -
+    // which is what a forged one from something on the path then amounts to.
     public static bool IsDeviceUnknown(Exception ex) =>
-        ex is PeerRefusedException { Code: ProblemCodes.DeviceUnknown };
+        ex is PeerRefusedException { Code: ProblemCodes.DeviceUnknown, SignedByServer: true };
 }

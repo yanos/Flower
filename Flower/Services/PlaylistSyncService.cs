@@ -149,7 +149,9 @@ public class PlaylistSyncService
             using var getRequest = new HttpRequestMessage(HttpMethod.Get, device.Url(getPath));
             await AddSignedIdentityHeadersAsync(getRequest, body: []);
             using var getResponse = await Http.SendAsync(getRequest);
-            await getResponse.EnsureSuccessAsync(); // A refusal throws with the server's reason - see below.
+            // A refusal throws with the server's reason, and with whether this
+            // server's pinned key signed it - see below.
+            await getResponse.EnsureSuccessAsync(device.PublicKey, device.Fingerprint);
             var json = await getResponse.Content.ReadAsStringAsync();
             var manifest = JsonSerializer.Deserialize(json, FlowerJsonContext.Default.PlaylistSyncManifestDto);
             remotePlaylists = manifest?.Playlists ?? new List<PlaylistSyncPlaylistDto>();
@@ -166,8 +168,9 @@ public class PlaylistSyncService
             // other 401s, signature-invalid, clock-skew and nonce-reused (a
             // stale timestamp, most often, after this device suspended with the
             // request in flight) - those must never unpair anything, they just
-            // fail this attempt. It used to be the status alone, 403, which
-            // anything on the path could answer; see FlowerProblem and
+            // fail this attempt. And only when this server's pinned key signed
+            // it: it used to be the status alone, 403, which anything on the
+            // path could answer. See FlowerProblem, ServerResponseSignature and
             // PeerTrustRejectedEventArgs.
             if (PeerResponses.IsDeviceUnknown(ex))
                 PeerTrustRejected?.Invoke(this, new PeerTrustRejectedEventArgs { Fingerprint = device.Fingerprint, Alias = device.Alias });

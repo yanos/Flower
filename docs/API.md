@@ -152,6 +152,37 @@ against another id.
 3. The signature verifies against the key **on file** for that fingerprint —
    never one offered on the request. `pair-redeem` is the single exception.
 
+### What the server signs back
+
+Two kinds of answer can end a pairing, and the server signs both: every `/info`
+response, and every `401 device-unknown` refusal (`ServerResponseSignature`).
+It signs with its own device key, whose hash is the fingerprint a client pinned
+at pairing, over the same canonical form requests use:
+
+```
+RESPONSE
+<the request's path>
+status=<status>
+<sha256 of the response body>
+<the server's timestamp>
+<the request's own X-Flower-Nonce>
+```
+
+The answer carries `X-Flower-Server-Signature` and `X-Flower-Server-Timestamp`.
+It is signed only when the request carried a nonce, which every signed request
+does. The request's nonce is what makes it the answer to *that* request: a
+captured "you are revoked" verifies against nothing a client sends afterwards.
+That is also why the timestamp is not checked against a clock.
+
+A client believes `trustsCaller: false` only when the answer is signed by the
+key it names and that key hashes to the fingerprint it names. It believes
+`device-unknown` only when the key is the one it holds for the server it paired
+with. Anything unsigned, or signed by any other key, is one failed request: a
+bare `403` from a proxy, a forged answer from whatever took the server's old
+DHCP lease. The browser head reads `trustsCaller` without this check. It only
+decides whether to show the pairing screen, and a tab's code comes from that
+same origin anyway.
+
 ### How a refusal reads
 
 Every refusal under `/api` is an RFC 9457 problem document,
@@ -187,7 +218,7 @@ not allowed".
 | `500` | `server-error` | Something on the server failed | Report it |
 
 Clients act on the code. A sync service treats `device-unknown` alone as "this
-server revoked me". A stale timestamp after a laptop slept is `clock-skew`, and
+server revoked me", and only when the server signed it (above). A stale timestamp after a laptop slept is `clock-skew`, and
 must never unpair anything. Every `HttpClient` that `PeerHttpClient` builds
 reads `serverTime` off a `clock-skew` refusal and signs with the corrected clock
 from then on. The media path, which signs its own requests, retries once at
@@ -234,7 +265,9 @@ server's identity; signed by a paired device it answers more.
 | `callerIsAdmin` | **Verified callers only**, `null` otherwise. A hint for showing admin controls; it grants nothing |
 
 A verified call also carries the device's current `X-Flower-Alias`, and this is
-where a rename lands in the server's device list.
+where a rename lands in the server's device list. A signed call's answer is
+signed back (see "What the server signs back"); a client unpairs on
+`trustsCaller: false` only when it is.
 
 ## Pairing
 

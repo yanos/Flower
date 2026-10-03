@@ -75,6 +75,12 @@ public sealed class RemoteLibraryImporter : IMusicImporter
     // keep-alive connection down without telling us - see PlaylistSyncService.
     // False in the browser, where the fetch stack
     // owns connection reuse and the header is not ours to set.
+    // The origin's public key as /info served it, so a device-unknown refusal
+    // from it can be checked against the fingerprint this device pinned (see
+    // PeerResponses.EnsureSuccessAsync). Null for a caller that has none, whose
+    // refusals then never read as a revocation.
+    private readonly string? _originPublicKey;
+
     public RemoteLibraryImporter(
         HttpClient http,
         string baseUrl,
@@ -82,8 +88,10 @@ public sealed class RemoteLibraryImporter : IMusicImporter
         string originFingerprint,
         string ownFingerprint,
         ILogger<RemoteLibraryImporter> logger,
-        bool closeConnection = false)
+        bool closeConnection = false,
+        string? originPublicKey = null)
     {
+        _originPublicKey = originPublicKey;
         _http = http;
         _baseUrl = baseUrl.TrimEnd('/');
         _credentials = credentials;
@@ -145,7 +153,7 @@ public sealed class RemoteLibraryImporter : IMusicImporter
             return new RemoteLibraryFetch(NotModified: true, ifNoneMatch, [], new HashSet<string>());
         }
 
-        await response.EnsureSuccessAsync();
+        await response.EnsureSuccessAsync(_originPublicKey, _originFingerprint);
 
         // Read off Headers.ETag when the value parses as one and off the raw
         // header when it does not - a weak or oddly-quoted tag we have to send

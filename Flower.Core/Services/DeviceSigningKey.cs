@@ -37,5 +37,17 @@ public sealed class DeviceSigningKey : IDisposable
         return (Convert.ToBase64String(signature), timestamp, nonce);
     }
 
+    // The server's half: a signature over its own answer to a request, bound
+    // to that request's nonce - see ServerResponseSignature. Its own clock,
+    // not SignatureClock's, which is a client's correction and never moves
+    // on a server.
+    public (string Signature, string Timestamp) SignResponse(string requestPath, int status, byte[] body, string requestNonce)
+    {
+        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
+        var toSign = ServerResponseSignature.Canonical(requestPath, status, body, timestamp, requestNonce);
+        var signature = _ecdsa.SignData(toSign, HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation);
+        return (Convert.ToBase64String(signature), timestamp);
+    }
+
     public void Dispose() => _ecdsa.Dispose();
 }

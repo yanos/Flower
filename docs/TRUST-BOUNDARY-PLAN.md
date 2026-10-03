@@ -1,6 +1,6 @@
 # Trust boundary: rogue clients, budgets, and what a refusal means
 
-**Status (2026-10-02): steps 1–3 done; steps 4 and 5 to go.** Steps 1 and 2 stand
+**Status (2026-10-02): steps 1–4 done; step 5 to go.** Steps 1 and 2 stand
 alone; step 4 needs step 3. `docs/API.md` describes the server as it is today
 and is updated as each step lands, not before.
 
@@ -422,13 +422,34 @@ This works the same over plain HTTP on a LAN, over the tailnet, and through a
 tunnel that terminates TLS somewhere else. It also takes the destructive meaning
 off status codes entirely, which is the real answer to `403` meaning two things.
 
-**Done when** tests show:
+**Done (2026-10-02)**, as described above. The signed form reuses
+`SignedRequestCanonicalizer`, with `RESPONSE` as the method and the status as
+the one query pair, so there is one canonical form, not two. Where it differs:
 
-- a client facing a forged `403` keeps its pairing;
-- a client facing an unsigned `trustsCaller: false` keeps its pairing;
-- a client facing a replayed signed revocation from an earlier pairing keeps
-  its pairing;
-- a client facing a real revocation unpairs.
+- **On `/info`, the key is checked against the answer's own fingerprint.**
+  `NetworkDiscoveryService` does not hold the pin, so the comparison with the
+  pinned fingerprint happens one step later, in
+  `PeerSyncCoordinator.HandlePeerTrustChanged`, which already ignored any
+  device that was not the paired server. Together the two checks mean "the
+  paired server, and nobody else, said so". On the sync routes the key is
+  `DiscoveredDevice.PublicKey` and the fingerprint is the device row's.
+- **The browser head is left reading `trustsCaller` unsigned.** It decides only
+  whether to show the pairing screen, and keeps its key. A tab's code comes
+  from that same origin, so whatever could forge the answer could replace the
+  page.
+
+Tests, all passing:
+
+- a client facing a bare `403` keeps its pairing (step 3's test, still
+  passing);
+- a `device-unknown` the paired server did not sign, unsigned or signed by
+  another key, leaves the pairing alone; one it did sign reads as revoked
+  (`RefusalContractTests`, client);
+- an `/info` "no" is believed only when its own key signed it;
+- a signed refusal does not verify as the answer to a different request;
+- the real server's `/info` answer and `device-unknown` refusal verify against
+  its key, and only for the nonce they answered (`RefusalContractTests`,
+  server).
 
 ## Step 5 — Cleanups
 

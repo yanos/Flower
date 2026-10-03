@@ -234,6 +234,44 @@ public class RefusalContractTests(FlowerServerFixture server) : IClassFixture<Fl
         }
     }
 
+    // docs/TRUST-BOUNDARY-PLAN.md step 4, from the server's side: the two
+    // answers a client may unpair on are signed with this server's key, over
+    // the bytes sent and the nonce of the request answered, and verify as
+    // such with nothing but what the client already holds.
+    [Theory]
+    [InlineData("/api/flower/v1/library", 401)]
+    [InlineData(SyncProtocol.InfoPath, 200)]
+    public async Task The_answers_a_client_may_unpair_on_are_signed_by_this_server(string path, int expectedStatus)
+    {
+        using var stranger = SyncEndpointTestsKeys.NewDevice();
+        var (signature, timestamp, nonce) = stranger.Sign("GET", path, [], []);
+
+        var context = await server.Server.SendAsync(c =>
+        {
+            c.Request.Method = "GET";
+            c.Request.Path = path;
+            c.Connection.RemoteIpAddress = IPAddress.Parse("10.0.9.98");
+            c.Request.Headers["X-Flower-Fingerprint"] = stranger.Fingerprint;
+            c.Request.Headers["X-Flower-Signature"] = signature;
+            c.Request.Headers["X-Flower-Timestamp"] = timestamp;
+            c.Request.Headers["X-Flower-Nonce"] = nonce;
+        });
+
+        Assert.Equal(expectedStatus, context.Response.StatusCode);
+        using var buffer = new MemoryStream();
+        await context.Response.Body.CopyToAsync(buffer);
+        var body = buffer.ToArray();
+        var serverKey = server.Services.GetRequiredService<DeviceSigningKey>();
+        var signed = context.Response.Headers[ServerResponseSignature.SignatureHeader].ToString();
+        var at = context.Response.Headers[ServerResponseSignature.TimestampHeader].ToString();
+
+        Assert.True(ServerResponseSignature.Verify(path, expectedStatus, body, at, signed, nonce,
+            serverKey.PublicKeyBase64, serverKey.Fingerprint));
+        // And as the answer to this request only.
+        Assert.False(ServerResponseSignature.Verify(path, expectedStatus, body, at, signed, nonce + "0",
+            serverKey.PublicKeyBase64, serverKey.Fingerprint));
+    }
+
     // The fallback under every route: a path nothing maps is still a coded
     // refusal, not a bare status a client has to guess from.
     [Fact]
@@ -249,5 +287,17 @@ public class RefusalContractTests(FlowerServerFixture server) : IClassFixture<Fl
         Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
         using var reader = new StreamReader(context.Response.Body);
         Assert.Equal(ProblemCodes.NotFound, FlowerProblem.TryRead(await reader.ReadToEndAsync())?.Code);
+    }
+}
+
+internal static class SyncEndpointTestsKeys
+{
+    public static DeviceSigningKey NewDevice()
+    {
+        var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var publicKeyRaw = ecdsa.ExportParameters(false) is { Q.X: { } x, Q.Y: { } y }
+            ? (byte[])[0x04, .. x, .. y]
+            : throw new InvalidOperationException("no public point");
+        return new DeviceSigningKey(ecdsa, publicKeyRaw);
     }
 }

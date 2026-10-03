@@ -238,7 +238,7 @@ public class LibrarySyncService
             var importer = new RemoteLibraryImporter(
                 Http, device.Origin, _credentials,
                 originFingerprint: device.Fingerprint, ownFingerprint: _deviceIdentity.Fingerprint,
-                _importerLogger, closeConnection: true);
+                _importerLogger, closeConnection: true, originPublicKey: device.PublicKey);
 
             var fetch = await importer.FetchAsync(_lastSeenTokens.GetValueOrDefault(device.Fingerprint));
             if (fetch.NotModified)
@@ -1275,7 +1275,7 @@ public class LibrarySyncService
     private static SyncFailure Classify(Exception ex) => ex switch
     {
         HttpRequestException { StatusCode: HttpStatusCode.TooManyRequests } => SyncFailure.Throttled,
-        PeerRefusedException { Code: ProblemCodes.DeviceUnknown } => SyncFailure.NotTrusted,
+        PeerRefusedException { Code: ProblemCodes.DeviceUnknown, SignedByServer: true } => SyncFailure.NotTrusted,
         HttpRequestException { StatusCode: not null } => SyncFailure.Refused,
         HttpRequestException => SyncFailure.Unreachable,
         TaskCanceledException => SyncFailure.Unreachable,

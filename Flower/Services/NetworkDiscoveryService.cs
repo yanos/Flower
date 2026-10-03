@@ -6,6 +6,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
 using System.Security.Authentication;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -565,6 +566,26 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
         _ = ResolveAliasAsync(device);
     }
 
+    // Whether an /info answer is signed by the key it hands out, over the
+    // bytes it is, for the request this device just made - see
+    // ServerResponseSignature. The key must hash to the fingerprint the same
+    // answer names; whether that is the server this device paired with is
+    // PeerSyncCoordinator's question, since it holds the pin.
+    private static bool SignedByOwnKey(HttpResponseMessage response, byte[] body, string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            return doc.RootElement.TryGetProperty("publicKey", out var key) && key.ValueKind == JsonValueKind.String
+                && doc.RootElement.TryGetProperty("fingerprint", out var fingerprint) && fingerprint.ValueKind == JsonValueKind.String
+                && ServerResponseSignature.IsSignedBy(response, body, key.GetString(), fingerprint.GetString());
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
     // Fetches the peer's real alias and fingerprint via the /info handshake
     // (Flower.Server's DiscoveryEndpoints), replacing the raw mDNS name shown until this
     // resolves. Best-effort: a peer that is not yet listening, or never will be,
@@ -577,6 +598,7 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
     private async Task ResolveAliasAsync(DiscoveredDevice device)
     {
         string json;
+        var signedAnswer = false;
         try
         {
             // Signed the same way every gated endpoint's calls are, even though
@@ -608,7 +630,9 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
             }
             using var response = await _http.SendAsync(request);
             response.EnsureSuccessStatusCode();
-            json = await response.Content.ReadAsStringAsync();
+            var bytes = await response.Content.ReadAsByteArrayAsync();
+            json = Encoding.UTF8.GetString(bytes);
+            signedAnswer = SignedByOwnKey(response, bytes, json);
         }
         catch (Exception ex)
         {
@@ -660,8 +684,19 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
             // null (this peer didn't recognize our identity headers) both leave
             // TrustsUs at its current value rather than defaulting to a
             // rejection - see DiscoveredDevice.TrustsUs.
+            //
+            // And a "no" only when the answer is signed by the key it names
+            // (SignedByOwnKey). A no is what ends a pairing (see
+            // PeerSyncCoordinator.HandlePeerTrustChanged), and an unsigned one
+            // is something anything answering at this address could say - a
+            // device that took the server's old DHCP lease, a captive portal.
+            // The fingerprint that key hashes to is what the coordinator then
+            // compares with the one it pinned, so the pair of checks means
+            // "the paired server, and nobody else, said so". A yes needs no
+            // such care: it is not the half that ends anything.
             if (doc.RootElement.TryGetProperty("trustsCaller", out var trustsCallerProp) &&
-                trustsCallerProp.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                trustsCallerProp.ValueKind is JsonValueKind.True or JsonValueKind.False &&
+                (trustsCallerProp.ValueKind == JsonValueKind.True || signedAnswer))
             {
                 var trustsUs = trustsCallerProp.ValueKind == JsonValueKind.True;
                 if (trustsUs != device.TrustsUs)
