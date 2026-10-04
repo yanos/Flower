@@ -20,6 +20,10 @@ public sealed record SettingsCapabilities
     // to set on it.
     public bool ThemePicker { get; init; }
 
+    // Where the desktop's playback controls sit (AppSettings.
+    // PlaybackControlsPlacement). The app's own only: a server has no window.
+    public bool PlaybackControlsPicker { get; init; }
+
     // macOS/Windows Music.app integration - a headless server has no Music.app,
     // and neither does a browser.
     public bool ITunesIntegration { get; init; }
@@ -70,6 +74,7 @@ public sealed record SettingsSnapshot
 {
     public string Alias { get; init; } = "";
     public AppThemePreference ThemePreference { get; init; }
+    public PlaybackControlsPlacement PlaybackControlsPlacement { get; init; }
     public IReadOnlyList<string> LibraryPaths { get; init; } = [];
     // A server's only - see SettingsCapabilities.ITunesMasterSwitch. The app's
     // own backend leaves it unset here and ignores it in the draft.
@@ -143,6 +148,7 @@ public sealed record SettingsDraft
 {
     public required string Alias { get; init; }
     public required AppThemePreference ThemePreference { get; init; }
+    public required PlaybackControlsPlacement PlaybackControlsPlacement { get; init; }
     public required IReadOnlyList<string> LibraryPaths { get; init; }
     public required bool LibraryPathsChanged { get; init; }
     public required bool IntegrateWithITunes { get; init; }

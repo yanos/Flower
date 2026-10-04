@@ -4,6 +4,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:Flower.ViewModels"
              xmlns:controls="using:Flower.Controls"
+             xmlns:usercontrols="using:Flower.UserControls"
              mc:Ignorable="d"
              x:Class="Flower.UserControls.CurrentlyPlayingControl"
              x:DataType="vm:CurrentlyPlayingControlViewModel">
@@ -34,40 +35,7 @@
                  Foreground="{DynamicResource AppTextSecondaryBrush}"
                  TextTrimming="CharacterEllipsis"/>
 
-      <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,2,0,0">
-        <TextBlock Grid.Column="0"
-                   Text="{Binding ElapsedTime}"
-                   FontSize="12"
-                   MinWidth="34"
-                   Foreground="{DynamicResource AppTextSecondaryBrush}"
-                   VerticalAlignment="Center"
-                   IsVisible="{Binding CurrentlyPlayingTrack, Converter={x:Static ObjectConverters.IsNotNull}}"/>
-
-        <!-- The phone's seek bar (Now Playing's Slider.tight), a little
-             thicker than Fluent's rail with round ends: the one bar here. The
-             negative margin crops the room Fluent's template keeps above and
-             below for a tick bar it has not got. -->
-        <Slider Grid.Column="1" x:Name="slider"
-                Margin="10,-11"
-                Padding="0"
-                Minimum="0"
-                Maximum="1"
-                Value="{Binding SeekPosition, Mode=TwoWay}"
-                VerticalAlignment="Center">
-          <Slider.Resources>
-            <x:Double x:Key="SliderTrackThemeHeight">4</x:Double>
-          </Slider.Resources>
-        </Slider>
-
-        <TextBlock Grid.Column="2"
-                   Text="{Binding TotalTime}"
-                   FontSize="12"
-                   MinWidth="34"
-                   TextAlignment="Right"
-                   Foreground="{DynamicResource AppTextSecondaryBrush}"
-                   VerticalAlignment="Center"
-                   IsVisible="{Binding CurrentlyPlayingTrack, Converter={x:Static ObjectConverters.IsNotNull}}"/>
-      </Grid>
+      <usercontrols:SeekBar Margin="0,2,0,0"/>
     </StackPanel>
   </Grid>
 </UserControl>

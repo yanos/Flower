@@ -64,6 +64,13 @@
             <NativeMenuItem Header="Select Columns…" Command="{Binding OpenColumnSelectorCommand}"/>
             <NativeMenuItem Header="Equalizer…" Command="{Binding OpenEqualizerWindowCommand}"/>
             <NativeMenuItemSeparator/>
+            <!-- One-way IsChecked, Command flips it - the Repeat/Shuffle
+                 pattern above. The same setting as Settings' Playback
+                 Controls picker. -->
+            <NativeMenuItem Header="Playback Controls at Bottom" ToggleType="CheckBox"
+                            IsChecked="{Binding PlaybackControlsAtBottom}"
+                            Command="{Binding TogglePlaybackControlsPlacementCommand}"/>
+            <NativeMenuItemSeparator/>
             <NativeMenuItem Header="Zoom"/>
           </NativeMenu>
         </NativeMenuItem.Menu>

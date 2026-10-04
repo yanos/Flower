@@ -26,6 +26,19 @@ namespace Flower.Persistence
         Dark,
     }
 
+    // Settings > General, and View > Playback Controls at Bottom - see
+    // MainViewModel.PlaybackControlsPlacement. Top is the bar above the page:
+    // the transport beside the cover, the title and the seek bar. Bottom splits
+    // that up the way iTunes 12 did: the transport, the seek bar and the
+    // title, artist and album over it join the status bar across the foot of
+    // the window, and the cover goes to the foot of the sidebar.
+    [JsonConverter(typeof(JsonStringEnumConverter<PlaybackControlsPlacement>))]
+    public enum PlaybackControlsPlacement
+    {
+        Top,
+        Bottom,
+    }
+
     // Everything the app persists to settings.json. The library folders and the
     // two iTunes imports come from MusicLibrarySettings, which Flower.Server's own
     // options type derives from as well - see there for why only that much is
@@ -95,6 +108,10 @@ namespace Flower.Persistence
         // variant regardless of the OS - see Settings' Appearance picker and
         // Flower.Services.AppTheme.
         public AppThemePreference ThemePreference { get; set; } = AppThemePreference.System;
+
+        // Where the desktop's transport and what is playing sit - see
+        // PlaybackControlsPlacement above.
+        public PlaybackControlsPlacement PlaybackControlsPlacement { get; set; } = PlaybackControlsPlacement.Top;
 
         // Which sidebar view (and, for a Playlist, which one - by name, since
         // Playlist objects themselves aren't stable across a relaunch) and how

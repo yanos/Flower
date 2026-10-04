@@ -461,6 +461,8 @@ Two consequences worth knowing before touching the render path. `OutputStage`'s 
 
 `MainView.axaml`: top bar (playlist controls, volume, seek/track info, search) → content (sidebar + optional drill-down sub-list + `MusicListView` track list) → status bar.
 
+`AppSettings.PlaybackControlsPlacement` (Settings > General, View > Playback Controls at Bottom) moves the transport, the seek bar and a one-line title/artist/album over it out of the top bar into the status bar, which then runs under the sidebar too and drops the song count, and puts the cover at the foot of the sidebar. Which grid cells those take is set by styles on `ContentGrid`, not on the elements, because a local value outranks a style; `PlaybackControlsPlacementTests` holds that down.
+
 Keyboard shortcuts (all via `PlatformShortcuts.Primary`): `Space` play/pause, `Enter` play selected, `Cmd/Ctrl+I` track info, `Cmd/Ctrl+,` settings, `Cmd/Ctrl+L` scroll to now playing. Track-list shortcuts are tunnel-routed in `MainView.axaml.cs` so `MusicListView`'s own key handling doesn't swallow them.
 
 Column visibility/width/order persist via `ColumnManager` → `config.json`.

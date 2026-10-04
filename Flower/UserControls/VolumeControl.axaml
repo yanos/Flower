@@ -31,15 +31,16 @@
          rendering at all, since Track computes their Rects itself and
          nothing here could reliably confirm what it was doing internally.
          A star-sized Grid is simple, standard, and needs no pixel math - it
-         is driven by the exact same Volume binding as the slider below. -->
+         is driven by the exact same Volume binding as the slider below.
+         4 high, the seek bar's thickness (SliderTrackThemeHeight in SeekBar). -->
     <Grid Grid.Column="1" VerticalAlignment="Center">
       <Grid VerticalAlignment="Center">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="{Binding Volume, Converter={StaticResource VolumeToStarWidthConverter}}"/>
           <ColumnDefinition Width="{Binding Volume, Converter={StaticResource VolumeToStarWidthConverter}, ConverterParameter=Remaining}"/>
         </Grid.ColumnDefinitions>
-        <Border Grid.Column="0" Background="{DynamicResource AppPrimaryBrush}" Height="3" CornerRadius="1.5"/>
-        <Border Grid.Column="1" Background="{DynamicResource AppTrackBrush}" Height="3" CornerRadius="1.5"/>
+        <Border Grid.Column="0" Background="{DynamicResource AppPrimaryBrush}" Height="4" CornerRadius="2"/>
+        <Border Grid.Column="1" Background="{DynamicResource AppTrackBrush}" Height="4" CornerRadius="2"/>
       </Grid>
 
       <!-- Real, fully interactive slider stacked on top for click/drag -

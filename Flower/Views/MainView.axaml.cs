@@ -74,7 +74,10 @@ public partial class MainView : UserControl
     {
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
+        // Two transports, one shown - the top bar's and the status bar's, by
+        // AppSettings.PlaybackControlsPlacement.
         PlaybackControls.PlayOrPauseRequested += (_, _) => _viewModel?.PlayOrPauseFromCurrentView();
+        BottomPlaybackControls.PlayOrPauseRequested += (_, _) => _viewModel?.PlayOrPauseFromCurrentView();
 
         // Wire MusicListView events
         MusicList.RowActivated    += OnRowActivated;

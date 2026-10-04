@@ -24,6 +24,7 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
     public SettingsCapabilities Capabilities { get; } = new()
     {
         ThemePicker = true,
+        PlaybackControlsPicker = true,
         ITunesIntegration = true,
         // The app has no master switch: its first run asks about the Music.app
         // library instead (ITunesLibraryOffer), and the two imports are each
@@ -47,6 +48,7 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
     {
         Alias = ViewModel.DeviceAlias,
         ThemePreference = ViewModel.ThemePreference,
+        PlaybackControlsPlacement = ViewModel.PlaybackControlsPlacement,
         LibraryPaths = ViewModel.LibraryPaths.ToList(),
         SyncPlayCountFromITunes = ViewModel.SyncPlayCountFromITunes,
         SyncDateAddedFromITunes = ViewModel.SyncDateAddedFromITunes,
@@ -82,6 +84,7 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
             ViewModel.DeviceAlias = draft.Alias.Trim();
 
         ViewModel.ThemePreference = draft.ThemePreference;
+        ViewModel.PlaybackControlsPlacement = draft.PlaybackControlsPlacement;
         ViewModel.SyncPlayCountFromITunes = draft.SyncPlayCountFromITunes;
         ViewModel.SyncDateAddedFromITunes = draft.SyncDateAddedFromITunes;
         ViewModel.ShareLogsWithPairedServer = draft.ShareLogsWithPairedServer;

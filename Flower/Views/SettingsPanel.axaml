@@ -56,6 +56,20 @@
             <ComboBoxItem Content="Dark"/>
           </ComboBox>
 
+          <!-- Top is the bar above the page; Bottom moves the transport, the
+               seek bar and what is playing into the status bar and the cover to
+               the foot of the sidebar - see AppSettings.PlaybackControlsPlacement. -->
+          <TextBlock Text="Playback Controls"
+                     FontWeight="SemiBold"
+                     Margin="0,20,0,8"
+                     IsVisible="{Binding Capabilities.PlaybackControlsPicker}"/>
+          <ComboBox HorizontalAlignment="Stretch"
+                    SelectedIndex="{Binding PlaybackControlsIndex, Mode=TwoWay}"
+                    IsVisible="{Binding Capabilities.PlaybackControlsPicker}">
+            <ComboBoxItem Content="Top"/>
+            <ComboBoxItem Content="Bottom"/>
+          </ComboBox>
+
           <!-- On by default: whoever runs the server is the one who ends up
                diagnosing a listener's phone, and a listener cannot be asked to
                find a log file. Still a switch, because the snapshot carries

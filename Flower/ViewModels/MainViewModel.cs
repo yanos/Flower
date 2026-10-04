@@ -96,6 +96,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public ICommand? SortByColumnCommand         { get; private set; }
     public ICommand? OpenSettingsCommand         { get; private set; }
     public ICommand? OpenColumnSelectorCommand   { get; private set; }
+    public ICommand? TogglePlaybackControlsPlacementCommand { get; private set; }
     public ICommand? OpenLogWindowCommand        { get; private set; }
     public ICommand? OpenEqualizerWindowCommand  { get; private set; }
     public ICommand? NewPlaylistCommand          { get; private set; }
@@ -382,6 +383,28 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             AppTheme.Apply(value);
         }
     }
+
+    // Settings' Playback Controls picker and View > Playback Controls at
+    // Bottom - see Flower.Persistence.PlaybackControlsPlacement. MainView
+    // binds the two bools: the top bar shows for one, and the status bar's
+    // transport and seek bar and the sidebar's now-playing card for the other.
+    public PlaybackControlsPlacement PlaybackControlsPlacement
+    {
+        get => _appSettings.PlaybackControlsPlacement;
+        set
+        {
+            if (_appSettings.PlaybackControlsPlacement == value)
+                return;
+            _appSettings.PlaybackControlsPlacement = value;
+            SaveSettings();
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(PlaybackControlsAtTop));
+            OnPropertyChanged(nameof(PlaybackControlsAtBottom));
+        }
+    }
+
+    public bool PlaybackControlsAtTop => PlaybackControlsPlacement == PlaybackControlsPlacement.Top;
+    public bool PlaybackControlsAtBottom => PlaybackControlsPlacement == PlaybackControlsPlacement.Bottom;
 
     // Both delegate to ITunesImportCoordinator, which owns the cooldown and
     // the apply/notify/save sequence - kept here as forwarders because
@@ -1863,6 +1886,10 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         SortByColumnCommand         = new RelayCommand<string>(Browser.SortByColumn);
         OpenSettingsCommand         = new RelayCommand(() => SettingsRequested?.Invoke(this, EventArgs.Empty));
         OpenColumnSelectorCommand   = new RelayCommand(() => ColumnSelectorRequested?.Invoke(this, EventArgs.Empty));
+        TogglePlaybackControlsPlacementCommand = new RelayCommand(() =>
+            PlaybackControlsPlacement = PlaybackControlsAtBottom
+                ? PlaybackControlsPlacement.Top
+                : PlaybackControlsPlacement.Bottom);
         OpenLogWindowCommand        = new RelayCommand(() => LogWindowRequested?.Invoke(this, EventArgs.Empty));
         OpenEqualizerWindowCommand  = new RelayCommand(() => EqualizerWindowRequested?.Invoke(this, EventArgs.Empty));
         NewPlaylistCommand          = new AsyncRelayCommand(() => CreatePlaylistWithTrack(null));

@@ -185,6 +185,17 @@ public sealed partial class SettingsViewModel : ViewModelBase
         _ => AppThemePreference.System,
     };
 
+    // A ComboBox index for the same reason as ThemeIndex: 0 is Top, 1 Bottom.
+    private int _playbackControlsIndex;
+    public int PlaybackControlsIndex
+    {
+        get => _playbackControlsIndex;
+        set => SetProperty(ref _playbackControlsIndex, value);
+    }
+
+    public PlaybackControlsPlacement PlaybackControlsPlacement =>
+        PlaybackControlsIndex == 1 ? PlaybackControlsPlacement.Bottom : PlaybackControlsPlacement.Top;
+
     private bool _integrateWithITunes;
     public bool IntegrateWithITunes
     {
@@ -444,6 +455,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
                 AppThemePreference.Dark => 2,
                 _ => 0,
             };
+            PlaybackControlsIndex = _snapshot.PlaybackControlsPlacement == PlaybackControlsPlacement.Bottom ? 1 : 0;
             _integrateWithITunes = _snapshot.IntegrateWithITunes;
             OnPropertyChanged(nameof(IntegrateWithITunes));
             SyncPlayCountFromITunes = _snapshot.SyncPlayCountFromITunes;
@@ -532,6 +544,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
             {
                 Alias = Alias,
                 ThemePreference = ThemePreference,
+                PlaybackControlsPlacement = PlaybackControlsPlacement,
                 LibraryPaths = _paths.ToList(),
                 LibraryPathsChanged = pathsChanged,
                 IntegrateWithITunes = IntegrateWithITunes,
