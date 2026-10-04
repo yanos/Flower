@@ -113,6 +113,15 @@ namespace Flower.Persistence
         // PlaybackControlsPlacement above.
         public PlaybackControlsPlacement PlaybackControlsPlacement { get; set; } = PlaybackControlsPlacement.Top;
 
+        // What Home's shelves hold, on every head - set in Settings (the
+        // desktop's General tab, the phone's Home card) and read by
+        // HomeViewModel. Continue Playing and Recently Played are capped at so
+        // many albums, Recently Added at so many months back. Zero hides that
+        // shelf.
+        public int HomeContinuePlayingLimit { get; set; } = 6;
+        public int HomeRecentlyPlayedLimit  { get; set; } = 6;
+        public int HomeRecentlyAddedMonths  { get; set; } = 3;
+
         // Which sidebar view (and, for a Playlist, which one - by name, since
         // Playlist objects themselves aren't stable across a relaunch) and how
         // far scrolled into it the user was, saved on close (MainWindow.Closing,

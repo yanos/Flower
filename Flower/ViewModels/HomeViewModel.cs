@@ -62,7 +62,13 @@ public sealed class ContinuePlayingItemViewModel : ViewModelBase
 // The Home screen, on every head: what the user was part-way through, what
 // they played lately, and what arrived lately - three short shelves rather
 // than three whole-library views, which is what Albums (sortable by date
-// added) and History are for. See HomeShelves for what goes on each.
+// added) and History are for. See HomeShelves for what goes on each, and the
+// three settings below for how much: so many albums on the first two, so many
+// months back on the third (AppSettings.HomeContinuePlayingLimit and friends,
+// pushed in by MainViewModel).
+//
+// Filter narrows what the shelves show, the way the page filter narrows any
+// other screen - the desktop's header box, the phone's pull-down oval.
 //
 // Built only while something is showing it: every song that starts changes
 // Recently Played, and grouping the whole library into albums for a screen
@@ -70,14 +76,17 @@ public sealed class ContinuePlayingItemViewModel : ViewModelBase
 // stale, and it catches up when it is next shown - see IsActive.
 public sealed class HomeViewModel : ViewModelBase, IDisposable
 {
-    public const int MaxContinuePlaying = 10;
-    public const int MaxRecentlyPlayed = 12;
-    public const int MaxRecentlyAdded = 12;
+    // The settings' ceilings. Continue Playing cannot show more albums than
+    // the tracker remembers; the others are held to the same number so the
+    // two shelves offer the same range.
+    public const int MaxAlbumsPerShelf = AlbumProgressTracker.MaxEntries;
+    public const int MaxRecentlyAddedMonths = 24;
 
     private readonly Library _library;
     private readonly AlbumProgressTracker _progress;
     private readonly PlaylistControlViewModel? _playback;
     private readonly SubscriptionBag _subscriptions = new();
+    private readonly TimeProvider _clock;
 
     // Whether the paired server is there to stream from, which decides
     // whether a cover of songs not on this device is greyed out.
@@ -92,6 +101,52 @@ public sealed class HomeViewModel : ViewModelBase, IDisposable
     public bool HasRecentlyAdded => RecentlyAdded.Count > 0;
     public bool IsEmpty => !HasContinuePlaying && !HasRecentlyPlayed && !HasRecentlyAdded;
 
+    // Which empty state the screen shows: nothing on Home at all, or nothing
+    // on it the filter lets through.
+    public bool ShowsNothingYet => IsEmpty && _filter == null;
+    public bool ShowsNoMatches => IsEmpty && _filter != null;
+
+    // How many covers the shelves show between them - the page header's count.
+    public int ShownCount => ContinuePlaying.Count + RecentlyPlayed.Count + RecentlyAdded.Count;
+
+    private int _continuePlayingLimit = 6;
+    public int ContinuePlayingLimit
+    {
+        get => _continuePlayingLimit;
+        set => SetSetting(ref _continuePlayingLimit, Math.Clamp(value, 0, MaxAlbumsPerShelf));
+    }
+
+    private int _recentlyPlayedLimit = 6;
+    public int RecentlyPlayedLimit
+    {
+        get => _recentlyPlayedLimit;
+        set => SetSetting(ref _recentlyPlayedLimit, Math.Clamp(value, 0, MaxAlbumsPerShelf));
+    }
+
+    private int _recentlyAddedMonths = 3;
+    public int RecentlyAddedMonths
+    {
+        get => _recentlyAddedMonths;
+        set => SetSetting(ref _recentlyAddedMonths, Math.Clamp(value, 0, MaxRecentlyAddedMonths));
+    }
+
+    // Trimmed, and null for nothing, so a box holding a stray space filters
+    // nothing out.
+    private string? _filter;
+    public string? Filter
+    {
+        get => _filter;
+        set => SetSetting(ref _filter, string.IsNullOrWhiteSpace(value) ? null : value.Trim());
+    }
+
+    private void SetSetting<T>(ref T field, T value)
+    {
+        if (EqualityComparer<T>.Default.Equals(field, value))
+            return;
+        field = value;
+        Invalidate();
+    }
+
     // Picks the album up where it was left.
     public ICommand ResumeCommand { get; }
 
@@ -105,9 +160,10 @@ public sealed class HomeViewModel : ViewModelBase, IDisposable
     public event EventHandler<AlbumTileViewModel>? AlbumOpened;
 
     public HomeViewModel(Library library, AlbumProgressTracker progress, PlaylistControlViewModel? playback,
-        Func<(string? Fingerprint, bool Reachable)>? availability = null)
+        Func<(string? Fingerprint, bool Reachable)>? availability = null, TimeProvider? clock = null)
     {
         _availability = availability ?? (() => (null, false));
+        _clock = clock ?? TimeProvider.System;
         _library = library;
         _progress = progress;
         _playback = playback;
@@ -192,19 +248,40 @@ public sealed class HomeViewModel : ViewModelBase, IDisposable
         _isStale = false;
         var snapshot = _library.Snapshot;
 
-        var continuing = HomeShelves.ContinuePlaying(_progress.Entries, snapshot, MaxContinuePlaying);
+        var continuing = HomeShelves.ContinuePlaying(_progress.Entries, snapshot, _continuePlayingLimit);
         var onShelf = continuing.Select(c => c.Entry.AlbumId).ToHashSet();
+        var played = HomeShelves.RecentlyPlayed(snapshot, onShelf, _recentlyPlayedLimit);
+        var added = _recentlyAddedMonths == 0
+            ? []
+            : HomeShelves.RecentlyAdded(snapshot, _clock.GetLocalNow().AddMonths(-_recentlyAddedMonths));
+
+        // After the limits, so the filter narrows what the shelves show
+        // rather than reaching past them for more.
+        if (_filter is { } filter)
+        {
+            continuing = continuing.Where(c => FilterableAlbumGrid.Matches(c.Tile, filter)).ToList();
+            played = played.Where(t => FilterableAlbumGrid.Matches(t, filter)).ToList();
+            added = added.Where(t => FilterableAlbumGrid.Matches(t, filter)).ToList();
+        }
 
         SetContinuePlaying(continuing);
-        SetTiles(RecentlyPlayed, HomeShelves.RecentlyPlayed(snapshot, onShelf, MaxRecentlyPlayed));
-        SetTiles(RecentlyAdded, HomeShelves.RecentlyAdded(snapshot, MaxRecentlyAdded));
+        SetTiles(RecentlyPlayed, played);
+        SetTiles(RecentlyAdded, added);
         ApplyAvailability();
 
         OnPropertyChanged(nameof(HasContinuePlaying));
         OnPropertyChanged(nameof(HasRecentlyPlayed));
         OnPropertyChanged(nameof(HasRecentlyAdded));
         OnPropertyChanged(nameof(IsEmpty));
+        OnPropertyChanged(nameof(ShowsNothingYet));
+        OnPropertyChanged(nameof(ShowsNoMatches));
+        OnPropertyChanged(nameof(ShownCount));
+        ShelvesChanged?.Invoke(this, EventArgs.Empty);
     }
+
+    // After every rebuild - what a view laying the shelves out in rows of its
+    // own (HomeShelfRowsHost) re-chunks on.
+    public event EventHandler? ShelvesChanged;
 
     // Greys out a cover none of whose songs can be played right now, as the
     // album grids do.

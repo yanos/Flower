@@ -630,6 +630,8 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             _playlistPickerFilter = filter;
             RebuildPlaylistPicker();
         }
+        else if (IsShowingHome)
+            Main.Home.Filter = filter;
         RaiseEmptyStateChanged();
     }
 

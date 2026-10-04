@@ -92,9 +92,10 @@ public sealed record MobileNavigationFrame(
 
     // Whether pulling this screen down opens its filter oval. Not on Search,
     // whose box is already a search, nor on the Queue, which is in the order
-    // it plays in and short of the one thing a filter would hide, nor on
-    // Home, whose shelves are a dozen covers each.
-    public bool CanFilter => ScreenKind is not (MobileScreenKind.SearchResults or MobileScreenKind.Queue or MobileScreenKind.Home);
+    // it plays in and short of the one thing a filter would hide. Home has
+    // one: Recently Added is three months of albums by default, which can be
+    // a long page.
+    public bool CanFilter => ScreenKind is not (MobileScreenKind.SearchResults or MobileScreenKind.Queue);
 
     // Whether this frame's TrackList (if any) is showing one album's own
     // tracks vs. a flat Songs/playlist list - mirrors

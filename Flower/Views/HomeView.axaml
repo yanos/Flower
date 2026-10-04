@@ -7,21 +7,26 @@
              x:Class="Flower.Views.HomeView"
              x:DataType="vm:HomeViewModel">
 
-  <!-- Desktop's Home: three shelves, each a single row that scrolls sideways
-       (see HomeViewModel for what is on them). The phone's is
-       HomeScreenView - the same shelves, but tapped and long-pressed rather
-       than clicked and right-clicked, and inside the phone's own screen
-       scroller. A vertical wheel over a shelf reaches the page: a shelf has
-       nothing to scroll that way, and ScrollViewer lets such a wheel chain on
-       to the one around it. Every cover is the album tile the phone draws
-       (AlbumCard); its "..." opens the tile's menu - MainView answers
+  <!-- Desktop's Home: three shelves under the page header MainView draws over
+       every list (the name, the count, the filter box), each laid out like
+       the Albums grid - as many columns as fit, wrapping onto rows below, in
+       a virtualizing list of rows at the grid's own cell width - rather than
+       one row that scrolls sideways. See HomeViewModel for what is on them and how
+       many. The phone's is HomeScreenView - the same shelves, but tapped and
+       long-pressed rather than clicked and right-clicked, and inside the
+       phone's own screen scroller. Every cover is the album tile the phone
+       draws (AlbumCard); its "..." opens the tile's menu - MainView answers
        AlbumCard.MenuRequested. -->
   <UserControl.Styles>
-    <!-- The phone's shelf headings (HomeScreenView). -->
+    <!-- The phone's shelf headings (HomeScreenView), each leaving room above
+         it for the shelf before. -->
     <Style Selector="TextBlock.shelfTitle">
       <Setter Property="FontSize" Value="24" />
       <Setter Property="FontWeight" Value="Bold" />
-      <Setter Property="Margin" Value="8,0,0,4" />
+      <Setter Property="Margin" Value="8,28,0,12" />
+    </Style>
+    <Style Selector="TextBlock.shelfTitle.first">
+      <Setter Property="Margin" Value="8,0,0,12" />
     </Style>
     <Style Selector="Button.homeTile">
       <Setter Property="Background" Value="Transparent" />
@@ -29,6 +34,7 @@
       <Setter Property="Padding" Value="8" />
       <Setter Property="CornerRadius" Value="12" />
       <Setter Property="VerticalAlignment" Value="Top" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
     </Style>
     <Style Selector="Button.homeTile:pointerover /template/ ContentPresenter#PART_ContentPresenter">
@@ -40,16 +46,28 @@
   </UserControl.Styles>
 
   <Grid>
+    <!-- One virtualizing list of rows - each shelf's heading, then its covers
+         so many to a row (HomeShelfRows, fed by HomeShelfRowsHost from this
+         list's width) - so only what is on screen is built, as in the Albums
+         grid. Its own ScrollViewer, as AlbumGridView has: an ItemsControl's
+         template has none. -->
     <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-      <StackPanel Margin="16,20,0,24" Spacing="28">
+      <ItemsControl x:Name="Rows" Margin="16,0,16,24">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <VirtualizingStackPanel Orientation="Vertical" />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.DataTemplates>
+          <DataTemplate DataType="vm:HomeShelfHeaderRow">
+            <TextBlock Classes="shelfTitle" Classes.first="{Binding IsFirst}" Text="{Binding Title}" />
+          </DataTemplate>
 
-        <StackPanel Spacing="8" IsVisible="{Binding HasContinuePlaying}">
-          <TextBlock Classes="shelfTitle" Text="Continue Playing" />
-          <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-            <ItemsControl ItemsSource="{Binding ContinuePlaying}" Margin="0,0,16,8">
+          <DataTemplate DataType="vm:HomeContinuePlayingRow">
+            <ItemsControl ItemsSource="{Binding Items}" Margin="0,0,0,8">
               <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>
-                  <StackPanel Orientation="Horizontal" />
+                  <UniformGrid Columns="{Binding Columns}" />
                 </ItemsPanelTemplate>
               </ItemsControl.ItemsPanel>
               <ItemsControl.ItemTemplate>
@@ -72,8 +90,7 @@
                                   CommandParameter="{Binding}" />
                       </ContextMenu>
                     </Button.ContextMenu>
-                    <controls:AlbumCard Width="180"
-                                        Tile="{Binding Tile}"
+                    <controls:AlbumCard Tile="{Binding Tile}"
                                         ShowsProgress="True"
                                         Progress="{Binding Progress}"
                                         Detail="{Binding Detail}" />
@@ -81,16 +98,13 @@
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
-          </ScrollViewer>
-        </StackPanel>
+          </DataTemplate>
 
-        <StackPanel Spacing="8" IsVisible="{Binding HasRecentlyPlayed}">
-          <TextBlock Classes="shelfTitle" Text="Recently Played" />
-          <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-            <ItemsControl ItemsSource="{Binding RecentlyPlayed}" Margin="0,0,16,8">
+          <DataTemplate DataType="vm:HomeAlbumRow">
+            <ItemsControl ItemsSource="{Binding Tiles}" Margin="0,0,0,8">
               <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>
-                  <StackPanel Orientation="Horizontal" />
+                  <UniformGrid Columns="{Binding Columns}" />
                 </ItemsPanelTemplate>
               </ItemsControl.ItemsPanel>
               <ItemsControl.ItemTemplate>
@@ -98,44 +112,31 @@
                   <Button Classes="homeTile"
                           Command="{Binding $parent[UserControl].((vm:HomeViewModel)DataContext).OpenAlbumCommand}"
                           CommandParameter="{Binding}">
-                    <controls:AlbumCard Width="180" Tile="{Binding}" />
+                    <controls:AlbumCard Tile="{Binding}" />
                   </Button>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
-          </ScrollViewer>
-        </StackPanel>
-
-        <StackPanel Spacing="8" IsVisible="{Binding HasRecentlyAdded}">
-          <TextBlock Classes="shelfTitle" Text="Recently Added" />
-          <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-            <ItemsControl ItemsSource="{Binding RecentlyAdded}" Margin="0,0,16,8">
-              <ItemsControl.ItemsPanel>
-                <ItemsPanelTemplate>
-                  <StackPanel Orientation="Horizontal" />
-                </ItemsPanelTemplate>
-              </ItemsControl.ItemsPanel>
-              <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="mvm:AlbumTileViewModel">
-                  <Button Classes="homeTile"
-                          Command="{Binding $parent[UserControl].((vm:HomeViewModel)DataContext).OpenAlbumCommand}"
-                          CommandParameter="{Binding}">
-                    <controls:AlbumCard Width="180" Tile="{Binding}" />
-                  </Button>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-          </ScrollViewer>
-        </StackPanel>
-      </StackPanel>
+          </DataTemplate>
+        </ItemsControl.DataTemplates>
+      </ItemsControl>
     </ScrollViewer>
 
-    <StackPanel IsVisible="{Binding IsEmpty}"
+    <StackPanel IsVisible="{Binding ShowsNothingYet}"
                 HorizontalAlignment="Center" VerticalAlignment="Center"
                 Spacing="8" Opacity="0.6" MaxWidth="360">
       <materialIcons:MaterialIcon Kind="HomeOutline" Width="40" Height="40" />
       <TextBlock Text="Nothing here yet" FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center" />
       <TextBlock Text="Albums you play and albums you add will show up here."
+                 FontSize="13" TextWrapping="Wrap" TextAlignment="Center" />
+    </StackPanel>
+
+    <StackPanel IsVisible="{Binding ShowsNoMatches}"
+                HorizontalAlignment="Center" VerticalAlignment="Center"
+                Spacing="8" Opacity="0.6" MaxWidth="360">
+      <materialIcons:MaterialIcon Kind="Magnify" Width="40" Height="40" />
+      <TextBlock Text="No matches" FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center" />
+      <TextBlock Text="Nothing on Home matches the filter."
                  FontSize="13" TextWrapping="Wrap" TextAlignment="Center" />
     </StackPanel>
   </Grid>

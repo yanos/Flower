@@ -25,6 +25,7 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
     {
         ThemePicker = true,
         PlaybackControlsPicker = true,
+        HomeShelves = true,
         ITunesIntegration = true,
         // The app has no master switch: its first run asks about the Music.app
         // library instead (ITunesLibraryOffer), and the two imports are each
@@ -49,6 +50,9 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
         Alias = ViewModel.DeviceAlias,
         ThemePreference = ViewModel.ThemePreference,
         PlaybackControlsPlacement = ViewModel.PlaybackControlsPlacement,
+        HomeContinuePlayingLimit = ViewModel.HomeContinuePlayingLimit,
+        HomeRecentlyPlayedLimit = ViewModel.HomeRecentlyPlayedLimit,
+        HomeRecentlyAddedMonths = ViewModel.HomeRecentlyAddedMonths,
         LibraryPaths = ViewModel.LibraryPaths.ToList(),
         SyncPlayCountFromITunes = ViewModel.SyncPlayCountFromITunes,
         SyncDateAddedFromITunes = ViewModel.SyncDateAddedFromITunes,
@@ -85,6 +89,9 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
 
         ViewModel.ThemePreference = draft.ThemePreference;
         ViewModel.PlaybackControlsPlacement = draft.PlaybackControlsPlacement;
+        ViewModel.HomeContinuePlayingLimit = draft.HomeContinuePlayingLimit;
+        ViewModel.HomeRecentlyPlayedLimit = draft.HomeRecentlyPlayedLimit;
+        ViewModel.HomeRecentlyAddedMonths = draft.HomeRecentlyAddedMonths;
         ViewModel.SyncPlayCountFromITunes = draft.SyncPlayCountFromITunes;
         ViewModel.SyncDateAddedFromITunes = draft.SyncDateAddedFromITunes;
         ViewModel.ShareLogsWithPairedServer = draft.ShareLogsWithPairedServer;

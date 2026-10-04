@@ -70,6 +70,34 @@
             <ComboBoxItem Content="Bottom"/>
           </ComboBox>
 
+          <!-- How much Home's shelves hold - see AppSettings.
+               HomeContinuePlayingLimit. The phone sets the same three in its
+               own Settings (SettingsView's Home card). -->
+          <StackPanel IsVisible="{Binding Capabilities.HomeShelves}">
+            <TextBlock Text="Home" FontWeight="SemiBold" Margin="0,20,0,8"/>
+            <Grid ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="10">
+              <TextBlock Grid.Row="0" Text="Continue Playing" VerticalAlignment="Center"/>
+              <NumericUpDown Grid.Row="0" Grid.Column="1" Width="120"
+                             Value="{Binding HomeContinuePlayingLimit, Mode=TwoWay}"
+                             Minimum="0" Maximum="{Binding MaxHomeShelfAlbums}" Increment="1" FormatString="0"/>
+              <TextBlock Grid.Row="0" Grid.Column="2" Text="albums" Opacity="0.6" VerticalAlignment="Center"/>
+
+              <TextBlock Grid.Row="1" Text="Recently Played" VerticalAlignment="Center"/>
+              <NumericUpDown Grid.Row="1" Grid.Column="1" Width="120"
+                             Value="{Binding HomeRecentlyPlayedLimit, Mode=TwoWay}"
+                             Minimum="0" Maximum="{Binding MaxHomeShelfAlbums}" Increment="1" FormatString="0"/>
+              <TextBlock Grid.Row="1" Grid.Column="2" Text="albums" Opacity="0.6" VerticalAlignment="Center"/>
+
+              <TextBlock Grid.Row="2" Text="Recently Added" VerticalAlignment="Center"/>
+              <NumericUpDown Grid.Row="2" Grid.Column="1" Width="120"
+                             Value="{Binding HomeRecentlyAddedMonths, Mode=TwoWay}"
+                             Minimum="0" Maximum="{Binding MaxHomeRecentlyAddedMonths}" Increment="1" FormatString="0"/>
+              <TextBlock Grid.Row="2" Grid.Column="2" Text="months" Opacity="0.6" VerticalAlignment="Center"/>
+            </Grid>
+            <TextBlock Text="0 hides that shelf."
+                       Margin="0,6,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
+          </StackPanel>
+
           <!-- On by default: whoever runs the server is the one who ends up
                diagnosing a listener's phone, and a listener cannot be asked to
                find a log file. Still a switch, because the snapshot carries

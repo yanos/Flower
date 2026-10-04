@@ -356,6 +356,24 @@ public class MobileScreenFilterTests : PinnedDataDirectory
         Dispatcher.UIThread.RunJobs();
     }
 
+    // Home's shelves can run long - Recently Added is months of albums - so
+    // the pull opens the oval there too, and it narrows every shelf.
+    [AvaloniaFact]
+    public void Home_is_filtered_like_any_other_screen()
+    {
+        using var scope = Build();
+        var mobile = scope.Mobile;
+        mobile.SelectTabCommand.Execute(nameof(MobileTab.Home));
+        var home = mobile.Main.Home;
+        WaitUntil(() => home.RecentlyAdded.Count == 3, "Home's shelves");
+
+        Assert.True(mobile.OpenScreenFilter());
+        mobile.ScreenFilter = "karma";
+
+        WaitUntil(() => home.RecentlyAdded.Count == 1, "the shelves narrowing");
+        Assert.Equal("OK Computer", home.RecentlyAdded[0].Name);
+    }
+
     [AvaloniaFact]
     public void The_search_screen_has_no_filter()
     {

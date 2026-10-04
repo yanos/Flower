@@ -403,6 +403,50 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         }
     }
 
+    // Home's three settings - see AppSettings.HomeContinuePlayingLimit. Set
+    // from Settings on either head; applied to the shelves at once, and saved.
+    public int HomeContinuePlayingLimit
+    {
+        get => _appSettings.HomeContinuePlayingLimit;
+        set => SetHomeSetting(value, v => _appSettings.HomeContinuePlayingLimit = v, v => Home.ContinuePlayingLimit = v,
+            () => Home.ContinuePlayingLimit);
+    }
+
+    public int HomeRecentlyPlayedLimit
+    {
+        get => _appSettings.HomeRecentlyPlayedLimit;
+        set => SetHomeSetting(value, v => _appSettings.HomeRecentlyPlayedLimit = v, v => Home.RecentlyPlayedLimit = v,
+            () => Home.RecentlyPlayedLimit);
+    }
+
+    public int HomeRecentlyAddedMonths
+    {
+        get => _appSettings.HomeRecentlyAddedMonths;
+        set => SetHomeSetting(value, v => _appSettings.HomeRecentlyAddedMonths = v, v => Home.RecentlyAddedMonths = v,
+            () => Home.RecentlyAddedMonths);
+    }
+
+    // Home clamps; what it kept is what gets saved, so a value typed past the
+    // ceiling is stored as the ceiling rather than as what was typed.
+    private void SetHomeSetting(int value, Action<int> store, Action<int> apply, Func<int> applied,
+        [System.Runtime.CompilerServices.CallerMemberName] string? property = null)
+    {
+        apply(value);
+        store(applied());
+        SaveSettings();
+        OnPropertyChanged(property);
+    }
+
+    // The desktop's page filter, on Home, narrows the shelves. Only while Home
+    // is the page: the phone shares this view model, and sets Home's filter
+    // from its own pull-down box instead (MobileMainViewModel.ApplyScreenFilter),
+    // which a word typed into a track list's filter must not overwrite.
+    private void SyncHomeFilter()
+    {
+        if (IsShowingHome)
+            Home.Filter = FilterText;
+    }
+
     public bool PlaybackControlsAtTop => PlaybackControlsPlacement == PlaybackControlsPlacement.Top;
     public bool PlaybackControlsAtBottom => PlaybackControlsPlacement == PlaybackControlsPlacement.Bottom;
 
@@ -736,10 +780,10 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     }
 
     // The band above a list on desktop: the page's name in the display serif,
-    // how much is in it, and the filter box. Over every list - Home is its
-    // shelves, and a server's page is about the server.
+    // how much is in it, and the filter box. Over every list and over Home -
+    // not over a server's page, which is about the server.
     public bool ShowsPageHeader => _selectedSidebarItem?.Kind is
-        SidebarItemKind.Songs or SidebarItemKind.Albums or SidebarItemKind.Artists
+        SidebarItemKind.Home or SidebarItemKind.Songs or SidebarItemKind.Albums or SidebarItemKind.Artists
         or SidebarItemKind.History or SidebarItemKind.Playlist;
 
     public string? PageTitle => _selectedSidebarItem?.Name;
@@ -749,6 +793,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public string PageSubtitle => _selectedSidebarItem?.Kind switch
     {
         SidebarItemKind.Albums => CountOf(AlbumGridTiles.Count, "album"),
+        SidebarItemKind.Home => CountOf(Home.ShownCount, "album"),
         SidebarItemKind.Artists => CountOf(VisibleSubListItems.Count, "artist"),
         _ => CountOf(DisplayedTracks.Count, "song"),
     };
@@ -1838,6 +1883,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
                         break;
                     case nameof(LibraryBrowserViewModel.FilterText):
                         RefreshArtistPage(refilter: true);
+                        SyncHomeFilter();
                         break;
                 }
             },
@@ -1856,7 +1902,18 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         // grid here (ShowAlbumAsync, wired by MainView), an album screen on a
         // phone (MobileMainViewModel) - so nothing here answers AlbumOpened.
         Home = new HomeViewModel(library, playlistControlViewModel.AlbumProgress, playlistControlViewModel,
-            () => (StreamingServerFingerprint, IsStreamingServerReachable));
+            () => (StreamingServerFingerprint, IsStreamingServerReachable))
+        {
+            ContinuePlayingLimit = _appSettings.HomeContinuePlayingLimit,
+            RecentlyPlayedLimit = _appSettings.HomeRecentlyPlayedLimit,
+            RecentlyAddedMonths = _appSettings.HomeRecentlyAddedMonths,
+        };
+        _subscriptions.Add<System.ComponentModel.PropertyChangedEventHandler>((_, e) =>
+        {
+            if (e.PropertyName == nameof(HomeViewModel.ShownCount) && IsShowingHome)
+                OnPropertyChanged(nameof(PageSubtitle));
+        },
+            h => Home.PropertyChanged += h, h => Home.PropertyChanged -= h);
 
         _subscriptions.Add<EventHandler<DeletePlaylistConfirmationEventArgs>>(
             (_, e) => DeletePlaylistConfirmationRequested?.Invoke(this, e),
@@ -2615,6 +2672,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         OnPropertyChanged(nameof(IsSubListVisible));
         OnPropertyChanged(nameof(IsShowingAlbumGrid));
         OnPropertyChanged(nameof(IsShowingHome));
+        SyncHomeFilter();
         Home.IsActive = IsShowingHome;
         OnPropertyChanged(nameof(IsShowingTrackList));
         OnPropertyChanged(nameof(IsShowingArtistPage));

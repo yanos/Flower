@@ -95,7 +95,7 @@ public class HomeShelvesTests
     }
 
     [Fact]
-    public void Recently_added_is_newest_first_limited_and_only_real_albums()
+    public void Recently_added_is_newest_first_since_the_cutoff_and_only_real_albums()
     {
         var old = Album("Old", 1, addedDaysAgo: 100);
         var mid = Album("Mid", 1, addedDaysAgo: 10);
@@ -103,8 +103,18 @@ public class HomeShelvesTests
         var loose = new Track { Title = "Loose", Path = "/loose.mp3", DateAdded = Now };
         var library = LibrarySnapshot.Build(old.Concat(mid).Concat(fresh).Append(loose).ToList());
 
-        var tiles = HomeShelves.RecentlyAdded(library, 2);
+        var tiles = HomeShelves.RecentlyAdded(library, Now.AddMonths(-3));
 
         Assert.Equal(new[] { "Fresh", "Mid" }, tiles.Select(t => t.Name));
+    }
+
+    // A window, not a count: however many arrived in it, all of them.
+    [Fact]
+    public void Recently_added_holds_everything_in_the_window()
+    {
+        var albums = Enumerable.Range(0, 20).Select(i => Album($"A{i}", 1, addedDaysAgo: i + 1)).ToList();
+        var library = LibrarySnapshot.Build(albums.SelectMany(a => a).ToList());
+
+        Assert.Equal(20, HomeShelves.RecentlyAdded(library, Now.AddMonths(-3)).Count);
     }
 }

@@ -7,6 +7,7 @@
              xmlns:avc="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
              xmlns:services="clr-namespace:Flower.Services"
              xmlns:controls="clr-namespace:Flower.Controls"
+             xmlns:fvm="clr-namespace:Flower.ViewModels"
              mc:Ignorable="d"
              x:Class="Flower.Views.Mobile.SettingsView"
              x:DataType="vm:MobileMainViewModel"
@@ -255,6 +256,52 @@
           </Grid>
           <TextBlock Classes="note"
                      Text="If off, tapping a song plays the album from there, and shuffle, download and add to playlist are in the menu at the top of the screen." />
+        </StackPanel>
+      </Border>
+
+      <!-- How much Home's shelves hold - see AppSettings.
+           HomeContinuePlayingLimit; desktop sets the same three on Settings'
+           General tab. Applied as they are stepped, like the switches above. -->
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <TextBlock Classes="section-header" Text="HOME" />
+          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+            <Border Grid.Column="0" Classes="badge" VerticalAlignment="Center">
+              <materialIcons:MaterialIcon Kind="PlayCircleOutline" />
+            </Border>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+              <TextBlock Classes="rowTitle" FontWeight="Normal" Text="Continue Playing" />
+              <TextBlock Classes="note" Text="Albums" />
+            </StackPanel>
+            <controls:Stepper Grid.Column="2"
+                              Value="{Binding Main.HomeContinuePlayingLimit}"
+                              Maximum="{x:Static fvm:HomeViewModel.MaxAlbumsPerShelf}" />
+          </Grid>
+          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+            <Border Grid.Column="0" Classes="badge" VerticalAlignment="Center">
+              <materialIcons:MaterialIcon Kind="History" />
+            </Border>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+              <TextBlock Classes="rowTitle" FontWeight="Normal" Text="Recently Played" />
+              <TextBlock Classes="note" Text="Albums" />
+            </StackPanel>
+            <controls:Stepper Grid.Column="2"
+                              Value="{Binding Main.HomeRecentlyPlayedLimit}"
+                              Maximum="{x:Static fvm:HomeViewModel.MaxAlbumsPerShelf}" />
+          </Grid>
+          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+            <Border Grid.Column="0" Classes="badge" VerticalAlignment="Center">
+              <materialIcons:MaterialIcon Kind="CalendarClock" />
+            </Border>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+              <TextBlock Classes="rowTitle" FontWeight="Normal" Text="Recently Added" />
+              <TextBlock Classes="note" Text="Months" />
+            </StackPanel>
+            <controls:Stepper Grid.Column="2"
+                              Value="{Binding Main.HomeRecentlyAddedMonths}"
+                              Maximum="{x:Static fvm:HomeViewModel.MaxRecentlyAddedMonths}" />
+          </Grid>
+          <TextBlock Classes="note" Text="0 hides that shelf." />
         </StackPanel>
       </Border>
 

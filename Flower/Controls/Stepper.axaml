@@ -1,0 +1,24 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:controls="clr-namespace:Flower.Controls"
+             x:Class="Flower.Controls.Stepper"
+             x:Name="Root">
+
+  <!-- A whole number with a minus and a plus either side - the phone's way of
+       setting one, where a text box means the keyboard and a spinner's arrows
+       are too small to hit. Each button greys out at its end of the range. -->
+  <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+    <Button x:Name="DecreaseButton" Classes="pill" Click="Decrease_Click" ToolTip.Tip="Fewer">
+      <materialIcons:MaterialIcon Kind="Minus" Width="20" Height="20" />
+    </Button>
+    <TextBlock Text="{Binding #Root.Value}"
+               MinWidth="28"
+               FontSize="17"
+               TextAlignment="Center"
+               VerticalAlignment="Center" />
+    <Button x:Name="IncreaseButton" Classes="pill" Click="Increase_Click" ToolTip.Tip="More">
+      <materialIcons:MaterialIcon Kind="Plus" Width="20" Height="20" />
+    </Button>
+  </StackPanel>
+</UserControl>

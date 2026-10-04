@@ -20,7 +20,7 @@ public sealed record ContinuePlayingShelfItem(
 
 // What the Home screen's three shelves hold, worked out from the library and
 // the album-progress shelf. Pure, so the rules - what counts, in what order,
-// how many - can be tested without a view.
+// how many or how far back - can be tested without a view.
 //
 // Albums are the library snapshot's (CatalogIdentity's album artist + album),
 // the grouping AlbumProgressTracker keys on, so an album on the Continue
@@ -75,11 +75,13 @@ public static class HomeShelves
             .Select(a => TileFor(a.Album))
             .ToList();
 
-    public static List<AlbumTileViewModel> RecentlyAdded(LibrarySnapshot library, int limit) =>
+    // Newest first, every album with a song added since then - a time window
+    // rather than a count, so a big import shows whole and a quiet season
+    // shows little.
+    public static List<AlbumTileViewModel> RecentlyAdded(LibrarySnapshot library, DateTimeOffset since) =>
         library.Albums
-            .Where(a => !IsUntitled(a))
+            .Where(a => !IsUntitled(a) && a.NewestDateAdded >= since)
             .OrderByDescending(a => a.NewestDateAdded)
-            .Take(limit)
             .Select(TileFor)
             .ToList();
 

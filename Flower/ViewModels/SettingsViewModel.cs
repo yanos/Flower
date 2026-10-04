@@ -196,6 +196,32 @@ public sealed partial class SettingsViewModel : ViewModelBase
     public PlaybackControlsPlacement PlaybackControlsPlacement =>
         PlaybackControlsIndex == 1 ? PlaybackControlsPlacement.Bottom : PlaybackControlsPlacement.Top;
 
+    // Home's shelves - see AppSettings.HomeContinuePlayingLimit. The panel's
+    // boxes are held to these ceilings, and HomeViewModel clamps again.
+    public int MaxHomeShelfAlbums => HomeViewModel.MaxAlbumsPerShelf;
+    public int MaxHomeRecentlyAddedMonths => HomeViewModel.MaxRecentlyAddedMonths;
+
+    private int _homeContinuePlayingLimit;
+    public int HomeContinuePlayingLimit
+    {
+        get => _homeContinuePlayingLimit;
+        set => SetProperty(ref _homeContinuePlayingLimit, value);
+    }
+
+    private int _homeRecentlyPlayedLimit;
+    public int HomeRecentlyPlayedLimit
+    {
+        get => _homeRecentlyPlayedLimit;
+        set => SetProperty(ref _homeRecentlyPlayedLimit, value);
+    }
+
+    private int _homeRecentlyAddedMonths;
+    public int HomeRecentlyAddedMonths
+    {
+        get => _homeRecentlyAddedMonths;
+        set => SetProperty(ref _homeRecentlyAddedMonths, value);
+    }
+
     private bool _integrateWithITunes;
     public bool IntegrateWithITunes
     {
@@ -456,6 +482,9 @@ public sealed partial class SettingsViewModel : ViewModelBase
                 _ => 0,
             };
             PlaybackControlsIndex = _snapshot.PlaybackControlsPlacement == PlaybackControlsPlacement.Bottom ? 1 : 0;
+            HomeContinuePlayingLimit = _snapshot.HomeContinuePlayingLimit;
+            HomeRecentlyPlayedLimit = _snapshot.HomeRecentlyPlayedLimit;
+            HomeRecentlyAddedMonths = _snapshot.HomeRecentlyAddedMonths;
             _integrateWithITunes = _snapshot.IntegrateWithITunes;
             OnPropertyChanged(nameof(IntegrateWithITunes));
             SyncPlayCountFromITunes = _snapshot.SyncPlayCountFromITunes;
@@ -545,6 +574,9 @@ public sealed partial class SettingsViewModel : ViewModelBase
                 Alias = Alias,
                 ThemePreference = ThemePreference,
                 PlaybackControlsPlacement = PlaybackControlsPlacement,
+                HomeContinuePlayingLimit = HomeContinuePlayingLimit,
+                HomeRecentlyPlayedLimit = HomeRecentlyPlayedLimit,
+                HomeRecentlyAddedMonths = HomeRecentlyAddedMonths,
                 LibraryPaths = _paths.ToList(),
                 LibraryPathsChanged = pathsChanged,
                 IntegrateWithITunes = IntegrateWithITunes,
