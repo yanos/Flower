@@ -266,12 +266,12 @@ public class PlaylistRowActionsTests : PinnedDataDirectory
 
         var name = Visible<TextBlock>(window, t => t.Text == "Road trip");
         var summary = Visible<TextBlock>(window, t => t.Text == "2 songs  ·  7:00");
-        var menu = Visible<MaterialIcon>(window, i => i.Kind == MaterialIconKind.DotsVertical);
-        // The cover in this row, not the first on screen: every cover in the
-        // app is an AlbumArtView, the Home screen kept alive behind this one's
-        // included.
+        // The cover and the menu in this row, not the first on screen: every
+        // cover in the app is an AlbumArtView and every album tile ends in a
+        // "...", the Home screen kept alive behind this one's included.
         var row = name.GetVisualAncestors().OfType<Button>().First();
         var cover = row.GetVisualDescendants().OfType<AlbumArtView>().First();
+        var menu = row.GetVisualDescendants().OfType<MaterialIcon>().First(i => i.Kind == MaterialIconKind.DotsVertical);
 
         Assert.True(Right(window, cover) <= Left(window, name), "the cover is not left of the name");
         Assert.Equal(Left(window, name), Left(window, summary), 1);

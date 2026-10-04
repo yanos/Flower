@@ -1,7 +1,5 @@
 using Avalonia.Controls;
 
-using Flower.ViewModels;
-
 namespace Flower.UserControls
 {
     // DataContext is supplied by whoever hosts this control - MainView.axaml
@@ -12,18 +10,6 @@ namespace Flower.UserControls
         public CurrentlyPlayingControl()
         {
             InitializeComponent();
-        }
-
-        private CurrentlyPlayingControlViewModel? ViewModel => DataContext as CurrentlyPlayingControlViewModel;
-
-        private void Shuffle(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-        {
-            ViewModel?.ToggleShuffle();
-        }
-
-        private void Repeat(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-        {
-            ViewModel?.ToggleRepeat();
         }
     }
 }

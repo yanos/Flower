@@ -17,6 +17,15 @@ namespace Flower.UserControls
             set => SetValue(FilterTextProperty, value);
         }
 
+        public static readonly StyledProperty<string?> PlaceholderTextProperty =
+            AvaloniaProperty.Register<FilterControl, string?>(nameof(PlaceholderText), "Filter…");
+
+        public string? PlaceholderText
+        {
+            get => GetValue(PlaceholderTextProperty);
+            set => SetValue(PlaceholderTextProperty, value);
+        }
+
         public FilterControl()
         {
             InitializeComponent();

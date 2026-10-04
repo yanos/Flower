@@ -26,6 +26,25 @@
     <Setter Property="BoxShadow" Value="{DynamicResource AppButtonShadow}" />
   </Style>
 
+  <!-- A text box inside an oval - the phone's filter and Search boxes
+       (ScreenSlot), the desktop's filter (FilterControl): the oval is its
+       border, so the box itself draws none, in any state - Fluent paints a
+       different background and outline for hover and focus from inside its
+       template. -->
+  <Style Selector="TextBox.inOval">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="MinHeight" Value="0" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="FontSize" Value="16" />
+  </Style>
+  <Style Selector="TextBox.inOval /template/ Border#PART_BorderElement, TextBox.inOval:pointerover /template/ Border#PART_BorderElement, TextBox.inOval:focus /template/ Border#PART_BorderElement">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+  </Style>
+
   <!-- CornerRadius is what rounds the pressed and hover highlight: Fluent paints
        those on the template's ContentPresenter, which takes the Button's radius.
        Larger than any icon button is tall, so the highlight is always a circle

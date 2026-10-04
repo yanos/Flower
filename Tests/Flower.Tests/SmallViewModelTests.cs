@@ -664,14 +664,14 @@ public class CurrentlyPlayingControlViewModelTests : PinnedDataDirectory
     }
 
     [AvaloniaFact]
-    public void Repeat_and_shuffle_are_forwarded_to_the_playback_view_model_and_re_raised()
+    public void Repeat_and_shuffle_are_read_from_the_playback_view_model_and_re_raised()
     {
         var vm = Make(out _, out var playback);
         var raised = new List<string?>();
         vm.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
 
-        vm.ToggleRepeat();
-        vm.ToggleShuffle();
+        playback.ToggleRepeat();
+        playback.ToggleShuffle();
 
         Assert.Equal(playback.IsRepeatEnabled, vm.IsRepeatEnabled);
         Assert.Equal(playback.IsShuffleEnabled, vm.IsShuffleEnabled);

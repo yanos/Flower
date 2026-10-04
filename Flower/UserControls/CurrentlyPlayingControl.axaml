@@ -4,134 +4,70 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:Flower.ViewModels"
              xmlns:controls="using:Flower.Controls"
-             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              mc:Ignorable="d"
              x:Class="Flower.UserControls.CurrentlyPlayingControl"
              x:DataType="vm:CurrentlyPlayingControlViewModel">
 
-  <UserControl.Styles>
-    <!-- Repeat/shuffle icon color, theme-aware (was a hardcoded Brushes.Black/
-         Brushes.Gray IValueConverter - invisible against a dark background).
-         Classes.active mirrors the same pattern MobileMainView.axaml already
-         uses for its own "currently playing" row highlight. Off is the grey
-         of a disabled control, as on Now Playing: a dimmed red read as on. -->
-    <Style Selector="materialIcons|MaterialIcon.transportToggle">
-      <Setter Property="Foreground" Value="{DynamicResource AppTextDisabledBrush}"/>
-    </Style>
-    <Style Selector="materialIcons|MaterialIcon.transportToggle.active">
-      <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}"/>
-    </Style>
-    <!-- Pointed at and pressed, on or off, the hover and pressed accents -
-         restated here because the two above are nearer than App.axaml's. -->
-    <Style Selector=":is(Button):pointerover materialIcons|MaterialIcon.transportToggle">
-      <Setter Property="Foreground" Value="{DynamicResource AppAccentHoverBrush}"/>
-    </Style>
-    <Style Selector=":is(Button):pressed materialIcons|MaterialIcon.transportToggle">
-      <Setter Property="Foreground" Value="{DynamicResource AppAccentPressedBrush}"/>
-    </Style>
-  </UserControl.Styles>
-
-  <Border Background="{DynamicResource AppSurfaceBrush}"
-          BorderBrush="{DynamicResource AppBorderBrush}"
-          BorderThickness="1"
-          CornerRadius="6"
-          Padding="12,6,12,6">
+  <!-- What is playing, beside the transport: the cover, the song's title in
+       the display serif - as on the phone's Now Playing, where a song's title
+       is the subject of the screen - the artist and album under it, and the
+       seek bar with the time either side. Shuffle and repeat are the
+       transport's now (PlaylistControls). -->
   <Grid ColumnDefinitions="Auto,*">
 
-    <!-- Album art: negative margins counteract the outer padding so art sits 2px from edges -->
     <controls:AlbumArtView Grid.Column="0"
-            Width="{Binding $self.Bounds.Height}"
-            Margin="-10,-4,10,-4"
-            VerticalAlignment="Stretch"
-            AlbumArt="{Binding AlbumArt}"/>
+                           Width="76" Height="76"
+                           ArtCornerRadius="6"
+                           Margin="0,0,16,0"
+                           VerticalAlignment="Center"
+                           AlbumArt="{Binding AlbumArt}"/>
 
-  <Grid Grid.Column="1">
-    <Grid.RowDefinitions>
-      <RowDefinition Height="Auto"/>
-      <RowDefinition Height="Auto"/>
-      <RowDefinition Height="*"/>
-      <RowDefinition Height="Auto"/>
-    </Grid.RowDefinitions>
+    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="0">
+      <TextBlock Text="{Binding CurrentlyPlayingTrack.Title}"
+                 FontFamily="{DynamicResource AppDisplayFontFamily}"
+                 FontSize="22"
+                 FontWeight="SemiBold"
+                 TextTrimming="CharacterEllipsis"/>
 
-    <TextBlock Grid.Row="0"
-               Text="{Binding CurrentlyPlayingTrack.Title}"
-               FontSize="16"
-               FontWeight="SemiBold"
-               HorizontalAlignment="Center" />
+      <TextBlock Text="{Binding Subtitle}"
+                 FontSize="13"
+                 Foreground="{DynamicResource AppTextSecondaryBrush}"
+                 TextTrimming="CharacterEllipsis"/>
 
-    <TextBlock Grid.Row="1"
-               Text="{Binding Subtitle}"
-               HorizontalAlignment="Center"
-               FontSize="13"
-               Opacity="0.65"
-               Margin="0,2,0,0" />
+      <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,2,0,0">
+        <TextBlock Grid.Column="0"
+                   Text="{Binding ElapsedTime}"
+                   FontSize="12"
+                   MinWidth="34"
+                   Foreground="{DynamicResource AppTextSecondaryBrush}"
+                   VerticalAlignment="Center"
+                   IsVisible="{Binding CurrentlyPlayingTrack, Converter={x:Static ObjectConverters.IsNotNull}}"/>
 
-    <!-- Row 2 is an empty "*" spacer, so the transport row below always sits
-         flush against the bottom of the control instead of floating up under
-         the title/subtitle when there's extra vertical space. -->
+        <!-- The phone's seek bar (Now Playing's Slider.tight), a little
+             thicker than Fluent's rail with round ends: the one bar here. The
+             negative margin crops the room Fluent's template keeps above and
+             below for a tick bar it has not got. -->
+        <Slider Grid.Column="1" x:Name="slider"
+                Margin="10,-11"
+                Padding="0"
+                Minimum="0"
+                Maximum="1"
+                Value="{Binding SeekPosition, Mode=TwoWay}"
+                VerticalAlignment="Center">
+          <Slider.Resources>
+            <x:Double x:Key="SliderTrackThemeHeight">4</x:Double>
+          </Slider.Resources>
+        </Slider>
 
-    <Grid Grid.Row="3" Margin="0,4,0,0">
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="Auto"/>
-        <ColumnDefinition Width="Auto"/>
-        <ColumnDefinition Width="*"/>
-        <ColumnDefinition Width="Auto"/>
-        <ColumnDefinition Width="Auto"/>
-      </Grid.ColumnDefinitions>
-
-      <Button Grid.Column="0"
-              Background="Transparent"
-              BorderThickness="0"
-              Padding="2"
-              VerticalContentAlignment="Center"
-              HorizontalContentAlignment="Center"
-              Click="Shuffle">
-        <materialIcons:MaterialIcon Kind="Shuffle"
-                                    Width="14" Height="14"
-                                    Classes="transportToggle"
-                                    Classes.active="{Binding IsShuffleEnabled}"/>
-      </Button>
-
-      <TextBlock Grid.Column="1"
-                 Text="{Binding ElapsedTime}"
-                 FontSize="11"
-                 Opacity="0.65"
-                 HorizontalAlignment="Left"
-                 VerticalAlignment="Center"
-                 Margin="4,0,0,0"
-                 IsVisible="{Binding CurrentlyPlayingTrack, Converter={x:Static ObjectConverters.IsNotNull}}"/>
-
-      <Slider Grid.Column="2" x:Name="slider"
-              Margin="8,0,8,0"
-              Minimum="0"
-              Maximum="1"
-              Value="{Binding SeekPosition, Mode=TwoWay}"
-              HorizontalAlignment="Stretch"
-              VerticalAlignment="Center"/>
-
-      <TextBlock Grid.Column="3"
-                 Text="{Binding TotalTime}"
-                 FontSize="11"
-                 Opacity="0.65"
-                 HorizontalAlignment="Right"
-                 VerticalAlignment="Center"
-                 Margin="0,0,4,0"
-                 IsVisible="{Binding CurrentlyPlayingTrack, Converter={x:Static ObjectConverters.IsNotNull}}"/>
-
-      <Button Grid.Column="4"
-              Background="Transparent"
-              BorderThickness="0"
-              Padding="2"
-              VerticalContentAlignment="Center"
-              HorizontalContentAlignment="Center"
-              Click="Repeat">
-        <materialIcons:MaterialIcon Kind="Repeat"
-                                    Width="14" Height="14"
-                                    Classes="transportToggle"
-                                    Classes.active="{Binding IsRepeatEnabled}"/>
-      </Button>
-    </Grid>
+        <TextBlock Grid.Column="2"
+                   Text="{Binding TotalTime}"
+                   FontSize="12"
+                   MinWidth="34"
+                   TextAlignment="Right"
+                   Foreground="{DynamicResource AppTextSecondaryBrush}"
+                   VerticalAlignment="Center"
+                   IsVisible="{Binding CurrentlyPlayingTrack, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+      </Grid>
+    </StackPanel>
   </Grid>
-  </Grid>
-  </Border>
 </UserControl>

@@ -29,22 +29,6 @@
        The filter oval (and Search's box, which is the same oval) sits in the
        band too, so opening it moves nothing below. -->
   <UserControl.Styles>
-    <!-- The filter oval's box: the oval is its border, so the box itself draws
-         none, in any state - Fluent paints a different background and outline
-         for hover and focus from inside its template. -->
-    <Style Selector="TextBox.inOval">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Padding" Value="0" />
-      <Setter Property="MinHeight" Value="0" />
-      <Setter Property="VerticalAlignment" Value="Center" />
-      <Setter Property="VerticalContentAlignment" Value="Center" />
-      <Setter Property="FontSize" Value="16" />
-    </Style>
-    <Style Selector="TextBox.inOval /template/ Border#PART_BorderElement, TextBox.inOval:pointerover /template/ Border#PART_BorderElement, TextBox.inOval:focus /template/ Border#PART_BorderElement">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="BorderThickness" Value="0" />
-    </Style>
     <!-- The screen menu's card: the recent-searches dropdown's look, so the
          two things that drop down from the band are one kind of thing. -->
     <Style Selector="FlyoutPresenter.screenMenu">

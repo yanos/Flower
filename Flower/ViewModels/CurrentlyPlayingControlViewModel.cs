@@ -108,16 +108,6 @@ namespace Flower.ViewModels
             }
         }
 
-        public void ToggleRepeat()
-        {
-            _playlistControlViewModel.ToggleRepeat();
-        }
-
-        public void ToggleShuffle()
-        {
-            _playlistControlViewModel.ToggleShuffle();
-        }
-
         private static string FormatDuration(TimeSpan ts)
             => (int)ts.TotalHours > 0 ? ts.ToString(@"h\:mm\:ss") : ts.ToString(@"m\:ss");
 

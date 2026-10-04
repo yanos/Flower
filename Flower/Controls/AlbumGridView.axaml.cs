@@ -21,9 +21,11 @@ namespace Flower.Controls;
 // via HitTestTile - same split MusicListView keeps with its own panel.
 public partial class AlbumGridView : UserControl
 {
-    // Matches AlbumTileControl's own hardcoded tile width (180) plus the row
-    // template's inter-tile Spacing (16) - used only to estimate how many
-    // tiles fit per row; not load-bearing for the tiles' own actual layout.
+    // The narrowest a tile gets, its 8px margins either side included: the
+    // grid fits as many of these across as the width allows, and the tiles
+    // then share the width evenly (AlbumGridRowControl's UniformGrid), so the
+    // columns fill the page the way the phone's do rather than leaving what
+    // is over at the right.
     private const double CellWidth = 180 + 16;
 
     private IReadOnlyList<AlbumTileViewModel> _tiles = Array.Empty<AlbumTileViewModel>();
@@ -184,7 +186,7 @@ public partial class AlbumGridView : UserControl
         // ask for.
         var rows = new List<AlbumGridRowViewModel>();
         for (int i = 0; i < _tiles.Count; i += _columns)
-            rows.Add(new AlbumGridRowViewModel { Tiles = _tiles.Skip(i).Take(_columns).ToList() });
+            rows.Add(new AlbumGridRowViewModel { Tiles = _tiles.Skip(i).Take(_columns).ToList(), Columns = _columns });
 
         _rows = rows;
         RowsList.ItemsSource = _rows;

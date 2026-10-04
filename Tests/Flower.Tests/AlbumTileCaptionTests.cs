@@ -8,8 +8,8 @@ using Xunit;
 namespace Flower.Tests;
 
 /// <summary>
-/// The mobile art grids (AlbumGridScreenView and friends) lay two album tiles
-/// out per row, so the two captions have to occupy the same height or the row
+/// Every album tile is an AlbumCard - the phone's grids and Home shelves, the
+/// desktop's grid and Home - and a grid lays several out per row, so the two captions have to occupy the same height or the row
 /// stops lining up. They do not do that for free: Inter carries no CJK glyphs,
 /// so a Japanese title resolves through a system fallback face whose metrics
 /// are 1.45x to 1.6x taller, and an unpinned caption then measures 39px next to
@@ -26,13 +26,11 @@ namespace Flower.Tests;
 /// </summary>
 public sealed class AlbumTileCaptionTests
 {
-    // Two captions in use, each pinned on its own: the album grids' (the
-    // Albums tab and an artist's albums), and the Home shelves' (whose styles
-    // are HomeScreenView's StackPanel.caption).
+    // One caption in use, AlbumCard's. The Home shelves had one of their own
+    // until they drew their covers with AlbumCard too.
     public static TheoryData<CaptionSpec> Specs => new()
     {
         new CaptionSpec("album grid", 17, 14, 29, 24, 5, FontWeight.Medium),
-        new CaptionSpec("home shelf", 16, 14, 27, 23, 4, FontWeight.SemiBold),
     };
 
     public sealed record CaptionSpec(

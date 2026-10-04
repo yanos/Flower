@@ -18,34 +18,14 @@
        Plain StackPanels rather than virtualized lists: a shelf is a dozen
        covers at most (HomeViewModel.MaxRecentlyPlayed and friends). A
        sideways drag is the shelf's and an up-and-down one the page's - each
-       ScrollViewer takes a pan only along the axis it can scroll. -->
+       ScrollViewer takes a pan only along the axis it can scroll. Each cover
+       is the album tile the Albums grid draws (AlbumCard), its "..." the same
+       album menu a long press opens. -->
   <UserControl.Styles>
     <Style Selector="TextBlock.shelfTitle">
       <Setter Property="FontSize" Value="24" />
       <Setter Property="FontWeight" Value="Bold" />
       <Setter Property="Margin" Value="16,0,16,12" />
-    </Style>
-    <!-- Every caption on the page: the name, then the artist (and, on
-         Continue Playing, where the album was left). Pinned line heights
-         for the same reason as the album grids' captions (see
-         AlbumGridScreenView): a CJK title falls back to a taller face, and
-         the pins are what keep a row of tiles level - AlbumTileCaptionTests
-         holds these numbers. -->
-    <Style Selector="StackPanel.caption">
-      <Setter Property="Spacing" Value="-4" />
-      <Setter Property="Margin" Value="2,0,0,0" />
-    </Style>
-    <Style Selector="StackPanel.caption > TextBlock">
-      <Setter Property="FontSize" Value="14" />
-      <Setter Property="LineHeight" Value="23" />
-      <Setter Property="Opacity" Value="0.6" />
-      <Setter Property="TextTrimming" Value="CharacterEllipsis" />
-    </Style>
-    <Style Selector="StackPanel.caption > TextBlock.name">
-      <Setter Property="FontSize" Value="16" />
-      <Setter Property="LineHeight" Value="27" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Opacity" Value="1" />
     </Style>
   </UserControl.Styles>
 
@@ -76,26 +56,11 @@
                             CommandParameter="{Binding}"
                             controls:LongPress.Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).OpenAlbumActionsCommand}"
                             controls:LongPress.CommandParameter="{Binding Tile}">
-                      <StackPanel Spacing="8" Classes.dimmed="{Binding Tile.IsUnavailable}">
-                        <Panel>
-                          <controls:SquareAlbumArtView AlbumArt="{Binding Tile.AlbumArt}" ArtCornerRadius="8" />
-                          <Border Width="40" Height="40" CornerRadius="20"
-                                  Margin="0,0,8,8"
-                                  HorizontalAlignment="Right" VerticalAlignment="Bottom"
-                                  BoxShadow="{DynamicResource AppButtonShadow}"
-                                  Background="{DynamicResource AppAccentBrush}">
-                            <materialIcons:MaterialIcon Kind="Play" Width="24" Height="24" Foreground="{DynamicResource AppOnPrimaryBrush}" />
-                          </Border>
-                        </Panel>
-                        <ProgressBar MinWidth="0" Minimum="0" Maximum="1" Value="{Binding Progress}"
-                                     Height="4" MinHeight="4" CornerRadius="2"
-                                     Foreground="{DynamicResource AppAccentBrush}" />
-                        <StackPanel Classes="caption">
-                          <TextBlock Classes="name" Text="{Binding Tile.Name}" />
-                          <TextBlock Text="{Binding Tile.Artist}" />
-                          <TextBlock Text="{Binding Detail}" />
-                        </StackPanel>
-                      </StackPanel>
+                      <controls:AlbumCard Tile="{Binding Tile}"
+                                          ShowsProgress="True"
+                                          Progress="{Binding Progress}"
+                                          Detail="{Binding Detail}"
+                                          MenuCommand="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).OpenAlbumActionsCommand}" />
                     </Button>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
@@ -120,13 +85,8 @@
                             CommandParameter="{Binding}"
                             controls:LongPress.Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).OpenAlbumActionsCommand}"
                             controls:LongPress.CommandParameter="{Binding}">
-                      <StackPanel Spacing="6" Classes.dimmed="{Binding IsUnavailable}">
-                        <controls:SquareAlbumArtView AlbumArt="{Binding AlbumArt}" ArtCornerRadius="8" />
-                        <StackPanel Classes="caption">
-                          <TextBlock Classes="name" Text="{Binding Name}" />
-                          <TextBlock Text="{Binding Artist}" />
-                        </StackPanel>
-                      </StackPanel>
+                      <controls:AlbumCard Tile="{Binding}"
+                                          MenuCommand="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).OpenAlbumActionsCommand}" />
                     </Button>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
@@ -151,13 +111,8 @@
                             CommandParameter="{Binding}"
                             controls:LongPress.Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).OpenAlbumActionsCommand}"
                             controls:LongPress.CommandParameter="{Binding}">
-                      <StackPanel Spacing="6" Classes.dimmed="{Binding IsUnavailable}">
-                        <controls:SquareAlbumArtView AlbumArt="{Binding AlbumArt}" ArtCornerRadius="8" />
-                        <StackPanel Classes="caption">
-                          <TextBlock Classes="name" Text="{Binding Name}" />
-                          <TextBlock Text="{Binding Artist}" />
-                        </StackPanel>
-                      </StackPanel>
+                      <controls:AlbumCard Tile="{Binding}"
+                                          MenuCommand="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).OpenAlbumActionsCommand}" />
                     </Button>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>

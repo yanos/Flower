@@ -16,15 +16,11 @@
        on Search, where the line collapses and takes no room: the album's name
        is right there in large type, and Search has its box in the band.
 
-       Set in the display serif and the accent red, like the album's name and
-       the song's on Now Playing: the serif is what a heading is in this app,
-       Inter what everything under it is. -->
-  <TextBlock Text="{Binding $parent[controls:ScreenSlot].Frame.Title}"
+       Set as every page's name is (TextBlock.screenTitle, App.axaml) - the
+       desktop page header's too. -->
+  <TextBlock Classes="screenTitle"
+             Text="{Binding $parent[controls:ScreenSlot].Frame.Title}"
              IsVisible="{Binding $parent[controls:ScreenSlot].Frame.Title, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
-             FontFamily="{DynamicResource AppDisplayFontFamily}"
              FontSize="34"
-             FontWeight="SemiBold"
-             Foreground="{DynamicResource AppAccentBrush}"
-             Margin="16,0,16,8"
-             TextTrimming="CharacterEllipsis" />
+             Margin="16,0,16,8" />
 </UserControl>

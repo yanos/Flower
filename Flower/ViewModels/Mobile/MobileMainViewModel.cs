@@ -2133,8 +2133,8 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             NowPlayingExitsForward = true;
             ActiveSheet = MobileSheet.None;
         });
-        ToggleRepeatCommand = new RelayCommand(CurrentlyPlaying.ToggleRepeat);
-        ToggleShuffleCommand = new RelayCommand(CurrentlyPlaying.ToggleShuffle);
+        ToggleRepeatCommand = new RelayCommand(PlaylistControl.ToggleRepeat);
+        ToggleShuffleCommand = new RelayCommand(PlaylistControl.ToggleShuffle);
         CloseSheetCommand = new RelayCommand(() => ActiveSheet = MobileSheet.None);
         NextTrackCommand = new RelayCommand(PlaylistControl.Next);
         PreviousTrackCommand = new RelayCommand(PlaylistControl.Previous);

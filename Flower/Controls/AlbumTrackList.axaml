@@ -1,0 +1,117 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:controls="clr-namespace:Flower.Controls"
+             xmlns:converters="clr-namespace:Flower.Converters"
+             xmlns:vm="clr-namespace:Flower.ViewModels"
+             x:Class="Flower.Controls.AlbumTrackList"
+             x:DataType="vm:AlbumTracksViewModel"
+             x:CompileBindings="True"
+             x:Name="Root"
+             Focusable="True">
+
+  <!-- One album's songs as a short list of their own: the Albums grid's
+       expanded album (AlbumGridRowControl, in two columns) and an album card
+       on the Artists page (MainView, in one with its track numbers). A click
+       selects, Ctrl/Cmd and Shift extend, the arrows move, Enter or a
+       double-click plays the album from that song, and a right-click - or
+       the row's "..." - opens the song menu. The state is the DataContext's
+       (AlbumTracksViewModel). -->
+  <UserControl.Resources>
+    <converters:DurationConverter x:Key="DurationConverter"/>
+
+    <DataTemplate x:Key="TrackRowTemplate" x:DataType="vm:ExpandedTrackRowViewModel">
+      <!-- The colored highlight is the tinted Border inside the Panel below -
+           and CRUCIALLY its size is driven by the Panel, which measures to the
+           text Grid, so to make the box bigger than the text the Grid gets an
+           inner Margin (grows the Panel -> grows the highlights filling it).
+           The Panel's own Margin then insets the whole box from the row's full
+           extent on all four sides (the separation between adjacent rows).
+           This outer Border stays Background="Transparent" with no padding of
+           its own so the entire row - including that margin gap - still
+           hit-tests for clicks (an unpainted Border doesn't register pointer
+           events in Avalonia), and carries the click/hover/context handlers. -->
+      <Border Classes="expandedTrack" Background="Transparent"
+              PointerEntered="TrackRow_PointerEntered"
+              PointerExited="TrackRow_PointerExited"
+              PointerPressed="TrackRow_PointerPressed"
+              DoubleTapped="TrackRow_DoubleTapped"
+              ContextRequested="TrackRow_ContextRequested">
+        <Panel Margin="4,3">
+          <Border IsVisible="{Binding IsHovered}"
+                  IsHitTestVisible="False"
+                  Background="{DynamicResource AppAccentHoverSoftBrush}"
+                  CornerRadius="5"/>
+          <Border IsVisible="{Binding IsSelected}"
+                  IsHitTestVisible="False"
+                  Background="{DynamicResource AppAccentSoftBrush}"
+                  CornerRadius="5"/>
+          <!-- The currently-playing song is bold and in the accent, the way
+               the main track list marks it (TrackRowControl's own .playing
+               style). The download well is a fixed width ahead of the title,
+               as there: a collapsing column would move the title itself on
+               every row that has nothing to fetch. -->
+          <Grid ColumnDefinitions="Auto,20,*,Auto,Auto" Margin="8,6,2,6"
+                Classes.dimmedTrack="{Binding IsUnavailable}"
+                Classes.playingTrack="{Binding IsCurrentlyPlaying}">
+            <TextBlock Grid.Column="0"
+                       Text="{Binding Track.TrackNumber}"
+                       IsVisible="{Binding #Root.ShowsNumbers}"
+                       MinWidth="26"
+                       FontSize="13"
+                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+            <controls:TrackDownloadButton Grid.Column="1" Margin="0,0,4,0"
+                                          DownloadRequested="TrackRow_DownloadRequested"/>
+            <TextBlock Grid.Column="2" Text="{Binding Track.Title}" TextTrimming="CharacterEllipsis" FontSize="13"/>
+            <TextBlock Grid.Column="3" Text="{Binding Track.Duration, Converter={StaticResource DurationConverter}}"
+                       FontSize="13" Opacity="0.6" Margin="8,0,0,0"/>
+            <!-- The song menu, for anyone who does not know to right-click -
+                 the phone's rows end in the same "..." (TrackRowTemplate). -->
+            <Button Grid.Column="4" Classes="pill" Padding="2" Margin="6,-4,0,-4"
+                    ToolTip.Tip="More"
+                    Click="TrackRow_MenuClick">
+              <materialIcons:MaterialIcon Kind="DotsVertical" Width="16" Height="16" Opacity="0.6"/>
+            </Button>
+          </Grid>
+        </Panel>
+      </Border>
+    </DataTemplate>
+  </UserControl.Resources>
+
+  <UserControl.Styles>
+    <!-- A song that can't be played right now - not downloaded, and no
+         reachable server to stream it from. Same 0.5 dim as the main track
+         list's own unavailable rows (TrackRowControl) and mobile's
+         (Button.trackRow.placeholder); applied to the text Grid rather than
+         the row Border so the hover/selection highlights behind it stay at
+         full strength. -->
+    <Style Selector="Grid.dimmedTrack">
+      <Setter Property="Opacity" Value="0.5"/>
+    </Style>
+    <!-- Grey, not the faded red dimming alone would leave them. -->
+    <Style Selector="Grid.dimmedTrack materialIcons|MaterialIcon">
+      <Setter Property="Foreground" Value="{DynamicResource AppTextDisabledBrush}"/>
+    </Style>
+    <Style Selector="Grid.dimmedTrack TextBlock.placeholderGlyph">
+      <Setter Property="Foreground" Value="{DynamicResource AppTextDisabledBrush}"/>
+    </Style>
+    <Style Selector="Grid.playingTrack TextBlock">
+      <Setter Property="FontWeight" Value="Bold"/>
+      <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}"/>
+    </Style>
+  </UserControl.Styles>
+
+  <Panel>
+    <!-- Two columns, read top to bottom then on to the next, like a phone
+         book - AlbumTracksViewModel.Column1Tracks/Column2Tracks. -->
+    <Grid ColumnDefinitions="*,*" IsVisible="{Binding #Root.TwoColumns}">
+      <ItemsControl Grid.Column="0" ItemsSource="{Binding Column1Tracks}" Margin="0,0,12,0"
+                    ItemTemplate="{StaticResource TrackRowTemplate}"/>
+      <ItemsControl Grid.Column="1" ItemsSource="{Binding Column2Tracks}" Margin="12,0,0,0"
+                    ItemTemplate="{StaticResource TrackRowTemplate}"/>
+    </Grid>
+    <ItemsControl IsVisible="{Binding !#Root.TwoColumns}"
+                  ItemsSource="{Binding TrackRows}"
+                  ItemTemplate="{StaticResource TrackRowTemplate}"/>
+  </Panel>
+</UserControl>

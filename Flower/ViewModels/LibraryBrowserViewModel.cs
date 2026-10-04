@@ -80,21 +80,32 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
 
     public IReadOnlyList<Track> DisplayedTracks => _currentFilteredTracks;
 
-    public string StatusBarText
+    // What the page on screen holds. The track list's own rows where there
+    // is one; the grid's albums on Albums, and the whole library on Home and
+    // a server's page, neither of which has rows - so all three read 0
+    // there when this only ever counted rows.
+    private IReadOnlyCollection<Track> StatusBarTracks => _host.CurrentKind switch
     {
-        get
-        {
-            var tracks    = _currentFilteredTracks;
-            var songCount = tracks.Count;
-            var albumCount = tracks.Select(t => t.Album).Where(a => !string.IsNullOrEmpty(a)).Distinct().Count();
-            var total     = TimeSpan.FromTicks(tracks.Sum(t => t.Duration.Ticks));
-            var songStr   = songCount == 1 ? "1 song"   : $"{songCount:N0} songs";
-            var albumStr  = albumCount == 1 ? "1 album" : $"{albumCount:N0} albums";
-            var durStr    = total.TotalHours >= 1
-                ? $"{(int)total.TotalHours}:{total.Minutes:D2}:{total.Seconds:D2}"
-                : $"{total.Minutes}:{total.Seconds:D2}";
-            return $"{songStr}  ·  {albumStr}  ·  {durStr}";
-        }
+        SidebarItemKind.Albums => _albumGridTiles.SelectMany(t => t.Tracks).ToList(),
+        SidebarItemKind.Home or SidebarItemKind.Device or SidebarItemKind.ServerSettings => _allTracks,
+        _ => _currentFilteredTracks,
+    };
+
+    public string StatusBarText => Summarize(StatusBarTracks);
+
+    // "16,114 songs · 1,397 albums · 1223:17:31" - also what MainViewModel
+    // says over the Artists page's cards.
+    public static string Summarize(IReadOnlyCollection<Track> tracks)
+    {
+        var songCount  = tracks.Count;
+        var albumCount = tracks.Select(t => t.Album).Where(a => !string.IsNullOrEmpty(a)).Distinct().Count();
+        var total      = TimeSpan.FromTicks(tracks.Sum(t => t.Duration.Ticks));
+        var songStr    = songCount == 1 ? "1 song"   : $"{songCount:N0} songs";
+        var albumStr   = albumCount == 1 ? "1 album" : $"{albumCount:N0} albums";
+        var durStr     = total.TotalHours >= 1
+            ? $"{(int)total.TotalHours}:{total.Minutes:D2}:{total.Seconds:D2}"
+            : $"{total.Minutes}:{total.Seconds:D2}";
+        return $"{songStr}  ·  {albumStr}  ·  {durStr}";
     }
 
     // ── Sort state ────────────────────────────────────────────────────────
@@ -217,6 +228,7 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         {
             _filterText = value;
             OnPropertyChanged();
+            RebuildVisibleSubListItems();
             ScheduleFilter();
         }
     }
@@ -304,7 +316,7 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
     public ObservableCollection<AlbumTileViewModel> AlbumGridTiles
     {
         get => _albumGridTiles;
-        private set { _albumGridTiles = value; OnPropertyChanged(); }
+        private set { _albumGridTiles = value; OnPropertyChanged(); OnPropertyChanged(nameof(StatusBarText)); }
     }
 
     // Through the merge that keeps a tile the user is
@@ -419,6 +431,33 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
                 : _subListItems.FirstOrDefault())
             : null;
 
+    // The desktop Artists column: SubListItems narrowed by the filter, whose
+    // box sits at that column's head - every artist with a song the filter
+    // finds, the way the phone's artist list filters
+    // (MobileMainViewModel.FilterArtistPicker), so typing an artist's name or
+    // one of their songs' finds them. A list of its own rather than
+    // SubListItems narrowed in place: the phone builds its artist list from
+    // SubListItems, and sets the filter on its track lists.
+    private ObservableCollection<string> _visibleSubListItems = new();
+    public ObservableCollection<string> VisibleSubListItems
+    {
+        get => _visibleSubListItems;
+        private set { _visibleSubListItems = value; OnPropertyChanged(); }
+    }
+
+    private void RebuildVisibleSubListItems()
+    {
+        if (string.IsNullOrWhiteSpace(_filterText) || _host.CurrentKind != SidebarItemKind.Artists)
+        {
+            if (!ReferenceEquals(_visibleSubListItems, _subListItems))
+                VisibleSubListItems = _subListItems;
+            return;
+        }
+        var matching = TrackListBuilder.Filter(_allTracks, _filterText)
+            .Select(t => t.Artists).Where(a => !string.IsNullOrEmpty(a)).ToHashSet();
+        VisibleSubListItems = new ObservableCollection<string>(_subListItems.Where(matching.Contains));
+    }
+
     public void RebuildSubListItems()
     {
         if (_host.CurrentKind == SidebarItemKind.Albums)
@@ -429,6 +468,7 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
                 _allTracks.Select(t => t.Artists!).Where(a => !string.IsNullOrEmpty(a)).Distinct().OrderBy(a => a));
         else
             SubListItems = new ObservableCollection<string>();
+        RebuildVisibleSubListItems();
     }
 
     // Resolves the tracks behind a set of SubListItems entries (album or artist

@@ -4,16 +4,18 @@
              x:CompileBindings="False"
              Focusable="True">
 
-  <Grid RowDefinitions="28,*">
+  <Grid RowDefinitions="36,*">
 
-    <!-- Column header bar. ClipToBounds so the header content - which is
-         translated horizontally in code-behind to track Scroller's horizontal
-         offset (see MusicListView.axaml.cs) - doesn't spill past this row. -->
+    <!-- Column header bar: a rounded band of the surface colour over the
+         rows. ClipToBounds so the header content - which is translated
+         horizontally in code-behind to track Scroller's horizontal offset
+         (see MusicListView.axaml.cs) - doesn't spill past this row. -->
     <Border x:Name="HeaderBorder"
             Grid.Row="0"
             ClipToBounds="True"
-            BorderThickness="0,0,0,1"
-            BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
+            Margin="0,0,8,2"
+            CornerRadius="10"
+            Background="{DynamicResource AppSurfaceBrush}">
       <!-- populated in code-behind -->
     </Border>
 

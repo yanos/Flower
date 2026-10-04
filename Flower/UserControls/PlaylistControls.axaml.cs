@@ -42,5 +42,15 @@ namespace Flower.UserControls
         {
             ViewModel?.Previous();
         }
+
+        private void Shuffle(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        {
+            ViewModel?.ToggleShuffle();
+        }
+
+        private void Repeat(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+        {
+            ViewModel?.ToggleRepeat();
+        }
     }
 }

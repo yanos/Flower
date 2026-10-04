@@ -9,7 +9,7 @@
              Background="Transparent"
              ClipToBounds="False"
              Classes.playing="{Binding IsCurrentlyPlaying}"
-             Height="28">
+             Height="34">
 
   <UserControl.Styles>
     <!-- ":is(UserControl)", not "UserControl", in every selector here: a bare
@@ -51,6 +51,12 @@
          matching anything. -->
     <Style Selector=":is(UserControl).playing StackPanel#CellsPanel TextBlock">
       <Setter Property="FontWeight" Value="Bold"/>
+      <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}"/>
+    </Style>
+    <!-- ...and sits in the accent's faint wash, the way the sidebar marks the
+         page you are on. -->
+    <Style Selector=":is(UserControl).playing Border#PlayingBorder">
+      <Setter Property="IsVisible" Value="True"/>
     </Style>
   </UserControl.Styles>
 
@@ -59,10 +65,24 @@
        off) rather than fixed here, and the art cell's own visibility with
        it. -->
   <Grid x:Name="RowGrid" ColumnDefinitions="80,*">
+    <!-- The rule between one song and the next, along the row's bottom edge
+         and from the cells on, not under the art - as the phone's rows draw
+         it (TrackRowTemplate), so the covers read as a column. -->
+    <Border Grid.Column="1"
+            BorderBrush="{DynamicResource AppDividerBrush}"
+            BorderThickness="0,0,0,1"
+            IsHitTestVisible="False"/>
+    <Border Grid.Column="1"
+            x:Name="PlayingBorder"
+            Background="{DynamicResource SystemControlHighlightListAccentLowBrush}"
+            CornerRadius="6"
+            IsVisible="False"
+            IsHitTestVisible="False"/>
     <!-- Hover background (column 1 only — stops before the art) -->
     <Border Grid.Column="1"
             x:Name="HoverBorder"
             Background="{DynamicResource AppAccentHoverSoftBrush}"
+            CornerRadius="6"
             IsVisible="False"
             IsHitTestVisible="False"/>
     <!-- Selection background (column 1 only). Matches the sidebar's playlist
@@ -72,7 +92,7 @@
     <Border Grid.Column="1"
             Background="{DynamicResource AppAccentBrush}"
             Opacity="0.25"
-            CornerRadius="4"
+            CornerRadius="6"
             IsVisible="{Binding IsSelected}"
             IsHitTestVisible="False"/>
 

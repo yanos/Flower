@@ -114,10 +114,13 @@ public partial class MainView : UserControl
         AlbumGrid.PointerReleased += AlbumGrid_PointerReleased;
         AlbumGrid.PointerCaptureLost += AlbumGrid_PointerCaptureLost;
         // AlbumTileControl handles no pointer gesture of its own except its
-        // download button (see its own doc comment) - right-click bubbles
+        // "..." button (see its own doc comment) - right-click bubbles
         // up from whichever tile the pointer landed on the same way the
         // four handlers above do, resolved the same way via HitTestTile.
         AlbumGrid.ContextRequested += AlbumGrid_ContextRequested;
+
+        // The "..." on every album tile - the grid's and Home's (AlbumCard).
+        AddHandler(AlbumCard.MenuRequestedEvent, AlbumCard_MenuRequested);
 
         // Cmd/Ctrl+, (Settings) must work regardless of which control currently
         // has focus, so it's handled at the MainView root rather than scoped to MusicList.
@@ -210,7 +213,7 @@ public partial class MainView : UserControl
         }
 
         _subListGesture = new NameSelectionDragGesture(
-            () => vm.SubListItems,
+            () => vm.VisibleSubListItems,
             () => vm.SelectedSubItems,
             vm.SetSelectedSubItems,
             selectOnPlainPress: true);
@@ -252,6 +255,14 @@ public partial class MainView : UserControl
             case nameof(MainViewModel.SelectedSubItems):
                 SyncSubListSelectionFromViewModel();
                 break;
+            // A new list of names (a rescan, or the filter) is a new
+            // ItemsSource, which empties the ListBox's own selection while the
+            // pick behind it stands - so the picked artist lost its highlight.
+            // Posted, so the ListBox has taken the new items first.
+            case nameof(MainViewModel.VisibleSubListItems):
+                KeepAListedArtistPicked();
+                Dispatcher.UIThread.Post(SyncSubListSelectionFromViewModel);
+                break;
             case nameof(MainViewModel.SelectedServerSettings):
             case nameof(MainViewModel.IsSelectedDevicePaired):
             case nameof(MainViewModel.IsSelectedServerReachable):
@@ -284,6 +295,40 @@ public partial class MainView : UserControl
                 }
                 break;
         }
+    }
+
+    // The Artists page shows the artist picked in the column of names, so the
+    // pick has to be one the column lists. Two ways it is not:
+    //  - Artists restored at launch is selected before there are any names,
+    //    so the pick a sidebar click makes (InitialSubItemForCurrentView)
+    //    found nobody and the page sat empty. The first names make it instead.
+    //  - The filter narrows the names and the artist on screen is no longer
+    //    among them: the page moves to the first that is, the way the cards
+    //    under it narrow to what the filter finds - and shows nobody when
+    //    the filter finds no one.
+    // Here rather than in the shared view model, because the phone sits on
+    // Artists with nobody picked on purpose - that is its list of names.
+    private void KeepAListedArtistPicked()
+    {
+        if (_viewModel is not { IsShowingArtistPage: true } vm)
+            return;
+
+        var listed = vm.VisibleSubListItems;
+        var picked = vm.SelectedSubItems;
+        if (picked.Count > 0 && picked.All(listed.Contains))
+            return;
+
+        if (listed.Count == 0)
+        {
+            if (picked.Count > 0 && !string.IsNullOrWhiteSpace(vm.FilterText))
+                vm.SetSelectedSubItems([]);
+            return;
+        }
+
+        var next = string.IsNullOrWhiteSpace(vm.FilterText)
+            ? vm.Browser.InitialSubItemForCurrentView() ?? listed[0]
+            : listed[0];
+        vm.SetSelectedSubItems([next]);
     }
 
     // Pushes the ViewModel's SelectedSubItems set into SubList's own selection.
@@ -452,6 +497,56 @@ public partial class MainView : UserControl
         var tracks = vm.GetTracksForSubListItems(vm.SelectedSubItems).ToList();
         BuildAlbumContextMenu(tracks, tile).Open(grid);
         e.Handled = true;
+    }
+
+    // An album tile's "...": the menu a right-click on that tile opens. In the
+    // grid that is the album menu over the selection, the way a right-click
+    // there picks it (AlbumGrid_ContextRequested). On Home, a tile whose shelf
+    // gives it a menu of its own (Continue Playing's, which can take it off the
+    // shelf) opens that; any other opens the album menu over the album alone,
+    // since Home has no selection of albums to act on.
+    private void AlbumCard_MenuRequested(object? sender, RoutedEventArgs e)
+    {
+        if (e.Source is not AlbumCard { Tile: { } tile } card || _viewModel is not { } vm)
+            return;
+        e.Handled = true;
+
+        if (card.FindAncestorOfType<AlbumGridView>() != null)
+        {
+            if (!vm.SelectedSubItems.Contains(tile.Name))
+                vm.SetSelectedSubItems(new List<string> { tile.Name });
+            var selected = vm.GetTracksForSubListItems(vm.SelectedSubItems).ToList();
+            BuildAlbumContextMenu(selected, tile).Open(card);
+            return;
+        }
+
+        if (card.FindAncestorOfType<Button>()?.ContextMenu is { } own)
+        {
+            own.Open(card);
+            return;
+        }
+
+        var tracks = LibraryBrowserViewModel.ExpandedTracksFor(tile).ToList();
+        BuildAlbumContextMenu(tracks, tile, () => OpenTrackInfo(tracks)).Open(card);
+    }
+
+    // An album card's play circle on the Artists page: the album from its
+    // first song, queued on its own the way a double-click on one of its songs
+    // queues it (MainViewModel.PlayTrackInAlbum).
+    private void ArtistAlbumPlay_Click(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is ArtistAlbumSectionViewModel { ExpandedTracks: [var first, ..] } album)
+            _viewModel?.PlayTrackInAlbum(album.ExpandedTracks, first);
+    }
+
+    // An album card's "...": the album menu over that album alone, as a Home
+    // tile's opens it - the Artists page has no selection of albums either.
+    private void ArtistAlbumMenu_Click(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control button || button.DataContext is not ArtistAlbumSectionViewModel album)
+            return;
+        var tracks = album.ExpandedTracks.ToList();
+        BuildAlbumContextMenu(tracks, album.Tile, () => OpenTrackInfo(tracks)).Open(button);
     }
 
     // ── Per-view scroll position + selection ────────────────────────────────────
@@ -1087,13 +1182,16 @@ public partial class MainView : UserControl
     // targets just the tile actually clicked, same "not a coherent multi-target
     // action" reasoning as that method's own Locate File; Get Info/Add To
     // Playlist act on the full current album selection via tracks.
-    private ContextMenu BuildAlbumContextMenu(IReadOnlyList<Track> tracks, AlbumTileViewModel clickedTile)
+    //
+    // getInfo is what Get Info opens: the grid's album selection unless the
+    // caller says otherwise (a Home tile, which has none).
+    private ContextMenu BuildAlbumContextMenu(IReadOnlyList<Track> tracks, AlbumTileViewModel clickedTile, Action? getInfo = null)
     {
         var playItem = new MenuItem { Header = "Play Album" };
         playItem.Click += (_, _) => _viewModel?.PlayAlbum(clickedTile);
 
         var getInfoItem = new MenuItem { Header = "Get Info" };
-        getInfoItem.Click += (_, _) => OpenTrackInfoForSelectedAlbums();
+        getInfoItem.Click += (_, _) => (getInfo ?? OpenTrackInfoForSelectedAlbums)();
 
         var addToPlaylistItem = new MenuItem { Header = "Add To Playlist" };
         PopulateAddToPlaylistMenu(addToPlaylistItem, tracks);
@@ -1423,6 +1521,19 @@ public partial class MainView : UserControl
             ? new TrackInfoWindow(target.Tracks, index, vm) { ShowInTaskbar = false }
             : new TrackInfoWindow(target.Tracks, vm) { ShowInTaskbar = false };
 
+        if (TopLevel.GetTopLevel(this) is Window owner)
+            infoWindow.Show(owner);
+        else
+            infoWindow.Show();
+    }
+
+    // Get Info over a given set of songs - a Home tile's album.
+    private void OpenTrackInfo(IReadOnlyList<Track> tracks)
+    {
+        if (_viewModel is not MainViewModel vm || tracks.Count == 0)
+            return;
+
+        var infoWindow = new TrackInfoWindow(tracks, vm) { ShowInTaskbar = false };
         if (TopLevel.GetTopLevel(this) is Window owner)
             infoWindow.Show(owner);
         else

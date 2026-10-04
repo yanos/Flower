@@ -1,0 +1,88 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:Flower.Controls"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
+             x:Class="Flower.Controls.AlbumCard"
+             x:Name="Root">
+
+  <!-- An album as a tile, wherever one is drawn: the phone's Albums grid and
+       Home shelves, the desktop's Albums grid and Home. The cover, square and
+       rounded; under it the album's name and its artist, with the "..." beside
+       the artist that opens the album's menu; and, for Continue Playing, the
+       play badge on the cover, how far through the album is, and where it was
+       left (ShowsProgress, Progress, Detail).
+
+       Only the tile's look: what pressing it does is its host's - a Button
+       round it on the phone, AlbumGridPanel's hit-testing on the desktop grid,
+       the shelf's Button on desktop Home. The "..." is a button inside it, so
+       a press on it is its alone; it runs MenuCommand where the host gives one
+       (the phone's album sheet) and raises MenuRequested either way, which is
+       how the desktop's views open their context menus from it.
+
+       Captions have explicit LineHeights, not the font default: Inter has no
+       CJK glyphs, so a Japanese title falls back to a system face 1.45x to
+       1.6x taller (which face, and so which of those, depends on the
+       machine), and a row pairing one with a Latin title puts the two
+       captions at different heights. Pinning both lines makes every caption
+       the same height whatever script it is in, with a pixel or two to spare
+       over the tallest fallback measured - see AlbumTileCaptionTests. The
+       lines overlap by 5px: each pinned height leaves room above and below a
+       Latin glyph, and the gap that made between the name and the artist read
+       as two separate captions. -->
+  <UserControl.Styles>
+    <!-- Nothing in it can be played right now (AlbumTileViewModel
+         .IsUnavailable): faded, with its icons and missing-cover note grey
+         rather than the faded red dimming alone would leave them. -->
+    <Style Selector="StackPanel.dimmed">
+      <Setter Property="Opacity" Value="0.5" />
+    </Style>
+    <Style Selector="StackPanel.dimmed materialIcons|MaterialIcon">
+      <Setter Property="Foreground" Value="{DynamicResource AppTextDisabledBrush}" />
+    </Style>
+    <Style Selector="StackPanel.dimmed TextBlock.placeholderGlyph">
+      <Setter Property="Foreground" Value="{DynamicResource AppTextDisabledBrush}" />
+    </Style>
+  </UserControl.Styles>
+
+  <StackPanel DataContext="{Binding #Root.Tile}"
+              x:DataType="vm:AlbumTileViewModel"
+              Spacing="2"
+              HorizontalAlignment="Stretch"
+              Classes.dimmed="{Binding IsUnavailable, FallbackValue=False}">
+    <Panel>
+      <controls:SquareAlbumArtView AlbumArt="{Binding AlbumArt}" ArtCornerRadius="10" />
+      <!-- Continue Playing's: this cover picks the album up where it was. -->
+      <Border IsVisible="{Binding #Root.ShowsProgress}"
+              Width="40" Height="40" CornerRadius="20"
+              Margin="0,0,8,8"
+              HorizontalAlignment="Right" VerticalAlignment="Bottom"
+              BoxShadow="{DynamicResource AppButtonShadow}"
+              Background="{DynamicResource AppAccentBrush}">
+        <materialIcons:MaterialIcon Kind="Play" Width="24" Height="24" Foreground="{DynamicResource AppOnPrimaryBrush}" />
+      </Border>
+    </Panel>
+    <ProgressBar IsVisible="{Binding #Root.ShowsProgress}"
+                 MinWidth="0" Minimum="0" Maximum="1" Value="{Binding #Root.Progress}"
+                 Height="4" MinHeight="4" CornerRadius="2"
+                 Margin="0,6,0,2"
+                 Foreground="{DynamicResource AppAccentBrush}" />
+    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto" Margin="2,0,0,0">
+      <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Text="{Binding Name}" FontSize="17" LineHeight="29" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
+      <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,-5,0,0" Text="{Binding Artist}" FontSize="14" LineHeight="24" Opacity="0.6" TextTrimming="CharacterEllipsis" />
+      <!-- On the artist's line rather than the name's: an album name is
+           what gets cut short on a narrow tile, and the artist is usually the
+           shorter of the two. The negative margins keep a comfortable target
+           without growing the pinned line. -->
+      <Button Grid.Row="1" Grid.Column="1" Classes="pill" Padding="4" Margin="4,-7,0,-2"
+              ToolTip.Tip="More"
+              Click="Menu_Click">
+        <materialIcons:MaterialIcon Kind="DotsVertical" Width="20" Height="20" Opacity="0.6" />
+      </Button>
+      <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Margin="0,-5,0,0"
+                 Text="{Binding #Root.Detail}"
+                 IsVisible="{Binding #Root.Detail, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                 FontSize="14" LineHeight="24" Opacity="0.6" TextTrimming="CharacterEllipsis" />
+    </Grid>
+  </StackPanel>
+</UserControl>

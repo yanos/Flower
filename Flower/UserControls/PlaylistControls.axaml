@@ -13,42 +13,61 @@
     <conv:PlayOrPauseConverter x:Key="PlayOrPauseConverter"/>
   </UserControl.Resources>
 
-  <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+  <UserControl.Styles>
+    <!-- Shuffle and repeat, off and on: the grey of a disabled control when
+         off, as on Now Playing - a dimmed red read as on - and the accent
+         when on. -->
+    <Style Selector="materialIcons|MaterialIcon.transportToggle">
+      <Setter Property="Foreground" Value="{DynamicResource AppTextDisabledBrush}"/>
+    </Style>
+    <Style Selector="materialIcons|MaterialIcon.transportToggle.active">
+      <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}"/>
+    </Style>
+    <!-- Pointed at and pressed, on or off, the hover and pressed accents -
+         restated here because the two above are nearer than App.axaml's. -->
+    <Style Selector=":is(Button):pointerover materialIcons|MaterialIcon.transportToggle">
+      <Setter Property="Foreground" Value="{DynamicResource AppAccentHoverBrush}"/>
+    </Style>
+    <Style Selector=":is(Button):pressed materialIcons|MaterialIcon.transportToggle">
+      <Setter Property="Foreground" Value="{DynamicResource AppAccentPressedBrush}"/>
+    </Style>
+  </UserControl.Styles>
 
-    <Button Background="Transparent"
-            Padding="6"
-            VerticalContentAlignment="Center"
-            HorizontalContentAlignment="Center"
-            Click="Previous">
-      <materialIcons:MaterialIcon Kind="Rewind"
-                                  Height="28"
-                                  Width="28"/>
+  <!-- The phone's transport (Now Playing), laid in a row: shuffle and repeat
+       at either end, previous and next either side of play, and play the
+       ringed circle it is there (Button.pill.circle, Styles/IconButtons.axaml).
+       Shuffle and repeat used to sit at the ends of the seek bar, in the
+       middle of the bar; they are transport, so they are here. -->
+  <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="2">
+
+    <Button Classes="pill" Click="Shuffle" ToolTip.Tip="Shuffle">
+      <materialIcons:MaterialIcon Kind="Shuffle" Width="20" Height="20"
+                                  Classes="transportToggle"
+                                  Classes.active="{Binding IsShuffleEnabled}"/>
     </Button>
 
-    <Button Background="Transparent"
-            Width="48"
-            Height="48"
-            Padding="0"
-            Margin="4,0,4,0"
-            VerticalContentAlignment="Center"
-            HorizontalContentAlignment="Center"
-            BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
-            BorderThickness="1.5"
-            CornerRadius="9999"
+    <Button Classes="pill" Click="Previous" ToolTip.Tip="Previous">
+      <materialIcons:MaterialIcon Kind="Rewind" Width="26" Height="26"/>
+    </Button>
+
+    <Button Classes="pill circle"
+            Width="56" Height="56"
+            Margin="4,0"
             Click="PlayOrPause">
-      <materialIcons:MaterialIcon Kind="{Binding IsPlaying, Converter={StaticResource PlayOrPauseConverter}}"
-                                  Height="36"
-                                  Width="36"/>
+      <Border Classes="ring">
+        <materialIcons:MaterialIcon Kind="{Binding IsPlaying, Converter={StaticResource PlayOrPauseConverter}}"
+                                    Width="28" Height="28"/>
+      </Border>
     </Button>
 
-    <Button Background="Transparent"
-            Padding="6"
-            VerticalContentAlignment="Center"
-            HorizontalContentAlignment="Center"
-            Click="Next">
-      <materialIcons:MaterialIcon Kind="FastForward"
-                                  Height="28"
-                                  Width="28"/>
+    <Button Classes="pill" Click="Next" ToolTip.Tip="Next">
+      <materialIcons:MaterialIcon Kind="FastForward" Width="26" Height="26"/>
+    </Button>
+
+    <Button Classes="pill" Click="Repeat" ToolTip.Tip="Repeat">
+      <materialIcons:MaterialIcon Kind="Repeat" Width="20" Height="20"
+                                  Classes="transportToggle"
+                                  Classes.active="{Binding IsRepeatEnabled}"/>
     </Button>
 
   </StackPanel>

@@ -110,6 +110,11 @@
   <SolidColorBrush x:Key="AppBackgroundBrush" Color="{DynamicResource PaletteBackground}" />
   <!-- Cards, the mini player and tab bar, sheets, text boxes. -->
   <SolidColorBrush x:Key="AppSurfaceBrush" Color="{DynamicResource PaletteSurface}" />
+  <!-- The desktop sidebar: the surface, half there over the background, so
+       the column reads as set apart from the page beside it without being as
+       heavy as a card - a shade darker than the page in the light theme and a
+       shade lighter in the dark. -->
+  <SolidColorBrush x:Key="AppSidebarBrush" Color="{DynamicResource PaletteSurface}" Opacity="0.6" />
   <!-- The square standing in for a missing cover: a step off the surface it
        sits on, so it still reads as a square there. -->
   <SolidColorBrush x:Key="AppPlaceholderBrush" Color="{DynamicResource PaletteDivider}" />

@@ -118,6 +118,7 @@ public class MusicListPanel : Panel
 
     // A row's own download icon was clicked - see TrackDownloadButton.
     public event EventHandler<TrackRowViewModel>? RowDownloadRequested;
+    public event EventHandler<TrackRowViewModel>? RowMenuRequested;
 
     public void SetItems(IReadOnlyList<TrackRowViewModel> items)
     {
@@ -165,6 +166,7 @@ public class MusicListPanel : Panel
             // any one row (see the pool above), and forwards whichever row it
             // currently holds.
             ctrl.DownloadRequested += (_, row) => RowDownloadRequested?.Invoke(this, row);
+            ctrl.MenuRequested += (_, row) => RowMenuRequested?.Invoke(this, row);
             ctrl.DataContext = _items[indices[slot]];
             _activeIndex.Add(indices[slot]);
             Children.Add(ctrl);

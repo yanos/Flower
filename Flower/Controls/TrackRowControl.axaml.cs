@@ -11,6 +11,9 @@ using Avalonia.Media;
 
 using CommunityToolkit.Mvvm.DependencyInjection;
 
+using Material.Icons;
+using Material.Icons.Avalonia;
+
 using Flower.ViewModels;
 
 namespace Flower.Controls;
@@ -50,6 +53,14 @@ public partial class TrackRowControl : UserControl
     // holding the ViewModel that can actually start a download.
     public event EventHandler<TrackRowViewModel>? DownloadRequested;
 
+    // The row's "..." was pressed - the menu a right-click on the row opens,
+    // for anyone who does not know to right-click. Forwarded the same way.
+    public event EventHandler<TrackRowViewModel>? MenuRequested;
+
+    // The "..." cell's width, after the last column. MusicListView's header
+    // keeps a spacer this wide, so the header and the cells end together.
+    public const double MenuCellWidth = 36;
+
     private void OnColumnsChanged(object? sender, EventArgs e) => BuildCells();
 
     private void BuildCells()
@@ -85,6 +96,31 @@ public partial class TrackRowControl : UserControl
             border.Child = BuildCellContent(col);
             CellsPanel.Children.Add(border);
         }
+
+        CellsPanel.Children.Add(BuildMenuCell());
+    }
+
+    // The phone's row ends in the same "..." (TrackRowTemplate).
+    private Control BuildMenuCell()
+    {
+        var icon = new MaterialIcon { Kind = MaterialIconKind.DotsVertical, Width = 18, Height = 18, Opacity = 0.6 };
+        var button = new Button
+        {
+            Content = icon,
+            Padding = new Thickness(4),
+            Width = MenuCellWidth,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        button.Classes.Add("pill");
+        ToolTip.SetTip(button, "More");
+        button.Click += (_, e) =>
+        {
+            e.Handled = true;
+            if (DataContext is TrackRowViewModel row)
+                MenuRequested?.Invoke(this, row);
+        };
+        return button;
     }
 
     // The art well is only shown to the first row of an album run, which is
@@ -248,6 +284,6 @@ public partial class TrackRowControl : UserControl
     {
         VerticalAlignment = VerticalAlignment.Center,
         TextTrimming      = TextTrimming.CharacterEllipsis,
-        FontSize          = 12,
+        FontSize          = 14,
     };
 }

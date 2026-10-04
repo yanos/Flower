@@ -13,27 +13,10 @@
        lives one level up, in AlbumGridPanel (mirrors MusicListPanel /
        MusicListView.axaml.cs's Panel_PointerPressed), not here. -->
   <UserControl.Styles>
-    <!-- ":is(UserControl)" because a bare type selector is an exact-type match
-         and this file's root is an AlbumTileControl - see the same note in
-         TrackRowControl.axaml, where written the plain way it matched nothing
-         and the hover highlight simply never showed. -->
-    <Style Selector=":is(UserControl):pointerover Border#HoverBorder">
+    <!-- "AlbumTileControl", not ":is(UserControl)": the AlbumCard inside is a
+         UserControl too, and a pointer over it would otherwise match. -->
+    <Style Selector="controls|AlbumTileControl:pointerover Border#HoverBorder">
       <Setter Property="IsVisible" Value="True"/>
-    </Style>
-    <!-- Greyed-out album: nothing in it can be played right now (see
-         AlbumTileViewModel.IsUnavailable - a single downloaded track is
-         enough to keep it at full strength). Same 0.5 as an unavailable
-         track row, and on the content only, so the selection/hover
-         backgrounds behind it are unaffected. -->
-    <Style Selector="StackPanel#TileContent.dimmed">
-      <Setter Property="Opacity" Value="0.5"/>
-    </Style>
-    <!-- Grey, not the faded red dimming alone would leave them. -->
-    <Style Selector="StackPanel#TileContent.dimmed materialIcons|MaterialIcon">
-      <Setter Property="Foreground" Value="{DynamicResource AppTextDisabledBrush}"/>
-    </Style>
-    <Style Selector="StackPanel#TileContent.dimmed TextBlock.placeholderGlyph">
-      <Setter Property="Foreground" Value="{DynamicResource AppTextDisabledBrush}"/>
     </Style>
   </UserControl.Styles>
 
@@ -41,11 +24,11 @@
     <Border x:Name="SelectionBorder"
             IsVisible="{Binding IsSelected}"
             Background="{DynamicResource AppAccentSoftBrush}"
-            CornerRadius="6"/>
+            CornerRadius="12"/>
     <Border x:Name="HoverBorder"
             IsVisible="False"
             Background="{DynamicResource AppAccentHoverSoftBrush}"
-            CornerRadius="6"/>
+            CornerRadius="12"/>
     <!-- Bottom margin is 16 (not the 8 on every other side) - the extra 8px
          is reserved unconditionally (not just when expanded) so the caret
          below always has real room to sit fully inside this control's own
@@ -53,23 +36,12 @@
          first and never rendered - ItemsControl's per-item container clips
          its content to bounds, so anything hanging outside AlbumTileControl's
          own edge was silently cut off. -->
-    <StackPanel x:Name="TileContent"
-                Classes.dimmed="{Binding IsUnavailable}"
-                Spacing="6" Width="180" Margin="8,8,8,16">
-      <controls:AlbumArtView AlbumArt="{Binding AlbumArt}" Width="180" Height="180"/>
-      <!-- The album's own download icon sits at the far right of its name,
-           and fetches every not-yet-downloaded track in the album at once
-           (see AlbumTileControl.axaml.cs) - the same thing the tile's
-           "Download Album" context-menu item does. Auto column, hidden
-           unless there is something to fetch, so an ordinary local album's
-           name still gets the tile's full width. -->
-      <Grid ColumnDefinitions="*,Auto">
-        <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="13" FontWeight="Medium" TextTrimming="CharacterEllipsis"/>
-        <controls:TrackDownloadButton Grid.Column="1" Margin="4,0,0,0"
-                                      DownloadRequested="Download_Requested"/>
-      </Grid>
-      <TextBlock Text="{Binding Artist}" FontSize="11" Opacity="0.6" TextTrimming="CharacterEllipsis"/>
-    </StackPanel>
+    <!-- The album's tile, the phone's own (AlbumCard): its "..." raises
+         AlbumCard.MenuRequested, which MainView answers with the same menu a
+         right-click on the tile opens. Downloading the album is in that menu. -->
+    <controls:AlbumCard x:Name="TileContent"
+                        Tile="{Binding}"
+                        Margin="8,8,8,16"/>
     <!-- Caret pointing down at ExpansionCard below (AlbumGridRowControl) -
          lives here, not there, so it's centered under THIS tile purely by
          layout (HorizontalAlignment=Center) regardless of which column this

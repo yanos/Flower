@@ -111,6 +111,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // doesn't need one; a NativeMenuItem does, and MainWindow's DataContext is
     // this ViewModel, not PlaylistControlViewModel, so these just forward.
     public ICommand? PlayOrPauseCommand          { get; private set; }
+    public ICommand? PlayViewCommand             { get; private set; }
+    public ICommand? ShuffleViewCommand          { get; private set; }
     public ICommand? NextTrackCommand            { get; private set; }
     public ICommand? PreviousTrackCommand        { get; private set; }
     public ICommand? ToggleRepeatCommand         { get; private set; }
@@ -500,7 +502,11 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     public ObservableCollection<TrackRowViewModel> Rows => Browser.Rows;
     public IReadOnlyList<Track> DisplayedTracks         => Browser.DisplayedTracks;
-    public string StatusBarText                         => Browser.StatusBarText;
+    // On Artists, what the cards show - which the filter narrows further than
+    // the rows behind them (ArtistPageTracks); everywhere else the browser's.
+    public string StatusBarText => IsShowingArtistPage
+        ? LibraryBrowserViewModel.Summarize(_artistAlbums.SelectMany(a => a.ExpandedTracks).ToList())
+        : Browser.StatusBarText;
 
     public string? FilterText
     {
@@ -524,6 +530,10 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public ObservableCollection<Track> ExpandedAlbumTracks => Browser.ExpandedAlbumTracks;
 
     public ObservableCollection<string> SubListItems => Browser.SubListItems;
+
+    // What the desktop Artists column lists: SubListItems narrowed by the
+    // filter - see LibraryBrowserViewModel.VisibleSubListItems.
+    public ObservableCollection<string> VisibleSubListItems => Browser.VisibleSubListItems;
 
     public IReadOnlyCollection<string> SelectedSubItems => Browser.SelectedSubItems;
 
@@ -562,6 +572,166 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         _appSettings.SortArtistAlbumsByYear = value;
         SaveSettings();
     }
+
+    // ── Page header (desktop) ─────────────────────────────────────────────
+
+    // The desktop Artists page, for the one artist picked: who they are, the
+    // way the phone's artist list draws one (ArtistPickerRow - their covers as
+    // a collage, how many albums and songs) and how long it all runs, and then
+    // each of their albums as a card of its own with its songs under it
+    // (ArtistAlbums). Several artists picked at once for a drag have no one
+    // name to head them, so the page shows nobody. Built when the pick or the
+    // library changes rather than on every read, so the covers behind it are
+    // fetched once per artist.
+    private ArtistHeaderInfo? _artistHeader;
+    public ArtistHeaderInfo? ArtistHeader => _artistHeader;
+
+    private IReadOnlyList<ArtistAlbumSectionViewModel> _artistAlbums = [];
+    public IReadOnlyList<ArtistAlbumSectionViewModel> ArtistAlbums => _artistAlbums;
+
+    // force: the library changed under the page, so everything is rebuilt.
+    // refilter: only the filter changed, so the header - the artist as a
+    // whole, collage and all - stays, and only the cards are rebuilt.
+    private void RefreshArtistPage(bool force = false, bool refilter = false)
+    {
+        var name = _selectedSidebarItem?.Kind == SidebarItemKind.Artists && SelectedSubItems.Count == 1
+            ? SelectedSubItems.First()
+            : null;
+        var newArtist = force || name != _artistHeader?.Name;
+        if (!newArtist && !refilter)
+            return;
+
+        foreach (var section in _artistAlbums)
+        {
+            section.SelectionStarted -= ArtistAlbum_SelectionStarted;
+            section.ExpandedTracks = [];
+            section.Tile.Dispose();
+        }
+
+        if (name == null)
+        {
+            _artistHeader = null;
+            _artistAlbums = [];
+        }
+        else
+        {
+            var tracks = Library.Tracks.Where(t => t.Artists == name).ToList();
+            if (newArtist)
+            {
+                var albums = tracks.Where(t => !string.IsNullOrEmpty(t.Album)).Select(t => t.Album).Distinct().Count();
+                var total = TimeSpan.FromTicks(tracks.Sum(t => t.Duration.Ticks));
+                var length = total.TotalHours >= 1 ? $"{(int)total.TotalHours}h {total.Minutes}m" : $"{total.Minutes}m";
+                _artistHeader = new ArtistHeaderInfo(name, AlbumCollage.ByAlbumName(tracks),
+                    $"{ArtistPickerRow.Summary(albums, tracks.Count)} · {length}");
+            }
+
+            var shown = ArtistPageTracks(tracks, name, FilterText);
+            var tiles = AlbumGridBuilder.Build(shown)
+                .OrderBy(t => ArtistAlbumSectionViewModel.Year(t) == null)
+                .ThenBy(t => ArtistAlbumSectionViewModel.Year(t))
+                .ThenBy(t => TrackListBuilder.SortKey(t.Name))
+                .ToList();
+            // Songs on no album still belong to the artist: they go in a card
+            // of their own, last.
+            var loose = shown.Where(t => string.IsNullOrEmpty(t.Album)).ToList();
+            if (loose.Count > 0)
+                tiles.Add(new AlbumTileViewModel
+                {
+                    Name = "Other Songs",
+                    Artist = name,
+                    RepresentativeTrack = loose[0],
+                    MostRecentlyAdded = loose.Max(t => t.DateAdded),
+                    Tracks = loose,
+                });
+
+            var availability = Availability;
+            var playing = CurrentlyPlayingTrack?.Id;
+            _artistAlbums = tiles.Select(tile =>
+            {
+                var section = new ArtistAlbumSectionViewModel(tile)
+                {
+                    Availability = availability,
+                    CurrentlyPlayingTrackId = playing,
+                };
+                section.ExpandedTracks = LibraryBrowserViewModel.ExpandedTracksFor(tile);
+                section.SelectionStarted += ArtistAlbum_SelectionStarted;
+                return section;
+            }).ToList();
+        }
+        if (newArtist)
+            OnPropertyChanged(nameof(ArtistHeader));
+        OnPropertyChanged(nameof(ArtistAlbums));
+        OnPropertyChanged(nameof(StatusBarText));
+    }
+
+    // The songs the Artists page's cards hold under the page header's filter.
+    // The most specific thing the text finds wins, album by album: the songs
+    // whose title (or genre) it finds; failing those, the whole album when it
+    // finds the album's name; failing that, all the artist's songs when it
+    // finds the artist's name. So "windf" over Windflower is the one song
+    // called Windflower, not the album it names as well - TrackListBuilder
+    // .Matches, which the column of names and the other lists use, keeps a
+    // song whose album matches, which is the whole album every time.
+    internal static List<Track> ArtistPageTracks(IReadOnlyList<Track> tracks, string artist, string? filter)
+    {
+        if (string.IsNullOrWhiteSpace(filter))
+            return tracks.ToList();
+
+        var artistMatches = SearchText.Contains(artist, filter);
+        var shown = new List<Track>();
+        foreach (var album in tracks.GroupBy(t => t.Album ?? ""))
+        {
+            var songs = album.Where(t => SearchText.Contains(t.Title, filter) || SearchText.Contains(t.Genre, filter)).ToList();
+            if (songs.Count == 0 && (SearchText.Contains(album.Key, filter) || artistMatches))
+                songs = album.ToList();
+            shown.AddRange(songs);
+        }
+        return shown;
+    }
+
+    // One selection across the page, as one list would have.
+    private void ArtistAlbum_SelectionStarted(object? sender, EventArgs e)
+    {
+        foreach (var section in _artistAlbums)
+        {
+            if (!ReferenceEquals(section, sender))
+                section.ClearSelection();
+        }
+    }
+
+    // A song starting, or the server coming and going, changes how the cards'
+    // songs draw - the same two things AlbumGridView is told about.
+    private void UpdateArtistAlbumRows()
+    {
+        var availability = Availability;
+        var playing = CurrentlyPlayingTrack?.Id;
+        foreach (var section in _artistAlbums)
+        {
+            section.Availability = availability;
+            section.CurrentlyPlayingTrackId = playing;
+        }
+    }
+
+    // The band above a list on desktop: the page's name in the display serif,
+    // how much is in it, and the filter box. Over every list - Home is its
+    // shelves, and a server's page is about the server.
+    public bool ShowsPageHeader => _selectedSidebarItem?.Kind is
+        SidebarItemKind.Songs or SidebarItemKind.Albums or SidebarItemKind.Artists
+        or SidebarItemKind.History or SidebarItemKind.Playlist;
+
+    public string? PageTitle => _selectedSidebarItem?.Name;
+
+    // What the page holds once filtered: albums over the grid, the artists
+    // listed on Artists, songs anywhere else.
+    public string PageSubtitle => _selectedSidebarItem?.Kind switch
+    {
+        SidebarItemKind.Albums => CountOf(AlbumGridTiles.Count, "album"),
+        SidebarItemKind.Artists => CountOf(VisibleSubListItems.Count, "artist"),
+        _ => CountOf(DisplayedTracks.Count, "song"),
+    };
+
+    private static string CountOf(int count, string noun) =>
+        count == 1 ? $"1 {noun}" : $"{count:N0} {noun}s";
 
     // What a phone screen's header menu last sorted it by - null when never
     // chosen. See MobileMainViewModel's "Screen menu".
@@ -666,7 +836,12 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public bool IsShowingHome => _selectedSidebarItem?.Kind == SidebarItemKind.Home;
 
     public bool IsShowingTrackList =>
-        !IsShowingDeviceDetail && !IsShowingAlbumGrid && !IsShowingHome && !IsShowingServerSettings;
+        !IsShowingDeviceDetail && !IsShowingAlbumGrid && !IsShowingHome && !IsShowingServerSettings && !IsShowingArtistPage;
+
+    // Artists: the column of names beside the picked artist's page - their
+    // header and an album card each (ArtistHeader, ArtistAlbums) - in place of
+    // a track list.
+    public bool IsShowingArtistPage => _selectedSidebarItem?.Kind == SidebarItemKind.Artists;
 
     public bool IsShowingDeviceDetail => _selectedSidebarItem?.Kind == SidebarItemKind.Device;
 
@@ -1614,10 +1789,42 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             appSettings.SortArtistAlbumsByYear);
 
         // The browser owns the state; these re-raise it on this ViewModel,
-        // which is what every binding actually watches.
+        // which is what every binding actually watches - along with the page
+        // header's own summaries of it.
         _subscriptions.Add<PropertyChangedEventHandler>(
-            (_, e) => OnPropertyChanged(e.PropertyName),
+            (_, e) =>
+            {
+                OnPropertyChanged(e.PropertyName);
+                switch (e.PropertyName)
+                {
+                    case nameof(LibraryBrowserViewModel.StatusBarText):
+                    case nameof(LibraryBrowserViewModel.AlbumGridTiles):
+                        OnPropertyChanged(nameof(PageSubtitle));
+                        break;
+                    case nameof(LibraryBrowserViewModel.SelectedSubItems):
+                        RefreshArtistPage();
+                        break;
+                    // A rescan or a sync replaced the library: the cards hold
+                    // the tracks they were built from.
+                    case nameof(LibraryBrowserViewModel.SubListItems):
+                        RefreshArtistPage(force: true);
+                        OnPropertyChanged(nameof(PageSubtitle));
+                        break;
+                    case nameof(LibraryBrowserViewModel.VisibleSubListItems):
+                        OnPropertyChanged(nameof(PageSubtitle));
+                        break;
+                    case nameof(LibraryBrowserViewModel.FilterText):
+                        RefreshArtistPage(refilter: true);
+                        break;
+                }
+            },
             h => Browser.PropertyChanged += h, h => Browser.PropertyChanged -= h);
+
+        PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(CurrentlyPlayingTrack) or nameof(Availability))
+                UpdateArtistAlbumRows();
+        };
 
         Playlists = new PlaylistManagementViewModel(library, _sidebarItems, this);
         Downloads = CreateDownloadRunner();
@@ -1661,6 +1868,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         NewPlaylistCommand          = new AsyncRelayCommand(() => CreatePlaylistWithTrack(null));
         NewSmartPlaylistCommand     = new RelayCommand(NewSmartPlaylist);
         PlayOrPauseCommand          = new RelayCommand(PlayOrPauseFromCurrentView);
+        PlayViewCommand             = new RelayCommand(() => PlayView(shuffle: false));
+        ShuffleViewCommand          = new RelayCommand(() => PlayView(shuffle: true));
         NextTrackCommand            = new RelayCommand(_playlistControlViewModel.Next);
         PreviousTrackCommand        = new RelayCommand(_playlistControlViewModel.Previous);
         ToggleRepeatCommand         = new RelayCommand(_playlistControlViewModel.ToggleRepeat);
@@ -1997,26 +2206,25 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // ShowAlbumAsync.
     public event EventHandler<AlbumTileKey>? AlbumRevealRequested;
 
-    // Enter/double-click on an individual track row inside the inline-
-    // expanded album (AlbumGridRowControl), as opposed to double-clicking
-    // the album tile itself (PlayAlbum above). Deliberately does NOT go
-    // through PlayTrack/SyncPlayQueueToCurrentView: that sources the queue
-    // from DisplayedTracks, which for the Albums grid
-    // is driven by _selectedSubItems - the Ctrl/Shift multi-select used for
-    // drag-to-playlist (see ExpandedAlbumName's remarks), not by which
-    // album is actually expanded on screen. Left-over multi-selected tiles
-    // from that gesture made the queue silently become empty, or a union of
-    // tracks across every selected album - playback would run off the end
-    // of the displayed album straight into a different one. Queuing
-    // ExpandedAlbumTracks directly - the same list PlayAlbum uses - keeps
-    // the queue matching what's actually on screen.
-    public void PlayTrackInExpandedAlbum(Track track)
+    // Enter/double-click on a song in one album's own list - the Albums
+    // grid's expanded album, or an album card on Artists (AlbumTrackList) -
+    // as opposed to double-clicking the album tile itself (PlayAlbum above).
+    // Deliberately does NOT go through PlayTrack/SyncPlayQueueToCurrentView:
+    // that sources the queue from DisplayedTracks, which for the Albums grid is
+    // driven by _selectedSubItems - the Ctrl/Shift multi-select used for
+    // drag-to-playlist (see ExpandedAlbumName's remarks), not by which album is
+    // actually expanded on screen. Left-over multi-selected tiles from that
+    // gesture made the queue silently become empty, or a union of tracks across
+    // every selected album - playback would run off the end of the displayed
+    // album straight into a different one. Queuing the list the song was
+    // played from keeps the queue matching what's actually on screen.
+    public void PlayTrackInAlbum(IReadOnlyList<Track> albumTracks, Track track)
     {
-        if (ExpandedAlbumTracks.Count == 0)
+        if (albumTracks.Count == 0)
             return;
 
-        _playlistControlViewModel.SetCurrentPlaylist(new Playlist("Now Playing Queue", new List<Track>(ExpandedAlbumTracks)));
-        _playlistControlViewModel.Play(track, ExpandedAlbumTracks.IndexOf(track));
+        _playlistControlViewModel.SetCurrentPlaylist(new Playlist("Now Playing Queue", new List<Track>(albumTracks)));
+        _playlistControlViewModel.Play(track, albumTracks.ToList().IndexOf(track));
     }
 
     // Space bar / toolbar play-pause button. Only snapshots a fresh queue when
@@ -2051,6 +2259,26 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     }
 
     private void SyncPlayQueueToCurrentView() => SetPlayQueue(DisplayedTracks);
+
+    // Every song on screen from the top, or shuffled from a random one - the
+    // Artists page header's play and shuffle circles, which are the phone's
+    // album-header ones (MobileMainViewModel.PlayAlbum). On Artists that is
+    // the cards' songs in the cards' order, album after album, not the row
+    // order the hidden track list keeps.
+    public void PlayView(bool shuffle)
+    {
+        IReadOnlyList<Track> tracks = IsShowingArtistPage
+            ? _artistAlbums.SelectMany(a => a.ExpandedTracks).ToList()
+            : DisplayedTracks;
+        if (tracks.Count == 0)
+            return;
+        if (_playlistControlViewModel.IsShuffleEnabled != shuffle)
+            _playlistControlViewModel.ToggleShuffle();
+
+        var index = shuffle ? Random.Shared.Next(tracks.Count) : 0;
+        SetPlayQueue(tracks);
+        _playlistControlViewModel.Play(tracks[index], index);
+    }
 
     // Re-anchors Next/Previous/auto-advance to a specific list of tracks.
     // Public because mobile needs the same thing over a different source: its
@@ -2362,8 +2590,13 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         OnPropertyChanged(nameof(IsShowingHome));
         Home.IsActive = IsShowingHome;
         OnPropertyChanged(nameof(IsShowingTrackList));
+        OnPropertyChanged(nameof(IsShowingArtistPage));
         OnPropertyChanged(nameof(IsShowingDeviceDetail));
         OnPropertyChanged(nameof(IsShowingServerSettings));
+        OnPropertyChanged(nameof(ShowsPageHeader));
+        OnPropertyChanged(nameof(PageTitle));
+        OnPropertyChanged(nameof(PageSubtitle));
+        RefreshArtistPage();
         OnPropertyChanged(nameof(SelectedDevice));
         // A code typed for one server must never be submitted against
         // another, so the box empties whenever the selection moves.

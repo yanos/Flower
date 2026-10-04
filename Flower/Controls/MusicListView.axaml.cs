@@ -302,6 +302,14 @@ public partial class MusicListView : UserControl
 
         // Handle pointer / keyboard on the panel
         _panel.RowDownloadRequested += (_, row) => RowDownloadRequested?.Invoke(this, row);
+        // The row's "..." is a right-click by another name: the same selection
+        // rule (Panel_ContextRequested), the same menu.
+        _panel.RowMenuRequested += (_, row) =>
+        {
+            if (!row.IsSelected)
+                SelectedRow = row;
+            RowContextMenu?.Invoke(this, row);
+        };
         _panel.PointerPressed     += Panel_PointerPressed;
         _panel.PointerMoved       += Panel_PointerMoved;
         _panel.PointerReleased    += Panel_PointerReleased;
@@ -426,6 +434,9 @@ public partial class MusicListView : UserControl
 
         foreach (var col in _columnManager.VisibleColumns)
             _headerPanel.Children.Add(MakeHeaderCell(col));
+
+        // Over the rows' "..." cell (TrackRowControl.BuildMenuCell).
+        _headerPanel.Children.Add(new Border { Width = TrackRowControl.MenuCellWidth });
 
         // _headerHost is a single, stable Grid reused across every BuildHeader()
         // call (which can happen several times in a row - e.g. Reorder() changes
@@ -566,11 +577,10 @@ public partial class MusicListView : UserControl
         {
             Text              = col.Header,
             VerticalAlignment = VerticalAlignment.Center,
-            FontSize          = 11,
-            FontWeight        = FontWeight.SemiBold,
-            Opacity           = 0.7,
+            FontSize          = 13,
             TextTrimming      = TextTrimming.CharacterEllipsis,
         };
+        label[!TextBlock.ForegroundProperty] = new DynamicResourceExtension("AppTextSecondaryBrush");
 
         var labelArea = new StackPanel
         {
@@ -591,14 +601,9 @@ public partial class MusicListView : UserControl
         };
         SetupResizeHandle(handle, col);
 
-        var separator = new Border
-        {
-            Width               = 1,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            IsHitTestVisible    = false,
-        };
-        separator[!Border.BackgroundProperty] = new DynamicResourceExtension("SystemControlForegroundBaseMediumLowBrush");
-
+        // No rule between header cells: the band is one shape, as the rows
+        // under it are; the resize handle at each cell's edge still shows its
+        // cursor.
         var outer = new Grid
         {
             // Transparent (not null) background so the whole cell - not just the
@@ -607,7 +612,6 @@ public partial class MusicListView : UserControl
         };
         outer.Bind(WidthProperty, new Avalonia.Data.Binding(nameof(col.Width)) { Source = col });
         outer.Children.Add(labelArea);
-        outer.Children.Add(separator);
         outer.Children.Add(handle);
 
         // Press-and-drag a header cell horizontally to reorder columns; a plain

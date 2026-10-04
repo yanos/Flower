@@ -7,44 +7,14 @@
              xmlns:mobileVm="clr-namespace:Flower.ViewModels.Mobile"
              x:Class="Flower.Controls.AlbumGridRowControl"
              x:DataType="vm:AlbumGridRowViewModel"
-             x:CompileBindings="True"
-             Focusable="True">
+             x:CompileBindings="True">
 
-  <UserControl.Resources>
-    <converters:DurationConverter x:Key="DurationConverter"/>
-  </UserControl.Resources>
-
-  <UserControl.Styles>
-    <!-- A song in an expanded album that can't be played right now - not
-         downloaded, and no reachable server to stream it from. Same 0.5 dim
-         as the main track list's own unavailable rows (TrackRowControl) and
-         mobile's (Button.trackRow.placeholder); applied to the text Grid
-         rather than the row Border so the hover/selection highlights behind
-         it stay at full strength. -->
-    <Style Selector="Grid.dimmedTrack">
-      <Setter Property="Opacity" Value="0.5"/>
-    </Style>
-    <!-- Grey, not the faded red dimming alone would leave them. -->
-    <Style Selector="Grid.dimmedTrack materialIcons|MaterialIcon">
-      <Setter Property="Foreground" Value="{DynamicResource AppTextDisabledBrush}"/>
-    </Style>
-    <Style Selector="Grid.dimmedTrack TextBlock.placeholderGlyph">
-      <Setter Property="Foreground" Value="{DynamicResource AppTextDisabledBrush}"/>
-    </Style>
-    <!-- The song this album is currently playing. Weight only - the rows are
-         laid out at a fixed 34px apiece (AlbumGridRowControl.axaml.cs's
-         TrackRowHeight, which is what the expansion's animated height is
-         computed from), so nothing here may change how tall a row measures. -->
-    <Style Selector="Grid.playingTrack TextBlock">
-      <Setter Property="FontWeight" Value="Bold"/>
-    </Style>
-  </UserControl.Styles>
 
   <StackPanel Margin="0,0,0,16">
     <ItemsControl ItemsSource="{Binding Tiles}">
       <ItemsControl.ItemsPanel>
         <ItemsPanelTemplate>
-          <StackPanel Orientation="Horizontal" Spacing="16"/>
+          <UniformGrid Columns="{Binding Columns}"/>
         </ItemsPanelTemplate>
       </ItemsControl.ItemsPanel>
       <ItemsControl.ItemTemplate>
@@ -74,147 +44,9 @@
               CornerRadius="8"
               Padding="12,10"
               VerticalAlignment="Top">
-        <Grid ColumnDefinitions="*,*">
-          <ItemsControl Grid.Column="0" ItemsSource="{Binding Column1Tracks}" Margin="0,0,12,0">
-            <ItemsControl.ItemTemplate>
-              <DataTemplate x:DataType="vm:ExpandedTrackRowViewModel">
-                <!-- The colored highlight is the ExpansionCard-tinted Border
-                     inside the Panel below - and CRUCIALLY its size is driven
-                     by the Panel, which measures to the text Grid, so to make
-                     the box bigger than the text the Grid gets an inner Margin
-                     (grows the Panel -> grows the highlights filling it). This
-                     is why every earlier attempt at Margin/Padding on this
-                     outer Border did nothing to the box's SIZE: the highlight
-                     always filled the Panel = text extent, so outer spacing
-                     only shifted the box's position, never its dimensions.
-                     The Panel's own Margin then insets the whole box from the
-                     row's full extent on all four sides (the "margin in every
-                     direction" gap, and the separation between adjacent rows).
-                     This outer Border stays Background="Transparent" with no
-                     padding of its own so the entire row - including that
-                     margin gap - still hit-tests for clicks (an unpainted
-                     Border doesn't register pointer events in Avalonia), and
-                     carries the click/hover/context handlers. -->
-              <Border Classes="expandedTrack" Background="Transparent"
-                      PointerEntered="TrackRow_PointerEntered"
-                      PointerExited="TrackRow_PointerExited"
-                      PointerPressed="TrackRow_PointerPressed"
-                      DoubleTapped="TrackRow_DoubleTapped"
-                      ContextRequested="TrackRow_ContextRequested">
-                  <Panel Margin="4,3">
-                    <Border IsVisible="{Binding IsHovered}"
-                            IsHitTestVisible="False"
-                            Background="{DynamicResource AppAccentHoverSoftBrush}"
-                            CornerRadius="5"/>
-                    <Border IsVisible="{Binding IsSelected}"
-                            IsHitTestVisible="False"
-                            Background="{DynamicResource AppAccentSoftBrush}"
-                            CornerRadius="5"/>
-                    <!-- Margin here is what actually makes the highlight box
-                         larger than the text (see the outer Border's comment).
-                         The currently-playing song is bold, the way the main
-                         track list marks it (TrackRowControl's own .playing
-                         style) and mobile always has - here wired through
-                         AlbumGridRowViewModel.CurrentlyPlayingTrackId (see
-                         ExpandedTrackRowViewModel.IsCurrentlyPlaying's own
-                         comment). It was a "▶" in a 14px column ahead of the
-                         title until that column was spent on one row in ten
-                         albums; weight marks the same row and takes none. -->
-                    <Grid ColumnDefinitions="20,*,Auto" Margin="8,6"
-                          Classes.dimmedTrack="{Binding IsUnavailable}"
-                          Classes.playingTrack="{Binding IsCurrentlyPlaying}">
-                      <!-- Ahead of the title, beside the play marker, the same
-                           way the main track list orders them (see
-                           TrackRowControl.BuildCellContent) - it answers "is
-                           this on this machine?", which belongs with the other
-                           mark about the row rather than at the far edge past
-                           the duration. A fixed well rather than Auto for the
-                           same reason it is fixed there: on the trailing edge
-                           an empty one cost nothing, but ahead of the title a
-                           collapsing column moves the title itself on every
-                           row that has nothing to fetch. -->
-                      <controls:TrackDownloadButton Grid.Column="0" Margin="0,0,4,0"
-                                                    DownloadRequested="TrackRow_DownloadRequested"/>
-                      <TextBlock Grid.Column="1" Text="{Binding Track.Title}" TextTrimming="CharacterEllipsis" FontSize="12"/>
-                      <TextBlock Grid.Column="2" Text="{Binding Track.Duration, Converter={StaticResource DurationConverter}}"
-                                 FontSize="11" Opacity="0.6" Margin="8,0,0,0"/>
-                    </Grid>
-                  </Panel>
-                </Border>
-              </DataTemplate>
-            </ItemsControl.ItemTemplate>
-          </ItemsControl>
-
-          <ItemsControl Grid.Column="1" ItemsSource="{Binding Column2Tracks}" Margin="12,0,0,0">
-            <ItemsControl.ItemTemplate>
-              <DataTemplate x:DataType="vm:ExpandedTrackRowViewModel">
-                <!-- The colored highlight is the ExpansionCard-tinted Border
-                     inside the Panel below - and CRUCIALLY its size is driven
-                     by the Panel, which measures to the text Grid, so to make
-                     the box bigger than the text the Grid gets an inner Margin
-                     (grows the Panel -> grows the highlights filling it). This
-                     is why every earlier attempt at Margin/Padding on this
-                     outer Border did nothing to the box's SIZE: the highlight
-                     always filled the Panel = text extent, so outer spacing
-                     only shifted the box's position, never its dimensions.
-                     The Panel's own Margin then insets the whole box from the
-                     row's full extent on all four sides (the "margin in every
-                     direction" gap, and the separation between adjacent rows).
-                     This outer Border stays Background="Transparent" with no
-                     padding of its own so the entire row - including that
-                     margin gap - still hit-tests for clicks (an unpainted
-                     Border doesn't register pointer events in Avalonia), and
-                     carries the click/hover/context handlers. -->
-              <Border Classes="expandedTrack" Background="Transparent"
-                      PointerEntered="TrackRow_PointerEntered"
-                      PointerExited="TrackRow_PointerExited"
-                      PointerPressed="TrackRow_PointerPressed"
-                      DoubleTapped="TrackRow_DoubleTapped"
-                      ContextRequested="TrackRow_ContextRequested">
-                  <Panel Margin="4,3">
-                    <Border IsVisible="{Binding IsHovered}"
-                            IsHitTestVisible="False"
-                            Background="{DynamicResource AppAccentHoverSoftBrush}"
-                            CornerRadius="5"/>
-                    <Border IsVisible="{Binding IsSelected}"
-                            IsHitTestVisible="False"
-                            Background="{DynamicResource AppAccentSoftBrush}"
-                            CornerRadius="5"/>
-                    <!-- Margin here is what actually makes the highlight box
-                         larger than the text (see the outer Border's comment).
-                         The currently-playing song is bold, the way the main
-                         track list marks it (TrackRowControl's own .playing
-                         style) and mobile always has - here wired through
-                         AlbumGridRowViewModel.CurrentlyPlayingTrackId (see
-                         ExpandedTrackRowViewModel.IsCurrentlyPlaying's own
-                         comment). It was a "▶" in a 14px column ahead of the
-                         title until that column was spent on one row in ten
-                         albums; weight marks the same row and takes none. -->
-                    <Grid ColumnDefinitions="20,*,Auto" Margin="8,6"
-                          Classes.dimmedTrack="{Binding IsUnavailable}"
-                          Classes.playingTrack="{Binding IsCurrentlyPlaying}">
-                      <!-- Ahead of the title, beside the play marker, the same
-                           way the main track list orders them (see
-                           TrackRowControl.BuildCellContent) - it answers "is
-                           this on this machine?", which belongs with the other
-                           mark about the row rather than at the far edge past
-                           the duration. A fixed well rather than Auto for the
-                           same reason it is fixed there: on the trailing edge
-                           an empty one cost nothing, but ahead of the title a
-                           collapsing column moves the title itself on every
-                           row that has nothing to fetch. -->
-                      <controls:TrackDownloadButton Grid.Column="0" Margin="0,0,4,0"
-                                                    DownloadRequested="TrackRow_DownloadRequested"/>
-                      <TextBlock Grid.Column="1" Text="{Binding Track.Title}" TextTrimming="CharacterEllipsis" FontSize="12"/>
-                      <TextBlock Grid.Column="2" Text="{Binding Track.Duration, Converter={StaticResource DurationConverter}}"
-                                 FontSize="11" Opacity="0.6" Margin="8,0,0,0"/>
-                    </Grid>
-                  </Panel>
-                </Border>
-              </DataTemplate>
-            </ItemsControl.ItemTemplate>
-          </ItemsControl>
-        </Grid>
+        <!-- The album's songs, in two columns (AlbumTrackList - the Artists
+             page's album cards draw theirs with it too). -->
+        <controls:AlbumTrackList TwoColumns="True"/>
       </Border>
     </Border>
   </StackPanel>
