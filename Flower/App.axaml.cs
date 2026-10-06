@@ -822,19 +822,19 @@ public partial class App : Application
             {
                 playbackControls.SavePlaybackState();
 
-                // Where the album got to, told to the server before the
-                // process goes - bounded like the push below, and on the pool
-                // for the same reason PushTrackStateNowAsync is: its
-                // continuations must not queue behind this blocked thread.
-                if (albumProgressSync is { } sync)
-                    Task.Run(sync.ExchangeNowAsync).Wait(TimeSpan.FromSeconds(2));
-
-                // And the paired server told, which on a desktop cannot be left
-                // to the push SavePlaybackState sets off: that one is posted to a
-                // dispatcher about to stop. Bounded, so a server that is not
-                // answering cannot hold the window open. A position that misses
-                // this still goes out next launch, which restates every track.
-                mainViewModel.Sync.PushTrackStateNowAsync().Wait(TimeSpan.FromSeconds(2));
+                // Two things the paired server is told before the process
+                // goes: where the album got to, and every track's state -
+                // which on a desktop cannot be left to the push
+                // SavePlaybackState sets off, since that one is posted to a
+                // dispatcher about to stop. Both on the pool (PushTrackStateNowAsync
+                // is already), so their continuations do not queue behind this
+                // blocked thread; both at once, under one budget, so a server
+                // that is not answering holds the window open two seconds
+                // rather than four. What misses it still goes out next launch,
+                // which restates every track. BoundedWait rather than
+                // Task.Wait - see there for the debugger freeze that cost.
+                var progress = albumProgressSync is { } sync ? Task.Run(sync.ExchangeNowAsync) : Task.CompletedTask;
+                BoundedWait.ForAll(TimeSpan.FromSeconds(2), progress, mainViewModel.Sync.PushTrackStateNowAsync());
             };
         }
         if (TryGetFeature(typeof(IActivatableLifetime)) is IActivatableLifetime activatable)
