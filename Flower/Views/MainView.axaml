@@ -365,6 +365,7 @@
                   VerticalAlignment="Center">
         <usercontrols:FilterControl
           Width="260"
+          IsVisible="{Binding ShowsPageFilter}"
           FilterText="{Binding FilterText}"/>
       </StackPanel>
     </Grid>
@@ -562,6 +563,23 @@
                                 x:Name="MusicList"
                                 IsVisible="{Binding IsShowingTrackList}"
                                 SelectedTrack="{Binding SelectedTrack, Mode=TwoWay}"/>
+
+        <!-- The Queue page with nothing playing - the phone's Queue tab says
+             the same (QueueViewModel.EmptyTitle/EmptyMessage). -->
+        <StackPanel Grid.Column="1" Grid.Row="1"
+                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Spacing="8" Opacity="0.6" MaxWidth="360">
+          <StackPanel.IsVisible>
+            <MultiBinding Converter="{x:Static BoolConverters.And}">
+              <Binding Path="IsShowingQueue"/>
+              <Binding Path="Queue.IsEmpty"/>
+            </MultiBinding>
+          </StackPanel.IsVisible>
+          <materialIcons:MaterialIcon Kind="PlaylistMusic" Width="40" Height="40"/>
+          <TextBlock Text="{x:Static vm:QueueViewModel.EmptyTitle}" FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+          <TextBlock Text="{x:Static vm:QueueViewModel.EmptyMessage}"
+                     FontSize="13" TextWrapping="Wrap" TextAlignment="Center"/>
+        </StackPanel>
 
         <!-- The browser's Server Settings page: the same SettingsPanel the
              device-detail pane above hosts, shown here because a tab's sidebar

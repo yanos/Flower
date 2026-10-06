@@ -40,6 +40,9 @@ public partial class MusicListView : UserControl
 
     private IReadOnlyList<TrackRowViewModel> _items = Array.Empty<TrackRowViewModel>();
 
+    // What the list was last handed - for tests asking which rows a page shows.
+    internal IReadOnlyList<TrackRowViewModel> Items => _items;
+
     // ── Sort state (set by MainView/MainViewModel via SortColumn / SortAscending) ─
     public string  SortColumn    { get; set; } = "TrackNumber";
     public bool    SortAscending { get; set; } = true;
@@ -199,9 +202,13 @@ public partial class MusicListView : UserControl
     // ── Sort command callback ─────────────────────────────────────────────────
     public event EventHandler<string>? SortRequested; // string = column id
 
-    // ── Drag-to-reorder (enabled by the host only while a playlist is shown) ────
+    // ── Drag-to-reorder (enabled by the host while a playlist or the queue is shown) ────
     public bool AllowReorder { get; set; }
-    public event EventHandler<(FlowerTrack dragged, FlowerTrack? insertBefore)>? RowReordered;
+
+    // Rows rather than tracks, because the queue can hold one song twice and
+    // a track cannot say which copy was dragged. A row whose CanBeDragged is
+    // false - the queue's song playing - stays put.
+    public event EventHandler<(TrackRowViewModel dragged, TrackRowViewModel? insertBefore)>? RowReordered;
 
     private readonly Border _dropIndicator = new()
     {
@@ -712,7 +719,7 @@ public partial class MusicListView : UserControl
         // else: row is already part of the current multi-selection - preserve
         // the whole selection so a drag or the context menu can act on all of it.
 
-        if (AllowReorder && isLeft)
+        if (AllowReorder && isLeft && row.CanBeDragged)
         {
             _draggedRow     = row;
             _dragStartPoint = pt;
@@ -779,7 +786,7 @@ public partial class MusicListView : UserControl
             int index = InsertionIndexAt(pt.Y);
             var insertBefore = index < _items.Count ? _items[index] : null;
             if (insertBefore != _draggedRow)
-                RowReordered?.Invoke(this, (_draggedRow.Track, insertBefore?.Track));
+                RowReordered?.Invoke(this, (_draggedRow, insertBefore));
         }
         e.Pointer.Capture(null);
         EndDrag();

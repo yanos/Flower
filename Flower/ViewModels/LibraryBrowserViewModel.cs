@@ -87,7 +87,7 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
     private IReadOnlyCollection<Track> StatusBarTracks => _host.CurrentKind switch
     {
         SidebarItemKind.Albums => _albumGridTiles.SelectMany(t => t.Tracks).ToList(),
-        SidebarItemKind.Home or SidebarItemKind.Device or SidebarItemKind.ServerSettings => _allTracks,
+        SidebarItemKind.Home or SidebarItemKind.Queue or SidebarItemKind.Device or SidebarItemKind.ServerSettings => _allTracks,
         _ => _currentFilteredTracks,
     };
 
@@ -502,8 +502,9 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
             SidebarItemKind.Artists
                 => new List<Track>(),
             // Home draws its shelves from the library itself (HomeViewModel),
-            // so a row per track would be built for nothing.
-            SidebarItemKind.Device or SidebarItemKind.Home
+            // and the Queue its rows from the queue (QueueViewModel), so a
+            // row per track would be built for nothing.
+            SidebarItemKind.Device or SidebarItemKind.Home or SidebarItemKind.Queue
                 => new List<Track>(),
             // Never-played tracks would otherwise just clutter the bottom/top of
             // a "newest played first" sort with a meaningless null - History only
@@ -528,6 +529,7 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         SidebarItemKind.Playlist      => $"playlist:{_host.CurrentPlaylist?.Name}",
         SidebarItemKind.History       => "history",
         SidebarItemKind.Home          => "home",
+        SidebarItemKind.Queue         => "queue",
         _                             => "songs"
     };
 

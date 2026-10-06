@@ -48,6 +48,7 @@ public partial class MainView : UserControl
     private MenuItem    _downloadItem = new();
     private MenuItem    _deleteLocalFileItem = new();
     private MenuItem    _removeFromLibraryItem = new();
+    private MenuItem    _removeFromQueueItem = new();
     private readonly ContextMenu _sidebarItemMenu = new();
     private SidebarItem? _dropTargetPlaylistItem;
 
@@ -145,6 +146,7 @@ public partial class MainView : UserControl
             _viewModel.NavigateToTrackRequested -= OnNavigateToTrackRequested;
             _viewModel.AlbumRevealRequested -= OnAlbumRevealRequested;
             _viewModel.Home.AlbumOpened -= OnHomeAlbumOpened;
+            _viewModel.Queue.PropertyChanged -= OnQueuePropertyChanged;
             _viewModel.PlaylistConflictRequested -= OnPlaylistConflictRequested;
             _viewModel.RenamePlaylistRequested -= OnRenamePlaylistRequested;
             _viewModel.DeletePlaylistConfirmationRequested -= OnDeletePlaylistConfirmationRequested;
@@ -158,6 +160,7 @@ public partial class MainView : UserControl
         if (_viewModel != null)
         {
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
+            _viewModel.Queue.PropertyChanged += OnQueuePropertyChanged;
             _viewModel.SettingsRequested += OnSettingsRequested;
             _viewModel.ColumnSelectorRequested += OnColumnSelectorRequested;
             _viewModel.LogWindowRequested += OnLogWindowRequested;
@@ -253,7 +256,7 @@ public partial class MainView : UserControl
                 break;
             case nameof(MainViewModel.SortColumn):
             case nameof(MainViewModel.SortAscending):
-                MusicList.UpdateSortIndicators(_viewModel!.SortColumn, _viewModel.SortAscending);
+                ApplyReorderAndSort();
                 break;
             case nameof(MainViewModel.SelectedSubItems):
                 SyncSubListSelectionFromViewModel();
@@ -554,16 +557,46 @@ public partial class MainView : UserControl
 
     // ── Per-view scroll position + selection ────────────────────────────────────
 
+    // The queue's rows on the Queue page, the browser's everywhere else - the
+    // one list control draws either (see MainViewModel.IsShowingQueue).
+    private IReadOnlyList<TrackRowViewModel> ShownRows =>
+        _viewModel == null ? []
+        : _viewModel.IsShowingQueue ? _viewModel.Queue.Rows
+        : _viewModel.Rows;
+
+    private void OnQueuePropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (_viewModel?.IsShowingQueue != true)
+            return;
+        if (e.PropertyName is nameof(QueueViewModel.Rows))
+            ApplyRows();
+        else if (e.PropertyName is nameof(QueueViewModel.IsReorderable))
+            ApplyReorderAndSort();
+    }
+
+    // Not on a smart playlist: its order is whatever its rules produced,
+    // so a drag would be undone by the next recompute - see
+    // PlaylistManagementViewModel.ReorderTrack, which refuses it anyway.
+    // On the queue, unless shuffle makes its order mean nothing - see
+    // QueueViewModel.IsReorderable. The queue is in the order it plays in,
+    // so no column shows a sort arrow there.
+    private void ApplyReorderAndSort()
+    {
+        if (_viewModel == null)
+            return;
+        MusicList.AllowReorder = _viewModel.IsShowingQueue
+            ? _viewModel.Queue.IsReorderable
+            : _viewModel.SelectedSidebarItem is { Kind: SidebarItemKind.Playlist, Playlist: { IsSmart: false } };
+        MusicList.UpdateSortIndicators(_viewModel.IsShowingQueue ? "" : _viewModel.SortColumn, _viewModel.SortAscending);
+    }
+
     private void ApplyRows()
     {
         if (_viewModel == null)
             return;
 
-        // Not on a smart playlist: its order is whatever its rules produced,
-        // so a drag would be undone by the next recompute - see
-        // PlaylistManagementViewModel.ReorderTrack, which refuses it anyway.
-        MusicList.AllowReorder = _viewModel.SelectedSidebarItem is
-            { Kind: SidebarItemKind.Playlist, Playlist: { IsSmart: false } };
+        ApplyReorderAndSort();
+        var rows = ShownRows;
 
         var newKey = _viewModel.CurrentViewKey;
 
@@ -571,7 +604,7 @@ public partial class MainView : UserControl
         // within the same view untouched.
         if (newKey == _currentViewKey)
         {
-            MusicList.SetItems(_viewModel.Rows);
+            MusicList.SetItems(rows);
             return;
         }
 
@@ -582,7 +615,7 @@ public partial class MainView : UserControl
         if (_currentViewKey != null)
             _viewStates[_currentViewKey] = new ViewScrollState(GetScrollOffsetYForKey(_currentViewKey), MusicList.SelectedRow?.Track.Path);
 
-        MusicList.SetItems(_viewModel.Rows);
+        MusicList.SetItems(rows);
 
         if (_viewStates.TryGetValue(newKey, out var saved))
         {
@@ -591,7 +624,7 @@ public partial class MainView : UserControl
             // selected last session - it is just the one track shape whose Path
             // is null. See MusicListView's own selection keys.
             MusicList.SelectedRow = saved.SelectedTrackPath is { } savedPath
-                ? _viewModel.Rows.FirstOrDefault(r => r.Track.Path == savedPath)
+                ? rows.FirstOrDefault(r => r.Track.Path == savedPath)
                 : null;
             RestoreScrollOffsetForKey(newKey, saved.ScrollOffsetY);
         }
@@ -682,8 +715,18 @@ public partial class MainView : UserControl
 
     // The row's own position is the queue position - see MainViewModel.PlayTrack's
     // queueIndex overload for why handing it over matters with duplicate entries.
+    //
+    // Not on the queue, which is not re-anchored from its own page: that page
+    // is the queue, and playing a row on it is a jump along it.
     private void OnRowActivated(object? sender, TrackRowViewModel row)
-        => _viewModel?.PlayTrack(row.Track, _viewModel.Rows.IndexOf(row));
+    {
+        if (_viewModel is not { } vm)
+            return;
+        if (vm.IsShowingQueue)
+            vm.Queue.Play(row);
+        else
+            vm.PlayTrack(row.Track, vm.Rows.IndexOf(row));
+    }
 
     // The download icon beside a song's title (see TrackDownloadButton) -
     // acts on that one row only, whatever the current selection is, same as
@@ -701,6 +744,8 @@ public partial class MainView : UserControl
         // row (it wasn't) before this fires, so SelectedTracks is always the
         // right set to act on here.
         PopulateAddToPlaylistMenu(MusicList.SelectedTracks);
+        _removeFromQueueItem.IsVisible = _viewModel is { IsShowingQueue: true } vm
+            && MusicList.SelectedRows.Any(vm.Queue.CanRemove);
         UpdateDownloadItem(_downloadItem, MusicList.SelectedTracks);
         LocalFileDeletionDialog.UpdateMenuItem(_deleteLocalFileItem, MusicList.SelectedTracks);
         LibraryRemovalDialog.UpdateMenuItem(_removeFromLibraryItem, MusicList.SelectedTracks);
@@ -710,8 +755,13 @@ public partial class MainView : UserControl
     private void OnHeaderContextMenu(object? sender, EventArgs e)
         => _columnMenu.Open(MusicList);
 
+    // The queue is in the order it plays in, so its headers sort nothing.
     private void OnSortRequested(object? sender, string columnId)
-        => _viewModel?.SortByColumnCommand?.Execute(columnId);
+    {
+        if (_viewModel?.IsShowingQueue == true)
+            return;
+        _viewModel?.SortByColumnCommand?.Execute(columnId);
+    }
 
     // Right-click on a Playlist or Device row in the sidebar. SidebarList is a
     // stock ListBox (unlike MusicList's hand-rolled hit-testing), so the target
@@ -1122,9 +1172,15 @@ public partial class MainView : UserControl
         var addToQueueItem = new MenuItem { Header = "Add to Queue" };
         addToQueueItem.Click += (_, _) => _viewModel?.AddToQueue(SelectedTracksInListOrder());
 
+        // Only on the Queue page, and only when the selection holds something
+        // other than the song playing - see OnRowContextMenu.
+        _removeFromQueueItem = new MenuItem { Header = "Remove from Queue" };
+        _removeFromQueueItem.Click += (_, _) => _viewModel?.Queue.Remove(MusicList.SelectedRows);
+
         _trackMenu = new ContextMenu();
         _trackMenu.Items.Add(playNextItem);
         _trackMenu.Items.Add(addToQueueItem);
+        _trackMenu.Items.Add(_removeFromQueueItem);
         _trackMenu.Items.Add(new Separator());
         _trackMenu.Items.Add(getInfoItem);
         _trackMenu.Items.Add(_addToPlaylistItem);
@@ -1143,7 +1199,7 @@ public partial class MainView : UserControl
         // Rows rather than tracks, so a playlist holding one song twice
         // queues the copy that was selected and not both.
         var selected = MusicList.SelectedRows.ToHashSet();
-        return _viewModel?.Rows.Where(selected.Contains).Select(r => r.Track).ToList() ?? [];
+        return ShownRows.Where(selected.Contains).Select(r => r.Track).ToList();
     }
 
     // Shared by the track list's own _trackMenu (via the overload above) and
@@ -1718,14 +1774,19 @@ public partial class MainView : UserControl
 
     // ── Drag-to-reorder (playlist view only) ────────────────────────────────────
 
-    private async void OnRowReordered(object? sender, (Track dragged, Track? insertBefore) e)
+    private async void OnRowReordered(object? sender, (TrackRowViewModel dragged, TrackRowViewModel? insertBefore) e)
     {
         if (_viewModel is not MainViewModel vm)
             return;
+        if (vm.IsShowingQueue)
+        {
+            vm.Queue.Reorder(e.dragged, e.insertBefore);
+            return;
+        }
         if (vm.SelectedSidebarItem?.Playlist is not Playlist playlist)
             return;
 
-        await vm.ReorderPlaylistTrack(playlist, e.dragged, e.insertBefore);
+        await vm.ReorderPlaylistTrack(playlist, e.dragged.Track, e.insertBefore?.Track);
     }
 
     // ── Device detail: the selected server's own settings ──────────────────────

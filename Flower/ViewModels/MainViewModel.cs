@@ -567,6 +567,10 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // Added. Shared with the phone, whose Home tab binds the same instance.
     public HomeViewModel Home { get; } = null!;
 
+    // What is playing and what plays after it, as rows - the desktop's Queue
+    // sidebar row and the phone's Queue tab draw the same instance.
+    public QueueViewModel Queue { get; } = null!;
+
     public ObservableCollection<TrackRowViewModel> Rows => Browser.Rows;
     public IReadOnlyList<Track> DisplayedTracks         => Browser.DisplayedTracks;
     // On Artists, what the cards show - which the filter narrows further than
@@ -783,8 +787,12 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // how much is in it, and the filter box. Over every list and over Home -
     // not over a server's page, which is about the server.
     public bool ShowsPageHeader => _selectedSidebarItem?.Kind is
-        SidebarItemKind.Home or SidebarItemKind.Songs or SidebarItemKind.Albums or SidebarItemKind.Artists
-        or SidebarItemKind.History or SidebarItemKind.Playlist;
+        SidebarItemKind.Home or SidebarItemKind.Queue or SidebarItemKind.Songs or SidebarItemKind.Albums
+        or SidebarItemKind.Artists or SidebarItemKind.History or SidebarItemKind.Playlist;
+
+    // Not over the queue, as on the phone: it is in the order it plays in,
+    // and a filtered one would hide what is next.
+    public bool ShowsPageFilter => !IsShowingQueue;
 
     public string? PageTitle => _selectedSidebarItem?.Name;
 
@@ -794,6 +802,11 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     {
         SidebarItemKind.Albums => CountOf(AlbumGridTiles.Count, "album"),
         SidebarItemKind.Home => CountOf(Home.ShownCount, "album"),
+        // How long the queue is, and - when what plays next is not simply the
+        // next row down - why not.
+        SidebarItemKind.Queue => Queue.Caption is { } caption
+            ? $"{CountOf(Queue.Rows.Count, "song")} · {caption}"
+            : CountOf(Queue.Rows.Count, "song"),
         SidebarItemKind.Artists => CountOf(VisibleSubListItems.Count, "artist"),
         _ => CountOf(DisplayedTracks.Count, "song"),
     };
@@ -902,6 +915,10 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     // The Home shelves (see HomeViewModel) in place of any list.
     public bool IsShowingHome => _selectedSidebarItem?.Kind == SidebarItemKind.Home;
+
+    // The queue (see QueueViewModel) in the track list, in place of the
+    // browser's rows - MainView swaps which rows the list is handed.
+    public bool IsShowingQueue => _selectedSidebarItem?.Kind == SidebarItemKind.Queue;
 
     public bool IsShowingTrackList =>
         !IsShowingDeviceDetail && !IsShowingAlbumGrid && !IsShowingHome && !IsShowingServerSettings && !IsShowingArtistPage;
@@ -1103,6 +1120,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             OnPropertyChanged(nameof(Availability));
             Browser.ApplyTrackAvailability(StreamingServerFingerprint, IsStreamingServerReachable);
             Home.ApplyAvailability();
+            Queue.ApplyAvailability();
         }
     }
 
@@ -1915,6 +1933,15 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         },
             h => Home.PropertyChanged += h, h => Home.PropertyChanged -= h);
 
+        Queue = new QueueViewModel(playlistControlViewModel,
+            () => (StreamingServerFingerprint, IsStreamingServerReachable));
+        _subscriptions.Add<System.ComponentModel.PropertyChangedEventHandler>((_, e) =>
+        {
+            if (e.PropertyName is nameof(QueueViewModel.Rows) or nameof(QueueViewModel.Caption) && IsShowingQueue)
+                OnPropertyChanged(nameof(PageSubtitle));
+        },
+            h => Queue.PropertyChanged += h, h => Queue.PropertyChanged -= h);
+
         _subscriptions.Add<EventHandler<DeletePlaylistConfirmationEventArgs>>(
             (_, e) => DeletePlaylistConfirmationRequested?.Invoke(this, e),
             h => Playlists.DeleteConfirmationRequested += h, h => Playlists.DeleteConfirmationRequested -= h);
@@ -2034,6 +2061,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
         BuildSidebarItems();
         Home.IsActive = IsShowingHome;
+        Queue.IsActive = IsShowingQueue;
         Browser.Repopulate();
 
         // Everything here runs on the UI thread, not just the rebuilds. Both
@@ -2125,6 +2153,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             NotifyPairButtonPropertiesChanged();
             Browser.ApplyTrackAvailability(StreamingServerFingerprint, IsStreamingServerReachable);
             Home.ApplyAvailability();
+            Queue.ApplyAvailability();
             ReachabilityChanged?.Invoke(this, EventArgs.Empty);
         },
                 h => reachability.Changed += h, h => reachability.Changed -= h);
@@ -2219,6 +2248,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     {
         _subscriptions.Dispose();
         Home.Dispose();
+        Queue.Dispose();
         Sync.Dispose();
     }
 
@@ -2385,6 +2415,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         _sidebarItems.Clear();
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.Header,        "Library"));
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.Home,    "Home",    MaterialIconKind.HomeOutline));
+        _sidebarItems.Add(new SidebarItem(SidebarItemKind.Queue,   "Queue",   MaterialIconKind.PlaylistMusic));
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.History, "History", MaterialIconKind.ClockTimeEightOutline));
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.Songs,   "Songs",   MaterialIconKind.Music));
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.Albums,  "Albums",  MaterialIconKind.Album));
@@ -2464,7 +2495,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         // SaveLastView below, which only ever writes one of these four), but
         // guarded anyway since this reads straight back out of a JSON file a
         // user could hand-edit.
-        return kind is SidebarItemKind.Songs or SidebarItemKind.Albums or SidebarItemKind.Artists or SidebarItemKind.Home or SidebarItemKind.History
+        return kind is SidebarItemKind.Songs or SidebarItemKind.Albums or SidebarItemKind.Artists or SidebarItemKind.Home or SidebarItemKind.Queue or SidebarItemKind.History
             ? _sidebarItems.FirstOrDefault(i => i.Kind == kind)
             : null;
     }
@@ -2674,6 +2705,9 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         OnPropertyChanged(nameof(IsShowingHome));
         SyncHomeFilter();
         Home.IsActive = IsShowingHome;
+        OnPropertyChanged(nameof(IsShowingQueue));
+        OnPropertyChanged(nameof(ShowsPageFilter));
+        Queue.IsActive = IsShowingQueue;
         OnPropertyChanged(nameof(IsShowingTrackList));
         OnPropertyChanged(nameof(IsShowingArtistPage));
         OnPropertyChanged(nameof(IsShowingDeviceDetail));
@@ -2768,7 +2802,10 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         // PlaylistControlViewModel.ResolveForPlaybackAsync), so its Path matches
         // nothing in the library, while every *undownloaded* placeholder's null
         // Path matches every other one.
-        if (DisplayedTracks.Any(t => t.Id == track.Id))
+        // The queue starts with the song playing, so on its page it is
+        // already there - the browser's rows, which that page does not show,
+        // would send this off to Songs.
+        if (IsShowingQueue || DisplayedTracks.Any(t => t.Id == track.Id))
         {
             NavigateToTrackRequested?.Invoke(this, track);
             return;

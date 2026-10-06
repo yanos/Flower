@@ -1819,7 +1819,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             if (IsShowingSearchResults)
                 return "No Results";
             if (IsShowingQueue)
-                return "Nothing Queued";
+                return QueueViewModel.EmptyTitle;
             if (ActiveScreenFilter != null)
                 return "No Matches";
             if (Main.Library.Tracks.Count == 0)
@@ -1838,7 +1838,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             if (IsShowingSearchResults)
                 return $"No matches for \"{SearchQuery}\".";
             if (IsShowingQueue)
-                return "Play a song, and what comes after it shows here.";
+                return QueueViewModel.EmptyMessage;
             if (ActiveScreenFilter is { } filter)
                 return $"Nothing here matches \"{filter}\".";
             if (Main.Library.Tracks.Count > 0)
@@ -1898,13 +1898,10 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             if (e.PropertyName == nameof(PlaylistControlViewModel.CurrentlyPlayingTrack) &&
                 PlaylistControl.CurrentlyPlayingTrack == null)
                 ActiveSheet = MobileSheet.None;
-            if (e.PropertyName is nameof(PlaylistControlViewModel.CurrentlyPlayingTrack)
-                or nameof(PlaylistControlViewModel.CurrentPlaylist)
-                or nameof(PlaylistControlViewModel.IsShuffleEnabled)
-                or nameof(PlaylistControlViewModel.IsRepeatEnabled))
-                QueueChanged();
         },
             h => PlaylistControl.PropertyChanged += h, h => PlaylistControl.PropertyChanged -= h);
+        _subscriptions.Add<PropertyChangedEventHandler>(OnQueuePropertyChanged,
+            h => Main.Queue.PropertyChanged += h, h => Main.Queue.PropertyChanged -= h);
 
         _subscriptions.Add<NotifyCollectionChangedEventHandler>((_, _) => RebuildPlaylistPicker(),
             h => Main.SidebarItems.CollectionChanged += h, h => Main.SidebarItems.CollectionChanged -= h);
@@ -1965,7 +1962,6 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         {
             TrackAvailability.Apply(SearchSongResults, Main.PairedServerFingerprint, Main.IsPairedServerReachable);
             TrackAvailability.Apply(SmartPlaylistPreviewRows, Main.PairedServerFingerprint, Main.IsPairedServerReachable);
-            TrackAvailability.Apply(QueueRows, Main.PairedServerFingerprint, Main.IsPairedServerReachable);
             ApplyAlbumTileAvailability();
             RefreshDownloadAllIndicator();
         },
@@ -1980,6 +1976,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         RebuildTabSettingRows();
         ApplyTabSelection();
         Main.Home.IsActive = IsShowingHome;
+        Main.Queue.IsActive = IsShowingQueue;
 
         RefreshSearchSuggestions();
         ClearRecentSearchesCommand = new RelayCommand(Main.ClearRecentSearches);
@@ -2065,11 +2062,8 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
                 return;
             // The queue is not re-anchored from its own screen: that screen
             // is the queue, and a tap on it is a jump along it.
-            if (IsShowingQueue && QueueIndexOf(row!) is var slot and >= 0)
-            {
-                PlaylistControl.Play(track, slot);
+            if (IsShowingQueue && Main.Queue.Play(row!))
                 return;
-            }
             // Desktop's own row-activation path (MainViewModel.PlayTrack) always
             // re-anchors the Next/Previous queue to whatever's currently on
             // screen before playing - this was missing here entirely, so
@@ -3128,8 +3122,9 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             RefreshSearchResultsNow();
         else
             _searchResultsCts?.Cancel();
-        if (IsShowingQueue && _queueRowsStale)
-            RebuildQueueRows();
+        // The same goes for the Queue, which Main sets from its sidebar's
+        // Queue row and this from the tab.
+        Main.Queue.IsActive = IsShowingQueue;
         // After Main's own say on it, which follows the sidebar: Home maps to
         // no sidebar item here, so Main always reads it as hidden. Not
         // Main's Home row on purpose - with no sidebar item, Main.Rows holds
