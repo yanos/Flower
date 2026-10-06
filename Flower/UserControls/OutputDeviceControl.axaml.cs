@@ -1,7 +1,11 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 
+using Flower.Services;
 using Flower.ViewModels;
+
+using Material.Icons;
+using Material.Icons.Avalonia;
 
 namespace Flower.UserControls
 {
@@ -15,22 +19,32 @@ namespace Flower.UserControls
             InitializeComponent();
         }
 
-        // Devices are re-enumerated on every open rather than watched for
-        // hotplug - see OutputDeviceControlViewModel.Refresh.
-        private void FlyoutOpening(object? sender, System.EventArgs e)
+        // The device list, as a menu: one item per device, the one in use
+        // ticked - the tick is IAudioManager's own answer, not which item was
+        // last clicked. Devices are re-enumerated on every open rather than
+        // watched for hotplug - see OutputDeviceControlViewModel.Refresh.
+        private void PickerButton_Click(object? sender, RoutedEventArgs e)
         {
-            (DataContext as OutputDeviceControlViewModel)?.Refresh();
-        }
+            if (DataContext is not OutputDeviceControlViewModel viewModel)
+                return;
 
-        private void DeviceClicked(object? sender, RoutedEventArgs e)
-        {
-            if (sender is Control { DataContext: OutputDeviceItemViewModel device }
-                && DataContext is OutputDeviceControlViewModel viewModel)
+            viewModel.Refresh();
+
+            // Upward, for Avalonia's own menu: the button is in the status bar
+            // at the very bottom of the window.
+            var menu = new ContextMenu { Placement = PlacementMode.Top };
+            foreach (var device in viewModel.Devices)
             {
-                viewModel.Select(device);
+                var item = new MenuItem
+                {
+                    Header = device.Name,
+                    Icon = device.IsSelected ? new MaterialIcon { Kind = MaterialIconKind.Check, Width = 12, Height = 12 } : null,
+                };
+                item.Click += (_, _) => viewModel.Select(device);
+                menu.Items.Add(item);
             }
 
-            PickerButton.Flyout?.Hide();
+            PlatformContextMenu.Open(menu, PickerButton);
         }
     }
 }
