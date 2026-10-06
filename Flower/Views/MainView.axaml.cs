@@ -501,7 +501,7 @@ public partial class MainView : UserControl
             vm.SetSelectedSubItems(new List<string> { tile.Name });
 
         var tracks = vm.GetTracksForSubListItems(vm.SelectedSubItems).ToList();
-        BuildAlbumContextMenu(tracks, tile).Open(grid);
+        PlatformContextMenu.Open(BuildAlbumContextMenu(tracks, tile), grid);
         e.Handled = true;
     }
 
@@ -522,18 +522,20 @@ public partial class MainView : UserControl
             if (!vm.SelectedSubItems.Contains(tile.Name))
                 vm.SetSelectedSubItems(new List<string> { tile.Name });
             var selected = vm.GetTracksForSubListItems(vm.SelectedSubItems).ToList();
-            BuildAlbumContextMenu(selected, tile).Open(card);
+            PlatformContextMenu.Open(BuildAlbumContextMenu(selected, tile), card);
             return;
         }
 
-        if (card.FindAncestorOfType<Button>()?.ContextMenu is { } own)
+        // The tile's own menu, declared on its Button (Home's Continue
+        // Playing) - opened for the Button, whose data its bindings are on.
+        if (card.FindAncestorOfType<Button>() is { ContextMenu: { } own } owner)
         {
-            own.Open(card);
+            PlatformContextMenu.Open(own, owner);
             return;
         }
 
         var tracks = LibraryBrowserViewModel.ExpandedTracksFor(tile).ToList();
-        BuildAlbumContextMenu(tracks, tile, () => OpenTrackInfo(tracks)).Open(card);
+        PlatformContextMenu.Open(BuildAlbumContextMenu(tracks, tile, () => OpenTrackInfo(tracks)), card);
     }
 
     // An album card's play circle on the Artists page: the album from its
@@ -552,7 +554,7 @@ public partial class MainView : UserControl
         if (sender is not Control button || button.DataContext is not ArtistAlbumSectionViewModel album)
             return;
         var tracks = album.ExpandedTracks.ToList();
-        BuildAlbumContextMenu(tracks, album.Tile, () => OpenTrackInfo(tracks)).Open(button);
+        PlatformContextMenu.Open(BuildAlbumContextMenu(tracks, album.Tile, () => OpenTrackInfo(tracks)), button);
     }
 
     // ── Per-view scroll position + selection ────────────────────────────────────
@@ -749,11 +751,11 @@ public partial class MainView : UserControl
         UpdateDownloadItem(_downloadItem, MusicList.SelectedTracks);
         LocalFileDeletionDialog.UpdateMenuItem(_deleteLocalFileItem, MusicList.SelectedTracks);
         LibraryRemovalDialog.UpdateMenuItem(_removeFromLibraryItem, MusicList.SelectedTracks);
-        _trackMenu.Open(MusicList);
+        PlatformContextMenu.Open(_trackMenu, MusicList);
     }
 
     private void OnHeaderContextMenu(object? sender, EventArgs e)
-        => _columnMenu.Open(MusicList);
+        => PlatformContextMenu.Open(_columnMenu, MusicList);
 
     // The queue is in the order it plays in, so its headers sort nothing.
     private void OnSortRequested(object? sender, string columnId)
@@ -877,7 +879,7 @@ public partial class MainView : UserControl
             }
         }
 
-        _sidebarItemMenu.Open(SidebarList);
+        PlatformContextMenu.Open(_sidebarItemMenu, SidebarList);
         e.Handled = true;
     }
 

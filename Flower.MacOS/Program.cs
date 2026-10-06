@@ -12,8 +12,9 @@ namespace Flower.MacOS;
 
 // The macOS entry point. Flower.Desktop still builds and runs on macOS, but
 // it is plain net10.0 and so has no Apple frameworks; this head exists to get
-// at them - today AVKit, for the AirPlay/Bluetooth route picker (see
-// docs/AIRPLAY-BLUETOOTH-PLAN.md Phase 2), and it is the natural home for the
+// at them - AVKit, for the AirPlay/Bluetooth route picker (see
+// docs/AIRPLAY-BLUETOOTH-PLAN.md Phase 2), AppKit for native context menus -
+// and it is the natural home for the
 // AppKit-backed pieces that currently go through hand-rolled objc_msgSend.
 class Program
 {
@@ -36,6 +37,12 @@ class Program
         // same timing/convention as Flower.iOS's AppDelegate, since
         // RoutePickerControl reads Current once in its constructor.
         PlatformRoutePicker.Current = new AppleRoutePicker();
+
+        // Context menus as NSMenus rather than Avalonia's own - see
+        // Flower.Services.PlatformContextMenu. Before Avalonia starts too: the
+        // hook that catches XAML-declared menus has to be in place before the
+        // first window's XAML assigns one.
+        PlatformContextMenu.Current = new AppleContextMenu();
 
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }

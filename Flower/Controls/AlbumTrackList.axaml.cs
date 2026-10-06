@@ -139,7 +139,7 @@ public partial class AlbumTrackList : UserControl
         if (!row.IsSelected)
             album.SelectTrack(row, toggle: false, rangeSelect: false);
 
-        BuildTrackContextMenu(row.Track, album.SelectedTracks, vm).Open(border);
+        PlatformContextMenu.Open(BuildTrackContextMenu(row.Track, album.SelectedTracks, vm), border);
         return true;
     }
 

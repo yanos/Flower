@@ -468,6 +468,8 @@ Keyboard shortcuts (all via `PlatformShortcuts.Primary`): `Space` play/pause, `E
 
 Column visibility/width/order persist via `ColumnManager` → `config.json`.
 
+Context menus are built as Avalonia `ContextMenu`s and opened with `PlatformContextMenu.Open(menu, target)`, never `menu.Open(...)`: on macOS (`Flower.MacOS/AppleContextMenu`) they are drawn as `NSMenu`s from a platform-free description (`ContextMenuEntry`), and picking an entry raises the original `MenuItem`'s `Click`. Menus declared in XAML (`Control.ContextMenu`) are caught at their `Opening` and need nothing.
+
 ## Binding Notes
 
 - Compiled bindings are on by default; `MusicListView.axaml` opts out (code-behind assembled), `TrackRowControl.axaml` opts back in.
