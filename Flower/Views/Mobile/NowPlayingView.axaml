@@ -3,7 +3,6 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
-             xmlns:vm2="clr-namespace:Flower.ViewModels"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:conv="clr-namespace:Flower.Converters"
              xmlns:controls="clr-namespace:Flower.UserControls"
@@ -273,9 +272,7 @@
              drives, so the two never disagree - but drawn as a plain Slider
              rather than reusing desktop's VolumeControl, whose 10px thumb and
              3px rail are a mouse target, not a finger one. -->
-        <Grid Grid.Row="4" ColumnDefinitions="Auto,*,Auto" Margin="0,16,0,0"
-              DataContext="{Binding Main.Volume}"
-              x:CompileBindings="True" x:DataType="vm2:VolumeControlViewModel">
+        <Grid Grid.Row="4" ColumnDefinitions="Auto,*,Auto" Margin="0,16,0,0">
           <materialIcons:MaterialIcon Grid.Column="0"
                                       Kind="VolumeLow"
                                       Width="18" Height="18"
@@ -285,7 +282,7 @@
           <Slider Grid.Column="1"
                   Classes="tight"
                   Minimum="0" Maximum="100"
-                  Value="{Binding Volume, Mode=TwoWay}" />
+                  Value="{Binding Main.Volume.Volume, Mode=TwoWay}" />
           <materialIcons:MaterialIcon Grid.Column="2"
                                       Kind="VolumeHigh"
                                       Width="18" Height="18"

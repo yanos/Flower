@@ -109,8 +109,7 @@
           </ItemsControl.DataTemplates>
         </ItemsControl>
 
-        <StackPanel DataContext="{Binding Main.Home}" x:DataType="fvm:HomeViewModel"
-                    IsVisible="{Binding ShowsNothingYet}"
+        <StackPanel IsVisible="{Binding Main.Home.ShowsNothingYet}"
                     Margin="32,96,32,0" Spacing="8" Opacity="0.6"
                     HorizontalAlignment="Center">
           <materialIcons:MaterialIcon Kind="HomeOutline" Width="40" Height="40" />
@@ -119,8 +118,7 @@
                      FontSize="14" TextWrapping="Wrap" TextAlignment="Center" />
         </StackPanel>
 
-        <StackPanel DataContext="{Binding Main.Home}" x:DataType="fvm:HomeViewModel"
-                    IsVisible="{Binding ShowsNoMatches}"
+        <StackPanel IsVisible="{Binding Main.Home.ShowsNoMatches}"
                     Margin="32,96,32,0" Spacing="8" Opacity="0.6"
                     HorizontalAlignment="Center">
           <materialIcons:MaterialIcon Kind="Magnify" Width="40" Height="40" />

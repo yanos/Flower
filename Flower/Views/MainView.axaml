@@ -102,10 +102,8 @@
           <Border DockPanel.Dock="Bottom"
                   IsVisible="{Binding PlaybackControlsAtBottom}"
                   Margin="16,8,16,16">
-            <controls:SquareAlbumArtView DataContext="{Binding NowPlaying}"
-                                         x:DataType="vm:CurrentlyPlayingControlViewModel"
-                                         IsVisible="{Binding CurrentlyPlayingTrack, Converter={x:Static ObjectConverters.IsNotNull}}"
-                                         AlbumArt="{Binding AlbumArt}"
+            <controls:SquareAlbumArtView IsVisible="{Binding NowPlaying.CurrentlyPlayingTrack, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                         AlbumArt="{Binding NowPlaying.AlbumArt}"
                                          ArtCornerRadius="10"/>
           </Border>
 
@@ -430,18 +428,21 @@
                       IsVisible="{Binding IsShowingArtistPage}"
                       HorizontalScrollBarVisibility="Disabled">
           <StackPanel Margin="24,4,24,24" Spacing="16">
-            <Grid DataContext="{Binding ArtistHeader}"
-                  x:DataType="vm:ArtistHeaderInfo"
-                  IsVisible="{Binding $parent[UserControl].((vm:MainViewModel)DataContext).ArtistHeader, Converter={x:Static ObjectConverters.IsNotNull}}"
+            <!-- Bound through ArtistHeader rather than switching the data
+                 context to it: a DataContext binding on the element that also
+                 declares the new x:DataType is resolved by Avalonia against
+                 the parent's type, but by Rider's inspection against the new
+                 one, which then reports ArtistHeader as missing. -->
+            <Grid IsVisible="{Binding ArtistHeader, Converter={x:Static ObjectConverters.IsNotNull}}"
                   ColumnDefinitions="Auto,*,Auto">
               <controls:AlbumArtView Grid.Column="0"
-                                     Covers="{Binding Cover.CoverArt}"
+                                     Covers="{Binding ArtistHeader.Cover.CoverArt}"
                                      Width="96" Height="96"
                                      ArtCornerRadius="48"
                                      Margin="0,0,20,0"/>
               <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                <TextBlock Classes="screenTitle" Text="{Binding Name}" FontSize="40"/>
-                <TextBlock Text="{Binding Summary}"
+                <TextBlock Classes="screenTitle" Text="{Binding ArtistHeader.Name}" FontSize="40"/>
+                <TextBlock Text="{Binding ArtistHeader.Summary}"
                            FontSize="14"
                            Margin="2,2,0,0"
                            Foreground="{DynamicResource AppTextSecondaryBrush}"/>
@@ -450,14 +451,14 @@
                 <Border Classes="floating" Width="48" Height="48" CornerRadius="24">
                   <Button Classes="pill" Padding="10" HorizontalAlignment="Center" VerticalAlignment="Center"
                           ToolTip.Tip="Play all"
-                          Command="{Binding $parent[UserControl].((vm:MainViewModel)DataContext).PlayViewCommand}">
+                          Command="{Binding PlayViewCommand}">
                     <materialIcons:MaterialIcon Kind="Play" Width="24" Height="24"/>
                   </Button>
                 </Border>
                 <Border Classes="floating" Width="48" Height="48" CornerRadius="24">
                   <Button Classes="pill" Padding="10" HorizontalAlignment="Center" VerticalAlignment="Center"
                           ToolTip.Tip="Shuffle"
-                          Command="{Binding $parent[UserControl].((vm:MainViewModel)DataContext).ShuffleViewCommand}">
+                          Command="{Binding ShuffleViewCommand}">
                     <materialIcons:MaterialIcon Kind="Shuffle" Width="24" Height="24"/>
                   </Button>
                 </Border>
@@ -773,18 +774,16 @@
               <Panel IsVisible="{Binding PlaybackControlsAtBottom}"
                      MinHeight="20"
                      Margin="44,0">
-                <TextBlock DataContext="{Binding NowPlaying}"
-                           x:DataType="vm:CurrentlyPlayingControlViewModel"
-                           IsVisible="{Binding CurrentlyPlayingTrack, Converter={x:Static ObjectConverters.IsNotNull}}"
+                <TextBlock IsVisible="{Binding NowPlaying.CurrentlyPlayingTrack, Converter={x:Static ObjectConverters.IsNotNull}}"
                            FontSize="13"
                            HorizontalAlignment="Center"
                            VerticalAlignment="Center"
                            TextTrimming="CharacterEllipsis">
-                  <Run Text="{Binding CurrentlyPlayingTrack.Title}" FontWeight="SemiBold"/>
+                  <Run Text="{Binding NowPlaying.CurrentlyPlayingTrack.Title}" FontWeight="SemiBold"/>
                   <Run Text="  —  " Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                  <Run Text="{Binding CurrentlyPlayingTrack.Artists}" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                  <Run Text="{Binding NowPlaying.CurrentlyPlayingTrack.Artists}" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                   <Run Text="  —  " Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                  <Run Text="{Binding CurrentlyPlayingTrack.Album}" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                  <Run Text="{Binding NowPlaying.CurrentlyPlayingTrack.Album}" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                 </TextBlock>
               </Panel>
             </Grid>
