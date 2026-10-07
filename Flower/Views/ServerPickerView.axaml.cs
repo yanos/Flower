@@ -100,16 +100,6 @@ public sealed class ServerRow : ViewModelBase
     }
     private bool _isTrustConfirmed;
 
-    // "Sync Now" is only ever shown on the paired row, and only enabled while
-    // that server is actually currently discovered - see
-    // MainViewModel.CanForceSync/ForceSyncNow.
-    public required bool CanForceSync
-    {
-        get => _canForceSync;
-        set => SetProperty(ref _canForceSync, value);
-    }
-    private bool _canForceSync;
-
     // Set to the currently-paired server's alias only when a DIFFERENT
     // server is paired - null otherwise (nothing paired, or this row itself
     // is the paired one).
@@ -234,8 +224,6 @@ public partial class ServerPickerView : UserControl
             {
                 Dispatcher.UIThread.Post(Refresh);
             }
-            if (args.PropertyName == nameof(MainViewModel.LastForceSyncResult))
-                Dispatcher.UIThread.Post(RefreshSyncResultText);
         },
             h => _mainViewModel.PropertyChanged += h, h => _mainViewModel.PropertyChanged -= h);
 
@@ -248,12 +236,6 @@ public partial class ServerPickerView : UserControl
     {
         _subscriptions.Dispose();
         base.OnDetachedFromVisualTree(e);
-    }
-
-    private void RefreshSyncResultText()
-    {
-        SyncResultText.Text = _mainViewModel.LastForceSyncResult;
-        SyncResultText.IsVisible = !string.IsNullOrEmpty(_mainViewModel.LastForceSyncResult);
     }
 
     // The rows on screen, kept and updated rather than replaced - see
@@ -317,7 +299,6 @@ public partial class ServerPickerView : UserControl
                     IsPaired = false,
                     IsSyncing = false,
                     IsTrustConfirmed = false,
-                    CanForceSync = false,
                     BlockedByAlias = null,
                 };
                 _rows.Insert(Math.Min(i, _rows.Count), existing);
@@ -333,7 +314,6 @@ public partial class ServerPickerView : UserControl
             existing.IsPaired = isPaired;
             existing.IsSyncing = isPaired && _mainViewModel.IsSyncing;
             existing.IsTrustConfirmed = isPaired && _mainViewModel.IsPairedServerTrustConfirmed;
-            existing.CanForceSync = isPaired && _mainViewModel.CanForceSync;
             existing.BlockedByAlias = !isPaired && pairedFingerprint != null ? pairedAlias : null;
             existing.LastSyncedDisplay = isPaired ? _mainViewModel.LastSyncedDisplay : null;
         }
@@ -381,8 +361,6 @@ public partial class ServerPickerView : UserControl
 
         Refresh();
     }
-
-    private void ForceSyncButton_Click(object? sender, RoutedEventArgs e) => _mainViewModel.ForceSyncNow();
 
     // The bootstrap path: a server this device has never shared a network with
     // cannot appear in the list above, so it cannot be paired with there. This

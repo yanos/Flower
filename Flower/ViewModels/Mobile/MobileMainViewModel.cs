@@ -196,7 +196,6 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     public ICommand RemoveManualServerCommand { get; }
     public ICommand ConfirmPairServerCommand { get; }
     public ICommand CancelPairServerCommand { get; }
-    public ICommand ForceSyncCommand { get; }
 
     // Real back-history: every "navigate forward" action (a tab-bar tap, a
     // picker tile tap, a drill-in) pushes a frame here capturing exactly the
@@ -2474,7 +2473,6 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             if (address != null)
                 Main.RemoveManualServer(address);
         });
-        ForceSyncCommand = new RelayCommand(Main.ForceSyncNow);
         ConfirmPairServerCommand = new RelayCommand(() =>
         {
             if (_pendingServerToPair is not { } device)

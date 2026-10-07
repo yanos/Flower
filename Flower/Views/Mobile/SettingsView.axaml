@@ -354,16 +354,11 @@
                          Text="Can't reach server" />
             </StackPanel>
             <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-              <Button Classes="soft" Content="Sync now"
-                      Command="{Binding ForceSyncCommand}" IsEnabled="{Binding Main.CanForceSync}" />
               <Button Classes="soft danger" Content="Unpair"
                       Command="{Binding UnpairServerCommand}" />
             </StackPanel>
           </Grid>
 
-          <TextBlock IsVisible="{Binding Main.LastForceSyncResult, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
-                     Text="{Binding Main.LastForceSyncResult}"
-                     Classes="note" Margin="58,0,0,0" />
           <!-- How the server is being reached, when it is not the ordinary
                at-home case - see MainViewModel.PairedServerRouteDescription. A
                silent fallback to a relayed tailnet path is otherwise

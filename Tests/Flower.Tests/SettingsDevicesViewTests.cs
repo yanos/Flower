@@ -328,7 +328,6 @@ public class SettingsDevicesViewTests : PinnedDataDirectory
             IsPaired = true,
             IsSyncing = false,
             IsTrustConfirmed = true,
-            CanForceSync = true,
             BlockedByAlias = null,
         };
 
@@ -339,10 +338,6 @@ public class SettingsDevicesViewTests : PinnedDataDirectory
 
         Assert.True(row.IsBusy);
         Assert.Contains(nameof(ServerRow.IsBusy), changed);
-
-        row.CanForceSync = false;
-
-        Assert.Contains(nameof(ServerRow.CanForceSync), changed);
     }
 
     // And the half the row alone cannot promise: that a Refresh - which runs off
