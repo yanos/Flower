@@ -13,15 +13,16 @@
     <conv:VolumeToStarWidthConverter x:Key="VolumeToStarWidthConverter"/>
   </UserControl.Resources>
 
-  <Grid ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Center">
+  <Grid ColumnDefinitions="Auto,*" VerticalAlignment="Center">
 
-    <!-- Plain speaker (no sound waves) - quiet end of the slider -->
+    <!-- One speaker, at the quiet end, that says how loud it is - an X at
+         nothing, more waves the louder it is (VolumeControlViewModel.Icon). -->
     <materialIcons:MaterialIcon Grid.Column="0"
-                                Kind="VolumeOff"
-                                Width="10" Height="10"
-                                Opacity="0.65"
+                                Kind="{Binding Icon}"
+                                Width="22" Height="22"
+                                Opacity="0.7"
                                 VerticalAlignment="Center"
-                                Margin="0,0,4,0"/>
+                                Margin="0,0,6,0"/>
 
     <!-- The rail is drawn here directly from Volume via two star-weighted
          columns, rather than through Slider's own Track.DecreaseButton/
@@ -79,13 +80,6 @@
       </Slider>
     </Grid>
 
-    <!-- Speaker with sound waves - loud end of the slider -->
-    <materialIcons:MaterialIcon Grid.Column="2"
-                                Kind="VolumeHigh"
-                                Width="10" Height="10"
-                                Opacity="0.65"
-                                VerticalAlignment="Center"
-                                Margin="4,0,0,0"/>
   </Grid>
 
 </UserControl>

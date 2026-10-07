@@ -21,8 +21,8 @@
           ToolTip.Tip="Audio output"
           Click="PickerButton_Click">
     <materialIcons:MaterialIcon Kind="SpeakerMultiple"
-                                Width="14" Height="14"
-                                Opacity="0.65"/>
+                                Width="20" Height="20"
+                                Opacity="0.7"/>
   </Button>
 
 </UserControl>
