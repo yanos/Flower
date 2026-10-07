@@ -132,7 +132,55 @@ public partial class TrackInfoView : UserControl
         GenreMenuButton.IsVisible = editable && DataContext is MobileMainViewModel vm
             && TagSuggestionSource.DistinctGenres(vm.Main.Library.Tracks).Count > 0;
 
+        // Only where a cover can be written: a file on this phone, or - for a
+        // song of the paired server's - an admin's right to have the server
+        // write it (AlbumArtEditor.CanWrite).
+        PasteArtButton.IsVisible = ArtEditor() is { CanWrite: true };
+        PasteArtButton.IsEnabled = true;
+        ArtMessage.IsVisible = false;
+
         _ = LoadAlbumArtAsync(track);
+    }
+
+    private AlbumArtEditor? ArtEditor() =>
+        _track is { } track && DataContext is MobileMainViewModel vm
+            ? vm.Main.ArtEditorFor([track], _logger)
+            : null;
+
+    // The clipboard's image, as the song's cover - written straight into the
+    // file (or by the server, for one of its songs), and the card's cover
+    // redrawn from it.
+    private async void PasteArt_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_track is not { } track || ArtEditor() is not { CanWrite: true } editor)
+            return;
+
+        ArtMessage.IsVisible = false;
+        var png = await ClipboardArt.TryReadPngAsync(TopLevel.GetTopLevel(this)?.Clipboard);
+        if (png is null)
+        {
+            ShowArtMessage("There's no image on the clipboard. Copy one, then tap Paste again.");
+            return;
+        }
+
+        PasteArtButton.IsEnabled = false;
+        try
+        {
+            if (await editor.WriteAsync(png, ClipboardArt.MimeType) is { } message)
+                ShowArtMessage(message);
+        }
+        finally
+        {
+            PasteArtButton.IsEnabled = true;
+        }
+        if (_track == track)
+            await LoadAlbumArtAsync(track);
+    }
+
+    private void ShowArtMessage(string message)
+    {
+        ArtMessage.Text = message;
+        ArtMessage.IsVisible = true;
     }
 
     private async Task LoadAlbumArtAsync(Track track)

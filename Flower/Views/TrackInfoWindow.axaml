@@ -372,6 +372,8 @@
 
           <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" Margin="0,10,0,0" HorizontalAlignment="Center">
             <Button x:Name="ChangeArtButton"  Content="Change…"        Height="30" Padding="12,0" VerticalContentAlignment="Center" Click="ChangeArtButton_Click"/>
+            <Button x:Name="PasteArtButton"   Content="Paste"          Height="30" Padding="12,0" VerticalContentAlignment="Center" Click="PasteArtButton_Click"
+                    ToolTip.Tip="Use the image on the clipboard as the cover."/>
             <Button x:Name="RemoveArtButton"  Content="Remove"         Height="30" Padding="12,0" VerticalContentAlignment="Center" Click="RemoveArtButton_Click"/>
             <Button x:Name="OpenArtButton"    Content="Open Full Size" Height="30" Padding="12,0" VerticalContentAlignment="Center" Click="OpenArtButton_Click"/>
           </StackPanel>

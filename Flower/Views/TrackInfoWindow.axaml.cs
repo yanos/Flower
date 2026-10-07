@@ -812,6 +812,7 @@ public partial class TrackInfoWindow : Window
             return;
 
         ChangeArtButton.IsEnabled = false;
+        PasteArtButton.IsEnabled = false;
         RemoveArtButton.IsEnabled = false;
 
         var message = await change(editor);
@@ -823,6 +824,18 @@ public partial class TrackInfoWindow : Window
 
     private async void RemoveArtButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
         await RemoveArtAsync();
+
+    // The clipboard's image - a screenshot, one copied from a browser - as
+    // the cover, written at once like Change. See ClipboardArt.
+    private async void PasteArtButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (await ClipboardArt.TryReadPngAsync(Clipboard) is not { } png)
+        {
+            ArtworkInfoText.Text = "There's no image on the clipboard.";
+            return;
+        }
+        await WriteArtAsync(png, ClipboardArt.MimeType);
+    }
 
     private void OpenArtButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
         OpenArtworkFullSize();
@@ -990,6 +1003,7 @@ public partial class TrackInfoWindow : Window
 
         ArtDropHint.IsVisible = !hasArt && canWrite;
         ChangeArtButton.IsEnabled = canWrite;
+        PasteArtButton.IsEnabled = canWrite;
         RemoveArtButton.IsEnabled = canWrite && hasArt;
         OpenArtButton.IsEnabled = hasArt;
 

@@ -12,6 +12,20 @@
              Padding="{DynamicResource SheetBottomInset}">
 
   <UserControl.Styles>
+    <!-- A secondary action, as on Settings: a grey fill rather than Fluent's
+         outlined box. -->
+    <Style Selector="Button.soft">
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Padding" Value="14,9" />
+      <Setter Property="FontWeight" Value="Medium" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.soft materialIcons|MaterialIcon">
+      <Setter Property="Width" Value="18" />
+      <Setter Property="Height" Value="18" />
+    </Style>
     <!-- Cards as on Settings: lighter than the page, rounded, each headed by
          an accent glyph and a heading in small capitals. -->
     <Style Selector="Border.card">
@@ -124,28 +138,55 @@
                   controls:SoftKeyboard.AvoidOcclusion="True">
       <StackPanel Margin="0,4,0,16">
 
-        <!-- The cover beside what it is the cover of. The three lines follow
-             the boxes below as they are typed in, so the card always shows
-             what Save would write. -->
+        <!-- The cover beside what it is the cover of: the title, album,
+             artist and year at the top - following the boxes below as they are
+             typed in, so the card always shows what Save would write - and at
+             the bottom, level with the cover's foot, the way to change the
+             cover from the clipboard (ClipboardArt). That writes at once, like
+             the desktop Artwork tab's buttons, rather than waiting for Save:
+             a picture goes into the file, not into a box. -->
         <Border Classes="card">
           <Grid ColumnDefinitions="128,*" ColumnSpacing="14">
             <controls:AlbumArtView x:Name="ArtView" Grid.Column="0"
-                                   Width="128" Height="128" ArtCornerRadius="12" />
-            <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
-              <TextBlock x:Name="AlbumHeading"
-                         Text="{Binding #AlbumBox.Text}"
-                         FontSize="18" FontWeight="SemiBold"
-                         TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis" />
-              <TextBlock x:Name="ArtistHeading"
-                         Text="{Binding #ArtistBox.Text}"
-                         FontSize="15"
-                         Foreground="{DynamicResource AppTextSecondaryBrush}"
-                         TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
-              <TextBlock x:Name="YearHeading"
-                         Text="{Binding #YearBox.Text}"
-                         FontSize="14"
-                         Foreground="{DynamicResource AppTextMutedBrush}" />
-            </StackPanel>
+                                   Width="128" Height="128" ArtCornerRadius="12"
+                                   VerticalAlignment="Top" />
+            <Grid Grid.Column="1" RowDefinitions="Auto,*,Auto" MinHeight="128">
+              <StackPanel Grid.Row="0" Spacing="2">
+                <TextBlock x:Name="TitleHeading"
+                           Text="{Binding #TitleBox.Text}"
+                           FontSize="18" FontWeight="SemiBold"
+                           TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
+                <TextBlock x:Name="AlbumHeading"
+                           Text="{Binding #AlbumBox.Text}"
+                           FontSize="15"
+                           TextTrimming="CharacterEllipsis" />
+                <TextBlock x:Name="ArtistHeading"
+                           Text="{Binding #ArtistBox.Text}"
+                           FontSize="15"
+                           Foreground="{DynamicResource AppTextSecondaryBrush}"
+                           TextTrimming="CharacterEllipsis" />
+                <TextBlock x:Name="YearHeading"
+                           Text="{Binding #YearBox.Text}"
+                           FontSize="14"
+                           Foreground="{DynamicResource AppTextMutedBrush}" />
+              </StackPanel>
+              <StackPanel Grid.Row="2" Spacing="4" Margin="0,8,0,0">
+                <Button x:Name="PasteArtButton"
+                        Classes="soft"
+                        HorizontalAlignment="Left"
+                        Click="PasteArt_Click">
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <materialIcons:MaterialIcon Kind="ContentPaste" />
+                    <TextBlock Text="Paste Cover Art" VerticalAlignment="Center" />
+                  </StackPanel>
+                </Button>
+                <TextBlock x:Name="ArtMessage"
+                           FontSize="13"
+                           Foreground="{DynamicResource AppTextSecondaryBrush}"
+                           TextWrapping="Wrap"
+                           IsVisible="False" />
+              </StackPanel>
+            </Grid>
           </Grid>
         </Border>
 
