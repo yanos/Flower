@@ -386,4 +386,56 @@ public partial class MobileMainViewModel
             [new ScreenMenuEntry("Settings", MaterialIconKind.Cog, () => OpenSettingsCommand.Execute(null))]));
         return sections;
     }
+
+    /// <summary>
+    /// The Now Playing sheet's menu - the same hamburger every screen has, for
+    /// the song playing: where it is from (its album and its artist, which a
+    /// tap on either name on the sheet also goes to), what can be done with it,
+    /// and Settings last, as everywhere.
+    /// </summary>
+    public IReadOnlyList<ScreenMenuSection> BuildNowPlayingMenu()
+    {
+        var sections = new List<ScreenMenuSection>();
+        if (PlaylistControl.CurrentlyPlayingTrack is { } playing)
+        {
+            var goTo = new List<ScreenMenuEntry>();
+            if (!string.IsNullOrEmpty(playing.Album))
+                goTo.Add(new ScreenMenuEntry("Go to Album", MaterialIconKind.Album,
+                    () => GoToCurrentlyPlayingAlbumCommand.Execute(null)));
+            if (!string.IsNullOrEmpty(playing.Artists))
+                goTo.Add(new ScreenMenuEntry("Go to Artist", MaterialIconKind.AccountMusicOutline,
+                    () => GoToCurrentlyPlayingArtistCommand.Execute(null)));
+            if (goTo.Count > 0)
+                sections.Add(new ScreenMenuSection(null, goTo));
+
+            sections.Add(new ScreenMenuSection(null,
+            [
+                new ScreenMenuEntry("Add to Playlist", MaterialIconKind.PlaylistPlus,
+                    () => OpenSongSheetForPlaying(MobileSheet.AddToPlaylist)),
+                new ScreenMenuEntry("Show Queue", MaterialIconKind.PlaylistMusic,
+                    () => SelectTabCommand.Execute(nameof(MobileTab.Queue))),
+                new ScreenMenuEntry("Track Info", MaterialIconKind.InformationOutline,
+                    () => OpenSongSheetForPlaying(MobileSheet.TrackInfo)),
+            ]));
+        }
+
+        sections.Add(new ScreenMenuSection(null,
+            [new ScreenMenuEntry("Settings", MaterialIconKind.Cog, () => OpenSettingsCommand.Execute(null))]));
+        return sections;
+    }
+
+    // A song's sheet - Add to Playlist, Track Info - for the song playing,
+    // as a row's "..." menu opens it for that row's. On the library's own
+    // track rather than the one playing: a streamed song plays as a copy that
+    // carries its stream address (same Id), and an edit or a playlist entry
+    // belongs to the song in the library, not to that copy.
+    private void OpenSongSheetForPlaying(MobileSheet sheet)
+    {
+        if (PlaylistControl.CurrentlyPlayingTrack is not { } playing)
+            return;
+        _actionRow = null;
+        _playlistTargets = null;
+        ActionTarget = Main.Library.Snapshot.ById.GetValueOrDefault(playing.Id) ?? playing;
+        ActiveSheet = sheet;
+    }
 }

@@ -8,15 +8,15 @@
              xmlns:controls="clr-namespace:Flower.UserControls"
              xmlns:layout="clr-namespace:Flower.Controls"
              xmlns:services="clr-namespace:Flower.Services"
+             xmlns:mobile="clr-namespace:Flower.Views.Mobile"
              mc:Ignorable="d"
              x:Class="Flower.Views.Mobile.NowPlayingView"
              x:DataType="vm:MobileMainViewModel"
-             Background="{Binding CurrentlyPlaying.AlbumArt, Converter={x:Static services:ArtSheetBrushConverter.Instance}}"
              Padding="{DynamicResource NowPlayingBottomInset}">
 
   <!-- The sheet is washed in the cover's own colour, darkened until white
        reads on it and a little lighter at the top than the bottom
-       (ArtBackdrop.SheetBrush), in either theme - so everything on it is
+       (ArtBackdrop.SheetBrush, set in the code-behind), in either theme - so everything on it is
        white rather than the app's red and ink: the words, the transport, and
        both sliders (their brushes are overridden just below). The two round
        buttons at the top keep their own white circles. -->
@@ -85,9 +85,44 @@
       <Setter Property="CornerRadius" Value="0,3,3,0" />
     </Style>
 
+    <!-- The artist's and the album's names: words to tap, not buttons to
+         see - no fill, no padding, and dimmer while pressed, as the white
+         icons here are. -->
+    <Style Selector="Button.nowPlayingLink">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0,1" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+      <Setter Property="Foreground" Value="{DynamicResource AppOnArtBrush}" />
+    </Style>
+    <Style Selector="Button.nowPlayingLink /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.nowPlayingLink:pressed">
+      <Setter Property="Opacity" Value="0.6" />
+    </Style>
+
     <Style Selector="Slider.tight">
       <Setter Property="Margin" Value="0,-11" />
       <Setter Property="Padding" Value="0" />
+    </Style>
+
+    <!-- With no cover there is no colour to wash the sheet in, so it is the
+         page's own background (set in the code-behind, with the cover's wash
+         when there is one), and what is on it the page's own colours:
+         the words in the text colour (the AppOnArt* brushes, pointed back at
+         the page's ones in the code-behind), the icons red as everywhere
+         else, shuffle and repeat greyed off and red on. Last, so these win
+         over the white ones above. -->
+    <Style Selector="mobile|NowPlayingView.plain layout|NowPlayingBodyPanel materialIcons|MaterialIcon">
+      <Setter Property="Foreground" Value="{DynamicResource AppPrimaryBrush}" />
+    </Style>
+    <Style Selector="mobile|NowPlayingView.plain materialIcons|MaterialIcon.transportToggle">
+      <Setter Property="Foreground" Value="{DynamicResource AppTextDisabledBrush}" />
+    </Style>
+    <Style Selector="mobile|NowPlayingView.plain materialIcons|MaterialIcon.transportToggle.active">
+      <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}" />
     </Style>
   </UserControl.Styles>
 
@@ -110,9 +145,10 @@
          margin mirrors that band's
          (12 in from either side), with Height="52" starting at y=0 putting
          every circle on the same 26px centre line, so neither the back arrow
-         nor the gear jumps when the sheet opens. The gear is this sheet's own
-         copy of the screens': the sheet is drawn over them, so
-         without one here settings could not be reached while a song plays. -->
+         nor the menu jumps when the sheet opens. The menu is the one every
+         screen has, with this sheet's own entries: the sheet is drawn over the
+         screens, so without one here settings could not be reached while a
+         song plays. -->
     <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Height="52" Margin="12,0,12,0">
       <Border Grid.Column="0" Classes="floating" Width="40">
         <Button Classes="pill"
@@ -132,13 +168,10 @@
                                    HorizontalAlignment="Right"
                                    VerticalAlignment="Center" />
 
-      <Border Grid.Column="2" Classes="floating" Width="40">
-        <Button Classes="pill"
-                Command="{Binding OpenSettingsCommand}"
-                HorizontalAlignment="Center">
-          <materialIcons:MaterialIcon Kind="Cog" Width="20" Height="20" />
-        </Button>
-      </Border>
+      <!-- The hamburger every screen has (ScreenMenuButton), here with the
+           song playing's own entries - see MobileMainViewModel
+           .BuildNowPlayingMenu, handed over in the code-behind. -->
+      <layout:ScreenMenuButton x:Name="NowPlayingMenu" Grid.Column="2" />
     </Grid>
 
     <!-- Album art and the controls, laid out by NowPlayingBodyPanel: stacked
@@ -191,12 +224,24 @@
                      HorizontalAlignment="Center"
                      TextAlignment="Center"
                      TextTrimming="CharacterEllipsis" />
-          <TextBlock Text="{Binding CurrentlyPlaying.Subtitle}"
-                     FontSize="16"
-                     Opacity="0.65"
-                     HorizontalAlignment="Center"
-                     TextAlignment="Center"
-                     TextTrimming="CharacterEllipsis" />
+          <!-- The artist and the album, a line each, each a way there - the
+               cover above is the album's too. -->
+          <Button Classes="nowPlayingLink"
+                  Command="{Binding GoToCurrentlyPlayingArtistCommand}">
+            <TextBlock Text="{Binding CurrentlyPlaying.CurrentlyPlayingTrack.Artists}"
+                       FontSize="16"
+                       Opacity="0.65"
+                       TextAlignment="Center"
+                       TextTrimming="CharacterEllipsis" />
+          </Button>
+          <Button Classes="nowPlayingLink"
+                  Command="{Binding GoToCurrentlyPlayingAlbumCommand}">
+            <TextBlock Text="{Binding CurrentlyPlaying.AlbumLine}"
+                       FontSize="16"
+                       Opacity="0.65"
+                       TextAlignment="Center"
+                       TextTrimming="CharacterEllipsis" />
+          </Button>
         </StackPanel>
 
         <!-- Seek slider + times. The slider is given a height because the

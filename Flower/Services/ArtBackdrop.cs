@@ -253,15 +253,3 @@ public sealed class TopEdgeBrushConverter : IValueConverter
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
         throw new NotSupportedException();
 }
-
-// Cover -> Now Playing's tinted background.
-public sealed class ArtSheetBrushConverter : IValueConverter
-{
-    public static readonly ArtSheetBrushConverter Instance = new();
-
-    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
-        ArtBackdrop.SheetBrush(ArtBackdrop.DominantColor(value as Bitmap));
-
-    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
-        throw new NotSupportedException();
-}

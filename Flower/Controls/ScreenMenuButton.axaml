@@ -1,0 +1,52 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="Flower.Controls.ScreenMenuButton">
+
+  <!-- A phone screen's menu: the hamburger in a pill of its own with one
+       button in it - so a circle, the size of the back button facing it across
+       the band - and the card it drops. Every screen's header band has one
+       (ScreenSlot), and so does the Now Playing sheet, which is drawn over the
+       screens and would otherwise have none. What the menu holds is the host's
+       to say (Sections), asked again on every opening. -->
+  <UserControl.Styles>
+    <!-- The card: the recent-searches dropdown's look, so the two things that
+         drop down from the band are one kind of thing. -->
+    <Style Selector="FlyoutPresenter.screenMenu">
+      <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundChromeMediumBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppPrimaryBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="Padding" Value="0,4" />
+      <Setter Property="MinWidth" Value="0" />
+    </Style>
+    <Style Selector="Button.screenMenuRow">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="0" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Padding" Value="16,11" />
+    </Style>
+  </UserControl.Styles>
+
+  <!-- Named as they were when this lived in ScreenSlot: tests find the
+       band's menu by these names. -->
+  <Border x:Name="MenuPill" Classes="floating" Width="40">
+    <Button x:Name="MenuButton"
+            Classes="pill"
+            HorizontalAlignment="Center">
+      <Button.Flyout>
+        <Flyout Placement="BottomEdgeAlignedRight"
+                VerticalOffset="8"
+                FlyoutPresenterClasses="screenMenu"
+                Opening="ScreenMenu_Opening"
+                Opened="ScreenMenu_Opened"
+                Closing="ScreenMenu_Closing">
+          <StackPanel x:Name="ScreenMenuItems" MinWidth="220" />
+        </Flyout>
+      </Button.Flyout>
+      <materialIcons:MaterialIcon Kind="Menu" Width="20" Height="20" />
+    </Button>
+  </Border>
+</UserControl>

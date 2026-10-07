@@ -134,6 +134,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     public ICommand ToggleMiniPlayerCommand { get; }
     public ICommand OpenNowPlayingCommand { get; }
     public ICommand GoToCurrentlyPlayingAlbumCommand { get; }
+    public ICommand GoToCurrentlyPlayingArtistCommand { get; }
     public ICommand ToggleRepeatCommand { get; }
     public ICommand ToggleShuffleCommand { get; }
     public ICommand CloseSheetCommand { get; }
@@ -2126,6 +2127,26 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             // Only now, with the album actually built and its own entrance
             // already running: the sheet and that entrance are one push, so
             // they have to start together.
+            NowPlayingExitsForward = true;
+            ActiveSheet = MobileSheet.None;
+        });
+        // The same for its artist - a tap on the artist's name on the sheet, or
+        // Go to Artist in its menu: the Artists tab, that artist's albums, one
+        // history entry, the sheet pushed off ahead of it.
+        GoToCurrentlyPlayingArtistCommand = new RelayCommand(() =>
+        {
+            var artist = PlaylistControl.CurrentlyPlayingTrack?.Artists;
+            if (string.IsNullOrEmpty(artist))
+                return;
+            if (IsShowingArtistAlbumGrid && _selectedArtistName == artist)
+            {
+                // Already there - see the album's own case above.
+                ActiveSheet = MobileSheet.None;
+                return;
+            }
+            PushHistory();
+            SetSelectedTabCore(MobileTab.Artists, raiseNavigationChanged: false);
+            SelectArtistCore(artist);
             NowPlayingExitsForward = true;
             ActiveSheet = MobileSheet.None;
         });

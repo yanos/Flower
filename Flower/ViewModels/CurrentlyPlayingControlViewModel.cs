@@ -53,6 +53,13 @@ namespace Flower.ViewModels
         // to render a bare "()" after the album. Possible on any head, but caught
         // in the browser, where every row comes from a server whose own import
         // may not have had a year to give.
+        // The album alone, with its year when there is one - the phone's Now
+        // Playing gives the artist and the album a line each, each a way to
+        // that artist or album, where Subtitle runs them together.
+        public string AlbumLine => CurrentlyPlayingTrack is { } track
+            ? string.IsNullOrWhiteSpace(track.Year) ? track.Album ?? "" : $"{track.Album} ({track.Year})"
+            : "";
+
         public string Subtitle => CurrentlyPlayingTrack is { } track
             ? string.IsNullOrWhiteSpace(track.Year)
                 ? $"{track.Artists} — {track.Album}"
@@ -202,6 +209,7 @@ namespace Flower.ViewModels
                 {
                     OnPropertyChanged(nameof(CurrentlyPlayingTrack));
                     OnPropertyChanged(nameof(Subtitle));
+                    OnPropertyChanged(nameof(AlbumLine));
                     OnPropertyChanged(nameof(TotalTime));
                     LoadAlbumArt(_playlistControlViewModel.CurrentlyPlayingTrack);
                 }
