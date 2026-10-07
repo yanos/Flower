@@ -327,6 +327,9 @@
   <SolidColorBrush x:Key="TextControlBorderBrush" Color="{DynamicResource PaletteAccent}" Opacity="0.5" />
   <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="{DynamicResource PaletteAccentHover}" />
   <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="{DynamicResource PaletteAccent}" />
+  <!-- The line under the selected tab (Track Info's, Settings'), which
+       Fluent otherwise draws in its own blue whatever the palette says. -->
+  <SolidColorBrush x:Key="TabItemHeaderSelectedPipeFill" Color="{DynamicResource PaletteAccent}" />
 
   <!-- Fluent's Slider - the seek bars and the phone's volume: filled and
        thumbed in the accent, its hover and pressed states under the pointer

@@ -4,215 +4,232 @@
         xmlns:controls="clr-namespace:Flower.Controls"
         x:Class="Flower.Views.TrackInfoWindow"
         Title="Track Info"
-        Width="659"
-        Height="691"
+        Width="760"
+        Height="640"
         CanResize="False"
         WindowStartupLocation="CenterOwner">
 
+  <!-- Laid out from the October 2026 mockups (mockups/Image ChatGPT 6 oct.):
+       the cover beside the title, artist and album, the tabs under them
+       rather than centred across the window, a rule under the lot, and each
+       tab's fields in two columns split by rules rather than under small
+       capital headings. -->
   <Window.Styles>
+    <!-- The label beside a field or a value, in the secondary text colour. -->
     <Style Selector="TextBlock.lbl">
-      <Setter Property="FontSize" Value="12"/>
-      <Setter Property="Opacity" Value="0.45"/>
-      <Setter Property="Margin" Value="0,4,0,7"/>
-      <Setter Property="VerticalAlignment" Value="Top"/>
-    </Style>
-    <!-- The label beside a read-only value, as opposed to one beside an
-         editable box. Same as .lbl but without its 4px top margin: that margin
-         exists to push a label down past a TextBox's border and padding so the
-         two baselines line up, and against a plain TextBlock value - which has
-         neither - it pushed the label 4px *below* the text it names instead.
-         Every row in the Technical tab, and the two in Listening, is that
-         second kind. -->
-    <Style Selector="TextBlock.roLbl">
-      <Setter Property="FontSize" Value="12"/>
-      <Setter Property="Opacity" Value="0.45"/>
-      <Setter Property="Margin" Value="0,0,0,7"/>
-      <Setter Property="VerticalAlignment" Value="Top"/>
+      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
     <Style Selector="TextBlock.val">
-      <Setter Property="FontSize" Value="12"/>
-      <Setter Property="Margin" Value="0,0,0,7"/>
+      <Setter Property="FontSize" Value="13"/>
       <Setter Property="TextWrapping" Value="Wrap"/>
-      <Setter Property="VerticalAlignment" Value="Top"/>
-      <Setter Property="MinWidth" Value="120"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
-    <Style Selector="TextBlock.sectionHeader">
-      <Setter Property="FontSize" Value="10"/>
-      <Setter Property="FontWeight" Value="SemiBold"/>
-      <Setter Property="LetterSpacing" Value="0.8"/>
-      <Setter Property="Opacity" Value="0.4"/>
-      <Setter Property="Margin" Value="0,0,0,6"/>
-    </Style>
+    <!-- One line, scrolling sideways when the text is longer than the box,
+         as in every other form; Description and Comment set their own
+         wrapping. -->
     <Style Selector=":is(TextBox).val">
-      <Setter Property="FontSize" Value="12"/>
-      <Setter Property="Margin" Value="0,0,0,4"/>
-      <Setter Property="Padding" Value="4,2"/>
-      <Setter Property="MinHeight" Value="0"/>
-      <Setter Property="VerticalAlignment" Value="Top"/>
-      <Setter Property="TextWrapping" Value="Wrap"/>
-      <Setter Property="MinWidth" Value="150"/>
+      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
     <Style Selector=":is(TextBox).numVal">
-      <Setter Property="FontSize" Value="12"/>
-      <Setter Property="Padding" Value="4,2"/>
-      <Setter Property="MinHeight" Value="0"/>
-      <Setter Property="Width" Value="50"/>
+      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="Width" Value="80"/>
       <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
     <!-- Parallel to TextBox.val above - AutoCompleteBox doesn't inherit from
-         TextBox, so that selector doesn't match it, and its own template has
-         no TextWrapping to set (single-line entry is fine for the three
-         fields this backs: Artist/Album/Album Artist - see
-         TrackInfoWindow.axaml.cs's PopulateSuggestions). Padding/MinHeight
-         are set on the templated PART_TextBox inside it, not on the outer
-         AutoCompleteBox itself - the outer control has its own default
-         Padding too, so setting it there as well stacked both paddings and
-         rendered visibly taller than the plain TextBox.val fields beside it. -->
+         TextBox, so that selector doesn't match it. It backs the three fields
+         with suggestions: Artist, Album and Album Artist - see
+         TrackInfoWindow.axaml.cs's PopulateSuggestions. -->
+    <!-- Its own Background is what its inner box paints, so the app-wide
+         text-box fill (App.axaml's :is(TextBox)) has to be restated here or
+         these three fields stand out white among the rest. -->
     <Style Selector="AutoCompleteBox.val">
-      <Setter Property="FontSize" Value="12"/>
-      <Setter Property="Margin" Value="0,0,0,4"/>
-      <Setter Property="Padding" Value="0"/>
-      <Setter Property="MinHeight" Value="0"/>
-      <Setter Property="VerticalAlignment" Value="Top"/>
-      <Setter Property="MinWidth" Value="150"/>
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}"/>
+      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
       <Setter Property="FilterMode" Value="Contains"/>
       <Setter Property="MinimumPrefixLength" Value="1"/>
     </Style>
-    <Style Selector="AutoCompleteBox.val /template/ TextBox#PART_TextBox">
-      <Setter Property="Padding" Value="4,2"/>
-      <Setter Property="MinHeight" Value="0"/>
+    <Style Selector="CheckBox.option">
+      <Setter Property="FontSize" Value="13"/>
     </Style>
-    <!-- Suggestion dropdown rows - same "Fluent's default list-item chrome is
-         roomier than this compact form needs" issue as PART_TextBox above,
-         just for the popup's ListBoxItem containers instead. Avalonia resolves
-         style scope for AutoCompleteBox's popup content against its logical
-         parent, so this reaches in despite the popup rendering on a separate
-         surface. -->
-    <Style Selector="AutoCompleteBox.val ListBoxItem">
-      <Setter Property="FontSize" Value="12"/>
-      <Setter Property="Padding" Value="4,2"/>
-      <Setter Property="MinHeight" Value="0"/>
+    <!-- A rule between groups of fields, across the column it is in. -->
+    <Style Selector="Border.rule">
+      <Setter Property="Height" Value="1"/>
+      <Setter Property="Background" Value="{DynamicResource AppDividerBrush}"/>
+      <Setter Property="Margin" Value="0,4"/>
+    </Style>
+    <!-- One line of the Technical table: a rule under every row but the
+         last of its column. -->
+    <Style Selector="Border.techRow">
+      <Setter Property="BorderBrush" Value="{DynamicResource AppDividerBrush}"/>
+      <Setter Property="BorderThickness" Value="0,0,0,1"/>
+      <Setter Property="Padding" Value="8,11"/>
+    </Style>
+    <Style Selector="Border.techRow.last">
+      <Setter Property="BorderThickness" Value="0"/>
+    </Style>
+    <!-- The tabs, under the title: the page's name in the secondary colour,
+         the selected one in the primary with the accent under it. -->
+    <Style Selector="TabStrip#Tabs TabStripItem">
+      <Setter Property="FontSize" Value="14"/>
+      <Setter Property="Padding" Value="12,0"/>
+      <Setter Property="MinHeight" Value="40"/>
+      <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
+    </Style>
+    <Style Selector="TabStrip#Tabs TabStripItem:selected">
+      <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
+    </Style>
+    <Style Selector="Button.nav">
+      <Setter Property="Width" Value="40"/>
+      <Setter Property="Height" Value="34"/>
+      <Setter Property="Padding" Value="4"/>
+    </Style>
+    <Style Selector="Button.nav materialIcons|MaterialIcon">
+      <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}"/>
     </Style>
   </Window.Styles>
 
   <DockPanel>
 
     <!-- ── Button bar (always visible at bottom) ── -->
-    <Border DockPanel.Dock="Bottom" Padding="24,10,24,16">
+    <Border DockPanel.Dock="Bottom" Padding="24,10,24,18">
       <Grid ColumnDefinitions="Auto,*,Auto">
-        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4">
-          <Button x:Name="PrevButton" Width="36" Height="32" Padding="4" Click="PrevButton_Click" ToolTip.Tip="Previous track">
-            <materialIcons:MaterialIcon Kind="ChevronLeft" Width="20" Height="20"/>
+        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8">
+          <Button x:Name="PrevButton" Classes="nav" Click="PrevButton_Click" ToolTip.Tip="Previous track">
+            <materialIcons:MaterialIcon Kind="ChevronLeft" Width="22" Height="22"/>
           </Button>
-          <Button x:Name="NextButton" Width="36" Height="32" Padding="4" Click="NextButton_Click" ToolTip.Tip="Next track">
-            <materialIcons:MaterialIcon Kind="ChevronRight" Width="20" Height="20"/>
+          <Button x:Name="NextButton" Classes="nav" Click="NextButton_Click" ToolTip.Tip="Next track">
+            <materialIcons:MaterialIcon Kind="ChevronRight" Width="22" Height="22"/>
           </Button>
         </StackPanel>
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
-          <Button x:Name="CancelButton" Content="Cancel" Width="80" Height="32" IsCancel="True" Click="CancelButton_Click"/>
-          <Button x:Name="OkButton"     Content="OK"     Width="80" Height="32" IsDefault="True" Click="OkButton_Click"/>
+          <Button x:Name="CancelButton" Content="Cancel" Width="90" Height="34" FontSize="13"
+                  HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                  IsCancel="True" Click="CancelButton_Click"/>
+          <Button x:Name="OkButton" Content="OK" Width="90" Height="34" FontSize="13"
+                  HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                  IsDefault="True" Click="OkButton_Click"/>
         </StackPanel>
       </Grid>
     </Border>
 
-    <!-- ── Persistent header: art + read-only title/artist/album display,
-         shown above the tabs so it stays visible regardless of which tab is
-         selected. This is display-only - the actual editable Title/Artist/
-         Album fields live in the Info tab below, alongside everything else. ── -->
-    <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*" Margin="24,16,24,0">
+    <!-- ── Persistent header: the cover, the read-only title/artist/album,
+         and the tabs under them - shown whichever tab is selected. Display
+         only: the editable Title/Artist/Album live in the Info tab. ── -->
+    <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*" RowDefinitions="*,Auto" Margin="24,20,24,0">
       <!-- Fixed 112×112 box; Stretch="Uniform" letterboxes non-square art
            inside it rather than cropping it (AlbumArtView's default
            UniformToFill would crop). MinWidth is a floor for when there's no
            image yet (still loading, or the track has no art at all) so the
-           box doesn't collapse to zero width before art loads. Deliberately
-           smaller than the header thumbnail it started as: this is a glance-
-           level "which track am I editing" cue, and the room it was taking is
-           worth more to the field rows below it. The Artwork tab is where the
-           art is actually looked at (and replaced) at size. -->
+           box doesn't collapse to zero width before art loads. A glance-level
+           "which track am I editing" cue: the Artwork tab is where the art is
+           actually looked at (and replaced) at size. -->
       <controls:AlbumArtView x:Name="AlbumArtView"
-              Grid.Column="0"
-              Height="112" MinWidth="112" Margin="0,0,16,0"
+              Grid.Column="0" Grid.RowSpan="2"
+              Height="112" MinWidth="112" Margin="0,0,24,12"
+              ArtCornerRadius="6"
               Stretch="Uniform"
+              VerticalAlignment="Top"
               DoubleTapped="Artwork_DoubleTapped"/>
 
-      <StackPanel x:Name="TitleStack" Grid.Column="1" VerticalAlignment="Top" Spacing="4">
-        <SelectableTextBlock x:Name="TitleDisplay"  FontSize="18" TextWrapping="Wrap"/>
-        <SelectableTextBlock x:Name="ArtistDisplay" FontSize="14" Opacity="0.7" TextWrapping="Wrap"/>
-        <SelectableTextBlock x:Name="AlbumDisplay"  FontSize="14" Opacity="0.7" TextWrapping="Wrap"/>
+      <StackPanel x:Name="TitleStack" Grid.Column="1" VerticalAlignment="Top" Spacing="2">
+        <SelectableTextBlock x:Name="TitleDisplay"  FontSize="22" FontWeight="Medium" TextWrapping="Wrap"/>
+        <SelectableTextBlock x:Name="ArtistDisplay" FontSize="16" Foreground="{DynamicResource AppTextSecondaryBrush}" TextWrapping="Wrap"/>
+        <SelectableTextBlock x:Name="AlbumDisplay"  FontSize="16" Foreground="{DynamicResource AppTextSecondaryBrush}" TextWrapping="Wrap"/>
       </StackPanel>
+
+      <!-- A TabStrip over a panel of pages rather than a TabControl: a
+           TabControl draws its strip across the top of its own content, and
+           here the strip belongs in the header beside the cover. The pages
+           below swap on its selection - see Tabs_SelectionChanged. -->
+      <TabStrip x:Name="Tabs" Grid.Row="1" Grid.Column="1"
+                Margin="-12,10,0,0"
+                SelectedIndex="0"
+                SelectionChanged="Tabs_SelectionChanged">
+        <TabStripItem Content="Info"/>
+        <TabStripItem Content="Descriptions"/>
+        <TabStripItem Content="Lyrics"/>
+        <TabStripItem Content="Artwork"/>
+        <TabStripItem Content="Options"/>
+        <TabStripItem Content="Technical"/>
+      </TabStrip>
     </Grid>
 
-    <TabControl Margin="0,8,0,0">
-      <TabControl.ItemsPanel>
-        <ItemsPanelTemplate>
-          <StackPanel Orientation="Horizontal" HorizontalAlignment="Center"/>
-        </ItemsPanelTemplate>
-      </TabControl.ItemsPanel>
+    <Border DockPanel.Dock="Top" Classes="rule" Margin="24,0"/>
 
-      <!-- ── Info (default) ── -->
-      <TabItem Header="Info">
+    <Panel x:Name="TabPages">
+
+      <!-- ── Info (default) ──
+           What the song is on the left, where it sits in the album on the
+           right; who else made it under the first, how it plays under the
+           second; and below a rule, what Flower knows of it being listened to. -->
+      <Panel x:Name="InfoPage">
         <ScrollViewer>
-          <StackPanel Margin="24,16,24,8" Spacing="0">
+          <StackPanel Margin="24,18,24,8" Spacing="14">
+            <Grid ColumnDefinitions="*,32,300">
+              <Grid Grid.Column="0" ColumnDefinitions="100,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="10">
+                <TextBlock Grid.Row="0" Text="Title" Classes="lbl"/>
+                <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="TitleBox" Classes="val"/>
 
-            <TextBlock Text="GENERAL" Classes="sectionHeader"/>
-            <Grid ColumnDefinitions="90,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" Margin="0,0,0,14">
-              <TextBlock Grid.Row="0" Grid.Column="0" Text="Title"  Classes="lbl"/>
-              <controls:TextInput   Grid.Row="0" Grid.Column="1" x:Name="TitleBox"  Classes="val"/>
+                <TextBlock Grid.Row="1" Text="Artist" Classes="lbl"/>
+                <AutoCompleteBox Grid.Row="1" Grid.Column="1" x:Name="ArtistBox" Classes="val"/>
 
-              <TextBlock Grid.Row="1" Grid.Column="0" Text="Artist" Classes="lbl"/>
-              <AutoCompleteBox Grid.Row="1" Grid.Column="1" x:Name="ArtistBox" Classes="val"/>
+                <TextBlock Grid.Row="2" Text="Album Artist" Classes="lbl"/>
+                <AutoCompleteBox Grid.Row="2" Grid.Column="1" x:Name="AlbumArtistBox" Classes="val"/>
 
-              <TextBlock Grid.Row="2" Grid.Column="0" Text="Album Artist" Classes="lbl"/>
-              <AutoCompleteBox Grid.Row="2" Grid.Column="1" x:Name="AlbumArtistBox" Classes="val"/>
+                <TextBlock Grid.Row="3" Text="Album" Classes="lbl"/>
+                <AutoCompleteBox Grid.Row="3" Grid.Column="1" x:Name="AlbumBox" Classes="val"/>
 
-              <TextBlock Grid.Row="3" Grid.Column="0" Text="Album"  Classes="lbl"/>
-              <AutoCompleteBox Grid.Row="3" Grid.Column="1" x:Name="AlbumBox"  Classes="val"/>
+                <Border Grid.Row="4" Grid.ColumnSpan="2" Classes="rule"/>
 
-              <TextBlock Grid.Row="4" Grid.Column="0" Text="Composer" Classes="lbl"/>
-              <controls:TextInput   Grid.Row="4" Grid.Column="1" x:Name="ComposerBox" Classes="val"/>
+                <TextBlock Grid.Row="5" Text="Composer" Classes="lbl"/>
+                <controls:TextInput Grid.Row="5" Grid.Column="1" x:Name="ComposerBox" Classes="val"/>
 
-              <TextBlock Grid.Row="5" Grid.Column="0" Text="Conductor" Classes="lbl"/>
-              <controls:TextInput   Grid.Row="5" Grid.Column="1" x:Name="ConductorBox" Classes="val"/>
+                <TextBlock Grid.Row="6" Text="Conductor" Classes="lbl"/>
+                <controls:TextInput Grid.Row="6" Grid.Column="1" x:Name="ConductorBox" Classes="val"/>
 
-              <TextBlock Grid.Row="6" Grid.Column="0" Text="Remixed By" Classes="lbl"/>
-              <controls:TextInput   Grid.Row="6" Grid.Column="1" x:Name="RemixedByBox" Classes="val"/>
-            </Grid>
+                <TextBlock Grid.Row="7" Text="Remixed By" Classes="lbl"/>
+                <controls:TextInput Grid.Row="7" Grid.Column="1" x:Name="RemixedByBox" Classes="val"/>
+              </Grid>
 
-            <TextBlock Text="ALBUM" Classes="sectionHeader"/>
-            <Grid ColumnDefinitions="*,24,*" Margin="0,0,0,14">
-              <Grid Grid.Column="0" ColumnDefinitions="90,*" RowDefinitions="Auto,Auto,Auto,Auto">
-                <TextBlock Grid.Row="0" Grid.Column="0" Text="Track" Classes="lbl"/>
-                <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Margin="0,2,0,4">
-                  <controls:TextInput x:Name="TrackNumBox"   Classes="numVal"/>
-                  <TextBlock Text=" / " VerticalAlignment="Center" Opacity="0.45" FontSize="12" Margin="4,0"/>
+              <Grid Grid.Column="2" ColumnDefinitions="80,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="10">
+                <TextBlock Grid.Row="0" Text="Track" Classes="lbl"/>
+                <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                  <controls:TextInput x:Name="TrackNumBox" Classes="numVal"/>
+                  <TextBlock Text="/" Classes="lbl"/>
                   <controls:TextInput x:Name="TrackTotalBox" Classes="numVal"/>
                 </StackPanel>
 
-                <TextBlock Grid.Row="1" Grid.Column="0" Text="Disc" Classes="lbl"/>
-                <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Margin="0,2,0,4">
-                  <controls:TextInput x:Name="DiscNumBox"    Classes="numVal"/>
-                  <TextBlock Text=" / " VerticalAlignment="Center" Opacity="0.45" FontSize="12" Margin="4,0"/>
-                  <controls:TextInput x:Name="DiscTotalBox"  Classes="numVal"/>
+                <TextBlock Grid.Row="1" Text="Disc" Classes="lbl"/>
+                <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                  <controls:TextInput x:Name="DiscNumBox" Classes="numVal"/>
+                  <TextBlock Text="/" Classes="lbl"/>
+                  <controls:TextInput x:Name="DiscTotalBox" Classes="numVal"/>
                 </StackPanel>
 
-                <TextBlock Grid.Row="2" Grid.Column="0" Text="Year"  Classes="lbl"/>
-                <controls:TextInput   Grid.Row="2" Grid.Column="1" x:Name="YearBox"  Classes="val"/>
+                <TextBlock Grid.Row="2" Text="Year" Classes="lbl"/>
+                <controls:TextInput Grid.Row="2" Grid.Column="1" x:Name="YearBox" Classes="val"/>
 
-                <TextBlock Grid.Row="3" Grid.Column="0" Text="Genre" Classes="lbl"/>
-                <controls:TextInput   Grid.Row="3" Grid.Column="1" x:Name="GenreBox" Classes="val"/>
-              </Grid>
+                <TextBlock Grid.Row="3" Text="Genre" Classes="lbl"/>
+                <controls:TextInput Grid.Row="3" Grid.Column="1" x:Name="GenreBox" Classes="val"/>
 
-              <Grid Grid.Column="2" ColumnDefinitions="90,*" RowDefinitions="Auto,Auto,Auto">
-                <TextBlock Grid.Row="0" Grid.Column="0" Text="BPM"      Classes="lbl"/>
-                <controls:TextInput   Grid.Row="0" Grid.Column="1" x:Name="BpmBox"      Classes="val"/>
+                <Border Grid.Row="4" Grid.ColumnSpan="2" Classes="rule"/>
 
-                <TextBlock Grid.Row="1" Grid.Column="0" Text="Key"      Classes="lbl"/>
-                <controls:TextInput   Grid.Row="1" Grid.Column="1" x:Name="KeyBox"      Classes="val"/>
+                <TextBlock Grid.Row="5" Text="BPM" Classes="lbl"/>
+                <controls:TextInput Grid.Row="5" Grid.Column="1" x:Name="BpmBox" Classes="val"/>
 
-                <TextBlock Grid.Row="2" Grid.Column="0" Text="Grouping" Classes="lbl"/>
-                <controls:TextInput   Grid.Row="2" Grid.Column="1" x:Name="GroupingBox" Classes="val"/>
+                <TextBlock Grid.Row="6" Text="Key" Classes="lbl"/>
+                <controls:TextInput Grid.Row="6" Grid.Column="1" x:Name="KeyBox" Classes="val"/>
+
+                <TextBlock Grid.Row="7" Text="Grouping" Classes="lbl"/>
+                <controls:TextInput Grid.Row="7" Grid.Column="1" x:Name="GroupingBox" Classes="val"/>
               </Grid>
             </Grid>
+
+            <Border Classes="rule"/>
 
             <!-- ── Listening ──
                  The only two fields in this window that are not tags: they are
@@ -220,84 +237,88 @@
                  track in the library rather than in the file (see Track's
                  "Stats" region). Which is also why the star writes immediately
                  instead of waiting for OK, like the artwork and unlike every
-                 field above it - there is no tag write to batch it with. -->
-            <TextBlock Text="LISTENING" Classes="sectionHeader"/>
-            <Grid ColumnDefinitions="*,24,*" Margin="0,0,0,14">
-              <Grid Grid.Column="0" ColumnDefinitions="90,*" RowDefinitions="Auto,Auto">
-                <TextBlock Grid.Row="0" Grid.Column="0" Text="Play Count" Classes="roLbl"/>
+                 field above it - there is no tag write to batch it with. One
+                 star, on or off, because that is what a rating is in Flower and
+                 on the server it syncs with. -->
+            <Grid ColumnDefinitions="*,32,300">
+              <Grid Grid.Column="0" ColumnDefinitions="100,*" RowDefinitions="Auto,Auto" RowSpacing="8">
+                <TextBlock Grid.Row="0" Text="Play Count" Classes="lbl"/>
                 <TextBlock Grid.Row="0" Grid.Column="1" x:Name="PlayCountValue" Classes="val"/>
 
-                <TextBlock Grid.Row="1" Grid.Column="0" Text="Last played" Classes="roLbl"/>
+                <TextBlock Grid.Row="1" Text="Last played" Classes="lbl"/>
                 <TextBlock Grid.Row="1" Grid.Column="1" x:Name="LastPlayedValue" Classes="val"/>
               </Grid>
 
-              <Grid Grid.Column="2" ColumnDefinitions="90,*" RowDefinitions="Auto">
-                <TextBlock Grid.Row="0" Grid.Column="0" Text="Rating" Classes="lbl"/>
-                <Button Grid.Row="0" Grid.Column="1" x:Name="StarButton"
+              <Grid Grid.Column="2" ColumnDefinitions="80,*" VerticalAlignment="Top">
+                <TextBlock Text="Rating" Classes="lbl"/>
+                <Button Grid.Column="1" x:Name="StarButton"
                         Background="Transparent" BorderThickness="0"
-                        Padding="0,0,6,0" Margin="0,-2,0,4"
+                        Padding="0,0,6,0"
                         HorizontalAlignment="Left" Click="StarButton_Click">
-                  <StackPanel Orientation="Horizontal" Spacing="6">
+                  <StackPanel Orientation="Horizontal" Spacing="8">
                     <materialIcons:MaterialIcon x:Name="StarIcon" Kind="StarOutline"
-                                                Width="16" Height="16" VerticalAlignment="Center"/>
-                    <TextBlock x:Name="StarText" FontSize="12" VerticalAlignment="Center"/>
+                                                Width="20" Height="20" VerticalAlignment="Center"
+                                                Foreground="{DynamicResource AppAccentBrush}"/>
+                    <TextBlock x:Name="StarText" FontSize="13" VerticalAlignment="Center"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                   </StackPanel>
                 </Button>
               </Grid>
             </Grid>
-
           </StackPanel>
         </ScrollViewer>
-      </TabItem>
+      </Panel>
 
       <!-- ── Descriptions ── -->
-      <TabItem Header="Descriptions">
+      <Panel x:Name="DescriptionsPage" IsVisible="False">
         <ScrollViewer>
-          <StackPanel Margin="24,16,24,8" Spacing="0">
-            <Grid ColumnDefinitions="*,24,*" Margin="0,0,0,10">
-              <Grid Grid.Column="0" ColumnDefinitions="90,*" RowDefinitions="Auto,Auto">
-                <TextBlock Grid.Row="0" Grid.Column="0" Text="Subtitle"  Classes="lbl"/>
-                <controls:TextInput   Grid.Row="0" Grid.Column="1" x:Name="SubtitleBox"  Classes="val"/>
+          <StackPanel Margin="24,18,24,8" Spacing="14">
+            <Grid ColumnDefinitions="*,32,*">
+              <Grid Grid.Column="0" ColumnDefinitions="100,*" RowDefinitions="Auto,Auto" RowSpacing="10">
+                <TextBlock Grid.Row="0" Text="Subtitle" Classes="lbl"/>
+                <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="SubtitleBox" Classes="val"/>
 
-                <TextBlock Grid.Row="1" Grid.Column="0" Text="Publisher" Classes="lbl"/>
-                <controls:TextInput   Grid.Row="1" Grid.Column="1" x:Name="PublisherBox" Classes="val"/>
+                <TextBlock Grid.Row="1" Text="Publisher" Classes="lbl"/>
+                <controls:TextInput Grid.Row="1" Grid.Column="1" x:Name="PublisherBox" Classes="val"/>
               </Grid>
 
-              <Grid Grid.Column="2" ColumnDefinitions="90,*" RowDefinitions="Auto,Auto">
-                <TextBlock Grid.Row="0" Grid.Column="0" Text="Copyright" Classes="lbl"/>
-                <controls:TextInput   Grid.Row="0" Grid.Column="1" x:Name="CopyrightBox" Classes="val"/>
+              <Grid Grid.Column="2" ColumnDefinitions="80,*" RowDefinitions="Auto,Auto" RowSpacing="10">
+                <TextBlock Grid.Row="0" Text="Copyright" Classes="lbl"/>
+                <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="CopyrightBox" Classes="val"/>
 
-                <TextBlock Grid.Row="1" Grid.Column="0" Text="ISRC"      Classes="lbl"/>
-                <controls:TextInput   Grid.Row="1" Grid.Column="1" x:Name="ISRCBox"      Classes="val"/>
+                <TextBlock Grid.Row="1" Text="ISRC" Classes="lbl"/>
+                <controls:TextInput Grid.Row="1" Grid.Column="1" x:Name="ISRCBox" Classes="val"/>
               </Grid>
             </Grid>
 
-            <Grid ColumnDefinitions="90,*" RowDefinitions="Auto,Auto" Margin="0,0,0,10">
-              <TextBlock Grid.Row="0" Grid.Column="0" Text="Description" Classes="lbl"/>
-              <controls:TextInput   Grid.Row="0" Grid.Column="1" x:Name="DescriptionBox" Classes="val" AcceptsReturn="True" MinHeight="48"/>
+            <Border Classes="rule"/>
 
-              <TextBlock Grid.Row="1" Grid.Column="0" Text="Comment"     Classes="lbl"/>
-              <controls:TextInput   Grid.Row="1" Grid.Column="1" x:Name="CommentBox"     Classes="val" AcceptsReturn="True" MinHeight="48"/>
+            <Grid ColumnDefinitions="100,*" RowDefinitions="Auto,Auto" RowSpacing="10">
+              <TextBlock Grid.Row="0" Text="Description" Classes="lbl" VerticalAlignment="Top" Margin="0,8,0,0"/>
+              <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="DescriptionBox" Classes="val" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="80"/>
+
+              <TextBlock Grid.Row="1" Text="Comment" Classes="lbl" VerticalAlignment="Top" Margin="0,8,0,0"/>
+              <controls:TextInput Grid.Row="1" Grid.Column="1" x:Name="CommentBox" Classes="val" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="80"/>
             </Grid>
           </StackPanel>
         </ScrollViewer>
-      </TabItem>
+      </Panel>
 
       <!-- ── Lyrics ──
            Its own tab rather than a section at the bottom of Descriptions: it
            is the one field with no natural height, and sharing a scroller with
            six single-line boxes meant it got whatever was left over. Here it
            fills the tab and grows with the window instead. -->
-      <TabItem Header="Lyrics">
+      <Panel x:Name="LyricsPage" IsVisible="False">
         <TextBox x:Name="LyricsBox"
-                 Margin="24,16,24,8"
-                 FontSize="12"
+                 Margin="24,18,24,8"
+                 FontSize="13"
                  TextWrapping="Wrap"
                  AcceptsReturn="True"
                  VerticalAlignment="Stretch"
                  VerticalContentAlignment="Top"
                  ScrollViewer.VerticalScrollBarVisibility="Auto"/>
-      </TabItem>
+      </Panel>
 
       <!-- ── Artwork ──
            The art at a size worth looking at, plus the ways to move a picture
@@ -308,7 +329,7 @@
            there is no pending state here and OK/Cancel do not apply to it,
            which is why the buttons say what they do rather than staging an edit
            like every other field in this window. -->
-      <TabItem Header="Artwork">
+      <Panel x:Name="ArtworkPage" IsVisible="False">
         <!-- The art takes nine tenths of the free height rather than all of it;
              the last tenth is the empty row below the buttons, which is what
              keeps this tab's button row from sitting flush against the window's
@@ -355,75 +376,72 @@
             <Button x:Name="OpenArtButton"    Content="Open Full Size" Height="30" Padding="12,0" VerticalContentAlignment="Center" Click="OpenArtButton_Click"/>
           </StackPanel>
         </Grid>
-      </TabItem>
+      </Panel>
 
       <!-- ── Options ──
            Everything about a track that is not a description of it: how it
            should be filed, and how it should behave when it plays.
 
-           Split down the middle by who owns the value, which is also why the
-           tab is not uniformly staged-until-OK like Info and Descriptions are.
+           Split by who owns the value, which is also why the tab is not
+           uniformly staged-until-OK like Info and Descriptions are.
            Compilation and the four "sort as" fields are tags, written into the
-           file when OK is pressed, alongside every other tag edit. Playback
-           below them is Flower's own state, kept in the library and not in the
-           file - so, exactly like the star on the Info tab, it is written the
-           moment it is changed and Cancel does not undo it. -->
-      <TabItem Header="Options">
+           file when OK is pressed, alongside every other tag edit. The three
+           below the first rule are Flower's own state, kept in the library and
+           not in the file - so, exactly like the star on the Info tab, they
+           are written the moment they are changed and Cancel does not undo
+           them. -->
+      <Panel x:Name="OptionsPage" IsVisible="False">
         <ScrollViewer>
-          <StackPanel Margin="24,16,24,8" Spacing="0">
-
-            <TextBlock Text="FILING" Classes="sectionHeader"/>
+          <StackPanel Margin="24,18,24,8" Spacing="14">
 
             <!-- The sort tags. Each box overrides what the field beside it in
                  the Info tab sorts under, and nothing else - the track lists
                  still display the real value. Watermarked with that real value
                  so an empty box reads as "sorts as itself" rather than as an
                  empty field. -->
-            <Grid ColumnDefinitions="90,*" RowDefinitions="Auto,Auto,Auto,Auto" Margin="0,0,0,14">
-              <TextBlock Grid.Row="0" Grid.Column="0" Text="Sort title"    Classes="lbl"/>
-              <controls:TextInput   Grid.Row="0" Grid.Column="1" x:Name="TitleSortBox"     Classes="val"/>
+            <Grid ColumnDefinitions="140,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="10">
+              <TextBlock Grid.Row="0" Text="Sort title" Classes="lbl"/>
+              <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="TitleSortBox" Classes="val"/>
 
-              <TextBlock Grid.Row="1" Grid.Column="0" Text="Sort artist"   Classes="lbl"/>
-              <controls:TextInput   Grid.Row="1" Grid.Column="1" x:Name="ArtistSortBox"    Classes="val"/>
+              <TextBlock Grid.Row="1" Text="Sort artist" Classes="lbl"/>
+              <controls:TextInput Grid.Row="1" Grid.Column="1" x:Name="ArtistSortBox" Classes="val"/>
 
-              <TextBlock Grid.Row="2" Grid.Column="0" Text="Sort album"    Classes="lbl"/>
-              <controls:TextInput   Grid.Row="2" Grid.Column="1" x:Name="AlbumSortBox"     Classes="val"/>
+              <TextBlock Grid.Row="2" Text="Sort album" Classes="lbl"/>
+              <controls:TextInput Grid.Row="2" Grid.Column="1" x:Name="AlbumSortBox" Classes="val"/>
 
-              <TextBlock Grid.Row="3" Grid.Column="0" Text="Sort composer" Classes="lbl"/>
-              <controls:TextInput   Grid.Row="3" Grid.Column="1" x:Name="ComposerSortBox"  Classes="val"/>
+              <TextBlock Grid.Row="3" Text="Sort composer" Classes="lbl"/>
+              <controls:TextInput Grid.Row="3" Grid.Column="1" x:Name="ComposerSortBox" Classes="val"/>
             </Grid>
 
-            <CheckBox x:Name="CompilationBox"
-                      Content="Part of a compilation"
-                      FontSize="12"
-                      MinHeight="0"
-                      Margin="0,0,0,10"
-                      ToolTip.Tip="Groups this album as one, under Various Artists, even when every track has a different artist."/>
+            <Border Classes="rule"/>
 
-            <TextBlock Text="PLAYBACK" Classes="sectionHeader"/>
+            <StackPanel Spacing="8">
+              <CheckBox x:Name="CompilationBox"
+                        Classes="option"
+                        Content="Part of a compilation"
+                        ToolTip.Tip="Groups this album as one, under Various Artists, even when every track has a different artist."/>
 
-            <CheckBox x:Name="RememberPositionBox"
-                      FontSize="12"
-                      MinHeight="0"
-                      Margin="0,0,0,2"
-                      IsCheckedChanged="RememberPositionBox_Changed"
-                      ToolTip.Tip="Start this track where it was last left off instead of at the beginning - for podcasts, audiobooks and long mixes.">
-              <StackPanel Orientation="Horizontal" Spacing="8">
-                <TextBlock Text="Remember playback position" VerticalAlignment="Center"/>
-                <TextBlock x:Name="ResumePositionText" Opacity="0.45" VerticalAlignment="Center"/>
-              </StackPanel>
-            </CheckBox>
+              <CheckBox x:Name="RememberPositionBox"
+                        Classes="option"
+                        IsCheckedChanged="RememberPositionBox_Changed"
+                        ToolTip.Tip="Start this track where it was last left off instead of at the beginning - for podcasts, audiobooks and long mixes.">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <TextBlock Text="Remember playback position" VerticalAlignment="Center"/>
+                  <TextBlock x:Name="ResumePositionText" Foreground="{DynamicResource AppTextSecondaryBrush}" VerticalAlignment="Center"/>
+                </StackPanel>
+              </CheckBox>
 
-            <CheckBox x:Name="IgnoreInShuffleBox"
-                      Content="Skip when shuffling"
-                      FontSize="12"
-                      MinHeight="0"
-                      Margin="0,0,0,10"
-                      IsCheckedChanged="IgnoreInShuffleBox_Changed"
-                      ToolTip.Tip="Shuffle never picks this track. It still plays when the queue reaches it in order."/>
+              <CheckBox x:Name="IgnoreInShuffleBox"
+                        Classes="option"
+                        Content="Skip when shuffling"
+                        IsCheckedChanged="IgnoreInShuffleBox_Changed"
+                        ToolTip.Tip="Shuffle never picks this track. It still plays when the queue reaches it in order."/>
+            </StackPanel>
 
-            <Grid ColumnDefinitions="90,*,56" RowDefinitions="Auto">
-              <TextBlock Grid.Column="0" Text="Volume" Classes="lbl" Margin="0,6,0,0"/>
+            <Border Classes="rule"/>
+
+            <Grid ColumnDefinitions="140,*,90">
+              <TextBlock Grid.Column="0" Text="Volume" Classes="lbl"/>
               <Slider Grid.Column="1" x:Name="VolumeAdjustmentSlider"
                       Minimum="-100" Maximum="100"
                       TickFrequency="25" IsSnapToTickEnabled="False"
@@ -431,82 +449,107 @@
                       ValueChanged="VolumeAdjustmentSlider_Changed"
                       ToolTip.Tip="Shifts the volume while this track plays, and puts it back afterwards - for the one track mastered far quieter or louder than the rest."/>
               <TextBlock Grid.Column="2" x:Name="VolumeAdjustmentText"
-                         FontSize="12" Margin="8,0,0,0"
-                         VerticalAlignment="Center" HorizontalAlignment="Right"/>
+                         Classes="lbl" Margin="16,0,0,0"
+                         HorizontalAlignment="Left"/>
             </Grid>
 
             <!-- Says why the controls above are greyed out, when they are:
                  a server-only track has no local file to write a tag into. -->
             <TextBlock x:Name="OptionsUnavailableText"
-                       FontSize="11" Opacity="0.55" TextWrapping="Wrap"
-                       Margin="0,12,0,0" IsVisible="False"/>
+                       FontSize="12" Foreground="{DynamicResource AppTextSecondaryBrush}" TextWrapping="Wrap"
+                       IsVisible="False"/>
 
           </StackPanel>
         </ScrollViewer>
-      </TabItem>
+      </Panel>
 
-      <!-- ── Technical ── -->
-      <TabItem Header="Technical">
-        <StackPanel Margin="24,16,24,4" Spacing="0">
-          <Grid ColumnDefinitions="*,24,*" Margin="0,0,0,10">
-            <Grid Grid.Column="0" ColumnDefinitions="90,*" RowDefinitions="Auto,Auto,Auto,Auto">
-              <TextBlock Grid.Row="0" Grid.Column="0" Text="Duration"    Classes="roLbl"/>
-              <TextBlock Grid.Row="0" Grid.Column="1" x:Name="DurationValue"   Classes="val"/>
+      <!-- ── Technical ──
+           A table, two columns of it: what the audio is on the left, where it
+           came from and when on the right, a rule under every row but the
+           last of each column. -->
+      <Panel x:Name="TechnicalPage" IsVisible="False">
+        <Grid Margin="24,14,24,4" ColumnDefinitions="*,32,*" VerticalAlignment="Top">
+          <StackPanel Grid.Column="0">
+            <Border Classes="techRow">
+              <Grid ColumnDefinitions="110,*">
+                <TextBlock Text="Duration" Classes="lbl"/>
+                <TextBlock Grid.Column="1" x:Name="DurationValue" Classes="val"/>
+              </Grid>
+            </Border>
+            <Border Classes="techRow">
+              <Grid ColumnDefinitions="110,*">
+                <TextBlock Text="Codec" Classes="lbl"/>
+                <TextBlock Grid.Column="1" x:Name="CodecValue" Classes="val"/>
+              </Grid>
+            </Border>
+            <Border Classes="techRow">
+              <Grid ColumnDefinitions="110,*">
+                <TextBlock Text="Bit Rate" Classes="lbl"/>
+                <TextBlock Grid.Column="1" x:Name="BitrateValue" Classes="val"/>
+              </Grid>
+            </Border>
+            <Border Classes="techRow last">
+              <Grid ColumnDefinitions="110,*">
+                <TextBlock Text="Sample Rate" Classes="lbl"/>
+                <TextBlock Grid.Column="1" x:Name="SampleRateValue" Classes="val"/>
+              </Grid>
+            </Border>
+          </StackPanel>
 
-              <TextBlock Grid.Row="1" Grid.Column="0" Text="Codec"       Classes="roLbl"/>
-              <TextBlock Grid.Row="1" Grid.Column="1" x:Name="CodecValue"      Classes="val"/>
+          <StackPanel Grid.Column="2">
+            <Border Classes="techRow">
+              <Grid ColumnDefinitions="110,*">
+                <TextBlock Text="Channels" Classes="lbl"/>
+                <TextBlock Grid.Column="1" x:Name="ChannelsValue" Classes="val"/>
+              </Grid>
+            </Border>
+            <!-- "—" for a lossy stream (mp3/aac - most of a typical
+                 library), which has no bit depth to report; lossless files
+                 (FLAC/WAV/ALAC) fill it in - see
+                 AudioTechnicalProperties.BitsPerSampleOf. The row stays put
+                 either way: a field that disappears when it has nothing to
+                 say cannot be told apart from one that does not exist. -->
+            <Border Classes="techRow">
+              <Grid ColumnDefinitions="110,*">
+                <TextBlock x:Name="BitDepthLabel" Text="Bit Depth" Classes="lbl"/>
+                <TextBlock Grid.Column="1" x:Name="BitDepthValue" Classes="val"/>
+              </Grid>
+            </Border>
+            <!-- The encoder's own record of how it was told to encode -
+                 "LAME 3.100, VBR (V0)". Only an MP3 carries this, so
+                 everything else reads "—", same as Bit Depth above. See
+                 EncodingProfile. -->
+            <Border Classes="techRow">
+              <Grid ColumnDefinitions="110,*">
+                <TextBlock Text="Encoding" Classes="lbl"/>
+                <TextBlock Grid.Column="1" x:Name="EncodingValue" Classes="val"/>
+              </Grid>
+            </Border>
+            <!-- "File" and its path for a song on this device; "Source" and the
+                 paired server's name - the same Server glyph and alias the
+                 sidebar row uses - for one that only exists there. -->
+            <Border Classes="techRow">
+              <Grid ColumnDefinitions="110,*">
+                <TextBlock x:Name="FileLabel" Text="File" Classes="lbl" VerticalAlignment="Top"/>
+                <SelectableTextBlock Grid.Column="1" x:Name="PathValue" FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}" TextWrapping="Wrap"/>
+                <StackPanel Grid.Column="1" x:Name="ServerSourcePanel"
+                            Orientation="Horizontal" Spacing="6" IsVisible="False">
+                  <materialIcons:MaterialIcon Kind="Server" Width="14" Height="14" Opacity="0.6" VerticalAlignment="Center"/>
+                  <TextBlock x:Name="ServerSourceName" FontSize="13" VerticalAlignment="Center"/>
+                </StackPanel>
+              </Grid>
+            </Border>
+            <Border Classes="techRow last">
+              <Grid ColumnDefinitions="110,*">
+                <TextBlock Text="Date Added" Classes="lbl"/>
+                <TextBlock Grid.Column="1" x:Name="DateAddedValue" Classes="val"/>
+              </Grid>
+            </Border>
+          </StackPanel>
+        </Grid>
+      </Panel>
 
-              <TextBlock Grid.Row="2" Grid.Column="0" Text="Bit Rate"    Classes="roLbl"/>
-              <TextBlock Grid.Row="2" Grid.Column="1" x:Name="BitrateValue"    Classes="val"/>
-
-              <TextBlock Grid.Row="3" Grid.Column="0" Text="Sample Rate" Classes="roLbl"/>
-              <TextBlock Grid.Row="3" Grid.Column="1" x:Name="SampleRateValue" Classes="val"/>
-            </Grid>
-
-            <Grid Grid.Column="2" ColumnDefinitions="90,*" RowDefinitions="Auto,Auto,Auto">
-              <TextBlock Grid.Row="0" Grid.Column="0" Text="Channels"  Classes="roLbl"/>
-              <TextBlock Grid.Row="0" Grid.Column="1" x:Name="ChannelsValue" Classes="val"/>
-
-              <!-- "—" for a lossy stream (mp3/aac - most of a typical
-                   library), which has no bit depth to report; lossless files
-                   (FLAC/WAV/ALAC) fill it in - see
-                   AudioTechnicalProperties.BitsPerSampleOf. The row stays put
-                   either way: a field that disappears when it has nothing to
-                   say cannot be told apart from one that does not exist. -->
-              <TextBlock Grid.Row="1" Grid.Column="0" x:Name="BitDepthLabel" Text="Bit Depth" Classes="roLbl"/>
-              <TextBlock Grid.Row="1" Grid.Column="1" x:Name="BitDepthValue" Classes="val"/>
-
-              <!-- The encoder's own record of how it was told to encode -
-                   "LAME 3.100, VBR (V0)". Only an MP3 carries this, so
-                   everything else reads "—", same as Bit Depth above. See
-                   EncodingProfile. -->
-              <TextBlock Grid.Row="2" Grid.Column="0" Text="Encoding" Classes="roLbl"/>
-              <TextBlock Grid.Row="2" Grid.Column="1" x:Name="EncodingValue" Classes="val"/>
-            </Grid>
-          </Grid>
-
-          <Grid ColumnDefinitions="90,*" RowDefinitions="Auto,Auto" Margin="0,0,0,10">
-            <TextBlock Grid.Row="0" Grid.Column="0" x:Name="FileLabel" Text="File" Classes="roLbl"/>
-            <SelectableTextBlock Grid.Row="0" Grid.Column="1" x:Name="PathValue" Classes="val" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
-            <!-- Shown in PathValue's place for a track that only exists on the
-                 paired server (Path == null): there is no local file to name,
-                 and the honest answer to "where is this" is the server's own
-                 sidebar identity - same Server glyph and alias the sidebar row
-                 uses - rather than the "—" that stood here. -->
-            <StackPanel Grid.Row="0" Grid.Column="1" x:Name="ServerSourcePanel"
-                        Orientation="Horizontal" Spacing="6" IsVisible="False"
-                        VerticalAlignment="Top" Margin="0,0,0,7">
-              <materialIcons:MaterialIcon Kind="Server" Width="14" Height="14" Opacity="0.6" VerticalAlignment="Center"/>
-              <TextBlock x:Name="ServerSourceName" FontSize="12" VerticalAlignment="Center"/>
-            </StackPanel>
-
-            <TextBlock Grid.Row="1" Grid.Column="0" Text="Date Added" Classes="roLbl"/>
-            <TextBlock Grid.Row="1" Grid.Column="1" x:Name="DateAddedValue" Classes="val"/>
-          </Grid>
-        </StackPanel>
-      </TabItem>
-
-    </TabControl>
+    </Panel>
 
   </DockPanel>
 </Window>

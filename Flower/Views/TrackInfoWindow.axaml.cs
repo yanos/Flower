@@ -118,6 +118,19 @@ public partial class TrackInfoWindow : Window
         AlbumBox.ItemsSource       = TagSuggestionSource.DistinctAlbums(_library.Tracks);
     }
 
+    // The pages under the header's tabs - one showing at a time, in the
+    // TabStrip's order.
+    private void Tabs_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        // Raised once while the XAML is still loading (SelectedIndex="0"),
+        // before the pages are there - Info is the one showing by default.
+        if (InfoPage is null)
+            return;
+        Control[] pages = [InfoPage, DescriptionsPage, LyricsPage, ArtworkPage, OptionsPage, TechnicalPage];
+        for (var i = 0; i < pages.Length; i++)
+            pages[i].IsVisible = i == Tabs.SelectedIndex;
+    }
+
     private async void PrevButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => await Navigate(-1);
     private async void NextButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => await Navigate(+1);
 
