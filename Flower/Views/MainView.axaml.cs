@@ -126,12 +126,34 @@ public partial class MainView : UserControl
         // The "..." on every album tile - the grid's and Home's (AlbumCard).
         AddHandler(AlbumCard.MenuRequestedEvent, AlbumCard_MenuRequested);
 
-        // Cmd/Ctrl+, (Settings) must work regardless of which control currently
-        // has focus, so it's handled at the MainView root rather than scoped to MusicList.
-        AddHandler(KeyDownEvent, MainView_PreviewKeyDown, RoutingStrategies.Tunnel);
+        // The window-wide shortcuts (Space, Cmd/Ctrl+, L, J, I) are handled on
+        // the window itself rather than here - see OnAttachedToVisualTree.
 
         // See MainView_PreviewPointerPressed for why this can't just rely on LostFocus.
         AddHandler(PointerPressedEvent, MainView_PreviewPointerPressed, RoutingStrategies.Tunnel);
+    }
+
+    // Cmd/Ctrl+, (Settings), Space and the rest must work whichever control
+    // has focus - and when none does. They used to be handled at this view's
+    // root, which is not enough: with nothing focused (a click on empty
+    // space, a native menu just closed) Avalonia routes a key to the window
+    // itself, the route never reaches this view, and Space did nothing while
+    // the app was plainly in front. Tunnelling on the window catches every
+    // key it is sent, before any control under it.
+    private TopLevel? _shortcutHost;
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        _shortcutHost = TopLevel.GetTopLevel(this);
+        _shortcutHost?.AddHandler(KeyDownEvent, MainView_PreviewKeyDown, RoutingStrategies.Tunnel);
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        _shortcutHost?.RemoveHandler(KeyDownEvent, MainView_PreviewKeyDown);
+        _shortcutHost = null;
+        base.OnDetachedFromVisualTree(e);
     }
 
     private void OnDataContextChanged(object? sender, EventArgs e)
