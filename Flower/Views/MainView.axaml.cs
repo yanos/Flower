@@ -916,8 +916,10 @@ public partial class MainView : UserControl
     // A hit on a specific playlist row (PlaylistItem set) adds to that playlist;
     // a hit anywhere else in the Playlists section (CreateNew) - including its
     // empty tail, or the whole section when there are no playlists yet -
-    // creates a new one instead. See HitTestSidebarDrop.
-    private readonly record struct SidebarDropTarget(SidebarItem? PlaylistItem, bool CreateNew);
+    // creates a new one instead. A hit on the Queue row (PlaylistItem is that
+    // row, IsQueue set) adds to the end of the queue, as Add to Queue does.
+    // See HitTestSidebarDrop.
+    private readonly record struct SidebarDropTarget(SidebarItem? PlaylistItem, bool CreateNew, bool IsQueue = false);
 
     private void OnTrackDragMoved(object? sender, (IReadOnlyList<Track> tracks, Point position) e)
     {
@@ -930,7 +932,11 @@ public partial class MainView : UserControl
         var target = HitTestSidebarDrop(MusicList, e.position);
         ResetDragVisuals();
 
-        if (target?.PlaylistItem?.Playlist is { } playlist)
+        // In the order the list shows them, as the menu's Add to Queue takes
+        // them - the drag carries them in the order they were clicked.
+        if (target?.IsQueue == true)
+            _viewModel?.AddToQueue(SelectedTracksInListOrder());
+        else if (target?.PlaylistItem?.Playlist is { } playlist)
             _ = _viewModel?.AddTracksToPlaylist(e.tracks, playlist);
         else if (target?.CreateNew == true)
             _ = _viewModel?.CreatePlaylistWithTracks(e.tracks);
@@ -1015,7 +1021,9 @@ public partial class MainView : UserControl
         var target = HitTestSidebarDrop(source, position);
         var tracks = _viewModel?.GetTracksForSubListItems(items) ?? Enumerable.Empty<Track>();
 
-        if (target?.PlaylistItem?.Playlist is { } playlist)
+        if (target?.IsQueue == true)
+            _viewModel?.AddToQueue(tracks.ToList());
+        else if (target?.PlaylistItem?.Playlist is { } playlist)
             _ = _viewModel?.AddTracksToPlaylist(tracks, playlist);
         else if (target?.CreateNew == true)
             _ = _viewModel?.CreatePlaylistWithTracks(tracks);
@@ -1044,9 +1052,20 @@ public partial class MainView : UserControl
         if (!new Rect(SidebarList.Bounds.Size).Contains(sidebarPos))
             return null;
 
-        if ((SidebarList.InputHitTest(sidebarPos) as Visual)
-            ?.FindAncestorOfType<ListBoxItem>(includeSelf: true)?.DataContext is
-            SidebarItem { Kind: SidebarItemKind.Playlist } item)
+        var hit = (SidebarList.InputHitTest(sidebarPos) as Visual)
+            ?.FindAncestorOfType<ListBoxItem>(includeSelf: true)?.DataContext as SidebarItem;
+
+        // The queue takes songs and albums the way Add to Queue does - except
+        // its own rows, dragged from its own page: dropped back on it they
+        // would only be queued a second time.
+        if (hit is { Kind: SidebarItemKind.Queue })
+        {
+            return source == MusicList && _viewModel?.IsShowingQueue == true
+                ? new SidebarDropTarget(null, false)
+                : new SidebarDropTarget(hit, false, IsQueue: true);
+        }
+
+        if (hit is { Kind: SidebarItemKind.Playlist } item)
         {
             // A smart playlist holds what its rules say and nothing else, so
             // this is a refusal, not a miss: neither the row's highlight nor

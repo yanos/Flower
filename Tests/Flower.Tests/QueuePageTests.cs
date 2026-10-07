@@ -1,7 +1,11 @@
 using System.Collections.Generic;
 using System.Linq;
 
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Headless;
+using Avalonia.Input;
+using Avalonia.VisualTree;
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
 
@@ -163,5 +167,80 @@ public class QueuePageTests : PinnedDataDirectory
         Assert.False(list.AllowReorder);
         Assert.Same(parts.Main.Queue.Rows, list.Items);
         window.Close();
+    }
+
+    // Songs dragged from a list onto the sidebar's Queue row go on the end of
+    // the queue, as the menu's Add to Queue puts them.
+    [AvaloniaFact]
+    public void A_song_dragged_onto_the_queue_row_is_queued()
+    {
+        using var parts = Playing("A", "B", "C");
+        var main = parts.Main;
+        var view = new MainView { DataContext = main };
+        // Theme first: content added before it never gets its templates.
+        var window = new Window { Width = 1100, Height = 700 };
+        window.Styles.Add(new Avalonia.Themes.Fluent.FluentTheme());
+        window.Content = view;
+        window.Show();
+        main.SelectedSidebarItem = main.SidebarItems.First(i => i.Kind == SidebarItemKind.Songs);
+        Dispatcher.UIThread.RunJobs();
+
+        Drag(window, view, RowCentre(window, view, "C"), QueueRowCentre(window, view));
+
+        ShowQueue(main);
+        Assert.Equal(new[] { "A", "B", "C", "C" }, Titles(main.Queue));
+        window.Close();
+    }
+
+    // Under shuffle the Queue page's rows drag like any list's - but dropped
+    // back on the Queue row they would only be queued again, so they are not.
+    [AvaloniaFact]
+    public void The_queue_s_own_rows_are_not_queued_again()
+    {
+        using var parts = Playing("A", "B", "C");
+        var main = parts.Main;
+        parts.PlaylistControl.ToggleShuffle();
+        var view = new MainView { DataContext = main };
+        // Theme first: content added before it never gets its templates.
+        var window = new Window { Width = 1100, Height = 700 };
+        window.Styles.Add(new Avalonia.Themes.Fluent.FluentTheme());
+        window.Content = view;
+        window.Show();
+        ShowQueue(main);
+        Dispatcher.UIThread.RunJobs();
+        var before = parts.PlaylistControl.CurrentPlaylist.Tracks.Count;
+
+        Drag(window, view, RowCentre(window, view, "B"), QueueRowCentre(window, view));
+
+        Assert.Equal(before, parts.PlaylistControl.CurrentPlaylist.Tracks.Count);
+        window.Close();
+    }
+
+    private static Point RowCentre(Window window, MainView view, string title)
+    {
+        window.UpdateLayout();
+        var row = view.FindControl<MusicListView>("MusicList")!.GetVisualDescendants()
+            .OfType<TrackRowControl>()
+            .First(r => r.IsVisible && (r.DataContext as TrackRowViewModel)?.Track.Title == title);
+        return row.TranslatePoint(new Point(200, row.Bounds.Height / 2), window)!.Value;
+    }
+
+    private static Point QueueRowCentre(Window window, MainView view)
+    {
+        var sidebar = view.FindControl<ListBox>("SidebarList")!;
+        var index = ((MainViewModel)view.DataContext!).SidebarItems.ToList().FindIndex(i => i.Kind == SidebarItemKind.Queue);
+        var row = (Control)sidebar.ContainerFromIndex(index)!;
+        return row.TranslatePoint(new Point(row.Bounds.Width / 2, row.Bounds.Height / 2), window)!.Value;
+    }
+
+    private static void Drag(Window window, MainView view, Point from, Point to)
+    {
+        // One press selects the row and arms the drag; a click first would
+        // make it a double-click, which plays the song.
+        window.MouseDown(from, MouseButton.Left);
+        window.MouseMove(new Point(from.X + 20, from.Y), RawInputModifiers.LeftMouseButton);
+        window.MouseMove(to, RawInputModifiers.LeftMouseButton);
+        window.MouseUp(to, MouseButton.Left);
+        Dispatcher.UIThread.RunJobs();
     }
 }
