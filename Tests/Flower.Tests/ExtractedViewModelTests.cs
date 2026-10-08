@@ -115,6 +115,39 @@ public class PlaylistManagementViewModelTests
         Assert.Equal(1, host.ScheduledSyncs);
     }
 
+    // A song dropped on the sidebar's Playlists space with a server paired:
+    // the new row went to the very end of the sidebar, under the server.
+    [Fact]
+    public async Task A_new_playlist_goes_in_the_playlists_section_not_under_the_server()
+    {
+        var (vm, _, items, _) = Make();
+        items.Add(new SidebarItem(SidebarItemKind.Header, "Servers"));
+        items.Add(new SidebarItem(SidebarItemKind.Device, "lambda"));
+
+        await vm.CreateWithTracks(new[] { Song("a") });
+        await vm.CreateWithTracks(new[] { Song("b") });
+
+        Assert.Equal(
+            new[] { "Library", "Songs", "Playlists", "New Playlist", "New Playlist", "Servers", "lambda" },
+            items.Select(i => i.Name));
+    }
+
+    // The first playlist arriving by sync rather than by hand.
+    [Fact]
+    public void A_synced_first_playlist_goes_in_the_playlists_section_not_under_the_server()
+    {
+        var (vm, library, items, _) = Make();
+        items.Add(new SidebarItem(SidebarItemKind.Header, "Servers"));
+        items.Add(new SidebarItem(SidebarItemKind.Device, "lambda"));
+        library.AddPlaylist(new Playlist("Road Trip", new List<Track>()));
+
+        vm.RefreshSidebarItems();
+
+        Assert.Equal(
+            new[] { "Library", "Songs", "Playlists", "Road Trip", "Servers", "lambda" },
+            items.Select(i => i.Name));
+    }
+
     [Fact]
     public async Task Deleting_the_selected_playlist_falls_back_to_the_default_selection()
     {

@@ -99,7 +99,7 @@ public sealed class PlaylistManagementViewModel
             return;
         }
 
-        var insertAt = header != null ? _items.IndexOf(header) + 1 : _items.Count;
+        var insertAt = header != null ? _items.IndexOf(header) + 1 : SectionAfterLibrary();
         if (header == null)
             _items.Insert(insertAt++, new SidebarItem(SidebarItemKind.Header, "Playlists"));
 
@@ -117,6 +117,37 @@ public sealed class PlaylistManagementViewModel
         }
     }
 
+    // Where a new playlist's row goes: under the last playlist, or under a
+    // Playlists header made for it where there was none. Never the end of the
+    // list, which is under the Servers section when a server is paired.
+    private int EndOfPlaylists()
+    {
+        var header = _items.FirstOrDefault(i => i.Kind == SidebarItemKind.Header && i.Name == "Playlists");
+        if (header == null)
+        {
+            var at = SectionAfterLibrary();
+            _items.Insert(at, new SidebarItem(SidebarItemKind.Header, "Playlists"));
+            return at + 1;
+        }
+
+        var end = _items.IndexOf(header) + 1;
+        while (end < _items.Count && _items[end].Kind == SidebarItemKind.Playlist)
+            end++;
+        return end;
+    }
+
+    // The Playlists section's place when it has none yet: straight after the
+    // Library section, before whatever heading follows it (Servers, Server).
+    private int SectionAfterLibrary()
+    {
+        for (var i = 1; i < _items.Count; i++)
+        {
+            if (_items[i].Kind == SidebarItemKind.Header)
+                return i;
+        }
+        return _items.Count;
+    }
+
     public Task CreateWithTrack(Track? track)
         => CreateWithTracks(track != null ? new List<Track> { track } : new List<Track>());
 
@@ -125,14 +156,11 @@ public sealed class PlaylistManagementViewModel
         var playlist = new Playlist("New Playlist", tracks.ToList());
         _library.AddPlaylist(playlist);
 
-        if (_items.All(i => i.Kind != SidebarItemKind.Playlist))
-            _items.Add(new SidebarItem(SidebarItemKind.Header, "Playlists"));
-
         var sidebarItem = new SidebarItem(SidebarItemKind.Playlist, playlist.Name, SidebarItem.IconFor(playlist), playlist)
         {
             IsEditing = true
         };
-        _items.Add(sidebarItem);
+        _items.Insert(EndOfPlaylists(), sidebarItem);
 
         _host.SelectedSidebarItem = sidebarItem;
 
