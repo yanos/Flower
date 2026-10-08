@@ -3,6 +3,7 @@
              xmlns:controls="clr-namespace:Flower.Controls"
              xmlns:vm="using:Flower.ViewModels"
              xmlns:ae="using:AvaloniaEdit"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="Flower.Views.LogViewer"
              x:DataType="vm:LogViewerViewModel">
   <Grid RowDefinitions="Auto,*">
@@ -57,7 +58,9 @@
                    FontSize="{Binding FontSize}">
       <ae:TextEditor.ContextMenu>
         <ContextMenu>
-          <MenuItem Header="Copy" Click="CopyMenuItem_Click"/>
+          <MenuItem Header="Copy" Click="CopyMenuItem_Click">
+            <MenuItem.Icon><materialIcons:MaterialIcon Kind="ContentCopy" Width="16" Height="16"/></MenuItem.Icon>
+          </MenuItem>
         </ContextMenu>
       </ae:TextEditor.ContextMenu>
     </ae:TextEditor>

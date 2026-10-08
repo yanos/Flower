@@ -812,7 +812,7 @@ public partial class MainView : UserControl
         {
             // Rename and Edit Rules are about one playlist, so they are not
             // offered here.
-            var deleteAllItem = new MenuItem { Header = $"Delete {selectedPlaylists.Count} Playlists" };
+            var deleteAllItem = new MenuItem { Header = $"Delete {selectedPlaylists.Count} Playlists" }.WithIcon(MaterialIconKind.TrashCanOutline);
             deleteAllItem.Click += async (_, _) => await vm.DeletePlaylistsAsync(selectedPlaylists);
             _sidebarItemMenu.Items.Add(deleteAllItem);
 
@@ -826,7 +826,7 @@ public partial class MainView : UserControl
                     Header = smart.Count == 1
                         ? "Convert Smart Playlist to Ordinary"
                         : $"Convert {smart.Count} Smart Playlists to Ordinary",
-                };
+                }.WithIcon(MaterialIconKind.PlaylistEdit);
                 convertAllItem.Click += async (_, _) =>
                 {
                     foreach (var playlist in smart)
@@ -840,20 +840,20 @@ public partial class MainView : UserControl
             // Reuses the same IsEditing/RenameBox flow CreatePlaylistWithTrack
             // already drops a freshly-created playlist into - see
             // RenameBox_Loaded/KeyDown/LostFocus and CommitRename below.
-            var playNextItem = new MenuItem { Header = "Play Next" };
+            var playNextItem = new MenuItem { Header = "Play Next" }.WithIcon(MaterialIconKind.PlaylistPlay);
             playNextItem.Click += (_, _) => vm.PlayNext(playlist.Tracks.ToList());
             _sidebarItemMenu.Items.Add(playNextItem);
 
-            var addToQueueItem = new MenuItem { Header = "Add to Queue" };
+            var addToQueueItem = new MenuItem { Header = "Add to Queue" }.WithIcon(MaterialIconKind.PlaylistMusic);
             addToQueueItem.Click += (_, _) => vm.AddToQueue(playlist.Tracks.ToList());
             _sidebarItemMenu.Items.Add(addToQueueItem);
             _sidebarItemMenu.Items.Add(new Separator());
 
-            var renameItem = new MenuItem { Header = "Rename Playlist" };
+            var renameItem = new MenuItem { Header = "Rename Playlist" }.WithIcon(MaterialIconKind.Pencil);
             renameItem.Click += (_, _) => BeginRename(item);
             _sidebarItemMenu.Items.Add(renameItem);
 
-            var deleteItem = new MenuItem { Header = "Delete Playlist" };
+            var deleteItem = new MenuItem { Header = "Delete Playlist" }.WithIcon(MaterialIconKind.TrashCanOutline);
             deleteItem.Click += async (_, _) => await vm.DeletePlaylistAsync(playlist);
             _sidebarItemMenu.Items.Add(deleteItem);
 
@@ -863,11 +863,11 @@ public partial class MainView : UserControl
             {
                 _sidebarItemMenu.Items.Add(new Separator());
 
-                var editRulesItem = new MenuItem { Header = "Edit Rules…" };
+                var editRulesItem = new MenuItem { Header = "Edit Rules…" }.WithIcon(MaterialIconKind.Tune);
                 editRulesItem.Click += (_, _) => vm.EditSmartPlaylist(playlist);
                 _sidebarItemMenu.Items.Add(editRulesItem);
 
-                var convertItem = new MenuItem { Header = "Convert to Ordinary Playlist" };
+                var convertItem = new MenuItem { Header = "Convert to Ordinary Playlist" }.WithIcon(MaterialIconKind.PlaylistEdit);
                 convertItem.Click += async (_, _) => await vm.ConvertPlaylistToOrdinary(playlist);
                 _sidebarItemMenu.Items.Add(convertItem);
             }
@@ -878,7 +878,7 @@ public partial class MainView : UserControl
         // freshly-discovered device's /info handshake resolves it.
         else if (item is { Kind: SidebarItemKind.Device, Device.Fingerprint.Length: > 0 })
         {
-            var renameItem = new MenuItem { Header = "Rename Device" };
+            var renameItem = new MenuItem { Header = "Rename Device" }.WithIcon(MaterialIconKind.Pencil);
             renameItem.Click += (_, _) => BeginRename(item);
             _sidebarItemMenu.Items.Add(renameItem);
         }
@@ -889,13 +889,13 @@ public partial class MainView : UserControl
         // Linux this is the only way to reach it.
         else
         {
-            var newPlaylistItem = new MenuItem { Header = "New Playlist" };
+            var newPlaylistItem = new MenuItem { Header = "New Playlist" }.WithIcon(MaterialIconKind.PlaylistPlus);
             newPlaylistItem.Click += async (_, _) => await vm.CreatePlaylistWithTrack(null);
             _sidebarItemMenu.Items.Add(newPlaylistItem);
 
             if (vm.SmartPlaylists != null)
             {
-                var newSmartItem = new MenuItem { Header = "New Smart Playlist…" };
+                var newSmartItem = new MenuItem { Header = "New Smart Playlist…" }.WithIcon(MaterialIconKind.PlaylistStar);
                 newSmartItem.Click += (_, _) => vm.NewSmartPlaylist();
                 _sidebarItemMenu.Items.Add(newSmartItem);
             }
@@ -1186,47 +1186,49 @@ public partial class MainView : UserControl
         {
             Header       = "Get Info",
             InputGesture = new KeyGesture(Key.I, PlatformShortcuts.Primary),
-        };
+        }.WithIcon(MaterialIconKind.InformationOutline);
         getInfoItem.Click += (_, _) => OpenTrackInfo();
 
-        var locateFileItem = new MenuItem { Header = "Locate File" };
+        var locateFileItem = new MenuItem { Header = "Locate File" }.WithIcon(MaterialIconKind.FolderOpenOutline);
         locateFileItem.Click += (_, _) => LocateFile();
 
-        _addToPlaylistItem = new MenuItem { Header = "Add To Playlist" };
+        _addToPlaylistItem = new MenuItem { Header = "Add to Playlist" }.WithIcon(MaterialIconKind.PlaylistPlus);
 
-        _downloadItem = new MenuItem { Header = "Download" };
+        _downloadItem = new MenuItem { Header = "Download" }.WithIcon(MaterialIconKind.CloudDownloadOutline);
         _downloadItem.Click += (_, _) => StartDownload(MusicList.SelectedTracks);
 
-        _deleteLocalFileItem = new MenuItem { Header = "Delete Local File" };
+        _deleteLocalFileItem = new MenuItem { Header = "Delete Local File" }.WithIcon(MaterialIconKind.TrashCanOutline);
         _deleteLocalFileItem.Click += async (_, _) =>
         {
             if (_viewModel is { } vm)
                 await LocalFileDeletionDialog.DeleteAsync(TopLevel.GetTopLevel(this), vm, MusicList.SelectedTracks);
         };
 
-        _removeFromLibraryItem = new MenuItem { Header = "Remove from Library" };
+        _removeFromLibraryItem = new MenuItem { Header = "Remove from Library" }.WithIcon(MaterialIconKind.MusicNoteOff);
         _removeFromLibraryItem.Click += async (_, _) =>
             await LibraryRemovalDialog.RemoveAsync(TopLevel.GetTopLevel(this), MusicList.SelectedTracks);
 
         // The selection in the order the list shows it, not the order it was
         // clicked in.
-        var playNextItem = new MenuItem { Header = "Play Next" };
+        var playNextItem = new MenuItem { Header = "Play Next" }.WithIcon(MaterialIconKind.PlaylistPlay);
         playNextItem.Click += (_, _) => _viewModel?.PlayNext(SelectedTracksInListOrder());
-        var addToQueueItem = new MenuItem { Header = "Add to Queue" };
+        var addToQueueItem = new MenuItem { Header = "Add to Queue" }.WithIcon(MaterialIconKind.PlaylistMusic);
         addToQueueItem.Click += (_, _) => _viewModel?.AddToQueue(SelectedTracksInListOrder());
 
         // Only on the Queue page, and only when the selection holds something
         // other than the song playing - see OnRowContextMenu.
-        _removeFromQueueItem = new MenuItem { Header = "Remove from Queue" };
+        _removeFromQueueItem = new MenuItem { Header = "Remove from Queue" }.WithIcon(MaterialIconKind.PlaylistRemove);
         _removeFromQueueItem.Click += (_, _) => _viewModel?.Queue.Remove(MusicList.SelectedRows);
 
+        // Where the songs go first - the queue, a playlist - then what they
+        // are, then taking them away.
         _trackMenu = new ContextMenu();
         _trackMenu.Items.Add(playNextItem);
         _trackMenu.Items.Add(addToQueueItem);
+        _trackMenu.Items.Add(_addToPlaylistItem);
         _trackMenu.Items.Add(_removeFromQueueItem);
         _trackMenu.Items.Add(new Separator());
         _trackMenu.Items.Add(getInfoItem);
-        _trackMenu.Items.Add(_addToPlaylistItem);
         _trackMenu.Items.Add(locateFileItem);
         _trackMenu.Items.Add(_downloadItem);
         _trackMenu.Items.Add(new Separator());
@@ -1255,7 +1257,7 @@ public partial class MainView : UserControl
 
         addToPlaylistItem.Items.Clear();
 
-        var newPlaylistItem = new MenuItem { Header = "New Playlist" };
+        var newPlaylistItem = new MenuItem { Header = "New Playlist" }.WithIcon(MaterialIconKind.Plus);
         newPlaylistItem.Click += async (_, _) => await vm.CreatePlaylistWithTracks(tracks);
         addToPlaylistItem.Items.Add(newPlaylistItem);
 
@@ -1277,7 +1279,7 @@ public partial class MainView : UserControl
         }
     }
 
-    // Play Album / Get Info / Add To Playlist for a right-clicked album tile -
+    // Play Album / Get Info / Add to Playlist for a right-clicked album tile -
     // see AlbumGrid_ContextRequested. Built fresh per-request rather than a
     // shared field, same as AlbumGridRowControl.BuildTrackContextMenu (its
     // song-level equivalent) does for its own right-click menu. Play always
@@ -1289,42 +1291,42 @@ public partial class MainView : UserControl
     // caller says otherwise (a Home tile, which has none).
     private ContextMenu BuildAlbumContextMenu(IReadOnlyList<Track> tracks, AlbumTileViewModel clickedTile, Action? getInfo = null)
     {
-        var playItem = new MenuItem { Header = "Play Album" };
+        var playItem = new MenuItem { Header = "Play Album" }.WithIcon(MaterialIconKind.Play);
         playItem.Click += (_, _) => _viewModel?.PlayAlbum(clickedTile);
 
-        var getInfoItem = new MenuItem { Header = "Get Info" };
+        var getInfoItem = new MenuItem { Header = "Get Info" }.WithIcon(MaterialIconKind.InformationOutline);
         getInfoItem.Click += (_, _) => (getInfo ?? OpenTrackInfoForSelectedAlbums)();
 
-        var addToPlaylistItem = new MenuItem { Header = "Add To Playlist" };
+        var addToPlaylistItem = new MenuItem { Header = "Add to Playlist" }.WithIcon(MaterialIconKind.PlaylistPlus);
         PopulateAddToPlaylistMenu(addToPlaylistItem, tracks);
 
-        // Acts on the whole album selection, same as Get Info/Add To Playlist
+        // Acts on the whole album selection, same as Get Info/Add to Playlist
         // above - "Download Album" when that is one album's worth of songs.
-        var downloadItem = new MenuItem();
+        var downloadItem = new MenuItem().WithIcon(MaterialIconKind.CloudDownloadOutline);
         UpdateDownloadItem(downloadItem, tracks, "Download Album");
         downloadItem.Click += (_, _) => StartDownload(tracks);
 
-        var playNextItem = new MenuItem { Header = "Play Next" };
+        var playNextItem = new MenuItem { Header = "Play Next" }.WithIcon(MaterialIconKind.PlaylistPlay);
         playNextItem.Click += (_, _) => _viewModel?.PlayNext(tracks);
-        var addToQueueItem = new MenuItem { Header = "Add to Queue" };
+        var addToQueueItem = new MenuItem { Header = "Add to Queue" }.WithIcon(MaterialIconKind.PlaylistMusic);
         addToQueueItem.Click += (_, _) => _viewModel?.AddToQueue(tracks);
 
         var menu = new ContextMenu();
         menu.Items.Add(playItem);
         menu.Items.Add(playNextItem);
         menu.Items.Add(addToQueueItem);
+        menu.Items.Add(addToPlaylistItem);
         menu.Items.Add(new Separator());
         menu.Items.Add(getInfoItem);
-        menu.Items.Add(addToPlaylistItem);
         menu.Items.Add(downloadItem);
-        var deleteLocalFileItem = new MenuItem { Header = "Delete Local File" };
+        var deleteLocalFileItem = new MenuItem { Header = "Delete Local File" }.WithIcon(MaterialIconKind.TrashCanOutline);
         LocalFileDeletionDialog.UpdateMenuItem(deleteLocalFileItem, tracks);
         deleteLocalFileItem.Click += async (_, _) =>
         {
             if (_viewModel is { } vm)
                 await LocalFileDeletionDialog.DeleteAsync(TopLevel.GetTopLevel(this), vm, tracks);
         };
-        var removeFromLibraryItem = new MenuItem();
+        var removeFromLibraryItem = new MenuItem().WithIcon(MaterialIconKind.MusicNoteOff);
         LibraryRemovalDialog.UpdateMenuItem(removeFromLibraryItem, tracks);
         removeFromLibraryItem.Click += async (_, _) =>
             await LibraryRemovalDialog.RemoveAsync(TopLevel.GetTopLevel(this), tracks);

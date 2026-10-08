@@ -7,7 +7,13 @@ using Avalonia.Controls;
 using Avalonia.Styling;
 using Avalonia.Threading;
 
+using CoreGraphics;
+
 using Flower.Services;
+
+using Foundation;
+
+using Material.Icons;
 
 namespace Flower.MacOS;
 
@@ -51,6 +57,8 @@ public sealed class AppleContextMenu : IPlatformContextMenu
             var item = new NSMenuItem(entry.Title) { Enabled = entry.IsEnabled };
             if (entry.IsChecked)
                 item.State = NSCellStateValue.On;
+            if (entry.Icon is { } icon)
+                item.Image = ImageFor(icon);
 
             if (entry.Children.Count > 0)
                 item.Submenu = Build(entry.Children);
@@ -62,5 +70,27 @@ public sealed class AppleContextMenu : IPlatformContextMenu
             menu.AddItem(item);
         }
         return menu;
+    }
+
+    // The icon a menu entry has on every other platform - the same Material
+    // glyph, not an SF Symbol standing in for it - drawn once per kind. A
+    // template image, so AppKit colours it as it does its own: the menu's
+    // text colour, white under the highlight, grey when disabled.
+    private const double IconPoints = 16;
+    private static readonly Dictionary<MaterialIconKind, NSImage> Icons = new();
+
+    private static NSImage ImageFor(MaterialIconKind kind)
+    {
+        if (Icons.TryGetValue(kind, out var cached))
+            return cached;
+
+        // At twice the size it is shown, for a Retina screen.
+        var image = new NSImage(NSData.FromArray(MenuItemIcons.RenderPng(kind, (int)IconPoints * 2)))
+        {
+            Size = new CGSize(IconPoints, IconPoints),
+            Template = true,
+        };
+        Icons[kind] = image;
+        return image;
     }
 }

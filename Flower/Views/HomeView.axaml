@@ -80,14 +80,20 @@
                       <ContextMenu>
                         <MenuItem Header="Continue Playing"
                                   Command="{Binding Home.ResumeCommand}"
-                                  CommandParameter="{Binding}" />
+                                  CommandParameter="{Binding}">
+                          <MenuItem.Icon><materialIcons:MaterialIcon Kind="Play" Width="16" Height="16" /></MenuItem.Icon>
+                        </MenuItem>
                         <MenuItem Header="Show Album"
                                   Command="{Binding Home.OpenAlbumCommand}"
-                                  CommandParameter="{Binding Tile}" />
+                                  CommandParameter="{Binding Tile}">
+                          <MenuItem.Icon><materialIcons:MaterialIcon Kind="Album" Width="16" Height="16" /></MenuItem.Icon>
+                        </MenuItem>
                         <Separator />
                         <MenuItem Header="Remove from Continue Playing"
                                   Command="{Binding Home.ForgetCommand}"
-                                  CommandParameter="{Binding}" />
+                                  CommandParameter="{Binding}">
+                          <MenuItem.Icon><materialIcons:MaterialIcon Kind="Close" Width="16" Height="16" /></MenuItem.Icon>
+                        </MenuItem>
                       </ContextMenu>
                     </Button.ContextMenu>
                     <controls:AlbumCard Tile="{Binding Tile}"

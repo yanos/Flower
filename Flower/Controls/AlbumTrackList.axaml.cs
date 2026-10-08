@@ -12,6 +12,8 @@ using Flower.Services;
 using Flower.ViewModels;
 using Flower.Views;
 
+using Material.Icons;
+
 namespace Flower.Controls;
 
 // One album's songs as a short list of their own - see the markup. Moved out of
@@ -148,13 +150,13 @@ public partial class AlbumTrackList : UserControl
     // list's selection), which is unrelated to a selection made here.
     private ContextMenu BuildTrackContextMenu(Track clickedTrack, IReadOnlyList<Track> selectedTracks, MainViewModel vm)
     {
-        var getInfoItem = new MenuItem { Header = "Get Info" };
+        var getInfoItem = new MenuItem { Header = "Get Info" }.WithIcon(MaterialIconKind.InformationOutline);
         getInfoItem.Click += (_, _) => OpenTrackInfo(selectedTracks, vm);
 
-        var addToPlaylistItem = new MenuItem { Header = "Add To Playlist" };
+        var addToPlaylistItem = new MenuItem { Header = "Add to Playlist" }.WithIcon(MaterialIconKind.PlaylistPlus);
         PopulateAddToPlaylistMenu(addToPlaylistItem, selectedTracks, vm);
 
-        var locateFileItem = new MenuItem { Header = "Locate File" };
+        var locateFileItem = new MenuItem { Header = "Locate File" }.WithIcon(MaterialIconKind.FolderOpenOutline);
         locateFileItem.Click += (_, _) => FileLocator.Reveal(clickedTrack.Path);
 
         var downloadable = selectedTracks.Where(vm.Availability.IsDownloadable).ToList();
@@ -163,30 +165,30 @@ public partial class AlbumTrackList : UserControl
             Header    = downloadable.Count > 1 ? $"Download {downloadable.Count} Songs" : "Download",
             IsVisible = downloadable.Count > 0,
             IsEnabled = !vm.Downloads.IsBulkDownloading,
-        };
+        }.WithIcon(MaterialIconKind.CloudDownloadOutline);
         downloadItem.Click += (_, _) => _ = vm.Downloads.DownloadAllAsync(downloadable);
 
-        var deleteLocalFileItem = new MenuItem { Header = "Delete Local File" };
+        var deleteLocalFileItem = new MenuItem { Header = "Delete Local File" }.WithIcon(MaterialIconKind.TrashCanOutline);
         LocalFileDeletionDialog.UpdateMenuItem(deleteLocalFileItem, selectedTracks);
         deleteLocalFileItem.Click += async (_, _) =>
             await LocalFileDeletionDialog.DeleteAsync(TopLevel.GetTopLevel(this), vm, selectedTracks);
 
-        var removeFromLibraryItem = new MenuItem();
+        var removeFromLibraryItem = new MenuItem().WithIcon(MaterialIconKind.MusicNoteOff);
         LibraryRemovalDialog.UpdateMenuItem(removeFromLibraryItem, selectedTracks);
         removeFromLibraryItem.Click += async (_, _) =>
             await LibraryRemovalDialog.RemoveAsync(TopLevel.GetTopLevel(this), selectedTracks);
 
-        var playNextItem = new MenuItem { Header = "Play Next" };
+        var playNextItem = new MenuItem { Header = "Play Next" }.WithIcon(MaterialIconKind.PlaylistPlay);
         playNextItem.Click += (_, _) => vm.PlayNext(selectedTracks);
-        var addToQueueItem = new MenuItem { Header = "Add to Queue" };
+        var addToQueueItem = new MenuItem { Header = "Add to Queue" }.WithIcon(MaterialIconKind.PlaylistMusic);
         addToQueueItem.Click += (_, _) => vm.AddToQueue(selectedTracks);
 
         var menu = new ContextMenu();
         menu.Items.Add(playNextItem);
         menu.Items.Add(addToQueueItem);
+        menu.Items.Add(addToPlaylistItem);
         menu.Items.Add(new Separator());
         menu.Items.Add(getInfoItem);
-        menu.Items.Add(addToPlaylistItem);
         menu.Items.Add(locateFileItem);
         menu.Items.Add(downloadItem);
         menu.Items.Add(new Separator());
@@ -197,7 +199,7 @@ public partial class AlbumTrackList : UserControl
 
     private static void PopulateAddToPlaylistMenu(MenuItem addToPlaylistItem, IReadOnlyList<Track> tracks, MainViewModel vm)
     {
-        var newPlaylistItem = new MenuItem { Header = "New Playlist" };
+        var newPlaylistItem = new MenuItem { Header = "New Playlist" }.WithIcon(MaterialIconKind.Plus);
         newPlaylistItem.Click += async (_, _) => await vm.CreatePlaylistWithTracks(tracks);
         addToPlaylistItem.Items.Add(newPlaylistItem);
 

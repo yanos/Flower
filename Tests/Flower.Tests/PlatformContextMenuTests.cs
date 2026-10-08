@@ -71,7 +71,7 @@ public class PlatformContextMenuTests : IDisposable
             new MenuItem { Header = "Title", Icon = new MaterialIcon { Kind = MaterialIconKind.Check } },
             new MenuItem { Header = "Rename", IsEnabled = false },
             new MenuItem { Header = "Delete", Command = never },
-            new MenuItem { Header = "Add To Playlist", Items = { new MenuItem { Header = "New Playlist" }, new MenuItem { Header = "Road Trip" } } },
+            new MenuItem { Header = "Add to Playlist", Items = { new MenuItem { Header = "New Playlist" }, new MenuItem { Header = "Road Trip" } } },
         });
 
         Assert.True(entries[0].IsChecked);
@@ -80,6 +80,42 @@ public class PlatformContextMenuTests : IDisposable
         Assert.True(entries[3].IsEnabled);
         Assert.Null(entries[3].Activate);
         Assert.Equal(new[] { "New Playlist", "Road Trip" }, Titles(entries[3].Children));
+    }
+
+    // The icon the item shows in Avalonia's menu goes to the native one too;
+    // the column menu's check glyph is a checkmark there, not an icon.
+    [AvaloniaFact]
+    public void An_items_icon_is_handed_over_but_a_check_is_not()
+    {
+        var entries = ContextMenuEntry.From(new object[]
+        {
+            new MenuItem { Header = "Play Next" }.WithIcon(MaterialIconKind.PlaylistPlay),
+            new MenuItem { Header = "Title", Icon = new MaterialIcon { Kind = MaterialIconKind.Check } },
+            new MenuItem { Header = "Rename" },
+        });
+
+        Assert.Equal(MaterialIconKind.PlaylistPlay, entries[0].Icon);
+        Assert.Null(entries[1].Icon);
+        Assert.Null(entries[2].Icon);
+    }
+
+    // What the Mac's menu shows for an icon: the glyph, opaque where the
+    // glyph is and clear around it, for AppKit to tint.
+    [AvaloniaFact]
+    public void A_menu_icon_renders_as_its_glyph_on_a_clear_ground()
+    {
+        var png = MenuItemIcons.RenderPng(MaterialIconKind.PlaylistPlay, 32);
+
+        using var bitmap = Avalonia.Media.Imaging.WriteableBitmap.Decode(new System.IO.MemoryStream(png));
+        Assert.Equal(new Avalonia.PixelSize(32, 32), bitmap.PixelSize);
+
+        using var pixels = bitmap.Lock();
+        var bytes = new byte[pixels.RowBytes * pixels.Size.Height];
+        System.Runtime.InteropServices.Marshal.Copy(pixels.Address, bytes, 0, bytes.Length);
+        var alphas = Enumerable.Range(0, 32 * 32).Select(i => bytes[(i / 32) * pixels.RowBytes + (i % 32) * 4 + 3]).ToList();
+
+        Assert.InRange(alphas.Count(a => a > 200), 50, 32 * 32 - 50);
+        Assert.InRange(alphas.Count(a => a == 0), 50, 32 * 32 - 50);
     }
 
     // Picking an entry clicks the MenuItem it came from, so whatever that

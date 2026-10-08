@@ -1,12 +1,15 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
 
 using Material.Icons;
 using Material.Icons.Avalonia;
@@ -111,6 +114,33 @@ public static class PlatformContextMenu
     }
 }
 
+// A context menu entry's icon, set the one way every menu sets it so the
+// operating system's menu can read it back (ContextMenuEntry.Icon). Material,
+// as everywhere else in the app: AppleContextMenu draws the same glyph.
+public static class MenuItemIcons
+{
+    public static MenuItem WithIcon(this MenuItem item, MaterialIconKind kind)
+    {
+        item.Icon = new MaterialIcon { Kind = kind, Width = 16, Height = 16 };
+        return item;
+    }
+
+    // The glyph alone, black on transparent, as a PNG - for a native menu to
+    // tint as it tints its own icons. Material glyphs are drawn in a
+    // 24-unit box.
+    public static byte[] RenderPng(MaterialIconKind kind, int pixels)
+    {
+        using var bitmap = new RenderTargetBitmap(new PixelSize(pixels, pixels));
+        using (var context = bitmap.CreateDrawingContext())
+        using (context.PushTransform(Matrix.CreateScale(pixels / 24.0, pixels / 24.0)))
+            context.DrawGeometry(Brushes.Black, null, StreamGeometry.Parse(MaterialIconDataProvider.GetData(kind)));
+
+        using var png = new MemoryStream();
+        bitmap.Save(png);
+        return png.ToArray();
+    }
+}
+
 // One line of a context menu, as the operating system is asked to draw it.
 public sealed record ContextMenuEntry(
     string Title,
@@ -118,15 +148,17 @@ public sealed record ContextMenuEntry(
     bool IsChecked,
     IReadOnlyList<ContextMenuEntry> Children,
     Action? Activate,
-    bool IsSeparator = false)
+    bool IsSeparator = false,
+    MaterialIconKind? Icon = null)
 {
     public static readonly ContextMenuEntry Separator = new("", false, false, [], null, IsSeparator: true);
 
     // What the user would see in Avalonia's menu: hidden items left out,
     // a disabled item - or one whose command cannot run - greyed, the column
-    // menu's check glyph as a checkmark, submenus as submenus. Separators
-    // that a hidden item left leading, trailing or doubled are dropped, as
-    // Avalonia's own layout makes them look.
+    // menu's check glyph as a checkmark, any other icon as its icon,
+    // submenus as submenus. Separators that a hidden item left leading,
+    // trailing or doubled are dropped, as Avalonia's own layout makes them
+    // look.
     public static List<ContextMenuEntry> From(IEnumerable<object> items)
     {
         var entries = new List<ContextMenuEntry>();
@@ -156,11 +188,15 @@ public sealed record ContextMenuEntry(
         var isChecked = item.IsChecked
             || item.Icon is MaterialIcon { Kind: MaterialIconKind.Check };
 
+        // The column menu's check glyph is a checkmark, not an icon.
+        var icon = item.Icon is MaterialIcon { Kind: var kind and not MaterialIconKind.Check } ? kind : (MaterialIconKind?)null;
+
         return new ContextMenuEntry(
             Title: item.Header as string ?? item.Header?.ToString() ?? "",
             IsEnabled: item.IsEnabled && (children.Count > 0 || canRun),
             IsChecked: isChecked,
             Children: children,
-            Activate: children.Count > 0 ? null : () => item.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)));
+            Activate: children.Count > 0 ? null : () => item.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)),
+            Icon: icon);
     }
 }
