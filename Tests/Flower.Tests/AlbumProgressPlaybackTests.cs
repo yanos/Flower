@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
@@ -9,6 +11,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 using Flower.Models;
 using Flower.Persistence;
+using Flower.Services;
 using Flower.Tests.TestSupport;
 using Flower.ViewModels;
 
@@ -131,5 +134,68 @@ public class AlbumProgressPlaybackTests : PinnedDataDirectory
 
         Assert.Equal(1, audio.ResumeCount);
         Assert.Equal(album[1].Id, audio.LastPlayed?.Id);
+    }
+    // A clock whose one-shot timers go off when the test says so.
+    private sealed class ManualTimers : TimeProvider
+    {
+        private readonly List<TimerCallback> _pending = new();
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            _pending.Add(callback);
+            return new Timer(() => _pending.Remove(callback));
+        }
+
+        public void FireAll()
+        {
+            foreach (var callback in _pending.ToList())
+                callback(null);
+            _pending.Clear();
+        }
+
+        private sealed class Timer(Action dispose) : ITimer
+        {
+            public bool Change(TimeSpan dueTime, TimeSpan period) => true;
+            public void Dispose() => dispose();
+            public ValueTask DisposeAsync()
+            {
+                dispose();
+                return ValueTask.CompletedTask;
+            }
+        }
+    }
+
+    // Picked up from the shelf, an album stays under the pointer that
+    // clicked it for a while, then goes to the front where playing put it.
+    [AvaloniaFact]
+    public void A_resumed_album_keeps_its_place_on_the_shelf_until_the_hold_runs_out()
+    {
+        var blue = Album("Blue", 4);
+        var red = Album("Red", 4);
+        var vm = Playback(blue.Concat(red).ToList(), out _, out var library);
+        var timers = new ManualTimers();
+        using var home = new HomeViewModel(library, vm.AlbumProgress, vm, clock: timers);
+
+        vm.SetCurrentPlaylist(new Playlist("Now Playing Queue", blue));
+        vm.Play(blue[0], 0);
+        vm.Play(blue[1], 1);
+        vm.SetCurrentPlaylist(new Playlist("Now Playing Queue", red));
+        vm.Play(red[0], 0);
+        vm.Play(red[1], 1);
+
+        home.Rebuild();
+        Assert.Equal(new[] { "Red", "Blue" }, home.ContinuePlaying.Select(c => c.Tile.Name));
+
+        home.ResumeCommand.Execute(home.ContinuePlaying[1]);
+        // Playing it put it at the front of the tracker straight away.
+        Assert.Equal(AlbumProgressTracker.AlbumIdOf(blue[0]), vm.AlbumProgress.Entries[0].AlbumId);
+
+        home.Rebuild();
+        Assert.Equal(new[] { "Red", "Blue" }, home.ContinuePlaying.Select(c => c.Tile.Name));
+
+        timers.FireAll();
+        Dispatcher.UIThread.RunJobs();
+        home.Rebuild();
+        Assert.Equal(new[] { "Blue", "Red" }, home.ContinuePlaying.Select(c => c.Tile.Name));
     }
 }

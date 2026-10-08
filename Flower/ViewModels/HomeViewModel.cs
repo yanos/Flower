@@ -195,7 +195,66 @@ public sealed class HomeViewModel : ViewModelBase, IDisposable
             h => progress.Changed += h, h => progress.Changed -= h);
     }
 
-    public void Dispose() => _subscriptions.Dispose();
+    public void Dispose()
+    {
+        _subscriptions.Dispose();
+        _holdTimer?.Dispose();
+    }
+
+    // An album picked up from the shelf stays where it was clicked for a
+    // while before moving to the front, which playing it puts it at in the
+    // tracker straight away. Moving it at once takes the tile out from under
+    // the pointer that just pressed it, and the shelf rearranging itself is the
+    // only answer the click gets. Then it moves, and HomeShelfRowsHost animates
+    // the covers into their new places.
+    public static readonly TimeSpan ResumedAlbumHold = TimeSpan.FromSeconds(10);
+
+    private string? _heldAlbumId;
+    private int _heldIndex;
+    private ITimer? _holdTimer;
+
+    private void HoldInPlace(ContinuePlayingItemViewModel item)
+    {
+        _holdTimer?.Dispose();
+        _holdTimer = null;
+        _heldAlbumId = null;
+
+        var index = ContinuePlaying.IndexOf(item);
+        if (index <= 0)
+            return;
+
+        _heldAlbumId = item.Item.Entry.AlbumId;
+        _heldIndex = index;
+        _holdTimer = _clock.CreateTimer(_ => Dispatcher.UIThread.Post(ReleaseHold), null, ResumedAlbumHold, Timeout.InfiniteTimeSpan);
+    }
+
+    private void ReleaseHold()
+    {
+        _holdTimer?.Dispose();
+        _holdTimer = null;
+        if (_heldAlbumId == null)
+            return;
+
+        _heldAlbumId = null;
+        Invalidate();
+    }
+
+    // The held album put back at the place it was clicked in, wherever the
+    // tracker has it now.
+    private List<ContinuePlayingShelfItem> ApplyHold(List<ContinuePlayingShelfItem> items)
+    {
+        if (_heldAlbumId is not { } held)
+            return items;
+
+        var at = items.FindIndex(i => i.Entry.AlbumId == held);
+        if (at < 0)
+            return items;
+
+        var item = items[at];
+        items.RemoveAt(at);
+        items.Insert(Math.Min(_heldIndex, items.Count), item);
+        return items;
+    }
 
     // Whether Home is on screen - set by the head as it navigates.
     private bool _isActive;
@@ -264,7 +323,7 @@ public sealed class HomeViewModel : ViewModelBase, IDisposable
             added = added.Where(t => FilterableAlbumGrid.Matches(t, filter)).ToList();
         }
 
-        SetContinuePlaying(continuing);
+        SetContinuePlaying(ApplyHold(continuing));
         SetTiles(RecentlyPlayed, played);
         SetTiles(RecentlyAdded, added);
         ApplyAvailability();
@@ -320,6 +379,7 @@ public sealed class HomeViewModel : ViewModelBase, IDisposable
             return;
 
         var shelf = item.Item;
+        HoldInPlace(item);
 
         // The album already playing, or paused where it is: the tape is in the
         // deck, so this carries on rather than rewinding to the last place it

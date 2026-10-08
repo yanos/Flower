@@ -79,10 +79,12 @@
               Click="Menu_Click">
         <materialIcons:MaterialIcon Kind="DotsVertical" Width="20" Height="20" Opacity="0.6" />
       </Button>
-      <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Margin="0,-5,0,0"
+      <!-- A size under the artist's: a note about the album, not part of
+           its name. -->
+      <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Margin="0,-3,0,0"
                  Text="{Binding #Root.Detail}"
                  IsVisible="{Binding #Root.Detail, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-                 FontSize="14" LineHeight="24" Opacity="0.6" TextTrimming="CharacterEllipsis" />
+                 FontSize="12" LineHeight="20" Opacity="0.6" TextTrimming="CharacterEllipsis" />
     </Grid>
   </StackPanel>
 </UserControl>

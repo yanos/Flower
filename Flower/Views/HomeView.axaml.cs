@@ -11,6 +11,9 @@ public partial class HomeView : UserControl
 
     private readonly HomeShelfRowsHost _rows;
 
+    // For a test to step the covers' slide by hand.
+    internal HomeShelfRowsHost ShelfRows => _rows;
+
     public HomeView()
     {
         InitializeComponent();
