@@ -203,18 +203,6 @@
     <Style Selector="Button.tab.compact.iconsOnly :is(Control).tabIcon">
       <Setter Property="RenderTransform" Value="scale(1.15)" />
     </Style>
-    <!-- Every icon on a button, on the phone, is a solid glyph without the
-         hairline rim App.axaml gives icons app-wide: the back and menu
-         circles, the tabs, the round action buttons, the rows' own menus. On
-         a button the glyph already has its circle or its row to be read
-         against, and the rim only made it look outlined. The second style is
-         the Songs tab's note, a bare Path rather than a MaterialIcon. -->
-    <Style Selector="Button materialIcons|MaterialIcon /template/ Path">
-      <Setter Property="StrokeThickness" Value="0" />
-    </Style>
-    <Style Selector="Button Path">
-      <Setter Property="StrokeThickness" Value="0" />
-    </Style>
     <Style Selector="Button.tab Path">
       <Setter Property="Fill" Value="{DynamicResource AppPrimaryBrush}" />
     </Style>

@@ -154,10 +154,6 @@
   <SolidColorBrush x:Key="AppAccentTintBrush" Color="{DynamicResource PaletteAccent}" Opacity="0.1" />
   <SolidColorBrush x:Key="AppOnPrimaryBrush" Color="{DynamicResource PaletteOnAccent}" />
 
-  <!-- A hairline around every icon (App.axaml): the text colour, faint, so
-       it defines a glyph against either variant's background. -->
-  <SolidColorBrush x:Key="AppIconOutlineBrush" Color="{DynamicResource PaletteTextPrimary}" Opacity="0.35" />
-
   <SolidColorBrush x:Key="AppSuccessBrush" Color="{DynamicResource PaletteSuccess}" />
   <SolidColorBrush x:Key="AppWarningBrush" Color="{DynamicResource PaletteWarning}" />
   <SolidColorBrush x:Key="AppErrorBrush" Color="{DynamicResource PaletteError}" />
