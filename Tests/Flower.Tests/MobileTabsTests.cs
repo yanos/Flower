@@ -251,7 +251,6 @@ public class MobileTabsTests : PinnedDataDirectory
         Assert.Equal(new[] { "Track 2", "Track 3", "Track 4" }, rows.Select(r => r.Track.Title));
         Assert.True(rows[0].IsCurrentlyPlaying);
         Assert.False(rows[1].IsCurrentlyPlaying);
-        Assert.Null(scope.Mobile.QueueCaption);
     }
 
     // It follows playback while it is on screen, not only on the way in.
@@ -284,7 +283,6 @@ public class MobileTabsTests : PinnedDataDirectory
         var listed = scope.Mobile.QueueRows.Select(r => r.Track.Title).ToList();
         Assert.Equal("Track 2", listed[0]);
         Assert.Equal(new[] { "Track 0", "Track 1", "Track 3", "Track 4" }, listed.Skip(1).Order());
-        Assert.NotNull(scope.Mobile.QueueCaption);
 
         var played = new List<string>();
         for (var i = 0; i < 4; i++)

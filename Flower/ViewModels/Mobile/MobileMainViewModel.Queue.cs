@@ -84,8 +84,6 @@ public partial class MobileMainViewModel
 
     public List<TrackRowViewModel> QueueRows => Main.Queue.Rows;
 
-    public string? QueueCaption => Main.Queue.Caption;
-
     private int QueueIndexOf(TrackRowViewModel row) => Main.Queue.SlotOf(row);
 
     private void OnQueuePropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -96,9 +94,6 @@ public partial class MobileMainViewModel
                 OnPropertyChanged(nameof(QueueRows));
                 if (IsShowingQueue)
                     RaiseEmptyStateChanged();
-                break;
-            case nameof(QueueViewModel.Caption):
-                OnPropertyChanged(nameof(QueueCaption));
                 break;
             case nameof(QueueViewModel.IsReorderable):
                 OnPropertyChanged(nameof(IsQueueReorderable));
