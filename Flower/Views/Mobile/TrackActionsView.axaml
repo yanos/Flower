@@ -75,6 +75,16 @@
           </StackPanel>
         </Button>
 
+        <!-- Straight after the two that put the song somewhere else, as on the
+             album menu (AlbumActionsView) - not after the entries that only
+             some songs have, which moved it down the sheet for those. -->
+        <Button Classes="action" Command="{Binding OpenAddToPlaylistCommand}">
+          <StackPanel Orientation="Horizontal" Spacing="14">
+            <materialIcons:MaterialIcon Kind="PlaylistPlus" Width="22" Height="22" />
+            <TextBlock Text="Add to Playlist" FontSize="16" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+
         <!-- Only on the Queue's own rows, and not on the song playing. -->
         <Button Classes="action" Command="{Binding RemoveActionTargetFromQueueCommand}"
                 IsVisible="{Binding CanRemoveActionTargetFromQueue}">
@@ -88,13 +98,6 @@
           <StackPanel Orientation="Horizontal" Spacing="14">
             <materialIcons:MaterialIcon Kind="InformationOutline" Width="22" Height="22" />
             <TextBlock Text="View Info" FontSize="16" VerticalAlignment="Center" />
-          </StackPanel>
-        </Button>
-
-        <Button Classes="action" Command="{Binding OpenAddToPlaylistCommand}">
-          <StackPanel Orientation="Horizontal" Spacing="14">
-            <materialIcons:MaterialIcon Kind="PlaylistPlus" Width="22" Height="22" />
-            <TextBlock Text="Add to Playlist" FontSize="16" VerticalAlignment="Center" />
           </StackPanel>
         </Button>
 
