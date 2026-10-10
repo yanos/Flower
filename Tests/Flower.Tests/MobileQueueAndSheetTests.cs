@@ -111,4 +111,23 @@ public class MobileQueueAndSheetTests : PinnedDataDirectory
         var top = playing.TranslatePoint(default, scroller)!.Value.Y;
         Assert.InRange(top, 0, 200);
     }
+
+    // Fluent shrinks a pressed button a little; on a full-width row that read
+    // as the list twitching under every touch.
+    [AvaloniaFact]
+    public void A_song_row_keeps_its_size_while_pressed()
+    {
+        using var h = new Harness();
+        h.Vm.SelectTabCommand.Execute(nameof(MobileTab.Songs));
+        Harness.Pump();
+
+        var row = h.Showing<TrackListScreenView>().GetVisualDescendants().OfType<Button>()
+            .First(b => b.Classes.Contains("trackRow"));
+        ((IPseudoClasses)row.Classes).Set(":pressed", true);
+        // Fluent eases the shrink in rather than snapping to it.
+        Harness.Pump(300);
+
+        Assert.True(row.RenderTransform is null || row.RenderTransform.Value.IsIdentity,
+            $"pressed row transformed by {row.RenderTransform?.Value}");
+    }
 }

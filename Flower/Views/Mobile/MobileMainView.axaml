@@ -337,6 +337,12 @@
                      Button.trackRow:pressed /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="Transparent" />
     </Style>
+    <!-- Nor does a row shrink under the finger: Fluent scales a pressed
+         button down a little, which on a full-width row reads as the list
+         twitching every time a scroll starts on it. -->
+    <Style Selector="Button.pickerRow:pressed, Button.trackRow:pressed">
+      <Setter Property="RenderTransform" Value="none" />
+    </Style>
     <!-- 16 on the left, so the covers line up with the screen's title and
          with the Artists page's; 8 on the right, where the "..." button's own
          padding already stands off the edge - a song row carries art, a
