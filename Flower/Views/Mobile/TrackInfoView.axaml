@@ -9,7 +9,8 @@
              x:Class="Flower.Views.Mobile.TrackInfoView"
              x:DataType="vm:MobileMainViewModel"
              Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
-             Padding="{DynamicResource SheetBottomInset}">
+             Padding="{DynamicResource SheetBottomInset}"
+             controls:SoftKeyboard.DismissOnTapOutside="True">
 
   <UserControl.Styles>
     <!-- A secondary action, as on Settings: a grey fill rather than Fluent's

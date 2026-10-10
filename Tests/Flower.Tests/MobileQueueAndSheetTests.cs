@@ -130,4 +130,40 @@ public class MobileQueueAndSheetTests : PinnedDataDirectory
         Assert.True(row.RenderTransform is null || row.RenderTransform.Value.IsIdentity,
             $"pressed row transformed by {row.RenderTransform?.Value}");
     }
+
+    // A phone keyboard has no key that puts it away: a tap anywhere on Track
+    // Info that is not a box does, and a tap on a box keeps it.
+    [AvaloniaFact]
+    public void Track_info_puts_the_keyboard_away_on_a_tap_off_the_boxes()
+    {
+        using var h = new Harness();
+        h.Vm.SelectTabCommand.Execute(nameof(MobileTab.Songs));
+        Harness.Pump();
+        h.Vm.OpenTrackActionsCommand.Execute(h.Showing<TrackListScreenView>().GetVisualDescendants().OfType<Button>()
+            .First(b => b.Classes.Contains("trackRow")).DataContext);
+        h.Vm.ViewTrackInfoCommand.Execute(null);
+        Harness.Pump();
+
+        var info = h.Showing<TrackInfoView>();
+        var title = info.FindControl<TextInput>("TitleBox")!;
+        var artist = info.FindControl<TextInput>("ArtistBox")!;
+        var focus = TopLevel.GetTopLevel(info)!.FocusManager!;
+
+        title.Focus();
+        Tap(artist);
+        Assert.Same(title, focus.GetFocusedElement());
+
+        var card = info.GetVisualDescendants().OfType<Border>().First(b => b.Classes.Contains("card"));
+        Tap(card);
+        Assert.Null(focus.GetFocusedElement());
+    }
+
+    private static void Tap(Control target)
+    {
+        var pointer = new Pointer(Pointer.GetNextFreeId(), PointerType.Touch, true);
+        var root = TopLevel.GetTopLevel(target)!;
+        var released = new PointerReleasedEventArgs(target, pointer, root, default, 0,
+            new PointerPointProperties(RawInputModifiers.None, PointerUpdateKind.LeftButtonReleased), KeyModifiers.None, MouseButton.Left);
+        target.RaiseEvent(new TappedEventArgs(InputElement.TappedEvent, released));
+    }
 }
