@@ -42,6 +42,13 @@ public sealed record TrackDto(
     // - see LibraryDtoMapper.ToTrackDto and Track.RemotePlayCounts for how
     // this propagates play counts between devices without a central server.
     Dictionary<string, int>? PlayCounts = null,
+    // Music.app's count for this song, as the library holds it - apart from
+    // PlayCounts, which are plays counted in Flower, each under the device
+    // that counted them. One number for the library rather than one per
+    // device, because the owner's Macs share one Music.app history more often
+    // than not (iCloud's Sync Library): the highest any of them reported (see
+    // Library.ApplyReportedOwnerState). Null for none.
+    int? ImportedPlayCount = null,
     // Also Flower-specific, same reasoning as PlayCounts above. The sending
     // device's own Track.DateAdded - without this, a synced placeholder
     // defaults DateAdded to "now" (see LibrarySyncMapper.ToPlaceholderTrack),

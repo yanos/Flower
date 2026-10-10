@@ -1523,6 +1523,11 @@ namespace Flower.Models
                         if (!ownersDevice || remote.DateAdded < existing.DateAdded)
                             existing.DateAdded = remote.DateAdded;
                         MergeRemotePlayCounts(existing, remote.RemotePlayCounts);
+                        // The higher of this device's and the library's
+                        // Music.app count, so every device settles on the
+                        // highest any admin device read - see
+                        // TrackDto.ImportedPlayCount.
+                        existing.ImportedPlayCount = Math.Max(existing.ImportedPlayCount, remote.ImportedPlayCount);
                         // A whole new file settles the other two: it has the
                         // tags and the picture in it. A placeholder has no
                         // file to replace and goes on to be refreshed.
@@ -2208,6 +2213,16 @@ namespace Flower.Models
                 track.IgnoreWhenShuffling = entry.IgnoreWhenShuffling;
                 track.VolumeAdjustment = entry.VolumeAdjustment;
                 moved |= TrackChange.Options;
+            }
+
+            // Upwards only: the library keeps one Music.app count per song, the
+            // highest any of the owner's devices read. The owner's Macs usually
+            // share one Music.app history, so adding each Mac's would count every
+            // play once per Mac (see TrackDto.ImportedPlayCount).
+            if (entry.ImportedCount > track.ImportedPlayCount)
+            {
+                track.ImportedPlayCount = entry.ImportedCount;
+                moved |= TrackChange.PlayFinished;
             }
 
             // Backwards only. Date Added is the earliest this song is known to

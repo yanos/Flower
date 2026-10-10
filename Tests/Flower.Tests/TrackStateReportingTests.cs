@@ -83,17 +83,45 @@ public class TrackStateReportingTests
         Assert.Empty(counts);
     }
 
-    // The same sum the manifest already sends as this device's own tally - a
-    // play imported from iTunes is still a play this device is the record of.
+    // Music.app's count is not this device's tally: the owner's Macs usually
+    // share one Music.app history, so it goes as the library's one number for
+    // the song (owner state, ImportedCount), and the tally is Flower's plays.
     [Fact]
-    public void Imported_plays_count_towards_this_devices_total()
+    public void Imported_plays_go_apart_from_this_devices_own_count()
     {
-        var counts = LibrarySyncService.UnreportedTrackState(
-            [Played("Love Song", "server-track-2", playCount: 2, importedPlayCount: 40)],
-            new Dictionary<string, int>(),
-            NoServerState, includeOwnerState: false);
+        var song = Played("Love Song", "server-track-2", playCount: 2, importedPlayCount: 40);
+        var served = Played("Love Song", "server-track-2", playCount: 0);
 
-        Assert.Equal(42, Assert.Single(counts).Count);
+        var report = Assert.Single(LibrarySyncService.UnreportedTrackState(
+            [song], new Dictionary<string, int>(), ServerSaid("server-track-2", served), includeOwnerState: true));
+
+        Assert.Equal(2, report.Count);
+        Assert.Equal(40, report.ImportedCount);
+    }
+
+    // The server keeps the highest any admin device read, so a lower count
+    // than the one it serves is not news - another Mac read further.
+    [Fact]
+    public void An_imported_count_the_server_already_exceeds_is_not_sent()
+    {
+        var song = Played("Love Song", "server-track-2", playCount: 0, importedPlayCount: 30);
+        var served = Played("Love Song", "server-track-2", playCount: 0, importedPlayCount: 40);
+        served.DateAdded = song.DateAdded;
+
+        Assert.Empty(LibrarySyncService.UnreportedTrackState(
+            [song], new Dictionary<string, int>(), ServerSaid("server-track-2", served), includeOwnerState: true));
+    }
+
+    // A guest's report carries no owner state, so no Music.app count either.
+    [Fact]
+    public void A_guest_sends_flower_plays_alone()
+    {
+        var report = Assert.Single(LibrarySyncService.UnreportedTrackState(
+            [Played("Love Song", "server-track-2", playCount: 2, importedPlayCount: 40)],
+            new Dictionary<string, int>(), NoServerState, includeOwnerState: false));
+
+        Assert.Equal(2, report.Count);
+        Assert.Equal(0, report.ImportedCount);
     }
 
     // The five-second tick this rides on would otherwise re-state every played

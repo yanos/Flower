@@ -866,8 +866,9 @@ entries in the same map, and `Track.TotalPlayCount` sums them without either one
 absorbing the other.
 
 **What gets reported** is anything carrying an `OriginTrackId` with a non-zero
-`PlayCount + ImportedPlayCount` — the same sum the manifest already sends as this
-device's own tally. Deliberately no distinction between a placeholder, a
+`PlayCount` — plays counted in Flower, the tally the manifest sends under a
+device's own name. (Music.app's count rode in the same sum until October 2026
+and travels apart now; see "Music.app's count travels on its own".) Deliberately no distinction between a placeholder, a
 downloaded file, and a local file of this device's own that the server also has:
 `MergeSyncedTracks` stamps the server's id onto a local match too, and a play of
 that song is a play of that song in that shared library.
@@ -1155,6 +1156,65 @@ This fixed something worse than the feature it was built for. A server whose mus
 - Phones have no Removed Songs screen. A phone's *own* imported file that is set aside stays on its disk with no way to delete or restore it from the phone.
 - The clean-up is all-or-nothing per machine, and it deletes rather than trashes.
 - "Not on the server's network" is judged by the address the server is reached at, not by whether the link is metered: a phone on home Wi-Fi reaching the server through its public address counts as away.
+
+## Music.app history from an admin device — done (October 2026)
+
+**The problem.** A device paired to a server never reads Music.app. The rule is in three places, all saying the same thing: `App.axaml.cs`'s startup rescan (`importsFromMusicApp` requires no paired server), `LocalSettingsBackend.SaveAsync`, and Settings, where `SettingsViewModel.CanManageLibrary` greys both switches. The reason given is that "its library is the server's, which runs these imports itself". That holds only for a server running on the Mac that has the Music.app library. The deployment this project actually has is the other kind: `Flower.Server` in Docker on a Linux box (lambda), with its music on a NAS. It has no Music.app and never will. So the owner's Mac, which has fifteen years of play counts and Date Added in Music.app, is barred from reading them, and the server cannot. The history reaches nobody, and the switches are greyed with no reason shown (the panel explains a greyed switch only when no Music.app library is found).
+
+**Most of the road is already built.** That is why this plan is small:
+
+- **The importers match by what a song is, not where it is.** `ITunesPlayCountImporter` and `ITunesDateAddedImporter` try the file path first, then `Track.SyncKey` (title, artist, album, rounded duration), then the same key without the duration when only one candidate has it. A song this Mac only streams has no path but has everything else. Measured against this owner's real data (the August export in the app's data folder and `flower.db`, read-only): 15,009 of 16,114 songs match exactly, and 437 more by title, artist and album alone, which is 96%.
+- **Play counts already travelled as this device's own tally.** `UnreportedTrackState` sent `PlayCount + ImportedPlayCount` for every song with an `OriginTrackId`, and the server filed it under the reporting device's fingerprint in `RemotePlayCounts`, a max-merged G-counter (see "A paired device that listens, stars and configures"). That turned out to be the wrong shape for an imported count; see "Music.app's count travels on its own" below.
+- **Date Added already travels as owner state.** An admin device's `DateAdded` rides in `TrackStateDto`, and the server only moves it backwards (`Library.ApplyReportedOwnerState`), which is the same oldest-wins rule `ITunesDateAddedImporter` applies locally. An admin device's pull keeps the older of its own and the server's.
+- **An import is already pushed.** Both importers end in one `Library.NotifyLibraryChanged`, and `PeerSyncCoordinator` answers any library-wide change with `MarkAllTrackStateChanged`, so the next five-second tick restates every song. The baseline for owner state needs a pull this session, which startup does before the import runs.
+
+So the change is the gate, not the plumbing.
+
+### Steps
+
+1. **One rule for who may import, in one place.** Something like `SyncRolePolicy.MayImportFromMusicApp(settings)`: true for an unpaired device and for a device paired as an admin (`AppSettings.PairedServerGrantsAdmin`). The three sites above call it instead of each testing `PairedServerFingerprint` themselves. *Adopting the Music.app folder* stays barred on a paired device. Taking a folder into the library is managing it, and this Mac's library is the server's. Only the two per-song imports open up. In Settings that means splitting `CanSyncFromITunes` off `CanManageLibrary`.
+
+2. **Never count the same Music.app plays twice.** If the server itself imports play counts from a Music.app library, that is, if it runs on the Mac that holds the library, the same plays would arrive once as the server's own figures and again as the device's tally. The server's admin settings already say whether it does: `IntegrateWithITunes`, `SyncPlayCountFromITunes` and `AppleMusicFolder` are all in the snapshot `GET /api/admin/settings` returns. The device reads them when it syncs, remembers the answer (`AppSettings`, like `PairedServerGrantsAdmin`, so it is the same answer offline), and skips the *play count* import while the server does its own. Date Added needs no such guard: two oldest-wins sources of one date converge.
+
+3. **Settings says what the switches do now, and why they are off when they are.** On a paired admin Mac the two switches are live, worded for where the data goes: play counts "add this Mac's Music.app plays to its plays on Flower", Date Added "dates songs on Flower by when Music.app first had them". When they are disabled, the line under them gives the reason, which is the gap that prompted this plan. The reasons are: a guest device ("Only an administrator's device can bring Music.app history to Flower"), a server that imports its own ("Flower reads play counts from its own Music.app library"), and no library found (the existing message). Turning a switch on runs the import at once, as it does on an unpaired Mac.
+
+4. **Prove the counts survive a pull and a download.** `Library` carries `ImportedPlayCount` forward across a placeholder being re-merged and across a placeholder becoming a downloaded file (`Library.cs`'s carry-forward sites). Each of those gets a test, because a pull that reset the field would make the device's tally drop, and a max-merge on the server hides that only until the device's real plays move past it.
+
+5. **Update the record.** `CLAUDE.md`'s "A first desktop launch…" paragraph says neither import runs on a paired device, and the comments at the three gate sites say why. All of them change with step 1.
+
+### Tests
+
+- The rule: unpaired → yes; paired admin → yes; paired guest → no; folder adoption on any paired device → no.
+- Startup on a paired admin device with both switches on runs both imports, and the next track-state push carries the imported totals and the older Date Added (`MainViewModelHarness` with a `SimulatedFlowerServer`, and a synthetic Music.app XML via `ApplyFromXmlFile`).
+- A server whose settings say it imports play counts itself: the device skips its play count import and still runs Date Added.
+- `ImportedPlayCount` on a placeholder survives a catalog pull and survives the song being downloaded.
+- Settings: the switch states and the reason line for each of the four cases above.
+
+**Done.** Where it differed from the steps below:
+
+- **The device learns whether the server imports from `/info`, not from the admin settings.** `importsMusicAppPlays` rides the answer a paired device already polls every five seconds, told to verified administrators only (`DiscoveryEndpoints.ImportsMusicAppPlays`: both switches on and a Music.app library found, the switches checked first so a container never looks). The client remembers it as `AppSettings.PairedServerImportsMusicAppPlays` beside `PairedServerGrantsAdmin`, and forgets both on unpairing. Reading `GET /api/admin/settings` would have been a second request for one bit, and the catalog could not carry it: the catalog is cached against the library's change token, and flipping a server switch does not move that.
+- **The rule is `SyncRolePolicy.MayImportFromMusicApp` and `MayImportPlayCountsFromMusicApp`**, called from the startup rescan, `LocalSettingsBackend.SaveAsync`, and through `MainViewModel` for Settings. `SettingsViewModel.CanSyncFromITunes` (Date Added) and `CanSyncPlayCountFromITunes` now say who may import; `CanIntegrateWithITunes`, taking the folder in, is unchanged.
+- **The Library tab is no longer disabled as a whole on a paired device.** It was one `IsEnabled` on the grid, which no child can override, so the folder rows below the Music.app ones carry it each instead. The note under the switches (`ITunesImportNote`) says where the history goes, or why the switches are off.
+- **Step 4 found nothing to fix.** A placeholder's `ImportedPlayCount` already survives a pull and a placeholder becoming a file; `SyncScenarioTests` and `LibraryTests` now hold both down, the first end to end from a synthetic Music.app export to the server's counts and dates.
+
+### Decided
+
+- **Admin devices only.** A guest's Music.app plays would legitimately be the guest's, filed under its own fingerprint, but its Date Added is owner state the server drops, so the switch would half work. Revisit if a guest ever asks.
+- **Two admin Macs with one Music.app history count it once** — decided first the other way and then reversed, see the next section.
+- **No undo on the server.** A count reported to a G-counter cannot be taken back; turning the switch off afterwards stops further imports but leaves what was sent. The same is true of every play today, and the imported number only ever restates Music.app's own.
+
+### Music.app's count travels on its own — done (October 2026)
+
+The first version sent `PlayCount + ImportedPlayCount` as the device's tally, as the code always had, and told the owner to switch play counts on in one Mac only, because two Macs sharing one Music.app history (iCloud's Sync Library) would each report the same count and the server would sum them. That was reversed the same week: it asked the owner to remember a rule the software could keep.
+
+- **Two numbers on the wire.** `TrackStateDto.Count` is plays counted in Flower on that device, unchanged in its rules. `ImportedCount` is Music.app's count as read on that device, and is owner state: admin devices only, dropped from anybody else.
+- **One number in the library.** The server raises `Track.ImportedPlayCount` to the highest any admin device reports and never lowers it (`Library.ApplyReportedOwnerState`). Highest rather than summed is right for Macs sharing one history and undercounts two Macs with separate libraries — the rarer case for one owner, and the one a library ID in Music.app's export could tell apart if it ever matters (unverified whether Macs syncing through iCloud report the same one).
+- **Served apart, so nobody counts it twice.** The catalog's `PlayCounts` used to give the server's own tally as `PlayCount + ImportedPlayCount`. With the imported count now coming *from* a device, folding it back in would hand that device its own Music.app plays as the server's, on top of its local copy. So `PlayCounts` carries Flower plays only and `TrackDto.ImportedPlayCount` carries the library's count, which a pull takes as the higher of it and the device's own (`MergeSyncedTracks`). Every device, a guest's included, ends up showing the same total.
+- **No migration.** Checked against the one real deployment before changing the wire: the owner's Mac had no imported counts stored, so nothing the server held mixed the two.
+
+The Settings note now says where the history goes and that the server keeps the highest count across Macs.
+
+**What this does not do:** it does not add songs. A Music.app song the server lacks is the Ingest section's business (an admin device uploads its own files), and this Mac has no library folders of its own (`LibraryPaths` is empty here), so it has nothing to upload. The 668 unmatched songs are songs Music.app has and Flower's catalog does not, or that are tagged differently in the two.
 
 ## Status summary
 

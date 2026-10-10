@@ -147,6 +147,13 @@ public sealed record SettingsSnapshot
     // synced in rather than locally curated, so the library-folder controls are
     // disabled - see SettingsViewModel.CanManageLibrary.
     public bool IsPairedToServer { get; init; }
+
+    // Whether that server has made this device one of its administrators,
+    // and whether it reads play counts from a Music.app library of its own:
+    // between them, which of the two Music.app imports this device may run
+    // (SyncRolePolicy.MayImportFromMusicApp and its play-count twin).
+    public bool AdministersPairedServer { get; init; }
+    public bool PairedServerImportsMusicAppPlays { get; init; }
 }
 
 // The subset the OK button writes back. Only what the user can actually edit -

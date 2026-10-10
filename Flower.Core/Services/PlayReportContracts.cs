@@ -96,6 +96,13 @@ public sealed record PlayReportDto(List<PlayEventDto> Plays)
 // field here the server only ever moves backwards - see
 // Library.ApplyReportedOwnerState. Null from a device that is not an admin,
 // like the rest of the owner state, and from one that has nothing older to say.
+//
+// Count is plays counted in Flower, on this device. ImportedCount is
+// Music.app's count, read on this device (ITunesPlayCountImporter), and owner
+// state like DateAdded: not this device's tally but the library's one number
+// for the song, which the server raises to the highest any admin device
+// reports. Kept apart from Count because the owner's Macs usually share one
+// Music.app history, and summing each Mac's tally counted it once per Mac.
 public sealed record TrackStateDto(
     string TrackId,
     int Count,
@@ -106,7 +113,8 @@ public sealed record TrackStateDto(
     double? ResumePositionSeconds = null,
     bool IgnoreWhenShuffling = false,
     int VolumeAdjustment = 0,
-    DateTimeOffset? DateAdded = null);
+    DateTimeOffset? DateAdded = null,
+    int ImportedCount = 0);
 
 // The fingerprint the report belongs to is deliberately absent: the server
 // files it under the one the request signature proved, because a body is

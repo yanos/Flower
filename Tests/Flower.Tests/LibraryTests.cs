@@ -93,6 +93,31 @@ public class LibraryTests
         Assert.Equal(freshDate, library.Tracks.Single().DateAdded);
     }
 
+    // A song this device streams, given its Music.app plays, then downloaded
+    // (or found on a scan): the file is the same song, and its imported plays
+    // are still this device's tally to report. See docs/SYNC-PLAN.md,
+    // "Music.app history from an admin device".
+    [Fact]
+    public void A_placeholders_imported_plays_survive_it_becoming_a_file()
+    {
+        var placeholder = new Track
+        {
+            Title = "Wishwanderer", Artists = "A", Album = "B", Duration = TimeSpan.FromSeconds(200),
+            Path = null, OriginDeviceFingerprint = "server", OriginTrackId = "t1", ImportedPlayCount = 19,
+        };
+        var library = new Library(new List<Track> { placeholder });
+
+        library.UpdateTracks(new List<Track>
+        {
+            new() { Title = "Wishwanderer", Artists = "A", Album = "B", Duration = TimeSpan.FromSeconds(200), Path = "/music/w.m4a" },
+        });
+
+        var song = library.Tracks.Single();
+        Assert.Equal("/music/w.m4a", song.Path);
+        Assert.Equal(19, song.ImportedPlayCount);
+        Assert.Equal("t1", song.OriginTrackId);
+    }
+
     [Fact]
     public void UpdateTracks_preserves_PlayCount_and_ImportedPlayCount_for_a_track_matched_by_path()
     {
@@ -1519,6 +1544,25 @@ public class LibraryTests
         Assert.Equal(ChangeSource.Remote, changed.Source);
         Assert.Equal(new[] { a, b }, changed.Tracks);
         Assert.Equal(TrackChange.PlayFinished | TrackChange.Starred, changed.Change);
+    }
+
+    // Music.app's count is the library's one number for a song: raised to the
+    // highest an admin device reports, never lowered, never summed across
+    // devices - and not a guest's to state. See TrackDto.ImportedPlayCount.
+    [Fact]
+    public void A_reported_music_app_count_is_the_highest_any_admin_device_read()
+    {
+        var song = new Track { Title = "A", Path = "/music/a.mp3" };
+        var library = new Library(new List<Track> { song });
+        var id = song.Id.ToKey();
+
+        library.MergeReportedTrackState("mac-1", [new TrackStateDto(id, 0, ImportedCount: 19)], callerIsAdmin: true);
+        library.MergeReportedTrackState("mac-2", [new TrackStateDto(id, 0, ImportedCount: 18)], callerIsAdmin: true);
+        library.MergeReportedTrackState("phone", [new TrackStateDto(id, 2, ImportedCount: 500)], callerIsAdmin: false);
+
+        Assert.Equal(19, song.ImportedPlayCount);
+        Assert.Equal(2, song.RemotePlayCounts["phone"]);
+        Assert.Equal(21, song.TotalPlayCount);
     }
 
     [Fact]

@@ -376,6 +376,13 @@ namespace Flower.Models
         // (or disabling) the import can never clobber plays Flower itself
         // recorded. TrackRowViewModel.PlayCountDisplay is what sums the two
         // for display.
+        //
+        // They travel apart too. PlayCount is this device's tally, filed on the
+        // server under its own name; ImportedPlayCount is the library's one
+        // Music.app count for the song, the highest any admin device read, which
+        // a pull brings back to every device (TrackDto.ImportedPlayCount) - the
+        // owner's Macs usually share one Music.app history, and summing each
+        // Mac's would count it once per Mac.
         public int PlayCount { get; set; }
         public int ImportedPlayCount { get; set; }
 

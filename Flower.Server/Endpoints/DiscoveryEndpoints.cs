@@ -199,6 +199,13 @@ public static class DiscoveryEndpoints
                     ? PlaylistSyncMapper.TokenOf(PlaylistSyncMapper.For(
                         library.Playlists,
                         Listeners.For(caller.Fingerprint!, trustedPeers.IsAdmin(caller.Fingerprint!))))
+                    : null,
+                // Whether this server counts Music.app's plays itself, so an
+                // administrator's Mac does not count them a second time - see
+                // SyncInfoResponseDto. Administrators only: nobody else's
+                // device imports anything.
+                callerIsTrusted && trustedPeers.IsAdmin(caller.Fingerprint!)
+                    ? ImportsMusicAppPlays(options)
                     : null);
 
             // Signed, over the bytes sent, whenever the caller signed its
@@ -258,4 +265,12 @@ public static class DiscoveryEndpoints
 
         return origins;
     }
+
+    // Whether this server's own scan reads play counts from a Music.app
+    // library (LibraryImportService.ApplyITunesImports): both switches on, and
+    // a library there to read. The switches first, so a server that never
+    // imports - one in a container, a Linux box - never looks for one.
+    public static bool ImportsMusicAppPlays(FlowerServerOptions options) =>
+        options is { IntegrateWithITunes: true, SyncPlayCountFromITunes: true }
+        && Flower.Importer.Importer.TryResolveAppleMusicFolder() != null;
 }

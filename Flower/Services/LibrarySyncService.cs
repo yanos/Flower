@@ -846,16 +846,18 @@ public class LibrarySyncService
         TimeSpan? ResumePosition,
         bool IgnoreWhenShuffling,
         int VolumeAdjustment,
-        DateTimeOffset? DateAdded = null)
+        DateTimeOffset? DateAdded = null,
+        int ImportedPlayCount = 0)
     {
         public static TrackStateSnapshot Of(Track track) => new(
             track.LastPlayedAt, track.Starred, track.RememberPlaybackPosition,
-            track.ResumePosition, track.IgnoreWhenShuffling, track.VolumeAdjustment, track.DateAdded);
+            track.ResumePosition, track.IgnoreWhenShuffling, track.VolumeAdjustment, track.DateAdded,
+            track.ImportedPlayCount);
 
         public static TrackStateSnapshot Of(TrackStateDto entry) => new(
             entry.LastPlayedAt, entry.Starred, entry.RememberPlaybackPosition,
             entry.ResumePositionSeconds is { } seconds ? TimeSpan.FromSeconds(seconds) : null,
-            entry.IgnoreWhenShuffling, entry.VolumeAdjustment, entry.DateAdded);
+            entry.IgnoreWhenShuffling, entry.VolumeAdjustment, entry.DateAdded, entry.ImportedCount);
 
         // Would telling the server this actually move it? Deliberately not
         // `!=` against what it served: the two sides have to agree about what
@@ -874,7 +876,8 @@ public class LibrarySyncService
             || VolumeAdjustment != served.VolumeAdjustment
             || MovesListeningForward(served)
             || MovesPositionWithinTheSameListen(served)
-            || MovesDateAddedBack(served);
+            || MovesDateAddedBack(served)
+            || ImportedPlayCount > served.ImportedPlayCount;
 
         // The mirror image of the listening rule below: Date Added is a
         // low-water mark there, so only an older one is news. A device that
@@ -948,10 +951,11 @@ public class LibrarySyncService
             if (track.OriginTrackId is not { Length: > 0 } originTrackId)
                 continue;
 
-            // The same sum LibraryDtoMapper sends as
-            // this device's own tally - a play imported from iTunes is still a
-            // play this device is the record of.
-            var total = track.PlayCount + track.ImportedPlayCount;
+            // Plays counted in Flower, on this device - the tally
+            // LibraryDtoMapper sends under a device's own name. Music.app's
+            // count is not this device's tally but the library's one number
+            // for the song, and goes as owner state below (ImportedCount).
+            var total = track.PlayCount;
             var countIsNews = total > 0 && sentCounts.GetValueOrDefault(originTrackId) < total;
 
             var local = TrackStateSnapshot.Of(track);
@@ -973,7 +977,8 @@ public class LibrarySyncService
                     originTrackId, total,
                     track.LastPlayedAt, track.Starred, track.StarredAt,
                     track.RememberPlaybackPosition, track.ResumePosition?.TotalSeconds,
-                    track.IgnoreWhenShuffling, track.VolumeAdjustment, track.DateAdded)
+                    track.IgnoreWhenShuffling, track.VolumeAdjustment, track.DateAdded,
+                    track.ImportedPlayCount)
                 : new TrackStateDto(originTrackId, total));
         }
 

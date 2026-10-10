@@ -91,12 +91,18 @@ public static class LibraryDtoMapper
             // could report a play here (see IPlayReporter) and then never see
             // it again - the count was stored and never served, so the next tab
             // showed an empty Plays column for a track it had just played.
+            //
+            // Flower's plays only. Music.app's count travels on its own
+            // (ImportedPlayCount below): folded in here it would come back to
+            // the admin device that reported it as this server's plays, on top
+            // of the same count that device holds itself.
             PlayCounts: selfFingerprint == null
                 ? null
                 : new Dictionary<string, int>(track.RemotePlayCounts)
                 {
-                    [selfFingerprint] = track.PlayCount + track.ImportedPlayCount,
+                    [selfFingerprint] = track.PlayCount,
                 },
+            ImportedPlayCount: track.ImportedPlayCount > 0 ? track.ImportedPlayCount : null,
             LastPlayed: track.LastPlayedAt,
             // The same albumArtist already used for AlbumId/ArtistId/CoverArt
             // above, now also sent as a value - see TrackDto.DisplayAlbumArtist for

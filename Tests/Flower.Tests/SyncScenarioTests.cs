@@ -377,6 +377,94 @@ public class SyncScenarioTests : PinnedDataDirectory
         AssertPlaylistEntriesAreLibraryTracks(client.Library);
     }
 
+    // An administrator's Mac reads its Music.app history into songs it only
+    // streams: Music.app's count goes up as the library's one number for the
+    // song, apart from the Mac's own Flower plays, the older Date Added as
+    // owner state, and a later pull brings the count back as the library's
+    // rather than as the server's plays - so the Mac shows it once. See
+    // docs/SYNC-PLAN.md, "Music.app history from an admin device".
+    [Fact]
+    public async Task Music_app_history_imported_on_an_admin_device_reaches_the_server_and_survives_a_pull()
+    {
+        var song = ServerTrack("Wishwanderer");
+        using var server = new SimulatedFlowerServer([song]);
+        var client = NewClient();
+        await client.PullLibraryAsync(server);
+
+        var export = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"music-app-{Guid.NewGuid():N}.xml");
+        System.IO.File.WriteAllText(export, """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+            <plist version="1.0">
+            <dict>
+                <key>Tracks</key>
+                <dict>
+                    <key>1</key>
+                    <dict>
+                        <key>Track ID</key><integer>1</integer>
+                        <key>Name</key><string>Wishwanderer</string>
+                        <key>Artist</key><string>Artist</string>
+                        <key>Album</key><string>Album</string>
+                        <key>Total Time</key><integer>200000</integer>
+                        <key>Play Count</key><integer>19</integer>
+                        <key>Date Added</key><date>2011-05-01T00:00:00Z</date>
+                    </dict>
+                </dict>
+            </dict>
+            </plist>
+            """);
+        try
+        {
+            Flower.Importer.ITunesPlayCountImporter.ApplyFromXmlFile(client.Library.Tracks, export);
+            Flower.Importer.ITunesDateAddedImporter.ApplyFromXmlFile(client.Library.Tracks, export);
+        }
+        finally
+        {
+            System.IO.File.Delete(export);
+        }
+        client.Library.NotifyLibraryChanged();
+
+        client.Library.IncrementPlayCount(client.Single("Wishwanderer"));
+
+        Assert.True(await client.PushTrackStateAsync(server));
+        Assert.Equal(19, song.ImportedPlayCount);
+        Assert.Equal(1, song.RemotePlayCounts.GetValueOrDefault(client.Key.Fingerprint));
+        Assert.Equal(new DateTimeOffset(2011, 5, 1, 0, 0, 0, TimeSpan.Zero), song.DateAdded);
+        Assert.Equal(20, song.TotalPlayCount);
+
+        server.Library.NotifyLibraryChanged();
+        await client.PullLibraryAsync(server);
+        var mine = client.Single("Wishwanderer");
+        Assert.Equal(19, mine.ImportedPlayCount);
+        Assert.Equal(20, mine.TotalPlayCount);
+    }
+
+    // Two of the owner's Macs with one Music.app history between them (iCloud's
+    // Sync Library) report the same count: the library keeps the highest, not
+    // the sum, and a third device sees it once.
+    [Fact]
+    public async Task Two_admin_macs_reporting_one_music_app_history_count_it_once()
+    {
+        var song = ServerTrack("Wishwanderer");
+        using var server = new SimulatedFlowerServer([song]);
+        var first = NewClient();
+        var second = NewClient();
+        var phone = NewClient();
+        await first.PullLibraryAsync(server);
+        await second.PullLibraryAsync(server);
+
+        first.Single("Wishwanderer").ImportedPlayCount = 19;
+        second.Single("Wishwanderer").ImportedPlayCount = 18;
+        Assert.True(await first.PushTrackStateAsync(server));
+        Assert.True(await second.PushTrackStateAsync(server));
+
+        Assert.Equal(19, song.ImportedPlayCount);
+        Assert.Equal(19, song.TotalPlayCount);
+
+        await phone.PullLibraryAsync(server);
+        Assert.Equal(19, phone.Single("Wishwanderer").TotalPlayCount);
+    }
+
     // A placeholder played on the phone, then the server retags the file: the
     // phone's plays are still of that song, and still reported under its id.
     [Fact]

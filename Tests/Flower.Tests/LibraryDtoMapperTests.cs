@@ -110,14 +110,19 @@ public class LibraryDtoMapperTests
         Assert.NotEqual(track.SyncKey, after); // Sanity check on the premise: SyncKey did move.
     }
 
+    // Flower's plays under our own name, and Music.app's count apart from
+    // them: folded together, it would come back to the admin device that
+    // reported it as this server's plays, on top of its own copy.
     [Fact]
-    public void PlayCounts_includes_our_own_tally_under_our_own_fingerprint()
+    public void PlayCounts_carries_our_own_flower_plays_and_music_apps_count_apart()
     {
         var track = RealTrack("Come Together", "Beatles", "Abbey Road");
         track.PlayCount = 3;
         track.ImportedPlayCount = 4;
 
-        Assert.Equal(7, LibraryDtoMapper.ToTrackDto(track, "self-1").PlayCounts!["self-1"]);
+        var dto = LibraryDtoMapper.ToTrackDto(track, "self-1");
+        Assert.Equal(3, dto.PlayCounts!["self-1"]);
+        Assert.Equal(4, dto.ImportedPlayCount);
     }
 
     [Fact]

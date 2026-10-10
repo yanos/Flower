@@ -293,6 +293,48 @@ public class DiscoveryEndpointTests(FlowerServerFixture server) : IClassFixture<
         }
     }
 
+    // Whether this server counts Music.app's plays itself - so an
+    // administrator's Mac leaves its own alone rather than counting them
+    // twice. Told to administrators only, since nobody else's device imports
+    // anything. Its value depends on the machine the suite runs on (a Mac with
+    // Music.app reads true), so only its presence is held here; the rule
+    // itself is the next test.
+    [Fact]
+    public async Task Tells_only_an_administrator_whether_it_imports_music_app_plays()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var admin = NewDevice();
+        var listener = NewDevice();
+        await trustedPeers.ApproveAsync(admin.Fingerprint, "Owner's Mac", admin.PublicKeyBase64, isAdmin: true);
+        await trustedPeers.ApproveAsync(listener.Fingerprint, "Listener", listener.PublicKeyBase64);
+
+        try
+        {
+            var (_, adminBody) = await GetInfoAsync(signer: admin);
+            Assert.True(adminBody.GetProperty("importsMusicAppPlays").ValueKind is JsonValueKind.True or JsonValueKind.False);
+
+            var (_, listenerBody) = await GetInfoAsync(signer: listener);
+            Assert.True(!listenerBody.TryGetProperty("importsMusicAppPlays", out var told)
+                        || told.ValueKind == JsonValueKind.Null);
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(admin.Fingerprint);
+            await trustedPeers.RevokeAsync(listener.Fingerprint);
+        }
+    }
+
+    // Either switch off and the server reads no plays, Music.app or not.
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public void Does_not_import_music_app_plays_with_either_switch_off(bool integrate, bool playCounts) =>
+        Assert.False(Flower.Server.Endpoints.DiscoveryEndpoints.ImportsMusicAppPlays(new FlowerServerOptions
+        {
+            IntegrateWithITunes = integrate,
+            SyncPlayCountFromITunes = playCounts,
+        }));
+
     // playlistsToken is per listener (see Listeners): a guest's own playlist
     // changing moves the guest's token and leaves the owner's alone, so the
     // owner's devices are not sent off to re-sync over an edit they will

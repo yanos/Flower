@@ -232,6 +232,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
                 return;
 
             OnPropertyChanged(nameof(CanSyncFromITunes));
+            OnPropertyChanged(nameof(CanSyncPlayCountFromITunes));
             ApplyAppleMusicFolder();
         }
     }
@@ -246,6 +247,14 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     public bool CanIntegrateWithITunes => HasAppleMusicFolder && CanManageLibrary;
 
+    // Whether this machine's Music.app history may be read in here at all:
+    // where the library is this machine's own to manage, or - on a device
+    // paired to a server - where that server made it an administrator, whose
+    // imports go up to the server (SyncRolePolicy.MayImportFromMusicApp).
+    // Taking the folder itself in stays CanIntegrateWithITunes's.
+    private bool MayImportITunesHistory =>
+        HasAppleMusicFolder && (CanManageLibrary || _snapshot.AdministersPairedServer);
+
     // On a server the two per-track imports only mean anything while the
     // integration as a whole is on. Disabled rather than unchecked, so each keeps
     // whatever had already been chosen for when it is switched back on.
@@ -254,8 +263,29 @@ public sealed partial class SettingsViewModel : ViewModelBase
     // there a Music.app library existing is all it takes - including after a no
     // to the first-run question (ITunesLibraryOffer), which turned both off and
     // is exactly the answer somebody comes here to change.
+    //
+    // Date Added's switch; play counts have one more condition, below.
     public bool CanSyncFromITunes =>
-        CanIntegrateWithITunes && (IntegrateWithITunes || !Capabilities.ITunesMasterSwitch);
+        MayImportITunesHistory && (IntegrateWithITunes || !Capabilities.ITunesMasterSwitch);
+
+    // Not on a device whose server reads play counts from a Music.app library
+    // of its own: those plays are counted there already
+    // (SyncRolePolicy.MayImportPlayCountsFromMusicApp).
+    public bool CanSyncPlayCountFromITunes =>
+        CanSyncFromITunes && !(_snapshot.IsPairedToServer && _snapshot.PairedServerImportsMusicAppPlays);
+
+    public bool ShowsITunesSource => MayImportITunesHistory;
+
+    // What the two switches do on a paired device, or why they are off there -
+    // the panel's other note (ITunesUnavailableMessage) covers a machine with
+    // no Music.app library at all. Null where neither applies.
+    public string? ITunesImportNote =>
+        !_snapshot.IsPairedToServer || !HasAppleMusicFolder ? null
+        : !_snapshot.AdministersPairedServer
+            ? "Only an administrator's device can bring Music.app history to the server."
+        : _snapshot.PairedServerImportsMusicAppPlays
+            ? "Dates added go to the server. Play counts come from the server's own Music.app library."
+        : "Play counts and dates added go to the server. With several Macs, it keeps each song's highest Music.app count.";
 
     public bool ShowsITunesUnavailable => Capabilities.ITunesIntegration && !HasAppleMusicFolder;
 
@@ -530,6 +560,9 @@ public sealed partial class SettingsViewModel : ViewModelBase
             OnPropertyChanged(nameof(HasAppleMusicFolder));
             OnPropertyChanged(nameof(CanIntegrateWithITunes));
             OnPropertyChanged(nameof(CanSyncFromITunes));
+            OnPropertyChanged(nameof(CanSyncPlayCountFromITunes));
+            OnPropertyChanged(nameof(ShowsITunesSource));
+            OnPropertyChanged(nameof(ITunesImportNote));
             OnPropertyChanged(nameof(ShowsITunesUnavailable));
             OnPropertyChanged(nameof(ITunesUnavailableMessage));
 

@@ -77,6 +77,9 @@ public static class LibrarySyncMapper
             RemotePlayCounts = (song.PlayCounts ?? new Dictionary<string, int>())
                 .Where(kv => kv.Key != ownFingerprint)
                 .ToDictionary(kv => kv.Key, kv => kv.Value),
+            // Music.app's count, the library's one number for it - see
+            // TrackDto.ImportedPlayCount.
+            ImportedPlayCount = song.ImportedPlayCount ?? 0,
             // Falls back to the Track record's own "now" default (see Track.DateAdded)
             // when talking to a third-party server that doesn't send this - see
             // TrackDto.DateAdded's own doc comment for why this matters for Recently

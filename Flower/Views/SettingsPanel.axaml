@@ -228,17 +228,22 @@
         </ScrollViewer>
       </TabItem>
 
-      <!-- The tab itself always stays selectable - only its content is disabled
-           (see SettingsViewModel.CanManageLibrary) while this device is a Client
-           paired to a Server: a Client's library is meant to be synced in from
-           that server, not locally curated, so importing its own folders or
-           rebuilding its own database doesn't make sense here. -->
+      <!-- The tab itself always stays selectable - only its folder controls
+           are disabled (see SettingsViewModel.CanManageLibrary) while this
+           device is paired to a server: its library is synced in from that
+           server, not locally curated, so importing its own folders or
+           rebuilding its own database doesn't make sense here. The Music.app
+           imports are the exception, on an administrator's device. -->
       <TabItem Header="Library" x:Name="LibraryTab">
         <ScrollViewer>
           <StackPanel>
+            <!-- The folder rows are disabled on a paired device
+                 (CanManageLibrary) each on its own rather than the grid as a
+                 whole, because the two Music.app imports above them stay live
+                 on an administrator's device - its history goes up to the
+                 server (SettingsViewModel.CanSyncFromITunes). -->
             <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto,Auto,Auto"
-                  Margin="0,12,0,0"
-                  IsEnabled="{Binding CanManageLibrary}">
+                  Margin="0,12,0,0">
 
               <!-- Master switch for the whole Music.app integration, on a server's
                    settings only (FlowerServerOptions.IntegrateWithITunes): with it
@@ -299,7 +304,7 @@
                         IsVisible="{Binding Capabilities.ITunesIntegration}">
                 <CheckBox.IsEnabled>
                   <MultiBinding Converter="{x:Static BoolConverters.And}">
-                    <Binding Path="CanSyncFromITunes"/>
+                    <Binding Path="CanSyncPlayCountFromITunes"/>
                     <Binding Path="SyncPlayCountFromITunesLock.IsEditable"/>
                   </MultiBinding>
                 </CheckBox.IsEnabled>
@@ -326,7 +331,7 @@
                          FontSize="11" Opacity="0.6"
                          TextTrimming="CharacterEllipsis"
                          IsEnabled="{Binding CanSyncFromITunes}"
-                         IsVisible="{Binding CanIntegrateWithITunes}"/>
+                         IsVisible="{Binding ShowsITunesSource}"/>
 
               <!-- Why the switches above are greyed out. Deliberately in the
                    same place the source description would have been, rather than
@@ -337,6 +342,12 @@
                            Margin="20,4,0,0" FontSize="11" Opacity="0.6"
                            TextWrapping="Wrap"
                            IsVisible="{Binding ShowsITunesUnavailable}"/>
+                <!-- On a device paired to a server: where the two imports go,
+                     or why they are off. -->
+                <TextBlock Text="{Binding ITunesImportNote}"
+                           Margin="20,4,0,0" FontSize="11" Opacity="0.6"
+                           TextWrapping="Wrap"
+                           IsVisible="{Binding ITunesImportNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                 <TextBlock Text="{Binding IntegrateWithITunesLock.Message}" IsVisible="{Binding IntegrateWithITunesLock.IsLocked}"
                            Margin="20,4,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
                 <TextBlock Text="{Binding SyncPlayCountFromITunesLock.Message}" IsVisible="{Binding SyncPlayCountFromITunesLock.IsLocked}"
@@ -345,9 +356,11 @@
                            Margin="20,4,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
               </StackPanel>
 
-              <TextBlock Grid.Row="5" Text="Library Folders" FontWeight="SemiBold" Margin="0,16,0,8"/>
+              <TextBlock Grid.Row="5" Text="Library Folders" FontWeight="SemiBold" Margin="0,16,0,8"
+                         IsEnabled="{Binding CanManageLibrary}"/>
 
               <Border Grid.Row="6" MinHeight="140"
+                      IsEnabled="{Binding CanManageLibrary}"
                       BorderThickness="1"
                       BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
                 <ListBox x:Name="PathsList" ItemsSource="{Binding LibraryPaths}">
@@ -379,7 +392,7 @@
               <!-- The three things you can do to the folder list above, on its own
                    row: the two that change what is in it on the left, and the one
                    that acts on all of it pushed to the right, away from them. -->
-              <Grid Grid.Row="7" Margin="0,12,0,0">
+              <Grid Grid.Row="7" Margin="0,12,0,0" IsEnabled="{Binding CanManageLibrary}">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" Spacing="8"
                             IsEnabled="{Binding LibraryPathsLock.IsEditable}">
                   <Button Content="Add Folder…" Click="AddFolderButton_Click"/>
@@ -399,6 +412,7 @@
 
               <StackPanel Grid.Row="8" Orientation="Horizontal" Margin="0,8,0,0"
                           HorizontalAlignment="Left" Spacing="8"
+                          IsEnabled="{Binding CanManageLibrary}"
                           IsVisible="{Binding Capabilities.RebuildDatabase}">
                 <Button Content="Rebuild Database"
                         Command="{Binding RebuildDatabaseCommand}"/>

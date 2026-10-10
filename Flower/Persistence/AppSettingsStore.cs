@@ -163,6 +163,14 @@ namespace Flower.Persistence
         // this gains nothing there.
         public bool PairedServerGrantsAdmin { get; set; }
 
+        // Whether the paired server reads play counts from a Music.app library
+        // of its own (DiscoveredDevice.ServerImportsMusicAppPlays), so this
+        // device leaves its own Music.app plays alone rather than counting them
+        // a second time. Remembered for the same reason as the field above:
+        // the import runs at startup, before the server has necessarily
+        // answered.
+        public bool PairedServerImportsMusicAppPlays { get; set; }
+
         // When a bulk sync with PairedServerFingerprint last actually succeeded.
         // Persisted rather than kept in memory because the question it answers -
         // "is what I'm looking at current?" - is asked right after a relaunch as

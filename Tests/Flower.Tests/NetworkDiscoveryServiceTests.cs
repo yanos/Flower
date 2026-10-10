@@ -478,6 +478,25 @@ public class NetworkDiscoveryServiceTests : IDisposable
         Assert.True(discovered!.WeAreAdmin);
     }
 
+    // Whether the server reads Music.app's plays itself, which decides
+    // whether this device brings its own - see
+    // SyncRolePolicy.MayImportPlayCountsFromMusicApp.
+    [Fact]
+    public void Resolves_whether_the_peer_imports_music_app_plays_itself()
+    {
+        var endpoint = Routable(33);
+        _handler.RespondWith(endpoint.Port,
+            """{"alias":"Basement NAS","fingerprint":"mac-fp","callerIsAdmin":true,"importsMusicAppPlays":true}""");
+
+        DiscoveredDevice? discovered = null;
+        _service.DeviceDiscovered += (_, d) => discovered = d;
+
+        _backend.RaiseInstanceFound(InstanceName("Basement-NAS"), endpoint);
+
+        WaitUntil(() => discovered?.Fingerprint == "mac-fp", "the server's info should resolve");
+        Assert.True(discovered!.ServerImportsMusicAppPlays);
+    }
+
     // The resting state is the cautious one, the opposite way round from
     // TrustsUs: a peer that says nothing about it leaves the admin-only
     // controls hidden rather than showing ones it would refuse.

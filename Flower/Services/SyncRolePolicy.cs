@@ -1,4 +1,5 @@
 using Flower.Models;
+using Flower.Persistence;
 
 namespace Flower.Services;
 
@@ -46,4 +47,35 @@ public static class SyncRolePolicy
     // sync takes away.
     public static bool MayEditSong(Track track, string? pairedServerFingerprint, bool administersPairedServer) =>
         IsServersSong(track, pairedServerFingerprint) ? administersPairedServer : track.Path != null;
+
+    // Whether this device may read its Music.app library's history - Date
+    // Added, and play counts subject to the rule below - into its library.
+    //
+    // A device of its own, yes. A device paired to a server, only as one of
+    // the server's administrators: its songs are the server's, so what it
+    // imports goes there (Date Added as owner state, which the server takes
+    // from administrators only; play counts as this device's own tally), and
+    // the server may well have no Music.app to read - one in a container
+    // never has. A guest's Date Added would be dropped, so a guest imports
+    // nothing. See docs/SYNC-PLAN.md, "Music.app history from an admin device".
+    //
+    // Only the history. Taking the Music.app folder into the library is
+    // managing the library, which a paired device does not do.
+    public static bool MayImportFromMusicApp(string? pairedServerFingerprint, bool administersPairedServer) =>
+        string.IsNullOrEmpty(pairedServerFingerprint) || administersPairedServer;
+
+    // Play counts, less one case: a server that reads them from a Music.app
+    // library of its own already counts those plays, and this device's would
+    // count them again. Date Added has no such case - two oldest-wins sources
+    // of one date agree.
+    public static bool MayImportPlayCountsFromMusicApp(
+        string? pairedServerFingerprint, bool administersPairedServer, bool serverImportsMusicAppPlays) =>
+        MayImportFromMusicApp(pairedServerFingerprint, administersPairedServer)
+        && (string.IsNullOrEmpty(pairedServerFingerprint) || !serverImportsMusicAppPlays);
+
+    public static bool MayImportFromMusicApp(AppSettings settings) =>
+        MayImportFromMusicApp(settings.PairedServerFingerprint, settings.PairedServerGrantsAdmin);
+
+    public static bool MayImportPlayCountsFromMusicApp(AppSettings settings) =>
+        MayImportPlayCountsFromMusicApp(settings.PairedServerFingerprint, settings.PairedServerGrantsAdmin, settings.PairedServerImportsMusicAppPlays);
 }

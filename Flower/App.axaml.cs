@@ -1021,16 +1021,15 @@ public partial class App : Application
                 // checkbox, independent of this startup rescan) and layer their
                 // own more specific BusyMessage on top of this outer scope's.
                 //
-                // Not on a device paired to a server: its library is the
-                // server's, which runs these imports itself, and Settings
-                // disables both switches there (SettingsViewModel.
-                // CanManageLibrary) - so an import that ran here anyway would
-                // be one nobody could turn off. The same rule
-                // LocalSettingsBackend.SaveAsync applies to its own two.
-                var importsFromMusicApp = isLocalImporter && string.IsNullOrEmpty(appSettings.PairedServerFingerprint);
-                if (importsFromMusicApp && appSettings.SyncPlayCountFromITunes)
+                // Who may is SyncRolePolicy's: a device of its own, or one of
+                // its server's administrators, whose imports reach the server
+                // through the track-state push - minus play counts when the
+                // server reads Music.app itself. Settings enables the switches
+                // by the same rule, and LocalSettingsBackend.SaveAsync applies
+                // it to its own two.
+                if (isLocalImporter && appSettings.SyncPlayCountFromITunes && SyncRolePolicy.MayImportPlayCountsFromMusicApp(appSettings))
                     await mainViewModel.SyncITunesPlayCountAsync();
-                if (importsFromMusicApp && appSettings.SyncDateAddedFromITunes)
+                if (isLocalImporter && appSettings.SyncDateAddedFromITunes && SyncRolePolicy.MayImportFromMusicApp(appSettings))
                     await mainViewModel.SyncITunesDateAddedAsync();
             }
             catch (Exception ex)

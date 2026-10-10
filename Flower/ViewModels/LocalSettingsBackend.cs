@@ -63,6 +63,8 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
         DataDirectory = AppDataDirectory.Path,
         Version = AppVersion.Display,
         IsPairedToServer = !string.IsNullOrEmpty(ViewModel.PairedServerFingerprint),
+        AdministersPairedServer = ViewModel.AdministersPairedServer,
+        PairedServerImportsMusicAppPlays = ViewModel.PairedServerImportsMusicAppPlays,
     });
 
     // The Library tab's *content* only stops making sense once this device is
@@ -100,12 +102,12 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
         if (draft.LibraryPathsChanged)
             await ViewModel.SaveLibraryPathsAsync(draft.LibraryPaths.ToList());
 
-        // Gated on CanManageLocalLibrary as well as each box's own value: a
-        // disabled CheckBox still reports whatever it was set to before it went
-        // disabled, so trusting IsChecked alone would let a paired device kick
+        // Gated on SyncRolePolicy's rule as well as each box's own value: a disabled
+        // CheckBox still reports whatever it was set to before it went
+        // disabled, so trusting IsChecked alone would let a guest device kick
         // off an iTunes import it is not supposed to run.
-        var syncPlayCount = CanManageLocalLibrary && draft.SyncPlayCountFromITunes;
-        var syncDateAdded = CanManageLocalLibrary && draft.SyncDateAddedFromITunes;
+        var syncPlayCount = draft.SyncPlayCountFromITunes && ViewModel.MayImportPlayCountsFromMusicApp;
+        var syncDateAdded = draft.SyncDateAddedFromITunes && ViewModel.MayImportFromMusicApp;
 
         // All three run unawaited, on purpose: the screen closes as soon as the
         // (fast) settings write lands, and the (potentially long) rescan/import

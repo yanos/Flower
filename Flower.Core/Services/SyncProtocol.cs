@@ -53,8 +53,15 @@ public static class SyncProtocol
 // own 403. Never a permission in itself: the server re-checks
 // TrustedPeer.IsAdmin on every admin route regardless of what a client
 // believes about itself.
+//
+// ImportsMusicAppPlays says whether this server reads play counts from a
+// Music.app library of its own. An administrator's device brings its Music.app
+// plays to the server only when the server does not, or the same plays would
+// be counted twice: once in the server's own figures, once as the device's
+// tally (see SyncRolePolicy.MayImportPlayCountsFromMusicApp). Administrators
+// only, null for everyone else: it describes the machine the server runs on.
 public sealed record SyncInfoResponseDto(
     string Alias, string Version, string? DeviceModel, string DeviceType,
     string Fingerprint, string PublicKey, bool Download, bool? TrustsCaller,
     string LibraryToken, List<string>? Addresses = null, bool? CallerIsAdmin = null,
-    string? PlaylistsToken = null);
+    string? PlaylistsToken = null, bool? ImportsMusicAppPlays = null);

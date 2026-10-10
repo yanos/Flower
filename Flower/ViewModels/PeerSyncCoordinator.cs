@@ -899,6 +899,7 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         _appSettings.PairedServerAlias = null;
         _appSettings.PairedServerTrustConfirmed = false;
         _appSettings.PairedServerGrantsAdmin = false;
+        _appSettings.PairedServerImportsMusicAppPlays = false;
         _appSettings.PairedServerLastSyncedAt = null;
         _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
         NotifyPairingChanged();
@@ -931,9 +932,13 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         // The same answer carries whether this device administers the server,
         // which is remembered for the times the server is not there to ask -
         // see AppSettings.PairedServerGrantsAdmin.
-        if (_appSettings.PairedServerGrantsAdmin != device.WeAreAdmin)
+        // And, for an administrator, whether the server counts Music.app's
+        // plays itself - see AppSettings.PairedServerImportsMusicAppPlays.
+        if (_appSettings.PairedServerGrantsAdmin != device.WeAreAdmin
+            || _appSettings.PairedServerImportsMusicAppPlays != device.ServerImportsMusicAppPlays)
         {
             _appSettings.PairedServerGrantsAdmin = device.WeAreAdmin;
+            _appSettings.PairedServerImportsMusicAppPlays = device.ServerImportsMusicAppPlays;
             _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
         }
     }

@@ -89,6 +89,13 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             track, _appSettings.PairedServerFingerprint,
             _reachability?.PairedServerDevice?.WeAreAdmin ?? _appSettings.PairedServerGrantsAdmin);
 
+    // The pairing as last heard, for Settings to say which Music.app imports
+    // this device may run (SyncRolePolicy.MayImportFromMusicApp).
+    public bool AdministersPairedServer => _appSettings.PairedServerGrantsAdmin;
+    public bool PairedServerImportsMusicAppPlays => _appSettings.PairedServerImportsMusicAppPlays;
+    public bool MayImportFromMusicApp => SyncRolePolicy.MayImportFromMusicApp(_appSettings);
+    public bool MayImportPlayCountsFromMusicApp => SyncRolePolicy.MayImportPlayCountsFromMusicApp(_appSettings);
+
     public void ScheduleContentSync() => Sync.ScheduleContentSync();
 
     public ICommand? OpenAppDataLocationCommand  { get; private set; }

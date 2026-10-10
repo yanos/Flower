@@ -255,7 +255,8 @@ device it answers more, on that device's budget, and the answer is signed back.
   "libraryToken": "…",
   "addresses": ["https://192.168.1.40:4534", "http://192.168.1.40:4533"],
   "callerIsAdmin": false,
-  "playlistsToken": "…"
+  "playlistsToken": "…",
+  "importsMusicAppPlays": false
 }
 ```
 
@@ -268,6 +269,7 @@ device it answers more, on that device's budget, and the answer is signed back.
 | `playlistsToken` | Change token for the caller's listener's playlists, so a guest's edit does not move the owner's. **Verified callers only**, `null` otherwise |
 | `addresses` | Every origin the server believes it is reachable on, https first, the public one last. **Verified callers only**, `null` otherwise |
 | `callerIsAdmin` | **Verified callers only**, `null` otherwise. A hint for showing admin controls; it grants nothing |
+| `importsMusicAppPlays` | **Verified administrators only**, `null` otherwise. Whether this server reads play counts from a Music.app library of its own; an admin device that brings its own Music.app plays leaves them alone while this is `true`, so they are not counted twice |
 
 A verified call also carries the device's current `X-Flower-Alias`, and this is
 where a rename lands in the server's device list. A signed call's answer is
@@ -336,6 +338,11 @@ Returns `LibrarySyncManifestDto`:
 { "DeviceFingerprint": "3f9a…", "Songs": [ { "Id": "…", "Title": "…" } ], "Removed": ["…"] }
 ```
 
+Each song's `PlayCounts` holds plays counted in Flower, one entry per device
+plus the server's own; its `ImportedPlayCount` is the library's Music.app count
+(see `POST /track-state`), served apart so the admin device that reported it
+does not get it back as the server's plays. A song's total is the sum of both.
+
 The response's `ETag` is the library change token — the same value `/info`
 reports as `libraryToken`. Send it back as `If-None-Match` for a `304` with no
 body. At a real library size this is megabytes; the serialized body is cached
@@ -394,13 +401,17 @@ limit it is a `400`.
 `{"Tracks": [TrackStateDto]}` → `204`, with the resulting library token in the
 `X-Flower-Library-Token` response header.
 
-Totals, not events: `Count` is this device's own play count for the track,
-filed under the fingerprint the signature proved and merged by max, so
-re-sending converges. Everything else in the record — `LastPlayedAt`,
-`Starred`, `StarredAt`, the playback options, `DateAdded` — is a single-valued
-field on the shared library, and is applied **only from an admin device**. A
-non-admin sending them still gets `204`; the fields are dropped in the merge.
-`DateAdded` only ever moves backwards.
+Totals, not events: `Count` is this device's own play count for the track —
+plays counted in Flower — filed under the fingerprint the signature proved and
+merged by max, so re-sending converges. Everything else in the record —
+`LastPlayedAt`, `Starred`, `StarredAt`, the playback options, `DateAdded`,
+`ImportedCount` — is a single-valued field on the shared library, and is
+applied **only from an admin device**. A non-admin sending them still gets
+`204`; the fields are dropped in the merge. `DateAdded` only ever moves
+backwards. `ImportedCount` is the song's play count as read from Music.app on
+the reporting device; the library keeps one such count per song and only ever
+raises it, to the highest any admin device reports, so two Macs sharing one
+Music.app history count it once.
 
 The response header exists to break a loop: reporting a play moves the library
 token, and a client that did not recognise its own echo would refetch the whole

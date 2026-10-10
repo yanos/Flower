@@ -244,4 +244,64 @@ public class SettingsITunesGatingTests
         Assert.False(viewModel.CanSyncFromITunes);
         Assert.True(viewModel.ShowsITunesUnavailable);
     }
+    // A device paired to a server: its library folders are the server's
+    // business, but an administrator's Mac still brings its Music.app history
+    // to the server - which, in a container, has none to read. See
+    // docs/SYNC-PLAN.md, "Music.app history from an admin device".
+    private static SettingsSnapshot Paired(bool admin, bool serverImports = false) => new()
+    {
+        AppleMusicFolder = "/Users/x/Music/Music/Media.localized",
+        SyncPlayCountFromITunes = true,
+        SyncDateAddedFromITunes = true,
+        IsPairedToServer = true,
+        AdministersPairedServer = admin,
+        PairedServerImportsMusicAppPlays = serverImports,
+    };
+
+    [Fact]
+    public async Task An_administrators_paired_mac_imports_both_and_says_where_they_go()
+    {
+        var viewModel = await LoadAsync(AppCapabilities, Paired(admin: true));
+
+        Assert.False(viewModel.CanManageLibrary);
+        Assert.False(viewModel.CanIntegrateWithITunes);
+        Assert.True(viewModel.CanSyncFromITunes);
+        Assert.True(viewModel.CanSyncPlayCountFromITunes);
+        Assert.True(viewModel.ShowsITunesSource);
+        Assert.Contains("go to the server", viewModel.ITunesImportNote);
+    }
+
+    [Fact]
+    public async Task A_guests_paired_mac_imports_nothing_and_says_why()
+    {
+        var viewModel = await LoadAsync(AppCapabilities, Paired(admin: false));
+
+        Assert.False(viewModel.CanSyncFromITunes);
+        Assert.False(viewModel.CanSyncPlayCountFromITunes);
+        Assert.Contains("administrator", viewModel.ITunesImportNote);
+    }
+
+    // The server counts those plays itself; the Mac counting them too would
+    // count them twice. Dates have an order, so both may say one.
+    [Fact]
+    public async Task A_server_reading_its_own_music_app_leaves_the_mac_only_dates()
+    {
+        var viewModel = await LoadAsync(AppCapabilities, Paired(admin: true, serverImports: true));
+
+        Assert.True(viewModel.CanSyncFromITunes);
+        Assert.False(viewModel.CanSyncPlayCountFromITunes);
+        Assert.Contains("server's own Music.app", viewModel.ITunesImportNote);
+    }
+
+    [Fact]
+    public async Task An_unpaired_mac_has_no_note()
+    {
+        var viewModel = await LoadAsync(AppCapabilities, new SettingsSnapshot
+        {
+            AppleMusicFolder = "/Users/x/Music/Music/Media.localized",
+        });
+
+        Assert.Null(viewModel.ITunesImportNote);
+        Assert.True(viewModel.CanSyncPlayCountFromITunes);
+    }
 }

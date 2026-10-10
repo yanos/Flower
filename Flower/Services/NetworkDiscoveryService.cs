@@ -102,6 +102,13 @@ public class DiscoveredDevice
     // the server says otherwise. See MainViewModel.CanInviteDeviceToPairedServer.
     public bool WeAreAdmin { get; set; }
 
+    // Whether this server reads play counts from a Music.app library of its
+    // own (importsMusicAppPlays, told to administrators only), in which case
+    // this device does not bring its own - see
+    // SyncRolePolicy.MayImportPlayCountsFromMusicApp. Absent leaves it as it
+    // was, starting false: a server that says nothing is not importing.
+    public bool ServerImportsMusicAppPlays { get; set; }
+
     // This peer's Library.ChangeToken as of its last /info answer - the same
     // opaque token GET /api/flower/v1/library serves as its ETag. Empty until
     // resolved. Changing means the peer's catalog changed, which is how a
@@ -718,6 +725,16 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
                     changed = true;
                 }
             }
+            if (doc.RootElement.TryGetProperty("importsMusicAppPlays", out var musicAppProp) &&
+                musicAppProp.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            {
+                var importsMusicAppPlays = musicAppProp.ValueKind == JsonValueKind.True;
+                if (importsMusicAppPlays != device.ServerImportsMusicAppPlays)
+                {
+                    device.ServerImportsMusicAppPlays = importsMusicAppPlays;
+                    changed = true;
+                }
+            }
             if (doc.RootElement.TryGetProperty("libraryToken", out var tokenProp) &&
                 tokenProp.GetString() is { } libraryToken && libraryToken != device.LibraryToken)
             {
@@ -1087,6 +1104,7 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
                     DeviceType = existing.DeviceType,
                     TrustsUs = existing.TrustsUs,
                     WeAreAdmin = existing.WeAreAdmin,
+                    ServerImportsMusicAppPlays = existing.ServerImportsMusicAppPlays,
                     LibraryToken = existing.LibraryToken,
                     PlaylistsToken = existing.PlaylistsToken,
                     Addresses = existing.Addresses,
