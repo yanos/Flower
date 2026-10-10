@@ -28,6 +28,9 @@
     <PackageReference Include="Avalonia.Controls.DataGrid" Version="12.1.0" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.0" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.0" />
+    <!-- Every head renders with Skia already; this is for BackdropBlur, which
+         draws with it directly. -->
+    <PackageReference Include="Avalonia.Skia" Version="12.1.0" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
 
     <PackageReference Include="Material.Icons.Avalonia" Version="3.0.2" />
