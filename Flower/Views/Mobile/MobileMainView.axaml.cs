@@ -1,8 +1,11 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Platform;
+using Avalonia.Data;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml.MarkupExtensions;
@@ -36,6 +39,54 @@ public partial class MobileMainView : UserControl
             if (e.Property == SlidingSheet.IsOpenProperty)
                 TuckMiniPlayer(NowPlayingSheet.IsOpen);
         };
+
+        foreach (var sheet in Root.Children.OfType<SlidingSheet>())
+            sheet.PropertyChanged += (_, e) =>
+            {
+                if (e.Property == SlidingSheet.IsCoveringProperty)
+                    UpdateCovered();
+            };
+    }
+
+    // ── What a full-bleed sheet hides ─────────────────────────────────────
+    //
+    // Everything declared before the topmost sheet that is open and at rest
+    // over the whole window (SlidingSheet.IsCovering) is out of sight, and is
+    // taken out of the picture: the compositor has no idea an opaque sheet
+    // hides what is under it, so the screen behind Track Info - an album page,
+    // its backdrop and its header's blur - and the mini player and tabs were
+    // all drawn again on every frame Track Info scrolled. At no opacity they
+    // are skipped, while staying laid out and where they were, so the moment
+    // the sheet starts to leave (or a finger drags it aside) they are back
+    // exactly as they were.
+    //
+    // Held at Animation priority, above every local value, and released
+    // rather than overwritten: the mini player and the card sheets set their
+    // own opacity as they animate, and theirs is what they go back to.
+    private readonly List<IDisposable> _covered = [];
+
+    private void UpdateCovered()
+    {
+        foreach (var cover in _covered)
+            cover.Dispose();
+        _covered.Clear();
+
+        var children = Root.Children;
+        var top = -1;
+        for (var i = children.Count - 1; i >= 0; i--)
+        {
+            if (children[i] is SlidingSheet { IsCovering: true })
+            {
+                top = i;
+                break;
+            }
+        }
+
+        for (var i = 0; i < top; i++)
+        {
+            if (children[i].SetValue(OpacityProperty, 0d, BindingPriority.Animation) is { } cover)
+                _covered.Add(cover);
+        }
     }
 
     // A tap on empty space puts a screen's text box down - the search box,

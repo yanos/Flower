@@ -550,6 +550,60 @@ public class SlidingSheetTests
         }
     }
 
+    // IsCovering is what MobileMainView stops drawing everything under a
+    // sheet by, so it has to be true only while nothing under it can show:
+    // open and still. Not while it slides in, not from the moment it starts
+    // to leave, and not while a finger has it dragged aside.
+    [AvaloniaFact]
+    public void A_full_bleed_sheet_covers_only_while_it_is_open_and_still()
+    {
+        var host = Show(dismiss: new RecordingCommand());
+        try
+        {
+            host.Sheet.IsOpen = true;
+            Host.Settle();
+            Assert.False(host.Sheet.IsCovering);
+
+            host.Advance();
+            Assert.True(host.Sheet.IsCovering);
+
+            host.Window.MouseDown(new Point(100, 400), MouseButton.Left);
+            host.Window.MouseMove(new Point(140, 400), RawInputModifiers.LeftMouseButton);
+            Assert.False(host.Sheet.IsCovering);
+            host.Window.MouseUp(new Point(140, 400), MouseButton.Left);
+            Host.Settle();
+            Assert.False(host.Sheet.IsCovering);
+
+            host.Advance();
+            Assert.True(host.Sheet.IsCovering);
+
+            host.Sheet.IsOpen = false;
+            Assert.False(host.Sheet.IsCovering);
+        }
+        finally
+        {
+            host.Window.Close();
+        }
+    }
+
+    // A card leaves the screen showing, dimmed, behind it.
+    [AvaloniaFact]
+    public void A_card_sheet_never_covers()
+    {
+        var host = Show(SheetEntrance.FromBottom, withCard: true);
+        try
+        {
+            host.Sheet.IsOpen = true;
+            host.Advance();
+
+            Assert.False(host.Sheet.IsCovering);
+        }
+        finally
+        {
+            host.Window.Close();
+        }
+    }
+
     // There is no forward from a sheet, so a leftward drag is nothing at all -
     // and must not drag the sheet off its own left edge on the way to finding
     // that out.

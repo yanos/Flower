@@ -136,6 +136,29 @@ public sealed class SlidingSheet : ContentControl
     public static void SetIsCard(Control control, bool value) => control.SetValue(IsCardProperty, value);
     public static bool GetIsCard(Control control) => control.GetValue(IsCardProperty);
 
+    public static readonly DirectProperty<SlidingSheet, bool> IsCoveringProperty =
+        AvaloniaProperty.RegisterDirect<SlidingSheet, bool>(nameof(IsCovering), s => s.IsCovering);
+
+    private bool _isCovering;
+
+    /// <summary>
+    /// Whether this is a full-bleed sheet open and at rest, hiding everything
+    /// under it - not while it slides in or out, nor while a finger drags it
+    /// aside. MobileMainView stops drawing what is under it for as long as
+    /// this holds (see its UpdateCovered): nothing tells the compositor that
+    /// an opaque sheet hides the screens beneath it, so they were drawn in
+    /// full on every frame the sheet scrolled. A card never covers: the
+    /// screen shows dimmed behind it.
+    /// </summary>
+    public bool IsCovering
+    {
+        get => _isCovering;
+        private set => SetAndRaise(IsCoveringProperty, ref _isCovering, value);
+    }
+
+    // At rest over everything, if it is a sheet that can be.
+    private void Settle() => IsCovering = IsOpen && FindCard() == null && GetOffset(_sheetTransform) == 0;
+
     private readonly TranslateTransform _sheetTransform = new();
     private Control? _card;
     private TranslateTransform? _cardTransform;
@@ -191,6 +214,7 @@ public sealed class SlidingSheet : ContentControl
         // same opacity) and would go on driving it out from under this one -
         // and finish by hiding a sheet the user has just asked for.
         StopEasing();
+        IsCovering = false;
 
         // Visible before anything is measured or moved, so the first frame the
         // compositor draws already has the sheet parked off-screen (or, for a
@@ -222,11 +246,12 @@ public sealed class SlidingSheet : ContentControl
                     // off-screen.
                     StopEasing();
                     SetOffset(_sheetTransform, 0);
+                    Settle();
                     return;
                 }
                 var from = StartOffset(distance);
                 SetOffset(_sheetTransform, from);
-                Ease(p => SetOffset(_sheetTransform, from * (1 - p)), null);
+                Ease(p => SetOffset(_sheetTransform, from * (1 - p)), Settle);
             }, DispatcherPriority.Loaded);
             return;
         }
@@ -266,6 +291,7 @@ public sealed class SlidingSheet : ContentControl
         // Same as Open: an entrance still easing must not keep driving the
         // transform this slide-out is about to take over.
         StopEasing();
+        IsCovering = false;
 
         // Hidden only once it is fully off-screen, so the closing slide is
         // actually seen - IsVisible is this control's own state, not a
@@ -499,6 +525,8 @@ public sealed class SlidingSheet : ContentControl
 
             e.Pointer.Capture(this);
             _capturedForSwipe = true;
+            // Dragged aside, it uncovers what is under it.
+            IsCovering = false;
         }
 
         // Clamped so the drag only ever uncovers what is behind the sheet, never
@@ -553,9 +581,12 @@ public sealed class SlidingSheet : ContentControl
     {
         var from = GetOffset(_sheetTransform);
         if (from == 0)
+        {
+            Settle();
             return;
+        }
 
-        Ease(p => SetOffset(_sheetTransform, from * (1 - p)), null);
+        Ease(p => SetOffset(_sheetTransform, from * (1 - p)), Settle);
     }
 
     private static double EaseOut(double t) => 1 - Math.Pow(1 - t, 3);

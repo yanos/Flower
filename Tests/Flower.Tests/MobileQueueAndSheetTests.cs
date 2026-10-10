@@ -112,6 +112,23 @@ public class MobileQueueAndSheetTests : PinnedDataDirectory
         Assert.InRange(top, 0, 200);
     }
 
+    // What a full-bleed sheet covers is not drawn while it covers it, and is
+    // back the moment the sheet starts to leave.
+    [AvaloniaFact]
+    public void A_full_bleed_sheet_takes_what_it_covers_out_of_the_picture()
+    {
+        using var h = new Harness();
+        var root = h.View.FindControl<Grid>("Root")!;
+        var screens = root.Children[0];
+
+        h.Vm.OpenSettingsCommand.Execute(null);
+        Harness.Pump();
+        Assert.Equal(0, screens.Opacity);
+
+        h.Vm.CloseSheetCommand.Execute(null);
+        Assert.Equal(1, screens.Opacity);
+    }
+
     // Fluent shrinks a pressed button a little; on a full-width row that read
     // as the list twitching under every touch.
     [AvaloniaFact]
