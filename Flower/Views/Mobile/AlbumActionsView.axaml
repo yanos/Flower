@@ -110,6 +110,16 @@
           </StackPanel>
         </Button>
 
+        <!-- Every song of the album at once, in Track Info. Not over a
+             playlist, whose songs share nothing a tag says. -->
+        <Button Classes="action" Command="{Binding ViewAlbumActionTargetTrackInfoCommand}"
+                IsVisible="{Binding !IsActingOnAPlaylist}">
+          <StackPanel Orientation="Horizontal" Spacing="14">
+            <materialIcons:MaterialIcon Kind="InformationOutline" Width="22" Height="22" />
+            <TextBlock Text="Track Info" FontSize="16" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+
         <Button Classes="action" Command="{Binding DownloadAlbumActionTargetCommand}"
                 IsVisible="{Binding CanDownloadAlbumActionTarget}">
           <StackPanel Orientation="Horizontal" Spacing="14">

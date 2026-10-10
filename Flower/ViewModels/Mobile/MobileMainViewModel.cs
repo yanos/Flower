@@ -142,6 +142,32 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     public ICommand PreviousTrackCommand { get; }
     public ICommand OpenTrackActionsCommand { get; }
     public ICommand ViewTrackInfoCommand { get; }
+
+    // Track Info over every song of the album the album menu was opened for -
+    // the songs' common tags in its boxes, "Multiple values" where they
+    // differ, and what is typed applied to them all.
+    public ICommand ViewAlbumActionTargetTrackInfoCommand { get; }
+
+    // What an open Track Info sheet edits: the one song a row's menu or Now
+    // Playing opened it for, or every song of an album (TrackInfoView).
+    private IReadOnlyList<Track> _trackInfoTracks = [];
+    public IReadOnlyList<Track> TrackInfoTracks
+    {
+        get => _trackInfoTracks;
+        private set
+        {
+            _trackInfoTracks = value;
+            OnPropertyChanged();
+        }
+    }
+
+    private void OpenTrackInfo(IReadOnlyList<Track> tracks)
+    {
+        if (tracks.Count == 0)
+            return;
+        TrackInfoTracks = tracks;
+        ActiveSheet = MobileSheet.TrackInfo;
+    }
     public ICommand OpenAddToPlaylistCommand { get; }
     public ICommand AddTrackToPlaylistCommand { get; }
     public ICommand BeginCreatePlaylistCommand { get; }
@@ -2283,9 +2309,10 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         });
         ViewTrackInfoCommand = new RelayCommand(() =>
         {
-            if (ActionTarget != null)
-                ActiveSheet = MobileSheet.TrackInfo;
+            if (ActionTarget is { } track)
+                OpenTrackInfo([track]);
         });
+        ViewAlbumActionTargetTrackInfoCommand = new RelayCommand(() => OpenTrackInfo(AlbumActionTargetTracks()));
         OpenAddToPlaylistCommand = new RelayCommand(() =>
         {
             if (ActionTarget != null)

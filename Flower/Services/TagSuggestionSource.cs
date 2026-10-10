@@ -35,8 +35,16 @@ public static class TagSuggestionSource
             .OrderBy(a => a, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
 
-    // For the phone's Track Info genre menu, which has no autocomplete box to
-    // put suggestions in and offers the whole list behind a chevron instead.
+    public static List<string> DistinctComposers(IEnumerable<Track> tracks) =>
+        tracks.Select(t => t.Composers)
+            .Where(c => !string.IsNullOrWhiteSpace(c))
+            .Select(c => c!)
+            .Distinct()
+            .OrderBy(c => c, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+
+    // For the phone's Track Info genre menu, the whole list behind a chevron,
+    // and the suggestions under its box.
     public static List<string> DistinctGenres(IEnumerable<Track> tracks) =>
         tracks.Select(t => t.Genre)
             .Where(g => !string.IsNullOrWhiteSpace(g))
@@ -44,4 +52,22 @@ public static class TagSuggestionSource
             .Distinct()
             .OrderBy(g => g, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
+
+    // What the phone shows under a box as it is typed in: names starting with
+    // the text first, then names containing it, never the text itself, at
+    // most a handful - a row of them, not a list to scroll.
+    public static List<string> Matching(IReadOnlyList<string> pool, string? typed, int limit = 6)
+    {
+        var text = typed?.Trim();
+        if (string.IsNullOrEmpty(text))
+            return [];
+
+        var starts = pool.Where(p => p.StartsWith(text, StringComparison.CurrentCultureIgnoreCase));
+        var contains = pool.Where(p => !p.StartsWith(text, StringComparison.CurrentCultureIgnoreCase)
+                                       && p.Contains(text, StringComparison.CurrentCultureIgnoreCase));
+        return starts.Concat(contains)
+            .Where(p => !string.Equals(p, text, StringComparison.CurrentCulture))
+            .Take(limit)
+            .ToList();
+    }
 }

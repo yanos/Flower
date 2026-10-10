@@ -86,6 +86,30 @@
     <Style Selector="TextBox.val:focus">
       <Setter Property="controls:TextInput.ShowsClearButton" Value="True" />
     </Style>
+    <!-- The keyboard starts each box with a capital - a title, a name - and
+         lets it be overridden, rather than the box rewriting what is typed:
+         "jinsang", "yes/and" and "waykup." are names as they are spelled.
+         The number boxes get the number pad instead. -->
+    <Style Selector="TextBox.val">
+      <Setter Property="TextInputOptions.AutoCapitalization" Value="True" />
+    </Style>
+    <Style Selector="TextBox.val.num">
+      <Setter Property="TextInputOptions.AutoCapitalization" Value="False" />
+      <Setter Property="TextInputOptions.ContentType" Value="Digits" />
+    </Style>
+    <!-- The library's own spellings, under the box being typed in, a tap
+         from going into it - see TrackInfoView's TagSuggestions. Not
+         focusable, so the tap leaves the keyboard where it is. -->
+    <Style Selector="WrapPanel.suggestions > Button">
+      <Setter Property="Focusable" Value="False" />
+      <Setter Property="Background" Value="{DynamicResource AppAccentTintBrush}" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="9999" />
+      <Setter Property="Padding" Value="12,6" />
+      <Setter Property="Margin" Value="0,0,6,6" />
+      <Setter Property="FontSize" Value="14" />
+    </Style>
+
     <Style Selector="TextBox.val.multi">
       <Setter Property="AcceptsReturn" Value="True" />
       <Setter Property="TextWrapping" Value="Wrap" />
@@ -152,8 +176,9 @@
                                    VerticalAlignment="Top" />
             <Grid Grid.Column="1" RowDefinitions="Auto,*,Auto" MinHeight="128">
               <StackPanel Grid.Row="0" Spacing="2">
+                <!-- Set from code rather than bound, so several songs with
+                     different titles read as how many there are. -->
                 <TextBlock x:Name="TitleHeading"
-                           Text="{Binding #TitleBox.Text}"
                            FontSize="18" FontWeight="SemiBold"
                            TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
                 <TextBlock x:Name="AlbumHeading"
@@ -199,10 +224,16 @@
             <Grid ColumnDefinitions="88,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="10">
               <TextBlock Grid.Row="0" Classes="lbl" Text="Title" />
               <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="TitleBox" Classes="val" />
-              <TextBlock Grid.Row="1" Classes="lbl" Text="Artist" />
-              <controls:TextInput Grid.Row="1" Grid.Column="1" x:Name="ArtistBox" Classes="val" />
-              <TextBlock Grid.Row="2" Classes="lbl" Text="Album" />
-              <controls:TextInput Grid.Row="2" Grid.Column="1" x:Name="AlbumBox" Classes="val" />
+              <TextBlock Grid.Row="1" Classes="lbl" Text="Artist" VerticalAlignment="Top" Margin="0,10,0,0" />
+              <StackPanel Grid.Row="1" Grid.Column="1">
+                <controls:TextInput x:Name="ArtistBox" Classes="val" />
+                <WrapPanel x:Name="ArtistSuggestions" Classes="suggestions" Margin="0,6,0,0" IsVisible="False" />
+              </StackPanel>
+              <TextBlock Grid.Row="2" Classes="lbl" Text="Album" VerticalAlignment="Top" Margin="0,10,0,0" />
+              <StackPanel Grid.Row="2" Grid.Column="1">
+                <controls:TextInput x:Name="AlbumBox" Classes="val" />
+                <WrapPanel x:Name="AlbumSuggestions" Classes="suggestions" Margin="0,6,0,0" IsVisible="False" />
+              </StackPanel>
             </Grid>
           </StackPanel>
         </Border>
@@ -215,23 +246,24 @@
             </StackPanel>
             <Grid ColumnDefinitions="88,*,40,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="10">
               <TextBlock Grid.Row="0" Classes="lbl" Text="Track #" />
-              <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="TrackNumBox" Classes="val" />
+              <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="TrackNumBox" Classes="val num" />
               <TextBlock Grid.Row="0" Grid.Column="2" Classes="lbl" Text="of" HorizontalAlignment="Center" />
-              <controls:TextInput Grid.Row="0" Grid.Column="3" x:Name="TrackTotalBox" Classes="val" />
+              <controls:TextInput Grid.Row="0" Grid.Column="3" x:Name="TrackTotalBox" Classes="val num" />
 
               <TextBlock Grid.Row="1" Classes="lbl" Text="Disc #" />
-              <controls:TextInput Grid.Row="1" Grid.Column="1" x:Name="DiscNumBox" Classes="val" />
+              <controls:TextInput Grid.Row="1" Grid.Column="1" x:Name="DiscNumBox" Classes="val num" />
               <TextBlock Grid.Row="1" Grid.Column="2" Classes="lbl" Text="of" HorizontalAlignment="Center" />
-              <controls:TextInput Grid.Row="1" Grid.Column="3" x:Name="DiscTotalBox" Classes="val" />
+              <controls:TextInput Grid.Row="1" Grid.Column="3" x:Name="DiscTotalBox" Classes="val num" />
 
               <TextBlock Grid.Row="2" Classes="lbl" Text="Year" />
-              <controls:TextInput Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" x:Name="YearBox" Classes="val" />
+              <controls:TextInput Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" x:Name="YearBox" Classes="val num" />
 
               <!-- Typed like any other field, with the library's own genres a
                    tap away on the chevron - so picking one reuses its exact
                    spelling, as the desktop's suggestions do for artists. -->
-              <TextBlock Grid.Row="3" Classes="lbl" Text="Genre" />
-              <Panel Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="3">
+              <TextBlock Grid.Row="3" Classes="lbl" Text="Genre" VerticalAlignment="Top" Margin="0,10,0,0" />
+              <StackPanel Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="3">
+              <Panel>
                 <controls:TextInput x:Name="GenreBox" Classes="val" ShowsClearButton="False" Padding="12,9,44,9" />
                 <Button x:Name="GenreMenuButton"
                         HorizontalAlignment="Right" VerticalAlignment="Center"
@@ -242,6 +274,8 @@
                                               Foreground="{DynamicResource AppTextSecondaryBrush}" />
                 </Button>
               </Panel>
+              <WrapPanel x:Name="GenreSuggestions" Classes="suggestions" Margin="0,6,0,0" IsVisible="False" />
+              </StackPanel>
             </Grid>
           </StackPanel>
         </Border>
@@ -254,7 +288,7 @@
             </StackPanel>
             <Grid ColumnDefinitions="88,*,52,*" RowDefinitions="Auto,Auto" RowSpacing="10">
               <TextBlock Grid.Row="0" Classes="lbl" Text="BPM" />
-              <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="BpmBox" Classes="val" />
+              <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="BpmBox" Classes="val num" />
               <TextBlock Grid.Row="0" Grid.Column="2" Classes="lbl" Text="Key" HorizontalAlignment="Center" />
               <controls:TextInput Grid.Row="0" Grid.Column="3" x:Name="KeyBox" Classes="val" />
 
@@ -271,10 +305,16 @@
               <TextBlock Classes="section-header" Text="PEOPLE" />
             </StackPanel>
             <Grid ColumnDefinitions="108,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="10">
-              <TextBlock Grid.Row="0" Classes="lbl" Text="Album Artist" />
-              <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="AlbumArtistBox" Classes="val" />
-              <TextBlock Grid.Row="1" Classes="lbl" Text="Composer" />
-              <controls:TextInput Grid.Row="1" Grid.Column="1" x:Name="ComposerBox" Classes="val" />
+              <TextBlock Grid.Row="0" Classes="lbl" Text="Album Artist" VerticalAlignment="Top" Margin="0,10,0,0" />
+              <StackPanel Grid.Row="0" Grid.Column="1">
+                <controls:TextInput x:Name="AlbumArtistBox" Classes="val" />
+                <WrapPanel x:Name="AlbumArtistSuggestions" Classes="suggestions" Margin="0,6,0,0" IsVisible="False" />
+              </StackPanel>
+              <TextBlock Grid.Row="1" Classes="lbl" Text="Composer" VerticalAlignment="Top" Margin="0,10,0,0" />
+              <StackPanel Grid.Row="1" Grid.Column="1">
+                <controls:TextInput x:Name="ComposerBox" Classes="val" />
+                <WrapPanel x:Name="ComposerSuggestions" Classes="suggestions" Margin="0,6,0,0" IsVisible="False" />
+              </StackPanel>
               <TextBlock Grid.Row="2" Classes="lbl" Text="Conductor" />
               <controls:TextInput Grid.Row="2" Grid.Column="1" x:Name="ConductorBox" Classes="val" />
               <TextBlock Grid.Row="3" Classes="lbl" Text="Remixed By" />

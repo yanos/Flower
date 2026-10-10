@@ -103,6 +103,55 @@ public class MobileTrackInfoTests : PinnedDataDirectory
         window.Close();
     }
 
+    // Track Info from the album menu edits every song of the album: the
+    // common tags in the boxes, "Multiple values" where they differ, and only
+    // what is typed applied to them all - the titles stay their own.
+    [AvaloniaFact]
+    public void Track_info_from_the_album_menu_edits_every_song_of_the_album()
+    {
+        Track Song(string title, uint n) => new()
+        {
+            Title = title, Album = "Avant Hard", Artists = "Add N To (X)", TrackNumber = n,
+            OriginDeviceFingerprint = "server-fp", OriginTrackId = $"t{n}",
+        };
+        var tracks = new List<Track> { Song("Skills", 3), Song("Fyuz", 5), Song("Robot New York", 2) };
+        using var parts = MainViewModelHarness.BuildMobile(new Library(tracks), new MainPlaylist(tracks));
+        parts.Parts.AppSettings.PairedServerFingerprint = "server-fp";
+        parts.Parts.AppSettings.PairedServerGrantsAdmin = true;
+        var vm = parts.Mobile;
+
+        var window = new Window { Width = 390, Height = 844 };
+        window.Styles.Add(new FluentTheme());
+        window.Content = new MobileMainView { DataContext = vm };
+        window.Show();
+        Pump(300);
+
+        vm.OpenAlbumActionsCommand.Execute(new Flower.ViewModels.Mobile.AlbumTileViewModel
+        {
+            Name = "Avant Hard", Artist = "Add N To (X)", Tracks = tracks, RepresentativeTrack = tracks[0],
+        });
+        vm.ViewAlbumActionTargetTrackInfoCommand.Execute(null);
+        Dispatcher.UIThread.RunJobs();
+
+        var sheet = FindSheet(window);
+        var titleBox = sheet.FindControl<TextBox>("TitleBox")!;
+        var artistBox = sheet.FindControl<TextBox>("ArtistBox")!;
+        Assert.Equal("", titleBox.Text);
+        Assert.Equal("Multiple values", titleBox.PlaceholderText);
+        Assert.Equal("3 songs", Value(sheet, "TitleHeading"));
+        Assert.Equal("Add N To (X)", artistBox.Text);
+
+        artistBox.Text = "Add N to (X)";
+        sheet.FindControl<Button>("SaveButton")!.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.All(tracks, t => Assert.Equal("Add N to (X)", t.Artists));
+        Assert.Equal(new[] { "Skills", "Fyuz", "Robot New York" }, tracks.Select(t => t.Title));
+
+        Pump(300);
+        window.Close();
+    }
+
     private static void Show(MobileMainViewModel vm, string title)
     {
         vm.OpenTrackActionsCommand.Execute(vm.Main.Rows.First(r => r.Track.Title == title));

@@ -349,6 +349,11 @@ public partial class MobileMainViewModel
             actions.AddRange(QueueEntries(() => CurrentTrackRows.Select(r => r.Track).ToList()));
             actions.Add(new ScreenMenuEntry("Add to Playlist", MaterialIconKind.PlaylistPlus,
                 () => OpenAlbumAddToPlaylistCommand.Execute(null)));
+            // Every song of the album at once - its common tags, and what is
+            // typed applied to them all.
+            if (frame.IsAlbumTrackList)
+                actions.Add(new ScreenMenuEntry("Track Info", MaterialIconKind.InformationOutline,
+                    () => OpenTrackInfo(CurrentTrackRows.Select(r => r.Track).ToList())));
             if (Main.CanForceSync && DownloadAllIndicator.IsDownloadable && !DownloadAllIndicator.IsDownloading)
                 downloadAll = new ScreenMenuEntry("Download All", MaterialIconKind.CloudDownloadOutline,
                     () => DownloadAllVisibleCommand.Execute(null));
@@ -436,6 +441,9 @@ public partial class MobileMainViewModel
         _actionRow = null;
         _playlistTargets = null;
         ActionTarget = Main.Library.Snapshot.ById.GetValueOrDefault(playing.Id) ?? playing;
-        ActiveSheet = sheet;
+        if (sheet == MobileSheet.TrackInfo)
+            OpenTrackInfo([ActionTarget]);
+        else
+            ActiveSheet = sheet;
     }
 }
