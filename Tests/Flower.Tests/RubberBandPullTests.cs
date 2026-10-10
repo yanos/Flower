@@ -207,6 +207,48 @@ public class RubberBandPullTests
         rig.Window.Close();
     }
 
+    // The same refusal at the other end: a finger on a list already at its
+    // bottom dragging up starts no scroll gesture either, so the list sat
+    // dead under it. It stretches up, springs back, and opens nothing.
+    [AvaloniaFact]
+    public void A_drag_up_from_the_bottom_stretches_the_list_up_and_opens_nothing()
+    {
+        var rig = Show();
+        rig.Scroller.Offset = new Vector(0, rig.Scroller.Extent.Height - rig.Scroller.Viewport.Height);
+        Dispatcher.UIThread.RunJobs();
+        var finger = new Pointer(Pointer.GetNextFreeId(), PointerType.Touch, true);
+
+        Press(rig, finger, new Point(200, 600));
+        Move(rig, finger, new Point(200, 585));
+        Move(rig, finger, new Point(200, 400));
+
+        Assert.True(rig.StretchY < 0, $"stretched by {rig.StretchY}");
+        Assert.Same(rig.Scroller, finger.Captured);
+
+        Release(rig, finger, new Point(200, 400));
+        Assert.Equal(0, rig.PulledDownCount);
+        Assert.Null(finger.Captured);
+        rig.Window.Close();
+    }
+
+    // Up from anywhere but the bottom is an ordinary scroll down the list.
+    [AvaloniaFact]
+    public void A_list_short_of_its_bottom_is_left_to_scroll_down()
+    {
+        var rig = Show();
+        rig.Scroller.Offset = new Vector(0, 300);
+        Dispatcher.UIThread.RunJobs();
+        var finger = new Pointer(Pointer.GetNextFreeId(), PointerType.Touch, true);
+
+        Press(rig, finger, new Point(200, 600));
+        Move(rig, finger, new Point(200, 585));
+        Move(rig, finger, new Point(200, 400));
+
+        Assert.Equal(0, rig.StretchY);
+        Assert.Null(finger.Captured);
+        rig.Window.Close();
+    }
+
     // Down from anywhere but the top is an ordinary scroll back up the list,
     // which the recognizer handles.
     [AvaloniaFact]

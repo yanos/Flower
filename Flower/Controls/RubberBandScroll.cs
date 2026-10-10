@@ -48,7 +48,10 @@ namespace Flower.Controls;
 // (OnPointerPressed/OnPointerMoved): once a drag from the top is clearly
 // downward, the pointer is captured - which also takes it away from whatever
 // row it landed on, so letting go does not tap it - and the same damped
-// transform follows the finger.
+// transform follows the finger. Its mirror image is refused the same way - a
+// finger on a list already at its bottom dragging up - and is followed the
+// same way, stretching the list up instead; only the pull from the top opens
+// anything.
 //
 // The spring-back (and the live drag itself) is driven by the shared 60Hz
 // AnimationClock, stepping RenderTransform.Y frame by frame (the same
@@ -151,11 +154,13 @@ public static class RubberBandScroll
         public double ReportedProgress;
 
         // A finger that landed on the list, while it might still turn into a
-        // pull from the top, and where it landed - in root coordinates, see
-        // FingerPosition. IsPulling once it has.
+        // pull past the top or the bottom, and where it landed - in root
+        // coordinates, see FingerPosition. IsPulling once it has, and
+        // IsPullingUp when it is the bottom it is being pulled past.
         public IPointer? PullPointer;
         public Point PullStart;
         public bool IsPulling;
+        public bool IsPullingUp;
     }
 
     private static void Attach(Control control)
@@ -273,16 +278,24 @@ public static class RubberBandScroll
             {
                 if (Math.Abs(dx) < PullStartDistance && Math.Abs(dy) < PullStartDistance)
                     return;
-                // Anything but a clearly downward drag from the very top is
-                // someone else's - an ordinary scroll, or a sideways swipe.
-                if (sv.Offset.Y > 0.5 || dy < PullStartDistance || dy < Math.Abs(dx) * PullDirectionRatio)
+                // Anything but a clearly downward drag from the very top, or
+                // a clearly upward one from the very bottom, is someone
+                // else's - an ordinary scroll, or a sideways swipe. A list too
+                // short to scroll is at both, and goes whichever way it is
+                // pulled.
+                var max = Math.Max(0, sv.Extent.Height - sv.Viewport.Height);
+                var clearlyVertical = Math.Abs(dy) >= PullStartDistance && Math.Abs(dy) >= Math.Abs(dx) * PullDirectionRatio;
+                var pastTop = clearlyVertical && dy > 0 && sv.Offset.Y <= 0.5;
+                var pastBottom = clearlyVertical && dy < 0 && sv.Offset.Y >= max - 0.5;
+                if (!pastTop && !pastBottom)
                 {
                     state.PullPointer = null;
                     return;
                 }
 
                 state.IsPulling = true;
-                state.StretchIsPull = true;
+                state.IsPullingUp = pastBottom;
+                state.StretchIsPull = pastTop;
                 state.PeakPull = 0;
                 state.Animation?.Dispose();
                 state.Animation = null;
@@ -294,14 +307,19 @@ public static class RubberBandScroll
                 return;
             }
 
-            var pull = Math.Max(0, dy);
-            state.PeakPull = Math.Max(state.PeakPull, pull);
-            SetStretch(state, Damp(pull));
+            if (state.IsPullingUp)
+                SetStretch(state, -Damp(Math.Max(0, -dy)));
+            else
+            {
+                var pull = Math.Max(0, dy);
+                state.PeakPull = Math.Max(state.PeakPull, pull);
+                SetStretch(state, Damp(pull));
+            }
             e.Handled = true;
         }
         catch (Exception ex)
         {
-            Logger.LogWarning(ex, "Rubber-band pull from the top failed, skipping");
+            Logger.LogWarning(ex, "Rubber-band pull past the top or bottom failed, skipping");
         }
     }
 
