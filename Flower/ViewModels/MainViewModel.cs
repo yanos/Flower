@@ -686,7 +686,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         }
         else
         {
-            var tracks = Library.Tracks.Where(t => t.Artists == name).ToList();
+            var tracks = Library.Tracks.Where(t => ArtistNames.Same(t.Artists, name)).ToList();
             if (newArtist)
             {
                 var albums = tracks.Where(t => !string.IsNullOrEmpty(t.Album)).Select(t => t.Album).Distinct().Count();

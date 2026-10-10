@@ -248,7 +248,7 @@ public partial class MobileMainViewModel
         MobileScreenKind.TrackList => Main.Rows.Select(r => r.Track).ToList(),
         MobileScreenKind.AlbumGrid => TracksOf(_albumGrid),
         MobileScreenKind.ArtistAlbumGrid => TracksOf(_artistAlbumGrid),
-        MobileScreenKind.ArtistPicker => ArtistPickerItems.Select(r => r.Name).ToHashSet() is var artists
+        MobileScreenKind.ArtistPicker => ArtistPickerItems.Select(r => r.Name).ToHashSet(ArtistNames.Comparer) is var artists
             ? Main.Library.Tracks.Where(t => t.Artists != null && artists.Contains(t.Artists)).ToList()
             : [],
         // A song in two of the playlists is still one song.

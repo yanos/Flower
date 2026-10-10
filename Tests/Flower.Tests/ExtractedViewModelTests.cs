@@ -324,6 +324,26 @@ public class LibraryBrowserViewModelTests
         Assert.Contains("2 albums", vm.StatusBarText);
     }
 
+    // "Add N to (X)" on two albums and "Add N To (X)" on one: one artist,
+    // as the catalog already counts them, named the way most of the songs
+    // spell it - and picking it shows every one of them.
+    [AvaloniaFact]
+    public async Task An_artist_spelled_in_two_cases_is_one_artist()
+    {
+        var (vm, host) = Make(
+            Song("a", "One", "Add N to (X)"), Song("b", "Two", "Add N to (X)"),
+            Song("c", "Three", "Add N To (X)"), Song("d", "Four", "Other"));
+        host.CurrentKind = SidebarItemKind.Artists;
+        vm.Repopulate();
+
+        Assert.Equal(new[] { "Add N to (X)", "Other" }, vm.SubListItems);
+
+        vm.SetSelectedSubItems(new[] { "Add N to (X)" });
+        await vm.RebuildRowsImmediatelyAsync();
+        Assert.Equal(new[] { "a", "b", "c" }, vm.Rows.Select(r => r.Track.Title).Order());
+        Assert.Equal(3, vm.GetTracksForSubListItems(new[] { "Add N to (X)" }).Count());
+    }
+
     [AvaloniaFact]
     public async Task Artists_shows_nothing_until_an_artist_is_picked_then_only_that_artists_tracks()
     {

@@ -654,8 +654,8 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     {
         var byArtist = Main.Library.Tracks
             .Where(t => t.Artists != null)
-            .GroupBy(t => t.Artists!)
-            .ToDictionary(g => g.Key, g => g.ToList());
+            .GroupBy(t => t.Artists!, ArtistNames.Comparer)
+            .ToDictionary(g => g.Key, g => g.ToList(), ArtistNames.Comparer);
         _artistPickerRows = InArtistOrder(Main.SubListItems
             .Select(name => byArtist.TryGetValue(name, out var tracks)
                 ? new ArtistPickerRow(name,
@@ -680,7 +680,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             var matching = Main.Library.Tracks
                 .Where(t => t.Artists != null && TrackListBuilder.Matches(t, filter))
                 .Select(t => t.Artists!)
-                .ToHashSet();
+                .ToHashSet(ArtistNames.Comparer);
             _filteredArtistPickerItems = _artistPickerRows.Where(r => matching.Contains(r.Name)).ToList();
         }
         OnPropertyChanged(nameof(ArtistPickerItems));
@@ -1426,7 +1426,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     // says how much there is.
     private AlbumTileViewModel? BuildArtistTile(string artist)
     {
-        var tracks = Main.Library.Tracks.Where(t => t.Artists == artist).ToList();
+        var tracks = Main.Library.Tracks.Where(t => ArtistNames.Same(t.Artists, artist)).ToList();
         if (tracks.Count == 0)
             return null;
 
@@ -2610,7 +2610,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
 
         RefillAlbumRows(
             _artistAlbumGrid,
-            InGridOrder(AlbumGridBuilder.Build(Main.Library.Tracks.Where(t => t.Artists == _selectedArtistName)),
+            InGridOrder(AlbumGridBuilder.Build(Main.Library.Tracks.Where(t => ArtistNames.Same(t.Artists, _selectedArtistName))),
                 MobileSortScreen.ArtistAlbums));
     }
 
@@ -2705,22 +2705,17 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             // (see MainViewModel.RebuildSubListItems) - not EffectiveAlbumArtist,
             // which AlbumGridBuilder uses for a different purpose (labeling a
             // same-named album spanning several artists as "Various Artists").
-            var allArtists = tracks
-                .Select(t => t.Artists)
-                .Where(a => SearchText.Contains(a, text))
-                .Distinct()
-                .OrderBy(a => a)
-                .ToList();
+            var allArtists = ArtistNames.Of(tracks.Where(t => SearchText.Contains(t.Artists, text)));
 
             // Counted and covered the way RebuildArtistPickerRows does it, for
             // the shown ones only: one pass over the library, not one per
             // artist.
             var shownArtists = allArtists.Take(MaxSearchResultsPerSection).Select(a => a!).ToList();
-            var shownSet = shownArtists.ToHashSet();
+            var shownSet = shownArtists.ToHashSet(ArtistNames.Comparer);
             var byArtist = tracks
                 .Where(t => t.Artists != null && shownSet.Contains(t.Artists))
-                .GroupBy(t => t.Artists!)
-                .ToDictionary(g => g.Key, g => g.ToList());
+                .GroupBy(t => t.Artists!, ArtistNames.Comparer)
+                .ToDictionary(g => g.Key, g => g.ToList(), ArtistNames.Comparer);
             var artistRows = shownArtists
                 .Select(name => byArtist.TryGetValue(name, out var mine)
                     ? new ArtistPickerRow(name,

@@ -454,7 +454,7 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
             return;
         }
         var matching = TrackListBuilder.Filter(_allTracks, _filterText)
-            .Select(t => t.Artists).Where(a => !string.IsNullOrEmpty(a)).ToHashSet();
+            .Select(t => t.Artists).Where(a => !string.IsNullOrEmpty(a)).ToHashSet(ArtistNames.Comparer);
         VisibleSubListItems = new ObservableCollection<string>(_subListItems.Where(matching.Contains));
     }
 
@@ -464,8 +464,7 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
             SubListItems = new ObservableCollection<string>(
                 _allTracks.Select(t => t.Album!).Where(a => !string.IsNullOrEmpty(a)).Distinct().OrderBy(a => a));
         else if (_host.CurrentKind == SidebarItemKind.Artists)
-            SubListItems = new ObservableCollection<string>(
-                _allTracks.Select(t => t.Artists!).Where(a => !string.IsNullOrEmpty(a)).Distinct().OrderBy(a => a));
+            SubListItems = new ObservableCollection<string>(ArtistNames.Of(_allTracks));
         else
             SubListItems = new ObservableCollection<string>();
         RebuildVisibleSubListItems();
@@ -478,11 +477,12 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
     public IEnumerable<Track> GetTracksForSubListItems(IEnumerable<string> items)
     {
         var set = new HashSet<string>(items);
+        var artists = new HashSet<string>(items, ArtistNames.Comparer);
         return _host.CurrentKind switch
         {
             SidebarItemKind.Albums
                 => _allTracks.Where(t => t.Album != null && set.Contains(t.Album)),
-            SidebarItemKind.Artists => _allTracks.Where(t => t.Artists != null && set.Contains(t.Artists)),
+            SidebarItemKind.Artists => _allTracks.Where(t => t.Artists != null && artists.Contains(t.Artists)),
             _ => Enumerable.Empty<Track>()
         };
     }
@@ -498,7 +498,9 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
             SidebarItemKind.Albums
                 => new List<Track>(),
             SidebarItemKind.Artists when _selectedSubItems.Count > 0
-                => _allTracks.Where(t => t.Artists != null && _selectedSubItems.Contains(t.Artists)).ToList(),
+                => _selectedSubItems.ToHashSet(ArtistNames.Comparer) is var artists
+                    ? _allTracks.Where(t => t.Artists != null && artists.Contains(t.Artists)).ToList()
+                    : [],
             SidebarItemKind.Artists
                 => new List<Track>(),
             // Home draws its shelves from the library itself (HomeViewModel),
