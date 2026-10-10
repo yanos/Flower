@@ -212,6 +212,59 @@ public class PlaylistControlViewModelTests : IDisposable
         }
     }
 
+    // Shuffle deals the queue once, like a deck: every song plays before any
+    // plays twice, and then it deals again rather than stopping.
+    [Fact]
+    public void Shuffle_plays_every_song_once_before_any_plays_twice()
+    {
+        var tracks = Enumerable.Range(0, 8).Select(i => T($"S{i}")).ToList();
+        var vm = MakeViewModel(tracks, out _);
+        vm.IsShuffleEnabled = true;
+        vm.Play(tracks[0], 0);
+
+        var pass = new List<Track> { vm.CurrentlyPlayingTrack! };
+        for (var i = 0; i < 7; i++)
+        {
+            vm.Next();
+            pass.Add(vm.CurrentlyPlayingTrack!);
+        }
+        Assert.Equal(tracks.OrderBy(t => t.Title), pass.OrderBy(t => t.Title));
+
+        vm.Next();
+        Assert.Contains(vm.CurrentlyPlayingTrack, tracks);
+    }
+
+    // What the Queue page lists is what plays, and taking one song out of the
+    // queue leaves the rest in the order they were going to play.
+    [Fact]
+    public void Removing_a_song_from_a_shuffled_queue_keeps_the_rest_in_order()
+    {
+        var tracks = Enumerable.Range(0, 8).Select(i => T($"S{i}")).ToList();
+        var vm = MakeViewModel(tracks, out _);
+        vm.IsShuffleEnabled = true;
+        vm.Play(tracks[0], 0);
+        var queue = vm.CurrentPlaylist.Tracks;
+        var upcoming = vm.ShuffleUpcomingSlots.Select(slot => queue[slot]).ToList();
+
+        vm.RemoveQueueEntry(vm.ShuffleUpcomingSlots[2]);
+
+        var after = vm.ShuffleUpcomingSlots.Select(slot => vm.CurrentPlaylist.Tracks[slot]).ToList();
+        Assert.Equal(upcoming.Where((_, i) => i != 2), after);
+    }
+
+    [Fact]
+    public void A_shuffled_order_leaves_out_songs_marked_to_skip()
+    {
+        var tracks = Enumerable.Range(0, 5).Select(i => T($"S{i}")).ToList();
+        tracks[3].IgnoreWhenShuffling = true;
+        var vm = MakeViewModel(tracks, out _);
+        vm.IsShuffleEnabled = true;
+        vm.Play(tracks[0], 0);
+
+        var upcoming = vm.ShuffleUpcomingSlots.Select(slot => vm.CurrentPlaylist.Tracks[slot].Title).ToList();
+        Assert.Equal(new[] { "S1", "S2", "S4" }, upcoming.Order());
+    }
+
     [Fact]
     public void Next_with_shuffle_enabled_and_a_single_track_returns_that_track_without_hanging()
     {

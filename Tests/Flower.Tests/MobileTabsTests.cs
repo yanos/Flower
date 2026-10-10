@@ -268,10 +268,12 @@ public class MobileTabsTests : PinnedDataDirectory
         Assert.Equal(new[] { "Track 3", "Track 4" }, scope.Mobile.QueueRows.Select(r => r.Track.Title));
     }
 
-    // Under shuffle any of them could be next, so all of them are shown, and
-    // the caption says why they are not in the order they will play.
+    // Under shuffle the queue is the rest in the order shuffle will play
+    // them - every one of them once - and that is the order Next takes. It
+    // used to list the queue as it stands, library order, which read as no
+    // shuffle at all.
     [AvaloniaFact]
-    public void Under_shuffle_the_queue_is_everything_else_and_says_so()
+    public void Under_shuffle_the_queue_is_the_order_shuffle_plays()
     {
         using var scope = Build();
         PlayFrom(scope, 2);
@@ -279,9 +281,19 @@ public class MobileTabsTests : PinnedDataDirectory
 
         scope.Mobile.SelectTabCommand.Execute(nameof(MobileTab.Queue));
 
-        Assert.Equal(new[] { "Track 2", "Track 0", "Track 1", "Track 3", "Track 4" },
-            scope.Mobile.QueueRows.Select(r => r.Track.Title));
+        var listed = scope.Mobile.QueueRows.Select(r => r.Track.Title).ToList();
+        Assert.Equal("Track 2", listed[0]);
+        Assert.Equal(new[] { "Track 0", "Track 1", "Track 3", "Track 4" }, listed.Skip(1).Order());
         Assert.NotNull(scope.Mobile.QueueCaption);
+
+        var played = new List<string>();
+        for (var i = 0; i < 4; i++)
+        {
+            scope.Parts.PlaylistControl.Next();
+            Dispatcher.UIThread.RunJobs();
+            played.Add(scope.Parts.PlaylistControl.CurrentlyPlayingTrack!.Title!);
+        }
+        Assert.Equal(listed.Skip(1), played);
     }
 
     // A tap on the queue is a jump along it - it must not replace the queue

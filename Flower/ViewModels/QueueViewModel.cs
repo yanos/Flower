@@ -92,14 +92,15 @@ public sealed class QueueViewModel : ViewModelBase, IDisposable
     public string? Caption =>
         _playback.IsRepeatEnabled ? "Repeat is on, so this song plays again."
         : _playback.IsShuffleEnabled && _playback.LinedUpCount > 0
-            ? "Shuffle is on: the songs you queued play next, then the rest at random."
-        : _playback.IsShuffleEnabled ? "Shuffle is on, so the next song is picked from these at random."
+            ? "Shuffle is on: the songs you queued play next, then the rest in this shuffled order."
+        : _playback.IsShuffleEnabled ? "Shuffle is on: the rest play in this shuffled order."
         : null;
 
     /// <summary>
     /// Whether the rows can be dragged into another order. Not under shuffle:
-    /// the list is then every song the next one could be picked from, in no
-    /// order that means anything, and a drag would pretend otherwise.
+    /// the order is then the one shuffle dealt (PlaylistControlViewModel
+    /// .ShuffleUpcomingSlots), and a drag moves a song's place in the queue,
+    /// which that order does not follow.
     /// </summary>
     public bool IsReorderable => !_playback.IsShuffleEnabled;
 
@@ -192,16 +193,15 @@ public sealed class QueueViewModel : ViewModelBase, IDisposable
         if (playing != null && current >= 0)
         {
             slots.Add(current);
+            // Under shuffle, the songs lined up by hand, then the rest in the
+            // order shuffle will play them - not the queue as it stands, which
+            // is the library's own order and read as no shuffle at all.
             if (_playback.IsShuffleEnabled)
             {
                 var linedUpEnd = Math.Min(queue.Count, current + 1 + _playback.LinedUpCount);
                 for (var i = current + 1; i < linedUpEnd; i++)
                     slots.Add(i);
-                for (var i = 0; i < queue.Count; i++)
-                {
-                    if (i != current && (i <= current || i >= linedUpEnd))
-                        slots.Add(i);
-                }
+                slots.AddRange(_playback.ShuffleUpcomingSlots);
             }
             else
             {

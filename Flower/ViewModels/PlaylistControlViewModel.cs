@@ -435,6 +435,7 @@ namespace Flower.ViewModels
             // ResolveQueueIndex searches the new list instead.
             _queueIndex = -1;
             _linedUpCount = 0;
+            ForgetShuffleOrder();
             OnPropertyChanged(nameof(CurrentPlaylist));
         }
 
@@ -643,6 +644,9 @@ namespace Flower.ViewModels
         public void ToggleShuffle()
         {
             IsShuffleEnabled = !IsShuffleEnabled;
+            ForgetShuffleOrder();
+            if (IsShuffleEnabled && CurrentlyPlayingTrack is { } playing)
+                _shufflePlayed.Add(playing.Id);
             _logger.LogInformation("Shuffle {State}", IsShuffleEnabled ? "enabled" : "disabled");
             _appSettings.IsShuffleEnabled = IsShuffleEnabled;
             _ = _appSettingsStore.SaveAsync(_appSettings);
@@ -692,12 +696,8 @@ namespace Flower.ViewModels
                 // can exclude almost the whole queue and rejection sampling
                 // against a 1-in-500 hit rate is a loop with no bound worth
                 // trusting on the UI thread.
-                var candidates = ShuffleCandidates(tracks, currentIndex);
-                if (candidates.Count > 0)
-                {
-                    var index = candidates[_random.Next(candidates.Count)];
+                if (ShuffleOrderFor(tracks, currentIndex) is [var index, ..])
                     return (tracks[index], index);
-                }
 
                 // Every other slot is marked "ignore when shuffling" - which
                 // makes the marks meaningless here, since the alternative is
@@ -779,6 +779,8 @@ namespace Flower.ViewModels
             _queueIndex = queueIndex >= 0 && queueIndex < _currentPlaylist.Tracks.Count && _currentPlaylist.Tracks[queueIndex] == track
                 ? queueIndex
                 : IndexOfInQueue(track);
+
+            NoteShufflePlayed(track);
 
             // Moving on into the songs lined up by hand uses up the ones passed;
             // a jump anywhere else - back, or past the end of them - leaves
@@ -1057,18 +1059,132 @@ namespace Flower.ViewModels
         // the same name for what each one is for; this is where they take
         // effect.
 
-        // Which slots shuffle is allowed to land on: everything except the
-        // current one and anything marked IgnoreWhenShuffling.
-        private static List<int> ShuffleCandidates(IReadOnlyList<Track> tracks, int currentIndex)
+        // ── The shuffled order ────────────────────────────────────────────
+        //
+        // Shuffle plays the queue in an order dealt once, like a shuffled deck,
+        // rather than rolling for each song as the last one ends. Rolling each
+        // time had two faults. A song could come round again before the rest
+        // had played at all. And there was no upcoming order to show, so the
+        // Queue page listed the queue as it stands - which is the library's
+        // order, album after album - under a line saying the next song would
+        // be picked from these at random; read as the queue, it looked like no
+        // shuffle at all.
+        //
+        // _shuffleOrder is the slots still to come in this pass, in the order
+        // they will play; the song playing is not among them, nor the songs
+        // lined up by hand behind it, which play first anyway (see
+        // _linedUpCount). _shufflePlayed is the songs this pass has already
+        // played, by Id, so that an order dealt again - after the queue
+        // changes - does not play them twice. A pass ends when nothing is left
+        // to deal, and the next starts over with everything but the song
+        // playing.
+        private List<int> _shuffleOrder = [];
+        private IReadOnlyList<Track>? _shuffledFor;
+        private readonly HashSet<Guid> _shufflePlayed = [];
+
+        /// <summary>The slots of <see cref="CurrentPlaylist"/> still to play in
+        /// this shuffle pass, in the order they will - what the Queue page
+        /// lists after the song playing and the ones lined up by hand. Empty
+        /// with shuffle off.</summary>
+        public IReadOnlyList<int> ShuffleUpcomingSlots =>
+            IsShuffleEnabled ? ShuffleOrderFor(_currentPlaylist.Tracks, QueueIndex).ToList() : [];
+
+        private void ForgetShuffleOrder()
         {
-            var candidates = new List<int>(tracks.Count);
-            for (var i = 0; i < tracks.Count; i++)
+            _shuffleOrder = [];
+            _shuffledFor = null;
+            _shufflePlayed.Clear();
+        }
+
+        // A song starting is played, in this pass, wherever it was in the
+        // order - the next one dealt, or a row tapped further down.
+        private void NoteShufflePlayed(Track track)
+        {
+            if (!IsShuffleEnabled)
+                return;
+
+            _shufflePlayed.Add(track.Id);
+            if (ReferenceEquals(_shuffledFor, _currentPlaylist.Tracks))
+                _shuffleOrder.Remove(_queueIndex);
+        }
+
+        // The order for this queue, dealt again when the queue is not the one
+        // it was dealt for. A queue changes whole (copy-on-write - see
+        // ReplaceQueueKeepingPlace), so a different list is a changed queue.
+        private List<int> ShuffleOrderFor(IReadOnlyList<Track> tracks, int currentIndex)
+        {
+            if (!ReferenceEquals(_shuffledFor, tracks))
             {
-                if (i != currentIndex && !tracks[i].IgnoreWhenShuffling)
-                    candidates.Add(i);
+                _shuffleOrder = Deal(tracks, currentIndex, keepOrderOf: _shuffledFor is { } dealtFor
+                    ? _shuffleOrder.Where(slot => slot < dealtFor.Count).Select(slot => dealtFor[slot]).ToList()
+                    : []);
+                _shuffledFor = tracks;
             }
 
-            return candidates;
+            // Everything has played: the next pass, with all of it again -
+            // whether the order ran out as it played or was dealt empty.
+            if (_shuffleOrder.Count == 0 && _shufflePlayed.Count > 0)
+            {
+                _shufflePlayed.Clear();
+                if (currentIndex >= 0 && currentIndex < tracks.Count)
+                    _shufflePlayed.Add(tracks[currentIndex].Id);
+                _shuffleOrder = Deal(tracks, currentIndex, keepOrderOf: []);
+            }
+
+            return _shuffleOrder;
+        }
+
+        // The slots left to deal, shuffled - except that songs still to come
+        // from the order this replaces keep their places relative to each other,
+        // so taking one song out of the queue, or lining one up, does not
+        // reshuffle everything else on the Queue page. Songs new to the order
+        // go in at random places among them.
+        private List<int> Deal(IReadOnlyList<Track> tracks, int currentIndex, List<Track> keepOrderOf)
+        {
+            var linedUpEnd = currentIndex >= 0 ? currentIndex + _linedUpCount : -1;
+            var free = new Dictionary<Track, Queue<int>>();
+            for (var i = 0; i < tracks.Count; i++)
+            {
+                if (i == currentIndex || (i > currentIndex && i <= linedUpEnd))
+                    continue;
+                if (tracks[i].IgnoreWhenShuffling || _shufflePlayed.Contains(tracks[i].Id))
+                    continue;
+                if (!free.TryGetValue(tracks[i], out var slots))
+                    free[tracks[i]] = slots = new Queue<int>();
+                slots.Enqueue(i);
+            }
+
+            // Copies of one song take their slots in turn, so a queue holding
+            // it twice keeps both.
+            var kept = new List<int>();
+            foreach (var track in keepOrderOf)
+            {
+                if (free.TryGetValue(track, out var slots) && slots.Count > 0)
+                    kept.Add(slots.Dequeue());
+            }
+
+            var added = free.Values.SelectMany(slots => slots).ToList();
+            for (var i = added.Count - 1; i > 0; i--)
+            {
+                var j = _random.Next(i + 1);
+                (added[i], added[j]) = (added[j], added[i]);
+            }
+
+            // The two merged at random, each place taken from one or the other
+            // in proportion to what each has left: every arrangement of the new
+            // songs among the kept ones equally likely, the kept ones still in
+            // their order, and one pass over the lot - "Shuffle" on the whole
+            // library is sixteen thousand songs, dealt on the UI thread.
+            var order = new List<int>(kept.Count + added.Count);
+            int k = 0, a = 0;
+            while (k < kept.Count || a < added.Count)
+            {
+                var keptLeft = kept.Count - k;
+                var addedLeft = added.Count - a;
+                order.Add(_random.Next(keptLeft + addedLeft) < keptLeft ? kept[k++] : added[a++]);
+            }
+
+            return order;
         }
 
         // Where this track should start, or null for "at the beginning" - which
