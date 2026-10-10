@@ -9,6 +9,7 @@
              Background="Transparent"
              ClipToBounds="False"
              Classes.playing="{Binding IsCurrentlyPlaying}"
+             Classes.played="{Binding IsPlayed}"
              Height="34">
 
   <UserControl.Styles>
@@ -52,6 +53,11 @@
     <Style Selector=":is(UserControl).playing StackPanel#CellsPanel TextBlock">
       <Setter Property="FontWeight" Value="Bold"/>
       <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}"/>
+    </Style>
+    <!-- A Queue row above the song playing (TrackRowViewModel.IsPlayed):
+         faded, lighter than an unavailable song, since it plays fine. -->
+    <Style Selector=":is(UserControl).played StackPanel#CellsPanel, :is(UserControl).played Panel#ArtCell">
+      <Setter Property="Opacity" Value="0.6"/>
     </Style>
     <!-- ...and sits in the accent's faint wash, the way the sidebar marks the
          page you are on. -->

@@ -240,7 +240,7 @@ public class MobileTabsTests : PinnedDataDirectory
     }
 
     [AvaloniaFact]
-    public void The_queue_is_the_song_playing_then_what_follows_it()
+    public void The_queue_is_what_came_before_the_song_playing_then_it_then_what_follows_it()
     {
         using var scope = Build();
         PlayFrom(scope, 2);
@@ -248,9 +248,12 @@ public class MobileTabsTests : PinnedDataDirectory
         scope.Mobile.SelectTabCommand.Execute(nameof(MobileTab.Queue));
 
         var rows = scope.Mobile.QueueRows;
-        Assert.Equal(new[] { "Track 2", "Track 3", "Track 4" }, rows.Select(r => r.Track.Title));
-        Assert.True(rows[0].IsCurrentlyPlaying);
-        Assert.False(rows[1].IsCurrentlyPlaying);
+        Assert.Equal(new[] { "Track 0", "Track 1", "Track 2", "Track 3", "Track 4" }, rows.Select(r => r.Track.Title));
+        Assert.Equal(2, scope.Mobile.QueuePlayedCount);
+        Assert.True(rows[2].IsCurrentlyPlaying);
+        Assert.False(rows[3].IsCurrentlyPlaying);
+        Assert.True(rows[1].IsPlayed);
+        Assert.False(rows[2].IsPlayed);
     }
 
     // It follows playback while it is on screen, not only on the way in.
@@ -264,7 +267,9 @@ public class MobileTabsTests : PinnedDataDirectory
         scope.Parts.PlaylistControl.Next();
         Dispatcher.UIThread.RunJobs();
 
-        Assert.Equal(new[] { "Track 3", "Track 4" }, scope.Mobile.QueueRows.Select(r => r.Track.Title));
+        Assert.Equal(3, scope.Mobile.QueuePlayedCount);
+        Assert.True(scope.Mobile.QueueRows[3].IsCurrentlyPlaying);
+        Assert.True(scope.Mobile.QueueRows[2].IsPlayed);
     }
 
     // Under shuffle the queue is the rest in the order shuffle will play
@@ -292,6 +297,29 @@ public class MobileTabsTests : PinnedDataDirectory
             played.Add(scope.Parts.PlaylistControl.CurrentlyPlayingTrack!.Title!);
         }
         Assert.Equal(listed.Skip(1), played);
+    }
+
+    // Under shuffle what has played is listed in the order it played, not
+    // the queue's, above the song playing - and the rest of the order is
+    // still what follows.
+    [AvaloniaFact]
+    public void Under_shuffle_what_has_played_is_above_in_the_order_it_played()
+    {
+        using var scope = Build();
+        PlayFrom(scope, 2);
+        scope.Parts.PlaylistControl.ToggleShuffle();
+        scope.Mobile.SelectTabCommand.Execute(nameof(MobileTab.Queue));
+        var dealt = scope.Mobile.QueueRows.Select(r => r.Track.Title).ToList();
+
+        scope.Parts.PlaylistControl.Next();
+        scope.Parts.PlaylistControl.Next();
+        Dispatcher.UIThread.RunJobs();
+
+        var listed = scope.Mobile.QueueRows.Select(r => r.Track.Title).ToList();
+        Assert.Equal(2, scope.Mobile.QueuePlayedCount);
+        Assert.Equal(dealt, listed);
+        Assert.Equal(dealt[2], scope.Parts.PlaylistControl.CurrentlyPlayingTrack?.Title);
+        Assert.True(scope.Mobile.QueueRows[2].IsCurrentlyPlaying);
     }
 
     // A tap on the queue is a jump along it - it must not replace the queue

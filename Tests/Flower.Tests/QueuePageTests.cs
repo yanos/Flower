@@ -91,7 +91,32 @@ public class QueuePageTests : PinnedDataDirectory
         Assert.True(queue.Play(queue.Rows[2]));
 
         Assert.Equal("C", parts.PlaylistControl.CurrentlyPlayingTrack?.Title);
-        Assert.Equal(new[] { "C", "D" }, Titles(queue));
+        Assert.Equal(new[] { "A", "B", "C", "D" }, Titles(queue));
+        Assert.Equal(2, queue.PlayedCount);
+        Assert.Equal(4, parts.PlaylistControl.CurrentPlaylist.Tracks.Count);
+    }
+
+    // What has played stays, above the song playing and faded, so the queue
+    // can be played again from its top - and a tap there goes back, along the
+    // same queue, rather than starting a new one.
+    [AvaloniaFact]
+    public void What_has_played_stays_above_and_plays_again_from_there()
+    {
+        using var parts = Playing("A", "B", "C", "D");
+        ShowQueue(parts.Main);
+        var queue = parts.Main.Queue;
+        queue.Play(queue.Rows[2]);
+
+        Assert.Equal(new[] { true, true, false, false }, queue.Rows.Select(r => r.IsPlayed));
+        Assert.Equal(new[] { false, false, true, false }, queue.Rows.Select(r => r.IsCurrentlyPlaying));
+        Assert.Equal(new[] { false, false, false, true }, queue.Rows.Select(r => r.CanBeDragged));
+        Assert.Equal(2, queue.UpcomingCount);
+
+        Assert.True(queue.Play(queue.Rows[0]));
+
+        Assert.Equal("A", parts.PlaylistControl.CurrentlyPlayingTrack?.Title);
+        Assert.Equal(0, queue.PlayedCount);
+        Assert.Equal(new[] { "A", "B", "C", "D" }, Titles(queue));
         Assert.Equal(4, parts.PlaylistControl.CurrentPlaylist.Tracks.Count);
     }
 

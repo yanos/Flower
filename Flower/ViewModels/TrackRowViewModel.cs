@@ -294,6 +294,12 @@ public class TrackRowViewModel : DownloadIndicatorViewModel
     // no change notification. See MobileMainViewModel.RebuildQueueRows.
     public bool CanBeDragged { get; set; } = true;
 
+    // A row of the Queue above the song playing: one that has played - or,
+    // outside shuffle, comes before it in the queue - kept so the queue can be
+    // scrolled back up and played again from there. Drawn faded. Set when the
+    // queue builds the row, like CanBeDragged.
+    public bool IsPlayed { get; set; }
+
     // ── Album art (lazy, async) ───────────────────────────────────────────────
 
     private Bitmap? _albumArt;

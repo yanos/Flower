@@ -1,13 +1,20 @@
+using System;
+
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
 
+using Flower.Controls;
 using Flower.ViewModels.Mobile;
 
 namespace Flower.Views.Mobile.Screens;
 
-public partial class QueueScreenView : UserControl, ITrackRowHost
+public partial class QueueScreenView : UserControl, ITrackRowHost, IOpensAtItsOwnPlace
 {
+    // How much of the last song played shows above the song playing when the
+    // screen opens: enough to say there is more up there.
+    private const double PlayedPeek = 24;
+
     public static readonly StyledProperty<bool> IsPlaylistModeProperty =
         AvaloniaProperty.Register<QueueScreenView, bool>(nameof(IsPlaylistMode));
 
@@ -37,5 +44,34 @@ public partial class QueueScreenView : UserControl, ITrackRowHost
             if (DataContext is MobileMainViewModel vm)
                 vm.ReorderQueueRow(dragged, insertBefore);
         });
+    }
+
+    // Opens on the song playing, just under the header, rather than at the
+    // top of what has played. Its row is found rather than worked out from a
+    // row height, and twice: the list virtualizes, so the extent the first
+    // pass scrolls against is an estimate until the rows around the target
+    // are real.
+    public void ScrollToItsPlace()
+    {
+        if (DataContext is not MobileMainViewModel vm)
+            return;
+
+        var index = vm.QueuePlayedCount;
+        if (index <= 0 || index >= vm.QueueRows.Count)
+        {
+            Scroller.Offset = default;
+            return;
+        }
+
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            QueueList.ScrollIntoView(index);
+            UpdateLayout();
+            if (QueueList.ContainerFromIndex(index) is not { } row
+                || row.TranslatePoint(default, QueueContent) is not { } at)
+                return;
+            Scroller.Offset = new Vector(0, Math.Max(0, at.Y - PlayedPeek));
+            UpdateLayout();
+        }
     }
 }

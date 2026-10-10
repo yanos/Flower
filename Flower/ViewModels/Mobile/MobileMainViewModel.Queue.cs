@@ -84,6 +84,9 @@ public partial class MobileMainViewModel
 
     public List<TrackRowViewModel> QueueRows => Main.Queue.Rows;
 
+    // Where the song playing is in QueueRows: the screen opens on it.
+    public int QueuePlayedCount => Main.Queue.PlayedCount;
+
     private int QueueIndexOf(TrackRowViewModel row) => Main.Queue.SlotOf(row);
 
     private void OnQueuePropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)

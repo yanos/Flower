@@ -272,6 +272,7 @@ public sealed class ScreenStackPanel : Panel
         var currentOffset = restoredFrame != null
             ? SavedOffset(restoredFrame)
             : ReferenceEquals(_currentInner, currentInner) ? null : Vector.Zero;
+        var arrived = restoredFrame != null || !ReferenceEquals(_currentInner, currentInner);
         var scrollOffsets = new (Control?, Vector?)[]
         {
             (currentInner, currentOffset), (backInner, SavedOffset(backFrame)), (forwardInner, SavedOffset(forwardFrame)),
@@ -287,6 +288,7 @@ public sealed class ScreenStackPanel : Panel
         if (unchanged)
         {
             RestoreScrollOffsets(scrollOffsets);
+            OpenAtItsOwnPlace(currentInner, arrived);
             RaiseSettled();
             return;
         }
@@ -308,6 +310,7 @@ public sealed class ScreenStackPanel : Panel
         // same reason its own layout pass comes first: it has to be measured
         // where it will rest.
         RestoreScrollOffsets(scrollOffsets);
+        OpenAtItsOwnPlace(currentInner, arrived);
 
         if (transition != MobileNavigationTransition.None
             && back != null
@@ -343,6 +346,15 @@ public sealed class ScreenStackPanel : Panel
         }
         else
             RaiseSettled();
+    }
+
+    // A screen that has just become the one showing and decides for itself
+    // where that is - see IOpensAtItsOwnPlace. After the offsets above, so it
+    // has the last word.
+    private static void OpenAtItsOwnPlace(Control currentInner, bool arrived)
+    {
+        if (arrived && currentInner is IOpensAtItsOwnPlace screen)
+            screen.ScrollToItsPlace();
     }
 
     // Where each screen was scrolled to when the user left it, keyed on the

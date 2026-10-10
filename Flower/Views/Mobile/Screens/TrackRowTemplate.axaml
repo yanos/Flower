@@ -28,6 +28,7 @@
          LongPress). -->
     <Button Classes="trackRow"
             Classes.playing="{Binding IsCurrentlyPlaying}"
+            Classes.played="{Binding IsPlayed}"
             Classes.placeholder="{Binding IsUnavailable}"
             Command="{Binding $parent[UserControl].((mvm:MobileMainViewModel)DataContext).PlayTrackCommand}"
             CommandParameter="{Binding}"

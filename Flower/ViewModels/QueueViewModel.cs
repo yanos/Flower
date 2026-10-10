@@ -8,9 +8,12 @@ using Flower.Services;
 
 namespace Flower.ViewModels;
 
-// The queue, as a screen shows it, on every head: what is playing, and what
-// plays after it - the phone's Queue tab and the desktop's Queue sidebar row
-// both draw these rows. It is the queue PlaylistControl walks (CurrentPlaylist),
+// The queue, as a screen shows it, on every head: what has played, what is
+// playing, and what plays after it - the phone's Queue tab and the desktop's
+// Queue sidebar row both draw these rows. The played ones are above the song
+// playing, faded (TrackRowViewModel.IsPlayed), so the queue can be scrolled
+// back up and played again from any of them - from its top, say. A screen
+// opens on the song playing (PlayedCount says where it is), not at the top. It is the queue PlaylistControl walks (CurrentPlaylist),
 // not a copy of it, so playing a row is a jump along it rather than a new
 // queue, and a drag rearranges what is to come, the way it does a playlist.
 //
@@ -78,6 +81,14 @@ public sealed class QueueViewModel : ViewModelBase, IDisposable
     }
 
     public bool IsEmpty => _rows.Count == 0;
+
+    /// <summary>How many rows are above the song playing - the index of its
+    /// row, where a screen showing the queue opens.</summary>
+    public int PlayedCount { get; private set; }
+
+    /// <summary>The song playing and what follows it - the queue still to
+    /// play, without what has.</summary>
+    public int UpcomingCount => _rows.Count - PlayedCount;
 
     // What a queue screen says with nothing on it, on both heads.
     public const string EmptyTitle = "Nothing Queued";
@@ -174,10 +185,13 @@ public sealed class QueueViewModel : ViewModelBase, IDisposable
             _isStale = true;
     }
 
-    // The song playing first, then the rest of the queue: in order from it
-    // onward, or - under shuffle, where any of them could be next - all of
-    // them, after the ones lined up by hand, which are next whatever shuffle
-    // says. Playing something outside the queue shows the whole queue.
+    // What has played, then the song playing, then the rest of the queue. In
+    // order, that is simply the queue - before the song playing, it, after it.
+    // Under shuffle, where any of them could be next, it is the songs this
+    // pass has played in the order they did, then the song playing, then the
+    // ones lined up by hand, which are next whatever shuffle says, then the
+    // rest in the order shuffle will play them. Playing something outside the
+    // queue shows the whole queue.
     // Nothing playing shows nothing: before the first play, the queue is only
     // the library in the order it was scanned, which is not anything the user
     // lined up.
@@ -190,8 +204,17 @@ public sealed class QueueViewModel : ViewModelBase, IDisposable
         var current = _playback.QueueIndex;
 
         var slots = new List<int>(queue.Count);
+        var played = 0;
         if (playing != null && current >= 0)
         {
+            if (_playback.IsShuffleEnabled)
+                slots.AddRange(_playback.ShufflePlayedSlots);
+            else
+            {
+                for (var i = 0; i < current; i++)
+                    slots.Add(i);
+            }
+            played = slots.Count;
             slots.Add(current);
             // Under shuffle, the songs lined up by hand, then the rest in the
             // order shuffle will play them - not the queue as it stands, which
@@ -225,15 +248,18 @@ public sealed class QueueViewModel : ViewModelBase, IDisposable
             pairedServerReachable: reachable);
 
         // The builder marks every copy of the playing song; here only its
-        // own slot is the one playing.
-        // Nor can it be dragged: everything else is queued behind it.
+        // own slot is the one playing. Nor can it be dragged: everything else
+        // is queued behind it - and nor can what has played, since a drag
+        // only ever moves a song among those still to come.
         for (var i = 0; i < rows.Count; i++)
         {
-            rows[i].IsCurrentlyPlaying = i == 0 && current >= 0;
-            rows[i].CanBeDragged = !rows[i].IsCurrentlyPlaying;
+            rows[i].IsCurrentlyPlaying = i == played && current >= 0;
+            rows[i].IsPlayed = i < played;
+            rows[i].CanBeDragged = i > played || current < 0;
         }
 
         _slots = slots;
+        PlayedCount = played;
         Rows = rows;
     }
 }

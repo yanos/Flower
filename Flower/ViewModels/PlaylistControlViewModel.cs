@@ -646,7 +646,10 @@ namespace Flower.ViewModels
             IsShuffleEnabled = !IsShuffleEnabled;
             ForgetShuffleOrder();
             if (IsShuffleEnabled && CurrentlyPlayingTrack is { } playing)
+            {
                 _shufflePlayed.Add(playing.Id);
+                _shufflePlayedOrder.Add(playing.Id);
+            }
             _logger.LogInformation("Shuffle {State}", IsShuffleEnabled ? "enabled" : "disabled");
             _appSettings.IsShuffleEnabled = IsShuffleEnabled;
             _ = _appSettingsStore.SaveAsync(_appSettings);
@@ -1075,12 +1078,14 @@ namespace Flower.ViewModels
         // lined up by hand behind it, which play first anyway (see
         // _linedUpCount). _shufflePlayed is the songs this pass has already
         // played, by Id, so that an order dealt again - after the queue
-        // changes - does not play them twice. A pass ends when nothing is left
-        // to deal, and the next starts over with everything but the song
-        // playing.
+        // changes - does not play them twice - and _shufflePlayedOrder the same
+        // songs in the order they played, which is what the Queue page lists
+        // above the song playing. A pass ends when nothing is left to deal, and
+        // the next starts over with everything but the song playing.
         private List<int> _shuffleOrder = [];
         private IReadOnlyList<Track>? _shuffledFor;
         private readonly HashSet<Guid> _shufflePlayed = [];
+        private readonly List<Guid> _shufflePlayedOrder = [];
 
         /// <summary>The slots of <see cref="CurrentPlaylist"/> still to play in
         /// this shuffle pass, in the order they will - what the Queue page
@@ -1089,11 +1094,46 @@ namespace Flower.ViewModels
         public IReadOnlyList<int> ShuffleUpcomingSlots =>
             IsShuffleEnabled ? ShuffleOrderFor(_currentPlaylist.Tracks, QueueIndex).ToList() : [];
 
+        /// <summary>The slots of <see cref="CurrentPlaylist"/> this shuffle pass
+        /// has played, in the order it played them, not counting the song
+        /// playing - what the Queue page lists above it. Empty with shuffle
+        /// off.</summary>
+        public IReadOnlyList<int> ShufflePlayedSlots
+        {
+            get
+            {
+                if (!IsShuffleEnabled || _shufflePlayedOrder.Count == 0)
+                    return [];
+
+                // Copies of one song take their slots in turn, as in Deal.
+                var tracks = _currentPlaylist.Tracks;
+                var current = QueueIndex;
+                var slotsOf = new Dictionary<Guid, Queue<int>>();
+                for (var i = 0; i < tracks.Count; i++)
+                {
+                    if (i == current)
+                        continue;
+                    if (!slotsOf.TryGetValue(tracks[i].Id, out var slots))
+                        slotsOf[tracks[i].Id] = slots = new Queue<int>();
+                    slots.Enqueue(i);
+                }
+
+                var played = new List<int>(_shufflePlayedOrder.Count);
+                foreach (var id in _shufflePlayedOrder)
+                {
+                    if (slotsOf.TryGetValue(id, out var slots) && slots.Count > 0)
+                        played.Add(slots.Dequeue());
+                }
+                return played;
+            }
+        }
+
         private void ForgetShuffleOrder()
         {
             _shuffleOrder = [];
             _shuffledFor = null;
             _shufflePlayed.Clear();
+            _shufflePlayedOrder.Clear();
         }
 
         // A song starting is played, in this pass, wherever it was in the
@@ -1103,7 +1143,8 @@ namespace Flower.ViewModels
             if (!IsShuffleEnabled)
                 return;
 
-            _shufflePlayed.Add(track.Id);
+            if (_shufflePlayed.Add(track.Id))
+                _shufflePlayedOrder.Add(track.Id);
             if (ReferenceEquals(_shuffledFor, _currentPlaylist.Tracks))
                 _shuffleOrder.Remove(_queueIndex);
         }
@@ -1126,8 +1167,12 @@ namespace Flower.ViewModels
             if (_shuffleOrder.Count == 0 && _shufflePlayed.Count > 0)
             {
                 _shufflePlayed.Clear();
+                _shufflePlayedOrder.Clear();
                 if (currentIndex >= 0 && currentIndex < tracks.Count)
+                {
                     _shufflePlayed.Add(tracks[currentIndex].Id);
+                    _shufflePlayedOrder.Add(tracks[currentIndex].Id);
+                }
                 _shuffleOrder = Deal(tracks, currentIndex, keepOrderOf: []);
             }
 

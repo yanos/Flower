@@ -641,7 +641,15 @@ public partial class MainView : UserControl
 
         MusicList.SetItems(rows);
 
-        if (_viewStates.TryGetValue(newKey, out var saved))
+        // The queue opens on the song playing, whatever it was left at, with
+        // one of the songs that played before it showing above - the rest are
+        // a scroll up (QueueViewModel.PlayedCount).
+        if (_viewModel.IsShowingQueue)
+        {
+            MusicList.SelectedRow = null;
+            MusicList.SetScrollOffsetY(Math.Max(0, (_viewModel.Queue.PlayedCount - 1) * TrackRowViewModel.RowHeight));
+        }
+        else if (_viewStates.TryGetValue(newKey, out var saved))
         {
             // Guarded: a null saved path would otherwise match the first
             // undownloaded placeholder in the view, which is not what was

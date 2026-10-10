@@ -24,14 +24,19 @@
        repeat): the desktop's page subtitle says it, where there is room, and
        on a phone it only pushed the songs down.
 
+       What has played is above the song playing, faded, and the screen opens
+       on the song playing (ScrollToItsPlace) - scrolled up, the queue can be
+       played again from any of them, its top included.
+
        Rows are dragged by their handle like a playlist's (TrackRowDragReorder),
-       all but the song playing, which heads the list.
+       all but the song playing and those above it: a drag moves a song among
+       the ones still to come.
 
        No pull-down filter (MobileNavigationFrame.CanFilter): the queue is in
        the order it plays in, and a filtered one would hide what is next. -->
   <Panel>
-    <ScrollViewer Classes="screenScroll" controls:RubberBandScroll.IsEnabled="True">
-      <StackPanel>
+    <ScrollViewer x:Name="Scroller" Classes="screenScroll" controls:RubberBandScroll.IsEnabled="True">
+      <StackPanel x:Name="QueueContent">
         <controls:ScreenTitle />
         <ItemsControl x:Name="QueueList"
                       ItemsSource="{Binding QueueRows}" ItemTemplate="{StaticResource TrackRowTemplate}">

@@ -376,6 +376,12 @@
     <Style Selector="Button.trackRow.placeholder">
       <Setter Property="Opacity" Value="0.5" />
     </Style>
+    <!-- A Queue row above the song playing (TrackRowViewModel.IsPlayed):
+         faded, but lighter than an unavailable song, since it plays fine -
+         a tap goes back to it. -->
+    <Style Selector="Button.trackRow.played">
+      <Setter Property="Opacity" Value="0.6" />
+    </Style>
     <!-- The album-level counterpart, for the art-tile grids and the album
          header (see AlbumTileViewModel.IsUnavailable): an album is only
          dimmed once *nothing* in it can be played - one downloaded track

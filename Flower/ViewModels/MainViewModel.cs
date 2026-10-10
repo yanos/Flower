@@ -812,8 +812,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         // How long the queue is, and - when what plays next is not simply the
         // next row down - why not.
         SidebarItemKind.Queue => Queue.Caption is { } caption
-            ? $"{CountOf(Queue.Rows.Count, "song")} · {caption}"
-            : CountOf(Queue.Rows.Count, "song"),
+            ? $"{CountOf(Queue.UpcomingCount, "song")} · {caption}"
+            : CountOf(Queue.UpcomingCount, "song"),
         SidebarItemKind.Artists => CountOf(VisibleSubListItems.Count, "artist"),
         _ => CountOf(DisplayedTracks.Count, "song"),
     };
