@@ -161,7 +161,11 @@ public sealed class ScreenStackPanel : Panel
     // screen and would otherwise hang in place over one sliding away.
     public event EventHandler? Moving;
 
-    private void RaiseSettled() => Settled?.Invoke(this, EventArgs.Empty);
+    private void RaiseSettled()
+    {
+        Cover();
+        Settled?.Invoke(this, EventArgs.Empty);
+    }
 
     private void RaiseMoving() => Moving?.Invoke(this, EventArgs.Empty);
 
@@ -203,6 +207,7 @@ public sealed class ScreenStackPanel : Panel
         current.IsLive = true;
         current.ShowsBackButton = vm.CanGoBack;
         current.IsVisible = true;
+        current.Opacity = 1;
         current.IsHitTestVisible = true;
         // A brand new transform every sync, never a reused/shared one - this
         // only ever runs as the result of an actual completed navigation
@@ -331,6 +336,8 @@ public sealed class ScreenStackPanel : Panel
             // the transform below is set before this dispatcher job returns.
             UpdateLayout();
             entrance.X = transition == MobileNavigationTransition.FromRight ? entranceWidth : -entranceWidth;
+            // What the incoming screen slides in over - see Cover.
+            back.Opacity = 1;
             RaiseMoving();
             EaseTransform(entrance, 0, RaiseSettled);
         }
@@ -567,10 +574,7 @@ public sealed class ScreenStackPanel : Panel
             if (committed)
                 CommitInteractive(vm, direction);
             else
-            {
                 CancelInteractive();
-                Reveal(SwipeDirection.None);
-            }
             e.Handled = true;
             return;
         }
@@ -596,7 +600,6 @@ public sealed class ScreenStackPanel : Panel
         {
             _interactiveDirection = SwipeDirection.None;
             CancelInteractive();
-            Reveal(SwipeDirection.None);
         }
     }
 
@@ -632,10 +635,22 @@ public sealed class ScreenStackPanel : Panel
         });
     }
 
+    // The resting arrangement comes back once the screen has eased back
+    // over the one it was uncovering, not as it starts to: until then part of
+    // that one is still showing.
     private void CancelInteractive()
     {
         if (_current?.RenderTransform is TranslateTransform transform)
-            EaseTransform(transform, 0, RaiseSettled);
+            EaseTransform(transform, 0, () =>
+            {
+                Reveal(SwipeDirection.None);
+                RaiseSettled();
+            });
+        else
+        {
+            Reveal(SwipeDirection.None);
+            RaiseSettled();
+        }
     }
 
     // Uncovers the one inert slot this motion is actually revealing and hides
@@ -649,6 +664,27 @@ public sealed class ScreenStackPanel : Panel
             _oneBack.IsVisible = direction != SwipeDirection.Forward;
         if (_oneForward != null)
             _oneForward.IsVisible = direction == SwipeDirection.Forward;
+        if (direction == SwipeDirection.Back && _oneBack != null)
+            _oneBack.Opacity = 1;
+        if (direction == SwipeDirection.Forward && _oneForward != null)
+            _oneForward.Opacity = 1;
+    }
+
+    // Takes both inert slots out of the picture while current covers them.
+    // Covered is not the same as not drawn: the compositor has no idea one
+    // opaque screen hides another, so the screen one back - laid out, visible,
+    // underneath - was drawn in full on every frame anything on top moved,
+    // which is every frame of a scroll, doubling what each one cost. At no
+    // opacity it is skipped, while staying laid out and scrolled where it was
+    // left (IsVisible would drop it from layout, and a swipe would then start
+    // with a full layout of it). Reveal and the entrance slide put it back for
+    // as long as something can uncover it; settling covers it again.
+    private void Cover()
+    {
+        if (_oneBack != null)
+            _oneBack.Opacity = 0;
+        if (_oneForward != null)
+            _oneForward.Opacity = 0;
     }
 
     private void EaseTransform(TranslateTransform transform, double target, Action? onFinished)

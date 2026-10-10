@@ -375,6 +375,40 @@ public class ScreenStackPanelSwipeTests : PinnedDataDirectory
         Assert.Equal(0, h.CurrentSlotOffset(), 1);
     }
 
+    // The screen one back sits under the current one, and covered is not the
+    // same as not drawn: it was drawn in full on every frame of a scroll on
+    // top of it. So it is drawn only while something can uncover it - a drag,
+    // and the ease back after one - and stays laid out throughout, so the
+    // drag that uncovers it does not have to lay it out first.
+    [AvaloniaFact]
+    public void The_screen_behind_is_drawn_only_while_something_can_uncover_it()
+    {
+        using var h = new Harness();
+        h.DrillIn();
+        h.LetEasingFinish();
+        var behind = h.Panel.Children[0];
+
+        Assert.True(behind.IsVisible);
+        Assert.Equal(0, behind.Opacity);
+
+        h.Swipe(UnderThreshold, release: false);
+        Assert.Equal(1, behind.Opacity);
+
+        h.Release(200 + UnderThreshold);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(1, behind.Opacity);
+
+        h.LetEasingFinish();
+        Assert.Equal(0, behind.Opacity);
+        Assert.True(behind.IsVisible);
+
+        // Gone back to, it is the screen showing.
+        h.Swipe(PastThreshold);
+        h.LetEasingFinish();
+        Assert.Equal(MobileScreenKind.AlbumGrid, h.Vm.CurrentFrame.ScreenKind);
+        Assert.Equal(1, h.Panel.Children.Last().Opacity);
+    }
+
     // The browser-style redo counterpart: after going back, a left swipe goes
     // forward again.
     [AvaloniaFact]
