@@ -139,6 +139,7 @@ namespace Flower.Importer
                 var tag = tagFile.Tag;
                 var props = tagFile.Properties;
                 var technical = AudioTechnicalProperties.From(props);
+                var id3v23 = Id3v23(tagFile);
 
                 return new Track
                 {
@@ -146,9 +147,9 @@ namespace Flower.Importer
                     Title         = tag.Title,
                     TitleSort     = tag.TitleSort,
                     Subtitle      = tag.Subtitle,
-                    Artists       = string.Join(", ", tag.Performers),
-                    ArtistsSort   = JoinOrNull(tag.PerformersSort),
-                    AlbumArtists  = string.Join(", ", tag.AlbumArtists),
+                    Artists       = SlashSeparated(id3v23, "TPE1") ?? string.Join(", ", tag.Performers),
+                    ArtistsSort   = SlashSeparated(id3v23, "TSOP") ?? JoinOrNull(tag.PerformersSort),
+                    AlbumArtists  = SlashSeparated(id3v23, "TPE2") ?? string.Join(", ", tag.AlbumArtists),
                     IsCompilation = CompilationFlag.Read(tagFile),
                     Album         = tag.Album,
                     AlbumSort     = tag.AlbumSort,
@@ -159,10 +160,10 @@ namespace Flower.Importer
                     DiscCount     = tag.DiscCount,
 
                     // People
-                    Composers     = string.Join(", ", tag.Composers),
-                    ComposersSort = JoinOrNull(tag.ComposersSort),
-                    Conductor     = tag.Conductor,
-                    RemixedBy     = tag.RemixedBy,
+                    Composers     = SlashSeparated(id3v23, "TCOM") ?? string.Join(", ", tag.Composers),
+                    ComposersSort = SlashSeparated(id3v23, "TSOC") ?? JoinOrNull(tag.ComposersSort),
+                    Conductor     = SlashSeparated(id3v23, "TPE3") ?? tag.Conductor,
+                    RemixedBy     = SlashSeparated(id3v23, "TPE4") ?? tag.RemixedBy,
 
                     // Classification
                     Genre            = tag.FirstGenre,
@@ -204,6 +205,42 @@ namespace Flower.Importer
                 _logger.LogTrace(ex, "Skipping unreadable file during import: {Path}", file);
                 return null;
             }
+        }
+
+        // An MP3's ID3v2.3 tag, whose name fields TagLib splits on every "/":
+        // v2.3 has no separator of its own, and "/" was the convention for
+        // several artists in one field. So "Akio / Okihide" read as two
+        // artists, "Akio " and " Okihide", and joined with ", " became
+        // "Akio ,  Okihide" - and a band called "yes/and" became "yes, and".
+        // Wrong in every list, and a name Music.app, which shows the field as
+        // written, never matched. ID3v2.4 separates with a NUL and leaves "/"
+        // alone; every other format has real multiple values.
+        private static TagLib.Id3v2.Tag? Id3v23(TagLib.File file) =>
+            file.GetTag(TagLib.TagTypes.Id3v2) is TagLib.Id3v2.Tag { Version: < 4 } id3 ? id3 : null;
+
+        // A name frame of a v2.3 tag as the file holds it: the pieces put back
+        // together with the "/" they were split on, which restores the text
+        // exactly - the split keeps the spaces either side, and an empty piece
+        // between two slashes ("SAINT PEPSI // LUXURY ELITE"). Read from the
+        // frame rather than from the Tag, whose Conductor and RemixedBy have
+        // already been rejoined with "; ". Null when the file has no v2.3 tag
+        // or no such frame, so the caller reads the Tag as before - a name an
+        // ID3v1 or APE tag supplies is not one v2.3 split. A v2.3 file that
+        // really does list "Artist A/Artist B" now shows exactly that: it is
+        // what the file says, and cannot be told apart from a band with a
+        // slash in its name.
+        private static string? SlashSeparated(TagLib.Id3v2.Tag? id3v23, string frameId)
+        {
+            if (id3v23 == null)
+                return null;
+
+            var frame = TagLib.Id3v2.TextInformationFrame.Get(
+                id3v23, TagLib.ByteVector.FromString(frameId, TagLib.StringType.Latin1), create: false);
+            if (frame?.Text is not { Length: > 0 } pieces)
+                return null;
+
+            var joined = string.Join("/", pieces);
+            return string.IsNullOrWhiteSpace(joined) ? null : joined;
         }
 
         // The multi-valued sort tags (TSOP/TSOC) joined the same way Performers

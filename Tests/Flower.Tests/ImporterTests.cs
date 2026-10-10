@@ -289,6 +289,57 @@ public class ImporterTests : IDisposable
         Assert.False(string.IsNullOrEmpty(track.Codec));
     }
 
+    // ID3v2.3 has no separator for several names in one field, and TagLib
+    // splits its name frames on every "/" - so "Akio / Okihide" came out as
+    // "Akio ,  Okihide", and the band "yes/and" as "yes, and". Each name must
+    // come back as the file has it, whichever version wrote it. See
+    // Importer.SlashSeparated.
+    [Theory]
+    [InlineData((byte)3)]
+    [InlineData((byte)4)]
+    public void Import_reads_a_name_with_a_slash_in_it_as_written(byte version)
+    {
+        Audio(_root, $"slash-v{version}.wav", f =>
+        {
+            var id3v2 = (TagLib.Id3v2.Tag)f.GetTag(TagLib.TagTypes.Id3v2, create: true);
+            id3v2.Version = version;
+            void Frame(string id, string text) =>
+                TagLib.Id3v2.TextInformationFrame.Get(id3v2, TagLib.ByteVector.FromString(id, TagLib.StringType.Latin1), true)
+                    .Text = [text];
+            Frame("TIT2", "Song");
+            Frame("TPE1", "Akio / Okihide");
+            Frame("TPE2", "SAINT PEPSI // LUXURY ELITE");
+            Frame("TCOM", "yes/and");
+            Frame("TSOP", "Akio / Okihide");
+            Frame("TPE3", "A / B");
+            Frame("TPE4", "C/D");
+        });
+
+        var track = Assert.Single(NewImporter().Import([_root]));
+
+        Assert.Equal("Akio / Okihide", track.Artists);
+        Assert.Equal("SAINT PEPSI // LUXURY ELITE", track.AlbumArtists);
+        Assert.Equal("yes/and", track.Composers);
+        Assert.Equal("Akio / Okihide", track.ArtistsSort);
+        Assert.Equal("A / B", track.Conductor);
+        Assert.Equal("C/D", track.RemixedBy);
+    }
+
+    // Names a tag really does hold as several values still read as a list.
+    [Fact]
+    public void Import_still_joins_several_artists_a_v24_tag_lists()
+    {
+        Audio(_root, "duet.wav", f =>
+        {
+            var id3v2 = (TagLib.Id3v2.Tag)f.GetTag(TagLib.TagTypes.Id3v2, create: true);
+            id3v2.Version = 4;
+            id3v2.Title = "Duet";
+            id3v2.Performers = ["Deerhoof", "Half Waif"];
+        });
+
+        Assert.Equal("Deerhoof, Half Waif", Assert.Single(NewImporter().Import([_root])).Artists);
+    }
+
     [Fact]
     public void Import_reads_the_compilation_flag_from_the_id3v2_tag()
     {
