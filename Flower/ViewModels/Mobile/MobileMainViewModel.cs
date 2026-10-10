@@ -956,10 +956,18 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             return null;
 
         var representative = tracks.OrderByDescending(t => t.DateAdded).First();
-        // Same "Various Artists" fallback as AlbumGridBuilder - a header
-        // naming one arbitrary artist out of several would be misleading.
-        var artists = tracks.Select(t => t.EffectiveAlbumArtist).Distinct().ToList();
-        var artist = artists.Count == 1 ? artists[0] : "Various Artists";
+        // The songs' own artist (Track.Artists) when they all share one,
+        // whatever the case it is spelled in - the album artist is a sorting
+        // tag, and often not the name the artist goes by on the songs. Songs
+        // by several (a guest on one track, a compilation) fall back to the
+        // album artist, with the same "Various Artists" as AlbumGridBuilder
+        // where even that differs: a header naming one arbitrary artist out of
+        // several would be misleading.
+        var songArtists = ArtistNames.Of(tracks);
+        var albumArtists = tracks.Select(t => t.EffectiveAlbumArtist).Distinct().ToList();
+        var artist = songArtists.Count == 1 && tracks.All(t => !string.IsNullOrEmpty(t.Artists)) ? songArtists[0]
+            : albumArtists.Count == 1 ? albumArtists[0]
+            : "Various Artists";
 
         var header = new AlbumTileViewModel
         {
