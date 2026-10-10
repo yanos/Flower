@@ -135,16 +135,35 @@
            the room above it is outside it, where nothing it holds can draw -
            and it was plain background over a blurred backdrop that ended in
            a hard line. This fills exactly that room, as tall as the pull,
-           with the colour the backdrop's top row is (ArtBackdrop.TopEdgeColor)
-           at the backdrop's own opacity, so the backdrop seems to carry on.
-           Only in the stacked layout, the one with a backdrop. -->
-      <Border Grid.Column="1"
-              VerticalAlignment="Top"
-              IsHitTestVisible="False"
-              IsVisible="{Binding !#Root.IsWideAlbumLayout}"
-              Opacity="0.6"
-              Height="{Binding #AlbumScroll.((TranslateTransform)RenderTransform).Y, Converter={x:Static conv:NonNegativeConverter.Instance}, FallbackValue=0}"
-              Background="{Binding #Root.DisplayHeader.AlbumArt, Converter={x:Static services:TopEdgeBrushConverter.Instance}}" />
+           with the backdrop again upside down: the same picture at the same
+           size, cropped the same way, so its bottom row is the backdrop's
+           top row and the two meet without a seam. It used to be one colour,
+           the average of that row, which read as the row smeared upwards.
+           Its fade flips with it, so it thins out towards the top of the
+           screen. Sized to the backdrop from code (TrackListScreenView
+           .SizePullMirror) - a different height would crop the picture
+           differently, and the rows would not meet. Only in the stacked
+           layout, the one with a backdrop. -->
+      <Panel Grid.Column="1"
+             VerticalAlignment="Top"
+             ClipToBounds="True"
+             IsHitTestVisible="False"
+             IsVisible="{Binding !#Root.IsWideAlbumLayout}"
+             Height="{Binding #AlbumScroll.((TranslateTransform)RenderTransform).Y, Converter={x:Static conv:NonNegativeConverter.Instance}, FallbackValue=0}">
+        <Border x:Name="PullMirror"
+                VerticalAlignment="Bottom"
+                ClipToBounds="True"
+                OpacityMask="{DynamicResource AppBackdropFadeMask}"
+                RenderTransformOrigin="50%,50%">
+          <Border.RenderTransform>
+            <ScaleTransform ScaleY="-1" />
+          </Border.RenderTransform>
+          <Image Source="{Binding #Root.DisplayHeader.AlbumArt, Converter={x:Static services:TinyArtConverter.Instance}}"
+                 Stretch="UniformToFill"
+                 Opacity="0.6"
+                 RenderOptions.BitmapInterpolationMode="HighQuality" />
+        </Border>
+      </Panel>
       <ScrollViewer x:Name="AlbumScroll" Grid.Column="1" Classes="screenScroll" controls:RubberBandScroll.IsEnabled="True">
         <StackPanel>
           <!-- Blank over an album, however it was reached, and this

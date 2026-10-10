@@ -161,7 +161,8 @@
            upscale (ArtBackdrop.Tiny), not a blur effect, which the phone
            would redraw on every frame of a scroll. A playlist has no cover of
            its own, so there is nothing to draw and nothing shows. -->
-      <Border Margin="{DynamicResource ScreenBackdropBleed}"
+      <Border Classes="albumBackdrop"
+              Margin="{DynamicResource ScreenBackdropBleed}"
               ClipToBounds="True"
               IsHitTestVisible="False"
               OpacityMask="{DynamicResource AppBackdropFadeMask}">

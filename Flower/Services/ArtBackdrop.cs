@@ -30,7 +30,6 @@ public static class ArtBackdrop
 
     private static readonly ConditionalWeakTable<Bitmap, Bitmap> Tinies = new();
     private static readonly ConditionalWeakTable<Bitmap, object> Tints = new();
-    private static readonly ConditionalWeakTable<Bitmap, object> TopEdges = new();
 
     // What Now Playing falls back to with no cover to take a colour from: the
     // theme's pressed accent - the palette's Deep Coral - (Theme.axaml),
@@ -78,41 +77,6 @@ public static class ArtBackdrop
         var tint = Measure(source) ?? FallbackTint;
         Tints.AddOrUpdate(source, tint);
         return tint;
-    }
-
-    // The colour along the top of the tiny copy, where the album page's
-    // backdrop starts: what the page is filled with above it when it is
-    // pulled down past its top, so the backdrop seems to carry on rather than
-    // ending at a hard edge over plain background. The middle of the row
-    // only - the backdrop is taller than it is wide, so the cover is drawn
-    // cropped at both sides and the ends of the row are not on screen.
-    public static Color? TopEdgeColor(Bitmap? source)
-    {
-        if (source is null)
-            return null;
-
-        if (TopEdges.TryGetValue(source, out var known))
-            return (Color)known;
-
-        if (Pixels(source) is not { } read)
-            return null;
-
-        var (pixels, width, rgba) = read;
-
-        double r = 0, g = 0, b = 0;
-        var from = width / 5;
-        var to = width - from;
-        for (var x = from; x < to; x++)
-        {
-            var i = x * 4;
-            r += rgba ? pixels[i] : pixels[i + 2];
-            g += pixels[i + 1];
-            b += rgba ? pixels[i + 2] : pixels[i];
-        }
-        var n = to - from;
-        var edge = Color.FromRgb((byte)(r / n), (byte)(g / n), (byte)(b / n));
-        TopEdges.AddOrUpdate(source, edge);
-        return edge;
     }
 
     // The tiny copy's pixels, top row first, four bytes each, and whether
@@ -237,18 +201,6 @@ public sealed class TinyArtConverter : IValueConverter
 
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
         ArtBackdrop.Tiny(value as Bitmap);
-
-    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
-        throw new NotSupportedException();
-}
-
-// Cover -> the colour the album page's backdrop carries on in above its top.
-public sealed class TopEdgeBrushConverter : IValueConverter
-{
-    public static readonly TopEdgeBrushConverter Instance = new();
-
-    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
-        ArtBackdrop.TopEdgeColor(value as Bitmap) is { } edge ? new SolidColorBrush(edge) : null;
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
         throw new NotSupportedException();

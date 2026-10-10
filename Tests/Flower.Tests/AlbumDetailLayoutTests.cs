@@ -5,6 +5,7 @@ using System.Threading;
 
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
 using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
@@ -143,6 +144,98 @@ public class AlbumDetailLayoutTests : PinnedDataDirectory
     private static ContentControl AlbumText(Window window) =>
         Assert.Single(Headers(window), h =>
             h.IsVisible && !h.GetVisualDescendants().OfType<SquareAlbumArtView>().Any());
+
+    // Pulled down past its top, the album page shows its blurred backdrop
+    // again upside down above it, so the two meet row for row. It used to
+    // fill that room with one colour - the average of the backdrop's top row -
+    // which read as that row smeared upwards. The cover here is red on the
+    // left and blue on the right: one colour above the seam cannot match both
+    // sides, the mirror does.
+    [AvaloniaFact]
+    public void Pulling_the_album_down_shows_the_backdrop_mirrored_with_no_seam()
+    {
+        var folder = System.IO.Directory.CreateTempSubdirectory("flower-pull-mirror").FullName;
+        WriteCover(System.IO.Path.Combine(folder, "cover.png"));
+        var tracks = Enumerable.Range(0, 4).Select(i =>
+        {
+            var file = SyntheticWav.CreateFile(folder, $"song{i}.wav", TimeSpan.FromSeconds(1), SyntheticWav.Marker(1));
+            return new Track { Title = $"Song {i}", Album = Album, Artists = "Deerhoof", Path = file, DateAdded = DateTimeOffset.UtcNow };
+        }).ToList();
+        var parts = MainViewModelHarness.BuildParts(new Library(tracks), new MainPlaylist(new List<Track>()));
+        MainViewModelHarness.UseSuiteTabs(parts);
+        var mobile = new MobileMainViewModel(parts.Main, parts.PlaylistControl, parts.CurrentlyPlaying,
+            NullLogger<MobileMainViewModel>.Instance);
+        mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
+        mobile.SelectAlbumOrArtistCommand.Execute(Album);
+        MainViewModelHarness.WaitForTheDrillIn(mobile, Album);
+        using var _ = new MainViewModelHarness.MobileParts(mobile, parts);
+
+        const double width = 390;
+        var (window, view) = Show(mobile, width);
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (view.DisplayHeader?.AlbumArt == null && DateTime.UtcNow < deadline)
+            Pump(50);
+        Assert.NotNull(view.DisplayHeader?.AlbumArt);
+        Layout(window, width);
+
+        // What MobileMainView does: the backdrop reaches up past the header
+        // by the scroller's own inset, so it starts at the scroller's top -
+        // which is where a pull's room ends.
+        var scroll = view.FindControl<ScrollViewer>("AlbumScroll")!;
+        var backdrop = view.GetVisualDescendants().OfType<Border>().Single(b => b.Classes.Contains("albumBackdrop"));
+        window.Resources["ScreenBackdropBleed"] = new Thickness(0, -backdrop.TranslatePoint(default, scroll)!.Value.Y, 0, 0);
+        Layout(window, width);
+
+        const double pull = 120;
+        if (scroll.RenderTransform is Avalonia.Media.TranslateTransform translate)
+            translate.Y = pull;
+        else
+            scroll.RenderTransform = new Avalonia.Media.TranslateTransform(0, pull);
+        Layout(window, width);
+
+        var mirror = view.FindControl<Border>("PullMirror")!;
+        var seam = (int)Math.Round(mirror.GetVisualParent()!.TranslatePoint(default, window)!.Value.Y + pull);
+        using var frame = window.CaptureRenderedFrame()!;
+        using var pixels = frame.Lock();
+
+        (int R, int G, int B) At(double x, int y)
+        {
+            var bytes = new byte[4];
+            System.Runtime.InteropServices.Marshal.Copy(
+                pixels.Address + y * pixels.RowBytes + (int)x * 4, bytes, 0, 4);
+            return (bytes[2], bytes[1], bytes[0]);
+        }
+
+        static int Delta((int R, int G, int B) a, (int R, int G, int B) b) =>
+            Math.Max(Math.Abs(a.R - b.R), Math.Max(Math.Abs(a.G - b.G), Math.Abs(a.B - b.B)));
+
+        var left = (Above: At(width * 0.2, seam - 3), Below: At(width * 0.2, seam + 3));
+        var right = (Above: At(width * 0.8, seam - 3), Below: At(width * 0.8, seam + 3));
+        Assert.True(Delta(left.Below, right.Below) > 40, $"the backdrop should differ side to side: {left.Below} vs {right.Below}");
+        Assert.True(Delta(left.Above, left.Below) < 16, $"left of the seam: {left.Above} above, {left.Below} below");
+        Assert.True(Delta(right.Above, right.Below) < 16, $"right of the seam: {right.Above} above, {right.Below} below");
+
+        window.Close();
+        try { System.IO.Directory.Delete(folder, recursive: true); } catch (System.IO.IOException) { }
+    }
+
+    // Red down the left, blue down the right.
+    private static void WriteCover(string path)
+    {
+        using var bitmap = new Avalonia.Media.Imaging.RenderTargetBitmap(new PixelSize(64, 64));
+        using (var context = bitmap.CreateDrawingContext())
+        {
+            context.FillRectangle(Avalonia.Media.Brushes.Red, new Rect(0, 0, 32, 64));
+            context.FillRectangle(Avalonia.Media.Brushes.Blue, new Rect(32, 0, 32, 64));
+        }
+        bitmap.Save(path);
+    }
+
+    private static void Pump(int milliseconds)
+    {
+        using var cts = new CancellationTokenSource(milliseconds);
+        Dispatcher.UIThread.MainLoop(cts.Token);
+    }
 
     [AvaloniaFact]
     public void A_narrow_screen_stacks_the_header_above_the_tracks()

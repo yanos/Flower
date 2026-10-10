@@ -6,6 +6,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.VisualTree;
 
 using Flower.Services;
 using Flower.ViewModels;
@@ -210,6 +211,8 @@ public partial class TrackListScreenView : UserControl, ITrackRowHost
     {
         InitializeComponent();
 
+        AlbumScroll.LayoutUpdated += (_, _) => SizePullMirror();
+
         // Drag-to-reorder, for a playlist's tracks - the handle it starts
         // from is only on screen in IsPlaylistMode.
         _ = new TrackRowDragReorder(TrackListBox, this, DropIndicator, (dragged, insertBefore) =>
@@ -293,5 +296,43 @@ public partial class TrackListScreenView : UserControl, ITrackRowHost
         DisplayRows = IsAlbumMode ? _observedVm.AlbumDetailRows : _observedVm.Main.Rows;
         DisplayHeader = _observedVm.CurrentAlbumHeader;
         ListHeader = _observedVm.CurrentPlaylistHeader;
+    }
+
+    // The pull-down mirror (PullMirror in the XAML) is the album header's
+    // backdrop upside down, and meets it without a seam only at exactly the
+    // backdrop's size and place: the cover is drawn cropped to fill, and a
+    // box of any other height crops it differently. So it follows the
+    // backdrop's bounds after each layout. The backdrop is inside the
+    // header's template, found once and again only when that template is
+    // rebuilt.
+    private Border? _backdrop;
+
+    private void SizePullMirror()
+    {
+        if (_backdrop is null || !_backdrop.IsAttachedToVisualTree())
+        {
+            _backdrop = null;
+            foreach (var visual in AlbumScroll.GetVisualDescendants())
+            {
+                if (visual is Border border && border.Classes.Contains("albumBackdrop"))
+                {
+                    _backdrop = border;
+                    break;
+                }
+            }
+        }
+
+        if (_backdrop is not { } backdrop || backdrop.TranslatePoint(default, AlbumScroll) is not { } at)
+            return;
+
+        var size = backdrop.Bounds.Size;
+        if (PullMirror.Width != size.Width || PullMirror.Height != size.Height)
+        {
+            PullMirror.Width = size.Width;
+            PullMirror.Height = size.Height;
+        }
+        PullMirror.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left;
+        if (PullMirror.Margin.Left != at.X)
+            PullMirror.Margin = new Thickness(at.X, 0, 0, 0);
     }
 }
