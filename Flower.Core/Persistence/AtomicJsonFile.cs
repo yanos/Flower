@@ -98,9 +98,8 @@ namespace Flower.Persistence
         // The one file that would have argued against this is gone. library.json
         // was ~18MB at 16k tracks and rewritten on every track start and end,
         // which is why FlowerJsonContext turned indentation off in the first
-        // place; the library lives in SQLite now and JsonLibraryImport only ever
-        // reads that file. What is left is a handful of files measured in
-        // kilobytes.
+        // place; the library lives in SQLite now. What is left is a handful of
+        // files measured in kilobytes.
         private static readonly JsonWriterOptions WriterOptions = new() { Indented = true };
 
         private static void WriteCore<T>(string path, T value, JsonTypeInfo<T> typeInfo, bool ownerOnly, ILogger? logger)

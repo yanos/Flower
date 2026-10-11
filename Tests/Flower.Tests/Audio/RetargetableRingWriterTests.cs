@@ -1,0 +1,318 @@
+using System;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+
+using Flower.Audio;
+
+using Xunit;
+
+namespace Flower.Tests.Audio;
+
+// The write half of a gapless handover: an armed decoder writes into its
+// private staging ring, and PromoteTarget has to be able to swap that ring
+// out from under a write that is already in flight. Every test here is a
+// regression test for one deadlock - a decode-ahead decoder that filled its
+// staging ring parked inside the ring's blocking Write while holding the
+// retarget lock, so the handover that would have drained that ring could
+// never take the lock, and the next track played as silence forever.
+public class RetargetableRingWriterTests
+{
+    // Every call that takes the writer's gate is made off the test thread
+    // and waited on with a timeout, never inline: the bug being covered is
+    // a deadlock, and calling into it directly would hang the whole test
+    // run instead of failing this one test.
+    private static void AssertCompletes(Action action, string because)
+    {
+        var task = Task.Run(action);
+        Assert.True(task.Wait(TimeSpan.FromSeconds(5)), because);
+    }
+
+    // The other half of the same rule, for a write the test started itself:
+    // a parked write is asserted on by waiting a bounded time for it, never
+    // by reading a flag, so the assertion says what the writer did rather
+    // than what it happened to have got round to.
+    private static void AssertStillParked(Task write, string because = "expected the write to still be parked on the full ring") =>
+        Assert.False(write.Wait(TimeSpan.FromMilliseconds(200)), because);
+
+    private static void AssertResumed(Task write, string because = "the parked write never resumed") =>
+        Assert.True(write.Wait(TimeSpan.FromSeconds(5)), because);
+
+    private static byte[] Ramp(int count, int start = 0) =>
+        Enumerable.Range(start, count).Select(i => (byte)(i % 251)).ToArray();
+
+    private static byte[] DrainAll(GaplessRingBuffer ring)
+    {
+        var buffer = new byte[ring.Capacity];
+        var total = 0;
+        int read;
+        while ((read = ring.Read(buffer.AsSpan(total))) > 0)
+            total += read;
+
+        return buffer[..total];
+    }
+
+    [Fact]
+    public void Write_fills_the_current_target()
+    {
+        var ring = new GaplessRingBuffer(64);
+        var writer = new RetargetableRingWriter(ring);
+
+        writer.Write(Ramp(16));
+
+        Assert.Equal(Ramp(16), DrainAll(ring));
+    }
+
+    [Fact]
+    public void PromoteTarget_completes_while_a_write_is_parked_on_a_full_target()
+    {
+        // Nothing ever reads the staging ring before the handover does -
+        // exactly like the real decode-ahead path - so this write cannot
+        // finish on its own. It has to be unblocked by the promotion.
+        var staging = new GaplessRingBuffer(32);
+        var shared = new GaplessRingBuffer(1024);
+        var writer = new RetargetableRingWriter(staging);
+
+        var parked = Task.Run(() => writer.Write(Ramp(64)), TestContext.Current.CancellationToken);
+        AssertStillParked(parked, "expected the write to still be parked on the full staging ring");
+
+        AssertCompletes(() => writer.PromoteTarget(shared), "PromoteTarget deadlocked behind the parked write");
+        AssertResumed(parked, "the parked write never resumed against the new target");
+    }
+
+    [Fact]
+    public void Retarget_preserves_byte_order_across_the_staged_backlog_and_the_parked_write()
+    {
+        // The whole point of draining the backlog before the in-flight
+        // write resumes: a splice that reorders or drops bytes here is a
+        // click or a repeated fragment of audio at the track boundary.
+        var staging = new GaplessRingBuffer(32);
+        var shared = new GaplessRingBuffer(1024);
+        var writer = new RetargetableRingWriter(staging);
+
+        var parked = Task.Run(() => writer.Write(Ramp(64)), TestContext.Current.CancellationToken);
+        AssertStillParked(parked);
+
+        AssertCompletes(() => writer.PromoteTarget(shared), "PromoteTarget deadlocked behind the parked write");
+        AssertResumed(parked);
+
+        // Whatever fit in staging first, then the rest, in one unbroken
+        // sequence - and all 64 bytes, none dropped for want of room.
+        Assert.Equal(Ramp(64), DrainAll(shared));
+    }
+
+    [Fact]
+    public void Writes_after_a_promotion_go_to_the_new_target()
+    {
+        var staging = new GaplessRingBuffer(64);
+        var shared = new GaplessRingBuffer(1024);
+        var writer = new RetargetableRingWriter(staging);
+
+        writer.Write(Ramp(8));
+        writer.PromoteTarget(shared);
+        writer.Write(Ramp(8, start: 8));
+
+        Assert.Equal(Ramp(16), DrainAll(shared));
+        Assert.Same(shared, writer.Target);
+    }
+
+    [Fact]
+    public void A_parked_write_gives_up_when_the_decoder_is_abandoned()
+    {
+        // Retire() while a write is parked - the decoder is being thrown
+        // away (manual skip, flush), and nothing will ever drain this ring.
+        var staging = new GaplessRingBuffer(32);
+        var abandoned = false;
+        var writer = new RetargetableRingWriter(staging);
+
+        var parked = Task.Run(() => writer.Write(Ramp(64), () => Volatile.Read(ref abandoned)), TestContext.Current.CancellationToken);
+        AssertStillParked(parked);
+
+        Volatile.Write(ref abandoned, true);
+
+        AssertResumed(parked, "the parked write ignored its abandonment check");
+    }
+
+    [Fact]
+    public void A_parked_write_drops_the_rest_of_its_chunk_when_the_target_is_flushed()
+    {
+        // A seek/flush means the bytes still in hand are from before the
+        // flush, so they must not be written on top of the new position -
+        // the same contract GaplessRingBuffer.Write has on a generation
+        // change.
+        var staging = new GaplessRingBuffer(32);
+        var writer = new RetargetableRingWriter(staging);
+
+        var parked = Task.Run(() => writer.Write(Ramp(64)), TestContext.Current.CancellationToken);
+        AssertStillParked(parked);
+
+        AssertCompletes(() => writer.ResetTarget(), "the flush deadlocked behind the parked write");
+
+        AssertResumed(parked, "the parked write kept waiting through a flush");
+
+        // Nothing at all survives the flush: Reset() discards what was
+        // buffered, and the remaining 32 bytes of the parked chunk must not
+        // take the room it freed. Asserted by writing a fresh, shorter chunk
+        // afterwards and reading back exactly that - a leaked pre-flush
+        // remainder would show up as extra bytes in front of it.
+        Assert.Empty(DrainAll(staging));
+
+        writer.Write(Ramp(16));
+        Assert.Equal(Ramp(16), DrainAll(staging));
+    }
+
+    [Fact]
+    public void PromoteTarget_reports_what_it_moved()
+    {
+        var staging = new GaplessRingBuffer(64);
+        var shared = new GaplessRingBuffer(64);
+        var writer = new RetargetableRingWriter(staging);
+
+        writer.Write(Ramp(40));
+
+        PromotionSplice splice = default;
+        AssertCompletes(() => splice = writer.PromoteTarget(shared), "promotion should not block");
+
+        Assert.True(splice.MovedAnything);
+        Assert.Equal(40, splice.BytesMoved);
+        Assert.Equal(40, splice.StagedBytes);
+        Assert.True(splice.MillisecondsToFirstByte >= 0, "a splice that moved bytes has a first byte to time");
+        Assert.True(splice.TotalMilliseconds >= splice.MillisecondsToFirstByte);
+    }
+
+    [Fact]
+    public void PromoteTarget_counts_only_the_destination_underruns_up_to_the_first_byte()
+    {
+        var staging = new GaplessRingBuffer(64);
+        var shared = new GaplessRingBuffer(64);
+        var writer = new RetargetableRingWriter(staging);
+
+        writer.Write(Ramp(40));
+
+        // Three reads against an empty shared ring - the render callback
+        // asking for PCM that isn't there yet. This is exactly the state a
+        // gap is made of, and the splice has to attribute it.
+        var scratch = new byte[8];
+        for (var i = 0; i < 3; i++)
+            shared.Read(scratch);
+
+        var splice = writer.PromoteTarget(shared);
+
+        Assert.Equal(3, splice.DestinationUnderrunsAtFirstByte);
+
+        // Underruns after the first byte landed are the new track playing,
+        // not the seam, so they must not move the reported figure.
+        DrainAll(shared);
+        for (var i = 0; i < 5; i++)
+            shared.Read(scratch);
+
+        Assert.Equal(3, splice.DestinationUnderrunsAtFirstByte);
+    }
+
+    [Fact]
+    public void PromoteTarget_with_nothing_staged_reports_no_first_byte()
+    {
+        var staging = new GaplessRingBuffer(64);
+        var shared = new GaplessRingBuffer(64);
+        var writer = new RetargetableRingWriter(staging);
+
+        var splice = writer.PromoteTarget(shared);
+
+        Assert.False(splice.MovedAnything);
+        Assert.Equal(0, splice.BytesMoved);
+        Assert.Equal(-1, splice.MillisecondsToFirstByte);
+        Assert.Equal(-1, splice.DestinationUnderrunsAtFirstByte);
+    }
+
+    // BackpressureWaits is what tells TrackDecoder's watchdog apart a decoder
+    // that has wedged from one that is simply waiting for playback to drain
+    // the ring it filled. Before it existed the watchdog called every
+    // decode-ahead a stall: a real device logged 2430 of them in one day,
+    // every single one with the ring at exactly 384000/384000.
+    [Fact]
+    public void Parking_on_a_full_ring_is_counted()
+    {
+        var ring = new GaplessRingBuffer(4096);
+        var writer = new RetargetableRingWriter(ring);
+
+        Assert.Equal(0, writer.BackpressureWaits);
+
+        // More than the ring holds, so the write cannot finish until
+        // something reads - it has to park at least once.
+        var abandon = false;
+        var write = Task.Run(() => writer.Write(Ramp(8192), () => Volatile.Read(ref abandon)), TestContext.Current.CancellationToken);
+
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (writer.BackpressureWaits == 0 && DateTime.UtcNow < deadline)
+            Thread.Sleep(5);
+
+        Assert.True(writer.BackpressureWaits > 0, "a write that could not fit never registered as parked");
+
+        Volatile.Write(ref abandon, true);
+        AssertResumed(write, "the abandoned write never returned");
+    }
+
+    [Fact]
+    public void A_write_that_fits_never_registers_as_parked()
+    {
+        var ring = new GaplessRingBuffer(4096);
+        var writer = new RetargetableRingWriter(ring);
+
+        AssertCompletes(() => writer.Write(Ramp(2048)), "a write that fits should not block");
+
+        Assert.Equal(0, writer.BackpressureWaits);
+    }
+
+    // A promotion drains a minute of staged audio at playback speed, holding
+    // the writer's gate throughout. A skip in that minute retires the
+    // decoder, and a seek resets its target - and both used to wait for the
+    // gate, inside GaplessCoordinator's own lock, on the UI thread. One phone
+    // log shows a tap on another song answered 32 seconds later.
+    private static (RetargetableRingWriter Writer, GaplessRingBuffer Shared, Task<PromotionSplice> Drain)
+        StartSlowDrain()
+    {
+        var staging = new GaplessRingBuffer(4096);
+        var shared = new GaplessRingBuffer(64);
+        var writer = new RetargetableRingWriter(staging);
+        writer.Write(Ramp(4096));
+
+        // Nobody reads the shared ring, so the drain fills it and waits for
+        // room, as it does behind a playing track.
+        var drain = Task.Run(() => writer.PromoteTarget(shared));
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        while (shared.AvailableBytes < shared.Capacity && DateTime.UtcNow < deadline)
+            Thread.Sleep(1);
+        Assert.False(drain.IsCompleted, "expected the drain to be waiting for room in the shared ring");
+
+        return (writer, shared, drain);
+    }
+
+    [Fact]
+    public void Waking_and_resetting_do_not_wait_for_a_promotion_in_progress()
+    {
+        var (writer, shared, drain) = StartSlowDrain();
+
+        AssertCompletes(writer.Wake, "Wake waited for the promotion's drain");
+        AssertCompletes(writer.ResetTarget, "ResetTarget waited for the promotion's drain");
+
+        shared.Reset();
+        Assert.True(drain.Wait(TimeSpan.FromSeconds(5)), "the drain did not stop when its destination was reset");
+    }
+
+    [Fact]
+    public void A_promotion_stops_draining_when_its_destination_is_reset()
+    {
+        var (writer, shared, drain) = StartSlowDrain();
+
+        // A skip or a seek: what is in the shared ring now belongs to
+        // whatever plays next, and the rest of the backlog must not follow.
+        shared.Reset();
+
+        Assert.True(drain.Wait(TimeSpan.FromSeconds(5)), "the drain did not stop when its destination was reset");
+        Assert.Equal(0, shared.AvailableBytes);
+        Assert.Same(shared, writer.Target);
+
+        writer.Write(Ramp(8, start: 100));
+        Assert.Equal(Ramp(8, start: 100), DrainAll(shared));
+    }
+}

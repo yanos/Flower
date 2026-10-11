@@ -173,21 +173,9 @@ public partial class App : Application
             // Registered as a singleton so one FlowerDb governs the process's
             // connection settings (see FlowerDb.Open's pragmas) - and, for a
             // test pointing at an in-memory database, so its keep-alive
-            // connection outlives the individual repository calls.
-            //
-            // The one-time JSON import happens in the factory, before this
-            // instance is handed to anything - the Library registration below
-            // reads through LibraryStore the moment it is resolved, so there
-            // is no later point at which it would still be safe to do. (The
-            // schema itself is FlowerDb's own responsibility - see its
-            // constructor.)
-            .AddSingleton(sp =>
-            {
-                var dbLogger = sp.GetRequiredService<ILogger<FlowerDb>>();
-                var db = FlowerDb.OpenDefault(dbLogger);
-                JsonLibraryImport.RunIfNeeded(db, dbLogger);
-                return db;
-            })
+            // connection outlives the individual repository calls. (The
+            // schema is FlowerDb's own responsibility - see its constructor.)
+            .AddSingleton(sp => FlowerDb.OpenDefault(sp.GetRequiredService<ILogger<FlowerDb>>()))
 
             // Persistence. Every store takes an ILogger<T> and the FlowerDb
             // above, so the container builds them outright.

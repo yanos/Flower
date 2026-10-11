@@ -173,9 +173,7 @@ jobs:
       #
       # The app writes a transcript into its own Documents container, and
       # scripts/ios-tests.sh boots a simulator, installs it, waits for the tally
-      # and turns it into an exit code. MusicListViewGestureTests are left out
-      # because they alone took seventeen minutes - see
-      # Flower.Tests.iOS/AppDelegate.cs.
+      # and turns it into an exit code.
       #
       # Every iOS build here is Release - optimized and compiled ahead of time
       # - even though that is most of this leg's time. It is what a release

@@ -224,7 +224,7 @@ namespace Flower.Persistence.Sql
             using (var command = connection.CreateCommand())
             {
                 command.Transaction = transaction;
-                // playlist_tracks cascades - see Schema.V1's foreign key.
+                // playlist_tracks cascades - see Schema.Baseline's foreign key.
                 command.CommandText = "DELETE FROM playlists WHERE id = $id;";
                 var parameter = command.Parameters.Add("$id", SqliteType.Text);
                 foreach (var id in doomed)

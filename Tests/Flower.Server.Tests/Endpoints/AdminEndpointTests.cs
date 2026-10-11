@@ -1,0 +1,781 @@
+using System.Net;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+
+using Flower.Persistence;
+using Flower.Server.Configuration;
+using Flower.Server.Endpoints;
+using Flower.Server.Services;
+using Flower.Services;
+
+using Flower.Server.Tests.TestSupport;
+
+namespace Flower.Server.Tests.Endpoints;
+
+// The admin API behind the browser settings page: reading and writing this
+// server's own configuration, triggering a rescan, and reading its log. One way
+// in for every caller, a device signature plus IsAdmin - the browser included,
+// which holds a WebCrypto keypair of its own now (see BrowserPeerCredentials).
+public class AdminEndpointTests(FlowerServerFixture server) : IClassFixture<FlowerServerFixture>
+{
+    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+
+    private static DeviceSigningKey NewDevice()
+    {
+        var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var publicKeyRaw = ecdsa.ExportParameters(false) is { Q.X: { } x, Q.Y: { } y }
+            ? (byte[])[0x04, .. x, .. y]
+            : throw new InvalidOperationException("no public point");
+        return new DeviceSigningKey(ecdsa, publicKeyRaw);
+    }
+
+    private Task<DeviceSigningKey> NewAdminAsync(string alias = "Admin Device") =>
+        NewAdminOnAsync(server, alias);
+
+    // The fixture is a parameter rather than the captured one because a test
+    // that writes settings cannot share a server with the tests that read them
+    // - see Writing_settings_persists_them_to_the_data_directorys_settings_file.
+    private static async Task<DeviceSigningKey> NewAdminOnAsync(
+        FlowerServerFixture target, string alias = "Admin Device")
+    {
+        var device = NewDevice();
+        await target.Services.GetRequiredService<TrustedPeerStore>()
+            .ApproveAsync(device.Fingerprint, alias, device.PublicKeyBase64, isAdmin: true);
+        return device;
+    }
+
+    // A signed admin request, exactly as ServerAdminClient builds one: identity in
+    // headers, the signature over method + path + query + a hash of the body.
+    private Task<HttpContext> SignedAsync(
+        DeviceSigningKey device, string method, string path, string? query = null, string? body = null,
+        string? remoteIp = null, string? host = null) =>
+        SignedOnAsync(server, device, method, path, query, body, remoteIp, host);
+
+    private static async Task<HttpContext> SignedOnAsync(
+        FlowerServerFixture target,
+        DeviceSigningKey device, string method, string path, string? query = null, string? body = null,
+        string? remoteIp = null, string? host = null)
+    {
+        var bodyBytes = body == null ? [] : Encoding.UTF8.GetBytes(body);
+        var queryPairs = ParseQuery(query);
+        var identity = new List<(string Key, string Value)>
+        {
+            ("X-Flower-Fingerprint", device.Fingerprint),
+            ("X-Flower-PublicKey", device.PublicKeyBase64),
+        };
+        var (signature, timestamp, nonce) = device.Sign(method, path, queryPairs.Concat(identity), bodyBytes);
+
+        return await target.Server.SendAsync(c =>
+        {
+            c.Request.Method = method;
+            c.Request.Path = path;
+            if (query != null)
+                c.Request.QueryString = new QueryString("?" + query);
+            c.Connection.RemoteIpAddress = IPAddress.Parse(remoteIp ?? "10.0.0.50");
+            if (host != null)
+                c.Request.Host = new HostString(host);
+            foreach (var (key, value) in identity)
+                c.Request.Headers[key] = value;
+            c.Request.Headers["X-Flower-Signature"] = signature;
+            c.Request.Headers["X-Flower-Timestamp"] = timestamp;
+            c.Request.Headers["X-Flower-Nonce"] = nonce;
+            if (body != null)
+            {
+                c.Request.ContentType = "application/json";
+                c.Request.Body = new MemoryStream(bodyBytes);
+                c.Request.ContentLength = bodyBytes.Length;
+            }
+        });
+    }
+
+    private static List<(string Key, string Value)> ParseQuery(string? query) =>
+        string.IsNullOrEmpty(query)
+            ? []
+            : query.Split('&', StringSplitOptions.RemoveEmptyEntries)
+                .Select(pair => pair.Split('=', 2))
+                .Select(parts => (Uri.UnescapeDataString(parts[0]),
+                                  parts.Length > 1 ? Uri.UnescapeDataString(parts[1]) : ""))
+                .ToList();
+
+    // Read straight through, no seeking: TestServer swaps in its own
+    // non-seekable ResponseBodyReaderStream, which throws on set_Position.
+    private static async Task<string> BodyAsync(HttpContext context)
+    {
+        using var reader = new StreamReader(context.Response.Body);
+        return await reader.ReadToEndAsync();
+    }
+
+    private static async Task<T> ReadAsync<T>(HttpContext context) =>
+        JsonSerializer.Deserialize<T>(await BodyAsync(context), Json)
+        ?? throw new InvalidOperationException("empty response");
+
+    [Fact]
+    public async Task An_admin_device_can_read_the_servers_settings()
+    {
+        using var admin = await NewAdminAsync();
+        try
+        {
+            var context = await SignedAsync(admin, "GET", "/api/admin/settings");
+
+            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+            var settings = await ReadAsync<ServerSettingsDto>(context);
+            // The fixture configures exactly one (empty) library folder, which is
+            // what stops the startup scan from wandering into the real ~/Music.
+            Assert.Single(settings.LibraryPaths);
+            Assert.False(string.IsNullOrEmpty(settings.DataDirectory));
+        }
+        finally
+        {
+            await server.Services.GetRequiredService<TrustedPeerStore>().RevokeAsync(admin.Fingerprint);
+        }
+    }
+
+    // The settings screen is where an operator reads this server's identity off
+    // to someone checking a paired device against it, so it has to be there and
+    // has to be this server's own - see PairingEntry for what the check is for.
+    [Fact]
+    public async Task The_settings_page_reports_this_servers_own_identity()
+    {
+        using var admin = await NewAdminAsync();
+        try
+        {
+            var settings = await ReadAsync<ServerSettingsDto>(
+                await SignedAsync(admin, "GET", "/api/admin/settings"));
+
+            Assert.Equal(
+                server.Services.GetRequiredService<DeviceSigningKey>().Fingerprint,
+                settings.Fingerprint);
+        }
+        finally
+        {
+            await server.Services.GetRequiredService<TrustedPeerStore>().RevokeAsync(admin.Fingerprint);
+        }
+    }
+
+    // The fixture pins its library folder and the iTunes switch from outside
+    // flower-server.json, the way the Docker image pins /music - so the page
+    // is told those two are not its to change, and says by what.
+    [Fact]
+    public async Task The_settings_page_is_told_which_settings_are_set_elsewhere()
+    {
+        using var admin = await NewAdminAsync();
+        try
+        {
+            var settings = await ReadAsync<ServerSettingsDto>(
+                await SignedAsync(admin, "GET", "/api/admin/settings"));
+
+            Assert.NotNull(settings.Overridden);
+            Assert.Equal(
+                [nameof(FlowerServerOptions.IntegrateWithITunes), nameof(FlowerServerOptions.LibraryPaths)],
+                settings.Overridden!.Keys.Order());
+        }
+        finally
+        {
+            await server.Services.GetRequiredService<TrustedPeerStore>().RevokeAsync(admin.Fingerprint);
+        }
+    }
+
+    // And a save leaves them alone: written to flower-server.json it would be
+    // outranked the moment it landed, so the page would appear to save a
+    // folder that was never scanned.
+    [Fact]
+    public async Task A_save_does_not_write_a_setting_that_is_set_elsewhere()
+    {
+        using var admin = await NewAdminAsync();
+        try
+        {
+            var settings = await ReadAsync<ServerSettingsDto>(await SignedAsync(
+                admin, "PUT", "/api/admin/settings",
+                body: """{"libraryPaths":["/somewhere/else"],"integrateWithITunes":true}"""));
+
+            Assert.DoesNotContain("/somewhere/else", settings.LibraryPaths);
+            Assert.False(settings.IntegrateWithITunes);
+            var written = await File.ReadAllTextAsync(
+                Path.Combine(settings.DataDirectory, ServerDataDirectory.SettingsFileName), TestContext.Current.CancellationToken);
+            Assert.DoesNotContain("/somewhere/else", written);
+        }
+        finally
+        {
+            await server.Services.GetRequiredService<TrustedPeerStore>().RevokeAsync(admin.Fingerprint);
+        }
+    }
+
+    // The settings page used to render an empty Name box on a server that
+    // plainly had a name - every client's sidebar was showing it - because an
+    // unset Alias means "the machine name" everywhere except in the DTO, which
+    // reported the configuration verbatim.
+    [Fact]
+    public async Task The_settings_page_is_told_the_name_the_server_actually_answers_to()
+    {
+        using var admin = await NewAdminAsync();
+        try
+        {
+            var settings = await ReadAsync<ServerSettingsDto>(
+                await SignedAsync(admin, "GET", "/api/admin/settings"));
+
+            // The fixture configures no alias at all, which is the default
+            // deployment and the case that was broken.
+            Assert.Equal(Environment.MachineName, settings.Alias);
+
+            // And the other half of reporting it resolved: sending it straight
+            // back must be a no-op rather than a write. Opening the page and
+            // pressing OK is not a rename.
+            var echoed = await ReadAsync<ServerSettingsDto>(await SignedAsync(
+                admin, "PUT", "/api/admin/settings",
+                body: JsonSerializer.Serialize(new { alias = Environment.MachineName })));
+
+            Assert.Equal(Environment.MachineName, echoed.Alias);
+        }
+        finally
+        {
+            await server.Services.GetRequiredService<TrustedPeerStore>().RevokeAsync(admin.Fingerprint);
+        }
+    }
+
+    // The page cannot say "reachable at" for a machine nobody is sitting at
+    // unless the server says so itself, and the list the handshake hands a
+    // client is the one that is actually true.
+    [Fact]
+    public async Task The_settings_page_is_told_where_this_server_can_be_reached()
+    {
+        using var admin = await NewAdminAsync();
+        try
+        {
+            var settings = await ReadAsync<ServerSettingsDto>(
+                await SignedAsync(admin, "GET", "/api/admin/settings"));
+
+            Assert.All(settings.Addresses, origin => Assert.StartsWith("http", origin));
+        }
+        finally
+        {
+            await server.Services.GetRequiredService<TrustedPeerStore>().RevokeAsync(admin.Fingerprint);
+        }
+    }
+
+    // The switch an operator throws to put this server on the internet, end to
+    // end: written from the admin API, and in force on the very next request
+    // rather than at the next restart. Both directions matter, and the one that
+    // matters more is shutting it again.
+    [Fact]
+    public async Task Public_access_can_be_opened_and_shut_from_the_settings_page()
+    {
+        using var admin = await NewAdminAsync();
+        try
+        {
+            await GuardedRequest.AssertDropped(() => UnsignedInfoAsync("203.0.113.11"));
+
+            var opened = await ReadAsync<ServerSettingsDto>(await SignedAsync(
+                admin, "PUT", "/api/admin/settings", body: "{\"allowPublicAccess\":true}"));
+
+            Assert.True(opened.AllowPublicAccess);
+            // The gate reads this per request (Program.cs), so it applies at
+            // once - which is what the assertion below pins.
+            Assert.Equal(HttpStatusCode.OK, await UnsignedInfoAsync("203.0.113.11"));
+
+            var written = await File.ReadAllTextAsync(
+                Path.Combine(opened.DataDirectory, ServerDataDirectory.SettingsFileName), TestContext.Current.CancellationToken);
+            Assert.Contains("AllowPublicAccess", written);
+
+            var shut = await ReadAsync<ServerSettingsDto>(await SignedAsync(
+                admin, "PUT", "/api/admin/settings", body: "{\"allowPublicAccess\":false}"));
+
+            Assert.False(shut.AllowPublicAccess);
+            await GuardedRequest.AssertDropped(() => UnsignedInfoAsync("203.0.113.11"));
+        }
+        finally
+        {
+            await server.Services.GetRequiredService<TrustedPeerStore>().RevokeAsync(admin.Fingerprint);
+        }
+    }
+
+    // Ungated apart from the LAN guard, so it answers "was this caller admitted
+    // at all" without a signature check getting in the way.
+    private async Task<HttpStatusCode> UnsignedInfoAsync(string remoteIp)
+    {
+        var context = await server.Server.SendAsync(c =>
+        {
+            c.Request.Method = HttpMethods.Get;
+            c.Request.Path = "/api/localsend/v2/info";
+            c.Connection.RemoteIpAddress = IPAddress.Parse(remoteIp);
+        });
+
+        return (HttpStatusCode)context.Response.StatusCode;
+    }
+
+    // The one thing that has to hold for the settings page to be worth anything:
+    // what it writes survives, in the file an operator owns.
+    //
+    // On a server of its own, because this is the only test here that changes
+    // the server's configuration and the change is exactly as durable as the
+    // test asserts it is: the write lands in flower-server.json, which is
+    // registered with reloadOnChange, so on the shared fixture every later test
+    // in this class sees "Basement NAS" as the alias. xUnit fixes no order
+    // within a class, so that surfaced as
+    // The_settings_page_is_told_the_name_the_server_actually_answers_to passing
+    // alone and failing in the suite - depending on which of the two ran first.
+    // A test whose subject is persistence has to own what it persists to.
+    [Fact]
+    public async Task Writing_settings_persists_them_to_the_data_directorys_settings_file()
+    {
+        await using var isolated = new FlowerServerFixture();
+        await isolated.InitializeAsync();
+
+        using var admin = await NewAdminOnAsync(isolated);
+
+        // No revoke in a finally, unlike every other test here: that exists to
+        // hand the *shared* fixture back unchanged, and this server is thrown
+        // away entire a few lines below.
+        var context = await SignedOnAsync(
+            isolated,
+            admin, "PUT", "/api/admin/settings",
+            body: """{"alias":"Basement NAS","advertiseOnLan":false,"allowedCidrs":["10.8.0.0/24"]}""");
+
+        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+        var settings = await ReadAsync<ServerSettingsDto>(context);
+        Assert.Equal("Basement NAS", settings.Alias);
+        Assert.False(settings.AdvertiseOnLan);
+        Assert.Equal(["10.8.0.0/24"], settings.AllowedCidrs);
+
+        var written = await File.ReadAllTextAsync(
+            Path.Combine(settings.DataDirectory, ServerDataDirectory.SettingsFileName), TestContext.Current.CancellationToken);
+        Assert.Contains("Basement NAS", written);
+        Assert.Contains("10.8.0.0/24", written);
+
+        // The seeded file is mostly underscore-prefixed documentation an
+        // operator may have added to - a settings write must not flatten it.
+        Assert.Contains("_LibraryPaths", written);
+    }
+
+    [Fact]
+    public async Task A_paired_device_that_is_not_an_admin_is_refused()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        using var device = NewDevice();
+        await trustedPeers.ApproveAsync(device.Fingerprint, "Kitchen iPad", device.PublicKeyBase64);
+
+        try
+        {
+            var context = await SignedAsync(device, "GET", "/api/admin/settings");
+            Assert.Equal(StatusCodes.Status403Forbidden, context.Response.StatusCode);
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    // The bearer token this surface used to accept is gone, and its absence is
+    // worth a test rather than a deletion: a header nothing reads is
+    // indistinguishable from a header that is read and honoured until something
+    // asks. See docs/OPEN-INTERNET-REVIEW.md finding 7.
+    [Fact]
+    public async Task An_admin_session_header_is_not_a_credential_any_more()
+    {
+        using var admin = await NewAdminAsync("Desktop");
+
+        // The exact shape the old AdminSessionService minted, from a device that
+        // really is an admin - so the only reason it fails is that nothing on
+        // this server resolves it.
+        var token = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
+        var refused = await server.Server.SendAsync(c =>
+        {
+            c.Request.Method = "GET";
+            c.Request.Path = "/api/admin/settings";
+            c.Connection.RemoteIpAddress = IPAddress.Parse("10.0.0.51");
+            c.Request.Headers["X-Flower-Admin-Session"] = token;
+        }, TestContext.Current.CancellationToken);
+
+        Assert.Equal(StatusCodes.Status401Unauthorized, refused.Response.StatusCode);
+
+        // And the route that used to mint them is not there to be asked.
+        var minting = await SignedAsync(admin, "POST", "/api/admin/sessions");
+        Assert.Equal(StatusCodes.Status404NotFound, minting.Response.StatusCode);
+    }
+
+    [Fact]
+    public async Task A_rescan_can_be_started_and_its_status_read_back()
+    {
+        using var admin = await NewAdminAsync();
+        try
+        {
+            var started = await SignedAsync(admin, "POST", "/api/admin/library/rescan");
+            Assert.Equal(StatusCodes.Status200OK, started.Response.StatusCode);
+
+            var status = await SignedAsync(admin, "GET", "/api/admin/library");
+            Assert.Equal(StatusCodes.Status200OK, status.Response.StatusCode);
+            // Answered as soon as the scan *starts*, so this deliberately asserts
+            // nothing about whether it has finished - only that the route reports.
+            Assert.Null((await ReadAsync<LibraryStatusResponse>(status)).LastError);
+        }
+        finally
+        {
+            await server.Services.GetRequiredService<TrustedPeerStore>().RevokeAsync(admin.Fingerprint);
+        }
+    }
+
+    // What the admin's browser page turns into its banner: the folders the last
+    // scan could not write to, on the status route it already asks. The check
+    // itself is LibraryWriteAccessTests'; this is that the list reaches the wire,
+    // and is an empty list rather than nothing on a server with no such folder.
+    [Fact]
+    public async Task The_library_status_names_the_folders_the_server_cannot_write_to()
+    {
+        using var admin = await NewAdminAsync();
+        var writeAccess = server.Services.GetRequiredService<LibraryWriteAccess>();
+        var root = Directory.CreateTempSubdirectory("flower-admin-write-access").FullName;
+        var readOnly = ReadOnlyFolders.Create(root, "music");
+        try
+        {
+            writeAccess.Check([]);
+            var writable = await ReadAsync<LibraryStatusResponse>(await SignedAsync(admin, "GET", "/api/admin/library"));
+            Assert.NotNull(writable.UnwritableFolders);
+            Assert.Empty(writable.UnwritableFolders);
+
+            if (readOnly == null)
+                return;
+
+            writeAccess.Check([readOnly]);
+            var refused = await ReadAsync<LibraryStatusResponse>(await SignedAsync(admin, "GET", "/api/admin/library"));
+            Assert.Equal([readOnly], refused.UnwritableFolders);
+        }
+        finally
+        {
+            writeAccess.Check([]);
+            if (readOnly != null)
+                ReadOnlyFolders.MakeWritable(readOnly);
+            Directory.Delete(root, recursive: true);
+            await server.Services.GetRequiredService<TrustedPeerStore>().RevokeAsync(admin.Fingerprint);
+        }
+    }
+
+    [Fact]
+    public async Task The_log_is_readable_from_the_admin_api()
+    {
+        using var admin = await NewAdminAsync();
+        try
+        {
+            var context = await SignedAsync(admin, "GET", "/api/admin/logs", query: "limit=50");
+
+            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+            // The server logs its data directory and its startup scan before any
+            // test can run, so there is always something here.
+            var slice = await ReadAsync<LogSliceResponse>(context);
+            Assert.NotEmpty(slice.Entries);
+
+            // Asking again from the cursor the first read handed back is what
+            // the Logs tab does every couple of seconds - a quiet server answers
+            // it with nothing rather than with the whole buffer again.
+            var followUp = await SignedAsync(
+                admin, "GET", "/api/admin/logs", query: $"limit=50&after={slice.LastSequence}");
+
+            Assert.Equal(StatusCodes.Status200OK, followUp.Response.StatusCode);
+            Assert.Empty((await ReadAsync<LogSliceResponse>(followUp)).Entries);
+        }
+        finally
+        {
+            await server.Services.GetRequiredService<TrustedPeerStore>().RevokeAsync(admin.Fingerprint);
+        }
+    }
+
+    // The read side of the log-sharing feature: a device pushes its snapshot
+    // through /api/flower/v1/log/report, and the owner reads it back here.
+    [Fact]
+    public async Task A_devices_pushed_log_is_readable_from_the_admin_api()
+    {
+        using var admin = await NewAdminAsync();
+        server.Services.GetRequiredService<ClientLogStore>().SetSnapshot(
+            "fp-phone", "Kitchen iPad",
+            [new LogEntryDto(DateTimeOffset.UtcNow, "Warning", null, "it went wrong", null)],
+            DateTimeOffset.UtcNow);
+
+        try
+        {
+            var context = await SignedAsync(admin, "GET", "/api/admin/devices/fp-phone/logs", query: "limit=50");
+
+            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+            var log = await ReadAsync<DeviceLogResponse>(context);
+            Assert.Equal("Kitchen iPad", log.Alias);
+            Assert.Equal("it went wrong", Assert.Single(log.Entries).Message);
+        }
+        finally
+        {
+            await server.Services.GetRequiredService<TrustedPeerStore>().RevokeAsync(admin.Fingerprint);
+        }
+    }
+
+    // What the Devices and Logs tabs need to tell one "iPhone" from another: when
+    // each was last let in, and whether it has a log to open at all.
+    [Fact]
+    public async Task The_device_list_says_who_was_last_seen_and_who_has_a_log()
+    {
+        using var admin = await NewAdminAsync();
+        var peers = server.Services.GetRequiredService<TrustedPeerStore>();
+        await peers.ApproveAsync("fp-with-log", "iPhone", "pubkey-with-log");
+        server.Services.GetRequiredService<ClientLogStore>().SetSnapshot(
+            "fp-with-log", "iPhone",
+            [new LogEntryDto(DateTimeOffset.UtcNow, "Information", null, "hello", null)],
+            DateTimeOffset.UtcNow);
+
+        try
+        {
+            var context = await SignedAsync(admin, "GET", "/api/admin/devices");
+
+            Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+            var devices = await ReadAsync<List<TrustedDeviceResponse>>(context);
+            var self = devices.Single(d => d.Fingerprint == admin.Fingerprint);
+            Assert.NotNull(self.LastSeenAt);
+            Assert.False(self.HasLog);
+            Assert.True(devices.Single(d => d.Fingerprint == "fp-with-log").HasLog);
+        }
+        finally
+        {
+            await peers.RevokeAsync(admin.Fingerprint);
+            await peers.RevokeAsync("fp-with-log");
+        }
+    }
+
+    // 404 rather than an empty list: "nothing has arrived from this device" and
+    // "this device logged nothing" are different answers, and only the first is
+    // worth telling the reader to wait about.
+    [Fact]
+    public async Task A_device_that_has_never_pushed_a_log_is_a_404()
+    {
+        using var admin = await NewAdminAsync();
+        try
+        {
+            var context = await SignedAsync(admin, "GET", "/api/admin/devices/fp-never-seen/logs");
+
+            Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
+        }
+        finally
+        {
+            await server.Services.GetRequiredService<TrustedPeerStore>().RevokeAsync(admin.Fingerprint);
+        }
+    }
+
+    [Fact]
+    public async Task An_unsigned_request_is_unauthorized()
+    {
+        var context = await server.Server.SendAsync(c =>
+        {
+            c.Request.Method = "GET";
+            c.Request.Path = "/api/admin/settings";
+            c.Connection.RemoteIpAddress = IPAddress.Parse("10.0.0.52");
+        }, TestContext.Current.CancellationToken);
+
+        Assert.Equal(StatusCodes.Status401Unauthorized, context.Response.StatusCode);
+    }
+
+    // The fixture pins Flower:WebUiPath at an empty directory, so no bundle is
+    // deployed here however the developer's own tree is set up - and the fallback
+    // has to say so rather than 404 into nothing, since the address a client's
+    // "Server Settings..." button just opened is exactly where that would be
+    // most confusing.
+    [Fact]
+    public async Task The_root_page_explains_itself_when_no_web_ui_is_deployed()
+    {
+        var context = await server.Server.SendAsync(c =>
+        {
+            c.Request.Method = "GET";
+            c.Request.Path = "/";
+            c.Connection.RemoteIpAddress = IPAddress.Parse("10.0.0.53");
+        }, TestContext.Current.CancellationToken);
+
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, context.Response.StatusCode);
+        Assert.Contains("wasm-tools", await BodyAsync(context));
+    }
+
+    // The fallback must not swallow an unknown API path: a client parsing an HTML
+    // page as JSON fails far less legibly than a 404 does.
+    [Fact]
+    public async Task An_unknown_api_path_still_fails_as_an_api_call()
+    {
+        var context = await server.Server.SendAsync(c =>
+        {
+            c.Request.Method = "GET";
+            c.Request.Path = "/api/nothingHere";
+            c.Connection.RemoteIpAddress = IPAddress.Parse("10.0.0.54");
+        }, TestContext.Current.CancellationToken);
+
+        Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
+    }
+
+    // Finding #4 of docs/OPEN-INTERNET-REVIEW.md: this surface had no budget at
+    // all. It is the one place a single request starts a rescan or writes
+    // settings, so an unauthenticated caller must run out of requests rather
+    // than only out of patience. From its own source address, so burning the
+    // budget cannot starve the other tests in this assembly.
+    [Fact]
+    public async Task An_unauthenticated_flood_runs_out_of_budget_before_it_runs_out_of_requests()
+    {
+        var flooder = IPAddress.Parse("10.0.0.99");
+        Task<HttpContext> Poke() => server.Server.SendAsync(c =>
+        {
+            c.Request.Method = "GET";
+            c.Request.Path = "/api/admin/devices";
+            c.Connection.RemoteIpAddress = flooder;
+        });
+
+        // The budget is 120/60s, so the first request is refused on its merits
+        // and a request well past the ceiling is refused before them.
+        var first = await Poke();
+        Assert.Equal(StatusCodes.Status401Unauthorized, first.Response.StatusCode);
+
+        HttpContext last = first;
+        for (var i = 0; i < 130; i++)
+        {
+            last = await Poke();
+        }
+
+        Assert.Equal(StatusCodes.Status429TooManyRequests, last.Response.StatusCode);
+    }
+
+    // The group filter refuses every /api/admin route to a non-admin, and one
+    // route is worth pinning on its own: this is the one that mints a
+    // credential. A listener's phone that reached the button anyway - a stale
+    // WeAreAdmin, a hand-rolled request - must not be able to hand out access
+    // to the library it was merely lent.
+    [Fact]
+    public async Task A_paired_device_that_is_not_an_admin_cannot_issue_a_pairing_code()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        using var device = NewDevice();
+        await trustedPeers.ApproveAsync(device.Fingerprint, "Guest phone", device.PublicKeyBase64);
+
+        try
+        {
+            var context = await SignedAsync(
+                device, "POST", "/api/admin/pairing-codes", query: "grantsAdmin=true");
+
+            Assert.Equal(StatusCodes.Status403Forbidden, context.Response.StatusCode);
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    // The link a client's "Server Settings..." button opens, and the one thing
+    // about it that is not obvious: which origin it names.
+    //
+    // A browser only exposes crypto.subtle in a secure context, so a tab at
+    // http://192.168.x.y holds no device key and cannot pair - it just gets a
+    // 401 on everything. When the caller asking for the code is on this very
+    // machine, its browser is too, and http://localhost *is* a secure context.
+    // See WebUiHosting.BrowserOriginFor.
+    [Fact]
+    public async Task A_pairing_link_for_a_client_on_this_machine_points_at_localhost()
+    {
+        var admin = await NewAdminAsync("Same Machine");
+
+        var context = await SignedAsync(
+            admin, "POST", "/api/admin/pairing-codes", query: "grantsAdmin=true",
+            // What a client on this machine that found us over mDNS looks like:
+            // it dialled our LAN address, not loopback.
+            remoteIp: "127.0.0.1", host: "192.168.1.40:4533");
+
+        Assert.Equal(200, context.Response.StatusCode);
+        var pairing = await ReadAsync<PairingCodeResponse>(context);
+        Assert.StartsWith("http://localhost:4533/#pair=", pairing.BrowserUrl);
+    }
+
+    // The other half, and the reason this is not simply hardcoded to localhost:
+    // for a browser anywhere else, localhost is this server rather than the one
+    // being administered, and the address the caller reached us on is the only
+    // one known to work.
+    [Fact]
+    public async Task A_pairing_link_for_a_client_elsewhere_keeps_the_address_it_reached_us_on()
+    {
+        var admin = await NewAdminAsync("Another Machine");
+
+        var context = await SignedAsync(
+            admin, "POST", "/api/admin/pairing-codes", query: "grantsAdmin=true",
+            remoteIp: "10.0.0.77", host: "192.168.1.40:4533");
+
+        Assert.Equal(200, context.Response.StatusCode);
+        var pairing = await ReadAsync<PairingCodeResponse>(context);
+        Assert.StartsWith("http://192.168.1.40:4533/#pair=", pairing.BrowserUrl);
+    }
+
+}
+
+// The other half of the not-deployed page: a bundle that *is* there gets served,
+// and the SPA fallback hands unknown non-API paths back to index.html so the
+// settings deep-link the "Server Settings..." button opens survives a reload.
+public class WebUiHostingTests
+{
+    private sealed class Factory : WebApplicationFactory<Program>
+    {
+        public string WebUi { get; } =
+            Path.Combine(Path.GetTempPath(), "flower-server-webui-" + Guid.NewGuid());
+
+        private readonly string _dataDirectory =
+            Path.Combine(Path.GetTempPath(), "flower-server-webui-data-" + Guid.NewGuid());
+
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        {
+            var emptyLibrary = Path.Combine(_dataDirectory, "lib");
+            Directory.CreateDirectory(emptyLibrary);
+            Directory.CreateDirectory(WebUi);
+
+            // Standing in for a published Flower.Web bundle - Resolve only ever
+            // looks for index.html, so one file is a faithful deployment here.
+            File.WriteAllText(Path.Combine(WebUi, "index.html"), "<html>flower</html>");
+
+            builder.UseSetting("Flower:DataDirectory", _dataDirectory);
+            builder.UseSetting("Flower:LibraryPaths:0", emptyLibrary);
+            // See FlowerServerFixture - keeps the adopted Music.app folder
+            // out of the pinned library path list.
+            builder.UseSetting("Flower:IntegrateWithITunes", "false");
+            builder.UseSetting("Flower:WebUiPath", WebUi);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            base.Dispose(disposing);
+            try { Directory.Delete(WebUi, recursive: true); } catch { /* best effort */ }
+            try { Directory.Delete(_dataDirectory, recursive: true); } catch { /* best effort */ }
+        }
+    }
+
+    private static async Task<(int Status, string Body)> GetAsync(Factory factory, string path)
+    {
+        var context = await factory.Server.SendAsync(c =>
+        {
+            c.Request.Method = "GET";
+            c.Request.Path = path;
+            c.Connection.RemoteIpAddress = IPAddress.Parse("10.0.0.60");
+        });
+
+        using var reader = new StreamReader(context.Response.Body);
+        return (context.Response.StatusCode, await reader.ReadToEndAsync());
+    }
+
+    [Fact]
+    public async Task A_deployed_bundle_is_served_at_the_root_and_backs_the_spa_fallback()
+    {
+        using var factory = new Factory();
+
+        var (rootStatus, rootBody) = await GetAsync(factory, "/");
+        Assert.Equal(StatusCodes.Status200OK, rootStatus);
+        Assert.Contains("flower", rootBody);
+
+        // Not a file on disk, not an API route: index.html, so the browser app
+        // boots and routes it itself.
+        var (deepStatus, deepBody) = await GetAsync(factory, "/settings");
+        Assert.Equal(StatusCodes.Status200OK, deepStatus);
+        Assert.Contains("flower", deepBody);
+
+        // Still not allowed to shadow the APIs.
+        var (apiStatus, _) = await GetAsync(factory, "/api/nothingHere");
+        Assert.Equal(StatusCodes.Status404NotFound, apiStatus);
+    }
+}
+

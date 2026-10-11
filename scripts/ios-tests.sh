@@ -10,7 +10,7 @@
 #   scripts/ios-tests.sh                           # newest iPhone, newest iOS
 #   scripts/ios-tests.sh "iPhone 17 Pro"           # by name
 #   IOS_SIMULATOR_RUNTIME=26 scripts/ios-tests.sh  # newest iPhone on iOS 26
-#   FLOWER_TEST_ARGS="-class Flower.Tests.PlaylistTests" scripts/ios-tests.sh
+#   FLOWER_TEST_ARGS="-class Flower.Tests.Playlists.PlaylistTests" scripts/ios-tests.sh
 #
 # FLOWER_TEST_ARGS is passed to xunit as extra command-line arguments.
 #
@@ -18,9 +18,6 @@
 # run which hangs can name the test that never came back. What is printed here
 # is the part worth reading: failures with their messages, the summary, and
 # for a run that never finished, the tests that started and did not.
-#
-# MusicListViewGestureTests are left out, in the app rather than here - see
-# Tests/Flower.Tests.iOS/AppDelegate.cs for why.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 . scripts/lib/ios-simulator.sh

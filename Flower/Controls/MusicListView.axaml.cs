@@ -54,39 +54,27 @@ public partial class MusicListView : UserControl
     public event EventHandler?                    HeaderContextMenu; // right-click on header
 
     // ── Selection ─────────────────────────────────────────────────────────────
-    // Keyed by Track.Id rather than TrackRowViewModel identity: rows are
-    // rebuilt from scratch on every SetItems() (filter/sort/view-switch), so
-    // IsSelected never survives on its own and the selection has to be
-    // re-matched against the new instances.
-    //
-    // Id, not Path, because Path is not an identity: it is null for every
-    // not-yet-downloaded placeholder, so all of them hashed to the same key.
-    // Selecting one greyed-out track therefore re-selected *every* greyed-out
-    // track in the view on the next rebuild - and dragging it to a playlist
-    // dropped all of them in. Id is the same identity TrackRowMerge already
-    // reuses rows by, and it survives a rescan (Library.CarryForwardMutableState
-    // copies it onto the new Track instance).
-    private readonly HashSet<Guid> _selectedIds = new();
-    private readonly List<TrackRowViewModel> _selectedRows = new();
-    private Guid? _anchorId; // Shift+click range-select anchor
+    // What a press does to the selection lives in TrackRowSelection; this
+    // control turns pointer and keyboard input into calls on it, and keeps the
+    // TwoWay SelectedTrack binding in step.
+    private readonly TrackRowSelection _selection = new();
 
-    public IReadOnlyList<FlowerTrack> SelectedTracks => _selectedRows.Select(r => r.Track).ToList();
+    public IReadOnlyList<FlowerTrack> SelectedTracks => _selection.Tracks;
 
     // The rows behind SelectedTracks, for a caller that needs the per-row state
     // and not just the tracks (the right-click Download item, whose progress
     // shows on the rows themselves).
-    public IReadOnlyList<TrackRowViewModel> SelectedRows => _selectedRows.ToList();
+    public IReadOnlyList<TrackRowViewModel> SelectedRows => _selection.Rows;
 
-    private TrackRowViewModel? _selectedRow;
     public TrackRowViewModel? SelectedRow
     {
-        get => _selectedRow;
+        get => _selection.Current;
         set
         {
-            if (_selectedRow == value && _selectedRows.Count <= 1)
+            if (_selection.Current == value && _selection.Count <= 1)
                 return;
-            SelectSingleRow(value);
-            RaiseSelectedTrackChanged(_selectedRow?.Track);
+            _selection.SelectOnly(value);
+            RaiseSelectedTrackChanged(_selection.Current?.Track);
         }
     }
 
@@ -96,7 +84,7 @@ public partial class MusicListView : UserControl
     // within the same call. Left unguarded, that echo re-enters SetSelectedTrack
     // and (since it can't otherwise tell an echo apart from a genuine external
     // "select this track" request) stomps a multi-selection back down to one row
-    // right after ToggleRow/SelectRange just built it. This flag lets
+    // right after a Shift- or Primary-press just built it. This flag lets
     // SetSelectedTrack recognize and ignore its own echo.
     private bool _isRaisingSelectedTrack;
 
@@ -105,74 +93,6 @@ public partial class MusicListView : UserControl
         _isRaisingSelectedTrack = true;
         try { SetAndRaise(SelectedTrackProperty, ref _selectedTrack, track); }
         finally { _isRaisingSelectedTrack = false; }
-    }
-
-    // Collapses selection down to just `row` (or clears it if null) - the
-    // "click on an unselected row" / programmatic-selection primitive shared
-    // by SelectedRow's setter, double-click, arrow-key navigation, and
-    // SetSelectedTrack below.
-    private void SelectSingleRow(TrackRowViewModel? row)
-    {
-        ClearSelection();
-        _selectedRow = row;
-        if (row != null)
-        {
-            row.IsSelected = true;
-            _selectedRows.Add(row);
-            _selectedIds.Add(row.Track.Id);
-            _anchorId = row.Track.Id;
-        }
-    }
-
-    private void ClearSelection()
-    {
-        foreach (var row in _selectedRows)
-            row.IsSelected = false;
-        _selectedRows.Clear();
-        _selectedIds.Clear();
-    }
-
-    private void ToggleRow(TrackRowViewModel row)
-    {
-        row.IsSelected = !row.IsSelected;
-        if (row.IsSelected)
-        {
-            _selectedIds.Add(row.Track.Id);
-            _selectedRows.Add(row);
-            _selectedRow = row;
-            _anchorId = row.Track.Id;
-        }
-        else
-        {
-            _selectedIds.Remove(row.Track.Id);
-            _selectedRows.Remove(row);
-            if (_selectedRow == row)
-                _selectedRow = _selectedRows.Count > 0 ? _selectedRows[^1] : null;
-        }
-        RaiseSelectedTrackChanged(_selectedRow?.Track);
-    }
-
-    private void SelectRange(TrackRowViewModel row)
-    {
-        var anchorRow = _anchorId is { } anchorId ? _items.FirstOrDefault(r => r.Track.Id == anchorId) : null;
-        int anchorIdx = anchorRow != null ? IndexOf(_items, anchorRow) : IndexOf(_items, row);
-        int clickIdx  = IndexOf(_items, row);
-        if (anchorIdx < 0)
-            anchorIdx = clickIdx;
-        int lo = Math.Min(anchorIdx, clickIdx);
-        int hi = Math.Max(anchorIdx, clickIdx);
-
-        // Anchor itself is deliberately left untouched so subsequent Shift+clicks
-        // keep extending/shrinking the range from the same starting point.
-        ClearSelection();
-        for (int i = lo; i <= hi; i++)
-        {
-            _items[i].IsSelected = true;
-            _selectedIds.Add(_items[i].Track.Id);
-            _selectedRows.Add(_items[i]);
-        }
-        _selectedRow = row;
-        RaiseSelectedTrackChanged(_selectedRow.Track);
     }
 
     private FlowerTrack? _selectedTrack;
@@ -194,9 +114,9 @@ public partial class MusicListView : UserControl
         _selectedTrack = track;
         if (_isRaisingSelectedTrack)
             return; // echo of our own change via the TwoWay binding - see RaiseSelectedTrackChanged
-        var row = track != null ? _items.FirstOrDefault(r => r.Track.Id == track.Id) : null;
-        if (row != _selectedRow)
-            SelectSingleRow(row);
+        var row = _selection.RowFor(track);
+        if (row != _selection.Current)
+            _selection.SelectOnly(row);
     }
 
     // ── Sort command callback ─────────────────────────────────────────────────
@@ -234,9 +154,9 @@ public partial class MusicListView : UserControl
         VerticalAlignment   = VerticalAlignment.Stretch,
     };
 
-    private MusicColumnDefinition? _draggedColumn;
-    private double _columnDragStartX;
-    private bool   _isColumnDragging;
+    // Click-vs-drag and where the gaps are; this control turns the pointer
+    // into calls on it and draws the indicator.
+    private readonly ColumnHeaderDrag _headerDrag;
 
     // ── Drag-onto-playlist (enabled by the host everywhere except a playlist's own
     // view, where AllowReorder already owns the drag gesture for reordering within
@@ -281,6 +201,7 @@ public partial class MusicListView : UserControl
         // MainView reads it back off ColumnManager here rather than making its
         // own call. See docs/ARCHITECTURE-REVIEW.md Tier 2.3.
         _columnManager = Ioc.Default.GetService<ColumnManager>()!;
+        _headerDrag    = new ColumnHeaderDrag(_columnManager);
         _panel         = new MusicListPanel(_columnManager)
         {
             ClipToBounds      = false,
@@ -292,7 +213,8 @@ public partial class MusicListView : UserControl
         contentHost.Children.Add(_dropIndicator);
         Scroller.Content = contentHost;
 
-        _columnManager.ColumnsChanged += (_, _) => BuildHeader();
+        // Subscribed to ColumnManager only while on screen - see
+        // OnAttachedToVisualTree.
 
         // The one scroller in the app with both axes live at once (the columns
         // go wider than the viewport), and so the only one where a two-finger
@@ -327,7 +249,7 @@ public partial class MusicListView : UserControl
         // Column header drag-to-reorder: capture/move/release are wired once,
         // here, on HeaderBorder - a stable element that outlives any single
         // BuildHeader() call. The per-cell PointerPressed handlers (added fresh
-        // each BuildHeader(), see MakeHeaderCell) only set _draggedColumn and
+        // each BuildHeader(), see MakeHeaderCell) only start _headerDrag and
         // capture the pointer to HeaderBorder; capturing the individual header
         // cell instead would break as soon as anything rebuilt the header mid-
         // drag (e.g. a column width binding update), silently dropping capture
@@ -335,6 +257,7 @@ public partial class MusicListView : UserControl
         HeaderBorder.PointerMoved       += HeaderBorder_PointerMoved;
         HeaderBorder.PointerReleased    += HeaderBorder_PointerReleased;
         HeaderBorder.PointerCaptureLost += (_, _) => EndColumnDrag();
+        HeaderBorder.ContextRequested   += (_, e) => { HeaderContextMenu?.Invoke(this, EventArgs.Empty); e.Handled = true; };
 
         AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
 
@@ -397,32 +320,7 @@ public partial class MusicListView : UserControl
         _items = items;
         _panel.SetItems(items);
 
-        // Re-apply the selection against the new row instances - rows are
-        // rebuilt from scratch on every SetItems() call, so IsSelected never
-        // survives on its own. Anything no longer present in this view
-        // (filtered/sorted out) is dropped from the selection.
-        _selectedRows.Clear();
-        if (_selectedIds.Count > 0)
-        {
-            var stillPresent = new HashSet<Guid>();
-            foreach (var row in items)
-            {
-                if (_selectedIds.Contains(row.Track.Id))
-                {
-                    row.IsSelected = true;
-                    _selectedRows.Add(row);
-                    stillPresent.Add(row.Track.Id);
-                }
-            }
-            _selectedIds.IntersectWith(stillPresent);
-        }
-
-        if (_selectedTrack != null)
-        {
-            var match = items.FirstOrDefault(r => r.Track.Id == _selectedTrack.Id);
-            if (match != null)
-                _selectedRow = match;
-        }
+        _selection.SetItems(items, _selectedTrack);
     }
 
     // ── Header bar ────────────────────────────────────────────────────────────
@@ -457,106 +355,76 @@ public partial class MusicListView : UserControl
         _headerHost.Children.Add(_columnDropIndicator);
 
         HeaderBorder.Child = _headerHost;
-        HeaderBorder.ContextRequested += (_, e) => { HeaderContextMenu?.Invoke(this, EventArgs.Empty); e.Handled = true; };
     }
 
-    // Gap index (0..VisibleColumns.Count) that `headerX` falls into, measured
-    // against the header as it's actually rendered right now - which, mid-drag,
-    // still shows the dragged column occupying its original slot (only the
-    // drop-indicator overlay moves; the cells themselves don't rearrange until
-    // drop). Must NOT exclude the dragged column from the width sum: doing so
-    // desyncs this from the real on-screen positions by exactly that column's
-    // width, which showed up as the indicator sitting inside a cell instead of
-    // at its edge.
-    private int FullGapIndexAt(double headerX)
+    // ColumnManager is one instance for the whole app and outlives any list
+    // showing it, so a list that subscribed for good was kept alive by it, and
+    // went on rebuilding a header nobody could see on every column change -
+    // one more of them each time a list was made and thrown away. Subscribed
+    // only while attached instead, and caught up on return, since a change
+    // made while away was not heard.
+    private bool _missedColumnChanges;
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
-        double cursor = _columnManager.ArtColumnWidth;
-        var cols = _columnManager.VisibleColumns.ToList();
-        for (int i = 0; i < cols.Count; i++)
+        base.OnAttachedToVisualTree(e);
+        _columnManager.ColumnsChanged += OnColumnsChanged;
+        if (_missedColumnChanges)
         {
-            if (headerX < cursor + cols[i].Width / 2)
-                return i;
-            cursor += cols[i].Width;
+            _missedColumnChanges = false;
+            BuildHeader();
         }
-        return cols.Count;
     }
 
-    // x-offset, in that same real-layout coordinate space, where a given gap index begins.
-    private double FullGapX(int gapIndex)
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
-        double cursor = _columnManager.ArtColumnWidth;
-        var cols = _columnManager.VisibleColumns.ToList();
-        for (int i = 0; i < gapIndex && i < cols.Count; i++)
-            cursor += cols[i].Width;
-        return cursor;
+        base.OnDetachedFromVisualTree(e);
+        _columnManager.ColumnsChanged -= OnColumnsChanged;
+        _missedColumnChanges = true;
     }
 
-    // ColumnManager.Reorder's newVisibleIndex is defined relative to the
-    // sequence with the dragged column already removed (see its own doc
-    // comment) - convert a gap index from the full (dragged-column-included)
-    // sequence into that convention.
-    private int ToExcludingIndex(int fullGapIndex, MusicColumnDefinition excluding)
-    {
-        var all = _columnManager.VisibleColumns.ToList();
-        int draggedIndex = all.IndexOf(excluding);
-        return fullGapIndex > draggedIndex ? fullGapIndex - 1 : fullGapIndex;
-    }
+    private void OnColumnsChanged(object? sender, EventArgs e) => BuildHeader();
 
     private void HeaderBorder_PointerMoved(object? sender, PointerEventArgs e)
     {
-        if (_draggedColumn == null)
+        if (_headerDrag.Move(e.GetPosition(_headerPanel).X) is not { } indicatorX)
             return;
-        double x = e.GetPosition(_headerPanel).X;
-        if (!_isColumnDragging)
-        {
-            if (Math.Abs(x - _columnDragStartX) < DragThreshold)
-                return;
-            _isColumnDragging = true;
-            _columnDropIndicator.IsVisible = true;
-        }
-        int gapIndex = FullGapIndexAt(x);
-        _columnDropIndicator.Margin = new Thickness(FullGapX(gapIndex), 0, 0, 0);
+        _columnDropIndicator.IsVisible = true;
+        _columnDropIndicator.Margin = new Thickness(indicatorX, 0, 0, 0);
     }
 
     private void HeaderBorder_PointerReleased(object? sender, PointerReleasedEventArgs e)
     {
-        if (_draggedColumn == null)
+        // Decided before the capture is released: Capture(null) synchronously
+        // fires PointerCaptureLost, which ends the gesture reentrantly, and
+        // reading it only after that always took the "not dragging" branch.
+        var gesture = _headerDrag.Release(e.GetPosition(_headerPanel).X);
+        if (gesture == null)
             return;
-
-        // Snapshot everything needed before releasing capture below:
-        // Capture(null) synchronously fires PointerCaptureLost on HeaderBorder,
-        // which runs EndColumnDrag() reentrantly and nulls _draggedColumn /
-        // resets _isColumnDragging - reading them only after Capture(null) NRE'd
-        // on a now-null column and silently always took the "not dragging"
-        // branch (the very bug this snapshot avoids).
-        var    column      = _draggedColumn;
-        bool   wasDragging = _isColumnDragging;
-        int    dropIndex   = ToExcludingIndex(FullGapIndexAt(e.GetPosition(_headerPanel).X), column);
 
         e.Pointer.Capture(null);
         EndColumnDrag(); // idempotent - PointerCaptureLost above likely already ran this
 
-        if (wasDragging)
+        if (gesture is ColumnHeaderGesture.Reorder reorder)
         {
             // Deferred: Reorder() changes every column's Order, and each change
-            // synchronously rebuilds the header (Columns.PropertyChanged ->
-            // ColumnManager.ColumnsChanged -> BuildHeader(), replacing
-            // HeaderBorder.Child) - doing that reentrantly, still inside the
-            // PointerReleased dispatch for the very element being replaced,
-            // crashed Avalonia's routed-event dispatch. Posting it lets this
-            // handler - and the event route calling it - finish first.
-            Dispatcher.UIThread.Post(() => _columnManager.Reorder(column, dropIndex));
+            // synchronously rebuilds the header (ColumnManager.ColumnsChanged ->
+            // BuildHeader(), replacing HeaderBorder.Child) - doing that
+            // reentrantly, still inside the PointerReleased dispatch for the
+            // very element being replaced, crashed Avalonia's routed-event
+            // dispatch. Posting it lets this handler - and the event route
+            // calling it - finish first.
+            Dispatcher.UIThread.Post(() => _columnManager.Reorder(reorder.Column, reorder.NewVisibleIndex));
         }
-        else
-            SortRequested?.Invoke(this, column.Id);
+        else if (gesture is ColumnHeaderGesture.Sort sort)
+            SortRequested?.Invoke(this, sort.ColumnId);
 
         e.Handled = true;
     }
 
     private void EndColumnDrag()
     {
-        _draggedColumn = null;
-        _isColumnDragging = false;
+        _headerDrag.End();
         _columnDropIndicator.IsVisible = false;
     }
 
@@ -622,7 +490,7 @@ public partial class MusicListView : UserControl
         outer.Children.Add(handle);
 
         // Press-and-drag a header cell horizontally to reorder columns; a plain
-        // click (no drag past DragThreshold) sorts by it instead - same
+        // click (no drag past ColumnHeaderDrag.DragThreshold) sorts by it instead - same
         // click-vs-drag split as the track rows use for reordering a playlist.
         // The capture target is HeaderBorder (see HeaderBorder_PointerMoved/
         // Released below), not this cell - see the comment where those are wired
@@ -631,17 +499,9 @@ public partial class MusicListView : UserControl
         {
             if (!e.GetCurrentPoint(outer).Properties.IsLeftButtonPressed)
                 return;
-            _draggedColumn      = col;
-            _columnDragStartX   = e.GetPosition(_headerPanel).X;
-            _isColumnDragging   = false;
+            _headerDrag.Press(col, e.GetPosition(_headerPanel).X);
             e.Pointer.Capture(HeaderBorder);
             e.Handled = true;
-        };
-
-        col.PropertyChanged += (_, e) =>
-        {
-            if (e.PropertyName == nameof(MusicColumnDefinition.IsVisible))
-                BuildHeader(); // rebuild when visibility changes
         };
 
         return outer;
@@ -710,14 +570,10 @@ public partial class MusicListView : UserControl
 
         bool isLeft = e.GetCurrentPoint(_panel).Properties.IsLeftButtonPressed;
 
-        if (isLeft && e.KeyModifiers.HasFlag(KeyModifiers.Shift))
-            SelectRange(row);
-        else if (isLeft && e.KeyModifiers.HasFlag(PlatformShortcuts.Primary))
-            ToggleRow(row);
-        else if (!row.IsSelected)
-            SelectedRow = row;
-        // else: row is already part of the current multi-selection - preserve
-        // the whole selection so a drag or the context menu can act on all of it.
+        if (_selection.Press(row,
+                extend: isLeft && e.KeyModifiers.HasFlag(KeyModifiers.Shift),
+                toggle: isLeft && e.KeyModifiers.HasFlag(PlatformShortcuts.Primary)))
+            RaiseSelectedTrackChanged(_selection.Current?.Track);
 
         if (AllowReorder && isLeft && row.CanBeDragged)
         {
@@ -847,36 +703,22 @@ public partial class MusicListView : UserControl
                 MoveSelection(-1, e.KeyModifiers.HasFlag(KeyModifiers.Shift));
                 e.Handled = true;
                 break;
-            case Key.Return when _selectedRow != null:
-                RowActivated?.Invoke(this, _selectedRow);
+            case Key.Return when _selection.Current is { } current:
+                RowActivated?.Invoke(this, current);
                 e.Handled = true;
                 break;
         }
     }
 
+    // Shift+Up/Down grows or shrinks the range from the existing anchor (the
+    // same primitive as Shift+click) instead of collapsing to one row.
     private void MoveSelection(int delta, bool extend)
     {
-        if (_items.Count == 0)
+        int next = _selection.Move(delta, extend);
+        if (next < 0)
             return;
-        int current = _selectedRow == null ? -1 : IndexOf(_items, _selectedRow);
-        int next = Math.Clamp(current + delta, 0, _items.Count - 1);
-        if (next == current)
-            return;
-        // Shift+Up/Down grows or shrinks the range from the existing anchor
-        // (same primitive as Shift+click) instead of collapsing to one row.
-        if (extend)
-            SelectRange(_items[next]);
-        else
-            SelectedRow = _items[next];
+        RaiseSelectedTrackChanged(_selection.Current?.Track);
         EnsureVisible(next);
-    }
-
-    private static int IndexOf(IReadOnlyList<TrackRowViewModel> list, TrackRowViewModel item)
-    {
-        for (int i = 0; i < list.Count; i++)
-            if (list[i] == item)
-                return i;
-        return -1;
     }
 
     private void EnsureVisible(int index)

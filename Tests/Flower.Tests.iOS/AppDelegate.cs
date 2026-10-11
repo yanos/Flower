@@ -67,18 +67,11 @@ public class AppDelegate : UIApplicationDelegate
         // finished run, and the unfinished tests of a stuck one.
         string[] verbose = ["-verbose"];
 
-        // MusicListViewGestureTests drive a real headless Avalonia window through
-        // full layout and Skia render per gesture, and under the simulator's
-        // interpreter that took 1116s of a 1312s run - one to three minutes a
-        // test, against well under a second on the desktop. They pass here; they
-        // are left out until they can run in a time a push can afford.
-        //
         // BrowserFontFilesTests read Flower.Web's fonts out of the source tree,
         // which this app does not carry.
         string[] excluded =
         [
-            "-class-", "Flower.Tests.MusicListViewGestureTests",
-            "-class-", "Flower.Tests.BrowserFontFilesTests",
+            "-class-", "Flower.Tests.Browser.BrowserFontFilesTests",
         ];
 
         var extra = Environment.GetEnvironmentVariable("FLOWER_TEST_ARGS");

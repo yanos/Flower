@@ -96,6 +96,20 @@ namespace Flower.Persistence.Sql
                 Quarantine(path);
                 SqliteMigrations.Apply(this);
             }
+            catch (ObsoleteSchemaException ex)
+            {
+                // A database from before the schema baseline. Nothing migrates
+                // from there (see SqliteMigrations), so it is set aside the way
+                // an unreadable one is, and for the same reason: kept, rather
+                // than overwritten, in case anyone needs what was in it.
+                _logger?.LogCritical(
+                    "{Path} has schema version {Version}, older than this build reads; moved it to {CorruptPath} and started a fresh one. "
+                    + "The library rebuilds on the next scan, but play counts and Date Added in it are lost.",
+                    path, ex.Version, CorruptPath(path));
+
+                Quarantine(path);
+                SqliteMigrations.Apply(this);
+            }
         }
 
         // Where an unreadable database is moved aside to, mirroring

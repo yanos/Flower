@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 using Microsoft.Data.Sqlite;
 
@@ -7,59 +8,40 @@ namespace Flower.Persistence.Sql
 {
     // Schema versioning via PRAGMA user_version - SQLite's own built-in
     // four-byte slot in the database header, so there is no bookkeeping table
-    // to create before the first migration can run.
+    // to create before the first step can run.
     //
-    // This replaces what EF Core's migrations would have given for free, and
-    // is deliberately the whole of it: an ordered list of scripts, applied in
-    // sequence, each inside a transaction with the version bump. There is no
-    // down-migration and no model-diffing - a schema change is a new entry
-    // appended to Scripts, written by hand.
+    // A fresh database is built from Schema.Baseline in one go and stamped at
+    // BaselineVersion. Changes after that are either folded into the baseline
+    // or appended to Steps, each applied once, in order, inside a transaction
+    // with its version bump. There is no down-migration and no model-diffing.
     //
-    // Note what this fixes on the server side: Flower.Server used to call
-    // EnsureCreatedAsync() with no migrations at all, so any schema change
-    // silently wiped a self-hoster's database (ARCHITECTURE-REVIEW Tier 2.5).
+    // The baseline is every step there used to be, collapsed (October 2026):
+    // with no released users (CLAUDE.md, "No Users Yet") there is nothing to
+    // carry forward from older schemas, so a database stamped below the
+    // baseline is not migrated - Apply refuses it with ObsoleteSchemaException
+    // and FlowerDb sets it aside for a fresh one. A database already at the
+    // baseline, which is every one that kept up, carries on untouched.
     //
-    // The default is still to fold a schema change straight into V1 rather than
-    // append a step: with no released users there is nothing to migrate *from*,
-    // and the honest upgrade path for a stale local flower.db is to delete it
-    // and rescan. Append a script only when that delete-and-rescan would lose
-    // something a rescan cannot reproduce - play counts, starred flags,
-    // playlists - which is what V2 is doing here.
-    //
-    // With one exception, which cost a running server: that default holds only
-    // for *adding* a column. Folding in a rename, a drop or a retype leaves an
-    // existing database holding a shape the code no longer asks for, and the
-    // next read throws - see Schema.V7, which is that mistake corrected.
-    //
-    // Folding in an *addition* used to be described here as harmless, on the
-    // grounds that it leaves a database merely missing something. It is not:
-    // the next query naming the column throws exactly like a rename does, just
-    // later and more quietly, and user_version says the database is current so
-    // nothing offers to fix it. That cost a phone its entire library - see
-    // ReconcileFoldedInColumns, which now repairs it automatically so that
-    // getting this wrong is no longer something to get wrong.
+    // Which change goes where: fold an *addition* into the baseline - the
+    // reconciling pass below adds the column to databases that already exist.
+    // Append a step for a rename, a drop, a retype or a new table, because
+    // folding one of those in only changes what a *fresh* database is created
+    // with, and an existing one keeps the old shape while every query asks for
+    // the new one. That mistake took a running server down once
+    // (origin_album_art_hash, renamed in place) and an addition folded in
+    // before the reconciling pass existed cost a phone its whole library.
     public static class SqliteMigrations
     {
-        // Index + 1 is the schema version a script brings the database to, so
-        // order is significant and entries are only ever appended.
-        private sealed record Migration(string Sql, Func<SqliteConnection, bool>? IsAlreadyApplied = null);
+        // The version Schema.Baseline stands for. Eleven because that is how
+        // many steps it replaced, so every database that ran all of them is
+        // already current.
+        public const int BaselineVersion = 11;
 
-        private static readonly IReadOnlyList<Migration> Scripts =
-        [
-            new Migration(Schema.V1),
-            new Migration(Schema.V2),
-            new Migration(Schema.V3),
-            new Migration(Schema.V4),
-            new Migration(Schema.V5, connection => HasColumn(connection, "tracks", "encoder_profile")),
-            new Migration(Schema.V6),
-            new Migration(Schema.V7, connection => HasColumn(connection, "tracks", "origin_album_art_id")),
-            new Migration(Schema.V8),
-            new Migration(Schema.V9),
-            new Migration(Schema.V10, connection => HasColumn(connection, "tracks", "withdrawn_by_origin")),
-            new Migration(Schema.V11, connection => HasColumn(connection, "playlists", "listener")),
-        ];
+        // Steps after the baseline: index 0 brings a database to
+        // BaselineVersion + 1, and so on. Only ever appended.
+        private static readonly IReadOnlyList<string> Steps = [];
 
-        public static int LatestVersion => Scripts.Count;
+        public static int LatestVersion => BaselineVersion + Steps.Count;
 
         public static void Apply(FlowerDb db)
         {
@@ -70,81 +52,73 @@ namespace Flower.Persistence.Sql
         public static void Apply(SqliteConnection connection)
         {
             var current = ReadVersion(connection);
-            if (current >= Scripts.Count)
+            if (current == 0)
             {
-                // Still reconcile: a database at the current version is exactly
-                // the one that folding an addition into V1 leaves broken, and
-                // the early return is what made that invisible.
-                ReconcileFoldedInColumns(connection);
-                return;
+                Run(connection, Schema.Baseline, BaselineVersion);
+                current = BaselineVersion;
+            }
+            else if (current < BaselineVersion)
+            {
+                throw new ObsoleteSchemaException(current);
             }
 
-            for (var version = current; version < Scripts.Count; version++)
-            {
-                using var transaction = connection.BeginTransaction();
+            for (var version = current; version < LatestVersion; version++)
+                Run(connection, Steps[version - BaselineVersion], version + 1);
 
-                using (var script = connection.CreateCommand())
-                {
-                    script.Transaction = transaction;
-                    var migration = Scripts[version];
-                    if (!migration.IsAlreadyApplied?.Invoke(connection) ?? true)
-                    {
-                        script.CommandText = migration.Sql;
-                        script.ExecuteNonQuery();
-                    }
-                }
-
-                using (var bump = connection.CreateCommand())
-                {
-                    bump.Transaction = transaction;
-                    // user_version takes no parameter binding - it is a pragma,
-                    // not a statement. The value is an int from a loop counter,
-                    // never user input, so the interpolation is not a injection
-                    // surface.
-                    bump.CommandText = $"PRAGMA user_version = {version + 1};";
-                    bump.ExecuteNonQuery();
-                }
-
-                transaction.Commit();
-            }
-
+            // Even when there was nothing to run: a database at the current
+            // version is exactly the one a folded-in addition leaves short.
             ReconcileFoldedInColumns(connection);
         }
 
-        // Adds any column that V1 has grown since this database was created.
+        private static void Run(SqliteConnection connection, string sql, int version)
+        {
+            using var transaction = connection.BeginTransaction();
+
+            using (var script = connection.CreateCommand())
+            {
+                script.Transaction = transaction;
+                script.CommandText = sql;
+                script.ExecuteNonQuery();
+            }
+
+            using (var bump = connection.CreateCommand())
+            {
+                bump.Transaction = transaction;
+                // user_version takes no parameter binding - it is a pragma,
+                // not a statement. The value is a constant or a loop counter,
+                // never user input.
+                bump.CommandText = $"PRAGMA user_version = {version};";
+                bump.ExecuteNonQuery();
+            }
+
+            transaction.Commit();
+        }
+
+        // Adds any column the schema has grown since this database was created.
         //
-        // This exists because "fold an addition into V1" is a trap that has now
-        // been sprung twice. A folded-in column reaches a *fresh* database and
-        // no existing one, and user_version cannot tell: the database is at the
-        // latest version, the runner has nothing to do, and the first query
-        // naming the new column throws "no such column". On the server that was
-        // origin_album_art_id (see Schema.V7). On a phone it was album_artist,
-        // and the symptom was worse for being quieter - LibraryStore caught the
-        // exception, logged it, and started with an empty library, while every
-        // save failed the same way. A library that is simply *not there* looks
-        // like a sync problem, and the sync it sends you to look at is fine.
+        // A folded-in column reaches a *fresh* database and no existing one, and
+        // user_version cannot tell: the database is current, there is nothing
+        // to run, and the first query naming the column throws "no such
+        // column". On a phone that was album_artist, and LibraryStore caught
+        // the exception and started with an empty library - which looks like a
+        // sync problem, and sends you to look at a sync that is fine.
         //
-        // So rather than asking everyone to remember the rule, the runner makes
-        // the rule unnecessary for the case it actually applies to. A fresh
-        // in-memory database built from the same scripts is the reference; any
-        // column it has that this one does not is added here.
+        // So the runner makes the rule unnecessary for the case it applies to.
+        // A fresh in-memory database built from the same scripts is the
+        // reference; any column it has that this one does not is added here.
         //
         // Only additions, deliberately. A rename, a drop or a retype still has
-        // to be an appended script, because the reference cannot tell a renamed
+        // to be an appended step, because the reference cannot tell a renamed
         // column from a new one beside an abandoned old one - the difference is
-        // intent, and intent has to be written down. That is the rule Schema.V7
-        // states, and it is unchanged; what changes is that forgetting it for an
-        // *addition* is no longer fatal.
+        // intent, and intent has to be written down.
         private static void ReconcileFoldedInColumns(SqliteConnection connection)
         {
             using var reference = new SqliteConnection("Data Source=:memory:");
             reference.Open();
-            foreach (var migration in Scripts)
+            foreach (var sql in Steps.Prepend(Schema.Baseline))
             {
                 using var script = reference.CreateCommand();
-                if (migration.IsAlreadyApplied?.Invoke(reference) == true)
-                    continue;
-                script.CommandText = migration.Sql;
+                script.CommandText = sql;
                 script.ExecuteNonQuery();
             }
 
@@ -166,7 +140,7 @@ namespace Flower.Persistence.Sql
                         continue;
 
                     // SQLite cannot add a NOT NULL column without a default to
-                    // put in the rows that already exist. V1 always gives one
+                    // put in the rows that already exist. The baseline always gives one
                     // (see album_artist's DEFAULT ''), so this is a guard
                     // against a future schema edit rather than a live case -
                     // and it throws, because the alternative is the silent
@@ -175,7 +149,7 @@ namespace Flower.Persistence.Sql
                     {
                         throw new InvalidOperationException(
                             $"Cannot add {table}.{column.Name} to an existing database: it is NOT NULL with no default. "
-                            + "Append it as a migration script that backfills a value instead of folding it into V1.");
+                            + "Append it as a step that backfills a value instead of folding it into the baseline.");
                     }
 
                     using var alter = connection.CreateCommand();
@@ -204,7 +178,7 @@ namespace Flower.Persistence.Sql
         {
             var columns = new List<ColumnInfo>();
             using var command = connection.CreateCommand();
-            // Same reason HasColumn interpolates: SQLite binds values, not
+            // Interpolated because SQLite binds values, not
             // identifiers, and these names come from sqlite_master rather than
             // from anything a user typed.
             command.CommandText = $"PRAGMA table_info({table});";
@@ -227,21 +201,13 @@ namespace Flower.Persistence.Sql
             command.CommandText = "PRAGMA user_version;";
             return Convert.ToInt32(command.ExecuteScalar());
         }
+    }
 
-        private static bool HasColumn(SqliteConnection connection, string table, string column)
-        {
-            using var command = connection.CreateCommand();
-            // Table names are fixed at the migration call site; SQLite only
-            // permits bindings for values, not identifiers.
-            command.CommandText = $"PRAGMA table_info({table});";
-            using var reader = command.ExecuteReader();
-            while (reader.Read())
-            {
-                if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
-                    return true;
-            }
-
-            return false;
-        }
+    // A database stamped below SqliteMigrations.BaselineVersion: built by a
+    // schema older than anything this code migrates from.
+    public sealed class ObsoleteSchemaException(int version)
+        : Exception($"Database schema version {version} predates the baseline ({SqliteMigrations.BaselineVersion}) and is not migrated.")
+    {
+        public int Version { get; } = version;
     }
 }

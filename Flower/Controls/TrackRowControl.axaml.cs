@@ -37,7 +37,6 @@ public partial class TrackRowControl : UserControl
     {
         InitializeComponent();
         _columnManager = columnManager ?? Ioc.Default.GetService<ColumnManager>()!;
-        _columnManager.ColumnsChanged += OnColumnsChanged;
         // The download button follows the row itself, and is the only part
         // that draws its spinner.
         _row = new ModelWatch(this, Show, ignoring: nameof(DownloadIndicatorViewModel.SpinAngle));
@@ -93,6 +92,34 @@ public partial class TrackRowControl : UserControl
     public const double MenuCellWidth = 36;
 
     private void OnColumnsChanged(object? sender, EventArgs e) => BuildCells();
+
+    // Subscribed to the app-wide ColumnManager only while attached, so a row
+    // thrown away with its list is not kept alive, and rebuilt, by it - see
+    // MusicListView's own OnAttachedToVisualTree. The per-column width
+    // subscriptions BuildCells makes go with it, and a row that was away
+    // rebuilds its cells on return, having missed whatever changed.
+    private bool _missedColumnChanges;
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        _columnManager.ColumnsChanged += OnColumnsChanged;
+        if (_missedColumnChanges)
+        {
+            _missedColumnChanges = false;
+            BuildCells();
+        }
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        _columnManager.ColumnsChanged -= OnColumnsChanged;
+        foreach (var (col, handler) in _widthSubs)
+            col.PropertyChanged -= handler;
+        _widthSubs.Clear();
+        _missedColumnChanges = true;
+    }
 
     private void BuildCells()
     {

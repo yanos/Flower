@@ -1,0 +1,478 @@
+﻿using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using Microsoft.Extensions.Logging.Abstractions;
+using Flower.Audio;
+using Flower.Models;
+using Flower.Persistence;
+using Flower.Tests.TestSupport;
+using Flower.ViewModels;
+
+namespace Flower.Tests.Playback;
+
+// PlatformDataDirectory.Current is pinned to an isolated temp directory
+// (same pattern as PlaylistAutoAdvanceTests/LibraryStoreTests) because
+// Play/ToggleRepeat/ToggleShuffle below all fire-and-forget a real
+// LibraryStore.SaveAsync/AppSettingsStore.SaveAsync - without this, those
+// writes land in the real developer's library.json/settings.json instead
+// of a throwaway temp one.
+[Collection("PlatformDataDirectory")]
+public class PlaylistControlViewModelTests : IDisposable
+{
+    private readonly string _tempHome;
+
+    public PlaylistControlViewModelTests()
+    {
+        _tempHome = Path.Combine(Path.GetTempPath(), "flower-tests-" + Guid.NewGuid());
+        Directory.CreateDirectory(_tempHome);
+        PlatformDataDirectory.Current = _tempHome;
+    }
+
+    public void Dispose()
+    {
+        PlatformDataDirectory.Current = AssemblySetup.DefaultDataDirectory;
+        try { Directory.Delete(_tempHome, recursive: true); } catch { /* best effort */ }
+    }
+
+    private static Track T(string title, string? path = null) =>
+        new Track { Title = title, Path = path ?? $"/music/{title}.mp3" };
+
+    private static PlaylistControlViewModel MakeViewModel(
+        List<Track> tracks, out FakeAudioManager audio, AppSettings? appSettings = null)
+    {
+        audio = new FakeAudioManager();
+        var library = new Library(tracks);
+        var playlist = new MainPlaylist(tracks);
+        var libraryStore = new LibraryStore(NullLogger<LibraryStore>.Instance);
+        var appSettingsStore = new AppSettingsStore(NullLogger<AppSettingsStore>.Instance);
+        return new PlaylistControlViewModel(
+            audio, playlist, library, appSettings ?? new AppSettings(), appSettingsStore,
+            NullLogger<PlaylistControlViewModel>.Instance);
+    }
+
+    [Fact]
+    public void Constructor_restores_repeat_and_shuffle_state_from_AppSettings()
+    {
+        var settings = new AppSettings { IsRepeatEnabled = true, IsShuffleEnabled = true };
+        var vm = MakeViewModel(new List<Track> { T("A") }, out _, settings);
+
+        Assert.True(vm.IsRepeatEnabled);
+        Assert.True(vm.IsShuffleEnabled);
+    }
+
+    [Fact]
+    public void ToggleRepeat_flips_IsRepeatEnabled_and_updates_the_shared_AppSettings_instance()
+    {
+        var settings = new AppSettings();
+        var vm = MakeViewModel(new List<Track> { T("A") }, out _, settings);
+
+        vm.ToggleRepeat();
+
+        Assert.True(vm.IsRepeatEnabled);
+        Assert.True(settings.IsRepeatEnabled);
+
+        vm.ToggleRepeat();
+
+        Assert.False(vm.IsRepeatEnabled);
+        Assert.False(settings.IsRepeatEnabled);
+    }
+
+    [Fact]
+    public void ToggleShuffle_flips_IsShuffleEnabled_and_updates_the_shared_AppSettings_instance()
+    {
+        var settings = new AppSettings();
+        var vm = MakeViewModel(new List<Track> { T("A") }, out _, settings);
+
+        vm.ToggleShuffle();
+
+        Assert.True(vm.IsShuffleEnabled);
+        Assert.True(settings.IsShuffleEnabled);
+    }
+
+    [Fact]
+    public void Play_sets_CurrentlyPlayingTrack_and_SelectedTrack_and_calls_the_audio_manager()
+    {
+        var track = T("A");
+        var vm = MakeViewModel(new List<Track> { track }, out var audio);
+
+        vm.Play(track);
+
+        Assert.Same(track, vm.CurrentlyPlayingTrack);
+        Assert.Same(track, vm.SelectedTrack);
+        Assert.Same(track, audio.LastPlayed);
+    }
+
+    [Fact]
+    public void Play_arms_the_next_track_in_playlist_order_as_upcoming()
+    {
+        var a = T("A");
+        var b = T("B");
+        var vm = MakeViewModel(new List<Track> { a, b }, out var audio);
+
+        vm.Play(a);
+
+        Assert.Same(b, audio.LastUpcoming);
+    }
+
+    [Fact]
+    public void Play_with_repeat_enabled_arms_the_same_track_as_upcoming()
+    {
+        var a = T("A");
+        var b = T("B");
+        var vm = MakeViewModel(new List<Track> { a, b }, out var audio);
+        vm.ToggleRepeat();
+
+        vm.Play(a);
+
+        Assert.Same(a, audio.LastUpcoming);
+    }
+
+    [Fact]
+    public void ToggleRepeat_while_a_track_is_playing_rearms_upcoming_to_the_current_track()
+    {
+        var a = T("A");
+        var b = T("B");
+        var vm = MakeViewModel(new List<Track> { a, b }, out var audio);
+        vm.Play(a);
+        Assert.Same(b, audio.LastUpcoming);
+
+        vm.ToggleRepeat();
+
+        Assert.Same(a, audio.LastUpcoming);
+    }
+
+    [Fact]
+    public void ToggleShuffle_while_a_track_is_playing_rearms_upcoming_to_a_different_track()
+    {
+        var tracks = new List<Track> { T("A"), T("B"), T("C") };
+        var vm = MakeViewModel(tracks, out var audio);
+        vm.Play(tracks[0]);
+
+        vm.ToggleShuffle();
+
+        Assert.NotSame(tracks[0], audio.LastUpcoming);
+        Assert.Contains(audio.LastUpcoming, tracks);
+    }
+
+    [Fact]
+    public void Next_arms_the_track_after_the_new_current_track_as_upcoming()
+    {
+        var a = T("A");
+        var b = T("B");
+        var c = T("C");
+        var vm = MakeViewModel(new List<Track> { a, b, c }, out var audio);
+        vm.Play(a);
+
+        vm.Next();
+
+        Assert.Same(c, audio.LastUpcoming);
+    }
+
+    [Fact]
+    public void Next_without_shuffle_follows_playlist_order()
+    {
+        var a = T("A");
+        var b = T("B");
+        var vm = MakeViewModel(new List<Track> { a, b }, out _);
+        vm.Play(a);
+
+        vm.Next();
+
+        Assert.Same(b, vm.CurrentlyPlayingTrack);
+    }
+
+    [Fact]
+    public void Next_without_shuffle_wraps_around_to_the_first_track_after_the_last()
+    {
+        var a = T("A");
+        var b = T("B");
+        var vm = MakeViewModel(new List<Track> { a, b }, out _);
+        vm.Play(b);
+
+        vm.Next();
+
+        Assert.Same(a, vm.CurrentlyPlayingTrack);
+    }
+
+    [Fact]
+    public void Next_with_shuffle_enabled_never_returns_the_current_track_when_more_than_one_track_exists()
+    {
+        var tracks = new List<Track> { T("A"), T("B"), T("C") };
+        var vm = MakeViewModel(tracks, out _);
+        vm.IsShuffleEnabled = true;
+        vm.Play(tracks[0]);
+
+        for (int i = 0; i < 20; i++)
+        {
+            var before = vm.CurrentlyPlayingTrack;
+            vm.Next();
+            Assert.NotSame(before, vm.CurrentlyPlayingTrack);
+            Assert.Contains(vm.CurrentlyPlayingTrack, tracks);
+        }
+    }
+
+    // Shuffle deals the queue once, like a deck: every song plays before any
+    // plays twice, and then it deals again rather than stopping.
+    [Fact]
+    public void Shuffle_plays_every_song_once_before_any_plays_twice()
+    {
+        var tracks = Enumerable.Range(0, 8).Select(i => T($"S{i}")).ToList();
+        var vm = MakeViewModel(tracks, out _);
+        vm.IsShuffleEnabled = true;
+        vm.Play(tracks[0], 0);
+
+        var pass = new List<Track> { vm.CurrentlyPlayingTrack! };
+        for (var i = 0; i < 7; i++)
+        {
+            vm.Next();
+            pass.Add(vm.CurrentlyPlayingTrack!);
+        }
+        Assert.Equal(tracks.OrderBy(t => t.Title), pass.OrderBy(t => t.Title));
+
+        vm.Next();
+        Assert.Contains(vm.CurrentlyPlayingTrack, tracks);
+    }
+
+    // What the Queue page lists is what plays, and taking one song out of the
+    // queue leaves the rest in the order they were going to play.
+    [Fact]
+    public void Removing_a_song_from_a_shuffled_queue_keeps_the_rest_in_order()
+    {
+        var tracks = Enumerable.Range(0, 8).Select(i => T($"S{i}")).ToList();
+        var vm = MakeViewModel(tracks, out _);
+        vm.IsShuffleEnabled = true;
+        vm.Play(tracks[0], 0);
+        var queue = vm.CurrentPlaylist.Tracks;
+        var upcoming = vm.ShuffleUpcomingSlots.Select(slot => queue[slot]).ToList();
+
+        vm.RemoveQueueEntry(vm.ShuffleUpcomingSlots[2]);
+
+        var after = vm.ShuffleUpcomingSlots.Select(slot => vm.CurrentPlaylist.Tracks[slot]).ToList();
+        Assert.Equal(upcoming.Where((_, i) => i != 2), after);
+    }
+
+    [Fact]
+    public void A_shuffled_order_leaves_out_songs_marked_to_skip()
+    {
+        var tracks = Enumerable.Range(0, 5).Select(i => T($"S{i}")).ToList();
+        tracks[3].IgnoreWhenShuffling = true;
+        var vm = MakeViewModel(tracks, out _);
+        vm.IsShuffleEnabled = true;
+        vm.Play(tracks[0], 0);
+
+        var upcoming = vm.ShuffleUpcomingSlots.Select(slot => vm.CurrentPlaylist.Tracks[slot].Title).ToList();
+        Assert.Equal(new[] { "S1", "S2", "S4" }, upcoming.Order());
+    }
+
+    [Fact]
+    public void Next_with_shuffle_enabled_and_a_single_track_returns_that_track_without_hanging()
+    {
+        var only = T("Only");
+        var vm = MakeViewModel(new List<Track> { only }, out _);
+        vm.IsShuffleEnabled = true;
+        vm.Play(only);
+
+        vm.Next();
+
+        Assert.Same(only, vm.CurrentlyPlayingTrack);
+    }
+
+    // ── Duplicate queue entries (ARCHITECTURE-REVIEW 0.2) ─────────────────
+    //
+    // Track equality is by Id, so the same song queued twice - added to a
+    // playlist twice, or an album that repeats a track - is the same object in
+    // two slots. Every advance used to resolve the current track by IndexOf,
+    // which always found the first slot: playing the second copy then advanced
+    // from the first, so Next went backwards and auto-advance replayed the
+    // stretch in between. Play now carries the position the caller activated.
+
+    [Fact]
+    public void Next_from_the_second_of_two_identical_entries_advances_past_that_entry()
+    {
+        var dup = T("Dup");
+        var b = T("B");
+        var c = T("C");
+        var vm = MakeViewModel(new List<Track> { dup, b, dup, c }, out _);
+
+        vm.Play(dup, 2);
+        vm.Next();
+
+        Assert.Same(c, vm.CurrentlyPlayingTrack);
+    }
+
+    [Fact]
+    public void Previous_from_the_second_of_two_identical_entries_steps_back_from_that_entry()
+    {
+        var dup = T("Dup");
+        var b = T("B");
+        var vm = MakeViewModel(new List<Track> { dup, b, dup }, out _);
+
+        vm.Play(dup, 2);
+        vm.Previous();
+
+        Assert.Same(b, vm.CurrentlyPlayingTrack);
+    }
+
+    [Fact]
+    public void Play_arms_the_entry_after_the_activated_slot_as_upcoming()
+    {
+        var dup = T("Dup");
+        var b = T("B");
+        var c = T("C");
+        var vm = MakeViewModel(new List<Track> { dup, b, dup, c }, out var audio);
+
+        vm.Play(dup, 2);
+
+        Assert.Same(c, audio.LastUpcoming);
+    }
+
+    [Fact]
+    public void Play_without_a_position_still_resolves_the_first_matching_entry()
+    {
+        var dup = T("Dup");
+        var b = T("B");
+        var vm = MakeViewModel(new List<Track> { dup, b, dup }, out _);
+
+        vm.Play(dup);
+
+        Assert.Equal(0, vm.QueueIndex);
+    }
+
+    [Fact]
+    public void Play_ignores_a_position_that_does_not_hold_the_given_track()
+    {
+        // Callers hand over an index into the list they were displaying, which
+        // is only the queue because they re-anchored it first - a stale or
+        // mismatched one falls back to searching rather than anchoring to the
+        // wrong song entirely.
+        var a = T("A");
+        var b = T("B");
+        var vm = MakeViewModel(new List<Track> { a, b }, out _);
+
+        vm.Play(b, 0);
+
+        Assert.Equal(1, vm.QueueIndex);
+        Assert.Same(b, vm.CurrentlyPlayingTrack);
+    }
+
+    [Fact]
+    public void Replacing_the_queue_under_a_playing_track_re_resolves_its_position()
+    {
+        var a = T("A");
+        var b = T("B");
+        var c = T("C");
+        var vm = MakeViewModel(new List<Track> { a, b, c }, out _);
+        vm.Play(c, 2);
+
+        vm.SetCurrentPlaylist(new Playlist("Other", new List<Track> { c, a }));
+
+        Assert.Equal(0, vm.QueueIndex);
+        vm.Next();
+        Assert.Same(a, vm.CurrentlyPlayingTrack);
+    }
+
+    [Fact]
+    public void Shuffle_over_a_queue_of_identical_entries_still_advances()
+    {
+        // The re-roll excludes the current *slot*, not the current track -
+        // excluding by value here would never find a candidate and spin
+        // forever.
+        var dup = T("Dup");
+        var vm = MakeViewModel(new List<Track> { dup, dup, dup }, out _);
+        vm.IsShuffleEnabled = true;
+        vm.Play(dup, 0);
+
+        vm.Next();
+
+        Assert.Same(dup, vm.CurrentlyPlayingTrack);
+        Assert.NotEqual(0, vm.QueueIndex);
+    }
+
+    [Fact]
+    public void Previous_moves_to_the_preceding_track_in_playlist_order()
+    {
+        var a = T("A");
+        var b = T("B");
+        var vm = MakeViewModel(new List<Track> { a, b }, out _);
+        vm.Play(b);
+
+        vm.Previous();
+
+        Assert.Same(a, vm.CurrentlyPlayingTrack);
+    }
+
+    [Fact]
+    public void Previous_a_few_seconds_into_a_track_rewinds_it_instead_of_stepping_back()
+    {
+        var a = T("A");
+        var b = T("B");
+        var vm = MakeViewModel(new List<Track> { a, b }, out var audio);
+        vm.Play(b);
+        audio.Time = 45_000;
+        audio.Position = 0.3f;
+
+        vm.Previous();
+
+        Assert.Same(b, vm.CurrentlyPlayingTrack);
+        Assert.Same(b, audio.LastPlayed);
+        Assert.Equal(0f, audio.Position);
+    }
+
+    [Fact]
+    public void Previous_close_to_the_start_of_a_track_steps_back_a_track()
+    {
+        var a = T("A");
+        var b = T("B");
+        var vm = MakeViewModel(new List<Track> { a, b }, out var audio);
+        vm.Play(b);
+        audio.Time = 2_000;
+
+        vm.Previous();
+
+        Assert.Same(a, vm.CurrentlyPlayingTrack);
+    }
+
+    [Fact]
+    public void Previous_at_the_start_of_the_playlist_does_not_wrap_to_the_last_track()
+    {
+        // Matches PlaylistControlViewModel.GetPreviousEntry - unlike
+        // Next() wrapping forward, Previous() at track 0 stays put rather
+        // than wrapping to the end.
+        var a = T("A");
+        var b = T("B");
+        var vm = MakeViewModel(new List<Track> { a, b }, out _);
+        vm.Play(a);
+
+        vm.Previous();
+
+        Assert.Same(a, vm.CurrentlyPlayingTrack);
+    }
+
+    [Fact]
+    public void Previous_arms_the_track_after_the_new_current_track_as_upcoming()
+    {
+        var a = T("A");
+        var b = T("B");
+        var c = T("C");
+        var vm = MakeViewModel(new List<Track> { a, b, c }, out var audio);
+        vm.Play(c);
+
+        vm.Previous();
+
+        Assert.Same(c, audio.LastUpcoming);
+    }
+
+    [Fact]
+    public void Previous_before_anything_has_played_does_nothing()
+    {
+        var a = T("A");
+        var b = T("B");
+        var vm = MakeViewModel(new List<Track> { a, b }, out var audio);
+
+        vm.Previous();
+
+        Assert.Null(vm.CurrentlyPlayingTrack);
+        Assert.Null(audio.LastPlayed);
+    }
+}

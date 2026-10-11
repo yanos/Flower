@@ -44,25 +44,52 @@ public class MusicListPanel : Panel
     public MusicListPanel(ColumnManager? columnManager = null)
     {
         _columnManager = columnManager ?? Ioc.Default.GetService<ColumnManager>()!;
+    }
 
-        // Column reorder/hide-show changes the set of visible columns (and
-        // hence total content width); resize changes width directly. Either
-        // one can turn a horizontal scrollbar on/off, so both must re-measure.
-        _columnManager.ColumnsChanged += (_, _) =>
-        {
-            // Hiding the art column removes the reason for phantom rows, and
-            // showing it brings them back.
-            BuildSlots();
-            RefreshActiveSet();
-            InvalidateMeasure();
-            InvalidateArrange();
-        };
+    // Subscribed to the app-wide ColumnManager only while attached, so a panel
+    // thrown away is not kept alive and re-laid-out by it - see MusicListView's
+    // own OnAttachedToVisualTree. A panel that was away catches up on return.
+    private bool _missedColumnChanges;
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        _columnManager.ColumnsChanged += OnColumnsChanged;
         foreach (var col in _columnManager.Columns)
-            col.PropertyChanged += (_, e) =>
-            {
-                if (e.PropertyName == nameof(MusicColumnDefinition.Width))
-                    InvalidateMeasure();
-            };
+            col.PropertyChanged += OnColumnPropertyChanged;
+        if (_missedColumnChanges)
+        {
+            _missedColumnChanges = false;
+            OnColumnsChanged(this, EventArgs.Empty);
+        }
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        _columnManager.ColumnsChanged -= OnColumnsChanged;
+        foreach (var col in _columnManager.Columns)
+            col.PropertyChanged -= OnColumnPropertyChanged;
+        _missedColumnChanges = true;
+    }
+
+    // Column reorder/hide-show changes the set of visible columns (and hence
+    // total content width); resize changes width directly. Either one can turn
+    // a horizontal scrollbar on/off, so both must re-measure.
+    private void OnColumnsChanged(object? sender, EventArgs e)
+    {
+        // Hiding the art column removes the reason for phantom rows, and
+        // showing it brings them back.
+        BuildSlots();
+        RefreshActiveSet();
+        InvalidateMeasure();
+        InvalidateArrange();
+    }
+
+    private void OnColumnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MusicColumnDefinition.Width))
+            InvalidateMeasure();
     }
 
     // Full-size art is ArtMaxSize plus the art cell's 2px top margin: 78px,

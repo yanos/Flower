@@ -1,0 +1,466 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Headless;
+using Avalonia.Headless.XUnit;
+using Avalonia.Input;
+using Avalonia.LogicalTree;
+using Avalonia.Media;
+using Avalonia.Threading;
+
+using Flower.Controls;
+using Flower.Models;
+using Flower.Services;
+using Flower.Tests.TestSupport;
+using Flower.ViewModels.Mobile;
+using Flower.Views.Mobile.Screens;
+
+using Xunit;
+
+namespace Flower.Tests.Controls;
+
+// docs/ARCHITECTURE-REVIEW.md §5.8 / §5.9: ScreenStackPanel's swipe state
+// machine, driven through a shown headless window's real input pipeline
+// rather than by calling its private handlers, so the two-stage detection
+// (direction decided early at EarlyCommitThreshold, go/no-go decided on
+// release at SwipeThreshold), the explicit pointer capture, and the live
+// interactive drag are all exercised as gestures.
+//
+// The panel hosts real screen controls built from a real MobileMainViewModel
+// (see MainViewModelHarness), because the interactive path only engages when
+// there is genuinely something to reveal - PeekOneBack/PeekOneForward have to
+// be real frames with real controls behind them.
+[Collection("PlatformDataDirectory")]
+public class ScreenStackPanelSwipeTests : PinnedDataDirectory
+{
+    private const double PanelWidth = 400;
+
+    // Comfortably past EarlyCommitThreshold (18) and SwipeThreshold (60).
+    private const double PastThreshold = 140;
+
+    // Past EarlyCommitThreshold, so the gesture is recognised and captured,
+    // but under SwipeThreshold, so release must cancel rather than commit.
+    private const double UnderThreshold = 30;
+
+    private sealed class Harness : IDisposable
+    {
+        public Window Window { get; }
+        public ScreenStackPanel Panel { get; }
+        public MobileMainViewModel Vm => _vm.Mobile;
+
+        // Held so it can be disposed with the window: the MainViewModel this
+        // mobile shell wraps starts a periodic log-push DispatcherTimer that
+        // would otherwise keep ticking for the rest of the run - see
+        // MainViewModelHarness.Parts.
+        private readonly MainViewModelHarness.MobileParts _vm;
+
+        public Harness()
+        {
+            var tracks = Enumerable.Range(0, 8).Select(i => new Track
+            {
+                Title = $"Track {i}", Path = $"/music/{i}.mp3", Album = $"Album {i / 4}", Artists = "An Artist",
+            }).ToList();
+
+            _vm   = MainViewModelHarness.BuildMobile(new Library(tracks), new MainPlaylist(tracks));
+            // Transparent (not null) background purely so the panel is
+            // hit-testable here. In the app each screen paints its own opaque
+            // AppBackgroundBrush, but that is an App.axaml resource and this
+            // suite runs on a bare Application, so it resolves to nothing and
+            // no pointer event would ever reach the panel. Nothing about the
+            // gesture itself is changed by this - the panel's own handlers are
+            // Tunnel with handledEventsToo, so they see the event either way.
+            Panel = new ScreenStackPanel { DataContext = Vm, Background = Brushes.Transparent };
+            Window = new Window { Width = PanelWidth, Height = 700, Content = Panel };
+            Window.Show();
+            Pump();
+        }
+
+        public static void Pump(int milliseconds = 60)
+        {
+            using var cts = new CancellationTokenSource(milliseconds);
+            Dispatcher.UIThread.MainLoop(cts.Token);
+        }
+
+        // Vertical centre of the panel, well clear of any header.
+        private static Point At(double x) => new(x, 400);
+
+        public void Press(double x) => Window.MouseDown(At(x), MouseButton.Left);
+        public void Move(double x)  => Window.MouseMove(At(x), RawInputModifiers.LeftMouseButton);
+        public void Release(double x) => Window.MouseUp(At(x), MouseButton.Left);
+
+        // One whole gesture: press at 200, drag by `dx` in a few steps, release.
+        public void Swipe(double dx, bool release = true)
+        {
+            const double startX = 200;
+            Press(startX);
+            for (var i = 1; i <= 4; i++)
+                Move(startX + dx * i / 4);
+            if (release)
+                Release(startX + dx);
+            Dispatcher.UIThread.RunJobs();
+        }
+
+        // A drag that is mostly vertical - an ordinary scroll, not a swipe.
+        // Deliberately long enough horizontally (100px, past SwipeThreshold) to
+        // have committed had it been mistaken for a swipe - it is rejected on
+        // the dx-vs-dy ratio alone, not for being short.
+        public void DragVertically()
+        {
+            Window.MouseDown(new Point(150, 100), MouseButton.Left);
+            Window.MouseMove(new Point(175, 250), RawInputModifiers.LeftMouseButton);
+            Window.MouseMove(new Point(220, 400), RawInputModifiers.LeftMouseButton);
+            Window.MouseMove(new Point(250, 550), RawInputModifiers.LeftMouseButton);
+            Window.MouseUp(new Point(250, 550), MouseButton.Left);
+            Dispatcher.UIThread.RunJobs();
+        }
+
+        // X translation of the topmost (current) slot - what the live drag moves.
+        public double CurrentSlotOffset()
+        {
+            var top = Panel.Children.LastOrDefault();
+            return top?.RenderTransform is TranslateTransform t ? t.X : 0;
+        }
+
+        // SelectedTab's setter is private - navigation goes through the same
+        // commands the View binds to, which is also what pushes history.
+        public void SelectTab(MobileTab tab)
+        {
+            Vm.SelectTabCommand.Execute(tab.ToString());
+            Pump();
+        }
+
+        // Drives a navigation the same way tapping into an album does, so
+        // there is a history entry to swipe back to.
+        public void DrillIn()
+        {
+            SelectTab(MobileTab.Albums);
+            Vm.SelectAlbumOrArtistCommand.Execute("Album 0");
+            Pump();
+        }
+
+        // Waits out ScreenStackPanel's 280ms commit easing plus its final
+        // navigation callback - until it has finished, not for a fixed time.
+        // This used to pump 600ms, which is twice the easing on a desktop and
+        // was not enough on a CI iOS simulator running under the interpreter:
+        // An_abandoned_right_swipe_cancels_and_springs_back caught the spring
+        // back mid-flight, 20.6px out. The easing unsubscribes from the clock
+        // in the same tick that runs the callback, so an idle clock is the
+        // finish line; the ceiling is only there to turn a stuck easing into a
+        // failure.
+        public void LetEasingFinish()
+        {
+            var deadline = Environment.TickCount64 + 10_000;
+            do
+            {
+                Pump(20);
+            }
+            while (AnimationClock.Current.SubscriberCount > 0 && Environment.TickCount64 < deadline);
+
+            Assert.Equal(0, AnimationClock.Current.SubscriberCount);
+
+            // Whatever that final callback posted.
+            Pump();
+        }
+
+        // The track list actually hosted by the topmost (current) slot, or
+        // null if that slot is hosting nothing - which is what an emptied
+        // screen looks like, its header being the slot's own.
+        public TrackListScreenView? CurrentTrackList() =>
+            Panel.Children.LastOrDefault()?.GetLogicalDescendants().OfType<TrackListScreenView>().FirstOrDefault();
+
+        // Several tests here assert what they came for partway through the
+        // 280ms commit easing and return without waiting it out. That easing
+        // holds a subscription on the process-wide AnimationClock, and nothing
+        // pumps the dispatcher between tests - so it does not merely finish
+        // late, it never finishes at all, and the clock's 60Hz timer goes on
+        // ticking for the rest of the assembly.
+        //
+        // Whether that is fatal is pure luck of ordering. Any following test
+        // pumps the pending easing to completion as a side effect of its own
+        // waiting, so only the test that happens to run *last* leaves the clock
+        // alive for HeadlessSessionWarmup's end-of-run backstop to find - and
+        // that failure reads as the suite exiting non-zero with 0 failed tests
+        // and no message, on one platform and not another.
+        //
+        // ScreenStackPanelEntranceTests' harness pumps a flat 600ms here for
+        // the same reason. This drains rather than sleeping, because this class
+        // has twenty-odd tests and most of them end with nothing animating at
+        // all: an idle clock costs one check instead of six tenths of a second.
+        // The cap is only a backstop, and matches that sibling's budget.
+        private static void LetAnyEasingFinish()
+        {
+            var deadline = DateTime.UtcNow + TimeSpan.FromMilliseconds(600);
+            while (AnimationClock.Current.IsRunning && DateTime.UtcNow < deadline)
+                Pump(50);
+        }
+
+        public void Dispose()
+        {
+            LetAnyEasingFinish();
+            Window.Close();
+            _vm.Dispose();
+        }
+    }
+
+    // ── Slot roles ────────────────────────────────────────────────────────────
+
+    // A history entry naming the screen just landed on resolves, through
+    // ScreenControlFactory's per-ScopeKey cache, to the very control that
+    // screen is already using - and a Control has one visual parent, so
+    // wrapping it as "one back" pulls it out of the current slot, which is
+    // then left hosting nothing at all. The header survives (it belongs to the
+    // slot), so what the user sees is a title and a back arrow over an empty
+    // screen. Reached in ordinary use by tapping the Now Playing sheet's album
+    // art while already on that album - and again on the way back out, the
+    // duplicate having moved to the forward stack.
+    [AvaloniaFact]
+    public void A_history_entry_for_the_current_screen_does_not_empty_it()
+    {
+        using var h = new Harness();
+        h.DrillIn();
+        Assert.NotNull(h.CurrentTrackList());
+
+        // Drilling into the album already being shown - the shape of the
+        // duplicate, without depending on which caller produced it.
+        h.Vm.SelectAlbumOrArtistCommand.Execute("Album 0");
+        Harness.Pump();
+
+        var trackList = h.CurrentTrackList();
+        Assert.NotNull(trackList);
+        Assert.NotEmpty(trackList!.DisplayRows);
+    }
+
+    // The same duplicate on the forward stack, which is where going back puts
+    // it.
+    [AvaloniaFact]
+    public void Going_back_past_a_duplicate_leaves_the_destination_intact()
+    {
+        using var h = new Harness();
+        h.DrillIn();
+        h.Vm.SelectAlbumOrArtistCommand.Execute("Album 0");
+        Harness.Pump();
+
+        h.Vm.BackCommand.Execute(null);
+        Harness.Pump();
+
+        var trackList = h.CurrentTrackList();
+        Assert.NotNull(trackList);
+        Assert.NotEmpty(trackList!.DisplayRows);
+    }
+
+    // ── Direction detection ───────────────────────────────────────────────────
+
+    // A vertical/ambiguous drag is an ordinary scroll: tracking is abandoned so
+    // release does nothing, and the pointer is never captured, leaving whatever
+    // is underneath (a ScrollViewer/ListBox) to handle it normally.
+    [AvaloniaFact]
+    public void A_vertical_drag_is_not_a_swipe()
+    {
+        using var h = new Harness();
+        h.DrillIn();
+        Assert.True(h.Vm.CanGoBack);
+
+        h.DragVertically();
+        h.LetEasingFinish();
+
+        Assert.Equal(MobileScreenKind.TrackList, h.Vm.CurrentFrame.ScreenKind);
+        Assert.Equal(0, h.CurrentSlotOffset());
+    }
+
+    // Under EarlyCommitThreshold in both axes, nothing is decided at all.
+    [AvaloniaFact]
+    public void A_tiny_drag_never_becomes_a_gesture()
+    {
+        using var h = new Harness();
+        h.DrillIn();
+
+        h.Swipe(6, release: false);
+
+        // Nothing may move before EarlyCommitThreshold is crossed - after
+        // release a too-short drag would spring back to 0 either way, so this
+        // has to be observed mid-gesture.
+        Assert.Equal(0, h.CurrentSlotOffset());
+
+        h.Release(206);
+        h.LetEasingFinish();
+        Assert.Equal(MobileScreenKind.TrackList, h.Vm.CurrentFrame.ScreenKind);
+    }
+
+    // ── Interactive (reveal) swipes ───────────────────────────────────────────
+
+    // Past SwipeThreshold on release: commit. The navigation only happens once
+    // the outgoing screen has eased fully off-screen.
+    [AvaloniaFact]
+    public void A_committed_right_swipe_navigates_back()
+    {
+        using var h = new Harness();
+        h.DrillIn();
+        Assert.Equal(MobileScreenKind.TrackList, h.Vm.CurrentFrame.ScreenKind);
+
+        h.Swipe(PastThreshold);
+        h.LetEasingFinish();
+
+        Assert.Equal(MobileScreenKind.AlbumGrid, h.Vm.CurrentFrame.ScreenKind);
+        Assert.True(h.Vm.CanGoForward, "a completed back swipe should fill the redo stack");
+    }
+
+    // The navigation is deliberately deferred until the outgoing screen has
+    // eased fully off-screen, so the state change and the resync it triggers
+    // never race the animation still in flight.
+    [AvaloniaFact]
+    public void A_committed_swipe_does_not_navigate_until_the_easing_finishes()
+    {
+        using var h = new Harness();
+        h.DrillIn();
+
+        h.Swipe(PastThreshold);
+        Harness.Pump(40); // well inside the 280ms easing
+
+        Assert.Equal(MobileScreenKind.TrackList, h.Vm.CurrentFrame.ScreenKind);
+
+        h.LetEasingFinish();
+        Assert.Equal(MobileScreenKind.AlbumGrid, h.Vm.CurrentFrame.ScreenKind);
+    }
+
+    // Released under SwipeThreshold: cancel, and spring the current screen back
+    // to where it started rather than leaving it stranded mid-drag.
+    [AvaloniaFact]
+    public void An_abandoned_right_swipe_cancels_and_springs_back()
+    {
+        using var h = new Harness();
+        h.DrillIn();
+
+        h.Swipe(UnderThreshold);
+        h.LetEasingFinish();
+
+        Assert.Equal(MobileScreenKind.TrackList, h.Vm.CurrentFrame.ScreenKind);
+        Assert.Equal(0, h.CurrentSlotOffset(), 1);
+    }
+
+    // The browser-style redo counterpart: after going back, a left swipe goes
+    // forward again.
+    [AvaloniaFact]
+    public void A_committed_left_swipe_navigates_forward_again()
+    {
+        using var h = new Harness();
+        h.DrillIn();
+        h.Swipe(PastThreshold);
+        h.LetEasingFinish();
+        Assert.True(h.Vm.CanGoForward);
+        Assert.Equal(MobileScreenKind.AlbumGrid, h.Vm.CurrentFrame.ScreenKind);
+
+        h.Swipe(-PastThreshold);
+        h.LetEasingFinish();
+
+        Assert.False(h.Vm.CanGoForward);
+        Assert.Equal(MobileScreenKind.TrackList, h.Vm.CurrentFrame.ScreenKind);
+    }
+
+    // ── Discrete (tab-paging) swipes ──────────────────────────────────────────
+
+    // Nothing to reveal in that direction, so the gesture stays discrete: no
+    // live drag at all, and the decision is made purely on release.
+    [AvaloniaFact]
+    public void With_no_history_a_left_swipe_pages_to_the_next_tab_without_dragging()
+    {
+        using var h = new Harness();
+        h.SelectTab(MobileTab.Songs);
+        Assert.False(h.Vm.CanGoForward);
+
+        h.Swipe(-PastThreshold, release: false);
+        Assert.Equal(0, h.CurrentSlotOffset());
+
+        h.Release(200 - PastThreshold);
+        Harness.Pump();
+
+        Assert.Equal(MobileTab.Albums, h.Vm.SelectedTab);
+    }
+
+    // Switching tabs pushes a history entry of its own, so a right swipe after
+    // one retraces that jump rather than paging to the tab sitting to its left
+    // - the whole point of the history stack over the old algorithmic unwind.
+    [AvaloniaFact]
+    public void After_a_tab_switch_a_right_swipe_retraces_it_rather_than_paging()
+    {
+        using var h = new Harness();
+        h.SelectTab(MobileTab.Albums);
+        Assert.True(h.Vm.CanGoBack);
+
+        h.Swipe(PastThreshold);
+        h.LetEasingFinish();
+
+        Assert.Equal(MobileTab.Home, h.Vm.SelectedTab);
+    }
+
+    // Recognised as horizontal, but not far enough on release to page.
+    [AvaloniaFact]
+    public void A_short_discrete_swipe_does_not_page()
+    {
+        using var h = new Harness();
+        h.SelectTab(MobileTab.Songs);
+
+        h.Swipe(-UnderThreshold);
+        Harness.Pump();
+
+        Assert.Equal(MobileTab.Songs, h.Vm.SelectedTab);
+    }
+
+    // Tab paging stops at the ends rather than wrapping around.
+    [AvaloniaFact]
+    public void Tab_paging_stops_at_the_first_and_last_tab()
+    {
+        using var h = new Harness();
+        h.SelectTab(MobileTab.Home);
+
+        h.Swipe(PastThreshold);
+        Harness.Pump();
+        Assert.Equal(MobileTab.Home, h.Vm.SelectedTab);
+
+        h.SelectTab(MobileTab.Search);
+
+        h.Swipe(-PastThreshold);
+        Harness.Pump();
+        Assert.Equal(MobileTab.Search, h.Vm.SelectedTab);
+    }
+
+    // ── The fixed back button ─────────────────────────────────────────────────
+
+    // AnimateGoBack reuses the interactive commit path so the overlay back
+    // button plays the same slide-off as a swipe, rather than cutting straight
+    // to the destination.
+    [AvaloniaFact]
+    public void AnimateGoBack_navigates_back_through_the_same_commit_path()
+    {
+        using var h = new Harness();
+        h.DrillIn();
+
+        h.Panel.AnimateGoBack();
+        h.LetEasingFinish();
+
+        Assert.Equal(MobileScreenKind.AlbumGrid, h.Vm.CurrentFrame.ScreenKind);
+        Assert.True(h.Vm.CanGoForward);
+    }
+
+    // ── Forward entrance ──────────────────────────────────────────────────────
+
+    [AvaloniaFact]
+    public void AnimateGoBack_does_nothing_with_no_history()
+    {
+        using var h = new Harness();
+        var tab = h.Vm.SelectedTab;
+
+        h.Panel.AnimateGoBack();
+        h.LetEasingFinish();
+
+        Assert.Equal(tab, h.Vm.SelectedTab);
+        Assert.False(h.Vm.CanGoBack);
+        // Nothing was animated either: without the CanGoBack gate the current
+        // screen eases off to the right and, with no navigation to follow and
+        // reset its transform, is simply left stranded off-screen.
+        Assert.Equal(0, h.CurrentSlotOffset());
+    }
+}

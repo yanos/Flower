@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
@@ -14,6 +15,26 @@ public class TrackRowViewModel : DownloadIndicatorViewModel
     public const double RowHeight      = 34.0;
     public const double ArtColumnWidth = 80.0;
     public const double ArtMaxSize     = 76.0; // ArtColumnWidth - 2px margin each side
+
+    /// <summary>
+    /// Whether a list of rows should print each track's artist under its
+    /// title: not when every row would say the same name. One row is not a
+    /// repetition, so it keeps its artist - a single-track playlist would
+    /// otherwise lose its only mention of who it is by.
+    /// </summary>
+    public static bool ArtistIsWorthShowing(IReadOnlyList<TrackRowViewModel> rows)
+    {
+        if (rows.Count < 2)
+            return true;
+
+        var first = rows[0].Track.Artists;
+        for (int i = 1; i < rows.Count; i++)
+        {
+            if (!string.Equals(rows[i].Track.Artists, first, StringComparison.Ordinal))
+                return true;
+        }
+        return false;
+    }
 
     // ── Data ─────────────────────────────────────────────────────────────────
 

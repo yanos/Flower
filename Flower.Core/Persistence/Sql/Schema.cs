@@ -18,7 +18,7 @@ namespace Flower.Persistence.Sql
     //   TimeSpanTicksConverter's existing choice on the JSON side.
     public static class Schema
     {
-        public const string V1 = """
+        public const string Baseline = """
             CREATE TABLE tracks (
                 id                        TEXT    NOT NULL PRIMARY KEY,
 
@@ -92,7 +92,34 @@ namespace Flower.Persistence.Sql
                 album_id                  TEXT    NOT NULL DEFAULT '',
 
                 starred                   INTEGER NOT NULL DEFAULT 0,
-                starred_at                INTEGER
+                starred_at                INTEGER,
+
+                -- See Track.IsLocallyDownloaded and Track.OriginRelativePath.
+                is_locally_downloaded     INTEGER NOT NULL DEFAULT 0,
+                origin_relative_path      TEXT,
+
+                -- Sort tags, re-read by every rescan.
+                title_sort                TEXT,
+                artists_sort              TEXT,
+                composers_sort            TEXT,
+                encoder_profile           TEXT,
+
+                -- Flower's own per-track playback state, carried across
+                -- rescans by Library.CarryForwardMutableState.
+                remember_playback_position INTEGER NOT NULL DEFAULT 0,
+                resume_position_ticks     INTEGER,
+                ignore_when_shuffling     INTEGER NOT NULL DEFAULT 0,
+                volume_adjustment         INTEGER NOT NULL DEFAULT 0,
+
+                -- What a device remembers about its own files to keep a
+                -- server's copies in step with them - see Track.WithdrawnByOrigin,
+                -- MovedFromPath and OriginFileStamp.
+                withdrawn_by_origin       INTEGER NOT NULL DEFAULT 0,
+                moved_from_path           TEXT,
+                origin_file_stamp         TEXT,
+                tags_edited_at            INTEGER,
+                art_edited_at             INTEGER,
+                file_replaced_at          INTEGER
             );
 
             -- Not unique: two library entries for one path is not supposed to
@@ -138,7 +165,18 @@ namespace Flower.Persistence.Sql
                 -- the server.
                 comment    TEXT,
                 is_public  INTEGER NOT NULL DEFAULT 0,
-                created_at INTEGER NOT NULL DEFAULT 0
+                created_at INTEGER NOT NULL DEFAULT 0,
+
+                -- A smart playlist's rules, as SmartPlaylistRulesJson. NULL is
+                -- an ordinary, hand-picked playlist. playlist_tracks holds the
+                -- materialized rows for a smart one too, so no reader has to
+                -- evaluate anything to answer a request.
+                rules      TEXT,
+
+                -- Whose playlist this is, on a server shared by an owner and a
+                -- few listeners - see Listeners and Playlist.Listener. A
+                -- client's own database leaves it at the default for good.
+                listener   TEXT    NOT NULL DEFAULT 'owner'
             );
 
             -- track_id is deliberately NOT a foreign key into tracks: a rescan
@@ -153,126 +191,24 @@ namespace Flower.Persistence.Sql
                 PRIMARY KEY (playlist_id, position),
                 FOREIGN KEY (playlist_id) REFERENCES playlists (id) ON DELETE CASCADE
             );
-            """;
 
-        // See Track.IsLocallyDownloaded. Appended as a step rather than folded
-        // into V1 - which is what SqliteMigrations' own comment says to do while
-        // there are no released users, and what every schema change so far has
-        // done - because folding it in means an existing local flower.db has to
-        // be deleted to pick it up, and by now that database is the only place
-        // play counts, starred flags and playlists live. Preserving those is
-        // exactly what the runner is for; it just arrived one release earlier
-        // than expected.
-        public const string V2 = """
-            ALTER TABLE tracks ADD COLUMN is_locally_downloaded INTEGER NOT NULL DEFAULT 0;
-            """;
-
-        // See Track.OriginRelativePath. A step for the same reason V2 is one:
-        // on a client the whole library is synced rows, and deleting the
-        // database to pick up a folded-in column would take the play counts,
-        // starred flags and playlists with it. The column starts null on every
-        // existing row and refills on the next sync, which is a merge, not a
-        // rescan - MergeSyncedTracks writes it whether the track is still a
-        // placeholder or already downloaded.
-        public const string V3 = """
-            ALTER TABLE tracks ADD COLUMN origin_relative_path TEXT;
-            """;
-
-        // Track Info's Options tab, in two halves that happen to arrive
-        // together. title_sort/artists_sort/composers_sort complete the set
-        // album_sort was already half of - all four are tags, re-read by every
-        // rescan, so an existing row's null refills by itself. The remaining
-        // four are Flower's own per-track playback state, carried across
-        // rescans by Library.CarryForwardMutableState and defaulting to "behave
-        // exactly as before" - which is what makes adding them to live rows
-        // safe without a backfill.
-        public const string V4 = """
-            ALTER TABLE tracks ADD COLUMN title_sort                 TEXT;
-            ALTER TABLE tracks ADD COLUMN artists_sort               TEXT;
-            ALTER TABLE tracks ADD COLUMN composers_sort             TEXT;
-            ALTER TABLE tracks ADD COLUMN remember_playback_position INTEGER NOT NULL DEFAULT 0;
-            ALTER TABLE tracks ADD COLUMN resume_position_ticks      INTEGER;
-            ALTER TABLE tracks ADD COLUMN ignore_when_shuffling      INTEGER NOT NULL DEFAULT 0;
-            ALTER TABLE tracks ADD COLUMN volume_adjustment          INTEGER NOT NULL DEFAULT 0;
-            """;
-
-        // EncoderProfile was initially appended to V4 while that migration was
-        // being developed. Databases already stamped as version 4 therefore
-        // never received it: migrations are deliberately never re-run. Keep
-        // V4 exactly as it was first released and append this corrective step
-        // instead, preserving every existing library's play counts, stars and
-        // playlists.
-        public const string V5 = """
-            ALTER TABLE tracks ADD COLUMN encoder_profile            TEXT;
-            """;
-
-        // Smart playlists (docs/SMART-PLAYLIST-PLAN.md phase 2). The rules -
-        // SmartPlaylistRules as JSON, via SmartPlaylistRulesJson - are the
-        // whole of what a smart playlist *is*; NULL means an ordinary,
-        // hand-picked one, which is every playlist that exists today.
-        //
-        // A step rather than a fold into V1 for the usual reason (see
-        // SqliteMigrations' remarks): playlists are precisely the thing a
-        // delete-and-rescan cannot reproduce.
-        //
-        // playlist_tracks keeps holding the materialized rows for a smart
-        // playlist too, so every reader - the sidebar, playback, the Subsonic
-        // surface, the track-shipping half of sync - stays exactly as it is
-        // and nothing has to evaluate anything to answer a request.
-        public const string V6 = """
-            ALTER TABLE playlists ADD COLUMN rules TEXT;
-            """;
-
-        // origin_album_art_hash became origin_album_art_id. The rename was made
-        // in V1 above, where every schema change so far has been made - but a
-        // rename is the one edit that cannot be folded in, because folding it
-        // only changes what a *fresh* database is created with. An existing one
-        // is stamped at 6 and never re-runs V1, so it kept the old column name
-        // while every query started asking for the new one, and the server died
-        // on the first read: "SQLite Error 1: no such column:
-        // origin_album_art_id".
-        //
-        // A column being added is invisible to an old database until the step
-        // runs; a column being renamed is a lie the old database is already
-        // telling. Which is the rule to take from this: fold in an addition,
-        // append a step for a rename, a drop or a retype.
-        //
-        // Guarded like V5, and for the same reason: V1 already creates the
-        // column under its new name, so on a fresh database this step would be
-        // renaming something that does not exist.
-        public const string V7 = """
-            ALTER TABLE tracks RENAME COLUMN origin_album_art_hash TO origin_album_art_id;
-            """;
-
-        // Files the user removed from the library while keeping them on disk
-        // (see Library.RemoveTracks). A rescan finds every file under the
-        // library folders, so without a record of the ones that were removed on
-        // purpose, the next scan would put them straight back. Keyed by path,
-        // because a path is the one thing a scan knows about a file before it
-        // has read it. A step rather than a fold into V1: it is a new table,
-        // and a database stamped at V7 would otherwise never get it.
-        public const string V8 = """
-            CREATE TABLE IF NOT EXISTS excluded_paths (
+            -- Files the user removed from the library while keeping them on
+            -- disk (see Library.RemoveTracks). A rescan finds every file under
+            -- the library folders, so without a record of the ones removed on
+            -- purpose the next scan would put them straight back. Keyed by
+            -- path, the one thing a scan knows about a file before reading it.
+            CREATE TABLE excluded_paths (
                 path        TEXT    NOT NULL PRIMARY KEY COLLATE NOCASE,
                 excluded_at INTEGER NOT NULL
             );
-            """;
 
-        // Songs that left the library, kept (see Library's RemovedTrack) so
-        // that one coming back - the file restored from the trash, a drive
-        // mounted again, an upload from another device - is the song it was
-        // rather than a new one: same id, same Date Added, same plays and
-        // star. Without the row all of that went with the track, and a server
-        // whose music folder was missing for one scan came back with every
-        // song added today and played never.
-        //
-        // The track itself is JSON rather than the fifty columns over again.
-        // Nothing queries a removed track by column - they are loaded once,
-        // matched in memory by path and by tags, and written back whole - so a
-        // second copy of the tracks table would be a second column list to
-        // keep in step for no reader.
-        public const string V9 = """
-            CREATE TABLE IF NOT EXISTS removed_tracks (
+            -- Songs that left the library, kept (see Library's RemovedTrack)
+            -- so that one coming back is the song it was - same id, Date
+            -- Added, plays and star - rather than a new one. The track itself
+            -- is JSON rather than the tracks table's columns over again:
+            -- nothing queries a removed track by column, they are loaded once,
+            -- matched in memory and written back whole.
+            CREATE TABLE removed_tracks (
                 id             TEXT    NOT NULL PRIMARY KEY,
                 removed_at     INTEGER NOT NULL,
                 owed_to_origin INTEGER NOT NULL DEFAULT 0,
@@ -283,33 +219,6 @@ namespace Flower.Persistence.Sql
                 -- the first kind and not the second (see RemovedTrack).
                 deliberate     INTEGER NOT NULL DEFAULT 0
             );
-            """;
-
-        // See Track.WithdrawnByOrigin, MovedFromPath and OriginFileStamp - what
-        // a device needs to remember about its own files to keep a server's
-        // copies in step with them. A step of its own, and guarded in
-        // SqliteMigrations the way V5 is, since columns this small are exactly
-        // what gets folded into V1 later.
-        public const string V10 = """
-            ALTER TABLE tracks ADD COLUMN withdrawn_by_origin INTEGER NOT NULL DEFAULT 0;
-            ALTER TABLE tracks ADD COLUMN moved_from_path     TEXT;
-            ALTER TABLE tracks ADD COLUMN origin_file_stamp   TEXT;
-            ALTER TABLE tracks ADD COLUMN tags_edited_at      INTEGER;
-            ALTER TABLE tracks ADD COLUMN art_edited_at       INTEGER;
-            ALTER TABLE tracks ADD COLUMN file_replaced_at    INTEGER;
-            """;
-
-        // Whose playlist this is, on a server shared by an owner and a few
-        // listeners - see Listeners and Playlist.Listener. Every existing row
-        // becomes the owner's: until now any paired device could rewrite any
-        // playlist, so who made one was never recorded, and the owner is the
-        // only listener all of them can safely be said to belong to. A
-        // client's own database leaves the column at that default for good.
-        //
-        // A step, and guarded like V10, for the reason V6 gave: playlists are
-        // the one thing a delete-and-rescan cannot bring back.
-        public const string V11 = """
-            ALTER TABLE playlists ADD COLUMN listener TEXT NOT NULL DEFAULT 'owner';
             """;
     }
 }

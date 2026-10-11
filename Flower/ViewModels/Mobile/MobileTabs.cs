@@ -33,7 +33,7 @@ public static class MobileTabs
 
     // What the oval holds at full size with every label on one line on a
     // 375px phone. Past it the tabs are drawn smaller (Button.tab.compact in
-    // MobileMainView.axaml) - MobileTabBarLayoutTests measures both.
+    // MobileMainView.axaml).
     public const int RoomyShown = 6;
 
     // A saved choice, cleaned: names that are no longer tabs and repeats are

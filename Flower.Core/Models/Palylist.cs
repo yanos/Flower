@@ -33,7 +33,7 @@ namespace Flower.Models
         private string? _comment;
 
         // Subsonic's playlist attributes, and the reason this model needed
-        // widening at all: they are columns in Schema.V1, so while the client
+        // widening at all: they are columns in Schema.Baseline, so while the client
         // had no field for them they could only be written from outside
         // Flower.Core - which is what forced the server to keep a second,
         // SQL-per-request view of the same playlists. With a field here, one

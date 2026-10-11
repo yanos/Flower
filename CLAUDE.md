@@ -58,6 +58,7 @@ The app is a WIP with no released users and no data anyone else depends on. **Ba
 - `AUTO-UPDATE-PLAN.md` — desktop auto-update via Velopack, and the versioning (MinVer, git tags) it consumes. Cutting the first `v*` tag is Phase 1's one remaining task and gates the rest.
 - `CRASH-REPORTING-PLAN.md` — crash reporting options.
 - `STORE-DEPLOYMENT-PLAN.md` — submitting iOS/Android to app stores, and the real-device verification still owed before that.
+- `TEST-SUITE-PLAN.md` — done (October 2026). The test-suite review: what was dropped (layout, pixel and colour assertions; trivial pass-throughs; duplicates; migration tests, with the migrations collapsed into one schema baseline) and why, the fence cases and how each was decided, and the folder layout.
 - `PERFORMANCE-TRACKING-PLAN.md` — CI benchmark regression tracking + runtime timing.
 - `STREAMING-SERVICES-PLAN.md` — feasibility of streaming Spotify/Apple Music/YouTube Music.
 
@@ -149,6 +150,22 @@ instance never writes to `~/Library/Application Support/Flower/Server`.
 
 `Tests/Flower.Tests/` covers `TrackListBuilder`, `Playlist`, `Library`, `PlaylistControlViewModel`, the JSON stores, and the gapless audio pipeline (`GaplessRingBuffer`, `FfmpegTrackDecoder`, `GaplessCoordinator`, `GaplessAudioManager`) — xUnit tests against pure logic plus, for the gapless pipeline specifically, layered coverage: fake-decoder unit tests (fast, no native decoder), real-decode tests against synthetic WAV fixtures generated at test time (tagged `RequiresFfmpeg`, slower, and decoding through the same FFAudio.NET payload the app ships), and full-pipeline playlist integration tests (`PlaylistPlaybackIntegrationTests`) using `Avalonia.Headless` for the `Dispatcher`-driven auto-advance path. `Tests/Flower.Tests/TestSupport/` holds the shared fakes (`FakeTrackDecoder`, `FakeAudioSink`, `FakeAudioManager`) and fixture generators (`SyntheticWav`, now in `Flower.DeviceChecks`) these all build on.
 
+**What gets a test, and where it goes** (`docs/TEST-SUITE-PLAN.md`). The suite is
+folders by area, namespace following folder: `Audio/`, `Decoding/`, `Playback/`,
+`MusicLibrary/` (`Import/`, `Art/`), `Playlists/` (`Smart/`), `Persistence/`,
+`Sync/` (`Scenarios/`), `Network/` (`Security/`), `Browser/`, `Logging/`,
+`ViewModels/` (`Mobile/`, `Home/`, `Settings/`), `Controls/`, `Views/`, `AppShell/`.
+`MusicLibrary` and `AppShell` rather than `Library` and `App`, because a folder's
+namespace named after a type shadows that type in every test file. One class per
+file. No test asserts how the UI looks - colours, pixels, fonts, sizes, margins,
+where one element sits relative to another - so moving things around never means
+editing tests. Navigation and UI behaviour are tested on view models; a headless
+window (`Views/`) is only for what lives in the view and nowhere else (pointer
+capture, focus, a binding's echo), and a custom control's own logic belongs in a
+class it delegates to (`TrackRowSelection`, `NameSelectionDragGesture`) where a
+plain test can reach it. No trivial tests: pass-throughs, list wrappers and
+"forwards the call" are not worth their upkeep.
+
 `GaplessCoordinator` used to give the armed (decode-ahead) role its own independent LibVLC core, because two `MediaPlayer`s sharing one core silently dropped `OnDrain`/`EndReached` under real decode load. That went out with LibVLC — two `FfmpegTrackDecoder`s share nothing to contend over. The bug that fix exposed did not: a fast handover racing `ArmAsync`'s own `PrepareAsync`, fixed in `ArmAsync`, and still what `GaplessCoordinatorRealDecodeTests`' class comment is about.
 
 Playback position (`GaplessAudioManager.Time`/`Position`, the seek bar) is driven off `GaplessCoordinator.CurrentTrackBytesProduced`, which is computed from the shared ring's actual bytes-*read* (real playback consumption), not a decoder's own `BytesProduced` (decode progress) — a decoder that finished decoding ahead before its track was promoted stops producing any new bytes at all, so a decode-side counter reads as permanently frozen at zero for that whole track. See `_currentTrackReadSplit`'s remarks on `GaplessCoordinator`.
@@ -182,9 +199,13 @@ AOT-compile. And it drives xunit's public runner pieces itself rather than
 `ConsoleRunner.EntryPoint`, which subscribes to `Console.CancelKeyPress` and
 throws `PlatformNotSupportedException` on iOS before running anything.
 
-`MusicListViewGestureTests` are excluded in that app: headless Avalonia layout
-and render under the simulator's interpreter took 1116s of a 1312s run. They
-pass there, just not in a time a push can afford. `FLOWER_TEST_ARGS` passes
+`MusicListViewGestureTests` used to be excluded in that app, having taken 1116s
+of a 1312s run. That was blamed on headless layout and render under the
+simulator, and was a leak: every track list ever built stayed subscribed to the
+app-wide `ColumnManager` and rebuilt itself on every column change, so each test
+paid for all the lists before it (`docs/TEST-SUITE-PLAN.md`). With the leak
+fixed the whole suite, those tests included, runs there in about 90s.
+`FLOWER_TEST_ARGS` passes
 extra xunit arguments through (`-class`, `-method`). The app always reports
 verbosely, so a run that hangs names the tests that started and never finished -
 the script prints those instead of the per-test lines, because the one hang so
@@ -474,7 +495,7 @@ Two consequences worth knowing before touching the render path. `OutputStage`'s 
 
 `MainView.axaml`: top bar (playlist controls, volume, seek/track info, search) → content (sidebar + optional drill-down sub-list + `MusicListView` track list) → status bar.
 
-`AppSettings.PlaybackControlsPlacement` (Settings > General, View > Playback Controls at Bottom) moves the transport, the seek bar and a one-line title/artist/album over it out of the top bar into the status bar, which then runs under the sidebar too and drops the song count, and puts the cover at the foot of the sidebar. Which grid cells those take is set by styles on `ContentGrid`, not on the elements, because a local value outranks a style; `PlaybackControlsPlacementTests` holds that down.
+`AppSettings.PlaybackControlsPlacement` (Settings > General, View > Playback Controls at Bottom) moves the transport, the seek bar and a one-line title/artist/album over it out of the top bar into the status bar, which then runs under the sidebar too and drops the song count, and puts the cover at the foot of the sidebar. Which grid cells those take is set by styles on `ContentGrid`, not on the elements, because a local value outranks a style.
 
 Keyboard shortcuts (all via `PlatformShortcuts.Primary`): `Space` play/pause, `Enter` play selected, `Cmd/Ctrl+I` track info, `Cmd/Ctrl+,` settings, `Cmd/Ctrl+L` scroll to now playing. Track-list shortcuts are tunnel-routed in `MainView.axaml.cs` so `MusicListView`'s own key handling doesn't swallow them.
 

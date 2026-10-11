@@ -596,7 +596,7 @@ namespace Flower.Persistence.Sql
             p["$last_played_at"].Value = (object?)track.LastPlayedAt?.UtcTicks ?? DBNull.Value;
             p["$date_added"].Value = track.DateAdded.UtcTicks;
             // Derived on write, never read back into a Track: these exist so
-            // Flower.Server can filter and index on them (see Schema.V1).
+            // Flower.Server can filter and index on them (see Schema.Baseline).
             // Recomputing here rather than storing whatever a caller passed
             // means they cannot go stale against a retagged album.
             var albumArtist = track.EffectiveAlbumArtist;
@@ -671,7 +671,7 @@ namespace Flower.Persistence.Sql
             // deliberately not read back: all three are derived from the tag
             // columns on write (Track.EffectiveAlbumArtist and CatalogIdentity)
             // and exist only so the server can group, index and filter on them.
-            // See Schema.V1.
+            // See Schema.Baseline.
             Starred = reader.GetInt64(44) != 0,
             StarredAt = reader.IsDBNull(45) ? null : new DateTimeOffset(reader.GetInt64(45), TimeSpan.Zero),
             IsLocallyDownloaded = reader.GetInt64(46) != 0,
