@@ -249,9 +249,9 @@ public class SmartPlaylistEvaluatorTests
         var tracks = new List<Track> { T(title: "Starred", starred: true), T(title: "Not") };
 
         Assert.Equal("Starred", Assert.Single(Evaluate(SmartPlaylistRules.MatchAll(
-            new SmartCondition(SmartField.Starred, SmartOperator.Is, new SmartValue.Bool(true))), tracks)).Title);
+            new SmartCondition(SmartField.Starred, SmartOperator.Is, new SmartValue.Flag(true))), tracks)).Title);
         Assert.Equal("Not", Assert.Single(Evaluate(SmartPlaylistRules.MatchAll(
-            new SmartCondition(SmartField.Starred, SmartOperator.IsNot, new SmartValue.Bool(true))), tracks)).Title);
+            new SmartCondition(SmartField.Starred, SmartOperator.IsNot, new SmartValue.Flag(true))), tracks)).Title);
     }
 
     [Fact]
@@ -410,7 +410,7 @@ public class SmartPlaylistEvaluatorTests
         var rules = SmartPlaylistRules.MatchAll(
             Is(SmartField.Genre, "Rock"),
             new SmartCondition(SmartField.DateAdded, SmartOperator.InTheLast, new SmartValue.Relative(30, RelativeUnit.Days)),
-            new SmartCondition(SmartField.Starred, SmartOperator.Is, new SmartValue.Bool(true)))
+            new SmartCondition(SmartField.Starred, SmartOperator.Is, new SmartValue.Flag(true)))
             with { Limit = new SmartLimit(25, LimitUnit.Items, LimitSelector.LeastRecentlyPlayed) };
 
         Assert.Empty(SmartPlaylistEvaluator.Validate(rules));

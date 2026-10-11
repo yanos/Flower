@@ -196,7 +196,7 @@ public class SmartPlaylistEditorViewModelTests
             [
                 new SmartCondition(SmartField.Genre, SmartOperator.Is, new SmartValue.Text("Jazz")),
                 new SmartCondition(SmartField.DateAdded, SmartOperator.InTheLast, new SmartValue.Relative(30, RelativeUnit.Days)),
-                new SmartCondition(SmartField.Starred, SmartOperator.Is, new SmartValue.Bool(true)),
+                new SmartCondition(SmartField.Starred, SmartOperator.Is, new SmartValue.Flag(true)),
             ],
             new SmartLimit(25, LimitUnit.Items, LimitSelector.LeastRecentlyPlayed),
             LiveUpdating: false);

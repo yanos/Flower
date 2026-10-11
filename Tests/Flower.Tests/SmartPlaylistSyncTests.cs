@@ -134,7 +134,7 @@ public class SmartPlaylistSyncTests
                 new SmartCondition(SmartField.Genre, SmartOperator.Is, new SmartValue.Text("Jazz")),
                 new SmartCondition(SmartField.DateAdded, SmartOperator.InTheLast, new SmartValue.Relative(30, RelativeUnit.Days)),
                 new SmartCondition(SmartField.Duration, SmartOperator.LessThan, new SmartValue.Duration(TimeSpan.FromMinutes(3))),
-                new SmartCondition(SmartField.Starred, SmartOperator.Is, new SmartValue.Bool(true)),
+                new SmartCondition(SmartField.Starred, SmartOperator.Is, new SmartValue.Flag(true)),
                 new SmartCondition(SmartField.Comment, SmartOperator.IsEmpty, SmartValue.None.Instance),
                 new SmartCondition(SmartField.Playlist, SmartOperator.IsNot, new SmartValue.PlaylistRef(Guid.NewGuid())),
                 new SmartCondition(SmartField.Year, SmartOperator.Between,

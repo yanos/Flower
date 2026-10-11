@@ -171,7 +171,7 @@ public static class SmartPlaylistEvaluator
             // "added before 2020" and "added before 3 months ago" are both
             // things a person writes.
             SmartValueKind.Date     => value is SmartValue.Date or SmartValue.Relative,
-            SmartValueKind.Bool     => value is SmartValue.Bool,
+            SmartValueKind.Bool     => value is SmartValue.Flag,
             SmartValueKind.Playlist => value is SmartValue.PlaylistRef,
             _ => false,
         };
@@ -341,7 +341,7 @@ public static class SmartPlaylistEvaluator
 
     private static bool MatchesBool(bool actual, SmartCondition condition)
     {
-        var expected = Expect<SmartValue.Bool>(condition).Value;
+        var expected = Expect<SmartValue.Flag>(condition).Value;
         return condition.Operator == SmartOperator.Is ? actual == expected : actual != expected;
     }
 

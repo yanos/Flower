@@ -339,7 +339,7 @@ public sealed class SmartConditionRowViewModel : ViewModelBase
                 _relativeAmount = relative.Amount;
                 _relativeUnit = AllRelativeUnits.First(u => u.Unit == relative.Unit);
                 break;
-            case SmartValue.Bool flag:
+            case SmartValue.Flag flag:
                 _boolValue = flag.Value ? BoolOptions[0] : BoolOptions[1];
                 break;
             case SmartValue.PlaylistRef reference:
@@ -461,7 +461,7 @@ public sealed class SmartConditionRowViewModel : ViewModelBase
                 return true;
 
             case SmartValueKind.Bool:
-                value = new SmartValue.Bool(BoolValue == BoolOptions[0]);
+                value = new SmartValue.Flag(BoolValue == BoolOptions[0]);
                 return true;
 
             case SmartValueKind.Playlist:

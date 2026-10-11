@@ -233,7 +233,7 @@ public class SmartPlaylistRefresherTests
         var track = T("A");
         var (library, _) = NewLibrary(track);
         var playlist = Smart("Starred", SmartPlaylistRules.MatchAll(
-            new SmartCondition(SmartField.Starred, SmartOperator.Is, new SmartValue.Bool(true))));
+            new SmartCondition(SmartField.Starred, SmartOperator.Is, new SmartValue.Flag(true))));
         library.ResetPlaylists([playlist]);
 
         using var refresher = Started(library);
@@ -252,7 +252,7 @@ public class SmartPlaylistRefresherTests
         var track = T("A");
         var (library, _) = NewLibrary(track);
         var playlist = Smart("Kept out of shuffle", SmartPlaylistRules.MatchAll(
-            new SmartCondition(SmartField.IgnoreWhenShuffling, SmartOperator.Is, new SmartValue.Bool(true))));
+            new SmartCondition(SmartField.IgnoreWhenShuffling, SmartOperator.Is, new SmartValue.Flag(true))));
         library.ResetPlaylists([playlist]);
 
         using var refresher = Started(library);

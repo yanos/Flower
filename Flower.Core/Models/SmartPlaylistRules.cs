@@ -189,7 +189,7 @@ public enum SmartOperator
 [JsonDerivedType(typeof(Duration), "duration")]
 [JsonDerivedType(typeof(Date), "date")]
 [JsonDerivedType(typeof(Relative), "relative")]
-[JsonDerivedType(typeof(Bool), "bool")]
+[JsonDerivedType(typeof(Flag), "bool")]
 [JsonDerivedType(typeof(PlaylistRef), "playlist")]
 [JsonDerivedType(typeof(Range), "range")]
 [JsonDerivedType(typeof(None), "none")]
@@ -213,7 +213,12 @@ public abstract record SmartValue
     // someone noticed it had not changed in a year.
     public sealed record Relative(int Amount, RelativeUnit Unit) : SmartValue;
 
-    public sealed record Bool(bool Value) : SmartValue;
+    // Not "Bool": NativeAOT's compiler names a generic instance by joining its
+    // arguments with underscores and calls System.Boolean "Bool", so an
+    // instance over (object, SmartValue, bool) and one over (object,
+    // SmartValue.Bool) came out as the same symbol and the iOS publish failed
+    // with a duplicate-key error inside ilc. "bool" on the wire is unchanged.
+    public sealed record Flag(bool Value) : SmartValue;
 
     public sealed record PlaylistRef(Guid PlaylistId) : SmartValue;
 

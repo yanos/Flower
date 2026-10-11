@@ -70,7 +70,7 @@ public class SmartPlaylistRulesJsonTests
         var condition = Assert.Single(rules.Conditions);
         Assert.Equal(SmartField.IsLocallyDownloaded, condition.Field);
         Assert.Equal(SmartOperator.Is, condition.Operator);
-        Assert.Equal(new SmartValue.Bool(true), condition.Value);
+        Assert.Equal(new SmartValue.Flag(true), condition.Value);
 
         // And it is rewritten in the readable form the next time it is saved.
         Assert.Contains("\"IsLocallyDownloaded\"", SmartPlaylistRulesJson.Write(rules));
@@ -86,7 +86,7 @@ public class SmartPlaylistRulesJsonTests
         new SmartValue.Duration(TimeSpan.FromSeconds(210)),
         new SmartValue.Date(new DateTimeOffset(2024, 3, 1, 12, 0, 0, TimeSpan.Zero)),
         new SmartValue.Relative(30, RelativeUnit.Days),
-        new SmartValue.Bool(true),
+        new SmartValue.Flag(true),
         new SmartValue.PlaylistRef(Guid.Parse("11111111-2222-3333-4444-555555555555")),
         new SmartValue.Range(new SmartValue.Number(1970), new SmartValue.Number(1979)),
         SmartValue.None.Instance,
