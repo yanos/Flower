@@ -19,6 +19,7 @@
                                   Opacity="0.6"
                                   VerticalAlignment="Center"/>
       <controls:TextInput Grid.Column="1"
+                          x:Name="Box"
                           Classes="inOval"
                           FontSize="14"
                           Text="{Binding $parent[local:FilterControl].FilterText}"

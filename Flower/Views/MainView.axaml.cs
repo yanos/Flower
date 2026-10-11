@@ -1558,6 +1558,18 @@ public partial class MainView : UserControl
             OpenTrackInfoForSelectedAlbums();
             e.Handled = true;
         }
+        else if (e.Key == Key.K && e.KeyModifiers == PlatformShortcuts.Primary)
+        {
+            FocusFilter();
+            e.Handled = true;
+        }
+    }
+
+    // Cmd/Ctrl+K: the page header's filter box, where the page has one.
+    public void FocusFilter()
+    {
+        var filter = this.GetVisualDescendants().OfType<UserControls.FilterControl>().FirstOrDefault(f => f.IsEffectivelyVisible);
+        filter?.FocusBox();
     }
 
     private void OnNavigateToTrackRequested(object? sender, Track track) => MusicList.ScrollToTrack(track);

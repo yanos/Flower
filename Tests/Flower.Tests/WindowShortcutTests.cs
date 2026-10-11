@@ -66,4 +66,23 @@ public class WindowShortcutTests : PinnedDataDirectory
         Assert.Equal(0, parts.Audio.ResumeCount);
         window.Close();
     }
+
+    // Cmd on the Mac, Ctrl elsewhere - PlatformShortcuts.Primary.
+    private static RawInputModifiers Primary =>
+        System.OperatingSystem.IsMacOS() ? RawInputModifiers.Meta : RawInputModifiers.Control;
+
+    [AvaloniaFact]
+    public void Cmd_K_puts_the_keyboard_in_the_page_filter()
+    {
+        var (window, view, parts) = Paused();
+        using var _p = parts;
+        window.Focus();
+
+        window.KeyPressQwerty(PhysicalKey.K, Primary);
+        Dispatcher.UIThread.RunJobs();
+
+        var focused = window.FocusManager?.GetFocusedElement() as Avalonia.Visual;
+        Assert.NotNull(focused?.FindAncestorOfType<Flower.UserControls.FilterControl>(includeSelf: true));
+        window.Close();
+    }
 }

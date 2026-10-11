@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
+using Avalonia.Input;
 
 namespace Flower.UserControls
 {
@@ -29,6 +30,14 @@ namespace Flower.UserControls
         public FilterControl()
         {
             InitializeComponent();
+        }
+
+        // Cmd/Ctrl+K: the box takes the keyboard with what is in it
+        // selected, so typing replaces the filter rather than adding to it.
+        public void FocusBox()
+        {
+            Box.Focus(NavigationMethod.Tab);
+            Box.SelectAll();
         }
     }
 }
