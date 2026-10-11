@@ -51,7 +51,7 @@ jobs:
           - name: build Flower.MacOS (macos-27)
             kind: macos-build
             runner: xcode-27
-          - name: build Flower.iOS, Flower.DeviceChecks.iOS (ios-27)
+          - name: build Flower.iOS, run decode checks with NativeAOT (ios-27)
             kind: ios-build
             runner: xcode-27
           - name: build Flower.Android (android-36)
@@ -180,6 +180,14 @@ jobs:
       # Every iOS build here is Release - optimized and compiled ahead of time
       # - even though that is most of this leg's time. It is what a release
       # runs, and the point of running anything on iOS is to run what ships.
+      #
+      # This leg is the one exception to that: the app ships on NativeAOT
+      # (scripts/deploy-ios-device.sh), and the suite runs on Mono, because
+      # it cannot run anywhere else yet. xunit finds tests by reflection over
+      # the assembly's file, which a NativeAOT app does not have, and the
+      # edition of xunit built for NativeAOT (xunit.v3.aot) is not one
+      # Avalonia.Headless.XUnit - [AvaloniaFact], 658 of these tests - is built
+      # against. The other iOS leg runs the decode checks on NativeAOT.
       - name: Install iOS workload
         if: matrix.kind == 'ios-test' || matrix.kind == 'ios-build'
         run: dotnet workload install ios
@@ -210,17 +218,28 @@ jobs:
       # KeychainSecureStore needs - which a simulator build still has to sign
       # in. An empty Entitlements.plist needed no signature at all, which is
       # why this only started failing when the group was added.
+      #
+      # On NativeAOT, the runtime the app ships on (scripts/deploy-ios-device.sh,
+      # FlowerNativeAot in Flower.iOS.csproj). The SDK compiles NativeAOT only on
+      # its publish path and refuses to publish for a simulator, so this is a
+      # build told it is publishing (_IsPublishing) - the same compile, trim
+      # and link a phone gets, for the simulator's architecture.
       - name: Build Flower.iOS
         if: matrix.kind == 'ios-build'
-        run: dotnet build Flower.iOS/Flower.iOS.csproj --configuration Release -p:RuntimeIdentifier=iossimulator-arm64 -p:CodesignKey=-
+        run: dotnet build Flower.iOS/Flower.iOS.csproj --configuration Release -p:RuntimeIdentifier=iossimulator-arm64 -p:CodesignKey=- -p:FlowerNativeAot=true -p:_IsPublishing=true
 
-      # The decode-checks runner no leg runs any more - the iOS test leg runs
-      # the same checks inside the suite - but it is still the one to put on a physical phone
-      # (no Avalonia, readable on screen with no cable), and a project CI never
-      # compiles is a project that silently rots.
-      - name: Build Flower.DeviceChecks.iOS
+      # The decode checks, on NativeAOT on a simulator: the iOS test leg runs
+      # the same checks inside the suite, but on Mono (see above), and NativeAOT
+      # is where a P/Invoke that will not resolve or a type the trimmer took
+      # away shows up - the first NativeAOT launch on a phone died on exactly
+      # the former. It is also the runner to put on a physical phone (no
+      # Avalonia, readable on screen with no cable), so running it here keeps
+      # it from rotting as well.
+      - name: Run decode checks on a simulator
         if: matrix.kind == 'ios-build'
-        run: dotnet build Tests/Flower.DeviceChecks.iOS/Flower.DeviceChecks.iOS.csproj --configuration Release
+        env:
+          IOS_SIMULATOR_RUNTIME: '27'
+        run: scripts/ios-device-checks.sh
 
       - name: Install Android workload
         if: matrix.kind == 'android-build'

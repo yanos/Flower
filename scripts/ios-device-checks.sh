@@ -11,6 +11,15 @@
 #   scripts/ios-device-checks.sh                           # newest iPhone, newest iOS
 #   scripts/ios-device-checks.sh "iPhone 17 Pro"           # by name
 #   IOS_SIMULATOR_RUNTIME=26 scripts/ios-device-checks.sh  # newest iPhone on iOS 26
+#   scripts/ios-device-checks.sh --mono                    # on Mono rather than NativeAOT
+#
+# On NativeAOT by default, the runtime Flower.iOS ships on (see
+# scripts/deploy-ios-device.sh): .NET's own runtime and garbage collector,
+# with every assembly trimmed - which is exactly where a P/Invoke that will not
+# resolve, or a type the trimmer took away, shows up, and Mono shows neither.
+# The SDK compiles NativeAOT only on its publish path and refuses to publish
+# for a simulator, so this is a build told it is publishing (_IsPublishing).
+# --mono builds for Mono instead.
 #
 # The simulator plumbing - boot, clean build, install, read the transcript -
 # is scripts/lib/ios-simulator.sh, shared with scripts/ios-tests.sh.
@@ -22,7 +31,26 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 . scripts/lib/ios-simulator.sh
 
-ios_simulator_boot "${1:-}"
+IOS_SIMULATOR_BUILD_ARGS="-p:FlowerNativeAot=true -p:_IsPublishing=true"
+SIMULATOR=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --mono)
+      IOS_SIMULATOR_BUILD_ARGS=""
+      ;;
+    -*)
+      echo "Unknown option: $1" >&2
+      echo "Usage: $(basename "$0") [--mono] [simulator name]" >&2
+      exit 1
+      ;;
+    *)
+      SIMULATOR="$1"
+      ;;
+  esac
+  shift
+done
+
+ios_simulator_boot "$SIMULATOR"
 
 ios_simulator_build Tests/Flower.DeviceChecks.iOS/Flower.DeviceChecks.iOS.csproj \
   Tests/Flower.DeviceChecks.iOS Tests/Flower.DeviceChecks Flower

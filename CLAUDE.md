@@ -306,9 +306,15 @@ and probes when even that hint will not open the stream.
 
 CI runs these per-OS in the three desktop test legs - they need
 nothing the fast suite does not already build - and on an iOS Simulator inside
-`build and test Flower.Tests (ios-27)`, which runs the whole suite there (see "The suite on iOS" above);
-`Flower.DeviceChecks.iOS` is only compiled in CI now, and stays the runner to
-put on a physical phone. The mobile two are a head apiece
+`build and test Flower.Tests (ios-27)`, which runs the whole suite there on Mono (see "The suite on iOS" above),
+and again on NativeAOT - the runtime the app ships on - in
+`build Flower.iOS, run decode checks with NativeAOT (ios-27)`, through
+`Flower.DeviceChecks.iOS`, which is also the runner to put on a physical phone.
+The suite itself cannot run on NativeAOT yet: xunit finds tests by reflection
+over the assembly's file, which a NativeAOT app does not have, and
+Avalonia.Headless.XUnit (`[AvaloniaFact]`) is not built against xunit's
+NativeAOT edition. `scripts/ios-device-checks.sh` builds NativeAOT by default
+and takes `--mono`. The mobile two are a head apiece
 (`Flower.DeviceChecks.iOS`, `Flower.DeviceChecks.Android`) driven by a script
 apiece, written to be twins: a runner with no Avalonia, no audio output and no
 UI beyond a text view, reporting the same `FLOWER-CHECK`/`FLOWER-CHECKS` lines

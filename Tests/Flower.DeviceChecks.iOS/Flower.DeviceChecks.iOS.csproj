@@ -34,7 +34,18 @@
 
     <ApplicationVersion>1</ApplicationVersion>
     <NoWarn>$(NoWarn);IL2104</NoWarn>
+
+    <!-- NativeAOT, as Flower.iOS ships it - see FlowerNativeAot there, and
+         scripts/ios-device-checks.sh, which builds this way by default. -->
+    <PublishAot Condition="'$(FlowerNativeAot)' == 'true'">true</PublishAot>
   </PropertyGroup>
+
+  <!-- The façade's P/Invokes compiled as direct calls, as Flower.iOS's are:
+       under NativeAOT the lookup by name that would otherwise find it does
+       not look inside Frameworks/. -->
+  <ItemGroup Condition="'$(FlowerNativeAot)' == 'true'">
+    <DirectPInvoke Include="ffaudio" />
+  </ItemGroup>
 
   <!-- The shell shared with Flower.Tests.iOS: the transcript contract, and
        the scene delegate iOS 27 requires. -->

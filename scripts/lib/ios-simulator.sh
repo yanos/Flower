@@ -56,6 +56,9 @@ ios_simulator_boot() {
 
 # Builds a runner from clean, in Release: ios_simulator_build <project> <dir to clean>...
 #
+# IOS_SIMULATOR_BUILD_ARGS, when set, is passed on to `dotnet build` - how a
+# script asks for NativeAOT (see scripts/ios-device-checks.sh).
+#
 # Release because it is optimized and compiled ahead of time, which is what a
 # release runs, and running anything on iOS is only worth it for running what
 # ships. The runner lands in bin/Release/<tfm>/iossimulator-arm64/.
@@ -78,7 +81,9 @@ ios_simulator_build() {
   echo "==> Building"
   local log started=$SECONDS
   log=$(mktemp)
-  if ! dotnet build "$project" -c Release -r iossimulator-arm64 >"$log" 2>&1; then
+  # Split on spaces on purpose: it is a list of arguments.
+  # shellcheck disable=SC2086
+  if ! dotnet build "$project" -c Release -r iossimulator-arm64 ${IOS_SIMULATOR_BUILD_ARGS:-} >"$log" 2>&1; then
     cat "$log"
     rm -f "$log"
     echo "==> Build failed after $(ios_simulator_duration $(( SECONDS - started )))"
