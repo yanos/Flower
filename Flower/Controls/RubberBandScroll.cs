@@ -53,7 +53,7 @@ namespace Flower.Controls;
 // same way, stretching the list up instead; only the pull from the top opens
 // anything.
 //
-// The spring-back (and the live drag itself) is driven by the shared 60Hz
+// The spring-back (and the live drag itself) is driven by the shared
 // AnimationClock, stepping RenderTransform.Y frame by frame (the same
 // manual-tween approach MainView.axaml.cs's status-bar spinner uses), NOT
 // Avalonia's Animation/

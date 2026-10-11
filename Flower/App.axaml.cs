@@ -293,7 +293,7 @@ public partial class App : Application
                 sp.GetService<IPeerCredentials>(),
                 sp.GetRequiredService<ILogger<AlbumArtLoader>>()))
 
-            // One 60Hz timer for every animation in the app - see
+            // One per-frame clock for every animation in the app - see
             // AnimationClock. Injected into MainViewModel (which threads it
             // down to the track rows); the Controls that also animate reach it
             // through AnimationClock.Current, set from this instance below.
@@ -800,6 +800,13 @@ public partial class App : Application
             singleViewPlatform.MainView = singleView;
             mainView = singleView;
         }
+
+        // Animations tick on the display's own frames from here on, rather than
+        // on a timer that knows nothing of them - see AnimationClock. Asked
+        // lazily: a single view has no TopLevel until the platform attaches it,
+        // and until then the clock falls back to its timer.
+        if (mainView != null)
+            AnimationClock.Current.TopLevelProvider = () => TopLevel.GetTopLevel(mainView);
 
         // Where a half-listened track got to has to survive the app going away,
         // not just a pause - see PlaylistControlViewModel.SavePlaybackState.

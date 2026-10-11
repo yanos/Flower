@@ -172,7 +172,7 @@ public sealed class SlidingSheet : ContentControl
     private bool _capturedForSwipe;
 
     // The clock the easing runs on. AnimationClock.Current is the process-wide
-    // 60Hz timer; a test hands in one it steps by hand, so a sheet's animation
+    // per-frame clock; a test hands in one it steps by hand, so a sheet's animation
     // can be driven to completion without parking the dispatcher for the real
     // 280ms - see AnimationClock's own test constructor, and
     // MainViewModelHarness on what a test that parks it costs every test queued

@@ -706,7 +706,7 @@ public sealed class ScreenStackPanel : Panel
 
         var from = transform.X;
         var duration = TimeSpan.FromMilliseconds(EasingDurationMs);
-        // Shared 60Hz clock rather than a timer per easing - see AnimationClock.
+        // Shared per-frame clock rather than a timer per easing - see AnimationClock.
         IDisposable? easing = null;
         // The last frame's work, named so a pointer press can run it early
         // (see _finishEasing) rather than leaving a half-slid screen behind.

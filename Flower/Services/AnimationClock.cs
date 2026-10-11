@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using Avalonia.Controls;
 using Avalonia.Threading;
 
 namespace Flower.Services;
 
-// One 60 Hz dispatcher timer for the whole app.
+// One clock for every animation the app drives from code, ticking once per
+// frame the display actually shows.
 //
 // Four separate animations each ran their own 16ms DispatcherTimer: the status
 // bar's busy spinner, the swipe/rubber-band easings, and - worst of the four -
@@ -13,8 +15,19 @@ namespace Flower.Services;
 // dispatcher 60 times a second per track. Each of those wakeups is a full
 // dispatcher loop iteration and a layout/render pass regardless of how little
 // it changed, which is exactly the wrong shape on a battery-powered device.
-// They now share this one timer, which runs only while something is actually
+// They now share this one clock, which runs only while something is actually
 // subscribed. See docs/ARCHITECTURE-REVIEW.md Tier 1.5.
+//
+// The ticks come from Avalonia's own frame callback (TopLevel.RequestAnimationFrame)
+// wherever there is a TopLevel to ask (TopLevelProvider, set by the composition
+// root). It used to be a 16ms DispatcherTimer, which was two things wrong on a
+// 120Hz phone: half the frames had nothing new to show, and a timer that does
+// not know when frames are drawn lands at 62.5Hz against a 120Hz display, so the
+// distance moved between one shown frame and the next alternated - an easing
+// that judders. A frame callback runs at the start of the frame it changes,
+// before layout, at whatever rate the display is running. The timer stays as
+// the fallback for a clock with no TopLevel behind it (the XAML previewer, a
+// test that never asked for one).
 //
 // Each subscriber is handed the time elapsed since *its own* subscription
 // rather than a raw tick, because that is what both kinds of consumer want: a
@@ -24,8 +37,8 @@ namespace Flower.Services;
 // Every subscriber in a frame is measured off one clock reading, so animations
 // that start together stay together.
 //
-// UI thread only - the underlying DispatcherTimer requires it, and every
-// subscriber writes to bound properties from the callback.
+// UI thread only - frame callbacks and the DispatcherTimer both arrive there,
+// and every subscriber writes to bound properties from the callback.
 public sealed class AnimationClock
 {
     public static readonly TimeSpan FrameInterval = TimeSpan.FromMilliseconds(16);
@@ -42,9 +55,25 @@ public sealed class AnimationClock
     private TimeSpan _lastTick;
     private bool _isRunning;
 
-    // A running clock ticks every 16ms, so a gap this long means the timer is
-    // not actually attached to a live dispatcher anymore - see Subscribe.
+    // Whether a frame callback is outstanding - so a subscription arriving
+    // while one is already asked for does not ask again and tick twice a frame -
+    // and which request is the live one. A request abandoned as stale (see
+    // Subscribe) can still be answered later, and must then do nothing, or two
+    // chains of requests would each tick every frame.
+    private bool _frameRequested;
+    private int _frameGeneration;
+
+    // A running clock ticks every frame, so a gap this long means its timer or
+    // its frame request is not attached to a live dispatcher anymore - see
+    // Subscribe.
     private static readonly TimeSpan StaleTimerThreshold = TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// Where to ask for frames: any live TopLevel will do, since every one of
+    /// them forwards to the same per-process frame clock. Null, or returning
+    /// null, falls back to a 16ms timer.
+    /// </summary>
+    public Func<TopLevel?>? TopLevelProvider { get; set; }
 
     // Guards against a subscriber unsubscribing (or subscribing) from inside
     // its own callback, which the easings do on their final frame: the list
@@ -71,6 +100,9 @@ public sealed class AnimationClock
 
     public bool IsRunning => _isRunning;
 
+    // Whether the clock is on its fallback timer rather than on frames.
+    internal bool HasTimer => _timer != null;
+
     // The returned handle stops this animation when disposed. Disposing twice
     // is safe; so is disposing from inside the callback.
     public IDisposable Subscribe(Action<TimeSpan> onTick)
@@ -88,23 +120,28 @@ public sealed class AnimationClock
         // zero to trigger that: one animation left running (a row abandoned
         // mid-download, say) would otherwise pin a dead timer in place and
         // take every later animation down with it.
-        if (_useTimer && _timer != null && _now() - _lastTick > StaleTimerThreshold)
+        if (_useTimer && (_timer != null || _frameRequested) && _now() - _lastTick > StaleTimerThreshold)
+        {
             StopTimer();
+            _frameRequested = false;
+            _frameGeneration++;
+        }
 
         _isRunning = true;
-        if (_useTimer && _timer == null)
+        if (_useTimer && _timer == null && !_frameRequested)
         {
             _lastTick = _now();
-            _timer = new DispatcherTimer { Interval = FrameInterval };
-            _timer.Tick += (_, _) => Tick();
-            _timer.Start();
+            if (TopLevelProvider?.Invoke() is { } topLevel)
+                RequestFrame(topLevel);
+            else
+                StartTimer();
         }
 
         return subscription;
     }
 
     // Stops the timer once the last animation ends - the point of the whole
-    // class is that an idle app has no 60 Hz wakeup at all, not that it has
+    // class is that an idle app has no per-frame wakeup at all, not that it has
     // exactly one.
     private void Remove(Subscription subscription)
     {
@@ -115,6 +152,37 @@ public sealed class AnimationClock
             _isRunning = false;
             StopTimer();
         }
+    }
+
+    private void StartTimer()
+    {
+        _timer = new DispatcherTimer { Interval = FrameInterval };
+        _timer.Tick += (_, _) => Tick();
+        _timer.Start();
+    }
+
+    private void RequestFrame(TopLevel topLevel)
+    {
+        _frameRequested = true;
+        var generation = ++_frameGeneration;
+        topLevel.RequestAnimationFrame(_ =>
+        {
+            if (generation == _frameGeneration)
+                OnFrame(topLevel);
+        });
+    }
+
+    // Asks for the next frame from inside this one for as long as anything is
+    // subscribed; the request lapses on the first frame that finds the clock
+    // idle, which is how it stops.
+    private void OnFrame(TopLevel topLevel)
+    {
+        _frameRequested = false;
+        if (!_isRunning)
+            return;
+        Tick();
+        if (_isRunning && !_frameRequested && _timer == null)
+            RequestFrame(topLevel);
     }
 
     private void StopTimer()
