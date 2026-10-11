@@ -35,6 +35,11 @@
             <NativeMenuItem Header="Next Track" Command="{Binding NextTrackCommand}"/>
             <NativeMenuItem Header="Previous Track" Command="{Binding PreviousTrackCommand}"/>
             <NativeMenuItemSeparator/>
+            <NativeMenuItem Header="Go to Current Song"/>
+            <NativeMenuItemSeparator/>
+            <NativeMenuItem Header="Increase Volume"/>
+            <NativeMenuItem Header="Decrease Volume"/>
+            <NativeMenuItemSeparator/>
             <!-- IsChecked is one-way (both properties are getter-only
                  passthroughs to PlaylistControlViewModel - see MainViewModel) -
                  Command flips the underlying state, which flows back through
@@ -46,20 +51,54 @@
           </NativeMenu>
         </NativeMenuItem.Menu>
       </NativeMenuItem>
+      <!-- What the song menus offer, over the songs selected on screen - the
+           list's, or the albums' in the grid (MainView.SelectedSongs). Get
+           Info falls back to the song playing when nothing is selected, so
+           Cmd+I always opens something. Enabled as the menu opens, since
+           what is selected is the view's and nothing binds to it. -->
+      <NativeMenuItem Header="Song">
+        <NativeMenuItem.Menu>
+          <NativeMenu>
+            <NativeMenuItem Header="Get Info"/>
+            <NativeMenuItemSeparator/>
+            <NativeMenuItem Header="Play Next"/>
+            <NativeMenuItem Header="Add to Queue"/>
+            <NativeMenuItemSeparator/>
+            <NativeMenuItem Header="Locate File"/>
+            <NativeMenuItem Header="Download"/>
+          </NativeMenu>
+        </NativeMenuItem.Menu>
+      </NativeMenuItem>
       <NativeMenuItem Header="Playlist">
         <NativeMenuItem.Menu>
           <NativeMenu>
             <NativeMenuItem Header="New Playlist" Command="{Binding NewPlaylistCommand}"/>
             <NativeMenuItem Header="New Smart Playlist…" Command="{Binding NewSmartPlaylistCommand}"/>
             <NativeMenuItemSeparator/>
+            <NativeMenuItem Header="Play Playlist Next"/>
+            <NativeMenuItem Header="Add Playlist to Queue"/>
+            <NativeMenuItemSeparator/>
             <NativeMenuItem Header="Rename Playlist" Command="{Binding RenamePlaylistCommand}"/>
             <NativeMenuItem Header="Delete Playlist" Command="{Binding DeletePlaylistCommand}"/>
+            <NativeMenuItemSeparator/>
+            <NativeMenuItem Header="Edit Rules…"/>
+            <NativeMenuItem Header="Convert to Ordinary Playlist"/>
           </NativeMenu>
         </NativeMenuItem.Menu>
       </NativeMenuItem>
       <NativeMenuItem Header="View">
         <NativeMenuItem.Menu>
           <NativeMenu>
+            <!-- The sidebar's Library rows, in its order. -->
+            <NativeMenuItem Header="Home"/>
+            <NativeMenuItem Header="Queue"/>
+            <NativeMenuItem Header="History"/>
+            <NativeMenuItem Header="Songs"/>
+            <NativeMenuItem Header="Albums"/>
+            <NativeMenuItem Header="Artists"/>
+            <NativeMenuItemSeparator/>
+            <NativeMenuItem Header="Filter"/>
+            <NativeMenuItemSeparator/>
             <NativeMenuItem Header="Device Logs…" Command="{Binding OpenLogWindowCommand}"/>
             <NativeMenuItem Header="Select Columns…" Command="{Binding OpenColumnSelectorCommand}"/>
             <NativeMenuItem Header="Equalizer…" Command="{Binding OpenEqualizerWindowCommand}"/>

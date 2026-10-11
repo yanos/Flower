@@ -1547,8 +1547,9 @@ public partial class MainView : UserControl
             _viewModel?.PlayOrPauseFromCurrentView();
             e.Handled = true;
         }
-        // Get Info from anywhere, the filter, the volume, and the sidebar's
-        // Library rows by number.
+        // The menu bar's Get Info, Filter and volume shortcuts. On macOS the
+        // menu takes these keys before Avalonia sees them, as it does Cmd+,
+        // above, and runs the same methods; this is Windows and Linux.
         else if (e.Key == Key.I && e.KeyModifiers == PlatformShortcuts.Primary)
         {
             GetInfo();
@@ -1571,9 +1572,9 @@ public partial class MainView : UserControl
         }
     }
 
-    // ── Window shortcuts ─────────────────────────────────────────────────────
-    // The ones that act on what is on screen and selected in it, which the
-    // view model does not hold.
+    // ── Menu bar ──────────────────────────────────────────────────────────────
+    // What MainWindow's menus run that only the view can: they act on what
+    // is on screen and selected in it, which the view model does not hold.
 
     // Get Info, from anywhere: the songs selected in the list, or the albums
     // selected in the grid, or - with nothing selected where focus is, Home
@@ -1594,13 +1595,36 @@ public partial class MainView : UserControl
             OpenTrackInfo(new[] { playing });
     }
 
+    // The songs the Song menu acts on: those selected in the list on screen,
+    // or under the albums selected in the grid.
+    public IReadOnlyList<Track> SelectedSongs()
+    {
+        if (_viewModel is not { } vm)
+            return [];
+
+        if (vm.IsShowingAlbumGrid)
+        {
+            var songs = AlbumGrid.GetExpandedRowSelectedTracks();
+            return songs.Count > 0 ? songs : vm.GetTracksForSubListItems(vm.SelectedSubItems).ToList();
+        }
+        return ShowsTrackList(vm) ? SelectedTracksInListOrder() : [];
+    }
+
+    public void LocateSelectedFile()
+    {
+        if (SelectedSongs() is [var first, ..])
+            FileLocator.Reveal(first.Path);
+    }
+
+    public void DownloadSelectedSongs() => StartDownload(SelectedSongs());
+
     // The track list is the page - not Home, the Artists page or a server's,
     // where a selection it kept from another page would be acted on unseen.
     private static bool ShowsTrackList(MainViewModel vm) =>
         !vm.IsShowingHome && !vm.IsShowingArtistPage && !vm.IsShowingDeviceDetail && !vm.IsShowingServerSettings;
 
     // The sidebar's Library rows, in its order, and the Cmd/Ctrl+number
-    // that shows each.
+    // that shows each - MainWindow's View menu lists them.
     public static readonly (SidebarItemKind Kind, Key Key)[] SectionKeys =
     [
         (SidebarItemKind.Home, Key.D1),

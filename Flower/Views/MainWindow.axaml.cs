@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 
 using Avalonia;
@@ -119,6 +120,8 @@ public partial class MainWindow : Window
         if (selectColumnsItem != null)
             selectColumnsItem.Gesture = new KeyGesture(Key.J, PlatformShortcuts.Primary);
 
+        WireMenuBar(topLevelItems);
+
         // Mirrors the standard macOS Window > Zoom behavior: resizes/repositions
         // the window to fill the available screen space, toggling back to its
         // prior size/position on a second click. This is WindowState.Maximized,
@@ -182,8 +185,128 @@ public partial class MainWindow : Window
                 SetIcon("Delete Playlist", MaterialIconKind.PlaylistRemove);
                 SetIcon("Select Columns…", MaterialIconKind.ViewColumn);
                 SetIcon("Zoom",            MaterialIconKind.WindowMaximize);
+                SetIcon("Go to Current Song", MaterialIconKind.Crosshairs);
+                SetIcon("Increase Volume", MaterialIconKind.VolumePlus);
+                SetIcon("Decrease Volume", MaterialIconKind.VolumeMinus);
+                SetIcon("Get Info",        MaterialIconKind.InformationOutline);
+                SetIcon("Play Next",       MaterialIconKind.PlaylistPlay);
+                SetIcon("Add to Queue",    MaterialIconKind.PlaylistMusic);
+                SetIcon("Locate File",     MaterialIconKind.FolderOpenOutline);
+                SetIcon("Download",        MaterialIconKind.CloudDownloadOutline);
+                SetIcon("Play Playlist Next",    MaterialIconKind.PlaylistPlay);
+                SetIcon("Add Playlist to Queue", MaterialIconKind.PlaylistMusic);
+                SetIcon("Edit Rules…",     MaterialIconKind.Tune);
+                SetIcon("Home",            MaterialIconKind.HomeOutline);
+                SetIcon("Queue",           MaterialIconKind.PlaylistMusic);
+                SetIcon("History",         MaterialIconKind.ClockTimeEightOutline);
+                SetIcon("Songs",           MaterialIconKind.Music);
+                SetIcon("Albums",          MaterialIconKind.Album);
+                SetIcon("Artists",         MaterialIconKind.Account);
+                SetIcon("Filter",          MaterialIconKind.Magnify);
             }
         }
+    }
+
+    // The menu bar's entries that act on the view - what is on screen and
+    // selected there (MainView), or which page shows - rather than through a
+    // command binding to the view model. Their shortcuts are MainView's own
+    // keys (MainView_PreviewKeyDown), shown here; on macOS the menu takes the
+    // key first and runs the same method.
+    private void WireMenuBar(List<NativeMenuItem> items)
+    {
+        NativeMenuItem? Item(string header) => items.FirstOrDefault(i => i.Header == header);
+        ViewModels.MainViewModel? Vm() => DataContext as ViewModels.MainViewModel;
+
+        void On(string header, System.Action click, Key? key = null, KeyModifiers extra = KeyModifiers.None)
+        {
+            if (Item(header) is not { } item)
+                return;
+            if (key is { } k)
+                item.Gesture = new KeyGesture(k, PlatformShortcuts.Primary | extra);
+            item.Click += (_, _) => click();
+        }
+
+        // Controls
+        On("Go to Current Song", () => _ = Vm()?.GoToCurrentlyPlayingTrackAsync(), Key.L);
+        On("Increase Volume", () => MainContent.ChangeVolume(10), Key.Up);
+        On("Decrease Volume", () => MainContent.ChangeVolume(-10), Key.Down);
+
+        // Song
+        On("Get Info", MainContent.GetInfo, Key.I);
+        On("Play Next", () => Vm()?.PlayNext(MainContent.SelectedSongs()));
+        On("Add to Queue", () => Vm()?.AddToQueue(MainContent.SelectedSongs()));
+        On("Locate File", MainContent.LocateSelectedFile);
+        On("Download", MainContent.DownloadSelectedSongs);
+
+        // Playlist - the one selected in the sidebar.
+        Playlist? Selected() => Vm()?.SelectedSidebarItem?.Playlist;
+        On("Play Playlist Next", () =>
+        {
+            if (Selected() is { } playlist)
+                Vm()?.PlayNext(playlist.Tracks.ToList());
+        });
+        On("Add Playlist to Queue", () =>
+        {
+            if (Selected() is { } playlist)
+                Vm()?.AddToQueue(playlist.Tracks.ToList());
+        });
+        On("Edit Rules…", () =>
+        {
+            if (Selected() is { IsSmart: true } playlist)
+                Vm()?.EditSmartPlaylist(playlist);
+        });
+        On("Convert to Ordinary Playlist", () =>
+        {
+            if (Selected() is { IsSmart: true } playlist)
+                _ = Vm()?.ConvertPlaylistToOrdinary(playlist);
+        });
+
+        // View - the sidebar's Library rows, Cmd/Ctrl+1 to 6 in its order.
+        foreach (var (kind, key) in MainView.SectionKeys)
+        {
+            var section = kind;
+            On(section.ToString(), () => MainContent.ShowSection(section), key);
+        }
+        On("Filter", MainContent.FocusFilter, Key.K);
+
+        // Greyed while there is nothing for them to act on, worked out as
+        // each menu opens - and only then, so a menu that somehow never
+        // reports opening leaves them enabled, doing nothing, rather than
+        // greyed for good.
+        void WhenOpened(string anyHeader, System.Action update)
+        {
+            var menu = NativeMenu.GetMenu(this)?.Items.OfType<NativeMenuItem>()
+                .Select(top => top.Menu)
+                .FirstOrDefault(m => m?.Items.OfType<NativeMenuItem>().Any(i => i.Header == anyHeader) == true);
+            if (menu == null)
+                return;
+            menu.Opening += (_, _) => update();
+        }
+
+        void Enable(string header, bool enabled)
+        {
+            if (Item(header) is { } item)
+                item.IsEnabled = enabled;
+        }
+
+        WhenOpened("Get Info", () =>
+        {
+            var songs = MainContent.SelectedSongs();
+            var vm = Vm();
+            Enable("Get Info", songs.Count > 0 || vm?.NowPlaying.CurrentlyPlayingTrack != null);
+            Enable("Play Next", songs.Count > 0);
+            Enable("Add to Queue", songs.Count > 0);
+            Enable("Locate File", songs.Count > 0);
+            Enable("Download", vm != null && !vm.Downloads.IsBulkDownloading && songs.Any(vm.Availability.IsDownloadable));
+        });
+        WhenOpened("Edit Rules…", () =>
+        {
+            var playlist = Selected();
+            Enable("Play Playlist Next", playlist is { Tracks.Count: > 0 });
+            Enable("Add Playlist to Queue", playlist is { Tracks.Count: > 0 });
+            Enable("Edit Rules…", playlist is { IsSmart: true } && Vm()?.SmartPlaylists != null);
+            Enable("Convert to Ordinary Playlist", playlist is { IsSmart: true });
+        });
     }
 
     // NativeMenuItem.Icon wants a Bitmap rather than a control, so rasterize
