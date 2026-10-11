@@ -126,6 +126,17 @@ public partial class MainView : UserControl
         // The "..." on every album tile - the grid's and Home's (AlbumCard).
         AddHandler(AlbumCard.MenuRequestedEvent, AlbumCard_MenuRequested);
 
+        // Home's covers: a right-click opens the tile's menu, as the "..."
+        // does, and a drag carries the album to the sidebar. Each cover is a
+        // Button, which takes the press and captures the pointer for its
+        // click, so the press and the moves are watched handled or not, and
+        // the release on the way down, before the Button can click.
+        AddHandler(ContextRequestedEvent, Home_ContextRequested);
+        AddHandler(PointerPressedEvent, Home_PointerPressed, RoutingStrategies.Bubble, handledEventsToo: true);
+        AddHandler(PointerMovedEvent, Home_PointerMoved, RoutingStrategies.Bubble, handledEventsToo: true);
+        AddHandler(PointerReleasedEvent, Home_PointerReleased, RoutingStrategies.Tunnel);
+        AddHandler(PointerCaptureLostEvent, Home_PointerCaptureLost, RoutingStrategies.Bubble, handledEventsToo: true);
+
         // The window-wide shortcuts (Space, Cmd/Ctrl+, L, J, I) are handled on
         // the window itself rather than here - see OnAttachedToVisualTree.
 
@@ -548,6 +559,11 @@ public partial class MainView : UserControl
             return;
         }
 
+        OpenHomeTileMenu(card, tile);
+    }
+
+    private void OpenHomeTileMenu(AlbumCard card, AlbumTileViewModel tile)
+    {
         // The tile's own menu, declared on its Button (Home's Continue
         // Playing) - opened for the Button, whose data its bindings are on.
         if (card.FindAncestorOfType<Button>() is { ContextMenu: { } own } owner)
@@ -558,6 +574,101 @@ public partial class MainView : UserControl
 
         var tracks = LibraryBrowserViewModel.ExpandedTracksFor(tile).ToList();
         PlatformContextMenu.Open(BuildAlbumContextMenu(tracks, tile, () => OpenTrackInfo(tracks)), card);
+    }
+
+    // The cover a pointer event on Home landed on: the shelf's Button round
+    // an AlbumCard - not the card's own "..." button inside it.
+    private static (Button Tile, AlbumCard Card)? HomeTileAt(object? source)
+    {
+        if (source is not Visual visual)
+            return null;
+        var tile = visual.GetSelfAndVisualAncestors().OfType<Button>().FirstOrDefault(b => b.Classes.Contains("homeTile"));
+        if (tile?.FindAncestorOfType<HomeView>() == null || tile.Content is not AlbumCard { Tile: not null } card)
+            return null;
+        return (tile, card);
+    }
+
+    // Recently Played's and Recently Added's covers, which declare no menu
+    // of their own. Continue Playing's does, and Avalonia opens it first.
+    private void Home_ContextRequested(object? sender, ContextRequestedEventArgs e)
+    {
+        if (e.Handled || HomeTileAt(e.Source) is not { Card: { Tile: { } tile } card })
+            return;
+        OpenHomeTileMenu(card, tile);
+        e.Handled = true;
+    }
+
+    // ── Drag an album from Home onto the sidebar ────────────────────────────────
+    // A cover pressed and moved past the threshold carries its album, as a
+    // grid tile does (AlbumGrid_PointerMoved): onto a playlist, the Playlists
+    // space for a new one, or the Queue row. Released anywhere else it does
+    // nothing - and since the pointer has left the cover, no click either.
+
+    private AlbumTileViewModel? _homeDragTile;
+    private Point _homeDragStart;
+    private bool _homeDragging;
+
+    private void Home_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        EndHomeDrag();
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed || HomeTileAt(e.Source) is not { Card.Tile: { } tile })
+            return;
+        _homeDragTile = tile;
+        _homeDragStart = e.GetPosition(this);
+    }
+
+    private void Home_PointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (_homeDragTile is not { } tile)
+            return;
+
+        var at = e.GetPosition(this);
+        if (!_homeDragging)
+        {
+            var moved = at - _homeDragStart;
+            if (moved.X * moved.X + moved.Y * moved.Y < NameSelectionDragGesture.DragThreshold * NameSelectionDragGesture.DragThreshold)
+                return;
+            _homeDragging = true;
+        }
+
+        ShowDragGhost(this, at, tile.Name);
+        SetSidebarDropHighlight(HitTestSidebarDrop(this, at));
+    }
+
+    private void Home_PointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (_homeDragTile is not { } tile || !_homeDragging)
+        {
+            EndHomeDrag();
+            return;
+        }
+
+        var target = HitTestSidebarDrop(this, e.GetPosition(this));
+        EndHomeDrag();
+        CompleteTracksDrop(target, LibraryBrowserViewModel.ExpandedTracksFor(tile).ToList());
+
+        // Kept from the cover, which would otherwise take the release as the
+        // end of its click.
+        e.Pointer.Capture(null);
+        e.Handled = true;
+    }
+
+    // Only once dragging: a press itself moves the capture - from the
+    // control under the pointer to the cover's Button - and that loss is the
+    // gesture starting, not ending.
+    private void Home_PointerCaptureLost(object? sender, PointerCaptureLostEventArgs e)
+    {
+        if (_homeDragging)
+            EndHomeDrag();
+    }
+
+    private void EndHomeDrag()
+    {
+        var wasDragging = _homeDragging;
+        _homeDragTile = null;
+        _homeDragging = false;
+        if (wasDragging)
+            ResetDragVisuals();
     }
 
     // An album card's play circle on the Artists page: the album from its
@@ -1026,11 +1137,14 @@ public partial class MainView : UserControl
     // set of album/artist names resolved to tracks the same way.
     private void CompleteNameDrop(Visual source, Point position, IReadOnlyList<string> items)
     {
-        var target = HitTestSidebarDrop(source, position);
         var tracks = _viewModel?.GetTracksForSubListItems(items) ?? Enumerable.Empty<Track>();
+        CompleteTracksDrop(HitTestSidebarDrop(source, position), tracks.ToList());
+    }
 
+    private void CompleteTracksDrop(SidebarDropTarget? target, List<Track> tracks)
+    {
         if (target?.IsQueue == true)
-            _viewModel?.AddToQueue(tracks.ToList());
+            _viewModel?.AddToQueue(tracks);
         else if (target?.PlaylistItem?.Playlist is { } playlist)
             _ = _viewModel?.AddTracksToPlaylist(tracks, playlist);
         else if (target?.CreateNew == true)

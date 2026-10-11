@@ -23,7 +23,7 @@ namespace Flower.Tests;
 // Avalonia ContextMenu becomes when handed over, and which openings are handed
 // over - every menu the app opens from code, and those declared in XAML, which
 // Avalonia opens on its own.
-[Collection("PlatformContextMenu")]
+[Collection("PlatformDataDirectory")]
 public class PlatformContextMenuTests : IDisposable
 {
     private readonly IPlatformContextMenu? _previous = PlatformContextMenu.Current;
