@@ -66,7 +66,6 @@ public class WindowShortcutTests : PinnedDataDirectory
         Assert.Equal(0, parts.Audio.ResumeCount);
         window.Close();
     }
-
     // Cmd on the Mac, Ctrl elsewhere - PlatformShortcuts.Primary.
     private static RawInputModifiers Primary =>
         System.OperatingSystem.IsMacOS() ? RawInputModifiers.Meta : RawInputModifiers.Control;
@@ -83,6 +82,42 @@ public class WindowShortcutTests : PinnedDataDirectory
 
         var focused = window.FocusManager?.GetFocusedElement() as Avalonia.Visual;
         Assert.NotNull(focused?.FindAncestorOfType<Flower.UserControls.FilterControl>(includeSelf: true));
+        window.Close();
+    }
+
+    // With nothing selected where it was pressed - here Home - it opens the
+    // song playing rather than nothing.
+    [AvaloniaFact]
+    public void Cmd_I_opens_track_info_with_nothing_selected()
+    {
+        var (window, _, parts) = Paused();
+        using var _p = parts;
+        parts.Main.SelectedSidebarItem = parts.Main.SidebarItems.First(i => i.Kind == Flower.ViewModels.SidebarItemKind.Home);
+        Dispatcher.UIThread.RunJobs();
+        window.Focus();
+
+        window.KeyPressQwerty(PhysicalKey.I, Primary);
+        Dispatcher.UIThread.RunJobs();
+
+        var info = Assert.Single(window.OwnedWindows.OfType<TrackInfoWindow>());
+        info.Close();
+        window.Close();
+    }
+
+    [AvaloniaFact]
+    public void Cmd_and_a_number_shows_that_library_row()
+    {
+        var (window, _, parts) = Paused();
+        using var _p = parts;
+        window.Focus();
+
+        window.KeyPressQwerty(PhysicalKey.Digit2, Primary);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(Flower.ViewModels.SidebarItemKind.Queue, parts.Main.SelectedSidebarItem?.Kind);
+
+        window.KeyPressQwerty(PhysicalKey.Digit5, Primary);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(Flower.ViewModels.SidebarItemKind.Albums, parts.Main.SelectedSidebarItem?.Kind);
         window.Close();
     }
 }

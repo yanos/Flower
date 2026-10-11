@@ -90,7 +90,7 @@ public partial class MainView : UserControl
         MusicList.TrackDragMoved  += OnTrackDragMoved;
         MusicList.TrackDragEnded  += OnTrackDragEnded;
 
-        // Forward Space / Cmd+I (Ctrl+I on Windows/Linux) from inside the list
+        // Forward Space from inside the list
         MusicList.AddHandler(KeyDownEvent, MusicList_KeyDown, RoutingStrategies.Tunnel);
 
         SidebarList.ContextRequested += SidebarList_ContextRequested;
@@ -1417,7 +1417,13 @@ public partial class MainView : UserControl
         playItem.Click += (_, _) => _viewModel?.PlayAlbum(clickedTile);
 
         var getInfoItem = new MenuItem { Header = "Get Info" }.WithIcon(MaterialIconKind.InformationOutline);
-        getInfoItem.Click += (_, _) => (getInfo ?? OpenTrackInfoForSelectedAlbums)();
+        getInfoItem.Click += (_, _) =>
+        {
+            if (getInfo != null)
+                getInfo();
+            else
+                OpenTrackInfoForSelectedAlbums();
+        };
 
         var addToPlaylistItem = new MenuItem { Header = "Add to Playlist" }.WithIcon(MaterialIconKind.PlaylistPlus);
         PopulateAddToPlaylistMenu(addToPlaylistItem, tracks);
@@ -1494,12 +1500,7 @@ public partial class MainView : UserControl
 
     private void MusicList_KeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Key == Key.I && e.KeyModifiers == PlatformShortcuts.Primary)
-        {
-            OpenTrackInfo();
-            e.Handled = true;
-        }
-        else if (e.Key == Key.Space)
+        if (e.Key == Key.Space)
         {
             _viewModel?.PlayOrPauseFromCurrentView();
             e.Handled = true;
@@ -1546,16 +1547,11 @@ public partial class MainView : UserControl
             _viewModel?.PlayOrPauseFromCurrentView();
             e.Handled = true;
         }
-        // Cmd/Ctrl+I on Albums - MusicList's own tunnel handler
-        // (MusicList_KeyDown) can't fire here since MusicList is hidden and
-        // never has focus while a grid is showing, so it's only reachable at
-        // this root level. Deliberately scoped to just the grid views - the
-        // track-list case is left alone so MusicList_KeyDown still owns it,
-        // unchanged, exactly as before this handler existed.
-        else if (e.Key == Key.I && e.KeyModifiers == PlatformShortcuts.Primary &&
-                 _viewModel is { IsShowingAlbumGrid: true })
+        // Get Info from anywhere, the filter, the volume, and the sidebar's
+        // Library rows by number.
+        else if (e.Key == Key.I && e.KeyModifiers == PlatformShortcuts.Primary)
         {
-            OpenTrackInfoForSelectedAlbums();
+            GetInfo();
             e.Handled = true;
         }
         else if (e.Key == Key.K && e.KeyModifiers == PlatformShortcuts.Primary)
@@ -1563,6 +1559,62 @@ public partial class MainView : UserControl
             FocusFilter();
             e.Handled = true;
         }
+        else if (e.Key is Key.Up or Key.Down && e.KeyModifiers == PlatformShortcuts.Primary)
+        {
+            ChangeVolume(e.Key == Key.Up ? VolumeStep : -VolumeStep);
+            e.Handled = true;
+        }
+        else if (e.KeyModifiers == PlatformShortcuts.Primary && SectionKeys.FirstOrDefault(s => s.Key == e.Key) is { Kind: not SidebarItemKind.Header } section)
+        {
+            ShowSection(section.Kind);
+            e.Handled = true;
+        }
+    }
+
+    // ── Window shortcuts ─────────────────────────────────────────────────────
+    // The ones that act on what is on screen and selected in it, which the
+    // view model does not hold.
+
+    // Get Info, from anywhere: the songs selected in the list, or the albums
+    // selected in the grid, or - with nothing selected where focus is, Home
+    // and the Artists page included - the song playing.
+    public void GetInfo()
+    {
+        if (_viewModel is not { } vm)
+            return;
+
+        if (vm.IsShowingAlbumGrid && OpenTrackInfoForSelectedAlbums())
+            return;
+        if (ShowsTrackList(vm) && MusicList.SelectedTracks.Count > 0)
+        {
+            OpenTrackInfo();
+            return;
+        }
+        if (vm.NowPlaying.CurrentlyPlayingTrack is { } playing)
+            OpenTrackInfo(new[] { playing });
+    }
+
+    // The track list is the page - not Home, the Artists page or a server's,
+    // where a selection it kept from another page would be acted on unseen.
+    private static bool ShowsTrackList(MainViewModel vm) =>
+        !vm.IsShowingHome && !vm.IsShowingArtistPage && !vm.IsShowingDeviceDetail && !vm.IsShowingServerSettings;
+
+    // The sidebar's Library rows, in its order, and the Cmd/Ctrl+number
+    // that shows each.
+    public static readonly (SidebarItemKind Kind, Key Key)[] SectionKeys =
+    [
+        (SidebarItemKind.Home, Key.D1),
+        (SidebarItemKind.Queue, Key.D2),
+        (SidebarItemKind.History, Key.D3),
+        (SidebarItemKind.Songs, Key.D4),
+        (SidebarItemKind.Albums, Key.D5),
+        (SidebarItemKind.Artists, Key.D6),
+    ];
+
+    public void ShowSection(SidebarItemKind kind)
+    {
+        if (_viewModel is { } vm && vm.SidebarItems.FirstOrDefault(i => i.Kind == kind) is { } row)
+            vm.SelectedSidebarItem = row;
     }
 
     // Cmd/Ctrl+K: the page header's filter box, where the page has one.
@@ -1570,6 +1622,14 @@ public partial class MainView : UserControl
     {
         var filter = this.GetVisualDescendants().OfType<UserControls.FilterControl>().FirstOrDefault(f => f.IsEffectivelyVisible);
         filter?.FocusBox();
+    }
+
+    private const int VolumeStep = 10;
+
+    public void ChangeVolume(int by)
+    {
+        if (_viewModel?.Volume is { } volume)
+            volume.Volume = Math.Clamp(volume.Volume + by, 0, 100);
     }
 
     private void OnNavigateToTrackRequested(object? sender, Track track) => MusicList.ScrollToTrack(track);
@@ -1739,10 +1799,10 @@ public partial class MainView : UserControl
     // acts on is AlbumTrackInfoSelection.Resolve's decision - see its own doc
     // comment for the precedence rules; all that's left here is reading the
     // grid's expanded-row selection and opening the window.
-    private void OpenTrackInfoForSelectedAlbums()
+    private bool OpenTrackInfoForSelectedAlbums()
     {
         if (_viewModel is not MainViewModel vm)
-            return;
+            return false;
 
         var songSelection = AlbumGrid.GetExpandedRowSelectedTracks();
 
@@ -1753,7 +1813,7 @@ public partial class MainView : UserControl
             vm.ExpandedAlbumName,
             vm.GetTracksForSubListItems);
         if (target.IsEmpty)
-            return;
+            return false;
 
         var infoWindow = target.FocusIndex is { } index
             ? new TrackInfoWindow(target.Tracks, index, vm) { ShowInTaskbar = false }
@@ -1763,6 +1823,7 @@ public partial class MainView : UserControl
             infoWindow.Show(owner);
         else
             infoWindow.Show();
+        return true;
     }
 
     // Get Info over a given set of songs - a Home tile's album.
