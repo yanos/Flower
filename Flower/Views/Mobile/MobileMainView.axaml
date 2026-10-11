@@ -764,5 +764,15 @@
                             IsOpen="{Binding IsShowingConfirmRemoveFromLibrary}">
       <views:ConfirmRemoveFromLibraryView />
     </controls:SlidingSheet>
+
+    <!-- The frame-rate readout Settings can turn on (ShowsFrameMeter), over
+         everything - sheets included, so it can be read while Now Playing or
+         Track Info scrolls - and centred just under the status bar, clear of
+         the Dynamic Island and between the back and menu buttons. -->
+    <controls:FrameMeter Grid.Row="0" Grid.RowSpan="3"
+                         VerticalAlignment="Top"
+                         HorizontalAlignment="Center"
+                         Margin="{DynamicResource StatusBarInset}"
+                         IsVisible="{Binding ShowsFrameMeter}" />
   </Grid>
 </UserControl>

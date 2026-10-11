@@ -1119,6 +1119,16 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     // it is a debugging readout, not a feature for listeners.
     public ResourceUsageViewModel Resources { get; } = new();
 
+    // Whether the frame-rate readout (FrameMeter) is drawn over the app - the
+    // Settings switch beside the figures above. For this session only, like
+    // them: a debugging aid, so it is gone on the next launch.
+    private bool _showsFrameMeter;
+    public bool ShowsFrameMeter
+    {
+        get => _showsFrameMeter;
+        set => SetProperty(ref _showsFrameMeter, value);
+    }
+
     public bool IsShowingNowPlaying => ActiveSheet == MobileSheet.NowPlaying;
 
     // Which edge the Now Playing sheet leaves by - see SlidingSheet.ExitsForward,

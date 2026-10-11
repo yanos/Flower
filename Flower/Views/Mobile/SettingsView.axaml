@@ -647,6 +647,19 @@
               <TextBlock Grid.Column="1" Text="{Binding Resources.ThreadsText}" />
             </Grid>
           </StackPanel>
+
+          <!-- A frame-rate readout over the whole app, just under the status
+               bar (FrameMeter): how often the screen is updated while something
+               moves, the longest gap, the longest the UI thread was busy, and
+               the collections - which of those runs over a 120Hz frame is what
+               makes a scroll stutter. Not a saved setting: gone on the next
+               launch. -->
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="14">
+            <TextBlock Grid.Column="0" Classes="rowTitle" FontWeight="Normal"
+                       Text="Show frame timing"
+                       VerticalAlignment="Center" />
+            <ToggleSwitch Grid.Column="1" IsChecked="{Binding ShowsFrameMeter}" />
+          </Grid>
         </StackPanel>
       </Border>
 
