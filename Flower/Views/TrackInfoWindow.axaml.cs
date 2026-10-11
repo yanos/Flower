@@ -174,76 +174,64 @@ public partial class TrackInfoWindow : Window
     // reference can't hold either.
     private sealed class EditableField(
         Func<string> getText, Action<string> setText, Action<string?> setWatermark, Action<bool> setEnabled,
-        Func<Track, string> display, Action<Track, TagLib.Tag, string?> apply)
+        TrackTagField field)
     {
         public readonly Action<bool> SetEnabled = setEnabled;
         public readonly Func<string> GetText = getText;
         public readonly Action<string> SetText = setText;
         public readonly Action<string?> SetWatermark = setWatermark;
-        public readonly Func<Track, string> Display = display;
-        public readonly Action<Track, TagLib.Tag, string?> Apply = apply;
+        public readonly TrackTagField Field = field;
+        public Func<Track, string> Display => Field.Display;
         public string OriginalText = "";
         public bool IsDirty => GetText() != OriginalText;
     }
 
-    private static EditableField FromTextBox(TextBox box, Func<Track, string> display, Action<Track, TagLib.Tag, string?> apply) =>
-        new(() => box.Text ?? "", v => box.Text = v, w => box.PlaceholderText = w, e => box.IsEnabled = e, display, apply);
+    private static EditableField FromTextBox(TextBox box, TrackTagField field) =>
+        new(() => box.Text ?? "", v => box.Text = v, w => box.PlaceholderText = w, e => box.IsEnabled = e, field);
 
-    private static EditableField FromAutoComplete(AutoCompleteBox box, Func<Track, string> display, Action<Track, TagLib.Tag, string?> apply) =>
-        new(() => box.Text ?? "", v => box.Text = v, w => box.PlaceholderText = w, e => box.IsEnabled = e, display, apply);
+    private static EditableField FromAutoComplete(AutoCompleteBox box, TrackTagField field) =>
+        new(() => box.Text ?? "", v => box.Text = v, w => box.PlaceholderText = w, e => box.IsEnabled = e, field);
 
-    private static EditableField SimpleField(
-        TextBox box, Func<Track, string?> get, Action<Track, string?> setTrack, Action<TagLib.Tag, string?> setTag) =>
-        FromTextBox(box, t => get(t) ?? "", (t, tag, v) =>
-        {
-            var n = NullIfEmpty(v);
-            setTrack(t, n);
-            setTag(tag, n);
-        });
-
+    // The tags themselves - what each box shows and how it is written - are
+    // TrackTagFields', shared with the phone's Track Info.
     private void BuildFields()
     {
         _fields =
         [
-            SimpleField(TitleBox, t => t.Title, (t, v) => t.Title = v, (tag, v) => tag.Title = v),
-            FromAutoComplete(ArtistBox, t => t.Artists ?? "", (t, tag, v) => { t.Artists = NullIfEmpty(v); tag.Performers = SplitArray(v); }),
-            FromAutoComplete(AlbumBox, t => t.Album ?? "", (t, tag, v) => { t.Album = NullIfEmpty(v); tag.Album = v; }),
+            FromTextBox(TitleBox, TrackTagFields.Title),
+            FromAutoComplete(ArtistBox, TrackTagFields.Artists),
+            FromAutoComplete(AlbumBox, TrackTagFields.Album),
 
-            FromTextBox(TrackNumBox, t => t.TrackNumber > 0 ? t.TrackNumber.ToString() : "", (t, tag, v) => { var n = ParseUInt(v); t.TrackNumber = n; tag.Track = n; }),
-            FromTextBox(TrackTotalBox, t => t.TrackCount > 0 ? t.TrackCount.ToString() : "", (t, tag, v) => { var n = ParseUInt(v); t.TrackCount = n; tag.TrackCount = n; }),
-            FromTextBox(DiscNumBox, t => t.DiscNumber > 0 ? t.DiscNumber.ToString() : "", (t, tag, v) => { var n = ParseUInt(v); t.DiscNumber = n; tag.Disc = n; }),
-            FromTextBox(DiscTotalBox, t => t.DiscCount > 0 ? t.DiscCount.ToString() : "", (t, tag, v) => { var n = ParseUInt(v); t.DiscCount = n; tag.DiscCount = n; }),
-            // Track.Year stays a raw string while tag.Year is parsed to uint - an
-            // existing asymmetry in how this field was already handled, preserved as-is.
-            FromTextBox(YearBox, t => t.Year ?? "", (t, tag, v) => { t.Year = NullIfEmpty(v); tag.Year = ParseUInt(v); }),
-            FromTextBox(GenreBox, t => t.Genre ?? "", (t, tag, v) => { var g = NullIfEmpty(v); t.Genre = g; tag.Genres = g is string gg ? [gg] : []; }),
-            FromTextBox(BpmBox, t => t.BeatsPerMinute > 0 ? t.BeatsPerMinute.ToString() : "", (t, tag, v) => { var n = ParseUInt(v); t.BeatsPerMinute = n; tag.BeatsPerMinute = n; }),
-            SimpleField(KeyBox, t => t.InitialKey, (t, v) => t.InitialKey = v, (tag, v) => tag.InitialKey = v),
-            SimpleField(GroupingBox, t => t.Grouping, (t, v) => t.Grouping = v, (tag, v) => tag.Grouping = v),
+            FromTextBox(TrackNumBox, TrackTagFields.TrackNumber),
+            FromTextBox(TrackTotalBox, TrackTagFields.TrackCount),
+            FromTextBox(DiscNumBox, TrackTagFields.DiscNumber),
+            FromTextBox(DiscTotalBox, TrackTagFields.DiscCount),
+            FromTextBox(YearBox, TrackTagFields.Year),
+            FromTextBox(GenreBox, TrackTagFields.Genre),
+            FromTextBox(BpmBox, TrackTagFields.BeatsPerMinute),
+            FromTextBox(KeyBox, TrackTagFields.InitialKey),
+            FromTextBox(GroupingBox, TrackTagFields.Grouping),
 
-            FromAutoComplete(AlbumArtistBox, t => t.AlbumArtists ?? "", (t, tag, v) => { t.AlbumArtists = NullIfEmpty(v); tag.AlbumArtists = SplitArray(v); }),
-            FromTextBox(ComposerBox, t => t.Composers ?? "", (t, tag, v) => { t.Composers = NullIfEmpty(v); tag.Composers = SplitArray(v); }),
-            SimpleField(ConductorBox, t => t.Conductor, (t, v) => t.Conductor = v, (tag, v) => tag.Conductor = v),
-            SimpleField(RemixedByBox, t => t.RemixedBy, (t, v) => t.RemixedBy = v, (tag, v) => tag.RemixedBy = v),
+            FromAutoComplete(AlbumArtistBox, TrackTagFields.AlbumArtists),
+            FromTextBox(ComposerBox, TrackTagFields.Composers),
+            FromTextBox(ConductorBox, TrackTagFields.Conductor),
+            FromTextBox(RemixedByBox, TrackTagFields.RemixedBy),
 
-            SimpleField(SubtitleBox, t => t.Subtitle, (t, v) => t.Subtitle = v, (tag, v) => tag.Subtitle = v),
-            SimpleField(DescriptionBox, t => t.Description, (t, v) => t.Description = v, (tag, v) => tag.Description = v),
-            SimpleField(CommentBox, t => t.Comment, (t, v) => t.Comment = v, (tag, v) => tag.Comment = v),
-            SimpleField(PublisherBox, t => t.Publisher, (t, v) => t.Publisher = v, (tag, v) => tag.Publisher = v),
-            SimpleField(CopyrightBox, t => t.Copyright, (t, v) => t.Copyright = v, (tag, v) => tag.Copyright = v),
-            SimpleField(ISRCBox, t => t.ISRC, (t, v) => t.ISRC = v, (tag, v) => tag.ISRC = v),
+            FromTextBox(SubtitleBox, TrackTagFields.Subtitle),
+            FromTextBox(DescriptionBox, TrackTagFields.Description),
+            FromTextBox(CommentBox, TrackTagFields.Comment),
+            FromTextBox(PublisherBox, TrackTagFields.Publisher),
+            FromTextBox(CopyrightBox, TrackTagFields.Copyright),
+            FromTextBox(ISRCBox, TrackTagFields.ISRC),
 
-            SimpleField(LyricsBox, t => t.Lyrics, (t, v) => t.Lyrics = v, (tag, v) => tag.Lyrics = v),
+            FromTextBox(LyricsBox, TrackTagFields.Lyrics),
 
-            // Options tab. The sort tags are ordinary staged tag edits like
-            // everything above - TSOT/TSOP/TSOA/TSOC and their MP4/Xiph
-            // equivalents, which TagLib does expose on the generic Tag. (The
-            // compilation flag on the same tab does not, and is handled
-            // separately in SaveChanges.)
-            SimpleField(TitleSortBox, t => t.TitleSort, (t, v) => t.TitleSort = v, (tag, v) => tag.TitleSort = v),
-            FromTextBox(ArtistSortBox, t => t.ArtistsSort ?? "", (t, tag, v) => { t.ArtistsSort = NullIfEmpty(v); tag.PerformersSort = SplitArray(v); }),
-            SimpleField(AlbumSortBox, t => t.AlbumSort, (t, v) => t.AlbumSort = v, (tag, v) => tag.AlbumSort = v),
-            FromTextBox(ComposerSortBox, t => t.ComposersSort ?? "", (t, tag, v) => { t.ComposersSort = NullIfEmpty(v); tag.ComposersSort = SplitArray(v); }),
+            // Options tab. The compilation flag on the same tab has no place
+            // on the generic Tag and is handled separately in SaveChanges.
+            FromTextBox(TitleSortBox, TrackTagFields.TitleSort),
+            FromTextBox(ArtistSortBox, TrackTagFields.ArtistsSort),
+            FromTextBox(AlbumSortBox, TrackTagFields.AlbumSort),
+            FromTextBox(ComposerSortBox, TrackTagFields.ComposersSort),
         ];
     }
 
@@ -625,60 +613,19 @@ public partial class TrackInfoWindow : Window
         if (dirty.Count == 0 && compilation == null)
             return;
 
-        // The tracks whose tags actually changed - which is what gets
-        // announced below, and so what is stamped as edited and sent to the
-        // paired server. A track the edit could not be applied to is not one.
-        var edited = new List<Track>();
-        foreach (var track in _editTracks)
-        {
-            // Not this device's to edit - a server's song, on a device that
-            // server has not made an administrator, file here or not.
-            if (!_main.CanEditTagsOf(track))
-                continue;
-
-            if (track.Path is not string path)
+        // The songs whose tags actually changed, file first - see
+        // TrackTagEdits, shared with the phone's Track Info.
+        var edited = TrackTagEdits.Apply(
+            _editTracks,
+            dirty.Select(f => (f.Field, f.GetText())).ToList(),
+            _main.CanEditTagsOf,
+            _logger,
+            perFile: (file, _) => compilation is not { } isCompilation || CompilationFlag.Write(file, isCompilation),
+            afterFile: track =>
             {
-                // No file here to write: a song that lives on the paired
-                // server. The edit is made to the track, and reaches the
-                // server's file from there (LibraryMirrorService).
-
-                // The fields apply themselves to a track and a TagLib tag
-                // together; with no file there is no tag, so they are given
-                // one nobody reads.
-                var nowhere = new TagLib.Id3v2.Tag();
-                foreach (var field in dirty)
-                    field.Apply(track, nowhere, field.GetText());
-                if (compilation is { } flag)
-                    track.IsCompilation = flag;
-                edited.Add(track);
-                continue;
-            }
-
-            try
-            {
-                using var tagFile = TagLib.File.Create(path);
-                var tag = tagFile.Tag;
-                foreach (var field in dirty)
-                    field.Apply(track, tag, field.GetText());
-                if (compilation is { } isCompilation && CompilationFlag.Write(tagFile, isCompilation))
+                if (compilation is { } isCompilation)
                     track.IsCompilation = isCompilation;
-                tagFile.Save();
-                edited.Add(track);
-            }
-            catch (Exception ex)
-            {
-                // field.Apply above already mutated the in-memory Track object
-                // itself (it's an Action<Track, TagLib.Tag, string?>, not just
-                // the TagLib tag) before this Save() was attempted - so a failed
-                // save here leaves the UI showing the edit as if it took, while
-                // the actual file on disk still has the old value. Not fixed
-                // here (would need reordering: apply to the tag only, save,
-                // *then* mutate the Track - a separate, real bug worth its own
-                // fix), but at least surfaced now instead of failing silently.
-                _logger.LogWarning(ex, "Could not save tag edits to {Path}; the in-memory track was updated but the file on disk was not", path);
-                continue;
-            }
-        }
+            });
 
         // Refreshes views bound to the library and persists the edited tracks
         // - one upsert each, where this used to rewrite the whole library to
@@ -1037,16 +984,7 @@ public partial class TrackInfoWindow : Window
             parts.Add("No artwork");
         }
 
-        // Scope first, because it is the part that can surprise: a batch edit
-        // rewrites every selected file, and a change on the server lands on the
-        // whole album (see ServerArtAlbumIds).
-        if (serverAlbums > 0)
-            parts.Add(serverAlbums == 1 ? "Changes apply to the whole album on the server" : $"Changes apply to {serverAlbums} albums on the server");
-        else if (writable > 1)
-            parts.Add($"Changes apply to all {writable} tracks");
-        else
-            parts.Add("Drop an image or click Change");
-
+        parts.Add("Drop an image or click Change");
         return string.Join("  ·  ", parts);
     }
 
@@ -1059,15 +997,4 @@ public partial class TrackInfoWindow : Window
 
     private static string FormatBytes(int count) =>
         count >= 1024 * 1024 ? $"{count / (1024.0 * 1024.0):0.#} MB" : $"{count / 1024.0:0} KB";
-
-    private static string? NullIfEmpty(string? s) =>
-        string.IsNullOrWhiteSpace(s) ? null : s.Trim();
-
-    private static string[] SplitArray(string? s) =>
-        string.IsNullOrWhiteSpace(s)
-            ? []
-            : [.. s.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
-
-    private static uint ParseUInt(string? s) =>
-        uint.TryParse(s?.Trim(), out var n) ? n : 0;
 }
