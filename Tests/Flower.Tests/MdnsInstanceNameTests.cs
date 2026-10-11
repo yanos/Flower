@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Net;
 
 using Makaretu.Dns;
 
@@ -28,10 +29,15 @@ public class MdnsInstanceNameTests
 
     // The name as it arrives from the LAN: encoded to wire bytes the way an
     // advertising server does, then read back the way the browsing client does.
+    // Given an address, because a profile without one lists the machine's
+    // network interfaces to find its own - which has nothing to do with the
+    // name, and which the iOS Simulator on a CI runner sometimes refuses
+    // (NetworkInformationException out of GetAllNetworkInterfaces).
     private static DomainName Announced(string instanceName)
     {
         var stream = new MemoryStream();
-        new WireWriter(stream).WriteDomainName(new ServiceProfile(instanceName, ServiceType, 4533).FullyQualifiedName);
+        var profile = new ServiceProfile(instanceName, ServiceType, 4533, [IPAddress.Loopback]);
+        new WireWriter(stream).WriteDomainName(profile.FullyQualifiedName);
         return new WireReader(new MemoryStream(stream.ToArray())).ReadDomainName();
     }
 
