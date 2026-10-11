@@ -34,6 +34,17 @@
          fails on iOS and nowhere else. -->
     <UseNativeHttpHandler>false</UseNativeHttpHandler>
 
+    <!-- NativeAOT instead of Mono, opted into with -p:FlowerNativeAot=true on a
+         publish (see scripts/deploy-ios-device.sh). A property of its
+         own rather than PublishAot on the command line, because a global
+         property reaches every referenced project too, and Flower/Flower.Core
+         are plain net10.0 libraries that refuse PublishAot for an iOS RID
+         (NETSDK1203). NativeAOT only happens on the publish path, and the SDK
+         refuses to publish for a simulator, so a simulator build that wants it
+         is told it is publishing (-p:_IsPublishing=true) - which is how CI
+         builds it. Any other build stays Mono. -->
+    <PublishAot Condition="'$(FlowerNativeAot)' == 'true'">true</PublishAot>
+
     <ApplicationVersion>1</ApplicationVersion>
     <!-- Names the AppIcon.appiconset in Resources/Assets.xcassets - without this,
          actool silently compiles the asset catalog with no app icon output and no
@@ -66,6 +77,32 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Flower\Flower.csproj" />
+  </ItemGroup>
+
+  <!-- NativeAOT trims every assembly, where Mono's SdkOnly left third-party ones
+       whole. TagLib# makes its per-format File classes with
+       Activator.CreateInstance over a table of types, which the trimmer cannot
+       follow (IL2072 in TagLib.File.Create), so their constructors would be
+       trimmed away and every TagLib.File.Create - album art, tags, a download's
+       metadata - would fail on the phone and nowhere else. Kept whole. -->
+  <ItemGroup Condition="'$(FlowerNativeAot)' == 'true'">
+    <TrimmerRootAssembly Include="TagLibSharp" />
+  </ItemGroup>
+
+  <!-- Every P/Invoke into the frameworks below compiled as a direct call. The
+       frameworks are linked into the executable either way (otool -L lists
+       them), but under NativeAOT a P/Invoke otherwise finds its library at
+       its first call, by name, and it does not find these: the first launch
+       died in UIApplicationMain with DllNotFoundException for 'miniaudio',
+       having dlopened every flat name beside the app and none inside
+       Frameworks/. The DllImportResolvers that solve this under Mono
+       (MiniaudioSink, AppDelegate) are then never consulted, and there is
+       no lookup left to get wrong. HarfBuzzSharp is not listed: its iOS
+       build names its framework by path, which resolves on its own. -->
+  <ItemGroup Condition="'$(FlowerNativeAot)' == 'true'">
+    <DirectPInvoke Include="miniaudio" />
+    <DirectPInvoke Include="ffaudio" />
+    <DirectPInvoke Include="libSkiaSharp" />
   </ItemGroup>
 
   <!-- Self-built dynamic frameworks (native/miniaudio/ios/build.sh), not

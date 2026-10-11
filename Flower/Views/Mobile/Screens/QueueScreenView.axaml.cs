@@ -37,7 +37,11 @@ public partial class QueueScreenView : UserControl, ITrackRowHost, IOpensAtItsOw
     public QueueScreenView()
     {
         InitializeComponent();
-        this.Bind(IsPlaylistModeProperty, new Binding(nameof(MobileMainViewModel.IsQueueReorderable)));
+        // Compiled rather than a Binding by name: a name is resolved by
+        // reflection at runtime, which a trimmed NativeAOT build can have
+        // removed the property behind.
+        this.Bind(IsPlaylistModeProperty,
+            CompiledBinding.Create((MobileMainViewModel vm) => vm.IsQueueReorderable));
 
         _ = new TrackRowDragReorder(QueueList, this, DropIndicator, (dragged, insertBefore) =>
         {

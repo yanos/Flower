@@ -11,17 +11,22 @@
 # that fixes this without a clean; doing it here, always, removes the class
 # of bug entirely instead of relying on remembering to do it by hand.
 #
-# The build is Release (the app needs to run without a debugger attached), but
-# with LLVM off - the .NET-for-iOS SDK turns MtouchUseLlvm on for every iOS
-# Release build, which sends all ~107 trimmed assemblies through opt+llc and is
-# where essentially the whole build goes: measured here, 4m25s total with it
-# and 46s without, of which _AOTCompile was 244s and 24s. Nothing else in the
-# build is close (ILLink, the next largest, is ~12s either way). The trimming,
-# the AOT and every code path are the same; the native code is just optimized
-# less well, which is a trade worth making for a build whose whole purpose is
-# to be looked at on a device in a minute rather than five. Pass --optimized
-# for the slow one when what you are measuring IS the performance, or when you
-# want the artifact Apple would actually receive.
+# The app is published with NativeAOT: the whole app trimmed and compiled
+# ahead of time by .NET's own compiler, running on .NET's own runtime and
+# garbage collector rather than Mono's - the runtime that made scrolling smooth
+# on a phone, and so the one worth looking at. It is a publish, not a build,
+# because the SDK only switches runtimes on publish (see FlowerNativeAot in
+# Flower.iOS.csproj), and it is always optimized. The .app lands where a build
+# puts it.
+#
+# --mono builds for Mono instead, which is what a plain `dotnet build` of
+# Flower.iOS still produces. Release (the app needs to run without a debugger
+# attached), but with LLVM off - the .NET-for-iOS SDK turns MtouchUseLlvm on
+# for every iOS Release build, which sends all ~107 trimmed assemblies through
+# opt+llc and is where essentially the whole build goes: measured here, 4m25s
+# total with it and 46s without, of which _AOTCompile was 244s and 24s.
+# Nothing else in the build is close (ILLink, the next largest, is ~12s either
+# way). --optimized is the Mono build with LLVM on, for measuring Mono itself.
 #
 # --no-build skips both the clean and the build and deploys whatever is
 # already in bin/. That is for reinstalling or relaunching the app you just
@@ -32,13 +37,15 @@
 # The connected device is found automatically; the optional device-id is for
 # when more than one is plugged in.
 #
-# Usage: scripts/deploy-ios-device.sh [--no-build] [--optimized] [device-id]
+# Usage: scripts/deploy-ios-device.sh [--no-build] [--mono | --optimized] [device-id]
 set -euo pipefail
 cd "$(dirname "$0")/.."
 . scripts/lib/ios-device.sh
 
 BUILD=1
 LLVM=0
+NATIVE_AOT=1
+USAGE="Usage: $(basename "$0") [--no-build] [--mono | --optimized] [device-id]"
 DEVICE_ID=""
 
 while [ $# -gt 0 ]; do
@@ -46,16 +53,20 @@ while [ $# -gt 0 ]; do
     --no-build)
       BUILD=0
       ;;
+    --mono)
+      NATIVE_AOT=0
+      ;;
     --optimized)
+      NATIVE_AOT=0
       LLVM=1
       ;;
     -h|--help)
-      echo "Usage: $(basename "$0") [--no-build] [--optimized] [device-id]"
+      echo "$USAGE"
       exit 0
       ;;
     -*)
       echo "Unknown option: $1" >&2
-      echo "Usage: $(basename "$0") [--no-build] [--optimized] [device-id]" >&2
+      echo "$USAGE" >&2
       exit 1
       ;;
     *)
@@ -87,18 +98,24 @@ if [ "$BUILD" -eq 1 ]; then
   echo "==> Cleaning obj/bin (see this script's header comment for why)"
   rm -rf Flower.iOS/obj Flower.iOS/bin Flower/obj Flower/bin
 
-  if [ "$LLVM" -eq 1 ]; then
-    echo "==> Building Release, LLVM on (several minutes - see the header)"
-  else
-    echo "==> Building Release, LLVM off (--optimized for the shipping one)"
-  fi
   # No DEVELOPER_DIR pin: the iOS SDK pack this TFM selects checks the
   # selected Xcode's major.minor for *equality* and says which one it wanted,
   # so a wrong `xcode-select` fails here with a better message than a path
   # hardcoded to whichever Xcode happened to be installed the day this was
   # written.
-  dotnet build Flower.iOS/Flower.iOS.csproj \
-    -c Release -p:MtouchUseLlvm=$([ "$LLVM" -eq 1 ] && echo true || echo false)
+  if [ "$NATIVE_AOT" -eq 1 ]; then
+    echo "==> Publishing Release with NativeAOT (see the header)"
+    dotnet publish Flower.iOS/Flower.iOS.csproj \
+      -c Release -r ios-arm64 -p:FlowerNativeAot=true
+  else
+    if [ "$LLVM" -eq 1 ]; then
+      echo "==> Building Release for Mono, LLVM on (several minutes - see the header)"
+    else
+      echo "==> Building Release for Mono, LLVM off (--optimized for LLVM on)"
+    fi
+    dotnet build Flower.iOS/Flower.iOS.csproj \
+      -c Release -p:MtouchUseLlvm=$([ "$LLVM" -eq 1 ] && echo true || echo false)
+  fi
 else
   echo "==> Skipping clean and build (--no-build)"
   if [ ! -d "$APP_PATH" ]; then

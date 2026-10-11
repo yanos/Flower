@@ -119,6 +119,12 @@ MSBuild acts on — the .NET-for-iOS build signs with the best profile already
 installed and will never create one. Xcode's UI is not involved, but its
 Accounts settings are: the account it signs as is the one added there.
 
+The script publishes with NativeAOT (`FlowerNativeAot` in `Flower.iOS.csproj`):
+.NET's own runtime and garbage collector rather than Mono's, which is what made
+the phone's scrolling smooth. `--mono` builds for Mono instead, the runtime a
+plain `dotnet build` of `Flower.iOS` and the iOS test runners still use; the
+script's header has the build-time trade-offs.
+
 The browser UI (`Flower.Web`) has no run configuration of its own — building
 `Flower.Server` publishes it and drops it in beside the binary, so running the
 server is all it takes to have it served. That needs the `wasm-tools` workload;
