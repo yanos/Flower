@@ -35,7 +35,8 @@ public class TrackRowMergeTests : IDisposable
     private sealed class CountingArtLoader(IReadOnlySet<Guid> ours) : AlbumArtLoader(null, null, NullLogger<AlbumArtLoader>.Instance)
     {
         public int Loads { get; private set; }
-        public override Task<Bitmap?> LoadAsync(Track track)
+        // A row's art is its thumbnail - see TrackRowViewModel.AlbumArt.
+        public override Task<Bitmap?> LoadThumbnailAsync(Track track)
         {
             if (ours.Contains(track.Id))
                 Loads++;

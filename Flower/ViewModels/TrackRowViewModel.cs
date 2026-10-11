@@ -361,7 +361,7 @@ public class TrackRowViewModel : DownloadIndicatorViewModel
         // this one is in flight must leave the published bitmap looking stale,
         // not be silently stamped onto it.
         var cacheGeneration = AlbumArtLoader.CacheGeneration;
-        var bmp = await AlbumArtLoader.Current.LoadAsync(Track);
+        var bmp = await AlbumArtLoader.Current.LoadThumbnailAsync(Track);
         if (Volatile.Read(ref _artGeneration) != generation)
             return;
         Volatile.Write(ref _artCacheGeneration, cacheGeneration);

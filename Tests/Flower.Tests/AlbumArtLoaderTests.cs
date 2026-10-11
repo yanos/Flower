@@ -153,6 +153,48 @@ public class AlbumArtLoaderTests : IDisposable
         Assert.Equal(768, bitmap!.PixelSize.Width);
     }
 
+    // A list row draws its cover at 52-76pt, and a fling through a song list
+    // wants a new one every few frames: decoding each at MaxArtPixels was ten
+    // times the pixels any row shows, uploaded to the GPU as a 2.4 MB texture
+    // per row that scrolled in.
+    [AvaloniaFact]
+    public async Task A_thumbnail_is_decoded_at_the_size_a_row_draws_it()
+    {
+        var track = LocalTrack(Dir("thumb"), "thumb.wav", Unique("Album"), SyntheticPng.Build(1400, 1400));
+
+        var thumbnail = await _loader.LoadThumbnailAsync(track);
+
+        Assert.Equal(192, thumbnail!.PixelSize.Width);
+    }
+
+    // Cached apart, so a tile asking for an album a row has already shown gets
+    // a cover sharp enough for a tile, and the row's next ask is a cache hit.
+    [AvaloniaFact]
+    public async Task A_thumbnail_and_the_full_cover_are_cached_apart()
+    {
+        var track = LocalTrack(Dir("both"), "both.wav", Unique("Album"), SyntheticPng.Build(1400, 1400));
+
+        var thumbnail = await _loader.LoadThumbnailAsync(track);
+        var full = await _loader.LoadAsync(track);
+
+        Assert.Equal(768, full!.PixelSize.Width);
+        Assert.Same(thumbnail, await _loader.LoadThumbnailAsync(track));
+        Assert.Same(full, await _loader.LoadAsync(track));
+    }
+
+    // Track Info's Artwork tab replaces a cover through Invalidate; a row
+    // still handed the old thumbnail would go on showing the old picture.
+    [AvaloniaFact]
+    public async Task Invalidating_an_album_drops_its_thumbnail_too()
+    {
+        var track = LocalTrack(Dir("replaced"), "replaced.wav", Unique("Album"), SyntheticPng.Build(400, 400));
+        var before = await _loader.LoadThumbnailAsync(track);
+
+        AlbumArtLoader.Invalidate(track);
+
+        Assert.NotSame(before, await _loader.LoadThumbnailAsync(track));
+    }
+
     [AvaloniaFact]
     public async Task Art_smaller_than_the_maximum_is_never_scaled_up()
     {

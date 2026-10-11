@@ -93,9 +93,70 @@ public class AlbumArtLoader
     // weak cache still covers everything beyond it. Deliberately small: at
     // MaxArtPixels a bitmap is ~2.4 MB, so 32 entries is a ~75 MB ceiling in
     // the worst case, and this app runs on phones.
+    //
+    // Thumbnails (LoadThumbnailAsync) get a cache of their own, because they
+    // are the opposite shape: small, and wanted by the hundred. A song list is
+    // mostly one album per row, so a fling through it wants a new cover every
+    // few frames, and 32 entries shared with the album grid meant almost every
+    // row that came back on screen decoded its cover again. At ThumbnailPixels
+    // 256 of them are ~37 MB at most.
     private const int StrongCacheSize = 32;
-    private static readonly object StrongCacheLock = new();
-    private static readonly LinkedList<(string Key, Bitmap Bitmap)> StrongCache = new();
+    private const int StrongThumbnailCacheSize = 256;
+    private static readonly StrongLru StrongCache = new(StrongCacheSize);
+    private static readonly StrongLru StrongThumbnailCache = new(StrongThumbnailCacheSize);
+
+    private sealed class StrongLru(int capacity)
+    {
+        private readonly object _lock = new();
+        private readonly LinkedList<(string Key, Bitmap Bitmap)> _entries = new();
+
+        public void Retain(string key, Bitmap bitmap)
+        {
+            lock (_lock)
+            {
+                RemoveLocked(key);
+                _entries.AddFirst((key, bitmap));
+
+                while (_entries.Count > capacity)
+                {
+                    // Evicted to weak-only, not disposed: a row or tile currently on
+                    // screen may still be painting this exact Bitmap.
+                    _entries.RemoveLast();
+                }
+            }
+        }
+
+        public void Forget(string key)
+        {
+            lock (_lock)
+                RemoveLocked(key);
+        }
+
+        private void RemoveLocked(string key)
+        {
+            for (var node = _entries.First; node != null; node = node.Next)
+            {
+                if (node.Value.Key == key)
+                {
+                    _entries.Remove(node);
+                    return;
+                }
+            }
+        }
+    }
+
+    private enum ArtSize
+    {
+        Full,
+        Thumbnail,
+    }
+
+    // Thumbnails are cached beside full-size art under the same key with this
+    // in front, so one album's two sizes never stand in for each other.
+    private const string ThumbnailKeyPrefix = "thumb|";
+
+    private static string Keyed(string key, ArtSize size) =>
+        size == ArtSize.Thumbnail ? ThumbnailKeyPrefix + key : key;
 
     // Also prunes cache entries whose bitmap has already been collected -
     // without this the dictionary only ever grows, one dead entry per album
@@ -104,26 +165,8 @@ public class AlbumArtLoader
     {
         Cache[key] = new WeakReference<Bitmap>(bitmap);
 
-        lock (StrongCacheLock)
-        {
-            for (var node = StrongCache.First; node != null; node = node.Next)
-            {
-                if (node.Value.Key == key)
-                {
-                    StrongCache.Remove(node);
-                    break;
-                }
-            }
-
-            StrongCache.AddFirst((key, bitmap));
-
-            while (StrongCache.Count > StrongCacheSize)
-            {
-                // Evicted to weak-only, not disposed: a row or tile currently on
-                // screen may still be painting this exact Bitmap.
-                StrongCache.RemoveLast();
-            }
-        }
+        (key.StartsWith(ThumbnailKeyPrefix, StringComparison.Ordinal) ? StrongThumbnailCache : StrongCache)
+            .Retain(key, bitmap);
 
         foreach (var (deadKey, weak) in Cache)
         {
@@ -170,6 +213,25 @@ public class AlbumArtLoader
     // learn its size, once at the size actually wanted. The full-size decode is
     // transient and immediately dropped, which is the whole point - what used
     // to be *retained*, per album, for the life of the cache entry.
+    // The width a track row's thumbnail is decoded at: the largest any row
+    // paints it is the desktop list's 76pt art column (TrackRowViewModel.
+    // ArtMaxSize) on a 2x screen, 152px, and a phone row's 52pt on a 3x one is
+    // 156px - so 192 is sharp at both with a little to spare. A sixteenth of the
+    // pixels of MaxArtPixels, and a texture the GPU takes as one small upload
+    // rather than 2.4 MB each time a row scrolls in.
+    private const int ThumbnailPixels = 192;
+
+    private static Bitmap Decode(Stream stream, ArtSize size) =>
+        size == ArtSize.Thumbnail ? DecodeThumbnail(stream) : DecodeScaled(stream);
+
+    // One decode, straight to the width wanted - a JPEG decoder can do most of
+    // that downscale inside the decode itself, so this is cheaper than reading
+    // the picture at full size first. Art narrower than ThumbnailPixels is
+    // scaled up to it, which for a bitmap this small is not worth a second
+    // decode to avoid.
+    private static Bitmap DecodeThumbnail(Stream stream) =>
+        Bitmap.DecodeToWidth(stream, ThumbnailPixels);
+
     private static Bitmap DecodeScaled(Stream stream)
     {
         var full = new Bitmap(stream);
@@ -184,12 +246,20 @@ public class AlbumArtLoader
     // Virtual for the same reason PeerTrackResolver.Resolve is: it is the one
     // seam a test needs to count how often a row actually asks for its art
     // (see TrackRowMergeTests) without standing up real files and a decoder.
-    public virtual async Task<Bitmap?> LoadAsync(Track track)
+    public virtual Task<Bitmap?> LoadAsync(Track track) => LoadAsync(track, ArtSize.Full);
+
+    /// <summary>
+    /// The track's art at ThumbnailPixels wide, for the places that draw it at
+    /// the size of a list row - see ThumbnailPixels and StrongThumbnailCacheSize.
+    /// </summary>
+    public virtual Task<Bitmap?> LoadThumbnailAsync(Track track) => LoadAsync(track, ArtSize.Thumbnail);
+
+    private async Task<Bitmap?> LoadAsync(Track track, ArtSize size)
     {
         if (IsLocalFile(track))
-            return await LoadLocalAsync(track);
+            return await LoadLocalAsync(track, size);
 
-        return await LoadRemoteAsync(track);
+        return await LoadRemoteAsync(track, size);
     }
 
     // A Path is not automatically a file. PlaylistControlViewModel.
@@ -219,21 +289,21 @@ public class AlbumArtLoader
             ? $"album:{track.Album}|{track.EffectiveAlbumArtist}"
             : $"dir:{Path.GetDirectoryName(track.Path ?? "") ?? ""}";
 
-    private async Task<Bitmap?> LoadLocalAsync(Track track)
+    private async Task<Bitmap?> LoadLocalAsync(Track track, ArtSize size)
     {
-        var key = LocalCacheKey(track);
+        var key = Keyed(LocalCacheKey(track), size);
 
         if (TryGetCached(key, out var cached))
             return cached;
 
-        var bmp = await Task.Run(() => LoadLocalBitmap(track));
+        var bmp = await Task.Run(() => LoadLocalBitmap(track, size));
         if (bmp != null)
             Retain(key, bmp);
 
         return bmp;
     }
 
-    private Bitmap? LoadLocalBitmap(Track track)
+    private Bitmap? LoadLocalBitmap(Track track, ArtSize size)
     {
         var data = TryGetLocalArtBytes(track);
         if (data == null)
@@ -248,7 +318,7 @@ public class AlbumArtLoader
         try
         {
             using var ms = new MemoryStream(data);
-            return DecodeScaled(ms);
+            return Decode(ms, size);
         }
         catch (Exception ex)
         {
@@ -339,10 +409,12 @@ public class AlbumArtLoader
         Interlocked.Increment(ref _cacheGeneration);
 
         Forget(LocalCacheKey(track));
+        Forget(Keyed(LocalCacheKey(track), ArtSize.Thumbnail));
 
         if (track.OriginAlbumArtId is { Length: > 0 } artId)
         {
             Forget($"remote:{artId}");
+            Forget(Keyed($"remote:{artId}", ArtSize.Thumbnail));
             var cachePath = Path.Combine(CacheDirectory, $"{artId}.art");
             try
             {
@@ -362,18 +434,8 @@ public class AlbumArtLoader
     private static void Forget(string key)
     {
         Cache.TryRemove(key, out _);
-
-        lock (StrongCacheLock)
-        {
-            for (var node = StrongCache.First; node != null; node = node.Next)
-            {
-                if (node.Value.Key == key)
-                {
-                    StrongCache.Remove(node);
-                    break;
-                }
-            }
-        }
+        StrongCache.Forget(key);
+        StrongThumbnailCache.Forget(key);
     }
 
     // Fetches a placeholder track's album art from its origin peer and keeps it
@@ -381,20 +443,20 @@ public class AlbumArtLoader
     // offline) does not mean re-fetching. The key names the album and not the
     // bytes - see Track.OriginAlbumArtId - so art replaced on the origin is not
     // noticed here on its own; Invalidate above is what drops a stale entry.
-    private async Task<Bitmap?> LoadRemoteAsync(Track track)
+    private async Task<Bitmap?> LoadRemoteAsync(Track track, ArtSize size)
     {
         var artId = track.OriginAlbumArtId;
         if (string.IsNullOrEmpty(artId) || string.IsNullOrEmpty(track.OriginDeviceFingerprint))
             return null;
 
-        var cacheKey = $"remote:{artId}";
+        var cacheKey = Keyed($"remote:{artId}", size);
         if (TryGetCached(cacheKey, out var cached))
             return cached;
 
         var cachePath = Path.Combine(CacheDirectory, $"{artId}.art");
         if (File.Exists(cachePath))
         {
-            var bmp = await Task.Run(() => TryDecodeFile(cachePath));
+            var bmp = await Task.Run(() => TryDecodeFile(cachePath, size));
             if (bmp != null)
             {
                 Retain(cacheKey, bmp);
@@ -432,7 +494,7 @@ public class AlbumArtLoader
             // LoadAsync (typically the UI thread, via TrackRowViewModel.AlbumArt's
             // getter), and decoding a full-size image inline there stalls scrolling
             // every time a placeholder row's art finishes downloading.
-            var bmp = await Task.Run(() => TryDecodeBytes(bytes));
+            var bmp = await Task.Run(() => TryDecodeBytes(bytes, size));
             if (bmp == null)
             {
                 // Reached the peer and got *something* back that is not an
@@ -445,8 +507,7 @@ public class AlbumArtLoader
                 return null;
             }
 
-            Directory.CreateDirectory(CacheDirectory);
-            await File.WriteAllBytesAsync(cachePath, bytes);
+            await WriteCacheFileAsync(cachePath, bytes);
 
             Retain(cacheKey, bmp);
             return bmp;
@@ -671,12 +732,30 @@ public class AlbumArtLoader
         public List<string> Ids { get; set; } = [];
     }
 
-    private Bitmap? TryDecodeBytes(byte[] bytes)
+    // A row's thumbnail and a tile's full-size cover can fetch the same album
+    // at the same moment, and both then write it here. The picture is already
+    // decoded by then, so a write that loses that race costs only the disk copy
+    // - not the art on screen, which a failure inside LoadRemoteAsync's own try
+    // would have turned into the placeholder.
+    private async Task WriteCacheFileAsync(string cachePath, byte[] bytes)
+    {
+        try
+        {
+            Directory.CreateDirectory(CacheDirectory);
+            await File.WriteAllBytesAsync(cachePath, bytes);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Could not write fetched album art to the cache at {Path}", cachePath);
+        }
+    }
+
+    private Bitmap? TryDecodeBytes(byte[] bytes, ArtSize size)
     {
         try
         {
             using var ms = new MemoryStream(bytes);
-            return DecodeScaled(ms);
+            return Decode(ms, size);
         }
         catch (Exception ex)
         {
@@ -700,12 +779,12 @@ public class AlbumArtLoader
         }
     }
 
-    private Bitmap? TryDecodeFile(string path)
+    private Bitmap? TryDecodeFile(string path, ArtSize size)
     {
         try
         {
             using var stream = File.OpenRead(path);
-            return DecodeScaled(stream);
+            return Decode(stream, size);
         }
         catch (Exception ex)
         {
