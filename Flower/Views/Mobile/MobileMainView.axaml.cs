@@ -37,7 +37,13 @@ public partial class MobileMainView : UserControl
         NowPlayingSheet.PropertyChanged += (_, e) =>
         {
             if (e.Property == SlidingSheet.IsOpenProperty)
+            {
                 TuckMiniPlayer(NowPlayingSheet.IsOpen);
+                // Over Now Playing, which is always washed in a colour, the
+                // tab oval lets that colour through and draws everything on
+                // it white (the .onArt styles in the XAML).
+                TabBar.Classes.Set("onArt", NowPlayingSheet.IsOpen);
+            }
         };
 
         foreach (var sheet in Root.Children.OfType<SlidingSheet>())

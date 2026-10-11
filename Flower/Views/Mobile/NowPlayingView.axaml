@@ -14,12 +14,13 @@
              x:DataType="vm:MobileMainViewModel"
              Padding="{DynamicResource NowPlayingBottomInset}">
 
-  <!-- The sheet is washed in the cover's own colour, darkened until white
-       reads on it and a little lighter at the top than the bottom
-       (ArtBackdrop.SheetBrush, set in the code-behind), in either theme - so everything on it is
-       white rather than the app's red and ink: the words, the transport, and
-       both sliders (their brushes are overridden just below). The two round
-       buttons at the top keep their own white circles. -->
+  <!-- The sheet is washed in the cover's own colour - or with no cover, the
+       theme's pressed accent - darkened until white reads on it and a little
+       lighter at the top than the bottom (ArtBackdrop.SheetBrush, set in the
+       code-behind), in either theme. So everything on it is white rather than
+       the app's red and ink: the words, the transport, both sliders (their
+       brushes are overridden just below), and the two round buttons at the
+       top, which are see-through rings. -->
 
   <UserControl.Resources>
     <conv:PlayOrPauseConverter x:Key="PlayOrPauseConverter" />
@@ -54,13 +55,28 @@
     </Style>
     <!-- Pressed, on the cover's colour: the white dims rather than turning
          the pressed accent, which would not read against a red or pink sheet.
-         The two round buttons at the top are off the tint and take the
-         app-wide pressed accent (App.axaml). -->
+         The two round buttons at the top do the same (below). -->
     <Style Selector="layout|NowPlayingBodyPanel :is(Button):pressed materialIcons|MaterialIcon">
       <Setter Property="Foreground" Value="{DynamicResource AppOnArtRingBrush}" />
     </Style>
     <Style Selector="Button.pill.circle Border.ring">
       <Setter Property="BorderBrush" Value="{DynamicResource AppOnArtRingBrush}" />
+    </Style>
+
+    <!-- The back and menu circles at the top: no fill, so the sheet's colour
+         shows through them, and ringed and drawn in white like everything
+         else here. The icon by child selectors rather than as any icon under
+         the bar: the menu's card is the menu button's logical child too, and
+         its entries keep their own colours. -->
+    <Style Selector="Grid#TopBar Border.floating">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppOnArtBrush}" />
+    </Style>
+    <Style Selector="Grid#TopBar Border.floating > Button.pill > materialIcons|MaterialIcon">
+      <Setter Property="Foreground" Value="{DynamicResource AppOnArtBrush}" />
+    </Style>
+    <Style Selector="Grid#TopBar Border.floating > Button.pill:pressed > materialIcons|MaterialIcon">
+      <Setter Property="Foreground" Value="{DynamicResource AppOnArtRingBrush}" />
     </Style>
 
     <!-- Fluent's Slider reserves 15px above and below its 20px track (the
@@ -108,22 +124,6 @@
       <Setter Property="Padding" Value="0" />
     </Style>
 
-    <!-- With no cover there is no colour to wash the sheet in, so it is the
-         page's own background (set in the code-behind, with the cover's wash
-         when there is one), and what is on it the page's own colours:
-         the words in the text colour (the AppOnArt* brushes, pointed back at
-         the page's ones in the code-behind), the icons red as everywhere
-         else, shuffle and repeat greyed off and red on. Last, so these win
-         over the white ones above. -->
-    <Style Selector="mobile|NowPlayingView.plain layout|NowPlayingBodyPanel materialIcons|MaterialIcon">
-      <Setter Property="Foreground" Value="{DynamicResource AppPrimaryBrush}" />
-    </Style>
-    <Style Selector="mobile|NowPlayingView.plain materialIcons|MaterialIcon.transportToggle">
-      <Setter Property="Foreground" Value="{DynamicResource AppTextDisabledBrush}" />
-    </Style>
-    <Style Selector="mobile|NowPlayingView.plain materialIcons|MaterialIcon.transportToggle.active">
-      <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}" />
-    </Style>
   </UserControl.Styles>
 
   <!-- The bottom padding is not the safe area, as on the other whole-screen
@@ -139,22 +139,23 @@
   <Grid RowDefinitions="Auto,*" Margin="0,0,0,10">
 
     <!-- Top bar: collapse only - no "Now Playing" label, the sheet's own
-         content already makes that obvious. The back button is the round one
-         every screen carries in its header band (ScreenSlot; Border.floating
-         and Button.pill are styled in Styles/IconButtons.axaml), and the
-         margin mirrors that band's
-         (12 in from either side), with Height="52" starting at y=0 putting
-         every circle on the same 26px centre line, so neither the back arrow
+         content already makes that obvious. The close button is the same
+         circle as the back button every screen carries in its header band
+         (ScreenSlot; Border.floating and Button.pill are styled in
+         Styles/IconButtons.axaml), with an arrow pointing down rather than
+         back: the sheet is an overlay, not a step in the history. The margin
+         mirrors that band's (12 in from either side), with Height="52" starting at y=0 putting
+         every circle on the same 26px centre line, so neither the arrow
          nor the menu jumps when the sheet opens. The menu is the one every
          screen has, with this sheet's own entries: the sheet is drawn over the
          screens, so without one here settings could not be reached while a
          song plays. -->
-    <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Height="52" Margin="12,0,12,0">
+    <Grid x:Name="TopBar" Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Height="52" Margin="12,0,12,0">
       <Border Grid.Column="0" Classes="floating" Width="40">
         <Button Classes="pill"
                 Command="{Binding CloseSheetCommand}"
                 HorizontalAlignment="Center">
-          <materialIcons:MaterialIcon Kind="ArrowLeft" Width="20" Height="20" />
+          <materialIcons:MaterialIcon Kind="ArrowDown" Width="20" Height="20" />
         </Button>
       </Border>
 

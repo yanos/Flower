@@ -264,11 +264,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         // one-back TrackListScreenView needs these instead of the live,
         // wholesale-replaced Main.Rows/CurrentDetailHeader.
         IsShowingTrackList ? Main.Rows.ToList() : null,
-        CurrentDetailHeader,
-        // Almost always None - the one sheet that is up while a navigation is
-        // pushed is Now Playing, whose album art is a drill-in. See
-        // MobileNavigationFrame.Sheet.
-        ActiveSheet);
+        CurrentDetailHeader);
 
     // Called BEFORE any state field mutates, both here and in GoBack - not
     // just before RaiseNavigationChanged's much-later resync. The gap
@@ -370,8 +366,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         _searchQuery,
         _screenFilter,
         null,
-        null,
-        ActiveSheet);
+        null);
 
     // What ScreenStackPanel should keep materialized underneath the current
     // screen, ready to reveal - null if there's nowhere to go back to.
@@ -1084,12 +1079,6 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             }
             if (value == MobileSheet.NowPlaying)
                 NowPlayingExitsForward = false;
-            else
-                // Whatever direction the last Now Playing arrived from, it is
-                // over now - the next one is an ordinary raise from the right
-                // unless ApplyFrame says otherwise, which it does immediately
-                // before assigning this property.
-                NowPlayingEntersBackward = false;
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsShowingNowPlaying));
             OnPropertyChanged(nameof(IsShowingTrackActions));
@@ -1133,7 +1122,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
 
     // Which edge the Now Playing sheet leaves by - see SlidingSheet.ExitsForward,
     // which this is bound to in MobileMainView.axaml. False for every ordinary
-    // dismissal (the back arrow, a swipe): the sheet retreats the way it came.
+    // dismissal (the down arrow, a swipe): the sheet retreats the way it came.
     // True for the one dismissal that is a forward navigation, tapping the album
     // art, where the sheet is pushed off to the left by the album arriving from
     // the right. Reset whenever the sheet is shown again, so one forward exit
@@ -1151,25 +1140,6 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         }
     }
 
-    // The mirror of NowPlayingExitsForward, for the way back: a sheet that was
-    // pushed off to the left by an album arriving from the right has to return
-    // from that same left edge when the album is popped, or going back would
-    // play as a forward push. Set only by ApplyFrame, and only when the frame
-    // being restored is one Back is walking to; cleared the moment any other
-    // sheet state takes over, so an ordinary reopen still arrives from the
-    // right. See SlidingSheet.EntersBackward.
-    private bool _nowPlayingEntersBackward;
-    public bool NowPlayingEntersBackward
-    {
-        get => _nowPlayingEntersBackward;
-        private set
-        {
-            if (_nowPlayingEntersBackward == value)
-                return;
-            _nowPlayingEntersBackward = value;
-            OnPropertyChanged();
-        }
-    }
     public bool IsShowingTrackActions => ActiveSheet == MobileSheet.TrackActions;
     public bool IsShowingAlbumActions => ActiveSheet == MobileSheet.AlbumActions;
     public bool IsShowingTrackInfo => ActiveSheet == MobileSheet.TrackInfo;
@@ -2040,9 +2010,9 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             // sheet. On the tab it was raised from, that is all it does - the
             // sheet retreats and uncovers the screen under it. On another, it
             // is a tab switch that carries the sheet off, the way the album
-            // art's drill-in does: the frame pushed remembers Now Playing, so
-            // Back brings it back, and the sheet leaves by the side the new
-            // tab's screen is not arriving from.
+            // art's drill-in does: the sheet leaves by the side the new tab's
+            // screen is not arriving from, and is not part of any history -
+            // Back from that tab never raises it again (MobileNavigationFrame).
             if (IsShowingNowPlaying)
             {
                 if (tab != SelectedTab)
@@ -3090,27 +3060,16 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         RaiseNavigationChanged();
         if (restoringTab)
             return;
-        // Last, over a destination that is fully built: a sheet is raised on
-        // top of a screen, so opening it before that screen is ready would
-        // animate it over the outgoing one.
-        ApplySheet(frame.Sheet, goingBack);
-    }
-
-    // Restores the sheet half of a frame, moving in whichever direction the
-    // navigation itself is going. Back returns the sheet by the edge it was
-    // pushed out of and, when it is instead the sheet being left behind,
-    // retreats it the ordinary way; Forward is the exact mirror, which is what
-    // makes a redo look like the push it is replaying rather than another back
-    // step. See SlidingSheet.EntersBackward/ExitsForward.
-    private void ApplySheet(MobileSheet sheet, bool goingBack)
-    {
-        if (sheet == ActiveSheet)
+        // Last, over a destination that is fully built. No frame carries a
+        // sheet (see MobileNavigationFrame), so one still up is left behind:
+        // Now Playing by whichever side the navigation is going, as a screen
+        // would be - the way it came on Back, off to the left ahead of the
+        // destination on Forward. See SlidingSheet.ExitsForward.
+        if (ActiveSheet == MobileSheet.None)
             return;
-        if (sheet == MobileSheet.NowPlaying)
-            NowPlayingEntersBackward = goingBack;
-        else if (ActiveSheet == MobileSheet.NowPlaying)
+        if (ActiveSheet == MobileSheet.NowPlaying)
             NowPlayingExitsForward = !goingBack;
-        ActiveSheet = sheet;
+        ActiveSheet = MobileSheet.None;
     }
 
     // Horizontal swipe-to-navigate (see ScreenStackPanel's own pointer

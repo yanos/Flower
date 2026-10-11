@@ -238,6 +238,42 @@
     <Style Selector="Button.tab:pressed Path">
       <Setter Property="Fill" Value="{DynamicResource AppAccentPressedBrush}" />
     </Style>
+    <!-- Over Now Playing, which is always washed in a colour (.onArt, set in
+         the code-behind while that sheet is open): the oval has no fill, so
+         the sheet shows through it as it does through the round buttons at
+         its top, and is ringed in white, with every icon and name white. The
+         tab showing keeps its pill, in white, faint - the accent's would not
+         read on the sheet's colour, and white icons alone leave nothing to
+         say which tab is under the sheet. Pressed, the white dims, as on the
+         sheet. After the resting and pressed colours above, so these win over
+         both. -->
+    <Style Selector="Grid#TabBar.onArt Border#TabOval">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppOnArtBrush}" />
+    </Style>
+    <Style Selector="Grid#TabBar.onArt Button.tab materialIcons|MaterialIcon">
+      <Setter Property="Foreground" Value="{DynamicResource AppOnArtBrush}" />
+    </Style>
+    <Style Selector="Grid#TabBar.onArt Button.tab TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource AppOnArtBrush}" />
+    </Style>
+    <Style Selector="Grid#TabBar.onArt Button.tab Path">
+      <Setter Property="Fill" Value="{DynamicResource AppOnArtBrush}" />
+    </Style>
+    <Style Selector="Grid#TabBar.onArt Button.tab.current">
+      <Setter Property="Background">
+        <SolidColorBrush Color="{DynamicResource PaletteOnArt}" Opacity="0.2" />
+      </Setter>
+    </Style>
+    <Style Selector="Grid#TabBar.onArt Button.tab:pressed materialIcons|MaterialIcon">
+      <Setter Property="Foreground" Value="{DynamicResource AppOnArtRingBrush}" />
+    </Style>
+    <Style Selector="Grid#TabBar.onArt Button.tab:pressed TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource AppOnArtRingBrush}" />
+    </Style>
+    <Style Selector="Grid#TabBar.onArt Button.tab:pressed Path">
+      <Setter Property="Fill" Value="{DynamicResource AppOnArtRingBrush}" />
+    </Style>
     <!-- The mini player and the tab oval float over the bottom of the screens
          (BottomChrome below), so every screen's scroller keeps that much room
          past its last item - enough to bring it up clear of them, while the
@@ -474,7 +510,8 @@
          come up from the bottom, the direction each one's own ChevronDown
          dismiss or bottom-anchored card already promises; now-playing and
          settings are the exceptions, arriving from the right like a pushed
-         screen and dismissing with that screen's back arrow.
+         screen and dismissing with an arrow (Now Playing's points down: it is
+         an overlay, never a step in the history).
          The four drawn as a card over a dimmed backdrop mark that card with
          SlidingSheet.IsCard, so the card slides while the dimming fades in
          behind it rather than sweeping up the screen with it.
@@ -499,8 +536,7 @@
                             Margin="{DynamicResource ScreenStackBleed}"
                             IsOpen="{Binding IsShowingNowPlaying}"
                             DismissCommand="{Binding CloseSheetCommand}"
-                            ExitsForward="{Binding NowPlayingExitsForward}"
-                            EntersBackward="{Binding NowPlayingEntersBackward}">
+                            ExitsForward="{Binding NowPlayingExitsForward}">
       <views:NowPlayingView />
     </controls:SlidingSheet>
 

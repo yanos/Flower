@@ -93,24 +93,10 @@ public sealed class SlidingSheet : ContentControl
         set => SetValue(ExitsForwardProperty, value);
     }
 
-    // The entrance counterpart to ExitsForward: a sheet restored by a Back
-    // arrives from the left, the edge the forward push shoved it out of.
-    // Without it, walking back to a sheet plays as a fresh push from the right,
-    // which is the one direction that means the opposite of what happened.
-    // Full-bleed sheets only, same as ExitsForward - a card is never part of a
-    // navigation.
-    public static readonly StyledProperty<bool> EntersBackwardProperty =
-        AvaloniaProperty.Register<SlidingSheet, bool>(nameof(EntersBackward));
-
-    public bool EntersBackward
-    {
-        get => GetValue(EntersBackwardProperty);
-        set => SetValue(EntersBackwardProperty, value);
-    }
-
     // What a rightward swipe on a full-bleed pushed sheet runs - the same
-    // command its back arrow does (CloseSheetCommand, for both Settings and
-    // Now Playing). A sheet that arrives from the right and is dismissed with
+    // command its arrow does (CloseSheetCommand, for both Settings and Now
+    // Playing, whose arrow points down since it is an overlay rather than a
+    // step in the history). A sheet that arrives from the right and is dismissed with
     // a back arrow is a pushed screen as far as the user is concerned, and
     // every other pushed screen goes back to the finger as well as to the
     // arrow - see ScreenStackPanel, which owns the identical gesture for the
@@ -224,7 +210,7 @@ public sealed class SlidingSheet : ContentControl
         if (FindCard() is not { } card)
         {
             Opacity = 1;
-            SetOffset(_sheetTransform, StartOffset(SlideDistance));
+            SetOffset(_sheetTransform, SlideDistance);
             // Parked synchronously above, but eased only once the layout this
             // IsVisible has just triggered has landed. A sheet that has been
             // hidden until now has never been arranged, so its first pass is
@@ -249,9 +235,8 @@ public sealed class SlidingSheet : ContentControl
                     Settle();
                     return;
                 }
-                var from = StartOffset(distance);
-                SetOffset(_sheetTransform, from);
-                Ease(p => SetOffset(_sheetTransform, from * (1 - p)), Settle);
+                SetOffset(_sheetTransform, distance);
+                Ease(p => SetOffset(_sheetTransform, distance * (1 - p)), Settle);
             }, DispatcherPriority.Loaded);
             return;
         }
@@ -376,9 +361,6 @@ public sealed class SlidingSheet : ContentControl
             return Entrance == SheetEntrance.FromRight ? parent.Width : parent.Height;
         }
     }
-
-    // Which side of home a full-bleed entrance starts on - see EntersBackward.
-    private double StartOffset(double distance) => EntersBackward ? -distance : distance;
 
     private void SetOffset(TranslateTransform transform, double offset)
     {

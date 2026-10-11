@@ -328,31 +328,6 @@ public class SlidingSheetTests
         }
     }
 
-    // The mirror of that forward exit, on the way back: a sheet restored by
-    // Back returns from the edge the push shoved it out of - see
-    // SlidingSheet.EntersBackward and MobileNavigationFrame.Sheet, which is
-    // what puts a sheet back on screen at all.
-    [AvaloniaFact]
-    public void A_backward_entrance_arrives_from_the_opposite_edge()
-    {
-        var host = Show();
-        try
-        {
-            host.Sheet.EntersBackward = true;
-            host.Sheet.IsOpen = true;
-
-            Assert.Equal(-Width, host.SheetOffsetX);
-
-            host.Advance();
-            Assert.Equal(0, host.SheetOffsetX);
-            Assert.True(host.Sheet.IsVisible);
-        }
-        finally
-        {
-            host.Window.Close();
-        }
-    }
-
     // A dismissal that is itself a forward navigation leaves by the opposite
     // edge, so the sheet and the screen arriving from the right travel together
     // as one push - see SlidingSheet.ExitsForward, and

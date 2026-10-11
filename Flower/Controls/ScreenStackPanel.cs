@@ -473,18 +473,6 @@ public sealed class ScreenStackPanel : Panel
     {
         if (DataContext is not MobileMainViewModel { CanGoBack: true } vm)
             return;
-        // A destination that carries a sheet animates itself: the sheet is
-        // full-bleed and arrives from the left over whatever is underneath, so
-        // sliding the screen off first would spend 280ms uncovering a
-        // destination the sheet is about to cover again anyway - two beats for
-        // one back step. See MobileNavigationFrame.Sheet. A swipe is different
-        // and keeps its slide: there the screen is moving because a finger
-        // moved it.
-        if (vm.PeekOneBack?.Sheet is not (null or MobileSheet.None))
-        {
-            vm.BackCommand.Execute(null);
-            return;
-        }
         CommitInteractive(vm, SwipeDirection.Back);
     }
 

@@ -67,7 +67,8 @@
          gesture underneath it (Avalonia doesn't hit-test an unpainted
          Panel/Grid's empty area). Both are a 40px circle, centred on 26 by
          the 52px row itself.
-         NowPlayingView's top bar draws its own back arrow in this same place. -->
+         NowPlayingView's top bar draws its own arrow, a down one, in this same
+         place. -->
     <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="12,0,12,0">
       <Border x:Name="BackPill"
               Grid.Column="0"

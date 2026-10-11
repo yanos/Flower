@@ -44,13 +44,9 @@ public enum MobileScreenKind
 // and drawn by that screen's own ScreenTitle, so a kept-alive screen revealed
 // by a swipe shows its own filter rather than the live one.
 //
-// Sheet is the one part of a frame that isn't a screen at all. Almost every
-// sheet is raised and dismissed without touching the history, but one is
-// itself a navigation: tapping Now Playing's album art pushes that album AND
-// closes the sheet as a single step, so the screen alone is not what the user
-// left - going back to the album list without the sheet lands them somewhere
-// they were never standing. Captured here, restored by
-// MobileMainViewModel.ApplyFrame.
+// No sheet is part of a frame, Now Playing included: it is an overlay raised
+// over whatever screen is showing, so Back never brings it back - even after
+// its album art pushed an album and took the sheet away in the same step.
 public sealed record MobileNavigationFrame(
     MobileTab Tab,
     bool HasDrilledIn,
@@ -61,8 +57,7 @@ public sealed record MobileNavigationFrame(
     string? SearchQuery,
     string? ScreenFilter,
     IReadOnlyList<TrackRowViewModel>? FrozenRows,
-    AlbumTileViewModel? FrozenHeader,
-    MobileSheet Sheet)
+    AlbumTileViewModel? FrozenHeader)
 {
     public MobileScreenKind ScreenKind => Classify(Tab, HasDrilledIn, HasDrilledIntoArtistAlbum);
 

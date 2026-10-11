@@ -171,7 +171,8 @@ public class MobileNavigationTransitionTests : PinnedDataDirectory
     // The tab oval stays up over Now Playing, so a tab tapped there leaves the
     // sheet. Another tab is a tab switch that carries the sheet off with it,
     // the way the album art's drill-in does: out to the left ahead of a tab
-    // arriving from the right, and back again on Back.
+    // arriving from the right. Back returns to the tab the sheet was raised
+    // over, without the sheet - it is an overlay, not a step in the history.
     [AvaloniaFact]
     public void A_tab_tapped_over_now_playing_switches_to_it_and_takes_the_sheet_away()
     {
@@ -189,8 +190,9 @@ public class MobileNavigationTransitionTests : PinnedDataDirectory
         Assert.Equal(MobileNavigationTransition.FromRight, scope.Mobile.ConsumePendingTransition());
 
         scope.Mobile.BackCommand.Execute(null);
-        WaitUntil(() => scope.Mobile.IsShowingNowPlaying);
-        Assert.Equal(MobileTab.Home, scope.Mobile.SelectedTab);
+        WaitUntil(() => scope.Mobile.SelectedTab == MobileTab.Home);
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(scope.Mobile.IsShowingNowPlaying);
     }
 
     // The tab the sheet was raised from is the screen already under it, so
@@ -233,15 +235,12 @@ public class MobileNavigationTransitionTests : PinnedDataDirectory
         Assert.False(scope.Mobile.NowPlayingExitsForward);
     }
 
-    // The user's own report: play something from one album, walk to a second
-    // one, raise Now Playing over it and tap the album art - and then go back.
-    // Back has to undo the whole compound step, sheet included: the album art
-    // tap pushed an album AND dismissed the sheet as a single navigation, so
-    // popping it without the sheet leaves the user on a screen they were never
-    // standing on, with the song they were looking at nowhere in sight. See
-    // MobileNavigationFrame.Sheet.
+    // Now Playing is an overlay, not a step in the history: its album art
+    // pushes an album and takes the sheet away as one step, and Back from that
+    // album lands on the screen the sheet was raised over, without raising the
+    // sheet again. See MobileNavigationFrame.
     [AvaloniaFact]
-    public void Back_from_the_album_art_returns_to_now_playing()
+    public void Back_from_the_album_art_does_not_bring_now_playing_back()
     {
         using var scope = Build();
         scope.Mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
@@ -262,39 +261,31 @@ public class MobileNavigationTransitionTests : PinnedDataDirectory
         Assert.False(scope.Mobile.IsShowingNowPlaying);
 
         scope.Mobile.BackCommand.Execute(null);
-        WaitUntil(() => scope.Mobile.IsShowingNowPlaying);
+        WaitUntil(() => scope.Mobile.Main.SelectedSubItem == "Album 1");
+        Dispatcher.UIThread.RunJobs();
 
-        Assert.Equal("Album 1", scope.Mobile.Main.SelectedSubItem);
-        // And it returns by the edge it was pushed out of, rather than playing
-        // a back step as a fresh push from the right.
-        Assert.True(scope.Mobile.NowPlayingEntersBackward);
+        Assert.False(scope.Mobile.IsShowingNowPlaying);
     }
 
-    // Redoing that same step is the push again, so the sheet leaves the way it
-    // left the first time - forward, off to the left, ahead of the album.
+    // Opening Now Playing is no navigation of its own: there is nothing to go
+    // back to that it added, and closing it leaves the history as it was.
     [AvaloniaFact]
-    public void Forward_past_the_album_art_dismisses_the_sheet_forward_again()
+    public void Opening_now_playing_adds_nothing_to_go_back_to()
     {
         using var scope = Build();
         scope.Mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
-        scope.Mobile.SelectAlbumOrArtistCommand.Execute("Album 1");
-        MainViewModelHarness.WaitForTheDrillIn(scope.Mobile, "Album 1");
         scope.Parts.PlaylistControl.Play(scope.Parts.Library.Tracks[0]);
+        var couldGoBack = scope.Mobile.CanGoBack;
+
         scope.Mobile.OpenNowPlayingCommand.Execute(null);
-        scope.Mobile.GoToCurrentlyPlayingAlbumCommand.Execute(null);
-        MainViewModelHarness.WaitForTheDrillIn(scope.Mobile, "Album 0");
-        scope.Mobile.BackCommand.Execute(null);
-        WaitUntil(() => scope.Mobile.IsShowingNowPlaying);
+        Assert.Equal(couldGoBack, scope.Mobile.CanGoBack);
+        scope.Mobile.CloseSheetCommand.Execute(null);
 
-        scope.Mobile.SwipeForward();
-        WaitUntil(() => !scope.Mobile.IsShowingNowPlaying);
-
-        Assert.Equal("Album 0", scope.Mobile.Main.SelectedSubItem);
-        Assert.True(scope.Mobile.NowPlayingExitsForward);
+        Assert.Equal(couldGoBack, scope.Mobile.CanGoBack);
     }
 
     // An ordinary drill-in carries no sheet, so going back to one must not
-    // raise anything - the frame's Sheet is None and restoring it is a no-op.
+    // raise anything.
     [AvaloniaFact]
     public void Back_to_a_screen_that_had_no_sheet_raises_none()
     {
@@ -307,7 +298,6 @@ public class MobileNavigationTransitionTests : PinnedDataDirectory
         WaitUntil(() => !scope.Mobile.IsShowingAlbumTrackList);
 
         Assert.False(scope.Mobile.IsShowingNowPlaying);
-        Assert.False(scope.Mobile.NowPlayingEntersBackward);
     }
 
     // Back/Forward are async (ApplyFrame awaits the destination's own row

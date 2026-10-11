@@ -97,22 +97,22 @@ public class NowPlayingMenuTests : PinnedDataDirectory
         Assert.Equal("Ethio Jazz (1972)", scope.Mobile.CurrentlyPlaying.AlbumLine);
     }
 
-    // With no cover there is no colour to wash the sheet in: it is the page's
-    // own background - the brush, not nothing. It once came out as nothing,
-    // and the screen under the sheet showed through.
+    // With no cover the sheet is washed all the same, in the colour
+    // ArtBackdrop falls back to (the theme's pressed accent), so it is always
+    // a colour the white on it reads against - and always a brush, never
+    // nothing. It once came out as nothing, and the screen under the sheet
+    // showed through.
     [AvaloniaFact]
-    public void Without_a_cover_the_sheet_is_the_page_s_own_background()
+    public void Without_a_cover_the_sheet_is_washed_in_the_accent()
     {
         using var scope = PlayingOnTheSheet();
         Assert.Null(scope.Mobile.CurrentlyPlaying.AlbumArt);
-        var page = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Colors.FloralWhite);
 
-        // The test app carries no theme, so the page's brush is given here.
         var sheet = new Flower.Views.Mobile.NowPlayingView();
-        sheet.Resources["AppBackgroundBrush"] = page;
         sheet.DataContext = scope.Mobile;
 
-        Assert.True(sheet.Classes.Contains("plain"));
-        Assert.Same(page, sheet.Background);
+        var wash = Assert.IsType<Avalonia.Media.LinearGradientBrush>(sheet.Background);
+        var expected = (Avalonia.Media.LinearGradientBrush)Flower.Services.ArtBackdrop.SheetBrush(Flower.Services.ArtBackdrop.FallbackTint);
+        Assert.Equal(expected.GradientStops.Select(s => s.Color), wash.GradientStops.Select(s => s.Color));
     }
 }

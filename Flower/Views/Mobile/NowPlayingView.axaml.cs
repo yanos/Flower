@@ -1,9 +1,6 @@
-using System;
 using System.ComponentModel;
 
-using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Media;
 
 using Flower.Services;
 using Flower.ViewModels;
@@ -41,52 +38,11 @@ public partial class NowPlayingView : UserControl
             ApplyCover();
     }
 
-    // The sheet's colours are for a cover's: white on its colour. Without a
-    // cover it is plain (the .plain styles in the XAML) - the page's
-    // background, and each AppOnArt* brush, which every word and both sliders
-    // here are drawn with, pointed back at the page's own: the text colour for
-    // words, the accent for the sliders, the ring colour for the play button's
-    // ring. Resolved for the theme in use, and again when it changes.
-    private static readonly string[] OnArtKeys = ["PaletteOnArt", "AppOnArtBrush", "AppOnArtMutedBrush", "AppOnArtRingBrush"];
-
-    // The page background while plain, followed live so a theme change
-    // repaints it; dropped when a cover's wash takes over.
-    private IDisposable? _pageBackground;
-
-    private void ApplyCover()
-    {
-        var art = _playing?.AlbumArt;
-        var plain = art is null;
-        Classes.Set("plain", plain);
-
-        // Set here rather than bound in XAML to a converter: a binding that
-        // yields nothing leaves the sheet with no background at all - it
-        // outranks any style that would have supplied one - and the screen
-        // under the sheet showed through.
-        _pageBackground?.Dispose();
-        _pageBackground = null;
-        if (art is null)
-            _pageBackground = Bind(BackgroundProperty, this.GetResourceObservable("AppBackgroundBrush"));
-        else
-            Background = ArtBackdrop.SheetBrush(ArtBackdrop.DominantColor(art));
-
-        foreach (var key in OnArtKeys)
-            Resources.Remove(key);
-        if (!plain)
-            return;
-
-        // Sliders' fill and thumb are built from PaletteOnArt in this view's
-        // own resources, so a local colour reaches them.
-        if (Find("PaletteAccent") is Color accent)
-            Resources["PaletteOnArt"] = accent;
-        if (Find("AppTextPrimaryBrush") is IBrush text)
-            Resources["AppOnArtBrush"] = text;
-        if (Find("AppTextDisabledBrush") is IBrush muted)
-            Resources["AppOnArtMutedBrush"] = muted;
-        if (Find("AppPrimaryBorderBrush") is IBrush ring)
-            Resources["AppOnArtRingBrush"] = ring;
-    }
-
-    private object? Find(string key) =>
-        Application.Current?.TryGetResource(key, ActualThemeVariant, out var value) == true ? value : null;
+    // The sheet is washed in the cover's colour, and with no cover in the
+    // colour ArtBackdrop falls back to - the theme's pressed accent, put
+    // through the same darkening - so it is always a colour white reads on,
+    // and everything on it is drawn the one way. Resolved for the theme in
+    // use, and again when it changes, since the accent is the theme's.
+    private void ApplyCover() =>
+        Background = ArtBackdrop.SheetBrush(ArtBackdrop.DominantColor(_playing?.AlbumArt));
 }
