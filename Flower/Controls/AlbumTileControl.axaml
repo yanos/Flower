@@ -2,12 +2,12 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:controls="clr-namespace:Flower.Controls"
-             xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
              x:Class="Flower.Controls.AlbumTileControl"
-             x:DataType="vm:AlbumTileViewModel"
-             x:CompileBindings="True"
              Background="Transparent">
 
+  <!-- What the tile decides - which album, selected, expanded - is set from
+       the code-behind rather than bound (see ModelWatch): the grid hands each
+       tile album after album as it scrolls. -->
   <!-- Selection/hover are plain overlay Borders, same pattern as
        TrackRowControl's HoverBorder - pointer/selection handling itself
        lives one level up, in AlbumGridPanel (mirrors MusicListPanel /
@@ -22,7 +22,7 @@
 
   <Panel>
     <Border x:Name="SelectionBorder"
-            IsVisible="{Binding IsSelected}"
+            IsVisible="False"
             Background="{DynamicResource AppAccentSoftBrush}"
             CornerRadius="12"/>
     <Border x:Name="HoverBorder"
@@ -40,7 +40,6 @@
          AlbumCard.MenuRequested, which MainView answers with the same menu a
          right-click on the tile opens. Downloading the album is in that menu. -->
     <controls:AlbumCard x:Name="TileContent"
-                        Tile="{Binding}"
                         Margin="8,8,8,16"/>
     <!-- Caret pointing down at ExpansionCard below (AlbumGridRowControl) -
          lives here, not there, so it's centered under THIS tile purely by
@@ -50,7 +49,8 @@
          Sits within the reserved bottom margin above, flush with this
          control's own bottom edge (no bottom margin of its own) so its tip
          touches ExpansionCard below with no gap. -->
-    <Polygon IsVisible="{Binding IsExpanded}"
+    <Polygon x:Name="Caret"
+             IsVisible="False"
              Points="0,8 16,8 8,0"
              Fill="{DynamicResource AppAccentSoftBrush}"
              HorizontalAlignment="Center"

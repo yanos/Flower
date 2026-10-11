@@ -1,11 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.Diagnostics.CodeAnalysis;
 
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Data;
 using Avalonia.Layout;
 using Avalonia.Media;
 
@@ -40,12 +38,45 @@ public partial class TrackRowControl : UserControl
         InitializeComponent();
         _columnManager = columnManager ?? Ioc.Default.GetService<ColumnManager>()!;
         _columnManager.ColumnsChanged += OnColumnsChanged;
+        // The download button follows the row itself, and is the only part
+        // that draws its spinner.
+        _row = new ModelWatch(this, Show, ignoring: nameof(DownloadIndicatorViewModel.SpinAngle));
         DataContextChanged += (_, _) =>
         {
             if (CellsPanel.Children.Count == 0)
                 BuildCells();
-            // Bindings on TextBlock children are dynamic and update automatically when DataContext changes.
+            _row.Watch(DataContext as TrackRowViewModel);
         };
+    }
+
+    private readonly ModelWatch _row;
+
+    // Each data cell's text and what it shows, rebuilt with the cells.
+    private readonly List<(RowText Text, Func<TrackRowViewModel, string?> Value)> _cells = new();
+
+    // Whether the art well is there at all (ColumnManager.ShowAlbumArt).
+    private bool _showsArt;
+
+    // Everything the row shows, read off the song whatever changed - see
+    // ModelWatch. Called again for every song the panel hands this row.
+    private void Show()
+    {
+        if (DataContext is not TrackRowViewModel row)
+            return;
+
+        Classes.Set("playing", row.IsCurrentlyPlaying);
+        Classes.Set("played", row.IsPlayed);
+        SelectionBorder.IsVisible = row.IsSelected;
+        CellsPanel.Classes.Set("dimmed", row.IsUnavailable);
+        ArtCell.Classes.Set("dimmed", row.IsAlbumGroupUnavailable);
+
+        // Only the first row of an album run draws the art, which spans down
+        // over the rest; asking a hidden well for its art would load it.
+        ArtCell.IsVisible = _showsArt && row.IsFirstInAlbumGroup;
+        ArtImage.AlbumArt = ArtCell.IsVisible ? row.AlbumArt : null;
+
+        foreach (var (text, value) in _cells)
+            text.Text = value(row);
     }
 
     // The row's own download icon was clicked - forwarded up through
@@ -72,6 +103,7 @@ public partial class TrackRowControl : UserControl
 
         ApplyArtWell();
         CellsPanel.Children.Clear();
+        _cells.Clear();
 
         foreach (var col in _columnManager.VisibleColumns)
         {
@@ -98,6 +130,7 @@ public partial class TrackRowControl : UserControl
         }
 
         CellsPanel.Children.Add(BuildMenuCell());
+        Show();
     }
 
     // The phone's row ends in the same "..." (TrackRowTemplate).
@@ -123,62 +156,22 @@ public partial class TrackRowControl : UserControl
         return button;
     }
 
-    // The art well is only shown to the first row of an album run, which is
-    // an ordinary binding - but only while the well exists at all. Turning it
-    // off has to beat that binding, and a local IsVisible = false would be
-    // overwritten the next time the binding produced a value, so the binding
-    // itself is what goes: both of these live here, held as subscriptions,
-    // rather than in the XAML where they cannot be withdrawn. The grid column
-    // collapses to zero alongside them, since the art deliberately overflows
-    // its cell (ClipToBounds="False") and would otherwise still paint over the
-    // title; and the art binding goes too, because reading
-    // TrackRowViewModel.AlbumArt is what starts the load - a fetch off the
-    // paired server, for a library synced from one.
-    private readonly List<IDisposable> _artBindings = new();
-
-    // The two paths below are string paths into TrackRowViewModel, which the
-    // trimmer cannot follow - but they are the same public properties
-    // CellBindingPathFor's DynamicDependency already roots, so there is nothing
-    // here for it to drop. See that attribute for the whole argument.
-    [UnconditionalSuppressMessage("Trimming", "IL2026",
-        Justification = "Bound paths are public properties of TrackRowViewModel, rooted by CellBindingPathFor's DynamicDependency.")]
+    // The art well's column collapses to zero when the art is turned off,
+    // since the art deliberately overflows its cell (ClipToBounds="False") and
+    // would otherwise still paint over the title. Show does the rest.
     private void ApplyArtWell()
     {
-        foreach (var binding in _artBindings)
-            binding.Dispose();
-        _artBindings.Clear();
-
         RowGrid.ColumnDefinitions[0].Width = new GridLength(_columnManager.ArtColumnWidth);
-
-        if (!_columnManager.ShowAlbumArt)
-        {
-            ArtCell.IsVisible = false;
-            ArtImage.AlbumArt = null;
-            return;
-        }
-
-        _artBindings.Add(ArtCell.Bind(IsVisibleProperty, new Binding(nameof(TrackRowViewModel.IsFirstInAlbumGroup))));
-        _artBindings.Add(ArtImage.Bind(AlbumArtView.AlbumArtProperty, new Binding(nameof(TrackRowViewModel.AlbumArt))));
+        _showsArt = _columnManager.ShowAlbumArt;
     }
 
     // Cell content is built per-column from ColumnManager's runtime-configurable
-    // definitions, so these bindings are constructed in code (new Binding(...))
-    // rather than declared in TrackRowControl.axaml, where compiled bindings are
-    // otherwise on. Each path used below is a real property on
-    // TrackRowViewModel/Track - but a *string* path, which is the whole problem:
-    // nothing in the codebase references DurationDisplay and its siblings any
-    // other way, so on a trimmed build the linker has no reason to believe they
-    // are used and drops them. Only Flower.Web trims (WasmBuildNative), so this
-    // showed up as browser-only: #, Duration, Plays, Added and Last Played all
-    // rendered blank in a tab while Title/Artist/Album/Genre - bound through
-    // Track, whose properties are referenced directly all over - were fine.
-    //
-    // DynamicDependency rather than a descriptor XML because the dependency is
-    // genuinely CellBindingPathFor's below: it is what turns a column id into a
-    // property name, and a root declared anywhere else would be a fact about
-    // that switch stored away from it.
-    [UnconditionalSuppressMessage("Trimming", "IL2026",
-        Justification = "Bound paths come from CellBindingPathFor, whose DynamicDependency roots every property they can name.")]
+    // definitions, each cell's text read off the row by CellTextFor - a
+    // function per column rather than a binding path, so nothing here is found
+    // by reflection: a trimmed build (Flower.Web, a NativeAOT head) keeps
+    // whatever the functions below name, where a string path named properties
+    // the linker had no reason to keep, and #, Duration, Plays, Added and Last
+    // Played once rendered blank in a browser tab for exactly that reason.
     private Control BuildCellContent(MusicColumnDefinition col)
     {
         if (col.Id == "Title")
@@ -197,7 +190,7 @@ public partial class TrackRowControl : UserControl
             grid.ColumnDefinitions.Add(new ColumnDefinition(1,  GridUnitType.Star));
 
             var text = MakeText();
-            text.Bind(TextBlock.TextProperty, new Binding("Track.Title"));
+            _cells.Add((text, CellTextFor(col.Id)!));
             Grid.SetColumn(text, 1);
 
             // Ahead of the title, in its own well, rather than pinned to the
@@ -222,65 +215,64 @@ public partial class TrackRowControl : UserControl
         }
 
         var tb = MakeText();
-        tb.Bind(TextBlock.TextProperty, new Binding(CellBindingPathFor(col.Id)));
+        if (CellTextFor(col.Id) is { } value)
+            _cells.Add((tb, value));
         return tb;
     }
 
-    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicProperties, typeof(TrackRowViewModel))]
-    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicProperties, typeof(Models.Track))]
-    // The property each column's cell shows, as a binding path. Internal and
-    // separate from the cell it feeds so the tests can hold every column
-    // ColumnManager offers to it: a column whose id lands on the "." fallback
-    // renders an empty cell forever, which is the kind of thing only noticed
-    // once someone turns that column on.
-    internal static string CellBindingPathFor(string columnId) =>
+    // What each column's cell shows. Internal and separate from the cell it
+    // feeds so the tests can hold every column ColumnManager offers to it: a
+    // column with no entry here renders an empty cell forever, which is the
+    // kind of thing only noticed once someone turns that column on. Static
+    // lambdas, so each is one delegate for the life of the process.
+    internal static Func<TrackRowViewModel, string?>? CellTextFor(string columnId) =>
         columnId switch
         {
-            "Title" => "Track.Title",
-            "TrackNumber" => nameof(TrackRowViewModel.TrackNumberDisplay),
-            "Artist"      => "Track.Artists",
-            "Album"       => "Track.Album",
-            "Year"        => "Track.Year",
-            "Genre"       => "Track.Genre",
-            "Duration"    => nameof(TrackRowViewModel.DurationDisplay),
-            "PlayCount"   => nameof(TrackRowViewModel.PlayCountDisplay),
-            "DateAdded"   => nameof(TrackRowViewModel.DateAddedDisplay),
-            "LastPlayed"  => nameof(TrackRowViewModel.LastPlayedDisplay),
-            "Composer"    => "Track.Composers",
-            "Encoding"    => "Track.EncoderProfile",
-            "SortTitle"   => "Track.TitleSort",
-            "SortArtist"  => "Track.ArtistsSort",
-            "SortAlbum"   => "Track.AlbumSort",
-            "SortComposer" => "Track.ComposersSort",
-            "Compilation"      => nameof(TrackRowViewModel.CompilationDisplay),
-            "RememberPosition" => nameof(TrackRowViewModel.RememberPositionDisplay),
-            "ResumePosition"   => nameof(TrackRowViewModel.ResumePositionDisplay),
-            "SkipInShuffle"    => nameof(TrackRowViewModel.SkipInShuffleDisplay),
-            "VolumeAdjustment" => nameof(TrackRowViewModel.VolumeAdjustmentDisplay),
-            "AlbumArtist"  => "Track.AlbumArtists",
-            "Subtitle"     => "Track.Subtitle",
-            "Disc"         => nameof(TrackRowViewModel.DiscDisplay),
-            "Conductor"    => "Track.Conductor",
-            "RemixedBy"    => "Track.RemixedBy",
-            "Bpm"          => nameof(TrackRowViewModel.BpmDisplay),
-            "InitialKey"   => "Track.InitialKey",
-            "Grouping"     => "Track.Grouping",
-            "Publisher"    => "Track.Publisher",
-            "Isrc"         => "Track.ISRC",
-            "Comment"      => "Track.Comment",
-            "Description"  => "Track.Description",
-            "Copyright"    => "Track.Copyright",
-            "Starred"      => nameof(TrackRowViewModel.StarredDisplay),
-            "Codec"        => "Track.Codec",
-            "Bitrate"      => nameof(TrackRowViewModel.BitrateDisplay),
-            "SampleRate"   => nameof(TrackRowViewModel.SampleRateDisplay),
-            "Channels"     => nameof(TrackRowViewModel.ChannelsDisplay),
-            "BitDepth"     => nameof(TrackRowViewModel.BitDepthDisplay),
-            "Location"     => "Track.Path",
-            _             => ".",
+            "Title"            => static row => row.Track.Title,
+            "TrackNumber"      => static row => row.TrackNumberDisplay,
+            "Artist"           => static row => row.Track.Artists,
+            "Album"            => static row => row.Track.Album,
+            "Year"             => static row => row.Track.Year,
+            "Genre"            => static row => row.Track.Genre,
+            "Duration"         => static row => row.DurationDisplay,
+            "PlayCount"        => static row => row.PlayCountDisplay,
+            "DateAdded"        => static row => row.DateAddedDisplay,
+            "LastPlayed"       => static row => row.LastPlayedDisplay,
+            "Composer"         => static row => row.Track.Composers,
+            "Encoding"         => static row => row.Track.EncoderProfile,
+            "SortTitle"        => static row => row.Track.TitleSort,
+            "SortArtist"       => static row => row.Track.ArtistsSort,
+            "SortAlbum"        => static row => row.Track.AlbumSort,
+            "SortComposer"     => static row => row.Track.ComposersSort,
+            "Compilation"      => static row => row.CompilationDisplay,
+            "RememberPosition" => static row => row.RememberPositionDisplay,
+            "ResumePosition"   => static row => row.ResumePositionDisplay,
+            "SkipInShuffle"    => static row => row.SkipInShuffleDisplay,
+            "VolumeAdjustment" => static row => row.VolumeAdjustmentDisplay,
+            "AlbumArtist"      => static row => row.Track.AlbumArtists,
+            "Subtitle"         => static row => row.Track.Subtitle,
+            "Disc"             => static row => row.DiscDisplay,
+            "Conductor"        => static row => row.Track.Conductor,
+            "RemixedBy"        => static row => row.Track.RemixedBy,
+            "Bpm"              => static row => row.BpmDisplay,
+            "InitialKey"       => static row => row.Track.InitialKey,
+            "Grouping"         => static row => row.Track.Grouping,
+            "Publisher"        => static row => row.Track.Publisher,
+            "Isrc"             => static row => row.Track.ISRC,
+            "Comment"          => static row => row.Track.Comment,
+            "Description"      => static row => row.Track.Description,
+            "Copyright"        => static row => row.Track.Copyright,
+            "Starred"          => static row => row.StarredDisplay,
+            "Codec"            => static row => row.Track.Codec,
+            "Bitrate"          => static row => row.BitrateDisplay,
+            "SampleRate"       => static row => row.SampleRateDisplay,
+            "Channels"         => static row => row.ChannelsDisplay,
+            "BitDepth"         => static row => row.BitDepthDisplay,
+            "Location"         => static row => row.Track.Path,
+            _ => null,
         };
 
-    private static TextBlock MakeText() => new()
+    private static RowText MakeText() => new()
     {
         VerticalAlignment = VerticalAlignment.Center,
         TextTrimming      = TextTrimming.CharacterEllipsis,

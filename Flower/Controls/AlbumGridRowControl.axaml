@@ -4,25 +4,21 @@
              xmlns:controls="clr-namespace:Flower.Controls"
              xmlns:converters="clr-namespace:Flower.Converters"
              xmlns:vm="clr-namespace:Flower.ViewModels"
-             xmlns:mobileVm="clr-namespace:Flower.ViewModels.Mobile"
              x:Class="Flower.Controls.AlbumGridRowControl"
              x:DataType="vm:AlbumGridRowViewModel"
              x:CompileBindings="True">
 
 
   <StackPanel Margin="0,0,0,16">
-    <ItemsControl ItemsSource="{Binding Tiles}">
-      <ItemsControl.ItemsPanel>
-        <ItemsPanelTemplate>
-          <UniformGrid Columns="{Binding Columns}"/>
-        </ItemsPanelTemplate>
-      </ItemsControl.ItemsPanel>
-      <ItemsControl.ItemTemplate>
-        <DataTemplate x:DataType="mobileVm:AlbumTileViewModel">
-          <controls:AlbumTileControl DataContext="{Binding}"/>
+    <!-- The row's tiles, kept as the grid hands the row album after album
+         (TileRowPanel). -->
+    <controls:TileRowPanel Columns="{Binding Columns}" Items="{Binding Tiles}">
+      <controls:TileRowPanel.ItemTemplate>
+        <DataTemplate>
+          <controls:AlbumTileControl/>
         </DataTemplate>
-      </ItemsControl.ItemTemplate>
-    </ItemsControl>
+      </controls:TileRowPanel.ItemTemplate>
+    </controls:TileRowPanel>
 
     <!-- Expanded track list - Height animates 0<->TargetHeight (set by
          AlbumGridRowControl.axaml.cs whenever IsExpanded/ExpandedTracks

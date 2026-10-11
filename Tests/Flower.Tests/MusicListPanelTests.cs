@@ -102,6 +102,25 @@ public class MusicListPanelTests : PinnedDataDirectory
         Assert.Equal(Enumerable.Range(20, 13), RenderedIndices(panel, items));
     }
 
+    // A row keeps its song while the song stays on screen: scrolling one row
+    // along hands one row a new song, where handing them out by position gave
+    // every row on screen a new one, every row scrolled past.
+    [AvaloniaFact]
+    public void Scrolling_one_row_along_hands_a_new_song_to_one_row()
+    {
+        var items = Rows(1000);
+        var panel = NewPanel();
+        panel.SetItems(items);
+        panel.SetViewport(scrollOffset: 20 * RowHeight, viewportHeight: 10 * RowHeight, viewportWidth: 800);
+        var before = panel.Children.Select(c => c.DataContext).ToList();
+
+        panel.SetViewport(scrollOffset: 21 * RowHeight, viewportHeight: 10 * RowHeight, viewportWidth: 800);
+
+        Assert.Equal(Enumerable.Range(21, 13), RenderedIndices(panel, items));
+        var handedNew = panel.Children.Where((c, slot) => !ReferenceEquals(c.DataContext, before[slot])).Count();
+        Assert.Equal(1, handedNew);
+    }
+
     [AvaloniaFact]
     public void A_partially_scrolled_row_is_still_realized()
     {

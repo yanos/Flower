@@ -4,13 +4,14 @@
              xmlns:vm="clr-namespace:Flower.ViewModels"
              xmlns:controls="clr-namespace:Flower.Controls"
              x:Class="Flower.Controls.TrackRowControl"
-             x:DataType="vm:TrackRowViewModel"
-             x:CompileBindings="True"
              Background="Transparent"
              ClipToBounds="False"
-             Classes.playing="{Binding IsCurrentlyPlaying}"
-             Classes.played="{Binding IsPlayed}"
              Height="34">
+
+  <!-- Nothing in here is bound to the row: what the song decides - its
+       cells, the classes below, the art - is set from the code-behind (see
+       ModelWatch), since MusicListPanel hands each row song after song as the
+       list scrolls. -->
 
   <UserControl.Styles>
     <!-- ":is(UserControl)", not "UserControl", in every selector here: a bare
@@ -50,7 +51,7 @@
          TrackRowPlayingTests, which reads the rendered weight rather than the
          class: the class was set correctly the whole time this style was not
          matching anything. -->
-    <Style Selector=":is(UserControl).playing StackPanel#CellsPanel TextBlock">
+    <Style Selector=":is(UserControl).playing StackPanel#CellsPanel controls|RowText">
       <Setter Property="FontWeight" Value="Bold"/>
       <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}"/>
     </Style>
@@ -96,10 +97,11 @@
          than the theme's own accent-tinted selection brush, which renders too
          dark for this app's unchanged-on-selection row text. -->
     <Border Grid.Column="1"
+            x:Name="SelectionBorder"
             Background="{DynamicResource AppAccentBrush}"
             Opacity="0.25"
             CornerRadius="6"
-            IsVisible="{Binding IsSelected}"
+            IsVisible="False"
             IsHitTestVisible="False"/>
 
     <!-- ── Art cell (first track of album group only) ─────────────────────── -->
@@ -107,14 +109,13 @@
     <!-- VerticalAlignment="Top" on Image ensures overflow goes downward, not upward. -->
     <Panel Grid.Column="0"
            x:Name="ArtCell"
-           Classes.dimmed="{Binding IsAlbumGroupUnavailable}"
            Margin="2,2,2,0"
            ClipToBounds="False">
 
       <!-- Album art (or placeholder), always ArtMaxSize - spans multiple rows visually. A run too
            short to hold it is padded with phantom rows by MusicListPanel (MinAlbumGroupRows).
-           The AlbumArt binding itself is made in code-behind (ApplyArtWell), not here:
-           reading that property is what starts the load, which for a synced library is a
+           Handed its art by the code-behind (Show), and only where the well shows: reading
+           TrackRowViewModel.AlbumArt is what starts the load, which for a synced library is a
            network fetch, and a hidden well should not be fetching covers nobody can see. -->
       <controls:AlbumArtView x:Name="ArtImage"
               IsHitTestVisible="False"
@@ -127,7 +128,6 @@
     <!-- ── Data cells (built in code-behind from ColumnManager) ──────────── -->
     <StackPanel x:Name="CellsPanel"
                 Grid.Column="1"
-                Classes.dimmed="{Binding IsUnavailable}"
                 Orientation="Horizontal"
                 VerticalAlignment="Stretch"/>
   </Grid>

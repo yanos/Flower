@@ -4,27 +4,31 @@
              xmlns:vm="clr-namespace:Flower.ViewModels"
              x:Class="Flower.Controls.AlbumGridView">
 
-  <!-- Row-chunked album art grid - same VirtualizingStackPanel-of-rows
-       approach mobile's own Albums/Recently Added grids use (see
-       MobileMainView.axaml), generalized here to a computed tiles-per-row
-       (AlbumGridView.axaml.cs's RebuildRows) instead of mobile's fixed 2,
-       plus per-row inline expansion (AlbumGridRowControl). Wrapped in an
+  <!-- Row-chunked album art grid - the same virtualizing list of rows the
+       phone's Albums grids are (see AlbumGridScreenView), at a computed
+       tiles-per-row (AlbumGridView.axaml.cs's RebuildRows), plus per-row
+       inline expansion (AlbumGridRowControl). Wrapped in an
        explicit ScrollViewer for the same reason mobile's grids are: a plain
-       ItemsControl has no ScrollViewer in its own default template. -->
+       ItemsControl has no ScrollViewer in its own default template.
+
+       UniformRowPanel, as the phone's grids are, with HasTallRows: a row here
+       grows when its album is expanded inline. Each row is built once and
+       handed row after row (RecyclingItemsControl), and its tiles with it
+       (TileRowPanel). -->
   <ScrollViewer x:Name="Scroller"
                 HorizontalScrollBarVisibility="Disabled"
                 VerticalScrollBarVisibility="Auto">
-    <ItemsControl x:Name="RowsList" Margin="16">
+    <controls:RecyclingItemsControl x:Name="RowsList" Margin="16">
       <ItemsControl.ItemsPanel>
         <ItemsPanelTemplate>
-          <VirtualizingStackPanel Orientation="Vertical"/>
+          <controls:UniformRowPanel HasTallRows="True"/>
         </ItemsPanelTemplate>
       </ItemsControl.ItemsPanel>
       <ItemsControl.ItemTemplate>
         <DataTemplate x:DataType="vm:AlbumGridRowViewModel">
-          <controls:AlbumGridRowControl DataContext="{Binding}"/>
+          <controls:AlbumGridRowControl/>
         </DataTemplate>
       </ItemsControl.ItemTemplate>
-    </ItemsControl>
+    </controls:RecyclingItemsControl>
   </ScrollViewer>
 </UserControl>

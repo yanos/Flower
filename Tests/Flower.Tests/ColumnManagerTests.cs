@@ -171,7 +171,7 @@ public class ColumnManagerTests : PinnedDataDirectory
 
         foreach (var column in manager.Columns)
         {
-            Assert.NotEqual(".", TrackRowControl.CellBindingPathFor(column.Id));
+            Assert.NotNull(TrackRowControl.CellTextFor(column.Id));
             Assert.True(TrackListBuilder.CanSortBy(column.Id), $"{column.Id} has no sort");
         }
     }

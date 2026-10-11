@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using CommunityToolkit.Mvvm.DependencyInjection;
@@ -113,8 +112,21 @@ public class MusicListPanel : Panel
         return lo;
     }
 
-    private double ContentWidth =>
-        _columnManager.ArtColumnWidth + _columnManager.VisibleColumns.Sum(c => c.Width);
+    private double ContentWidth
+    {
+        get
+        {
+            // Over Columns rather than VisibleColumns, which sorts: the sum
+            // does not care about order, and this runs on every measure.
+            var width = _columnManager.ArtColumnWidth;
+            foreach (var column in _columnManager.Columns)
+            {
+                if (column.IsVisible)
+                    width += column.Width;
+            }
+            return width;
+        }
+    }
 
     // A row's own download icon was clicked - see TrackDownloadButton.
     public event EventHandler<TrackRowViewModel>? RowDownloadRequested;
@@ -151,51 +163,80 @@ public class MusicListPanel : Panel
 
     // ── Active-set management ─────────────────────────────────────────────────
 
+    // Which song each pooled row shows. A row keeps its song for as long as
+    // that song stays in the window, and only the rows whose songs left it are
+    // handed the ones arriving: scrolling one row along changes one row,
+    // where handing them out by position (row 0 the first song in the window,
+    // row 1 the next...) gave every row on screen a new song every time - the
+    // whole visible list re-read and re-drawn for each row scrolled past.
     private void RefreshActiveSet()
     {
-        var indices = ComputeRenderIndices();
+        var (leader, first, last) = ComputeRenderRange();
+        var span = Math.Max(0, last - first + 1);
+        var needed = span + (leader >= 0 ? 1 : 0);
 
-        // Grow the Children pool if needed (never shrink — just hide extras).
-        // DataContext must be set BEFORE Children.Add so the compiled binding never sees
-        // the inherited MainViewModel DataContext during the brief insertion window.
-        while (Children.Count < indices.Count)
+        // Grow the pool if needed (never shrink - just hide extras).
+        while (Children.Count < needed)
         {
-            int slot = Children.Count;
             var ctrl = new TrackRowControl(_columnManager);
             // Wired once per pooled control, not per row: the control outlives
             // any one row (see the pool above), and forwards whichever row it
             // currently holds.
             ctrl.DownloadRequested += (_, row) => RowDownloadRequested?.Invoke(this, row);
             ctrl.MenuRequested += (_, row) => RowMenuRequested?.Invoke(this, row);
-            ctrl.DataContext = _items[indices[slot]];
-            _activeIndex.Add(indices[slot]);
+            _activeIndex.Add(-1);
             Children.Add(ctrl);
         }
 
+        // Which songs in the window a row already shows; the rest of the rows
+        // are let go of theirs.
+        if (_shown.Length < span)
+            _shown = new bool[Math.Max(span, _shown.Length * 2)];
+        Array.Clear(_shown, 0, span);
+        var leaderShown = false;
         for (int slot = 0; slot < Children.Count; slot++)
         {
-            if (slot < indices.Count)
-            {
-                int rowIdx = indices[slot];
-                if (_activeIndex[slot] != rowIdx)
-                {
-                    ((TrackRowControl)Children[slot]).DataContext = _items[rowIdx];
-                    _activeIndex[slot] = rowIdx;
-                }
-                Children[slot].IsVisible = true;
-            }
+            var index = _activeIndex[slot];
+            if (index >= first && index <= last)
+                _shown[index - first] = true;
+            else if (index >= 0 && index == leader)
+                leaderShown = true;
             else
-            {
-                Children[slot].IsVisible = false;
                 _activeIndex[slot] = -1;
-            }
         }
+
+        var free = 0;
+        if (leader >= 0 && !leaderShown)
+            Place(leader, ref free);
+        for (int i = 0; i < span; i++)
+        {
+            if (!_shown[i])
+                Place(first + i, ref free);
+        }
+
+        for (int slot = 0; slot < Children.Count; slot++)
+            Children[slot].IsVisible = _activeIndex[slot] >= 0;
     }
 
-    private List<int> ComputeRenderIndices()
+    private bool[] _shown = [];
+
+    // Hands the song at `index` to the next row without one.
+    private void Place(int index, ref int free)
+    {
+        while (_activeIndex[free] >= 0)
+            free++;
+        _activeIndex[free] = index;
+        Children[free].DataContext = _items[index];
+    }
+
+    // The rows the window covers, plus a little overdraw, and the leader of
+    // the album the window opens partway into, whose art spans down into view
+    // (-1 when there is none). Only that one album's leader can be above the
+    // window: any album starting inside it has its leader inside it too.
+    private (int Leader, int First, int Last) ComputeRenderRange()
     {
         if (_items.Count == 0)
-            return [];
+            return (-1, 0, -1);
 
         int firstSlot = Math.Max(0, (int)Math.Floor(_scrollOffset / TrackRowViewModel.RowHeight));
         int lastSlot  = firstSlot + (int)Math.Ceiling(_viewportHeight / TrackRowViewModel.RowHeight) + 3;
@@ -205,16 +246,12 @@ public class MusicListPanel : Panel
         if (first > 0 && (first == _items.Count || _rowSlot[first] > firstSlot))
             first--;
 
-        var set = new SortedSet<int>();
-        for (int i = first; i < _items.Count && _rowSlot[i] < lastSlot; i++)
-        {
-            set.Add(i);
-            // Ensure the album-group leader is always rendered so its art spans down visually
-            var leader = _groupLeader[i];
-            if (leader >= 0)
-                set.Add(leader);
-        }
-        return [.. set];
+        int last = first - 1;
+        while (last + 1 < _items.Count && _rowSlot[last + 1] < lastSlot)
+            last++;
+
+        var leader = first <= last ? _groupLeader[first] : -1;
+        return (leader, first, last);
     }
 
     // Lays the rows out in slots, padding every album run shorter than

@@ -11,7 +11,7 @@ namespace Flower.Controls;
 // One row of tiles (+ an optional expanded track list below them, drawn by
 // AlbumTrackList, which handles its own clicks, keys and menus) in
 // AlbumGridView's grid - see AlbumGridRowViewModel. Instances are recycled by
-// VirtualizingStackPanel as the user scrolls, so DataContext changes
+// UniformRowPanel as the user scrolls, so DataContext changes
 // repeatedly on the same control - the PropertyChanged subscription below is
 // swapped, not just added, each time to avoid leaking one per recycle.
 public partial class AlbumGridRowControl : UserControl

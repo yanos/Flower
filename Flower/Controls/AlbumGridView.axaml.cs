@@ -23,7 +23,7 @@ public partial class AlbumGridView : UserControl
 {
     // The narrowest a tile gets, its 8px margins either side included: the
     // grid fits as many of these across as the width allows, and the tiles
-    // then share the width evenly (AlbumGridRowControl's UniformGrid), so the
+    // then share the width evenly (AlbumGridRowControl's TileRowPanel), so the
     // columns fill the page the way the phone's do rather than leaving what
     // is over at the right.
     private const double CellWidth = 180 + 16;
@@ -244,8 +244,8 @@ public partial class AlbumGridView : UserControl
     // Resolves whichever AlbumTileControl (if any) a raw pointer event's
     // original source landed on, by walking up the visual tree - used by
     // MainView.axaml.cs's pointer handlers instead of coordinate math, since
-    // tiles are now real, individually-templated controls (VirtualizingStackPanel
-    // of rows) rather than manually arranged by a custom Panel.
+    // tiles are now real, individually-templated controls (a virtualizing
+    // list of rows) rather than manually arranged by a custom Panel.
     public AlbumTileViewModel? HitTestTile(object? eventSource) =>
         (eventSource as Visual)?.FindAncestorOfType<AlbumTileControl>(includeSelf: true)?.DataContext as AlbumTileViewModel;
 

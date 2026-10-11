@@ -18,7 +18,7 @@ namespace Flower.Tests;
 
 // The main track list says "this is the song playing" with weight and nothing
 // else (see TrackRowControl.axaml's .playing style). Asserted on the rendered
-// TextBlocks rather than on the row's classes, because the class was being set
+// cells (RowText) rather than on the row's classes, because the class was being set
 // correctly the whole time the style matching it was inert: the selector named
 // UserControl, which is an exact-type match, and the row is a TrackRowControl.
 // A test on Classes would have passed throughout and said nothing.
@@ -44,7 +44,7 @@ public class TrackRowPlayingTests : PinnedDataDirectory
         window.Arrange(new Rect(0, 0, 800, 200));
         window.UpdateLayout();
 
-        var weights = row.GetVisualDescendants().OfType<TextBlock>().Select(t => t.FontWeight).ToArray();
+        var weights = row.GetVisualDescendants().OfType<RowText>().Select(t => t.FontWeight).ToArray();
         window.Close();
         return weights;
     }

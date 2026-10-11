@@ -205,7 +205,7 @@ public class TrackRowMergeTests : IDisposable
 
         Build(new[] { T("Song", id: id) }, first, out _);
 
-        // TrackRowControl binds Track.Title/Track.Artists/... through this one.
+        // TrackRowControl re-reads Track.Title/Track.Artists/... off this one.
         Assert.Contains(nameof(TrackRowViewModel.Track), changed);
         Assert.Contains(nameof(TrackRowViewModel.DurationDisplay), changed);
     }

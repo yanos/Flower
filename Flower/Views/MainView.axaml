@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:sys="using:System"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Flower.ViewModels"
@@ -389,7 +390,9 @@
                 Width="250"
                 BorderThickness="0,0,1,0"
                 BorderBrush="{DynamicResource AppDividerBrush}">
-          <ListBox x:Name="SubList"
+          <!-- Each name built once and handed name after name as the list
+               scrolls (RecyclingListBox, UniformRowPanel), as on the phone. -->
+          <controls:RecyclingListBox x:Name="SubList"
                    Classes="names"
                    ItemsSource="{Binding VisibleSubListItems}"
                    SelectionMode="Multiple"
@@ -415,7 +418,17 @@
                 <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}"/>
               </Style>
             </ListBox.Styles>
-          </ListBox>
+            <ListBox.ItemsPanel>
+              <ItemsPanelTemplate>
+                <controls:UniformRowPanel/>
+              </ItemsPanelTemplate>
+            </ListBox.ItemsPanel>
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="sys:String">
+                <controls:RowText Text="{Binding}" TextTrimming="CharacterEllipsis"/>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </controls:RecyclingListBox>
         </Border>
 
         <!-- The picked artist's page: who they are - their covers as a round

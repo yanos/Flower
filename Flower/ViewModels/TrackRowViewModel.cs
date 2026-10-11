@@ -319,8 +319,8 @@ public class TrackRowViewModel : DownloadIndicatorViewModel
     private int     _artCacheGeneration;
 
     // Loads regardless of IsFirstInAlbumGroup - desktop's MusicListView only
-    // ever shows this for the group leader (IsVisible="{Binding
-    // IsFirstInAlbumGroup}" in TrackRowControl.axaml gates that independently),
+    // ever asks for this for the group leader (TrackRowControl.Show gates that
+    // independently),
     // but mobile's flat row-per-track list (no spanning) wants every row to
     // show its own thumbnail. AlbumArtLoader caches by directory, so repeat
     // loads within one album are cheap regardless of platform.
