@@ -370,8 +370,9 @@
          arrow: it was the half of this that had no counterpart over there,
          and colour is already spoken for on a row (0.5 opacity means the
          song is not here yet - see Button.trackRow.placeholder below). -->
-    <Style Selector="Button.trackRow.playing TextBlock">
-      <Setter Property="FontWeight" Value="Bold" />
+    <Style Selector="Button.trackRow.playing TextBlock, Button.trackRow.playing controls|RowText">
+      <!-- TextElement's, which both of them take theirs from. -->
+      <Setter Property="TextElement.FontWeight" Value="Bold" />
     </Style>
     <!-- Not-yet-downloaded track that can't currently be streamed/downloaded
          (see TrackRowViewModel.IsUnavailable/IsAvailable) - dimmed like

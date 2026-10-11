@@ -2,7 +2,6 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:Flower.Controls"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
-             xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
              x:Class="Flower.Controls.AlbumCard"
              x:Name="Root">
 
@@ -45,15 +44,18 @@
     </Style>
   </UserControl.Styles>
 
-  <StackPanel DataContext="{Binding #Root.Tile}"
-              x:DataType="vm:AlbumTileViewModel"
+  <!-- Nothing here is bound to the tile: Show in the code-behind sets it,
+       for the reason ModelWatch gives - a grid hands one card album after
+       album as it scrolls. What the host hands it (ShowsProgress, Progress,
+       Detail) is set from there too. -->
+  <StackPanel x:Name="Card"
               Spacing="2"
-              HorizontalAlignment="Stretch"
-              Classes.dimmed="{Binding IsUnavailable, FallbackValue=False}">
+              HorizontalAlignment="Stretch">
     <Panel>
-      <controls:SquareAlbumArtView AlbumArt="{Binding AlbumArt}" ArtCornerRadius="10" />
+      <controls:SquareAlbumArtView x:Name="Art" ArtCornerRadius="10" />
       <!-- Continue Playing's: this cover picks the album up where it was. -->
-      <Border IsVisible="{Binding #Root.ShowsProgress}"
+      <Border x:Name="Badge"
+              IsVisible="False"
               Width="40" Height="40" CornerRadius="20"
               Margin="0,0,8,8"
               HorizontalAlignment="Right" VerticalAlignment="Bottom"
@@ -62,14 +64,15 @@
         <materialIcons:MaterialIcon Kind="Play" Width="24" Height="24" Foreground="{DynamicResource AppOnPrimaryBrush}" />
       </Border>
     </Panel>
-    <ProgressBar IsVisible="{Binding #Root.ShowsProgress}"
-                 MinWidth="0" Minimum="0" Maximum="1" Value="{Binding #Root.Progress}"
+    <ProgressBar x:Name="ProgressLine"
+                 IsVisible="False"
+                 MinWidth="0" Minimum="0" Maximum="1"
                  Height="4" MinHeight="4" CornerRadius="2"
                  Margin="0,6,0,2"
                  Foreground="{DynamicResource AppAccentBrush}" />
     <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto" Margin="2,0,0,0">
-      <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Text="{Binding Name}" FontSize="17" LineHeight="29" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
-      <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,-5,0,0" Text="{Binding Artist}" FontSize="14" LineHeight="24" Opacity="0.6" TextTrimming="CharacterEllipsis" />
+      <controls:RowText x:Name="AlbumName" Grid.Row="0" Grid.ColumnSpan="2" FontSize="17" LineHeight="29" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
+      <controls:RowText x:Name="ArtistName" Grid.Row="1" Grid.Column="0" Margin="0,-5,0,0" FontSize="14" LineHeight="24" Opacity="0.6" TextTrimming="CharacterEllipsis" />
       <!-- On the artist's line rather than the name's: an album name is
            what gets cut short on a narrow tile, and the artist is usually the
            shorter of the two. The negative margins keep a comfortable target
@@ -81,10 +84,9 @@
       </Button>
       <!-- A size under the artist's: a note about the album, not part of
            its name. -->
-      <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Margin="0,-3,0,0"
-                 Text="{Binding #Root.Detail}"
-                 IsVisible="{Binding #Root.Detail, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-                 FontSize="12" LineHeight="20" Opacity="0.6" TextTrimming="CharacterEllipsis" />
+      <controls:RowText x:Name="DetailLine" Grid.Row="2" Grid.ColumnSpan="2" Margin="0,-3,0,0"
+                        IsVisible="False"
+                        FontSize="12" LineHeight="20" Opacity="0.6" TextTrimming="CharacterEllipsis" />
     </Grid>
   </StackPanel>
 </UserControl>

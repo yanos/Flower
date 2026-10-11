@@ -2059,7 +2059,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             else
                 SelectedTab = tab;
         });
-        SelectAlbumOrArtistCommand = new RelayCommand<string>(SelectAlbumOrArtist);
+        SelectAlbumOrArtistCommand = new RelayCommand<object?>(album => SelectAlbumOrArtist(AlbumNameOf(album)));
         SelectArtistCommand = new RelayCommand<string>(SelectArtist);
         // Switch tab first (moves Main.SelectedSidebarItem to the right scope -
         // see ApplyTabSelection) then drill in exactly like that tab's own
@@ -2086,7 +2086,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             SetSelectedTabCore(MobileTab.Artists, raiseNavigationChanged: false);
             SelectArtistCore(name);
         });
-        SelectArtistAlbumCommand = new RelayCommand<string>(SelectArtistAlbum);
+        SelectArtistAlbumCommand = new RelayCommand<object?>(album => SelectArtistAlbum(AlbumNameOf(album)));
         SelectHomeAlbumCommand = new RelayCommand<AlbumTileViewModel>(SelectHomeAlbum);
         SelectPlaylistCommand = new RelayCommand<SidebarItem>(SelectPlaylist);
         BackCommand = new RelayCommand(async () => await GoBack());
@@ -2863,6 +2863,16 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     }
 
     private Task SelectAlbumOrArtistCore(string name) => DrillIntoAsync(subItem: name);
+
+    // What SelectAlbumOrArtistCommand and SelectArtistAlbumCommand are
+    // handed: a cover hands over its tile (AlbumTileView, the same on every
+    // screen), anything else the album's name.
+    private static string? AlbumNameOf(object? album) => album switch
+    {
+        AlbumTileViewModel tile => tile.Name,
+        string name => name,
+        _ => null,
+    };
 
     // Which drill-in level a navigation lands on - the one thing that differs
     // between the four track-list drill-ins below.

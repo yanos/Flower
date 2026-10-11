@@ -1,0 +1,177 @@
+<Button xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:Flower.Controls"
+        xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+        xmlns:mvm="clr-namespace:Flower.ViewModels.Mobile"
+        xmlns:views="clr-namespace:Flower.Views.Mobile.Screens"
+        x:Class="Flower.Views.Mobile.Screens.TrackRowView"
+        Classes="trackRow"
+        Command="{Binding $parent[UserControl].((mvm:MobileMainViewModel)DataContext).PlayTrackCommand}"
+        controls:LongPress.Command="{Binding $parent[UserControl].((mvm:MobileMainViewModel)DataContext).OpenTrackActionsCommand}">
+  <!-- One song's row on the phone (TrackRowTemplate is just this). Every
+       binding left in this file reads the hosting screen - its commands, and
+       what ITrackRowHost says about the list as a whole - and none reads the
+       song: what the song decides (its words, its cover, which classes the
+       row wears, what the buttons are handed) is set from the code-behind,
+       for the reason given there. -->
+  <!-- A long press opens the same menu as the "..." button at the end of
+       the row, without also playing the track once the finger lifts (see
+       LongPress). -->
+  <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto">
+    <!-- The rule between one song and the next, along this row's bottom
+         edge (the row has no vertical padding - see Button.trackRow in
+         MobileMainView.axaml). From the words on, not under the art, so
+         the covers read as a column; drawn first, so everything else is
+         on top of it. -->
+    <Border Grid.Column="2" Grid.ColumnSpan="4"
+            BorderBrush="{DynamicResource AppDividerBrush}"
+            BorderThickness="0,0,0,1"
+            IsHitTestVisible="False" />
+    <!-- Pointer wiring for drag-to-reorder is not here: the hosting screen
+         (TrackListScreenView) wires it via AddHandler on its ListBox using
+         tunnel routing + e.Source, the same pattern MobileMainView.axaml.cs
+         uses for its swipe gesture, because reordering is the list's act
+         rather than one row's. -->
+    <!-- IsPlaylistMode/IsAlbumMode read off the HOSTING screen via
+         ITrackRowHost ($parent[views:ITrackRowHost]), NOT
+         $parent[UserControl].DataContext (the shared MobileMainViewModel)
+         - both TrackListScreenView and SearchResultsScreenView implement
+         it (see each one's own code-behind, and ITrackRowHost.cs). A
+         kept-alive one-back/one-forward TrackListScreenView needs to
+         reflect ITS OWN frozen state here, not whatever screen is
+         currently live - reading the shared VM's
+         IsShowingPlaylistTracks/IsShowingAlbumTrackList directly briefly
+         showed/hid these based on whatever WAS live at that instant
+         (confirmed on a real device as album art flashing in on every
+         row of a revealed album screen mid swipe-forward, then
+         disappearing once the transition committed and resynced it). -->
+    <!-- The grip itself is the row's own answer (CanBeDragged), false
+         only for the song playing at the head of the Queue, which nothing
+         moves ahead of - its column stays, so its art lines up with the
+         rows under it. -->
+    <Border Grid.Column="0"
+            Classes="dragHandle"
+            IsVisible="{Binding $parent[views:ITrackRowHost].IsPlaylistMode}"
+            Background="Transparent"
+            Width="32"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center">
+      <materialIcons:MaterialIcon x:Name="DragGrip" Kind="DragHorizontalVariant" Width="20" Height="20" Opacity="0.5" />
+    </Border>
+    <!-- Hidden while viewing one album's own track list - its header
+         (see IsShowingAlbumTrackList/CurrentAlbumHeader) already shows
+         the art once, full-size, above the list. -->
+    <!-- The art and the words each carry the row's room above and below
+         (8), which is what sets its height: 68 with art, and only as tall
+         as the words where there is none - an album's own list, where a
+         title alone makes a short row. -->
+    <controls:AlbumArtView x:Name="Art"
+                            Grid.Column="1"
+                            IsVisible="{Binding !$parent[views:ITrackRowHost].IsAlbumMode}"
+                            ArtCornerRadius="6"
+                            Width="52" Height="52"
+                            Margin="0,8,14,8" />
+    <StackPanel Grid.Column="2" Spacing="2" Margin="0,8" VerticalAlignment="Center">
+      <controls:RowText x:Name="Title"
+                        FontSize="17"
+                        TextTrimming="CharacterEllipsis" />
+      <!-- Dropped when every row in this view carries the same artist -
+           an album's tracks, or a single-artist playlist - where it was
+           the same name repeated down the entire screen. Answered by the
+           hosting screen, not the row: only the host knows the whole
+           list (see ITrackRowHost.ShowsRowArtist). -->
+      <controls:RowText x:Name="Artists"
+                        IsVisible="{Binding $parent[views:ITrackRowHost].ShowsRowArtist}"
+                        FontSize="15"
+                        Opacity="0.65"
+                        TextTrimming="CharacterEllipsis" />
+    </StackPanel>
+
+    <!-- Ranged right against the duration, so it lines up down the screen
+         however long each track is: the duration cell beside it is one
+         fixed width on every row (below). An Auto column that collapses
+         on a row with nothing to fetch, which only gives that row's title
+         a little more room - nothing else on the row moves.
+
+         Tapping the row itself (PlayTrackCommand, above) is a no-op
+         for a placeholder track, so this is the only thing on that
+         row that acts on the music rather than on the catalog entry
+         (the "..." menu does the latter). The control itself is the
+         shared one every download icon in the app is now
+         (TrackDownloadButton), which is where the three mutually
+         exclusive icon states and the spinner live - this row used to
+         carry its own copy of them, and a copy is a thing that can
+         miss a fix.
+
+         Padded evenly, so the press lights up a circle (Button.pill) -
+         and only 3px, so that circle stays tight round the glyph rather
+         than growing into a disc between the title and the time. The
+         negative right margin gives that padding back on the duration's
+         side, and the left one is short by the same 3, so the glyph
+         itself sits where it would with no padding at all. -->
+    <controls:TrackDownloadButton x:Name="Download"
+                                  Grid.Column="3"
+                                  IconSize="24"
+                                  IconPadding="3"
+                                  Command="{Binding $parent[UserControl].((mvm:MobileMainViewModel)DataContext).DownloadTrackCommand}"
+                                  Margin="5,0,-3,0"
+                                  HorizontalAlignment="Right" />
+
+    <!-- Duration always shows, downloaded or not - a placeholder still
+         knows its own length (Track.Duration comes from the peer's
+         catalog, not from reading a local file - see
+         LibrarySyncMapper.ToPlaceholderTrack).
+
+         The cell is as wide as the longest duration it can say, 9:59:59,
+         on every row, so the download icons beside it stay in one column
+         whether a track runs two minutes or two hours. Measured from an
+         invisible copy of that text rather than a fixed pixel width, so it
+         follows the font; bold, because the playing row's text is bold
+         (Button.trackRow.playing) and its cell must not be the one that
+         is wider.
+
+         No gap before it: the bold copy is 3px wider in Inter than the
+         regular 9:59:59, which is exactly what the download circle reaches
+         into the cell, and the 9 draws a pixel inside its own box - so the
+         circle ends one pixel short of the longest time's ink. -->
+    <Panel Grid.Column="4" VerticalAlignment="Center">
+      <TextBlock Text="9:59:59"
+                 FontSize="15"
+                 FontWeight="Bold"
+                 Opacity="0" />
+      <controls:RowText x:Name="Duration"
+                        FontSize="15"
+                        Opacity="0.65"
+                        HorizontalAlignment="Right" />
+    </Panel>
+
+    <!-- Shown on every row, placeholder or not. It used to hide on
+         IsPlaceholder, which read as "actions need the file" - but
+         only one of the actions behind it does. Viewing a track's
+         info and adding it to a playlist are both about the catalog
+         entry, which a placeholder fully is, and the playlist stores
+         a track reference rather than a path (see playlists.json).
+         Deleting the downloaded file is the file-dependent one, and
+         it gates itself on having a Path - see
+         MobileMainViewModel.CanDeleteDownloadedFile - so an
+         undownloaded track opens this sheet without it. Downloading
+         is the other way round (CanDownloadActionTarget).
+
+         Handed the row rather than its Track, because downloading
+         from the menu goes through the row: that is what spins the
+         row's own icon while it runs.
+
+         Only 2px either side: the glyph already sits in a wide
+         margin of its own, so the gap to the duration and to the screen
+         edge is mostly that. -->
+    <Button x:Name="Menu"
+            Grid.Column="5"
+            Command="{Binding $parent[UserControl].((mvm:MobileMainViewModel)DataContext).OpenTrackActionsCommand}"
+            Background="Transparent"
+            BorderThickness="0"
+            Padding="2,4,2,4"
+            VerticalAlignment="Center">
+      <materialIcons:MaterialIcon Kind="DotsVertical" Width="24" Height="24" Opacity="0.6" />
+    </Button>
+  </Grid>
+</Button>

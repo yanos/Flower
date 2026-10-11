@@ -4,7 +4,6 @@ using System.Linq;
 
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.Primitives;
 using Avalonia.Media;
 using Avalonia.VisualTree;
 
@@ -99,20 +98,20 @@ public sealed class HomeShelfRowsHost
 
     // Each cover on screen by what it shows - a Continue Playing item, or an
     // album tile - which is the same object across a rebuild (HomeViewModel
-    // reuses them) though its container is not. A cover is the container its
-    // row's grid holds. A row the list has recycled is kept hidden, still
-    // holding what it last showed, and says nothing about where that is.
+    // reuses them) though its container is not. A cover is what its row
+    // (TileRowPanel) holds. A row the list has recycled, or a cover its row
+    // has spare, is kept hidden, and says nothing about where anything is.
     private Dictionary<object, (Control Cover, Point At)> CoverPositions()
     {
         var covers = new Dictionary<object, (Control, Point)>();
-        foreach (var grid in _list.GetVisualDescendants().OfType<UniformGrid>())
+        foreach (var row in _list.GetVisualDescendants().OfType<TileRowPanel>())
         {
-            if (!grid.IsEffectivelyVisible)
+            if (!row.IsEffectivelyVisible)
                 continue;
 
-            foreach (var cover in grid.Children)
+            foreach (var cover in row.Children)
             {
-                if (cover.DataContext is { } shown && cover.TranslatePoint(default, _list) is { } at)
+                if (cover.IsVisible && cover.DataContext is { } shown && cover.TranslatePoint(default, _list) is { } at)
                     covers[shown] = (cover, at);
             }
         }

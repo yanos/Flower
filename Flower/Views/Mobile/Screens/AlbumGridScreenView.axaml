@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:Flower.Controls"
+             xmlns:views="clr-namespace:Flower.Views.Mobile.Screens"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
              x:Class="Flower.Views.Mobile.Screens.AlbumGridScreenView"
@@ -13,17 +14,19 @@
        SelectAlbumOrArtistCommand.
 
        Bound to rows of tiles (AlbumGridRow), not a flat tile list, with a
-       VirtualizingStackPanel rather than a UniformGrid - a flat list in a
+       virtualizing panel rather than a UniformGrid - a flat list in a
        UniformGrid isn't virtualizable (no viewport awareness), so it had to
        realize/measure/template-expand every tile in the whole library the
        first time the grid became visible - a multi-second stall on a library
        with ~1,400 albums. Wrapped in an explicit ScrollViewer - unlike
        ListBox, plain ItemsControl has no ScrollViewer in its own default
        template, so without this there was no scroll gesture at all on
-       mobile. Safe alongside VirtualizingStackPanel specifically because that
-       panel cooperates with ScrollViewer via logical scrolling; a
-       non-virtualizing panel inside a ScrollViewer would defeat
-       virtualization by forcing an unconstrained measure pass. -->
+       mobile. The panel is UniformRowPanel, which reads the scroller's
+       window off its effective viewport the way VirtualizingStackPanel does,
+       and keeps its rows on the tree rather than taking each off and putting
+       it back as it scrolls by; a non-virtualizing panel inside a ScrollViewer
+       would defeat virtualization by forcing an unconstrained measure
+       pass. -->
   <!-- The index bar takes a column of its own rather than floating over
        the grid, which put it on top of the right-hand tiles' art. The grid
        sizes its tiles off the width it is left with (AlbumGridColumnSizing
@@ -36,51 +39,33 @@
            tiles (ScreenTitle). -->
       <StackPanel>
         <controls:ScreenTitle />
-        <ItemsControl x:Name="Rows"
+        <controls:RecyclingItemsControl x:Name="Rows"
                       ItemsSource="{Binding AlbumGridRows}"
                       Padding="12,12,0,12"
                       controls:AlbumGridColumnSizing.IsEnabled="True">
           <ItemsControl.ItemsPanel>
             <ItemsPanelTemplate>
-              <VirtualizingStackPanel Orientation="Vertical" />
+              <controls:UniformRowPanel />
             </ItemsPanelTemplate>
           </ItemsControl.ItemsPanel>
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="vm:AlbumGridRow">
-              <!-- One UniformGrid per row, sized by that row's own Columns: the
-                   grid fits as many ~150px tiles across as the width allows, so a
-                   phone turned into landscape shows five where portrait shows two
-                   (see AlbumGridRow.ColumnsFor, fed by AlbumGridColumnSizing on
-                   the ItemsControl above). UniformGrid has no ColumnSpacing of its
-                   own, so the 12px gutter is each tile's right margin and the
-                   ItemsControl leaves its own right edge to the last tile's - that
-                   is what keeps the gap identical at both screen edges and between
-                   columns. The gap *below* a tile is deliberately much larger than
-                   the 6 between its art and its caption, so a title reads as
-                   belonging to the album above it rather than the one below. -->
-              <ItemsControl ItemsSource="{Binding Tiles}">
-                <ItemsControl.ItemsPanel>
-                  <ItemsPanelTemplate>
-                    <UniformGrid Columns="{Binding Columns}" />
-                  </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate x:DataType="vm:AlbumTileViewModel">
-                    <Button Classes="pickerRow" Padding="0" Margin="0,0,12,20"
-                            Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).SelectAlbumOrArtistCommand}"
-                            CommandParameter="{Binding Name}"
-                            controls:LongPress.Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).OpenAlbumActionsCommand}"
-                            controls:LongPress.CommandParameter="{Binding}">
-                      <!-- The album's tile, the same one desktop draws (AlbumCard). -->
-                      <controls:AlbumCard Tile="{Binding}"
-                                          MenuCommand="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).OpenAlbumActionsCommand}" />
-                    </Button>
+              <!-- One row of covers, as many across as the grid's width
+                   allows, so a phone turned into landscape shows five where
+                   portrait shows two (see AlbumGridRow.ColumnsFor, fed by
+                   AlbumGridColumnSizing on the ItemsControl above). Each cover
+                   carries its own gutters (AlbumTileView); TileRowPanel is what
+                   keeps the covers as the row is handed album after album. -->
+              <controls:TileRowPanel Columns="{Binding Columns}" Items="{Binding Tiles}">
+                <controls:TileRowPanel.ItemTemplate>
+                  <DataTemplate>
+                    <views:AlbumTileView />
                   </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
+                </controls:TileRowPanel.ItemTemplate>
+              </controls:TileRowPanel>
             </DataTemplate>
           </ItemsControl.ItemTemplate>
-        </ItemsControl>
+        </controls:RecyclingItemsControl>
       </StackPanel>
     </ScrollViewer>
     <controls:ScrollIndexBar x:Name="IndexBar" Grid.Column="1" Target="{Binding #Rows}"

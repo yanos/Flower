@@ -1,8 +1,12 @@
+using System.Windows.Input;
+
 using Avalonia.Controls;
+
+using Flower.ViewModels.Mobile;
 
 namespace Flower.Views.Mobile.Screens;
 
-public partial class SearchResultsScreenView : UserControl, ITrackRowHost
+public partial class SearchResultsScreenView : UserControl, ITrackRowHost, IArtistRowHost
 {
     // TrackRowTemplate (shared with TrackListScreenView) reads these off
     // whichever UserControl hosts it - see that template's own comment -
@@ -24,4 +28,6 @@ public partial class SearchResultsScreenView : UserControl, ITrackRowHost
     {
         InitializeComponent();
     }
+
+    public ICommand? OpenArtistCommand => (DataContext as MobileMainViewModel)?.SelectSearchArtistCommand;
 }

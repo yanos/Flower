@@ -1,3 +1,5 @@
+using System.Windows.Input;
+
 using Avalonia.Controls;
 
 using Flower.Services;
@@ -5,7 +7,7 @@ using Flower.ViewModels.Mobile;
 
 namespace Flower.Views.Mobile.Screens;
 
-public partial class ArtistPickerScreenView : UserControl
+public partial class ArtistPickerScreenView : UserControl, IArtistRowHost
 {
     public ArtistPickerScreenView()
     {
@@ -18,4 +20,6 @@ public partial class ArtistPickerScreenView : UserControl
                 descending: vm.ArtistPickerRunsZToA)
             : -1;
     }
+
+    public ICommand? OpenArtistCommand => (DataContext as MobileMainViewModel)?.SelectArtistCommand;
 }

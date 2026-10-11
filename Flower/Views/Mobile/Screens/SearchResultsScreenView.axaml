@@ -3,6 +3,7 @@
              xmlns:controls="clr-namespace:Flower.Controls"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
+             xmlns:views="clr-namespace:Flower.Views.Mobile.Screens"
              xmlns:system="clr-namespace:System;assembly=System.Runtime"
              x:Class="Flower.Views.Mobile.Screens.SearchResultsScreenView"
              x:DataType="vm:MobileMainViewModel"
@@ -30,8 +31,8 @@
       <Setter Property="Opacity" Value="0.7" />
       <Setter Property="Margin" Value="16,16,16,6" />
     </Style>
-    <!-- The chevron at the end of an artist or album row: those two open a
-         screen, where a song row plays. -->
+    <!-- The chevron at the end of an album row: it opens a screen, where a
+         song row plays. -->
     <Style Selector="materialIcons|MaterialIcon.drillIn">
       <Setter Property="Width" Value="24" />
       <Setter Property="Height" Value="24" />
@@ -41,38 +42,26 @@
     </Style>
   </UserControl.Styles>
 
+  <!-- Each section's rows are built once and handed the next search's
+       results as the query is typed (RecyclingItemsControl); none is
+       virtualized, each being capped (MaxSearchResultsPerSection). -->
   <ScrollViewer Classes="screenScroll" controls:RubberBandScroll.IsEnabled="True">
     <StackPanel>
       <StackPanel IsVisible="{Binding HasSearchArtistResults}">
         <TextBlock Classes="sectionHeader" Text="Artists" />
-        <ItemsControl ItemsSource="{Binding SearchArtistResults}">
+        <controls:RecyclingItemsControl ItemsSource="{Binding SearchArtistResults}">
           <ItemsControl.ItemTemplate>
-            <!-- The artist's cover is the collage the Artists tab draws for
-                 them, made round: a person, where an album is square. -->
+            <!-- The Artists tab's own row (ArtistRowView). -->
             <DataTemplate x:DataType="vm:ArtistPickerRow">
-              <Button Classes="pickerRow"
-                      Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).SelectSearchArtistCommand}"
-                      CommandParameter="{Binding Name}"
-                      controls:LongPress.Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).OpenArtistActionsCommand}"
-                      controls:LongPress.CommandParameter="{Binding Name}">
-                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
-                  <controls:AlbumArtView Grid.Column="0"
-                                              Covers="{Binding Cover.CoverArt}"
-                                              ArtCornerRadius="28"
-                                              Width="56" Height="56" />
-                  <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="17"
-                             VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                  <materialIcons:MaterialIcon Grid.Column="2" Classes="drillIn" Kind="ChevronRight" />
-                </Grid>
-              </Button>
+              <views:ArtistRowView />
             </DataTemplate>
           </ItemsControl.ItemTemplate>
-        </ItemsControl>
+        </controls:RecyclingItemsControl>
       </StackPanel>
 
       <StackPanel IsVisible="{Binding HasSearchAlbumResults}">
         <TextBlock Classes="sectionHeader" Text="Albums" />
-        <ItemsControl ItemsSource="{Binding SearchAlbumResults}">
+        <controls:RecyclingItemsControl ItemsSource="{Binding SearchAlbumResults}">
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="vm:AlbumTileViewModel">
               <Button Classes="pickerRow"
@@ -92,12 +81,12 @@
               </Button>
             </DataTemplate>
           </ItemsControl.ItemTemplate>
-        </ItemsControl>
+        </controls:RecyclingItemsControl>
       </StackPanel>
 
       <StackPanel IsVisible="{Binding HasSearchSongResults}">
         <TextBlock Classes="sectionHeader" Text="Songs" />
-        <ItemsControl ItemsSource="{Binding SearchSongResults}" ItemTemplate="{StaticResource TrackRowTemplate}" />
+        <controls:RecyclingItemsControl ItemsSource="{Binding SearchSongResults}" ItemTemplate="{StaticResource TrackRowTemplate}" />
       </StackPanel>
 
       <!-- See MaxSearchResultsPerSection's own doc comment - each section

@@ -78,9 +78,9 @@ public class TrackRowArtistTests : PinnedDataDirectory
     private static List<string?> ArtistLinesOnRows(Window window) =>
         window.GetVisualDescendants().OfType<Button>()
             .Where(b => b.Classes.Contains("trackRow"))
-            .SelectMany(b => b.GetVisualDescendants().OfType<TextBlock>())
+            .SelectMany(ShownText.In)
             .Where(t => t.IsVisible)
-            .Select(t => t.Text)
+            .Select(ShownText.Of)
             .ToList();
 
     [AvaloniaFact]

@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 
 using Avalonia.Controls;
-using UniformGrid = Avalonia.Controls.Primitives.UniformGrid;
 using Avalonia.Headless.XUnit;
 using Avalonia.Media;
 using Avalonia.Threading;
@@ -42,12 +41,12 @@ public class HomeShelfSlideTests : PinnedDataDirectory
         progress.TrackStarted(album[1], shuffling: false);
     }
 
-    // Its Continue Playing cover: the container its row's grid holds, which
+    // Its Continue Playing cover: what its row (TileRowPanel) holds, which
     // is what the slide moves. (It is on Recently Added as well.)
     private static Control CoverOf(Window window, string album)
     {
         var card = window.GetVisualDescendants().OfType<AlbumCard>().Single(c => c.ShowsProgress && c.Tile?.Name == album);
-        return card.GetVisualAncestors().OfType<Control>().First(c => c.GetVisualParent() is UniformGrid);
+        return card.GetVisualAncestors().OfType<Control>().First(c => c.GetVisualParent() is TileRowPanel);
     }
 
     private static double OffsetOf(Control cover) => cover.RenderTransform is TranslateTransform t ? t.X : 0;

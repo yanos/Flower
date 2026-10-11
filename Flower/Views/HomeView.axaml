@@ -49,10 +49,11 @@
     <!-- One virtualizing list of rows - each shelf's heading, then its covers
          so many to a row (HomeShelfRows, fed by HomeShelfRowsHost from this
          list's width) - so only what is on screen is built, as in the Albums
-         grid. Its own ScrollViewer, as AlbumGridView has: an ItemsControl's
-         template has none. -->
+         grid, and each row built once and handed shelf after shelf
+         (RecyclingItemsControl), as on the phone. Its own ScrollViewer, as
+         AlbumGridView has: an ItemsControl's template has none. -->
     <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-      <ItemsControl x:Name="Rows" Margin="16,0,16,24">
+      <controls:RecyclingItemsControl x:Name="Rows" Margin="16,0,16,24">
         <ItemsControl.ItemsPanel>
           <ItemsPanelTemplate>
             <VirtualizingStackPanel Orientation="Vertical" />
@@ -63,14 +64,11 @@
             <TextBlock Classes="shelfTitle" Classes.first="{Binding IsFirst}" Text="{Binding Title}" />
           </DataTemplate>
 
+          <!-- Each shelf's covers, so many to a row (TileRowPanel, which
+               keeps them as the list hands the row other albums). -->
           <DataTemplate DataType="vm:HomeContinuePlayingRow">
-            <ItemsControl ItemsSource="{Binding Items}" Margin="0,0,0,8">
-              <ItemsControl.ItemsPanel>
-                <ItemsPanelTemplate>
-                  <UniformGrid Columns="{Binding Columns}" />
-                </ItemsPanelTemplate>
-              </ItemsControl.ItemsPanel>
-              <ItemsControl.ItemTemplate>
+            <controls:TileRowPanel Columns="{Binding Columns}" Items="{Binding Items}" Margin="0,0,0,8">
+              <controls:TileRowPanel.ItemTemplate>
                 <DataTemplate x:DataType="vm:ContinuePlayingItemViewModel">
                   <Button Classes="homeTile"
                           Command="{Binding Home.ResumeCommand}"
@@ -102,18 +100,13 @@
                                         Detail="{Binding Detail}" />
                   </Button>
                 </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
+              </controls:TileRowPanel.ItemTemplate>
+            </controls:TileRowPanel>
           </DataTemplate>
 
           <DataTemplate DataType="vm:HomeAlbumRow">
-            <ItemsControl ItemsSource="{Binding Tiles}" Margin="0,0,0,8">
-              <ItemsControl.ItemsPanel>
-                <ItemsPanelTemplate>
-                  <UniformGrid Columns="{Binding Columns}" />
-                </ItemsPanelTemplate>
-              </ItemsControl.ItemsPanel>
-              <ItemsControl.ItemTemplate>
+            <controls:TileRowPanel Columns="{Binding Columns}" Items="{Binding Tiles}" Margin="0,0,0,8">
+              <controls:TileRowPanel.ItemTemplate>
                 <DataTemplate x:DataType="mvm:AlbumTileViewModel">
                   <Button Classes="homeTile"
                           Command="{Binding $parent[UserControl].((vm:HomeViewModel)DataContext).OpenAlbumCommand}"
@@ -121,11 +114,11 @@
                     <controls:AlbumCard Tile="{Binding}" />
                   </Button>
                 </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
+              </controls:TileRowPanel.ItemTemplate>
+            </controls:TileRowPanel>
           </DataTemplate>
         </ItemsControl.DataTemplates>
-      </ItemsControl>
+      </controls:RecyclingItemsControl>
     </ScrollViewer>
 
     <StackPanel IsVisible="{Binding ShowsNothingYet}"

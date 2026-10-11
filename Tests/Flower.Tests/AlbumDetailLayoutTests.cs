@@ -398,8 +398,7 @@ public class AlbumDetailLayoutTests : PinnedDataDirectory
     private static IEnumerable<StackPanel> AlbumButtonRows(Window window) =>
         window.GetVisualDescendants().OfType<StackPanel>().Where(p => p.Classes.Contains("albumActions"));
 
-    private static TextBlock TextBlockSaying(Window window, string text) =>
-        window.GetVisualDescendants().OfType<TextBlock>().First(t => t.Text == text && t.IsEffectivelyVisible);
+    private static Control TextBlockSaying(Window window, string text) => ShownText.Saying(window, text);
 
     private static ItemsControl TrackList(Window window) =>
         window.GetVisualDescendants().OfType<ItemsControl>()

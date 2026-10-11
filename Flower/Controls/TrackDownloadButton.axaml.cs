@@ -4,6 +4,7 @@ using System.Windows.Input;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 
 using Flower.ViewModels;
 
@@ -76,10 +77,33 @@ public partial class TrackDownloadButton : UserControl
         set => SetValue(CommandParameterProperty, value);
     }
 
+    // One subscription to the indicator in place of a binding per icon - see
+    // ModelWatch.
+    private readonly ModelWatch _indicator;
+
     public TrackDownloadButton()
     {
         InitializeComponent();
         DownloadButton.Click += OnClick;
+        _indicator = new ModelWatch(this, Show);
+        Show();
+    }
+
+    protected override void OnDataContextChanged(EventArgs e)
+    {
+        base.OnDataContextChanged(e);
+        _indicator.Watch(DataContext as DownloadIndicatorViewModel);
+    }
+
+    private void Show()
+    {
+        var indicator = DataContext as DownloadIndicatorViewModel;
+        IsVisible = indicator?.IsDownloadable == true;
+        IdleIcon.IsVisible = indicator?.IsDownloadIdle == true;
+        SpinningIcon.IsVisible = indicator?.IsDownloading == true;
+        FailedIcon.IsVisible = indicator?.IsDownloadUnavailable == true;
+        if (SpinningIcon.RenderTransform is RotateTransform spin)
+            spin.Angle = indicator?.SpinAngle ?? 0;
     }
 
     // Raised instead of a bound ICommand: the DataContext here is whatever

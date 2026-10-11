@@ -10,6 +10,7 @@ using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 
+using Flower.Controls;
 using Flower.Models;
 using Flower.Tests.TestSupport;
 using Flower.ViewModels.Mobile;
@@ -19,7 +20,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 using Xunit;
 
-using UniformGrid = Avalonia.Controls.Primitives.UniformGrid;
 using Track = Flower.Models.Track;
 
 namespace Flower.Tests;
@@ -32,8 +32,7 @@ namespace Flower.Tests;
 // go through the real view, because the parts of the chain that can silently
 // do nothing are the ones only a laid-out control exercises - whether the
 // attached property ever sees a width, and whether the row template's
-// UniformGrid.Columns binding, which lives inside an ItemsPanelTemplate,
-// resolves at all.
+// TileRowPanel.Columns binding resolves at all.
 [Collection("PlatformDataDirectory")]
 public class AlbumGridColumnSizingTests : PinnedDataDirectory
 {
@@ -88,7 +87,7 @@ public class AlbumGridColumnSizingTests : PinnedDataDirectory
     }
 
     private static int RenderedColumns(Window window) =>
-        window.GetVisualDescendants().OfType<UniformGrid>().First().Columns;
+        window.GetVisualDescendants().OfType<TileRowPanel>().First().Columns;
 
     [AvaloniaFact]
     public void A_portrait_width_lays_the_grid_out_two_across()
@@ -141,7 +140,7 @@ public class AlbumGridColumnSizingTests : PinnedDataDirectory
         var window = ShowGrid(scope.Mobile, 844);
 
         var widths = window.GetVisualDescendants().OfType<Button>()
-            .Where(b => b.Classes.Contains("pickerRow"))
+            .Where(b => b.Classes.Contains("pickerRow") && b.IsEffectivelyVisible)
             .Select(b => Math.Round(b.Bounds.Width))
             .Distinct()
             .ToList();

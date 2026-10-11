@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Windows.Input;
 
 using Avalonia.Controls;
 
@@ -7,13 +8,15 @@ using Flower.ViewModels.Mobile;
 
 namespace Flower.Views.Mobile.Screens;
 
-public partial class AlbumGridScreenView : UserControl
+public partial class AlbumGridScreenView : UserControl, IAlbumTileHost
 {
     public AlbumGridScreenView()
     {
         InitializeComponent();
         IndexBar.IndexOfLetter = RowOfLetter;
     }
+
+    public ICommand? OpenAlbumCommand => (DataContext as MobileMainViewModel)?.SelectAlbumOrArtistCommand;
 
     // The bar scrolls rows, and a row holds several albums, so the letter is
     // found among the albums and answered with the row it is in - by name or

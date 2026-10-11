@@ -17,8 +17,9 @@
   <!-- The Queue tab: the song playing, then what plays after it - see
        MobileMainViewModel.QueueRows. A ScrollViewer over an ItemsControl
        rather than the screenScroll ListBox. The rows still virtualize: the
-       panel sizes itself off the effective viewport, which the StackPanel
-       around it does not change, and a queue can be the whole library.
+       panel (UniformRowPanel, every song row being one height) sizes itself
+       off the effective viewport, which the StackPanel around it does not
+       change, and a queue can be the whole library.
 
        No line under the title saying why the order is what it is (shuffle,
        repeat): the desktop's page subtitle says it, where there is room, and
@@ -38,14 +39,14 @@
     <ScrollViewer x:Name="Scroller" Classes="screenScroll" controls:RubberBandScroll.IsEnabled="True">
       <StackPanel x:Name="QueueContent">
         <controls:ScreenTitle />
-        <ItemsControl x:Name="QueueList"
+        <controls:RecyclingItemsControl x:Name="QueueList"
                       ItemsSource="{Binding QueueRows}" ItemTemplate="{StaticResource TrackRowTemplate}">
           <ItemsControl.ItemsPanel>
             <ItemsPanelTemplate>
-              <VirtualizingStackPanel />
+              <controls:UniformRowPanel />
             </ItemsPanelTemplate>
           </ItemsControl.ItemsPanel>
-        </ItemsControl>
+        </controls:RecyclingItemsControl>
       </StackPanel>
     </ScrollViewer>
 

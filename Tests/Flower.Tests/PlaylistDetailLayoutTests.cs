@@ -112,8 +112,7 @@ public class PlaylistDetailLayoutTests : PinnedDataDirectory
     private static TrackListScreenView Screen(Window window) =>
         window.GetVisualDescendants().OfType<TrackListScreenView>().Last(v => v.IsEffectivelyVisible);
 
-    private static TextBlock TextBlockSaying(Window window, string text) =>
-        Screen(window).GetVisualDescendants().OfType<TextBlock>().First(t => t.Text == text && t.IsEffectivelyVisible);
+    private static Control TextBlockSaying(Window window, string text) => ShownText.Saying(Screen(window), text);
 
     private static Rect InWindow(Window window, Visual control) =>
         new(control.TranslatePoint(default, window) ?? default, control.Bounds.Size);

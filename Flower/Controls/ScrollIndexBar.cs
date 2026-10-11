@@ -376,10 +376,18 @@ public class ScrollIndexBar : Control
                     BringToTop(index);
             }
         }
-        else if (fraction != _currentFraction)
+        else
         {
-            _currentFraction = fraction;
-            ScrollToFraction(fraction);
+            // From the middle of the top dot to the middle of the bottom one,
+            // not from edge to edge: a finger on the last dot is the end of the
+            // list, rather than a dot's height short of it.
+            var (slots, slotHeight, top) = Layout();
+            var dots = Math.Clamp((y - top - slotHeight / 2) / Math.Max(1, (slots - 1) * slotHeight), 0, 1);
+            if (dots != _currentFraction)
+            {
+                _currentFraction = dots;
+                ScrollToFraction(dots);
+            }
         }
 
         InvalidateVisual();

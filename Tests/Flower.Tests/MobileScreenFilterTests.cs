@@ -149,10 +149,9 @@ public class MobileScreenFilterTests : PinnedDataDirectory
 
         // On the line under the name, the way a song's artist is under its title.
         var window = ShowView(mobile);
-        var texts = window.GetVisualDescendants().OfType<ArtistPickerScreenView>().Single()
-            .GetVisualDescendants().OfType<TextBlock>().ToList();
-        var name = texts.First(t => t.Text == "David Bowie");
-        var summary = texts.First(t => t.Text == "2 albums · 3 songs");
+        var screen = window.GetVisualDescendants().OfType<ArtistPickerScreenView>().Single();
+        var name = ShownText.Saying(screen, "David Bowie");
+        var summary = ShownText.Saying(screen, "2 albums · 3 songs");
         Assert.True(summary.TranslatePoint(default, window)!.Value.Y > name.TranslatePoint(default, window)!.Value.Y);
         Assert.Equal(
             name.TranslatePoint(default, window)!.Value.X,
@@ -304,7 +303,7 @@ public class MobileScreenFilterTests : PinnedDataDirectory
         var mobile = scope.Mobile;
         mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
         var window = ShowView(mobile);
-        TextBlock Tile() => window.GetVisualDescendants().OfType<TextBlock>().First(t => t.Text == "OK Computer");
+        Control Tile() => ShownText.Saying(window, "OK Computer");
 
         Assert.True(mobile.OpenScreenFilter());
         Settle(window);

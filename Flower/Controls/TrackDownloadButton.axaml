@@ -6,7 +6,6 @@
              x:Name="Root"
              x:DataType="vm:DownloadIndicatorViewModel"
              x:CompileBindings="True"
-             IsVisible="{Binding IsDownloadable}"
              VerticalAlignment="Center">
 
   <!-- The download control, wherever one appears: a track-list row's title
@@ -20,10 +19,11 @@
        DownloadIndicatorViewModel.FinishDownload). A copy that misses that is a
        button that flickers, which is exactly what the top bar's own copy did.
 
-       Its own UserControl rather than code-built cell content because of the
-       spinner: SpinAngle is bound onto a RotateTransform, which is not part of
-       the visual tree and so has no DataContext of its own to bind against
-       from code-behind - declaring it in XAML is what gives it one.
+       Which icon shows, and the spinner's angle, are set from the
+       code-behind rather than bound (see Follow there): this sits in every
+       phone track row, and a row handed the next song as it scrolls would
+       otherwise tear down and remake five bindings' worth of subscriptions
+       to the old song and the new one.
 
        Only shown when there is actually something to fetch (IsDownloadable -
        a placeholder the paired server can serve right now, an album with at
@@ -42,9 +42,9 @@
           Classes="pill"
           Padding="{Binding #Root.IconPadding}">
     <Panel>
-      <materialIcons:MaterialIcon Kind="CloudDownloadOutline"
+      <materialIcons:MaterialIcon x:Name="IdleIcon"
+                                  Kind="CloudDownloadOutline"
                                   Width="{Binding #Root.IconSize}" Height="{Binding #Root.IconSize}" Opacity="0.7"
-                                  IsVisible="{Binding IsDownloadIdle}"
                                   ToolTip.Tip="{Binding #Root.Label}"/>
       <!-- Rotation driven by the indicator's own SpinAngle, not a View-side
            animation - see DownloadIndicatorViewModel.IsDownloading's doc
@@ -58,17 +58,17 @@
            from the top-left corner and the icon orbits it instead of
            spinning in place. "50%,50%" would work; saying nothing is
            shorter and is what every other spinner here does. -->
-      <materialIcons:MaterialIcon Kind="Sync"
-                                  Width="{Binding #Root.IconSize}" Height="{Binding #Root.IconSize}" Opacity="0.7"
-                                  IsVisible="{Binding IsDownloading}">
+      <materialIcons:MaterialIcon x:Name="SpinningIcon"
+                                  Kind="Sync"
+                                  Width="{Binding #Root.IconSize}" Height="{Binding #Root.IconSize}" Opacity="0.7">
         <materialIcons:MaterialIcon.RenderTransform>
-          <RotateTransform Angle="{Binding SpinAngle}"/>
+          <RotateTransform />
         </materialIcons:MaterialIcon.RenderTransform>
       </materialIcons:MaterialIcon>
-      <materialIcons:MaterialIcon Kind="AlertCircleOutline"
+      <materialIcons:MaterialIcon x:Name="FailedIcon"
+                                  Kind="AlertCircleOutline"
                                   Width="{Binding #Root.IconSize}" Height="{Binding #Root.IconSize}"
                                   Foreground="{DynamicResource AppTextDisabledBrush}"
-                                  IsVisible="{Binding IsDownloadUnavailable}"
                                   ToolTip.Tip="Download failed - try again later"/>
     </Panel>
   </Button>

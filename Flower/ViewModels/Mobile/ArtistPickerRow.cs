@@ -19,8 +19,10 @@ public sealed class ArtistPickerRow
     public AlbumCollage Cover { get; }
 
     // The line under the name, rather than a bare number beside it that could
-    // be counting anything.
-    public string SummaryText => Summary(AlbumCount, SongCount);
+    // be counting anything. Made once, on first asking: the row is handed it
+    // every time it scrolls past.
+    private string? _summaryText;
+    public string SummaryText => _summaryText ??= Summary(AlbumCount, SongCount);
 
     public static string Summary(int albums, int songs)
     {

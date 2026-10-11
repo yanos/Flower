@@ -1,0 +1,51 @@
+<Button xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:Flower.Controls"
+        xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+        xmlns:mvm="clr-namespace:Flower.ViewModels.Mobile"
+        x:Class="Flower.Views.Mobile.Screens.ArtistRowView"
+        Classes="trackRow"
+        Padding="16,0,8,0"
+        controls:LongPress.Command="{Binding $parent[UserControl].((mvm:MobileMainViewModel)DataContext).OpenArtistActionsCommand}">
+  <!-- One artist's row, wherever artists are listed: the Artists tab and
+       Search. As with a song's row (TrackRowView), the binding left here
+       reads the screen and none reads the artist: what the artist decides is
+       set from the code-behind (see ModelWatch), and what a tap does is the
+       screen's to say (IArtistRowHost).
+
+       Its own padding rather than the track row's: no vertical padding, so
+       the rule under each row is the row's own bottom edge and sits exactly
+       halfway between two names; 16 on the left so the covers line up with
+       the screen's title. -->
+  <!-- The artist's cover (see AlbumCollage), their name above, how much of
+       theirs there is below, and a chevron: the row opens a screen rather
+       than playing anything. The rule runs under the words and the chevron
+       only, the way a list inset behind its pictures does, so the covers
+       read as a column. -->
+  <Grid ColumnDefinitions="Auto,*" Height="60">
+    <controls:AlbumArtView x:Name="Cover"
+                           Grid.Column="0"
+                           ArtCornerRadius="6"
+                           Width="48" Height="48"
+                           Margin="0,0,14,0" />
+    <Border Grid.Column="1"
+            BorderBrush="{DynamicResource AppDividerBrush}"
+            BorderThickness="0,0,0,1">
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel Grid.Column="0" Spacing="1" VerticalAlignment="Center">
+          <controls:RowText x:Name="ArtistName" FontSize="17" TextTrimming="CharacterEllipsis" />
+          <controls:RowText x:Name="Summary"
+                            FontSize="14"
+                            Opacity="0.6"
+                            TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+        <materialIcons:MaterialIcon Grid.Column="1"
+                                    Kind="ChevronRight"
+                                    Width="24" Height="24"
+                                    Opacity="0.7"
+                                    Margin="8,0,0,0"
+                                    VerticalAlignment="Center" />
+      </Grid>
+    </Border>
+  </Grid>
+</Button>

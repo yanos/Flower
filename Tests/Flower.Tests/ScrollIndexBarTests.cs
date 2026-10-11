@@ -174,6 +174,7 @@ public class ScrollIndexBarTests : PinnedDataDirectory
         var bar = Bar(window);
 
         var art = window.GetVisualDescendants().OfType<SquareAlbumArtView>()
+            .Where(a => a.IsEffectivelyVisible)
             .Select(a => new Rect(a.TranslatePoint(default, window)!.Value, a.Bounds.Size)).ToList();
         var barLeft = bar.TranslatePoint(default, window)!.Value.X;
 

@@ -63,14 +63,15 @@ public class TrackRowViewModel : DownloadIndicatorViewModel
             var previous = _track;
             _track = plan.Track;
 
-            // Everything bound through the Track.* paths TrackRowControl
-            // builds (Track.Title, Track.Artists, ...) re-reads off this one
+            // Every cell TrackRowControl reads straight off the Track
+            // (Track.Title, Track.Artists, ...) re-reads on this one
             // notification; the rest are this class's own derived displays.
             OnPropertyChanged(nameof(Track));
             OnPropertyChanged(nameof(TrackNumberDisplay));
             OnPropertyChanged(nameof(PlayCountDisplay));
             OnPropertyChanged(nameof(DateAddedDisplay));
             OnPropertyChanged(nameof(LastPlayedDisplay));
+            _durationDisplay = null;
             OnPropertyChanged(nameof(DurationDisplay));
             OnPropertyChanged(nameof(IsPlaceholder));
             OnPropertyChanged(nameof(IsUnavailable));
@@ -254,7 +255,11 @@ public class TrackRowViewModel : DownloadIndicatorViewModel
     }
 
 
-    public string DurationDisplay => DurationText.Compact(Track.Duration);
+    // Kept rather than formatted on every read: a phone row reads it each time
+    // it is handed this song as the list scrolls (TrackRowView). Only a new
+    // Track changes it (ApplyPlan).
+    private string? _durationDisplay;
+    public string DurationDisplay => _durationDisplay ??= DurationText.Compact(Track.Duration);
 
     // ── Selection / playing ───────────────────────────────────────────────────
 

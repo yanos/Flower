@@ -1,0 +1,27 @@
+<Button xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:Flower.Controls"
+        xmlns:mvm="clr-namespace:Flower.ViewModels.Mobile"
+        x:Class="Flower.Views.Mobile.Screens.AlbumTileView"
+        Classes="pickerRow"
+        Padding="0"
+        Margin="0,0,12,20"
+        VerticalAlignment="Top"
+        controls:LongPress.Command="{Binding $parent[UserControl].((mvm:MobileMainViewModel)DataContext).OpenAlbumActionsCommand}">
+  <!-- One album cover on the phone, wherever one is: the Albums grid, an
+       artist's albums, Home's shelves - an album, or a Continue Playing item
+       around one. A tap opens the album (IAlbumTileHost says how on each
+       screen) or picks a Continue Playing one up where it was left; a long
+       press, or the cover's own "...", is the album menu. What the item
+       decides is set from the code-behind rather than bound (see ModelWatch);
+       the bindings left here read the screen.
+
+       The gutters are the grid's: 12 to the right of every cover, which with
+       the list's own 12 of left padding makes the gap the same at both screen
+       edges and between columns, and 20 below - deliberately much more than
+       the 6 between a cover's art and its caption, so a title reads as
+       belonging to the album above it rather than the one below. -->
+  <!-- The album's tile, the same one desktop draws (AlbumCard). -->
+  <controls:AlbumCard x:Name="Card"
+                      MenuCommand="{Binding $parent[UserControl].((mvm:MobileMainViewModel)DataContext).OpenAlbumActionsCommand}" />
+</Button>

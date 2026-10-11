@@ -71,14 +71,14 @@
         <!-- Virtualized inside the page's own scroller, as the album grids
              are (AlbumGridScreenView): a loose rule matches most of a
              library, and laying out every row of that froze the page. -->
-        <ItemsControl ItemsSource="{Binding SmartPlaylistPreviewRows}"
-                      ItemTemplate="{StaticResource TrackRowTemplate}">
+        <controls:RecyclingItemsControl ItemsSource="{Binding SmartPlaylistPreviewRows}"
+                                        ItemTemplate="{StaticResource TrackRowTemplate}">
           <ItemsControl.ItemsPanel>
             <ItemsPanelTemplate>
-              <VirtualizingStackPanel Orientation="Vertical" />
+              <controls:UniformRowPanel />
             </ItemsPanelTemplate>
           </ItemsControl.ItemsPanel>
-        </ItemsControl>
+        </controls:RecyclingItemsControl>
       </StackPanel>
     </ScrollViewer>
   </Grid>

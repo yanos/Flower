@@ -4,6 +4,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 
+using Flower.ViewModels;
 using Flower.ViewModels.Mobile;
 
 namespace Flower.Controls;
@@ -72,9 +73,42 @@ public partial class AlbumCard : UserControl
         remove => RemoveHandler(MenuRequestedEvent, value);
     }
 
+    // The tile, followed while the card is on screen - see ModelWatch.
+    private readonly ModelWatch _tile;
+
     public AlbumCard()
     {
         InitializeComponent();
+        // A tile is a DownloadIndicatorViewModel, whose spinner turns every
+        // frame of a download; nothing here draws it.
+        _tile = new ModelWatch(this, Show, ignoring: nameof(DownloadIndicatorViewModel.SpinAngle));
+    }
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property == TileProperty)
+            _tile.Watch(Tile);
+        else if (change.Property == ShowsProgressProperty || change.Property == ProgressProperty || change.Property == DetailProperty)
+            ShowProgress();
+    }
+
+    private void Show()
+    {
+        var tile = Tile;
+        Card.Classes.Set("dimmed", tile?.IsUnavailable == true);
+        Art.AlbumArt = tile?.AlbumArt;
+        AlbumName.Text = tile?.Name;
+        ArtistName.Text = tile?.Artist;
+    }
+
+    private void ShowProgress()
+    {
+        Badge.IsVisible = ShowsProgress;
+        ProgressLine.IsVisible = ShowsProgress;
+        ProgressLine.Value = Progress;
+        DetailLine.Text = Detail;
+        DetailLine.IsVisible = !string.IsNullOrEmpty(Detail);
     }
 
     private void Menu_Click(object? sender, RoutedEventArgs e)
