@@ -72,7 +72,14 @@ public class AppDelegate : UIApplicationDelegate
         // interpreter that took 1116s of a 1312s run - one to three minutes a
         // test, against well under a second on the desktop. They pass here; they
         // are left out until they can run in a time a push can afford.
-        string[] excluded = ["-class-", "Flower.Tests.MusicListViewGestureTests"];
+        //
+        // BrowserFontFilesTests read Flower.Web's fonts out of the source tree,
+        // which this app does not carry.
+        string[] excluded =
+        [
+            "-class-", "Flower.Tests.MusicListViewGestureTests",
+            "-class-", "Flower.Tests.BrowserFontFilesTests",
+        ];
 
         var extra = Environment.GetEnvironmentVariable("FLOWER_TEST_ARGS");
         return string.IsNullOrWhiteSpace(extra)
