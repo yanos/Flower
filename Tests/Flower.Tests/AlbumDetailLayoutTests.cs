@@ -151,6 +151,14 @@ public class AlbumDetailLayoutTests : PinnedDataDirectory
     // which read as that row smeared upwards. The cover here is red on the
     // left and blue on the right: one colour above the seam cannot match both
     // sides, the mirror does.
+    // An album of its own, because this is the one test here with a cover:
+    // AlbumArtLoader caches art by album and album artist for the whole
+    // process, so under Album every later test in the run drew it too, and a
+    // backdrop is tall enough to set the header's height by itself - which
+    // took The_buttons_under_the_art_can_be_turned_off's room away from it
+    // wherever this ran first (the iOS Simulator's order).
+    private const string MirroredAlbum = "Mirrored Album";
+
     [AvaloniaFact]
     public void Pulling_the_album_down_shows_the_backdrop_mirrored_with_no_seam()
     {
@@ -159,15 +167,15 @@ public class AlbumDetailLayoutTests : PinnedDataDirectory
         var tracks = Enumerable.Range(0, 4).Select(i =>
         {
             var file = SyntheticWav.CreateFile(folder, $"song{i}.wav", TimeSpan.FromSeconds(1), SyntheticWav.Marker(1));
-            return new Track { Title = $"Song {i}", Album = Album, Artists = "Deerhoof", Path = file, DateAdded = DateTimeOffset.UtcNow };
+            return new Track { Title = $"Song {i}", Album = MirroredAlbum, Artists = "Deerhoof", Path = file, DateAdded = DateTimeOffset.UtcNow };
         }).ToList();
         var parts = MainViewModelHarness.BuildParts(new Library(tracks), new MainPlaylist(new List<Track>()));
         MainViewModelHarness.UseSuiteTabs(parts);
         var mobile = new MobileMainViewModel(parts.Main, parts.PlaylistControl, parts.CurrentlyPlaying,
             NullLogger<MobileMainViewModel>.Instance);
         mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
-        mobile.SelectAlbumOrArtistCommand.Execute(Album);
-        MainViewModelHarness.WaitForTheDrillIn(mobile, Album);
+        mobile.SelectAlbumOrArtistCommand.Execute(MirroredAlbum);
+        MainViewModelHarness.WaitForTheDrillIn(mobile, MirroredAlbum);
         using var _ = new MainViewModelHarness.MobileParts(mobile, parts);
 
         const double width = 390;
