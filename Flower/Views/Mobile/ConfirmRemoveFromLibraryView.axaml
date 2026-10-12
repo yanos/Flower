@@ -55,7 +55,7 @@
 
         <Button Classes="removeAction" Content="Remove" Command="{Binding ConfirmRemoveFromLibraryCommand}"
                 IsEnabled="{Binding !IsRemovingFromLibrary}"
-                Background="{DynamicResource AppErrorBrush}" Foreground="{DynamicResource AppOnPrimaryBrush}" />
+                Background="{DynamicResource AppDangerBrush}" Foreground="{DynamicResource AppOnPrimaryBrush}" />
         <Button Classes="removeAction" Content="Cancel" Command="{Binding CancelRemoveFromLibraryCommand}"
                 Background="Transparent" />
       </StackPanel>

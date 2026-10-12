@@ -228,8 +228,11 @@
          box (the buttons' 12 + 40, and its own 10, in from each side), and after the screen's content so it is drawn over the results
          rather than under them. The rows cannot take focus: a press on one
          would otherwise take it from the box, which closes this dropdown
-         under the finger before the tap has landed. -->
+         under the finger before the tap has landed. Its icons, and Clear,
+         are the frame's colour, as on every card dropped from the band
+         (.chromeIcons, App.axaml). -->
     <Border Grid.Row="0"
+            Classes="chromeIcons"
             Grid.RowSpan="2"
             Margin="62,50,62,0"
             VerticalAlignment="Top"
@@ -266,7 +269,7 @@
                 Command="{Binding ClearRecentSearchesCommand}">
           <TextBlock Text="Clear"
                      FontSize="13"
-                     Foreground="{DynamicResource AppAccentBrush}" />
+                     Foreground="{DynamicResource AppChromeBrush}" />
         </Button>
       </Grid>
       <ItemsControl ItemsSource="{Binding SearchSuggestions}">

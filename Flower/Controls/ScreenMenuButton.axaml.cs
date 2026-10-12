@@ -179,12 +179,10 @@ public partial class ScreenMenuButton : UserControl
         var icon = new MaterialIcon { Kind = entry.Icon, Width = 20, Height = 20, VerticalAlignment = VerticalAlignment.Center };
         row.Children.Add(icon);
         var label = new TextBlock { Text = entry.Label, FontSize = 16, VerticalAlignment = VerticalAlignment.Center };
-        // Red, like the same entries on the song and album menus.
+        // The words in the danger colour, like the same entries on the song
+        // and album menus; the icon stays the frame's.
         if (entry.IsDestructive)
-        {
-            icon[!MaterialIcon.ForegroundProperty] = new DynamicResourceExtension("AppErrorBrush");
-            label[!TextBlock.ForegroundProperty] = new DynamicResourceExtension("AppErrorBrush");
-        }
+            label[!TextBlock.ForegroundProperty] = new DynamicResourceExtension("AppDangerBrush");
         Grid.SetColumn(label, 1);
         row.Children.Add(label);
         // The sort in use says which way it runs; picking it again turns it

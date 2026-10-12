@@ -79,7 +79,7 @@
     </Style>
 
     <!-- A secondary action: a grey fill rather than Fluent's outlined box.
-         .danger is the same shape washed in the accent, for Unpair. -->
+         .danger is the same shape washed in the danger colour, for Unpair. -->
     <Style Selector="Button.soft">
       <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}" />
       <Setter Property="BorderThickness" Value="0" />
@@ -90,8 +90,8 @@
       <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
     <Style Selector="Button.soft.danger">
-      <Setter Property="Background" Value="{DynamicResource AppAccentTintBrush}" />
-      <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}" />
+      <Setter Property="Background" Value="{DynamicResource AppDangerTintBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource AppDangerBrush}" />
     </Style>
     <Style Selector="Button.soft materialIcons|MaterialIcon">
       <Setter Property="Width" Value="18" />

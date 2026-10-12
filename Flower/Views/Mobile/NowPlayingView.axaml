@@ -64,6 +64,15 @@
     <Style Selector="Button.pill.circle Border.ring">
       <Setter Property="BorderBrush" Value="{DynamicResource AppOnArtBrush}" />
     </Style>
+    <!-- And so is the glyph in it, named as the app-wide ring glyph is
+         (App.axaml: the frame's colour), which the any-icon style above
+         loses to. -->
+    <Style Selector="layout|NowPlayingBodyPanel Border.ring > materialIcons|MaterialIcon">
+      <Setter Property="Foreground" Value="{DynamicResource AppOnArtBrush}" />
+    </Style>
+    <Style Selector="layout|NowPlayingBodyPanel :is(Button):pressed Border.ring > materialIcons|MaterialIcon">
+      <Setter Property="Foreground" Value="{DynamicResource AppOnArtRingBrush}" />
+    </Style>
 
     <!-- The back and menu circles at the top: no fill, so the sheet's colour
          shows through them, and ringed and drawn in white like everything

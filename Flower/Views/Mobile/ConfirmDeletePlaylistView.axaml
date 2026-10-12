@@ -44,7 +44,7 @@
                    FontSize="14" Opacity="0.75" TextWrapping="Wrap" />
 
         <Button Classes="deleteAction" Content="Delete" Command="{Binding ConfirmDeletePlaylistCommand}"
-                Background="{DynamicResource AppErrorBrush}" Foreground="{DynamicResource AppOnPrimaryBrush}" />
+                Background="{DynamicResource AppDangerBrush}" Foreground="{DynamicResource AppOnPrimaryBrush}" />
         <Button Classes="deleteAction" Content="Cancel" Command="{Binding CancelDeletePlaylistCommand}"
                 Background="Transparent" />
       </StackPanel>

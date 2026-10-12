@@ -37,12 +37,15 @@
        template already applies once on the way in and would apply twice.
 
        Button.pill (Styles/IconButtons.axaml) is the look every icon button
-       shares, and what makes a press light up a circle rather than a square. -->
+       shares, and what makes a press light up a circle rather than a square.
+       The glyph is the frame's colour (.chrome, App.axaml) wherever it sits,
+       like the "..." beside it; a failed one stays grey. -->
   <Button x:Name="DownloadButton"
           Classes="pill"
           Padding="{Binding #Root.IconPadding}">
     <Panel>
       <materialIcons:MaterialIcon x:Name="IdleIcon"
+                                  Classes="chrome"
                                   Kind="CloudDownloadOutline"
                                   Width="{Binding #Root.IconSize}" Height="{Binding #Root.IconSize}" Opacity="0.7"
                                   ToolTip.Tip="{Binding #Root.Label}"/>
@@ -59,6 +62,7 @@
            spinning in place. "50%,50%" would work; saying nothing is
            shorter and is what every other spinner here does. -->
       <materialIcons:MaterialIcon x:Name="SpinningIcon"
+                                  Classes="chrome"
                                   Kind="Sync"
                                   Width="{Binding #Root.IconSize}" Height="{Binding #Root.IconSize}" Opacity="0.7">
         <materialIcons:MaterialIcon.RenderTransform>

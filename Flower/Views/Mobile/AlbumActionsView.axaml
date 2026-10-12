@@ -41,8 +41,9 @@
             VerticalAlignment="Stretch" />
 
     <!-- Action card -->
-    <!-- .chromeIcons: every icon on the card, the X included, in the
-         frame's colour (App.axaml) - a delete's red is set on it. -->
+    <!-- .chromeIcons: every icon on the card, the X and a delete's
+         included, in the frame's colour (App.axaml); a delete's words are
+         AppDangerBrush. -->
     <Border VerticalAlignment="Bottom"
             Classes="chromeIcons"
             controls:SlidingSheet.IsCard="True"
@@ -162,8 +163,8 @@
         <Button Classes="action" Command="{Binding DeleteAlbumActionTargetLocalFilesCommand}"
                 IsVisible="{Binding CanDeleteAlbumActionTargetLocalFiles}">
           <StackPanel Orientation="Horizontal" Spacing="14">
-            <materialIcons:MaterialIcon Kind="TrashCanOutline" Width="22" Height="22" Foreground="{DynamicResource AppErrorBrush}" />
-            <TextBlock Text="Delete Local Files" FontSize="16" VerticalAlignment="Center" Foreground="{DynamicResource AppErrorBrush}" />
+            <materialIcons:MaterialIcon Kind="TrashCanOutline" Width="22" Height="22" />
+            <TextBlock Text="Delete Local Files" FontSize="16" VerticalAlignment="Center" Foreground="{DynamicResource AppDangerBrush}" />
           </StackPanel>
         </Button>
 
@@ -173,8 +174,8 @@
         <Button Classes="action" Command="{Binding RemoveAlbumFromLibraryCommand}"
                 IsVisible="{Binding CanRemoveAlbumActionTargetFromLibrary}">
           <StackPanel Orientation="Horizontal" Spacing="14">
-            <materialIcons:MaterialIcon Kind="MusicNoteOff" Width="22" Height="22" Foreground="{DynamicResource AppErrorBrush}" />
-            <TextBlock Text="Remove from Library" FontSize="16" VerticalAlignment="Center" Foreground="{DynamicResource AppErrorBrush}" />
+            <materialIcons:MaterialIcon Kind="MusicNoteOff" Width="22" Height="22" />
+            <TextBlock Text="Remove from Library" FontSize="16" VerticalAlignment="Center" Foreground="{DynamicResource AppDangerBrush}" />
           </StackPanel>
         </Button>
 
@@ -185,8 +186,8 @@
         <Button Classes="action" Command="{Binding DeletePlaylistActionTargetCommand}"
                 IsVisible="{Binding IsActingOnAPlaylist}">
           <StackPanel Orientation="Horizontal" Spacing="14">
-            <materialIcons:MaterialIcon Kind="PlaylistRemove" Width="22" Height="22" Foreground="{DynamicResource AppErrorBrush}" />
-            <TextBlock Text="Delete Playlist" FontSize="16" VerticalAlignment="Center" Foreground="{DynamicResource AppErrorBrush}" />
+            <materialIcons:MaterialIcon Kind="PlaylistRemove" Width="22" Height="22" />
+            <TextBlock Text="Delete Playlist" FontSize="16" VerticalAlignment="Center" Foreground="{DynamicResource AppDangerBrush}" />
           </StackPanel>
         </Button>
       </StackPanel>

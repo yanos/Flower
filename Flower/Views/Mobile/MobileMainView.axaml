@@ -386,20 +386,8 @@
       <Setter Property="HorizontalAlignment" Value="Stretch" />
       <Setter Property="Padding" Value="16,10" />
     </Style>
-    <!-- Same story as ListBoxItem above - the grey the user sees on press is
-         FluentTheme setting Background on the Button's own
-         ContentPresenter#PART_ContentPresenter template part, so it has to be
-         overridden there (a Background setter on the Button itself, tried
-         first, doesn't touch that inner part). Covers both the picker/album
-         tiles and the song rows. -->
-    <Style Selector="Button.pickerRow:pointerover /template/ ContentPresenter#PART_ContentPresenter,
-                     Button.trackRow:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="Transparent" />
-    </Style>
-    <Style Selector="Button.pickerRow:pressed /template/ ContentPresenter#PART_ContentPresenter,
-                     Button.trackRow:pressed /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="Transparent" />
-    </Style>
+    <!-- No fill under a finger either, as no button has one
+         (Styles/IconButtons.axaml). -->
     <!-- Nor does a row shrink under the finger: Fluent scales a pressed
          button down a little, which on a full-width row reads as the list
          twitching every time a scroll starts on it. -->
@@ -512,7 +500,7 @@
               <Binding Path="!IsSearchDropdownOpen" />
             </MultiBinding>
           </StackPanel.IsVisible>
-          <materialIcons:MaterialIcon Kind="{Binding EmptyStateIcon}" Width="40" Height="40" Opacity="0.35" HorizontalAlignment="Center" />
+          <materialIcons:MaterialIcon Kind="{Binding EmptyStateIcon}" Classes="chrome" Width="40" Height="40" Opacity="0.35" HorizontalAlignment="Center" />
           <TextBlock Text="{Binding EmptyStateTitle}"
                      FontSize="17"
                      FontWeight="SemiBold"

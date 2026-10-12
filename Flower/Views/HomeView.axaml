@@ -37,12 +37,6 @@
       <Setter Property="HorizontalAlignment" Value="Stretch" />
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
     </Style>
-    <Style Selector="Button.homeTile:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="{DynamicResource AppAccentHoverSoftBrush}" />
-    </Style>
-    <Style Selector="Button.homeTile:pressed /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="{DynamicResource AppAccentPressedSoftBrush}" />
-    </Style>
   </UserControl.Styles>
 
   <Grid>
@@ -124,7 +118,7 @@
     <StackPanel IsVisible="{Binding ShowsNothingYet}"
                 HorizontalAlignment="Center" VerticalAlignment="Center"
                 Spacing="8" Opacity="0.6" MaxWidth="360">
-      <materialIcons:MaterialIcon Kind="HomeOutline" Width="40" Height="40" />
+      <materialIcons:MaterialIcon Kind="HomeOutline" Classes="chrome" Width="40" Height="40" />
       <TextBlock Text="Nothing here yet" FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center" />
       <TextBlock Text="Albums you play and albums you add will show up here."
                  FontSize="13" TextWrapping="Wrap" TextAlignment="Center" />
@@ -133,7 +127,7 @@
     <StackPanel IsVisible="{Binding ShowsNoMatches}"
                 HorizontalAlignment="Center" VerticalAlignment="Center"
                 Spacing="8" Opacity="0.6" MaxWidth="360">
-      <materialIcons:MaterialIcon Kind="Magnify" Width="40" Height="40" />
+      <materialIcons:MaterialIcon Kind="Magnify" Classes="chrome" Width="40" Height="40" />
       <TextBlock Text="No matches" FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center" />
       <TextBlock Text="Nothing on Home matches the filter."
                  FontSize="13" TextWrapping="Wrap" TextAlignment="Center" />

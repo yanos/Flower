@@ -3,8 +3,7 @@
              x:Class="Flower.App"
              Name="Flower"
              RequestedThemeVariant="Default"
-             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
-             xmlns:controls="clr-namespace:Flower.Controls">
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia">
 
     <!-- Defines just the native macOS app menu (the bold "Flower" title's own
          dropdown - About/Settings/Hide/Quit), replacing Avalonia's default
@@ -116,7 +115,7 @@
              text colour of whatever it sits in. The note Paths and the
              placeholder's ♫ glyph say the same thing themselves. An icon that
              carries a meaning of its own keeps its colour by setting it where
-             it is declared: a delete in AppErrorBrush, a server's standing in
+             it is declared: a server's standing in
              success or warning, a lit toggle or selected pill in AppAccentBrush.
              Set directly on the icon, so a disabled button's greyed foreground
              no longer reaches it; the disabled style below greys it again. -->
@@ -130,13 +129,12 @@
              song and album menus, Add to Playlist, the hamburger's card); and
              one marked .chrome itself (the "..." on a row). Oval icons by
              child selectors, so a menu card a button drops - its logical
-             child - answers to its own marking; and the download button's,
-             which sits in an oval as a control of its own (an album's
-             download-all). An entry that means something keeps its own
-             colour, set where it is declared (a delete's AppErrorBrush).
+             child - answers to its own marking. The download button marks
+             its own glyphs .chrome, in an oval or not. A delete's icon is
+             the frame's too; its words say danger (AppDangerBrush).
              After the red so it wins over it; before the disabled grey and
              the hover and pressed accents below, so they still win over it. -->
-        <Style Selector="Border.floating > Button.pill > materialIcons|MaterialIcon, Border.floating > materialIcons|MaterialIcon, Border.ring > materialIcons|MaterialIcon, Border.floating > controls|TrackDownloadButton materialIcons|MaterialIcon, :is(Control).chromeIcons materialIcons|MaterialIcon, materialIcons|MaterialIcon.chrome">
+        <Style Selector="Border.floating > Button.pill > materialIcons|MaterialIcon, Border.floating > materialIcons|MaterialIcon, Border.ring > materialIcons|MaterialIcon, :is(Control).chromeIcons materialIcons|MaterialIcon, materialIcons|MaterialIcon.chrome">
             <Setter Property="Foreground" Value="{DynamicResource AppChromeBrush}"/>
         </Style>
         <Style Selector="materialIcons|MaterialIcon:disabled">

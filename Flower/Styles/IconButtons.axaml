@@ -81,6 +81,18 @@
     <Setter Property="Padding" Value="3.5" />
   </Style>
 
+  <!-- Every button, pressed or pointed at: its icon takes the accent
+       (App.axaml) and nothing else changes - no fill or rim behind it, and
+       the words keep their colour rather than Fluent's pressed accent. The
+       presenter keeps the button's own resting look, on the template's
+       presenter where Fluent paints its states. Button.primary, below, still
+       deepens its fill: that fill is the button. -->
+  <Style Selector="Button:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button:pressed /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{Binding $parent[Button].Background}" />
+    <Setter Property="BorderBrush" Value="{Binding $parent[Button].BorderBrush}" />
+    <Setter Property="Foreground" Value="{Binding $parent[Button].Foreground}" />
+  </Style>
+
   <!-- An accent-filled button - the one action a sheet is asking for. The
      accent at rest, its hover and pressed states under the pointer and the
      finger, and the text that reads on it throughout. On the template's

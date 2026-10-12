@@ -10,11 +10,14 @@
 
   <!-- The phone's filter oval (ScreenSlot's FilterOval): a magnifier, the
        app's own box (TextInput, with its clear button) drawing no border of
-       its own, and the floating oval around both. -->
+       its own, and the floating oval around both. The magnifier is the
+       frame's colour (.chrome, App.axaml), which reaches only an oval's
+       direct children by itself. -->
   <Border Classes="floating" Padding="14,0,4,0">
     <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
       <materialIcons:MaterialIcon Grid.Column="0"
                                   Kind="Magnify"
+                                  Classes="chrome"
                                   Width="18" Height="18"
                                   Opacity="0.6"
                                   VerticalAlignment="Center"/>

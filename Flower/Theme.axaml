@@ -69,6 +69,10 @@
       <Color x:Key="PaletteSuccess">#4CAF7B</Color>
       <Color x:Key="PaletteWarning">#E0A12E</Color>
       <Color x:Key="PaletteError">#D64545</Color>
+      <!-- What cannot be undone: the words of a menu entry that deletes or
+           removes, and the button that confirms one. Not an error - the
+           same red today, kept apart so the two can part. -->
+      <Color x:Key="PaletteDanger">#D64545</Color>
 
       <!-- Fluent's accent shades, as the palette's hover and pressed
            accents: its Palettes (AppTheme.ApplyPalette) set the rest of its
@@ -102,6 +106,8 @@
       <Color x:Key="PaletteSuccess">#3DAA6B</Color>
       <Color x:Key="PaletteWarning">#E0A82E</Color>
       <Color x:Key="PaletteError">#E0524D</Color>
+      <!-- See the light theme's. -->
+      <Color x:Key="PaletteDanger">#E0524D</Color>
 
       <!-- Fluent's accent shades, as the palette's hover and pressed
            accents: its Palettes (AppTheme.ApplyPalette) set the rest of its
@@ -171,6 +177,11 @@
   <SolidColorBrush x:Key="AppSuccessBrush" Color="{DynamicResource PaletteSuccess}" />
   <SolidColorBrush x:Key="AppWarningBrush" Color="{DynamicResource PaletteWarning}" />
   <SolidColorBrush x:Key="AppErrorBrush" Color="{DynamicResource PaletteError}" />
+  <!-- A destructive act (PaletteDanger): its menu entry's words - the icon
+       beside them stays the frame's - and the fill of the button confirming
+       it; faint, behind a softer one (Settings' Unpair). -->
+  <SolidColorBrush x:Key="AppDangerBrush" Color="{DynamicResource PaletteDanger}" />
+  <SolidColorBrush x:Key="AppDangerTintBrush" Color="{DynamicResource PaletteDanger}" Opacity="0.1" />
 
   <!-- Dimmed behind a card raised over the screen (the action sheets). -->
   <SolidColorBrush x:Key="AppScrimBrush" Color="{DynamicResource PaletteScrim}" Opacity="0.4" />
@@ -223,10 +234,10 @@
        and one that is plain at rest (a button, a menu row, a tab, a combo
        box) takes them faintly behind it, and the pressed one on its text.
        Fluent keeps a brush per control per state and fills them with its own
-       greys, so each is named here; the app's own icon buttons do the same
-       through App.axaml's Button:pointerover / Button:pressed icon rules. -->
+       greys, so each is named here. A Button is the exception: it keeps its
+       resting look and only its icon takes the accent (Styles/IconButtons.axaml,
+       and App.axaml's Button:pointerover / Button:pressed icon rules). -->
   <SolidColorBrush x:Key="AppAccentHoverSoftBrush" Color="{DynamicResource PaletteAccentHover}" Opacity="0.12" />
-  <SolidColorBrush x:Key="AppAccentPressedSoftBrush" Color="{DynamicResource PaletteAccentPressed}" Opacity="0.22" />
   <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="{DynamicResource PaletteAccentHover}" Opacity="0.12" />
   <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="{DynamicResource PaletteAccentPressed}" Opacity="0.22" />
   <SolidColorBrush x:Key="ButtonForegroundPressed" Color="{DynamicResource PaletteAccentPressed}" />

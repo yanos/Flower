@@ -44,7 +44,8 @@
                 Opened="ScreenMenu_Opened"
                 Closing="ScreenMenu_Closing">
           <!-- .chromeIcons: the entries' icons in the frame's colour
-               (App.axaml), a destructive one's red set on it. -->
+               (App.axaml), a destructive one's included - its words are
+               AppDangerBrush. -->
           <StackPanel x:Name="ScreenMenuItems" Classes="chromeIcons" MinWidth="220" />
         </Flyout>
       </Button.Flyout>

@@ -44,7 +44,7 @@
                    FontSize="14" Opacity="0.75" TextWrapping="Wrap" />
 
         <Button Classes="unpairAction" Content="Unpair" Command="{Binding ConfirmUnpairServerCommand}"
-                Background="{DynamicResource AppErrorBrush}" Foreground="{DynamicResource AppOnPrimaryBrush}" />
+                Background="{DynamicResource AppDangerBrush}" Foreground="{DynamicResource AppOnPrimaryBrush}" />
         <Button Classes="unpairAction" Content="Cancel" Command="{Binding CancelUnpairServerCommand}"
                 Background="Transparent" />
       </StackPanel>

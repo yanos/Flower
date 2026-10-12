@@ -25,7 +25,8 @@ public enum MobileSortScreen { Songs, Albums, ArtistAlbums, Artists }
 // the moment it is opened, so nothing about it has to stay live.
 //
 // Direction is set on the one sort entry in use, and says which way it runs;
-// null on every other entry. IsDestructive draws it in red.
+// null on every other entry. IsDestructive draws its words in the danger
+// colour (AppDangerBrush).
 public sealed record ScreenMenuEntry(string Label, MaterialIconKind Icon, Action Invoke,
     ListSortDirection? Direction = null, bool IsDestructive = false);
 
