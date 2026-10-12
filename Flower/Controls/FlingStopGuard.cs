@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.VisualTree;
 
 namespace Flower.Controls;
 
@@ -22,6 +23,16 @@ namespace Flower.Controls;
 //
 // The press has to be judged on the tunnel too: the recognizer runs from a
 // class handler on the bubble pass, and by then it has already ended the glide.
+//
+// Only a press on the list that is gliding stops it - the recognizer ending
+// the glide is that list's own - so only that press is judged. A tap on the
+// tab bar, the mini player or a header button while a list behind them is
+// still gliding is a tap, and clicks; swallowing it was the button that lit
+// up under the finger and did nothing. And a list that leaves the screen
+// mid-glide - a tab switched away from, a screen torn down - says that its
+// glide ended to itself alone, out of the tree where this cannot hear it, so
+// a glide whose list is gone is no glide: kept, it swallowed every tap after
+// it until the next flick.
 //
 // Leaving the finger down after stopping a glide means the same thing - it
 // was a stop, not a long press - but Holding is not something a release can
@@ -56,20 +67,26 @@ public static class FlingStopGuard
         // than a flag, so the end of some other gesture cannot clear it.
         private int _glidingGestureId;
 
+        // What the glide is scrolling: the recognizer's target, which raised
+        // its start.
+        private Visual? _gliding;
+
         public void Attach(InputElement element)
         {
-            element.AddHandler(InputElement.ScrollGestureInertiaStartingEvent,
-                (_, e) => _glidingGestureId = e.Id,
-                RoutingStrategies.Bubble, handledEventsToo: true);
+            element.AddHandler(InputElement.ScrollGestureInertiaStartingEvent, (_, e) =>
+            {
+                _glidingGestureId = e.Id;
+                _gliding = e.Source as Visual;
+            }, RoutingStrategies.Bubble, handledEventsToo: true);
 
             element.AddHandler(InputElement.ScrollGestureEndedEvent, (_, e) =>
             {
                 if (e.Id == _glidingGestureId)
-                    _glidingGestureId = 0;
+                    EndGlide();
             }, RoutingStrategies.Bubble, handledEventsToo: true);
 
             element.AddHandler(InputElement.PointerPressedEvent,
-                (_, e) => s_stoppingPointer = _glidingGestureId != 0 ? e.Pointer : null,
+                (_, e) => s_stoppingPointer = StopsGlide(e) ? e.Pointer : null,
                 RoutingStrategies.Tunnel, handledEventsToo: true);
 
             element.AddHandler(InputElement.PointerReleasedEvent, (_, e) =>
@@ -79,6 +96,25 @@ public static class FlingStopGuard
                 s_stoppingPointer = null;
                 e.Handled = true;
             }, RoutingStrategies.Tunnel, handledEventsToo: true);
+        }
+
+        private bool StopsGlide(PointerPressedEventArgs e)
+        {
+            if (_glidingGestureId == 0 || _gliding is not { } gliding)
+                return false;
+            if (!gliding.IsAttachedToVisualTree())
+            {
+                EndGlide();
+                return false;
+            }
+            return e.Source is Visual pressed
+                && (ReferenceEquals(pressed, gliding) || gliding.IsVisualAncestorOf(pressed));
+        }
+
+        private void EndGlide()
+        {
+            _glidingGestureId = 0;
+            _gliding = null;
         }
     }
 }
