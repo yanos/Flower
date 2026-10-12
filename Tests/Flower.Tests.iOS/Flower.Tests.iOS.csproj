@@ -48,6 +48,17 @@
          runner: with nothing linked away, LLVM compiled the whole BCL. The
          suite passes either way; the app ships trimmed too. -->
     <MtouchLink>SdkOnly</MtouchLink>
+
+    <!-- Compiled ahead of time by Mono's own code generator rather than
+         LLVM's, which a Release build otherwise uses. Still every method
+         compiled ahead of time, with no JIT, on the same Mono runtime - what
+         is given up is LLVM's optimizer, and this app is not what ships: the
+         app ships on NativeAOT, and the suite runs on Mono only because it
+         cannot run there yet. LLVM was nine tenths of the build: six and a
+         half minutes on an Apple Silicon Mac against one, and 23 to 57 on a
+         CI runner's three cores, mostly spent on the one object that holds
+         every assembly's generic instances (aot-instances.dll). -->
+    <MtouchUseLlvm>false</MtouchUseLlvm>
   </PropertyGroup>
 
   <ItemGroup>

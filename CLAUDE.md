@@ -185,16 +185,20 @@ iOS 27.0 workload (`net10.0-ios27.0`) wants exactly Xcode 27, which the
 `Tests/Flower.Tests.iOS` is an app that references it the way `Flower.iOS`
 references `Flower` and runs xunit in-process, so what differs from the desktop
 run is exactly the platform - Mono with no JIT, a sandboxed filesystem, the iOS
-builds of ffaudio, miniaudio and Skia. It is a Release build, optimized and
-compiled ahead of time with LLVM, because that is what a release runs: about six
-minutes to build on an Apple Silicon Mac and under two to run.
+builds of ffaudio, miniaudio and Skia. It is a Release build, trimmed and
+compiled ahead of time: about a minute to build on an Apple Silicon Mac and two
+to run.
 
-Most of that is the build, and the linker is what keeps it there. With
-`MtouchLink=None` LLVM compiled the whole BCL too - 28 minutes locally, 2h07m on
-a CI runner, for three minutes of tests. `SdkOnly` trims only the framework and
-leaves the suite, xunit, Flower and Avalonia whole, so reflection still finds
-every test. Interpreting everything (`MtouchInterpreter=all`) is faster still
-and was tried; it is off so the leg runs the code a phone runs.
+Two settings keep the build there. With `MtouchLink=None` the whole BCL was
+compiled too - 28 minutes locally, 2h07m on a CI runner, for three minutes of
+tests. `SdkOnly` trims only the framework and leaves the suite, xunit, Flower
+and Avalonia whole, so reflection still finds every test. And the compiling is
+Mono's own code generator rather than LLVM (`MtouchUseLlvm=false`): LLVM was
+nine tenths of what was left, six and a half minutes locally and 23 to 57 on a
+CI runner's three cores. Every method is still compiled ahead of time with no
+JIT; only LLVM's optimizer is given up, and this app is not what ships - the
+app ships on NativeAOT. Interpreting everything (`MtouchInterpreter=all`) was
+tried too, and is off so the leg runs compiled code, as a phone does.
 
 Three things in that project are load-bearing and none is obvious. xunit's
 `buildTransitive` targets are excluded, because they demand an app host and

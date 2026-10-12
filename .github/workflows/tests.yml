@@ -178,6 +178,8 @@ jobs:
       # Every iOS build here is Release - optimized and compiled ahead of time
       # - even though that is most of this leg's time. It is what a release
       # runs, and the point of running anything on iOS is to run what ships.
+      # (Without LLVM in this leg, which is what kept its build to minutes
+      # rather than most of an hour - see Flower.Tests.iOS.csproj.)
       #
       # This leg is the one exception to that: the app ships on NativeAOT
       # (scripts/deploy-ios-device.sh), and the suite runs on Mono, because
