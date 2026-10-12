@@ -71,13 +71,13 @@ public static class DiscoveryEndpoints
             // route kept handing clients the old one, with nothing to say which
             // was true but a restart. AdvertisedHost is the one that makes it
             // more than cosmetic: it is how a client learns where to find this
-            // server after leaving the LAN (see docs/REMOTE-ACCESS-PLAN.md), so
+            // server after leaving the LAN (see docs/REMOTE-ACCESS.md), so
             // a stale one is a phone that cannot get home.
             //
             // Read once per request rather than per use, so the two fields
             // below cannot come from different edits of the same file.
             var options = optionsMonitor.CurrentValue;
-            // Budgeted like everything else since docs/TRUST-BOUNDARY-PLAN.md
+            // Budgeted like everything else since docs/SECURITY.md
             // step 2, which found this route answering without limit. It
             // answers strangers rather than refusing them, so the halves are
             // asked separately (see RequestGate): a caller that did not try to
@@ -170,7 +170,7 @@ public static class DiscoveryEndpoints
                 // Every address this server thinks it can be reached on,
                 // including its tailnet one - the whole point being that a
                 // client which paired here on the LAN keeps working after it
-                // leaves. See LocalAddresses and REMOTE-ACCESS-PLAN.md.
+                // leaves. See LocalAddresses and REMOTE-ACCESS.md.
                 //
                 // Verified peers only. This is the one field in the handshake
                 // that describes the server's own network position rather than

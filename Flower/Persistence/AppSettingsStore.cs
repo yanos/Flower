@@ -188,7 +188,7 @@ namespace Flower.Persistence
         // it, reachability *was* mDNS discovery, and mDNS is link-local: off
         // the home network the paired server simply vanished, with no record of
         // any address to fall back on. See PairedServerReachability and
-        // docs/REMOTE-ACCESS-PLAN.md.
+        // docs/REMOTE-ACCESS.md.
         public List<string> PairedServerAddresses { get; set; } = [];
 
         // Addresses the user typed in themselves, for a server they have never

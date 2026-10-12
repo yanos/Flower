@@ -252,7 +252,7 @@ public class LibrarySyncLogPushTests : IDisposable
     // A backlog larger than one report goes in several, each under what the
     // server accepts for /log/report - as one request it was refused outright
     // and every later session sent it again. See
-    // docs/TRUST-BOUNDARY-PLAN.md step 1.
+    // docs/SECURITY.md step 1.
     [Fact]
     public async Task A_large_backlog_goes_in_reports_the_server_will_accept()
     {

@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 
 namespace Flower.Services;
 
-// How Flower.Server says no, on every route - docs/TRUST-BOUNDARY-PLAN.md step
+// How Flower.Server says no, on every route - docs/SECURITY.md step
 // 3. An RFC 9457 problem document (application/problem+json) with one member
 // of Flower's own, Code, which is the part a client acts on.
 //

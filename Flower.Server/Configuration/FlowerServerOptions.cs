@@ -102,7 +102,7 @@ public sealed class FlowerServerOptions : MusicLibrarySettings
     // breaks nothing, and Flower's own
     // clients move over on their own - the server lists its https origins from
     // /info and the client's candidate ranking prefers them (see
-    // LocalAddresses.Reachable's scheme parameter, and REMOTE-ACCESS-PLAN.md).
+    // LocalAddresses.Reachable's scheme parameter, and REMOTE-ACCESS.md).
     //
     // On by default, and that is the point: with a self-signed certificate
     // minted from this server's own device key, TLS needs no certificate

@@ -2,10 +2,10 @@
 
 What `Flower.Server` answers over HTTP, and what a caller has to send to be
 answered. A reference, written from the code as it stood in October 2026, after
-the trust-boundary work in `TRUST-BOUNDARY-PLAN.md`. `Flower.Server/Endpoints/`
+the trust-boundary work in `SECURITY.md`. `Flower.Server/Endpoints/`
 is the authority, and each section names the file it was read from.
 `SYNC-PLAN.md` holds the reasoning behind most of it; `SELF-HOSTING.md` is the
-operator's side; `TRUST-BOUNDARY-PLAN.md` is why the budgets, refusals and
+operator's side; `SECURITY.md` is why the budgets, refusals and
 signed answers are shaped the way they are.
 
 There is one protocol and one server. A client never serves, there is no

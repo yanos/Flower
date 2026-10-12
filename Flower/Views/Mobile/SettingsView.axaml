@@ -529,7 +529,7 @@
           <!-- Bootstrap only: a server this phone has never shared a network
                with, and so could never discover. A server paired with at home
                reports its own addresses and keeps working away from home
-               without anything being typed - see docs/REMOTE-ACCESS-PLAN.md. -->
+               without anything being typed - see docs/REMOTE-ACCESS.md. -->
           <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
             <controls:TextInput Grid.Column="0" Text="{Binding ManualServerAddress}"
                                 PlaceholderText="my-server.tail1234.ts.net:4533"

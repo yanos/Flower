@@ -1006,7 +1006,7 @@ assumed a client could be pointed at the resulting address. It could not:
 reachability was *defined* as "discovered on this link right now" and nothing
 persisted an address to fall back on. The setup guide written alongside this
 told the reader to "add the server by address instead", a feature that did not
-exist. See `REMOTE-ACCESS-PLAN.md`, which owns that half: the server reports its
+exist. See `REMOTE-ACCESS.md`, which owns that half: the server reports its
 own addresses in the `/info` handshake, the client remembers them for its paired
 server, and reachability becomes a ranked probe (mDNS, then LAN, then tailnet).
 

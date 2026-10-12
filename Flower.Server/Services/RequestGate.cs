@@ -6,7 +6,7 @@ using Flower.Services;
 namespace Flower.Server.Services;
 
 // The budgets that sit in front of every signed route, and the order they are
-// checked in - docs/TRUST-BOUNDARY-PLAN.md step 2.
+// checked in - docs/SECURITY.md step 2.
 //
 // Every budget used to be keyed by source address and charged before anyone
 // was authenticated. That turned away strangers, which is what it was for, and

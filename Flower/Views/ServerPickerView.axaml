@@ -92,7 +92,7 @@
          be paired with there. Typing its address and its code here does both
          steps at once - see AddManualServerButton_Click. A server paired with
          on the LAN reports its own addresses and keeps working away from home
-         with nothing typed - see docs/REMOTE-ACCESS-PLAN.md. -->
+         with nothing typed - see docs/REMOTE-ACCESS.md. -->
     <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" Margin="0,14,0,0">
       <TextBox Grid.Column="0" x:Name="ManualAddressBox"
                PlaceholderText="my-server.tail1234.ts.net:4533"

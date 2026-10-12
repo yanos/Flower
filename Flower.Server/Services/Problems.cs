@@ -5,7 +5,7 @@ using Flower.Services;
 namespace Flower.Server.Services;
 
 // Every refusal this server sends, as the one shape a client reads - see
-// FlowerProblem for the contract and docs/TRUST-BOUNDARY-PLAN.md step 3 for
+// FlowerProblem for the contract and docs/SECURITY.md step 3 for
 // why the status alone stopped being enough.
 public static class Problems
 {
@@ -24,7 +24,7 @@ public static class Problems
         Of(StatusCodes.Status403Forbidden, ProblemCodes.NotAdmin);
 
     // The one refusal a client may unpair on, so the one this server signs -
-    // see ServerResponseSignature and docs/TRUST-BOUNDARY-PLAN.md step 4.
+    // see ServerResponseSignature and docs/SECURITY.md step 4.
     // Signed only when the request carried a nonce to bind the answer to,
     // which every signed request does; an anonymous one has nothing to unpair.
     public static IResult DeviceUnknown(HttpContext http) =>

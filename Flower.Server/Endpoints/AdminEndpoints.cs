@@ -66,7 +66,7 @@ public sealed record LogSliceResponse(long LastSequence, IReadOnlyList<LogEntryR
 public static class AdminEndpoints
 {
     // Budgets are RequestGate's, charged per device once a request verifies
-    // (docs/TRUST-BOUNDARY-PLAN.md step 2): the admin plane at 120 a minute,
+    // (docs/SECURITY.md step 2): the admin plane at 120 a minute,
     // sized for a person driving the settings page - which opens by fetching
     // devices, settings and the log at once - and the upload plane at 3000.
     //
@@ -127,7 +127,7 @@ public static class AdminEndpoints
             // signature failed), so anyone could learn which devices
             // administer this server by naming fingerprints with a junk
             // signature - which /info is careful never to tell an unsigned
-            // caller. After docs/TRUST-BOUNDARY-PLAN.md step 2 it also bought
+            // caller. After docs/SECURITY.md step 2 it also bought
             // little: the gate reads no body for a fingerprint it has no key
             // for, and caps failed signatures per address and fingerprint.
             // So not-admin is said only to a request that has proved who it is.

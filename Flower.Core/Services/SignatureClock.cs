@@ -11,7 +11,7 @@ namespace Flower.Services;
 //
 // A signature is good for SignatureVerifier.ClockSkewWindow either side of the
 // server's time, so a phone whose clock is a few minutes out fails every
-// request it makes, and until docs/TRUST-BOUNDARY-PLAN.md step 3 nothing told
+// request it makes, and until docs/SECURITY.md step 3 nothing told
 // it why: the refusal was a 401 like any other. Now a stale signature is
 // refused as clock-skew carrying the server's time (FlowerProblem), and
 // SignatureClockHandler sets the offset from it, so the next request is signed

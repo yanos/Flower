@@ -2036,7 +2036,7 @@ namespace Flower.Models
         // that is not one of the owner's: a listener's browser tab. RecordPlay
         // writes this library's own PlayCount and LastPlayed, which is the
         // owner speaking for the library - a guest's tab doing that is the
-        // hole docs/TRUST-BOUNDARY-PLAN.md step 1 closes. So the play is filed
+        // hole docs/SECURITY.md step 1 closes. So the play is filed
         // where a guest's phone files its plays through /track-state: under
         // its own fingerprint in RemotePlayCounts, one more each time.
         //

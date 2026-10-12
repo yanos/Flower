@@ -128,7 +128,7 @@ public class DiscoveredDevice
     // that predates the field. A client persists these for the server it paired
     // with, which is what lets it keep hold of that server after leaving the
     // network it discovered it on - see PairedServerReachability and
-    // REMOTE-ACCESS-PLAN.md.
+    // REMOTE-ACCESS.md.
     public IReadOnlyList<string> Addresses { get; set; } = [];
 
     // Whether this entry came from a remembered address rather than an mDNS

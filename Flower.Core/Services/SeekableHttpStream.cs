@@ -388,7 +388,7 @@ public sealed class SeekableHttpStream : Stream
     // It began as the answer to OpenSubsonic, which refused a request with an
     // error envelope on an HTTP 200; this used to dig that envelope's message
     // out. Flower.Server refuses with a status and a problem document now
-    // (FlowerProblem, docs/TRUST-BOUNDARY-PLAN.md step 3), so that half is
+    // (FlowerProblem, docs/SECURITY.md step 3), so that half is
     // gone and the rule it rested on stays: keyed on the content type rather
     // than on parsing any one shape.
     private static async Task<string?> ProtocolErrorFor(

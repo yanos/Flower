@@ -139,7 +139,7 @@ public class NetworkDiscoveryServiceTests : IDisposable
     // mDNS is link-local, so a client off its home network has nothing to
     // find. Before these, reachability *was* discovery and a paired server
     // simply vanished when its client left the house. See
-    // docs/REMOTE-ACCESS-PLAN.md.
+    // docs/REMOTE-ACCESS.md.
 
     [Fact]
     public async Task A_remembered_address_becomes_a_peer_without_any_mDNS_sighting()

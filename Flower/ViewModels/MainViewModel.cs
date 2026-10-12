@@ -1502,7 +1502,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // has no sidebar to select a server in, so it asks the one server it is
     // paired with - resolved through PairedServerReachability, which knows the
     // server's current address whether it was found on this link or remembered
-    // from home (see docs/REMOTE-ACCESS-PLAN.md).
+    // from home (see docs/REMOTE-ACCESS.md).
     //
     // Gated on this device being one of that server's administrators
     // (DiscoveredDevice.WeAreAdmin, answered on the same 5s /info poll

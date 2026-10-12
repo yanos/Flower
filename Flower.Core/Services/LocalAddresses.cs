@@ -21,7 +21,7 @@ namespace Flower.Services;
 // mDNS is link-local, so it never crosses a tailnet or a subnet, and a client
 // that only knows how to *discover* a server has no way back to one it cannot
 // see. Reported here once, remembered by the client, probed in rank order
-// later - see REMOTE-ACCESS-PLAN.md.
+// later - see REMOTE-ACCESS.md.
 //
 // Deliberately not Tailscale-aware. A tailnet address is just a unicast address
 // in 100.64.0.0/10 (the range LanGuard already knows), so enumerating our own

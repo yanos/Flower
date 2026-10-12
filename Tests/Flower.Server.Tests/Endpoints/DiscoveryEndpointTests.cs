@@ -457,7 +457,7 @@ public class DiscoveryEndpointTests(FlowerServerFixture server) : IClassFixture<
     [Fact]
     public async Task Reports_its_addresses_to_a_verified_trusted_peer()
     {
-        // The other half, and the one REMOTE-ACCESS-PLAN.md depends on: a paired
+        // The other half, and the one REMOTE-ACCESS.md depends on: a paired
         // client has to keep learning where this server can be reached, or it
         // stops working the moment it leaves the LAN.
         var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();

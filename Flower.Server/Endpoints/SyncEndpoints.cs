@@ -41,7 +41,7 @@ namespace Flower.Server.Endpoints;
 public static class SyncEndpoints
 {
     // The budgets for this group are RequestGate's, charged per device once a
-    // request has verified (docs/TRUST-BOUNDARY-PLAN.md step 2). Three planes,
+    // request has verified (docs/SECURITY.md step 2). Three planes,
     // and the split is the point rather than the ceilings:
     //
     //   - Bulk, sixty a minute: a handful of large requests per sync session.
@@ -433,7 +433,7 @@ public static class SyncEndpoints
     // listening, and moves this library's own count; anyone else's plays are
     // filed under that device (see PlayReportService.Apply). Any paired device
     // used to be able to inflate the server's own counts through here, which
-    // docs/TRUST-BOUNDARY-PLAN.md step 1 closed.
+    // docs/SECURITY.md step 1 closed.
 
     // A paired device's own recent log lines, pushed at the end of each sync
     // session it runs (see LibrarySyncService.PushLogSnapshotAsync). Overlapping

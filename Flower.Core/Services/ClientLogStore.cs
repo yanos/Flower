@@ -31,7 +31,7 @@ public sealed class ClientLogStore
     public static readonly TimeSpan Retention = TimeSpan.FromDays(7);
 
     // What one push may add, and what one device may hold - see
-    // docs/TRUST-BOUNDARY-PLAN.md step 1. Retention bounded a device's log by
+    // docs/SECURITY.md step 1. Retention bounded a device's log by
     // age and nothing else, so any paired device could fill the server's disk
     // for a week. A phone's own archive runs to about 50 MB of these lines a
     // week (see Append), so the cap leaves an honest device well over twice

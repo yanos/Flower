@@ -43,7 +43,7 @@ public static class StreamTicketEndpoints
             //
             // Through the same gate as the sync group, and charged to the
             // device's media plane: minting a ticket is the first request of a
-            // playback, and until docs/TRUST-BOUNDARY-PLAN.md step 2 this route
+            // playback, and until docs/SECURITY.md step 2 this route
             // had no budget at all. Outside that group only because it takes
             // no ticket of its own.
             var admitted = await gate.AdmitAsync(context, RequestGate.Plane.Media, MaxBodyBytes, logger);

@@ -14,7 +14,7 @@ using Flower.Server.Tests.TestSupport;
 
 namespace Flower.Server.Tests.Security;
 
-// docs/TRUST-BOUNDARY-PLAN.md step 2: budgets are charged per device once a
+// docs/SECURITY.md step 2: budgets are charged per device once a
 // request verifies, and only failing callers are counted by address. Every
 // test here takes source addresses of its own, so one test spending a budget
 // cannot starve another in the same fixture.
@@ -221,7 +221,7 @@ public class RequestGateTests(FlowerServerFixture server) : IClassFixture<Flower
     }
 }
 
-// docs/TRUST-BOUNDARY-PLAN.md step 3: every refusal under /api is a problem
+// docs/SECURITY.md step 3: every refusal under /api is a problem
 // document with a code, on every route this server maps - walked from the
 // routing table rather than listed, so a route added later is covered without
 // anyone remembering to add it here.
@@ -277,7 +277,7 @@ public class RefusalContractTests(FlowerServerFixture server) : IClassFixture<Fl
         }
     }
 
-    // docs/TRUST-BOUNDARY-PLAN.md step 4, from the server's side: the two
+    // docs/SECURITY.md step 4, from the server's side: the two
     // answers a client may unpair on are signed with this server's key, over
     // the bytes sent and the nonce of the request answered, and verify as
     // such with nothing but what the client already holds.
@@ -345,7 +345,7 @@ internal static class SyncEndpointTestsKeys
     }
 }
 
-// docs/TRUST-BOUNDARY-PLAN.md step 5: a stream's log line names who the gate
+// docs/SECURITY.md step 5: a stream's log line names who the gate
 // found, never what the request claims - so a ticketed request carrying
 // someone else's fingerprint in its header is logged as the device that
 // minted the ticket.

@@ -1,8 +1,9 @@
 # Reaching your own server from anywhere
 
-How a Flower client finds and keeps hold of its paired server when the two are
-not on the same network — the client-side half of the remote-access story whose
-server half is in `SYNC-PLAN.md` and whose setup guide is `SELF-HOSTING.md`.
+This document explains how a Flower client finds and keeps hold of its paired
+server when the two are not on the same network. It is the client-side half of
+the remote-access design; the server half is described in `SYNC-PLAN.md`, and
+the user-facing setup guide is `SELF-HOSTING.md`.
 
 ## The problem this exists to fix
 
@@ -213,12 +214,10 @@ transition:
    without interrupting audio.
 5. Kill every `Flower.Server` started along the way — see `CLAUDE.md`.
 
-## Status
+## Implementation status
 
-**Built.** Written up front, before any code, because the design question worth
-getting right here — should the user type an address, or should the server say
-where it lives — is the one that determines whether remote access is a feature
-people configure or one that simply works.
+**Implemented.** The central design decision is that the server reports where
+it can be reached; manual address entry is only a bootstrap and recovery path.
 
 Landed: `LocalAddresses` (shared, so both servers answer the same way),
 `SyncInfoResponseDto.Addresses`, `DiscoveredDevice.IsRemembered`/`IsResponding`/

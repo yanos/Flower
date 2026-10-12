@@ -185,7 +185,7 @@ public class StreamTicketServiceTests
         Assert.False(service.TryRedeem(ticket, "", Now));
     }
 
-    // docs/TRUST-BOUNDARY-PLAN.md step 1: a device minting as fast as it
+    // docs/SECURITY.md step 1: a device minting as fast as it
     // likes holds MaxPerDevice tickets, not as many as it asked for - and
     // the one it is about to use, the newest, is never the one dropped.
     [Fact]

@@ -1,6 +1,6 @@
 # Getting to the server without installing a VPN on the phone
 
-`REMOTE-ACCESS-PLAN.md` answered *which address to dial* once a path exists.
+`REMOTE-ACCESS.md` answered *which address to dial* once a path exists.
 This one asks the question underneath it: **who provides the path at all**, when
 the server sits behind a home router with no public address and the client is on
 cellular. It exists because "install Tailscale on every device" — the answer
@@ -9,7 +9,7 @@ happens on the phone, and the phone is where setup friction actually costs
 something.
 
 Nothing here is built. It is a decision record written before the code, same as
-`REMOTE-ACCESS-PLAN.md` was.
+`REMOTE-ACCESS.md` was.
 
 ## The thing that is actually scarce
 
@@ -114,7 +114,7 @@ phone.
 
 1. **HTTPS on the native client.** Every peer URL is hardcoded `http://`, so a
    public HTTPS endpoint is unreachable from the app today. This is the deferred
-   scheme rework `REMOTE-ACCESS-PLAN.md` names: eleven call sites, plus widening
+   scheme rework `REMOTE-ACCESS.md` names: eleven call sites, plus widening
    `DiscoveredDevice.EndPoint` past `IPEndPoint` so it can hold a name — already
    partly done for remembered candidates. Nothing conceptually hard; it is the
    bulk of the effort and it is client-side after all, which weakens the "zero
@@ -167,7 +167,7 @@ phone.
 
 The status quo: `SELF-HOSTING.md` tells the reader to install it on the server
 and every device. Best privacy of the three (nothing in the middle can read
-anything), zero code, and it is the path `REMOTE-ACCESS-PLAN.md`'s ranking was
+anything), zero code, and it is the path `REMOTE-ACCESS.md`'s ranking was
 designed against — the `100.64/10` rank exists for it.
 
 Its only real cost is the phone-side install, which is a five-minute one-off, not
@@ -212,7 +212,7 @@ to become. So steps 1, 3 and 4 are not available to us without becoming Plex.
 
 The one genuinely borrowable piece. `Flower.Server` asks the router to map its
 port, discovers its own public IP, and reports that address in the `/info`
-handshake — where `REMOTE-ACCESS-PLAN.md`'s machinery already picks it up. The
+handshake — where `REMOTE-ACCESS.md`'s machinery already picks it up. The
 client remembers it, ranks it below LAN and tailnet, probes it when nothing
 better answers. **No new client concepts, no accounts, no third party, no
 ongoing cost**, and it slots into `LocalAddresses.Reachable` as one more source.
@@ -350,7 +350,7 @@ it.
 ## Decision
 
 **All of them, because they are not alternatives.** This is the point worth
-holding onto: `REMOTE-ACCESS-PLAN.md` already built a client that keeps a *list*
+holding onto: `REMOTE-ACCESS.md` already built a client that keeps a *list*
 of candidate addresses, probes them concurrently and takes the best-ranked one
 that answers. Every option here is just another entry in that list. Supporting
 several is therefore close to free on the client, and what it buys is graceful

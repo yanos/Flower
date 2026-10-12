@@ -284,7 +284,7 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
         }
     }
 
-    // docs/TRUST-BOUNDARY-PLAN.md step 1: playlists belong to a listener. The
+    // docs/SECURITY.md step 1: playlists belong to a listener. The
     // owner's devices share one set; a guest's phone has its own, and can
     // neither see the owner's nor change them - not by pushing one of their
     // ids, not by naming one as deleted, and not with an UpdatedAt from the

@@ -17,7 +17,7 @@ using Flower.Tests.TestSupport;
 
 namespace Flower.Tests.Network.Security;
 
-// The client half of docs/TRUST-BOUNDARY-PLAN.md step 3: a refusal is read by
+// The client half of docs/SECURITY.md step 3: a refusal is read by
 // its code, not its status. The one that matters most is which refusals may
 // end a pairing - device-unknown, and nothing else, however it arrives.
 [Collection("PlatformDataDirectory")]
@@ -117,7 +117,7 @@ public class RefusalContractTests : IDisposable
         return (rejected, result);
     }
 
-    // docs/TRUST-BOUNDARY-PLAN.md step 4: device-unknown ends a pairing only
+    // docs/SECURITY.md step 4: device-unknown ends a pairing only
     // when the server this device paired with signed it.
     [Fact]
     public async Task A_device_unknown_signed_by_the_paired_server_reads_as_revoked()

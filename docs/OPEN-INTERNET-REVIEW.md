@@ -71,7 +71,7 @@ the code that made them is gone, so three of the five sites remain.
 ### 1. `/info` hands its address list to anyone who asks
 
 `DiscoveryEndpoints` answers `SyncProtocol.InfoPath` with no authentication at
-all, and `REMOTE-ACCESS-PLAN.md` just added `LocalAddresses.Reachable(...)` to
+all, and `REMOTE-ACCESS.md` just added `LocalAddresses.Reachable(...)` to
 that response. On a LAN that is a peer learning where to dial. Exposed, it is
 an unauthenticated caller learning the server's internal subnet layout, its ULA
 addresses and — the one that matters — its tailnet address, which is otherwise
@@ -588,7 +588,7 @@ confirmed by hand to answer an anonymous `/info` with `addresses: null`, where
 it previously listed every address it had. Pairing was confirmed by hand to
 still work afterwards.
 
-Still outstanding from `REMOTE-ACCESS-PLAN.md`'s own hand-run, and unchanged by
+Still outstanding from `REMOTE-ACCESS.md`'s own hand-run, and unchanged by
 any of this: the tailnet leg — that a paired client off the LAN reaches the
 server on its `100.x` address and hands back to the LAN one on the way home.
 Nothing here can stand in for it.

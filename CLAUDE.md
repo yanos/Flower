@@ -45,8 +45,8 @@ The app is a WIP with no released users and no data anyone else depends on. **Ba
 
 - `SELF-HOSTING.md` — the one user-facing document here: running your own server and reaching it remotely. `SYNC-PLAN.md` holds the reasoning behind it.
 - `API.md` — the HTTP reference for `Flower.Server`: every route, the request signature, the rate-limit planes, and what each refusal means. Written from `Flower.Server/Endpoints/`, which stays the authority; update it when a route changes.
-- `TRUST-BOUNDARY-PLAN.md` — done (October 2026). What a rogue paired device or anything on the path could do, and the five steps that closed it: playlists per listener (the album-progress model), budgets per device rather than per address, one problem+json error contract (`FlowerProblem`), and revocation that only the server's pinned key can sign (`ServerResponseSignature`). Each step's "Done" note records where it differed from the plan.
-- `REMOTE-ACCESS-PLAN.md` — the client-side half of remote access: how a paired server stays reachable off the LAN (candidate addresses, LAN↔tailnet handover).
+- `SECURITY.md` — the server trust-boundary documentation: playlists per listener (the album-progress model), budgets per device rather than per address, the shared problem+json refusal contract (`FlowerProblem`), and revocation that only the server's pinned key can sign (`ServerResponseSignature`).
+- `REMOTE-ACCESS.md` — the client-side half of remote access: how a paired server stays reachable off the LAN (candidate addresses, LAN↔tailnet handover).
 - `REMOTE-TRANSPORT-PLAN.md` — who carries the traffic when neither end has a public address: Tailscale vs Cloudflare Tunnel vs embedding `tsnet`.
 - `CITED-DECISIONS.md` — the index for three retired documents: the August 2026 structural review (`ARCHITECTURE-REVIEW.md`), the trust-boundary read-through that gated remote transport (`OPEN-INTERNET-REVIEW.md`), and `SMART-PLAYLIST-PLAN.md`. All three were finished, and deleted once they were; ~140 source comments still cite their tier and finding numbers, and this is what those citations resolve against. One line per item, with the full text recoverable from git. `CODE-REVIEW-2026-09.md` is the live backlog now.
 - `CODE-REVIEW-2026-09.md` — the standing backlog. September 2026 review pass: audio-quality and deadlock defects, security/trust-boundary gaps, allocation hot spots, dead code. Each finding carries the evidence that produced it, and the ones that have been fixed say so in place (A2, B6, E1, E4 so far) — including what the fix turned out to be when it differed from what the finding proposed, which is most of the value in re-reading them.
@@ -58,7 +58,6 @@ The app is a WIP with no released users and no data anyone else depends on. **Ba
 - `AUTO-UPDATE-PLAN.md` — desktop auto-update via Velopack, and the versioning (MinVer, git tags) it consumes. Cutting the first `v*` tag is Phase 1's one remaining task and gates the rest.
 - `CRASH-REPORTING-PLAN.md` — crash reporting options.
 - `STORE-DEPLOYMENT-PLAN.md` — submitting iOS/Android to app stores, and the real-device verification still owed before that.
-- `TEST-SUITE-PLAN.md` — done (October 2026). The test-suite review: what was dropped (layout, pixel and colour assertions; trivial pass-throughs; duplicates; migration tests, with the migrations collapsed into one schema baseline) and why, the fence cases and how each was decided, and the folder layout.
 - `PERFORMANCE-TRACKING-PLAN.md` — CI benchmark regression tracking + runtime timing.
 - `STREAMING-SERVICES-PLAN.md` — feasibility of streaming Spotify/Apple Music/YouTube Music.
 
@@ -158,8 +157,8 @@ a headless window only for what lives in the view and nowhere else. Don't test
 trivial things either: pass-throughs, list wrappers, getters, "forwards the
 call". A test that breaks these rules gets deleted, not fixed.
 
-**What gets a test, and where it goes** (`docs/TEST-SUITE-PLAN.md`). The suite is
-folders by area, namespace following folder: `Audio/`, `Decoding/`, `Playback/`,
+**What gets a test, and where it goes.** The suite is folders by area, namespace
+following folder: `Audio/`, `Decoding/`, `Playback/`,
 `MusicLibrary/` (`Import/`, `Art/`), `Playlists/` (`Smart/`), `Persistence/`,
 `Sync/` (`Scenarios/`), `Network/` (`Security/`), `Browser/`, `Logging/`,
 `ViewModels/` (`Mobile/`, `Home/`, `Settings/`), `Controls/`, `Views/`, `AppShell/`.
@@ -209,8 +208,8 @@ throws `PlatformNotSupportedException` on iOS before running anything.
 of a 1312s run. That was blamed on headless layout and render under the
 simulator, and was a leak: every track list ever built stayed subscribed to the
 app-wide `ColumnManager` and rebuilt itself on every column change, so each test
-paid for all the lists before it (`docs/TEST-SUITE-PLAN.md`). With the leak
-fixed the whole suite, those tests included, runs there in about 90s.
+paid for all the lists before it. With the leak fixed the whole suite, those
+tests included, runs there in about 90s.
 `FLOWER_TEST_ARGS` passes
 extra xunit arguments through (`-class`, `-method`). The app always reports
 verbosely, so a run that hangs names the tests that started and never finished -

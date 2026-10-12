@@ -37,7 +37,7 @@ namespace Flower.Services;
 // remembered to fall back on. Now the server reports its own addresses in the
 // /info handshake, this class persists them for the one server we paired with,
 // and probes them when discovery comes up empty. See
-// docs/REMOTE-ACCESS-PLAN.md.
+// docs/REMOTE-ACCESS.md.
 public class PairedServerReachability : IDisposable
 {
     private readonly NetworkDiscoveryService _networkDiscovery;

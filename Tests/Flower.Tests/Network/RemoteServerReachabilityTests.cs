@@ -22,7 +22,7 @@ namespace Flower.Tests.Network;
 // vanished the moment its client left the house - with no address stored to
 // fall back on. These cover the other half: the server reports its own
 // addresses in the /info handshake, the client keeps them for the one server it
-// paired with, and probes them later. See docs/REMOTE-ACCESS-PLAN.md.
+// paired with, and probes them later. See docs/REMOTE-ACCESS.md.
 [Collection("PlatformDataDirectory")]
 public class RemoteServerReachabilityTests : PinnedDataDirectory
 {

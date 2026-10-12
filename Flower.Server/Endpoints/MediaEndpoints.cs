@@ -99,7 +99,7 @@ public static class MediaEndpoints
     // stream ticket was minted for. Never the X-Flower-Fingerprint header on
     // a ticketed request, which nothing checks; and no longer a "u" query
     // parameter, which was the OpenSubsonic adapter's username and outlived
-    // it here, read but never sent. See docs/TRUST-BOUNDARY-PLAN.md step 5.
+    // it here, read but never sent. See docs/SECURITY.md step 5.
     private static string StreamPeer(HttpContext context)
     {
         var address = context.Connection.RemoteIpAddress?.ToString() ?? "an unknown address";

@@ -5,7 +5,7 @@ using System.Security.Cryptography;
 
 namespace Flower.Services;
 
-// A server's signature over its own answer - docs/TRUST-BOUNDARY-PLAN.md step 4.
+// A server's signature over its own answer - docs/SECURITY.md step 4.
 //
 // Every request a device makes is signed, and until this no answer was. That
 // mattered for exactly one kind of answer: the ones that end a pairing. A

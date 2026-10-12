@@ -34,7 +34,7 @@ public class ClientLogStoreTests : PinnedDataDirectory
         Assert.Single(store.All());
     }
 
-    // docs/TRUST-BOUNDARY-PLAN.md step 1: one push adds at most
+    // docs/SECURITY.md step 1: one push adds at most
     // MaxEntriesPerReport lines, its oldest, so the watermark it answers with
     // names the last line kept and the device sends the rest next.
     [Fact]

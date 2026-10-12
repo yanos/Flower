@@ -9,7 +9,7 @@ namespace Flower.Services;
 // The Continue Playing shelf was the first thing kept this way (see
 // AlbumProgressLedger) and playlists are the second: a housemate's phone can
 // keep playlists on the server without being able to read, rename or delete
-// the owner's. See docs/TRUST-BOUNDARY-PLAN.md, step 1.
+// the owner's. See docs/SECURITY.md, step 1.
 //
 // Decided from the fingerprint a request signature proved and the trust
 // store's admin flag, never from anything a request body says.

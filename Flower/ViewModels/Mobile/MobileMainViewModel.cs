@@ -217,7 +217,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     // Bootstrap-only: an address for a server this phone has never shared a
     // network with, and therefore could never discover. A server paired with at
     // home reports its own addresses and needs none of this - see
-    // docs/REMOTE-ACCESS-PLAN.md.
+    // docs/REMOTE-ACCESS.md.
     public ICommand AddManualServerCommand { get; }
     public ICommand RemoveManualServerCommand { get; }
     public ICommand ConfirmPairServerCommand { get; }

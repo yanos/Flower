@@ -980,7 +980,7 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
     // Addresses the user typed for a server they cannot discover - the
     // bootstrap case, and only that: a server paired with on the LAN reports
     // its own addresses and needs none of this. See
-    // docs/REMOTE-ACCESS-PLAN.md.
+    // docs/REMOTE-ACCESS.md.
     public IEnumerable<string> ManualServerAddresses => _appSettings.ManualServerAddresses;
 
     // Returns the server if the address answered, null otherwise. A caller shows

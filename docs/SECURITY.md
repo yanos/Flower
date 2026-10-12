@@ -1,9 +1,10 @@
-# Trust boundary: rogue clients, budgets, and what a refusal means
+# Security: trust boundaries, request budgets, and refusals
 
-**Status (2026-10-02): done.** All five steps landed, one commit each. Where a
-step turned out differently from what is written below, its "Done" note says
-so, and those notes are the most useful part of re-reading this. `docs/API.md`
-is the reference for the result; this file is why it is shaped that way.
+This document explains Flower's server trust boundary and the controls applied
+to rogue clients and hostile network intermediaries. The work landed in October
+2026. `docs/API.md` is the protocol reference; this document records why its
+authorization, budgeting, refusal, and revocation rules have their current
+shape.
 
 ## Why
 
@@ -155,7 +156,7 @@ write access.
 **Consequence, open:** a guest browser tab's History is read from the
 catalog's `LastPlayed`, so after a refresh it will not show what that guest
 played. Per-listener history is the real fix. It is out of scope here and is
-listed under "Not in this plan".
+listed under "Out of scope".
 
 ### Bounded tables
 
@@ -355,7 +356,7 @@ refusal under `/api` that leaves without a body is filled in by status in a
 fallback. Where it differs from the above:
 
 - **`SeekableHttpStream.ProtocolErrorFor` stays; only its OpenSubsonic half is
-  gone.** The plan said to delete it, but its rule is "a 2xx with a textual body
+  gone.** The original design said to delete it, but its rule is "a 2xx with a textual body
   is not audio", and that also catches a captive portal or a proxy's sign-in
   page. Only the parsing of the old error envelope went. The device checks'
   not-audio check moved to `LoopbackMediaServer.ServesAPortalPage`, and
@@ -465,9 +466,8 @@ Tests, all passing:
 - `StreamTicketService.TryRedeem` returns the fingerprint the ticket was minted
   for. `StreamPeer` logs that, rather than an `X-Flower-Fingerprint` header that
   a ticketed request is free to make up.
-- Rewrite `docs/API.md`'s authentication, rate-limit and refusal sections from
-  the code as it then stands. Fold this plan's status into it, and mark this
-  file done.
+- Keep `docs/API.md`'s authentication, rate-limit and refusal sections aligned
+  with the implementation and this document.
 
 **Done (2026-10-02).** The ticket half came early, in step 2, which needed
 `TryRedeem` to name the minter in order to charge playback to it. The sync
@@ -477,7 +477,7 @@ the fingerprint whose signature verified or the ticket's minter, marked
 header and a `u=` on a ticketed request. `API.md` was kept current step by
 step, and was read through once more against the code at the end.
 
-## Not in this plan
+## Out of scope
 
 - **Per-listener history**, which would let a guest browser tab keep its own
   History. See step 1.

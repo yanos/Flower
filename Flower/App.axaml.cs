@@ -882,7 +882,7 @@ public partial class App : Application
             // what a client off its home network has instead of discovery -
             // mDNS is link-local, so away from home there is nothing to find
             // and this is the only route back to the server. See
-            // PairedServerReachability and docs/REMOTE-ACCESS-PLAN.md.
+            // PairedServerReachability and docs/REMOTE-ACCESS.md.
             _ = provider.GetRequiredService<PairedServerReachability>().RestoreRememberedAsync();
         }
 
