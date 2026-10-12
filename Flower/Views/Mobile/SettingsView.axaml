@@ -46,6 +46,16 @@
       <Setter Property="Height" Value="22" />
       <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}" />
     </Style>
+    <!-- TRIAL: the page without its badges, to see how it reads. Delete these
+         two styles (and the badgeRow classes) to bring them back. A row's
+         badge leaves its column empty but the 14 after it, so the row is
+         drawn that much further left, which keeps the gap before a switch. -->
+    <Style Selector="Border.badge">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector="Grid.badgeRow">
+      <Setter Property="Margin" Value="-14,0,0,0" />
+    </Style>
     <!-- The smaller disc beside a section's own heading, for the sections
          that are one action rather than a list of rows. -->
     <Style Selector="Border.badge.small">
@@ -173,7 +183,7 @@
         <StackPanel Spacing="12">
           <TextBlock Classes="section-header" Text="GENERAL" />
 
-          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14">
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14" Classes="badgeRow">
             <Border Grid.Column="0" Classes="badge">
               <materialIcons:MaterialIcon Kind="Cellphone" />
             </Border>
@@ -189,7 +199,7 @@
           <!-- Radio buttons rather than desktop's ComboBox: each choice is one
                tap, with no popup to open first. Stacked, since three side by
                side do not fit the width of a small phone. -->
-          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14">
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14" Classes="badgeRow">
             <Border Grid.Column="0" Classes="badge">
               <materialIcons:MaterialIcon Kind="WeatherSunny" />
             </Border>
@@ -203,7 +213,7 @@
 
           <StackPanel IsVisible="{Binding HasMediaPermissionPrompt}" Spacing="12">
             <Border Classes="divider" Margin="58,4,0,4" />
-            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14">
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14" Classes="badgeRow">
               <Border Grid.Column="0" Classes="badge">
                 <materialIcons:MaterialIcon Kind="MusicNote" />
               </Border>
@@ -228,14 +238,12 @@
            switches and handles is more than this one should carry. -->
       <Border Classes="card" Padding="0">
         <Button Classes="cardLink" Command="{Binding OpenNavigationBarSettingsCommand}">
-          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14" Classes="badgeRow">
             <Border Grid.Column="0" Classes="badge" VerticalAlignment="Center">
               <materialIcons:MaterialIcon Kind="PlaylistMusic" />
             </Border>
-            <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
-              <TextBlock Classes="rowTitle" Text="Customize navigation bar" />
-              <TextBlock Classes="note" Text="Choose which tabs appear and in what order." />
-            </StackPanel>
+            <TextBlock Grid.Column="1" Classes="rowTitle" Text="Customize navigation bar"
+                       VerticalAlignment="Center" />
             <materialIcons:MaterialIcon Grid.Column="2" Kind="ChevronRight" Width="22" Height="22"
                                         Foreground="{DynamicResource AppAccentBrush}" />
           </Grid>
@@ -245,7 +253,7 @@
       <Border Classes="card">
         <StackPanel Spacing="12">
           <TextBlock Classes="section-header" Text="ALBUM ACTIONS" />
-          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14" Classes="badgeRow">
             <Border Grid.Column="0" Classes="badge" VerticalAlignment="Center">
               <materialIcons:MaterialIcon Kind="Album" />
             </Border>
@@ -254,8 +262,6 @@
                        VerticalAlignment="Center" />
             <ToggleSwitch Grid.Column="2" IsChecked="{Binding ShowAlbumButtons}" />
           </Grid>
-          <TextBlock Classes="note"
-                     Text="If off, tapping a song plays the album from there, and shuffle, download and add to playlist are in the menu at the top of the screen." />
         </StackPanel>
       </Border>
 
@@ -265,43 +271,36 @@
       <Border Classes="card">
         <StackPanel Spacing="12">
           <TextBlock Classes="section-header" Text="HOME" />
-          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14" Classes="badgeRow">
             <Border Grid.Column="0" Classes="badge" VerticalAlignment="Center">
               <materialIcons:MaterialIcon Kind="PlayCircleOutline" />
             </Border>
-            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-              <TextBlock Classes="rowTitle" FontWeight="Normal" Text="Continue Playing" />
-              <TextBlock Classes="note" Text="Albums" />
-            </StackPanel>
+            <TextBlock Grid.Column="1" Classes="rowTitle" FontWeight="Normal" Text="Continue Playing"
+                       VerticalAlignment="Center" />
             <controls:Stepper Grid.Column="2"
                               Value="{Binding Main.HomeContinuePlayingLimit}"
                               Maximum="{x:Static fvm:HomeViewModel.MaxAlbumsPerShelf}" />
           </Grid>
-          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14" Classes="badgeRow">
             <Border Grid.Column="0" Classes="badge" VerticalAlignment="Center">
               <materialIcons:MaterialIcon Kind="History" />
             </Border>
-            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-              <TextBlock Classes="rowTitle" FontWeight="Normal" Text="Recently Played" />
-              <TextBlock Classes="note" Text="Albums" />
-            </StackPanel>
+            <TextBlock Grid.Column="1" Classes="rowTitle" FontWeight="Normal" Text="Recently Played"
+                       VerticalAlignment="Center" />
             <controls:Stepper Grid.Column="2"
                               Value="{Binding Main.HomeRecentlyPlayedLimit}"
                               Maximum="{x:Static fvm:HomeViewModel.MaxAlbumsPerShelf}" />
           </Grid>
-          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14" Classes="badgeRow">
             <Border Grid.Column="0" Classes="badge" VerticalAlignment="Center">
               <materialIcons:MaterialIcon Kind="CalendarClock" />
             </Border>
-            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-              <TextBlock Classes="rowTitle" FontWeight="Normal" Text="Recently Added" />
-              <TextBlock Classes="note" Text="Months" />
-            </StackPanel>
+            <TextBlock Grid.Column="1" Classes="rowTitle" FontWeight="Normal" Text="Recently Added"
+                       VerticalAlignment="Center" />
             <controls:Stepper Grid.Column="2"
                               Value="{Binding Main.HomeRecentlyAddedMonths}"
                               Maximum="{x:Static fvm:HomeViewModel.MaxRecentlyAddedMonths}" />
           </Grid>
-          <TextBlock Classes="note" Text="0 hides that shelf." />
         </StackPanel>
       </Border>
 
@@ -312,7 +311,7 @@
         <StackPanel Spacing="12">
           <TextBlock Classes="section-header" Text="SERVER" />
 
-          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14"
+          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14" Classes="badgeRow"
                 IsVisible="{Binding Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}">
             <Border Grid.Column="0" Classes="badge" VerticalAlignment="Center">
               <materialIcons:MaterialIcon Kind="Database" />
@@ -367,7 +366,7 @@
                      Text="{Binding Main.PairedServerRouteDescription}"
                      Classes="note" Margin="58,0,0,0" />
 
-          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14"
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14" Classes="badgeRow"
                 IsVisible="{Binding Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNullOrEmpty}}">
             <Border Grid.Column="0" Classes="badge" VerticalAlignment="Center">
               <materialIcons:MaterialIcon Kind="Database" />
@@ -385,7 +384,7 @@
           <StackPanel Spacing="12"
                       IsVisible="{Binding Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}">
             <Border Classes="divider" Margin="58,0,0,0" />
-            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14" Classes="badgeRow">
               <Border Grid.Column="0" Classes="badge" VerticalAlignment="Center">
                 <materialIcons:MaterialIcon Kind="FileDocumentOutline" />
               </Border>
@@ -399,7 +398,7 @@
                  on its own network and wait otherwise, rather than spending a
                  data plan unasked. See AppSettings.UploadWhenAwayFromHome. -->
             <Border Classes="divider" Margin="58,0,0,0" />
-            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14" Classes="badgeRow">
               <Border Grid.Column="0" Classes="badge" VerticalAlignment="Center">
                 <materialIcons:MaterialIcon Kind="CloudUploadOutline" />
               </Border>
