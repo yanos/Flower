@@ -120,6 +120,26 @@ public class PlaylistRowActionsTests : PinnedDataDirectory
         Assert.Equal("2 songs  ·  10:00", row.PlaylistSummary);
     }
 
+    // Like a song row's, the row's download icon is there while something in
+    // the playlist is still only on the server - and a song added from there
+    // brings it, though the row itself is never rebuilt.
+    [AvaloniaFact]
+    public async Task A_row_offers_a_download_once_it_holds_a_song_still_on_the_server()
+    {
+        var vm = Build(out var library, T("A", 3));
+        // The one way a test has to make a server reachable: the tab's own.
+        vm.Main.BrowserOriginFingerprint = "server-fp";
+        var row = TheRow(vm);
+        Assert.False(row.PlaylistDownload.IsDownloadable);
+
+        var remote = new Track { Title = "B", Album = "Bee Thousand", OriginDeviceFingerprint = "server-fp" };
+        library.UpdateTracks(library.Tracks.Append(remote).ToList());
+        await vm.Main.AddTrackToPlaylist(remote, row.Playlist!);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.True(row.PlaylistDownload.IsDownloadable);
+    }
+
     [AvaloniaFact]
     public void The_menu_is_the_album_menu_over_this_playlist()
     {

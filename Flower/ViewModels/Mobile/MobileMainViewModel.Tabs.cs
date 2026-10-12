@@ -45,10 +45,9 @@ public partial class MobileMainViewModel
         }
     }
 
-    // Whether an album's screen has its row of buttons under the art -
-    // Settings' switch, kept in AppSettings.MobileAlbumButtons. A playlist's
-    // screen keeps its row either way: its pencil is the one thing in it the
-    // header menu does not also offer.
+    // Whether an album's or a playlist's screen has its row of buttons under
+    // the art - Settings' switch, kept in AppSettings.MobileAlbumButtons.
+    // Everything in the row is also in the screen's header menu.
     private bool _showAlbumButtons = true;
 
     public bool ShowAlbumButtons

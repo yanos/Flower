@@ -63,6 +63,13 @@ public class SidebarItem : ViewModelBase
     public AlbumCollage PlaylistCover =>
         _playlistCover ??= Playlist is { } playlist ? AlbumCollage.ByAlbumAndArtist(playlist.Tracks) : AlbumCollage.Empty;
 
+    // The download icon on the phone's playlist row: every song in it not yet
+    // on the device, the way an album's is. Whether there is anything to fetch
+    // is pushed in by MobileMainViewModel (RefreshPlaylistDownloads), which
+    // owns the server's reachability; built on first read, like the cover.
+    private BulkDownloadIndicatorViewModel? _playlistDownload;
+    public BulkDownloadIndicatorViewModel PlaylistDownload => _playlistDownload ??= new();
+
     // The songs in it changed: what it says about them, and which albums its
     // cover is made of.
     public void NotifyPlaylistSummaryChanged()

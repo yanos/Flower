@@ -189,6 +189,8 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     // A playlist row's own "..." (PlaylistPickerScreenView) - the album menu,
     // over a playlist, with the two entries only a playlist has.
     public ICommand OpenPlaylistActionsCommand { get; }
+    // A playlist row's own download icon: every song in it not yet here.
+    public ICommand DownloadPlaylistCommand { get; }
     public ICommand RenamePlaylistActionTargetCommand { get; }
     public ICommand CommitPlaylistRenameCommand { get; }
     // The pencil in a playlist screen's own header, beside play and shuffle:
@@ -1802,6 +1804,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         _currentPlaylistHeaderKey = default;
         RaiseDetailHeaderChanged();
         RefreshDownloadAllIndicator();
+        RefreshPlaylistDownloads();
     }
 
     public MaterialIconKind EmptyStateIcon => IsShowingSearchPrompt ? MaterialIconKind.Magnify : MaterialIconKind.MusicNoteOff;
@@ -1960,6 +1963,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             TrackAvailability.Apply(SmartPlaylistPreviewRows, Main.PairedServerFingerprint, Main.IsPairedServerReachable);
             ApplyAlbumTileAvailability();
             RefreshDownloadAllIndicator();
+            RefreshPlaylistDownloads();
         },
             h => Main.ReachabilityChanged += h, h => Main.ReachabilityChanged -= h);
         RebuildPlaylistPicker();
@@ -2241,9 +2245,13 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         DownloadAlbumActionTargetCommand = new RelayCommand(async () =>
         {
             var tile = AlbumActionTarget;
+            // Over a playlist, its row's icon is the one on screen to spin.
+            var indicator = PlaylistActionTarget is { Playlist: not null } item
+                ? item.PlaylistDownload
+                : (DownloadIndicatorViewModel?)tile;
             ActiveSheet = MobileSheet.None;
-            if (tile != null)
-                await Main.Downloads.DownloadAlbumAsync(tile, tile.Tracks);
+            if (tile != null && indicator != null)
+                await Main.Downloads.DownloadAlbumAsync(indicator, tile.Tracks);
         });
         // Confirmed first, like a song's Delete. The confirm sheet replaces the
         // menu without passing through None, so AlbumActionTarget is still set
@@ -2381,6 +2389,11 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         DownloadAllVisibleCommand = new RelayCommand(async () =>
             await Main.Downloads.DownloadAlbumAsync(
                 DownloadAllIndicator, Main.Rows.Select(r => r.Track).ToList()));
+        DownloadPlaylistCommand = new RelayCommand<SidebarItem>(async item =>
+        {
+            if (item?.Playlist is { } playlist)
+                await Main.Downloads.DownloadAlbumAsync(item.PlaylistDownload, playlist.Tracks.ToList());
+        });
 
         // The album header's play and shuffle (TrackListScreenView). Both start
         // the album the way tapping one of its rows does - the queue re-anchored
@@ -2516,6 +2529,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         // user is looking at is the one most likely to have just gained one.
         _currentPlaylistHeaderKey = default;
         RaiseDetailHeaderChanged();
+        RefreshPlaylistDownloads();
     }
 
     private void RebuildPlaylistPicker()
@@ -2527,6 +2541,25 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
                 PlaylistPickerItems.Add(item);
         }
         RaiseEmptyStateChanged();
+        RefreshPlaylistDownloads();
+    }
+
+    // Whether each playlist row's download icon has anything to fetch. Every
+    // playlist rather than the filtered few, as with the album tiles. Asked
+    // of the library's own instance of each song: the playlist's may be the
+    // one from before it was downloaded. Not while a row's batch runs, for
+    // the reason RefreshDownloadAllIndicator gives.
+    private void RefreshPlaylistDownloads()
+    {
+        var availability = Main.Availability;
+        var byId = Main.Library.Snapshot.ById;
+        foreach (var item in Main.SidebarItems)
+        {
+            if (item.Playlist is not { } playlist || item.PlaylistDownload.IsDownloading)
+                continue;
+            item.PlaylistDownload.IsDownloadable = playlist.Tracks
+                .Any(t => availability.IsDownloadable(byId.GetValueOrDefault(t.Id) ?? t));
+        }
     }
 
     // Every album tile this view model owns, re-marked in place. Called on

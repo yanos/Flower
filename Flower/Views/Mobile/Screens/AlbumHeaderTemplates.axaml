@@ -86,17 +86,11 @@
       <TextBlock Text="{Binding Artist}"
                  FontSize="16" Opacity="0.7"
                  TextWrapping="Wrap" />
-      <!-- Hidden on an album when Settings says so (ShowAlbumButtons); a
-           playlist keeps it, its pencil being in no menu. Read off the host
-           screen's own IsPlaylistMode rather than the live ViewModel's, like
-           the rows, so a kept-alive screen answers for what it shows. -->
-      <StackPanel Classes="albumActions" Orientation="Horizontal" Spacing="10" Margin="0,12,0,0">
-        <StackPanel.IsVisible>
-          <MultiBinding Converter="{x:Static BoolConverters.Or}">
-            <Binding Path="$parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).ShowAlbumButtons" FallbackValue="True" />
-            <Binding Path="$parent[screens:TrackListScreenView].IsPlaylistMode" FallbackValue="True" />
-          </MultiBinding>
-        </StackPanel.IsVisible>
+      <!-- Hidden when Settings says so (ShowAlbumButtons), on a playlist as
+           on an album: everything in it, a playlist's pencil included, is
+           also in the screen's header menu. -->
+      <StackPanel Classes="albumActions" Orientation="Horizontal" Spacing="10" Margin="0,12,0,0"
+                  IsVisible="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).ShowAlbumButtons, FallbackValue=True}">
         <Border Classes="floating" Width="48" Height="48" CornerRadius="24">
           <Button Classes="pill" Padding="10" HorizontalAlignment="Center" VerticalAlignment="Center"
                   Command="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).PlayAlbumCommand}">
