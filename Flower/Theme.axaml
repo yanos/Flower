@@ -55,6 +55,12 @@
       <Color x:Key="PaletteDivider">#E6DDD8</Color>
       <Color x:Key="PaletteIconInactive">#8C7F7F</Color>
       <Color x:Key="PaletteIconDisabled">#C9BEBE</Color>
+      <!-- The app's frame: every oval and ring (the back and menu buttons,
+           the filter, the mini player, the tab bar, an album's actions) -
+           their rims, their icons and the tab showing - the cards dropped
+           from them, every page's title and the A-Z bar. Black on this almost-white page, where the accent red read
+           as too much; the dark theme keeps the accent. -->
+      <Color x:Key="PaletteChrome">#000000</Color>
 
       <!-- Roles the palette does not name. -->
       <Color x:Key="PaletteOnAccent">#FFFFFF</Color>
@@ -86,6 +92,8 @@
       <Color x:Key="PaletteDivider">#3B2F31</Color>
       <Color x:Key="PaletteIconInactive">#8E7D7F</Color>
       <Color x:Key="PaletteIconDisabled">#5F5053</Color>
+      <!-- See the light theme's: the accent here. -->
+      <StaticResource x:Key="PaletteChrome" ResourceKey="PaletteAccent" />
 
       <!-- Roles the palette does not name. -->
       <Color x:Key="PaletteOnAccent">#FFFFFF</Color>
@@ -145,14 +153,20 @@
        (Button.primary, Styles/IconButtons.axaml). -->
   <SolidColorBrush x:Key="AppAccentHoverBrush" Color="{DynamicResource PaletteAccentHover}" />
   <SolidColorBrush x:Key="AppAccentPressedBrush" Color="{DynamicResource PaletteAccentPressed}" />
-  <!-- The accent at half strength, for the rim of every oval: at full
-       strength a one-pixel ring outshouted the icon inside it. -->
-  <SolidColorBrush x:Key="AppPrimaryBorderBrush" Color="{DynamicResource PaletteAccent}" Opacity="0.5" />
   <SolidColorBrush x:Key="AppAccentSoftBrush" Color="{DynamicResource PaletteAccent}" Opacity="0.2" />
   <!-- The faintest wash of the accent, behind something rather than under a
        finger: a settings row's icon disc, the pairing code's box. -->
   <SolidColorBrush x:Key="AppAccentTintBrush" Color="{DynamicResource PaletteAccent}" Opacity="0.1" />
   <SolidColorBrush x:Key="AppOnPrimaryBrush" Color="{DynamicResource PaletteOnAccent}" />
+
+  <!-- The frame (PaletteChrome): the icons in the floating ovals and rings,
+       the tab showing, every page's title and the A-Z bar; at half strength,
+       the rim of every oval, ring and dropped-down card - at full strength a
+       one-pixel ring outshouted the icon inside it; and the soft pill behind
+       the tab showing. -->
+  <SolidColorBrush x:Key="AppChromeBrush" Color="{DynamicResource PaletteChrome}" />
+  <SolidColorBrush x:Key="AppChromeBorderBrush" Color="{DynamicResource PaletteChrome}" Opacity="0.5" />
+  <SolidColorBrush x:Key="AppChromeSoftBrush" Color="{DynamicResource PaletteChrome}" Opacity="0.2" />
 
   <SolidColorBrush x:Key="AppSuccessBrush" Color="{DynamicResource PaletteSuccess}" />
   <SolidColorBrush x:Key="AppWarningBrush" Color="{DynamicResource PaletteWarning}" />

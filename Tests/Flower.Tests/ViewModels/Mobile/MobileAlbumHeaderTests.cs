@@ -15,11 +15,14 @@ namespace Flower.Tests.ViewModels.Mobile;
 
 // The album page names the artist the songs are by (Track.Artists), not the
 // album artist tag, which is a sorting key and often not the name the artist
-// goes by - and falls back to that tag only where the songs disagree.
+// goes by - and falls back to that tag only where the songs disagree. Its
+// heading carries the album's year in brackets, when a song gives one.
 [Collection("PlatformDataDirectory")]
 public class MobileAlbumHeaderTests : PinnedDataDirectory
 {
-    private static string? HeaderArtistOf(List<Track> tracks)
+    private static string? HeaderArtistOf(List<Track> tracks) => HeaderOf(tracks)?.Artist;
+
+    private static AlbumTileViewModel? HeaderOf(List<Track> tracks)
     {
         using var parts = MainViewModelHarness.BuildMobile(new Library(tracks), new MainPlaylist(tracks));
         parts.Mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
@@ -34,13 +37,33 @@ public class MobileAlbumHeaderTests : PinnedDataDirectory
             using var cts = new CancellationTokenSource(20);
             Dispatcher.UIThread.MainLoop(cts.Token);
         }
-        return parts.Mobile.CurrentAlbumHeader?.Artist;
+        return parts.Mobile.CurrentAlbumHeader;
     }
 
-    private static Track Song(string title, string artists, string? albumArtists = null) => new()
+    private static Track Song(string title, string artists, string? albumArtists = null, string? year = null) => new()
     {
         Title = title, Path = $"/music/{title}.mp3", Album = "Album", Artists = artists, AlbumArtists = albumArtists,
+        Year = year,
     };
+
+    // A reissue's bonus track carries the reissue's year; the album is the
+    // original's.
+    [AvaloniaFact]
+    public void The_heading_carries_the_albums_earliest_year()
+    {
+        Assert.Equal("Album (1975)", HeaderOf(
+        [
+            Song("One", "Mulatu Astatke", year: "1975"),
+            Song("Bonus", "Mulatu Astatke", year: "1998"),
+        ])?.Heading);
+    }
+
+    // An untagged album is not followed by an empty "()".
+    [AvaloniaFact]
+    public void An_album_with_no_year_is_headed_by_its_name_alone()
+    {
+        Assert.Equal("Album", HeaderOf([Song("One", "Mulatu Astatke")])?.Heading);
+    }
 
     [AvaloniaFact]
     public void The_header_names_the_songs_artist_rather_than_the_album_artist()

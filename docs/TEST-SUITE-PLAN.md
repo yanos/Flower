@@ -155,7 +155,12 @@ not a compatibility test.
   - `WindowShortcutTests`, `HomeTileGestureTests`
   - the playlist header's pointer-capture tap
   - the virtualising panels' own arithmetic (`MusicListPanelTests`,
-    `UniformRowPanelTests`)
+    `UniformRowPanelTests`) - until a second pass the same month, which held
+    them to the rule as well: `UniformRowPanelTests` went whole, and
+    `MusicListPanelTests` lost every assertion on where a row is arranged or
+    how large the panel measures (seven tests, and one line of an eighth).
+    What it keeps is which rows are realized, which row a point falls on, and
+    where a drop lands
   - `MakaretuMdnsBackendTests`, `DecoderVersionTests`, `DurationTextTests`
   - both layers of `EndReached` with repeat (integration and unit)
 

@@ -6,7 +6,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
-using Avalonia.VisualTree;
+using Avalonia.Media;
 
 using Flower.Services;
 using Flower.ViewModels;
@@ -186,6 +186,42 @@ public partial class TrackListScreenView : UserControl, ITrackRowHost
         {
             ShowsRowArtist = TrackRowViewModel.ArtistIsWorthShowing(DisplayRows);
         }
+        else if (change.Property == DisplayHeaderProperty)
+        {
+            WatchCover(DisplayHeader);
+        }
+    }
+
+    // An album's page is washed in its cover's colour by the same rule as Now
+    // Playing's sheet (ArtBackdrop.SheetBrush), so the two read as one thing:
+    // with no cover, the theme's pressed accent put through the same
+    // darkening. Follows this screen's own header rather than the live one,
+    // like everything else here, and the header's art, which loads after the
+    // header itself does. Again when the theme changes, the fallback being the
+    // theme's.
+    private AlbumTileViewModel? _cover;
+
+    private void WatchCover(AlbumTileViewModel? header)
+    {
+        if (_cover != null)
+            _cover.PropertyChanged -= Cover_PropertyChanged;
+        _cover = header;
+        if (_cover != null)
+            _cover.PropertyChanged += Cover_PropertyChanged;
+        ApplyCover();
+    }
+
+    private void Cover_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(AlbumTileViewModel.AlbumArt))
+            ApplyCover();
+    }
+
+    private void ApplyCover()
+    {
+        AlbumPage.Background = ArtBackdrop.SheetBrush(ArtBackdrop.DominantColor(_cover?.AlbumArt));
+        BackdropImage.Source = ArtBackdrop.Soft(_cover?.AlbumArt);
+        PublishPage();
     }
 
     private MobileMainViewModel? _observedVm;
@@ -194,7 +230,12 @@ public partial class TrackListScreenView : UserControl, ITrackRowHost
     {
         InitializeComponent();
 
-        AlbumScroll.LayoutUpdated += (_, _) => SizePullMirror();
+        LayoutUpdated += (_, _) =>
+        {
+            SizeBackdrop();
+            PublishPage();
+        };
+        ActualThemeVariantChanged += (_, _) => ApplyCover();
 
         // Drag-to-reorder, for a playlist's tracks - the handle it starts
         // from is only on screen in IsPlaylistMode.
@@ -281,41 +322,85 @@ public partial class TrackListScreenView : UserControl, ITrackRowHost
         ListHeader = _observedVm.CurrentPlaylistHeader;
     }
 
-    // The pull-down mirror (PullMirror in the XAML) is the album header's
-    // backdrop upside down, and meets it without a seam only at exactly the
-    // backdrop's size and place: the cover is drawn cropped to fill, and a
-    // box of any other height crops it differently. So it follows the
-    // backdrop's bounds after each layout. The backdrop is inside the
-    // header's template, found once and again only when that template is
-    // rebuilt.
-    private Border? _backdrop;
-
-    private void SizePullMirror()
+    // The blurred cover (Backdrop in the XAML) is the page's and stays put,
+    // but fades out under the header's words, wherever they wrap to - so it
+    // is as tall as the stacked header stands with nothing scrolled: the
+    // scroller's inset above it, then the header itself. From layout bounds,
+    // which a scroll or a pull does not move.
+    private void SizeBackdrop()
     {
-        if (_backdrop is null || !_backdrop.IsAttachedToVisualTree())
-        {
-            _backdrop = null;
-            foreach (var visual in AlbumScroll.GetVisualDescendants())
-            {
-                if (visual is Border border && border.Classes.Contains("albumBackdrop"))
-                {
-                    _backdrop = border;
-                    break;
-                }
-            }
-        }
+        var height = AlbumContent.Margin.Top + StackedHeader.Bounds.Bottom;
+        if (Backdrop.Height != height)
+            Backdrop.Height = height;
+    }
 
-        if (_backdrop is not { } backdrop || backdrop.TranslatePoint(default, AlbumScroll) is not { } at)
+    // What the page draws, handed to the slot so the buttons over it can be
+    // filled with it (ScreenSlot.PageDrawing): the cover's colour across the
+    // whole of it, and the blurred cover on top as the Backdrop element draws
+    // it - the same picture, placed, faded and dimmed the same way, so the
+    // two cannot drift apart. Rebuilt only when one of the things it is made
+    // of changes, since this runs after every layout pass.
+    private (bool Album, Size Page, Rect Backdrop, IBrush? Sheet, IImage? Cover)? _published;
+
+    private void PublishPage()
+    {
+        var backdrop = Backdrop.IsVisible ? Backdrop.Bounds : default;
+        var made = (IsAlbumMode, AlbumPage.Bounds.Size, backdrop, AlbumPage.Background, BackdropImage.Source);
+        if (_published == made)
             return;
+        _published = made;
+        Flower.Controls.ScreenSlot.SetPageDrawing(this, IsAlbumMode ? PageDrawing(backdrop) : null);
+    }
 
-        var size = backdrop.Bounds.Size;
-        if (PullMirror.Width != size.Width || PullMirror.Height != size.Height)
+    private Drawing? PageDrawing(Rect backdrop)
+    {
+        if (AlbumPage.Background is not { } sheet)
+            return null;
+
+        var page = new DrawingGroup();
+        page.Children.Add(new GeometryDrawing
         {
-            PullMirror.Width = size.Width;
-            PullMirror.Height = size.Height;
+            Geometry = new RectangleGeometry(new Rect(AlbumPage.Bounds.Size)),
+            Brush = sheet,
+        });
+
+        if (BackdropImage.Source is IImageBrushSource cover && backdrop is { Width: > 0, Height: > 0 })
+        {
+            // The dimming on the brush rather than the group: a DrawingGroup
+            // with both an Opacity and an OpacityMask applies the opacity
+            // twice, which drew the cover at a third of its strength.
+            var blurred = new DrawingGroup
+            {
+                OpacityMask = FadeMaskOver(backdrop),
+                ClipGeometry = new RectangleGeometry(backdrop),
+            };
+            blurred.Children.Add(new GeometryDrawing
+            {
+                Geometry = new RectangleGeometry(backdrop),
+                Brush = new ImageBrush(cover) { Stretch = Stretch.UniformToFill, Opacity = BackdropImage.Opacity },
+            });
+            page.Children.Add(blurred);
         }
-        PullMirror.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left;
-        if (PullMirror.Margin.Left != at.X)
-            PullMirror.Margin = new Thickness(at.X, 0, 0, 0);
+
+        return page;
+    }
+
+    // The Backdrop's fade (AppBackdropFadeMask, top to bottom of whatever it
+    // masks), pinned to where the Backdrop is on the page: inside a drawing,
+    // a relative brush would answer to the drawing's bounds instead.
+    private IBrush? FadeMaskOver(Rect backdrop)
+    {
+        if (!this.TryFindResource("AppBackdropFadeMask", ActualThemeVariant, out var found)
+            || found is not LinearGradientBrush fade)
+            return null;
+
+        var pinned = new LinearGradientBrush
+        {
+            StartPoint = new RelativePoint(backdrop.X, backdrop.Top, RelativeUnit.Absolute),
+            EndPoint = new RelativePoint(backdrop.X, backdrop.Bottom, RelativeUnit.Absolute),
+        };
+        foreach (var stop in fade.GradientStops)
+            pinned.GradientStops.Add(new GradientStop(stop.Color, stop.Offset));
+        return pinned;
     }
 }

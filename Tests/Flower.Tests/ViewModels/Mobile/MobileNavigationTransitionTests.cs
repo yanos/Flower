@@ -111,20 +111,17 @@ public class MobileNavigationTransitionTests : PinnedDataDirectory
     }
 
     // The same jump, made from the Now Playing sheet's album art. It is a push
-    // like any other, so the album arrives from the right - and the sheet has
-    // to be shoved off to the LEFT to let it (SlidingSheet.ExitsForward), or
-    // the album is uncovered from the left edge, which is what going back looks
-    // like. The drill-in has to land first, too: the sheet is opaque and
+    // like any other, so the album arrives from the right, under the sheet as
+    // it slides down. The drill-in has to land first: the sheet is opaque and
     // full-screen, so an entrance that started before it began leaving would
     // spend its whole length hidden behind it.
     [AvaloniaFact]
-    public void The_album_art_pushes_the_now_playing_sheet_off_to_the_left()
+    public void The_album_art_pushes_the_album_and_then_lets_the_sheet_go()
     {
         using var scope = Build();
         scope.Parts.PlaylistControl.Play(scope.Parts.Library.Tracks[0]);
         scope.Mobile.OpenNowPlayingCommand.Execute(null);
         Assert.True(scope.Mobile.IsShowingNowPlaying);
-        Assert.False(scope.Mobile.NowPlayingExitsForward);
 
         bool? sheetStillUpWhenTheAlbumLanded = null;
         scope.Mobile.NavigationChanged += (_, _) => sheetStillUpWhenTheAlbumLanded ??= scope.Mobile.IsShowingNowPlaying;
@@ -134,7 +131,6 @@ public class MobileNavigationTransitionTests : PinnedDataDirectory
 
         Assert.True(sheetStillUpWhenTheAlbumLanded);
         Assert.False(scope.Mobile.IsShowingNowPlaying);
-        Assert.True(scope.Mobile.NowPlayingExitsForward);
         Assert.Equal(MobileNavigationTransition.FromRight, scope.Mobile.ConsumePendingTransition());
     }
 
@@ -164,15 +160,13 @@ public class MobileNavigationTransitionTests : PinnedDataDirectory
         Assert.False(scope.Mobile.IsShowingNowPlaying);
         Assert.Equal(0, navigations);
         Assert.Equal(MobileNavigationTransition.None, scope.Mobile.ConsumePendingTransition());
-        // An ordinary dismissal, so the sheet retreats the way it came.
-        Assert.False(scope.Mobile.NowPlayingExitsForward);
     }
 
     // The tab oval stays up over Now Playing, so a tab tapped there leaves the
-    // sheet. Another tab is a tab switch that carries the sheet off with it,
-    // the way the album art's drill-in does: out to the left ahead of a tab
-    // arriving from the right. Back returns to the tab the sheet was raised
-    // over, without the sheet - it is an overlay, not a step in the history.
+    // sheet. Another tab is a tab switch as well, the way the album art's
+    // drill-in is: the tab arrives from the right as the sheet slides down.
+    // Back returns to the tab the sheet was raised over, without the sheet -
+    // it is an overlay, not a step in the history.
     [AvaloniaFact]
     public void A_tab_tapped_over_now_playing_switches_to_it_and_takes_the_sheet_away()
     {
@@ -186,7 +180,6 @@ public class MobileNavigationTransitionTests : PinnedDataDirectory
 
         Assert.Equal(MobileTab.Albums, scope.Mobile.SelectedTab);
         Assert.False(scope.Mobile.IsShowingNowPlaying);
-        Assert.True(scope.Mobile.NowPlayingExitsForward);
         Assert.Equal(MobileNavigationTransition.FromRight, scope.Mobile.ConsumePendingTransition());
 
         scope.Mobile.BackCommand.Execute(null);
@@ -214,25 +207,6 @@ public class MobileNavigationTransitionTests : PinnedDataDirectory
 
         Assert.False(scope.Mobile.IsShowingNowPlaying);
         Assert.Equal(0, navigations);
-        Assert.False(scope.Mobile.NowPlayingExitsForward);
-    }
-
-    // One forward exit must not colour the next ordinary dismissal - reopening
-    // the sheet puts it back to leaving by the edge it arrived from.
-    [AvaloniaFact]
-    public void Reopening_now_playing_restores_the_ordinary_dismissal()
-    {
-        using var scope = Build();
-        scope.Parts.PlaylistControl.Play(scope.Parts.Library.Tracks[0]);
-        scope.Mobile.OpenNowPlayingCommand.Execute(null);
-        scope.Mobile.GoToCurrentlyPlayingAlbumCommand.Execute(null);
-        MainViewModelHarness.WaitForTheDrillIn(scope.Mobile, "Album 0");
-        Assert.True(scope.Mobile.NowPlayingExitsForward);
-
-        scope.Mobile.OpenNowPlayingCommand.Execute(null);
-
-        Assert.True(scope.Mobile.IsShowingNowPlaying);
-        Assert.False(scope.Mobile.NowPlayingExitsForward);
     }
 
     // Now Playing is an overlay, not a step in the history: its album art

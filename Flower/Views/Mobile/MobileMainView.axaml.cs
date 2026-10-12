@@ -24,7 +24,11 @@ public partial class MobileMainView : UserControl
     {
         InitializeComponent();
         LayOutTabs();
-        ScreenStack.Settled += (_, _) => EmptyStateHost.IsVisible = true;
+        ScreenStack.Settled += (_, _) =>
+        {
+            EmptyStateHost.IsVisible = true;
+            FillBottomChrome();
+        };
         ScreenStack.Moving += (_, _) => EmptyStateHost.IsVisible = false;
 
         // handledEventsToo: the screens' swipe gesture takes the press for
@@ -34,15 +38,17 @@ public partial class MobileMainView : UserControl
         AddHandler(PointerPressedEvent, CloseEmptyFilterOnPressElsewhere, RoutingStrategies.Tunnel, handledEventsToo: true);
 
         MiniPlayerHost.RenderTransform = _miniPlayerTransform;
+        BottomChrome.LayoutUpdated += (_, _) => FillBottomChrome();
         NowPlayingSheet.PropertyChanged += (_, e) =>
         {
             if (e.Property == SlidingSheet.IsOpenProperty)
             {
                 TuckMiniPlayer(NowPlayingSheet.IsOpen);
-                // Over Now Playing, which is always washed in a colour, the
-                // tab oval lets that colour through and draws everything on
-                // it white (the .onArt styles in the XAML).
-                TabBar.Classes.Set("onArt", NowPlayingSheet.IsOpen);
+                UpdateTabBarOnArt();
+            }
+            else if (e.Property == IsVisibleProperty)
+            {
+                FillBottomChrome();
             }
         };
 
@@ -232,7 +238,6 @@ public partial class MobileMainView : UserControl
     {
         var top = _statusBarHeight + ScreenSlot.HeaderHeight + ScreenSlot.ContentGap;
         Resources["ScreenScrollInset"] = new Thickness(0, top, 0, _bottomChromeHeight + BottomChromeClearance);
-        Resources["ScreenBackdropBleed"] = new Thickness(0, -top, 0, 0);
     }
 
     // The Now Playing sheet runs under the tab oval, so its content stops this
@@ -342,13 +347,60 @@ public partial class MobileMainView : UserControl
         if (_tabsSource != null)
             _tabsSource.PropertyChanged += TabsSource_PropertyChanged;
         LayOutTabs();
+        UpdateTabBarOnArt();
     }
 
     private void TabsSource_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(MobileMainViewModel.VisibleTabs) or nameof(MobileMainViewModel.ShowTabLabels))
             LayOutTabs();
+        else if (e.PropertyName == nameof(MobileMainViewModel.IsShowingAlbumTrackList))
+            UpdateTabBarOnArt();
     }
+
+    // Over Now Playing, and over an album's page, both always washed in a
+    // cover's colour, the tab oval lets that colour through and draws
+    // everything on it white (the .onArt styles in the XAML) - and so does
+    // the mini player over an album, Now Playing being where it tucks away.
+    private void UpdateTabBarOnArt()
+    {
+        var onAlbum = _tabsSource?.IsShowingAlbumTrackList == true;
+        TabBar.Classes.Set("onArt", NowPlayingSheet.IsOpen || onAlbum);
+        MiniPlayerHost.Classes.Set("onArt", onAlbum);
+        FillBottomChrome();
+    }
+
+    static MobileMainView()
+    {
+        // A screen's page drawing is rebuilt as its cover loads and as it is
+        // laid out, neither of which is a layout pass of the ovals'.
+        ScreenSlot.PageDrawingProperty.Changed.AddClassHandler<Control>((screen, _) =>
+            screen.FindAncestorOfType<MobileMainView>()?.FillBottomChrome());
+    }
+
+    // The mini player and the tab oval over an album's page are filled with
+    // the page, the way its header's buttons are (ScreenSlot.FillWithPage):
+    // the patch of it each one covers. Placed against the screen stack
+    // rather than the screen, which is the same place at rest and stays put
+    // while a screen slides; and with the mini player where it rests, not
+    // where its tuck has it, so a fill worked out mid-slide is still right
+    // once the slide ends. Over Now Playing, nothing: that sheet's colour
+    // shows straight through the tab oval, and the mini player is tucked.
+    // For as long as the sheet is on screen at all, its closing slide
+    // included - filled the moment it starts to close, the oval would show
+    // the album's colours over the sheet's for the length of the slide.
+    private void FillBottomChrome()
+    {
+        var screen = NowPlayingSheet.IsVisible ? null : ScreenStack.LiveScreen;
+        var page = screen is null ? null : ScreenSlot.GetPageDrawing(screen);
+        ScreenSlot.FillWithPage(TabOval, page, PatchUnder(TabOval, page, 0));
+        ScreenSlot.FillWithPage(MiniPlayerOval, page, PatchUnder(MiniPlayerOval, page, _miniPlayerTransform.Y));
+    }
+
+    private Rect? PatchUnder(Border oval, Drawing? page, double slidBy) =>
+        page is not null && oval.IsEffectivelyVisible && oval.TranslatePoint(default, ScreenStack) is { } at
+            ? new Rect(at.WithY(at.Y - slidBy), oval.Bounds.Size)
+            : null;
 
     private void LayOutTabs()
     {

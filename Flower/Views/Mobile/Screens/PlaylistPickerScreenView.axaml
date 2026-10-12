@@ -105,7 +105,7 @@
                         BorderThickness="0"
                         Padding="2,4"
                         VerticalAlignment="Center">
-                  <materialIcons:MaterialIcon Kind="DotsVertical" Width="24" Height="24" Opacity="0.6" />
+                  <materialIcons:MaterialIcon Classes="chrome" Kind="DotsVertical" Width="24" Height="24" Opacity="0.6" />
                 </Button>
               </Grid>
             </Button>

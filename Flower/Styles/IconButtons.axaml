@@ -13,13 +13,14 @@
   <!-- A pill round at both ends, and a circle when it is 40 wide. Every oval on
        the phone is one - the back button, search and the menu, an album's
        actions, the mini player and the tab bar - and each is ringed by a
-       single pixel of the primary red at half strength. -->
+       single pixel of the frame's colour (PaletteChrome, Theme.axaml) at half
+       strength. The icon in each is that colour too (App.axaml). -->
   <Style Selector="Border.floating">
     <Setter Property="Height" Value="40" />
     <Setter Property="CornerRadius" Value="20" />
     <Setter Property="VerticalAlignment" Value="Center" />
     <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundChromeMediumBrush}" />
-    <Setter Property="BorderBrush" Value="{DynamicResource AppPrimaryBorderBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource AppChromeBorderBrush}" />
     <Setter Property="BorderThickness" Value="1" />
     <!-- Just enough to lift the circle off the page: a darker or wider one
          read as a halo round every button. -->
@@ -76,7 +77,7 @@
   <Style Selector="Button.pill.circle Border.ring">
     <Setter Property="CornerRadius" Value="9999" />
     <Setter Property="BorderThickness" Value="1" />
-    <Setter Property="BorderBrush" Value="{DynamicResource AppPrimaryBorderBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource AppChromeBorderBrush}" />
     <Setter Property="Padding" Value="3.5" />
   </Style>
 

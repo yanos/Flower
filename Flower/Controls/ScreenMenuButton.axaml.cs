@@ -36,6 +36,12 @@ public partial class ScreenMenuButton : UserControl
     /// </summary>
     public Func<IReadOnlyList<ScreenMenuSection>>? Sections { get; set; }
 
+    /// <summary>
+    /// The circle the button is drawn in - which ScreenSlot fills with the
+    /// page under it over an album (ScreenSlot.FillPills).
+    /// </summary>
+    public Border Pill => MenuPill;
+
     public ScreenMenuButton()
     {
         InitializeComponent();
@@ -56,7 +62,7 @@ public partial class ScreenMenuButton : UserControl
                 {
                     Height = 1,
                     Margin = new Thickness(0, 4),
-                    [!Border.BackgroundProperty] = new DynamicResourceExtension("AppPrimaryBorderBrush"),
+                    [!Border.BackgroundProperty] = new DynamicResourceExtension("AppChromeBorderBrush"),
                 });
             }
             first = false;
@@ -191,7 +197,7 @@ public partial class ScreenMenuButton : UserControl
                 Width = 20,
                 Height = 20,
                 VerticalAlignment = VerticalAlignment.Center,
-                [!MaterialIcon.ForegroundProperty] = new DynamicResourceExtension("AppAccentBrush"),
+                [!MaterialIcon.ForegroundProperty] = new DynamicResourceExtension("AppChromeBrush"),
             };
             Grid.SetColumn(arrow, 2);
             row.Children.Add(arrow);

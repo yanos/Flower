@@ -59,8 +59,10 @@
     <Style Selector="layout|NowPlayingBodyPanel :is(Button):pressed materialIcons|MaterialIcon">
       <Setter Property="Foreground" Value="{DynamicResource AppOnArtRingBrush}" />
     </Style>
+    <!-- The ring round play is white like the rims of the round buttons at
+         the top, not the dimmer white a pressed icon turns. -->
     <Style Selector="Button.pill.circle Border.ring">
-      <Setter Property="BorderBrush" Value="{DynamicResource AppOnArtRingBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppOnArtBrush}" />
     </Style>
 
     <!-- The back and menu circles at the top: no fill, so the sheet's colour

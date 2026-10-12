@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:Flower.Controls"
              xmlns:vm="using:Flower.ViewModels"
+             xmlns:conv="clr-namespace:Flower.Converters"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -24,9 +25,115 @@
     <Style Selector="Border.rowButton > Button.pill">
       <Setter Property="Padding" Value="7" />
     </Style>
+    <!-- A count as a plain number box, typed into like the name box above it.
+         Fluent's spinner hangs a pair of 34-wide arrow buttons off the box,
+         each drawing its own border inside the box's, and on a phone they are
+         a target too small to hit and took most of the box from the number.
+         The wheel and the arrow keys still step it on a desktop. -->
+    <Style Selector="NumericUpDown">
+      <Setter Property="ShowButtonSpinner" Value="False" />
+      <Setter Property="Width" Value="80" />
+    </Style>
   </UserControl.Styles>
 
   <UserControl.Resources>
+    <!-- A date as a field that reads like the combo boxes beside it: the date
+         as one line of text from the left edge, and the combo's chevron at the
+         right, opening the same picker Fluent's DatePicker does. Fluent's own
+         face is three fixed columns - day, month, year centred in each - with
+         a 296-wide floor, which on a phone ran under the -/+ buttons and cut
+         the year off, and left the date in pieces across the box even where
+         it fitted. The three PART_ text blocks stay, hidden, because
+         DatePicker writes into them and has nowhere else to. -->
+    <ControlTheme x:Key="DateFieldButton" TargetType="Button">
+      <Setter Property="Template">
+        <ControlTemplate>
+          <ContentPresenter Name="PART_ContentPresenter"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="{TemplateBinding CornerRadius}"
+                            Content="{TemplateBinding Content}"
+                            Foreground="{TemplateBinding Foreground}"
+                            HorizontalContentAlignment="Stretch"
+                            VerticalContentAlignment="Stretch"/>
+        </ControlTemplate>
+      </Setter>
+      <Style Selector="^:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource ComboBoxBackgroundPointerOver}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource ComboBoxBorderBrushPointerOver}"/>
+      </Style>
+      <Style Selector="^:pressed /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource ComboBoxBackgroundPressed}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource ComboBoxBorderBrushPressed}"/>
+      </Style>
+      <Style Selector="^:disabled /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource ComboBoxBackgroundDisabled}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource ComboBoxBorderBrushDisabled}"/>
+        <Setter Property="Foreground" Value="{DynamicResource ComboBoxForegroundDisabled}"/>
+      </Style>
+    </ControlTheme>
+
+    <ControlTheme x:Key="DateField" TargetType="DatePicker">
+      <Setter Property="Foreground" Value="{DynamicResource ComboBoxForeground}"/>
+      <Setter Property="Background" Value="{DynamicResource ComboBoxBackground}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource ComboBoxBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="{DynamicResource ComboBoxBorderThemeThickness}"/>
+      <Setter Property="CornerRadius" Value="{DynamicResource ControlCornerRadius}"/>
+      <Setter Property="MinHeight" Value="{DynamicResource ComboBoxMinHeight}"/>
+      <Setter Property="Padding" Value="{DynamicResource ComboBoxPadding}"/>
+      <Setter Property="HorizontalAlignment" Value="Left"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+      <Setter Property="Template">
+        <ControlTemplate>
+          <DataValidationErrors>
+            <Grid>
+              <Button Name="PART_FlyoutButton"
+                      Theme="{StaticResource DateFieldButton}"
+                      Foreground="{TemplateBinding Foreground}"
+                      Background="{TemplateBinding Background}"
+                      BorderBrush="{TemplateBinding BorderBrush}"
+                      BorderThickness="{TemplateBinding BorderThickness}"
+                      CornerRadius="{TemplateBinding CornerRadius}"
+                      MinHeight="{TemplateBinding MinHeight}"
+                      IsEnabled="{TemplateBinding IsEnabled}"
+                      HorizontalAlignment="Stretch"
+                      VerticalAlignment="Stretch"
+                      TemplatedControl.IsTemplateFocusTarget="True">
+                <Grid ColumnDefinitions="*,32">
+                  <TextBlock Grid.Column="0"
+                             Text="{TemplateBinding SelectedDate, Converter={x:Static conv:DateFieldTextConverter.Instance}}"
+                             Margin="{TemplateBinding Padding}"
+                             VerticalAlignment="Center"/>
+                  <PathIcon Grid.Column="1"
+                            Width="12" Height="12" Margin="0,0,10,0"
+                            HorizontalAlignment="Right" VerticalAlignment="Center"
+                            UseLayoutRounding="False" IsHitTestVisible="False"
+                            Foreground="{DynamicResource ComboBoxDropDownGlyphForeground}"
+                            Data="M1939 486L2029 576L1024 1581L19 576L109 486L1024 1401L1939 486Z"/>
+                  <Panel IsVisible="False">
+                    <TextBlock Name="PART_DayTextBlock"/>
+                    <TextBlock Name="PART_MonthTextBlock"/>
+                    <TextBlock Name="PART_YearTextBlock"/>
+                  </Panel>
+                </Grid>
+              </Button>
+              <Popup Name="PART_Popup"
+                     WindowManagerAddShadowHint="False"
+                     IsLightDismissEnabled="True"
+                     PlacementTarget="{TemplateBinding}"
+                     Placement="Bottom">
+                <DatePickerPresenter Name="PART_PickerPresenter"/>
+              </Popup>
+            </Grid>
+          </DataValidationErrors>
+        </ControlTemplate>
+      </Setter>
+      <Style Selector="^:error /template/ Button#PART_FlyoutButton">
+        <Setter Property="BorderBrush" Value="{DynamicResource SystemControlErrorTextForegroundBrush}"/>
+      </Style>
+    </ControlTheme>
+
     <!-- Every value control lives in the same cell and only the ones matching
          the current field/operator pairing are visible - see
          SmartConditionRowViewModel's Show* properties. A typed value takes the
@@ -56,20 +163,22 @@
 
         <WrapPanel Orientation="Horizontal" ItemSpacing="6" LineSpacing="6"
                    IsVisible="{Binding ShowWrappedValues}">
-          <DatePicker SelectedDate="{Binding DateValue, Mode=TwoWay}"
+          <DatePicker Theme="{StaticResource DateField}"
+                      SelectedDate="{Binding DateValue, Mode=TwoWay}"
                       IsVisible="{Binding ShowDateBox}"
                       VerticalAlignment="Center"/>
 
           <TextBlock Text="and" IsVisible="{Binding ShowSecondDateBox}"
                      VerticalAlignment="Center" Opacity="0.75"/>
 
-          <DatePicker SelectedDate="{Binding SecondDateValue, Mode=TwoWay}"
+          <DatePicker Theme="{StaticResource DateField}"
+                      SelectedDate="{Binding SecondDateValue, Mode=TwoWay}"
                       IsVisible="{Binding ShowSecondDateBox}"
                       VerticalAlignment="Center"/>
 
           <NumericUpDown Value="{Binding RelativeAmount, Mode=TwoWay}"
                          Minimum="1" Maximum="100000" Increment="1"
-                         FormatString="0" Width="110"
+                         FormatString="0"
                          IsVisible="{Binding ShowRelative}"
                          VerticalAlignment="Center"/>
 
@@ -193,7 +302,7 @@
         <NumericUpDown Value="{Binding LimitAmount, Mode=TwoWay}"
                        IsEnabled="{Binding LimitEnabled}"
                        Minimum="1" Maximum="100000" Increment="1"
-                       FormatString="0" Width="110" VerticalAlignment="Center"/>
+                       FormatString="0" VerticalAlignment="Center"/>
         <ComboBox ItemsSource="{Binding LimitUnits}"
                   SelectedItem="{Binding LimitUnit, Mode=TwoWay}"
                   IsEnabled="{Binding LimitEnabled}"

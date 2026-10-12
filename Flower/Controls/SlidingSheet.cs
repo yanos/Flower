@@ -77,33 +77,15 @@ public sealed class SlidingSheet : ContentControl
         set => SetValue(EntranceProperty, value);
     }
 
-    // A sheet normally leaves by the edge it arrived from: that is the reverse
-    // of the gesture that opened it, and reads as going back. But some
-    // dismissals are themselves forward navigations - Now Playing's album art
-    // pushes that album onto the history - and there the sheet has to leave by
-    // the opposite edge, so it and the screen arriving from the right travel
-    // together as one push. Leaving rightwards instead uncovers the incoming
-    // screen from its left edge, which is exactly what going back looks like.
-    public static readonly StyledProperty<bool> ExitsForwardProperty =
-        AvaloniaProperty.Register<SlidingSheet, bool>(nameof(ExitsForward));
-
-    public bool ExitsForward
-    {
-        get => GetValue(ExitsForwardProperty);
-        set => SetValue(ExitsForwardProperty, value);
-    }
-
-    // What a rightward swipe on a full-bleed pushed sheet runs - the same
-    // command its arrow does (CloseSheetCommand, for both Settings and Now
-    // Playing, whose arrow points down since it is an overlay rather than a
-    // step in the history). A sheet that arrives from the right and is dismissed with
-    // a back arrow is a pushed screen as far as the user is concerned, and
-    // every other pushed screen goes back to the finger as well as to the
-    // arrow - see ScreenStackPanel, which owns the identical gesture for the
-    // screens underneath these sheets. Left unset, the sheet does not respond
-    // to the gesture at all, which is the right answer for the ones that rise
-    // from the bottom with a ChevronDown: their dismissal is downwards, not
-    // backwards.
+    // What a swipe back the way a full-bleed sheet came in runs - the same
+    // command its arrow does (CloseSheetCommand). Settings arrives from the
+    // right with a back arrow, a pushed screen as far as the user is
+    // concerned, so it goes back to a rightward swipe the way every screen
+    // underneath it does (ScreenStackPanel owns that identical gesture). Now
+    // Playing rises from the bottom with a down arrow, an overlay, so it goes
+    // down to a downward swipe. Left unset, the sheet does not respond to the
+    // gesture at all, which is the right answer for the cards: what slides
+    // there is the card, not this control.
     public static readonly StyledProperty<ICommand?> DismissCommandProperty =
         AvaloniaProperty.Register<SlidingSheet, ICommand?>(nameof(DismissCommand));
 
@@ -291,13 +273,8 @@ public sealed class SlidingSheet : ContentControl
                 IsVisible = false;
                 return;
             }
-            // Only the full-bleed sheets have a forward exit - a card over a
-            // dimmed backdrop is raised over the screen you were reading, not
-            // a screen you can push past, so its slide-out below is always the
-            // reverse of its entrance.
-            var target = ExitsForward ? -distance : distance;
             var from = GetOffset(_sheetTransform);
-            Ease(p => SetOffset(_sheetTransform, from + (target - from) * p), () => IsVisible = false);
+            Ease(p => SetOffset(_sheetTransform, from + (distance - from) * p), () => IsVisible = false);
             return;
         }
 
@@ -420,13 +397,13 @@ public sealed class SlidingSheet : ContentControl
 
     // ── Swipe to dismiss ──────────────────────────────────────────────────
     //
-    // A full-bleed sheet that arrived from the right is a pushed screen with a
-    // back arrow, so it goes back to a rightward swipe as well - the same
-    // gesture, thresholds and easing ScreenStackPanel gives the screens
-    // underneath it, written again here rather than shared because the two move
-    // different things: that panel drags one of three live slots and commits by
-    // navigating, this drags the sheet itself and commits by running the
-    // command its own back arrow runs.
+    // A full-bleed sheet goes back to a swipe the way it came in - rightward
+    // for one that arrived from the right, downward for one that rose from the
+    // bottom - with the same thresholds and easing ScreenStackPanel gives the
+    // screens underneath, written again here rather than shared because the two
+    // move different things: that panel drags one of three live slots and
+    // commits by navigating, this drags the sheet itself and commits by running
+    // the command its own arrow runs.
     //
     // The commit deliberately does no animating of its own. Executing
     // DismissCommand puts ActiveSheet back to None, which lands on IsOpen and
@@ -436,11 +413,19 @@ public sealed class SlidingSheet : ContentControl
     private const double DirectionRatio = 1.5;
     private const double SwipeThreshold = 60.0;
 
-    // Card sheets are excluded because their dismissal is downwards over a
-    // dimmed backdrop, and because the thing that slides is the card rather
-    // than this control - a rightward drag would move the backdrop with it.
+    // Card sheets are excluded because the thing that slides there is the
+    // card rather than this control - a drag would move the dimmed backdrop
+    // with it.
     private bool CanSwipeToDismiss =>
-        IsOpen && Entrance == SheetEntrance.FromRight && DismissCommand != null && FindCard() == null;
+        IsOpen && DismissCommand != null && FindCard() == null;
+
+    // The finger's travel along the way the sheet leaves, and across it.
+    private (double Along, double Across) Travel(Point start, Point current)
+    {
+        var dx = current.X - start.X;
+        var dy = current.Y - start.Y;
+        return Entrance == SheetEntrance.FromRight ? (dx, dy) : (dy, dx);
+    }
 
     private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
     {
@@ -454,10 +439,10 @@ public sealed class SlidingSheet : ContentControl
             : null;
     }
 
-    // Now Playing's seek bar is dragged horizontally, on purpose, right across
-    // the middle of the sheet - and a slider that has to be scrubbed without
-    // dismissing the screen underneath is not an edge case there, it is the
-    // control the user reaches for most. So a gesture that starts on any
+    // Now Playing's seek bar is dragged, on purpose, right across the middle of
+    // the sheet - and a slider that has to be scrubbed without dismissing the
+    // sheet is not an edge case there, it is the control the user reaches for
+    // most, and a scrub wanders up and down as it goes. So a gesture that starts on any
     // range control (the seek bar, a scrollbar thumb) is that control's, and
     // this never looks at it again. So is one that starts on a row's drag
     // handle (.dragHandle): the Navigation Bar page's rows are dragged by it,
@@ -486,20 +471,19 @@ public sealed class SlidingSheet : ContentControl
         if (_swipeStart is not { } start)
             return;
 
-        var current = FingerPosition(e);
-        var dx = current.X - start.X;
-        var dy = current.Y - start.Y;
+        var (along, across) = Travel(start, FingerPosition(e));
 
         if (!_capturedForSwipe)
         {
-            if (Math.Abs(dx) < EarlyCommitThreshold && Math.Abs(dy) < EarlyCommitThreshold)
+            if (Math.Abs(along) < EarlyCommitThreshold && Math.Abs(across) < EarlyCommitThreshold)
                 return;
 
-            // Anything vertical or ambiguous is an ordinary scroll (Settings is
-            // one long scrolling list), and a leftward drag is nothing at all -
-            // there is no forward from a sheet. Both abandon tracking without
-            // capturing, so whatever is underneath keeps handling the pointer.
-            if (dx <= 0 || Math.Abs(dx) <= Math.Abs(dy) * DirectionRatio)
+            // Anything across the way out or ambiguous is the content's own
+            // (Settings is one long scrolling list), and a drag the other way -
+            // left, or up - is nothing at all: there is nowhere further in for
+            // a sheet to go. Both abandon tracking without capturing, so
+            // whatever is underneath keeps handling the pointer.
+            if (along <= 0 || Math.Abs(along) <= Math.Abs(across) * DirectionRatio)
             {
                 _swipeStart = null;
                 return;
@@ -512,8 +496,8 @@ public sealed class SlidingSheet : ContentControl
         }
 
         // Clamped so the drag only ever uncovers what is behind the sheet, never
-        // pulls it past its own width, and never travels left of home.
-        SetOffset(_sheetTransform, Math.Clamp(dx, 0, Math.Max(1, SlideDistance)));
+        // pulls it past its own size, and never travels back past home.
+        SetOffset(_sheetTransform, Math.Clamp(along, 0, Math.Max(1, SlideDistance)));
         e.Handled = true;
     }
 
@@ -532,8 +516,8 @@ public sealed class SlidingSheet : ContentControl
 
         e.Handled = true;
 
-        var dx = FingerPosition(e).X - start.X;
-        if (dx > SwipeThreshold && DismissCommand is { } dismiss && dismiss.CanExecute(null))
+        var (along, _) = Travel(start, FingerPosition(e));
+        if (along > SwipeThreshold && DismissCommand is { } dismiss && dismiss.CanExecute(null))
         {
             dismiss.Execute(null);
 

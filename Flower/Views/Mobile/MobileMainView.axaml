@@ -33,11 +33,6 @@
            bar, the header band, and the fade below them. Replaced from the
            code-behind with the safe area. -->
       <x:Double x:Key="HeaderBlurHeight">76</x:Double>
-      <!-- ScreenScrollInset's top, pulled the other way: how far above its
-           own top a screen's header backdrop reaches to start at the very top
-           of the screen (AlbumHeaderTemplate). Kept in step from the
-           code-behind. -->
-      <Thickness x:Key="ScreenBackdropBleed">0,-64,0,0</Thickness>
       <Thickness x:Key="ScreenStackBleed">0,0,0,0</Thickness>
       <!-- The tab oval's height and bottom margin, which the Now Playing
            sheet keeps its content clear of - replaced from the code-behind. -->
@@ -154,9 +149,9 @@
     </Style>
     <!-- The tabs not showing are grey rather than dimmed: dimming left their
          icons a faded red that still read as lit. The muted grey rather than
-         the disabled one, which is paler: these are tabs you can press. The one showing keeps the
-         primary red every icon is drawn in, and its label and the Songs note
-         follow it. -->
+         the disabled one, which is paler: these are tabs you can press. The one showing is drawn
+         in the frame's colour (AppChromeBrush, below), and its label and the
+         Songs note follow it. -->
     <!-- Seven tabs are narrower columns than six can have (MobileTabs.MaxShown):
          at 375 the oval gives each about 47px. So with all seven in the bar
          (.compact, set by LayOutTabs) each tab comes down to 45, and the
@@ -203,20 +198,33 @@
     <Style Selector="Button.tab.compact.iconsOnly :is(Control).tabIcon">
       <Setter Property="RenderTransform" Value="scale(1.15)" />
     </Style>
+    <!-- The tab showing - its icon, its name and the Songs note - in the
+         frame's colour (AppChromeBrush), black on the light page and the
+         accent on the dark one, as are the rims of both ovals here
+         (Border.floating) and the mini player's buttons. -->
     <Style Selector="Button.tab Path">
-      <Setter Property="Fill" Value="{DynamicResource AppPrimaryBrush}" />
+      <Setter Property="Fill" Value="{DynamicResource AppChromeBrush}" />
+    </Style>
+    <Style Selector="Button.tab.current materialIcons|MaterialIcon">
+      <Setter Property="Foreground" Value="{DynamicResource AppChromeBrush}" />
     </Style>
     <Style Selector="Button.tab.current TextBlock">
-      <Setter Property="Foreground" Value="{DynamicResource AppPrimaryBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource AppChromeBrush}" />
     </Style>
-    <!-- The soft pill behind the tab showing: the accent, faint, as the
+    <Style Selector="Border#MiniPlayerOval Button.pill materialIcons|MaterialIcon">
+      <Setter Property="Foreground" Value="{DynamicResource AppChromeBrush}" />
+    </Style>
+    <Style Selector="Border#MiniPlayerOval Button.pill:pressed materialIcons|MaterialIcon">
+      <Setter Property="Foreground" Value="{DynamicResource AppAccentPressedBrush}" />
+    </Style>
+    <!-- The soft pill behind the tab showing: the frame's colour, faint, as the
          button's own Background, which Fluent's template paints at rest and
          replaces with its pressed tint (Theme.axaml) while the tab is held.
          Not a style on the template's presenter: one there outranked the
          tap-to-dismiss check's view of the press (DismissKeyboardOnEmptyTap)
          and a tap on the Search tab put the search box down. -->
     <Style Selector="Button.tab.current">
-      <Setter Property="Background" Value="{DynamicResource AppAccentSoftBrush}" />
+      <Setter Property="Background" Value="{DynamicResource AppChromeSoftBrush}" />
     </Style>
     <Style Selector="Button.tab:not(.current) materialIcons|MaterialIcon">
       <Setter Property="Foreground" Value="{DynamicResource AppTextMutedBrush}" />
@@ -238,15 +246,18 @@
     <Style Selector="Button.tab:pressed Path">
       <Setter Property="Fill" Value="{DynamicResource AppAccentPressedBrush}" />
     </Style>
-    <!-- Over Now Playing, which is always washed in a colour (.onArt, set in
-         the code-behind while that sheet is open): the oval has no fill, so
-         the sheet shows through it as it does through the round buttons at
-         its top, and is ringed in white, with every icon and name white. The
-         tab showing keeps its pill, in white, faint - the accent's would not
-         read on the sheet's colour, and white icons alone leave nothing to
-         say which tab is under the sheet. Pressed, the white dims, as on the
-         sheet. After the resting and pressed colours above, so these win over
-         both. -->
+    <!-- Over Now Playing, or an album's page, each always washed in a
+         cover's colour (.onArt, set in the code-behind while either is
+         showing): the oval lets the colour through, and is ringed in white,
+         with every icon and name white. Over Now Playing it simply has no
+         fill; over an album it is filled with the page itself, exactly what
+         the page draws where the oval sits, so it looks the same while the
+         songs scrolling under it stay hidden (FillBottomChrome in the
+         code-behind, which outranks the Transparent here). The tab showing
+         keeps its pill, in white, faint - the accent's would not read on the
+         sheet's colour, and white icons alone leave nothing to say which tab
+         is under the sheet. Pressed, the white dims, as on the sheet. After
+         the resting and pressed colours above, so these win over both. -->
     <Style Selector="Grid#TabBar.onArt Border#TabOval">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderBrush" Value="{DynamicResource AppOnArtBrush}" />
@@ -273,6 +284,22 @@
     </Style>
     <Style Selector="Grid#TabBar.onArt Button.tab:pressed Path">
       <Setter Property="Fill" Value="{DynamicResource AppOnArtRingBrush}" />
+    </Style>
+    <!-- The mini player over an album's page, the same way: filled with the
+         page under it (FillBottomChrome), ringed and drawn in white, dimming
+         while pressed. Not over Now Playing, which it tucks away under. -->
+    <Style Selector="Grid#MiniPlayerHost.onArt Border#MiniPlayerOval">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppOnArtBrush}" />
+    </Style>
+    <Style Selector="Grid#MiniPlayerHost.onArt TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource AppOnArtBrush}" />
+    </Style>
+    <Style Selector="Grid#MiniPlayerHost.onArt Button.pill materialIcons|MaterialIcon">
+      <Setter Property="Foreground" Value="{DynamicResource AppOnArtBrush}" />
+    </Style>
+    <Style Selector="Grid#MiniPlayerHost.onArt Button.pill:pressed materialIcons|MaterialIcon">
+      <Setter Property="Foreground" Value="{DynamicResource AppOnArtRingBrush}" />
     </Style>
     <!-- The mini player and the tab oval float over the bottom of the screens
          (BottomChrome below), so every screen's scroller keeps that much room
@@ -345,8 +372,8 @@
          reach, and BringToTop lines a letter's first entry up with its top. -->
     <Style Selector="controls|ScrollIndexBar">
       <Setter Property="Margin" Value="{DynamicResource ScreenScrollInset}" />
-      <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}" />
-      <Setter Property="ActiveBackground" Value="{DynamicResource AppAccentSoftBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource AppChromeBrush}" />
+      <Setter Property="ActiveBackground" Value="{DynamicResource AppChromeSoftBrush}" />
       <Setter Property="BubbleBackground" Value="{DynamicResource AppSurfaceBrush}" />
       <Setter Property="BubbleForeground" Value="{DynamicResource AppTextPrimaryBrush}" />
     </Style>
@@ -508,24 +535,23 @@
          which is why these take IsOpen instead of an IsVisible binding (the
          closing slide has to outlive ActiveSheet going back to None). They
          come up from the bottom, the direction each one's own ChevronDown
-         dismiss or bottom-anchored card already promises; now-playing and
-         settings are the exceptions, arriving from the right like a pushed
-         screen and dismissing with an arrow (Now Playing's points down: it is
-         an overlay, never a step in the history).
+         dismiss or bottom-anchored card already promises; Settings and the
+         two pages pushed over it the same way (the Navigation Bar page, the
+         smart playlist editor) are the exceptions, arriving from the right
+         like a pushed screen and dismissing with a back arrow.
          The four drawn as a card over a dimmed backdrop mark that card with
          SlidingSheet.IsCard, so the card slides while the dimming fades in
          behind it rather than sweeping up the screen with it.
-         The two that arrive from the right are pushed screens with a back
-         arrow, so they take DismissCommand as well and go back to a rightward
-         swipe the way every screen underneath them does - see
+         Now Playing and those three take DismissCommand as well and go back
+         to a swipe the way they came - down for Now Playing, right for the
+         others, the way every screen underneath goes back - see
          SlidingSheet's own "Swipe to dismiss" section. -->
 
-    <!-- Now-playing sheet: full-screen overlay above everything else. Arrives
-         from the right, like Settings below and for the same reason - it is a
-         whole screen reached from a persistent bar, not something raised over
-         the list you were reading. Leaves the same way, except when the
-         dismissal is itself a push - tapping the album art - and it is shoved
-         off to the left by the album coming in behind it. The tab oval stays
+    <!-- Now-playing sheet: full-screen overlay above everything else. Rises
+         from the bottom and goes back down - by its down arrow, a downward
+         swipe, or when its album art, its artist or a tab takes the user
+         somewhere else, the sheet sliding away as that screen arrives under
+         it. It is an overlay, never a step in the history. The tab oval stays
          over it (BottomChrome is declared after it, and before every other
          sheet), so the tabs are one tap away from the song too. -->
     <!-- Pulled up under the status bar like the screens (ScreenStackBleed):
@@ -535,8 +561,8 @@
                             Grid.Row="0" Grid.RowSpan="3"
                             Margin="{DynamicResource ScreenStackBleed}"
                             IsOpen="{Binding IsShowingNowPlaying}"
-                            DismissCommand="{Binding CloseSheetCommand}"
-                            ExitsForward="{Binding NowPlayingExitsForward}">
+                            Entrance="FromBottom"
+                            DismissCommand="{Binding CloseSheetCommand}">
       <views:NowPlayingView />
     </controls:SlidingSheet>
 
@@ -564,7 +590,7 @@
          its margins, and pass touches either side through to the list, as the
          tab oval's do - and that oval takes this same margin and this same
          97%, so neither number can move here without moving there. Both
-         ovals take the round buttons' red rim and the same soft shadow below
+         ovals take the round buttons' rim and the same soft shadow below
          (see this one's Border). -->
     <Grid IsVisible="{Binding CurrentlyPlaying.CurrentlyPlayingTrack, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
           x:Name="MiniPlayerHost"
@@ -572,7 +598,8 @@
           ColumnDefinitions="3*,194*,3*">
     <!-- Ringed like every other oval (Border.floating's pixel of the primary
          red), over a soft shadow that lifts it off the list. -->
-    <Border Grid.Column="1"
+    <Border x:Name="MiniPlayerOval"
+            Grid.Column="1"
             Classes="floating"
             Height="56"
             BoxShadow="{DynamicResource AppOvalShadow}"
@@ -670,7 +697,8 @@
               Command="{Binding SelectTabCommand}" CommandParameter="Songs">
         <StackPanel HorizontalAlignment="Center" Spacing="2">
           <!-- SongNoteGeometry (App.axaml). Its fill comes from the Button.tab
-               styles above, red when the tab is showing and grey when not. -->
+               styles above, the frame's colour when the tab is showing and grey
+               when not. -->
           <Path Classes="tabIcon" Data="{StaticResource SongNoteGeometry}"
                 Stretch="Uniform" Width="24" Height="24" HorizontalAlignment="Center" />
           <TextBlock x:Name="SongsLabel" Text="Songs" HorizontalAlignment="Center" />

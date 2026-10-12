@@ -163,7 +163,7 @@ public partial class TrackRowControl : UserControl
     // The phone's row ends in the same "..." (TrackRowTemplate).
     private Control BuildMenuCell()
     {
-        var icon = new MaterialIcon { Kind = MaterialIconKind.DotsVertical, Width = 18, Height = 18, Opacity = 0.6 };
+        var icon = new MaterialIcon { Kind = MaterialIconKind.DotsVertical, Width = 18, Height = 18, Opacity = 0.6, Classes = { "chrome" } };
         var button = new Button
         {
             Content = icon,

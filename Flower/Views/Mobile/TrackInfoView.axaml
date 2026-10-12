@@ -140,7 +140,7 @@
                  FontFamily="{DynamicResource AppDisplayFontFamily}"
                  FontSize="32"
                  FontWeight="SemiBold"
-                 Foreground="{DynamicResource AppAccentBrush}"
+                 Foreground="{DynamicResource AppChromeBrush}"
                  HorizontalAlignment="Center" VerticalAlignment="Center" />
       <Border Classes="floating" Width="40" HorizontalAlignment="Left">
         <Button Classes="pill"

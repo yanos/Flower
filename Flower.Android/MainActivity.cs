@@ -41,6 +41,10 @@ public class FlowerApplication(nint javaReference, JniHandleOwnership transfer)
         PlatformPermissions.Current = new AndroidMediaPermissionStatus(this);
         PlatformMulticastLock.Current = new AndroidMulticastLockHolder(this);
         PlatformNetworkChange.Current = new AndroidNetworkChange(this);
+        // Android's own text field, laid over a box while it is typed in -
+        // see INativeTextFieldFactory. Before Avalonia starts: every
+        // TextInput reads it as it is built.
+        PlatformNativeTextField.Factory = new AndroidNativeTextFieldFactory();
 
         PlatformCrashInfo.PendingAndroidExitReasons = CollectCrashExitReasons();
 

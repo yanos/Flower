@@ -62,6 +62,17 @@ public class SlidingSheetTests
             Settle();
         }
 
+        // The same gesture downwards, by `dy`, down the middle of the sheet.
+        public void SwipeDown(double dy, double x = 200)
+        {
+            const double startY = 200;
+            Window.MouseDown(new Point(x, startY), MouseButton.Left);
+            for (var i = 1; i <= 4; i++)
+                Window.MouseMove(new Point(x, startY + dy * i / 4), RawInputModifiers.LeftMouseButton);
+            Window.MouseUp(new Point(x, startY + dy), MouseButton.Left);
+            Settle();
+        }
+
         // Time passing with no dispatcher job allowed to run in between.
         public required Action Tick { get; init; }
 
@@ -451,13 +462,37 @@ public class SlidingSheetTests
         }
     }
 
-    // A sheet that rises from the bottom is dismissed downwards with its own
-    // ChevronDown - it is raised over the screen being read rather than pushed
-    // over it, so there is nothing for a back gesture to mean. Left without a
-    // DismissCommand in MobileMainView.axaml, which is what turns the gesture
-    // off entirely.
+    // A sheet that rises from the bottom (Now Playing) goes back down to a
+    // downward swipe, the way it came - and, closed, slides the rest of the way
+    // out below the screen.
     [AvaloniaFact]
-    public void A_sheet_that_rises_from_the_bottom_ignores_the_gesture()
+    public void A_downward_swipe_dismisses_a_bottom_sheet()
+    {
+        Host? host = null;
+        var dismiss = new RecordingCommand(() => host!.Sheet.IsOpen = false);
+        host = Show(SheetEntrance.FromBottom, dismiss: dismiss);
+        try
+        {
+            host.Sheet.IsOpen = true;
+            host.Advance();
+
+            host.SwipeDown(PastThreshold);
+
+            Assert.Equal(1, dismiss.Executions);
+            host.Advance();
+            Assert.False(host.Sheet.IsVisible);
+            Assert.Equal(Height, host.SheetOffsetY);
+        }
+        finally
+        {
+            host.Window.Close();
+        }
+    }
+
+    // Sideways is not the way a bottom sheet leaves, so a rightward swipe over
+    // one is left to whatever is under the finger.
+    [AvaloniaFact]
+    public void A_bottom_sheet_ignores_a_sideways_swipe()
     {
         var dismiss = new RecordingCommand();
         var host = Show(SheetEntrance.FromBottom, dismiss: dismiss);
@@ -470,6 +505,7 @@ public class SlidingSheetTests
 
             Assert.Equal(0, dismiss.Executions);
             Assert.Equal(0, host.SheetOffsetX);
+            Assert.Equal(0, host.SheetOffsetY);
         }
         finally
         {

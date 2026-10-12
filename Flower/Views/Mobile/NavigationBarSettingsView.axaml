@@ -58,7 +58,7 @@
          over the rows it is being dragged across. -->
     <Style Selector="Border.tabRow.lifted">
       <Setter Property="Background" Value="{DynamicResource AppBackgroundBrush}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AppPrimaryBorderBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppChromeBorderBrush}" />
       <Setter Property="BoxShadow" Value="{DynamicResource AppOvalShadow}" />
     </Style>
     <Style Selector="Border.tabRow.lifted Panel.wash">
@@ -155,12 +155,12 @@
 
     <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
       <StackPanel Margin="16,4,16,16">
-        <!-- A heading, so the serif and the accent red - see ScreenTitle. -->
+        <!-- A heading, so the serif and the frame's colour - see ScreenTitle. -->
         <TextBlock Text="Navigation Bar"
                    FontFamily="{DynamicResource AppDisplayFontFamily}"
                    FontSize="34"
                    FontWeight="SemiBold"
-                   Foreground="{DynamicResource AppAccentBrush}"
+                   Foreground="{DynamicResource AppChromeBrush}"
                    Margin="4,0,0,4" />
         <TextBlock Text="Choose which sections to display and reorder them."
                    FontSize="15"

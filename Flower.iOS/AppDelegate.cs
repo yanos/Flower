@@ -101,6 +101,11 @@ public partial class AppDelegate : AvaloniaAppDelegate<App>, IMXMetricManagerSub
         // since RoutePickerControl reads Current once in its constructor.
         PlatformRoutePicker.Current = new AppleRoutePicker();
 
+        // UIKit's own text field, laid over a box while it is typed in - see
+        // INativeTextFieldFactory. Same before-Avalonia-starts timing: every
+        // TextInput reads it as it is built.
+        PlatformNativeTextField.Factory = new AppleNativeTextFieldFactory();
+
         // Notification-based rather than overriding UIApplicationDelegate's
         // WillEnterForeground directly - the classic override isn't available
         // on however AvaloniaAppDelegate's base hooks into UIKit here (Scene

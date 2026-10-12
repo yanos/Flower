@@ -14,7 +14,7 @@
          drop down from the band are one kind of thing. -->
     <Style Selector="FlyoutPresenter.screenMenu">
       <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundChromeMediumBrush}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource AppPrimaryBorderBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppChromeBorderBrush}" />
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="CornerRadius" Value="12" />
       <Setter Property="Padding" Value="0,4" />
@@ -43,7 +43,9 @@
                 Opening="ScreenMenu_Opening"
                 Opened="ScreenMenu_Opened"
                 Closing="ScreenMenu_Closing">
-          <StackPanel x:Name="ScreenMenuItems" MinWidth="220" />
+          <!-- .chromeIcons: the entries' icons in the frame's colour
+               (App.axaml), a destructive one's red set on it. -->
+          <StackPanel x:Name="ScreenMenuItems" Classes="chromeIcons" MinWidth="220" />
         </Flyout>
       </Button.Flyout>
       <materialIcons:MaterialIcon Kind="Menu" Width="20" Height="20" />

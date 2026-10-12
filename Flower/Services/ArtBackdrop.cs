@@ -1,10 +1,8 @@
 using System;
-using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 using Avalonia;
-using Avalonia.Data.Converters;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
@@ -13,10 +11,10 @@ namespace Flower.Services;
 
 // What a cover looks like from far away: a tiny copy of it, and the colour
 // it is mostly made of. The album page draws the tiny copy stretched back up
-// behind its header, which a smooth upscale turns into a soft blur for
+// behind its header (Soft), which a smooth upscale turns into a soft blur for
 // nothing - a live blur effect would be redrawn every frame the page scrolls,
-// on a phone. Now Playing washes its whole sheet in the colour, darkened far
-// enough that white reads on it.
+// on a phone. Now Playing and the album page wash themselves in the colour,
+// darkened far enough that white reads on it.
 //
 // Both are worked out once per bitmap and remembered for as long as the
 // bitmap lives: AlbumArtLoader hands the same instance to everything showing
@@ -28,7 +26,17 @@ public static class ArtBackdrop
     // flower, softened, rather than as a blot of red where it was.
     private const int TinySide = 32;
 
+    // How large the tiny copy is smoothed back up to before anything draws
+    // it. The page and the buttons over it (TrackListScreenView.PageDrawing)
+    // have to draw the cover identically, and a brush inside a drawing - the
+    // buttons' - is always sampled the cheap, bilinear way, which stretching
+    // 32 pixels across a screen leaves creased. Smoothed to 128 first, the
+    // cheap way is within a level or so of the smooth one; a quarter as large
+    // was no better than not smoothing at all.
+    private const int SoftSide = 128;
+
     private static readonly ConditionalWeakTable<Bitmap, Bitmap> Tinies = new();
+    private static readonly ConditionalWeakTable<Bitmap, Bitmap> Softs = new();
     private static readonly ConditionalWeakTable<Bitmap, object> Tints = new();
 
     // What Now Playing falls back to with no cover to take a colour from: the
@@ -56,6 +64,24 @@ public static class ArtBackdrop
         {
             // A bitmap that cannot be scaled (disposed under us, a format
             // Skia will not resample) just has no backdrop.
+            return null;
+        }
+    }
+
+    // The blurred cover behind an album's header: the tiny copy, smoothed
+    // back up to SoftSide.
+    public static Bitmap? Soft(Bitmap? source)
+    {
+        if (Tiny(source) is not { } tiny)
+            return null;
+
+        try
+        {
+            return Softs.GetValue(source!, _ =>
+                tiny.CreateScaledBitmap(new PixelSize(SoftSide, SoftSide), BitmapInterpolationMode.HighQuality));
+        }
+        catch (Exception)
+        {
             return null;
         }
     }
@@ -192,16 +218,4 @@ public static class ArtBackdrop
             },
         };
     }
-}
-
-// Cover -> the tiny copy the album page stretches behind its header.
-public sealed class TinyArtConverter : IValueConverter
-{
-    public static readonly TinyArtConverter Instance = new();
-
-    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
-        ArtBackdrop.Tiny(value as Bitmap);
-
-    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
-        throw new NotSupportedException();
 }

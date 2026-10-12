@@ -28,7 +28,10 @@
             VerticalAlignment="Stretch" />
 
     <!-- Action card -->
+    <!-- .chromeIcons: every icon on the card, the X included, in the
+         frame's colour (App.axaml) - a delete's red is set on it. -->
     <Border VerticalAlignment="Bottom"
+            Classes="chromeIcons"
             controls:SlidingSheet.IsCard="True"
             Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
             CornerRadius="12,12,0,0"

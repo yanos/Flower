@@ -169,6 +169,12 @@ public sealed class ScreenStackPanel : Panel
 
     private void RaiseMoving() => Moving?.Invoke(this, EventArgs.Empty);
 
+    /// <summary>
+    /// The screen the user is on - what MobileMainView's floating ovals read
+    /// the page under them off (ScreenSlot.PageDrawing).
+    /// </summary>
+    public Control? LiveScreen => _currentInner;
+
     public void SyncToCurrentFrame(MobileMainViewModel vm)
     {
         var currentFrame = vm.CurrentFrame;

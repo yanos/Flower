@@ -41,6 +41,15 @@ public sealed class AlbumTileViewModel : DownloadIndicatorViewModel
     public required string Name { get; init; }
     public string? Artist { get; init; }
 
+    // Only an album's own screen sets these (MobileMainViewModel
+    // .BuildAlbumHeader): its name heads that screen with the year in
+    // brackets, the way Now Playing's album line has it
+    // (CurrentlyPlayingControlViewModel.AlbumLine) - and with nothing in
+    // brackets when no song gives a year. A playlist's header, and every grid
+    // tile, has no year and reads as its name.
+    public string? Year { get; init; }
+    public string Heading => string.IsNullOrWhiteSpace(Year) ? Name : $"{Name} ({Year})";
+
     // Settable rather than init-only, and only by ApplyBuilt below: a rebuild
     // reuses the tile already on screen instead of allocating a fresh one (see
     // AlbumTileMerge), so the three things a rebuild can actually change about

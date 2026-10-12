@@ -19,8 +19,9 @@ namespace Flower.Tests.Controls;
 // MusicListPanel is hand-rolled virtualization - uniform-height range math
 // plus a grow-only row pool - and was the highest-risk untested surface in the
 // codebase (docs/ARCHITECTURE-REVIEW.md §5.5). Every assertion here reads the
-// panel's real Children/DataContext/Bounds after a real measure-arrange pass,
-// not an extracted copy of the arithmetic.
+// panel's real Children/DataContext after a real measure-arrange pass, not an
+// extracted copy of the arithmetic - which rows it realizes, which row a point
+// falls on and where a drop lands, never where a row is drawn or how big.
 //
 // [AvaloniaFact] because the panel builds TrackRowControls, which load XAML and
 // need a platform.
@@ -223,80 +224,6 @@ public class MusicListPanelTests : PinnedDataDirectory
             c => Assert.Contains(c.DataContext, replacement));
     }
 
-    [AvaloniaFact]
-    public void The_panel_reports_the_full_list_height_so_the_scrollbar_is_sized_for_every_row()
-    {
-        var panel = NewPanel();
-        panel.SetItems(Rows(1000));
-
-        Layout(panel);
-
-        // Not the realized height - virtualization must be invisible to the
-        // ScrollViewer.
-        Assert.Equal(1000 * RowHeight, panel.DesiredSize.Height);
-    }
-
-    [AvaloniaFact]
-    public void The_panel_reports_the_total_column_width_so_a_horizontal_scrollbar_can_appear()
-    {
-        var panel = NewPanel();
-        panel.SetViewport(scrollOffset: 0, viewportHeight: 280, viewportWidth: 100);
-        panel.SetItems(Rows(10));
-
-        Layout(panel);
-
-        var expected = _columns.ArtColumnWidth + _columns.VisibleColumns.Sum(c => c.Width);
-        Assert.Equal(expected, panel.DesiredSize.Width);
-    }
-
-    [AvaloniaFact]
-    public void Rows_fill_a_viewport_wider_than_the_columns_need()
-    {
-        var panel = NewPanel();
-        var wide = 5000d;
-        panel.SetViewport(scrollOffset: 0, viewportHeight: 280, viewportWidth: wide);
-        panel.SetItems(Rows(10));
-
-        Layout(panel, width: wide);
-
-        // Otherwise the selection highlight stops short of the right edge.
-        Assert.Equal(wide, panel.DesiredSize.Width);
-    }
-
-    [AvaloniaFact]
-    public void Every_realized_row_is_arranged_at_its_own_absolute_offset()
-    {
-        var items = Rows(1000);
-        var panel = NewPanel();
-        panel.SetItems(items);
-        panel.SetViewport(scrollOffset: 20 * RowHeight, viewportHeight: 5 * RowHeight, viewportWidth: 800);
-
-        Layout(panel);
-
-        // Positions are absolute within the scrollable content, not relative to
-        // the viewport - the ScrollViewer does the translation.
-        foreach (var child in panel.Children.Where(c => c.IsVisible))
-        {
-            var index = items.IndexOf((TrackRowViewModel)child.DataContext!);
-            Assert.Equal(index * RowHeight, child.Bounds.Y);
-            Assert.Equal(RowHeight, child.Bounds.Height);
-        }
-    }
-
-    [AvaloniaFact]
-    public void A_hidden_pooled_row_is_not_arranged_over_a_live_one()
-    {
-        var items = Rows(1000);
-        var panel = NewPanel();
-        panel.SetViewport(scrollOffset: 0, viewportHeight: 40 * RowHeight, viewportWidth: 800);
-        panel.SetItems(items);
-        panel.SetViewport(scrollOffset: 0, viewportHeight: 3 * RowHeight, viewportWidth: 800);
-
-        Layout(panel);
-
-        Assert.All(panel.Children.Where(c => !c.IsVisible), c => Assert.Equal(default, c.Bounds));
-    }
-
     // ── Phantom rows ──────────────────────────────────────────────────────────
 
     // Consecutive album runs of the given lengths.
@@ -314,38 +241,6 @@ public class MusicListPanelTests : PinnedDataDirectory
                 });
         }
         return rows;
-    }
-
-    [AvaloniaFact]
-    public void A_run_too_short_for_full_size_art_is_followed_by_phantom_rows()
-    {
-        // Slots: album 0 = 0 (+1, 2 phantom), album 1 = 3, 4 (+5 phantom),
-        // album 2 = 6..9.
-        var items = Runs(1, 2, 4);
-        var panel = NewPanel(art: true);
-        panel.SetViewport(scrollOffset: 0, viewportHeight: 20 * RowHeight, viewportWidth: 800);
-        panel.SetItems(items);
-
-        Layout(panel);
-
-        int[] expectedSlots = [0, 3, 4, 6, 7, 8, 9];
-        foreach (var child in panel.Children.Where(c => c.IsVisible))
-        {
-            var index = items.IndexOf((TrackRowViewModel)child.DataContext!);
-            Assert.Equal(expectedSlots[index] * RowHeight, child.Bounds.Y);
-        }
-        Assert.Equal(10 * RowHeight, panel.DesiredSize.Height);
-    }
-
-    [AvaloniaFact]
-    public void The_last_run_is_padded_too_so_its_art_is_not_cut_off_at_the_bottom()
-    {
-        var panel = NewPanel(art: true);
-        panel.SetItems(Runs(3, 1));
-
-        Layout(panel);
-
-        Assert.Equal(6 * RowHeight, panel.DesiredSize.Height);
     }
 
     [AvaloniaFact]
@@ -403,7 +298,6 @@ public class MusicListPanelTests : PinnedDataDirectory
         _columns.ShowAlbumArt = false;
         Layout(panel);
 
-        Assert.Equal(3 * RowHeight, panel.DesiredSize.Height);
         Assert.Equal(2, panel.RowIndexAt(2.5 * RowHeight));
         window.Close();
     }

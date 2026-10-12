@@ -513,7 +513,7 @@
                             <Button Classes="pill" Padding="8"
                                     ToolTip.Tip="More"
                                     Click="ArtistAlbumMenu_Click">
-                              <materialIcons:MaterialIcon Kind="DotsVertical" Width="20" Height="20" Opacity="0.6"/>
+                              <materialIcons:MaterialIcon Classes="chrome" Kind="DotsVertical" Width="20" Height="20" Opacity="0.6"/>
                             </Button>
                           </StackPanel>
                         </Grid>

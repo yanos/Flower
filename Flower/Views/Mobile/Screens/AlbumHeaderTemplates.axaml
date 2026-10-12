@@ -3,7 +3,6 @@
                     xmlns:controls="clr-namespace:Flower.Controls"
                     xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
                     xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
-                    xmlns:services="clr-namespace:Flower.Services"
                     xmlns:screens="clr-namespace:Flower.Views.Mobile.Screens">
 
   <!-- What a track list of one thing's songs says about that thing, above the
@@ -69,15 +68,17 @@
       <!-- A playlist's name turns into a box in place when its pencil is
            pressed (see controls:PlaylistNameEditor); an album's never does,
            since it has no row to be renamed through.
-           Set like the song's title on Now Playing - the display serif, in
-           the accent red - since this is the one place the album is the
-           subject rather than a tile among many. -->
+           Set like the song's title on Now Playing - the display serif -
+           since this is the one place the album is the subject rather than a
+           tile among many: white on an album, whose screen is washed in its
+           cover's colour as Now Playing is (TrackListScreenView), every
+           page title's colour on a playlist's plain page (AppChromeBrush). An album's year follows its name
+           (AlbumTileViewModel.Heading). -->
       <TextBlock Classes="albumName"
-                 Text="{Binding Name}"
+                 Text="{Binding Heading}"
                  IsVisible="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).CurrentPlaylistItem.IsEditing, Converter={x:Static BoolConverters.Not}, FallbackValue=True}"
                  FontFamily="{DynamicResource AppDisplayFontFamily}"
                  FontSize="28" FontWeight="SemiBold"
-                 Foreground="{DynamicResource AppAccentBrush}"
                  TextWrapping="Wrap" />
       <controls:PlaylistNameEditor DataContext="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).CurrentPlaylistItem}"
                                    IsVisible="{Binding IsEditing, FallbackValue=False}"
@@ -150,37 +151,18 @@
        enough to be the page's subject and narrow enough to leave songs
        showing under it. -->
   <DataTemplate x:Key="AlbumHeaderTemplate" x:DataType="vm:AlbumTileViewModel">
-    <Panel>
-      <!-- The cover again, behind all of it: stretched across the page and
-           blurred, fading out below the words. It reaches up past the top of
-           the header by the scroller's own inset (ScreenBackdropBleed), under
-           the back button and the status bar, so the page starts in it
-           rather than below a strip of plain background - and scrolls away
-           with the header like the rest of it.
-           The blur is a 16px copy of the cover drawn large with a smooth
-           upscale (ArtBackdrop.Tiny), not a blur effect, which the phone
-           would redraw on every frame of a scroll. A playlist has no cover of
-           its own, so there is nothing to draw and nothing shows. -->
-      <Border Classes="albumBackdrop"
-              Margin="{DynamicResource ScreenBackdropBleed}"
-              ClipToBounds="True"
-              IsHitTestVisible="False"
-              OpacityMask="{DynamicResource AppBackdropFadeMask}">
-        <Image Source="{Binding AlbumArt, Converter={x:Static services:TinyArtConverter.Instance}}"
-               Stretch="UniformToFill"
-               Opacity="0.6"
-               RenderOptions.BitmapInterpolationMode="HighQuality" />
-      </Border>
-      <StackPanel>
-        <ContentControl Content="{Binding}"
-                        ContentTemplate="{StaticResource AlbumArtTemplate}"
-                        ClipToBounds="False"
-                        Width="240" Margin="24,4,24,12"
-                        HorizontalAlignment="Center" />
-        <ContentControl Classes="albumText"
-                        Content="{Binding}"
-                        ContentTemplate="{StaticResource AlbumTextTemplate}" />
-      </StackPanel>
-    </Panel>
+    <!-- The blurred cover behind it is the album page's, not the header's
+         (TrackListScreenView's Backdrop): it stays put while this scrolls
+         over it. -->
+    <StackPanel>
+      <ContentControl Content="{Binding}"
+                      ContentTemplate="{StaticResource AlbumArtTemplate}"
+                      ClipToBounds="False"
+                      Width="240" Margin="24,4,24,12"
+                      HorizontalAlignment="Center" />
+      <ContentControl Classes="albumText"
+                      Content="{Binding}"
+                      ContentTemplate="{StaticResource AlbumTextTemplate}" />
+    </StackPanel>
   </DataTemplate>
 </ResourceDictionary>

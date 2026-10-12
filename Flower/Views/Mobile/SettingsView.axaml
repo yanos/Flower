@@ -157,12 +157,12 @@
                   controls:SoftKeyboard.AvoidOcclusion="True">
     <StackPanel Margin="0,4,0,16">
 
-      <!-- A heading, so the serif and the accent red - see ScreenTitle. -->
+      <!-- A heading, so the serif and the frame's colour - see ScreenTitle. -->
       <TextBlock Text="Settings"
                  FontFamily="{DynamicResource AppDisplayFontFamily}"
                  FontSize="40"
                  FontWeight="SemiBold"
-                 Foreground="{DynamicResource AppAccentBrush}"
+                 Foreground="{DynamicResource AppChromeBrush}"
                  Margin="20,0,20,14" />
 
       <!-- Headed cards rather than one flat run of blocks: the sheet grew past

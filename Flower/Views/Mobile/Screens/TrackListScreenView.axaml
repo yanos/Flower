@@ -2,8 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:Flower.Controls"
              xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
-             xmlns:conv="clr-namespace:Flower.Converters"
-             xmlns:services="clr-namespace:Flower.Services"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="Flower.Views.Mobile.Screens.TrackListScreenView"
              x:DataType="vm:MobileMainViewModel"
              x:Name="Root"
@@ -36,10 +35,9 @@
          inset evenly. Ranged left beside it they answer to the song titles
          below instead, and take their left inset from the row: the 24 of
          Grid.albumTracks' row Padding (below), which is all that stands ahead
-         of a title inside an album. Change one and change the other -
-         AlbumDetailLayoutTests.The_album_name_lines_up_with_the_song_titles
-         measures the two against each other. Both live here rather than on
-         the use site because a local Margin would outrank them. -->
+         of a title inside an album. Change one and change the other: nothing
+         checks the two against each other. Both live here rather than on the
+         use site because a local Margin would outrank them. -->
     <Style Selector="ContentControl.albumText">
       <Setter Property="Margin" Value="12,4,12,16" />
     </Style>
@@ -66,6 +64,49 @@
     <Style Selector="Grid.albumTracks Button.trackRow">
       <Setter Property="Padding" Value="24,0,16,0" />
     </Style>
+
+    <!-- An album's page is washed in its cover's colour, the way Now Playing
+         is (AlbumPage's Background, from the code-behind) - dark whatever the
+         theme, so the words on it are white: the name, the artist, the songs,
+         and the songs' own icons, which dim rather than turn the pressed
+         accent, as on that sheet. The round actions under the name are Now
+         Playing's round buttons too: no fill, ringed and drawn in white. A
+         playlist's page is the plain one, and its name the colour every
+         page's title is (AppChromeBrush). -->
+    <Style Selector="TextBlock.albumName">
+      <Setter Property="Foreground" Value="{DynamicResource AppChromeBrush}" />
+    </Style>
+    <Style Selector="Grid#AlbumPage">
+      <Setter Property="TextElement.Foreground" Value="{DynamicResource AppOnArtBrush}" />
+    </Style>
+    <!-- A row is a Button, whose Fluent theme gives it a foreground of its
+         own (and its presenter another, pressed), so the page's does not
+         reach the songs by inheritance. -->
+    <Style Selector="Grid#AlbumPage Button.trackRow">
+      <Setter Property="Foreground" Value="{DynamicResource AppOnArtBrush}" />
+    </Style>
+    <Style Selector="Grid#AlbumPage Button.trackRow /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Foreground" Value="{DynamicResource AppOnArtBrush}" />
+    </Style>
+    <Style Selector="Grid#AlbumPage TextBlock.albumName">
+      <Setter Property="Foreground" Value="{DynamicResource AppOnArtBrush}" />
+    </Style>
+    <Style Selector="Grid#AlbumPage Button.trackRow:not(.placeholder) materialIcons|MaterialIcon">
+      <Setter Property="Foreground" Value="{DynamicResource AppOnArtBrush}" />
+    </Style>
+    <Style Selector="Grid#AlbumPage Button.trackRow:not(.placeholder) :is(Button):pressed materialIcons|MaterialIcon">
+      <Setter Property="Foreground" Value="{DynamicResource AppOnArtRingBrush}" />
+    </Style>
+    <Style Selector="Grid#AlbumPage StackPanel.albumActions Border.floating">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppOnArtBrush}" />
+    </Style>
+    <Style Selector="Grid#AlbumPage StackPanel.albumActions materialIcons|MaterialIcon">
+      <Setter Property="Foreground" Value="{DynamicResource AppOnArtBrush}" />
+    </Style>
+    <Style Selector="Grid#AlbumPage StackPanel.albumActions :is(Button):pressed materialIcons|MaterialIcon">
+      <Setter Property="Foreground" Value="{DynamicResource AppOnArtRingBrush}" />
+    </Style>
   </UserControl.Styles>
 
   <!-- Track list: Songs (flat), or the drilled-into album/artist/playlist.
@@ -77,7 +118,12 @@
        (The wide layout pins the art again, deliberately, but not the
        words - see the album Grid.) -->
   <Panel>
-    <Grid Classes="albumTracks" IsVisible="{Binding #Root.IsAlbumMode}" ColumnDefinitions="Auto,*">
+    <Grid x:Name="AlbumPage" Classes="albumTracks" IsVisible="{Binding #Root.IsAlbumMode}" ColumnDefinitions="Auto,*">
+      <!-- The rule between songs, faint white on the cover's colour rather
+           than the theme's divider, which is a cream line in light mode. -->
+      <Grid.Resources>
+        <SolidColorBrush x:Key="AppDividerBrush" Color="{DynamicResource PaletteOnArt}" Opacity="0.15" />
+      </Grid.Resources>
       <!-- Turned sideways (or on a tablet) the art moves out of the scroll
            and pins to the left, sized to fill the height it is given
            (PinnedArtSize in the code-behind), with the album name and the
@@ -130,42 +176,35 @@
            navigate generally, not just within an album (the same bug, in the
            same shape, that motivated AlbumDetailRows in the first place - see
            TrackListScreenView.axaml.cs's ObserveLive/Freeze). -->
-      <!-- What a pull down past the top of the album opens up. The pull moves
-           the whole scroller down (RubberBandScroll's RenderTransform), so
-           the room above it is outside it, where nothing it holds can draw -
-           and it was plain background over a blurred backdrop that ended in
-           a hard line. This fills exactly that room, as tall as the pull,
-           with the backdrop again upside down: the same picture at the same
-           size, cropped the same way, so its bottom row is the backdrop's
-           top row and the two meet without a seam. It used to be one colour,
-           the average of that row, which read as the row smeared upwards.
-           Its fade flips with it, so it thins out towards the top of the
-           screen. Sized to the backdrop from code (TrackListScreenView
-           .SizePullMirror) - a different height would crop the picture
-           differently, and the rows would not meet. Only in the stacked
-           layout, the one with a backdrop. -->
-      <Panel Grid.Column="1"
-             VerticalAlignment="Top"
-             ClipToBounds="True"
-             IsHitTestVisible="False"
-             IsVisible="{Binding !#Root.IsWideAlbumLayout}"
-             Height="{Binding #AlbumScroll.((TranslateTransform)RenderTransform).Y, Converter={x:Static conv:NonNegativeConverter.Instance}, FallbackValue=0}">
-        <Border x:Name="PullMirror"
-                VerticalAlignment="Bottom"
-                ClipToBounds="True"
-                OpacityMask="{DynamicResource AppBackdropFadeMask}"
-                RenderTransformOrigin="50%,50%">
-          <Border.RenderTransform>
-            <ScaleTransform ScaleY="-1" />
-          </Border.RenderTransform>
-          <Image Source="{Binding #Root.DisplayHeader.AlbumArt, Converter={x:Static services:TinyArtConverter.Instance}}"
-                 Stretch="UniformToFill"
-                 Opacity="0.6"
-                 RenderOptions.BitmapInterpolationMode="HighQuality" />
-        </Border>
-      </Panel>
+      <!-- The cover again, behind the header: stretched across the page and
+           blurred, fading out below the words, from the very top of the
+           screen, under the back button and the status bar, so the page
+           starts in it rather than below a strip of plain background. Part
+           of the page rather than of what scrolls, so it stays put: the
+           header and the songs scroll up over it, and a pull down past the
+           top moves them and leaves it where it is. As tall as the stacked
+           header stands at rest (SizeBackdrop in the code-behind), so it
+           fades out under the words wherever they wrap. Only in the stacked
+           layout; the wide one pins the cover itself instead.
+           The blur is a small copy of the cover drawn large (ArtBackdrop
+           .Soft), not a blur effect, which the phone would redraw on every
+           frame of a scroll. Low quality to match the buttons over it, whose
+           brush can only sample that way (PageDrawing in the code-behind) -
+           Soft is smoothed already, so the two cannot be told apart. -->
+      <Border x:Name="Backdrop"
+              Grid.Column="1"
+              VerticalAlignment="Top"
+              ClipToBounds="True"
+              IsHitTestVisible="False"
+              IsVisible="{Binding !#Root.IsWideAlbumLayout}"
+              OpacityMask="{DynamicResource AppBackdropFadeMask}">
+        <Image x:Name="BackdropImage"
+               Stretch="UniformToFill"
+               Opacity="0.6"
+               RenderOptions.BitmapInterpolationMode="LowQuality" />
+      </Border>
       <ScrollViewer x:Name="AlbumScroll" Grid.Column="1" Classes="screenScroll" controls:RubberBandScroll.IsEnabled="True">
-        <StackPanel>
+        <StackPanel x:Name="AlbumContent">
           <!-- Blank over an album, however it was reached, and this
                collapses - see MobileNavigationFrame.Title. -->
           <controls:ScreenTitle />
@@ -173,7 +212,8 @@
                playlist shows); pinned, the art is out of this scroller
                entirely and only the words are left here, ranged left so they
                line their first character up with the song titles below. -->
-          <ContentControl IsVisible="{Binding !#Root.IsWideAlbumLayout}"
+          <ContentControl x:Name="StackedHeader"
+                          IsVisible="{Binding !#Root.IsWideAlbumLayout}"
                           Content="{Binding #Root.DisplayHeader}"
                           ContentTemplate="{StaticResource AlbumHeaderTemplate}"
                           ClipToBounds="False" />

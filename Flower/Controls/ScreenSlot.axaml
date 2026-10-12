@@ -29,6 +29,53 @@
        The filter oval (and Search's box, which is the same oval) sits in the
        band too, so opening it moves nothing below. -->
 
+  <UserControl.Styles>
+    <!-- The filter oval's icons are the frame's colour like every oval's
+         (App.axaml), which reaches only an oval's direct children - these
+         sit a Grid further in - and the pressed accent under a finger as
+         every icon is. Before the .onArt styles below, which win over
+         these. -->
+    <Style Selector="Border#FilterOval materialIcons|MaterialIcon">
+      <Setter Property="Foreground" Value="{DynamicResource AppChromeBrush}" />
+    </Style>
+    <Style Selector="Border#FilterOval Button.pill:pressed > materialIcons|MaterialIcon">
+      <Setter Property="Foreground" Value="{DynamicResource AppAccentPressedBrush}" />
+    </Style>
+
+    <!-- Over an album, whose page is washed in its cover's colour
+         (TrackListScreenView), the back and menu circles and the filter oval
+         between them are ringed and drawn in white like Now Playing's (its
+         TopBar styles), dimming while pressed. Their fill is the page itself:
+         exactly what the page draws where each one sits, so it looks see-
+         through while hiding the songs that scroll up under it (FillPills in
+         the code-behind, which outranks the Transparent here once it has the
+         page to draw). The icons by child selectors, as there: the menu's
+         card is the menu button's logical child too, and its entries keep
+         their own colours. -->
+    <Style Selector="Grid#HeaderBand.onArt Border#BackPill, Grid#HeaderBand.onArt Border#MenuPill, Grid#HeaderBand.onArt Border#FilterOval">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppOnArtBrush}" />
+    </Style>
+    <Style Selector="Grid#HeaderBand.onArt Border#BackPill > Button.pill > materialIcons|MaterialIcon, Grid#HeaderBand.onArt Border#MenuPill > Button.pill > materialIcons|MaterialIcon, Grid#HeaderBand.onArt Border#FilterOval materialIcons|MaterialIcon">
+      <Setter Property="Foreground" Value="{DynamicResource AppOnArtBrush}" />
+    </Style>
+    <Style Selector="Grid#HeaderBand.onArt Border#BackPill > Button.pill:pressed > materialIcons|MaterialIcon, Grid#HeaderBand.onArt Border#MenuPill > Button.pill:pressed > materialIcons|MaterialIcon, Grid#HeaderBand.onArt Border#FilterOval Button.pill:pressed > materialIcons|MaterialIcon">
+      <Setter Property="Foreground" Value="{DynamicResource AppOnArtRingBrush}" />
+    </Style>
+    <!-- What is typed, white too, and the hint before it at the faint white
+         Now Playing uses for what is off. On the box and on its template's
+         placeholder both, since Fluent colours that part directly in some
+         states. -->
+    <Style Selector="Grid#HeaderBand.onArt Border#FilterOval TextBox">
+      <Setter Property="Foreground" Value="{DynamicResource AppOnArtBrush}" />
+      <Setter Property="CaretBrush" Value="{DynamicResource AppOnArtBrush}" />
+      <Setter Property="PlaceholderForeground" Value="{DynamicResource AppOnArtMutedBrush}" />
+    </Style>
+    <Style Selector="Grid#HeaderBand.onArt Border#FilterOval TextBox /template/ TextBlock#PART_Placeholder">
+      <Setter Property="Foreground" Value="{DynamicResource AppOnArtMutedBrush}" />
+    </Style>
+  </UserControl.Styles>
+
   <!-- The screen fills the whole slot, which on a phone runs up under the
        status bar (MobileMainView pulls the stack up behind it), so a list
        scrolls on past the header and under the clock rather than stopping at
@@ -69,7 +116,11 @@
          the 52px row itself.
          NowPlayingView's top bar draws its own arrow, a down one, in this same
          place. -->
-    <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="12,0,12,0">
+    <Grid x:Name="HeaderBand"
+          Grid.Row="0"
+          ColumnDefinitions="Auto,*,Auto"
+          Margin="12,0,12,0"
+          Classes.onArt="{Binding #Root.Frame.IsAlbumTrackList, FallbackValue=False}">
       <Border x:Name="BackPill"
               Grid.Column="0"
               Classes="floating"
@@ -183,7 +234,7 @@
             Margin="62,50,62,0"
             VerticalAlignment="Top"
             Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
-            BorderBrush="{DynamicResource AppPrimaryBorderBrush}"
+            BorderBrush="{DynamicResource AppChromeBorderBrush}"
             BorderThickness="1"
             CornerRadius="12"
             BoxShadow="{DynamicResource AppDropdownShadow}"

@@ -35,7 +35,10 @@
          lift squeezes the card rather than pushing it off the top: the height
          left above the keyboard is what it gets, and the list scrolls in it.
          See Flower.Controls.SoftKeyboard. -->
+    <!-- .chromeIcons: every icon on the card, the X included, in the
+         frame's colour (App.axaml) - a delete's red is set on it. -->
     <Border VerticalAlignment="Bottom"
+            Classes="chromeIcons"
             controls:SlidingSheet.IsCard="True"
             controls:SoftKeyboard.AvoidOcclusion="True"
             MaxHeight="420"

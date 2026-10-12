@@ -150,6 +150,14 @@ instance never writes to `~/Library/Application Support/Flower/Server`.
 
 `Tests/Flower.Tests/` covers `TrackListBuilder`, `Playlist`, `Library`, `PlaylistControlViewModel`, the JSON stores, and the gapless audio pipeline (`GaplessRingBuffer`, `FfmpegTrackDecoder`, `GaplessCoordinator`, `GaplessAudioManager`) — xUnit tests against pure logic plus, for the gapless pipeline specifically, layered coverage: fake-decoder unit tests (fast, no native decoder), real-decode tests against synthetic WAV fixtures generated at test time (tagged `RequiresFfmpeg`, slower, and decoding through the same FFAudio.NET payload the app ships), and full-pipeline playlist integration tests (`PlaylistPlaybackIntegrationTests`) using `Avalonia.Headless` for the `Dispatcher`-driven auto-advance path. `Tests/Flower.Tests/TestSupport/` holds the shared fakes (`FakeTrackDecoder`, `FakeAudioSink`, `FakeAudioManager`) and fixture generators (`SyntheticWav`, now in `Flower.DeviceChecks`) these all build on.
 
+**Never write a test for UI placement, spacing or colour.** Nothing asserts
+how the UI looks - colours, brushes, pixels, fonts, sizes, margins, padding,
+bounds, or where one element sits relative to another - and that includes a
+custom panel's layout arithmetic. Test UI behaviour on the view model; reach for
+a headless window only for what lives in the view and nowhere else. Don't test
+trivial things either: pass-throughs, list wrappers, getters, "forwards the
+call". A test that breaks these rules gets deleted, not fixed.
+
 **What gets a test, and where it goes** (`docs/TEST-SUITE-PLAN.md`). The suite is
 folders by area, namespace following folder: `Audio/`, `Decoding/`, `Playback/`,
 `MusicLibrary/` (`Import/`, `Art/`), `Playlists/` (`Smart/`), `Persistence/`,
@@ -157,14 +165,12 @@ folders by area, namespace following folder: `Audio/`, `Decoding/`, `Playback/`,
 `ViewModels/` (`Mobile/`, `Home/`, `Settings/`), `Controls/`, `Views/`, `AppShell/`.
 `MusicLibrary` and `AppShell` rather than `Library` and `App`, because a folder's
 namespace named after a type shadows that type in every test file. One class per
-file. No test asserts how the UI looks - colours, pixels, fonts, sizes, margins,
-where one element sits relative to another - so moving things around never means
+file. With nothing pinned to how the UI looks, moving things around never means
 editing tests. Navigation and UI behaviour are tested on view models; a headless
 window (`Views/`) is only for what lives in the view and nowhere else (pointer
 capture, focus, a binding's echo), and a custom control's own logic belongs in a
 class it delegates to (`TrackRowSelection`, `NameSelectionDragGesture`) where a
-plain test can reach it. No trivial tests: pass-throughs, list wrappers and
-"forwards the call" are not worth their upkeep.
+plain test can reach it.
 
 `GaplessCoordinator` used to give the armed (decode-ahead) role its own independent LibVLC core, because two `MediaPlayer`s sharing one core silently dropped `OnDrain`/`EndReached` under real decode load. That went out with LibVLC — two `FfmpegTrackDecoder`s share nothing to contend over. The bug that fix exposed did not: a fast handover racing `ArmAsync`'s own `PrepareAsync`, fixed in `ArmAsync`, and still what `GaplessCoordinatorRealDecodeTests`' class comment is about.
 
@@ -492,6 +498,8 @@ The pipeline carries packed S24 because that is what the decoder delivers — an
 Two consequences worth knowing before touching the render path. `OutputStage`'s dither and clamp are the destination format's, not S16 constants. And `flower_audio_bridge`'s transport fade reads samples rather than bytes, so `flower_audio_bridge_create` is told the width (`bytesPerSample`, 2 or 3) and refuses any other - a format it cannot fade is one it must not render. It used to walk `int16_t*` unconditionally, which cost `MiniaudioSink` the whole native bridge at S24, i.e. cost electing FFmpeg on a phone the GC-pause resilience the bridge exists for. Changing that signature means rebuilding the vendored `libminiaudio.so`/`miniaudio.framework` binaries.
 
 ## UI Structure
+
+**On the phones, a box is typed in through the platform's own field** (`TextInput`, `NativeTextSession`, `PlatformNativeTextField`; `AppleNativeTextField`, `AndroidNativeTextField`): at rest every box is Avalonia's, so it scrolls, slides and sits under the floating ovals like everything else; while it has the focus a `UITextField`/`UITextView` or `EditText` is laid exactly over its text, placed every frame and clipped to whatever clips the box, and the box turns Avalonia's input method off. The box keeps the focus as far as the app can tell, so nothing listening to it changes: typing is its `Text`, Return is its Enter, the platform dismissing the keyboard is its `LostFocus`. Use `TextInput`, never a bare `TextBox`, for anything a phone can reach. Desktop and the browser have no factory and type in Avalonia's box as before.
 
 `MainView.axaml`: top bar (playlist controls, volume, seek/track info, search) → content (sidebar + optional drill-down sub-list + `MusicListView` track list) → status bar.
 

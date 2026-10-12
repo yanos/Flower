@@ -1,8 +1,7 @@
 long term:
- album mode
+ server multiple libraries?
  artist / playlist icon instead of album art
  localisation
- on each startup, choose an flower emoji and make that the app icon. show it in the about box and in the ios splash screen. different flower species in  dark mode
  Currently playing controls that looks like an lcd panel
  visualizers
  themes / ui customization
@@ -12,112 +11,23 @@ external services
  most popular track for an artist service
  artist image service
  lyric service
+ bandcamp integration
+ other streaming platform integration if possible
  
 short term
  option to toggle each log category (level, category, timestamp) 
  Event bus?
- no utf on the web version
  add an issue link in about box
  write a readme
  folder in playlist
-
-Connecting the Claude Chrome extension (optional now, but useful for web UI problems like this):
-1. Install it from https://claude.ai/chrome in the Chrome you use.
-2. Sign in to claude.ai in that Chrome with the same account as Claude Code.
-3. Restart Chrome if this is the first install.
-4. Say so here and I'll check it's connected. When I use it, I open my own tab and don't touch yours.
+ better song rating integration in the ui
+ transform plans to actual documentation
 
 ----
-1. The identity guard — and a second copy of it
 
-Play() now compares _current.Track.Id instead of _currentPath == track.Path. While 
-reading it I found SetUpcoming had the identical defect (_armedTrack.Path ==
-next.Path), reached the same way — ArmUpcoming also goes through                   ResolveForPlaybackAsync, so every shuffle/repeat toggle mid-track tore down a decoder already seconds into decoding ahead and restarted its network fetch. Both fixed.
+Lambda's side is now writable: Docker mounts the volume read-write, and the NFS mount inside the container says rw. The refusal comes from the NAS. The write got Read-only file system, an error that only a server exporting the share read-only to this client gives. Once that's fixed there's a second layer, the file permissions.
 
-Two regression tests, in the streamed shape the old ones missed: same Track.Id, 
-different signed URL. I verified them red first — reverting just the two comparisons
-gives exactly 2 failures out of 23, and restoring gives 23/23.                  
-
-2. CPU/memory instrumentation                                                   
-
-Flower.Core/Diagnostics/ResourceMonitor.cs — resident memory, managed heap, CPU 
-counts by generation, thread count. In Flower.Core so the server can use it.
-                                                                                
-Two things worth knowing:
-- CPU comes from Environment.CpuUsage (.NET 9+); I probed it on this machine fir
-  rather than assuming — busy-loop reads 100.0%, sleep reads 0.3%.
-- Memory goes through mach task_info, not Environment.WorkingSet, on Apple platf
-  WorkingSet returns 0 where the runtime has no implementation, and 0 is
-  indistinguishable from a real answer on a settings screen. Verified against th
-  Mac: 32MB resident, 32768MB device total.
-                                                                                
-ResourceMonitor is instantiable, not static, because CPU % is a delta — the settings
-screen at 1s and the playback snapshot at 10s would otherwise eat each other's  
-baseline. There's a test for exactly that.
-                                                                                
-Also added to the Playback snapshot log line: CpuPercent, ProcessMemoryMb,
-ManagedHeapMb, Gen0/1/2, Threads — beside the decode counters, so "CPU pinned wh
-the ring stayed full" is readable in one line.
-                                                                                
-3. Mobile settings readout             
-ResourceUsageViewModel + a Diagnostics block in SettingsView.axaml: CPU, Memory (148
-MB of 3814 MB), Heap, GC, Threads. Polls once a second and only while the settin
-sheet is open — MobileMainViewModel.ActiveSheet starts and stops it. A diagnostics
-panel that ran a timer for the life of the app would drain the battery it's mean
-investigate.
-                                                                                
-I also wrapped the settings content in a ScrollViewer. It had none, so on a 13 mini
-the new block would simply have been unreachable.                               
-
-
-
-----
-The volume slider will feel different. It was raw linear amplitude (50% = −6 dB); it's now a cubic taper (50% ≈ −18 dB). That's the fix for "101 steps you can't hear apart", but it's a real change — one line in OutputStage.GainForVolumePercent if you want it gentler.
-----
-Lock-free synchronisation — correct in shape, but (A) is a bug in the
-    protocol and (B) is a lock that reaches the RT thread anyway.
-
-----
-GC pauses / ArrayPool — the RT callback already allocates nothing;
-    TrackDecoder.OnPlay's _scratch (:396-399) is grow-only and reused. The
-    useful artifact here is a regression test asserting zero allocation.
-    
-
-----
-why is star a special case?
-Library.TrackStarsChanged is a new event. SetStarred — both the Track Info window and Subsonic /star go through it — reached neither existing event, so a star would not have entered a starred-based playlist until something unrelated triggered a pass. It can't be folded into TrackStatsChanged: App.axaml.cs:740 forwards that to IPlayReporter, so a star raised there would be reported to the origin server as a listen. Checking the other two paths the doc had flagged went the other way — MergeReportedTrackState already raises TrackStatsChanged and MergeSyncedTracks already raises TracksUpdated, so both were covered.
-----
-Picture the desktop and the server, and the two things that happen on their own timers:
-
-- The pull (catalog sync): "give me your whole library."
-- The push (every five seconds): "here's what I know that you don't."
-
-Now you star a song on the desktop. For a moment the desktop's answer is starred: true and the server's is still false. If the pull ran right then and took the server's answer for every track, it would set your star back to false — and then the push, comparing local against the baseline, sees nothing to report. Your star is gone, and nothing anywhere records that it ever existed. The pull would have raced the push and won.
-
-So today the pull just doesn't touch those fields on a track it already knows. Nothing is ever lost, because the client's answer is never overwritten. The cost is the mirror image: the client also never learns anything about those fields. Star something on the server's web UI and your desktop won't hear about it.
-
-With one admin device that's invisible. The desktop is the only thing that ever changes a star, information flows desktop → server, and both ends agree.
-
-With two it stops converging. Star a song on the laptop; the server gets it; the desktop pulls and ignores it. Both machines are internally consistent and permanently disagree. Same for history — the server knows everything, but each machine only shows its own.
-
-Why the fix isn't a one-liner. The client can't decide with two values; it needs three. It already keeps _knownServerState — "what the server told me last time" — so a pull could ask:
-
-- Did the server's answer change since it last told me? → that's news, take it.
-- Did mine drift from what the server told me? → that's my unpushed edit, keep it and push.
-- Both changed? → someone has to lose, and I'd have to pick a rule.
-
-That's a three-way merge, the same shape as git's: common ancestor, mine, theirs. Doable, but it means the baseline has to be trustworthy every time (including the moment between a pull landing and a push being acknowledged), the push and pull have to be ordered against each other, and each of those branches wants a test. Not something to bolt onto the end of this change — which is why I stopped where the behaviour is strictly "never loses data", named the gap, and left it as its own piece.
-  
-  
-Situations I didn't resolve
-
-1. The server's music folder goes missing during a rescan (NAS unmounted, drive asleep). The server's own library drops those tracks. When they come back they get new ids, a new date added, and lose their play counts and stars; clients then see brand-new songs. The fix belongs in the rescan ("folder not there, skip this scan"), and I didn't check how the importer handles a missing folder.
-2. Editing a playlist on a client that's missing some of its songs. The edit is genuinely newer, so the server takes it and loses the entries the client couldn't match. This is now a short window after first contact, but it isn't closed.
-3. Playlists keep entries for files deleted on the server, on both the server and the client, as unplayable rows. The existing code does this on purpose. Should they be removed?
-4. A file both moved and retagged on the server in one go gets a new server id, so clients see it as a delete plus an add. Only content fingerprinting would fix this.
-5. Two identically tagged files on the server (the same album ripped twice) now show up as two rows on the client, mirroring the server. A client with its own single copy sees that file plus one server-only row. I picked this deliberately.
-6. The ±2s length tolerance could merge two genuinely different recordings with identical tags and nearly identical lengths. That should be rare.
-7. A listener's star (paired but not an admin) stays on their device only and never reaches the server. The test assumes that's intended.
-8. Re-pairing with a reinstalled server starts with no sync history, so every playlist that differs will prompt a conflict.
-9. An unanswered conflict prompt now makes other playlist syncs wait until the user answers.
- 
+1. The export. The NAS (uid 1026 and group users suggest a Synology) gives lambda read-only access to /volume1/audio. In DSM that's Control Panel → Shared Folder → audio → Edit → NFS Permissions. Edit the rule matching 192.168.50.52 (or *) and set Privilege to Read/Write.
+2. Who the write happens as. Everything there is owned by 1026:100 with drwxr-xr-x, so only uid 1026 can write. The server writes as uid 1654, so even with a read/write export it would get "Permission denied". In the same NFS rule:
+   - Simplest: set Squash to Map all users to admin, so writes from lambda happen as the NAS admin. Keep the rule's hostname/IP set to 192.168.50.52 only, not *, so no other machine on your network gets that.
+   - Narrower: keep "No mapping" and give a NAS user with uid 1654 (or group 100 with group-write) write permission on the share. That's more fiddly on a Synology.

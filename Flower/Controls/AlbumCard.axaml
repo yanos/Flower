@@ -80,7 +80,7 @@
       <Button Grid.Row="1" Grid.Column="1" Classes="pill" Padding="4" Margin="4,-7,0,-2"
               ToolTip.Tip="More"
               Click="Menu_Click">
-        <materialIcons:MaterialIcon Kind="DotsVertical" Width="20" Height="20" Opacity="0.6" />
+        <materialIcons:MaterialIcon Classes="chrome" Kind="DotsVertical" Width="20" Height="20" Opacity="0.6" />
       </Button>
       <!-- A size under the artist's: a note about the album, not part of
            its name. -->

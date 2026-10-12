@@ -3,7 +3,8 @@
              x:Class="Flower.App"
              Name="Flower"
              RequestedThemeVariant="Default"
-             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia">
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:controls="clr-namespace:Flower.Controls">
 
     <!-- Defines just the native macOS app menu (the bold "Flower" title's own
          dropdown - About/Settings/Hide/Quit), replacing Avalonia's default
@@ -90,6 +91,14 @@
         <Style Selector=":is(TextBox)">
             <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}"/>
         </Style>
+        <!-- While the platform's own field is laid over a box to be typed in
+             (TextInput, NativeTextSession - the phones), the box's own words,
+             caret and placeholder make way for the field's, so there is one
+             copy on screen. Its background, border and clear button stay:
+             the field draws on them. -->
+        <Style Selector=":is(TextBox).nativeEditing /template/ TextPresenter#PART_TextPresenter, :is(TextBox).nativeEditing /template/ TextBlock#PART_Placeholder">
+            <Setter Property="Opacity" Value="0"/>
+        </Style>
         <!-- Compact tab headers app-wide (Settings, Track Info) - FluentTheme's
              own default TabItem is sized for a handful of wide tabs, not the
              several compact one-word ones these dialogs use. Was previously
@@ -114,6 +123,22 @@
         <Style Selector="materialIcons|MaterialIcon">
             <Setter Property="Foreground" Value="{DynamicResource AppPrimaryBrush}"/>
         </Style>
+        <!-- ...except where the icon is part of the app's frame, which is the
+             frame's colour (PaletteChrome, Theme.axaml): an icon in one of the
+             ovals or rings (a round button, a pill, the ring round play), like
+             the rim round it; every icon on a surface marked .chromeIcons (the
+             song and album menus, Add to Playlist, the hamburger's card); and
+             one marked .chrome itself (the "..." on a row). Oval icons by
+             child selectors, so a menu card a button drops - its logical
+             child - answers to its own marking; and the download button's,
+             which sits in an oval as a control of its own (an album's
+             download-all). An entry that means something keeps its own
+             colour, set where it is declared (a delete's AppErrorBrush).
+             After the red so it wins over it; before the disabled grey and
+             the hover and pressed accents below, so they still win over it. -->
+        <Style Selector="Border.floating > Button.pill > materialIcons|MaterialIcon, Border.floating > materialIcons|MaterialIcon, Border.ring > materialIcons|MaterialIcon, Border.floating > controls|TrackDownloadButton materialIcons|MaterialIcon, :is(Control).chromeIcons materialIcons|MaterialIcon, materialIcons|MaterialIcon.chrome">
+            <Setter Property="Foreground" Value="{DynamicResource AppChromeBrush}"/>
+        </Style>
         <Style Selector="materialIcons|MaterialIcon:disabled">
             <Setter Property="Foreground" Value="{DynamicResource AppTextDisabledBrush}"/>
         </Style>
@@ -125,13 +150,13 @@
         </Style>
         <!-- A page's name, where it heads the page: the phone's screens
              (ScreenTitle) and the desktop's lists (MainView's page header).
-             The display serif in the accent red, like an album's name and a
-             song's on Now Playing: the serif is what a heading is in this
-             app, Inter what everything under it is. Each sets its own size. -->
+             The display serif in the frame's colour (PaletteChrome), like a
+             playlist's name; the serif is what a heading is in this app,
+             Inter what everything under it is. Each sets its own size. -->
         <Style Selector="TextBlock.screenTitle">
             <Setter Property="FontFamily" Value="{DynamicResource AppDisplayFontFamily}"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource AppChromeBrush}"/>
             <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
         </Style>
         <!-- An icon on a button pointed at or pressed takes the hover or

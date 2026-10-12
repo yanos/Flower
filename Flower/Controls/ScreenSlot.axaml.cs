@@ -64,6 +64,7 @@ public partial class ScreenSlot : UserControl
             : [];
         AddHandler(RubberBandScroll.PulledDownEvent, Screen_PulledDown);
         AddHandler(RubberBandScroll.PullingDownEvent, Screen_PullingDown);
+        HeaderBand.LayoutUpdated += (_, _) => FillPills();
     }
 
     // Inserts the wrapped screen control into this slot's content area.
@@ -76,6 +77,75 @@ public partial class ScreenSlot : UserControl
         if (content.Parent is ContentControl oldHost && !ReferenceEquals(oldHost, ContentHost))
             oldHost.Content = null;
         ContentHost.Content = content;
+        FillPills();
+    }
+
+    // ── The page under the band ───────────────────────────────────────────
+
+    /// <summary>
+    /// What a screen paints behind everything else, in its own coordinates,
+    /// for a screen whose page is more than the plain background - an album's,
+    /// washed in its cover's colour with the cover blurred at the top
+    /// (TrackListScreenView). Null for the plain page.
+    /// </summary>
+    public static readonly AttachedProperty<Drawing?> PageDrawingProperty =
+        AvaloniaProperty.RegisterAttached<ScreenSlot, Control, Drawing?>("PageDrawing");
+
+    public static Drawing? GetPageDrawing(Control screen) => screen.GetValue(PageDrawingProperty);
+
+    public static void SetPageDrawing(Control screen, Drawing? value) => screen.SetValue(PageDrawingProperty, value);
+
+    static ScreenSlot()
+    {
+        PageDrawingProperty.Changed.AddClassHandler<Control>((screen, _) =>
+            screen.FindAncestorOfType<ScreenSlot>()?.FillPills());
+    }
+
+    /// <summary>The screen this slot shows - the one PageDrawing is read off.</summary>
+    public Control? Screen => ContentHost.Content as Control;
+
+    // Over a painted page the band's circles and oval are filled with it:
+    // each shows exactly the patch of page it covers, so it reads as
+    // see-through while the songs scrolling up under it stay hidden. Again
+    // after every layout, since the oval comes and goes and the band moves
+    // with the safe area.
+    private void FillPills()
+    {
+        var screen = Screen;
+        var page = screen is null ? null : GetPageDrawing(screen);
+        foreach (var pill in new[] { BackPill, ScreenMenu.Pill, FilterOval })
+        {
+            var at = page is null || screen is null || !pill.IsVisible ? null : pill.TranslatePoint(default, screen);
+            FillWithPage(pill, page, at is { } point ? new Rect(point, pill.Bounds.Size) : null);
+        }
+    }
+
+    /// <summary>
+    /// Fills a control floating over a painted page with the patch of that
+    /// page under it (<paramref name="patch"/>, in the page's coordinates),
+    /// or gives it back its styled fill when there is no page or no patch.
+    /// A brush over the page's own drawing, cut to the control's place,
+    /// rather than a copy of the page's controls inside each one - the page
+    /// is still, so where the control sits is all it takes. Used for the
+    /// band's buttons here and for the mini player and tab oval over the
+    /// bottom of the screens (MobileMainView).
+    /// </summary>
+    public static void FillWithPage(Border pill, Drawing? page, Rect? patch)
+    {
+        if (page is null || patch is not { } source)
+        {
+            if (pill.IsSet(Border.BackgroundProperty))
+                pill.ClearValue(Border.BackgroundProperty);
+            return;
+        }
+
+        if (pill.Background is DrawingBrush current && ReferenceEquals(current.Drawing, page) && current.SourceRect.Rect == source)
+            return;
+        pill.Background = new DrawingBrush(page)
+        {
+            SourceRect = new RelativeRect(source, RelativeUnit.Absolute),
+            Stretch = Stretch.Fill,
+        };
     }
 
     // ── The filter oval ───────────────────────────────────────────────────
