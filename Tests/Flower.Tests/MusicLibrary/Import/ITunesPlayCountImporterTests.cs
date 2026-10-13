@@ -34,9 +34,10 @@ public class ITunesPlayCountImporterTests : IsolatedHome
         return path;
     }
 
-    private static string TrackEntry(int id, string name, string artist, string? album, int totalTimeMs, int playCount)
+    private static string TrackEntry(int id, string name, string artist, string? album, int totalTimeMs, int playCount, string? location = null)
     {
         var albumXml = album == null ? "" : $"<key>Album</key><string>{album}</string>";
+        var locationXml = location == null ? "" : $"<key>Location</key><string>{location}</string>";
         return $"""
             <key>{id}</key>
             <dict>
@@ -46,6 +47,7 @@ public class ITunesPlayCountImporterTests : IsolatedHome
                 {albumXml}
                 <key>Total Time</key><integer>{totalTimeMs}</integer>
                 <key>Play Count</key><integer>{playCount}</integer>
+                {locationXml}
             </dict>
             """;
     }
@@ -262,6 +264,47 @@ public class ITunesPlayCountImporterTests : IsolatedHome
         ITunesPlayCountImporter.ApplyFromXmlFile(new List<Track> { track }, xmlPath);
 
         Assert.Equal(17, track.ImportedPlayCount);
+    }
+
+    // A song this device only streams has no Path, only where the file sits
+    // under its server's music folder - and a server filled from Music.app
+    // keeps it under the same artist and album folders. Confirmed against a
+    // real library: an album tagged "The Rip Tide 2011" that Music.app calls
+    // "The Rip Tide" matched on no key, and sat in a "Never played" smart
+    // playlist after eleven plays a song.
+    [Fact]
+    public void A_streamed_song_is_found_by_where_it_sits_under_the_servers_music_folder()
+    {
+        var xmlPath = WriteLibraryXml(TrackEntry(
+            1, "Santa Fe", "Beirut", "The Rip Tide", 254432, 12,
+            location: "file:///Users/test/Music/Music/Media.localized/Music/Beirut/The%20Rip%20Tide/02%20Santa%20Fe.mp3"));
+        var track = new Track
+        {
+            Title = "Santa Fe", Artists = "Beirut", Album = "The Rip Tide 2011", Duration = TimeSpan.FromSeconds(254.43),
+            OriginRelativePath = "Beirut/The Rip Tide/02 Santa Fe.mp3",
+        };
+
+        ITunesPlayCountImporter.ApplyFromXmlFile(new List<Track> { track }, xmlPath);
+
+        Assert.Equal(12, track.ImportedPlayCount);
+    }
+
+    // A relative path ending two Music.app files names neither of them.
+    [Fact]
+    public void A_server_path_that_ends_two_Music_app_files_is_not_guessed_between()
+    {
+        var xmlPath = WriteLibraryXml(
+            TrackEntry(1, "Intro", "One", "First", 60000, 5, location: "file:///Users/test/Music/One/First/01%20Intro.mp3")
+            + TrackEntry(2, "Intro", "Two", "Second", 90000, 9, location: "file:///Users/test/Other/Music/One/First/01%20Intro.mp3"));
+        var track = new Track
+        {
+            Title = "Intro", Artists = "Someone Else", Album = "Elsewhere", Duration = TimeSpan.FromSeconds(60),
+            OriginRelativePath = "One/First/01 Intro.mp3",
+        };
+
+        ITunesPlayCountImporter.ApplyFromXmlFile(new List<Track> { track }, xmlPath);
+
+        Assert.Equal(0, track.ImportedPlayCount);
     }
 
     [Fact]

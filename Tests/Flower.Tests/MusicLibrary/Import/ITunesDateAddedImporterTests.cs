@@ -123,6 +123,25 @@ public class ITunesDateAddedImporterTests
         Assert.Equal(new DateTimeOffset(2010, 1, 1, 0, 0, 0, TimeSpan.Zero), track.DateAdded);
     }
 
+    // See ITunesPlayCountImporterTests' test of the same name.
+    [Fact]
+    public void A_streamed_song_is_found_by_where_it_sits_under_the_servers_music_folder()
+    {
+        var xmlPath = WriteLibraryXml(TrackEntry(
+            1, "Santa Fe", "Beirut", "The Rip Tide", 254432, "2011-08-30T00:00:00Z",
+            location: "file:///Users/test/Music/Music/Media.localized/Music/Beirut/The%20Rip%20Tide/02%20Santa%20Fe.mp3"));
+        var track = new Track
+        {
+            Title = "Santa Fe", Artists = "Beirut", Album = "The Rip Tide 2011", Duration = TimeSpan.FromSeconds(254.43),
+            OriginRelativePath = "Beirut/The Rip Tide/02 Santa Fe.mp3",
+            DateAdded = new DateTimeOffset(2026, 9, 1, 0, 0, 0, TimeSpan.Zero),
+        };
+
+        ITunesDateAddedImporter.ApplyFromXmlFile(new List<Track> { track }, xmlPath);
+
+        Assert.Equal(new DateTimeOffset(2011, 8, 30, 0, 0, 0, TimeSpan.Zero), track.DateAdded);
+    }
+
     [Fact]
     public void ApplyFromXmlFile_matches_by_path_despite_different_unicode_normalization()
     {

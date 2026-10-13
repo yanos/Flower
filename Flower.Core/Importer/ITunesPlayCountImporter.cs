@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Text;
 
 using Claunia.PropertyList;
 
@@ -92,10 +91,9 @@ public static class ITunesPlayCountImporter
             }
 
             var playCountBySyncKey = new Dictionary<string, int>();
-            // Highest-priority match - see TryDecodeLocationPath's own doc
-            // comment for why a path match, when available, beats metadata
-            // entirely.
-            var playCountByPath = new Dictionary<string, int>();
+            // Highest-priority match - see ITunesLocations for why the file,
+            // when it can be found, beats metadata entirely.
+            var playCountByLocation = new ITunesLocations<int>((a, b) => a + b);
             // Fallback for when BuildSyncKey finds nothing - see Track.
             // BuildLooseKey's own doc comment. Tracks how many *distinct* full
             // sync keys (i.e. distinct durations) share a loose key - two raw
@@ -143,8 +141,7 @@ public static class ITunesPlayCountImporter
                     syncKeys.Add(syncKey);
 
                     iTunesTrack.TryGetValue("Location", out var locationNode);
-                    if (TryDecodeLocationPath(locationNode?.ToString()) is { } path)
-                        playCountByPath[path] = playCountByPath.GetValueOrDefault(path) + playCount.ToInt();
+                    playCountByLocation.Add(locationNode?.ToString(), playCount.ToInt());
                 }
             }
 
@@ -152,8 +149,8 @@ public static class ITunesPlayCountImporter
             foreach (var track in tracks)
             {
                 int? count = null;
-                if (!string.IsNullOrEmpty(track.Path) && playCountByPath.TryGetValue(NormalizePath(track.Path), out var byPath))
-                    count = byPath;
+                if (playCountByLocation.TryFind(track, out var byLocation))
+                    count = byLocation;
                 else if (playCountBySyncKey.TryGetValue(track.SyncKey, out var exact))
                     count = exact;
                 else if (looseSyncKeys.TryGetValue(Track.BuildLooseKey(track.Title, track.Artists, track.Album), out var syncKeys) && syncKeys.Count == 1)
@@ -175,43 +172,6 @@ public static class ITunesPlayCountImporter
             logger.LogWarning(ex, "Failed to parse iTunes library export at {XmlPath}; play counts left unchanged", xmlPath);
         }
     }
-
-    // An iTunes entry's own file path, when it resolves and matches a local
-    // Track.Path exactly, is a stronger identity signal than any tag-derived
-    // key: metadata (title/artist/album/duration) can drift after Music.app
-    // last indexed a file - confirmed against a real track whose Artist tag
-    // had been edited ("Takashi Kokubo (小久保隆)" locally vs "Takashi Kokubo"
-    // in Music.app's stale record) where Location still pointed at the exact
-    // same file - or, per this class's own doc comment, a *static* export's
-    // paths can predate an iTunes-to-Music.app migration and no longer
-    // resolve at all. Either way this fallback degrades safely: a stale/non-
-    // matching path here just means the metadata-based keys below get tried
-    // instead, exactly as if this dictionary had never been built.
-    private static string? TryDecodeLocationPath(string? location)
-    {
-        if (string.IsNullOrEmpty(location))
-            return null;
-        try
-        {
-            var uri = new Uri(location);
-            return uri.IsFile ? NormalizePath(uri.LocalPath) : null;
-        }
-        catch (UriFormatException)
-        {
-            return null;
-        }
-    }
-
-    // Confirmed necessary against a real file whose name contains "é": iTunes'
-    // Location URL had it as the decomposed form ("e" + a combining acute
-    // accent, U+0301) while the same path read off disk elsewhere used the
-    // precomposed single-codepoint form (U+00E9) - visually identical, but a
-    // byte-for-byte dictionary lookup treated them as two different strings
-    // and the path match silently found nothing. Both sides of the path
-    // match (this dictionary's keys and the local Track.Path used to look
-    // them up) have to go through this same normalization or the mismatch
-    // just resurfaces in the opposite direction.
-    private static string NormalizePath(string path) => path.Normalize(NormalizationForm.FormC);
 
     // Runs synchronously (this is always called from a background Task.Run at
     // both its call sites - App.axaml.cs's startup rescan and
