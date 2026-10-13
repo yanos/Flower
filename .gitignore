@@ -515,3 +515,6 @@ FFAudioPackage.local.props
 ## Anchored, so a future .env fixture inside a test project is unaffected.
 /docker/.env
 /docker/.env.*
+
+## Design mockups: scratch, kept beside the code while working on a screen.
+/mockups/
