@@ -432,12 +432,11 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
             : null;
 
     // The desktop Artists column: SubListItems narrowed by the filter, whose
-    // box sits at that column's head - every artist with a song the filter
-    // finds, the way the phone's artist list filters
-    // (MobileMainViewModel.FilterArtistPicker), so typing an artist's name or
-    // one of their songs' finds them. A list of its own rather than
-    // SubListItems narrowed in place: the phone builds its artist list from
-    // SubListItems, and sets the filter on its track lists.
+    // box sits at that column's head - the artists whose name it finds, the
+    // way the phone's artist list filters (MobileMainViewModel
+    // .FilterArtistPicker). A list of its own rather than SubListItems
+    // narrowed in place: the phone builds its artist list from SubListItems,
+    // and sets the filter on its track lists.
     private ObservableCollection<string> _visibleSubListItems = new();
     public ObservableCollection<string> VisibleSubListItems
     {
@@ -453,9 +452,8 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
                 VisibleSubListItems = _subListItems;
             return;
         }
-        var matching = TrackListBuilder.Filter(_allTracks, _filterText)
-            .Select(t => t.Artists).Where(a => !string.IsNullOrEmpty(a)).ToHashSet(ArtistNames.Comparer);
-        VisibleSubListItems = new ObservableCollection<string>(_subListItems.Where(matching.Contains));
+        var filter = _filterText;
+        VisibleSubListItems = new ObservableCollection<string>(_subListItems.Where(a => SearchText.Contains(a, filter)));
     }
 
     public void RebuildSubListItems()
@@ -621,6 +619,12 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         var libraryChangeToken = _library.ChangeToken;
         var pairedServerFingerprint = _host.PairedServerFingerprint;
         var pairedServerReachable   = _host.IsPairedServerReachable;
+        // Songs finds a song by its title alone (TrackListBuilder
+        // .TitleMatches); every other list of songs - an album's, an
+        // artist's, a playlist, History - by anything about it.
+        Func<Track, string, bool>? matches = _host.CurrentKind == SidebarItemKind.Songs
+            ? TrackListBuilder.TitleMatches
+            : null;
 
         // Albums shows a tile grid instead of Rows built straight
         // from _allTracks, not from GetBaseTracksForFilter's (mostly
@@ -684,11 +688,11 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         // PropertyChanged on them.
         var (plan, albumTiles) = await Task.Run(() =>
         {
-            var builtPlan = TrackListBuilder.Plan(baseTracks, text, sortCol, sortAsc, playing, _sortArtistAlbumsByYear, pairedServerFingerprint, pairedServerReachable);
+            var builtPlan = TrackListBuilder.Plan(baseTracks, text, sortCol, sortAsc, playing, _sortArtistAlbumsByYear, pairedServerFingerprint, pairedServerReachable, matches);
             if (!buildGrids)
                 return (builtPlan, (List<AlbumTileViewModel>?)null);
 
-            var filteredForGrids = TrackListBuilder.Filter(allTracks, text).ToList();
+            var filteredForGrids = TrackListBuilder.Filter(allTracks, text, TrackListBuilder.AlbumMatches).ToList();
             return (builtPlan, AlbumGridBuilder.Build(filteredForGrids));
         }, token);
 

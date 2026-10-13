@@ -46,14 +46,20 @@ public sealed class FilterableAlbumGrid
 
     public void Rechunk(int columns)
     {
-        var shown = Filter == null ? Tiles : Tiles.Where(t => Matches(t, Filter)).ToList();
+        var shown = Filter == null ? Tiles : Tiles.Where(t => NameMatches(t, Filter)).ToList();
         Rows.Clear();
         foreach (var row in AlbumGridRow.Chunk(shown, columns))
             Rows.Add(row);
     }
 
-    // An album is found by its own name and artist, and by anything any of its
-    // songs would be found by - typing a song's title finds the album it is on.
+    // A grid finds an album by its name alone, the way the desktop's Albums
+    // grid does (TrackListBuilder.AlbumMatches).
+    public static bool NameMatches(AlbumTileViewModel tile, string filter) =>
+        SearchText.Contains(tile.Name, filter);
+
+    // Home's shelves, which are albums too but no one page's list, find one by
+    // its own name and artist, and by anything any of its songs would be
+    // found by - typing a song's title finds the album it is on.
     public static bool Matches(AlbumTileViewModel tile, string filter) =>
         SearchText.Contains(tile.Name, filter) ||
         SearchText.Contains(tile.Artist, filter) ||

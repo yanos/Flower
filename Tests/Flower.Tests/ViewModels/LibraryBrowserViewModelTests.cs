@@ -126,6 +126,59 @@ public class LibraryBrowserViewModelTests
         Assert.Equal("hello", Assert.Single(vm.Rows).Track.Title);
     }
 
+    // Songs finds a song by its title; an album's or an artist's name is
+    // what the other two pages find.
+    [AvaloniaFact]
+    public async Task Songs_are_found_by_title_alone()
+    {
+        var (vm, _) = Make(Song("Heroes", "Heroes", "Bowie"), Song("Sons of the Silent Age", "Heroes", "Bowie"));
+        vm.Repopulate();
+
+        vm.FilterText = "heroes";
+        await vm.RebuildRowsImmediatelyAsync();
+        Assert.Equal("Heroes", Assert.Single(vm.Rows).Track.Title);
+
+        vm.FilterText = "bowie";
+        await vm.RebuildRowsImmediatelyAsync();
+        Assert.Empty(vm.Rows);
+    }
+
+    // Any other list of songs - here a playlist - still finds one by anything.
+    [AvaloniaFact]
+    public async Task A_playlist_still_finds_a_song_by_its_artist()
+    {
+        var song = Song("Heroes", "Heroes", "Bowie");
+        var (vm, host) = Make(song);
+        host.CurrentKind = SidebarItemKind.Playlist;
+        host.CurrentPlaylist = new Playlist("Mix", [song]);
+        vm.Repopulate();
+
+        vm.FilterText = "bowie";
+        await vm.RebuildRowsImmediatelyAsync();
+
+        Assert.Single(vm.Rows);
+    }
+
+    [AvaloniaFact]
+    public async Task The_album_grid_finds_an_album_by_its_name_alone()
+    {
+        var (vm, host) = Make(Song("Karma Police", "OK Computer", "Radiohead"), Song("Heroes", "Heroes", "Bowie"));
+        host.CurrentKind = SidebarItemKind.Albums;
+        vm.Repopulate();
+
+        vm.FilterText = "computer";
+        await vm.RebuildRowsImmediatelyAsync();
+        Assert.Equal("OK Computer", Assert.Single(vm.AlbumGridTiles).Name);
+
+        vm.FilterText = "karma";
+        await vm.RebuildRowsImmediatelyAsync();
+        Assert.Empty(vm.AlbumGridTiles);
+
+        vm.FilterText = "radiohead";
+        await vm.RebuildRowsImmediatelyAsync();
+        Assert.Empty(vm.AlbumGridTiles);
+    }
+
     [AvaloniaFact]
     public void History_keeps_sort_state_independent_of_songs()
     {

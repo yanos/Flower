@@ -39,9 +39,10 @@ public static class TrackListBuilder
         Track? currentlyPlayingTrack = null,
         bool sortArtistAlbumsByYear = false,
         string? pairedServerFingerprint = null,
-        bool pairedServerReachable = false)
+        bool pairedServerReachable = false,
+        Func<Track, string, bool>? matches = null)
     {
-        var filtered = Filter(tracks, filterText).ToList();
+        var filtered = Filter(tracks, filterText, matches).ToList();
         var sorted   = Sort(filtered, sortColumn, sortAscending, sortArtistAlbumsByYear).ToList();
 
         return PlanRows(sorted, currentlyPlayingTrack, pairedServerFingerprint, pairedServerReachable);
@@ -50,11 +51,13 @@ public static class TrackListBuilder
     // Public so MainViewModel can also filter the Albums/Recently Added tile
     // grids by the same text (see RebuildRowsAsync) - those aren't built from
     // Rows/TrackRowViewModel at all, so they'd otherwise never see FilterText.
-    public static IEnumerable<Track> Filter(IEnumerable<Track> tracks, string? text)
+    // matches is what a track is found by, Matches when not given.
+    public static IEnumerable<Track> Filter(IEnumerable<Track> tracks, string? text, Func<Track, string, bool>? matches = null)
     {
         if (string.IsNullOrWhiteSpace(text))
             return tracks;
-        return tracks.Where(t => Matches(t, text));
+        matches ??= Matches;
+        return tracks.Where(t => matches(t, text));
     }
 
     // Accent-insensitive as well as case-insensitive - see SearchText for
@@ -66,6 +69,14 @@ public static class TrackListBuilder
         SearchText.Contains(t.Artists, text) ||
         SearchText.Contains(t.Album,   text) ||
         SearchText.Contains(t.Genre,   text);
+
+    // What the three library pages filter by: each finds what it lists by its
+    // own name and nothing else - Songs a song by its title, Albums an album by
+    // its name, Artists an artist by theirs. A song's title finding the album
+    // it is on, or the artist who sang it, made every page a search of the
+    // whole library under another layout.
+    public static bool TitleMatches(Track t, string text) => SearchText.Contains(t.Title, text);
+    public static bool AlbumMatches(Track t, string text) => SearchText.Contains(t.Album, text);
 
     // Sorts on each field's "sort as" value rather than the field itself - the
     // tag's own sort override when it has one, the displayed text otherwise

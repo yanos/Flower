@@ -28,8 +28,8 @@ namespace Flower.Tests.ViewModels.Mobile;
 // The filter box a phone screen reveals when pulled down past its top
 // (MobileMainViewModel.ScreenFilter, drawn by MobileMainView as an oval). It narrows
 // whichever list the screen is - album grid, artist or playlist picker, or a
-// track list - by anything a song in it would be found by, belongs to that one
-// screen, and comes back with it on Back.
+// track list - belongs to that one screen, and comes back with it on Back. The
+// Songs, Albums and Artists tabs find what they list by its own name alone.
 [Collection("PlatformDataDirectory")]
 public class MobileScreenFilterTests : PinnedDataDirectory
 {
@@ -76,17 +76,22 @@ public class MobileScreenFilterTests : PinnedDataDirectory
         rows.SelectMany(r => r.Tiles).Select(t => t.Name).ToList();
 
     [AvaloniaFact]
-    public void A_song_title_finds_the_album_it_is_on()
+    public void An_album_is_found_by_its_name_and_not_by_its_songs_or_artist()
     {
         using var scope = Build();
         var mobile = scope.Mobile;
         mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
         Assert.Equal(3, GridAlbums(mobile.AlbumGridRows).Count);
 
-        mobile.ScreenFilter = "karma";
-
+        mobile.ScreenFilter = "computer";
         WaitUntil(() => GridAlbums(mobile.AlbumGridRows).Count == 1, "the grid narrowing");
         Assert.Equal(["OK Computer"], GridAlbums(mobile.AlbumGridRows));
+
+        mobile.ScreenFilter = "karma";
+        WaitUntil(() => GridAlbums(mobile.AlbumGridRows).Count == 0, "a song's title finding nothing");
+
+        mobile.ScreenFilter = "radiohead";
+        WaitUntil(() => GridAlbums(mobile.AlbumGridRows).Count == 0, "an artist's name finding nothing");
     }
 
     [AvaloniaFact]
@@ -95,7 +100,7 @@ public class MobileScreenFilterTests : PinnedDataDirectory
         using var scope = Build();
         var mobile = scope.Mobile;
         mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
-        mobile.ScreenFilter = "karma";
+        mobile.ScreenFilter = "computer";
         WaitUntil(() => GridAlbums(mobile.AlbumGridRows).Count == 1, "the grid narrowing");
 
         mobile.ScreenFilter = "";
@@ -105,7 +110,7 @@ public class MobileScreenFilterTests : PinnedDataDirectory
 
     // Accents are folded the way the Search tab folds them - see SearchText.
     [AvaloniaFact]
-    public void An_artist_is_found_by_name_or_by_one_of_their_songs()
+    public void An_artist_is_found_by_name_and_not_by_their_songs()
     {
         using var scope = Build();
         var mobile = scope.Mobile;
@@ -117,7 +122,7 @@ public class MobileScreenFilterTests : PinnedDataDirectory
         Assert.Equal(["Björk"], mobile.ArtistPickerItems.Select(r => r.Name));
 
         mobile.ScreenFilter = "airbag";
-        WaitUntil(() => mobile.ArtistPickerItems.Select(r => r.Name).SequenceEqual(["Radiohead"]), "the artists narrowing by song");
+        WaitUntil(() => mobile.ArtistPickerItems.Count == 0, "a song's title finding nobody");
     }
 
     // Each artist row says how many albums a tap on it opens onto - counted
@@ -153,7 +158,7 @@ public class MobileScreenFilterTests : PinnedDataDirectory
     }
 
     [AvaloniaFact]
-    public void The_songs_list_is_narrowed_to_matching_songs()
+    public void The_songs_list_is_narrowed_by_title_alone()
     {
         using var scope = Build();
         var mobile = scope.Mobile;
@@ -162,9 +167,9 @@ public class MobileScreenFilterTests : PinnedDataDirectory
 
         mobile.ScreenFilter = "heroes";
 
-        // By title and by album: both of the Heroes album's songs.
-        WaitUntil(() => mobile.Main.Rows.Count == 2, "the songs narrowing");
-        Assert.All(mobile.Main.Rows, r => Assert.Equal("Heroes", r.Track.Album));
+        // The song called Heroes, not the other song on the album of that name.
+        WaitUntil(() => mobile.Main.Rows.Count == 1, "the songs narrowing");
+        Assert.Equal("Heroes", mobile.Main.Rows[0].Track.Title);
     }
 
     // A drill-in lands on a screen of its own, with nothing filtered out of
@@ -175,7 +180,7 @@ public class MobileScreenFilterTests : PinnedDataDirectory
         using var scope = Build();
         var mobile = scope.Mobile;
         mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
-        mobile.ScreenFilter = "karma";
+        mobile.ScreenFilter = "computer";
         WaitUntil(() => GridAlbums(mobile.AlbumGridRows).Count == 1, "the grid narrowing");
 
         mobile.SelectAlbumOrArtistCommand.Execute("OK Computer");
@@ -192,7 +197,7 @@ public class MobileScreenFilterTests : PinnedDataDirectory
         using var scope = Build();
         var mobile = scope.Mobile;
         mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
-        mobile.ScreenFilter = "karma";
+        mobile.ScreenFilter = "computer";
         WaitUntil(() => GridAlbums(mobile.AlbumGridRows).Count == 1, "the grid narrowing");
         mobile.SelectAlbumOrArtistCommand.Execute("OK Computer");
         MainViewModelHarness.WaitForTheDrillIn(mobile, "OK Computer");
@@ -200,7 +205,7 @@ public class MobileScreenFilterTests : PinnedDataDirectory
         mobile.BackCommand.Execute(null);
 
         WaitUntil(() => mobile.IsShowingAlbumGrid, "landing back on the grid");
-        Assert.Equal("karma", mobile.ScreenFilter);
+        Assert.Equal("computer", mobile.ScreenFilter);
         Assert.Equal(["OK Computer"], GridAlbums(mobile.AlbumGridRows));
     }
 
@@ -244,7 +249,7 @@ public class MobileScreenFilterTests : PinnedDataDirectory
         mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
         Assert.True(mobile.OpenScreenFilter());
         Assert.True(mobile.IsScreenFilterOpen);
-        mobile.ScreenFilter = "karma";
+        mobile.ScreenFilter = "computer";
         WaitUntil(() => GridAlbums(mobile.AlbumGridRows).Count == 1, "the grid narrowing");
 
         mobile.CloseScreenFilterCommand.Execute(null);
@@ -275,10 +280,10 @@ public class MobileScreenFilterTests : PinnedDataDirectory
         Assert.False(mobile.IsScreenFilterOpen);
 
         Assert.True(mobile.OpenScreenFilter());
-        mobile.ScreenFilter = "karma";
+        mobile.ScreenFilter = "computer";
         mobile.CloseScreenFilterIfEmpty();
         Assert.True(mobile.IsScreenFilterOpen);
-        Assert.Equal("karma", mobile.ScreenFilter);
+        Assert.Equal("computer", mobile.ScreenFilter);
     }
 
     // The same, from the screen: a press anywhere but the oval - a tile here -
@@ -305,7 +310,7 @@ public class MobileScreenFilterTests : PinnedDataDirectory
         PressOn(window, BoxOf(LiveSlot(window)));
         Assert.True(mobile.IsScreenFilterOpen);
 
-        mobile.ScreenFilter = "karma";
+        mobile.ScreenFilter = "computer";
         Settle(window);
         PressOn(window, Tile());
         Assert.True(mobile.IsScreenFilterOpen);
@@ -436,15 +441,15 @@ public class MobileScreenFilterTests : PinnedDataDirectory
         Assert.True(oval.IsEffectivelyVisible);
         Assert.True(box.IsFocused);
 
-        box.Text = "karma";
+        box.Text = "computer";
         Dispatcher.UIThread.RunJobs();
-        Assert.Equal("karma", mobile.ScreenFilter);
+        Assert.Equal("computer", mobile.ScreenFilter);
         WaitUntil(() => GridAlbums(mobile.AlbumGridRows).Count == 1, "the grid narrowing");
 
         window.FocusManager!.Focus(null);
         Dispatcher.UIThread.RunJobs();
         Assert.True(oval.IsEffectivelyVisible);
-        Assert.Equal("karma", mobile.ScreenFilter);
+        Assert.Equal("computer", mobile.ScreenFilter);
 
         var close = oval.GetVisualDescendants().OfType<Button>().Single(b => b.Command == mobile.CloseScreenFilterCommand);
         close.Command!.Execute(null);
@@ -469,7 +474,7 @@ public class MobileScreenFilterTests : PinnedDataDirectory
         var grid = LiveSlot(window);
         Pull(grid);
         Settle(window);
-        BoxOf(grid).Text = "karma";
+        BoxOf(grid).Text = "computer";
         WaitUntil(() => GridAlbums(mobile.AlbumGridRows).Count == 1, "the grid narrowing");
 
         mobile.SelectAlbumOrArtistCommand.Execute("OK Computer");
@@ -477,7 +482,7 @@ public class MobileScreenFilterTests : PinnedDataDirectory
         // The live filter is gone at once; the screen being left still shows it.
         Assert.Null(mobile.ScreenFilter);
         Assert.True(OvalOf(grid).IsEffectivelyVisible);
-        Assert.Equal("karma", BoxOf(grid).Text);
+        Assert.Equal("computer", BoxOf(grid).Text);
 
         MainViewModelHarness.WaitForTheDrillIn(mobile, "OK Computer");
         Settle(window);
@@ -494,7 +499,7 @@ public class MobileScreenFilterTests : PinnedDataDirectory
 
         var back = LiveSlot(window);
         Assert.True(OvalOf(back).IsEffectivelyVisible);
-        Assert.Equal("karma", BoxOf(back).Text);
+        Assert.Equal("computer", BoxOf(back).Text);
         window.Close();
     }
 }

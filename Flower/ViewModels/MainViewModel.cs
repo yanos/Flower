@@ -580,8 +580,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     public ObservableCollection<TrackRowViewModel> Rows => Browser.Rows;
     public IReadOnlyList<Track> DisplayedTracks         => Browser.DisplayedTracks;
-    // On Artists, what the cards show - which the filter narrows further than
-    // the rows behind them (ArtistPageTracks); everywhere else the browser's.
+    // On Artists, what the cards show; everywhere else the browser's.
     public string StatusBarText => IsShowingArtistPage
         ? LibraryBrowserViewModel.Summarize(_artistAlbums.SelectMany(a => a.ExpandedTracks).ToList())
         : Browser.StatusBarText;
@@ -668,15 +667,14 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public IReadOnlyList<ArtistAlbumSectionViewModel> ArtistAlbums => _artistAlbums;
 
     // force: the library changed under the page, so everything is rebuilt.
-    // refilter: only the filter changed, so the header - the artist as a
-    // whole, collage and all - stays, and only the cards are rebuilt.
-    private void RefreshArtistPage(bool force = false, bool refilter = false)
+    // The filter does not reach the cards: it finds artists by name, in the
+    // column beside them, and the page is whichever one is picked, whole.
+    private void RefreshArtistPage(bool force = false)
     {
         var name = _selectedSidebarItem?.Kind == SidebarItemKind.Artists && SelectedSubItems.Count == 1
             ? SelectedSubItems.First()
             : null;
-        var newArtist = force || name != _artistHeader?.Name;
-        if (!newArtist && !refilter)
+        if (!force && name == _artistHeader?.Name)
             return;
 
         foreach (var section in _artistAlbums)
@@ -694,24 +692,20 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         else
         {
             var tracks = Library.Tracks.Where(t => ArtistNames.Same(t.Artists, name)).ToList();
-            if (newArtist)
-            {
-                var albums = tracks.Where(t => !string.IsNullOrEmpty(t.Album)).Select(t => t.Album).Distinct().Count();
-                var total = TimeSpan.FromTicks(tracks.Sum(t => t.Duration.Ticks));
-                var length = total.TotalHours >= 1 ? $"{(int)total.TotalHours}h {total.Minutes}m" : $"{total.Minutes}m";
-                _artistHeader = new ArtistHeaderInfo(name, AlbumCollage.ByAlbumName(tracks),
-                    $"{ArtistPickerRow.Summary(albums, tracks.Count)} · {length}");
-            }
+            var albums = tracks.Where(t => !string.IsNullOrEmpty(t.Album)).Select(t => t.Album).Distinct().Count();
+            var total = TimeSpan.FromTicks(tracks.Sum(t => t.Duration.Ticks));
+            var length = total.TotalHours >= 1 ? $"{(int)total.TotalHours}h {total.Minutes}m" : $"{total.Minutes}m";
+            _artistHeader = new ArtistHeaderInfo(name, AlbumCollage.ByAlbumName(tracks),
+                $"{ArtistPickerRow.Summary(albums, tracks.Count)} · {length}");
 
-            var shown = ArtistPageTracks(tracks, name, FilterText);
-            var tiles = AlbumGridBuilder.Build(shown)
+            var tiles = AlbumGridBuilder.Build(tracks)
                 .OrderBy(t => ArtistAlbumSectionViewModel.Year(t) == null)
                 .ThenBy(t => ArtistAlbumSectionViewModel.Year(t))
                 .ThenBy(t => TrackListBuilder.SortKey(t.Name))
                 .ToList();
             // Songs on no album still belong to the artist: they go in a card
             // of their own, last.
-            var loose = shown.Where(t => string.IsNullOrEmpty(t.Album)).ToList();
+            var loose = tracks.Where(t => string.IsNullOrEmpty(t.Album)).ToList();
             if (loose.Count > 0)
                 tiles.Add(new AlbumTileViewModel
                 {
@@ -736,35 +730,9 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
                 return section;
             }).ToList();
         }
-        if (newArtist)
-            OnPropertyChanged(nameof(ArtistHeader));
+        OnPropertyChanged(nameof(ArtistHeader));
         OnPropertyChanged(nameof(ArtistAlbums));
         OnPropertyChanged(nameof(StatusBarText));
-    }
-
-    // The songs the Artists page's cards hold under the page header's filter.
-    // The most specific thing the text finds wins, album by album: the songs
-    // whose title (or genre) it finds; failing those, the whole album when it
-    // finds the album's name; failing that, all the artist's songs when it
-    // finds the artist's name. So "windf" over Windflower is the one song
-    // called Windflower, not the album it names as well - TrackListBuilder
-    // .Matches, which the column of names and the other lists use, keeps a
-    // song whose album matches, which is the whole album every time.
-    internal static List<Track> ArtistPageTracks(IReadOnlyList<Track> tracks, string artist, string? filter)
-    {
-        if (string.IsNullOrWhiteSpace(filter))
-            return tracks.ToList();
-
-        var artistMatches = SearchText.Contains(artist, filter);
-        var shown = new List<Track>();
-        foreach (var album in tracks.GroupBy(t => t.Album ?? ""))
-        {
-            var songs = album.Where(t => SearchText.Contains(t.Title, filter) || SearchText.Contains(t.Genre, filter)).ToList();
-            if (songs.Count == 0 && (SearchText.Contains(album.Key, filter) || artistMatches))
-                songs = album.ToList();
-            shown.AddRange(songs);
-        }
-        return shown;
     }
 
     // One selection across the page, as one list would have.
@@ -1907,7 +1875,6 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
                         OnPropertyChanged(nameof(PageSubtitle));
                         break;
                     case nameof(LibraryBrowserViewModel.FilterText):
-                        RefreshArtistPage(refilter: true);
                         SyncHomeFilter();
                         break;
                 }

@@ -660,8 +660,8 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
 
     // The artists the Artists tab lists - Main.SubListItems, each with how
     // many albums a tap on it shows, or those of them the filter lets
-    // through. An artist is found by name, and by anything one of their songs
-    // would be found by.
+    // through. An artist is found by name alone (TrackListBuilder
+    // .TitleMatches says why).
     private string? _artistPickerFilter;
     private IReadOnlyList<ArtistPickerRow> _artistPickerRows = [];
     private IReadOnlyList<ArtistPickerRow> _filteredArtistPickerItems = [];
@@ -700,11 +700,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     {
         if (_artistPickerFilter is { } filter)
         {
-            var matching = Main.Library.Tracks
-                .Where(t => t.Artists != null && TrackListBuilder.Matches(t, filter))
-                .Select(t => t.Artists!)
-                .ToHashSet(ArtistNames.Comparer);
-            _filteredArtistPickerItems = _artistPickerRows.Where(r => matching.Contains(r.Name)).ToList();
+            _filteredArtistPickerItems = _artistPickerRows.Where(r => SearchText.Contains(r.Name, filter)).ToList();
         }
         OnPropertyChanged(nameof(ArtistPickerItems));
     }
