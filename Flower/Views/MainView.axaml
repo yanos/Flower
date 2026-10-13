@@ -302,12 +302,14 @@
       </Grid>
     </Border>
 
-    <!-- An administrator's browser tab only: the server cannot write to its
-         music folders (see LibraryWriteWarning). Across the page rather than
+    <!-- The server cannot write to its music folders (see
+         LibraryWriteWarning): in an administrator's browser tab, as the server
+         reports it; on a desktop, as edits and files from here that it could
+         not write (MainViewModel.OnUnwrittenChanged). Across the page rather than
          on the settings screen, because what it warns about happens elsewhere
          - on the owner's phone, as a refused upload or tag edit. The close
          button is for a server that is read-only on purpose; it lasts until
-         the page is next loaded. -->
+         the page is next loaded, or the desktop's count next changes. -->
     <Border x:Name="LibraryWriteWarningBanner"
             Grid.Row="1"
             IsVisible="{Binding HasServerLibraryWriteWarning}"

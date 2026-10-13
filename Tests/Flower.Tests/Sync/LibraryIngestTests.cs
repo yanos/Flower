@@ -472,7 +472,7 @@ public sealed class LibraryIngestTests : IDisposable
 
         var result = await ingest.BeginAsync(RequestFor("a.wav", SongBytes("A")), TestContext.Current.CancellationToken);
 
-        Assert.Equal(IngestOutcome.Unavailable, result.Outcome);
+        Assert.Equal(IngestOutcome.CannotWrite, result.Outcome);
     }
 
     // A server that restarted in the middle forgot the upload, not the bytes.

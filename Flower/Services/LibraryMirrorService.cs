@@ -28,6 +28,12 @@ public sealed record LibraryUploadSummary(int Uploaded, int Refused, int Remaini
     public static readonly LibraryUploadSummary Nothing = new(0, 0, 0);
 }
 
+// What a server could not write into its music folder, as of the last time
+// this device sent it: songs whose edits (tags, artwork or both) it took and
+// could not write, and files - new, changed or moved - it would not take
+// because it had nowhere to put them. See LibraryMirrorService.Unwritten.
+public sealed record UnwrittenChanges(string ServerFingerprint, string ServerAlias, int EditedSongs, int WaitingFiles);
+
 // Keeps the paired server's files in step with this device's own - the half of
 // sync that moves audio *towards* the server, where everything before it moved
 // only metadata up and files down. See docs/SYNC-PLAN.md: the library lives on
@@ -108,6 +114,45 @@ public class LibraryMirrorService
     // Raised as a round of uploads moves on: how many have gone, of how many.
     // (0, 0) when the round is over.
     public event Action<int, int>? UploadProgress;
+
+    // What the server could not write into its music folder - a read-only
+    // mount, most likely. Nothing here decides what is sent: an unwritten edit
+    // is still owed and every sync sends it again (PushTagEditsAsync), and a
+    // file the server had nowhere to put is still waiting for the next round
+    // (UploadPendingAsync). This is only so the device can say so, rather than
+    // show a song as edited, or a new album as sent, while the server has
+    // neither.
+    //
+    // Edits by song (OriginTrackId), tags and artwork apart because a song can
+    // be owed one and not the other. Each push settles its own kind: a song
+    // goes in when the server says it could not write it, and comes out when
+    // the server takes it or the edit stops being owed.
+    //
+    // Files as a count, set by a round of uploads that the server stopped
+    // with cannot-write - and only that: a rate limit, a lost admin role or a
+    // proxy answering for a server that is down stop a round too, and are not
+    // a music folder anyone needs to fix. See SettleWaitingFiles.
+    //
+    // In memory only - after a restart the first sync sends the same things
+    // and learns the same answer.
+    private readonly object _unwrittenLock = new();
+    private readonly HashSet<string> _unwrittenTags = [];
+    private readonly HashSet<string> _unwrittenArt = [];
+    private int _waitingFiles;
+    private (string Fingerprint, string Alias)? _unwrittenServer;
+
+    // Null when there is nothing to say.
+    public UnwrittenChanges? Unwritten
+    {
+        get
+        {
+            lock (_unwrittenLock)
+                return UnwrittenLocked();
+        }
+    }
+
+    // Raised, on whichever thread the push ran on, when Unwritten changes.
+    public event Action? UnwrittenChanged;
 
     private bool MayMirrorTo(DiscoveredDevice device) =>
         device.WeAreAdmin && SyncRolePolicy.MayRequestFrom(_appSettings.PairedServerFingerprint, device.Fingerprint);
@@ -303,6 +348,7 @@ public class LibraryMirrorService
                         && t.TagsEditedAt is { } mine
                         && !(_librarySync.ServerTagsEditedAt(device.Fingerprint, t.OriginTrackId!) is { } theirs && theirs >= mine))
             .ToList();
+        ForgetUnwrittenNoLongerOwed(device, _unwrittenTags, owed);
         if (owed.Count == 0)
             return 0;
 
@@ -329,6 +375,7 @@ public class LibraryMirrorService
                         _librarySync.NoteServerTagsEditedAt(device.Fingerprint, edit.TrackId, edit.EditedAt);
                 }
 
+                NoteUnwritten(device, _unwrittenTags, edits.Select(e => e.TrackId), notWritten);
                 AcceptAsSent(batch.Where(t => !notWritten.Contains(t.OriginTrackId!)));
 
                 taken += response.Applied;
@@ -395,6 +442,7 @@ public class LibraryMirrorService
                         && t.ArtEditedAt is { } mine
                         && !(_librarySync.ServerArtEditedAt(device.Fingerprint, t.OriginTrackId!) is { } theirs && theirs >= mine))
             .ToList();
+        ForgetUnwrittenNoLongerOwed(device, _unwrittenArt, owed);
         if (owed.Count == 0)
             return 0;
 
@@ -429,6 +477,7 @@ public class LibraryMirrorService
                             _librarySync.NoteServerArtEditedAt(device.Fingerprint, id, group.Key.At);
                     }
 
+                    NoteUnwritten(device, _unwrittenArt, ids, notWritten);
                     AcceptAsSent(batch.Where(t => !notWritten.Contains(t.OriginTrackId!)));
 
                     taken += response.Applied;
@@ -443,6 +492,65 @@ public class LibraryMirrorService
         }
 
         return taken;
+    }
+
+    // An edit no longer owed is no longer unwritten, whatever the server last
+    // said about it: another device's newer edit won, or the song is gone.
+    private void ForgetUnwrittenNoLongerOwed(DiscoveredDevice device, HashSet<string> kind, List<Track> owed)
+    {
+        var stillOwed = owed.Select(t => t.OriginTrackId!).ToHashSet();
+        ChangeUnwritten(device, () => kind.IntersectWith(stillOwed));
+    }
+
+    // What a round of uploads found out about files waiting on the server's
+    // music folder: how many are, which is none when the round went through.
+    private void SettleWaitingFiles(DiscoveredDevice device, int waiting) =>
+        ChangeUnwritten(device, () => _waitingFiles = waiting);
+
+    // One answer from the server about the songs it was sent.
+    private void NoteUnwritten(DiscoveredDevice device, HashSet<string> kind, IEnumerable<string> sent, HashSet<string> notWritten) =>
+        ChangeUnwritten(device, () =>
+        {
+            foreach (var id in sent)
+            {
+                if (notWritten.Contains(id))
+                    kind.Add(id);
+                else
+                    kind.Remove(id);
+            }
+        });
+
+    private void ChangeUnwritten(DiscoveredDevice device, Action change)
+    {
+        UnwrittenChanges? before, after;
+        lock (_unwrittenLock)
+        {
+            before = UnwrittenLocked();
+
+            // What one server could not write says nothing about another's.
+            if (_unwrittenServer?.Fingerprint != device.Fingerprint)
+            {
+                _unwrittenTags.Clear();
+                _unwrittenArt.Clear();
+                _waitingFiles = 0;
+            }
+
+            _unwrittenServer = (device.Fingerprint, device.Alias);
+            change();
+            after = UnwrittenLocked();
+        }
+
+        if (before != after)
+            UnwrittenChanged?.Invoke();
+    }
+
+    private UnwrittenChanges? UnwrittenLocked()
+    {
+        if (_unwrittenServer is not { } server)
+            return null;
+
+        var songs = _unwrittenTags.Count + _unwrittenArt.Count(id => !_unwrittenTags.Contains(id));
+        return songs == 0 && _waitingFiles == 0 ? null : new UnwrittenChanges(server.Fingerprint, server.Alias, songs, _waitingFiles);
     }
 
     // ── Files the server does not have ────────────────────────────────────
@@ -479,12 +587,15 @@ public class LibraryMirrorService
             using var http = PeerHttpClient.Create(RequestTimeout);
             var client = new ServerAdminClient(http, device.BaseUri, ServerAdminClient.SignWith(_credentials), logger: _logger);
 
-            moved = await TellMovesAsync(client, device, roots, ct);
+            (moved, var movesCannotWrite) = await TellMovesAsync(client, device, roots, ct);
             var changed = ChangedSinceSent(device);
 
             var waiting = PendingUploads(device).Count + changed.Count;
             if (waiting == 0)
+            {
+                SettleWaitingFiles(device, movesCannotWrite);
                 return new LibraryUploadSummary(0, 0, 0, Moved: moved);
+            }
 
             // Files travel on the server's own network unless the user has
             // said otherwise. Said once, not on every sync - the songs are
@@ -499,6 +610,10 @@ public class LibraryMirrorService
                         waiting, device.Alias);
                 }
 
+                // No files sent, so nothing learned about them - only about
+                // the moves, which go over any connection.
+                if (movesCannotWrite > 0 || moved > 0)
+                    SettleWaitingFiles(device, movesCannotWrite);
                 return new LibraryUploadSummary(0, 0, waiting, "not on the server's network", moved);
             }
 
@@ -507,6 +622,7 @@ public class LibraryMirrorService
                 waiting, device.Alias);
 
             var attempted = new HashSet<Guid>();
+            var filesCannotWrite = 0;
             while (stopped == null)
             {
                 ct.ThrowIfCancellationRequested();
@@ -550,6 +666,10 @@ public class LibraryMirrorService
                         break;
                     case UploadResult.Skipped:
                         break;
+                    case UploadResult.ServerCannotWrite:
+                        stopped = "the server cannot write to its music folder";
+                        filesCannotWrite = left;
+                        break;
                     case UploadResult.ServerCannotTakeFiles:
                         stopped = "the server cannot take files right now";
                         break;
@@ -558,6 +678,12 @@ public class LibraryMirrorService
                         break;
                 }
             }
+
+            // A round stopped for any other reason - the server lost, a rate
+            // limit, this device no longer an admin there - says nothing about
+            // its music folder either way, and changes nothing that was said.
+            if (filesCannotWrite + movesCannotWrite > 0 || stopped == null)
+                SettleWaitingFiles(device, filesCannotWrite + movesCannotWrite);
 
             var remaining = PendingUploads(device).Count;
             _logger.LogInformation(
@@ -601,12 +727,16 @@ public class LibraryMirrorService
 
     // Songs whose file a scan found somewhere new (Track.MovedFromPath): the
     // server is asked to move its copy to the same place. One small request a
-    // song, sent over any connection. Returns how many the server moved.
-    private async Task<int> TellMovesAsync(
+    // song, sent over any connection. Returns how many the server moved, and
+    // how many it could not because it cannot write to its music folder -
+    // still marked, and asked again next round.
+    private async Task<(int Moved, int CannotWrite)> TellMovesAsync(
         ServerAdminClient client, DiscoveredDevice device, IReadOnlyList<string> roots, CancellationToken ct)
     {
         var moved = 0;
+        var cannotWrite = 0;
         var notMoves = new List<(Track Track, string? FileStamp, bool ClearMove)>();
+        var moves = new List<(Track Track, string RelativePath)>();
         var comparison = OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
         foreach (var track in OwnFilesOnServer(device).Where(t => t.MovedFromPath != null))
         {
@@ -620,11 +750,14 @@ public class LibraryMirrorService
             // tell anyone about.
             var from = track.MovedFromPath!.Replace('\\', '/');
             if (relativePath == track.OriginRelativePath || from.EndsWith("/" + relativePath, comparison))
-            {
                 notMoves.Add((track, null, true));
-                continue;
-            }
+            else
+                moves.Add((track, relativePath));
+        }
 
+        for (var i = 0; i < moves.Count; i++)
+        {
+            var (track, relativePath) = moves[i];
             try
             {
                 var response = await Throttled(() => client.MoveInLibraryAsync(
@@ -642,6 +775,14 @@ public class LibraryMirrorService
                 _logger.LogWarning("{Server} would not move its copy of {Path}: {Reason}", device.Alias, LogPath.Short(track.Path!), ex.Message);
                 notMoves.Add((track, null, true));
             }
+            catch (ServerAdminException ex) when (ex.Code == ProblemCodes.CannotWrite)
+            {
+                // About the server's music folder, and every move left would
+                // be told the same.
+                _logger.LogWarning("{Server} cannot write to its music folder; {Count} moved song(s) wait for it", device.Alias, moves.Count - i);
+                cannotWrite = moves.Count - i;
+                break;
+            }
             catch (Exception ex) when (ex is ServerAdminException or HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
             {
                 // About the server. The rest wait, still marked, for next time.
@@ -653,7 +794,7 @@ public class LibraryMirrorService
         _library.RecordOriginBookkeeping(notMoves);
         if (moved > 0)
             _logger.LogInformation("{Count} song(s) moved on this device were moved on {Server} too", moved, device.Alias);
-        return moved;
+        return (moved, cannotWrite);
     }
 
     private enum UploadResult
@@ -662,6 +803,11 @@ public class LibraryMirrorService
 
         // The server will not have this file, whatever is tried.
         Refused,
+
+        // The server cannot write to its music folder (ProblemCodes.CannotWrite).
+        // Not about this file, and worth telling the owner about: it waits
+        // for someone to fix the server, not for the next sync.
+        ServerCannotWrite,
 
         // Not uploaded and not refused: unreadable here, or failed in a way
         // worth another go next round.
@@ -758,11 +904,17 @@ public class LibraryMirrorService
                 _logger.LogWarning("{Server} would not take {Path}: {Reason}", device.Alias, LogPath.Short(path), ex.Message);
                 return UploadResult.Refused;
             }
+            catch (ServerAdminException ex) when (ex.Code == ProblemCodes.CannotWrite)
+            {
+                _logger.LogWarning("{Server} cannot write to its music folder: {Reason}", device.Alias, ex.Message);
+                return UploadResult.ServerCannotWrite;
+            }
             catch (ServerAdminException ex)
             {
-                // 503 (nowhere to write), 401/403 (no longer an admin there),
-                // or a 429 that outlasted its wait: none of them is about this
-                // file, and the next one would be told the same.
+                // 503 (a scan, or a proxy whose server is down), 401/403 (no
+                // longer an admin there), or a 429 that outlasted its wait:
+                // none of them is about this file, and the next one would be
+                // told the same.
                 _logger.LogWarning("{Server} is not taking uploads: {Reason}", device.Alias, ex.Message);
                 return UploadResult.ServerCannotTakeFiles;
             }

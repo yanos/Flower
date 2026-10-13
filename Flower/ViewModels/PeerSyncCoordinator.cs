@@ -153,7 +153,23 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
             _subscriptions.Add<EventHandler>((_, _) => librarySyncService.MarkAllTrackStateChanged(),
                 h => library.LibraryChanged += h, h => library.LibraryChanged -= h);
         }
+
+        if (libraryMirrorService != null)
+        {
+            _subscriptions.Add<Action>(() => Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(UnwrittenWarning))),
+                h => libraryMirrorService.UnwrittenChanged += h, h => libraryMirrorService.UnwrittenChanged -= h);
+        }
     }
+
+    // Edits and files from this device that the paired server could not write
+    // into its music folder - see LibraryMirrorService.Unwritten and
+    // LibraryWriteWarning.
+    // Only the paired server's: a server this device has since left is not one
+    // it can do anything about.
+    public string? UnwrittenWarning =>
+        _libraryMirrorService?.Unwritten is { } unwritten && unwritten.ServerFingerprint == PairedServerFingerprint
+            ? LibraryWriteWarning.ForUnwritten(unwritten)
+            : null;
 
     // ── Sync tracking ─────────────────────────────────────────────────────
 

@@ -94,24 +94,27 @@ public sealed class SimulatedFlowerServer : IDisposable
         _http = new FakePeerHttpServer(HandleAsync);
     }
 
-    // AdminEndpoints.ToResult: the outcome as the status a device acts on.
+    // AdminEndpoints.ToResult: the outcome as the status a device acts on, and
+    // a refusal as the same problem document.
     private static async Task WriteIngestResultAsync(HttpListenerContext context, IngestResult result)
     {
-        context.Response.StatusCode = result.Outcome switch
+        byte[] bytes;
+        if (result.Outcome is IngestOutcome.Accepted or IngestOutcome.Completed)
         {
-            IngestOutcome.Accepted or IngestOutcome.Completed => 200,
-            IngestOutcome.Conflict => 409,
-            IngestOutcome.Unavailable => 503,
-            IngestOutcome.UnknownUpload => 404,
-            IngestOutcome.Corrupt => 422,
-            _ => 400,
-        };
-        var bytes = result.Moved != null
-            ? JsonSerializer.SerializeToUtf8Bytes(result.Moved, AdminJson)
-            : result.Status != null
-                ? JsonSerializer.SerializeToUtf8Bytes(result.Status, AdminJson)
-                : JsonSerializer.SerializeToUtf8Bytes(new { error = result.Error }, AdminJson);
-        context.Response.ContentType = "application/json";
+            context.Response.StatusCode = 200;
+            context.Response.ContentType = "application/json";
+            bytes = result.Moved != null
+                ? JsonSerializer.SerializeToUtf8Bytes(result.Moved, AdminJson)
+                : JsonSerializer.SerializeToUtf8Bytes(result.Status, AdminJson);
+        }
+        else
+        {
+            var (status, code) = IngestResult.Refusal(result.Outcome);
+            context.Response.StatusCode = status;
+            context.Response.ContentType = FlowerProblem.ContentType;
+            bytes = System.Text.Encoding.UTF8.GetBytes(FlowerProblem.Serialize(FlowerProblem.Create(status, code, result.Error)));
+        }
+
         context.Response.ContentLength64 = bytes.Length;
         await context.Response.OutputStream.WriteAsync(bytes);
     }

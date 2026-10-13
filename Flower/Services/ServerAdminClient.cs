@@ -58,10 +58,17 @@ public sealed record CoverArtWriteDto(int Written, int Total);
 // ServerAdminClient.ReadJsonAsync. It is there to be logged, not shown: the
 // message is what a reader can act on, and the JsonException under it says
 // nothing they could.
-public sealed class ServerAdminException(HttpStatusCode status, string message, Exception? inner = null)
+public sealed class ServerAdminException(HttpStatusCode status, string message, Exception? inner = null, string? code = null)
     : Exception(message, inner)
 {
     public HttpStatusCode Status { get; } = status;
+
+    // The refusal's ProblemCodes entry, when the server sent a problem
+    // document; null for anything else - a proxy's error page, an empty body.
+    // What to act on when a status is shared by more than one reason: a 503
+    // is a scan, a music folder it cannot write, or a proxy whose server is
+    // down, and only the code tells them apart.
+    public string? Code { get; } = code;
 
     // The two the UI treats specially: not paired at all, versus paired but not
     // an admin. Both are ordinary outcomes of clicking the button, not faults.
@@ -232,7 +239,7 @@ public sealed class ServerAdminClient(
 
     // A 2xx is not on its own a promise that this was the admin API answering.
     //
-    // DescribeFailureAsync below has always allowed for a *failure* body that is
+    // ReadProblemAsync below has always allowed for a *failure* body that is
     // not JSON - "a proxy's HTML error page" is the case it names - and a
     // success body deserves the same doubt for the same reason: a reverse proxy,
     // a tunnel, a captive portal or a single-page fallback that forgot to
@@ -297,7 +304,10 @@ public sealed class ServerAdminClient(
 
         var response = await http.SendAsync(request, ct);
         if (!response.IsSuccessStatusCode)
-            throw new ServerAdminException(response.StatusCode, await DescribeFailureAsync(response, ct));
+        {
+            var problem = await ReadProblemAsync(response, ct);
+            throw new ServerAdminException(response.StatusCode, DescribeFailure(response, problem), code: problem?.Code);
+        }
 
         return response;
     }
@@ -308,12 +318,11 @@ public sealed class ServerAdminClient(
     // "your clock is out" want different next moves, and the status alone
     // used to make them the same 401. Falls back gracefully when the body is
     // something else entirely (a proxy's HTML error page).
-    private async Task<string> DescribeFailureAsync(HttpResponseMessage response, CancellationToken ct)
+    private async Task<FlowerProblemDto?> ReadProblemAsync(HttpResponseMessage response, CancellationToken ct)
     {
-        FlowerProblemDto? problem = null;
         try
         {
-            problem = FlowerProblem.TryRead(await response.Content.ReadAsStringAsync(ct));
+            return FlowerProblem.TryRead(await response.Content.ReadAsStringAsync(ct));
         }
         catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException)
         {
@@ -325,8 +334,12 @@ public sealed class ServerAdminClient(
             // and we could not read it".
             logger?.LogDebug(ex, "Could not read the error body of a {Status} from the server; describing it by status code alone.",
                 (int)response.StatusCode);
+            return null;
         }
+    }
 
+    private string DescribeFailure(HttpResponseMessage response, FlowerProblemDto? problem)
+    {
         if (problem?.Detail is { Length: > 0 } detail)
             return detail;
 

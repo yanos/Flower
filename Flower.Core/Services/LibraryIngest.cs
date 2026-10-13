@@ -36,7 +36,7 @@ public enum IngestOutcome
     // Nowhere to write - no library folder, or one this process cannot write
     // to. Not about this file; nothing else will upload either until an
     // operator changes something.
-    Unavailable,
+    CannotWrite,
 
     // No such upload in progress - a server restarted mid-file answers this,
     // and beginning again picks the staged bytes back up - or no such song,
@@ -48,7 +48,22 @@ public enum IngestOutcome
 }
 
 public sealed record IngestResult(
-    IngestOutcome Outcome, LibraryUploadStatusDto? Status = null, string? Error = null, LibraryMoveResponseDto? Moved = null);
+    IngestOutcome Outcome, LibraryUploadStatusDto? Status = null, string? Error = null, LibraryMoveResponseDto? Moved = null)
+{
+    // A refusal as it goes over the wire: AdminEndpoints answers with it, and
+    // SimulatedFlowerServer the same way. CannotWrite has a code of its own,
+    // never the generic unavailable, because a device tells its owner about
+    // that one (LibraryMirrorService.Unwritten) - and a 503 that merely says
+    // unavailable may have come from a proxy whose server is down.
+    public static (int Status, string Code) Refusal(IngestOutcome outcome) => outcome switch
+    {
+        IngestOutcome.Conflict => (409, ProblemCodes.Conflict),
+        IngestOutcome.CannotWrite => (503, ProblemCodes.CannotWrite),
+        IngestOutcome.UnknownUpload => (404, ProblemCodes.NotFound),
+        IngestOutcome.Corrupt => (422, ProblemCodes.Corrupt),
+        _ => (400, ProblemCodes.InvalidRequest),
+    };
+}
 
 // A file arriving from one of the owner's devices, taken into this server's
 // library: the "ingest" docs/SYNC-PLAN.md says the star topology was missing.
@@ -177,7 +192,7 @@ public sealed class LibraryIngest
             }
 
             if (!CanWriteWhere(target))
-                return Refuse(IngestOutcome.Unavailable, CannotWrite);
+                return Refuse(IngestOutcome.CannotWrite, CannotWrite);
 
             Directory.CreateDirectory(_stagingDirectory);
             SweepStagedFiles();
@@ -287,7 +302,7 @@ public sealed class LibraryIngest
             // file, and once it is fixed the next attempt completes from here
             // without sending anything again.
             _logger.LogWarning(ex, "Could not move an uploaded file into place at {Path}", LogPath.Short(session.Target));
-            return Refuse(IngestOutcome.Unavailable, CannotWrite);
+            return Refuse(IngestOutcome.CannotWrite, CannotWrite);
         }
 
         _sessions.Remove(uploadId);
@@ -319,7 +334,7 @@ public sealed class LibraryIngest
             if (hadOld && File.Exists(aside) && !File.Exists(target))
                 File.Move(aside, target);
             _logger.LogWarning(ex, "Could not replace {Path} with its uploaded version", LogPath.Short(target));
-            return Refuse(IngestOutcome.Unavailable, CannotWrite);
+            return Refuse(IngestOutcome.CannotWrite, CannotWrite);
         }
 
         _sessions.Remove(uploadId);
@@ -407,7 +422,7 @@ public sealed class LibraryIngest
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {
                     _logger.LogWarning(ex, "Could not move {From} to {To}", LogPath.Short(from), LogPath.Short(target));
-                    return Refuse(IngestOutcome.Unavailable, CannotWrite);
+                    return Refuse(IngestOutcome.CannotWrite, CannotWrite);
                 }
 
                 _library.RestoreExcludedPaths([target]);
@@ -487,7 +502,7 @@ public sealed class LibraryIngest
 
         var root = roots.FirstOrDefault(r => !string.IsNullOrWhiteSpace(r) && Directory.Exists(r));
         if (root == null)
-            return Refuse(IngestOutcome.Unavailable, "This server has no music folder to put the file in.");
+            return Refuse(IngestOutcome.CannotWrite, "This server has no music folder to put the file in.");
 
         var rootPath = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         var full = Path.GetFullPath(Path.Combine([rootPath, .. segments]));

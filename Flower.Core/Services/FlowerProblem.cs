@@ -63,7 +63,11 @@ public static class ProblemCodes
     public const string RateLimited = "rate-limited";
     // 503 - a library scan is running; upload, move and edit routes wait.
     public const string Scanning = "scanning";
-    // 503 - nowhere to write, or something else about the server.
+    // 503 - the music folder cannot be written: read-only, or none at all.
+    // Said only by the routes that write files there, and only when that is
+    // why. A device keeps what it was sending and tells its owner.
+    public const string CannotWrite = "cannot-write";
+    // 503 - something else about the server, or a 503 that said nothing more.
     public const string Unavailable = "unavailable";
     public const string ServerError = "server-error";
 
@@ -136,6 +140,7 @@ public static class FlowerProblem
         ProblemCodes.Corrupt => "What arrived does not match what was promised.",
         ProblemCodes.RateLimited => "Too many requests. Wait and try again.",
         ProblemCodes.Scanning => "This server is scanning its library; try again when it has finished.",
+        ProblemCodes.CannotWrite => "This server cannot write to its music folder.",
         ProblemCodes.Unavailable => "This server cannot do that right now.",
         _ => "The server could not answer that.",
     };

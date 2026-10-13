@@ -328,7 +328,7 @@ allowed.**
 | `413` | `too-large` | Over the route's body cap | Drop the request |
 | `422` | `corrupt` | Upload bytes do not match the promised hash | Send again |
 | `429` | `rate-limited` | Over budget. `Retry-After` is set on every plane | Wait `Retry-After` |
-| `503` | `scanning`, `unavailable` | Library scan running, or nowhere writable | Pause the batch |
+| `503` | `scanning`, `cannot-write`, `unavailable` | Library scan running, music folder not writable, or something else | Pause the batch; tell the owner about `cannot-write` |
 
 On the sync group, `device-unknown` moves from `403` to `401`. On the admin
 group, `401` stops conflating "unknown" with "bad signature", so a device with

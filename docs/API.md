@@ -217,7 +217,8 @@ not allowed".
 | `422` | `corrupt` | Upload bytes do not match the promised hash | Send again |
 | `429` | `rate-limited` | Over a budget; `Retry-After` is set | Wait that long |
 | `503` | `scanning` | A library scan is running | Pause; resume when the token moves |
-| `503` | `unavailable` | Nowhere to write, or similar | Stop the batch |
+| `503` | `cannot-write` | The music folder is read-only, or there is none | Stop the batch; tell the owner |
+| `503` | `unavailable` | Something else about the server, or a bare `503` | Stop the batch |
 | `500` | `server-error` | Something on the server failed | Report it |
 
 Clients act on the code. A sync service treats `device-unknown` alone as "this
@@ -603,7 +604,7 @@ the song keeps its id.
 | `409 conflict` | A different file already sits at that path | Final; nothing is overwritten |
 | `422 corrupt` | All bytes arrived and the hash does not match | Send it again |
 | `503 scanning` | A library scan is running | Pause; resume when the token moves |
-| `503 unavailable` | Nowhere writable | Stop the whole batch |
+| `503 cannot-write` | The music folder is read-only, or there is none | Stop the whole batch, and tell the owner — a proxy in front of a server that is down also answers `503`, so only this code means the folder needs fixing |
 
 **Move.** `POST /library/move` with `{trackId, relativePath}` → 
 `{relativePath, libraryToken}`. Sent only for a recorded move, never inferred

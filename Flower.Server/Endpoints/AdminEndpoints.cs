@@ -850,12 +850,14 @@ public static class AdminEndpoints
     {
         IngestOutcome.Accepted or IngestOutcome.Completed when result.Moved != null => Results.Json(result.Moved, jsonOptions),
         IngestOutcome.Accepted or IngestOutcome.Completed => Results.Json(result.Status, jsonOptions),
-        IngestOutcome.Conflict => Problems.Of(StatusCodes.Status409Conflict, ProblemCodes.Conflict, result.Error),
-        IngestOutcome.Unavailable => Problems.Of(StatusCodes.Status503ServiceUnavailable, ProblemCodes.Unavailable, result.Error),
-        IngestOutcome.UnknownUpload => Problems.Of(StatusCodes.Status404NotFound, ProblemCodes.NotFound, result.Error),
-        IngestOutcome.Corrupt => Problems.Of(StatusCodes.Status422UnprocessableEntity, ProblemCodes.Corrupt, result.Error),
-        _ => Problems.BadRequest(result.Error),
+        _ => Refused(result),
     };
+
+    private static IResult Refused(IngestResult result)
+    {
+        var (status, code) = IngestResult.Refusal(result.Outcome);
+        return Problems.Of(status, code, result.Error);
+    }
 
     // Its own code rather than unavailable: this one passes by itself, and a
     // device waits for the library token to move rather than for an operator.

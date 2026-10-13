@@ -119,6 +119,9 @@ public class LibraryMirrorScenarioTests : PinnedDataDirectory
 
         public Track Single(string title) => Library.Tracks.Single(t => t.Title == title);
 
+        // What this device would tell its owner the server could not write.
+        public UnwrittenChanges? Unwritten => _mirror?.Unwritten;
+
         // One sync, in the order PeerSyncCoordinator runs it: what has gone,
         // then the pull, then what the server lacks - and a second pull if
         // anything went up.
@@ -916,6 +919,80 @@ public class LibraryMirrorScenarioTests : PinnedDataDirectory
         Assert.Equal("The Song", server.Library.Tracks.Single().Title);
         using var file = TagLib.File.Create(ServerPath(server, "song.wav"));
         Assert.Equal("The Song", file.Tag.Title);
+    }
+
+    // A server whose music folder is mounted read-only takes the edit and
+    // cannot write it. The device says so, keeps the edit rather than taking
+    // the server's old tags back, and sends it at every sync until it lands.
+    [Fact]
+    public async Task An_edit_the_server_could_not_write_is_reported_and_sent_again_until_it_can()
+    {
+        var server = NewServer();
+        ServerFile(server, "song.wav", "Teh Song");
+        var phone = NewDevice();
+        await phone.SyncAsync(server);
+        var serverFile = ServerPath(server, "song.wav");
+        File.SetAttributes(serverFile, FileAttributes.ReadOnly);
+
+        phone.EditTitle("Teh Song", "The Song");
+        await phone.SyncAsync(server);
+
+        Assert.Equal("Teh Song", server.Library.Tracks.Single().Title);
+        Assert.Equal(new UnwrittenChanges(server.Fingerprint, server.Device.Alias, EditedSongs: 1, WaitingFiles: 0), phone.Unwritten);
+
+        await phone.SyncAsync(server);
+        Assert.Equal(1, phone.Unwritten?.EditedSongs);
+        Assert.Equal(["The Song"], phone.Library.Tracks.Select(t => t.Title));
+
+        File.SetAttributes(serverFile, FileAttributes.Normal);
+        await phone.SyncAsync(server);
+
+        Assert.Null(phone.Unwritten);
+        Assert.Equal("The Song", server.Library.Tracks.Single().Title);
+    }
+
+    // The same for files: a server with nowhere to put them answers
+    // cannot-write. The device says how many are waiting, and once the server
+    // has a music folder again they go up and the warning goes with them.
+    [Fact]
+    public async Task Files_a_server_has_nowhere_to_put_are_reported_and_go_up_once_it_can()
+    {
+        var server = NewServer();
+        var desktop = NewDevice();
+        desktop.AddFile("a.wav", "A", seed: 1);
+        desktop.AddFile("b.wav", "B", seed: 2);
+        desktop.Scan();
+        Directory.Delete(server.MusicFolder!);
+
+        var summary = await desktop.SyncAsync(server);
+
+        Assert.Equal(0, summary.Uploaded);
+        Assert.Equal(new UnwrittenChanges(server.Fingerprint, server.Device.Alias, EditedSongs: 0, WaitingFiles: 2), desktop.Unwritten);
+
+        Directory.CreateDirectory(server.MusicFolder!);
+        summary = await desktop.SyncAsync(server);
+
+        Assert.Equal(2, summary.Uploaded);
+        Assert.Null(desktop.Unwritten);
+    }
+
+    // A 503 that is not the server saying so - a proxy answering for a server
+    // that is down - stops the round the same way, and is not a music folder
+    // anyone needs to fix.
+    [Fact]
+    public async Task A_bare_503_is_not_taken_for_a_server_that_cannot_write()
+    {
+        var server = NewServer();
+        var desktop = NewDevice();
+        desktop.AddFile("a.wav", "A");
+        desktop.Scan();
+        server.AdminReachable = false;
+
+        var summary = await desktop.SyncAsync(server);
+
+        Assert.Equal(0, summary.Uploaded);
+        Assert.Equal(1, summary.Remaining);
+        Assert.Null(desktop.Unwritten);
     }
 
     // Two of the owner's devices edit the same song. The later edit is the

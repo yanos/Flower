@@ -366,6 +366,14 @@
                      Text="{Binding Main.PairedServerRouteDescription}"
                      Classes="note" Margin="58,0,0,0" />
 
+          <!-- Edits and files from this phone that the server could not
+               write into its music folder - see MainViewModel.UnwrittenWarning.
+               Here rather than nowhere, because otherwise the phone shows a
+               song as edited, or as sent, while the server has neither. -->
+          <TextBlock IsVisible="{Binding Main.UnwrittenWarning, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}"
+                     Text="{Binding Main.UnwrittenWarning}"
+                     Classes="warning" TextWrapping="Wrap" Margin="58,0,0,0" />
+
           <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14" Classes="badgeRow"
                 IsVisible="{Binding Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNullOrEmpty}}">
             <Border Grid.Column="0" Classes="badge" VerticalAlignment="Center">

@@ -342,6 +342,26 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     public string? LastForceSyncResult => Sync.LastForceSyncResult;
 
+    public string? UnwrittenWarning => Sync.UnwrittenWarning;
+
+    // The phone shows UnwrittenWarning on its server card; desktop puts it
+    // in the banner the browser uses for the same news from the server's side
+    // (ServerLibraryWriteWarning). Only when the text itself changes, so a
+    // dismissed banner stays dismissed until the count does, and a browser
+    // tab - which never has any - keeps the server's warning it was given.
+    private string? _lastUnwrittenWarning;
+
+    private void OnUnwrittenChanged()
+    {
+        var warning = UnwrittenWarning;
+        if (warning == _lastUnwrittenWarning)
+            return;
+
+        _lastUnwrittenWarning = warning;
+        OnPropertyChanged(nameof(UnwrittenWarning));
+        ServerLibraryWriteWarning = warning;
+    }
+
     // When the paired server last successfully synced - see
     // PeerSyncCoordinator.LastSyncedAt.
     public DateTimeOffset? LastSyncedAt => Sync.LastSyncedAt;
@@ -1210,10 +1230,11 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     }
 
     // What the server said about writing to its music folders, for an
-    // administrator's tab only - see LibraryWriteWarning. Null when there is
-    // nothing to say, and after the banner's own close button: a server left
-    // read-only on purpose should be able to stop being told so, and the page
-    // asks again on its next load.
+    // administrator's tab - see LibraryWriteWarning - or, on a desktop, edits
+    // and files from here that it could not write (OnUnwrittenChanged). Null when
+    // there is nothing to say, and after the banner's own close button: a
+    // server left read-only on purpose should be able to stop being told so,
+    // and the page asks again on its next load.
     private string? _serverLibraryWriteWarning;
     public string? ServerLibraryWriteWarning
     {
@@ -1995,6 +2016,9 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
                 case nameof(PeerSyncCoordinator.LastForceSyncResult):
                     OnPropertyChanged(nameof(LastForceSyncResult));
                     break;
+                case nameof(PeerSyncCoordinator.UnwrittenWarning):
+                    OnUnwrittenChanged();
+                    break;
                 case nameof(PeerSyncCoordinator.LastSyncedAt):
                     OnPropertyChanged(nameof(LastSyncedAt));
                     OnPropertyChanged(nameof(LastSyncedDisplay));
@@ -2008,6 +2032,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             OnPropertyChanged(nameof(PairedServerFingerprint));
             OnPropertyChanged(nameof(PairedServerAlias));
             OnPropertyChanged(nameof(Availability));
+            OnUnwrittenChanged();
             NotifyPairButtonPropertiesChanged();
             // Identity first, then the reachability glyph - SyncPairedServerRow
             // only ever touches a row that is already pinned, so pinning has to
