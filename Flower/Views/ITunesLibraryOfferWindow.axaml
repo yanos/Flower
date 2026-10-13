@@ -32,7 +32,7 @@
          anything with the library added, so "Don't Add" ignores them. -->
     <StackPanel Spacing="4">
       <CheckBox x:Name="SyncPlayCountCheckBox"
-                Content="Sync play counts from Music.app on startup"
+                Content="Sync play counts and last played from Music.app on startup"
                 IsChecked="True"
                 FontSize="12"/>
       <CheckBox x:Name="SyncDateAddedCheckBox"

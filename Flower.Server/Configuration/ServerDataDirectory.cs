@@ -54,7 +54,7 @@ public static class ServerDataDirectory
             "_AdvertisedHost": "host:port to put in pairing invites when the address a device should dial isn't the one the request arrived on (reverse proxy, remapped container port).",
             "_AdvertiseOnLan": "false to stop announcing this server over mDNS - for tailnet/reverse-proxy-only deployments.",
             "_IntegrateWithITunes": "false to make this server ignore a local iTunes/Music.app library entirely. On by default: Music.app's own media folder is added to LibraryPaths on the first scan that finds it, and the two switches below then import play counts and Date Added from it.",
-            "_SyncPlayCountFromITunes": "false to stop importing per-track play counts from Music.app on each rescan.",
+            "_SyncPlayCountFromITunes": "false to stop importing per-track play counts and last-played dates from Music.app on each rescan.",
             "_SyncDateAddedFromITunes": "false to stop importing per-track Date Added values from Music.app on each rescan.",
             "_HttpsPort": "The port for this server's TLS listener, alongside the plain one - 4534 by default, 0 to turn it off. Needs no configuration: the certificate is minted from this server's own device key, which every paired Flower client already holds, so it validates without a certificate authority. A browser cannot do that and keeps using the plain port; set CertificatePath for it.",
             "_CertificatePath": "A real certificate to serve instead of the self-signed one, as a PEM file - from 'tailscale cert', Let's Encrypt, or a domain you own. Only a browser tab needs it; paired Flower clients validate the self-signed one against the device key they already hold. Must be set together with CertificateKeyPath.",

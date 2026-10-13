@@ -34,10 +34,11 @@ public class ITunesPlayCountImporterTests : IsolatedHome
         return path;
     }
 
-    private static string TrackEntry(int id, string name, string artist, string? album, int totalTimeMs, int playCount, string? location = null)
+    private static string TrackEntry(int id, string name, string artist, string? album, int totalTimeMs, int playCount, string? location = null, string? playDateUtc = null)
     {
         var albumXml = album == null ? "" : $"<key>Album</key><string>{album}</string>";
         var locationXml = location == null ? "" : $"<key>Location</key><string>{location}</string>";
+        var playDateXml = playDateUtc == null ? "" : $"<key>Play Date UTC</key><date>{playDateUtc}</date>";
         return $"""
             <key>{id}</key>
             <dict>
@@ -48,6 +49,7 @@ public class ITunesPlayCountImporterTests : IsolatedHome
                 <key>Total Time</key><integer>{totalTimeMs}</integer>
                 <key>Play Count</key><integer>{playCount}</integer>
                 {locationXml}
+                {playDateXml}
             </dict>
             """;
     }
@@ -305,6 +307,37 @@ public class ITunesPlayCountImporterTests : IsolatedHome
         ITunesPlayCountImporter.ApplyFromXmlFile(new List<Track> { track }, xmlPath);
 
         Assert.Equal(0, track.ImportedPlayCount);
+    }
+
+    [Fact]
+    public void Music_apps_last_play_is_taken_for_a_song_Flower_has_not_played_since()
+    {
+        var xmlPath = WriteLibraryXml(
+            TrackEntry(1, "Never Here", "Artist", "Album", 60000, 4, playDateUtc: "2019-05-04T20:00:00Z")
+            + TrackEntry(2, "Played Before", "Artist", "Album", 90000, 7, playDateUtc: "2024-03-01T12:00:00Z"));
+        var neverPlayedInFlower = new Track { Title = "Never Here", Artists = "Artist", Album = "Album", Duration = TimeSpan.FromSeconds(60) };
+        var playedEarlierInFlower = new Track
+        {
+            Title = "Played Before", Artists = "Artist", Album = "Album", Duration = TimeSpan.FromSeconds(90),
+            LastPlayedAt = new DateTimeOffset(2023, 1, 1, 0, 0, 0, TimeSpan.Zero),
+        };
+
+        ITunesPlayCountImporter.ApplyFromXmlFile(new List<Track> { neverPlayedInFlower, playedEarlierInFlower }, xmlPath);
+
+        Assert.Equal(new DateTimeOffset(2019, 5, 4, 20, 0, 0, TimeSpan.Zero), neverPlayedInFlower.LastPlayedAt);
+        Assert.Equal(new DateTimeOffset(2024, 3, 1, 12, 0, 0, TimeSpan.Zero), playedEarlierInFlower.LastPlayedAt);
+    }
+
+    [Fact]
+    public void A_listen_in_Flower_after_Music_apps_last_play_is_kept()
+    {
+        var xmlPath = WriteLibraryXml(TrackEntry(1, "Song", "Artist", "Album", 60000, 4, playDateUtc: "2019-05-04T20:00:00Z"));
+        var flowerPlayed = new DateTimeOffset(2026, 10, 1, 9, 30, 0, TimeSpan.Zero);
+        var track = new Track { Title = "Song", Artists = "Artist", Album = "Album", Duration = TimeSpan.FromSeconds(60), LastPlayedAt = flowerPlayed };
+
+        ITunesPlayCountImporter.ApplyFromXmlFile(new List<Track> { track }, xmlPath);
+
+        Assert.Equal(flowerPlayed, track.LastPlayedAt);
     }
 
     [Fact]

@@ -299,7 +299,7 @@
               <CheckBox Grid.Row="1"
                         Classes="itunesImport"
                         Classes.underMasterSwitch="{Binding Capabilities.ITunesMasterSwitch}"
-                        Content="Sync play count from iTunes/Music.app"
+                        Content="Sync play counts and last played from iTunes/Music.app"
                         IsChecked="{Binding SyncPlayCountFromITunes, Mode=TwoWay}"
                         IsVisible="{Binding Capabilities.ITunesIntegration}">
                 <CheckBox.IsEnabled>

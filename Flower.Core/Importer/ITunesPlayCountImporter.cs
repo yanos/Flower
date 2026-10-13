@@ -15,8 +15,10 @@ using Flower.Persistence;
 namespace Flower.Importer;
 
 // Reads per-track "Play Count" from Music.app and applies it to
-// Track.ImportedPlayCount. Deliberately leaves Track.PlayCount (Flower's own
-// count, incremented by PlaylistControlViewModel) untouched -
+// Track.ImportedPlayCount, and "Play Date UTC" - when Music.app last played it
+// - to Track.LastPlayedAt where that is later than Flower's own. Deliberately
+// leaves Track.PlayCount (Flower's own count, incremented by
+// PlaylistControlViewModel) untouched -
 // TrackRowViewModel.PlayCountDisplay is what sums the two for display, so
 // re-running (or disabling) this import can never lose plays Flower itself
 // recorded.
@@ -90,10 +92,10 @@ public static class ITunesPlayCountImporter
                 return;
             }
 
-            var playCountBySyncKey = new Dictionary<string, int>();
+            var playsBySyncKey = new Dictionary<string, MusicAppPlays>();
             // Highest-priority match - see ITunesLocations for why the file,
             // when it can be found, beats metadata entirely.
-            var playCountByLocation = new ITunesLocations<int>((a, b) => a + b);
+            var playsByLocation = new ITunesLocations<MusicAppPlays>(MusicAppPlays.Combine);
             // Fallback for when BuildSyncKey finds nothing - see Track.
             // BuildLooseKey's own doc comment. Tracks how many *distinct* full
             // sync keys (i.e. distinct durations) share a loose key - two raw
@@ -125,6 +127,9 @@ public static class ITunesPlayCountImporter
                         Track.RoundedSeconds(totalTimeMs.ToInt() / 1000.0));
                     var looseKey = Track.BuildLooseKey(nameNode.ToString(), artistNode?.ToString(), albumNode?.ToString());
 
+                    iTunesTrack.TryGetValue("Play Date UTC", out var playDateNode);
+                    var plays = new MusicAppPlays(playCount.ToInt(), playDateNode is NSDate playDate ? Utc(playDate.Date) : null);
+
                     // Sum rather than overwrite: a library that's been through a
                     // merge/duplicate-import can have more than one Music.app
                     // entry for the exact same file (confirmed against a real
@@ -133,45 +138,70 @@ public static class ITunesPlayCountImporter
                     // SyncKey since Flower only keeps one Track per file, so
                     // overwriting silently discarded whichever entry's play
                     // count didn't happen to be enumerated last.
-                    playCountBySyncKey[syncKey] =
-                        playCountBySyncKey.GetValueOrDefault(syncKey) + playCount.ToInt();
+                    playsBySyncKey[syncKey] = playsBySyncKey.TryGetValue(syncKey, out var existing)
+                        ? MusicAppPlays.Combine(existing, plays)
+                        : plays;
 
                     if (!looseSyncKeys.TryGetValue(looseKey, out var syncKeys))
                         looseSyncKeys[looseKey] = syncKeys = new HashSet<string>();
                     syncKeys.Add(syncKey);
 
                     iTunesTrack.TryGetValue("Location", out var locationNode);
-                    playCountByLocation.Add(locationNode?.ToString(), playCount.ToInt());
+                    playsByLocation.Add(locationNode?.ToString(), plays);
                 }
             }
 
             var matchedCount = 0;
             foreach (var track in tracks)
             {
-                int? count = null;
-                if (playCountByLocation.TryFind(track, out var byLocation))
-                    count = byLocation;
-                else if (playCountBySyncKey.TryGetValue(track.SyncKey, out var exact))
-                    count = exact;
+                MusicAppPlays? plays = null;
+                if (playsByLocation.TryFind(track, out var byLocation))
+                    plays = byLocation;
+                else if (playsBySyncKey.TryGetValue(track.SyncKey, out var exact))
+                    plays = exact;
                 else if (looseSyncKeys.TryGetValue(Track.BuildLooseKey(track.Title, track.Artists, track.Album), out var syncKeys) && syncKeys.Count == 1)
-                    count = playCountBySyncKey[syncKeys.Single()];
+                    plays = playsBySyncKey[syncKeys.Single()];
 
-                if (count is { } value)
-                {
-                    track.ImportedPlayCount = value;
-                    matchedCount++;
-                }
+                if (plays is not { } value)
+                    continue;
+
+                track.ImportedPlayCount = value.Count;
+                // Later only: LastPlayedAt is a high-water mark everywhere it
+                // is kept (Library.ApplyReportedOwnerState), so Music.app's
+                // date fills in a song Flower has never played and moves one
+                // that Music.app played since, and never walks back a listen
+                // Flower recorded. Moved here, it goes to the server as owner
+                // state the way the count does.
+                if (value.LastPlayedAt is { } musicAppPlayed && (track.LastPlayedAt is not { } flowerPlayed || musicAppPlayed > flowerPlayed))
+                    track.LastPlayedAt = musicAppPlayed;
+                matchedCount++;
             }
 
-            logger.LogInformation("iTunes play count sync matched {MatchedCount} of {ExportedCount} exported tracks", matchedCount, playCountBySyncKey.Count);
+            logger.LogInformation("iTunes play count sync matched {MatchedCount} of {ExportedCount} exported tracks", matchedCount, playsBySyncKey.Count);
         }
         catch (Exception ex)
         {
             // Corrupt/unreadable/unexpected-shape XML - leave ImportedPlayCount
-            // as-is rather than blocking startup over an optional enrichment step.
+            // and LastPlayedAt as they are rather than blocking startup over an
+            // optional enrichment step.
             logger.LogWarning(ex, "Failed to parse iTunes library export at {XmlPath}; play counts left unchanged", xmlPath);
         }
     }
+
+    // One Music.app record's listening: how often, and when last. Two records
+    // for one file are summed, and keep the later date - see the duplicate-entry
+    // note where they are built.
+    private readonly record struct MusicAppPlays(int Count, DateTimeOffset? LastPlayedAt)
+    {
+        public static MusicAppPlays Combine(MusicAppPlays a, MusicAppPlays b) =>
+            new(a.Count + b.Count, a.LastPlayedAt is null || b.LastPlayedAt > a.LastPlayedAt ? b.LastPlayedAt : a.LastPlayedAt);
+    }
+
+    // The plist parser hands back a DateTime that may arrive Unspecified, which
+    // for Music.app's "... UTC" keys means UTC - the same reading
+    // ITunesDateAddedImporter gives "Date Added".
+    private static DateTimeOffset Utc(DateTime raw) =>
+        new(raw.Kind == DateTimeKind.Unspecified ? DateTime.SpecifyKind(raw, DateTimeKind.Utc) : raw.ToUniversalTime());
 
     // Runs synchronously (this is always called from a background Task.Run at
     // both its call sites - App.axaml.cs's startup rescan and
