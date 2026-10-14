@@ -50,7 +50,7 @@ public class LibraryBrowserViewModelTests
     }
 
     [AvaloniaFact]
-    public async Task Songs_shows_every_track_and_summarises_them_in_the_status_bar()
+    public async Task Songs_shows_every_track()
     {
         var (vm, _) = Make(Song("a", "One", "X"), Song("b", "One", "X"), Song("c", "Two", "Y"));
 
@@ -58,8 +58,6 @@ public class LibraryBrowserViewModelTests
         await vm.RebuildRowsImmediatelyAsync();
 
         Assert.Equal(3, vm.Rows.Count);
-        Assert.Contains("3 songs", vm.StatusBarText);
-        Assert.Contains("2 albums", vm.StatusBarText);
     }
 
     // "Add N to (X)" on two albums and "Add N To (X)" on one: one artist,

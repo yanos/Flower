@@ -27,11 +27,10 @@ namespace Flower.Persistence
     }
 
     // Settings > General, and View > Playback Controls at Bottom - see
-    // MainViewModel.PlaybackControlsPlacement. Top is the bar above the page:
-    // the transport beside the cover, the title and the seek bar. Bottom splits
-    // that up the way iTunes 12 did: the transport, the seek bar and the
-    // title, artist and album over it join the status bar across the foot of
-    // the window, and the cover goes to the foot of the sidebar.
+    // MainViewModel.PlaybackControlsPlacement. Which edge of the window the
+    // player bar runs along - what is playing, the transport, the volume and
+    // output - above the sidebar and the page, or under them. The bar is the
+    // same either way.
     [JsonConverter(typeof(JsonStringEnumConverter<PlaybackControlsPlacement>))]
     public enum PlaybackControlsPlacement
     {

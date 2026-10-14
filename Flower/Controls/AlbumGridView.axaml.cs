@@ -179,7 +179,7 @@ public partial class AlbumGridView : UserControl
         // believing its source never changed, and it keeps the containers it
         // had already realized. Visible as albums that stay on screen after
         // the library behind them is gone (remove the last library folder -
-        // the status bar correctly says 0 songs while the grid still shows
+        // the page header correctly says 0 songs while the grid still shows
         // every album) until any resize happens to force a fresh layout pass.
         // A different instance leaves nothing to recognise, so the panel
         // rebuilds - which is all the null-then-reassign was ever trying to

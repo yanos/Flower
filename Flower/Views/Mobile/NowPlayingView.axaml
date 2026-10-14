@@ -325,7 +325,7 @@
         </Grid>
 
         <!-- Volume, below the transport where a thumb already is. Bound
-             straight to the same VolumeControlViewModel the desktop status bar
+             straight to the same VolumeControlViewModel the desktop player bar
              drives, so the two never disagree - but drawn as a plain Slider
              rather than reusing desktop's VolumeControl, whose 10px thumb and
              3px rail are a mouse target, not a finger one. -->

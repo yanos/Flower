@@ -37,12 +37,17 @@ public sealed class AppleRoutePicker : IPlatformRoutePicker
             // An explicit frame because a NativeControlHost has no intrinsic
             // size to hand down and AVRoutePickerView does not size itself;
             // the Avalonia side sets the same numbers (see MainView.axaml).
-            _picker = new AVRoutePickerView(new CGRect(0, 0, 22, 22))
+            // Drawn scaled up to match the glyphs beside it, see below.
+            _picker = new ScaledRoutePickerView(new CGRect(0, 0, 28, 28))
             {
                 // Borderless, so it reads as one of the status bar's flat
                 // glyph buttons rather than a raised push button.
                 RoutePickerButtonBordered = false
             };
+            // The label colour, as the volume and output glyphs beside it
+            // are the song title's, rather than AppKit's dimmer default.
+            // Only at rest: routed elsewhere, it keeps the system's accent.
+            _picker.SetRoutePickerButtonColor(AppKit.NSColor.Label, AVRoutePickerViewButtonState.Normal);
 
             return new PlatformHandle(_picker.Handle, "NSView");
         }
@@ -53,5 +58,41 @@ public sealed class AppleRoutePicker : IPlatformRoutePicker
             _picker?.Dispose();
             _picker = null;
         }
+    }
+
+    // AVRoutePickerView draws its glyph at one size whatever its frame, a
+    // little smaller than the volume and output glyphs beside it. Bounds
+    // smaller than the frame scale the drawing up, so this keeps the bounds
+    // that much smaller than every frame Avalonia lays it out at - and its
+    // button to those bounds, since the view lays the button out to its
+    // frame's size, which in the smaller bounds put the glyph's middle
+    // above the view's, out of line with the glyphs beside it. Filling the
+    // bounds still leaves the glyph's middle 3.5 points below the middle of
+    // the glyphs beside it (measured off a screenshot), so the button is
+    // lifted by that much too.
+    private sealed class ScaledRoutePickerView : AVRoutePickerView
+    {
+        private const double Scale = 28.0 / 22.0;
+        private const double Lift = 3.5 / Scale;
+
+        public ScaledRoutePickerView(CGRect frame) : base(frame) =>
+            SetBoundsSize(Scaled(frame.Size));
+
+        public override void SetFrameSize(CGSize newSize)
+        {
+            base.SetFrameSize(newSize);
+            SetBoundsSize(Scaled(newSize));
+        }
+
+        public override void Layout()
+        {
+            base.Layout();
+            var frame = Bounds;
+            frame.Y += (nfloat)(IsFlipped ? -Lift : Lift);
+            foreach (var subview in Subviews)
+                subview.Frame = frame;
+        }
+
+        private static CGSize Scaled(CGSize size) => new(size.Width / Scale, size.Height / Scale);
     }
 }

@@ -11,7 +11,7 @@ namespace Flower.UserControls
 {
     // DataContext is supplied by whoever hosts this control - MainView.axaml
     // binds it to MainViewModel.OutputDevice. Same arrangement as
-    // VolumeControl, which sits right beside it in the status bar.
+    // VolumeControl, which sits right beside it in the player bar.
     public partial class OutputDeviceControl : UserControl
     {
         public OutputDeviceControl()
@@ -30,8 +30,8 @@ namespace Flower.UserControls
 
             viewModel.Refresh();
 
-            // Upward, for Avalonia's own menu: the button is in the status bar
-            // at the very bottom of the window.
+            // Upward, for Avalonia's own menu: the button is in the player
+            // bar, which can sit at the very bottom of the window.
             var menu = new ContextMenu { Placement = PlacementMode.Top };
             foreach (var device in viewModel.Devices)
             {

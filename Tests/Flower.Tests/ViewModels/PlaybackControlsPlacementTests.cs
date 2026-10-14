@@ -10,10 +10,10 @@ using Xunit;
 
 namespace Flower.Tests.ViewModels;
 
-// The desktop's two arrangements of the transport (AppSettings.
+// The desktop's two places for the player bar (AppSettings.
 // PlaybackControlsPlacement) - the view model's half: that the choice is
-// remembered. Where MainView.axaml puts things is the view's business and not
-// tested.
+// remembered. Where MainView.axaml puts the bar is the view's business and
+// not tested.
 [Collection("PlatformDataDirectory")]
 public class PlaybackControlsPlacementTests : PinnedDataDirectory
 {

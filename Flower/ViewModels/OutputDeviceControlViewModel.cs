@@ -13,7 +13,7 @@ namespace Flower.ViewModels
     public sealed record OutputDeviceItemViewModel(string? Id, string Name, bool IsSelected);
 
     // Backs OutputDeviceControl, the speaker button beside the volume slider
-    // in the desktop status bar. Deliberately thin: it re-enumerates on open
+    // in the desktop player bar. Deliberately thin: it re-enumerates on open
     // (there is no hotplug subscription anywhere in the audio stack) and
     // forwards the pick straight to IAudioManager.
     //

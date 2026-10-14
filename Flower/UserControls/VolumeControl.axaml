@@ -5,80 +5,55 @@
              mc:Ignorable="d"
              xmlns:vm="using:Flower.ViewModels"
              xmlns:conv="clr-namespace:Flower.Converters"
-             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="Flower.UserControls.VolumeControl"
              x:DataType="vm:VolumeControlViewModel">
 
   <UserControl.Resources>
-    <conv:VolumeToStarWidthConverter x:Key="VolumeToStarWidthConverter"/>
+    <conv:MaterialIconGeometryConverter x:Key="MaterialIconGeometryConverter"/>
   </UserControl.Resources>
 
   <Grid ColumnDefinitions="Auto,*" VerticalAlignment="Center">
 
     <!-- One speaker, at the quiet end, that says how loud it is - an X at
-         nothing, more waves the louder it is (VolumeControlViewModel.Icon). -->
-    <materialIcons:MaterialIcon Grid.Column="0"
-                                Kind="{Binding Icon}"
-                                Width="22" Height="22"
-                                Opacity="0.7"
-                                VerticalAlignment="Center"
-                                Margin="0,0,6,0"/>
+         nothing, more waves the louder it is (VolumeControlViewModel.Icon).
+         Drawn on the icons' own 24x24 canvas rather than as a MaterialIcon,
+         which scales each glyph to fit its outline: the waves make each
+         level's outline a different width, so the speaker moved and resized
+         as the volume crossed from one to the next. -->
+    <Viewbox Grid.Column="0"
+             Width="26" Height="26"
+             VerticalAlignment="Center"
+             Margin="0,0,6,0">
+      <Canvas Width="24" Height="24">
+        <Path Data="{Binding Icon, Converter={StaticResource MaterialIconGeometryConverter}}"
+              Fill="{DynamicResource AppTextPrimaryBrush}"/>
+      </Canvas>
+    </Viewbox>
 
-    <!-- The rail is drawn here directly from Volume via two star-weighted
-         columns, rather than through Slider's own Track.DecreaseButton/
-         IncreaseButton - repeated attempts at restyling those down to this
-         compact size (Style overrides, a re-templated Button, a plain
-         Border) all left the fill either mismatched with the thumb or not
-         rendering at all, since Track computes their Rects itself and
-         nothing here could reliably confirm what it was doing internally.
-         A star-sized Grid is simple, standard, and needs no pixel math - it
-         is driven by the exact same Volume binding as the slider below.
-         4 high, the seek bar's thickness (SliderTrackThemeHeight in SeekBar). -->
-    <Grid Grid.Column="1" VerticalAlignment="Center">
-      <Grid VerticalAlignment="Center">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="{Binding Volume, Converter={StaticResource VolumeToStarWidthConverter}}"/>
-          <ColumnDefinition Width="{Binding Volume, Converter={StaticResource VolumeToStarWidthConverter}, ConverterParameter=Remaining}"/>
-        </Grid.ColumnDefinitions>
-        <Border Grid.Column="0" Background="{DynamicResource AppPrimaryBrush}" Height="4" CornerRadius="2"/>
-        <Border Grid.Column="1" Background="{DynamicResource AppTrackBrush}" Height="4" CornerRadius="2"/>
-      </Grid>
-
-      <!-- Real, fully interactive slider stacked on top for click/drag -
-           only its thumb is visible; the track buttons are transparent so
-           they do not double up with the rail drawn above. -->
-      <Slider x:Name="slider"
-              Maximum="100"
-              Height="16"
-              Value="{Binding Volume, Mode=TwoWay}"
-              HorizontalAlignment="Stretch"
-              VerticalAlignment="Center">
-        <Slider.Template>
-          <ControlTemplate TargetType="Slider">
-            <Track Minimum="{TemplateBinding Minimum}"
-                   Maximum="{TemplateBinding Maximum}"
-                   Value="{TemplateBinding Value, Mode=TwoWay}"
-                   Orientation="Horizontal"
-                   HorizontalAlignment="Stretch"
-                   VerticalAlignment="Center">
-              <Track.DecreaseButton>
-                <Button Height="16" Background="Transparent" BorderThickness="0"/>
-              </Track.DecreaseButton>
-              <Track.IncreaseButton>
-                <Button Height="16" Background="Transparent" BorderThickness="0"/>
-              </Track.IncreaseButton>
-              <Thumb Width="10" Height="10">
-                <Thumb.Template>
-                  <ControlTemplate TargetType="Thumb">
-                    <Ellipse Fill="{DynamicResource AppPrimaryBrush}" Width="10" Height="10"/>
-                  </ControlTemplate>
-                </Thumb.Template>
-              </Thumb>
-            </Track>
-          </ControlTemplate>
-        </Slider.Template>
-      </Slider>
-    </Grid>
+    <!-- The seek bar's slider (SeekBar): the same size, thumb and rail, and
+         the same text-coloured fill up to the thumb. The negative margin
+         crops the room Fluent's template keeps above and below for a tick
+         bar it has not got, as the seek bar's does - 2 more at the top than
+         the bottom, which otherwise left the rail that much below the middle
+         of the speaker beside it (measured off a screenshot). -->
+    <Slider x:Name="slider"
+            Grid.Column="1"
+            Padding="0"
+            Margin="0,-13,0,-9"
+            Maximum="100"
+            Value="{Binding Volume, Mode=TwoWay}"
+            HorizontalAlignment="Stretch"
+            VerticalAlignment="Center">
+      <Slider.Resources>
+        <x:Double x:Key="SliderTrackThemeHeight">4</x:Double>
+        <SolidColorBrush x:Key="SliderTrackValueFill" Color="{DynamicResource PaletteTextPrimary}"/>
+        <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Color="{DynamicResource PaletteTextPrimary}" Opacity="0.8"/>
+        <SolidColorBrush x:Key="SliderTrackValueFillPressed" Color="{DynamicResource PaletteTextPrimary}" Opacity="0.8"/>
+        <SolidColorBrush x:Key="SliderThumbBackground" Color="{DynamicResource PaletteTextPrimary}"/>
+        <SolidColorBrush x:Key="SliderThumbBackgroundPointerOver" Color="{DynamicResource PaletteTextPrimary}" Opacity="0.8"/>
+        <SolidColorBrush x:Key="SliderThumbBackgroundPressed" Color="{DynamicResource PaletteTextPrimary}" Opacity="0.8"/>
+      </Slider.Resources>
+    </Slider>
 
   </Grid>
 

@@ -413,8 +413,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     // Settings' Playback Controls picker and View > Playback Controls at
     // Bottom - see Flower.Persistence.PlaybackControlsPlacement. MainView
-    // binds the two bools: the top bar shows for one, and the status bar's
-    // transport and seek bar and the sidebar's now-playing card for the other.
+    // binds PlaybackControlsAtBottom to move its player bar to the window's
+    // foot; the menu item binds it as its check.
     public PlaybackControlsPlacement PlaybackControlsPlacement
     {
         get => _appSettings.PlaybackControlsPlacement;
@@ -425,7 +425,6 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             _appSettings.PlaybackControlsPlacement = value;
             SaveSettings();
             OnPropertyChanged();
-            OnPropertyChanged(nameof(PlaybackControlsAtTop));
             OnPropertyChanged(nameof(PlaybackControlsAtBottom));
         }
     }
@@ -474,7 +473,6 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             Home.Filter = FilterText;
     }
 
-    public bool PlaybackControlsAtTop => PlaybackControlsPlacement == PlaybackControlsPlacement.Top;
     public bool PlaybackControlsAtBottom => PlaybackControlsPlacement == PlaybackControlsPlacement.Bottom;
 
     // Both delegate to ITunesImportCoordinator, which owns the cooldown and
@@ -484,7 +482,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public Task SyncITunesPlayCountAsync() => ITunesImport.SyncPlayCountAsync();
     public Task SyncITunesDateAddedAsync() => ITunesImport.SyncDateAddedAsync();
 
-    // ── Child ViewModels the top bar and status bar bind to ───────────────────
+    // ── Child ViewModels the player bar binds to ──────────────────────────────
 
     // Exposed so MainView.axaml can hand each control its DataContext
     // declaratively ({Binding PlaybackControls} and friends) instead of the
@@ -600,10 +598,6 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     public ObservableCollection<TrackRowViewModel> Rows => Browser.Rows;
     public IReadOnlyList<Track> DisplayedTracks         => Browser.DisplayedTracks;
-    // On Artists, what the cards show; everywhere else the browser's.
-    public string StatusBarText => IsShowingArtistPage
-        ? LibraryBrowserViewModel.Summarize(_artistAlbums.SelectMany(a => a.ExpandedTracks).ToList())
-        : Browser.StatusBarText;
 
     public string? FilterText
     {
@@ -752,7 +746,6 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         }
         OnPropertyChanged(nameof(ArtistHeader));
         OnPropertyChanged(nameof(ArtistAlbums));
-        OnPropertyChanged(nameof(StatusBarText));
     }
 
     // One selection across the page, as one list would have.
@@ -1766,7 +1759,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public MainViewModel()
     {
         // The collaborators this class forwards to are constructed even here:
-        // most of what MainView.axaml binds (Rows, StatusBarText, SubListItems,
+        // most of what MainView.axaml binds (Rows, PageSubtitle, SubListItems,
         // the tile grids) now reads through Browser, so leaving it null would
         // make the previewer throw on the first binding rather than render an
         // empty window. Over an empty Library, so nothing touches disk.
@@ -1879,7 +1872,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
                 OnPropertyChanged(e.PropertyName);
                 switch (e.PropertyName)
                 {
-                    case nameof(LibraryBrowserViewModel.StatusBarText):
+                    case nameof(LibraryBrowserViewModel.DisplayedTracks):
                     case nameof(LibraryBrowserViewModel.AlbumGridTiles):
                         OnPropertyChanged(nameof(PageSubtitle));
                         break;

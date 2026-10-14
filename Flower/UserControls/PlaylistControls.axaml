@@ -14,6 +14,11 @@
   </UserControl.Resources>
 
   <UserControl.Styles>
+    <!-- The transport's glyphs in the text's colour, the song title's beside
+         them, rather than the red App.axaml gives every icon. -->
+    <Style Selector="materialIcons|MaterialIcon">
+      <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
+    </Style>
     <!-- Shuffle and repeat, off and on: the grey of a disabled control when
          off, as on Now Playing - a dimmed red read as on - and the accent
          when on. -->
@@ -23,12 +28,12 @@
     <Style Selector="materialIcons|MaterialIcon.transportToggle.active">
       <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}"/>
     </Style>
-    <!-- Pointed at and pressed, on or off, the hover and pressed accents -
-         restated here because the two above are nearer than App.axaml's. -->
-    <Style Selector=":is(Button):pointerover materialIcons|MaterialIcon.transportToggle">
+    <!-- Pointed at and pressed, any of them, the hover and pressed accents -
+         restated here because the ones above are nearer than App.axaml's. -->
+    <Style Selector=":is(Button):pointerover materialIcons|MaterialIcon">
       <Setter Property="Foreground" Value="{DynamicResource AppAccentHoverBrush}"/>
     </Style>
-    <Style Selector=":is(Button):pressed materialIcons|MaterialIcon.transportToggle">
+    <Style Selector=":is(Button):pressed materialIcons|MaterialIcon">
       <Setter Property="Foreground" Value="{DynamicResource AppAccentPressedBrush}"/>
     </Style>
   </UserControl.Styles>
@@ -41,31 +46,33 @@
   <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="2">
 
     <Button Classes="pill" Click="Shuffle" ToolTip.Tip="Shuffle">
-      <materialIcons:MaterialIcon Kind="Shuffle" Width="20" Height="20"
+      <materialIcons:MaterialIcon Kind="Shuffle" Width="22" Height="22"
                                   Classes="transportToggle"
                                   Classes.active="{Binding IsShuffleEnabled}"/>
     </Button>
 
     <Button Classes="pill" Click="Previous" ToolTip.Tip="Previous">
-      <materialIcons:MaterialIcon Kind="Rewind" Width="26" Height="26"/>
+      <materialIcons:MaterialIcon Kind="Rewind" Width="30" Height="30"/>
     </Button>
 
     <Button Classes="pill circle"
-            Width="56" Height="56"
+            Width="62" Height="62"
             Margin="4,0"
             Click="PlayOrPause">
-      <Border Classes="ring">
+      <!-- A pixel heavier than the ring's own (IconButtons.axaml), as the
+           one big button in the bar. -->
+      <Border Classes="ring" BorderThickness="2">
         <materialIcons:MaterialIcon Kind="{Binding IsPlaying, Converter={StaticResource PlayOrPauseConverter}}"
-                                    Width="28" Height="28"/>
+                                    Width="32" Height="32"/>
       </Border>
     </Button>
 
     <Button Classes="pill" Click="Next" ToolTip.Tip="Next">
-      <materialIcons:MaterialIcon Kind="FastForward" Width="26" Height="26"/>
+      <materialIcons:MaterialIcon Kind="FastForward" Width="30" Height="30"/>
     </Button>
 
     <Button Classes="pill" Click="Repeat" ToolTip.Tip="Repeat">
-      <materialIcons:MaterialIcon Kind="Repeat" Width="20" Height="20"
+      <materialIcons:MaterialIcon Kind="Repeat" Width="22" Height="22"
                                   Classes="transportToggle"
                                   Classes.active="{Binding IsRepeatEnabled}"/>
     </Button>

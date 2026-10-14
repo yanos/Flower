@@ -11,31 +11,34 @@
 
   <!-- What is playing, beside the transport: the cover, the song's title in
        the display serif - as on the phone's Now Playing, where a song's title
-       is the subject of the screen - the artist and album under it, and the
-       seek bar with the time either side. Shuffle and repeat are the
-       transport's now (PlaylistControls). -->
+       is the subject of the screen - and the artist and album under it, level
+       with the cover's top, and the seek bar level with its bottom, the times
+       under the bar's ends. Shuffle and repeat are the transport's now
+       (PlaylistControls). -->
   <Grid ColumnDefinitions="Auto,*">
 
     <controls:AlbumArtView Grid.Column="0"
-                           Width="76" Height="76"
+                           Width="84" Height="84"
                            ArtCornerRadius="6"
                            Margin="0,0,16,0"
                            VerticalAlignment="Center"
                            AlbumArt="{Binding AlbumArt}"/>
 
-    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="0">
-      <TextBlock Text="{Binding CurrentlyPlayingTrack.Title}"
+    <Grid Grid.Column="1" RowDefinitions="Auto,Auto,*,Auto">
+      <TextBlock Grid.Row="0"
+                 Text="{Binding CurrentlyPlayingTrack.Title}"
                  FontFamily="{DynamicResource AppDisplayFontFamily}"
                  FontSize="22"
                  FontWeight="SemiBold"
                  TextTrimming="CharacterEllipsis"/>
 
-      <TextBlock Text="{Binding Subtitle}"
+      <TextBlock Grid.Row="1"
+                 Text="{Binding Subtitle}"
                  FontSize="13"
                  Foreground="{DynamicResource AppTextSecondaryBrush}"
                  TextTrimming="CharacterEllipsis"/>
 
-      <usercontrols:SeekBar Margin="0,2,0,0"/>
-    </StackPanel>
+      <usercontrols:SeekBar Grid.Row="3"/>
+    </Grid>
   </Grid>
 </UserControl>

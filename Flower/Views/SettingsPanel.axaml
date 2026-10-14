@@ -56,9 +56,8 @@
             <ComboBoxItem Content="Dark"/>
           </ComboBox>
 
-          <!-- Top is the bar above the page; Bottom moves the transport, the
-               seek bar and what is playing into the status bar and the cover to
-               the foot of the sidebar - see AppSettings.PlaybackControlsPlacement. -->
+          <!-- Which edge of the window the player bar runs along - see
+               AppSettings.PlaybackControlsPlacement. -->
           <TextBlock Text="Playback Controls"
                      FontWeight="SemiBold"
                      Margin="0,20,0,8"

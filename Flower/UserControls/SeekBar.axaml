@@ -7,42 +7,62 @@
              x:Class="Flower.UserControls.SeekBar"
              x:DataType="vm:CurrentlyPlayingControlViewModel">
 
-  <!-- The seek bar with the time either side. Its own control because it has
-       two homes: under the title in CurrentlyPlayingControl, and in the status
-       bar when the playback controls are at the bottom (see
-       AppSettings.PlaybackControlsPlacement). -->
-  <Grid ColumnDefinitions="Auto,*,Auto">
-    <TextBlock Grid.Column="0"
-               Text="{Binding ElapsedTime}"
-               FontSize="12"
-               MinWidth="34"
-               Foreground="{DynamicResource AppTextSecondaryBrush}"
-               VerticalAlignment="Center"
-               IsVisible="{Binding CurrentlyPlayingTrack, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+  <!-- The seek bar, with the elapsed and total times on a line under its
+       two ends - under the title in CurrentlyPlayingControl. -->
+  <UserControl.Styles>
+    <!-- Tucked up under the bar, and down by the depth of the line's
+         descent, so the digits - which have none - sit on the bottom edge of
+         whatever this is laid along (the cover, in CurrentlyPlayingControl).
+         -->
+    <Style Selector="TextBlock.time">
+      <Setter Property="Grid.Row" Value="1"/>
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="Margin" Value="0,-2,0,-3"/>
+    </Style>
+  </UserControl.Styles>
 
+  <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto">
     <!-- The phone's seek bar (Now Playing's Slider.tight), a little
-         thicker than Fluent's rail with round ends: the one bar here. The
-         negative margin crops the room Fluent's template keeps above and
-         below for a tick bar it has not got. -->
-    <Slider Grid.Column="1"
-            Margin="10,-11"
+         thicker than Fluent's rail with round ends: the one bar here. Filled
+         and thumbed in the text's colour, as the title over it is, rather
+         than the theme's accent. The negative margin crops the room Fluent's
+         template keeps above and below for a tick bar it has not got. -->
+    <Slider x:Name="Bar"
+            Grid.ColumnSpan="3"
             Padding="0"
+            Margin="0,-11"
             Minimum="0"
             Maximum="1"
             Value="{Binding SeekPosition, Mode=TwoWay}"
             VerticalAlignment="Center">
       <Slider.Resources>
         <x:Double x:Key="SliderTrackThemeHeight">4</x:Double>
+        <SolidColorBrush x:Key="SliderTrackValueFill" Color="{DynamicResource PaletteTextPrimary}"/>
+        <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Color="{DynamicResource PaletteTextPrimary}" Opacity="0.8"/>
+        <SolidColorBrush x:Key="SliderTrackValueFillPressed" Color="{DynamicResource PaletteTextPrimary}" Opacity="0.8"/>
+        <SolidColorBrush x:Key="SliderThumbBackground" Color="{DynamicResource PaletteTextPrimary}"/>
+        <SolidColorBrush x:Key="SliderThumbBackgroundPointerOver" Color="{DynamicResource PaletteTextPrimary}" Opacity="0.8"/>
+        <SolidColorBrush x:Key="SliderThumbBackgroundPressed" Color="{DynamicResource PaletteTextPrimary}" Opacity="0.8"/>
       </Slider.Resources>
     </Slider>
 
+    <TextBlock Grid.Column="0"
+               Classes="time"
+               Text="{Binding ElapsedTime}"
+               MinWidth="34"
+               Foreground="{DynamicResource AppTextSecondaryBrush}"
+               IsVisible="{Binding CurrentlyPlayingTrack, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+
     <TextBlock Grid.Column="2"
+               Classes="time"
                Text="{Binding TotalTime}"
-               FontSize="12"
                MinWidth="34"
                TextAlignment="Right"
                Foreground="{DynamicResource AppTextSecondaryBrush}"
-               VerticalAlignment="Center"
                IsVisible="{Binding CurrentlyPlayingTrack, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+
+    <!-- Holds the times' line open while nothing is playing and they are
+         hidden, so nothing above it moves when something starts. -->
+    <TextBlock Classes="time" Text=" "/>
   </Grid>
 </UserControl>

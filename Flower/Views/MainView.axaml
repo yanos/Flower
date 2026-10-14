@@ -20,18 +20,14 @@
 
   <Grid>
 
-    <!-- The window, left to right: the sidebar, the whole height of it, and
-         beside it the top bar, the page and the status bar.
-
-         With the playback controls at the bottom (AppSettings.
-         PlaybackControlsPlacement) the top bar goes, the status bar runs the
-         whole width under the sidebar and takes the transport, the seek bar
-         and the title, artist and album over it, and the cover moves to the
-         foot of the sidebar - iTunes 12's arrangement. Which cells the sidebar and the status bar take is
-         set by the styles below rather than on the elements, because a value
-         set on an element outranks any style. -->
+    <!-- The window: the player bar across its whole width - at the top, or at
+         the bottom with the playback controls there (AppSettings.
+         PlaybackControlsPlacement) - and between, the sidebar and beside it
+         the page. Under everything, the status bar. Which row the player bar
+         takes is set by the styles below rather than on the element, because
+         a value set on an element outranks any style. -->
     <Grid x:Name="ContentGrid"
-          RowDefinitions="*,Auto"
+          RowDefinitions="Auto,*,Auto,Auto"
           Classes.controlsAtBottom="{Binding PlaybackControlsAtBottom}">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="220" MinWidth="170" MaxWidth="320"/>
@@ -39,75 +35,73 @@
         <ColumnDefinition Width="*"/>
       </Grid.ColumnDefinitions>
       <Grid.Styles>
-        <Style Selector="Grid#ContentGrid > Border#Sidebar, Grid#ContentGrid > GridSplitter">
-          <Setter Property="Grid.RowSpan" Value="2"/>
+        <Style Selector="Grid#ContentGrid > Border#PlayerBar">
+          <Setter Property="Grid.Row" Value="0"/>
+          <Setter Property="BorderThickness" Value="0,0,0,1"/>
         </Style>
-        <Style Selector="Grid#ContentGrid > Border#StatusBar">
-          <Setter Property="Grid.Column" Value="2"/>
-          <Setter Property="Padding" Value="12,6,12,6"/>
-        </Style>
-        <Style Selector="Border#StatusBar StackPanel#StatusMiddle">
-          <Setter Property="Grid.Column" Value="0"/>
-          <Setter Property="Grid.ColumnSpan" Value="4"/>
-        </Style>
-
-        <Style Selector="Grid#ContentGrid.controlsAtBottom > Border#Sidebar, Grid#ContentGrid.controlsAtBottom > GridSplitter">
-          <Setter Property="Grid.RowSpan" Value="1"/>
-        </Style>
-        <Style Selector="Grid#ContentGrid.controlsAtBottom > Border#StatusBar">
-          <Setter Property="Grid.Column" Value="0"/>
-          <Setter Property="Grid.ColumnSpan" Value="3"/>
-          <Setter Property="Padding" Value="16,10,16,10"/>
-        </Style>
-        <!-- Between the transport and the volume: what is playing, and the
-             seek bar under it. -->
-        <Style Selector="Grid#ContentGrid.controlsAtBottom Border#StatusBar StackPanel#StatusMiddle">
-          <Setter Property="Grid.Column" Value="1"/>
-          <Setter Property="Grid.ColumnSpan" Value="1"/>
-          <Setter Property="Spacing" Value="4"/>
-        </Style>
-        <!-- The volume level with the seek bar rather than with the middle of
-             the bar: both are centred, and the seek bar sits under a line 20
-             high and 4 of spacing, so the volume drops by the same 24. -->
-        <Style Selector="Grid#ContentGrid.controlsAtBottom Border#StatusBar StackPanel#VolumeGroup">
-          <Setter Property="Margin" Value="0,24,0,0"/>
+        <Style Selector="Grid#ContentGrid.controlsAtBottom > Border#PlayerBar">
+          <Setter Property="Grid.Row" Value="2"/>
+          <Setter Property="BorderThickness" Value="0,1,0,0"/>
         </Style>
       </Grid.Styles>
 
-      <!-- Sidebar: the app's name at the head, then the library, playlists and
-           server under small capital headings. Its own tint (AppSidebarBrush)
-           sets it apart from the page instead of a rule down its edge. -->
-      <Border x:Name="Sidebar" Grid.Column="0" Background="{DynamicResource AppSidebarBrush}">
-        <DockPanel>
-          <StackPanel x:Name="SidebarBrand"
-                      DockPanel.Dock="Top"
+      <!-- Player bar, across the whole window over or under the sidebar and
+           the page: what is playing at the left, the transport in the middle
+           - the middle of the window, since the halves either side are equal
+           - and the volume and output at the right. -->
+      <Border x:Name="PlayerBar"
+              Grid.ColumnSpan="3"
+              Padding="16,8,16,8"
+              BorderBrush="{DynamicResource AppDividerBrush}">
+        <Grid ColumnDefinitions="*,Auto,*">
+          <usercontrols:CurrentlyPlayingControl
+            Grid.Column="0"
+            DataContext="{Binding NowPlaying}"
+            Margin="0,0,128,0"
+            HorizontalAlignment="Stretch"
+            VerticalAlignment="Center"/>
+
+          <usercontrols:PlaylistControls
+            x:Name="PlaybackControls"
+            Grid.Column="1"
+            DataContext="{Binding PlaybackControls}"
+            VerticalAlignment="Center"/>
+
+          <StackPanel Grid.Column="2"
                       Orientation="Horizontal"
-                      Spacing="10"
-                      Margin="22,22,16,14">
-            <Image Source="/Assets/flower-glyph.png"
-                   Width="30" Height="30"
-                   VerticalAlignment="Center"
-                   RenderOptions.BitmapInterpolationMode="HighQuality"/>
-            <TextBlock Text="Flower"
-                       FontFamily="{DynamicResource AppDisplayFontFamily}"
-                       FontSize="30"
-                       FontWeight="SemiBold"
-                       VerticalAlignment="Center"/>
+                      Spacing="6"
+                      Margin="24,0,0,0"
+                      HorizontalAlignment="Right"
+                      VerticalAlignment="Center">
+            <usercontrols:VolumeControl
+              DataContext="{Binding Volume}"
+              VerticalAlignment="Center"
+              Height="24"
+              Width="240" />
+            <usercontrols:OutputDeviceControl
+              DataContext="{Binding OutputDevice}"
+              Margin="12,0,0,0"
+              VerticalAlignment="Center" />
+            <!-- Apple's own AirPlay route button, hosted natively, and nothing
+                 at all on platforms with no such control (see RoutePickerControl)
+                 - which today is everything but the Flower.MacOS head. It sits
+                 beside OutputDeviceControl rather than replacing it: that one
+                 lists the CoreAudio devices miniaudio can render to, this one
+                 reaches AirPlay receivers that are not devices at all. Sized
+                 here because a NativeControlHost has no intrinsic size of its
+                 own to measure. -->
+            <usercontrols:RoutePickerControl
+              Width="28" Height="28"
+              VerticalAlignment="Center" />
           </StackPanel>
+        </Grid>
+      </Border>
 
-          <!-- What is playing, at the foot of the sidebar, when the playback
-               controls are at the bottom: its cover, the column's width. Its
-               title, artist and album are the status bar's, over the seek bar.
-               Nothing at all while nothing is playing - an empty square that
-               size is a hole in the column. -->
-          <Border DockPanel.Dock="Bottom"
-                  IsVisible="{Binding PlaybackControlsAtBottom}"
-                  Margin="16,8,16,16">
-            <controls:SquareAlbumArtView IsVisible="{Binding NowPlaying.CurrentlyPlayingTrack, Converter={x:Static ObjectConverters.IsNotNull}}"
-                                         AlbumArt="{Binding NowPlaying.AlbumArt}"
-                                         ArtCornerRadius="10"/>
-          </Border>
-
+      <!-- Sidebar: the library, playlists and server under small capital
+           headings. Its own tint (AppSidebarBrush) sets it apart from the
+           page instead of a rule down its edge. -->
+      <Border x:Name="Sidebar" Grid.Row="1" Grid.Column="0" Background="{DynamicResource AppSidebarBrush}">
+        <DockPanel>
         <Panel>
           <ListBox x:Name="SidebarList"
                    Classes="sidebar"
@@ -115,7 +109,7 @@
                    SelectedItem="{Binding SelectedSidebarItem, Mode=TwoWay}"
                    SelectionMode="Multiple"
                    Background="Transparent"
-                   Padding="0,0,0,8"
+                   Padding="0,12,0,8"
                    SelectionChanged="SidebarList_SelectionChanged">
             <ListBox.Styles>
               <!-- Each row a rounded pill inset from the column's edges: the
@@ -265,42 +259,14 @@
         </DockPanel>
       </Border>
 
-      <GridSplitter Grid.Column="1"
+      <GridSplitter Grid.Row="1" Grid.Column="1"
                     Width="4"
                     Background="Transparent"
                     ResizeDirection="Columns"/>
 
-      <!-- Beside the sidebar: the top bar, a banner when there is something to
-           say, the page's header and the page. The status bar is under it, in
-           ContentGrid's second row. -->
-      <Grid Grid.Column="2" RowDefinitions="Auto,Auto,Auto,*">
-
-    <!-- Top bar: the transport, and what is playing beside it. -->
-    <Border Grid.Row="0"
-            IsVisible="{Binding PlaybackControlsAtTop}"
-            Padding="16,14,24,14"
-            BorderThickness="0,0,0,1"
-            BorderBrush="{DynamicResource AppDividerBrush}">
-      <Grid ColumnDefinitions="Auto,Auto,*">
-        <usercontrols:PlaylistControls
-          x:Name="PlaybackControls"
-          DataContext="{Binding PlaybackControls}"
-          VerticalAlignment="Center"/>
-
-        <Rectangle Grid.Column="1"
-                   Width="1" Height="56"
-                   Margin="16,0,20,0"
-                   Fill="{DynamicResource AppDividerBrush}"
-                   VerticalAlignment="Center"/>
-
-        <usercontrols:CurrentlyPlayingControl
-          Grid.Column="2"
-          DataContext="{Binding NowPlaying}"
-          MaxWidth="820"
-          HorizontalAlignment="Stretch"
-          VerticalAlignment="Center"/>
-      </Grid>
-    </Border>
+      <!-- Beside the sidebar: a banner when there is something to say, the
+           page's header and the page. -->
+      <Grid Grid.Row="1" Grid.Column="2" RowDefinitions="Auto,Auto,*">
 
     <!-- The server cannot write to its music folders (see
          LibraryWriteWarning): in an administrator's browser tab, as the server
@@ -311,7 +277,7 @@
          button is for a server that is read-only on purpose; it lasts until
          the page is next loaded, or the desktop's count next changes. -->
     <Border x:Name="LibraryWriteWarningBanner"
-            Grid.Row="1"
+            Grid.Row="0"
             IsVisible="{Binding HasServerLibraryWriteWarning}"
             Padding="12,8,8,8"
             BorderThickness="0,0,0,1"
@@ -349,7 +315,7 @@
          what it acts on. Not over Home, Artists (whose column of
          names carries the filter instead) or a server's page - see
          MainViewModel.ShowsPageHeader. -->
-    <Grid Grid.Row="2"
+    <Grid Grid.Row="1"
           IsVisible="{Binding ShowsPageHeader}"
           ColumnDefinitions="*,Auto"
           Margin="28,18,24,14">
@@ -375,7 +341,7 @@
 
       <!-- The page: the Artists column of names beside a track area, or one
            of the views that take the whole width. -->
-      <Grid Grid.Row="3" RowDefinitions="Auto,*">
+      <Grid Grid.Row="2" RowDefinitions="Auto,*">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="Auto"/>
           <ColumnDefinition Width="*"/>
@@ -753,112 +719,32 @@
 
       </Grid>
 
-      <!-- Status bar: what the app is busy with, how much the page holds, and
-           the volume and output. At the bottom placement, also the transport
-           and the seek bar - see ContentGrid's styles for the cells it takes. -->
+      <!-- Status bar, across the whole width under everything else: what the
+           app is busy with - a rescan, a sync, an import - and empty, but
+           still there, when it is busy with nothing. -->
       <Border x:Name="StatusBar"
-              Grid.Row="1"
+              Grid.Row="3"
+              Grid.ColumnSpan="3"
+              Padding="16,5,16,5"
               BorderThickness="0,1,0,0"
               BorderBrush="{DynamicResource AppDividerBrush}">
-        <Grid ColumnDefinitions="Auto,*,Auto,Auto">
-          <!-- At the bottom placement: the transport, and a rule after it like
-               the top bar's between the transport and what is playing. -->
-          <StackPanel Grid.Column="0"
-                      Orientation="Horizontal"
-                      IsVisible="{Binding PlaybackControlsAtBottom}"
-                      VerticalAlignment="Center">
-            <usercontrols:PlaylistControls
-              x:Name="BottomPlaybackControls"
-              DataContext="{Binding PlaybackControls}"
-              VerticalAlignment="Center"/>
-            <Rectangle Width="1" Height="40"
-                       Margin="16,0,24,0"
-                       Fill="{DynamicResource AppDividerBrush}"
+        <Panel>
+          <!-- Holds the line's height while there is nothing on it. -->
+          <TextBlock Text=" " FontSize="11"/>
+          <StackPanel Orientation="Horizontal"
+                      IsVisible="{Binding IsBusy}"
+                      VerticalAlignment="Center"
+                      Spacing="5">
+            <materialIcons:MaterialIcon x:Name="SpinnerIcon"
+                                        Kind="Sync"
+                                        Width="13" Height="13"
+                                        Opacity="0.55"/>
+            <TextBlock Text="{Binding BusyMessage}"
+                       FontSize="11"
+                       Opacity="0.55"
                        VerticalAlignment="Center"/>
           </StackPanel>
-
-          <StackPanel x:Name="StatusMiddle" VerticalAlignment="Center">
-            <!-- The status line: what the app is busy with at the left, and in
-                 the middle how much the page holds - or, at the bottom
-                 placement, what is playing, on one line over the seek bar. That
-                 line keeps its height while nothing plays, so the seek bar does
-                 not jump when something starts. -->
-            <Grid>
-              <StackPanel Orientation="Horizontal"
-                          IsVisible="{Binding IsBusy}"
-                          VerticalAlignment="Center"
-                          HorizontalAlignment="Left"
-                          Spacing="5">
-                <materialIcons:MaterialIcon x:Name="SpinnerIcon"
-                                            Kind="Sync"
-                                            Width="13" Height="13"
-                                            Opacity="0.55"/>
-                <TextBlock Text="{Binding BusyMessage}"
-                           FontSize="11"
-                           Opacity="0.55"
-                           VerticalAlignment="Center"/>
-              </StackPanel>
-              <TextBlock Text="{Binding StatusBarText}"
-                         IsVisible="{Binding PlaybackControlsAtTop}"
-                         HorizontalAlignment="Center"
-                         VerticalAlignment="Center"
-                         FontSize="11"
-                         Opacity="0.6"/>
-              <Panel IsVisible="{Binding PlaybackControlsAtBottom}"
-                     MinHeight="20"
-                     Margin="44,0">
-                <TextBlock IsVisible="{Binding NowPlaying.CurrentlyPlayingTrack, Converter={x:Static ObjectConverters.IsNotNull}}"
-                           FontSize="13"
-                           HorizontalAlignment="Center"
-                           VerticalAlignment="Center"
-                           TextTrimming="CharacterEllipsis">
-                  <Run Text="{Binding NowPlaying.CurrentlyPlayingTrack.Title}" FontWeight="SemiBold"/>
-                  <Run Text="  —  " Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                  <Run Text="{Binding NowPlaying.CurrentlyPlayingTrack.Artists}" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                  <Run Text="  —  " Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                  <Run Text="{Binding NowPlaying.CurrentlyPlayingTrack.Album}" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                </TextBlock>
-              </Panel>
-            </Grid>
-            <Panel IsVisible="{Binding PlaybackControlsAtBottom}">
-              <usercontrols:SeekBar DataContext="{Binding NowPlaying}"/>
-            </Panel>
-          </StackPanel>
-
-          <Rectangle Grid.Column="2"
-                     IsVisible="{Binding PlaybackControlsAtBottom}"
-                     Width="1" Height="40"
-                     Margin="24,0,16,0"
-                     Fill="{DynamicResource AppDividerBrush}"
-                     VerticalAlignment="Center"/>
-
-          <StackPanel x:Name="VolumeGroup"
-                      Grid.Column="3"
-                      Orientation="Horizontal"
-                      Spacing="4"
-                      VerticalAlignment="Center"
-                      HorizontalAlignment="Right">
-            <usercontrols:VolumeControl
-              DataContext="{Binding Volume}"
-              VerticalAlignment="Center"
-              Height="16"
-              Width="140" />
-            <usercontrols:OutputDeviceControl
-              DataContext="{Binding OutputDevice}"
-              VerticalAlignment="Center" />
-            <!-- Apple's own AirPlay route button, hosted natively, and nothing
-                 at all on platforms with no such control (see RoutePickerControl)
-                 - which today is everything but the Flower.MacOS head. It sits
-                 beside OutputDeviceControl rather than replacing it: that one
-                 lists the CoreAudio devices miniaudio can render to, this one
-                 reaches AirPlay receivers that are not devices at all. Sized
-                 here because a NativeControlHost has no intrinsic size of its
-                 own to measure. -->
-            <usercontrols:RoutePickerControl
-              Width="22" Height="22"
-              VerticalAlignment="Center" />
-          </StackPanel>
-        </Grid>
+        </Panel>
       </Border>
 
       <!-- Floating "what you're dragging" ghost for the drag-onto-playlist gesture
@@ -867,7 +753,7 @@
            follow the cursor from the track list all the way to the sidebar. -->
       <Border x:Name="DragGhost"
               Grid.ColumnSpan="3"
-              Grid.RowSpan="2"
+              Grid.RowSpan="4"
               IsVisible="False"
               IsHitTestVisible="False"
               HorizontalAlignment="Left"
