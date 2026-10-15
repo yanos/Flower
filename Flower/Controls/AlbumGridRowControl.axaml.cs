@@ -2,7 +2,6 @@ using System;
 using System.ComponentModel;
 
 using Avalonia.Controls;
-using Avalonia.Threading;
 
 using Flower.ViewModels;
 
@@ -32,7 +31,12 @@ public partial class AlbumGridRowControl : UserControl
     private const double ExpansionCardVerticalPadding = 20;
 
     private AlbumGridRowViewModel? _row;
-    private DispatcherTimer? _scrollIntoViewTimer;
+
+    // The height ExpansionBorder is growing or shrinking to - its Height
+    // property reads the transition's value of the moment, not where it is
+    // headed. AlbumGridView scrolls to what the row will be, not what it is
+    // mid-animation (RevealExpanded).
+    private double _expansionHeight;
 
     public AlbumGridRowControl()
     {
@@ -40,6 +44,18 @@ public partial class AlbumGridRowControl : UserControl
         DataContextChanged += OnDataContextChanged;
     }
 
+    // Where the songs will end once the expansion has finished opening,
+    // measured from the top of this row.
+    public double ExpandedBottom => ExpansionBorder.Bounds.Top + _expansionHeight;
+
+    // How tall the songs are drawn right now, mid-animation included - what a
+    // row closing above another takes away from everything under it.
+    public double CurrentExpansionHeight => ExpansionBorder.Bounds.Height;
+
+    // A row handed another album's row while scrolling - or a new row object
+    // after the grid rebuilds - is shown at its height outright. Only the row
+    // the user opens or closes animates: a recycled row growing in place as it
+    // scrolls on screen pushes everything under it down mid-scroll.
     private void OnDataContextChanged(object? sender, EventArgs e)
     {
         if (_row != null)
@@ -50,7 +66,10 @@ public partial class AlbumGridRowControl : UserControl
         if (_row != null)
             _row.PropertyChanged += Row_PropertyChanged;
 
+        var transitions = ExpansionBorder.Transitions;
+        ExpansionBorder.Transitions = null;
         UpdateExpansionHeight();
+        ExpansionBorder.Transitions = transitions;
     }
 
     private void Row_PropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -64,38 +83,21 @@ public partial class AlbumGridRowControl : UserControl
     // Height to actually animate smoothly between two real values, which is
     // the whole point of precomputing it from the (small, bounded) track
     // count instead of just letting the two-column content measure itself.
+    //
+    // Scrolling the songs into view is not this row's business: it cannot
+    // tell the user opening it from the grid rebuilding or recycling it, and
+    // used to scroll on all three - see AlbumGridView.RevealExpanded.
     private void UpdateExpansionHeight()
     {
         if (_row is not { IsExpanded: true } row)
         {
+            _expansionHeight = 0;
             ExpansionBorder.Height = 0;
-            _scrollIntoViewTimer?.Stop();
             return;
         }
 
         var rowCount = Math.Max(row.Column1Tracks.Count, row.Column2Tracks.Count);
-        ExpansionBorder.Height = Math.Max(rowCount, 1) * TrackRowHeight + ExpansionCardVerticalPadding;
-
-        ScheduleScrollIntoView();
-    }
-
-    // Waits out ExpansionBorder's own 220ms Height transition (see this
-    // control's own XAML) before scrolling - calling BringIntoView
-    // immediately would measure against the pre-animation (near-zero)
-    // height, under-scrolling and leaving the newly revealed tracks cut off
-    // at the bottom of the viewport instead of fully visible once expanded.
-    private void ScheduleScrollIntoView()
-    {
-        _scrollIntoViewTimer?.Stop();
-        _scrollIntoViewTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(260) };
-        _scrollIntoViewTimer.Tick += ScrollIntoViewTimer_Tick;
-        _scrollIntoViewTimer.Start();
-    }
-
-    private void ScrollIntoViewTimer_Tick(object? sender, EventArgs e)
-    {
-        _scrollIntoViewTimer?.Stop();
-        _scrollIntoViewTimer = null;
-        ExpansionBorder.BringIntoView();
+        _expansionHeight = Math.Max(rowCount, 1) * TrackRowHeight + ExpansionCardVerticalPadding;
+        ExpansionBorder.Height = _expansionHeight;
     }
 }

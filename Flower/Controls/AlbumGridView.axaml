@@ -14,8 +14,14 @@
        UniformRowPanel, as the phone's grids are, with HasTallRows: a row here
        grows when its album is expanded inline. Each row is built once and
        handed row after row (RecyclingItemsControl), and its tiles with it
-       (TileRowPanel). -->
+       (TileRowPanel).
+
+       Not scrolled to whatever takes the focus: a tile's "..." is a button
+       and an open album's song list takes the focus on a click, and either
+       pulled the page about under the pointer. The one scroll an album asks
+       for is AlbumGridView.RevealExpanded's. -->
   <ScrollViewer x:Name="Scroller"
+                BringIntoViewOnFocusChange="False"
                 HorizontalScrollBarVisibility="Disabled"
                 VerticalScrollBarVisibility="Auto">
     <controls:RecyclingItemsControl x:Name="RowsList" Margin="16">

@@ -271,7 +271,7 @@ public partial class MainView : UserControl
     {
         if (_viewModel is not { WasLastViewRestored: true } vm)
             return;
-        _viewStates[vm.CurrentViewKey] = new ViewScrollState(vm.LastScrollOffsetY, null);
+        _viewStates[PageKey(vm.CurrentViewKey)] = new ViewScrollState(vm.LastScrollOffsetY, null);
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -735,7 +735,7 @@ public partial class MainView : UserControl
         ApplyReorderAndSort();
         var rows = ShownRows;
 
-        var newKey = _viewModel.CurrentViewKey;
+        var newKey = PageKey(_viewModel.CurrentViewKey);
 
         // Only save/restore on an actual view switch — leave filtering/sorting
         // within the same view untouched.
@@ -781,6 +781,14 @@ public partial class MainView : UserControl
 
         _currentViewKey = newKey;
     }
+
+    // The page a view key is shown on. The Albums grid's key names the tiles
+    // selected in it (LibraryBrowserViewModel.CurrentViewKey), so selecting
+    // one - a Ctrl/Shift-click, a right-click, its "..." - changes the key
+    // without leaving the page, and read as a view switch that put the grid
+    // back at the top under the pointer. Every "album:" key is the one grid.
+    private static string PageKey(string key) =>
+        key.StartsWith("album:", StringComparison.Ordinal) ? "album:" : key;
 
     // CurrentViewKey's own prefix (see MainViewModel.CurrentViewKey) already
     // unambiguously says which control owns a given view's scroll - "album:"
