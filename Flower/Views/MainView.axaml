@@ -23,11 +23,12 @@
     <!-- The window: the player bar across its whole width - at the top, or at
          the bottom with the playback controls there (AppSettings.
          PlaybackControlsPlacement) - and between, the sidebar and beside it
-         the page. Under everything, the status bar. Which row the player bar
-         takes is set by the styles below rather than on the element, because
-         a value set on an element outranks any style. -->
+         the page, with the status bar coming up over its foot when there is
+         something to say. Which row the player bar takes is set by the styles
+         below rather than on the element, because a value set on an element
+         outranks any style. -->
     <Grid x:Name="ContentGrid"
-          RowDefinitions="Auto,*,Auto,Auto"
+          RowDefinitions="Auto,*,Auto"
           Classes.controlsAtBottom="{Binding PlaybackControlsAtBottom}">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="220" MinWidth="170" MaxWidth="320"/>
@@ -719,33 +720,50 @@
 
       </Grid>
 
-      <!-- Status bar, across the whole width under everything else: what the
-           app is busy with - a rescan, a sync, an import - and empty, but
-           still there, when it is busy with nothing. -->
-      <Border x:Name="StatusBar"
-              Grid.Row="3"
-              Grid.ColumnSpan="3"
-              Padding="16,5,16,5"
-              BorderThickness="0,1,0,0"
-              BorderBrush="{DynamicResource AppDividerBrush}">
-        <Panel>
-          <!-- Holds the line's height while there is nothing on it. -->
-          <TextBlock Text=" " FontSize="11"/>
-          <StackPanel Orientation="Horizontal"
-                      IsVisible="{Binding IsBusy}"
-                      VerticalAlignment="Center"
-                      Spacing="5">
+      <!-- Status bar: what the app is busy with - a rescan, a sync, an import -
+           as a tab at the bottom right of the page, only as wide as what it
+           says. It slides up when a message arrives, stays while the work
+           goes on, and slides back down a second after it ends
+           (ShowStatusMessage in the code-behind), so it is never a strip of
+           empty chrome. Over the page rather than in a row of its own, and
+           clipped by this panel so the slide happens below the page's edge,
+           not across the player bar when that sits at the bottom. -->
+      <Panel Grid.Row="1" Grid.Column="2"
+             ClipToBounds="True"
+             IsHitTestVisible="False">
+        <Border x:Name="StatusBar"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Bottom"
+                Padding="12,5,16,5"
+                CornerRadius="6,0,0,0"
+                BorderThickness="1,1,0,0"
+                BorderBrush="{DynamicResource AppDividerBrush}"
+                Background="{DynamicResource AppSurfaceBrush}"
+                RenderTransform="translateY(40px)">
+          <Border.Transitions>
+            <Transitions>
+              <TransformOperationsTransition Property="RenderTransform"
+                                             Duration="0:0:0.2"
+                                             Easing="CubicEaseOut"/>
+            </Transitions>
+          </Border.Transitions>
+          <Border.Styles>
+            <Style Selector="Border#StatusBar.shown">
+              <Setter Property="RenderTransform" Value="translateY(0px)"/>
+            </Style>
+          </Border.Styles>
+          <StackPanel Orientation="Horizontal" Spacing="5">
             <materialIcons:MaterialIcon x:Name="SpinnerIcon"
                                         Kind="Sync"
                                         Width="13" Height="13"
                                         Opacity="0.55"/>
-            <TextBlock Text="{Binding BusyMessage}"
+            <TextBlock x:Name="StatusText"
                        FontSize="11"
                        Opacity="0.55"
                        VerticalAlignment="Center"/>
           </StackPanel>
-        </Panel>
-      </Border>
+        </Border>
+      </Panel>
 
       <!-- Floating "what you're dragging" ghost for the drag-onto-playlist gesture
            (see MusicListView's TrackDragFormat / MainView.axaml.cs's
@@ -753,7 +771,7 @@
            follow the cursor from the track list all the way to the sidebar. -->
       <Border x:Name="DragGhost"
               Grid.ColumnSpan="3"
-              Grid.RowSpan="4"
+              Grid.RowSpan="3"
               IsVisible="False"
               IsHitTestVisible="False"
               HorizontalAlignment="Left"

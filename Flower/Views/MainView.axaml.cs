@@ -65,6 +65,10 @@ public partial class MainView : UserControl
     private IDisposable? _spin;
     private RotateTransform? _spinTransform;
 
+    // Takes the status bar back down a second after its last message - see
+    // HideStatusBarSoon.
+    private DispatcherTimer? _statusHideTimer;
+
     // Per-view (Songs / album / artist / playlist) scroll position + selection memory
     private readonly Dictionary<string, ViewScrollState> _viewStates = new();
     private string? _currentViewKey;
@@ -181,7 +185,7 @@ public partial class MainView : UserControl
             _viewModel.RenamePlaylistRequested -= OnRenamePlaylistRequested;
             _viewModel.DeletePlaylistConfirmationRequested -= OnDeletePlaylistConfirmationRequested;
             _viewModel.SmartPlaylistEditorRequested -= OnSmartPlaylistEditorRequested;
-            StopSpinner();
+            HideStatusBar();
         }
 
         _viewModel = DataContext as MainViewModel;
@@ -203,8 +207,7 @@ public partial class MainView : UserControl
             _viewModel.DeletePlaylistConfirmationRequested += OnDeletePlaylistConfirmationRequested;
             _viewModel.SmartPlaylistEditorRequested += OnSmartPlaylistEditorRequested;
             BuildColumnMenu();
-            if (_viewModel.IsBusy)
-                StartSpinner();
+            ShowStatusMessage(_viewModel.BusyMessage);
 
             // Reflect the ViewModel's (possibly persisted) sort state immediately -
             // MusicList's own SortColumn/SortAscending fields default to
@@ -276,10 +279,12 @@ public partial class MainView : UserControl
         switch (e.PropertyName)
         {
             case nameof(MainViewModel.IsBusy):
-                if (_viewModel!.IsBusy)
-                    StartSpinner();
-                else
-                    StopSpinner();
+                UpdateSpinner();
+                if (!_viewModel!.IsBusy)
+                    HideStatusBarSoon();
+                break;
+            case nameof(MainViewModel.BusyMessage):
+                ShowStatusMessage(_viewModel!.BusyMessage);
                 break;
             case nameof(MainViewModel.Rows):
                 ApplyRows();
@@ -825,7 +830,53 @@ public partial class MainView : UserControl
         _viewModel.SaveLastView(GetScrollOffsetYForKey(key));
     }
 
+    // ── Status bar ────────────────────────────────────────────────────────────
+
+    // Up when a message arrives and for as long as the work goes on, then
+    // down a second after it ends. A null message is the work ending, not
+    // something to say, so what was last said stays up through that second -
+    // which is also what keeps an operation that finishes in a blink from
+    // being a flicker nobody can read.
+    private void ShowStatusMessage(string? message)
+    {
+        if (message == null)
+            return;
+
+        _statusHideTimer?.Stop();
+        StatusText.Text = message;
+        StatusBar.Classes.Set("shown", true);
+        UpdateSpinner();
+    }
+
+    private void HideStatusBarSoon()
+    {
+        if (_statusHideTimer == null)
+        {
+            _statusHideTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+            _statusHideTimer.Tick += (_, _) => HideStatusBar();
+        }
+        _statusHideTimer.Stop();
+        _statusHideTimer.Start();
+    }
+
+    private void HideStatusBar()
+    {
+        _statusHideTimer?.Stop();
+        StatusBar.Classes.Set("shown", false);
+        UpdateSpinner();
+    }
+
     // ── Spinner ───────────────────────────────────────────────────────────────
+
+    // Turning only while there is work going on and the bar is up to show it:
+    // a spinner below the page's edge would still cost a frame every tick.
+    private void UpdateSpinner()
+    {
+        if (_viewModel is { IsBusy: true } && StatusBar.Classes.Contains("shown"))
+            StartSpinner();
+        else
+            StopSpinner();
+    }
 
     private void StartSpinner()
     {
