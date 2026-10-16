@@ -27,21 +27,20 @@
       <controls:NewPlaylistEntry IsLarge="True" />
 
       <!-- Under New Playlist, and drawn the same way so the two read as a
-           pair - the same circled plus, since both rows make something and
-           the words already say which. Only here, not in the add-to-playlist
-           sheet: a smart playlist holds what its rules say, so there is
-           nothing to add a song to. -->
+           pair - the same pill round a plus, since both rows make something
+           and the words already say which. Only here, not in the
+           add-to-playlist sheet: a smart playlist holds what its rules say,
+           so there is nothing to add a song to. -->
       <Button Classes="pickerRow"
               IsVisible="{Binding CanCreateSmartPlaylist}"
               Command="{Binding NewSmartPlaylistCommand}">
         <!-- NewPlaylistEntry's large sizes (IsLarge), restated. -->
-        <StackPanel Orientation="Horizontal" Spacing="14" HorizontalAlignment="Left">
-          <Border Classes="floating" Width="36" Height="36" CornerRadius="18">
-            <materialIcons:MaterialIcon Kind="Plus" Width="20" Height="20"
-                                        HorizontalAlignment="Center" VerticalAlignment="Center" />
-          </Border>
-          <TextBlock Text="New Smart Playlist" FontSize="17" VerticalAlignment="Center" />
-        </StackPanel>
+        <Border Classes="floating" Height="40" CornerRadius="20" Padding="12,0,18,0" HorizontalAlignment="Left">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <materialIcons:MaterialIcon Kind="Plus" Width="20" Height="20" VerticalAlignment="Center" />
+            <TextBlock Text="New Smart Playlist" FontSize="17" VerticalAlignment="Center" />
+          </StackPanel>
+        </Border>
       </Button>
 
       <!-- Set apart from the two rows above: those make a playlist, these
