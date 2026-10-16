@@ -985,11 +985,15 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
     // where naming the obvious would just be noise. Worth surfacing at all
     // because a fallback from the LAN to a possibly-relayed tailnet path is
     // silent, and "why has this got slow" otherwise has no answer anywhere in
-    // the app. See PairedServerReachability.Route.
-    public string? PairedServerRouteDescription => _reachability?.Route switch
+    // the app. The address itself is named too, since "a remote address" on
+    // its own leaves the obvious next question - which one? - unanswered. See
+    // PairedServerReachability.Route.
+    public string? PairedServerRouteDescription => _reachability switch
     {
-        ServerRoute.Tailnet => "Connected over your tailnet",
-        ServerRoute.Remote => "Connected over a remote address",
+        { Route: ServerRoute.Tailnet, PairedServerDevice: { } device } =>
+            $"Connected over your tailnet: {device.BaseUri.Authority}",
+        { Route: ServerRoute.Remote, PairedServerDevice: { } device } =>
+            $"Connected over a remote address: {device.BaseUri.Authority}",
         _ => null,
     };
 
