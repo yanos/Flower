@@ -141,9 +141,9 @@
   <!-- The two of them stacked, which is the whole header for everything but
        the wide album layout: a narrow album screen, and a playlist either way
        up (a playlist has no art to pin, so there is nothing for the wide
-       layout to do differently). 240 is the art's width on a phone, wide
-       enough to be the page's subject and narrow enough to leave songs
-       showing under it. -->
+       layout to do differently). 300 is the art's width on a phone: most of
+       the screen's width, the page's subject, with a few songs still showing
+       under it on all but the smallest phones. -->
   <DataTemplate x:Key="AlbumHeaderTemplate" x:DataType="vm:AlbumTileViewModel">
     <!-- The blurred cover behind it is the album page's, not the header's
          (TrackListScreenView's Backdrop): it stays put while this scrolls
@@ -152,7 +152,7 @@
       <ContentControl Content="{Binding}"
                       ContentTemplate="{StaticResource AlbumArtTemplate}"
                       ClipToBounds="False"
-                      Width="240" Margin="24,4,24,12"
+                      Width="300" Margin="24,4,24,12"
                       HorizontalAlignment="Center" />
       <ContentControl Classes="albumText"
                       Content="{Binding}"
