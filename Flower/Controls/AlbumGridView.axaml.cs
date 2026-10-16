@@ -282,28 +282,33 @@ public partial class AlbumGridView : UserControl
 
         foreach (var row in _rows)
         {
-            var isMatch = expandedKey != null && row.Tiles.Any(t => t.Key == expandedKey);
-            row.IsExpanded = isMatch;
+            var tile = expandedKey == null ? null : row.Tiles.FirstOrDefault(t => t.Key == expandedKey);
+            row.IsExpanded = tile != null;
             // Availability first: ExpandedTracks builds the row objects, and
             // each one reads it as it is constructed rather than waiting for a
             // second pass to grey it in.
             row.Availability = Availability;
-            row.ExpandedTracks = isMatch ? tracks : Array.Empty<Track>();
+            // A row closing keeps its album and songs to fold away with (see
+            // AlbumGridRowViewModel.ExpandedTile).
+            if (tile == null)
+                continue;
+            row.ExpandedTile = tile;
+            row.ExpandedTracks = tracks;
         }
     }
 
-    // Same shape (and same near-no-op cost) as ApplyPlayingIndicator above -
-    // only the one expanded row has any track rows to re-mark.
+    // Same shape (and same near-no-op cost) as ApplyPlayingIndicator below -
+    // only the rows that have been opened have any track rows to re-mark.
     private void ApplyAvailability()
     {
         foreach (var row in _rows)
             row.Availability = Availability;
     }
 
-    // Cheap even though it touches every row - only the one currently
-    // expanded row (if any) actually has a non-empty ExpandedTracks/
-    // _trackRows to iterate (see ApplyExpansion above), so this is a no-op
-    // pass over every other row.
+    // Cheap even though it touches every row - only a row that has been
+    // opened (the one open now, and any that keeps the album it folded away
+    // with - see ApplyExpansion above) has a non-empty ExpandedTracks/
+    // _trackRows to iterate, so this is a no-op pass over every other row.
     private void ApplyPlayingIndicator()
     {
         foreach (var row in _rows)
@@ -366,6 +371,10 @@ public partial class AlbumGridView : UserControl
     private void RevealExpanded(int closing)
     {
         StopReveal();
+
+        // The card has just been handed its album, and measures to it on the
+        // next layout - this one, so FullHeight is that album's.
+        Scroller.UpdateLayout();
 
         var index = _rows.FindIndex(r => r.IsExpanded);
         if (RowControlAt(index) is not { } row || row.TranslatePoint(default, Scroller) is not { } at)

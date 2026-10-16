@@ -19,6 +19,27 @@ public sealed class AlbumGridRowViewModel : AlbumTracksViewModel
     // one included, so its tiles are as wide as the rest.
     public required int Columns { get; init; }
 
+    // The album this row shows open - or, once it closes, showed: kept while
+    // the row folds away, with its songs (ExpandedTracks), so what closes is
+    // the album rather than an empty card. Replaced when the row next opens.
+    private AlbumTileViewModel? _expandedTile;
+    public AlbumTileViewModel? ExpandedTile
+    {
+        get => _expandedTile;
+        set
+        {
+            if (ReferenceEquals(_expandedTile, value))
+                return;
+            _expandedTile = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(ExpandedYear));
+        }
+    }
+
+    // The line under the artist: the year alone, and nothing when the album
+    // has none.
+    public string? ExpandedYear => string.IsNullOrWhiteSpace(_expandedTile?.Year) ? null : _expandedTile.Year;
+
     private bool _isExpanded;
     public bool IsExpanded
     {

@@ -62,8 +62,6 @@ public abstract class AlbumTracksViewModel : ViewModelBase
                 })
                 .ToList();
             OnPropertyChanged();
-            OnPropertyChanged(nameof(Column1Tracks));
-            OnPropertyChanged(nameof(Column2Tracks));
             OnPropertyChanged(nameof(TrackRows));
         }
     }
@@ -94,17 +92,9 @@ public abstract class AlbumTracksViewModel : ViewModelBase
 
     // List, not IReadOnlyList, so SelectTrack's range-select below can index
     // into it directly (IReadOnlyList<T> has no IndexOf) - still only ever
-    // exposed as IReadOnlyList via Column1Tracks/Column2Tracks.
+    // exposed as IReadOnlyList via TrackRows.
     private List<ExpandedTrackRowViewModel> _trackRows = new();
 
-    // Split top-to-bottom-then-next-column (like a phone book), not
-    // interleaved row-by-row - matches how a numbered list normally reads
-    // across two columns.
-    private int Column1Count => (_trackRows.Count + 1) / 2;
-    public IReadOnlyList<ExpandedTrackRowViewModel> Column1Tracks => _trackRows.Take(Column1Count).ToList();
-    public IReadOnlyList<ExpandedTrackRowViewModel> Column2Tracks => _trackRows.Skip(Column1Count).ToList();
-
-    // All of them in one column - an album card on the Artists page.
     public IReadOnlyList<ExpandedTrackRowViewModel> TrackRows => _trackRows;
 
     // A song was picked in this list, so a page holding several of them (the
@@ -137,10 +127,7 @@ public abstract class AlbumTracksViewModel : ViewModelBase
     // Click-to-select (AlbumGridRowControl.axaml.cs's TrackRow_PointerPressed)
     // - mirrors SubList/AlbumGrid's own click/Ctrl-toggle/Shift-range gesture
     // (see MainView.axaml.cs's SubList_PointerPressed doc comment for the
-    // base rationale), applied across the flat top-to-bottom-then-next-column
-    // order (_trackRows) both columns are split from, so a Shift-click range
-    // spans across the column break exactly like reading the list normally
-    // would.
+    // base rationale), in album order (_trackRows).
     public void SelectTrack(ExpandedTrackRowViewModel target, bool toggle, bool rangeSelect)
     {
         SelectionStarted?.Invoke(this, System.EventArgs.Empty);
@@ -177,10 +164,8 @@ public abstract class AlbumTracksViewModel : ViewModelBase
 
     // Arrow-key navigation (AlbumGridRowControl.axaml.cs's own KeyDown
     // handler, registered the same way MusicListView.OnKeyDown is) - steps
-    // _currentRow by delta across the same flat top-to-bottom-then-next-
-    // column order SelectTrack's range-select uses, so Down at the bottom of
-    // column 1 naturally continues into the top of column 2 instead of
-    // stopping there. Shift extends the range from the existing anchor
+    // _currentRow by delta in the same album order SelectTrack's
+    // range-select uses. Shift extends the range from the existing anchor
     // (same primitive as Shift+click) instead of collapsing to one row -
     // identical semantics to MusicListView's own MoveSelection.
     public void MoveSelection(int delta, bool extend)

@@ -41,18 +41,19 @@
          right-click on the tile opens. Downloading the album is in that menu. -->
     <controls:AlbumCard x:Name="TileContent"
                         Margin="8,8,8,16"/>
-    <!-- Caret pointing down at ExpansionCard below (AlbumGridRowControl) -
+    <!-- Caret pointing down at the album card below (AlbumGridRowControl),
+         in the card's colour -
          lives here, not there, so it's centered under THIS tile purely by
          layout (HorizontalAlignment=Center) regardless of which column this
          tile sits in, rather than a hand-computed pixel offset (which
          previously got the math wrong and only ever pointed at one column).
          Sits within the reserved bottom margin above, flush with this
          control's own bottom edge (no bottom margin of its own) so its tip
-         touches ExpansionCard below with no gap. -->
+         touches the album card below with no gap. -->
     <Polygon x:Name="Caret"
              IsVisible="False"
              Points="0,8 16,8 8,0"
-             Fill="{DynamicResource AppAccentSoftBrush}"
+             Fill="{DynamicResource AppSidebarBrush}"
              HorizontalAlignment="Center"
              VerticalAlignment="Bottom"/>
   </Panel>

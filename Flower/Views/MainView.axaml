@@ -405,8 +405,8 @@
              phone's album-header circles to play it all or shuffle it - then
              each of their albums as a card: its cover, its name and a line
              about it, play and the album menu, and its songs under it
-             (AlbumTrackList, the Albums grid's expanded-album list, here in one
-             column with track numbers). Oldest album first. -->
+             (AlbumTrackList, the Albums grid's expanded-album list, here
+             under a band naming its columns). Oldest album first. -->
         <ScrollViewer Grid.Column="1" Grid.RowSpan="2"
                       IsVisible="{Binding IsShowingArtistPage}"
                       HorizontalScrollBarVisibility="Disabled">

@@ -135,6 +135,7 @@ public partial class MainView : UserControl
 
         // The "..." on every album tile - the grid's and Home's (AlbumCard).
         AddHandler(AlbumCard.MenuRequestedEvent, AlbumCard_MenuRequested);
+        AddHandler(AlbumGridRowControl.AlbumMenuRequestedEvent, AlbumGridRow_AlbumMenuRequested);
 
         // Home's covers: a right-click opens the tile's menu, as the "..."
         // does, and a drag carries the album to the sidebar. Each cover is a
@@ -571,6 +572,19 @@ public partial class MainView : UserControl
         }
 
         OpenHomeTileMenu(card, tile);
+    }
+
+    // The open album's "..." in the Albums grid: the album menu over that
+    // album alone, as an album card's on Artists - the card is one album,
+    // whatever tiles happen to be selected round it.
+    private void AlbumGridRow_AlbumMenuRequested(object? sender, RoutedEventArgs e)
+    {
+        if (e.Source is not Control button
+            || button.FindAncestorOfType<AlbumGridRowControl>(includeSelf: true)?.DataContext is not AlbumGridRowViewModel { ExpandedTile: { } tile } row)
+            return;
+        e.Handled = true;
+        var tracks = row.ExpandedTracks.ToList();
+        PlatformContextMenu.Open(BuildAlbumContextMenu(tracks, tile, () => OpenTrackInfo(tracks)), button);
     }
 
     private void OpenHomeTileMenu(AlbumCard card, AlbumTileViewModel tile)

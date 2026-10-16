@@ -21,19 +21,8 @@ namespace Flower.Controls;
 // once the Artists page's album cards needed the same list.
 public partial class AlbumTrackList : UserControl
 {
-    public static readonly StyledProperty<bool> TwoColumnsProperty =
-        AvaloniaProperty.Register<AlbumTrackList, bool>(nameof(TwoColumns));
-
     public static readonly StyledProperty<bool> ShowsNumbersProperty =
         AvaloniaProperty.Register<AlbumTrackList, bool>(nameof(ShowsNumbers));
-
-    // Read top to bottom then on into a second column - the Albums grid's
-    // expanded album, which spans the width of the grid.
-    public bool TwoColumns
-    {
-        get => GetValue(TwoColumnsProperty);
-        set => SetValue(TwoColumnsProperty, value);
-    }
 
     // Each song's track number ahead of it - the Artists page's cards.
     public bool ShowsNumbers

@@ -2371,11 +2371,16 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // album-header ones (MobileMainViewModel.PlayAlbum). On Artists that is
     // the cards' songs in the cards' order, album after album, not the row
     // order the hidden track list keeps.
-    public void PlayView(bool shuffle)
-    {
-        IReadOnlyList<Track> tracks = IsShowingArtistPage
+    public void PlayView(bool shuffle) =>
+        PlayTracks(IsShowingArtistPage
             ? _artistAlbums.SelectMany(a => a.ExpandedTracks).ToList()
-            : DisplayedTracks;
+            : DisplayedTracks, shuffle);
+
+    // These songs as the queue, from the top or shuffled from a random one -
+    // the Artists header's circles over everything on the page, and the Albums
+    // grid's open album's Play and Shuffle over that album.
+    public void PlayTracks(IReadOnlyList<Track> tracks, bool shuffle)
+    {
         if (tracks.Count == 0)
             return;
         if (_playlistControlViewModel.IsShuffleEnabled != shuffle)

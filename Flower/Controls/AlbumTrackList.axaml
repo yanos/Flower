@@ -10,9 +10,9 @@
              x:Name="Root"
              Focusable="True">
 
-  <!-- One album's songs as a short list of their own: the Albums grid's
-       expanded album (AlbumGridRowControl, in two columns) and an album card
-       on the Artists page (MainView, in one with its track numbers). A click
+  <!-- One album's songs as a short list of their own, numbered: the Albums
+       grid's expanded album (AlbumGridRowControl, with a line between each)
+       and an album card on the Artists page (MainView). A click
        selects, Ctrl/Cmd and Shift extend, the arrows move, Enter or a
        double-click plays the album from that song, and a right-click - or
        the row's "..." - opens the song menu. The state is the DataContext's
@@ -79,6 +79,14 @@
   </UserControl.Resources>
 
   <UserControl.Styles>
+    <!-- A line under every song but the last - the Albums grid's open album. -->
+    <Style Selector="controls|AlbumTrackList.divided Border.expandedTrack">
+      <Setter Property="BorderThickness" Value="0,0,0,1"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource AppDividerBrush}"/>
+    </Style>
+    <Style Selector="controls|AlbumTrackList.divided ContentPresenter:nth-last-child(1) Border.expandedTrack">
+      <Setter Property="BorderThickness" Value="0"/>
+    </Style>
     <!-- A song that can't be played right now - not downloaded, and no
          reachable server to stream it from. Same 0.5 dim as the main track
          list's own unavailable rows (TrackRowControl) and mobile's
@@ -101,17 +109,6 @@
     </Style>
   </UserControl.Styles>
 
-  <Panel>
-    <!-- Two columns, read top to bottom then on to the next, like a phone
-         book - AlbumTracksViewModel.Column1Tracks/Column2Tracks. -->
-    <Grid ColumnDefinitions="*,*" IsVisible="{Binding #Root.TwoColumns}">
-      <ItemsControl Grid.Column="0" ItemsSource="{Binding Column1Tracks}" Margin="0,0,12,0"
-                    ItemTemplate="{StaticResource TrackRowTemplate}"/>
-      <ItemsControl Grid.Column="1" ItemsSource="{Binding Column2Tracks}" Margin="12,0,0,0"
-                    ItemTemplate="{StaticResource TrackRowTemplate}"/>
-    </Grid>
-    <ItemsControl IsVisible="{Binding !#Root.TwoColumns}"
-                  ItemsSource="{Binding TrackRows}"
-                  ItemTemplate="{StaticResource TrackRowTemplate}"/>
-  </Panel>
+  <ItemsControl ItemsSource="{Binding TrackRows}"
+                ItemTemplate="{StaticResource TrackRowTemplate}"/>
 </UserControl>
