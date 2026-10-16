@@ -26,7 +26,7 @@
 
     <Grid Grid.Column="1" RowDefinitions="Auto,Auto,*,Auto">
       <TextBlock Grid.Row="0"
-                 Text="{Binding CurrentlyPlayingTrack.Title}"
+                 Text="{Binding Title}"
                  FontFamily="{DynamicResource AppDisplayFontFamily}"
                  FontSize="22"
                  FontWeight="SemiBold"

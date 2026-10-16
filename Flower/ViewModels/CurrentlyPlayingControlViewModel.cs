@@ -60,11 +60,16 @@ namespace Flower.ViewModels
             ? string.IsNullOrWhiteSpace(track.Year) ? track.Album ?? "" : $"{track.Album} ({track.Year})"
             : "";
 
+        // With nothing to play, the bar names the app and its build rather
+        // than standing empty - the one place the version is on screen without
+        // opening About.
+        public string Title => CurrentlyPlayingTrack?.Title ?? "Flower";
+
         public string Subtitle => CurrentlyPlayingTrack is { } track
             ? string.IsNullOrWhiteSpace(track.Year)
                 ? $"{track.Artists} — {track.Album}"
                 : $"{track.Artists} — {track.Album} ({track.Year})"
-            : " ";
+            : $"Version {AppVersion.Display}";
 
         // Not disposed on replacement, and deliberately so. These bitmaps come
         // from AlbumArtLoader, which caches them per album and hands the same
@@ -208,6 +213,7 @@ namespace Flower.ViewModels
                 if (e.PropertyName == nameof(_playlistControlViewModel.CurrentlyPlayingTrack))
                 {
                     OnPropertyChanged(nameof(CurrentlyPlayingTrack));
+                    OnPropertyChanged(nameof(Title));
                     OnPropertyChanged(nameof(Subtitle));
                     OnPropertyChanged(nameof(AlbumLine));
                     OnPropertyChanged(nameof(TotalTime));

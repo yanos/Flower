@@ -43,31 +43,30 @@ public class CurrentlyPlayingControlViewModelTests : PinnedDataDirectory
         Duration = TimeSpan.FromSeconds(215),
     };
 
-    // Deliberately a single space, not empty and not hidden: the control is
-    // always rendered so its height stays constant whether or not anything is
-    // playing.
     [Fact]
-    public void Subtitle_is_a_single_space_with_nothing_playing()
+    public void With_nothing_playing_the_bar_names_the_app_and_its_version()
     {
         var vm = Make(out _, out _);
 
-        Assert.Equal(" ", vm.Subtitle);
         Assert.Null(vm.CurrentlyPlayingTrack);
+        Assert.Equal("Flower", vm.Title);
+        Assert.Equal($"Version {AppVersion.Display}", vm.Subtitle);
     }
 
     [AvaloniaFact]
-    public void Subtitle_is_artist_album_and_year_once_a_track_is_playing()
+    public void Title_and_subtitle_are_the_track_once_a_track_is_playing()
     {
         var track = T("A");
         var vm = Make(out _, out var playback, track);
 
         playback.Play(track);
 
+        Assert.Equal("A", vm.Title);
         Assert.Equal("An Artist — An Album (1999)", vm.Subtitle);
     }
 
     [AvaloniaFact]
-    public void A_track_change_re_raises_the_track_subtitle_and_total_time()
+    public void A_track_change_re_raises_the_title_subtitle_and_total_time()
     {
         var track = T("A");
         var vm = Make(out _, out var playback, track);
@@ -77,6 +76,7 @@ public class CurrentlyPlayingControlViewModelTests : PinnedDataDirectory
         playback.Play(track);
 
         Assert.Contains(nameof(vm.CurrentlyPlayingTrack), raised);
+        Assert.Contains(nameof(vm.Title), raised);
         Assert.Contains(nameof(vm.Subtitle), raised);
         Assert.Contains(nameof(vm.TotalTime), raised);
     }
