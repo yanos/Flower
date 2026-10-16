@@ -101,7 +101,7 @@ namespace Flower.Importer
         // moved to the trash on purpose came straight back with the next scan.
         // The configured root itself is exempt: a library the user pointed at
         // a dot-folder is one they meant.
-        internal static bool IsUnderHiddenFolder(string root, string file)
+        public static bool IsUnderHiddenFolder(string root, string file)
         {
             var relative = Path.GetRelativePath(root, file);
             var folders = relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);

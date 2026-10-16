@@ -42,6 +42,12 @@ public sealed class LibraryRescanCoordinator(
         }
     }
 
+    // After every scan, startup's included, whether or not it succeeded - the
+    // folder watcher re-reads the folder list here, since a scan is what every
+    // change to that list ends in (the settings endpoint starts one, and the
+    // startup scan may adopt Music.app's folder).
+    public event Action? Completed;
+
     public DateTimeOffset? LastCompletedAt { get; private set; }
     public string? LastError { get; private set; }
     public int TrackCount => library.Tracks.Count;
@@ -99,6 +105,14 @@ public sealed class LibraryRescanCoordinator(
             catch (Exception ex)
             {
                 logger.LogError(ex, "Post-rescan startup step failed");
+            }
+            try
+            {
+                Completed?.Invoke();
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Post-rescan step failed");
             }
         }
     }

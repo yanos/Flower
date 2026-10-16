@@ -2774,6 +2774,47 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
         _appSettings.LibraryPaths = paths;
         await (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
+        FolderWatcher?.Watch(paths);
+    }
+
+    // Keeps the library in step with its folders between scans - desktop
+    // only, and set by the composition root once the startup scan is done
+    // (App.axaml.cs). Null until then, and on every other head.
+    public LibraryFolderWatcher? FolderWatcher { get; set; }
+
+    // Whether songs can be dropped on the window: only where the library is
+    // this machine's own folders. A browser tab's is a server's catalog.
+    public bool AcceptsDroppedSongs => _importer?.ScansLocalFiles == true && !OperatingSystem.IsBrowser();
+
+    // Songs dropped on the window - files, folders, or both. Those already in
+    // a library folder are added where they are; the rest are copied into the
+    // first one (LibraryDrop) and added from there, at once rather than when
+    // the watcher next notices.
+    public async Task AddDroppedSongsAsync(IReadOnlyList<string> paths)
+    {
+        if (!AcceptsDroppedSongs || paths.Count == 0)
+            return;
+
+        var roots = Importer.Importer.ScanRoots(_appSettings.LibraryPaths);
+        if (roots.Count == 0)
+        {
+            // Said where the drop was made, for long enough to read.
+            using var notice = _busy.BeginScope("Add a library folder in Settings to drop songs here");
+            await Task.Delay(TimeSpan.FromSeconds(4));
+            return;
+        }
+
+        using var busy = _busy.BeginScope("Adding songs…");
+        var result = await new LibraryDrop(roots, _logger).PrepareAsync(paths);
+        _logger.LogInformation("Dropped songs: {Count} to add, {Copied} copied into {Root}, {Failed} could not be copied",
+            result.Files.Count, result.Copied, roots[0], result.Failed);
+        if (result.Files.Count == 0)
+            return;
+
+        if (FolderWatcher != null)
+            await FolderWatcher.AddFilesAsync(result.Files);
+        else
+            await RescanLibraryAsync();
     }
 
     // Mobile has no library-paths UI to rescan as a side effect of (desktop's

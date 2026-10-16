@@ -8,6 +8,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -93,6 +94,14 @@ public partial class MainView : UserControl
 
         // Forward Space from inside the list
         MusicList.AddHandler(KeyDownEvent, MusicList_KeyDown, RoutingStrategies.Tunnel);
+
+        // Songs dragged in from Finder or Explorer, anywhere on the window -
+        // see MainViewModel.AddDroppedSongsAsync. The window's own drags
+        // (rows, albums onto playlists) are pointer gestures rather than
+        // DragDrop, so nothing else here is a drop target.
+        DragDrop.SetAllowDrop(this, true);
+        AddHandler(DragDrop.DragOverEvent, OnSongsDragOver);
+        AddHandler(DragDrop.DropEvent, OnSongsDropped);
 
         SidebarList.ContextRequested += SidebarList_ContextRequested;
 
@@ -908,6 +917,32 @@ public partial class MainView : UserControl
         
         if (SpinnerIcon != null)
             SpinnerIcon.RenderTransform = null;
+    }
+
+    // ── Songs dropped on the window ───────────────────────────────────────────
+
+    // Song files, and folders, which may hold some - looking inside a folder
+    // is left to the drop, not done on every move of the pointer.
+    private static List<string> DroppedPaths(IDataTransfer data) =>
+        data.TryGetFiles()?
+            .Select(item => item.TryGetLocalPath())
+            .OfType<string>()
+            .Where(path => System.IO.Directory.Exists(path) || Importer.Importer.IsImportable(path))
+            .ToList() ?? [];
+
+    private void OnSongsDragOver(object? sender, DragEventArgs e)
+    {
+        var accepted = _viewModel is { AcceptsDroppedSongs: true } && DroppedPaths(e.DataTransfer).Count > 0;
+        e.DragEffects = accepted ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void OnSongsDropped(object? sender, DragEventArgs e)
+    {
+        e.Handled = true;
+        var paths = DroppedPaths(e.DataTransfer);
+        if (_viewModel != null && paths.Count > 0)
+            _viewModel.AddDroppedSongsAsync(paths).Forget(Logger, "Adding dropped songs");
     }
 
     // ── MusicListView event handlers ──────────────────────────────────────────

@@ -681,6 +681,7 @@ public partial class App : Application
         var firstRunQuestion = Task.CompletedTask;
 
         Control? mainView = null;
+        var watchesLibraryFolders = ApplicationLifetime is IClassicDesktopStyleApplicationLifetime;
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             var window = new MainWindow(
@@ -1026,6 +1027,20 @@ public partial class App : Application
                     await mainViewModel.SyncITunesPlayCountAsync();
                 if (isLocalImporter && appSettings.SyncDateAddedFromITunes && SyncRolePolicy.MayImportFromMusicApp(appSettings))
                     await mainViewModel.SyncITunesDateAddedAsync();
+
+                // From here on the library follows its folders - see
+                // LibraryFolderWatcher. Started only now so that nothing it
+                // does can race the scan above. Desktop only: a phone's
+                // library folder is one only Flower writes to.
+                if (isLocalImporter && watchesLibraryFolders)
+                {
+                    var watcher = new LibraryFolderWatcher(
+                        library, mainViewModel.RescanLibraryAsync,
+                        provider.GetRequiredService<ILogger<LibraryFolderWatcher>>(),
+                        provider.GetRequiredService<ILogger<Importer.Importer>>());
+                    watcher.Watch(appSettings.LibraryPaths);
+                    mainViewModel.FolderWatcher = watcher;
+                }
             }
             catch (Exception ex)
             {

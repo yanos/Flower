@@ -78,6 +78,15 @@ public sealed class FlowerServerOptions : MusicLibrarySettings
     // matter.
     public bool AdvertiseOnLan { get; set; } = true;
 
+    // How often the library folders are listed and compared with the
+    // library, in minutes; 0 turns it off. Change notifications cover a local
+    // disk, but a network share sends none for what another machine does to
+    // it, and a NAS share is the ordinary place for a server's music - so
+    // without this a song copied onto the share from a laptop would wait for
+    // the next restart or Rescan. Only names are read, not tags, so it is
+    // cheap even at 16k tracks. See LibraryFolderWatcher.
+    public int LibraryListingMinutes { get; set; } = 5;
+
     // Whether LanGuard's built-in allow-list includes 100.64.0.0/10 - the
     // Tailscale range, and also generic carrier-grade NAT. See LanGuard's own
     // remarks; turn it off on a deployment that doesn't reach the server over

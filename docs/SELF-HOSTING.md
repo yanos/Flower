@@ -239,6 +239,19 @@ to the binary and survives redeploying it. Environment variables
 (`Flower__Alias=Basement`) and command-line switches (`--Flower:Alias=Basement`)
 still win over both.
 
+### Adding music to the server's folder
+
+Copy songs into the music folder and they appear in the library on their own —
+there is no need to restart the server or press Rescan. A song copied onto a
+disk the server's machine has itself shows up within seconds; one deleted or
+moved there starts a rescan, so that a moved song keeps its plays and stars.
+
+A network share is the exception: it does not tell the server about changes
+made from another machine, so for a NAS mount the server also lists its folders
+every five minutes and catches up then. `LibraryListingMinutes` in
+`flower-server.json` sets how often (`0` turns the listing off). Only file names
+are read for it, so it stays cheap on a large library.
+
 ---
 
 ## Running it in Docker

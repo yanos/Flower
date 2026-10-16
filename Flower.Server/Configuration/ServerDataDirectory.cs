@@ -53,6 +53,7 @@ public static class ServerDataDirectory
             "_Alias": "The name this server shows up as in a Flower client's sidebar. Defaults to the machine name.",
             "_AdvertisedHost": "host:port to put in pairing invites when the address a device should dial isn't the one the request arrived on (reverse proxy, remapped container port).",
             "_AdvertiseOnLan": "false to stop announcing this server over mDNS - for tailnet/reverse-proxy-only deployments.",
+            "_LibraryListingMinutes": "How often to list the library folders for songs added or removed behind the server's back, in minutes - 5 by default, 0 to turn it off. Changes on a local disk are noticed at once anyway; this is for a network share, which does not report what other machines do to it.",
             "_IntegrateWithITunes": "false to make this server ignore a local iTunes/Music.app library entirely. On by default: Music.app's own media folder is added to LibraryPaths on the first scan that finds it, and the two switches below then import play counts and Date Added from it.",
             "_SyncPlayCountFromITunes": "false to stop importing per-track play counts and last-played dates from Music.app on each rescan.",
             "_SyncDateAddedFromITunes": "false to stop importing per-track Date Added values from Music.app on each rescan.",

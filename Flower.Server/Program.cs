@@ -233,6 +233,28 @@ builder.Services.AddSingleton(services =>
 });
 
 builder.Services.AddScoped<LibraryImportService>();
+// The library following its folders between scans - see LibraryFolderWatcher.
+// Its full rescan is the coordinator's, so a watcher-started one shows in the
+// admin page's status like any other and is never a second importer over the
+// same folders; and it waits out a scan in flight before adding a song, since
+// that scan may have listed the folders before the song arrived.
+builder.Services.AddSingleton(services =>
+{
+    var rescans = services.GetRequiredService<LibraryRescanCoordinator>();
+    var options = services.GetRequiredService<IOptionsMonitor<FlowerServerOptions>>();
+    return new LibraryFolderWatcher(
+        services.GetRequiredService<Library>(),
+        async () =>
+        {
+            await rescans.Running;
+            rescans.TryStart();
+            await rescans.Running;
+        },
+        services.GetRequiredService<ILogger<LibraryFolderWatcher>>(),
+        services.GetRequiredService<ILogger<Flower.Importer.Importer>>(),
+        scanInFlight: () => rescans.Running,
+        pollInterval: TimeSpan.FromMinutes(Math.Max(0, options.CurrentValue.LibraryListingMinutes)));
+});
 // What the last scan found out about writing to the library folders - see
 // LibraryWriteAccess. A singleton because the scan that fills it in is scoped
 // and gone long before the admin page asks.
@@ -640,6 +662,12 @@ using (var scope = app.Services.CreateScope())
 // browser already poll, and the guard against two importers over the same
 // folders - which is exactly what an operator pressing Rescan during the
 // startup scan would otherwise start.
+// Watching starts once the first scan is done, and the folder list is re-read
+// after every scan - see LibraryRescanCoordinator.Completed.
+var folderWatcher = app.Services.GetRequiredService<LibraryFolderWatcher>();
+app.Services.GetRequiredService<LibraryRescanCoordinator>().Completed += () =>
+    folderWatcher.Watch(app.Services.GetRequiredService<IOptionsMonitor<FlowerServerOptions>>().CurrentValue.LibraryPaths);
+
 app.Services.GetRequiredService<LibraryRescanCoordinator>().TryStart(
     // Still after the first rescan, for the reason it always was: the opening
     // pass should run against the real catalog rather than recomputing every
