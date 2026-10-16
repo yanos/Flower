@@ -148,7 +148,7 @@
         <Button Classes="pill"
                 Command="{Binding CloseNavigationBarSettingsCommand}"
                 HorizontalAlignment="Center">
-          <materialIcons:MaterialIcon Kind="ArrowLeft" Width="20" Height="20" />
+          <materialIcons:MaterialIcon Kind="ChevronLeft" Width="22" Height="22" />
         </Button>
       </Border>
     </Grid>

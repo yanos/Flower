@@ -155,7 +155,7 @@
         <Button Classes="pill"
                 Command="{Binding CloseSheetCommand}"
                 HorizontalAlignment="Center">
-          <materialIcons:MaterialIcon Kind="ArrowLeft" Width="20" Height="20" />
+          <materialIcons:MaterialIcon Kind="ChevronLeft" Width="22" Height="22" />
         </Button>
       </Border>
     </Grid>

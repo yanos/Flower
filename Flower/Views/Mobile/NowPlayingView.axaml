@@ -153,7 +153,7 @@
          content already makes that obvious. The close button is the same
          circle as the back button every screen carries in its header band
          (ScreenSlot; Border.floating and Button.pill are styled in
-         Styles/IconButtons.axaml), with an arrow pointing down rather than
+         Styles/IconButtons.axaml), with its chevron pointing down rather than
          back: the sheet is an overlay, not a step in the history. The margin
          mirrors that band's (12 in from either side), with Height="52" starting at y=0 putting
          every circle on the same 26px centre line, so neither the arrow
@@ -166,7 +166,7 @@
         <Button Classes="pill"
                 Command="{Binding CloseSheetCommand}"
                 HorizontalAlignment="Center">
-          <materialIcons:MaterialIcon Kind="ArrowDown" Width="20" Height="20" />
+          <materialIcons:MaterialIcon Kind="ChevronDown" Width="22" Height="22" />
         </Button>
       </Border>
 

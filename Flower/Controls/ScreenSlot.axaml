@@ -114,7 +114,8 @@
          gesture underneath it (Avalonia doesn't hit-test an unpainted
          Panel/Grid's empty area). Both are a 40px circle, centred on 26 by
          the 52px row itself.
-         NowPlayingView's top bar draws its own arrow, a down one, in this same
+         NowPlayingView's top bar draws its own chevron, a down one - Track
+         Info's, which this one is turned a quarter round from - in this same
          place. -->
     <Grid x:Name="HeaderBand"
           Grid.Row="0"
@@ -129,7 +130,7 @@
         <Button Classes="pill"
                 Click="BackButton_Click"
                 HorizontalAlignment="Center">
-          <materialIcons:MaterialIcon Kind="ArrowLeft" Width="20" Height="20" />
+          <materialIcons:MaterialIcon Kind="ChevronLeft" Width="22" Height="22" />
         </Button>
       </Border>
 
