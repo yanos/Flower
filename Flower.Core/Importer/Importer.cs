@@ -16,7 +16,11 @@ namespace Flower.Importer
     {
         private readonly ILogger<Importer> _logger;
         private static readonly HashSet<string> ValidExtensions =
-            new(StringComparer.OrdinalIgnoreCase) { ".mp3", ".m4a", ".wav", ".flac", ".alac" };
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                ".mp3", ".m4a", ".wav", ".flac", ".alac",
+                ".ogg", ".opus", ".aiff", ".aif", ".ape",
+            };
 
         // Whether a scan would take this file at all, by its name alone - the
         // same question an upload has to answer before accepting one (see

@@ -29,6 +29,11 @@ public static class LibraryDtoMapper
         ["wav"] = "audio/wav",
         ["flac"] = "audio/flac",
         ["alac"] = "audio/mp4",
+        ["ogg"] = "audio/ogg",
+        ["opus"] = "audio/ogg",
+        ["aiff"] = "audio/aiff",
+        ["aif"] = "audio/aiff",
+        ["ape"] = "audio/x-ape",
     };
 
     public static string SuffixOf(Track track) =>

@@ -172,7 +172,7 @@ public class ImporterTests : IDisposable
         Audio(_root, "keep.wav");
         File.WriteAllText(Path.Combine(_root, "notes.txt"), "not audio");
         File.WriteAllText(Path.Combine(_root, "cover.jpg"), "not audio");
-        File.WriteAllText(Path.Combine(_root, "song.ogg"), "unsupported format");
+        File.WriteAllText(Path.Combine(_root, "song.wma"), "unsupported format");
 
         var tracks = NewImporter().Import([_root]);
 
@@ -286,6 +286,38 @@ public class ImporterTests : IDisposable
         Assert.Equal(TimeSpan.FromSeconds(1), track.Duration);
         Assert.Equal((int)Flower.Audio.GaplessFormat.SampleRate, track.SampleRate);
         Assert.Equal((int)Flower.Audio.GaplessFormat.Channels, track.Channels);
+        Assert.False(string.IsNullOrEmpty(track.Codec));
+    }
+
+    // The formats a scan takes beyond the original five each have a tag layer
+    // of their own in TagLib# - Xiph comments in Ogg Vorbis and Opus, ID3v2 in
+    // an AIFF chunk, APEv2 on Monkey's Audio - so taking the extension is only
+    // half of supporting one. These are the device checks' committed fixtures,
+    // the same bytes the decoder is held to there, tagged here and read back.
+    [Theory]
+    [InlineData("aiff")]
+    [InlineData("ape")]
+    [InlineData("ogg")]
+    [InlineData("opus")]
+    public void Import_reads_tags_and_properties_of_each_added_format(string extension)
+    {
+        var fixture = Flower.DeviceChecks.Fixture.All.Single(f => f.Extension == extension);
+        var path = Path.Combine(_root, "song." + extension);
+        File.WriteAllBytes(path, fixture.Bytes());
+        using (var file = TagLib.File.Create(path))
+        {
+            file.Tag.Title = "Sine";
+            file.Tag.Performers = ["Tone Generator"];
+            file.Save();
+        }
+
+        var track = Assert.Single(NewImporter().Import([_root]));
+
+        Assert.Equal("Sine", track.Title);
+        Assert.Equal("Tone Generator", track.Artists);
+        Assert.Equal(2, Math.Round(track.Duration.TotalSeconds));
+        Assert.Equal(48000, track.SampleRate);
+        Assert.Equal(2, track.Channels);
         Assert.False(string.IsNullOrEmpty(track.Codec));
     }
 

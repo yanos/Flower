@@ -20,11 +20,11 @@ worth asking; it just has to be asked of `FfmpegTrackDecoder`, `AudioFeeder` and
 `MiniaudioSink`'s period sizing instead, which is a different investigation
 rather than a re-worded one.
 
-**#3** is half stale: the tagging half is untouched and shippable today, and the
-playback half's two options have collapsed into one, because "build VLC demux
-plugins per platform" has no VLC to build them for. What is left is whether
-FFmpeg's own DSD and APE decoders are enabled in the façade's build — a question
-`native/ffmpeg/README.md` can answer and this document cannot.
+**#3** is half done: Monkey's Audio shipped in October 2026, alongside Ogg
+Vorbis, Opus and AIFF, and DSD has not. The playback half's two options
+collapsed into one, because "build VLC demux plugins per platform" has no VLC
+to build them for, and FFAudio.NET's slim codec set carries the APE demuxer and
+decoder. DSD is what is left; see §3.
 
 **#5** is the one that aged well, because most of it was built: its own
 narrative below is the FFmpeg migration, step by step.
@@ -52,6 +52,13 @@ Fixed at 10 bands (31Hz–16kHz, ISO-ish spacing, `Q≈1.41`), ±12dB per band, 
 Re-scoped, the same question is about three places: `FfmpegTrackDecoder`'s open path (it already avoids blocking work on the play thread, and `StartDecoding` opens on its own decode thread), `AudioFeeder`'s fill policy, and `MiniaudioSink`'s period sizing — the last being the one that actually sets the floor on how quickly a press of play makes a sound. `AudioTimingSettings` is where the tunables already live. Worth measuring before assuming there is anything to win.
 
 ## 3. DSD (`.dsf`) + Monkey's Audio (`.ape`) — Small effort for tagging, Medium-Large + Medium-High risk for playback
+
+**Monkey's Audio is done** (October 2026), in the same change that added Ogg
+Vorbis, Opus and AIFF: `.ape` is in `Importer.ValidExtensions`, and
+`Tests/Flower.DeviceChecks` carries a `sine.ape` fixture that has to decode back
+to `sine.wav` byte for byte, from disk and over every streaming shape. FFmpeg
+cannot encode APE, so `regenerate.sh` uses Monkey's Audio's own `mac` encoder.
+What follows is the original finding, and the DSD half of it still stands.
 
 Add `.ape`/`.dsf` to `Importer._validExtensions` — tagging works today regardless of playback, so library browsing/sorting works immediately. Skip `.dff` until TagLib# supports it or a real library needs it. **Playback requires real engineering, but less than it did.** The finding was that mainline VLC ships no Monkey's Audio or DSD demux/decode plugins, leaving two options: build third-party VLC plugins per platform, or decode outside LibVLC. Option (a) is void — there is no VLC. Option (b) is what the whole pipeline now is, which turned the question into a build-configuration one. **That question is now answered.** `ape` was always in both lists; `dsf` was in the demuxer list with no `dsd_*` decoder behind it, which is worse than not claiming the format - the file demuxed and then found no decoder - and the four `dsd_*` decoders are in the list now (`native/ffmpeg/<ios|android>/build-ffmpeg.sh`, and FFAudio.NET's `native/codec-set.sh`, which is where that list is heading). It stays inside the LGPL constraint: neither is a `--enable-gpl` component. Desktop asks nothing of the list at all, since macOS and Linux link the system FFmpeg and Windows a pinned download. What is left is not configuration but proof - no phone has yet been built from a list with DSD in it. Decoded to PCM at an eighth of the DSD rate, never passed through. Until either lands, wrap `Play()` for these formats in a try/catch with a user-facing "unsupported format" message. Once playback exists, be clear in UI copy that DSD is decoded to PCM, not passed through natively.
 

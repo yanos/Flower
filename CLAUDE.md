@@ -245,7 +245,8 @@ suite: VLC's mp4 demuxer refusing an unseekable stream, then .NET's mobile
 person listening to a phone.
 
 The fixture set is the point. `Fixtures/` holds the same two seconds of 440Hz
-sine as WAV, FLAC, ALAC, MP3 and AAC, at both 48kHz and 44.1kHz, committed
+sine as WAV, FLAC, ALAC, MP3 and AAC, at both 48kHz and 44.1kHz, plus AIFF,
+Monkey's Audio, Ogg Vorbis and Opus at 48kHz, committed
 rather than generated (`Fixtures/regenerate.sh`) because a phone has no
 encoder. 44.1kHz is not thoroughness: it is what a music library is actually
 made of, and it is the one rate the pipeline resamples, so a 48kHz-only
@@ -477,7 +478,7 @@ MVVM via Avalonia compiled bindings + `CommunityToolkit.Mvvm` source generators.
 - `PlaylistControlViewModel` — play/pause/next/previous, repeat/shuffle (persisted in `settings.json`). Shuffle/repeat only affect auto-advance and `Next()`, never manual `Previous()`.
 - `QueueViewModel` — the queue as a page, on both heads (desktop's Queue sidebar row in `MusicListView`, the phone's Queue tab): the song playing, then what plays after it, as rows that know their slot in `PlaylistControlViewModel.CurrentPlaylist` (the queue can hold one song twice). Playing a row jumps along the queue rather than re-anchoring it; rows drag into a new order except under shuffle; Remove from Queue never takes the song playing. Built only while showing, like `HomeViewModel`.
 - `CurrentlyPlayingControlViewModel` — seek bar + elapsed/total time.
-- `Importer.Importer` — recursive scan of `AppSettings.LibraryPaths` (mp3/m4a/wav/flac/alac) via TagLib#. No folders means an empty library: a first run seeds `~/Music` into the list instead of the scan guessing it.
+- `Importer.Importer` — recursive scan of `AppSettings.LibraryPaths` (mp3/m4a/wav/flac/alac/ogg/opus/aiff/aif/ape) via TagLib#. No folders means an empty library: a first run seeds `~/Music` into the list instead of the scan guessing it.
 - `PlatformShortcuts.Primary` — Meta on macOS, Control elsewhere; all shortcuts should reference this, not a hardcoded modifier.
 
 **Persistence** (macOS: `~/Library/Application Support/Flower/`): `library.json`, `playlists.json` (track references only, resolved against the library), `config.json` (column state), `settings.json` (`AppSettings`).

@@ -10,7 +10,7 @@
        built at run time could drift between the two platforms these checks
        exist to compare. See Fixtures/regenerate.sh. -->
   <ItemGroup>
-    <EmbeddedResource Include="Fixtures\*.wav;Fixtures\*.flac;Fixtures\*.mp3;Fixtures\*.m4a" />
+    <EmbeddedResource Include="Fixtures\*.wav;Fixtures\*.flac;Fixtures\*.mp3;Fixtures\*.m4a;Fixtures\*.aiff;Fixtures\*.ape;Fixtures\*.ogg;Fixtures\*.opus" />
   </ItemGroup>
 
   <ItemGroup>
