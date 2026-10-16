@@ -237,22 +237,19 @@
                      TextAlignment="Center"
                      TextTrimming="CharacterEllipsis" />
           <!-- The artist and the album, a line each, each a way there - the
-               cover above is the album's too. -->
+               cover above is the album's too. A line too long for the screen
+               scrolls round slowly rather than losing its end (MarqueeText). -->
           <Button Classes="nowPlayingLink"
                   Command="{Binding GoToCurrentlyPlayingArtistCommand}">
-            <TextBlock Text="{Binding CurrentlyPlaying.CurrentlyPlayingTrack.Artists}"
-                       FontSize="16"
-                       Opacity="0.65"
-                       TextAlignment="Center"
-                       TextTrimming="CharacterEllipsis" />
+            <layout:MarqueeText Text="{Binding CurrentlyPlaying.CurrentlyPlayingTrack.Artists}"
+                                FontSize="16"
+                                Opacity="0.65" />
           </Button>
           <Button Classes="nowPlayingLink"
                   Command="{Binding GoToCurrentlyPlayingAlbumCommand}">
-            <TextBlock Text="{Binding CurrentlyPlaying.AlbumLine}"
-                       FontSize="16"
-                       Opacity="0.65"
-                       TextAlignment="Center"
-                       TextTrimming="CharacterEllipsis" />
+            <layout:MarqueeText Text="{Binding CurrentlyPlaying.AlbumLine}"
+                                FontSize="16"
+                                Opacity="0.65" />
           </Button>
         </StackPanel>
 
