@@ -268,10 +268,14 @@ public class LibraryFolderWatcherTests : IDisposable
     }
 
     // The whole thing, through the operating system's own change
-    // notifications rather than Note.
+    // notifications rather than Note. Skipped on iOS, which has no
+    // FileSystemWatcher - and no watcher either, since it runs only on the
+    // desktop and the server.
     [Fact]
     public async Task A_song_copied_in_shows_up_by_itself()
     {
+        if (OperatingSystem.IsIOS())
+            return;
         using var watcher = NewWatcher(listensForChanges: true);
         // Give the watcher a moment to be listening before the file lands.
         await Task.Delay(300);
