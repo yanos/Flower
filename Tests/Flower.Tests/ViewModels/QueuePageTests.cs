@@ -241,6 +241,33 @@ public class QueuePageTests : PinnedDataDirectory
         window.Close();
     }
 
+    // A tap on a row under shuffle is a jump along the rows as they are
+    // shown: the song tapped stays where it was, what was above it is what
+    // has played, and Next plays the row under it.
+    [AvaloniaFact]
+    public void Playing_a_row_under_shuffle_leaves_the_rows_where_they_were()
+    {
+        using var parts = Playing("A", "B", "C", "D", "E", "F");
+        parts.PlaylistControl.ToggleShuffle();
+        var queue = parts.Main.Queue;
+        ShowQueue(parts.Main);
+        var before = Titles(queue);
+        var tapped = queue.Rows[3];
+
+        Assert.True(queue.Play(tapped));
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(before, Titles(queue));
+        Assert.Equal(3, queue.PlayedCount);
+        Assert.Equal(before[3], parts.PlaylistControl.CurrentlyPlayingTrack?.Title);
+
+        parts.PlaylistControl.Next();
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(before[4], parts.PlaylistControl.CurrentlyPlayingTrack?.Title);
+        Assert.Equal(before, Titles(queue));
+    }
+
     private static Point RowCentre(Window window, MainView view, string title)
     {
         window.UpdateLayout();

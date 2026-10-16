@@ -826,8 +826,7 @@ namespace Flower.ViewModels
             // nothing lined up. Starting the same slot again (repeat) is neither.
             if (_linedUpCount > 0 && _queueIndex != previousIndex)
             {
-                var step = _queueIndex - previousIndex;
-                _linedUpCount = previousIndex >= 0 && step > 0 && step <= _linedUpCount ? _linedUpCount - step : 0;
+                _linedUpCount = LinedUpAfterMoving(previousIndex, _queueIndex);
                 OnPropertyChanged(nameof(LinedUpCount));
             }
 
@@ -862,6 +861,46 @@ namespace Flower.ViewModels
             }
 
             Start(playable, immediate, startAt);
+        }
+
+        private int LinedUpAfterMoving(int from, int to)
+        {
+            if (_linedUpCount == 0 || to == from)
+                return _linedUpCount;
+            var step = to - from;
+            return from >= 0 && step > 0 && step <= _linedUpCount ? _linedUpCount - step : 0;
+        }
+
+        /// <summary>
+        /// Plays the entry at <paramref name="slot"/> under shuffle as a jump
+        /// along the order the Queue screen shows - <paramref name="before"/>,
+        /// it, then <paramref name="after"/>, all slots - rather than as a song
+        /// pulled out of it: what was above it counts as played, and what was
+        /// below it plays next in the order it was shown. Without this the
+        /// song tapped moved up to sit under the one it replaced, and the
+        /// songs it was tapped past dropped below it.
+        /// </summary>
+        public void JumpInShuffledOrder(int slot, IReadOnlyList<int> before, IReadOnlyList<int> after)
+        {
+            var tracks = _currentPlaylist.Tracks;
+            if (slot < 0 || slot >= tracks.Count)
+                return;
+
+            // The songs lined up by hand play next whatever the order says,
+            // so the ones still lined up after the jump stay out of it.
+            var linedUpEnd = slot + LinedUpAfterMoving(_queueIndex, slot);
+
+            _shufflePlayed.Clear();
+            _shufflePlayedOrder.Clear();
+            foreach (var played in before)
+            {
+                if (played >= 0 && played < tracks.Count && _shufflePlayed.Add(tracks[played].Id))
+                    _shufflePlayedOrder.Add(tracks[played].Id);
+            }
+            _shuffleOrder = after.Where(s => s >= 0 && s < tracks.Count && s != slot && !(s > slot && s <= linedUpEnd)).ToList();
+            _shuffledFor = tracks;
+
+            Play(tracks[slot], slot);
         }
 
         // Makes tracks the queue and starts the one at index, part-way through

@@ -157,13 +157,22 @@ public sealed class QueueViewModel : ViewModelBase, IDisposable
 
     /// <summary>
     /// Plays <paramref name="row"/> where it is in the queue - a jump along
-    /// it, not a new queue. False for a row that is not one of these.
+    /// it, not a new queue, and the rows stay in the order they are in: the
+    /// ones above it become what has played, the ones below what plays next.
+    /// Under shuffle that order is the screen's rather than the queue's, so it
+    /// is handed over as it stands. False for a row that is not one of these.
     /// </summary>
     public bool Play(TrackRowViewModel row)
     {
-        if (SlotOf(row) is not (var slot and >= 0))
+        var index = _rows.IndexOf(row);
+        if (index < 0)
             return false;
-        _playback.Play(row.Track, slot);
+
+        var slot = _slots[index];
+        if (_playback.IsShuffleEnabled)
+            _playback.JumpInShuffledOrder(slot, _slots.GetRange(0, index), _slots.GetRange(index + 1, _slots.Count - index - 1));
+        else
+            _playback.Play(row.Track, slot);
         return true;
     }
 
