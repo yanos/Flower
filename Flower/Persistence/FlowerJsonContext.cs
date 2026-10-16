@@ -42,6 +42,7 @@ namespace Flower.Persistence
     [JsonSerializable(typeof(ServerStarBaselineStore.StarBaselineRecord))]
     [JsonSerializable(typeof(List<DeviceNickname>), TypeInfoPropertyName = "DeviceNicknameList")]
     [JsonSerializable(typeof(AlbumProgressState))]
+    [JsonSerializable(typeof(PlayQueueState))]
     [JsonSerializable(typeof(PlaylistSyncManifestDto))]
     [JsonSerializable(typeof(LibrarySyncManifestDto))]
     [JsonSerializable(typeof(LogReportDto))]

@@ -142,8 +142,12 @@ namespace Flower.ViewModels
             // written anywhere.
             AlbumProgressTracker? albumProgress = null,
             // Only ever passed by a test, which needs to own its clock.
-            ListenMeter? listenMeter = null)
+            ListenMeter? listenMeter = null,
+            // Null in a test that builds this class directly, so it neither
+            // reads a queue left by the real app nor writes one.
+            PlayQueueStore? queueStore = null)
         {
+            _queueStore = queueStore;
             _streamUrlResolver = streamUrlResolver;
             AlbumProgress = albumProgress ?? new AlbumProgressTracker(library);
             _listen = listenMeter ?? new ListenMeter();
@@ -170,6 +174,7 @@ namespace Flower.ViewModels
             _subscriptions.Add<EventHandler>((s, e) =>
             {
                 var time = _audioManager.Time;
+                _playheadMs = time;
                 if (_positionTrack != null)
                     _lastKnownTimeMs = time;
                 AlbumProgress.UpdatePosition(time);
@@ -186,13 +191,21 @@ namespace Flower.ViewModels
             // always - MiniaudioSink raises it from HandleUnexpectedStop when
             // the output device dies, on a backend thread - and everything
             // here mutates observable state the view is bound to.
+            //
+            // Nothing in the app asks for a stop - there is no stop button - so
+            // one arriving is the output going away under it, and the song is
+            // kept rather than dropped: parked where it was, as the end of the
+            // queue parks at its top, so the queue is still there and play
+            // carries on from the same place. Dropping it took the whole queue
+            // off the Queue screen, which shows nothing with nothing playing.
             _subscriptions.Add<EventHandler>((s, e) => Dispatcher.UIThread.Post(() =>
             {
+                var position = TimeSpan.FromMilliseconds(_playheadMs);
                 LeavePlayingTrack();
                 AlbumProgress.Flush();
-                _parkedAtQueueTop = false;
                 OnPropertyChanged(nameof(IsPlaying));
-                CurrentlyPlayingTrack = null;
+                if (CurrentlyPlayingTrack is { } stopped && !_parked)
+                    ParkAt(stopped, ResolveQueueIndex(stopped), position);
             }),
                 h => _audioManager.Stopped += h, h => _audioManager.Stopped -= h);
 
@@ -214,6 +227,7 @@ namespace Flower.ViewModels
                 AlbumProgress.Flush();
                 _listen.Suspend();
                 OnPropertyChanged(nameof(IsPlaying));
+                SaveQueue();
             },
                 h => _audioManager.Paused += h, h => _audioManager.Paused -= h);
 
@@ -608,6 +622,27 @@ namespace Flower.ViewModels
             ReplaceQueueKeepingPlace(queue, index);
         }
 
+        /// <summary>Whether there is anything in the queue besides the song playing.</summary>
+        public bool CanClearQueue => CurrentlyPlayingTrack != null && _currentPlaylist.Tracks.Count > 1;
+
+        /// <summary>Empties the queue of everything but the song playing, which
+        /// is left to finish - after it, nothing plays.</summary>
+        public void ClearQueue()
+        {
+            if (!CanClearQueue || CurrentlyPlayingTrack is not { } current)
+                return;
+
+            _linedUpCount = 0;
+            ForgetShuffleOrder();
+            if (IsShuffleEnabled)
+            {
+                _shufflePlayed.Add(current.Id);
+                _shufflePlayedOrder.Add(current.Id);
+            }
+            _logger.LogInformation("Cleared the queue");
+            ReplaceQueueKeepingPlace([current], 0);
+        }
+
         // A new queue with the song playing still at its own slot in it, and
         // the song after it armed again: what plays next is exactly what an
         // edit here changes, and the gapless pipeline has already decoded ahead
@@ -623,8 +658,9 @@ namespace Flower.ViewModels
             OnPropertyChanged(nameof(LinedUpCount));
             OnPropertyChanged(nameof(CurrentPlaylist));
 
-            if (CurrentlyPlayingTrack is { } current && !_parkedAtQueueTop)
+            if (CurrentlyPlayingTrack is { } current && !_parked)
                 ArmUpcoming(GetUpcomingEntry(current, _queueIndex).Track);
+            SaveQueue();
         }
 
         public void ToggleRepeat()
@@ -855,7 +891,9 @@ namespace Flower.ViewModels
             // down as the old one's.
             AlbumProgress.TrackStarted(track, IsShuffleEnabled);
 
-            _parkedAtQueueTop = false;
+            _parked = false;
+            _parkedStartAt = null;
+            _playheadMs = startAt is { } at ? (long)at.TotalMilliseconds : 0;
             SelectedTrack = track;
             CurrentlyPlayingTrack = track;
 
@@ -880,6 +918,7 @@ namespace Flower.ViewModels
             // been heard (see ListenMeter). Raises TrackChanged as a
             // PlayStarted - same reasoning as the EndReached handler above.
             _library.RecordPlayed(track);
+            SaveQueue();
         }
 
         // The browser path: the stream URL is a round trip away (a ticket has to
@@ -991,11 +1030,25 @@ namespace Flower.ViewModels
             return streaming;
         }
 
-        // Set while the queue has played out and been parked back at its first
-        // track: something is "currently playing" as far as the rest of the app
-        // and the OS now-playing card are concerned, but nothing is loaded
-        // behind it, so play has to start that track rather than resume.
-        private bool _parkedAtQueueTop;
+        // Set while a song is parked: the queue played out and wound back to
+        // its first track, the output stopped under the song playing, or the
+        // queue was restored at launch. Something is "currently playing" as far
+        // as the rest of the app and the OS now-playing card are concerned, but
+        // nothing is loaded behind it, so play has to start that track - from
+        // _parkedStartAt, when it was left part-way - rather than resume.
+        private bool _parked;
+        private TimeSpan? _parkedStartAt;
+
+        private void ParkAt(Track track, int index, TimeSpan? startAt)
+        {
+            _queueIndex = index;
+            _parked = true;
+            _parkedStartAt = startAt > TimeSpan.Zero ? startAt : null;
+            _playheadMs = (long)(_parkedStartAt?.TotalMilliseconds ?? 0);
+            SelectedTrack = track;
+            CurrentlyPlayingTrack = track;
+            OnPropertyChanged(nameof(IsPlaying));
+        }
 
         // The album finished. Rather than clearing the current track - which is
         // what a stop does, and which takes the Lock Screen/Control Center card
@@ -1019,12 +1072,16 @@ namespace Flower.ViewModels
             _logger.LogInformation(
                 "Queue played out; parking at {Title}", first?.Title ?? "nothing - the queue is empty");
 
-            _queueIndex = first != null ? 0 : -1;
-            _parkedAtQueueTop = first != null;
             if (first != null)
-                SelectedTrack = first;
-            CurrentlyPlayingTrack = first;
-            OnPropertyChanged(nameof(IsPlaying));
+                ParkAt(first, 0, null);
+            else
+            {
+                _queueIndex = -1;
+                _parked = false;
+                CurrentlyPlayingTrack = null;
+                OnPropertyChanged(nameof(IsPlaying));
+            }
+            SaveQueue();
         }
 
         public void PlayOrPause(Track track)
@@ -1033,13 +1090,13 @@ namespace Flower.ViewModels
             {
                 _audioManager.Pause();
             }
-            else if (_parkedAtQueueTop && CurrentlyPlayingTrack is { } parked)
+            else if (_parked && CurrentlyPlayingTrack is { } parked)
             {
-                // Parked at the top of a queue that finished: there is nothing
-                // to resume - the coordinator let its decoder go when the album
-                // ended - so this starts the album again from the top, which is
-                // what the card showing that first track promises.
-                Play(parked, _queueIndex);
+                // Parked: there is nothing to resume - the coordinator let its
+                // decoder go, or never had one - so this starts the parked song,
+                // from where it was left, which is what the card showing it
+                // promises.
+                Play(parked, _queueIndex, startAt: _parkedStartAt);
             }
             else
             {
@@ -1300,6 +1357,106 @@ namespace Flower.ViewModels
         {
             SaveResumePosition();
             AlbumProgress.Flush(synchronously: true);
+            SaveQueue(synchronously: true);
+        }
+
+        // ── The queue between launches ────────────────────────────────────
+        //
+        // See PlayQueueStore. Written whenever a song starts, the queue is
+        // edited, playback pauses, and the app goes away - the last with the
+        // playhead, so a relaunch picks the song up where it was left.
+
+        private readonly PlayQueueStore? _queueStore;
+
+        // Where playback is in the song playing, latched off PositionChanged
+        // like _lastKnownTimeMs but for every song, since the queue's place is
+        // kept whether or not the song's own option to remember it is on.
+        private long _playheadMs;
+
+        private PlayQueueState? QueueSnapshot()
+        {
+            if (CurrentlyPlayingTrack is not { } playing)
+                return null;
+
+            var index = ResolveQueueIndex(playing);
+            if (index < 0)
+                return null;
+
+            var ids = new List<Guid>(_currentPlaylist.Tracks.Count);
+            foreach (var track in _currentPlaylist.Tracks)
+                ids.Add(track.Id);
+            return new PlayQueueState(ids, index, _playheadMs, _linedUpCount);
+        }
+
+        private void SaveQueue(bool synchronously = false)
+        {
+            if (_queueStore == null || QueueSnapshot() is not { } state)
+                return;
+
+            try
+            {
+                if (synchronously)
+                    _queueStore.Save(state);
+                else
+                    _ = SaveQueueAsync(_queueStore, state);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not save the queue");
+            }
+        }
+
+        private async Task SaveQueueAsync(PlayQueueStore store, PlayQueueState state)
+        {
+            try
+            {
+                await store.SaveAsync(state);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not save the queue");
+            }
+        }
+
+        // The queue left at the last launch, parked on the song that was
+        // playing - nothing starts until play is pressed. Songs the library no
+        // longer has are left out, and the place is the playing song's slot
+        // among those that remain; if that song is one of the missing, there
+        // is no place to come back to and nothing is restored.
+        public void RestoreQueue()
+        {
+            if (_queueStore?.Load() is not { } state || CurrentlyPlayingTrack != null)
+                return;
+            if (state.Index < 0 || state.Index >= state.TrackIds.Count)
+                return;
+
+            var byId = new Dictionary<Guid, Track>();
+            foreach (var track in _library.Tracks)
+                byId.TryAdd(track.Id, track);
+
+            var queue = new List<Track>(state.TrackIds.Count);
+            var index = -1;
+            var linedUp = 0;
+            for (var i = 0; i < state.TrackIds.Count; i++)
+            {
+                if (!byId.TryGetValue(state.TrackIds[i], out var track))
+                    continue;
+                if (i == state.Index)
+                    index = queue.Count;
+                else if (i > state.Index && i <= state.Index + state.LinedUpCount)
+                    linedUp++;
+                queue.Add(track);
+            }
+
+            if (index < 0)
+                return;
+
+            _currentPlaylist = new Playlist("Now Playing Queue", queue);
+            _linedUpCount = linedUp;
+            OnPropertyChanged(nameof(CurrentPlaylist));
+            OnPropertyChanged(nameof(LinedUpCount));
+            ParkAt(queue[index], index, TimeSpan.FromMilliseconds(state.PositionMs));
+            _logger.LogInformation("Restored a queue of {Count} songs, parked at {Title}", queue.Count, queue[index].Title);
         }
 
         private void SaveResumePosition()

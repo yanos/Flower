@@ -198,6 +198,7 @@ public partial class App : Application
             .AddSingleton<PlaylistSyncStateStore>()
             .AddSingleton<ServerStarBaselineStore>()
             .AddSingleton<AlbumProgressStore>()
+            .AddSingleton<PlayQueueStore>()
             .AddSingleton(InMemoryLogStore.Instance)
             // A week of this device's own logs on disk, so what gets pushed to
             // the paired server is not limited to what one process's memory
@@ -804,6 +805,10 @@ public partial class App : Application
         // deactivated (Avalonia raises Deactivated for backgrounding, which is
         // as close to "about to be killed" as iOS/Android ever get).
         var playbackControls = provider.GetRequiredService<PlaylistControlViewModel>();
+
+        // And the queue itself, which a phone otherwise lost every time it put
+        // the app away - see PlayQueueStore.
+        playbackControls.RestoreQueue();
 
         // Constructed eagerly, for the same reason as NowPlayingIntegrationService
         // below: nothing else asks for it, and its exchanges have to start.

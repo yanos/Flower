@@ -381,6 +381,11 @@ public partial class MobileMainViewModel
         }
         if (downloadAll != null)
             actions.Add(downloadAll);
+
+        // Everything queued but the song playing.
+        if (frame.ScreenKind == MobileScreenKind.Queue && PlaylistControl.CanClearQueue)
+            actions.Add(new ScreenMenuEntry("Clear Queue", MaterialIconKind.PlaylistRemove,
+                () => PlaylistControl.ClearQueue(), IsDestructive: true));
         if (actions.Count > 0)
             sections.Add(new ScreenMenuSection(null, actions));
 
