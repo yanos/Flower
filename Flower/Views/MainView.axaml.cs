@@ -80,6 +80,11 @@ public partial class MainView : UserControl
     {
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
+        ActualThemeVariantChanged += (_, _) =>
+        {
+            _playerBarOnArt = null;
+            ApplyPlayerBarTint();
+        };
         PlaybackControls.PlayOrPauseRequested += (_, _) => _viewModel?.PlayOrPauseFromCurrentView();
 
         // Wire MusicListView events
@@ -195,6 +200,7 @@ public partial class MainView : UserControl
             _viewModel.RenamePlaylistRequested -= OnRenamePlaylistRequested;
             _viewModel.DeletePlaylistConfirmationRequested -= OnDeletePlaylistConfirmationRequested;
             _viewModel.SmartPlaylistEditorRequested -= OnSmartPlaylistEditorRequested;
+            _viewModel.NowPlaying.PropertyChanged -= OnNowPlayingPropertyChanged;
             HideStatusBar();
         }
 
@@ -216,6 +222,7 @@ public partial class MainView : UserControl
             _viewModel.RenamePlaylistRequested += OnRenamePlaylistRequested;
             _viewModel.DeletePlaylistConfirmationRequested += OnDeletePlaylistConfirmationRequested;
             _viewModel.SmartPlaylistEditorRequested += OnSmartPlaylistEditorRequested;
+            _viewModel.NowPlaying.PropertyChanged += OnNowPlayingPropertyChanged;
             BuildColumnMenu();
             ShowStatusMessage(_viewModel.BusyMessage);
 
@@ -245,7 +252,76 @@ public partial class MainView : UserControl
 
             UpdateServerSettingsPane();
         }
+
+        ApplyPlayerBarTint();
     }
+
+    private void OnNowPlayingPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(CurrentlyPlayingControlViewModel.AlbumArt))
+            ApplyPlayerBarTint();
+    }
+
+    // The player bar washed in the album's colour, the way the phone's Now
+    // Playing sheet is (NowPlayingView): ArtBackdrop's colour and gradient,
+    // and with no cover - nothing playing included - the same fallback. Everything on the bar
+    // is then drawn in the colour for things over a cover's (PaletteOnArt),
+    // as everything on that sheet is: the colours the bar's controls are
+    // drawn with are restated for the bar alone (PlayerBarOnArt), so the
+    // controls themselves do not know which way they are being drawn.
+    private ResourceDictionary? _playerBarOnArt;
+
+    private void ApplyPlayerBarTint()
+    {
+        var merged = PlayerBar.Resources.MergedDictionaries;
+        if (_viewModel is not { TintPlayerBarWithAlbumColor: true } vm)
+        {
+            merged.Clear();
+            PlayerBar.ClearValue(Border.BackgroundProperty);
+            RoutePicker.GlyphColor = null;
+            return;
+        }
+
+        _playerBarOnArt ??= PlayerBarOnArt();
+        if (!merged.Contains(_playerBarOnArt))
+        {
+            merged.Clear();
+            merged.Add(_playerBarOnArt);
+        }
+        PlayerBar.Background = ArtBackdrop.SheetBrush(ArtBackdrop.DominantColor(vm.NowPlaying.AlbumArt));
+        RoutePicker.GlyphColor = OnArtColor();
+    }
+
+    private object? AppResource(string key) =>
+        Application.Current?.TryGetResource(key, ActualThemeVariant, out var value) == true ? value : null;
+
+    private Color OnArtColor() => AppResource("PaletteOnArt") is Color color ? color : default;
+
+    // What each colour the bar's controls name is on a cover's colour - the
+    // phone's Now Playing's choices (NowPlayingView.axaml), every one of them
+    // Theme.axaml's AppOnArt* on PaletteOnArt: words and glyphs in it, the
+    // artist line and the times dimmer, shuffle and repeat half as bright off
+    // and full on, a press dimming it rather than turning it the accent, the
+    // ring round play in it, and the sliders' rails faint. Hover is new here
+    // - a phone has none - and dims a little less than a press. The divider
+    // is gone: the bar's colour already sets it apart from the page. Built
+    // for the theme in use, and again when it changes.
+    private ResourceDictionary PlayerBarOnArt() => new()
+    {
+        ["PaletteTextPrimary"] = OnArtColor(),
+        ["AppTextPrimaryBrush"] = AppResource("AppOnArtBrush"),
+        ["AppTextSecondaryBrush"] = AppResource("AppOnArtSecondaryBrush"),
+        ["AppTextDisabledBrush"] = AppResource("AppOnArtMutedBrush"),
+        ["AppAccentBrush"] = AppResource("AppOnArtBrush"),
+        ["AppAccentHoverBrush"] = AppResource("AppOnArtHoverBrush"),
+        ["AppAccentPressedBrush"] = AppResource("AppOnArtRingBrush"),
+        ["AppChromeBrush"] = AppResource("AppOnArtBrush"),
+        ["AppChromeBorderBrush"] = AppResource("AppOnArtBrush"),
+        ["AppDividerBrush"] = Brushes.Transparent,
+        ["SliderTrackFill"] = AppResource("AppOnArtTrackBrush"),
+        ["SliderTrackFillPointerOver"] = AppResource("AppOnArtTrackBrush"),
+        ["SliderTrackFillPressed"] = AppResource("AppOnArtTrackBrush"),
+    };
 
     // The three name-selection gestures all read and write the same
     // MainViewModel.SelectedSubItems, so they only exist while there is a
@@ -298,6 +374,9 @@ public partial class MainView : UserControl
                 break;
             case nameof(MainViewModel.Rows):
                 ApplyRows();
+                break;
+            case nameof(MainViewModel.TintPlayerBarWithAlbumColor):
+                ApplyPlayerBarTint();
                 break;
             case nameof(MainViewModel.SortColumn):
             case nameof(MainViewModel.SortAscending):

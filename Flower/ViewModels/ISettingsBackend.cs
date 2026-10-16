@@ -21,7 +21,9 @@ public sealed record SettingsCapabilities
     public bool ThemePicker { get; init; }
 
     // Where the desktop's playback controls sit (AppSettings.
-    // PlaybackControlsPlacement). The app's own only: a server has no window.
+    // PlaybackControlsPlacement), and whether their bar takes the album's
+    // colour (TintPlayerBarWithAlbumColor). The app's own only: a server has
+    // no window.
     public bool PlaybackControlsPicker { get; init; }
 
     // How much Home's shelves hold (AppSettings.HomeContinuePlayingLimit and
@@ -79,6 +81,7 @@ public sealed record SettingsSnapshot
     public string Alias { get; init; } = "";
     public AppThemePreference ThemePreference { get; init; }
     public PlaybackControlsPlacement PlaybackControlsPlacement { get; init; }
+    public bool TintPlayerBarWithAlbumColor { get; init; }
     public int HomeContinuePlayingLimit { get; init; }
     public int HomeRecentlyPlayedLimit { get; init; }
     public int HomeRecentlyAddedMonths { get; init; }
@@ -163,6 +166,7 @@ public sealed record SettingsDraft
     public required string Alias { get; init; }
     public required AppThemePreference ThemePreference { get; init; }
     public required PlaybackControlsPlacement PlaybackControlsPlacement { get; init; }
+    public required bool TintPlayerBarWithAlbumColor { get; init; }
     public required int HomeContinuePlayingLimit { get; init; }
     public required int HomeRecentlyPlayedLimit { get; init; }
     public required int HomeRecentlyAddedMonths { get; init; }

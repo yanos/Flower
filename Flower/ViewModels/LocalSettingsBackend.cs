@@ -50,6 +50,7 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
         Alias = ViewModel.DeviceAlias,
         ThemePreference = ViewModel.ThemePreference,
         PlaybackControlsPlacement = ViewModel.PlaybackControlsPlacement,
+        TintPlayerBarWithAlbumColor = ViewModel.TintPlayerBarWithAlbumColor,
         HomeContinuePlayingLimit = ViewModel.HomeContinuePlayingLimit,
         HomeRecentlyPlayedLimit = ViewModel.HomeRecentlyPlayedLimit,
         HomeRecentlyAddedMonths = ViewModel.HomeRecentlyAddedMonths,
@@ -91,6 +92,7 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
 
         ViewModel.ThemePreference = draft.ThemePreference;
         ViewModel.PlaybackControlsPlacement = draft.PlaybackControlsPlacement;
+        ViewModel.TintPlayerBarWithAlbumColor = draft.TintPlayerBarWithAlbumColor;
         ViewModel.HomeContinuePlayingLimit = draft.HomeContinuePlayingLimit;
         ViewModel.HomeRecentlyPlayedLimit = draft.HomeRecentlyPlayedLimit;
         ViewModel.HomeRecentlyAddedMonths = draft.HomeRecentlyAddedMonths;

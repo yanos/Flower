@@ -196,6 +196,13 @@ public sealed partial class SettingsViewModel : ViewModelBase
     public PlaybackControlsPlacement PlaybackControlsPlacement =>
         PlaybackControlsIndex == 1 ? PlaybackControlsPlacement.Bottom : PlaybackControlsPlacement.Top;
 
+    private bool _tintPlayerBarWithAlbumColor;
+    public bool TintPlayerBarWithAlbumColor
+    {
+        get => _tintPlayerBarWithAlbumColor;
+        set => SetProperty(ref _tintPlayerBarWithAlbumColor, value);
+    }
+
     // Home's shelves - see AppSettings.HomeContinuePlayingLimit. The panel's
     // boxes are held to these ceilings, and HomeViewModel clamps again.
     public int MaxHomeShelfAlbums => HomeViewModel.MaxAlbumsPerShelf;
@@ -512,6 +519,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
                 _ => 0,
             };
             PlaybackControlsIndex = _snapshot.PlaybackControlsPlacement == PlaybackControlsPlacement.Bottom ? 1 : 0;
+            TintPlayerBarWithAlbumColor = _snapshot.TintPlayerBarWithAlbumColor;
             HomeContinuePlayingLimit = _snapshot.HomeContinuePlayingLimit;
             HomeRecentlyPlayedLimit = _snapshot.HomeRecentlyPlayedLimit;
             HomeRecentlyAddedMonths = _snapshot.HomeRecentlyAddedMonths;
@@ -607,6 +615,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
                 Alias = Alias,
                 ThemePreference = ThemePreference,
                 PlaybackControlsPlacement = PlaybackControlsPlacement,
+                TintPlayerBarWithAlbumColor = TintPlayerBarWithAlbumColor,
                 HomeContinuePlayingLimit = HomeContinuePlayingLimit,
                 HomeRecentlyPlayedLimit = HomeRecentlyPlayedLimit,
                 HomeRecentlyAddedMonths = HomeRecentlyAddedMonths,

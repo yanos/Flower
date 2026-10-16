@@ -112,6 +112,12 @@ namespace Flower.Persistence
         // PlaybackControlsPlacement above.
         public PlaybackControlsPlacement PlaybackControlsPlacement { get; set; } = PlaybackControlsPlacement.Top;
 
+        // Settings > General. The desktop's player bar washed in the playing
+        // album's colour, its words and controls drawn over it the way the
+        // phone's Now Playing draws them (ArtBackdrop, MainView's
+        // PlayerBarOnArt) - on by default; off, the bar is the page's own.
+        public bool TintPlayerBarWithAlbumColor { get; set; } = true;
+
         // What Home's shelves hold, on every head - set in Settings (the
         // desktop's General tab, the phone's Home card) and read by
         // HomeViewModel. Continue Playing and Recently Played are capped at so

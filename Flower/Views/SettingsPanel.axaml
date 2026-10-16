@@ -68,6 +68,11 @@
             <ComboBoxItem Content="Top"/>
             <ComboBoxItem Content="Bottom"/>
           </ComboBox>
+          <!-- AppSettings.TintPlayerBarWithAlbumColor. -->
+          <CheckBox Content="Color the player bar with the album's cover"
+                    Margin="0,8,0,0"
+                    IsChecked="{Binding TintPlayerBarWithAlbumColor, Mode=TwoWay}"
+                    IsVisible="{Binding Capabilities.PlaybackControlsPicker}"/>
 
           <!-- How much Home's shelves hold - see AppSettings.
                HomeContinuePlayingLimit. The phone sets the same three in its

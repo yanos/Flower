@@ -25,8 +25,19 @@ public sealed class AppleRoutePicker : IPlatformRoutePicker
 {
     public Control CreatePicker() => new RoutePickerHost();
 
-    private sealed class RoutePickerHost : NativeControlHost
+    private sealed class RoutePickerHost : NativeControlHost, IRoutePickerGlyphColor
     {
+        private Avalonia.Media.Color? _glyphColor;
+
+        public Avalonia.Media.Color? GlyphColor
+        {
+            set
+            {
+                _glyphColor = value;
+                ApplyGlyphColor();
+            }
+        }
+
         // Held so the managed wrapper outlives the handle Avalonia is given -
         // the NSView itself is retained by the view hierarchy, but nothing
         // else keeps the binding object from being collected.
@@ -44,12 +55,24 @@ public sealed class AppleRoutePicker : IPlatformRoutePicker
                 // glyph buttons rather than a raised push button.
                 RoutePickerButtonBordered = false
             };
-            // The label colour, as the volume and output glyphs beside it
-            // are the song title's, rather than AppKit's dimmer default.
-            // Only at rest: routed elsewhere, it keeps the system's accent.
-            _picker.SetRoutePickerButtonColor(AppKit.NSColor.Label, AVRoutePickerViewButtonState.Normal);
+            ApplyGlyphColor();
 
             return new PlatformHandle(_picker.Handle, "NSView");
+        }
+
+        // The label colour, as the volume and output glyphs beside it are
+        // the song title's, rather than AppKit's dimmer default - or the
+        // colour the app asked for, on a bar washed in a cover's colour. Only
+        // at rest: routed elsewhere, it keeps the system's accent.
+        private void ApplyGlyphColor()
+        {
+            if (_picker is null)
+                return;
+
+            var color = _glyphColor is { } c
+                ? AppKit.NSColor.FromSrgb(c.R / 255f, c.G / 255f, c.B / 255f, c.A / 255f)
+                : AppKit.NSColor.Label;
+            _picker.SetRoutePickerButtonColor(color, AVRoutePickerViewButtonState.Normal);
         }
 
         protected override void DestroyNativeControlCore(IPlatformHandle control)

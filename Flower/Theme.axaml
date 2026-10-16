@@ -187,13 +187,18 @@
   <SolidColorBrush x:Key="AppScrimBrush" Color="{DynamicResource PaletteScrim}" Opacity="0.4" />
 
   <!-- On a sheet washed in a cover's colour (Now Playing - see
-       ArtBackdrop.SheetBrush), which is dark whatever the theme: the words
-       and the filled controls, the same faint for what is off, and a ring
-       between the two. (Its sliders' brushes are NowPlayingView's own, on
-       PaletteOnArt.) -->
+       ArtBackdrop.SheetBrush - and the desktop's player bar), which is dark
+       whatever the theme: the words and the filled controls, the same faint
+       for what is off, and a ring between the two. Then, for the desktop's
+       bar (MainView.PlayerBarOnArt): the words under a title, a control
+       pointed at, and a slider's empty rail. (Now Playing's own sliders'
+       brushes are NowPlayingView's, on PaletteOnArt.) -->
   <SolidColorBrush x:Key="AppOnArtBrush" Color="{DynamicResource PaletteOnArt}" />
   <SolidColorBrush x:Key="AppOnArtMutedBrush" Color="{DynamicResource PaletteOnArt}" Opacity="0.5" />
   <SolidColorBrush x:Key="AppOnArtRingBrush" Color="{DynamicResource PaletteOnArt}" Opacity="0.6" />
+  <SolidColorBrush x:Key="AppOnArtSecondaryBrush" Color="{DynamicResource PaletteOnArt}" Opacity="0.65" />
+  <SolidColorBrush x:Key="AppOnArtHoverBrush" Color="{DynamicResource PaletteOnArt}" Opacity="0.8" />
+  <SolidColorBrush x:Key="AppOnArtTrackBrush" Color="{DynamicResource PaletteOnArt}" Opacity="0.25" />
 
   <!-- ── Shadows ─────────────────────────────────────────────────────── -->
 

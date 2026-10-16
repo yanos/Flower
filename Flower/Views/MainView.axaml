@@ -49,11 +49,15 @@
       <!-- Player bar, across the whole window over or under the sidebar and
            the page: what is playing at the left, the transport in the middle
            - the middle of the window, since the halves either side are equal
-           - and the volume and output at the right. -->
+           - and the volume and output at the right. Washed in the album's
+           colour (AppSettings.TintPlayerBarWithAlbumColor), everything on it
+           then drawn as on the phone's Now Playing - see ApplyPlayerBarTint
+           in the code-behind. -->
       <Border x:Name="PlayerBar"
               Grid.ColumnSpan="3"
               Padding="16,8,16,8"
-              BorderBrush="{DynamicResource AppDividerBrush}">
+              BorderBrush="{DynamicResource AppDividerBrush}"
+              TextElement.Foreground="{DynamicResource AppTextPrimaryBrush}">
         <Grid ColumnDefinitions="*,Auto,*">
           <usercontrols:CurrentlyPlayingControl
             Grid.Column="0"
@@ -92,6 +96,7 @@
                  here because a NativeControlHost has no intrinsic size of its
                  own to measure. -->
             <usercontrols:RoutePickerControl
+              x:Name="RoutePicker"
               Width="28" Height="28"
               VerticalAlignment="Center" />
           </StackPanel>

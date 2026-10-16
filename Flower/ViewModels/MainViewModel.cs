@@ -475,6 +475,20 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     public bool PlaybackControlsAtBottom => PlaybackControlsPlacement == PlaybackControlsPlacement.Bottom;
 
+    // Settings > General - see AppSettings.TintPlayerBarWithAlbumColor.
+    public bool TintPlayerBarWithAlbumColor
+    {
+        get => _appSettings.TintPlayerBarWithAlbumColor;
+        set
+        {
+            if (_appSettings.TintPlayerBarWithAlbumColor == value)
+                return;
+            _appSettings.TintPlayerBarWithAlbumColor = value;
+            SaveSettings();
+            OnPropertyChanged();
+        }
+    }
+
     // Both delegate to ITunesImportCoordinator, which owns the cooldown and
     // the apply/notify/save sequence - kept here as forwarders because
     // App.axaml.cs's startup rescan and SettingsWindow both reach them through

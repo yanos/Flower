@@ -25,5 +25,16 @@ namespace Flower.UserControls
             IsVisible = picker != null;
             Content = picker;
         }
+
+        // Passed on to a picker that can take it (IRoutePickerGlyphColor);
+        // the rest keep their own.
+        public Avalonia.Media.Color? GlyphColor
+        {
+            set
+            {
+                if (Content is IRoutePickerGlyphColor picker)
+                    picker.GlyphColor = value;
+            }
+        }
     }
 }
