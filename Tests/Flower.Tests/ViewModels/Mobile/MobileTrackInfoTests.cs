@@ -61,11 +61,10 @@ public class MobileTrackInfoTests : PinnedDataDirectory
         window.Close();
     }
 
-    // The card beside the cover says what it is the cover of, and follows
-    // the boxes as they are typed in. A song on the paired server names the
-    // server where a file path would be.
+    // A song on the paired server names the server where a file path would
+    // be.
     [AvaloniaFact]
-    public void The_cover_card_names_the_album_artist_and_year_as_they_are_edited()
+    public void A_song_on_the_paired_server_names_the_server_for_its_file()
     {
         var local = new Track { Title = "Local", Path = "/music/local.mp3", Album = "A", Artists = "X", Year = "2003", Genre = "Electronic" };
         var elsewhere = new Track { Title = "Elsewhere", Album = "B", Artists = "Y", OriginDeviceFingerprint = "server-fp" };
@@ -84,18 +83,10 @@ public class MobileTrackInfoTests : PinnedDataDirectory
 
         Show(vm, "Local");
         var sheet = FindSheet(window);
-        Assert.Equal("A", Value(sheet, "AlbumHeading"));
-        Assert.Equal("X", Value(sheet, "ArtistHeading"));
-        Assert.Equal("2003", Value(sheet, "YearHeading"));
         Assert.Equal("File", Value(sheet, "FileLabel"));
-
-        sheet.FindControl<TextBox>("AlbumBox")!.Text = "Renamed";
-        Dispatcher.UIThread.RunJobs();
-        Assert.Equal("Renamed", Value(sheet, "AlbumHeading"));
 
         vm.CloseSheetCommand.Execute(null);
         Show(vm, "Elsewhere");
-        Assert.Equal("B", Value(sheet, "AlbumHeading"));
         Assert.Equal("Source", Value(sheet, "FileLabel"));
         Assert.Equal("Lambda", Value(sheet, "PathValue"));
 
@@ -138,7 +129,6 @@ public class MobileTrackInfoTests : PinnedDataDirectory
         var artistBox = sheet.FindControl<TextBox>("ArtistBox")!;
         Assert.Equal("", titleBox.Text);
         Assert.Equal("Multiple values", titleBox.PlaceholderText);
-        Assert.Equal("3 songs", Value(sheet, "TitleHeading"));
         Assert.Equal("Add N To (X)", artistBox.Text);
 
         artistBox.Text = "Add N to (X)";
@@ -150,6 +140,73 @@ public class MobileTrackInfoTests : PinnedDataDirectory
 
         Pump(300);
         window.Close();
+    }
+
+    // One song's Track Info steps along the list it was opened from, a song
+    // at a time, keeping what was typed for the song it leaves - and the
+    // sheet over a whole album has nowhere to step.
+    [AvaloniaFact]
+    public void Track_info_for_one_song_steps_through_its_list_saving_on_the_way()
+    {
+        Track Song(string title, uint n) => new()
+        {
+            Title = title, Album = "A", Artists = "X", TrackNumber = n,
+            OriginDeviceFingerprint = "server-fp", OriginTrackId = $"t{n}",
+        };
+        var tracks = new List<Track> { Song("One", 1), Song("Two", 2), Song("Three", 3) };
+        using var parts = MainViewModelHarness.BuildMobile(new Library(tracks), new MainPlaylist(tracks));
+        parts.Parts.AppSettings.PairedServerFingerprint = "server-fp";
+        parts.Parts.AppSettings.PairedServerGrantsAdmin = true;
+        var vm = parts.Mobile;
+
+        var window = new Window { Width = 390, Height = 844 };
+        window.Styles.Add(new FluentTheme());
+        window.Content = new MobileMainView { DataContext = vm };
+        window.Show();
+        vm.SelectTabCommand.Execute(nameof(MobileTab.Songs));
+        Pump(500);
+
+        var order = vm.Main.Rows.Select(r => r.Track).ToList();
+        Show(vm, order[0].Title!);
+        var sheet = FindSheet(window);
+        var titleBox = sheet.FindControl<TextBox>("TitleBox")!;
+        Assert.True(vm.CanStepTrackInfo);
+        Assert.False(vm.HasPreviousTrackInfo);
+        Assert.True(vm.HasNextTrackInfo);
+
+        var first = order[0];
+        titleBox.Text = "Renamed";
+        Click(sheet, "NextSongButton");
+
+        Assert.Equal("Renamed", first.Title);
+        Assert.Equal(order[1].Title, titleBox.Text);
+        Assert.True(vm.HasPreviousTrackInfo);
+
+        Click(sheet, "NextSongButton");
+        Assert.Equal(order[2].Title, titleBox.Text);
+        Assert.False(vm.HasNextTrackInfo);
+
+        Click(sheet, "PreviousSongButton");
+        Click(sheet, "PreviousSongButton");
+        Assert.Equal("Renamed", titleBox.Text);
+
+        vm.CloseSheetCommand.Execute(null);
+        vm.OpenAlbumActionsCommand.Execute(new Flower.ViewModels.Mobile.AlbumTileViewModel
+        {
+            Name = "A", Artist = "X", Tracks = tracks, RepresentativeTrack = tracks[0],
+        });
+        vm.ViewAlbumActionTargetTrackInfoCommand.Execute(null);
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(vm.CanStepTrackInfo);
+
+        Pump(300);
+        window.Close();
+    }
+
+    private static void Click(TrackInfoView sheet, string name)
+    {
+        sheet.FindControl<Button>(name)!.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+        Dispatcher.UIThread.RunJobs();
     }
 
     private static void Show(MobileMainViewModel vm, string title)

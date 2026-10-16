@@ -755,7 +755,10 @@
                             IsOpen="{Binding IsShowingAlbumActions}">
       <views:AlbumActionsView />
     </controls:SlidingSheet>
+    <!-- Pulled up under the status bar, as Now Playing is, so the sheet
+         covers the whole screen rather than stopping at the clock. -->
     <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"
+                            Margin="{DynamicResource ScreenStackBleed}"
                             Entrance="FromBottom"
                             IsOpen="{Binding IsShowingTrackInfo}">
       <views:TrackInfoView />

@@ -1,0 +1,78 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="Flower.Views.Mobile.ArtworkViewer"
+             Background="Black"
+             Opacity="0">
+
+  <UserControl.Transitions>
+    <Transitions>
+      <DoubleTransition Property="Opacity" Duration="0:0:0.18" />
+    </Transitions>
+  </UserControl.Transitions>
+
+  <UserControl.Styles>
+    <!-- Over black whatever the theme, as a photo is shown everywhere else on
+         a phone: the words are white and the second button a light glass. -->
+    <Style Selector="TextBlock.caption">
+      <Setter Property="Foreground" Value="#B3FFFFFF" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+      <Setter Property="TextAlignment" Value="Center" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style Selector="Button.choice">
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Padding" Value="16,11" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.glass">
+      <Setter Property="Foreground" Value="White" />
+    </Style>
+    <Style Selector="Button.glass /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#33FFFFFF" />
+      <Setter Property="Foreground" Value="White" />
+    </Style>
+    <Style Selector="Button.glass:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="#55FFFFFF" />
+    </Style>
+  </UserControl.Styles>
+
+  <!-- Inset by the safe area from code: this sits on the window's overlay
+       layer, above MobileMainView and so out of reach of its inset
+       resources. -->
+  <Grid x:Name="Frame" RowDefinitions="Auto,*,Auto">
+
+    <Button Grid.Row="0" x:Name="CloseButton"
+            HorizontalAlignment="Right"
+            Margin="12,4"
+            Width="40" Height="40" CornerRadius="20" Padding="0"
+            Classes="glass"
+            HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+            Click="Close_Click">
+      <materialIcons:MaterialIcon Kind="Close" Width="22" Height="22" Foreground="White" />
+    </Button>
+
+    <Panel Grid.Row="1" Margin="0,8">
+      <Image x:Name="Picture" Stretch="Uniform" />
+      <TextBlock x:Name="Status" Classes="caption"
+                 VerticalAlignment="Center" IsVisible="False" />
+    </Panel>
+
+    <StackPanel Grid.Row="2" Spacing="12" Margin="20,8,20,16">
+      <TextBlock x:Name="Caption" Classes="caption" />
+      <TextBlock x:Name="Detail" Classes="caption" FontSize="13" Foreground="#80FFFFFF" IsVisible="False" />
+      <!-- Only for a cover that is not the song's yet - one Find Online came
+           back with - so taking it is a deliberate tap, never the sheet's own
+           Save. -->
+      <Grid x:Name="Choices" ColumnDefinitions="*,*" ColumnSpacing="10" IsVisible="False">
+        <Button Grid.Column="0" x:Name="NextButton" Classes="choice glass" Click="Next_Click"
+                Content="Try Another" />
+        <Button Grid.Column="1" x:Name="UseButton" Classes="choice primary" Click="Use_Click"
+                Content="Use This Cover" />
+      </Grid>
+    </StackPanel>
+  </Grid>
+</UserControl>

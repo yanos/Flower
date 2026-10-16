@@ -165,8 +165,51 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     {
         if (tracks.Count == 0)
             return;
+        SetTrackInfoSequence(null, 0);
         TrackInfoTracks = tracks;
         ActiveSheet = MobileSheet.TrackInfo;
+    }
+
+    // The list one song's Track Info was opened from - an album's songs, a
+    // playlist's, the Songs tab's, a search's - and where in it the song sits,
+    // so the sheet's arrows can step along it a song at a time, as the
+    // desktop window's Prev/Next do. Null for the sheet opened over several
+    // songs at once (there is no "next" when a set is edited as one) and for
+    // Now Playing's, which has no list behind it.
+    private IReadOnlyList<Track>? _trackInfoSequence;
+    private int _trackInfoIndex;
+
+    public bool CanStepTrackInfo => _trackInfoSequence != null;
+    public bool HasPreviousTrackInfo => _trackInfoSequence != null && _trackInfoIndex > 0;
+    public bool HasNextTrackInfo => _trackInfoSequence != null && _trackInfoIndex < _trackInfoSequence.Count - 1;
+
+    private void OpenTrackInfo(IReadOnlyList<Track> sequence, int index)
+    {
+        SetTrackInfoSequence(sequence, index);
+        TrackInfoTracks = [sequence[index]];
+        ActiveSheet = MobileSheet.TrackInfo;
+    }
+
+    // The sheet saves what was typed for the song it is leaving before it
+    // calls this - see TrackInfoView.Step.
+    public void StepTrackInfo(int delta)
+    {
+        if (_trackInfoSequence is not { } sequence)
+            return;
+        var index = _trackInfoIndex + delta;
+        if (index < 0 || index >= sequence.Count)
+            return;
+        SetTrackInfoSequence(sequence, index);
+        TrackInfoTracks = [sequence[index]];
+    }
+
+    private void SetTrackInfoSequence(IReadOnlyList<Track>? sequence, int index)
+    {
+        _trackInfoSequence = sequence is { Count: > 1 } ? sequence : null;
+        _trackInfoIndex = index;
+        OnPropertyChanged(nameof(CanStepTrackInfo));
+        OnPropertyChanged(nameof(HasPreviousTrackInfo));
+        OnPropertyChanged(nameof(HasNextTrackInfo));
     }
     public ICommand OpenAddToPlaylistCommand { get; }
     public ICommand AddTrackToPlaylistCommand { get; }
@@ -2264,7 +2307,16 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         });
         ViewTrackInfoCommand = new RelayCommand(() =>
         {
-            if (ActionTarget is { } track)
+            if (ActionTarget is not { } track)
+                return;
+            // Found by its row rather than its song, since a playlist can
+            // hold one song twice. A row from somewhere CurrentTrackRows does
+            // not cover just opens on its own.
+            var rows = CurrentTrackRows;
+            var index = _actionRow != null ? rows.IndexOf(_actionRow) : -1;
+            if (index >= 0)
+                OpenTrackInfo(rows.Select(r => r.Track).ToList(), index);
+            else
                 OpenTrackInfo([track]);
         });
         ViewAlbumActionTargetTrackInfoCommand = new RelayCommand(() => OpenTrackInfo(AlbumActionTargetTracks()));

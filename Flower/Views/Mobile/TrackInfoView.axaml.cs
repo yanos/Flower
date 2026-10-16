@@ -2,11 +2,17 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Globalization;
+using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform.Storage;
 
 using CommunityToolkit.Mvvm.DependencyInjection;
 
@@ -43,6 +49,13 @@ public partial class TrackInfoView : UserControl
     private IReadOnlyList<Track> _tracks = [];
     private Track? _track => _tracks.Count > 0 ? _tracks[0] : null;
     private int _artRequestId; // guards against a stale track's art load winning a race
+    // The cover's own bytes, undecoded - what the resolution under it is
+    // measured from and what tapping it opens at full size.
+    private byte[]? _artBytes;
+    // The full-screen cover, while it is open - see ArtworkViewer.
+    private ArtworkViewer? _viewer;
+    // A Find Online still searching or downloading, dropped with the sheet.
+    private CancellationTokenSource? _findArt;
 
     // Each box and the tag it edits (TrackTagFields, shared with the desktop
     // window), with what it showed when the sheet opened - a box whose text
@@ -50,6 +63,9 @@ public partial class TrackInfoView : UserControl
     // alone across several songs.
     private (TextBox Box, TrackTagField Field)[] _fields = [];
     private readonly Dictionary<TextBox, string> _shown = new();
+    // What a box says when empty, as the XAML gave it - the lyrics box, which
+    // has no name beside it - put back after "Multiple values".
+    private readonly Dictionary<TextBox, string?> _placeholders = new();
 
     // The library's own spellings, offered under a box as it is typed in.
     private readonly List<TagSuggestions> _suggestions = [];
@@ -84,13 +100,14 @@ public partial class TrackInfoView : UserControl
             (LyricsBox, TrackTagFields.Lyrics),
         ];
 
+        foreach (var (box, _) in _fields)
+            _placeholders[box] = box.PlaceholderText;
+
         _suggestions.Add(new TagSuggestions(ArtistBox, ArtistSuggestions));
         _suggestions.Add(new TagSuggestions(AlbumBox, AlbumSuggestions));
         _suggestions.Add(new TagSuggestions(AlbumArtistBox, AlbumArtistSuggestions));
         _suggestions.Add(new TagSuggestions(ComposerBox, ComposerSuggestions));
         _suggestions.Add(new TagSuggestions(GenreBox, GenreSuggestions));
-
-        TitleBox.TextChanged += (_, _) => UpdateTitleHeading();
 
         DataContextChanged += (_, _) =>
         {
@@ -105,23 +122,26 @@ public partial class TrackInfoView : UserControl
             return;
         if (e.PropertyName is nameof(MobileMainViewModel.TrackInfoTracks) or nameof(MobileMainViewModel.ActiveSheet))
         {
+            // The full-screen cover sits above the sheet rather than in it, so
+            // it would outlive a sheet closed under it (Android's back).
+            if (!vm.IsShowingTrackInfo)
+            {
+                _findArt?.Cancel();
+                CloseArtwork();
+            }
+
             if (vm.IsShowingTrackInfo && vm.TrackInfoTracks.Count > 0 && !ReferenceEquals(vm.TrackInfoTracks, _tracks))
                 Populate(vm.TrackInfoTracks);
         }
     }
 
-    // The title, or - for several songs whose titles differ - how many there
-    // are, rather than nothing.
-    private void UpdateTitleHeading() =>
-        TitleHeading.Text = !string.IsNullOrEmpty(TitleBox.Text) || _tracks.Count < 2
-            ? TitleBox.Text ?? ""
-            : $"{_tracks.Count} songs";
-
     // One value for the whole set when they agree, "Multiple values" when not.
+    private const string MixedValues = "Multiple values";
+
     private string UniformOrMixed(Func<Track, string> display)
     {
         var values = _tracks.Select(display).Distinct().Take(2).ToList();
-        return values.Count == 1 ? values[0] : "Multiple values";
+        return values.Count == 1 ? values[0] : MixedValues;
     }
 
     private void Populate(IReadOnlyList<Track> tracks)
@@ -140,10 +160,9 @@ public partial class TrackInfoView : UserControl
             box.IsEnabled = editable;
             var common = TrackTagFields.CommonValue(field, tracks);
             box.Text = common ?? "";
-            box.PlaceholderText = common == null ? "Multiple values" : null;
+            box.PlaceholderText = common == null ? MixedValues : _placeholders.GetValueOrDefault(box);
             _shown[box] = common ?? "";
         }
-        UpdateTitleHeading();
 
         if (vm != null)
         {
@@ -160,6 +179,9 @@ public partial class TrackInfoView : UserControl
         // UpdateListening for why a play count with no last-played date is
         // right (an iTunes import brings the count and no date).
         PlayCountValue.Text  = UniformOrMixed(t => t.TotalPlayCount.ToString(CultureInfo.CurrentCulture));
+        // A count is a number at display size; the words for there being
+        // several are not, and at that size they do not fit the card.
+        PlayCountValue.FontSize = PlayCountValue.Text == MixedValues ? 15 : 22;
         LastPlayedValue.Text = UniformOrMixed(t => t.LastPlayedAt is { } at
             ? $"{at.LocalDateTime.ToString("MMM d, yyyy", CultureInfo.CurrentCulture)} {at.LocalDateTime.ToShortTimeString()}"
             : "—");
@@ -184,8 +206,10 @@ public partial class TrackInfoView : UserControl
         // Only where a cover can be written: a file on this phone, or - for a
         // song of the paired server's - an admin's right to have the server
         // write it (AlbumArtEditor.CanWrite).
-        PasteArtButton.IsVisible = ArtEditor() is { CanWrite: true };
-        PasteArtButton.IsEnabled = true;
+        _findArt?.Cancel();
+        CloseArtwork();
+        ArtButtons.IsVisible = ArtEditor() is { CanWrite: true };
+        SetArtButtonsEnabled(true);
         ArtMessage.IsVisible = false;
 
         if (_track is { } first)
@@ -199,12 +223,62 @@ public partial class TrackInfoView : UserControl
             ? vm.Main.ArtEditorFor(_tracks, _logger)
             : null;
 
+    // ── Cover ──────────────────────────────────────────────────────────────
+
+    // A picture from the phone: the photo library on iOS, which Avalonia opens
+    // for a picker asking for images alone, and the system picker narrowed to
+    // images on Android. Read through the stream rather than a path, which an
+    // Android content URI does not have.
+    private async void ChoosePhoto_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_track is not { } track || TopLevel.GetTopLevel(this)?.StorageProvider is not { CanOpen: true } storage)
+            return;
+
+        ArtMessage.IsVisible = false;
+        var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Choose a Photo",
+            AllowMultiple = false,
+            FileTypeFilter = [FilePickerFileTypes.ImageAll],
+        });
+        if (files.FirstOrDefault() is not { } file)
+            return;
+
+        byte[] bytes;
+        try
+        {
+            await using var stream = await file.OpenReadAsync();
+            using var copy = new MemoryStream();
+            await stream.CopyToAsync(copy);
+            bytes = copy.ToArray();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not read the chosen photo {Name}", file.Name);
+            ShowArtMessage("That photo couldn't be read.");
+            return;
+        }
+        finally
+        {
+            file.Dispose();
+        }
+
+        // A format the tags have a name for goes in as it is; anything else
+        // Skia can still decode goes in as PNG.
+        if (LocalAlbumArtReader.MimeTypeForBytes(bytes) is { } mimeType)
+            await WriteArtAsync(track, bytes, mimeType);
+        else if (await Task.Run(() => ReencodeAsPng(bytes)) is { } png)
+            await WriteArtAsync(track, png, ClipboardArt.MimeType);
+        else
+            ShowArtMessage("That photo isn't in a format Flower can read.");
+    }
+
     // The clipboard's image, as the song's cover - written straight into the
     // file (or by the server, for one of its songs), and the card's cover
     // redrawn from it.
     private async void PasteArt_Click(object? sender, RoutedEventArgs e)
     {
-        if (_track is not { } track || ArtEditor() is not { CanWrite: true } editor)
+        if (_track is not { } track)
             return;
 
         ArtMessage.IsVisible = false;
@@ -215,18 +289,154 @@ public partial class TrackInfoView : UserControl
             return;
         }
 
-        PasteArtButton.IsEnabled = false;
+        await WriteArtAsync(track, png, ClipboardArt.MimeType);
+    }
+
+    // A cover found online for the album the boxes name (OnlineCoverArt) -
+    // the boxes rather than the song, so a misspelt album can be corrected
+    // and searched again before Save. What comes back is shown on the whole
+    // screen, one candidate at a time, and only Use This Cover writes it.
+    private async void FindArt_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_track is not { } track)
+            return;
+
+        var album = FirstNonBlank(AlbumBox.Text, track.Album);
+        var artist = FirstNonBlank(AlbumArtistBox.Text, ArtistBox.Text, track.EffectiveAlbumArtist);
+        var title = FirstNonBlank(TitleBox.Text, track.Title);
+
+        _findArt?.Cancel();
+        var find = _findArt = new CancellationTokenSource();
+        ArtMessage.IsVisible = false;
+        FindArtButton.IsEnabled = false;
+        FindArtLabel.Text = "Searching…";
+
+        var finder = new OnlineCoverArt(_logger);
+        IReadOnlyList<OnlineCoverArt.Candidate>? found;
         try
         {
-            if (await editor.WriteAsync(png, ClipboardArt.MimeType) is { } message)
+            found = await finder.SearchAsync(album, artist, title, find.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        finally
+        {
+            FindArtButton.IsEnabled = true;
+            FindArtLabel.Text = "Find Online";
+        }
+
+        if (find.IsCancellationRequested || _track != track)
+            return;
+        if (found is null)
+        {
+            ShowArtMessage("Couldn't search online. Check the connection, then try again.");
+            return;
+        }
+        if (found.Count == 0)
+        {
+            var named = string.IsNullOrWhiteSpace(album) ? title : album;
+            ShowArtMessage($"No cover found online for \u201c{named}\u201d. Check the album and artist below, then try again.");
+            return;
+        }
+
+        var viewer = OpenArtwork(offersChoice: true);
+        viewer.SetHasNext(found.Count > 1);
+        var index = 0;
+        var shown = 0;
+        byte[]? picked = null;
+
+        async Task ShowCandidateAsync()
+        {
+            var showing = ++shown;
+            var candidate = found[index];
+            picked = null;
+            viewer.ShowStatus("Downloading…");
+
+            byte[] bytes;
+            try
+            {
+                bytes = await finder.DownloadAsync(candidate, find.Token);
+            }
+            catch (Exception ex) when (!find.IsCancellationRequested)
+            {
+                _logger.LogWarning(ex, "Could not download the cover found for {Album}", candidate.Album);
+                if (showing == shown)
+                    viewer.ShowStatus("This cover couldn't be downloaded.");
+                return;
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            var decoded = await Task.Run(() => DecodeForScreen(bytes));
+            if (showing != shown || !viewer.IsOpen)
+            {
+                decoded?.Bitmap.Dispose();
+                return;
+            }
+            if (decoded is not { } picture)
+            {
+                viewer.ShowStatus("This cover couldn't be read.");
+                return;
+            }
+
+            picked = bytes;
+            var position = found.Count > 1 ? $" \u00b7 {index + 1} of {found.Count}" : "";
+            viewer.ShowPicture(picture.Bitmap,
+                string.IsNullOrEmpty(candidate.Artist) ? candidate.Album : $"{candidate.Album} \u2014 {candidate.Artist}",
+                Resolution(picture.Size) + position);
+        }
+
+        viewer.NextRequested += async (_, _) =>
+        {
+            index = (index + 1) % found.Count;
+            await ShowCandidateAsync();
+        };
+        viewer.Accepted += async (_, _) =>
+        {
+            if (picked is not { } bytes)
+                return;
+            viewer.SetBusy(true);
+            await WriteArtAsync(track, bytes, LocalAlbumArtReader.MimeTypeForBytes(bytes) ?? "image/jpeg");
+            viewer.Close();
+        };
+        viewer.Closed += (_, _) => find.Cancel();
+
+        await ShowCandidateAsync();
+    }
+
+    private static string FirstNonBlank(params string?[] values) =>
+        values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v))?.Trim() ?? "";
+
+    // Every way of changing the cover ends here: written into every song
+    // being edited, and the card's cover read back from what was written.
+    private async Task WriteArtAsync(Track track, byte[] bytes, string mimeType)
+    {
+        if (ArtEditor() is not { CanWrite: true } editor)
+            return;
+
+        SetArtButtonsEnabled(false);
+        try
+        {
+            if (await editor.WriteAsync(bytes, mimeType) is { } message)
                 ShowArtMessage(message);
         }
         finally
         {
-            PasteArtButton.IsEnabled = true;
+            SetArtButtonsEnabled(true);
         }
         if (_track == track)
             await LoadAlbumArtAsync(track);
+    }
+
+    private void SetArtButtonsEnabled(bool enabled)
+    {
+        ChoosePhotoButton.IsEnabled = enabled;
+        FindArtButton.IsEnabled = enabled;
+        PasteArtButton.IsEnabled = enabled;
     }
 
     private void ShowArtMessage(string message)
@@ -235,14 +445,125 @@ public partial class TrackInfoView : UserControl
         ArtMessage.IsVisible = true;
     }
 
+    // The cover on the card, and under it its real size: measured from the
+    // undecoded bytes (AlbumArtLoader.TryGetArt), since the bitmap the card
+    // draws is capped at the loader's display size and would report the cap.
     private async Task LoadAlbumArtAsync(Track track)
     {
         var requestId = ++_artRequestId;
         ArtView.AlbumArt = null;
+        ArtResolution.IsVisible = false;
+        _artBytes = null;
+
         var bitmap = await AlbumArtLoader.Current.LoadAsync(track);
-        if (requestId == _artRequestId)
-            ArtView.AlbumArt = bitmap;
+        var (bytes, size) = await Task.Run(() =>
+        {
+            var art = AlbumArtLoader.TryGetArt(track);
+            return (art?.Bytes, art is null ? null : MeasureArt(art.Bytes));
+        });
+        if (requestId != _artRequestId)
+            return;
+
+        ArtView.AlbumArt = bitmap;
+        _artBytes = bytes;
+        ArtResolution.Text = size is { } pixels ? Resolution(pixels) : "";
+        ArtResolution.IsVisible = size is not null;
     }
+
+    private static string Resolution(PixelSize size) =>
+        $"{size.Width.ToString(CultureInfo.CurrentCulture)} \u00d7 {size.Height.ToString(CultureInfo.CurrentCulture)}";
+
+    private static PixelSize? MeasureArt(byte[] bytes)
+    {
+        try
+        {
+            using var stream = new MemoryStream(bytes);
+            using var full = new Bitmap(stream);
+            return full.PixelSize;
+        }
+        catch
+        {
+            // Art that will not decode shows as the placeholder everywhere
+            // else; here it just means no size under it.
+            return null;
+        }
+    }
+
+    // A picture for the full screen: its own size, or 2048 wide where it is
+    // wider - sharp on any phone, without holding a 3000-pixel decode.
+    private const int ScreenPixels = 2048;
+
+    private static (Bitmap Bitmap, PixelSize Size)? DecodeForScreen(byte[] bytes)
+    {
+        try
+        {
+            using var stream = new MemoryStream(bytes);
+            var full = new Bitmap(stream);
+            var size = full.PixelSize;
+            if (size.Width <= ScreenPixels)
+                return (full, size);
+
+            full.Dispose();
+            stream.Position = 0;
+            return (Bitmap.DecodeToWidth(stream, ScreenPixels), size);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static byte[]? ReencodeAsPng(byte[] bytes)
+    {
+        try
+        {
+            using var stream = new MemoryStream(bytes);
+            using var bitmap = new Bitmap(stream);
+            using var png = new MemoryStream();
+            bitmap.Save(png);
+            return png.ToArray();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    // Tapping the cover shows it on the whole screen, at its own size.
+    private async void Art_Tapped(object? sender, TappedEventArgs e)
+    {
+        if (_artBytes is not { } bytes)
+            return;
+
+        e.Handled = true;
+        var viewer = OpenArtwork(offersChoice: false);
+        if (await Task.Run(() => DecodeForScreen(bytes)) is not { } picture)
+        {
+            viewer.ShowStatus("This cover couldn't be read.");
+            return;
+        }
+        if (!viewer.IsOpen)
+        {
+            picture.Bitmap.Dispose();
+            return;
+        }
+        viewer.ShowPicture(picture.Bitmap, Resolution(picture.Size));
+    }
+
+    private ArtworkViewer OpenArtwork(bool offersChoice)
+    {
+        CloseArtwork();
+        var viewer = _viewer = new ArtworkViewer { OffersChoice = offersChoice };
+        viewer.Closed += (_, _) =>
+        {
+            if (_viewer == viewer)
+                _viewer = null;
+        };
+        viewer.Open(this);
+        return viewer;
+    }
+
+    private void CloseArtwork() => _viewer?.Close();
 
     // ── Genre ──────────────────────────────────────────────────────────────
 
@@ -273,6 +594,17 @@ public partial class TrackInfoView : UserControl
     {
         await SaveChanges();
         (DataContext as MobileMainViewModel)?.CloseSheetCommand.Execute(null);
+    }
+
+    private async void Previous_Click(object? sender, RoutedEventArgs e) => await Step(-1);
+    private async void Next_Click(object? sender, RoutedEventArgs e) => await Step(+1);
+
+    // Saved before moving on, as the desktop window's Prev/Next do: stepping
+    // to the next song is not leaving, so what was typed for this one is kept.
+    private async Task Step(int delta)
+    {
+        await SaveChanges();
+        (DataContext as MobileMainViewModel)?.StepTrackInfo(delta);
     }
 
     // The boxes whose text changed since the sheet opened, applied to every

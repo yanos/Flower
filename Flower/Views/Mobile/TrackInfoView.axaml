@@ -13,6 +13,10 @@
              controls:SoftKeyboard.DismissOnTapOutside="True">
 
   <UserControl.Styles>
+    <Style Selector="Border.step:disabled">
+      <Setter Property="Opacity" Value="0.4" />
+    </Style>
+
     <!-- A secondary action, as on Settings: a grey fill rather than Fluent's
          outlined box. -->
     <Style Selector="Button.soft">
@@ -22,37 +26,20 @@
       <Setter Property="Padding" Value="14,9" />
       <Setter Property="FontWeight" Value="Medium" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
+      <!-- Stacked full width beside the cover, so the glyphs line up. -->
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
     </Style>
     <Style Selector="Button.soft materialIcons|MaterialIcon">
       <Setter Property="Width" Value="18" />
       <Setter Property="Height" Value="18" />
     </Style>
-    <!-- Cards as on Settings: lighter than the page, rounded, each headed by
-         an accent glyph and a heading in small capitals. -->
+    <!-- Cards as on Settings: lighter than the page, and rounded. -->
     <Style Selector="Border.card">
       <Setter Property="Background" Value="{DynamicResource AppBackgroundBrush}" />
       <Setter Property="CornerRadius" Value="18" />
       <Setter Property="BoxShadow" Value="{DynamicResource AppButtonShadow}" />
       <Setter Property="Padding" Value="14,14,14,16" />
       <Setter Property="Margin" Value="16,0,16,14" />
-    </Style>
-    <Style Selector="TextBlock.section-header">
-      <Setter Property="FontSize" Value="13" />
-      <Setter Property="LetterSpacing" Value="1.2" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}" />
-      <Setter Property="VerticalAlignment" Value="Center" />
-    </Style>
-    <Style Selector="StackPanel.heading">
-      <Setter Property="Orientation" Value="Horizontal" />
-      <Setter Property="Spacing" Value="10" />
-      <Setter Property="Margin" Value="2,0,0,2" />
-    </Style>
-    <Style Selector="StackPanel.heading > materialIcons|MaterialIcon">
-      <Setter Property="Width" Value="18" />
-      <Setter Property="Height" Value="18" />
-      <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}" />
-      <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
 
     <!-- A field's name, to the left of its box. -->
@@ -129,19 +116,47 @@
     </Style>
   </UserControl.Styles>
 
-  <Grid RowDefinitions="Auto,*">
+  <!-- Below the status bar: the sheet itself runs up under it (MobileMainView
+       pulls it up by ScreenStackBleed) so it covers the whole screen. -->
+  <Grid RowDefinitions="Auto,*" Margin="{DynamicResource StatusBarInset}">
 
     <!-- A round chevron and a round check facing it, as on the smart
          playlist editor: 40px circles 12 in from either edge. The check is
          Save; the chevron leaves without saving. The title is centred on the
-         sheet between them. -->
+         sheet between them. Opened for one song from a list - an album, a
+         playlist, Songs - it has an arrow either side, stepping along that
+         list a song at a time and saving what was typed on the way (see
+         MobileMainViewModel.StepTrackInfo); dimmed at either end. -->
     <Panel Grid.Row="0" Height="60" Margin="12,4,12,4">
-      <TextBlock Text="Track Info"
-                 FontFamily="{DynamicResource AppDisplayFontFamily}"
-                 FontSize="32"
-                 FontWeight="SemiBold"
-                 Foreground="{DynamicResource AppChromeBrush}"
-                 HorizontalAlignment="Center" VerticalAlignment="Center" />
+      <StackPanel Orientation="Horizontal" Spacing="10"
+                  HorizontalAlignment="Center" VerticalAlignment="Center">
+        <Border Classes="floating step" Width="40"
+                IsVisible="{Binding CanStepTrackInfo}"
+                IsEnabled="{Binding HasPreviousTrackInfo}">
+          <Button x:Name="PreviousSongButton"
+                  Classes="pill"
+                  Click="Previous_Click"
+                  HorizontalAlignment="Center">
+            <materialIcons:MaterialIcon Kind="ChevronLeft" Width="22" Height="22" />
+          </Button>
+        </Border>
+        <TextBlock Text="Track Info"
+                   FontFamily="{DynamicResource AppDisplayFontFamily}"
+                   FontSize="32"
+                   FontWeight="SemiBold"
+                   Foreground="{DynamicResource AppChromeBrush}"
+                   VerticalAlignment="Center" />
+        <Border Classes="floating step" Width="40"
+                IsVisible="{Binding CanStepTrackInfo}"
+                IsEnabled="{Binding HasNextTrackInfo}">
+          <Button x:Name="NextSongButton"
+                  Classes="pill"
+                  Click="Next_Click"
+                  HorizontalAlignment="Center">
+            <materialIcons:MaterialIcon Kind="ChevronRight" Width="22" Height="22" />
+          </Button>
+        </Border>
+      </StackPanel>
       <Border Classes="floating" Width="40" HorizontalAlignment="Left">
         <Button Classes="pill"
                 Click="Cancel_Click"
@@ -163,65 +178,65 @@
                   controls:SoftKeyboard.AvoidOcclusion="True">
       <StackPanel Margin="0,4,0,16">
 
-        <!-- The cover beside what it is the cover of: the title, album,
-             artist and year at the top - following the boxes below as they are
-             typed in, so the card always shows what Save would write - and at
-             the bottom, level with the cover's foot, the way to change the
-             cover from the clipboard (ClipboardArt). That writes at once, like
-             the desktop Artwork tab's buttons, rather than waiting for Save:
-             a picture goes into the file, not into a box. -->
+        <!-- The cover, its size in pixels under it, and beside it the ways to
+             change it: a photo from the phone, one found online for the album
+             named in the boxes below, or the clipboard's image (ClipboardArt).
+             Each writes at once, like the desktop Artwork tab's buttons,
+             rather than waiting for Save: a picture goes into the file, not
+             into a box. Tapping the cover shows it on the whole screen. -->
         <Border Classes="card">
-          <Grid ColumnDefinitions="128,*" ColumnSpacing="14">
-            <controls:AlbumArtView x:Name="ArtView" Grid.Column="0"
-                                   Width="128" Height="128" ArtCornerRadius="12"
-                                   VerticalAlignment="Top" />
-            <Grid Grid.Column="1" RowDefinitions="Auto,*,Auto" MinHeight="128">
-              <StackPanel Grid.Row="0" Spacing="2">
-                <!-- Set from code rather than bound, so several songs with
-                     different titles read as how many there are. -->
-                <TextBlock x:Name="TitleHeading"
-                           FontSize="18" FontWeight="SemiBold"
-                           TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis" />
-                <TextBlock x:Name="AlbumHeading"
-                           Text="{Binding #AlbumBox.Text}"
-                           FontSize="15"
-                           TextTrimming="CharacterEllipsis" />
-                <TextBlock x:Name="ArtistHeading"
-                           Text="{Binding #ArtistBox.Text}"
-                           FontSize="15"
-                           Foreground="{DynamicResource AppTextSecondaryBrush}"
-                           TextTrimming="CharacterEllipsis" />
-                <TextBlock x:Name="YearHeading"
-                           Text="{Binding #YearBox.Text}"
-                           FontSize="14"
-                           Foreground="{DynamicResource AppTextMutedBrush}" />
-              </StackPanel>
-              <StackPanel Grid.Row="2" Spacing="4" Margin="0,8,0,0">
-                <Button x:Name="PasteArtButton"
-                        Classes="soft"
-                        HorizontalAlignment="Left"
-                        Click="PasteArt_Click">
-                  <StackPanel Orientation="Horizontal" Spacing="8">
-                    <materialIcons:MaterialIcon Kind="ContentPaste" />
-                    <TextBlock Text="Paste Cover Art" VerticalAlignment="Center" />
-                  </StackPanel>
-                </Button>
-                <TextBlock x:Name="ArtMessage"
-                           FontSize="13"
-                           Foreground="{DynamicResource AppTextSecondaryBrush}"
-                           TextWrapping="Wrap"
-                           IsVisible="False" />
-              </StackPanel>
-            </Grid>
+          <Grid ColumnDefinitions="128,*" RowDefinitions="Auto,Auto" ColumnSpacing="14">
+            <StackPanel Grid.Column="0" Spacing="6" VerticalAlignment="Top">
+              <controls:AlbumArtView x:Name="ArtView"
+                                     Width="128" Height="128" ArtCornerRadius="12"
+                                     Tapped="Art_Tapped" />
+              <TextBlock x:Name="ArtResolution"
+                         FontSize="12"
+                         Foreground="{DynamicResource AppTextMutedBrush}"
+                         HorizontalAlignment="Center"
+                         IsVisible="False" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" x:Name="ArtButtons" Spacing="8" VerticalAlignment="Top">
+              <Button x:Name="ChoosePhotoButton"
+                      Classes="soft"
+                      HorizontalAlignment="Stretch"
+                      Click="ChoosePhoto_Click">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <materialIcons:MaterialIcon Kind="ImageMultiple" />
+                  <TextBlock Text="Choose Photo" VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+              <Button x:Name="FindArtButton"
+                      Classes="soft"
+                      HorizontalAlignment="Stretch"
+                      Click="FindArt_Click">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <materialIcons:MaterialIcon Kind="ImageSearch" />
+                  <TextBlock x:Name="FindArtLabel" Text="Find Online" VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+              <Button x:Name="PasteArtButton"
+                      Classes="soft"
+                      HorizontalAlignment="Stretch"
+                      Click="PasteArt_Click">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <materialIcons:MaterialIcon Kind="ContentPaste" />
+                  <TextBlock Text="Paste" VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+            </StackPanel>
+            <TextBlock Grid.Row="1" Grid.ColumnSpan="2"
+                       x:Name="ArtMessage"
+                       FontSize="13"
+                       Foreground="{DynamicResource AppTextSecondaryBrush}"
+                       TextWrapping="Wrap"
+                       Margin="0,10,0,0"
+                       IsVisible="False" />
           </Grid>
         </Border>
 
         <Border Classes="card">
           <StackPanel Spacing="10">
-            <StackPanel Classes="heading">
-              <materialIcons:MaterialIcon Kind="MusicNote" />
-              <TextBlock Classes="section-header" Text="BASIC INFORMATION" />
-            </StackPanel>
             <Grid ColumnDefinitions="88,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="10">
               <TextBlock Grid.Row="0" Classes="lbl" Text="Title" />
               <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="TitleBox" Classes="val" />
@@ -241,10 +256,6 @@
 
         <Border Classes="card">
           <StackPanel Spacing="10">
-            <StackPanel Classes="heading">
-              <materialIcons:MaterialIcon Kind="FormatListBulleted" />
-              <TextBlock Classes="section-header" Text="TRACK DETAILS" />
-            </StackPanel>
             <Grid ColumnDefinitions="88,*,40,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="10">
               <TextBlock Grid.Row="0" Classes="lbl" Text="Track #" />
               <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="TrackNumBox" Classes="val num" />
@@ -283,10 +294,6 @@
 
         <Border Classes="card">
           <StackPanel Spacing="10">
-            <StackPanel Classes="heading">
-              <materialIcons:MaterialIcon Kind="Waveform" />
-              <TextBlock Classes="section-header" Text="MUSICAL DETAILS" />
-            </StackPanel>
             <Grid ColumnDefinitions="88,*,52,*" RowDefinitions="Auto,Auto" RowSpacing="10">
               <TextBlock Grid.Row="0" Classes="lbl" Text="BPM" />
               <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="BpmBox" Classes="val num" />
@@ -301,10 +308,6 @@
 
         <Border Classes="card">
           <StackPanel Spacing="10">
-            <StackPanel Classes="heading">
-              <materialIcons:MaterialIcon Kind="AccountMultiple" />
-              <TextBlock Classes="section-header" Text="PEOPLE" />
-            </StackPanel>
             <Grid ColumnDefinitions="108,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="10">
               <TextBlock Grid.Row="0" Classes="lbl" Text="Album Artist" VerticalAlignment="Top" Margin="0,10,0,0" />
               <StackPanel Grid.Row="0" Grid.Column="1">
@@ -326,10 +329,6 @@
 
         <Border Classes="card">
           <StackPanel Spacing="10">
-            <StackPanel Classes="heading">
-              <materialIcons:MaterialIcon Kind="FileDocument" />
-              <TextBlock Classes="section-header" Text="DESCRIPTIONS" />
-            </StackPanel>
             <Grid ColumnDefinitions="108,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="10">
               <TextBlock Grid.Row="0" Classes="lbl" Text="Subtitle" />
               <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="SubtitleBox" Classes="val" />
@@ -349,11 +348,7 @@
 
         <Border Classes="card">
           <StackPanel Spacing="10">
-            <StackPanel Classes="heading">
-              <materialIcons:MaterialIcon Kind="FormatQuoteOpen" />
-              <TextBlock Classes="section-header" Text="LYRICS" />
-            </StackPanel>
-            <controls:TextInput x:Name="LyricsBox" Classes="val multi" MinHeight="100" />
+            <controls:TextInput x:Name="LyricsBox" Classes="val multi" MinHeight="100" PlaceholderText="Lyrics" />
           </StackPanel>
         </Border>
 
@@ -363,12 +358,8 @@
         <Grid ColumnDefinitions="2*,3*" ColumnSpacing="10" Margin="16,0,16,14">
           <Border Grid.Column="0" Classes="card" Margin="0">
             <StackPanel Spacing="4">
-              <StackPanel Classes="heading" Margin="2,0,0,10">
-                <materialIcons:MaterialIcon Kind="Headphones" />
-                <TextBlock Classes="section-header" Text="LISTENING" />
-              </StackPanel>
               <TextBlock Classes="lbl" Text="Play Count" />
-              <TextBlock x:Name="PlayCountValue" FontSize="22" Margin="0,0,0,10" />
+              <TextBlock x:Name="PlayCountValue" FontSize="22" Margin="0,0,0,10" TextWrapping="Wrap" />
               <TextBlock Classes="lbl" Text="Last Played" />
               <TextBlock x:Name="LastPlayedValue" FontSize="15" TextWrapping="Wrap" />
             </StackPanel>
@@ -376,10 +367,6 @@
 
           <Border Grid.Column="1" Classes="card" Margin="0">
             <StackPanel>
-              <StackPanel Classes="heading" Margin="2,0,0,10">
-                <materialIcons:MaterialIcon Kind="CogOutline" />
-                <TextBlock Classes="section-header" Text="TECHNICAL" />
-              </StackPanel>
               <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" RowSpacing="4"
                     RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto">
                 <TextBlock Grid.Row="0" Classes="figureLabel" Text="Duration" />
