@@ -90,4 +90,16 @@ public class SearchTextTests
         Assert.True(SearchText.Contains("Live at the Café de Paris", "de paris"));
         Assert.True(SearchText.Contains("Live at the Café de Paris", "café"));
     }
+
+    // A suggestion is something being typed out, so it matches from the
+    // start of the name or of one of its words, never the middle of a word.
+    [Theory]
+    [InlineData("Nat King Cole", "nat", 0)]
+    [InlineData("The National", "nat", 1)]
+    [InlineData("Sonata", "nat", -1)]
+    [InlineData("Björk", "bjo", 0)]
+    [InlineData("Sigur Rós", "ros", 1)]
+    [InlineData("(What's the Story) Morning Glory?", "what", 1)]
+    public void Word_start_matches_rank_the_start_of_the_name_first(string value, string query, int expected) =>
+        Assert.Equal(expected, SearchText.WordStartMatch(value, query));
 }

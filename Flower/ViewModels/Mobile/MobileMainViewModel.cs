@@ -740,11 +740,14 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         }
     }
 
-    // ── Recent searches ───────────────────────────────────────────────
+    // ── Search suggestions ────────────────────────────────────────────
     //
-    // The dropdown under the search box: past searches containing what has
-    // been typed so far, or all of them while nothing has - see ScreenSlot,
-    // which shows it only while the box has focus. A search is remembered when
+    // The dropdown under the search box: what the words typed so far could be
+    // finishing - past searches, then artists, albums and songs in the library
+    // (SearchSuggestion.For). Nothing while nothing is typed: opening Search
+    // used to drop every past search over the screen before a key was
+    // pressed. See ScreenSlot, which shows it only while the box has focus,
+    // and the Search screen's menu for clearing the past ones. A search is remembered when
     // the box is left with something in it (RememberSearch): a result tapped,
     // the keyboard put away, the tab changed. Not on each keystroke, or every
     // prefix of a word would be kept as a search of its own.
@@ -753,9 +756,9 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     // down under the keyboard, where nobody can tap it.
     public const int MaxSearchSuggestions = 5;
 
-    private IReadOnlyList<string> _searchSuggestions = [];
+    private IReadOnlyList<SearchSuggestion> _searchSuggestions = [];
 
-    public IReadOnlyList<string> SearchSuggestions
+    public IReadOnlyList<SearchSuggestion> SearchSuggestions
     {
         get => _searchSuggestions;
         private set
@@ -792,25 +795,15 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
 
     public ICommand ApplySearchSuggestionCommand { get; }
 
-    // Every past search, not only the ones the dropdown is showing for what
-    // has been typed - it is the history being cleared, not the filter.
+    // Every past search - it is the history being cleared, not the filter.
+    // The Search screen's menu.
     public ICommand ClearRecentSearchesCommand { get; }
 
     // The suggestions follow on their own, off Main's RecentSearches change.
     public void RememberSearch() => Main.RememberSearch(SearchQuery);
 
-    // What is typed matching a past search exactly is left out: offering the
-    // box its own contents back is a row that does nothing.
-    private void RefreshSearchSuggestions()
-    {
-        var typed = SearchQuery?.Trim() ?? "";
-        SearchSuggestions = Main.RecentSearches
-            .Where(q => typed.Length == 0
-                || (q.Contains(typed, StringComparison.OrdinalIgnoreCase)
-                    && !q.Equals(typed, StringComparison.OrdinalIgnoreCase)))
-            .Take(MaxSearchSuggestions)
-            .ToList();
-    }
+    private void RefreshSearchSuggestions() =>
+        SearchSuggestions = SearchSuggestion.For(SearchQuery, Main.RecentSearches, Main.Library.Tracks, MaxSearchSuggestions);
 
     // Shown instead of the track list on the Search tab until something is
     // actually typed - unlike the Songs tab (which lists the whole library by

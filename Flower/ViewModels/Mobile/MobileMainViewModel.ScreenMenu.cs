@@ -382,6 +382,11 @@ public partial class MobileMainViewModel
         if (downloadAll != null)
             actions.Add(downloadAll);
 
+        // The past searches the box finishes words from.
+        if (frame.IsSearchScreen && Main.RecentSearches.Count > 0)
+            actions.Add(new ScreenMenuEntry("Clear Recent Searches", MaterialIconKind.History,
+                () => ClearRecentSearchesCommand.Execute(null)));
+
         // Everything queued but the song playing.
         if (frame.ScreenKind == MobileScreenKind.Queue && PlaylistControl.CanClearQueue)
             actions.Add(new ScreenMenuEntry("Clear Queue", MaterialIconKind.PlaylistRemove,

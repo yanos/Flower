@@ -51,6 +51,27 @@ public static class SearchText
         return false;
     }
 
+    // Where query matches value as the start of something typed rather than
+    // the middle of a word: 0 at the very start of value, 1 at the start of a
+    // later word, -1 nowhere - so "nat" finds "Nat King Cole" first, "The
+    // National" second, and never "Sonata". What a search box suggests while
+    // it is being typed in (SearchSuggestions) is ranked by this.
+    public static int WordStartMatch(string? value, string? query)
+    {
+        if (string.IsNullOrEmpty(query) || string.IsNullOrEmpty(value) || value.Length < query.Length)
+            return -1;
+        if (MatchesAt(value, query, 0))
+            return 0;
+
+        for (var start = 1; start <= value.Length - query.Length; start++)
+        {
+            if (!char.IsLetterOrDigit(value[start - 1]) && char.IsLetterOrDigit(value[start]) && MatchesAt(value, query, start))
+                return 1;
+        }
+
+        return -1;
+    }
+
     private static bool MatchesAt(string value, string query, int start)
     {
         for (var i = 0; i < query.Length; i++)

@@ -390,9 +390,9 @@ public partial class ScreenSlot : UserControl
     // letters typed to find it.
     private void Suggestion_Click(object? sender, RoutedEventArgs e)
     {
-        if (sender is not Button { DataContext: string query } || DataContext is not MobileMainViewModel vm)
+        if (sender is not Button { DataContext: SearchSuggestion suggestion } || DataContext is not MobileMainViewModel vm)
             return;
-        vm.ApplySearchSuggestionCommand.Execute(query);
+        vm.ApplySearchSuggestionCommand.Execute(suggestion.Text);
         TopLevel.GetTopLevel(this)?.FocusManager?.Focus(null);
     }
 }

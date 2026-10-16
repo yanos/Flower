@@ -24,8 +24,9 @@ using Xunit;
 
 namespace Flower.Tests.ViewModels.Mobile;
 
-// The Search tab's dropdown of past searches: which are kept, which are
-// offered for what has been typed, and that picking one searches for it.
+// The Search tab's dropdown of suggestions: which past searches are kept,
+// what is offered for what has been typed - past searches, then the library's
+// artists, albums and songs - and that picking one searches for it.
 // Pinned, because remembering a search saves settings.json.
 [Collection("PlatformDataDirectory")]
 public class MobileRecentSearchesTests : PinnedDataDirectory
@@ -78,21 +79,67 @@ public class MobileRecentSearchesTests : PinnedDataDirectory
         vm.SelectTabCommand.Execute(nameof(MobileTab.Search));
         vm.SearchQuery = "nat";
 
-        Assert.Equal(new[] { "nat king cole", "the national" }, vm.SearchSuggestions);
+        Assert.Equal(new[] { "nat king cole", "the national" }, vm.SearchSuggestions.Select(s => s.Text));
     }
 
+    // Opening Search is the start of a search, not a list of old ones.
     [AvaloniaFact]
-    public void An_empty_box_offers_the_latest_ones()
+    public void An_empty_box_offers_nothing()
     {
         using var parts = Build();
         var vm = parts.Mobile;
-        for (var i = 0; i < 10; i++)
-            vm.Main.RememberSearch($"query {i}");
+        vm.Main.RememberSearch("radiohead");
 
         vm.SelectTabCommand.Execute(nameof(MobileTab.Search));
 
-        Assert.Equal(MobileMainViewModel.MaxSearchSuggestions, vm.SearchSuggestions.Count);
-        Assert.Equal("query 9", vm.SearchSuggestions[0]);
+        Assert.Empty(vm.SearchSuggestions);
+    }
+
+    // After the past searches, the library: names that start with what is
+    // typed before names with a later word that does, and each kind says
+    // what it is.
+    [AvaloniaFact]
+    public void The_library_s_names_are_offered_after_past_searches()
+    {
+        var tracks = new List<Track>
+        {
+            new() { Title = "Wildfire", Path = "/music/1.mp3", Album = "The Wild Hunt", Artists = "Tallest Man" },
+            new() { Title = "Sonata", Path = "/music/2.mp3", Album = "Classics", Artists = "Wilco" },
+        };
+        using var parts = MainViewModelHarness.BuildMobile(new Library(tracks), new MainPlaylist(tracks));
+        var vm = parts.Mobile;
+        vm.Main.RememberSearch("wild nothing");
+
+        vm.SelectTabCommand.Execute(nameof(MobileTab.Search));
+        vm.SearchQuery = "wil";
+
+        Assert.Equal(
+            new[]
+            {
+                ("wild nothing", SearchSuggestionKind.Recent),
+                ("Wilco", SearchSuggestionKind.Artist),
+                ("Wildfire", SearchSuggestionKind.Song),
+                ("The Wild Hunt", SearchSuggestionKind.Album),
+            },
+            vm.SearchSuggestions.Select(s => (s.Text, s.Kind)));
+    }
+
+    // Past searches are cleared from the Search screen's menu.
+    [AvaloniaFact]
+    public void The_search_menu_clears_past_searches()
+    {
+        using var parts = Build();
+        var vm = parts.Mobile;
+        vm.Main.RememberSearch("radiohead");
+        vm.SelectTabCommand.Execute(nameof(MobileTab.Search));
+
+        var clear = vm.BuildScreenMenu(vm.CurrentFrame).SelectMany(s => s.Entries)
+            .Single(e => e.Label == "Clear Recent Searches");
+        clear.Invoke();
+
+        Assert.Empty(vm.Main.RecentSearches);
+        Assert.DoesNotContain(vm.BuildScreenMenu(vm.CurrentFrame).SelectMany(s => s.Entries),
+            e => e.Label == "Clear Recent Searches");
     }
 
     // The dropdown is only up while the box has focus, and a tap on a row
@@ -114,12 +161,11 @@ public class MobileRecentSearchesTests : PinnedDataDirectory
         vm.SelectTabCommand.Execute(nameof(MobileTab.Search));
         Pump(400);
 
-        // Opening the tab focuses the box, so the empty box's dropdown - every
-        // recent search - is already up.
+        // Opening the tab focuses the box, with nothing dropped under it until
+        // something is typed.
         var box = window.GetVisualDescendants().OfType<TextBox>().Single(b => b.IsEffectivelyVisible);
         Assert.True(box.IsFocused);
-        Assert.NotNull(Row(window, "radiohead"));
-        Assert.NotNull(Row(window, "bjork"));
+        Assert.Null(Row(window, "radiohead"));
 
         box.Text = "rad";
         Pump(100);
@@ -141,20 +187,18 @@ public class MobileRecentSearchesTests : PinnedDataDirectory
         window.Close();
     }
 
-    // Clear forgets every past search - the ones the typing had filtered out
-    // as well - and leaves the box focused, since whatever was being typed is
-    // still being typed.
+    // The empty state - "no results" for what is typed - is drawn over every
+    // screen, so while the dropdown is open it steps aside rather than
+    // painting across the rows.
     [AvaloniaFact]
-    public void Clear_forgets_them_all_and_keeps_the_keyboard_up()
+    public void The_empty_state_steps_aside_while_the_dropdown_is_open()
     {
         using var parts = Build();
         var vm = parts.Mobile;
         vm.Main.RememberSearch("radiohead");
-        vm.Main.RememberSearch("bjork");
 
         var window = new Window { Width = 390, Height = 844 };
         window.Styles.Add(new FluentTheme());
-        window.Styles.Add(new MaterialIconStyles(null));
         window.Content = new MobileMainView { DataContext = vm };
         window.Show();
         vm.SelectTabCommand.Execute(nameof(MobileTab.Search));
@@ -162,41 +206,11 @@ public class MobileRecentSearchesTests : PinnedDataDirectory
 
         var box = window.GetVisualDescendants().OfType<TextBox>().Single(b => b.IsEffectivelyVisible);
         box.Text = "rad";
-        Pump(100);
+        PumpUntil(() => vm.IsContentEmpty && !vm.IsShowingSearchPrompt && Row(window, "radiohead") != null, 5000);
 
-        var clear = window.GetVisualDescendants().OfType<Button>()
-            .Single(b => b.IsEffectivelyVisible && b.Content is TextBlock { Text: "Clear" });
-        var centre = clear.TranslatePoint(new Point(clear.Bounds.Width / 2, clear.Bounds.Height / 2), window)!.Value;
-        window.MouseDown(centre, MouseButton.Left);
-        window.MouseUp(centre, MouseButton.Left);
-        Pump(100);
-
-        Assert.Empty(vm.Main.RecentSearches);
-        Assert.False(clear.IsEffectivelyVisible);
-        Assert.True(box.IsFocused);
-        Assert.Equal("rad", box.Text);
-
-        Pump(300);
-        window.Close();
-    }
-
-    // The search prompt is drawn over every screen, so while the dropdown is
-    // open it steps aside rather than painting across the rows.
-    [AvaloniaFact]
-    public void The_search_prompt_steps_aside_while_the_dropdown_is_open()
-    {
-        using var parts = Build();
-        var vm = parts.Mobile;
-        vm.Main.RememberSearch("radiohead");
-
-        var window = new Window { Width = 390, Height = 844 };
-        window.Styles.Add(new FluentTheme());
-        window.Content = new MobileMainView { DataContext = vm };
-        window.Show();
-        vm.SelectTabCommand.Execute(nameof(MobileTab.Search));
-        Pump(400);
-
-        TextBlock Prompt() => window.GetVisualDescendants().OfType<TextBlock>().Single(t => t.Text == vm.EmptyStateTitle);
+        // The empty state's words, whatever they say for this query.
+        Control Prompt() => (Control)window.GetVisualDescendants().OfType<Panel>().Single(p => p.Name == "EmptyStateHost")
+            .GetVisualChildren().First();
         Assert.NotNull(Row(window, "radiohead"));
         Assert.False(Prompt().IsEffectivelyVisible);
 
@@ -240,7 +254,7 @@ public class MobileRecentSearchesTests : PinnedDataDirectory
     // A visible dropdown row for this search, or null.
     private static Button? Row(Window window, string query) =>
         window.GetVisualDescendants().OfType<Button>()
-            .FirstOrDefault(b => b.DataContext as string == query && b.IsEffectivelyVisible);
+            .FirstOrDefault(b => (b.DataContext as SearchSuggestion)?.Text == query && b.IsEffectivelyVisible);
 
     private static void Pump(int milliseconds)
     {
