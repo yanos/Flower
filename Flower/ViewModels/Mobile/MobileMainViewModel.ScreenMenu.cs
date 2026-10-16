@@ -68,7 +68,7 @@ public partial class MobileMainViewModel
 
     private static MobileSortScreen? SortScreenFor(MobileNavigationFrame frame) => frame.ScreenKind switch
     {
-        MobileScreenKind.TrackList when frame.Tab == MobileTab.Songs && !frame.HasDrilledIn => MobileSortScreen.Songs,
+        MobileScreenKind.TrackList when frame.IsSongsList => MobileSortScreen.Songs,
         MobileScreenKind.AlbumGrid => MobileSortScreen.Albums,
         MobileScreenKind.ArtistAlbumGrid => MobileSortScreen.ArtistAlbums,
         MobileScreenKind.ArtistPicker => MobileSortScreen.Artists,
