@@ -230,7 +230,7 @@ public static class SyncEndpoints
         // POST rather than GET because the id list is the request: thirty-odd
         // album ids do not belong in a query string, and this group signs
         // bodies already.
-        sync.MapPost(CoverArtBatchRoute, (HttpContext context, Library library) => GetCoverArtBatch(context, library));
+        sync.MapPost(CoverArtBatchRoute, (HttpContext context, CoverArtCache covers) => GetCoverArtBatch(context, covers));
 
         // The bytes themselves (see MediaEndpoints): the door every Flower client
         // uses, and the only one a stream ticket opens.
@@ -259,12 +259,12 @@ public static class SyncEndpoints
         path.Equals(StreamPath, StringComparison.OrdinalIgnoreCase) ||
         path.Equals(DownloadPath, StringComparison.OrdinalIgnoreCase);
 
-    // Deliberately built on MediaEndpoints.CoverArtCandidates, the same
-    // "which files is this id's art in" rule the single-id route and the admin
-    // replace route both use. A second answer to that question is how a batch
-    // starts returning different pictures from the endpoint it is meant to
-    // replace.
-    private static IResult GetCoverArtBatch(HttpContext context, Library library)
+    // Deliberately built on CoverArtCache, as the single-id route is, and so on
+    // MediaEndpoints.CoverArtCandidates, the same "which files is this id's
+    // art in" rule the admin replace route uses. A second answer to that
+    // question is how a batch starts returning different pictures from the
+    // endpoint it is meant to replace.
+    private static IResult GetCoverArtBatch(HttpContext context, CoverArtCache covers)
     {
         var ids = ReadBatchRequest(context);
         if (ids == null)
@@ -275,15 +275,7 @@ public static class SyncEndpoints
 
         foreach (var id in ids)
         {
-            byte[] bytes = [];
-            foreach (var candidate in MediaEndpoints.CoverArtCandidates(id, library))
-            {
-                if (LocalAlbumArtReader.ForFile(candidate.Path) is { } art)
-                {
-                    bytes = art.Bytes;
-                    break;
-                }
-            }
+            var bytes = covers.Find(id)?.Bytes ?? [];
 
             // Truncation, not failure: the covers already gathered are worth
             // sending, and the caller asks again for the ids that are missing

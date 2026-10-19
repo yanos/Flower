@@ -455,6 +455,11 @@ send everything.
 file that carries art supplies it. Answers the image bytes with their own MIME
 type, or `404`.
 
+The server remembers where each id's art was found (`CoverArtCache`, shared
+with the batch route), along with every file and folder it looked in to find
+it. Those are checked before the answer is used again, so a cover replaced,
+added or deleted on disk is noticed at the next request.
+
 ### `POST /cover-art/batch`
 
 `{"Ids": ["al-…", …]}`, at most 32. `400` for a malformed body, an empty list or

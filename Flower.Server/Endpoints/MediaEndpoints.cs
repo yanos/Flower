@@ -133,21 +133,15 @@ public static class MediaEndpoints
 
     // Album art, at GET /api/flower/v1/cover-art. Out here with the routes
     // above rather than inline, for the same reason they are.
-    internal static IResult GetCoverArt(string? id, Library library)
+    // Found through CoverArtCache, which remembers where each id's art is.
+    internal static IResult GetCoverArt(string? id, CoverArtCache covers)
     {
         if (string.IsNullOrEmpty(id))
             return Problems.NotFound();
 
-        foreach (var candidate in CoverArtCandidates(id, library))
-        {
-            // Shared with the client - see LocalAlbumArtReader, which this used
-            // to be a private copy of.
-            var art = LocalAlbumArtReader.ForFile(candidate.Path);
-            if (art is not null)
-                return Results.Bytes(art.Bytes, art.MimeType);
-        }
-
-        return Problems.NotFound();
+        return covers.Find(id) is { } art
+            ? Results.Bytes(art.Bytes, art.MimeType)
+            : Problems.NotFound();
     }
 
     // Which files an art request for this id is about: every track on an album

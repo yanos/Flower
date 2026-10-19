@@ -130,12 +130,53 @@ public static class LocalAlbumArtReader
         }
     }
 
-    public static LocalAlbumArt? ForFile(string? path, ILogger? logger = null)
-    {
-        if (string.IsNullOrEmpty(path))
-            return null;
+    public static LocalAlbumArt? ForFile(string? path, ILogger? logger = null) =>
+        FirstFor([path], logger)?.Art;
 
-        // 1. Embedded tag art.
+    // The art for the first of these files that has any, found the way ForFile
+    // finds it for each in turn - its embedded picture, then a cover.*/folder.*
+    // beside it - with each folder listed once rather than once per file. An
+    // album's songs mostly share one folder, and an album with no art used to
+    // cost a listing of it per song before the answer was no. Source is the
+    // file the picture was read from: the song, for an embedded one, or the
+    // image file.
+    //
+    // consulted, when given, collects every file read and every folder listed
+    // on the way to the answer, in order - the songs whose tags had no
+    // picture, the folders that had no cover, and wherever the picture came
+    // from. Any of those changing can change the answer, so they are what the
+    // server's CoverArtCache checks before it trusts the answer again.
+    public static (LocalAlbumArt Art, string Source)? FirstFor(
+        IEnumerable<string?> paths, ILogger? logger = null, ICollection<string>? consulted = null)
+    {
+        HashSet<string>? listed = null;
+        foreach (var path in paths)
+        {
+            if (string.IsNullOrEmpty(path))
+                continue;
+
+            consulted?.Add(path);
+            if (EmbeddedPicture(path, logger) is { } embedded)
+                return (embedded, path);
+
+            var directory = Path.GetDirectoryName(path);
+            if (directory == null || !(listed ??= new HashSet<string>(StringComparer.Ordinal)).Add(directory))
+                continue;
+
+            consulted?.Add(directory);
+            if (CoverFileIn(directory, path, logger) is { } cover)
+            {
+                consulted?.Add(cover.Source);
+                return cover;
+            }
+        }
+
+        return null;
+    }
+
+    // 1. Embedded tag art.
+    private static LocalAlbumArt? EmbeddedPicture(string path, ILogger? logger)
+    {
         try
         {
             using var tagFile = TagLib.File.Create(path);
@@ -145,28 +186,29 @@ public static class LocalAlbumArtReader
         }
         catch (Exception ex)
         {
-            // Debug, not Warning - TagLib failing to open a file's tags
-            // entirely is routine for oddball/corrupt files scattered through
-            // a large real library, not something worth a warning for each.
+            // Trace - TagLib failing to open a file's tags entirely is routine
+            // for oddball/corrupt files scattered through a large real
+            // library, not something worth a warning for each.
             logger?.LogTrace(ex, "Could not read embedded art tag for {Path}", path);
         }
 
-        // 2. cover.*/folder.* in the same directory.
+        return null;
+    }
+
+    // 2. cover.*/folder.* in the same directory.
+    private static (LocalAlbumArt Art, string Source)? CoverFileIn(string directory, string path, ILogger? logger)
+    {
         try
         {
-            var directory = Path.GetDirectoryName(path);
-            if (directory != null)
+            var file = Directory.EnumerateFiles(directory).FirstOrDefault(f =>
             {
-                var file = Directory.EnumerateFiles(directory).FirstOrDefault(f =>
-                {
-                    var stem = Path.GetFileNameWithoutExtension(f);
-                    return (stem.Equals("cover", StringComparison.OrdinalIgnoreCase) ||
-                            stem.Equals("folder", StringComparison.OrdinalIgnoreCase))
-                        && ImageMimeTypes.ContainsKey(Path.GetExtension(f));
-                });
-                if (file != null)
-                    return new LocalAlbumArt(File.ReadAllBytes(file), ImageMimeTypes[Path.GetExtension(file)]);
-            }
+                var stem = Path.GetFileNameWithoutExtension(f);
+                return (stem.Equals("cover", StringComparison.OrdinalIgnoreCase) ||
+                        stem.Equals("folder", StringComparison.OrdinalIgnoreCase))
+                    && ImageMimeTypes.ContainsKey(Path.GetExtension(f));
+            });
+            if (file != null)
+                return (new LocalAlbumArt(File.ReadAllBytes(file), ImageMimeTypes[Path.GetExtension(file)]), file);
         }
         catch (Exception ex)
         {
