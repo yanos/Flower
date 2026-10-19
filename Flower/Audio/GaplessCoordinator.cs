@@ -823,12 +823,11 @@ namespace Flower.Audio
                 }
             }
 
-            // Before the events, not after: EndReached's subscriber
-            // (PlaylistControlViewModel) runs right here on the LibVLC decode
-            // callback thread and does real work - a play-count UPDATE under
-            // Library's lock, a resume-position write, a walk of the queue -
-            // and until it returns, nothing has put a single byte of the
-            // promoted track in front of the render callback. The only thing
+            // Before the events, not after: every subscriber to EndReached
+            // runs right here on the decode thread, and until they return,
+            // nothing has put a single byte of the promoted track in front of
+            // the render callback. PlaylistControlViewModel's own posts its
+            // work to the UI thread now, but the window is still theirs. The only thing
             // covering that window is whatever is left of the finishing
             // track's tail in the shared ring, and ReportHandoverSeam then
             // blames the splice for the underrun. Priming first closes the
@@ -839,10 +838,21 @@ namespace Flower.Audio
             // simply move up here instead.
             var primeSplice = promoted?.PrimeTarget(_sharedRing);
 
-            if (faulted)
-                TrackFailed?.Invoke(finishedTrack);
-            else
-                EndReached?.Invoke(finishedTrack);
+            // Caught: a subscriber that throws would otherwise unwind past the
+            // Retire and the promotion drain below, so the promoted track's
+            // staged audio never reached the ring and playback stopped at the
+            // boundary - for a fault in somebody's bookkeeping.
+            try
+            {
+                if (faulted)
+                    TrackFailed?.Invoke(finishedTrack);
+                else
+                    EndReached?.Invoke(finishedTrack);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "A handler for the end of {Finished} threw; carrying on with the handover", LogPath.Short(finishedTrack.Path));
+            }
 
             // Retire + the promoted decoder's staged-audio drain happen
             // outside _gate: PromoteTarget's Write() calls are paced by the

@@ -151,10 +151,13 @@ public class LibraryStoreTests : IsolatedHome
             audio, emptyPlaylist, library, new AppSettings(),
             new AppSettingsStore(NullLogger<AppSettingsStore>.Instance), NullLogger<PlaylistControlViewModel>.Instance);
 
-        // The play-count write is deliberately handed off the LibVLC decode
+        // The play-count write is deliberately handed off the decode
         // callback thread (see PlaylistControlViewModel.OffPlaybackThread);
         // run it inline so the assertion below isn't racing the pool.
         vm.OffPlaybackThread = work => work();
+        // And the end of the track is handled where it would be on the UI
+        // thread, which a plain test has no dispatcher running for.
+        vm.OnUiThread = work => work();
 
         vm.Play(oldTrack);
 

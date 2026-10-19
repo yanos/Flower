@@ -264,7 +264,32 @@ public class PlaylistAutoAdvanceTests : IDisposable
 
         audio.RaiseTrackFailed(a);
 
+        PumpUntil(() => reported != null, TimeSpan.FromSeconds(5));
         Assert.Same(a, reported);
+    }
+
+    // The end of a track is raised on its decode thread, and what plays next
+    // is decided on the UI thread, which owns the queue and the shuffle order
+    // (the decode thread dealing it while Next() did was a race). Decided
+    // there, it is decided against what is playing by then: a song the user
+    // picked in the meantime stands. Decided on the decode thread, the
+    // advance to B was already posted, and it replaced the user's choice.
+    [AvaloniaFact]
+    public void A_song_picked_while_the_end_of_the_last_one_is_on_its_way_keeps_playing()
+    {
+        var a = T("A");
+        var b = T("B");
+        var c = T("C");
+        var vm = MakeViewModel(new List<Track> { a, b, c }, out var audio);
+        vm.Play(a);
+
+        var decodeThread = new Thread(audio.RaiseEndReached);
+        decodeThread.Start();
+        decodeThread.Join();
+        vm.Play(c);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Same(c, vm.CurrentlyPlayingTrack);
     }
 
     // ── Giving up on a source that fails everything ──────────────────────────

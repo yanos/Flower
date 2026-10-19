@@ -231,21 +231,37 @@ namespace Flower.ViewModels
             },
                 h => _audioManager.Paused += h, h => _audioManager.Paused -= h);
 
-            // This handler runs on the LibVLC decode callback thread, at the
-            // exact moment the gapless seam is open: the finished track's
-            // decode is exhausted and only what is left in the shared ring is
-            // still covering the render callback. Anything slow here is heard.
-            // So the queue decision - the only part the advance depends on -
-            // stays inline, and the bookkeeping (a play-count UPDATE that
-            // takes Library's lock, which a background rescan can be holding
-            // for a while, plus a possible resume-position write) is handed to
-            // the pool. See GaplessCoordinator.HandleDrainedOrFaulted, which
-            // primes the ring before raising this for the same reason.
+            // Raised on the finished track's decode thread, at the exact
+            // moment the gapless seam is open: its decode is exhausted and
+            // only what is left in the shared ring is still covering the
+            // render callback. So nothing is done there at all. The queue
+            // decision moves to the UI thread, because under shuffle it deals
+            // the shuffle order - a List, a HashSet and a Random that Next(),
+            // ToggleShuffle and every queue edit change on the UI thread, with
+            // no lock between them. Raced, that was a wrong next song at best
+            // and a "collection was modified" at worst, thrown into the
+            // coordinator ahead of the handover it had not started yet. The
+            // gapless output does not wait on it: the coordinator promotes
+            // whatever was armed, and the decision only feeds the next
+            // Play(..., immediate: false), which was always posted. The
+            // bookkeeping (a play-count UPDATE that takes Library's lock,
+            // which a background rescan can be holding for a while, plus a
+            // possible resume-position write) goes on from there to the pool.
             _subscriptions.Add<EventHandler>((s, e) =>
             {
-                if (CurrentlyPlayingTrack != null)
+                // Which track ended is read here, on the decode thread, so
+                // that a song the user has moved on from by the time the UI
+                // thread gets to this is recognised as no longer the one
+                // playing - their own skip already decided what comes next.
+                if (CurrentlyPlayingTrack is not { } endedTrack)
+                    return;
+
+                OnUiThread(() =>
                 {
-                    var finishedTrack = CurrentlyPlayingTrack;
+                    if (!ReferenceEquals(CurrentlyPlayingTrack, endedTrack))
+                        return;
+
+                    var finishedTrack = endedTrack;
                     _logger.LogDebug("EndReached: {Title} ({Path})", finishedTrack.Title, LogPath.Short(finishedTrack.Path));
 
                     // Reaching the end is proof that playback works, so a run
@@ -263,8 +279,8 @@ namespace Flower.ViewModels
                     // repro), CurrentlyPlayingTrack still points at the old, now-orphaned
                     // object. IncrementPlayCount resolves the current object and applies the
                     // increment atomically under Library's own lock, so a rescan racing on
-                    // another thread (EndReached fires on a LibVLC callback thread, the
-                    // rescan runs on a threadpool thread - see Library._lock) can't land
+                    // another thread (the bookkeeping runs on the pool, and so does the
+                    // rescan - see Library._lock) can't land
                     // between "resolve" and "increment" and silently discard it the way a
                     // plain find-then-increment here already proved it could.
                     // Reaching the end is the one way of leaving a track that
@@ -293,7 +309,7 @@ namespace Flower.ViewModels
                         // immediate: false - the queue advancing, not the
                         // user skipping, so whatever the finished track still
                         // has buffered gets played out rather than cut off.
-                        Dispatcher.UIThread.Post(() => Play(next.Track, next.Index, immediate: false));
+                        Play(next.Track, next.Index, immediate: false);
                     }
 
                     // IncrementPlayCount raises Library.TrackChanged as a
@@ -328,7 +344,7 @@ namespace Flower.ViewModels
                             _logger.LogError(ex, "Post-playback bookkeeping failed for {Path}", LogPath.Short(finishedTrack.Path));
                         }
                     });
-                }
+                });
             },
                 h => _audioManager.EndReached += h, h => _audioManager.EndReached -= h);
 
@@ -338,7 +354,9 @@ namespace Flower.ViewModels
             // was indistinguishable from one the user actually listened to.
             // Advance the same way, but count nothing and don't stamp
             // LastPlayedAt - and re-raise for whoever wants to tell the user.
-            _subscriptions.Add<EventHandler<TrackFailedEventArgs>>((_, e) =>
+            // On the UI thread, like EndReached and for the same reason: the
+            // next track comes out of state the UI thread owns.
+            _subscriptions.Add<EventHandler<TrackFailedEventArgs>>((_, e) => OnUiThread(() =>
             {
                 _logger.LogWarning("Skipping {Title} ({Path}) - it could not be played", e.Track.Title, LogPath.Short(e.Track.Path));
                 PlaybackFailed?.Invoke(this, e);
@@ -356,14 +374,14 @@ namespace Flower.ViewModels
                 // this one.
                 var next = GetNextEntry(e.Track, ResolveQueueIndex(e.Track));
                 if (next.Track != null && next.Track != e.Track)
-                    Dispatcher.UIThread.Post(() => Play(next.Track, next.Index, immediate: false));
-            },
+                    Play(next.Track, next.Index, immediate: false);
+            }),
                 h => _audioManager.TrackFailed += h, h => _audioManager.TrackFailed -= h);
         }
 
         // Skipping past a track that won't play is the right thing to do once.
         // Doing it forever is what a broken *source* looks like from in here:
-        // an unreachable server, a disconnected drive, a container LibVLC
+        // an unreachable server, a disconnected drive, a container the decoder
         // cannot open. Every track fails the same way, each failure advances to
         // the next, and the queue empties itself at two tracks a second without
         // a sound - fifteen tracks in twenty seconds, then round again, because
@@ -384,11 +402,17 @@ namespace Flower.ViewModels
         // counted.
         private int _consecutiveFailures;
 
-        // How work that must not run on the LibVLC decode callback thread gets
-        // off it - see the EndReached handler above for why. Settable so a
-        // test can run it inline and assert straight after raising the event
-        // instead of racing a threadpool item; nothing in the app changes it.
+        // How work that must not run on the decode thread gets off it - see
+        // the EndReached handler above for why. Settable so a test can run it
+        // inline and assert straight after raising the event instead of
+        // racing a threadpool item; nothing in the app changes it.
         public Action<Action> OffPlaybackThread { get; set; } = work => Task.Run(work);
+
+        // How the end of a track and a failed one reach the UI thread, which
+        // owns the queue - see the EndReached handler. Settable for the same
+        // reason as OffPlaybackThread: a test without a running dispatcher
+        // runs it inline.
+        public Action<Action> OnUiThread { get; set; } = work => Dispatcher.UIThread.Post(work);
 
         // Enough of the track has been heard, part-way through it. Handed off
         // like the end-of-track bookkeeping and for a version of the same

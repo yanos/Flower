@@ -45,6 +45,9 @@ public class PlayCountingTests : PinnedDataDirectory
         // Inline, so an assertion straight after the report that counts a play
         // is not racing the pool - see PlaylistControlViewModel.OffPlaybackThread.
         vm.OffPlaybackThread = work => work();
+        // And the end of the track is handled where it would be on the UI
+        // thread, which a plain test has no dispatcher running for.
+        vm.OnUiThread = work => work();
         return vm;
     }
 
