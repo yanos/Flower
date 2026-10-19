@@ -78,7 +78,10 @@ namespace Flower.ViewModels
             // stays put says that more plainly than 0.0/s does.
             GcText = $"gen0 {sample.Gen0Collections} / gen1 {sample.Gen1Collections} / gen2 {sample.Gen2Collections}";
 
-            ThreadsText = sample.ThreadCount.ToString();
+            // The pool's threads, and the decoders alive - the second is where
+            // a decode leak shows, since a decoder's threads are not the
+            // pool's (see LiveDecoders).
+            ThreadsText = $"{sample.PoolThreadCount} in the pool, {sample.LiveDecoders} decoding";
 
             OnPropertyChanged(nameof(CpuText));
             OnPropertyChanged(nameof(MemoryText));

@@ -74,7 +74,7 @@ public class ResourceMonitorTests
         Assert.Matches(@"^\d+ MB of \d+ MB$", vm.MemoryText);
         Assert.EndsWith(" MB", vm.HeapText);
         Assert.StartsWith("gen0 ", vm.GcText);
-        Assert.True(int.Parse(vm.ThreadsText) > 0);
+        Assert.Matches(@"^\d+ in the pool, \d+ decoding$", vm.ThreadsText);
     }
 
     private static void Spin(TimeSpan duration)

@@ -8,6 +8,7 @@ using FFAudio;
 
 using Microsoft.Extensions.Logging;
 
+using Flower.Diagnostics;
 using Flower.Logging;
 using Flower.Models;
 using Flower.Services;
@@ -118,6 +119,7 @@ namespace Flower.Audio.Ffmpeg
             _writer = new RetargetableRingWriter(initialTarget);
             _isRetired = () => Volatile.Read(ref _retired) == 1;
             _logger = logger;
+            LiveDecoders.Opened();
         }
 
         // Opening is the whole of the prepare: unlike LibVLC's parse, which
@@ -683,7 +685,10 @@ namespace Flower.Audio.Ffmpeg
                     _logger?.LogWarning("The decode thread for {Path} did not stop within 5s; leaking its decoder rather than closing it underneath",
                                         LogPath.Short(Track.Path));
                 else
+                {
                     decoder?.Dispose();
+                    LiveDecoders.Closed();
+                }
 
                 stream?.Dispose();
 

@@ -12,6 +12,12 @@ namespace Flower.Diagnostics
     // asked is "is something spinning", and a single runaway decode thread
     // reading 100% is a clearer answer than the same thread reading 16% of six
     // cores.
+    //
+    // PoolThreadCount is the thread pool's, and only that: the threads a
+    // decode leak would leave behind are dedicated and native, and not in it.
+    // LiveDecoders is the number that answers for those (see LiveDecoders).
+    // Process.Threads would count every thread, but drags
+    // System.Diagnostics.Process onto every head to do it.
     public readonly record struct ResourceSample(
         long    ManagedHeapBytes,
         long    ProcessMemoryBytes,
@@ -20,7 +26,8 @@ namespace Flower.Diagnostics
         int     Gen0Collections,
         int     Gen1Collections,
         int     Gen2Collections,
-        int     ThreadCount);
+        int     PoolThreadCount,
+        int     LiveDecoders);
 
     // Samples process CPU and memory, on every platform Flower has a head for.
     //
@@ -67,7 +74,8 @@ namespace Flower.Diagnostics
                 Gen0Collections:        GC.CollectionCount(0),
                 Gen1Collections:        GC.CollectionCount(1),
                 Gen2Collections:        GC.CollectionCount(2),
-                ThreadCount:            ThreadCount());
+                PoolThreadCount:        System.Threading.ThreadPool.ThreadCount,
+                LiveDecoders:           Diagnostics.LiveDecoders.Count);
         }
 
         private static TimeSpan TotalCpuTime()
@@ -153,10 +161,5 @@ namespace Flower.Diagnostics
                 return 0;
             }
         }
-
-        // The CLR's own thread count, which is what a managed leak shows up in.
-        // Process.Threads would count native ones too but drags
-        // System.Diagnostics.Process onto every head to do it.
-        private static int ThreadCount() => System.Threading.ThreadPool.ThreadCount + 1;
     }
 }

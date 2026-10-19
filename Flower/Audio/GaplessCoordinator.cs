@@ -285,7 +285,7 @@ namespace Flower.Audio
             var resources = _resources.Sample();
 
             _logger?.LogDebug(
-                "Playback snapshot: RenderStarted={RenderStarted} Current={CurrentPath} PlayedBytes={PlayedBytes} DecodedBytes={DecodedBytes} SharedRead={SharedRead} SharedWritten={SharedWritten} SharedAvailable={SharedAvailable}/{SharedCapacity} SharedUnderruns={SharedUnderruns} RingGeneration={RingGeneration} Armed={ArmedPath} ArmedDecodedBytes={ArmedDecodedBytes} StagingRead={StagingRead} StagingWritten={StagingWritten} StagingAvailable={StagingAvailable}/{StagingCapacity} StagingGeneration={StagingGeneration} ArmedAlreadyDrained={ArmedAlreadyDrained} CpuPercent={CpuPercent} ProcessMemoryMb={ProcessMemoryMb} ManagedHeapMb={ManagedHeapMb} Gen0={Gen0} Gen1={Gen1} Gen2={Gen2} Threads={Threads}",
+                "Playback snapshot: RenderStarted={RenderStarted} Current={CurrentPath} PlayedBytes={PlayedBytes} DecodedBytes={DecodedBytes} SharedRead={SharedRead} SharedWritten={SharedWritten} SharedAvailable={SharedAvailable}/{SharedCapacity} SharedUnderruns={SharedUnderruns} RingGeneration={RingGeneration} Armed={ArmedPath} ArmedDecodedBytes={ArmedDecodedBytes} StagingRead={StagingRead} StagingWritten={StagingWritten} StagingAvailable={StagingAvailable}/{StagingCapacity} StagingGeneration={StagingGeneration} ArmedAlreadyDrained={ArmedAlreadyDrained} CpuPercent={CpuPercent} ProcessMemoryMb={ProcessMemoryMb} ManagedHeapMb={ManagedHeapMb} Gen0={Gen0} Gen1={Gen1} Gen2={Gen2} PoolThreads={PoolThreads} Decoders={Decoders}",
                 renderStarted, currentPath, played, currentDecoded, sharedRead,
                 sharedWritten, sharedAvailable, _sharedRing.Capacity,
                 sharedUnderruns, sharedGeneration, armedPath,
@@ -295,7 +295,7 @@ namespace Flower.Audio
                 resources.ProcessMemoryBytes / 1024 / 1024,
                 resources.ManagedHeapBytes / 1024 / 1024,
                 resources.Gen0Collections, resources.Gen1Collections,
-                resources.Gen2Collections, resources.ThreadCount);
+                resources.Gen2Collections, resources.PoolThreadCount, resources.LiveDecoders);
         }
 
         // Starts track fresh unless it's already the one that just became
