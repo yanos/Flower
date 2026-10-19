@@ -182,7 +182,7 @@ namespace Flower.Models
         // path that can change either the list or a Path calls Invalidate,
         // including NotifyTracksChanged, which is exactly the "a Track you
         // already hold was mutated in place" signal.
-        private Dictionary<string, Track>? _byPath;
+        private Built<Dictionary<string, Track>>? _byPath;
 
         // Grouped-album / by-id / by-artist indexes for the OpenSubsonic
         // surface - see LibrarySnapshot. Built lazily and thrown away rather
@@ -190,7 +190,24 @@ namespace Flower.Models
         // invalidated at the same points, because the same "a Track was
         // mutated in place without going through this class" case applies:
         // a tag edit changes which album a track groups into.
-        private LibrarySnapshot? _snapshot;
+        private Built<LibrarySnapshot>? _snapshot;
+
+        // Bumped by InvalidateIndexes, always after the change it announces.
+        // Each index above is kept with the generation it was built for, and
+        // one built for an older generation is never handed out.
+        //
+        // That is what makes building outside the lock safe. The indexes used
+        // to be nulled to invalidate them, and a reader that found null, read
+        // Tracks, and was still building when a rescan replaced Tracks and
+        // nulled the field (already null, so a no-op) then published an index
+        // of the old library - kept until the next change, however long that
+        // was. Tagged, the same reader's index carries the old generation, and
+        // the next reader builds again. Reading the generation before Tracks is
+        // the ordering that matters: a reader that sees the new generation sees
+        // the new list.
+        private int _indexGeneration;
+
+        private sealed record Built<T>(int Generation, T Index);
 
         // Lock-free for readers: the field is only ever assigned a fully-built
         // snapshot, so a caller either sees the previous one or the next one,
@@ -201,12 +218,12 @@ namespace Flower.Models
         {
             get
             {
-                var current = Volatile.Read(ref _snapshot);
-                if (current is not null)
-                    return current;
+                var generation = Volatile.Read(ref _indexGeneration);
+                if (Volatile.Read(ref _snapshot) is { } cached && cached.Generation == generation)
+                    return cached.Index;
 
                 var built = LibrarySnapshot.Build(Tracks);
-                Volatile.Write(ref _snapshot, built);
+                Volatile.Write(ref _snapshot, new Built<LibrarySnapshot>(generation, built));
                 return built;
             }
         }
@@ -2023,8 +2040,20 @@ namespace Flower.Models
             if (playedTrack.Path == null)
                 return playedTrack;
 
-            _byPath ??= BuildPathIndex();
-            return _byPath.TryGetValue(playedTrack.Path, out var current) ? current : playedTrack;
+            return PathIndex().TryGetValue(playedTrack.Path, out var current) ? current : playedTrack;
+        }
+
+        // Called under _lock, but invalidated by NotifyTracksChanged without
+        // it, so tagged by generation like Snapshot and for the same reason.
+        private Dictionary<string, Track> PathIndex()
+        {
+            var generation = Volatile.Read(ref _indexGeneration);
+            if (Volatile.Read(ref _byPath) is { } cached && cached.Generation == generation)
+                return cached.Index;
+
+            var built = BuildPathIndex();
+            Volatile.Write(ref _byPath, new Built<Dictionary<string, Track>>(generation, built));
+            return built;
         }
 
         // First match wins, matching the FirstOrDefault this replaced: two
@@ -2046,8 +2075,7 @@ namespace Flower.Models
         // NotifyLibraryChanged - see the former.
         private void InvalidateIndexes()
         {
-            _byPath = null;
-            Volatile.Write(ref _snapshot, null);
+            Interlocked.Increment(ref _indexGeneration);
             BumpChangeToken();
         }
 
