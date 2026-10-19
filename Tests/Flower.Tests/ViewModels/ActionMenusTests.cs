@@ -32,6 +32,18 @@ public class ActionMenusTests
             Titles(ActionMenus.ForSongs(everything, canRemoveFromQueue: true, canLocateFiles: true)));
     }
 
+    // A song streamed from the server has no file here to show, and on a
+    // device whose library is all the server's that is nearly every song.
+    [Fact]
+    public void Locate_File_is_offered_only_over_a_song_with_a_file_here()
+    {
+        var streamed = new MenuFacts(Downloadable: 1, IsBulkDownloading: false, LocalFiles: 0, Removable: 0);
+
+        var entries = ActionMenus.Flat(ActionMenus.ForSongs(streamed, canRemoveFromQueue: false, canLocateFiles: true));
+
+        Assert.DoesNotContain(entries, e => e.Action == MenuAction.LocateFile);
+    }
+
     // These menus act on a whole selection, so the count is in the words.
     [Fact]
     public void A_selection_is_counted_in_what_the_entries_say()

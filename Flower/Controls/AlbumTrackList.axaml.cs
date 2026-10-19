@@ -137,7 +137,9 @@ public partial class AlbumTrackList : UserControl
     // Built fresh per right-click: it acts on this album's own selection,
     // which is unrelated to the main track list's. The same song menu as the
     // track list's (ActionMenus.ForSongs), with Locate File for the row
-    // clicked, since revealing several files at once is not one action.
+    // clicked, since revealing several files at once is not one action - or,
+    // when that row is streamed and has no file here, the first of the
+    // selection that has one, which is what offered the entry.
     private ContextMenu BuildTrackContextMenu(Track clickedTrack, IReadOnlyList<Track> selectedTracks, MainViewModel vm)
     {
         var groups = ActionMenus.ForSongs(
@@ -159,7 +161,7 @@ public partial class AlbumTrackList : UserControl
                     OpenTrackInfo(selectedTracks, vm);
                     break;
                 case MenuAction.LocateFile:
-                    PlatformShell.Reveal(clickedTrack.Path);
+                    PlatformShell.Reveal(clickedTrack.Path ?? LocalFileDeletion.LocalFiles(selectedTracks).FirstOrDefault()?.Path);
                     break;
                 case MenuAction.Download:
                     _ = vm.Downloads.DownloadAllAsync(selectedTracks.Where(vm.Availability.IsDownloadable).ToList());

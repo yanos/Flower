@@ -1732,11 +1732,10 @@ public partial class MainView : UserControl
         return ShowsTrackList(vm) ? SelectedTracksInListOrder() : [];
     }
 
-    public void LocateSelectedFile()
-    {
-        if (SelectedSongs() is [var first, ..])
-            PlatformShell.Reveal(first.Path);
-    }
+    // The first of them with a file here: a song streamed from the server has
+    // none to show.
+    public void LocateSelectedFile() =>
+        PlatformShell.Reveal(LocalFileDeletion.LocalFiles(SelectedSongs()).FirstOrDefault()?.Path);
 
     public void DownloadSelectedSongs() => StartDownload(SelectedSongs());
 
@@ -1995,12 +1994,8 @@ public partial class MainView : UserControl
             infoWindow.Show();
     }
 
-    private void LocateFile()
-    {
-        if (MusicList.SelectedTrack is not Track track)
-            return;
-        PlatformShell.Reveal(track.Path);
-    }
+    private void LocateFile() =>
+        PlatformShell.Reveal(LocalFileDeletion.LocalFiles(SelectedTracksInListOrder()).FirstOrDefault()?.Path);
 
     // ── Sidebar ───────────────────────────────────────────────────────────────
 

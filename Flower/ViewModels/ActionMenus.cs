@@ -58,7 +58,8 @@ public static class ActionMenus
 {
     // canRemoveFromQueue: opened on the Queue, over something other than the
     // song playing. canLocateFiles: the head can show a file in the platform's
-    // file manager, which a phone cannot.
+    // file manager, which a phone cannot - and then only when one of the songs
+    // has a file here to show, which one streamed from the server does not.
     public static IReadOnlyList<IReadOnlyList<ActionMenuEntry>> ForSongs(
         MenuFacts facts, bool canRemoveFromQueue, bool canLocateFiles)
     {
@@ -72,7 +73,7 @@ public static class ActionMenus
             where.Add(new(MenuAction.RemoveFromQueue, "Remove from Queue", MaterialIconKind.PlaylistRemove));
 
         var what = new List<ActionMenuEntry> { new(MenuAction.GetInfo, "Get Info", MaterialIconKind.InformationOutline) };
-        if (canLocateFiles)
+        if (canLocateFiles && facts.LocalFiles > 0)
             what.Add(new(MenuAction.LocateFile, "Locate File", MaterialIconKind.FolderOpenOutline));
         if (Download(facts, "Download") is { } download)
             what.Add(download);

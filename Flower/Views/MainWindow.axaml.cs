@@ -296,7 +296,7 @@ public partial class MainWindow : Window
             Enable("Get Info", songs.Count > 0 || vm?.NowPlaying.CurrentlyPlayingTrack != null);
             Enable("Play Next", songs.Count > 0);
             Enable("Add to Queue", songs.Count > 0);
-            Enable("Locate File", songs.Count > 0);
+            Enable("Locate File", LocalFileDeletion.LocalFiles(songs).Count > 0);
             Enable("Download", vm != null && !vm.Downloads.IsBulkDownloading && songs.Any(vm.Availability.IsDownloadable));
         });
         WhenOpened("Edit Rules…", () =>

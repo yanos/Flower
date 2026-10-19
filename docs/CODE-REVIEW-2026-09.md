@@ -970,6 +970,14 @@ bound to the capability that already hid "Open App Data Location" for a
 remote backend, renamed `SettingsCapabilities.RevealInFileManager` since it
 now covers both, and set from `PlatformShell.IsAvailable` on the local one.
 
+The same thing was true of Locate File on the desktop itself, one level
+down: it was offered on every song, and a song streamed from the server has
+no file here (`Track.Path` null), so on a Mac whose library is all the
+server's - 60 files of 16116 songs, when it was found - it did nothing on
+nearly all of them. It is offered now only when the selection has a song with
+a file (`MenuFacts.LocalFiles`, which Delete Local File already counted), and
+reveals the first of those rather than whichever song was current.
+
 ### E8. Four loose ends in the album grid
 
 `Flower/Controls/AlbumGridRowControl.axaml(.cs)`, `Flower/Views/AlbumGridView*`,
