@@ -182,16 +182,34 @@ public sealed class RequestGate(TrustedPeerStore trustedPeers, NonceReplayGuard 
         http.Request.ContentLength is null
         && http.Features.Get<IHttpRequestBodyDetectionFeature>()?.CanHaveBody == true;
 
+    // The body the gate read and verified the signature over, for the handler
+    // to deserialize - see ReadBodyAsync.
+    public static byte[] BodyOf(HttpContext http) => http.Items[BodyKey] as byte[] ?? [];
+
+    private const string BodyKey = "Flower.RequestGate.Body";
+
+    // Read once, into one array the size the request declared - which the
+    // caller has already held to the route's cap. The signature covers these
+    // bytes, and the handler deserializes the same ones (BodyOf); the request's
+    // own Body is swapped for a stream over them, for the handlers that read
+    // it. A 20 MB sync body used to become a buffered request stream, a
+    // MemoryStream, its ToArray copy and a UTF-16 string of the lot - about
+    // 80 MB, the first 40 of it before the signature was checked.
     private static async Task<byte[]> ReadBodyAsync(HttpContext http)
     {
-        if (http.Request.ContentLength is not > 0)
+        if (http.Request.ContentLength is not { } length || length <= 0)
             return [];
 
-        http.Request.EnableBuffering();
-        using var buffer = new MemoryStream();
-        await http.Request.Body.CopyToAsync(buffer, http.RequestAborted);
-        http.Request.Body.Position = 0;
-        return buffer.ToArray();
+        var body = new byte[length];
+        var read = await http.Request.Body.ReadAtLeastAsync(body, body.Length, throwOnEndOfStream: false, http.RequestAborted);
+
+        // Shorter than it said: what arrived is what gets verified, and fails.
+        if (read < body.Length)
+            body = body[..read];
+
+        http.Items[BodyKey] = body;
+        http.Request.Body = new MemoryStream(body, writable: false);
+        return body;
     }
 
     // Debug, throttled: being rate limited is precisely the state that

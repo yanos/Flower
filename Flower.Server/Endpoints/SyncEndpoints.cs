@@ -305,8 +305,7 @@ public static class SyncEndpoints
     {
         try
         {
-            context.Request.Body.Position = 0;
-            var request = JsonSerializer.Deserialize<CoverArtBatchRequest>(context.Request.Body, JsonOptions);
+            var request = JsonSerializer.Deserialize<CoverArtBatchRequest>(RequestGate.BodyOf(context), JsonOptions);
             if (request?.Ids is not { Count: > 0 } ids || ids.Count > CoverArtBatch.MaxIds)
                 return null;
 
@@ -430,9 +429,7 @@ public static class SyncEndpoints
         if (ListenerOf(context, trustedPeers) is not { } listener)
             return Problems.Of(StatusCodes.Status401Unauthorized, ProblemCodes.SignatureInvalid);
 
-        using var reader = new StreamReader(context.Request.Body);
-        var manifest = JsonSerializer.Deserialize<PlaylistSyncManifestDto>(
-            await reader.ReadToEndAsync(context.RequestAborted), JsonOptions);
+        var manifest = JsonSerializer.Deserialize<PlaylistSyncManifestDto>(RequestGate.BodyOf(context), JsonOptions);
         if (manifest == null)
             return Problems.BadRequest();
 
@@ -475,9 +472,7 @@ public static class SyncEndpoints
     private static async Task<IResult> ReportLog(
         HttpContext context, ClientLogStore logs, ILogger logger)
     {
-        using var reader = new StreamReader(context.Request.Body);
-        var report = JsonSerializer.Deserialize<LogReportDto>(
-            await reader.ReadToEndAsync(context.RequestAborted), JsonOptions);
+        var report = JsonSerializer.Deserialize<LogReportDto>(RequestGate.BodyOf(context), JsonOptions);
         if (report == null)
             return Problems.BadRequest();
 
@@ -520,12 +515,10 @@ public static class SyncEndpoints
         if (context.Items[AuthenticatedFingerprintKey] is not string { Length: > 0 } fingerprint)
             return Problems.Of(StatusCodes.Status401Unauthorized, ProblemCodes.SignatureInvalid);
 
-        using var reader = new StreamReader(context.Request.Body);
         PlayReportDto? report;
         try
         {
-            report = JsonSerializer.Deserialize<PlayReportDto>(
-                await reader.ReadToEndAsync(context.RequestAborted), JsonOptions);
+            report = JsonSerializer.Deserialize<PlayReportDto>(RequestGate.BodyOf(context), JsonOptions);
         }
         catch (JsonException)
         {
@@ -572,9 +565,7 @@ public static class SyncEndpoints
     private static async Task<IResult> ReportTrackState(
         HttpContext context, Library library, TrustedPeerStore trustedPeers, ILogger logger)
     {
-        using var reader = new StreamReader(context.Request.Body);
-        var report = JsonSerializer.Deserialize<TrackStateReportDto>(
-            await reader.ReadToEndAsync(context.RequestAborted), JsonOptions);
+        var report = JsonSerializer.Deserialize<TrackStateReportDto>(RequestGate.BodyOf(context), JsonOptions);
         if (report == null)
             return Problems.BadRequest();
 
@@ -606,12 +597,10 @@ public static class SyncEndpoints
         if (context.Items[AuthenticatedFingerprintKey] is not string fingerprint || fingerprint.Length == 0)
             return Problems.Of(StatusCodes.Status401Unauthorized, ProblemCodes.SignatureInvalid);
 
-        using var reader = new StreamReader(context.Request.Body);
         AlbumProgressExchangeDto? exchange;
         try
         {
-            exchange = JsonSerializer.Deserialize<AlbumProgressExchangeDto>(
-                await reader.ReadToEndAsync(context.RequestAborted), JsonOptions);
+            exchange = JsonSerializer.Deserialize<AlbumProgressExchangeDto>(RequestGate.BodyOf(context), JsonOptions);
         }
         catch (JsonException)
         {

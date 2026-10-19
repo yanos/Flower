@@ -502,13 +502,10 @@ public static class AdminEndpoints
             if (context.Request.ContentLength is not > 0)
                 return Problems.BadRequest("A piece of the file is required, with its length.");
 
-            // Already in memory - the filter buffered it to check the
-            // signature - and already bounded by MaxBodyBytes there.
-            using var buffer = new MemoryStream();
-            await context.Request.Body.CopyToAsync(buffer, context.RequestAborted);
-
+            // Already in memory - the filter read it to check the signature -
+            // and already bounded by MaxBodyBytes there.
             var result = await ingest.AppendAsync(
-                uploadId, from, buffer.GetBuffer().AsMemory(0, (int)buffer.Length), context.RequestAborted);
+                uploadId, from, RequestGate.BodyOf(context), context.RequestAborted);
             LogUpload(logger, context, uploadId, result);
             return ToResult(result, jsonOptions);
         });
@@ -591,9 +588,7 @@ public static class AdminEndpoints
             if (ParseArtworkEdit(ids, editedAt) is not { } edit)
                 return Problems.BadRequest("Name the songs and when the artwork was changed.");
 
-            using var buffer = new MemoryStream();
-            await context.Request.Body.CopyToAsync(buffer, context.RequestAborted);
-            var bytes = buffer.ToArray();
+            var bytes = RequestGate.BodyOf(context);
 
             // Sniffed rather than trusted, as the album route below does and
             // for its reason: the type ends up inside the tag.
@@ -714,9 +709,7 @@ public static class AdminEndpoints
 
             var contentType = context.Request.ContentType?.Split(';')[0].Trim();
 
-            using var buffer = new MemoryStream();
-            await context.Request.Body.CopyToAsync(buffer, context.RequestAborted);
-            var bytes = buffer.ToArray();
+            var bytes = RequestGate.BodyOf(context);
             if (bytes.Length == 0)
                 return Problems.BadRequest("An image body is required.");
 
