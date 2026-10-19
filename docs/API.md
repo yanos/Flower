@@ -345,10 +345,15 @@ plus the server's own; its `ImportedPlayCount` is the library's Music.app count
 (see `POST /track-state`), served apart so the admin device that reported it
 does not get it back as the server's plays. A song's total is the sum of both.
 
+That is the owner's view. A device that is not an admin gets the same songs
+with only its own entry in `PlayCounts`, and without `LastPlayed`,
+`ResumePositionSeconds` or `ImportedPlayCount`, so a guest learns nothing about
+anyone else's listening. See `SECURITY.md`.
+
 The response's `ETag` is the library change token — the same value `/info`
 reports as `libraryToken`. Send it back as `If-None-Match` for a `304` with no
 body. At a real library size this is megabytes; the serialized body is cached
-per token.
+per token and audience (the owner's, or one guest's).
 
 `Songs` holds only tracks the server has a file for. Each is a `TrackDto`
 (`LibraryContracts.cs`), whose comments are the field-by-field reference:

@@ -469,6 +469,58 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
         }
     }
 
+    // A guest's device is served the songs and its own plays - not which other
+    // device played what, nor the owner's own listening. The owner's devices
+    // still get all of it, which is what they merge.
+    [Fact]
+    public async Task A_guest_device_is_served_its_own_plays_and_nobody_elses()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var library = server.Services.GetRequiredService<Library>();
+        using var guest = await TrustedDeviceAsync(trustedPeers);
+        using var owner = await AdminDeviceAsync(trustedPeers);
+        var track = library.Tracks.First(t => t.Title == "Second Song");
+        var serverFingerprint = server.Services.GetRequiredService<DeviceSigningKey>().Fingerprint;
+
+        try
+        {
+            track.LastPlayedAt = DateTimeOffset.UtcNow;
+            track.ResumePosition = TimeSpan.FromSeconds(42);
+            // Through the library, so the catalog token moves and neither
+            // fetch is served a body cached before these plays.
+            library.RecordPlayFor(track.Id.ToKey(), guest.Fingerprint);
+            library.RecordPlayFor(track.Id.ToKey(), "someone-elses-phone");
+            library.RecordPlayFor(track.Id.ToKey(), "someone-elses-phone");
+
+            var (_, guestBody, _) = await SendAsync(guest, "GET", "/api/flower/v1/library", "10.0.2.40");
+            var asGuest = JsonSerializer.Deserialize<LibrarySyncManifestDto>(guestBody)!
+                .Songs.Single(s => s.Id == track.Id.ToKey());
+
+            Assert.Equal(new Dictionary<string, int> { [guest.Fingerprint] = 1 }, asGuest.PlayCounts);
+            Assert.Null(asGuest.LastPlayed);
+            Assert.Null(asGuest.ResumePositionSeconds);
+
+            var (_, ownerBody, _) = await SendAsync(owner, "GET", "/api/flower/v1/library", "10.0.2.41");
+            var asOwner = JsonSerializer.Deserialize<LibrarySyncManifestDto>(ownerBody)!
+                .Songs.Single(s => s.Id == track.Id.ToKey());
+
+            Assert.Equal(2, asOwner.PlayCounts!["someone-elses-phone"]);
+            Assert.Equal(1, asOwner.PlayCounts[guest.Fingerprint]);
+            Assert.True(asOwner.PlayCounts.ContainsKey(serverFingerprint));
+            Assert.NotNull(asOwner.LastPlayed);
+            Assert.Equal(42, asOwner.ResumePositionSeconds);
+        }
+        finally
+        {
+            track.RemotePlayCounts.Remove(guest.Fingerprint);
+            track.RemotePlayCounts.Remove("someone-elses-phone");
+            track.LastPlayedAt = null;
+            track.ResumePosition = null;
+            await trustedPeers.RevokeAsync(guest.Fingerprint);
+            await trustedPeers.RevokeAsync(owner.Fingerprint);
+        }
+    }
+
     // The two halves a browser tab reports separately, so the server ends up
     // with the History a local player would have had - a skipped track stamped
     // as played without its count claiming a listen. See IPlayReporter.

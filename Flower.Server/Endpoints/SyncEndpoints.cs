@@ -332,9 +332,18 @@ public static class SyncEndpoints
     // asks otherwise - so the serialized body is cached alongside the token it
     // was built from, and several peers missing the cache at once still only
     // build it once.
+    //
+    // Two catalogs, by who is asking. The owner's devices get everything, and
+    // need it: they merge every device's play count and the owner's own
+    // listening into their library. A guest's device gets the songs and its
+    // own play count, and nobody else's listening - not the per-device counts
+    // (a fingerprint in a household is a person), not when the owner last
+    // played a song, not where the owner left a podcast, not Music.app's
+    // counts. A guest's phone never needed any of it to play music, and a
+    // guest's tab, whose whole library this is, shows its own plays.
     private static IResult GetLibrary(
         HttpContext context, Library library, DeviceSigningKey signingKey, LibraryManifestCache cache,
-        IOptionsMonitor<FlowerServerOptions> options)
+        IOptionsMonitor<FlowerServerOptions> options, TrustedPeerStore trustedPeers)
     {
         var token = library.ChangeToken;
         context.Response.Headers.ETag = token;
@@ -342,7 +351,11 @@ public static class SyncEndpoints
         if (context.Request.Headers.IfNoneMatch.ToString() == token)
             return Results.StatusCode(StatusCodes.Status304NotModified);
 
-        var json = cache.Get(token, () =>
+        if (context.Items[AuthenticatedFingerprintKey] is not string { Length: > 0 } caller)
+            return Problems.Of(StatusCodes.Status401Unauthorized, ProblemCodes.SignatureInvalid);
+        var isOwner = trustedPeers.IsAdmin(caller);
+
+        var json = cache.Get(token, isOwner ? LibraryManifestCache.OwnerAudience : caller, () =>
         {
             // Only tracks this server actually has a file for: a placeholder
             // learned from somewhere else is not this device's to advertise.
@@ -353,6 +366,7 @@ public static class SyncEndpoints
                 // this manifest files the counts as *this device's* rather
                 // than its own - see Track.RemotePlayCounts.
                 .Select(track => LibraryDtoMapper.ToTrackDto(track, signingKey.Fingerprint, options.CurrentValue.LibraryPaths))
+                .Select(song => isOwner ? song : ForGuest(song, caller))
                 .ToList();
             // What was removed on purpose, so a device holding its own copy of
             // one drops it too - see LibrarySyncManifestDto.Removed.
@@ -365,6 +379,17 @@ public static class SyncEndpoints
 
         return Results.Text(json, "application/json");
     }
+
+    // A song as a guest's device sees it - see GetLibrary.
+    internal static TrackDto ForGuest(TrackDto song, string guestFingerprint) => song with
+    {
+        PlayCounts = song.PlayCounts?.TryGetValue(guestFingerprint, out var own) == true
+            ? new Dictionary<string, int> { [guestFingerprint] = own }
+            : null,
+        ImportedPlayCount = null,
+        LastPlayed = null,
+        ResumePositionSeconds = null,
+    };
 
     // The caller's listener's playlists and nobody else's - see Listeners. A
     // guest device sees the playlists it made; every admin device sees the
@@ -612,20 +637,27 @@ public static class SyncEndpoints
 // several hosts a test run boots in one process.
 public sealed class LibraryManifestCache
 {
+    // The audience every owner's device shares; a guest's is its own
+    // fingerprint, since its catalog carries its own play count.
+    public const string OwnerAudience = "owner";
+
     private readonly object _lock = new();
     private string? _token;
-    private string? _json;
+    private readonly Dictionary<string, string> _jsonByAudience = new();
 
-    public string Get(string token, Func<string> build)
+    public string Get(string token, string audience, Func<string> build)
     {
         lock (_lock)
         {
-            if (_token != token || _json == null)
+            if (_token != token)
             {
-                _json = build();
+                _jsonByAudience.Clear();
                 _token = token;
             }
-            return _json;
+
+            if (!_jsonByAudience.TryGetValue(audience, out var json))
+                _jsonByAudience[audience] = json = build();
+            return json;
         }
     }
 }

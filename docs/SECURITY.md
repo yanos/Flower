@@ -157,9 +157,23 @@ write access.
   events, and an `EventId` is at most 64 characters.
 
 **Consequence, open:** a guest browser tab's History is read from the
-catalog's `LastPlayed`, so after a refresh it will not show what that guest
-played. Per-listener history is the real fix. It is out of scope here and is
-listed under "Out of scope".
+catalog's `LastPlayed`, and a guest is not served that field (see below), so
+after a refresh the tab shows no History at all. Per-listener history is the
+real fix. It is out of scope here and is listed under "Out of scope".
+
+### A guest is served the songs, not the listening
+
+`GET /library` used to send every caller the same catalog, and for each song
+that included every device's play count (keyed by fingerprint, and in a
+household a fingerprint is a person), when the owner last played it, where the
+owner left a podcast, and the owner's Music.app count. TLS does not help here,
+because the guest's own app is the legitimate recipient. Now there are two
+catalogs. The owner's devices get all of it, because merging it is how their
+libraries agree. A guest's device gets the songs and its own entry in
+`PlayCounts`, with `LastPlayed`, `ResumePositionSeconds` and
+`ImportedPlayCount` left out (`SyncEndpoints.ForGuest`). Stars are still
+served: they are the owner's curation of the library, not a record of
+listening.
 
 ### Bounded tables
 
