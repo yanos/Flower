@@ -68,6 +68,11 @@ public class SeekableHttpStreamTests
         // were: a proxy or captive portal answering with a sign-in page.
         public bool RefusesBodiesWithHtml { get; init; }
 
+        // Body requests answered with this status, this many times - a 404
+        // for a song the server no longer has, a 503 from a proxy in trouble.
+        public HttpStatusCode? RefusesBodiesWith { get; init; }
+        public int RefusesBodiesTimes { get; set; } = int.MaxValue;
+
         // Body requests that get no answer at all - refused, unroutable -
         // before one finally does. The network under a phone moving from
         // Wi-Fi to cellular, for the few seconds it takes to settle.
@@ -158,6 +163,11 @@ public class SeekableHttpStreamTests
                 return SubsonicError();
             if (!probe && RefusesBodiesWithHtml)
                 return Textual("text/html", "<html><body>Please sign in</body></html>");
+            if (!probe && RefusesBodiesWith is { } refusal && RefusesBodiesTimes > 0)
+            {
+                RefusesBodiesTimes--;
+                return new HttpResponseMessage(refusal) { Content = new ByteArrayContent([]) };
+            }
 
             var from = 0L;
             var to = _content.Length - 1L;
@@ -548,6 +558,65 @@ public class SeekableHttpStreamTests
         Assert.Throws<HttpProtocolErrorException>(() => stream.Read(new byte[1024]));
 
         Assert.Equal(1, server.Requests - beforeRead);
+    }
+
+    // A server saying no is the same no when asked again: a signature it
+    // will not take, a device it has forgotten, a song it no longer has.
+    // These were retried as a dropped connection - three more requests, 250ms
+    // apart, for every song left in the queue of a revoked device.
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    [InlineData(HttpStatusCode.NotFound)]
+    [InlineData(HttpStatusCode.Gone)]
+    public async Task A_refusal_is_not_retried(HttpStatusCode status)
+    {
+        var content = Content(20_000);
+        var server = new FakeServer(content) { RefusesBodiesWith = status };
+        var (stream, _) = await OpenAsync(content, server: server);
+
+        var beforeRead = server.Requests;
+        var thrown = Assert.Throws<HttpProtocolErrorException>(() => stream.Read(new byte[1024]));
+
+        Assert.Equal(1, server.Requests - beforeRead);
+        Assert.Contains(((int)status).ToString(), thrown.Message);
+    }
+
+    // The counterpart: a server in trouble is not a server saying no, and a
+    // moment later it may well answer.
+    [Fact]
+    public async Task A_server_error_is_still_retried()
+    {
+        var content = Content(20_000);
+        var (stream, _) = await OpenAsync(content, server: new FakeServer(content)
+        {
+            RefusesBodiesWith = HttpStatusCode.ServiceUnavailable,
+            RefusesBodiesTimes = 1,
+        });
+
+        Assert.Equal(content, ReadFully(stream, content.Length));
+    }
+
+    // A throttled server is waited out for up to two minutes, and the read
+    // doing the waiting is on a decode thread that skipping a song has to
+    // join. Uncancellable, that join timed out and leaked the decoder and the
+    // stream; Cancel ends the wait now.
+    [Fact]
+    public async Task Cancel_ends_a_throttle_wait_at_once()
+    {
+        var content = Content(20_000);
+        var server = new FakeServer(content) { RetryAfter = TimeSpan.FromMilliseconds(200) };
+        var (stream, _) = await OpenAsync(content, server: server);
+        server.Refusals = int.MaxValue;
+
+        var read = Task.Run(() => stream.Read(new byte[1024]));
+        await Task.Delay(300);
+        var cancelledAt = System.Diagnostics.Stopwatch.StartNew();
+        stream.Cancel();
+
+        await Assert.ThrowsAsync<IOException>(() => read);
+        Assert.True(cancelledAt.Elapsed < TimeSpan.FromSeconds(2), $"took {cancelledAt.Elapsed}");
+        Assert.Throws<IOException>(() => stream.Read(new byte[1024]));
     }
 
     // The counterpart, so the check above cannot be satisfied by refusing

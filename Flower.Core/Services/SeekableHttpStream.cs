@@ -159,6 +159,14 @@ public sealed class SeekableHttpStream : Stream
     private CancellationTokenSource _stall = new();
     private readonly Lock _stallLock = new();
 
+    // Cancelled by Cancel (and Dispose): every request, every throttle wait
+    // and every backoff this stream is in gives up at once. Without it a
+    // throttled stream held its decode thread for the whole two-minute
+    // budget, past the five seconds the decoder's retirement waits before it
+    // leaks the native decoder and this stream with it - one leak per track
+    // skipped during a throttle storm.
+    private readonly CancellationTokenSource _lifetime = new();
+
     // The origin the open body was requested from, and whether Reroute has
     // asked for it to be abandoned for a better one.
     private string? _bodyOrigin;
@@ -265,7 +273,7 @@ public sealed class SeekableHttpStream : Stream
             if (Volatile.Read(ref _facts) is { } raced)
                 return raced;
 
-            var (length, acceptsRanges) = ProbeServerAsync(_client, CurrentUri(), _logger, ThrottleWaitBudget, ResponseTimeout, CancellationToken.None).GetAwaiter().GetResult();
+            var (length, acceptsRanges) = ProbeServerAsync(_client, CurrentUri(), _logger, ThrottleWaitBudget, ResponseTimeout, _lifetime.Token).GetAwaiter().GetResult();
             return Adopt(length, acceptsRanges);
         }
     }
@@ -578,6 +586,14 @@ public sealed class SeekableHttpStream : Stream
                 DropBody();
                 throw;
             }
+            // Cancel: the reader is going away, so nothing is retried, and the
+            // decoder gets the IOException a failed read always is.
+            catch (OperationCanceledException ex) when (_lifetime.IsCancellationRequested)
+            {
+                _broken = true;
+                DropBody();
+                throw new IOException($"The stream for {LogPath.Short(_uri.ToString())} was cancelled at offset {_position}", ex);
+            }
             // Also ahead of the general clause, for the opposite reason: this
             // is the one failure that must not be *retried* at all. A server
             // answering a protocol error is not a connection that dropped -
@@ -636,8 +652,9 @@ public sealed class SeekableHttpStream : Stream
 
             // A connection that has just been reset is rarely ready again in
             // the same millisecond, and a hot retry loop is the shape that
-            // takes a struggling server down rather than riding it out.
-            Thread.Sleep(backoffMs);
+            // takes a struggling server down rather than riding it out. Woken
+            // by Cancel, and the next pass through the loop gives up.
+            _lifetime.Token.WaitHandle.WaitOne(backoffMs);
             backoffMs = Math.Min(backoffMs * 2, MaxRetryBackoffMs);
         }
     }
@@ -702,7 +719,7 @@ public sealed class SeekableHttpStream : Stream
                 if (seekable && position > 0)
                     request.Headers.Range = new RangeHeaderValue(position, null);
                 return request;
-            }, _logger, ThrottleWaitBudget, ResponseTimeout, CancellationToken.None).GetAwaiter().GetResult();
+            }, _logger, ThrottleWaitBudget, ResponseTimeout, _lifetime.Token).GetAwaiter().GetResult();
         }
         catch (Exception ex) when (ex is (IOException or HttpRequestException)
                                    and not HttpThrottledException and not HttpProtocolErrorException)
@@ -710,7 +727,29 @@ public sealed class SeekableHttpStream : Stream
             throw new ServerUnreachableException(ex);
         }
 
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            // Disposed before throwing, or the connection stays checked out
+            // of the pool until the finalizer gets to it.
+            var status = response.StatusCode;
+            response.Dispose();
+
+            // The server said no, and asking again gets the same no: a
+            // signature it will not take, a device it has forgotten, a song it
+            // no longer has. Failing once, rather than three times 250ms
+            // apart, matters most for a revoked pairing, where every song
+            // left in the queue would pay it. Anything else - a 5xx, a proxy
+            // in trouble - is the transient failure the read loop retries.
+            if (status is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
+                or HttpStatusCode.NotFound or HttpStatusCode.Gone)
+            {
+                throw new HttpProtocolErrorException(
+                    $"{LogPath.Short(uri.ToString())} answered {(int)status} {status}");
+            }
+
+            throw new HttpRequestException(
+                $"{LogPath.Short(uri.ToString())} answered {(int)status} {status}", null, status);
+        }
 
         // A server that answers a ranged request with 200 is serving from
         // zero regardless of what was asked, and reading it as though it
@@ -795,9 +834,12 @@ public sealed class SeekableHttpStream : Stream
             }
 
             // Checked under the lock, after the reset: a Reroute that landed
-            // between reads cancelled a source the reset has just cleared.
+            // between reads cancelled a source the reset has just cleared, and
+            // so did a Cancel - which takes this same lock, so it lands either
+            // before this check or on the token below.
             if (_rerouteRequested)
                 throw new StreamReroutedException();
+            _lifetime.Token.ThrowIfCancellationRequested();
 
             _stall.CancelAfter(StallTimeout);
             token = _stall.Token;
@@ -807,6 +849,10 @@ public sealed class SeekableHttpStream : Stream
         {
             return _body!.ReadAsync(scratch.AsMemory(0, count), token).AsTask().GetAwaiter().GetResult();
         }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (OperationCanceledException) when (_rerouteRequested)
         {
             throw new StreamReroutedException();
@@ -815,6 +861,22 @@ public sealed class SeekableHttpStream : Stream
         {
             throw new IOException(
                 $"No data from {LogPath.Short(_uri.ToString())} for {StallTimeout.TotalSeconds:F0}s at offset {_position}", ex);
+        }
+    }
+
+    // Gives up whatever this stream is waiting on - a request, a throttle
+    // wait, a backoff, a body read - and fails every read from now on. Safe
+    // from any thread, unlike Dispose: this is what the decoder's retirement
+    // calls before joining a decode thread that may be inside Read.
+    public void Cancel()
+    {
+        lock (_stallLock)
+        {
+            if (_disposed || _lifetime.IsCancellationRequested)
+                return;
+
+            _lifetime.Cancel();
+            _stall.Cancel();
         }
     }
 
@@ -837,10 +899,14 @@ public sealed class SeekableHttpStream : Stream
     {
         if (disposing && !_disposed)
         {
+            Cancel();
             _disposed = true;
             DropBody();
             lock (_stallLock)
+            {
                 _stall.Dispose();
+                _lifetime.Dispose();
+            }
             if (_ownsClient)
                 _client.Dispose();
         }
@@ -855,8 +921,9 @@ public sealed class SeekableHttpStream : Stream
 // knows about streams still handles it.
 public sealed class HttpThrottledException(string message) : IOException(message);
 
-// A response that arrived intact and is not the track: a Subsonic error
-// envelope on its mandated HTTP 200, a proxy's sign-in page, a captive portal.
+// A response that arrived intact and is not the track: a proxy's sign-in page,
+// a captive portal, or the server refusing the request outright (401, 403,
+// 404, 410).
 // An IOException so every existing caller treats it as a failed read rather
 // than as a finished one, but distinct so SeekableHttpStream's own read loop
 // can refuse to retry it - see the catch there.

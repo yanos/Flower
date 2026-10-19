@@ -666,6 +666,11 @@ namespace Flower.Audio.Ffmpeg
             if (stream != null)
                 LiveStreams.TryRemove(stream, out _);
 
+            // Before the join, not after: a decode thread waiting on the
+            // network - a throttled server's two-minute budget, a backoff, a
+            // slow body - is what the join would otherwise time out on.
+            stream?.Cancel();
+
             // Off the caller's thread: this is called from the coordinator
             // during a skip, and joining a decode thread that is mid-read of a
             // slow network stream would stall the UI.
