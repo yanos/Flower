@@ -2350,7 +2350,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         if (Browser.ExpandedAlbumKey != tile.Key)
             Browser.ToggleAlbumExpanded(tile);
 
-        _playlistControlViewModel.SetCurrentPlaylist(new Playlist("Now Playing Queue", new List<Track>(tracks)));
+        SetPlayQueue(tracks);
         _playlistControlViewModel.Play(tracks[0], 0);
     }
 
@@ -2398,7 +2398,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         if (albumTracks.Count == 0)
             return;
 
-        _playlistControlViewModel.SetCurrentPlaylist(new Playlist("Now Playing Queue", new List<Track>(albumTracks)));
+        SetPlayQueue(albumTracks);
         _playlistControlViewModel.Play(track, albumTracks.ToList().IndexOf(track));
     }
 
@@ -2446,8 +2446,10 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             : DisplayedTracks, shuffle);
 
     // These songs as the queue, from the top or shuffled from a random one -
-    // the Artists header's circles over everything on the page, and the Albums
-    // grid's open album's Play and Shuffle over that album.
+    // the Artists header's circles over everything on the page, the Albums
+    // grid's open album's Play and Shuffle over that album, and every Play and
+    // Shuffle on the phone. Through ToggleShuffle rather than the property, so
+    // the choice persists like the Now Playing toggle.
     public void PlayTracks(IReadOnlyList<Track> tracks, bool shuffle)
     {
         if (tracks.Count == 0)

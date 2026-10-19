@@ -343,7 +343,7 @@ public partial class MobileMainViewModel
                 () => EditCurrentPlaylistCommand.Execute(null)));
         if (TracksOnScreen(frame).Count > 0)
             actions.Add(new ScreenMenuEntry("Shuffle", MaterialIconKind.Shuffle,
-                () => PlayTracks(TracksOnScreen(frame), shuffle: true)));
+                () => Main.PlayTracks(TracksOnScreen(frame), shuffle: true)));
         if (frame.IsTrackList && Main.Rows.Count > 0)
         {
             // The album or playlist on screen, in the order it shows.

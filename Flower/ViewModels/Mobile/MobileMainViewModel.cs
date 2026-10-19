@@ -1042,6 +1042,11 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         DownloadAllIndicator.IsDownloadable = Main.Rows.Any(r => availability.IsDownloadable(r.Track));
     }
 
+    // The screen's header Play and Shuffle: the songs it lists, which on an
+    // album, artist or playlist screen are Main.Rows.
+    private void PlayAlbum(bool shuffle) =>
+        Main.PlayTracks(Main.Rows.Select(r => r.Track).ToList(), shuffle);
+
     // Re-anchors Next/Previous/auto-advance to whatever's actually on screen
     // right now, mirroring desktop's MainViewModel.SyncPlayQueueToCurrentView -
     // called immediately before every PlayTrackCommand invocation. Search's
@@ -1050,19 +1055,6 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     // needs its own branch here; every other screen (Songs, an album/
     // artist-album/Recently-Added drill-in, or a playlist) renders straight
     // from Main.Rows, whatever MainViewModel already narrowed it to.
-    private void PlayAlbum(bool shuffle)
-    {
-        var rows = Main.Rows;
-        if (rows.Count == 0)
-            return;
-        if (PlaylistControl.IsShuffleEnabled != shuffle)
-            PlaylistControl.ToggleShuffle();
-
-        var index = shuffle ? Random.Shared.Next(rows.Count) : 0;
-        SyncPlayQueueToCurrentView();
-        PlaylistControl.Play(rows[index].Track, index);
-    }
-
     private void SyncPlayQueueToCurrentView() =>
         Main.SetPlayQueue(CurrentTrackRows.Select(r => r.Track));
 
@@ -1480,22 +1472,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     {
         var tracks = AlbumActionTargetTracks();
         ActiveSheet = MobileSheet.None;
-        PlayTracks(tracks, shuffle);
-    }
-
-    // Plays these songs as the queue: from the first in order, or with
-    // shuffle turned on from a random one. Through ToggleShuffle rather than
-    // the property, so the choice persists like the Now Playing toggle.
-    private void PlayTracks(IReadOnlyList<Track> tracks, bool shuffle)
-    {
-        if (tracks.Count == 0)
-            return;
-        if (PlaylistControl.IsShuffleEnabled != shuffle)
-            PlaylistControl.ToggleShuffle();
-
-        var index = shuffle ? Random.Shared.Next(tracks.Count) : 0;
-        Main.SetPlayQueue(tracks);
-        PlaylistControl.Play(tracks[index], index);
+        Main.PlayTracks(tracks, shuffle);
     }
 
     // What the Add to Playlist sheet adds when it was opened from an album's
