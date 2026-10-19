@@ -110,17 +110,29 @@ public class AlbumArtLoader
         private readonly object _lock = new();
         private readonly LinkedList<(string Key, Bitmap Bitmap)> _entries = new();
 
+        // Each entry's node, so a hit moves it to the front without walking
+        // the list to find it. The walk was every thumbnail hit's cost during
+        // a fling: up to 256 nodes, on the UI thread, per row scrolled in.
+        private readonly Dictionary<string, LinkedListNode<(string Key, Bitmap Bitmap)>> _nodes = new();
+
         public void Retain(string key, Bitmap bitmap)
         {
             lock (_lock)
             {
-                RemoveLocked(key);
-                _entries.AddFirst((key, bitmap));
+                if (_nodes.TryGetValue(key, out var node))
+                {
+                    _entries.Remove(node);
+                    node.Value = (key, bitmap);
+                    _entries.AddFirst(node);
+                    return;
+                }
 
+                _nodes[key] = _entries.AddFirst((key, bitmap));
                 while (_entries.Count > capacity)
                 {
                     // Evicted to weak-only, not disposed: a row or tile currently on
                     // screen may still be painting this exact Bitmap.
+                    _nodes.Remove(_entries.Last!.Value.Key);
                     _entries.RemoveLast();
                 }
             }
@@ -129,18 +141,9 @@ public class AlbumArtLoader
         public void Forget(string key)
         {
             lock (_lock)
-                RemoveLocked(key);
-        }
-
-        private void RemoveLocked(string key)
-        {
-            for (var node = _entries.First; node != null; node = node.Next)
             {
-                if (node.Value.Key == key)
-                {
+                if (_nodes.Remove(key, out var node))
                     _entries.Remove(node);
-                    return;
-                }
             }
         }
     }
@@ -160,13 +163,18 @@ public class AlbumArtLoader
 
     // Also prunes cache entries whose bitmap has already been collected -
     // without this the dictionary only ever grows, one dead entry per album
-    // ever displayed, for the life of the process.
+    // ever displayed, for the life of the process. Every half a minute at
+    // most, rather than on every call: the sweep walks every album ever shown,
+    // and it used to run on every cache hit as well as every load.
     private void Retain(string key, Bitmap bitmap)
     {
         Cache[key] = new WeakReference<Bitmap>(bitmap);
+        StrongCacheFor(key).Retain(key, bitmap);
 
-        (key.StartsWith(ThumbnailKeyPrefix, StringComparison.Ordinal) ? StrongThumbnailCache : StrongCache)
-            .Retain(key, bitmap);
+        var now = Environment.TickCount64;
+        var due = Volatile.Read(ref _nextSweepAt);
+        if (now < due || Interlocked.CompareExchange(ref _nextSweepAt, now + SweepIntervalMs, due) != due)
+            return;
 
         foreach (var (deadKey, weak) in Cache)
         {
@@ -175,13 +183,20 @@ public class AlbumArtLoader
         }
     }
 
+    private const long SweepIntervalMs = 30_000;
+    private static long _nextSweepAt;
+
+    private static StrongLru StrongCacheFor(string key) =>
+        key.StartsWith(ThumbnailKeyPrefix, StringComparison.Ordinal) ? StrongThumbnailCache : StrongCache;
+
     // Refreshes LRU position on a hit, so the strong cache tracks what is
-    // actually being displayed rather than what was displayed first.
+    // actually being displayed rather than what was displayed first. The weak
+    // entry already holds this bitmap, so it is left as it is.
     private bool TryGetCached(string key, out Bitmap bitmap)
     {
         if (Cache.TryGetValue(key, out var weak) && weak.TryGetTarget(out bitmap!))
         {
-            Retain(key, bitmap);
+            StrongCacheFor(key).Retain(key, bitmap);
             return true;
         }
 
