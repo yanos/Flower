@@ -38,6 +38,13 @@ public static class SignatureVerifier
         if ((now - requestTime).Duration() > ClockSkewWindow)
             return SignatureCheck.Stale;
 
+        // Both become a key in the replay guard below, and both are fixed-width
+        // on the honest path, so anything longer is not a real request and
+        // must not cost this server memory - see NonceReplayGuard.
+        if (fingerprint.Length > NonceReplayGuard.MaxFingerprintLength ||
+            nonce.Length > NonceReplayGuard.MaxNonceLength)
+            return SignatureCheck.Invalid;
+
         // Recorded before the signature itself is checked - a wrong/forged
         // signature still burns the nonce, which is fine: a legitimate
         // caller always generates a fresh nonce per attempt (see

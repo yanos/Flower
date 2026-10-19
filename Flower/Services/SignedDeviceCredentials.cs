@@ -23,10 +23,10 @@ namespace Flower.Services;
 //     query-string transports produce identical bytes, so adding one changes
 //     nothing about what is signed or verified.
 //   - Nothing is *read* differently. An X-Flower-PublicKey is only ever
-//     consulted by the self-signed pairing check (PeerSignatureAuth.
-//     VerifySelfSigned, reached from the pairing routes alone); a gated
-//     endpoint looks the trusted key up by fingerprint and ignores it
-//     entirely.
+//     consulted by the self-signed check (PeerSignatureAuth.VerifySelfSigned,
+//     reached from the pairing routes, and from /info for a fingerprint it has
+//     no key for, which is how a revoked device is told so); a gated endpoint
+//     looks the trusted key up by fingerprint and ignores it entirely.
 //
 // So the uniform set costs a few bytes per request and removes the standing
 // question of which subset a new call site is supposed to copy.

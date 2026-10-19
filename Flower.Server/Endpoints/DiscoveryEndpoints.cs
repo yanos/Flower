@@ -124,8 +124,11 @@ public static class DiscoveryEndpoints
             // from an anonymous probe would let anything that can reach this
             // port relabel somebody else's phone in this server's own logs,
             // which is a way to make an audit trail lie.
+            //
+            // Cleaned first (DeviceAlias), so the log line below names what was
+            // stored rather than whatever text the device sent.
             if (callerIsTrusted &&
-                DeviceSignatureAuth.GetIdentityValue(context.Request, "X-Flower-Alias") is { } claimedAlias &&
+                DeviceAlias.Clean(DeviceSignatureAuth.GetIdentityValue(context.Request, "X-Flower-Alias")) is { } claimedAlias &&
                 await trustedPeers.RenameAsync(caller.Fingerprint!, claimedAlias) is { } previousAlias)
             {
                 // Information, on the same footing as PairingEndpoints' line
@@ -160,8 +163,17 @@ public static class DiscoveryEndpoints
                     PeerAuthFailure.None => true,
                     // No key on file for the fingerprint claimed - never
                     // approved, or approved and since revoked. The durable
-                    // statement, and the one a revoked device needs to hear.
-                    PeerAuthFailure.NotTrusted => false,
+                    // statement, and the one a revoked device needs to hear -
+                    // so it is told only to a caller that holds the key the
+                    // fingerprint is the hash of, which a revoked device still
+                    // does. Anyone else claiming a fingerprint gets null here
+                    // and null below, so the two cannot be told apart, and
+                    // "is this device paired here?" has no answer for a
+                    // caller who is not that device.
+                    PeerAuthFailure.NotTrusted =>
+                        DeviceSignatureAuth.VerifySelfSigned(context.Request, [], replayGuard) != null
+                            ? false
+                            : null,
                     // A key *is* on file; this one request just didn't verify.
                     // Says nothing about the pairing, so it reads as unknown.
                     _ => null,

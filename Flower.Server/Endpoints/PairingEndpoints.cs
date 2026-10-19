@@ -96,9 +96,10 @@ public static class PairingEndpoints
             }
 
             var publicKeyBase64 = DeviceSignatureAuth.GetIdentityValue(request, "X-Flower-PublicKey")!;
-            var alias = DeviceSignatureAuth.GetIdentityValue(request, "X-Flower-Alias");
-            if (string.IsNullOrEmpty(alias))
-                alias = fingerprint;
+            // Cleaned before the log line below as well as in the store: it is
+            // the caller's own text - see DeviceAlias.
+            var alias = DeviceAlias.Clean(DeviceSignatureAuth.GetIdentityValue(request, "X-Flower-Alias"))
+                ?? fingerprint;
 
             await trustedPeerStore.ApproveAsync(fingerprint, alias, publicKeyBase64, grantsAdmin);
 

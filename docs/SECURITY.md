@@ -496,6 +496,52 @@ the fingerprint whose signature verified or the ticket's minter, marked
 header and a `u=` on a ticketed request. `API.md` was kept current step by
 step, and was read through once more against the code at the end.
 
+## After the October review
+
+`CODE-REVIEW-2026-10.md` found four more things a stranger or a guest could
+learn or write, and September's backlog had two more. All were closed on
+2026-10-18:
+
+- **`/info` no longer says which devices are paired here.** It used to answer
+  `trustsCaller: false` to anyone claiming an unknown fingerprint and `null` to
+  anyone claiming a known one without signing, which answered "is this device
+  paired?" for any fingerprint, and a guest's manifest carries the others'.
+  Now `false` goes only to a caller that self-signs with the key the
+  fingerprint is the hash of (`PeerSignatureAuth.VerifySelfSigned`, as
+  pairing does). A revoked device still holds that key, so it still hears it
+  was revoked. Everyone else gets `null`. `DiscoveryEndpointTests` holds both
+  halves. What is left is coarser: a bare claim of a paired fingerprint is
+  charged to the failed-signature budget and a claim of an unknown one to the
+  anonymous one, so a caller willing to run into both limits can tell them
+  apart. Closing that would mean charging a paired device's polls to its
+  address's anonymous budget, which a stranger on the same address could then
+  spend for it.
+- **The web UI refuses to be framed.** Every page and file `MapWebUi` serves
+  carries `Content-Security-Policy: frame-ancestors 'none'`,
+  `X-Frame-Options: DENY` and `X-Content-Type-Options: nosniff`
+  (`WebUiFramingTests`). An admin's tab signs whatever it is clicked into
+  doing, so a page that could sit invisibly inside another site could be
+  clicked into issuing an admin code or revoking a device.
+- **A device's alias is cleaned before it is kept or logged** (`DeviceAlias`):
+  no control characters, so it cannot start a forged log line; no
+  bidirectional overrides; at most 64 characters, cut at a whole character.
+  Applied at pairing and on every rename.
+- **The replay guard bounds what a caller who cannot sign may write into it.**
+  Nonces are recorded before the signature is checked, so `NonceReplayGuard`
+  is written to by strangers under keys they choose. A fingerprint or nonce
+  over 64 characters is now refused as malformed before it becomes a key, and
+  the expiry sweep runs every 15 seconds instead of walking the whole
+  dictionary on every insert (`NonceReplayGuardTests`). There is deliberately
+  no ceiling past which new nonces are refused: a full guard would lock out
+  every honest device too, and the request budgets already bound how fast it
+  can fill.
+- **Stream tickets are bearer tokens in a query string.** That is what an
+  `<audio>` element can carry, and it means a ticket appears in full in any
+  log that records request URLs. Flower's own log lines name a request's path,
+  never its query, and the shipped configuration keeps `Microsoft.*` at
+  Warning, so ASP.NET Core's per-request lines are not written. An operator who
+  raises that to Information does log tickets, each good for fifteen minutes.
+
 ## Out of scope
 
 - **Per-listener history**, which would let a guest browser tab keep its own

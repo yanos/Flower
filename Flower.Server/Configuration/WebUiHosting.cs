@@ -75,7 +75,10 @@ public static class WebUiHosting
                 // after an upgrade is a real hazard. The assets are local-network
                 // sized and this is not a public CDN, so revalidating is cheap.
                 OnPrepareResponse = context =>
-                    context.Context.Response.Headers.CacheControl = "no-cache",
+                {
+                    context.Context.Response.Headers.CacheControl = "no-cache";
+                    RefuseFraming(context.Context.Response);
+                },
             });
         }
         else
@@ -102,6 +105,8 @@ public static class WebUiHosting
                 return;
             }
 
+            RefuseFraming(context.Response);
+
             if (root != null && File.Exists(Path.Combine(root, "index.html")))
             {
                 context.Response.ContentType = "text/html; charset=utf-8";
@@ -126,13 +131,26 @@ public static class WebUiHosting
         provider.Mappings[".blat"] = "application/octet-stream";
         provider.Mappings[".dat"] = "application/octet-stream";
         provider.Mappings[".dll"] = "application/octet-stream";
-        provider.Mappings[".pdb"] = "application/octet-stream";
         provider.Mappings[".br"] = "application/octet-stream";
         provider.Mappings[".webcil"] = "application/octet-stream";
         // The browser head's fonts, fetched by script (see BrowserFonts).
         provider.Mappings[".otf"] = "font/otf";
         provider.Mappings[".ttf"] = "font/ttf";
         return provider;
+    }
+
+    // An administrator's tab holds a signing key and signs whatever it is
+    // clicked into doing - issuing an admin pairing code, revoking a device,
+    // deleting removed files - so a page that could sit invisibly in someone
+    // else's frame could be clicked into doing it. Nothing legitimate frames
+    // this UI. X-Frame-Options says the same for a browser too old to read
+    // frame-ancestors, and nosniff keeps a file from being run as something
+    // other than the type it was served as.
+    private static void RefuseFraming(HttpResponse response)
+    {
+        response.Headers.ContentSecurityPolicy = "frame-ancestors 'none'";
+        response.Headers.XFrameOptions = "DENY";
+        response.Headers.XContentTypeOptions = "nosniff";
     }
 
     private const string NotDeployedPage = """

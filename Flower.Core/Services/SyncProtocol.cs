@@ -31,6 +31,10 @@ public static class SyncProtocol
 //
 // TrustsCaller is null rather than false when the caller did not identify
 // itself, so a plain unauthenticated probe cannot be misread as a rejection.
+// False goes only to a caller that proved it holds the key for the fingerprint
+// it claimed (self-signed, as at pairing), and null to everyone else: fingerprints
+// are public, and a "no" for an unknown one beside a null for a known one told
+// anybody which devices were paired here.
 //
 // Addresses is how a client keeps hold of a server it can no longer discover.
 // mDNS is link-local, so a client off the home network cannot see the server at

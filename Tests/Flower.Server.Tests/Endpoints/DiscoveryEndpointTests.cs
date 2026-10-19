@@ -128,12 +128,46 @@ public class DiscoveryEndpointTests(FlowerServerFixture server) : IClassFixture<
                     || trusts.ValueKind == JsonValueKind.Null);
     }
 
+    // A revoked device still holds the key it paired with, and signs with it;
+    // that is what earns it a "no" rather than the null a bare claim gets.
     [Fact]
-    public async Task Reports_trustsCaller_false_for_a_device_it_does_not_know()
+    public async Task Tells_a_device_it_has_revoked_that_it_is_no_longer_trusted()
     {
-        var (_, body) = await GetInfoAsync(callerFingerprint: "a-device-that-never-paired");
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var device = NewDevice();
+        await trustedPeers.ApproveAsync(device.Fingerprint, "Test peer", device.PublicKeyBase64);
+        await trustedPeers.RevokeAsync(device.Fingerprint);
+
+        var (_, body) = await GetInfoAsync(signer: device);
 
         Assert.False(body.GetProperty("trustsCaller").GetBoolean());
+    }
+
+    // Fingerprints are public - every guest's manifest carries the others' -
+    // so claiming one without its key must not say whether it is paired here.
+    // It used to: false for an unknown one, null for a known one.
+    [Fact]
+    public async Task Answers_a_claimed_fingerprint_the_same_whether_or_not_it_is_paired()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var paired = NewDevice();
+        await trustedPeers.ApproveAsync(paired.Fingerprint, "Test peer", paired.PublicKeyBase64);
+
+        try
+        {
+            var (_, aboutPaired) = await GetInfoAsync(callerFingerprint: paired.Fingerprint);
+            var (_, aboutStranger) = await GetInfoAsync(callerFingerprint: NewDevice().Fingerprint);
+
+            foreach (var body in new[] { aboutPaired, aboutStranger })
+            {
+                Assert.True(!body.TryGetProperty("trustsCaller", out var trusts)
+                            || trusts.ValueKind == JsonValueKind.Null);
+            }
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(paired.Fingerprint);
+        }
     }
 
     [Fact]

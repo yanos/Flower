@@ -120,8 +120,13 @@ namespace Flower.Persistence
         // new alias/key) replaces its entry rather than duplicating it. Also
         // clears any pending denial for the same fingerprint, so a later
         // approval doesn't leave a stale "denied" entry sitting alongside it.
+        //
+        // The alias is cleaned here rather than trusted from the caller, as it
+        // is in RenameAsync - see DeviceAlias.
         public async Task ApproveAsync(string fingerprint, string alias, string publicKey, bool isAdmin = false)
         {
+            alias = DeviceAlias.Clean(alias) ?? fingerprint;
+
             await _writeLock.WaitAsync();
             try
             {
@@ -163,9 +168,10 @@ namespace Flower.Persistence
             // An empty alias is not a rename to nothing, it is a client that
             // told us nothing. Pairing already substitutes the fingerprint when
             // that happens, and overwriting a good name with a worse one is the
-            // opposite of the point.
-            if (string.IsNullOrWhiteSpace(alias))
+            // opposite of the point. So is one that cleaning leaves nothing of.
+            if (DeviceAlias.Clean(alias) is not { } cleaned)
                 return null;
+            alias = cleaned;
 
             if (Load().FirstOrDefault(p => p.Fingerprint == fingerprint) is not { } known ||
                 known.Alias == alias)

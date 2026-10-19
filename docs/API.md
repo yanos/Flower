@@ -102,10 +102,10 @@ Source: `Flower.Core/Services/` — `SignedRequestCanonicalizer`,
 | Name | Value |
 |---|---|
 | `X-Flower-Fingerprint` | First 32 hex characters of the lowercase SHA-256 of the raw public key |
-| `X-Flower-PublicKey` | Base64 of the 65-byte uncompressed point (`0x04 ‖ X ‖ Y`). Read only by `pair-redeem` |
-| `X-Flower-Alias` | The device's name, user-typed |
+| `X-Flower-PublicKey` | Base64 of the 65-byte uncompressed point (`0x04 ‖ X ‖ Y`). Read only by `pair-redeem`, and by `/info` for a fingerprint it has no key for |
+| `X-Flower-Alias` | The device's name, user-typed. Kept without control or bidirectional-override characters, cut to 64 characters (`DeviceAlias`) |
 | `X-Flower-Timestamp` | Unix seconds |
-| `X-Flower-Nonce` | Any string unique per request; clients send 16 random bytes as hex |
+| `X-Flower-Nonce` | Any string unique per request, at most 64 characters; clients send 16 random bytes as hex |
 | `X-Flower-Signature` | Base64 ECDSA signature, SHA-256, IEEE P1363 form (`r ‖ s`, 64 bytes) |
 
 Each may be sent as a header or as a query parameter of the same name; the
@@ -266,7 +266,7 @@ device it answers more, on that device's budget, and the answer is signed back.
 |---|---|
 | `alias` | The name actually announced, which differs from the configured one when another server already had it |
 | `fingerprint`, `publicKey` | What a client pins, and checks against a pairing invite's `fp` |
-| `trustsCaller` | `true` verified; `false` no key on file for the claimed fingerprint, believed by a client only when the answer is signed; `null` no identity claimed, or a signature that merely failed |
+| `trustsCaller` | `true` verified; `false` no key on file for the claimed fingerprint, told only to a caller whose request is self-signed by that fingerprint's key (a revoked device still holds it), and believed by a client only when the answer is signed; `null` otherwise: no identity claimed, a fingerprint claimed without its key, or a signature that merely failed |
 | `libraryToken` | Change token for the catalog. Paired clients poll this route about every 5s and sync when it moves |
 | `playlistsToken` | Change token for the caller's listener's playlists, so a guest's edit does not move the owner's. **Verified callers only**, `null` otherwise |
 | `addresses` | Every origin the server believes it is reachable on, https first, the public one last. **Verified callers only**, `null` otherwise |
@@ -498,7 +498,9 @@ A ticket is a bearer token by necessity, so it is narrow: one track id, fifteen
 minutes, in memory only, and revoked with the device that minted it. It is
 deliberately **not** single-use — a media element makes a probe and then a
 range request per seek. A device holds at most 32; minting another drops its
-oldest. `400` without an id or with one over 64 characters; an authentication
+oldest. Because it rides in the query string, a ticket appears in full in any
+log that records request URLs; the shipped configuration does not log them
+(`Microsoft.*` at Warning), and raising that to Information does. `400` without an id or with one over 64 characters; an authentication
 failure is the same `401` and code as anywhere else.
 
 ## The admin surface — `/api/admin`
