@@ -79,20 +79,12 @@ public sealed record SettingsCapabilities
 public sealed record SettingsSnapshot
 {
     public string Alias { get; init; } = "";
-    public AppThemePreference ThemePreference { get; init; }
-    public PlaybackControlsPlacement PlaybackControlsPlacement { get; init; }
-    public bool TintPlayerBarWithAlbumColor { get; init; }
-    public int HomeContinuePlayingLimit { get; init; }
-    public int HomeRecentlyPlayedLimit { get; init; }
-    public int HomeRecentlyAddedMonths { get; init; }
     public IReadOnlyList<string> LibraryPaths { get; init; } = [];
     // A server's only - see SettingsCapabilities.ITunesMasterSwitch. The app's
     // own backend leaves it unset here and ignores it in the draft.
     public bool IntegrateWithITunes { get; init; }
     public bool SyncPlayCountFromITunes { get; init; }
     public bool SyncDateAddedFromITunes { get; init; }
-    public bool ShareLogsWithPairedServer { get; init; }
-    public bool UploadWhenAwayFromHome { get; init; }
     public string AdvertisedHost { get; init; } = "";
     public bool AdvertiseOnLan { get; init; } = true;
     public bool TrustTailscaleRange { get; init; } = true;
@@ -160,23 +152,17 @@ public sealed record SettingsSnapshot
 }
 
 // The subset the OK button writes back. Only what the user can actually edit -
-// DataDirectory, Version and the iTunes description are read-only above.
+// DataDirectory, Version and the iTunes description are read-only above - and
+// only what a server has too: this device's own settings are not drafted at
+// all (see ISettingsBackend.Device).
 public sealed record SettingsDraft
 {
     public required string Alias { get; init; }
-    public required AppThemePreference ThemePreference { get; init; }
-    public required PlaybackControlsPlacement PlaybackControlsPlacement { get; init; }
-    public required bool TintPlayerBarWithAlbumColor { get; init; }
-    public required int HomeContinuePlayingLimit { get; init; }
-    public required int HomeRecentlyPlayedLimit { get; init; }
-    public required int HomeRecentlyAddedMonths { get; init; }
     public required IReadOnlyList<string> LibraryPaths { get; init; }
     public required bool LibraryPathsChanged { get; init; }
     public required bool IntegrateWithITunes { get; init; }
     public required bool SyncPlayCountFromITunes { get; init; }
     public required bool SyncDateAddedFromITunes { get; init; }
-    public required bool ShareLogsWithPairedServer { get; init; }
-    public required bool UploadWhenAwayFromHome { get; init; }
     public required string AdvertisedHost { get; init; }
     public required bool AdvertiseOnLan { get; init; }
     public required bool TrustTailscaleRange { get; init; }
@@ -196,6 +182,15 @@ public sealed record SettingsDraft
 public interface ISettingsBackend
 {
     SettingsCapabilities Capabilities { get; }
+
+    // The device whose own settings these are, or null for a server's. What
+    // only a device has - its theme, where its player bar sits, Home's
+    // shelves, its logs and uploads - is bound straight to it and applies the
+    // moment it is touched, the way the phone's Settings does, so each of
+    // those is one property in one place rather than a field in the snapshot,
+    // the draft, this backend and SettingsViewModel as well. The draft is for
+    // what a server shares, where a save is one request.
+    MainViewModel? Device => null;
 
     Task<SettingsSnapshot> LoadAsync(CancellationToken ct = default);
 

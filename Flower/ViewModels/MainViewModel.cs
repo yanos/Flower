@@ -407,6 +407,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
                 return;
             _appSettings.ThemePreference = value;
             SaveSettings();
+            OnPropertyChanged();
             AppTheme.Apply(value);
         }
     }

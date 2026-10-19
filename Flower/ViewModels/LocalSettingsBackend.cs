@@ -21,6 +21,8 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
 {
     public MainViewModel ViewModel { get; } = viewModel;
 
+    public MainViewModel Device => ViewModel;
+
     public SettingsCapabilities Capabilities { get; } = new()
     {
         ThemePicker = true,
@@ -48,17 +50,9 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
     public Task<SettingsSnapshot> LoadAsync(CancellationToken ct = default) => Task.FromResult(new SettingsSnapshot
     {
         Alias = ViewModel.DeviceAlias,
-        ThemePreference = ViewModel.ThemePreference,
-        PlaybackControlsPlacement = ViewModel.PlaybackControlsPlacement,
-        TintPlayerBarWithAlbumColor = ViewModel.TintPlayerBarWithAlbumColor,
-        HomeContinuePlayingLimit = ViewModel.HomeContinuePlayingLimit,
-        HomeRecentlyPlayedLimit = ViewModel.HomeRecentlyPlayedLimit,
-        HomeRecentlyAddedMonths = ViewModel.HomeRecentlyAddedMonths,
         LibraryPaths = ViewModel.LibraryPaths.ToList(),
         SyncPlayCountFromITunes = ViewModel.SyncPlayCountFromITunes,
         SyncDateAddedFromITunes = ViewModel.SyncDateAddedFromITunes,
-        ShareLogsWithPairedServer = ViewModel.ShareLogsWithPairedServer,
-        UploadWhenAwayFromHome = ViewModel.UploadWhenAwayFromHome,
         ITunesLibraryDescription = ITunesIntegration.DescribeSource(),
         AppleMusicFolder = Flower.Importer.Importer.TryResolveAppleMusicFolder(),
         DataDirectory = AppDataDirectory.Path,
@@ -80,9 +74,8 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
 
     // Deliberately applied property-by-property rather than through one settings
     // object: each of these setters already persists and already no-ops when the
-    // value is unchanged (see MainViewModel), and several have side effects -
-    // ThemePreference repaints, the library paths kick off a rescan - that a
-    // bulk write would have to reimplement.
+    // value is unchanged (see MainViewModel), and the library paths kick off a
+    // rescan that a bulk write would have to reimplement.
     public async Task<string?> SaveAsync(SettingsDraft draft, CancellationToken ct = default)
     {
         // An empty alias is never persisted (it would show peers a blank name);
@@ -90,16 +83,8 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
         if (!string.IsNullOrWhiteSpace(draft.Alias))
             ViewModel.DeviceAlias = draft.Alias.Trim();
 
-        ViewModel.ThemePreference = draft.ThemePreference;
-        ViewModel.PlaybackControlsPlacement = draft.PlaybackControlsPlacement;
-        ViewModel.TintPlayerBarWithAlbumColor = draft.TintPlayerBarWithAlbumColor;
-        ViewModel.HomeContinuePlayingLimit = draft.HomeContinuePlayingLimit;
-        ViewModel.HomeRecentlyPlayedLimit = draft.HomeRecentlyPlayedLimit;
-        ViewModel.HomeRecentlyAddedMonths = draft.HomeRecentlyAddedMonths;
         ViewModel.SyncPlayCountFromITunes = draft.SyncPlayCountFromITunes;
         ViewModel.SyncDateAddedFromITunes = draft.SyncDateAddedFromITunes;
-        ViewModel.ShareLogsWithPairedServer = draft.ShareLogsWithPairedServer;
-        ViewModel.UploadWhenAwayFromHome = draft.UploadWhenAwayFromHome;
 
         if (draft.LibraryPathsChanged)
             await ViewModel.SaveLibraryPathsAsync(draft.LibraryPaths.ToList());

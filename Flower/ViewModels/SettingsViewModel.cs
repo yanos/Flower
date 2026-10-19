@@ -19,12 +19,13 @@ namespace Flower.ViewModels;
 // Drives SettingsPanel, for either this device's settings or a remote Flower
 // server's - the difference is entirely which ISettingsBackend it was handed.
 //
-// This is a *draft*: edits live here until Save, which is what finally makes
-// Cancel mean something. The old SettingsWindow applied the alias, the theme and
-// every checkbox the moment they were touched and only treated the library-folder
-// list as cancellable, so "Cancel" quietly kept most of what had just been
-// changed. Nothing about the remote case could work that way anyway - every write
-// there is a request, and firing one per keystroke is not an option.
+// What a server shares with a device - the name, the library folders, the
+// Music.app imports - and the server's own network settings are a *draft*:
+// edits live here until Save, and Cancel drops them. The remote case could not
+// work any other way - every write there is a request, and firing one per
+// keystroke is not an option. What only a device has is not drafted: the panel
+// binds it straight to Device, where it applies when touched, as on the phone
+// (see ISettingsBackend.Device).
 public sealed partial class SettingsViewModel : ViewModelBase
 {
     private readonly ISettingsBackend _backend;
@@ -169,65 +170,14 @@ public sealed partial class SettingsViewModel : ViewModelBase
         set => SetProperty(ref _alias, value);
     }
 
-    // Bound as a ComboBox index rather than the enum, so the XAML can stay a
-    // plain three-item ComboBox with no converter or enum-source plumbing.
-    private int _themeIndex;
-    public int ThemeIndex
-    {
-        get => _themeIndex;
-        set => SetProperty(ref _themeIndex, value);
-    }
-
-    public AppThemePreference ThemePreference => ThemeIndex switch
-    {
-        1 => AppThemePreference.Light,
-        2 => AppThemePreference.Dark,
-        _ => AppThemePreference.System,
-    };
-
-    // A ComboBox index for the same reason as ThemeIndex: 0 is Top, 1 Bottom.
-    private int _playbackControlsIndex;
-    public int PlaybackControlsIndex
-    {
-        get => _playbackControlsIndex;
-        set => SetProperty(ref _playbackControlsIndex, value);
-    }
-
-    public PlaybackControlsPlacement PlaybackControlsPlacement =>
-        PlaybackControlsIndex == 1 ? PlaybackControlsPlacement.Bottom : PlaybackControlsPlacement.Top;
-
-    private bool _tintPlayerBarWithAlbumColor;
-    public bool TintPlayerBarWithAlbumColor
-    {
-        get => _tintPlayerBarWithAlbumColor;
-        set => SetProperty(ref _tintPlayerBarWithAlbumColor, value);
-    }
+    // This device, when these are its own settings - see ISettingsBackend.
+    // Device. Null for a server's.
+    public MainViewModel? Device => _backend.Device;
 
     // Home's shelves - see AppSettings.HomeContinuePlayingLimit. The panel's
     // boxes are held to these ceilings, and HomeViewModel clamps again.
     public int MaxHomeShelfAlbums => HomeViewModel.MaxAlbumsPerShelf;
     public int MaxHomeRecentlyAddedMonths => HomeViewModel.MaxRecentlyAddedMonths;
-
-    private int _homeContinuePlayingLimit;
-    public int HomeContinuePlayingLimit
-    {
-        get => _homeContinuePlayingLimit;
-        set => SetProperty(ref _homeContinuePlayingLimit, value);
-    }
-
-    private int _homeRecentlyPlayedLimit;
-    public int HomeRecentlyPlayedLimit
-    {
-        get => _homeRecentlyPlayedLimit;
-        set => SetProperty(ref _homeRecentlyPlayedLimit, value);
-    }
-
-    private int _homeRecentlyAddedMonths;
-    public int HomeRecentlyAddedMonths
-    {
-        get => _homeRecentlyAddedMonths;
-        set => SetProperty(ref _homeRecentlyAddedMonths, value);
-    }
 
     private bool _integrateWithITunes;
     public bool IntegrateWithITunes
@@ -312,20 +262,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
     {
         get => _syncDateAddedFromITunes;
         set => SetProperty(ref _syncDateAddedFromITunes, value);
-    }
-
-    private bool _shareLogsWithPairedServer;
-    public bool ShareLogsWithPairedServer
-    {
-        get => _shareLogsWithPairedServer;
-        set => SetProperty(ref _shareLogsWithPairedServer, value);
-    }
-
-    private bool _uploadWhenAwayFromHome;
-    public bool UploadWhenAwayFromHome
-    {
-        get => _uploadWhenAwayFromHome;
-        set => SetProperty(ref _uploadWhenAwayFromHome, value);
     }
 
     private string _advertisedHost = "";
@@ -512,23 +448,10 @@ public sealed partial class SettingsViewModel : ViewModelBase
             _snapshot = await _backend.LoadAsync(ct);
 
             Alias = _snapshot.Alias;
-            ThemeIndex = _snapshot.ThemePreference switch
-            {
-                AppThemePreference.Light => 1,
-                AppThemePreference.Dark => 2,
-                _ => 0,
-            };
-            PlaybackControlsIndex = _snapshot.PlaybackControlsPlacement == PlaybackControlsPlacement.Bottom ? 1 : 0;
-            TintPlayerBarWithAlbumColor = _snapshot.TintPlayerBarWithAlbumColor;
-            HomeContinuePlayingLimit = _snapshot.HomeContinuePlayingLimit;
-            HomeRecentlyPlayedLimit = _snapshot.HomeRecentlyPlayedLimit;
-            HomeRecentlyAddedMonths = _snapshot.HomeRecentlyAddedMonths;
             _integrateWithITunes = _snapshot.IntegrateWithITunes;
             OnPropertyChanged(nameof(IntegrateWithITunes));
             SyncPlayCountFromITunes = _snapshot.SyncPlayCountFromITunes;
             SyncDateAddedFromITunes = _snapshot.SyncDateAddedFromITunes;
-            ShareLogsWithPairedServer = _snapshot.ShareLogsWithPairedServer;
-            UploadWhenAwayFromHome = _snapshot.UploadWhenAwayFromHome;
             AdvertisedHost = _snapshot.AdvertisedHost;
             AdvertiseOnLan = _snapshot.AdvertiseOnLan;
             TrustTailscaleRange = _snapshot.TrustTailscaleRange;
@@ -613,19 +536,11 @@ public sealed partial class SettingsViewModel : ViewModelBase
             StatusMessage = await _backend.SaveAsync(new SettingsDraft
             {
                 Alias = Alias,
-                ThemePreference = ThemePreference,
-                PlaybackControlsPlacement = PlaybackControlsPlacement,
-                TintPlayerBarWithAlbumColor = TintPlayerBarWithAlbumColor,
-                HomeContinuePlayingLimit = HomeContinuePlayingLimit,
-                HomeRecentlyPlayedLimit = HomeRecentlyPlayedLimit,
-                HomeRecentlyAddedMonths = HomeRecentlyAddedMonths,
                 LibraryPaths = _paths.ToList(),
                 LibraryPathsChanged = pathsChanged,
                 IntegrateWithITunes = IntegrateWithITunes,
                 SyncPlayCountFromITunes = SyncPlayCountFromITunes,
                 SyncDateAddedFromITunes = SyncDateAddedFromITunes,
-                ShareLogsWithPairedServer = ShareLogsWithPairedServer,
-                UploadWhenAwayFromHome = UploadWhenAwayFromHome,
                 AdvertisedHost = AdvertisedHost,
                 AdvertiseOnLan = AdvertiseOnLan,
                 TrustTailscaleRange = TrustTailscaleRange,

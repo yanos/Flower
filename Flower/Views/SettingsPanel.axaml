@@ -5,6 +5,7 @@
              xmlns:vm="clr-namespace:Flower.ViewModels"
              xmlns:avc="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
              xmlns:views="clr-namespace:Flower.Views"
+             xmlns:conv="clr-namespace:Flower.Converters"
              x:Class="Flower.Views.SettingsPanel"
              x:DataType="vm:SettingsViewModel">
 
@@ -14,6 +15,10 @@
        entirely by SettingsViewModel.Capabilities, so administering a headless
        Flower.Server from a browser runs this exact XAML rather than a second,
        drifting copy of it. -->
+  <UserControl.Resources>
+    <conv:EnumIndexConverter x:Key="EnumIndexConverter"/>
+  </UserControl.Resources>
+
   <Grid RowDefinitions="*,Auto,Auto" Margin="16">
 
     <TabControl Grid.Row="0" x:Name="Tabs" SelectionChanged="Tabs_SelectionChanged">
@@ -44,12 +49,16 @@
                      Foreground="{DynamicResource AppWarningBrush}"
                      Margin="0,4,0,0" FontSize="11" TextWrapping="Wrap"/>
 
+          <!-- From here to the uploads switch, this device's own settings:
+               bound to Device and applied as they are touched, not on Save -
+               see ISettingsBackend.Device. Hidden on a server's page, where
+               Device is null. -->
           <TextBlock Text="Theme"
                      FontWeight="SemiBold"
                      Margin="0,20,0,8"
                      IsVisible="{Binding Capabilities.ThemePicker}"/>
           <ComboBox HorizontalAlignment="Stretch"
-                    SelectedIndex="{Binding ThemeIndex, Mode=TwoWay}"
+                    SelectedIndex="{Binding Device.ThemePreference, Mode=TwoWay, Converter={StaticResource EnumIndexConverter}}"
                     IsVisible="{Binding Capabilities.ThemePicker}">
             <ComboBoxItem Content="Follow System"/>
             <ComboBoxItem Content="Light"/>
@@ -63,7 +72,7 @@
                      Margin="0,20,0,8"
                      IsVisible="{Binding Capabilities.PlaybackControlsPicker}"/>
           <ComboBox HorizontalAlignment="Stretch"
-                    SelectedIndex="{Binding PlaybackControlsIndex, Mode=TwoWay}"
+                    SelectedIndex="{Binding Device.PlaybackControlsPlacement, Mode=TwoWay, Converter={StaticResource EnumIndexConverter}}"
                     IsVisible="{Binding Capabilities.PlaybackControlsPicker}">
             <ComboBoxItem Content="Top"/>
             <ComboBoxItem Content="Bottom"/>
@@ -71,7 +80,7 @@
           <!-- AppSettings.TintPlayerBarWithAlbumColor. -->
           <CheckBox Content="Color the player bar with the album's cover"
                     Margin="0,8,0,0"
-                    IsChecked="{Binding TintPlayerBarWithAlbumColor, Mode=TwoWay}"
+                    IsChecked="{Binding Device.TintPlayerBarWithAlbumColor, Mode=TwoWay}"
                     IsVisible="{Binding Capabilities.PlaybackControlsPicker}"/>
 
           <!-- How much Home's shelves hold - see AppSettings.
@@ -82,19 +91,19 @@
             <Grid ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="10">
               <TextBlock Grid.Row="0" Text="Continue Playing" VerticalAlignment="Center"/>
               <NumericUpDown Grid.Row="0" Grid.Column="1" Width="120"
-                             Value="{Binding HomeContinuePlayingLimit, Mode=TwoWay}"
+                             Value="{Binding Device.HomeContinuePlayingLimit, Mode=TwoWay}"
                              Minimum="0" Maximum="{Binding MaxHomeShelfAlbums}" Increment="1" FormatString="0"/>
               <TextBlock Grid.Row="0" Grid.Column="2" Text="albums" Opacity="0.6" VerticalAlignment="Center"/>
 
               <TextBlock Grid.Row="1" Text="Recently Played" VerticalAlignment="Center"/>
               <NumericUpDown Grid.Row="1" Grid.Column="1" Width="120"
-                             Value="{Binding HomeRecentlyPlayedLimit, Mode=TwoWay}"
+                             Value="{Binding Device.HomeRecentlyPlayedLimit, Mode=TwoWay}"
                              Minimum="0" Maximum="{Binding MaxHomeShelfAlbums}" Increment="1" FormatString="0"/>
               <TextBlock Grid.Row="1" Grid.Column="2" Text="albums" Opacity="0.6" VerticalAlignment="Center"/>
 
               <TextBlock Grid.Row="2" Text="Recently Added" VerticalAlignment="Center"/>
               <NumericUpDown Grid.Row="2" Grid.Column="1" Width="120"
-                             Value="{Binding HomeRecentlyAddedMonths, Mode=TwoWay}"
+                             Value="{Binding Device.HomeRecentlyAddedMonths, Mode=TwoWay}"
                              Minimum="0" Maximum="{Binding MaxHomeRecentlyAddedMonths}" Increment="1" FormatString="0"/>
               <TextBlock Grid.Row="2" Grid.Column="2" Text="months" Opacity="0.6" VerticalAlignment="Center"/>
             </Grid>
@@ -110,7 +119,7 @@
                paired, since there is nowhere for the logs to go. -->
           <CheckBox Content="Send logs to server"
                     Margin="0,20,0,0"
-                    IsChecked="{Binding ShareLogsWithPairedServer, Mode=TwoWay}"
+                    IsChecked="{Binding Device.ShareLogsWithPairedServer, Mode=TwoWay}"
                     IsVisible="{Binding ShowsShareLogs}"/>
           <TextBlock Text="Helps the server owner fix problems. Includes file names."
                      Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"
@@ -122,7 +131,7 @@
                switch is, for the same reason - no server, nowhere to send. -->
           <CheckBox Content="Transfer songs when away from home"
                     Margin="0,16,0,0"
-                    IsChecked="{Binding UploadWhenAwayFromHome, Mode=TwoWay}"
+                    IsChecked="{Binding Device.UploadWhenAwayFromHome, Mode=TwoWay}"
                     IsVisible="{Binding ShowsShareLogs}"/>
           <TextBlock Text="Off: song files are sent to the server, and replaced versions fetched from it, only on its own network. On: also over cellular or a remote connection. Edits to tags and covers always go."
                      Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"
