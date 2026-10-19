@@ -18,7 +18,7 @@
   </UserControl.Resources>
 
   <!-- Search tab results: Artists/Albums/Songs sections, each hidden when
-       empty - see MobileMainViewModel.RebuildSearchResults. A plain
+       empty - see MobileSearchViewModel. A plain
        ScrollViewer+StackPanel rather than TrackListScreenView's virtualized
        ListBox - search results are bounded by the query, not the whole
        library, so virtualization isn't worth the extra complexity here. -->
@@ -44,12 +44,12 @@
 
   <!-- Each section's rows are built once and handed the next search's
        results as the query is typed (RecyclingItemsControl); none is
-       virtualized, each being capped (MaxSearchResultsPerSection). -->
+       virtualized, each being capped (MobileSearchViewModel.MaxResultsPerSection). -->
   <ScrollViewer Classes="screenScroll" controls:RubberBandScroll.IsEnabled="True">
     <StackPanel>
-      <StackPanel IsVisible="{Binding HasSearchArtistResults}">
+      <StackPanel IsVisible="{Binding Search.HasArtistResults}">
         <TextBlock Classes="sectionHeader" Text="Artists" />
-        <controls:RecyclingItemsControl ItemsSource="{Binding SearchArtistResults}">
+        <controls:RecyclingItemsControl ItemsSource="{Binding Search.ArtistResults}">
           <ItemsControl.ItemTemplate>
             <!-- The Artists tab's own row (ArtistRowView). -->
             <DataTemplate x:DataType="vm:ArtistPickerRow">
@@ -59,9 +59,9 @@
         </controls:RecyclingItemsControl>
       </StackPanel>
 
-      <StackPanel IsVisible="{Binding HasSearchAlbumResults}">
+      <StackPanel IsVisible="{Binding Search.HasAlbumResults}">
         <TextBlock Classes="sectionHeader" Text="Albums" />
-        <controls:RecyclingItemsControl ItemsSource="{Binding SearchAlbumResults}">
+        <controls:RecyclingItemsControl ItemsSource="{Binding Search.AlbumResults}">
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="vm:AlbumTileViewModel">
               <Button Classes="pickerRow"
@@ -84,15 +84,15 @@
         </controls:RecyclingItemsControl>
       </StackPanel>
 
-      <StackPanel IsVisible="{Binding HasSearchSongResults}">
+      <StackPanel IsVisible="{Binding Search.HasSongResults}">
         <TextBlock Classes="sectionHeader" Text="Songs" />
-        <controls:RecyclingItemsControl ItemsSource="{Binding SearchSongResults}" ItemTemplate="{StaticResource TrackRowTemplate}" />
+        <controls:RecyclingItemsControl ItemsSource="{Binding Search.SongResults}" ItemTemplate="{StaticResource TrackRowTemplate}" />
       </StackPanel>
 
-      <!-- See MaxSearchResultsPerSection's own doc comment - each section
+      <!-- See MobileSearchViewModel.MaxResultsPerSection - each section
            above is capped, so a very broad query needs to say so rather
            than silently looking like the whole match set. -->
-      <TextBlock IsVisible="{Binding HasMoreSearchResults}"
+      <TextBlock IsVisible="{Binding Search.HasMoreResults}"
                  Text="Showing partial results - refine your search to see more."
                  FontSize="12" Opacity="0.5" TextWrapping="Wrap"
                  Margin="16,14,16,20" />

@@ -665,7 +665,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
     // them. Two buttons ("Add Device…"/"Add Administrator…") used to say this
     // instead, which made the rarer, more dangerous one just as easy to press
     // by accident as the ordinary one. Not remembered between presses, for the
-    // same reason MainViewModel.PairingCodeGrantsAdmin isn't.
+    // same reason PairingCodeIssuerViewModel.GrantsAdmin isn't.
     private bool _pairingCodeGrantsAdmin;
     public bool PairingCodeGrantsAdmin
     {

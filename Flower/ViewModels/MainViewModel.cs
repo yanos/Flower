@@ -162,7 +162,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public event EventHandler<SmartPlaylistEditorEventArgs>? SmartPlaylistEditorRequested;
 
     // Forwards PairedServerReachability.Changed - see the constructor's own
-    // subscription to it. Lets MobileMainViewModel (SearchSongResults, a row
+    // subscription to it. Lets MobileMainViewModel (Search.SongResults, a row
     // list that doesn't live on Rows) react without needing its own direct
     // reference to the reachability service.
     public event EventHandler? ReachabilityChanged;
@@ -696,110 +696,16 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     // ── Page header (desktop) ─────────────────────────────────────────────
 
-    // The desktop Artists page, for the one artist picked: who they are, the
-    // way the phone's artist list draws one (ArtistPickerRow - their covers as
-    // a collage, how many albums and songs) and how long it all runs, and then
-    // each of their albums as a card of its own with its songs under it
-    // (ArtistAlbums). Several artists picked at once for a drag have no one
-    // name to head them, so the page shows nobody. Built when the pick or the
-    // library changes rather than on every read, so the covers behind it are
-    // fetched once per artist.
-    private ArtistHeaderInfo? _artistHeader;
-    public ArtistHeaderInfo? ArtistHeader => _artistHeader;
+    // The desktop Artists page, for the one artist picked - see
+    // ArtistPageViewModel.
+    public ArtistPageViewModel ArtistPage { get; } = new();
 
-    private IReadOnlyList<ArtistAlbumSectionViewModel> _artistAlbums = [];
-    public IReadOnlyList<ArtistAlbumSectionViewModel> ArtistAlbums => _artistAlbums;
-
-    // force: the library changed under the page, so everything is rebuilt.
-    // The filter does not reach the cards: it finds artists by name, in the
-    // column beside them, and the page is whichever one is picked, whole.
-    private void RefreshArtistPage(bool force = false)
-    {
-        var name = _selectedSidebarItem?.Kind == SidebarItemKind.Artists && SelectedSubItems.Count == 1
-            ? SelectedSubItems.First()
-            : null;
-        if (!force && name == _artistHeader?.Name)
-            return;
-
-        foreach (var section in _artistAlbums)
-        {
-            section.SelectionStarted -= ArtistAlbum_SelectionStarted;
-            section.ExpandedTracks = [];
-            section.Tile.Dispose();
-        }
-
-        if (name == null)
-        {
-            _artistHeader = null;
-            _artistAlbums = [];
-        }
-        else
-        {
-            var tracks = Library.Tracks.Where(t => ArtistNames.Same(t.Artists, name)).ToList();
-            var albums = tracks.Where(t => !string.IsNullOrEmpty(t.Album)).Select(t => t.Album).Distinct().Count();
-            var total = TimeSpan.FromTicks(tracks.Sum(t => t.Duration.Ticks));
-            var length = total.TotalHours >= 1 ? $"{(int)total.TotalHours}h {total.Minutes}m" : $"{total.Minutes}m";
-            _artistHeader = new ArtistHeaderInfo(name, AlbumCollage.ByAlbumName(tracks),
-                $"{ArtistPickerRow.Summary(albums, tracks.Count)} · {length}");
-
-            var tiles = AlbumGridBuilder.Build(tracks)
-                .OrderBy(t => ArtistAlbumSectionViewModel.Year(t) == null)
-                .ThenBy(t => ArtistAlbumSectionViewModel.Year(t))
-                .ThenBy(t => TrackListBuilder.SortKey(t.Name))
-                .ToList();
-            // Songs on no album still belong to the artist: they go in a card
-            // of their own, last.
-            var loose = tracks.Where(t => string.IsNullOrEmpty(t.Album)).ToList();
-            if (loose.Count > 0)
-                tiles.Add(new AlbumTileViewModel
-                {
-                    Name = "Other Songs",
-                    Artist = name,
-                    RepresentativeTrack = loose[0],
-                    MostRecentlyAdded = loose.Max(t => t.DateAdded),
-                    Tracks = loose,
-                });
-
-            var availability = Availability;
-            var playing = CurrentlyPlayingTrack?.Id;
-            _artistAlbums = tiles.Select(tile =>
-            {
-                var section = new ArtistAlbumSectionViewModel(tile)
-                {
-                    Availability = availability,
-                    CurrentlyPlayingTrackId = playing,
-                };
-                section.ExpandedTracks = LibraryBrowserViewModel.ExpandedTracksFor(tile);
-                section.SelectionStarted += ArtistAlbum_SelectionStarted;
-                return section;
-            }).ToList();
-        }
-        OnPropertyChanged(nameof(ArtistHeader));
-        OnPropertyChanged(nameof(ArtistAlbums));
-    }
-
-    // One selection across the page, as one list would have.
-    private void ArtistAlbum_SelectionStarted(object? sender, EventArgs e)
-    {
-        foreach (var section in _artistAlbums)
-        {
-            if (!ReferenceEquals(section, sender))
-                section.ClearSelection();
-        }
-    }
-
-    // A song starting, or the server coming and going, changes how the cards'
-    // songs draw - the same two things AlbumGridView is told about.
-    private void UpdateArtistAlbumRows()
-    {
-        var availability = Availability;
-        var playing = CurrentlyPlayingTrack?.Id;
-        foreach (var section in _artistAlbums)
-        {
-            section.Availability = availability;
-            section.CurrentlyPlayingTrackId = playing;
-        }
-    }
+    private void RefreshArtistPage(bool force = false) =>
+        ArtistPage.Show(
+            _selectedSidebarItem?.Kind == SidebarItemKind.Artists && SelectedSubItems.Count == 1
+                ? SelectedSubItems.First()
+                : null,
+            Library.Tracks, Availability, CurrentlyPlayingTrack?.Id, force);
 
     // The band above a list on desktop: the page's name in the display serif,
     // how much is in it, and the filter box. Over every list and over Home -
@@ -1103,65 +1009,10 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     // ── Browser pairing ───────────────────────────────────────────────────
     //
-    // A browser tab is a device like any other: until the server knows its
-    // key, every request it makes is refused. Such a tab shows nothing but a
-    // pairing screen - a box for a code, and where to get one - because
-    // everything else on the page could only ever be empty or refused. Set at
-    // startup by App.ReportBrowserPairing, from the server's own answer on the
-    // /info handshake. All of it is false/null on every other head.
-
-    // The server said it does not know this tab.
-    private bool _isBrowserUnpaired;
-    public bool IsBrowserUnpaired
-    {
-        get => _isBrowserUnpaired;
-        set
-        {
-            if (_isBrowserUnpaired == value)
-                return;
-            _isBrowserUnpaired = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(ShowsBrowserPairingScreen));
-            OnPropertyChanged(nameof(CoversBrowserPage));
-            OnPropertyChanged(nameof(CanEnterBrowserPairingCode));
-        }
-    }
-
-    // Why this tab cannot pair at all - a page that cannot hold a key (plain
-    // http from another machine, storage blocked). A code would not help, so
-    // the screen says this instead of offering the box.
-    private string? _browserCannotPairReason;
-    public string? BrowserCannotPairReason
-    {
-        get => _browserCannotPairReason;
-        set
-        {
-            if (_browserCannotPairReason == value)
-                return;
-            _browserCannotPairReason = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(ShowsBrowserPairingScreen));
-            OnPropertyChanged(nameof(CoversBrowserPage));
-            OnPropertyChanged(nameof(CanEnterBrowserPairingCode));
-        }
-    }
-
-    // Until the server has answered, the tab does not know which of the two
-    // pages it is, so it shows neither - an opaque blank rather than a flash
-    // of the library before the pairing screen covers it.
-    private bool _isCheckingBrowserPairing;
-    public bool IsCheckingBrowserPairing
-    {
-        get => _isCheckingBrowserPairing;
-        set
-        {
-            if (_isCheckingBrowserPairing == value)
-                return;
-            _isCheckingBrowserPairing = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(CoversBrowserPage));
-        }
-    }
+    // The pairing screen a browser tab the server does not know shows instead
+    // of everything else - see BrowserPairingViewModel. Left as it is on every
+    // other head.
+    public BrowserPairingViewModel BrowserPairing { get; } = new();
 
     // The server this tab was loaded from, once it has said who it is: the
     // one server a tab's tracks can stream from - see
@@ -1180,98 +1031,6 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             Browser.ApplyTrackAvailability(StreamingServerFingerprint, IsStreamingServerReachable);
             Home.ApplyAvailability();
             Queue.ApplyAvailability();
-        }
-    }
-
-    public bool ShowsBrowserPairingScreen => IsBrowserUnpaired || BrowserCannotPairReason != null;
-    public bool CoversBrowserPage => IsCheckingBrowserPairing || ShowsBrowserPairingScreen;
-    public bool CanEnterBrowserPairingCode => IsBrowserUnpaired && BrowserCannotPairReason == null;
-
-    // Where a code comes from - shown under the box. One string, so the
-    // screen and the tests read the same words.
-    public const string BrowserPairingHelp =
-        "Pairing lets this browser play music from this server. You need a pairing code, which an administrator "
-        + "of the server creates:\n\n"
-        + "  •  In the Flower app on a computer: select the server in the sidebar and press Generate Pairing Code.\n"
-        + "  •  In the Flower app on a phone: Settings, then Generate Pairing Code.\n"
-        + "  •  In a browser that is already paired as an administrator: Server Settings, Devices, Generate Pairing Code.\n\n"
-        + "Tick Administrator when creating it if this browser should also be able to change the server's settings. "
-        + "Without it, this browser can play music but won't see the settings.\n\n"
-        + "Nobody can create one? The server prints an administrator code in its log when it starts with no "
-        + "administrator, or when it is started with --pairing-code (for Docker: docker compose logs flower). "
-        + "A code works once, for ten minutes.";
-
-    private string _browserPairingCode = "";
-    public string BrowserPairingCode
-    {
-        get => _browserPairingCode;
-        set
-        {
-            if (_browserPairingCode == value)
-                return;
-            _browserPairingCode = value;
-            OnPropertyChanged();
-        }
-    }
-
-    private string? _browserPairingError;
-    public string? BrowserPairingError
-    {
-        get => _browserPairingError;
-        private set
-        {
-            if (_browserPairingError == value)
-                return;
-            _browserPairingError = value;
-            OnPropertyChanged();
-        }
-    }
-
-    private bool _isPairingBrowser;
-    public bool IsPairingBrowser
-    {
-        get => _isPairingBrowser;
-        private set
-        {
-            if (_isPairingBrowser == value)
-                return;
-            _isPairingBrowser = value;
-            OnPropertyChanged();
-        }
-    }
-
-    // What spends a code, and what happens once one is spent - the browser
-    // head's BrowserPeerCredentials.PairAsync and a page reload, handed in by
-    // App so this view model neither knows about WebCrypto nor calls into
-    // JavaScript. The pairer answers null for success, or the sentence to show.
-    public Func<string, Task<string?>>? BrowserPairer { get; set; }
-    public Action? AfterBrowserPaired { get; set; }
-
-    private IAsyncRelayCommand? _pairBrowserCommand;
-    public IAsyncRelayCommand PairBrowserCommand => _pairBrowserCommand ??= new AsyncRelayCommand(PairBrowserAsync);
-
-    private async Task PairBrowserAsync()
-    {
-        if (BrowserPairer is not { } pair || IsPairingBrowser)
-            return;
-
-        IsPairingBrowser = true;
-        BrowserPairingError = null;
-        try
-        {
-            if (await pair(BrowserPairingCode) is { } error)
-            {
-                BrowserPairingError = error;
-                return;
-            }
-
-            // Everything the page built at startup was built for a tab the
-            // server did not know. Starting over is how all of it asks again.
-            AfterBrowserPaired?.Invoke();
-        }
-        finally
-        {
-            IsPairingBrowser = false;
         }
     }
 
@@ -1475,81 +1234,9 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     // ── Handing out pairing codes ─────────────────────────────────────────────
 
-    // "Generate Pairing Code" on mobile's Settings sheet: the same one-time code
-    // the server hands out through its own settings screen (see
-    // SettingsViewModel's IssuePairingCodeCommand and PairingCodeService).
-    //
-    // Desktop no longer has a second one of these. It used to sit in the
-    // device-detail header, next to a pane that browsed the server's catalog;
-    // that pane now *is* the server's settings screen (SelectedServerSettings),
-    // whose Devices tab already offers this - and two identical buttons on one
-    // page is worse than the trip the header one was saving. A phone has no
-    // such pane, which is why this state stays.
-    //
-    // An ordinary listener's code unless PairingCodeGrantsAdmin is ticked: the
-    // common case is adding somebody's phone, and a device that only listens has
-    // no business handing out codes of its own - but an owner's second device is
-    // a real case too.
-    private string? _issuedPairingCode;
-    public string? IssuedPairingCode
-    {
-        get => _issuedPairingCode;
-        private set
-        {
-            if (_issuedPairingCode == value)
-                return;
-            _issuedPairingCode = value;
-            OnPropertyChanged();
-        }
-    }
-
-    // The same code rendered as a flower:// link, which additionally carries
-    // this server's fingerprint. Kept beside the bare code rather than
-    // replacing it: five characters is what survives being read down a phone
-    // line, but only the link lets the device on the other end check which
-    // server it is pairing with, so the stronger of the two has to be on
-    // screen for anyone to use it - see PairingEntry.
-    private string? _issuedPairingInvite;
-    public string? IssuedPairingInvite
-    {
-        get => _issuedPairingInvite;
-        private set
-        {
-            if (_issuedPairingInvite == value)
-                return;
-            _issuedPairingInvite = value;
-            OnPropertyChanged();
-        }
-    }
-
-    // Same treatment as ServerSettingsError: "paired, but not an administrator of
-    // that server" is the most likely answer here and is an ordinary outcome of
-    // clicking the button, not a fault worth a dialog.
-    private string? _issuedPairingCodeError;
-    public string? IssuedPairingCodeError
-    {
-        get => _issuedPairingCodeError;
-        private set
-        {
-            if (_issuedPairingCodeError == value)
-                return;
-            _issuedPairingCodeError = value;
-            OnPropertyChanged();
-        }
-    }
-
-    private bool _isIssuingPairingCode;
-    public bool IsIssuingPairingCode
-    {
-        get => _isIssuingPairingCode;
-        private set
-        {
-            if (_isIssuingPairingCode == value)
-                return;
-            _isIssuingPairingCode = value;
-            OnPropertyChanged();
-        }
-    }
+    // "Generate Pairing Code" on mobile's Settings sheet, and what came of
+    // it - see PairingCodeIssuerViewModel.
+    public PairingCodeIssuerViewModel PairingCodes { get; } = new();
 
     // Whether mobile's Settings sheet offers to hand out a pairing code. A phone
     // has no sidebar to select a server in, so it asks the one server it is
@@ -1567,59 +1254,12 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         _reachability?.PairedServerDevice is { WeAreAdmin: true }
         && IsPairedServerTrustConfirmed && _signingKey != null && _deviceIdentity != null;
 
-    // Whether the code the next "Generate Pairing Code" press asks for should
-    // grant administrator rights - the checkbox next to that button, on both
-    // the desktop sidebar and mobile's Settings sheet.
-    //
-    // Off by default and deliberately not remembered between presses: adding a
-    // listener's phone is the ordinary case, and a checkbox that stayed ticked
-    // from an hour ago would quietly turn the next guest into an administrator.
-    // More than one device may hold it at once, though - somebody's own desktop
-    // and their own phone both being admins is the expected shape, not an
-    // exception (see TrustedPeerStore.TrustedPeer.IsAdmin).
-    private bool _pairingCodeGrantsAdmin;
-    public bool PairingCodeGrantsAdmin
+    public Task InviteDeviceToPairedServerAsync()
     {
-        get => _pairingCodeGrantsAdmin;
-        set
-        {
-            if (_pairingCodeGrantsAdmin == value)
-                return;
-            _pairingCodeGrantsAdmin = value;
-            OnPropertyChanged();
-        }
-    }
+        if (_reachability?.PairedServerDevice is not { } device || _signingKey == null || _deviceIdentity == null)
+            return Task.CompletedTask;
 
-    public Task InviteDeviceToPairedServerAsync() => IssuePairingCodeAgainstAsync(_reachability?.PairedServerDevice);
-
-    private async Task IssuePairingCodeAgainstAsync(DiscoveredDevice? device)
-    {
-        if (device == null || _signingKey == null || _deviceIdentity == null)
-            return;
-
-        IssuedPairingCodeError = null;
-        // The previous code is dropped before the request rather than after it:
-        // a stale code left on screen next to a spinner reads as the new one.
-        IssuedPairingCode = null;
-        IssuedPairingInvite = null;
-        IsIssuingPairingCode = true;
-        try
-        {
-            using var http = PeerHttpClient.Create(TimeSpan.FromSeconds(15));
-            var client = CreateServerAdminClient(http, device);
-            var pairing = await client.IssuePairingCodeAsync(PairingCodeGrantsAdmin);
-            IssuedPairingCode = pairing.Code;
-            IssuedPairingInvite = pairing.Invite;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Could not issue a pairing code on {Device}", device.BaseUri);
-            IssuedPairingCodeError = ex is ServerAdminException ? ex.Message : "Could not reach that server.";
-        }
-        finally
-        {
-            IsIssuingPairingCode = false;
-        }
+        return PairingCodes.IssueAsync(http => CreateServerAdminClient(http, device), device.BaseUri, _logger);
     }
 
     // Both admin calls this ViewModel makes sign as this device with the same
@@ -1969,7 +1609,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         PropertyChanged += (_, e) =>
         {
             if (e.PropertyName is nameof(CurrentlyPlayingTrack) or nameof(Availability))
-                UpdateArtistAlbumRows();
+                ArtistPage.UpdateRows(Availability, CurrentlyPlayingTrack?.Id);
         };
 
         Playlists = new PlaylistManagementViewModel(library, _sidebarItems, this);
@@ -2459,7 +2099,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // order the hidden track list keeps.
     public void PlayView(bool shuffle) =>
         PlayTracks(IsShowingArtistPage
-            ? _artistAlbums.SelectMany(a => a.ExpandedTracks).ToList()
+            ? ArtistPage.AllTracks
             : DisplayedTracks, shuffle);
 
     // These songs as the queue, from the top or shuffled from a random one -
@@ -2808,12 +2448,10 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         PairingCodeError = null;
         // Likewise for a code handed *out* for one server: it is worthless
         // against another, and leaving it on screen under a different server's
-        // name says otherwise. See IssuedPairingCode. Cleared only here and not
-        // in DeviceRowsChanged, which also runs on the 5s peer poll - a code
-        // that vanished every few seconds could not be read out loud.
-        IssuedPairingCode = null;
-        IssuedPairingInvite = null;
-        IssuedPairingCodeError = null;
+        // name says otherwise. Cleared only here and not in DeviceRowsChanged,
+        // which also runs on the 5s peer poll - a code that vanished every few
+        // seconds could not be read out loud.
+        PairingCodes.Clear();
         ServerSettingsError = null;
         NotifyPairButtonPropertiesChanged();
         RefreshSelectedServerSettings();

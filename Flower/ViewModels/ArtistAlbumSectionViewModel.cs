@@ -5,7 +5,7 @@ using Flower.ViewModels.Mobile;
 
 namespace Flower.ViewModels;
 
-// One album on the desktop Artists page (MainViewModel.ArtistAlbums): its
+// One album on the desktop Artists page (ArtistPageViewModel.Albums): its
 // card's cover, name and line about it, and its songs as a list of their own
 // (AlbumTracksViewModel, drawn by AlbumTrackList).
 public sealed class ArtistAlbumSectionViewModel : AlbumTracksViewModel

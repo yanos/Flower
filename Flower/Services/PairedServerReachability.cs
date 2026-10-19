@@ -19,7 +19,7 @@ namespace Flower.Services;
 // slightly different definition), MainViewModel.ForceSyncNow's own
 // KnownDevices lookup, and PeerTrackResolver's own FindByFingerprint call -
 // all five kept in sync only by convention, which is exactly how a
-// SearchSongResults-shaped row list ended up permanently stuck on a stale
+// Search.SongResults-shaped row list ended up permanently stuck on a stale
 // default (see git history around this class's introduction).
 //
 // Owns its own NetworkDiscoveryService.DeviceDiscovered/DeviceLost

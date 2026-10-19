@@ -77,9 +77,9 @@ public class MobileRecentSearchesTests : PinnedDataDirectory
         vm.Main.RememberSearch("nat");
 
         vm.SelectTabCommand.Execute(nameof(MobileTab.Search));
-        vm.SearchQuery = "nat";
+        vm.Search.Query = "nat";
 
-        Assert.Equal(new[] { "nat king cole", "the national" }, vm.SearchSuggestions.Select(s => s.Text));
+        Assert.Equal(new[] { "nat king cole", "the national" }, vm.Search.Suggestions.Select(s => s.Text));
     }
 
     // Opening Search is the start of a search, not a list of old ones.
@@ -92,7 +92,7 @@ public class MobileRecentSearchesTests : PinnedDataDirectory
 
         vm.SelectTabCommand.Execute(nameof(MobileTab.Search));
 
-        Assert.Empty(vm.SearchSuggestions);
+        Assert.Empty(vm.Search.Suggestions);
     }
 
     // After the past searches, the library: names that start with what is
@@ -111,7 +111,7 @@ public class MobileRecentSearchesTests : PinnedDataDirectory
         vm.Main.RememberSearch("wild nothing");
 
         vm.SelectTabCommand.Execute(nameof(MobileTab.Search));
-        vm.SearchQuery = "wil";
+        vm.Search.Query = "wil";
 
         Assert.Equal(
             new[]
@@ -121,7 +121,7 @@ public class MobileRecentSearchesTests : PinnedDataDirectory
                 ("Wildfire", SearchSuggestionKind.Song),
                 ("The Wild Hunt", SearchSuggestionKind.Album),
             },
-            vm.SearchSuggestions.Select(s => (s.Text, s.Kind)));
+            vm.Search.Suggestions.Select(s => (s.Text, s.Kind)));
     }
 
     // Past searches are cleared from the Search screen's menu.
@@ -178,7 +178,7 @@ public class MobileRecentSearchesTests : PinnedDataDirectory
         window.MouseUp(centre, MouseButton.Left);
         Pump(100);
 
-        Assert.Equal("radiohead", vm.SearchQuery);
+        Assert.Equal("radiohead", vm.Search.Query);
         Assert.False(box.IsFocused);
         Assert.Null(Row(window, "radiohead"));
         Assert.Equal(new[] { "radiohead", "bjork" }, vm.Main.RecentSearches);

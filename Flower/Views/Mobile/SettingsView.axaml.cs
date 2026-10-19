@@ -81,7 +81,7 @@ public partial class SettingsView : UserControl
     // own comment in the XAML.
     private void CopyPairingCodeButton_Click(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is not ViewModels.Mobile.MobileMainViewModel vm || vm.Main.IssuedPairingCode is not { Length: > 0 } code)
+        if (DataContext is not ViewModels.Mobile.MobileMainViewModel vm || vm.Main.PairingCodes.Code is not { Length: > 0 } code)
             return;
 
         _ = TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(code);
@@ -89,7 +89,7 @@ public partial class SettingsView : UserControl
 
     private void CopyPairingInviteButton_Click(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is not ViewModels.Mobile.MobileMainViewModel vm || vm.Main.IssuedPairingInvite is not { Length: > 0 } invite)
+        if (DataContext is not ViewModels.Mobile.MobileMainViewModel vm || vm.Main.PairingCodes.Invite is not { Length: > 0 } invite)
             return;
 
         _ = TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(invite);

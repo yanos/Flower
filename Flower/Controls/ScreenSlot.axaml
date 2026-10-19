@@ -178,7 +178,7 @@
                               TextChanged="FilterBox_TextChanged"
                               KeyDown="FilterBox_KeyDown"
                               LostFocus="FilterBox_LostFocus" />
-          <!-- Bound to SearchQuery on the shared DataContext (genuinely
+          <!-- Bound to Search.Query on the shared DataContext (genuinely
                live/global state, not per-frame - see ScreenSlot.axaml.cs's own
                doc comment). PropertyChanged so the results follow each
                keystroke, and so the x emptying it reaches the query without
@@ -188,7 +188,7 @@
                               Classes="inOval"
                               IsVisible="{Binding #Root.Frame.IsSearchScreen, FallbackValue=False}"
                               ShowsClearButton="False"
-                              Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}"
+                              Text="{Binding Search.Query, UpdateSourceTrigger=PropertyChanged}"
                               PlaceholderText="Search your library"
                               KeyDown="SearchTabBox_KeyDown"
                               GotFocus="SearchTabBox_GotFocus"
@@ -226,7 +226,7 @@
 
     <!-- Suggestions for what is being typed - past searches, then artists,
          albums and songs - dropped down under the box while it has focus and
-         holds something: see MobileMainViewModel.SearchSuggestions. The width of the
+         holds something: see MobileSearchViewModel.Suggestions. The width of the
          box (the buttons' 12 + 40, and its own 10, in from each side), and after the screen's content so it is drawn over the results
          rather than under them. The rows cannot take focus: a press on one
          would otherwise take it from the box, which closes this dropdown
@@ -244,18 +244,18 @@
             CornerRadius="12"
             BoxShadow="{DynamicResource AppDropdownShadow}"
             ClipToBounds="True">
-      <!-- This slot's own box, not IsSearchDropdownOpen: the screen kept alive
+      <!-- This slot's own box, not Search.IsDropdownOpen: the screen kept alive
            beside this one for a swipe is a ScreenSlot too, and would open its
            own copy off-screen. -->
       <Border.IsVisible>
         <MultiBinding Converter="{x:Static BoolConverters.And}">
           <Binding ElementName="SearchTabBox" Path="IsFocused" />
-          <Binding Path="HasSearchSuggestions" />
+          <Binding Path="Search.HasSuggestions" />
         </MultiBinding>
       </Border.IsVisible>
       <!-- Each row says what it is by its icon - a past search, an artist,
            an album, a song - and an album or a song whose it is. -->
-      <ItemsControl ItemsSource="{Binding SearchSuggestions}" Margin="0,4">
+      <ItemsControl ItemsSource="{Binding Search.Suggestions}" Margin="0,4">
         <ItemsControl.ItemTemplate>
           <DataTemplate x:DataType="vm:SearchSuggestion">
             <Button Classes="pickerRow"

@@ -836,7 +836,7 @@ what they were given. The equalizer is built by the manager at its own rate
 the rate either. The test that used to save and restore the statics around the
 production constructor no longer has anything to restore.
 
-### E3. The mobile shell never got Tier 4.2's decomposition
+### E3. The mobile shell never got Tier 4.2's decomposition — **reduced (October 2026)**
 
 `Flower/ViewModels/Mobile/MobileMainViewModel.cs` — 1609 lines, 189 members
 
@@ -852,6 +852,25 @@ is the right shape. They are simply both large.
 
 Not urgent. Recorded because "Tier 4.2 — DONE" reads as though the shell-sized
 ViewModel problem was solved, and half of it was never in scope.
+
+**Reduced, October 2026**, by moving out the parts that had grown into
+features of their own and needed nothing of the shell but a notification. By
+then the two had grown to 3165 and 2968 lines, and the October pass's
+`ActionMenus` and `TrackInfoViewModel` had already taken some code out of each.
+
+- From `MobileMainViewModel`, now 2654 lines: `MobileSearchViewModel` (the
+  Search tab's query, its three sections of results, and the suggestions) and
+  `MobileServerPairingViewModel` (the pair and unpair sheets, the code box, and
+  servers added by address).
+- From `MainViewModel`, now 2606 lines: `BrowserPairingViewModel` (a browser
+  tab's pairing screen), `ArtistPageViewModel` (the desktop Artists page) and
+  `PairingCodeIssuerViewModel` (handing out a code from a phone).
+
+The views bind through the new property (`Search.Query`, `Pairing.…`,
+`BrowserPairing.…`, `ArtistPage.…`, `PairingCodes.…`).
+
+Both are still large. What is left is mostly what a shell is: navigation,
+sheet state, and forwarding to the shared services.
 
 ### E4. `GaplessAudioManager`'s constructor defaulted to the wrong decoder — **resolved**
 

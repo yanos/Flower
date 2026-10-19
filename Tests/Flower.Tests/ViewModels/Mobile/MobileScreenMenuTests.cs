@@ -173,7 +173,7 @@ public class MobileScreenMenuTests : PinnedDataDirectory
 
         vm.SelectTabCommand.Execute(nameof(MobileTab.Search));
         Assert.Equal(["Settings"], Labels(vm));
-        vm.SearchQuery = "Maps";
+        vm.Search.Query = "Maps";
         Assert.Equal(["Shuffle", "Delete Local Files", "Settings"], Labels(vm));
 
         Entry(vm, "Settings").Invoke();

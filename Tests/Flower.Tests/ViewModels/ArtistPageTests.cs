@@ -14,7 +14,7 @@ using Xunit;
 namespace Flower.Tests.ViewModels;
 
 // The desktop Artists page: the picked artist, and an album card each with
-// its songs under it (MainViewModel.ArtistAlbums). The page header's filter
+// its songs under it (ArtistPageViewModel.Albums). The page header's filter
 // narrows the column of names, by name alone, and leaves the cards whole.
 [Collection("PlatformDataDirectory")]
 public class ArtistPageTests : PinnedDataDirectory
@@ -43,10 +43,10 @@ public class ArtistPageTests : PinnedDataDirectory
     }
 
     private static string[] Cards(MainViewModel vm) =>
-        vm.ArtistAlbums.Select(a => a.Tile.Name).ToArray();
+        vm.ArtistPage.Albums.Select(a => a.Tile.Name).ToArray();
 
     private static string[] Songs(MainViewModel vm, string album) =>
-        vm.ArtistAlbums.Single(a => a.Tile.Name == album).ExpandedTracks.Select(t => t.Title!).ToArray();
+        vm.ArtistPage.Albums.Single(a => a.Tile.Name == album).ExpandedTracks.Select(t => t.Title!).ToArray();
 
     [AvaloniaFact]
     public void Each_album_is_a_card_oldest_first_with_its_songs_in_track_order()
@@ -55,7 +55,7 @@ public class ArtistPageTests : PinnedDataDirectory
 
         Assert.Equal(new[] { "Hit Vibes", "Winner's Circle" }, Cards(vm));
         Assert.Equal(new[] { "Private Caller", "Carpark" }, Songs(vm, "Winner's Circle"));
-        Assert.Equal("SAINT PEPSI", vm.ArtistHeader?.Name);
+        Assert.Equal("SAINT PEPSI", vm.ArtistPage.Header?.Name);
     }
 
     // A song's title, an album's name: neither is an artist's, so neither
@@ -109,6 +109,6 @@ public class ArtistPageTests : PinnedDataDirectory
         vm.FilterText = "nothing by anybody";
 
         Assert.Empty(vm.SelectedSubItems);
-        Assert.Empty(vm.ArtistAlbums);
+        Assert.Empty(vm.ArtistPage.Albums);
     }
 }

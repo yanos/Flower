@@ -92,34 +92,9 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         }
     }
 
-    // Search tab results - see RebuildSearchResultsAsync. Albums matching by
-    // Album name, Artists matching by Artists (the same raw per-track field
-    // the Artists tab's own picker groups by - see
-    // MainViewModel.RebuildSubListItems), Songs mirroring (a capped slice of)
-    // Main.Rows. All three capped at MaxSearchResultsPerSection: unlike the
-    // Songs tab's own TrackListBox (a real virtualized ListBox), this whole
-    // results view is a plain ScrollViewer+ItemsControl per section (mixing
-    // three different item shapes under one scroll, which a single
-    // virtualizing list can't do) - realizing thousands of un-virtualized
-    // track rows for a broad one-letter query froze the UI in practice.
-    private const int MaxSearchResultsPerSection = 40;
-    public ObservableCollection<AlbumTileViewModel> SearchAlbumResults { get; } = new();
-    // The Artists tab's own row, so a result carries the same collage of the
-    // artist's covers and the same counts - built for the result rather than
-    // looked up in that tab's list, which only exists while it is filled.
-    public ObservableCollection<ArtistPickerRow> SearchArtistResults { get; } = new();
-    public ObservableCollection<TrackRowViewModel> SearchSongResults { get; } = new();
-
-    // True if any section actually had more matches than the cap - drives a
-    // single "refine your search" caption rather than a separate one per
-    // section, since usually either none or all of them are far over the cap
-    // together (a broad query matches lots of everything at once).
-    private bool _hasMoreSearchResults;
-    public bool HasMoreSearchResults
-    {
-        get => _hasMoreSearchResults;
-        private set { if (_hasMoreSearchResults != value) { _hasMoreSearchResults = value; OnPropertyChanged(); } }
-    }
+    // The Search tab - its query, results and suggestions. See
+    // MobileSearchViewModel.
+    public MobileSearchViewModel Search { get; }
 
     public ICommand SelectTabCommand { get; }
     public ICommand SelectAlbumOrArtistCommand { get; }
@@ -248,25 +223,10 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     public ICommand AddAlbumActionTargetToPlaylistCommand { get; }
     public ICommand DownloadAlbumActionTargetCommand { get; }
     public ICommand DeleteAlbumActionTargetLocalFilesCommand { get; }
-    public ICommand PairWithServerCommand { get; }
-    public ICommand UnpairServerCommand { get; }
-    public ICommand ConfirmUnpairServerCommand { get; }
-    public ICommand CancelUnpairServerCommand { get; }
 
-    // Hands out a one-time pairing code for somebody else's device, if this
-    // phone is an administrator of the server it is paired with - desktop's
-    // equivalent is the "Generate Pairing Code" button in the sidebar's device-detail
-    // header. See MainViewModel.InviteDeviceToPairedServerAsync.
-    public ICommand InviteDeviceCommand { get; }
-
-    // Bootstrap-only: an address for a server this phone has never shared a
-    // network with, and therefore could never discover. A server paired with at
-    // home reports its own addresses and needs none of this - see
-    // docs/REMOTE-ACCESS.md.
-    public ICommand AddManualServerCommand { get; }
-    public ICommand RemoveManualServerCommand { get; }
-    public ICommand ConfirmPairServerCommand { get; }
-    public ICommand CancelPairServerCommand { get; }
+    // Pairing with a server and unpairing from it, from Settings - see
+    // MobileServerPairingViewModel.
+    public MobileServerPairingViewModel Pairing { get; }
 
     // Real back-history: every "navigate forward" action (a tab-bar tap, a
     // picker tile tap, a drill-in) pushes a frame here capturing exactly the
@@ -302,7 +262,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         _hasDrilledIntoArtistAlbum,
         Main.SelectedSidebarItem,
         Main.SelectedSubItem,
-        _searchQuery,
+        Search.Query,
         _screenFilter,
         // Only captured leaving a track-list screen - see
         // MobileNavigationFrame's own doc comment for why a kept-alive
@@ -408,7 +368,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         _hasDrilledIntoArtistAlbum,
         Main.SelectedSidebarItem,
         Main.SelectedSubItem,
-        _searchQuery,
+        Search.Query,
         _screenFilter,
         null,
         null);
@@ -530,7 +490,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         _hasDrilledIntoArtistAlbum = false;
         ApplyTabSelection();
         OnPropertyChanged(nameof(SelectedTab));
-        // SearchQuery deliberately survives leaving the Search tab - the query
+        // Search's query deliberately survives leaving the Search tab - the query
         // and its results should still be there whenever the user comes back
         // to Search, whether via the tab bar or Back/swipe-back, not reset to
         // a blank prompt every time.
@@ -573,7 +533,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     //
     // Not the Search tab's query either, which is a lookup across the whole
     // library rather than a narrowing of what is already on screen - see
-    // SearchQuery below, and the Search screen, which has no pull-down box.
+    // Search's query (MobileSearchViewModel), and the Search screen, which has no pull-down box.
     private string? _screenFilter;
     public string? ScreenFilter
     {
@@ -756,109 +716,17 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         SearchText.Contains(item.Name, filter) ||
         item.Playlist?.Tracks.Any(t => TrackListBuilder.Matches(t, filter)) == true;
 
-    // The Search tab's own query - deliberately its own field, not
-    // Main.FilterText. Search is a one-off lookup across the whole library,
-    // surfaced in its own results view (SearchAlbumResults/SearchArtistResults/
-    // SearchSongResults below) - it was never meant to act as a filter that
-    // follows the user to other tabs. Sharing Main.FilterText used to do
-    // exactly that: ApplyTabSelection pointed the Search tab at the same
-    // "Songs" scope Main.Rows uses, so a query typed here stayed live in
-    // Main.FilterText and kept narrowing the Songs tab's own list for a
-    // moment (or, in the worst case, until something else happened to clear
-    // it) after switching tabs.
-    private string? _searchQuery;
-    public string? SearchQuery
-    {
-        get => _searchQuery;
-        set
-        {
-            if (_searchQuery == value)
-                return;
-            _searchQuery = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(IsShowingSearchPrompt));
-            OnPropertyChanged(nameof(IsShowingSearchResults));
-            RefreshSearchSuggestions();
-            ScheduleSearchResultsRebuild();
-        }
-    }
-
-    // ── Search suggestions ────────────────────────────────────────────
-    //
-    // The dropdown under the search box: what the words typed so far could be
-    // finishing - past searches, then artists, albums and songs in the library
-    // (SearchSuggestion.For). Nothing while nothing is typed: opening Search
-    // used to drop every past search over the screen before a key was
-    // pressed. See ScreenSlot, which shows it only while the box has focus,
-    // and the Search screen's menu for clearing the past ones. A search is remembered when
-    // the box is left with something in it (RememberSearch): a result tapped,
-    // the keyboard put away, the tab changed. Not on each keystroke, or every
-    // prefix of a word would be kept as a search of its own.
-
-    // At most this many rows under the box - past it the dropdown would reach
-    // down under the keyboard, where nobody can tap it.
-    public const int MaxSearchSuggestions = 5;
-
-    private IReadOnlyList<SearchSuggestion> _searchSuggestions = [];
-
-    public IReadOnlyList<SearchSuggestion> SearchSuggestions
-    {
-        get => _searchSuggestions;
-        private set
-        {
-            _searchSuggestions = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(HasSearchSuggestions));
-            OnPropertyChanged(nameof(IsSearchDropdownOpen));
-        }
-    }
-
-    public bool HasSearchSuggestions => _searchSuggestions.Count > 0;
-
-    // Whether the search box has focus - view state, set by ScreenSlot, and
-    // here only for MobileMainView: the search prompt there is drawn over
-    // every screen, the recent-searches dropdown included, so it has to step
-    // aside while that is open.
-    private bool _isSearchBoxFocused;
-
-    public bool IsSearchBoxFocused
-    {
-        get => _isSearchBoxFocused;
-        set
-        {
-            if (_isSearchBoxFocused == value)
-                return;
-            _isSearchBoxFocused = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(IsSearchDropdownOpen));
-        }
-    }
-
-    public bool IsSearchDropdownOpen => _isSearchBoxFocused && HasSearchSuggestions;
-
-    public ICommand ApplySearchSuggestionCommand { get; }
-
-    // Every past search - it is the history being cleared, not the filter.
-    // The Search screen's menu.
-    public ICommand ClearRecentSearchesCommand { get; }
-
-    // The suggestions follow on their own, off Main's RecentSearches change.
-    public void RememberSearch() => Main.RememberSearch(SearchQuery);
-
-    private void RefreshSearchSuggestions() =>
-        SearchSuggestions = SearchSuggestion.For(SearchQuery, Main.RecentSearches, Main.Library.Tracks, MaxSearchSuggestions);
-
     // Shown instead of the track list on the Search tab until something is
     // actually typed - unlike the Songs tab (which lists the whole library by
     // default and search only narrows it), a dedicated Search tab should not
     // dump every track in the library the moment it opens.
-    public bool IsShowingSearchPrompt => SelectedTab == MobileTab.Search && string.IsNullOrEmpty(SearchQuery);
+    public bool IsShowingSearchPrompt => SelectedTab == MobileTab.Search && !Search.HasQuery;
 
     // The Search tab's own results view (Songs/Albums/Artists sections - see
     // RebuildSearchResults) once something is typed - a separate layout from
     // IsShowingTrackList's plain flat list, so Search is fully excluded from
     // that one rather than just gated by IsShowingSearchPrompt.
-    public bool IsShowingSearchResults => SelectedTab == MobileTab.Search && !string.IsNullOrEmpty(SearchQuery);
+    public bool IsShowingSearchResults => SelectedTab == MobileTab.Search && Search.HasQuery;
 
     public bool IsShowingTrackList =>
         !IsShowingAlbumGrid && !IsShowingArtistPicker && !IsShowingArtistAlbumGrid
@@ -1050,7 +918,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     // Re-anchors Next/Previous/auto-advance to whatever's actually on screen
     // right now, mirroring desktop's MainViewModel.SyncPlayQueueToCurrentView -
     // called immediately before every PlayTrackCommand invocation. Search's
-    // own song section (SearchSongResults) is a separate mirror of Main.Rows,
+    // own song section (Search.SongResults) is a separate mirror of Main.Rows,
     // not Main.Rows itself (see that collection's own doc comment), so it
     // needs its own branch here; every other screen (Songs, an album/
     // artist-album/Recently-Added drill-in, or a playlist) renders straight
@@ -1063,7 +931,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     // Search, and Main.Rows on everything else.
     private IList<TrackRowViewModel> CurrentTrackRows =>
         IsShowingSmartPlaylistEditor ? SmartPlaylistPreviewRows
-        : IsShowingSearchResults ? SearchSongResults
+        : IsShowingSearchResults ? Search.SongResults
         : Main.Rows;
 
     // Non-null only while drilled into a specific playlist's track list, which is the
@@ -1255,112 +1123,6 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     public bool IsShowingConfirmDeletePlaylist => ActiveSheet == MobileSheet.ConfirmDeletePlaylist;
     public bool IsShowingConfirmRemoveFromLibrary => ActiveSheet == MobileSheet.ConfirmRemoveFromLibrary;
     public bool IsShowingConfirmUnpairServer => ActiveSheet == MobileSheet.ConfirmUnpairServer;
-
-    // Unpairing is asked about rather than done on the tap, the way desktop's
-    // two Unpair buttons ask: it removes every song this phone has not
-    // downloaded, and getting them back takes a fresh code from the server's
-    // owner. The sheet takes Settings' place, as the pairing one does, and puts
-    // it back whichever way it is answered - see _sheetBeforePairing.
-    private MobileSheet _sheetBeforeUnpair = MobileSheet.None;
-
-    public string ConfirmUnpairServerTitle => $"Unpair From \"{Main.PairedServerAlias}\"?";
-    public string ConfirmUnpairServerMessage => MainViewModel.UnpairConsequences(Main.PairedServerAlias ?? "this server");
-
-    // Set by PairWithServerCommand (Settings' server list) before switching to
-    // the ConfirmPairServer sheet, cleared once ConfirmPairServerCommand/
-    // CancelPairServerCommand resolves it - see those. Desktop's equivalent is
-    // ServerPickerView's own ConfirmDialogWindow prompt; mobile had no
-    // confirmation at all here previously (SettingsView's Sync button called
-    // straight through to Main.PairWithServer).
-    private DiscoveredDevice? _pendingServerToPair;
-    public string PendingServerToPairAlias => _pendingServerToPair?.Alias ?? "";
-
-    // Only one sheet is up at a time (see ActiveSheet), so raising the pairing
-    // sheet takes Settings' place rather than stacking on top of it. Whichever
-    // sheet it displaced is remembered here and put back when pairing resolves -
-    // otherwise finishing (or cancelling) a pair drops the user all the way out
-    // to the library, when what they did was tap one row inside Settings and
-    // expect to still be in Settings afterwards.
-    private MobileSheet _sheetBeforePairing = MobileSheet.None;
-
-    public string ConfirmPairServerTitle => $"Pair With \"{PendingServerToPairAlias}\"?";
-
-    public string ConfirmPairServerActionLabel => IsPairingInProgress ? "Pairing..." : "Pair";
-
-    public string ConfirmPairServerMessage =>
-        $"This device's library view will be replaced by \"{PendingServerToPairAlias}\"'s - your Songs/Albums list will show its library instead of managing its own. Your existing music files on this device will not be deleted. "
-        + "The pairing code below authorizes this device immediately.";
-
-    // What the user typed into Settings' "add a server by address" box, and
-    // the result of the last attempt. See AddManualServerCommand.
-    private string _manualServerAddress = "";
-    public string ManualServerAddress
-    {
-        get => _manualServerAddress;
-        set
-        {
-            if (_manualServerAddress == value)
-                return;
-            _manualServerAddress = value;
-            OnPropertyChanged();
-        }
-    }
-
-    private string _manualServerStatus = "";
-    public string ManualServerStatus
-    {
-        get => _manualServerStatus;
-        set
-        {
-            if (_manualServerStatus == value)
-                return;
-            _manualServerStatus = value;
-            OnPropertyChanged();
-        }
-    }
-
-    // What the user typed into the sheet's code box. Reset every time the
-    // sheet opens, so a code left from an abandoned attempt is never
-    // submitted against a different server.
-    private string _pendingPairingCode = "";
-    public string PendingPairingCode
-    {
-        get => _pendingPairingCode;
-        set
-        {
-            if (_pendingPairingCode == value)
-                return;
-            _pendingPairingCode = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(IsConfirmPairServerEnabled));
-            // Editing the code is the user retrying, and the message was about
-            // the previous attempt - same rule as desktop's PairingCode setter.
-            Main.PairingCodeError = null;
-        }
-    }
-
-    // Set while a code is being redeemed, which is the whole time the sheet
-    // holds itself open waiting for an answer - see ConfirmPairServerCommand.
-    private bool _isPairingInProgress;
-    public bool IsPairingInProgress
-    {
-        get => _isPairingInProgress;
-        private set
-        {
-            if (_isPairingInProgress == value)
-                return;
-            _isPairingInProgress = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(IsConfirmPairServerEnabled));
-            OnPropertyChanged(nameof(ConfirmPairServerActionLabel));
-        }
-    }
-
-    // "Pair" on an empty box would only round-trip to be rejected, and a second
-    // tap while the first is still in flight would redeem the same one-use code
-    // twice.
-    public bool IsConfirmPairServerEnabled =>
-        !IsPairingInProgress && !string.IsNullOrWhiteSpace(PendingPairingCode);
 
     // Android's media-access permission can be permanently denied, in which case the
     // only way back in is the system app-settings screen; desktop/iOS have nothing
@@ -1743,10 +1505,6 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     // IsShowingSearchPrompt counts as "empty" too - the Search tab before anything is
     // typed has an empty Main.Rows (see ApplyTabSelection/IsShowingSearchPrompt), but
     // wants its own prompt rather than falling through to "No Results".
-    public bool HasSearchAlbumResults => SearchAlbumResults.Count > 0;
-    public bool HasSearchArtistResults => SearchArtistResults.Count > 0;
-    public bool HasSearchSongResults => SearchSongResults.Count > 0;
-
     public bool IsContentEmpty =>
         (IsShowingAlbumGrid && AlbumGridRows.Count == 0) ||
         (IsShowingArtistPicker && ArtistPickerItems.Count == 0) ||
@@ -1754,7 +1512,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         (IsShowingPlaylistPicker && PlaylistPickerItems.Count == 0 && !IsNamingNewPlaylist) ||
         (IsShowingQueue && QueueRows.Count == 0) ||
         IsShowingSearchPrompt ||
-        (IsShowingSearchResults && !HasSearchAlbumResults && !HasSearchArtistResults && !HasSearchSongResults) ||
+        (IsShowingSearchResults && !Search.HasAnyResults) ||
         // Not while the rows for this scope are still being built: until they
         // land, Main.Rows belongs to the screen being left - see
         // LibraryBrowserViewModel.IsRowsRebuildPending.
@@ -1776,7 +1534,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         // artists there are, so the counts are not only SubListItems' to redo.
         RebuildArtistPickerRows();
         if (SelectedTab == MobileTab.Search)
-            RefreshSearchResultsNow();
+            Search.RefreshNow();
         // Forces CurrentAlbumHeader to rebuild even though the album name
         // itself hasn't changed - a download/rescan can still change which
         // track is "most recently added" (representative art) or the
@@ -1816,7 +1574,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             if (IsShowingSearchPrompt)
                 return "";
             if (IsShowingSearchResults)
-                return $"No matches for \"{SearchQuery}\".";
+                return $"No matches for \"{Search.Query}\".";
             if (IsShowingQueue)
                 return QueueViewModel.EmptyMessage;
             if (ActiveScreenFilter is { } filter)
@@ -1837,14 +1595,6 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         OnPropertyChanged(nameof(EmptyStateIcon));
         OnPropertyChanged(nameof(EmptyStateTitle));
         OnPropertyChanged(nameof(EmptyStateMessage));
-    }
-
-    private void RaiseSearchResultsChanged()
-    {
-        OnPropertyChanged(nameof(HasSearchAlbumResults));
-        OnPropertyChanged(nameof(HasSearchArtistResults));
-        OnPropertyChanged(nameof(HasSearchSongResults));
-        RaiseEmptyStateChanged();
     }
 
     // Every event this class attaches to in its constructor, paired with its
@@ -1872,6 +1622,15 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         CurrentlyPlaying = currentlyPlaying;
         _logger = logger;
         _libraryRemoval = libraryRemoval;
+
+        Search = new MobileSearchViewModel(main);
+        Search.QueryChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(IsShowingSearchPrompt));
+            OnPropertyChanged(nameof(IsShowingSearchResults));
+        };
+        Search.ResultsChanged += (_, _) => RaiseEmptyStateChanged();
+        Pairing = new MobileServerPairingViewModel(main, () => ActiveSheet, sheet => ActiveSheet = sheet);
 
         _subscriptions.Add<PropertyChangedEventHandler>((_, e) =>
         {
@@ -1911,7 +1670,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         _subscriptions.Add<PropertyChangedEventHandler>((_, e) =>
         {
             // Songs/Albums/Artists picker empty-states only - Search has its
-            // own SearchQuery-driven path (see that property's setter) and no
+            // own query-driven path (MobileSearchViewModel) and no
             // longer touches Main.Rows at all.
             if (e.PropertyName == nameof(MainViewModel.SubListItems))
                 RebuildArtistPickerRows();
@@ -1923,14 +1682,13 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             }
             if (e.PropertyName is nameof(MainViewModel.PairingCodeError)
                 or nameof(MainViewModel.IsPairedServerTrustConfirmed))
-                SettleCodePairing();
+                Pairing.Settle();
             if (e.PropertyName == nameof(MainViewModel.RecentSearches))
-                RefreshSearchSuggestions();
+                Search.RefreshSuggestions();
         },
             h => Main.PropertyChanged += h, h => Main.PropertyChanged -= h);
-        // SearchSongResults is a separate TrackRowViewModel list from
-        // Main.Rows (see RebuildSearchResultsAsync's own doc comment), so it
-        // needs its own live-update subscription to stay correct after the
+        // Search's results are a separate row list from Main.Rows, so they
+        // need their own live-update subscription to stay correct after the
         // paired server's reachability changes - MainViewModel.Rows gets this
         // for free from its own subscription to the same signal.
         // The album grids need the same treatment for the same reason, and
@@ -1940,7 +1698,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         // AlbumTileViewModel.Tracks), so already-loaded art survives it.
         _subscriptions.Add<EventHandler>((_, _) =>
         {
-            TrackAvailability.Apply(SearchSongResults, Main.PairedServerFingerprint, Main.IsPairedServerReachable);
+            Search.ApplyAvailability(Main.PairedServerFingerprint, Main.IsPairedServerReachable);
             TrackAvailability.Apply(SmartPlaylistPreviewRows, Main.PairedServerFingerprint, Main.IsPairedServerReachable);
             ApplyAlbumTileAvailability();
             RefreshDownloadAllIndicator();
@@ -1958,14 +1716,6 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         ApplyTabSelection();
         Main.Home.IsActive = IsShowingHome;
         Main.Queue.IsActive = IsShowingQueue;
-
-        RefreshSearchSuggestions();
-        ClearRecentSearchesCommand = new RelayCommand(Main.ClearRecentSearches);
-        ApplySearchSuggestionCommand = new RelayCommand<string>(query =>
-        {
-            SearchQuery = query;
-            RememberSearch();
-        });
 
         CloseScreenFilterCommand = new RelayCommand(CloseScreenFilter);
 
@@ -2406,110 +2156,6 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             ActiveSheet = MobileSheet.AddToPlaylist;
         });
 
-        // Confirm-before-pairing (see ConfirmPairServerMessage) rather than
-        // pairing immediately - matches desktop's ServerPickerView dialog.
-        PairWithServerCommand = new RelayCommand<DiscoveredDevice>(device =>
-        {
-            if (device == null)
-                return;
-            _pendingServerToPair = device;
-            _sheetBeforePairing = ActiveSheet;
-            PendingPairingCode = "";
-            OnPropertyChanged(nameof(PendingServerToPairAlias));
-            OnPropertyChanged(nameof(ConfirmPairServerTitle));
-            OnPropertyChanged(nameof(ConfirmPairServerActionLabel));
-            OnPropertyChanged(nameof(ConfirmPairServerMessage));
-            OnPropertyChanged(nameof(IsConfirmPairServerEnabled));
-            ActiveSheet = MobileSheet.ConfirmPairServer;
-        });
-        UnpairServerCommand = new RelayCommand(() =>
-        {
-            _sheetBeforeUnpair = ActiveSheet;
-            OnPropertyChanged(nameof(ConfirmUnpairServerTitle));
-            OnPropertyChanged(nameof(ConfirmUnpairServerMessage));
-            ActiveSheet = MobileSheet.ConfirmUnpairServer;
-        });
-        ConfirmUnpairServerCommand = new RelayCommand(() =>
-        {
-            Main.UnpairServer();
-            ActiveSheet = _sheetBeforeUnpair;
-        });
-        CancelUnpairServerCommand = new RelayCommand(() => ActiveSheet = _sheetBeforeUnpair);
-        InviteDeviceCommand = new RelayCommand(async () => await Main.InviteDeviceToPairedServerAsync());
-        AddManualServerCommand = new RelayCommand(async () =>
-        {
-            var address = ManualServerAddress.Trim();
-            if (address.Length == 0)
-                return;
-
-            ManualServerStatus = "Looking for a server...";
-            var found = await Main.AddManualServerAsync(address) != null;
-
-            // A typo is by far the likeliest reason this fails, and finding
-            // that out here beats finding it out from a coffee shop. The entry
-            // is kept either way - a server that is merely switched off right
-            // now is still the server the user meant.
-            ManualServerStatus = found
-                ? ""
-                : $"Nothing answered at {address}. It is saved anyway - check the address, and that Tailscale is on at both ends.";
-            if (found)
-                ManualServerAddress = "";
-
-            OnPropertyChanged(nameof(Main.ManualServerAddresses));
-        });
-        RemoveManualServerCommand = new RelayCommand<string>(address =>
-        {
-            if (address != null)
-                Main.RemoveManualServer(address);
-        });
-        ConfirmPairServerCommand = new RelayCommand(() =>
-        {
-            if (_pendingServerToPair is not { } device)
-            {
-                ActiveSheet = _sheetBeforePairing;
-                return;
-            }
-
-            Main.PairingCodeError = null;
-
-            // A code is accepted or refused within one round trip, and a
-            // refusal has to land where the user is looking - next to the box
-            // that produced it, with the typed code still there to correct. So
-            // the sheet holds itself open until SettleCodePairing sees one or
-            // the other.
-            IsPairingInProgress = true;
-            Main.PairWithServer(device, PendingPairingCode.Trim());
-        });
-        CancelPairServerCommand = new RelayCommand(() =>
-        {
-            _pendingServerToPair = null;
-            PendingPairingCode = "";
-            IsPairingInProgress = false;
-            Main.PairingCodeError = null;
-            ActiveSheet = _sheetBeforePairing;
-        });
-    }
-
-    // The other half of ConfirmPairServerCommand's code path: the sheet stays up
-    // through the redeem, so something has to take it back down. Trust confirmed
-    // means the server accepted the code and the sheet is done; an error means it
-    // stays, showing the reason, ready for another try.
-    private void SettleCodePairing()
-    {
-        if (!IsShowingConfirmPairServer || !IsPairingInProgress)
-            return;
-
-        if (Main.IsPairedServerTrustConfirmed)
-        {
-            IsPairingInProgress = false;
-            _pendingServerToPair = null;
-            PendingPairingCode = "";
-            ActiveSheet = _sheetBeforePairing;
-        }
-        else if (!string.IsNullOrEmpty(Main.PairingCodeError))
-        {
-            IsPairingInProgress = false;
-        }
     }
 
     private void RefreshPlaylistSummaries()
@@ -2574,7 +2220,6 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         // now is on screen again the moment the filter is cleared.
         TrackAvailability.Apply(_albumGrid.Tiles, fingerprint, reachable);
         TrackAvailability.Apply(_artistAlbumGrid.Tiles, fingerprint, reachable);
-        TrackAvailability.Apply(SearchAlbumResults, fingerprint, reachable);
         if (CurrentDetailHeader is { } header)
             TrackAvailability.Apply([header], fingerprint, reachable);
     }
@@ -2623,164 +2268,9 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
                 MobileSortScreen.ArtistAlbums));
     }
 
-    private CancellationTokenSource? _searchResultsCts;
-
-    // Immediate (no debounce) - used when the Search tab is entered or the
-    // library changes, neither of which happens once per keystroke, unlike
-    // ScheduleSearchResultsRebuild below.
-    private void RefreshSearchResultsNow()
-    {
-        _searchResultsCts?.Cancel();
-        _searchResultsCts = new CancellationTokenSource();
-        _ = RebuildSearchResultsAsync(_searchResultsCts.Token);
-    }
-
-    // Debounced, same 250ms/cancel-and-restart shape as MainViewModel.ScheduleFilter
-    // for Main.Rows - calling RebuildSearchResultsAsync directly on every keystroke
-    // discarded and rebuilt every matching album's AlbumTileViewModel from scratch
-    // each time (including any art already mid-load - see AlbumTileViewModel.AlbumArt),
-    // observed in practice as the app freezing while typing.
-    private void ScheduleSearchResultsRebuild()
-    {
-        _searchResultsCts?.Cancel();
-        _searchResultsCts = new CancellationTokenSource();
-        _ = DebouncedRebuildSearchResultsAsync(_searchResultsCts.Token);
-    }
-
-    private async Task DebouncedRebuildSearchResultsAsync(CancellationToken token)
-    {
-        try
-        {
-            await Task.Delay(250, token);
-        }
-        catch (OperationCanceledException)
-        {
-            return; // A newer keystroke restarted the cooldown - that call's own delay will fire instead.
-        }
-        await RebuildSearchResultsAsync(token);
-    }
-
-    // Pre-cap match counts for Albums/Artists/Songs, so HasMoreSearchResults
-    // can tell "over the cap" apart from "genuinely fewer than the cap" after
-    // the collections themselves have already been truncated.
-    private int _totalMatchingAlbums;
-    private int _totalMatchingArtists;
-    private int _totalMatchingSongs;
-
-    // Search tab's Albums/Artists/Songs sections, all matched directly
-    // against Main.Library.Tracks by SearchQuery - a self-contained scan, not
-    // a mirror of MainViewModel's own Rows/FilterText pipeline (see
-    // SearchQuery's own doc comment for why that coupling was removed).
-    // Songs reuses TrackListBuilder.Build, the same filter+sort+row-building
-    // Main.Rows itself is built from, just pointed at the whole library
-    // instead of whatever MainViewModel.GetBaseTracksForFilter's sidebar
-    // scope happens to be. Clears down to empty once the query is blank,
-    // since IsShowingSearchResults hides this whole view at that point
-    // anyway - no reason to keep stale matches from the last query around.
-    // The actual scan runs off the UI thread (Task.Run), same reasoning as
-    // MainViewModel.RebuildRowsAsync - a broad single-character query can
-    // match a large fraction of the library.
-    private async Task RebuildSearchResultsAsync(CancellationToken token)
-    {
-        var text = SearchQuery;
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            SearchAlbumResults.Clear();
-            SearchArtistResults.Clear();
-            SearchSongResults.Clear();
-            _totalMatchingAlbums = 0;
-            _totalMatchingArtists = 0;
-            _totalMatchingSongs = 0;
-            RecomputeHasMoreSearchResults();
-            RaiseSearchResultsChanged();
-            return;
-        }
-
-        var tracks = Main.Library.Tracks;
-        var playing = Main.CurrentlyPlayingTrack;
-        var pairedServerFingerprint = Main.PairedServerFingerprint;
-        var pairedServerReachable   = Main.IsPairedServerReachable;
-        var (albums, albumsTotal, artists, artistsTotal, songs, songsTotal) = await Task.Run(() =>
-        {
-            // SearchText, not a plain Contains, so these two agree with the
-            // song rows below - those go through TrackListBuilder, which folds
-            // accents. Searching "bjork" must not return the songs and then an
-            // empty artist strip.
-            var matchingAlbumTracks = tracks.Where(t => SearchText.Contains(t.Album, text));
-            var allAlbums = AlbumGridBuilder.Build(matchingAlbumTracks);
-            TrackAvailability.Apply(allAlbums, pairedServerFingerprint, pairedServerReachable);
-
-            // Same raw per-track field the Artists tab's own picker groups by
-            // (see MainViewModel.RebuildSubListItems) - not EffectiveAlbumArtist,
-            // which AlbumGridBuilder uses for a different purpose (labeling a
-            // same-named album spanning several artists as "Various Artists").
-            var allArtists = ArtistNames.Of(tracks.Where(t => SearchText.Contains(t.Artists, text)));
-
-            // Counted and covered the way RebuildArtistPickerRows does it, for
-            // the shown ones only: one pass over the library, not one per
-            // artist.
-            var shownArtists = allArtists.Take(MaxSearchResultsPerSection).Select(a => a!).ToList();
-            var shownSet = shownArtists.ToHashSet(ArtistNames.Comparer);
-            var byArtist = tracks
-                .Where(t => t.Artists != null && shownSet.Contains(t.Artists))
-                .GroupBy(t => t.Artists!, ArtistNames.Comparer)
-                .ToDictionary(g => g.Key, g => g.ToList(), ArtistNames.Comparer);
-            var artistRows = shownArtists
-                .Select(name => byArtist.TryGetValue(name, out var mine)
-                    ? new ArtistPickerRow(name,
-                        mine.Where(t => !string.IsNullOrEmpty(t.Album)).Select(t => t.Album).Distinct().Count(),
-                        mine.Count,
-                        AlbumCollage.ByAlbumName(mine))
-                    : new ArtistPickerRow(name, 0, 0, AlbumCollage.Empty))
-                .ToList();
-
-            // See TrackAvailability - passed straight in so these rows are
-            // correct from construction, same as Main.Rows itself
-            // (MainViewModel.RebuildRowsAsync); SearchSongResults below is a
-            // separate row list from Main.Rows (see this method's own doc
-            // comment), kept correct afterward by the Main.ReachabilityChanged
-            // subscription in the constructor rather than by a one-off patch
-            // here.
-            var allSongRows = TrackListBuilder.Build(tracks, text, "Title", true, playing,
-                pairedServerFingerprint: pairedServerFingerprint, pairedServerReachable: pairedServerReachable);
-
-            return (allAlbums.Take(MaxSearchResultsPerSection).ToList(), allAlbums.Count,
-                    artistRows, allArtists.Count,
-                    allSongRows.Take(MaxSearchResultsPerSection).ToList(), allSongRows.Count);
-        }, token);
-
-        if (token.IsCancellationRequested)
-            return;
-
-        SearchAlbumResults.Clear();
-        foreach (var album in albums)
-            SearchAlbumResults.Add(album);
-
-        SearchArtistResults.Clear();
-        foreach (var artist in artists)
-            SearchArtistResults.Add(artist);
-
-        SearchSongResults.Clear();
-        foreach (var row in songs)
-            SearchSongResults.Add(row);
-
-        _totalMatchingAlbums = albumsTotal;
-        _totalMatchingArtists = artistsTotal;
-        _totalMatchingSongs = songsTotal;
-        RecomputeHasMoreSearchResults();
-        RaiseSearchResultsChanged();
-    }
-
-    private void RecomputeHasMoreSearchResults() =>
-        HasMoreSearchResults =
-            _totalMatchingSongs > MaxSearchResultsPerSection ||
-            _totalMatchingAlbums > MaxSearchResultsPerSection ||
-            _totalMatchingArtists > MaxSearchResultsPerSection;
-
     // Search deliberately maps to no sidebar item (same as Home and
-    // Playlists) - it renders entirely from its own SearchQuery-driven
-    // SearchAlbumResults/SearchArtistResults/SearchSongResults, scanning
-    // Main.Library.Tracks directly (see RebuildSearchResultsAsync) rather
+    // Playlists) - it renders entirely from its own query and results
+    // (MobileSearchViewModel), scanning Main.Library.Tracks directly rather
     // than through Main.SelectedSidebarItem/Main.Rows the way it used to.
     private void ApplyTabSelection()
     {
@@ -3014,13 +2504,12 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         // Restoring the exact query the user had typed, not just the tab, is
         // what makes landing back on Search actually useful rather than an
         // empty prompt. Set before RaiseNavigationChanged so its own
-        // Search-tab branch (RefreshSearchResultsNow) rebuilds against the
+        // Search-tab branch (Search.RefreshNow) rebuilds against the
         // restored query, not whatever SetSelectedTabCore's own "fresh
         // start" clear already left there.
         if (frame.Tab == MobileTab.Search)
         {
-            _searchQuery = frame.SearchQuery;
-            OnPropertyChanged(nameof(SearchQuery));
+            Search.Restore(frame.SearchQuery);
         }
         // The screen's own filter too, and before the rows below are rebuilt,
         // so a filtered track list comes back filtered rather than whole and
@@ -3124,8 +2613,8 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         OnPropertyChanged(nameof(IsShowingAlbumTrackList));
         OnPropertyChanged(nameof(AlbumDetailRows));
         RaiseDetailHeaderChanged();
-        // SearchQuery and its matched results survive leaving the Search tab
-        // (see SearchQuery's own doc comment) - deliberately NOT cleared here
+        // Search's query and its matched results survive leaving the Search tab
+        // (see MobileSearchViewModel) - deliberately NOT cleared here
         // on the way out, so they're still there the instant the user comes
         // back, with no rescan flash of "no results" in between. Re-running
         // the scan on the way back in (rather than trusting the stale
@@ -3134,9 +2623,9 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         // replaces old matches with new ones in place if anything's actually
         // different, imperceptible if nothing is.
         if (SelectedTab == MobileTab.Search)
-            RefreshSearchResultsNow();
+            Search.RefreshNow();
         else
-            _searchResultsCts?.Cancel();
+            Search.CancelRebuild();
         // The same goes for the Queue, which Main sets from its sidebar's
         // Queue row and this from the tab.
         Main.Queue.IsActive = IsShowingQueue;

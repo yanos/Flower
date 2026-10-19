@@ -257,9 +257,9 @@ public partial class MobileMainViewModel
             .SelectMany(i => i.Playlist?.Tracks ?? [])
             .Distinct()
             .ToList(),
-        MobileScreenKind.SearchResults => string.IsNullOrWhiteSpace(SearchQuery)
+        MobileScreenKind.SearchResults => string.IsNullOrWhiteSpace(Search.Query)
             ? []
-            : Main.Library.Tracks.Where(t => TrackListBuilder.Matches(t, SearchQuery)).ToList(),
+            : Main.Library.Tracks.Where(t => TrackListBuilder.Matches(t, Search.Query)).ToList(),
         _ => [],
     };
 
@@ -385,7 +385,7 @@ public partial class MobileMainViewModel
         // The past searches the box finishes words from.
         if (frame.IsSearchScreen && Main.RecentSearches.Count > 0)
             actions.Add(new ScreenMenuEntry("Clear Recent Searches", MaterialIconKind.History,
-                () => ClearRecentSearchesCommand.Execute(null)));
+                () => Search.ClearRecentSearchesCommand.Execute(null)));
 
         // Everything queued but the song playing.
         if (frame.ScreenKind == MobileScreenKind.Queue && PlaylistControl.CanClearQueue)

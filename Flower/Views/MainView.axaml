@@ -416,21 +416,21 @@
                       IsVisible="{Binding IsShowingArtistPage}"
                       HorizontalScrollBarVisibility="Disabled">
           <StackPanel Margin="24,4,24,24" Spacing="16">
-            <!-- Bound through ArtistHeader rather than switching the data
+            <!-- Bound through ArtistPage.Header rather than switching the data
                  context to it: a DataContext binding on the element that also
                  declares the new x:DataType is resolved by Avalonia against
                  the parent's type, but by Rider's inspection against the new
-                 one, which then reports ArtistHeader as missing. -->
-            <Grid IsVisible="{Binding ArtistHeader, Converter={x:Static ObjectConverters.IsNotNull}}"
+                 one, which then reports ArtistPage.Header as missing. -->
+            <Grid IsVisible="{Binding ArtistPage.Header, Converter={x:Static ObjectConverters.IsNotNull}}"
                   ColumnDefinitions="Auto,*,Auto">
               <controls:AlbumArtView Grid.Column="0"
-                                     Covers="{Binding ArtistHeader.Cover.CoverArt}"
+                                     Covers="{Binding ArtistPage.Header.Cover.CoverArt}"
                                      Width="96" Height="96"
                                      ArtCornerRadius="48"
                                      Margin="0,0,20,0"/>
               <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                <TextBlock Classes="screenTitle" Text="{Binding ArtistHeader.Name}" FontSize="40"/>
-                <TextBlock Text="{Binding ArtistHeader.Summary}"
+                <TextBlock Classes="screenTitle" Text="{Binding ArtistPage.Header.Name}" FontSize="40"/>
+                <TextBlock Text="{Binding ArtistPage.Header.Summary}"
                            FontSize="14"
                            Margin="2,2,0,0"
                            Foreground="{DynamicResource AppTextSecondaryBrush}"/>
@@ -453,7 +453,7 @@
               </StackPanel>
             </Grid>
 
-            <ItemsControl ItemsSource="{Binding ArtistAlbums}">
+            <ItemsControl ItemsSource="{Binding ArtistPage.Albums}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="vm:ArtistAlbumSectionViewModel">
                   <Border Background="{DynamicResource AppSidebarBrush}"
@@ -804,42 +804,43 @@
          library, the transport, the settings. What remains is the one thing
          such a tab can do: take a pairing code. Or, when the page cannot hold
          a key at all, say so instead of offering a box no code would help.
-         Blank until the server has said which (IsCheckingBrowserPairing). -->
-    <Border
-            IsVisible="{Binding CoversBrowserPage}"
+         Blank until the server has said which (BrowserPairingViewModel.IsChecking). -->
+    <Border DataContext="{Binding BrowserPairing}"
+            x:DataType="vm:BrowserPairingViewModel"
+            IsVisible="{Binding CoversPage}"
             Background="{DynamicResource SystemControlBackgroundAltHighBrush}">
-      <ScrollViewer IsVisible="{Binding ShowsBrowserPairingScreen}">
+      <ScrollViewer IsVisible="{Binding ShowsScreen}">
         <StackPanel MaxWidth="520" Margin="24,48" Spacing="16" HorizontalAlignment="Center">
           <StackPanel Orientation="Horizontal" Spacing="10">
             <materialIcons:MaterialIcon Kind="LinkVariant" Width="28" Height="28"/>
             <TextBlock Text="Pair this browser" FontSize="22" FontWeight="SemiBold" VerticalAlignment="Center"/>
           </StackPanel>
 
-          <StackPanel Spacing="12" IsVisible="{Binding CanEnterBrowserPairingCode}">
+          <StackPanel Spacing="12" IsVisible="{Binding CanEnterCode}">
             <Grid ColumnDefinitions="*,Auto">
               <TextBox x:Name="BrowserPairingCodeBox"
-                       Text="{Binding BrowserPairingCode}"
+                       Text="{Binding Code}"
                        Watermark="Pairing code"
                        FontSize="18"
-                       IsEnabled="{Binding !IsPairingBrowser}">
+                       IsEnabled="{Binding !IsPairing}">
                 <TextBox.KeyBindings>
-                  <KeyBinding Gesture="Enter" Command="{Binding PairBrowserCommand}"/>
+                  <KeyBinding Gesture="Enter" Command="{Binding PairCommand}"/>
                 </TextBox.KeyBindings>
               </TextBox>
               <Button Grid.Column="1" Content="Pair" Margin="8,0,0,0" Padding="20,8"
                       VerticalAlignment="Stretch" VerticalContentAlignment="Center"
-                      Command="{Binding PairBrowserCommand}"
-                      IsEnabled="{Binding !IsPairingBrowser}"/>
+                      Command="{Binding PairCommand}"
+                      IsEnabled="{Binding !IsPairing}"/>
             </Grid>
-            <SelectableTextBlock Text="{Binding BrowserPairingError}"
-                                 IsVisible="{Binding BrowserPairingError, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
+            <SelectableTextBlock Text="{Binding Error}"
+                                 IsVisible="{Binding Error, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
                                  Foreground="{DynamicResource AppErrorBrush}" TextWrapping="Wrap"/>
-            <SelectableTextBlock Text="{x:Static vm:MainViewModel.BrowserPairingHelp}"
+            <SelectableTextBlock Text="{x:Static vm:BrowserPairingViewModel.Help}"
                                  TextWrapping="Wrap" Opacity="0.8"/>
           </StackPanel>
 
-          <SelectableTextBlock Text="{Binding BrowserCannotPairReason}"
-                               IsVisible="{Binding BrowserCannotPairReason, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
+          <SelectableTextBlock Text="{Binding CannotPairReason}"
+                               IsVisible="{Binding CannotPairReason, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
                                TextWrapping="Wrap"/>
         </StackPanel>
       </ScrollViewer>

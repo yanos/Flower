@@ -923,7 +923,7 @@ public partial class App : Application
 
         // As soon as the server has said who this tab is, not once the whole
         // catalog has arrived - until then the page is held blank (see
-        // MainViewModel.IsCheckingBrowserPairing).
+        // BrowserPairingViewModel.IsChecking).
         if (importer is Importer.OriginLibraryImporter origin)
             origin.HandshakeAnswered += () => ReportBrowserPairing(origin, mainViewModel);
 
@@ -1062,7 +1062,7 @@ public partial class App : Application
                 // A server that never answered leaves nothing to wait for: the
                 // page shows what it has rather than staying blank.
                 if (OperatingSystem.IsBrowser())
-                    Dispatcher.UIThread.Post(() => mainViewModel.IsCheckingBrowserPairing = false);
+                    Dispatcher.UIThread.Post(() => mainViewModel.BrowserPairing.IsChecking = false);
             }
         });
 
@@ -1151,10 +1151,10 @@ public partial class App : Application
         Dispatcher.UIThread.Post(() =>
         {
             mainViewModel.BrowserOriginFingerprint = originFingerprint;
-            mainViewModel.BrowserCannotPairReason = cannotPair;
-            mainViewModel.IsBrowserUnpaired = unpaired;
+            mainViewModel.BrowserPairing.CannotPairReason = cannotPair;
+            mainViewModel.BrowserPairing.IsUnpaired = unpaired;
             mainViewModel.IsBrowserAdmin = admin;
-            mainViewModel.IsCheckingBrowserPairing = false;
+            mainViewModel.BrowserPairing.IsChecking = false;
         });
 
         // An administrator's tab only: the route is theirs alone, and a
@@ -1187,9 +1187,9 @@ public partial class App : Application
     private static void WireBrowserPairing(MainViewModel mainViewModel)
     {
         var credentials = Ioc.Default.GetRequiredService<BrowserPeerCredentials>();
-        mainViewModel.IsCheckingBrowserPairing = true;
-        mainViewModel.BrowserPairer = credentials.PairAsync;
-        mainViewModel.AfterBrowserPaired = BrowserLocation.Reload;
+        mainViewModel.BrowserPairing.IsChecking = true;
+        mainViewModel.BrowserPairing.Pairer = credentials.PairAsync;
+        mainViewModel.BrowserPairing.AfterPaired = BrowserLocation.Reload;
     }
 
     internal static SettingsViewModel CreateOriginServerSettings() =>

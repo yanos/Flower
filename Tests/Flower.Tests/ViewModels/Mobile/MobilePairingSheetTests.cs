@@ -50,8 +50,8 @@ public class MobilePairingSheetTests : PinnedDataDirectory
 
     private static void OpenSheetFor(MobileMainViewModel mobile, DiscoveredDevice device, string code)
     {
-        mobile.PairWithServerCommand.Execute(device);
-        mobile.PendingPairingCode = code;
+        mobile.Pairing.PairWithServerCommand.Execute(device);
+        mobile.Pairing.PendingPairingCode = code;
     }
 
     [AvaloniaFact]
@@ -60,13 +60,13 @@ public class MobilePairingSheetTests : PinnedDataDirectory
         using var scope = Build();
         OpenSheetFor(scope.Mobile, UnreachableHeadlessServer(), "ABCD2345");
 
-        scope.Mobile.ConfirmPairServerCommand.Execute(null);
+        scope.Mobile.Pairing.ConfirmPairServerCommand.Execute(null);
 
         Assert.True(scope.Mobile.IsShowingConfirmPairServer);
-        Assert.True(scope.Mobile.IsPairingInProgress);
+        Assert.True(scope.Mobile.Pairing.IsPairingInProgress);
         // Re-tapping while the first attempt is still out would redeem the
         // same single-use code twice.
-        Assert.False(scope.Mobile.IsConfirmPairServerEnabled);
+        Assert.False(scope.Mobile.Pairing.IsConfirmPairServerEnabled);
     }
 
     [AvaloniaFact]
@@ -75,14 +75,14 @@ public class MobilePairingSheetTests : PinnedDataDirectory
         using var scope = Build();
         OpenSheetFor(scope.Mobile, UnreachableHeadlessServer(), "ABCD2345");
 
-        scope.Mobile.ConfirmPairServerCommand.Execute(null);
-        Assert.True(await WaitFor(() => !scope.Mobile.IsPairingInProgress), "the redeem never settled");
+        scope.Mobile.Pairing.ConfirmPairServerCommand.Execute(null);
+        Assert.True(await WaitFor(() => !scope.Mobile.Pairing.IsPairingInProgress), "the redeem never settled");
 
         Assert.True(scope.Mobile.IsShowingConfirmPairServer);
         Assert.False(string.IsNullOrEmpty(scope.Mobile.Main.PairingCodeError));
         // The typed code survives, so a mistyped one is corrected rather than
         // retyped from scratch.
-        Assert.Equal("ABCD2345", scope.Mobile.PendingPairingCode);
+        Assert.Equal("ABCD2345", scope.Mobile.Pairing.PendingPairingCode);
     }
 
     [AvaloniaFact]
@@ -92,7 +92,7 @@ public class MobilePairingSheetTests : PinnedDataDirectory
         OpenSheetFor(scope.Mobile, UnreachableHeadlessServer(), "ABCD2345");
         scope.Mobile.Main.PairingCodeError = "Invalid, expired, or already-used pairing code.";
 
-        scope.Mobile.PendingPairingCode = "ABCD2346";
+        scope.Mobile.Pairing.PendingPairingCode = "ABCD2346";
 
         Assert.Null(scope.Mobile.Main.PairingCodeError);
     }
@@ -104,10 +104,10 @@ public class MobilePairingSheetTests : PinnedDataDirectory
         OpenSheetFor(scope.Mobile, UnreachableHeadlessServer(), "ABCD2345");
         scope.Mobile.Main.PairingCodeError = "Invalid, expired, or already-used pairing code.";
 
-        scope.Mobile.CancelPairServerCommand.Execute(null);
+        scope.Mobile.Pairing.CancelPairServerCommand.Execute(null);
 
         Assert.False(scope.Mobile.IsShowingConfirmPairServer);
-        Assert.Equal("", scope.Mobile.PendingPairingCode);
+        Assert.Equal("", scope.Mobile.Pairing.PendingPairingCode);
         Assert.Null(scope.Mobile.Main.PairingCodeError);
     }
 
@@ -123,7 +123,7 @@ public class MobilePairingSheetTests : PinnedDataDirectory
         OpenSheetFor(scope.Mobile, UnreachableHeadlessServer(), "ABCD2345");
         Assert.True(scope.Mobile.IsShowingConfirmPairServer);
 
-        scope.Mobile.CancelPairServerCommand.Execute(null);
+        scope.Mobile.Pairing.CancelPairServerCommand.Execute(null);
 
         Assert.True(scope.Mobile.IsShowingSettings);
     }

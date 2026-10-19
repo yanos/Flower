@@ -361,14 +361,14 @@ public partial class ScreenSlot : UserControl
     {
         if (DataContext is not MobileMainViewModel vm)
             return;
-        vm.IsSearchBoxFocused = false;
-        vm.RememberSearch();
+        vm.Search.IsBoxFocused = false;
+        vm.Search.Remember();
     }
 
     private void SearchTabBox_GotFocus(object? sender, FocusChangedEventArgs e)
     {
         if (DataContext is MobileMainViewModel vm)
-            vm.IsSearchBoxFocused = true;
+            vm.Search.IsBoxFocused = true;
     }
 
     // The oval's x, on Search: empties the box, and leaves the keyboard as it
@@ -392,7 +392,7 @@ public partial class ScreenSlot : UserControl
     {
         if (sender is not Button { DataContext: SearchSuggestion suggestion } || DataContext is not MobileMainViewModel vm)
             return;
-        vm.ApplySearchSuggestionCommand.Execute(suggestion.Text);
+        vm.Search.ApplySuggestionCommand.Execute(suggestion.Text);
         TopLevel.GetTopLevel(this)?.FocusManager?.Focus(null);
     }
 }

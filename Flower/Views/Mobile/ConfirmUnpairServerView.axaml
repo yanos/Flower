@@ -35,17 +35,17 @@
       <StackPanel Spacing="14" Margin="{DynamicResource SheetBottomInset}">
         <StackPanel Orientation="Horizontal" Spacing="10">
           <materialIcons:MaterialIcon Kind="ServerRemove" Width="24" Height="24" />
-          <TextBlock Text="{Binding ConfirmUnpairServerTitle}"
+          <TextBlock Text="{Binding Pairing.ConfirmUnpairServerTitle}"
                      FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"
                      TextTrimming="CharacterEllipsis" />
         </StackPanel>
 
-        <TextBlock Text="{Binding ConfirmUnpairServerMessage}"
+        <TextBlock Text="{Binding Pairing.ConfirmUnpairServerMessage}"
                    FontSize="14" Opacity="0.75" TextWrapping="Wrap" />
 
-        <Button Classes="unpairAction" Content="Unpair" Command="{Binding ConfirmUnpairServerCommand}"
+        <Button Classes="unpairAction" Content="Unpair" Command="{Binding Pairing.ConfirmUnpairServerCommand}"
                 Background="{DynamicResource AppDangerBrush}" Foreground="{DynamicResource AppOnPrimaryBrush}" />
-        <Button Classes="unpairAction" Content="Cancel" Command="{Binding CancelUnpairServerCommand}"
+        <Button Classes="unpairAction" Content="Cancel" Command="{Binding Pairing.CancelUnpairServerCommand}"
                 Background="Transparent" />
       </StackPanel>
     </Border>

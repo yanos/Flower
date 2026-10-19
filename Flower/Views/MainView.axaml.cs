@@ -180,6 +180,7 @@ public partial class MainView : UserControl
         if (_viewModel != null)
         {
             _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
+            _viewModel.BrowserPairing.PropertyChanged -= OnBrowserPairingPropertyChanged;
             _viewModel.SettingsRequested -= OnSettingsRequested;
             _viewModel.ColumnSelectorRequested -= OnColumnSelectorRequested;
             _viewModel.LogWindowRequested -= OnLogWindowRequested;
@@ -202,6 +203,7 @@ public partial class MainView : UserControl
         if (_viewModel != null)
         {
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
+            _viewModel.BrowserPairing.PropertyChanged += OnBrowserPairingPropertyChanged;
             _viewModel.Queue.PropertyChanged += OnQueuePropertyChanged;
             _viewModel.SettingsRequested += OnSettingsRequested;
             _viewModel.ColumnSelectorRequested += OnColumnSelectorRequested;
@@ -405,11 +407,21 @@ public partial class MainView : UserControl
             case nameof(MainViewModel.IsShowingServerSettings):
                 UpdateServerSettingsPage();
                 break;
+        }
+    }
+
+    private void OnBrowserPairingPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (sender is not BrowserPairingViewModel pairing)
+            return;
+
+        switch (e.PropertyName)
+        {
             // The pairing screen is the whole page, and typing a code is the
             // one thing to do on it. Posted, so the box is visible - and so
             // focusable - by the time it is asked.
-            case nameof(MainViewModel.ShowsBrowserPairingScreen):
-                if (_viewModel!.CanEnterBrowserPairingCode)
+            case nameof(BrowserPairingViewModel.ShowsScreen):
+                if (pairing.CanEnterCode)
                     Dispatcher.UIThread.Post(() => BrowserPairingCodeBox.Focus());
                 break;
             // The box is disabled while a code is being checked, which takes
@@ -417,8 +429,8 @@ public partial class MainView : UserControl
             // refused code the next keystrokes went nowhere until the box was
             // clicked. Back into it, with the refused code selected so typing
             // replaces it.
-            case nameof(MainViewModel.IsPairingBrowser):
-                if (!_viewModel!.IsPairingBrowser && _viewModel.CanEnterBrowserPairingCode)
+            case nameof(BrowserPairingViewModel.IsPairing):
+                if (!pairing.IsPairing && pairing.CanEnterCode)
                 {
                     Dispatcher.UIThread.Post(() =>
                     {

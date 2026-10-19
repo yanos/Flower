@@ -18,7 +18,7 @@ namespace Flower.Tests.ViewModels.Mobile;
 // The phone's Unpair used to act on the tap. Unpairing removes every song this
 // device has not downloaded, and getting them back takes a new code from the
 // server's owner, so it now asks first, the way desktop's two Unpair buttons
-// do - see MobileMainViewModel.UnpairServerCommand.
+// do - see MobileMainViewModel.Pairing.UnpairServerCommand.
 [Collection("PlatformDataDirectory")]
 public class MobileUnpairSheetTests : PinnedDataDirectory
 {
@@ -43,11 +43,11 @@ public class MobileUnpairSheetTests : PinnedDataDirectory
         using var scope = BuildPaired();
         scope.Mobile.OpenSettingsCommand.Execute(null);
 
-        scope.Mobile.UnpairServerCommand.Execute(null);
+        scope.Mobile.Pairing.UnpairServerCommand.Execute(null);
 
         Assert.True(scope.Mobile.IsShowingConfirmUnpairServer);
         Assert.Equal("fp-attic", scope.Mobile.Main.PairedServerFingerprint);
-        Assert.Equal(MainViewModel.UnpairConsequences("Attic"), scope.Mobile.ConfirmUnpairServerMessage);
+        Assert.Equal(MainViewModel.UnpairConsequences("Attic"), scope.Mobile.Pairing.ConfirmUnpairServerMessage);
     }
 
     [AvaloniaFact]
@@ -55,9 +55,9 @@ public class MobileUnpairSheetTests : PinnedDataDirectory
     {
         using var scope = BuildPaired();
         scope.Mobile.OpenSettingsCommand.Execute(null);
-        scope.Mobile.UnpairServerCommand.Execute(null);
+        scope.Mobile.Pairing.UnpairServerCommand.Execute(null);
 
-        scope.Mobile.CancelUnpairServerCommand.Execute(null);
+        scope.Mobile.Pairing.CancelUnpairServerCommand.Execute(null);
 
         Assert.True(scope.Mobile.IsShowingSettings);
         Assert.Equal("fp-attic", scope.Mobile.Main.PairedServerFingerprint);
@@ -68,9 +68,9 @@ public class MobileUnpairSheetTests : PinnedDataDirectory
     {
         using var scope = BuildPaired();
         scope.Mobile.OpenSettingsCommand.Execute(null);
-        scope.Mobile.UnpairServerCommand.Execute(null);
+        scope.Mobile.Pairing.UnpairServerCommand.Execute(null);
 
-        scope.Mobile.ConfirmUnpairServerCommand.Execute(null);
+        scope.Mobile.Pairing.ConfirmUnpairServerCommand.Execute(null);
 
         Assert.True(scope.Mobile.IsShowingSettings);
         Assert.Null(scope.Mobile.Main.PairedServerFingerprint);

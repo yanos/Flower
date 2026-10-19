@@ -95,11 +95,11 @@ public class MobileSharedPlaybackTests : PinnedDataDirectory
         var (mobile, parts) = (scope.Mobile, scope.Parts);
 
         mobile.SelectTabCommand.Execute(nameof(MobileTab.Search));
-        mobile.SearchQuery = "Aurora";
-        Assert.True(await WaitFor(() => mobile.SearchSongResults.Count == 1),
+        mobile.Search.Query = "Aurora";
+        Assert.True(await WaitFor(() => mobile.Search.SongResults.Count == 1),
             "the search results never arrived");
 
-        mobile.PlayTrackCommand.Execute(mobile.SearchSongResults.Single(r => r.Track == inView));
+        mobile.PlayTrackCommand.Execute(mobile.Search.SongResults.Single(r => r.Track == inView));
 
         var queue = parts.PlaylistControl.CurrentPlaylist.Tracks;
         Assert.Equal(new[] { "Aurora" }, queue.Select(t => t.Title));

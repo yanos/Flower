@@ -28,10 +28,10 @@ public class BrowserPairingScreenTests : PinnedDataDirectory
     {
         var vm = Build();
 
-        vm.IsBrowserUnpaired = true;
+        vm.BrowserPairing.IsUnpaired = true;
 
-        Assert.True(vm.ShowsBrowserPairingScreen);
-        Assert.True(vm.CanEnterBrowserPairingCode);
+        Assert.True(vm.BrowserPairing.ShowsScreen);
+        Assert.True(vm.BrowserPairing.CanEnterCode);
     }
 
     // No key, no pairing: a code box would send its user round a loop.
@@ -40,11 +40,11 @@ public class BrowserPairingScreenTests : PinnedDataDirectory
     {
         var vm = Build();
 
-        vm.IsBrowserUnpaired = true;
-        vm.BrowserCannotPairReason = "reach this server over https";
+        vm.BrowserPairing.IsUnpaired = true;
+        vm.BrowserPairing.CannotPairReason = "reach this server over https";
 
-        Assert.True(vm.ShowsBrowserPairingScreen);
-        Assert.False(vm.CanEnterBrowserPairingCode);
+        Assert.True(vm.BrowserPairing.ShowsScreen);
+        Assert.False(vm.BrowserPairing.CanEnterCode);
     }
 
     // Until the server answers, the tab doesn't know which page it is, so it
@@ -54,17 +54,17 @@ public class BrowserPairingScreenTests : PinnedDataDirectory
     {
         var vm = Build();
 
-        vm.IsCheckingBrowserPairing = true;
-        Assert.True(vm.CoversBrowserPage);
-        Assert.False(vm.ShowsBrowserPairingScreen);
+        vm.BrowserPairing.IsChecking = true;
+        Assert.True(vm.BrowserPairing.CoversPage);
+        Assert.False(vm.BrowserPairing.ShowsScreen);
 
-        vm.IsBrowserUnpaired = true;
-        vm.IsCheckingBrowserPairing = false;
-        Assert.True(vm.CoversBrowserPage);
-        Assert.True(vm.ShowsBrowserPairingScreen);
+        vm.BrowserPairing.IsUnpaired = true;
+        vm.BrowserPairing.IsChecking = false;
+        Assert.True(vm.BrowserPairing.CoversPage);
+        Assert.True(vm.BrowserPairing.ShowsScreen);
 
-        vm.IsBrowserUnpaired = false;
-        Assert.False(vm.CoversBrowserPage);
+        vm.BrowserPairing.IsUnpaired = false;
+        Assert.False(vm.BrowserPairing.CoversPage);
     }
 
     [AvaloniaFact]
@@ -72,41 +72,41 @@ public class BrowserPairingScreenTests : PinnedDataDirectory
     {
         var vm = Build();
 
-        Assert.False(vm.ShowsBrowserPairingScreen);
+        Assert.False(vm.BrowserPairing.ShowsScreen);
     }
 
     [AvaloniaFact]
     public async Task A_code_the_server_takes_starts_the_page_over()
     {
         var vm = Build();
-        vm.IsBrowserUnpaired = true;
+        vm.BrowserPairing.IsUnpaired = true;
         string? spent = null;
         var reloaded = false;
-        vm.BrowserPairer = code => { spent = code; return Task.FromResult<string?>(null); };
-        vm.AfterBrowserPaired = () => reloaded = true;
-        vm.BrowserPairingCode = "G6RJR";
+        vm.BrowserPairing.Pairer = code => { spent = code; return Task.FromResult<string?>(null); };
+        vm.BrowserPairing.AfterPaired = () => reloaded = true;
+        vm.BrowserPairing.Code = "G6RJR";
 
-        await vm.PairBrowserCommand.ExecuteAsync(null);
+        await vm.BrowserPairing.PairCommand.ExecuteAsync(null);
 
         Assert.Equal("G6RJR", spent);
         Assert.True(reloaded);
-        Assert.Null(vm.BrowserPairingError);
+        Assert.Null(vm.BrowserPairing.Error);
     }
 
     [AvaloniaFact]
     public async Task A_refused_code_is_said_under_the_box_and_the_page_stays()
     {
         var vm = Build();
-        vm.IsBrowserUnpaired = true;
+        vm.BrowserPairing.IsUnpaired = true;
         var reloaded = false;
-        vm.BrowserPairer = _ => Task.FromResult<string?>("That code wasn't accepted.");
-        vm.AfterBrowserPaired = () => reloaded = true;
+        vm.BrowserPairing.Pairer = _ => Task.FromResult<string?>("That code wasn't accepted.");
+        vm.BrowserPairing.AfterPaired = () => reloaded = true;
 
-        await vm.PairBrowserCommand.ExecuteAsync(null);
+        await vm.BrowserPairing.PairCommand.ExecuteAsync(null);
 
-        Assert.Equal("That code wasn't accepted.", vm.BrowserPairingError);
+        Assert.Equal("That code wasn't accepted.", vm.BrowserPairing.Error);
         Assert.False(reloaded);
-        Assert.False(vm.IsPairingBrowser);
+        Assert.False(vm.BrowserPairing.IsPairing);
     }
 
     // A listener's tab plays music; only an administrator's gets the settings.

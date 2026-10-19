@@ -38,11 +38,11 @@
       <StackPanel Spacing="14" Margin="{DynamicResource SheetBottomInset}">
         <StackPanel Orientation="Horizontal" Spacing="10">
           <materialIcons:MaterialIcon Kind="Sync" Width="24" Height="24" />
-          <TextBlock Text="{Binding ConfirmPairServerTitle}"
+          <TextBlock Text="{Binding Pairing.ConfirmPairServerTitle}"
                      FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
         </StackPanel>
 
-        <TextBlock Text="{Binding ConfirmPairServerMessage}"
+        <TextBlock Text="{Binding Pairing.ConfirmPairServerMessage}"
                    FontSize="14" Opacity="0.75" TextWrapping="Wrap" />
 
         <!-- The code is the whole of the authorization - a server is headless
@@ -52,9 +52,9 @@
              trusting, which a bare code cannot (see PairingEntry). The length
              cap is sized for it - at 20 a pasted link was cut into a code that
              could only fail. -->
-        <controls:TextInput Text="{Binding PendingPairingCode}"
+        <controls:TextInput Text="{Binding Pairing.PendingPairingCode}"
                             PlaceholderText="Pairing code or link"
-                            IsEnabled="{Binding !IsPairingInProgress}"
+                            IsEnabled="{Binding !Pairing.IsPairingInProgress}"
                             controls:SoftKeyboard.ReopenOnTap="True"
                             MaxLength="400" FontSize="16" Padding="12,10" TextWrapping="Wrap" />
 
@@ -67,10 +67,10 @@
                    Foreground="{DynamicResource AppWarningBrush}"
                    FontSize="13" TextWrapping="Wrap" />
 
-        <Button Classes="peerAction primary" Content="{Binding ConfirmPairServerActionLabel}"
-                Command="{Binding ConfirmPairServerCommand}"
-                IsEnabled="{Binding IsConfirmPairServerEnabled}" />
-        <Button Classes="peerAction" Content="Cancel" Command="{Binding CancelPairServerCommand}"
+        <Button Classes="peerAction primary" Content="{Binding Pairing.ConfirmPairServerActionLabel}"
+                Command="{Binding Pairing.ConfirmPairServerCommand}"
+                IsEnabled="{Binding Pairing.IsConfirmPairServerEnabled}" />
+        <Button Classes="peerAction" Content="Cancel" Command="{Binding Pairing.CancelPairServerCommand}"
                 Background="Transparent" />
       </StackPanel>
     </Border>

@@ -493,11 +493,11 @@
                     Spacing="10"
                     MaxWidth="280">
           <!-- Out of the way of the search suggestions dropdown, which it would
-               otherwise be drawn over - see IsSearchDropdownOpen. -->
+               otherwise be drawn over - see MobileSearchViewModel.IsDropdownOpen. -->
           <StackPanel.IsVisible>
             <MultiBinding Converter="{x:Static BoolConverters.And}">
               <Binding Path="IsContentEmpty" />
-              <Binding Path="!IsSearchDropdownOpen" />
+              <Binding Path="!Search.IsDropdownOpen" />
             </MultiBinding>
           </StackPanel.IsVisible>
           <materialIcons:MaterialIcon Kind="{Binding EmptyStateIcon}" Classes="chrome" Width="40" Height="40" Opacity="0.35" HorizontalAlignment="Center" />
