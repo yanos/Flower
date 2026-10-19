@@ -26,9 +26,7 @@ public class SettingsRemovedSongsTests
         public Task<string?> SaveAsync(SettingsDraft draft, CancellationToken ct = default) => Task.FromResult<string?>(null);
         public int CountSongsUnder(string folder) => 0;
         public Task<IReadOnlyList<TrustedPeerRow>> LoadDevicesAsync(CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<IReadOnlyList<DeniedPeerRow>> LoadDeniedDevicesAsync(CancellationToken ct = default) => throw new NotSupportedException();
         public Task ForgetDeviceAsync(TrustedPeerRow device, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task ForgetDenialAsync(DeniedPeerRow device, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<(string Code, string Invite)> IssuePairingCodeAsync(bool grantsAdmin, CancellationToken ct = default) => throw new NotSupportedException();
         public Task RescanAsync(CancellationToken ct = default) => Task.CompletedTask;
         public Task RebuildDatabaseAsync(CancellationToken ct = default) => Task.CompletedTask;

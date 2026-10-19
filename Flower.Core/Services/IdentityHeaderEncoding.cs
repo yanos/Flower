@@ -28,8 +28,8 @@ namespace Flower.Services;
 //     param from the canonical string (see its IsTransportParam), precisely so
 //     the header and query transports sign identical bytes, so changing the
 //     wire form of one of them cannot invalidate anything.
-//   - The query transport. A URL handed to something else to fetch (LibVLC
-//     playing a stream URL - PeerMediaClient.BuildUrlAsync) carries the
+//   - The query transport. A URL handed to something else to fetch (a
+//     stream URL - PeerMediaClient.BuildSignedUrlAsync) carries the
 //     same params as query params, where Uri.EscapeDataString has always been
 //     applied and the receiving stack decodes them itself. Encoding there too
 //     would double-encode, and decoding a query value here would strip an

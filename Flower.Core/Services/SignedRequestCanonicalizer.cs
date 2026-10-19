@@ -19,8 +19,8 @@ public static class SignedRequestCanonicalizer
     // identity it is signed under - is excluded from the canonical query, so
     // the canonical form is identical whether those values travel as headers
     // (PeerMediaClient.SendAsync, the sync services' own calls) or as
-    // query-string fallbacks alongside everything else in the URL (the
-    // LibVLC/PeerMediaClient.BuildUrl case - see SignedRequest.Identity).
+    // query-string fallbacks alongside everything else in the URL (a stream
+    // URL, PeerMediaClient.BuildSignedUrlAsync - see SignedRequest.Identity).
     //
     // Only the three signature params used to be excluded, which made the two
     // transports sign *different* strings: a caller signs its identity params

@@ -24,9 +24,6 @@ namespace Flower.Audio
     // See MiniaudioSink.OpenDevice's _hasNegotiatedFormat.
     public static class GaplessFormat
     {
-        // What TrackDecoder asks LibVLC for, and gets whether it asks or not.
-        public const string LibVlcFourCc = "S16N";
-
         // The fallback also keeps test fixtures and headless sinks
         // deterministic. MiniaudioSink replaces the process's session rate
         // with the opened output device's native rate before any decoder is
@@ -34,8 +31,9 @@ namespace Flower.Audio
         public const uint DefaultSampleRate = 48000;
 
         // What the pipeline carries until something negotiates otherwise -
-        // which is to say what it carries for the LibVLC decoder, for every
-        // device check, and for every test that does not say otherwise.
+        // which is to say for every device check and every test that does
+        // not say otherwise. The app negotiates S24 at startup
+        // (GaplessAudioManager.StartSink).
         public const PcmSampleFormat DefaultSampleFormat = PcmSampleFormat.S16;
 
         public const uint Channels = 2;

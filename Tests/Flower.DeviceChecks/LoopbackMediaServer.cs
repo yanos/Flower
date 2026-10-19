@@ -12,8 +12,8 @@ using Flower.Services;
 
 namespace Flower.DeviceChecks;
 
-// A one-file HTTP server on loopback, standing in for the Subsonic /stream
-// endpoint.
+// A one-file HTTP server on loopback, standing in for Flower.Server's /stream
+// route.
 //
 // Hand-rolled on a TcpListener rather than built on HttpListener, which is the
 // obvious choice and is not available on iOS - and iOS is the whole reason

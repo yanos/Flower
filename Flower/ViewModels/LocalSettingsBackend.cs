@@ -132,12 +132,7 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
 
     public Task<IReadOnlyList<TrustedPeerRow>> LoadDevicesAsync(CancellationToken ct = default) => throw NoRoster();
 
-    public Task<IReadOnlyList<DeniedPeerRow>> LoadDeniedDevicesAsync(CancellationToken ct = default) => throw NoRoster();
-
     public Task ForgetDeviceAsync(TrustedPeerRow device, CancellationToken ct = default) => throw NoRoster();
-
-    public Task ForgetDenialAsync(DeniedPeerRow device, CancellationToken ct = default) => throw NoRoster();
-
 
     public Task RescanAsync(CancellationToken ct = default) => ViewModel.RescanLibraryAsync();
 

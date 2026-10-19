@@ -508,12 +508,12 @@ namespace Flower.Audio
             {
                 if (_current != null)
                 {
-                    // Flushed here, synchronously, rather than left to
-                    // LibVLC's own asynchronous OnFlush -> ResetTarget: until
-                    // that arrives the ring still holds up to a full
+                    // Flushed here, synchronously, rather than left to the
+                    // decoder's own ResetTarget on its decode thread: until
+                    // that runs the ring still holds up to a full
                     // RingCapacityBytes of pre-seek audio, and the render
                     // callback happily plays all of it before the new
-                    // position is heard. The later OnFlush reset is then a
+                    // position is heard. The decoder's reset is then a
                     // harmless second generation bump.
                     _sharedRing.Reset();
 
@@ -531,7 +531,7 @@ namespace Flower.Audio
                     //
                     // That target is a provisional answer, not the final
                     // one: a lossy stream is seeked to a frame/keyframe
-                    // boundary, so LibVLC routinely lands somewhere near
+                    // boundary, so the decoder routinely lands somewhere near
                     // the request rather than on it, and nothing here can
                     // know where. HandleSeekSettled re-anchors the split
                     // onto the real landing point once the decoder reports
@@ -752,11 +752,11 @@ namespace Flower.Audio
                     _armedAlreadyDrained);
 
                 // A track that produced not one sample did not play, whatever
-                // LibVLC calls it. It reports a clean end for this - no error,
-                // no fault - and EndReached is a *finished* track: the play
+                // the decoder calls it. LibVLC reported a clean end for this -
+                // no error, no fault - and EndReached is a *finished* track: the play
                 // count goes up, the resume position is cleared, and the queue
                 // advances as if it had been listened to. So a track LibVLC
-                // could not make sense of at all (see TrackDecoder.DemuxHintFor
+                // could not make sense of at all (see FfmpegTrackDecoder.DemuxerHintFor
                 // for the way this was found: every AAC stream on iOS) went
                 // past silently and counted, and the next one did the same, and
                 // an album emptied itself in twenty seconds.
@@ -776,7 +776,7 @@ namespace Flower.Audio
                 if (!faulted && expectedBytes > 0 && decoder.BytesProduced + BytesForDuration(TimeSpan.FromSeconds(2)) < expectedBytes)
                 {
                     _logger?.LogWarning(
-                        "Decoder ended materially before the tagged duration: Path={Path} TaggedDurationMs={TaggedDurationMs} DecodedMs={DecodedMs} MissingMs={MissingMs} Media may be truncated or LibVLC may have ended early",
+                        "Decoder ended materially before the tagged duration: Path={Path} TaggedDurationMs={TaggedDurationMs} DecodedMs={DecodedMs} MissingMs={MissingMs} Media may be truncated or the decoder may have ended early",
                         finishedTrack.Path, finishedTrack.Duration.TotalMilliseconds,
                         decodedMs, finishedTrack.Duration.TotalMilliseconds - decodedMs);
                 }

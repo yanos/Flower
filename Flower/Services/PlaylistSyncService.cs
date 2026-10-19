@@ -81,13 +81,12 @@ public class PlaylistSyncService
         _logger = logger;
     }
 
-    // forceInitiator is set by MainViewModel's Client-side triggers (see
-    // SyncRolePolicy) - under Client/Server roles, a Client is the only side
-    // that ever calls this for a given pair (a Server's own trigger paths are
-    // gated off entirely, so it never reciprocates), so it must always be the
-    // initiator regardless of the ordinal comparison below, which would
-    // otherwise (for roughly half of all possible fingerprint pairs) decide
-    // the Client isn't the initiator and leave that pair permanently unsynced.
+    // forceInitiator is set by every PeerSyncCoordinator trigger. A device only
+    // ever syncs with its paired server, and the server never calls this, so
+    // the device must always be the initiator regardless of the ordinal
+    // comparison below, which would otherwise (for roughly half of all
+    // possible fingerprint pairs) decide it isn't and leave that pair
+    // permanently unsynced.
     // Virtual for the same reason as LibrarySyncService.SyncWithAsync - see
     // its comment, and docs/ARCHITECTURE-REVIEW.md Tier 5.6.
     public virtual async Task SyncWithAsync(DiscoveredDevice device, bool forceInitiator = false)

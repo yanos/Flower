@@ -212,8 +212,8 @@ namespace Flower.Models
         // already hold was mutated in place" signal.
         private Built<Dictionary<string, Track>>? _byPath;
 
-        // Grouped-album / by-id / by-artist indexes for the OpenSubsonic
-        // surface - see LibrarySnapshot. Built lazily and thrown away rather
+        // Grouped-album / by-id / by-artist indexes for the server's routes -
+        // see LibrarySnapshot. Built lazily and thrown away rather
         // than maintained incrementally, exactly like _byPath above and
         // invalidated at the same points, because the same "a Track was
         // mutated in place without going through this class" case applies:
@@ -1475,13 +1475,11 @@ namespace Flower.Models
         //
         // OriginDeviceFingerprint/OriginFileExtension/OriginAlbumArtId and
         // DateAdded are the exceptions to "never touches an already-known
-        // track": this method's only caller (LibrarySyncService, per
-        // SyncRolePolicy) is always a Client pulling from its one paired
-        // Server over Flower's own private /api/flower/v1/library endpoint -
-        // never a third-party OpenSubsonic server, which only ever answers
-        // the generic /rest/* browse API - so the peer here is always another
-        // Flower instance, and OriginDeviceFingerprint is always that Server's
-        // own fingerprint (see LibrarySyncMapper.ToPlaceholderTrack). Recording
+        // track": this method's only caller (LibrarySyncService) is always a
+        // device pulling from its one paired server over
+        // /api/flower/v1/library - Flower's own protocol, the only one it
+        // speaks - so the peer here is always Flower.Server, and
+        // OriginDeviceFingerprint is always that server's own fingerprint (see LibrarySyncMapper.ToPlaceholderTrack). Recording
         // it even when this device already has its own real file for the same
         // track (matched by SyncKey, e.g. a song the user separately imported
         // on both devices) is what lets MobileMainViewModel's delete-downloaded-
@@ -2073,10 +2071,11 @@ namespace Flower.Models
             if (Snapshot.ById.GetValueOrDefault(playedTrack.Id) is { } byId)
                 return byId;
 
-            // Still by path as well, and not redundantly: a rescan replaces
-            // every Track instance with a brand-new one carrying a brand-new
-            // Id, so a caller holding a pre-rescan reference (the case the
-            // tests above cover) can only be matched by the file it names.
+            // Still by path as well. A rescan builds a new Track for every
+            // file but carries each one's Id over (CarryForwardMutableState,
+            // RescanCarryForwardGuardTests), so the id lookup above already
+            // finds a pre-rescan reference; the path is for a Track whose Id
+            // the library never issued, matched by the file it names.
             if (playedTrack.Path == null)
                 return playedTrack;
 
@@ -2175,7 +2174,7 @@ namespace Flower.Models
             return current;
         }
 
-        // Whichever Track a Subsonic-style id names, or null. The id
+        // Whichever Track a wire id names, or null. The id
         // vocabulary is the wire's, not this class's, which is why this
         // parses rather than taking a Guid: it is the boundary, and having
         // exactly one of them is the point (the playlist half has its own,
@@ -2183,9 +2182,9 @@ namespace Flower.Models
         public Track? Find(string? id) =>
             EntityId.FromWire(id) is { } parsed ? Snapshot.ById.GetValueOrDefault(parsed) : null;
 
-        // A play that happened somewhere else, addressed by id - Subsonic's
-        // scrobble, and the browser head reporting what it played back to the
-        // origin server that lent it the track (see IPlayReporter).
+        // A play that happened somewhere else, addressed by id - the browser
+        // head reporting what it played back to the origin server that lent it
+        // the track (see IPlayReporter).
         //
         // Both halves by default, because a scrobble is both: the count bump
         // and the played-at stamp live on separate methods above only because
@@ -2454,7 +2453,7 @@ namespace Flower.Models
             return moved | TrackChange.PlayStarted;
         }
 
-        // Stars or unstars every track behind one Subsonic id - a song, or every
+        // Stars or unstars every track behind one id - a song, or every
         // track on an album or by an album artist - and hands back the tracks
         // it touched so the caller can persist them and report a count.
         //
@@ -2828,7 +2827,7 @@ namespace Flower.Models
             }
         }
 
-        // The playlist a Subsonic id names, or null - the playlist half of
+        // The playlist a wire id names, or null - the playlist half of
         // Find above.
         public Playlist? FindPlaylist(string? id) =>
             EntityId.FromWire(id) is { } parsed ? Playlists.FirstOrDefault(p => p.Id == parsed) : null;

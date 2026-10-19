@@ -594,7 +594,7 @@ them starts the import. Getting this wrong now costs one place instead of two:
 a new server setting still goes through the snapshot, the draft and
 `SettingsViewModel`, and a new device setting does not.
 
-### D5. The retired review documents still exist
+### D5. The retired review documents still exist — **fixed**
 
 `CLAUDE.md` and `docs/CITED-DECISIONS.md` both say `ARCHITECTURE-REVIEW.md`
 and `OPEN-INTERNET-REVIEW.md` were "finished, and deleted once they were". Both
@@ -603,9 +603,19 @@ files are still tracked, at 669 and 617 lines (`git ls-files docs/`), and only
 resolve against two documents that disagree in detail. Either delete the two
 files, as the index says happened, or change the index to say they remain.
 
+**Fixed** the first way. Both are deleted, and `CITED-DECISIONS.md`'s
+`git show` lines name `070c2ca`, the last commit that has them.
+
 ---
 
 ## E. Outdated comments
+
+**Fixed (October 2026)**, all but one. The `LibraryMirrorService` comment
+describes what the guard should do, so B4 fixes the code to match it rather
+than the other way round. Along the way, the references to
+`PeerMediaClient.BuildUrl`/`BuildUrlAsync`, renamed `BuildSignedUrlAsync`,
+were corrected too, and `GaplessFormat.LibVlcFourCc`, which nothing read, was
+deleted.
 
 Each of these describes something the code no longer does, in the present
 tense. Historical notes ("this used to…") are fine and are not listed. The
@@ -749,7 +759,8 @@ Checked against the code, not taken from the September document's own marks.
 
 ### Dead code found along the way
 
-- **Denied peers.** `TrustedPeerStore.DenyAsync`, `ForgetDenialAsync`,
+- **Denied peers** — **removed (October 2026)**, `denied-peers.json` with
+  them. `TrustedPeerStore.DenyAsync`, `ForgetDenialAsync`,
   `LoadDenied`, `denied-peers.json`, `DeniedPeerRow`,
   `SettingsViewModel.DeniedDevices` and its command, the
   `ISettingsBackend` members, and the "denied devices" template in

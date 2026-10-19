@@ -3,8 +3,10 @@ namespace Flower.Audio
     // The sample formats the canonical pipeline can carry between a decoder
     // and the render sink. Two of them, and the absences are the design.
     //
-    // S16 is what LibVLC's amem seam delivers and the only thing it can
-    // deliver - see GaplessFormat.LibVlcFourCc. S24 is packed three-byte
+    // S16 is what a device that will not open at 24 bits gets, and what the
+    // tests and device checks carry unless they say otherwise. It was also
+    // all LibVLC's amem seam could ever deliver, which is why ffaudio exists
+    // (see GaplessFormat). S24 is packed three-byte
     // little-endian, which is what miniaudio's ma_format_s24 takes and what
     // ffaudio's pack_s24 produces, and it is the real ceiling of every
     // hi-res release and every DAC that plays one.

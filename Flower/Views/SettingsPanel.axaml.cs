@@ -234,12 +234,6 @@ public partial class SettingsPanel : UserControl
             _viewModel.ForgetDeviceCommand.Execute(row);
     }
 
-    private void ForgetRefusalButton_Click(object? sender, RoutedEventArgs e)
-    {
-        if ((sender as Button)?.DataContext is DeniedPeerRow row)
-            _viewModel.ForgetDenialCommand.Execute(row);
-    }
-
     private void RestoreRemovedFileButton_Click(object? sender, RoutedEventArgs e)
     {
         if ((sender as Button)?.DataContext is RemovedFileRow row)

@@ -44,12 +44,9 @@ public static class LibraryDtoMapper
 
     // selfFingerprint is this server's own DeviceIdentity.Fingerprint, and is
     // what makes the PlayCounts field below meaningful - it names whose tally
-    // the count is. Optional because only the callers whose response a Flower
-    // client *merges into its own library* need it: GET /api/flower/v1/library
-    // (see SyncEndpoints). The /rest browse endpoints pass nothing and send no
-    // counts, which is what they did before and what a third-party Subsonic
-    // client expects; a Flower client pulls its catalog through the bulk route,
-    // not through those.
+    // the count is. GET /api/flower/v1/library (see SyncEndpoints) is the one
+    // caller, and passes it; it is optional so a test can map a track without
+    // one, and then no counts are sent.
     // paths is the server library's own PathRules (Library.PathRules), which
     // knows the folders it scans - what RelativePath below is relative *to*.
     // Optional only so a test can map a track without a folder configuration;

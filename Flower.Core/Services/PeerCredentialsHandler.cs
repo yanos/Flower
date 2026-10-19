@@ -9,7 +9,7 @@ namespace Flower.Services;
 // Signs every request an HttpClient makes, freshly, one signature per request.
 //
 // The audio pipeline is why this exists. A streamed track's URL is built once
-// - PeerStreamUrlResolver asks PeerMediaClient.BuildUrlAsync for a URL with
+// - PeerStreamUrlResolver asks PeerMediaClient.BuildSignedUrlAsync for a URL with
 // the whole signed credential set baked into its query string - and then
 // handed onward as a plain string in Track.Path. SeekableHttpStream reuses
 // that one string for every request it makes: the HEAD probe, the bytes=0-0
@@ -25,7 +25,7 @@ namespace Flower.Services;
 //
 // What made it invisible was the order. The bytes=0-0 probe went first, so it
 // succeeded and the track got a correct length; the body GET that followed was
-// refused, and a refusal on this surface is Subsonic's "Wrong username or
+// refused, and a refusal on that surface was Subsonic's "Wrong username or
 // password" on an HTTP 200, per the protocol. SeekableHttpStream read those
 // ~130 bytes of JSON as the track's audio, saw the body end far short of the
 // length it had just been told, reopened three times - replaying the same
@@ -92,9 +92,8 @@ public sealed class PeerCredentialsHandler(Func<IPeerCredentials?> credentials) 
     // and sits there at rest (see LogPath, which shortens it for the same
     // reason).
     //
-    // The Subsonic params (u/t/s/v/c/f/id) are deliberately kept: they are what
-    // the server falls back to when signature auth is not in play, and they are
-    // part of the signed query on both sides.
+    // The route's own params (the track's id) are kept: they are part of the
+    // signed query on both sides.
     internal static Uri WithoutIdentityParams(Uri uri)
     {
         if (!uri.Query.Contains("X-Flower-", StringComparison.OrdinalIgnoreCase))

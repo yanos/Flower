@@ -31,16 +31,11 @@ namespace Flower.Persistence
         string Fingerprint, string Alias, DateTimeOffset ApprovedAt, string PublicKey, bool IsAdmin = false,
         DateTimeOffset? LastSeenAt = null);
 
-    public sealed record DeniedPeer(string Fingerprint, string Alias, DateTimeOffset DeniedAt);
-
     // Peers approved for the sync endpoints (see SyncEndpoints' gate,
     // SYNC-PLAN.md Phase 3). Approval is redeeming an admin-issued one-time code
     // (PairingEndpoints), after which that peer is
     // never prompted again. Revoking is the manual "forget this device" action
-    // in TrustedDevicesView. Denials are persisted separately (DeniedPeer/
-    // denied-peers.json) so a device can see who it turned away and forget
-    // that refusal explicitly, rather than the peer just being silently
-    // re-prompted on its next request.
+    // in TrustedDevicesView.
     public class TrustedPeerStore
     {
         private readonly ILogger<TrustedPeerStore> _logger;
@@ -51,7 +46,6 @@ namespace Flower.Persistence
         }
 
         public static string StorePath => Path.Combine(AppDataDirectory.Path, "trusted-peers.json");
-        public static string DeniedStorePath => Path.Combine(AppDataDirectory.Path, "denied-peers.json");
 
         // Every mutation below is a load-modify-save over the whole file, so the
         // load has to be inside the same critical section as the save - two
@@ -84,14 +78,12 @@ namespace Flower.Persistence
 
         private readonly object _cacheLock = new();
         private List<TrustedPeer>? _cachedPeers;
-        private List<DeniedPeer>? _cachedDenied;
 
         private void InvalidateCache()
         {
             lock (_cacheLock)
             {
                 _cachedPeers = null;
-                _cachedDenied = null;
             }
         }
 
@@ -117,9 +109,7 @@ namespace Flower.Persistence
             Load().FirstOrDefault(p => p.Fingerprint == fingerprint)?.PublicKey;
 
         // Re-approving an already-trusted fingerprint (e.g. it reconnected with a
-        // new alias/key) replaces its entry rather than duplicating it. Also
-        // clears any pending denial for the same fingerprint, so a later
-        // approval doesn't leave a stale "denied" entry sitting alongside it.
+        // new alias/key) replaces its entry rather than duplicating it.
         //
         // The alias is cleaned here rather than trusted from the caller, as it
         // is in RenameAsync - see DeviceAlias.
@@ -134,9 +124,6 @@ namespace Flower.Persistence
                 var now = DateTimeOffset.UtcNow;
                 peers.Add(new TrustedPeer(fingerprint, alias, now, publicKey, isAdmin, LastSeenAt: now));
                 await SaveAsync(peers);
-
-                var denied = LoadDenied().Where(p => p.Fingerprint != fingerprint).ToList();
-                await SaveDeniedAsync(denied);
             }
             finally
             {
@@ -277,61 +264,11 @@ namespace Flower.Persistence
             }
         }
 
-        // Cached the same way, and for the same reason, as Load above.
-        public List<DeniedPeer> LoadDenied()
-        {
-            lock (_cacheLock)
-            {
-                return _cachedDenied ??=
-                    AtomicJsonFile.Read(DeniedStorePath, FlowerCoreJsonContext.Default.DeniedPeerList, _logger) ?? new List<DeniedPeer>();
-            }
-        }
-
-        // Written when an app could be paired *to* and a human tapped Deny, or
-        // let the prompt time out - both being "this device did not approve
-        // fingerprint X," which is exactly what
-        // the denied-devices list is for. Replaces rather than duplicates a
-        // repeat denial of the same fingerprint.
-        public async Task DenyAsync(string fingerprint, string alias)
-        {
-            await _writeLock.WaitAsync();
-            try
-            {
-                var denied = LoadDenied().Where(p => p.Fingerprint != fingerprint).ToList();
-                denied.Add(new DeniedPeer(fingerprint, alias, DateTimeOffset.UtcNow));
-                await SaveDeniedAsync(denied);
-            }
-            finally
-            {
-                _writeLock.Release();
-            }
-        }
-
-        public async Task ForgetDenialAsync(string fingerprint)
-        {
-            await _writeLock.WaitAsync();
-            try
-            {
-                var denied = LoadDenied().Where(p => p.Fingerprint != fingerprint).ToList();
-                await SaveDeniedAsync(denied);
-            }
-            finally
-            {
-                _writeLock.Release();
-            }
-        }
-
-        // Both assume _writeLock is already held by the caller, and both drop
-        // the read cache so the next Load/LoadDenied reflects what was written.
+        // Assumes _writeLock is already held by the caller, and drops the read
+        // cache so the next Load reflects what was written.
         private async Task SaveAsync(List<TrustedPeer> peers)
         {
             await AtomicJsonFile.WriteAsync(StorePath, peers, FlowerCoreJsonContext.Default.TrustedPeerList);
-            InvalidateCache();
-        }
-
-        private async Task SaveDeniedAsync(List<DeniedPeer> denied)
-        {
-            await AtomicJsonFile.WriteAsync(DeniedStorePath, denied, FlowerCoreJsonContext.Default.DeniedPeerList);
             InvalidateCache();
         }
     }

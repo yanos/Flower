@@ -489,7 +489,7 @@
                these two is visible at a time - see RefreshDevicesTab. -->
           <ContentControl x:Name="ServerPickerHost"/>
 
-          <Grid x:Name="TrustedDevicesSection" RowDefinitions="Auto,Auto,*,Auto,Auto">
+          <Grid x:Name="TrustedDevicesSection" RowDefinitions="Auto,Auto,*">
             <StackPanel Grid.Row="0" Spacing="0">
               <TextBlock Text="Devices that can use this server."
                          TextWrapping="Wrap" Opacity="0.75" FontSize="12" Margin="0,0,0,12"/>
@@ -617,42 +617,6 @@
                 </ListBox.ItemTemplate>
               </ListBox>
             </Grid>
-          </Border>
-
-          <TextBlock Grid.Row="3"
-                     Text="Refused devices"
-                     TextWrapping="Wrap" Opacity="0.75" FontSize="12" Margin="0,16,0,8"
-                     IsVisible="{Binding ShowsDeniedDevices}"/>
-
-          <Border Grid.Row="4"
-                  BorderThickness="1"
-                  BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
-                  IsVisible="{Binding ShowsDeniedDevices}">
-            <ListBox ItemsSource="{Binding DeniedDevices}">
-              <ListBox.Styles>
-                <Style Selector="ListBoxItem">
-                  <Setter Property="Padding" Value="0"/>
-                  <Setter Property="MinHeight" Value="0"/>
-                </Style>
-              </ListBox.Styles>
-              <ListBox.ItemTemplate>
-                <DataTemplate x:DataType="vm:DeniedPeerRow">
-                  <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" Margin="4,2">
-                    <TextBlock Grid.Row="0" Grid.Column="0"
-                               Text="{Binding Alias}"
-                               FontWeight="SemiBold" FontSize="13"
-                               VerticalAlignment="Center" Margin="4,0"/>
-                    <TextBlock Grid.Row="1" Grid.Column="0"
-                               Text="{Binding DeniedAtDisplay}"
-                               Opacity="0.6" FontSize="11" Margin="4,1,0,0"/>
-                    <Button Grid.Row="0" Grid.RowSpan="2" Grid.Column="1"
-                            Content="Forget refusal"
-                            Padding="10,4" VerticalAlignment="Center" Margin="8,0,0,0"
-                            Click="ForgetRefusalButton_Click"/>
-                  </Grid>
-                </DataTemplate>
-              </ListBox.ItemTemplate>
-            </ListBox>
           </Border>
           </Grid>
         </Panel>

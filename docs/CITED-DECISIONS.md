@@ -15,10 +15,14 @@ here.
 enough:
 
 ```bash
-git show ad337e7:docs/ARCHITECTURE-REVIEW.md
-git show ad337e7:docs/OPEN-INTERNET-REVIEW.md
+git show 070c2ca:docs/ARCHITECTURE-REVIEW.md
+git show 070c2ca:docs/OPEN-INTERNET-REVIEW.md
 git show ad337e7:docs/SMART-PLAYLIST-PLAN.md
 ```
+
+(The first two outlived their retirement by a month: they were left tracked
+when the third was deleted, and went in October 2026. `070c2ca` is the last
+commit that has them.)
 
 Everything listed here is **done**. Nothing in this file is a backlog;
 `CODE-REVIEW-2026-09.md` is where open work lives.

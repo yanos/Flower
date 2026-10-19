@@ -48,9 +48,7 @@ public class SettingsRosterlessLoadTests
             new("This device has no trusted-device roster - it does not accept incoming connections.");
 
         public Task<IReadOnlyList<TrustedPeerRow>> LoadDevicesAsync(CancellationToken ct = default) => throw NoRoster();
-        public Task<IReadOnlyList<DeniedPeerRow>> LoadDeniedDevicesAsync(CancellationToken ct = default) => throw NoRoster();
         public Task ForgetDeviceAsync(TrustedPeerRow device, CancellationToken ct = default) => throw NoRoster();
-        public Task ForgetDenialAsync(DeniedPeerRow device, CancellationToken ct = default) => throw NoRoster();
 
         public Task RescanAsync(CancellationToken ct = default) => Task.CompletedTask;
         public Task RebuildDatabaseAsync(CancellationToken ct = default) => Task.CompletedTask;

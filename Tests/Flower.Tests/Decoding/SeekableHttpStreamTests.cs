@@ -23,7 +23,7 @@ public class SeekableHttpStreamTests
     private static byte[] Content(int length) =>
         Enumerable.Range(0, length).Select(i => (byte)(i % 251)).ToArray();
 
-    // Serves one byte array the way the Subsonic /stream endpoint does, and
+    // Serves one byte array the way Flower.Server's /stream route does, and
     // counts requests so a test can assert about traffic rather than only
     // about bytes.
     private sealed class FakeServer : HttpMessageHandler

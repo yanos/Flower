@@ -7,7 +7,7 @@ using Flower.Services;
 
 namespace Flower.Models;
 
-// What a star applies to - the three ids a Subsonic client can star. Lives
+// What a star applies to - a song, an album or an artist. Lives
 // beside the snapshot rather than in the repository because both halves need
 // it: Library.SetStarred resolves it against these indexes, and
 // TrackRepository.SetStarred maps it to the matching indexed column.
@@ -18,11 +18,11 @@ public enum StarTarget
     Artist,
 }
 
-// One immutable view of the whole library, plus the indexes the Subsonic
-// surface reads through - grouped albums, tracks by id, tracks by album artist.
+// One immutable view of the whole library, plus the indexes the server's
+// routes read through - grouped albums, tracks by id, tracks by album artist.
 //
 // Owned by Library, which rebuilds it lazily after any change to Tracks, and
-// used wherever an OpenSubsonic request has to be answered out of it. It exists
+// used wherever a request has to be answered out of it. It exists
 // because the two hosts that then existed were doing the same grouping per
 // request - the server as an aggregate SQL query, the client as a LINQ GroupBy
 // over the whole library

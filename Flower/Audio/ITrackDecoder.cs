@@ -6,11 +6,10 @@ using Flower.Models;
 
 namespace Flower.Audio
 {
-    // The subset of TrackDecoder's surface GaplessCoordinator actually
-    // depends on - lets tests substitute a fake decoder and exercise the
-    // coordinator's handover/idempotency/generation logic without touching
-    // real LibVLC decode. See GaplessCoordinator's factory-taking
-    // constructor.
+    // What GaplessCoordinator needs of a decoder - FfmpegTrackDecoder in the
+    // app. Lets tests substitute a fake decoder and exercise the
+    // coordinator's handover/idempotency/generation logic without a real
+    // decode. See GaplessCoordinator's factory-taking constructor.
     public interface ITrackDecoder : IDisposable
     {
         Track Track { get; }
@@ -22,7 +21,7 @@ namespace Flower.Audio
         // Raised once a Seek has actually landed, carrying the byte offset
         // into the track that decode genuinely resumed from - which is not
         // necessarily the offset that was asked for. A lossy seek is
-        // keyframe/frame-aligned by the demuxer, so LibVLC routinely lands
+        // keyframe/frame-aligned by the demuxer, so a decoder routinely lands
         // somewhere near the request rather than on it. Without this the
         // seek target is the only thing anyone ever learns, and the
         // scrubber stays permanently offset from the audio by however far

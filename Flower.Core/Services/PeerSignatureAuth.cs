@@ -33,8 +33,8 @@ public sealed class SignedRequest
     public byte[] Body { get; }
 
     // Header if present, else the same name as a query param - see
-    // PeerMediaClient.BuildUrl's own doc comment: a URL handed to
-    // something else to fetch (LibVLC playing GetStreamUrl directly) can't
+    // PeerMediaClient.GetStreamUrlAsync's own doc comment: a URL handed to
+    // something else to fetch (a stream URL, passed on as Track.Path) can't
     // carry custom headers, so the identity (and the signature, timestamp,
     // nonce and public key with it) travels as a query param there instead.
     // Header wins when both are somehow present. This fallback *policy* is

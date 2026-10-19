@@ -1069,7 +1069,9 @@ pre-trust endpoints, fingerprint-keyed post-trust); LAN-only enforcement
 closes `docs/todo.txt`'s "only stream on local network," since the wildcard
 `http://+:{port}/` bind has no other network-layer boundary); persisted
 pairing denials (`TrustedPeerStore.DenyAsync`/`denied-peers.json`,
-surfaced in `TrustedDevicesView` with a "Forget refusal" action); a
+surfaced in `TrustedDevicesView` with a "Forget refusal" action - removed
+in October 2026, since nothing has denied anything since the live approval
+prompt went with peer-to-peer); a
 server-initiated unpair notification (`POST /api/flower/v1/unpair-notify`,
 `PeerUnpairNotifier`, fire-and-forget) so a revoked peer can learn about it
 proactively instead of only via a later 403/poll; and a 20 MB request-body

@@ -118,7 +118,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     public ObservableCollection<LibraryPathRow> LibraryPaths { get; } = [];
     public ObservableCollection<TrustedPeerRow> Devices { get; } = [];
-    public ObservableCollection<DeniedPeerRow> DeniedDevices { get; } = [];
 
     // The Library tab's "Removed Songs" - see ISettingsBackend.LoadRemovedFilesAsync.
     // Hidden while empty, which it is for anyone who has never removed a song
@@ -434,7 +433,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
     // Logs go to the paired server, so with none there is nothing to switch.
     public bool ShowsShareLogs => Capabilities.PairedServerPicker && _snapshot.IsPairedToServer;
 
-    public bool ShowsDeniedDevices => DeniedDevices.Count > 0;
     public bool HasDevices => Devices.Count > 0;
 
     // Raised when the Devices tab's content should be rebuilt.
@@ -690,16 +688,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
             return;
 
         await _backend.ForgetDeviceAsync(device, ct);
-        await RefreshDevicesAsync(ct);
-    });
-
-    [RelayCommand]
-    private Task ForgetDenialAsync(DeniedPeerRow? device) => RunAsync(async ct =>
-    {
-        if (device == null)
-            return;
-
-        await _backend.ForgetDenialAsync(device, ct);
         await RefreshDevicesAsync(ct);
     });
 
@@ -967,10 +955,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
         foreach (var device in await _backend.LoadDevicesAsync(ct))
             Devices.Add(device);
 
-        DeniedDevices.Clear();
-        foreach (var device in await _backend.LoadDeniedDevicesAsync(ct))
-            DeniedDevices.Add(device);
-
         // Keep the Logs tab's list in step with the roster it names - but only
         // when that roster has actually changed. This runs on every load,
         // including the catch-up one a panel does when it comes back on screen,
@@ -1005,7 +989,6 @@ public sealed partial class SettingsViewModel : ViewModelBase
         SelectedLogSource = LogSources.FirstOrDefault(s => (s.Fingerprint ?? "") == wanted) ?? LogSources[0];
 
         OnPropertyChanged(nameof(HasDevices));
-        OnPropertyChanged(nameof(ShowsDeniedDevices));
     }
 
     // Turning the iTunes integration on - a server's switch; the app has none,

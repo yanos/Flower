@@ -121,16 +121,8 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
             })
             .ToList();
 
-    // The server keeps no denied list: it never prompts anyone to Allow, because
-    // there is nobody in front of it to answer - a device pairs by redeeming a
-    // code or not at all (see PairingEndpoints). So there is nothing to show.
-    public Task<IReadOnlyList<DeniedPeerRow>> LoadDeniedDevicesAsync(CancellationToken ct = default) =>
-        Task.FromResult<IReadOnlyList<DeniedPeerRow>>([]);
-
     public Task ForgetDeviceAsync(TrustedPeerRow device, CancellationToken ct = default) =>
         client.ForgetDeviceAsync(device.Fingerprint, ct);
-
-    public Task ForgetDenialAsync(DeniedPeerRow device, CancellationToken ct = default) => Task.CompletedTask;
 
     public async Task<(string Code, string Invite)> IssuePairingCodeAsync(bool grantsAdmin, CancellationToken ct = default)
     {

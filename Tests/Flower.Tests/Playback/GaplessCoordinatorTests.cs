@@ -54,11 +54,11 @@ public class GaplessCoordinatorTests
 
     private static Track T(string title) => new() { Title = title, Path = $"/music/{title}.mp3", Duration = TimeSpan.FromMinutes(3) };
 
-    // The shape a remote track's Path actually has: an OpenSubsonic stream URL
-    // whose per-request nonce and signature change on every resolve, around a
-    // stable id. Only the query differs between two resolves of one track.
+    // The shape a remote track's Path actually has: a signed stream URL whose
+    // nonce and signature change on every resolve, around a stable id. Only
+    // the query differs between two resolves of one track.
     private static string StreamUrl(string title, string nonce) =>
-        $"http://server:4533/rest/stream?u=&t={nonce}&s=salt&v=1.16.1&c=Flower&id={title}";
+        $"http://server:4534/api/flower/v1/stream?id={title}&X-Flower-Nonce={nonce}&X-Flower-Signature=sig";
 
     private static Track Streamed(string title, string nonce) =>
         new() { Title = title, Path = StreamUrl(title, nonce), Duration = TimeSpan.FromMinutes(3) };

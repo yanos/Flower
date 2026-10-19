@@ -204,9 +204,7 @@ public interface ISettingsBackend
     int CountSongsUnder(string folder);
 
     Task<IReadOnlyList<TrustedPeerRow>> LoadDevicesAsync(CancellationToken ct = default);
-    Task<IReadOnlyList<DeniedPeerRow>> LoadDeniedDevicesAsync(CancellationToken ct = default);
     Task ForgetDeviceAsync(TrustedPeerRow device, CancellationToken ct = default);
-    Task ForgetDenialAsync(DeniedPeerRow device, CancellationToken ct = default);
 
     // Both renderings of one code. The bare Code is what gets read out over
     // the phone; Invite is the flower:// link that also names this server's

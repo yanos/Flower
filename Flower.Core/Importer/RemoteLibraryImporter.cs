@@ -28,13 +28,11 @@ public readonly record struct RemoteLibraryFetch(bool NotModified, string? ETag,
 // only the knowledge that the origin does, and how to ask for it later.
 //
 // Deliberately not Subsonic-shaped. Browsing a Flower host over
-// getAlbumList2/getAlbum means one request per album, which at a real library
-// size is hundreds or thousands of connections in a burst - see
-// LibrarySyncContracts for the full history. GET /api/flower/v1/library is the
-// whole catalog in one request with an ETag, so that is what this reads. A
-// genuine SubsonicLibraryImporter is still worth having for third-party servers
-// (Navidrome, Jellyfin) that have no such endpoint, but never for talking to
-// Flower.Server, which does.
+// getAlbumList2/getAlbum, while it still answered them, meant one request per
+// album, which at a real library size is hundreds or thousands of connections
+// in a burst - see LibrarySyncContracts for the full history. GET
+// /api/flower/v1/library is the whole catalog in one request with an ETag, so
+// that is what this reads.
 //
 // In Flower.Core so both heads share it: the desktop reaches it through
 // LibrarySyncService, which pulls from a discovered peer and merges additively;

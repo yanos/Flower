@@ -15,18 +15,19 @@ using Flower.Services;
 
 namespace Flower.Audio.Ffmpeg
 {
-    // ITrackDecoder over the ffaudio façade - the second implementation
-    // GaplessCoordinator can drive, alongside the LibVLC-based TrackDecoder it
-    // was written for. Everything above ITrackDecoder is unchanged: the
-    // decode-ahead role, the staging ring, the retarget at handover.
+    // ITrackDecoder over the ffaudio façade - the only decoder now. It was
+    // written as the second implementation GaplessCoordinator could drive,
+    // beside the LibVLC-based TrackDecoder the coordinator was written for, and
+    // nothing above ITrackDecoder changed for it: the decode-ahead role, the
+    // staging ring, the retarget at handover.
     //
-    // The shape below is different from TrackDecoder's in one way that is
-    // worth stating, because it is the reason several of that class's hardest
-    // bugs cannot occur here. LibVLC pushes: it owns a thread, calls OnPlay
-    // when it feels like it, and a seek is a request whose effects arrive
-    // later on callbacks that have to be correlated back to it (hence
-    // _seekRequested, _seekAwaitingFirstSample, and OnFlush having to tell a
-    // seek's flush from a route change's). FFmpeg pulls: this class owns the
+    // Its shape differed from TrackDecoder's in one way that is worth stating,
+    // because it is the reason several of that class's hardest bugs cannot
+    // occur here. LibVLC pushed: it owned a thread, called OnPlay
+    // when it felt like it, and a seek was a request whose effects arrived
+    // later on callbacks that had to be correlated back to it (hence that
+    // class's _seekRequested, _seekAwaitingFirstSample, and OnFlush having to
+    // tell a seek's flush from a route change's). FFmpeg pulls: this class owns the
     // thread and asks for samples, so a seek is a function call that returns
     // where it landed. The seek is still posted to the decode thread rather
     // than performed on the caller's, because one FFmpeg decoder belongs to
@@ -181,7 +182,7 @@ namespace Flower.Audio.Ffmpeg
                 format.Duration?.TotalMilliseconds ?? -1);
         }
 
-        // Same budget as TrackDecoder's parse, and for the same reason: it is
+        // Same budget as LibVLC's parse had, and for the same reason: it is
         // how long a stopped or unreachable server takes to be reported, and
         // it runs off the lock while the current track keeps playing.
         private const int OpenTimeoutMs = 5000;
@@ -190,9 +191,9 @@ namespace Flower.Audio.Ffmpeg
         {
             if (IsRemote(path))
             {
-                // The same stream LibVLC reads through today, handed to
-                // FFmpeg's AVIOContext callbacks instead - which is the point
-                // of having built it before this: range requests, a known
+                // The stream LibVLC used to read through, handed to FFmpeg's
+                // AVIOContext callbacks - which is the point of having built
+                // it before this decoder: range requests, a known
                 // length, a real seek, and every byte fetched on Flower's own
                 // pinned client.
                 _remoteStream = new SeekableHttpStream(AudioHttpClient, new Uri(path), logger: _logger, route: RouteStream);
@@ -219,7 +220,7 @@ namespace Flower.Audio.Ffmpeg
         // A prepare is an optimisation, not a precondition. GaplessCoordinator
         // calls PrepareAsync only on the decode-ahead path; pressing play on a
         // track goes straight from Play() to here, and LibVLC's TrackDecoder
-        // supports that by doing its own open inside StartDecoding. A decoder
+        // supported that by doing its own open inside StartDecoding. A decoder
         // that instead required a prepare faulted on every single press of
         // play, and only tracks that happened to be armed ahead of time ever
         // opened at all - the golden path was the one path that never worked.
@@ -713,8 +714,8 @@ namespace Flower.Audio.Ffmpeg
             || path.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
 
         // FFmpeg's own demuxer names, not LibVLC's module names, and named
-        // for the same containers TrackDecoder.DemuxHintFor names and no
-        // others.
+        // for the same containers LibVLC's TrackDecoder.DemuxHintFor named and
+        // no others.
         //
         // This used to list mp3, flac and wav as well, on the reasoning that
         // skipping the probe saves a round trip on a remote track. It cost an

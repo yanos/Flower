@@ -38,11 +38,7 @@ public class SettingsITunesGatingTests
         public Task<IReadOnlyList<TrustedPeerRow>> LoadDevicesAsync(CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<TrustedPeerRow>>([]);
 
-        public Task<IReadOnlyList<DeniedPeerRow>> LoadDeniedDevicesAsync(CancellationToken ct = default) =>
-            Task.FromResult<IReadOnlyList<DeniedPeerRow>>([]);
-
         public Task ForgetDeviceAsync(TrustedPeerRow device, CancellationToken ct = default) => Task.CompletedTask;
-        public Task ForgetDenialAsync(DeniedPeerRow device, CancellationToken ct = default) => Task.CompletedTask;
 
         public Task<(string Code, string Invite)> IssuePairingCodeAsync(bool grantsAdmin, CancellationToken ct = default) =>
             throw new NotSupportedException();

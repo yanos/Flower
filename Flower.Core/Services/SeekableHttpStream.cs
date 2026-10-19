@@ -26,14 +26,14 @@ namespace Flower.Services;
 // to libavformat's demuxer; on iOS the fallback did not save it, and an entire
 // AAC album produced no audio at all while the queue raced through it in
 // twenty seconds. The server has served byte ranges the whole time
-// (enableRangeProcessing on the Subsonic /stream endpoint). Nothing was wrong
+// (enableRangeProcessing on the /stream endpoint). Nothing was wrong
 // with either end - the platform's own HTTP access module simply decided the
 // stream was not seekable, and there was no way to argue with it. Owning the
 // fetching settles the question rather than negotiating it.
 //
-// **Authentication.** LibVLC opening its own https URL means LibVLC's TLS
-// stack, which knows nothing about the key this device paired with - the gap
-// VlcCertificateDialogs exists to paper over. Reading through PeerHttpClient
+// **Authentication.** LibVLC opening its own https URL meant LibVLC's TLS
+// stack, which knew nothing about the key this device paired with - the gap
+// VlcCertificateDialogs existed to paper over. Reading through PeerHttpClient
 // means audio is fetched by the same pinned client as every other request.
 //
 // **Every HTTP call here is the async one, blocked on.** That looks like
@@ -140,7 +140,7 @@ public sealed class SeekableHttpStream : Stream
 
     // What the server said, published as one object rather than as a flag
     // beside two fields. The probe happens on whichever thread got there first
-    // - a decode-ahead prepare, or LibVLC's reading thread - and is read from
+    // - a decode-ahead prepare, or the decoder's own thread - and is read from
     // the other, so a "have we probed yet" bool set after the values it
     // describes can be seen true while they are still stale. One reference,
     // written once, removes the question.
@@ -174,9 +174,9 @@ public sealed class SeekableHttpStream : Stream
 
     // Construction costs nothing and asks the server nothing.
     //
-    // That matters because of who opens these: LibVLC calls MediaInput.Open on
-    // its own thread when it opens the media, and FFmpeg's AVIOContext is the
-    // same shape. Probing in the constructor would put a network round trip on
+    // That matters because of who opens these: FfmpegTrackDecoder builds one
+    // wherever it is constructed, and FFmpeg's AVIOContext reads it on the
+    // decode thread. Probing in the constructor would put a network round trip on
     // whichever thread happened to build the decoder - the UI thread, for a
     // track the user just double-clicked. Probing on first use puts it where
     // the reading already is.
@@ -253,7 +253,7 @@ public sealed class SeekableHttpStream : Stream
     // Finds out now, off the caller's thread, what the first read would
     // otherwise find out later: whether the server answers at all, and how big
     // the track is. A decode-ahead prepare wants that answer before it commits
-    // to arming the track - see TrackDecoder.PrepareAsync.
+    // to arming the track - see FfmpegTrackDecoder.PrepareAsync.
     public async Task ProbeAsync(CancellationToken cancellationToken = default)
     {
         if (Volatile.Read(ref _facts) != null)
@@ -377,8 +377,8 @@ public sealed class SeekableHttpStream : Stream
         }
     }
 
-    // How much of a textual response is worth reading to quote it back. An
-    // error envelope is a couple of hundred bytes; anything beyond this is not
+    // How much of a textual response is worth reading to quote it back. A
+    // refusal is a couple of hundred bytes; anything beyond this is not
     // going to become a better log line.
     private const int MaxProtocolErrorBytes = 2048;
 
@@ -527,7 +527,7 @@ public sealed class SeekableHttpStream : Stream
 
         // Once the retries are spent, stay spent. Without this latch each
         // fresh Read starts its own run of attempts, and a caller that keeps
-        // reading after a failure - LibVLC does, several times a second -
+        // reading after a failure - LibVLC did, several times a second -
         // turns a dead connection into an unbounded storm of requests against
         // a server that is already in trouble. Measured on a fixture that
         // resets the connection every time: one decode, requests without end.

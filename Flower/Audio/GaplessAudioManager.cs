@@ -142,9 +142,9 @@ namespace Flower.Audio
             _coordinator.TrackFailed += track =>
             {
                 // Warning, not Information: this is a file the user asked for
-                // and did not get. It's also the only signal they have until
-                // the UI grows a real "couldn't play this" surface - the Log
-                // window is reachable, a silently-skipped track is not.
+                // and did not get. The user is told too (MainViewModel's
+                // playback notice, from PlaybackFailed); this is the line that
+                // says which file and why.
                 _logger.LogWarning("Playback failed for {Path} - decode error, skipping", LogPath.Short(track.Path));
                 TrackFailed?.Invoke(this, new TrackFailedEventArgs(track));
             };

@@ -99,7 +99,7 @@ public class PeerMediaClient
             return;
 
         // Percent-encoded, same as every other header-transport call site -
-        // see IdentityHeaderEncoding. BuildUrlAsync above sends the identical
+        // see IdentityHeaderEncoding. BuildSignedUrlAsync above sends the identical
         // params as query params and escapes them itself; this is the half
         // that would otherwise throw on a device whose alias has an accent in
         // it.

@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace Flower.ViewModels;
 
 // The row types the settings screens bind to. They live here rather than beside
-// the controls that render them (TrustedPeerRow and DeniedPeerRow used to sit in
+// the controls that render them (TrustedPeerRow used to sit in
 // TrustedDevicesView.axaml.cs, LibraryPathRow in SettingsWindow.axaml.cs) because
 // there are now two screens rendering them - the desktop Settings window and the
 // server's browser settings page - and two ISettingsBackend implementations
@@ -93,22 +93,6 @@ public sealed class TrustedPeerRow : ViewModelBase
     }
 
     public bool IsNotConfirmingForget => !_isConfirmingForget;
-}
-
-// A fingerprint a server explicitly denied (or let time out unanswered) rather
-// than approved - lets the owner see who got turned away and forget that
-// refusal, so a since-legitimate
-// device isn't left permanently unable to re-request (denials aren't
-// re-prompted from scratch, but nothing here blocks a fresh pair-request
-// either way - this list is purely visibility/cleanup, see
-// TrustedPeerStore.DenyAsync's own doc comment). No rename affordance - a
-// denied peer has no ongoing relationship to nickname.
-public sealed class DeniedPeerRow
-{
-    public required string Fingerprint { get; init; }
-    public required string Alias { get; init; }
-    public required DateTimeOffset DeniedAt { get; init; }
-    public string DeniedAtDisplay => $"Denied {DeniedAt.LocalDateTime:g}";
 }
 
 // One row in the Logs tab's list of whose log to read: the server itself, or a

@@ -126,40 +126,4 @@ public class TrustedPeerStoreTests : IsolatedHome
     {
         Assert.False(new TrustedPeerStore(NullLogger<TrustedPeerStore>.Instance).IsTrusted("anything"));
     }
-
-    [Fact]
-    public async Task TrustedPeerStore_Deny_then_LoadDenied_round_trips()
-    {
-        var store = new TrustedPeerStore(NullLogger<TrustedPeerStore>.Instance);
-        Assert.Empty(store.LoadDenied());
-
-        await store.DenyAsync("fp-1", "Suspicious Device");
-
-        var denied = Assert.Single(store.LoadDenied());
-        Assert.Equal("fp-1", denied.Fingerprint);
-        Assert.Equal("Suspicious Device", denied.Alias);
-    }
-
-    [Fact]
-    public async Task TrustedPeerStore_ForgetDenial_removes_the_entry()
-    {
-        var store = new TrustedPeerStore(NullLogger<TrustedPeerStore>.Instance);
-        await store.DenyAsync("fp-1", "Denied Device");
-
-        await store.ForgetDenialAsync("fp-1");
-
-        Assert.Empty(store.LoadDenied());
-    }
-
-    [Fact]
-    public async Task TrustedPeerStore_Approve_clears_a_matching_denial()
-    {
-        var store = new TrustedPeerStore(NullLogger<TrustedPeerStore>.Instance);
-        await store.DenyAsync("fp-1", "Reconsidered Device");
-
-        await store.ApproveAsync("fp-1", "Reconsidered Device", "pubkey-1");
-
-        Assert.Empty(store.LoadDenied());
-        Assert.True(store.IsTrusted("fp-1"));
-    }
 }

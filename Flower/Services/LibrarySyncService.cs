@@ -83,12 +83,10 @@ public enum SyncFailure
 // than electing one initiator - there's no write-back to the peer here, just
 // a local, additive merge, so there was no risk of two conflicting writes
 // racing, and in the old mesh model both sides genuinely needed to learn
-// about the other's exclusive tracks. Under Client/Server roles (see
-// SyncRolePolicy) this method is only ever called by a Client pulling from
-// its one paired Server - a Server's own trigger paths (MainViewModel) are
-// gated off entirely, so it never calls this at all, making the pull
-// effectively one-directional (client-pulls-from-server) without needing any
-// change to this method itself.
+// about the other's exclusive tracks. Now that a device never serves, this
+// is only ever called by a device pulling from its one paired server, which
+// makes the pull one-directional without needing any change to this method
+// itself.
 public class LibrarySyncService
 {
     // A real library's manifest can run into the tens of thousands of songs
