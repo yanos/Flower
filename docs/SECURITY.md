@@ -79,8 +79,11 @@ and, for the budgets, checked against a running server on 2026-10-02:
   proxy every request arrives from the proxy's address.
 
 These are password systems, so the threat they defend is guessing. Flower's
-only guessable secret is the pairing code, which already allows 5 attempts a
-minute. Flower's distinctive risks are the ones they model least: a
+only guessable secret is the pairing code. It allows 5 attempts a minute per
+address, and 20 wrong codes in ten minutes from all addresses together cancel
+every outstanding code (`PairingCodeService.MaxWrongCodes`). The per-address
+limit alone was not enough, because an address is an IPv6 /64 and a /48 is
+65,536 of them. Flower's distinctive risks are the ones they model least: a
 *verified* caller that misbehaves, and per-address budgets that collapse behind
 a proxy. That is why steps 1 and 2 are about authorizing and budgeting **per
 device, after authentication**, and Home Assistant's warning is why the
@@ -254,7 +257,9 @@ The routes outside the groups:
   and paired clients poll every ~5s, which stays well under it.
 - **`/stream-tickets`:** moves into the sync group's filter, charged to the
   media plane per device.
-- **`pair-redeem`:** stays at 5 a minute per address.
+- **`pair-redeem`:** stays at 5 a minute per address. Wrong codes are also
+  counted across all addresses: 20 in ten minutes cancel every outstanding code
+  and log a warning (`PairingCodeService.MaxWrongCodes`, October 2026).
 
 **Done (2026-10-02).** One `RequestGate`, a DI singleton, now runs the same
 checks for the sync group, the admin group, `/stream-tickets` and `/info`.

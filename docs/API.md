@@ -73,6 +73,7 @@ so devices behind one proxy, tunnel or CGNAT do not share a budget:
 | Failures | address + device | Any route, a signature that failed | 10 / 60s |
 | Anonymous info | address | `/info`, unsigned | 120 / 60s |
 | Pairing | address | `pair-redeem` | 5 / 60s |
+| Wrong pairing codes | the whole server | `pair-redeem`, a code that is not good | 20 / 10 min, then every outstanding code is cancelled |
 
 A request over any of these is refused `429 rate-limited` with
 `Retry-After: 60`. A request a stream ticket admitted is charged to the media
@@ -305,7 +306,7 @@ body is empty.
 | Status | Meaning |
 |---|---|
 | `200` | `{"fingerprint": "…", "isAdmin": false}` — the device is trusted. `isAdmin` comes from the code as issued, never from the caller |
-| `400` | `pairing-code-invalid` |
+| `400` | `pairing-code-invalid`. The 20th wrong code in ten minutes, from any address, also cancels every outstanding code |
 | `401` | `signature-invalid`: the proof of possession failed. The code is **not** consumed |
 | `413` | `too-large`: body over 4 KB |
 | `429` | `rate-limited`: more than five attempts a minute from this address |

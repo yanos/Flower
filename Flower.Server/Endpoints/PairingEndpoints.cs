@@ -12,11 +12,11 @@ namespace Flower.Server.Endpoints;
 // vetted out-of-band, which a headless box can actually issue.
 public static class PairingEndpoints
 {
-    // Deliberately tight: a code is only valid for ~10 minutes total, so a hard
-    // per-IP cap here is
-    // most of what stands between "brute-forceable 5-char code" and not - see
-    // PairingCodeService's alphabet/length for the resulting keyspace, which is
-    // small enough that this limiter is load-bearing rather than belt-and-braces.
+    // Deliberately tight, and per source: five guesses a minute from any one
+    // address. It is not what keeps a 5-char code from being guessed - a
+    // source is an IPv6 /64, and an attacker can hold tens of thousands of
+    // them. The server-wide budget of wrong codes is (PairingCodeService.
+    // MaxWrongCodes); see PairingCodeService.
     private static readonly RateLimiter RedeemRateLimiter = new(max: 5, TimeSpan.FromSeconds(60));
 
     // Largest legitimate body here is empty - the redeem request carries
@@ -70,8 +70,19 @@ public static class PairingEndpoints
             // grantsAdmin comes back from the code itself, not from anything
             // the redeeming device said: a device asking to be an admin is not
             // evidence that it should be one. See PairingCodeService.
-            if (!pairingCodes.TryConsume(code, out var grantsAdmin))
+            if (!pairingCodes.TryConsume(code, now, out var grantsAdmin, out var cancelled))
             {
+                // Said whether or not any code was outstanding to cancel: the
+                // point is that somebody is guessing, and the owner should hear
+                // it even on a server with nothing to steal right now.
+                if (cancelled is { } cancelledCodes)
+                {
+                    logger.LogWarning(
+                        "{MaxWrongCodes} wrong pairing codes in ten minutes, the last from {RemoteAddress}: somebody is guessing. "
+                        + "Cancelled {Cancelled} outstanding code(s) - issue a new one to pair a device (a server with no admin yet: restart it with --pairing-code).",
+                        PairingCodeService.MaxWrongCodes, RemoteAddress(context), cancelledCodes);
+                }
+
                 // Warning: the caller proved it holds the key it claims, so
                 // this is a real device presenting a code that is not good.
                 // Usually a typo or a code that expired while the person was
