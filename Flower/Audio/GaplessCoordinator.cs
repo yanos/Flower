@@ -102,6 +102,14 @@ namespace Flower.Audio
         // an event that will never come.
         private bool _armedAlreadyDrained;
 
+        // What ArmAsync subscribed to the armed decoder, kept so that leaving
+        // the armed slot - promotion included - takes them off again. A
+        // promoted decoder used to keep them, guarded by _armed, beside the
+        // ones promotion adds, guarded by _current: harmless only because
+        // the first set no-ops once _armed has moved on.
+        private Action? _armedDrainedHandler;
+        private Action? _armedFaultedHandler;
+
         private int _generation;
 
         // Compared by LogDiagnosticSnapshot to detect a render path that says
@@ -650,8 +658,10 @@ namespace Flower.Audio
                 {
                     if (stillArmed)
                     {
-                        decoder.Drained += () => HandleArmedDrained(decoder);
-                        decoder.Faulted += () => HandleArmedFaulted(decoder);
+                        _armedDrainedHandler = () => HandleArmedDrained(decoder);
+                        _armedFaultedHandler = () => HandleArmedFaulted(decoder);
+                        decoder.Drained += _armedDrainedHandler;
+                        decoder.Faulted += _armedFaultedHandler;
                     }
                     else
                     {
@@ -1000,6 +1010,14 @@ namespace Flower.Audio
         {
             if (retireDecoder)
                 _armed?.Retire();
+
+            if (_armed != null)
+            {
+                _armed.Drained -= _armedDrainedHandler;
+                _armed.Faulted -= _armedFaultedHandler;
+            }
+            _armedDrainedHandler = null;
+            _armedFaultedHandler = null;
 
             _armed = null;
             _armedTrack = null;

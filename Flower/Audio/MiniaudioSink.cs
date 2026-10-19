@@ -460,7 +460,14 @@ namespace Flower.Audio
             lock (_gate)
             {
                 _ringBuffer = ringBuffer;
-                _selfHandle = GCHandle.Alloc(this);
+
+                // Once per sink, however many times Start runs - including
+                // again after a first call that bailed below without a device.
+                // Overwriting an allocated handle would leak it, and with it
+                // this sink, its ring buffer and its device, rooted for the
+                // life of the process. Dispose frees the one there is.
+                if (!_selfHandle.IsAllocated)
+                    _selfHandle = GCHandle.Alloc(this);
 
                 // ma_context's actual native size depends on which backends
                 // (CoreAudio/WASAPI/ALSA/...) this specific prebuilt
