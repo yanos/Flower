@@ -1490,11 +1490,22 @@ namespace Flower.Models
             SyncedFileWork? fileWork = null)
         {
             int removedCount;
+            bool reshaped;
+            Dictionary<Track, TrackChange> changed;
+            TrackChange inPlace;
             lock (_lock)
             {
                 var matches = SyncedTrackMatcher.Match(Tracks, sourceDeviceFingerprint, incoming);
                 var claimed = new HashSet<Track>(ReferenceEqualityComparer.Instance);
                 var newcomers = new List<Track>();
+
+                // What the pull actually moved on the tracks this device
+                // already had, by kind - see MergedTrackState. Most pulls move
+                // a play count or two, or nothing at all: the server's token
+                // moves on any listener's play, so every device pulls the
+                // whole catalog for it. Those must not cost a rewrite of every
+                // row and a rebuild of every list, which is what they did.
+                changed = new Dictionary<Track, TrackChange>(ReferenceEqualityComparer.Instance);
 
                 var merged = new List<Track>(Tracks);
                 for (var i = 0; i < incoming.Count; i++)
@@ -1503,6 +1514,7 @@ namespace Flower.Models
                     if (matches[i] is { } existing)
                     {
                         claimed.Add(existing);
+                        var before = MergedTrackState.Of(existing);
 
                         // The source's file is somewhere new since the last
                         // pull. Noted before the line below forgets where it
@@ -1548,6 +1560,9 @@ namespace Flower.Models
                         MergePlaybackOptions(existing, remote);
                         MergeLastPlayed(existing, remote);
                         MergeStar(existing, remote, starBaseline);
+
+                        if (before.ChangesTo(MergedTrackState.Of(existing)) is not 0 and var change)
+                            changed[existing] = changed.GetValueOrDefault(existing) | change;
                         continue; // Already known locally, real file or placeholder - only
                                   // the bookkeeping above needed updating, not a whole new Track.
                     }
@@ -1597,29 +1612,60 @@ namespace Flower.Models
                     {
                         ClearOrigin(track);
                         track.WithdrawnByOrigin = true;
+                        changed[track] = changed.GetValueOrDefault(track) | TrackChange.Origin;
                     }
                 }
-                merged.RemoveAll(stale.Contains);
-
-                // Removed there, so removed here: on record like any other
-                // removal, and the files left where they are, out of every
-                // scan's reach.
-                RememberRemoved(setAside, owedToOrigin: false, deliberate: true);
-                ExcludePaths(setAside.Select(t => t.Path!).ToList());
-
-                Tracks = merged;
-                InvalidateIndexes();
-                RebindPlaylistTracks();
                 removedCount = stale.Count;
 
-                // See UpdateTracks - same write, same reason for being under
-                // the lock. Without it a merge only lived in memory, and a
-                // relaunched app (mobile has no always-on background process)
-                // lost every not-yet-downloaded placeholder learned this way.
-                Persist(() => _store!.ReplaceAll(Tracks));
+                // Songs arriving or leaving reshape the library, and so does a
+                // change to where a song comes from (what can be downloaded,
+                // what deleting a file costs) or when it was added (Recently
+                // Added, and a sort): rare, and every list has to hear it.
+                // Anything else a pull moves is a row or two - see below.
+                inPlace = changed.Values.Aggregate((TrackChange)0, (all, change) => all | change);
+                reshaped = newcomers.Count > 0 || stale.Count > 0
+                    || (inPlace & (TrackChange.Origin | TrackChange.DateAdded)) != 0;
+
+                if (reshaped)
+                {
+                    merged.RemoveAll(stale.Contains);
+
+                    // Removed there, so removed here: on record like any other
+                    // removal, and the files left where they are, out of every
+                    // scan's reach.
+                    RememberRemoved(setAside, owedToOrigin: false, deliberate: true);
+                    ExcludePaths(setAside.Select(t => t.Path!).ToList());
+
+                    Tracks = merged;
+                    InvalidateIndexes();
+                    RebindPlaylistTracks();
+
+                    // See UpdateTracks - same write, same reason for being under
+                    // the lock. Without it a merge only lived in memory, and a
+                    // relaunched app (mobile has no always-on background process)
+                    // lost every not-yet-downloaded placeholder learned this way.
+                    Persist(() => _store!.ReplaceAll(Tracks));
+                }
+                else if (changed.Count > 0)
+                {
+                    // Tracks is untouched, so nothing is rebound; only what
+                    // moved is written, and the snapshot is thrown away only
+                    // when a placeholder's tags moved.
+                    if ((inPlace & TrackChange.Reshaping) != 0)
+                        InvalidateIndexes();
+                    else
+                        BumpChangeToken();
+                    Persist(() => _store!.UpsertMany(changed.Keys));
+                }
             }
 
-            LibraryChanged?.Invoke(this, EventArgs.Empty);
+            // An in-place change is announced as Remote, like every other
+            // change that arrived from somewhere else: nothing in it is this
+            // device's to report back.
+            if (reshaped)
+                LibraryChanged?.Invoke(this, EventArgs.Empty);
+            else if (changed.Count > 0)
+                RaiseTrackChanged(changed.Keys.ToList(), inPlace, ChangeSource.Remote);
             return removedCount;
         }
 
@@ -1828,6 +1874,78 @@ namespace Flower.Models
 
             existing.Starred = remote.Starred;
             existing.StarredAt = remote.StarredAt;
+        }
+
+        // Everything MergeSyncedTracks can move on a track this device already
+        // has, read before the merge and again after it, so the merge can tell
+        // "nothing moved" from "a play count moved" from "the library changed
+        // shape" without each Merge* helper having to report what it did.
+        //
+        // The remote counts are compared by size and total rather than entry
+        // by entry: MergeRemotePlayCounts only adds devices and raises counts,
+        // so either one moving is exactly the count map having changed. Tags
+        // are read only off a placeholder, the one kind of track a pull
+        // retags (RefreshPlaceholderMetadata) - a file's tags change through
+        // SyncedFileWork, written by the caller after this returns.
+        private readonly record struct MergedTrackState(
+            string? OriginDeviceFingerprint, string? OriginTrackId, string? OriginFileExtension,
+            string? OriginRelativePath, string? OriginAlbumArtId, bool WithdrawnByOrigin,
+            DateTimeOffset DateAdded,
+            int RemoteCountDevices, long RemoteCountTotal, int ImportedPlayCount,
+            DateTimeOffset? LastPlayedAt,
+            bool Starred, DateTimeOffset? StarredAt,
+            bool RememberPlaybackPosition, TimeSpan? ResumePosition, bool IgnoreWhenShuffling, int VolumeAdjustment,
+            TrackTagsDto? PlaceholderTags, TimeSpan Duration, int Bitrate, int SampleRate, int Channels,
+            int BitsPerSample, string? Codec, string? EncoderProfile,
+            DateTimeOffset? TagsEditedAt, DateTimeOffset? ArtEditedAt, DateTimeOffset? FileReplacedAt)
+        {
+            public static MergedTrackState Of(Track track)
+            {
+                long total = 0;
+                foreach (var count in track.RemotePlayCounts.Values)
+                    total += count;
+
+                return new MergedTrackState(
+                    track.OriginDeviceFingerprint, track.OriginTrackId, track.OriginFileExtension,
+                    track.OriginRelativePath, track.OriginAlbumArtId, track.WithdrawnByOrigin,
+                    track.DateAdded,
+                    track.RemotePlayCounts.Count, total, track.ImportedPlayCount,
+                    track.LastPlayedAt,
+                    track.Starred, track.StarredAt,
+                    track.RememberPlaybackPosition, track.ResumePosition, track.IgnoreWhenShuffling, track.VolumeAdjustment,
+                    track.Path == null ? TrackTags.Of(track) : null, track.Duration, track.Bitrate, track.SampleRate,
+                    track.Channels, track.BitsPerSample, track.Codec, track.EncoderProfile,
+                    track.TagsEditedAt, track.ArtEditedAt, track.FileReplacedAt);
+            }
+
+            // Which kinds of change separate this state from `after`; zero for
+            // none.
+            public TrackChange ChangesTo(MergedTrackState after)
+            {
+                TrackChange change = 0;
+                if ((OriginDeviceFingerprint, OriginTrackId, OriginFileExtension, OriginRelativePath, OriginAlbumArtId, WithdrawnByOrigin)
+                    != (after.OriginDeviceFingerprint, after.OriginTrackId, after.OriginFileExtension, after.OriginRelativePath, after.OriginAlbumArtId, after.WithdrawnByOrigin))
+                    change |= TrackChange.Origin;
+                if (DateAdded != after.DateAdded)
+                    change |= TrackChange.DateAdded;
+                if ((RemoteCountDevices, RemoteCountTotal, ImportedPlayCount) != (after.RemoteCountDevices, after.RemoteCountTotal, after.ImportedPlayCount))
+                    change |= TrackChange.PlayFinished;
+                if (LastPlayedAt != after.LastPlayedAt)
+                    change |= TrackChange.PlayStarted;
+                if ((Starred, StarredAt) != (after.Starred, after.StarredAt))
+                    change |= TrackChange.Starred;
+                if ((RememberPlaybackPosition, IgnoreWhenShuffling, VolumeAdjustment) != (after.RememberPlaybackPosition, after.IgnoreWhenShuffling, after.VolumeAdjustment))
+                    change |= TrackChange.Options;
+                if (ResumePosition != after.ResumePosition)
+                    change |= TrackChange.ResumePosition;
+                if (PlaceholderTags != after.PlaceholderTags
+                    || (Duration, Bitrate, SampleRate, Channels, BitsPerSample, Codec, EncoderProfile, TagsEditedAt, FileReplacedAt)
+                    != (after.Duration, after.Bitrate, after.SampleRate, after.Channels, after.BitsPerSample, after.Codec, after.EncoderProfile, after.TagsEditedAt, after.FileReplacedAt))
+                    change |= TrackChange.Tags;
+                if (ArtEditedAt != after.ArtEditedAt)
+                    change |= TrackChange.Artwork;
+                return change;
+            }
         }
 
         // Per-key max, not overwrite - see Track.RemotePlayCounts' own doc

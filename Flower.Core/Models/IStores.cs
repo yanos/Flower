@@ -31,6 +31,11 @@ namespace Flower.Models
 
         void Upsert(Track track);
 
+        // The rows a sync pull moved in place - a few play counts, usually -
+        // in one transaction, rather than ReplaceAll over every track the
+        // pull merely restated.
+        void UpsertMany(IReadOnlyCollection<Track> tracks);
+
         void ReplaceAll(IEnumerable<Track> tracks);
 
         // Removing tracks from the library on purpose - see Library.RemoveTracks.

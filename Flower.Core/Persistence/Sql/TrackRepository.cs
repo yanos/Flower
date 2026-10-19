@@ -163,21 +163,33 @@ namespace Flower.Persistence.Sql
         // Upsert of a single track, for an in-place mutation that is not a
         // stats bump - a placeholder's Path being set after a download
         // (LibraryDownloadService), or a tag edit in TrackInfoWindow.
-        public void Upsert(Track track)
+        public void Upsert(Track track) => UpsertMany([track]);
+
+        public void UpsertMany(IReadOnlyCollection<Track> tracks)
         {
+            if (tracks.Count == 0)
+                return;
+
             using var connection = db.Open();
             using var transaction = connection.BeginTransaction();
 
+            var written = new HashSet<Guid>();
             using (var command = connection.CreateCommand())
             {
                 command.Transaction = transaction;
                 command.CommandText = UpsertSql;
                 PrepareUpsertParameters(command);
-                BindUpsert(command, track);
-                command.ExecuteNonQuery();
+                foreach (var track in tracks)
+                {
+                    if (!written.Add(track.Id))
+                        continue;
+
+                    BindUpsert(command, track);
+                    command.ExecuteNonQuery();
+                }
             }
 
-            WriteRemotePlayCounts(connection, transaction, [track], [track.Id]);
+            WriteRemotePlayCounts(connection, transaction, tracks, written);
             transaction.Commit();
         }
 
