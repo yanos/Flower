@@ -14,6 +14,7 @@ namespace Flower.Tests.TestSupport;
 // (e.g. auto-advance on EndReached) without a real audio pipeline.
 public sealed class FakeAudioManager : IAudioManager
 {
+    public AudioFeatures Features { get; set; } = AudioFeatures.All;
     public bool IsPlaying { get; set; }
     public int Volume { get; set; }
     public int VolumeOffset { get; set; }

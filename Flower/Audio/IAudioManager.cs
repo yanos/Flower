@@ -12,8 +12,33 @@ namespace Flower.Audio
         public Track Track { get; } = track;
     }
 
+    // What a player can do beyond play, pause and seek. Every native head has
+    // all of it; the browser's <audio> element has none (WebAudioManager).
+    [Flags]
+    public enum AudioFeatures
+    {
+        None = 0,
+
+        // SetUpcoming decodes the next track ahead and hands over without a gap.
+        Gapless = 1,
+
+        // ApplyEqualizer changes the sound.
+        Equalizer = 2,
+
+        // GetOutputDevices lists devices, and SetOutputDevice moves to one.
+        OutputDevices = 4,
+
+        All = Gapless | Equalizer | OutputDevices,
+    }
+
     public interface IAudioManager
     {
+        // Which of SetUpcoming, ApplyEqualizer and the output routing below do
+        // anything here. A manager that lacks one still accepts the call and
+        // does nothing, so callers need not check - this is for the ones that
+        // should say so, or hide what cannot work, rather than offer it.
+        AudioFeatures Features { get; }
+
         bool IsPlaying { get; }
         //bool CanResume { get; }
 

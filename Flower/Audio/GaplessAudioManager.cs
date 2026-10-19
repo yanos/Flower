@@ -193,6 +193,8 @@ namespace Flower.Audio
             _positionTimer.Start();
         }
 
+        public AudioFeatures Features => AudioFeatures.All;
+
         public bool IsPlaying => _sink.IsPlaying;
 
         // The user's own volume, kept here rather than read back off the sink:

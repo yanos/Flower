@@ -169,6 +169,11 @@ namespace Flower.ViewModels
             _isRepeatEnabled = appSettings.IsRepeatEnabled;
             _isShuffleEnabled = appSettings.IsShuffleEnabled;
 
+            // Said once, so a log from the browser head explains why there is a
+            // gap between songs rather than leaving it to look like a bug.
+            if (audioManager.Features != AudioFeatures.All)
+                _logger.LogInformation("This player has no {Missing}", AudioFeatures.All & ~audioManager.Features);
+
             _subscriptions.Add<EventHandler>((s, e) =>
             {
                 ApplyPendingSeek();

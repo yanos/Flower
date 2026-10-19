@@ -21,6 +21,11 @@ namespace Flower.ViewModels
 
         public IReadOnlyList<EqualizerBandViewModel> Bands { get; }
 
+        // False on a player that cannot equalize (the browser's - see
+        // IAudioManager.Features), where the window is not offered at all.
+        // Settings still save, so the curve is there on a head that can.
+        public bool IsAvailable => _audioManager.Features.HasFlag(AudioFeatures.Equalizer);
+
         public bool Enabled
         {
             get => _settings.Enabled;

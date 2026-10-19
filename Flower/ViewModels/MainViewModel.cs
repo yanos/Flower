@@ -2032,7 +2032,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
                 ? PlaybackControlsPlacement.Top
                 : PlaybackControlsPlacement.Bottom);
         OpenLogWindowCommand        = new RelayCommand(() => LogWindowRequested?.Invoke(this, EventArgs.Empty));
-        OpenEqualizerWindowCommand  = new RelayCommand(() => EqualizerWindowRequested?.Invoke(this, EventArgs.Empty));
+        OpenEqualizerWindowCommand  = new RelayCommand(
+            () => EqualizerWindowRequested?.Invoke(this, EventArgs.Empty), () => Equalizer.IsAvailable);
         NewPlaylistCommand          = new AsyncRelayCommand(() => CreatePlaylistWithTrack(null));
         NewSmartPlaylistCommand     = new RelayCommand(NewSmartPlaylist);
         PlayOrPauseCommand          = new RelayCommand(PlayOrPauseFromCurrentView);

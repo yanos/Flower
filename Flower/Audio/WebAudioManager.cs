@@ -104,6 +104,10 @@ namespace Flower.Audio
             _positionTimer.Start();
         }
 
+        // See the class remarks: one <audio> element, no decode-ahead, no
+        // PCM of our own to equalize, and the browser's routing.
+        public AudioFeatures Features => AudioFeatures.None;
+
         public bool IsPlaying => _isPlaying;
 
         public int Volume

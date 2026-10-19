@@ -1017,7 +1017,7 @@ before the first request, rather than being raced.
 Worth fixing at the harness level before it trains anyone to ignore a red run,
 which is the real cost of a flake and the reason this is not merely cosmetic.
 
-### G2. `IAudioManager` is silently partial on WASM
+### G2. `IAudioManager` is silently partial on WASM — **fixed (October 2026)**
 
 `Flower/Audio/WebAudioManager.cs`
 
@@ -1026,6 +1026,14 @@ signal that a platform drops those features. So gapless handover and the
 equalizer are simply absent in the browser, and nothing says so - a caller
 cannot ask, and a user is not told. Worth a capability flag on `IAudioManager`
 before `Flower.Web` grows any feature that assumes an answer.
+
+**Fixed.** `IAudioManager.Features` says which of gapless handover, the
+equalizer and output routing a player has (`AudioFeatures`): all of them for
+`GaplessAudioManager`, none for `WebAudioManager`. The calls still do nothing
+where a feature is missing, so no caller has to check. The equalizer command
+is disabled on a player that cannot equalize, and `PlaylistControlViewModel`
+logs once what the player lacks. The output picker already hid itself on an
+empty device list.
 
 ---
 

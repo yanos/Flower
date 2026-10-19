@@ -102,6 +102,7 @@ public class LibraryStoreTests : IsolatedHome
     // class's HOME redirection.
     private sealed class FakeAudioManager : Flower.Audio.IAudioManager
     {
+        public Flower.Audio.AudioFeatures Features => Flower.Audio.AudioFeatures.All;
         public bool IsPlaying { get; set; }
         public int Volume { get; set; }
         public int VolumeOffset { get; set; }

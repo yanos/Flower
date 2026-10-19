@@ -754,7 +754,7 @@ Checked against the code, not taken from the September document's own marks.
 | E5 `GCHandle` leak on a second `Start` | fixed | October 2026 |
 | E6 Armed handlers kept after promotion | fixed | October 2026 |
 | E7 `Process.Start` on mobile | **open** | three sites now: `MainViewModel.cs:1411, 2764`, `SettingsPanel.axaml.cs:177` |
-| G2 `IAudioManager` partial on WASM | **open** | `WebAudioManager.SetUpcoming`/`ApplyEqualizer` are still empty with no capability flag |
+| G2 `IAudioManager` partial on WASM | fixed | October 2026: `IAudioManager.Features`, and the equalizer is not offered without it |
 | E8, G1 | not re-checked in depth | |
 
 ### Dead code found along the way
