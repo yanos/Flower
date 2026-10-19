@@ -10,6 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Text.Json;
 
+using Avalonia;
 using Avalonia.Media.Imaging;
 
 using Microsoft.Extensions.Logging;
@@ -222,12 +223,11 @@ public class AlbumArtLoader
     // applying it unconditionally would inflate a small 300x300 cover into a
     // 768-wide bitmap - turning a 0.36 MB decode into a 2.36 MB one and making
     // exactly the problem this is here to fix worse for libraries with modest
-    // art. There is no cheap way to read the intrinsic size first (SkiaSharp,
-    // and so SKCodec, isn't a reference of this project - only Avalonia's own
-    // Bitmap surface is available), so oversized art is decoded twice: once to
-    // learn its size, once at the size actually wanted. The full-size decode is
-    // transient and immediately dropped, which is the whole point - what used
-    // to be *retained*, per album, for the life of the cache entry.
+    // art. So the intrinsic size is read first, from the header (ImageHeader),
+    // and the picture decoded once at the size wanted. A picture whose header
+    // that cannot read is decoded twice, as all of them used to be: once at
+    // full size to learn it, then again at the size wanted - a ~7.8 MB decode
+    // thrown away per 1400px cover, and the dearest thing a cold scroll did.
     // The width a track row's thumbnail is decoded at: the largest any row
     // paints it is the desktop list's 76pt art column (TrackRowViewModel.
     // ArtMaxSize) on a 2x screen, 152px, and a phone row's 52pt on a 3x one is
@@ -249,6 +249,9 @@ public class AlbumArtLoader
 
     private static Bitmap DecodeScaled(Stream stream)
     {
+        if (ImageHeader.TryReadSize(stream) is { } size)
+            return size.Width <= MaxArtPixels ? new Bitmap(stream) : Bitmap.DecodeToWidth(stream, MaxArtPixels);
+
         var full = new Bitmap(stream);
         if (full.PixelSize.Width <= MaxArtPixels)
             return full;
@@ -389,6 +392,28 @@ public class AlbumArtLoader
         catch (Exception ex)
         {
             StaticLogger.LogDebug(ex, "Could not read cached remote art at {Path}", cachePath);
+            return null;
+        }
+    }
+
+    // The art's own pixel size - what Track Info writes under the cover, on
+    // both heads. Read from the header (ImageHeader), and decoded only for a
+    // format that cannot read; both views used to decode the whole picture for
+    // it. Null for art that will not decode at all, which shows as the
+    // placeholder everywhere and here just means no size.
+    public static PixelSize? MeasureArt(byte[] bytes)
+    {
+        if (ImageHeader.TryReadSize(bytes) is { } size)
+            return new PixelSize(size.Width, size.Height);
+
+        try
+        {
+            using var stream = new MemoryStream(bytes);
+            using var full = new Bitmap(stream);
+            return full.PixelSize;
+        }
+        catch
+        {
             return null;
         }
     }

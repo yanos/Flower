@@ -459,7 +459,7 @@ public partial class TrackInfoView : UserControl
         var (bytes, size) = await Task.Run(() =>
         {
             var art = AlbumArtLoader.TryGetArt(track);
-            return (art?.Bytes, art is null ? null : MeasureArt(art.Bytes));
+            return (art?.Bytes, art is null ? null : AlbumArtLoader.MeasureArt(art.Bytes));
         });
         if (requestId != _artRequestId)
             return;
@@ -473,22 +473,6 @@ public partial class TrackInfoView : UserControl
     private static string Resolution(PixelSize size) =>
         $"{size.Width.ToString(CultureInfo.CurrentCulture)} \u00d7 {size.Height.ToString(CultureInfo.CurrentCulture)}";
 
-    private static PixelSize? MeasureArt(byte[] bytes)
-    {
-        try
-        {
-            using var stream = new MemoryStream(bytes);
-            using var full = new Bitmap(stream);
-            return full.PixelSize;
-        }
-        catch
-        {
-            // Art that will not decode shows as the placeholder everywhere
-            // else; here it just means no size under it.
-            return null;
-        }
-    }
-
     // A picture for the full screen: its own size, or 2048 wide where it is
     // wider - sharp on any phone, without holding a 3000-pixel decode.
     private const int ScreenPixels = 2048;
@@ -498,6 +482,14 @@ public partial class TrackInfoView : UserControl
         try
         {
             using var stream = new MemoryStream(bytes);
+            // The size from the header where it can be read, so the picture is
+            // decoded once, at the size it is shown.
+            if (ImageHeader.TryReadSize(stream) is { } header)
+            {
+                var wanted = new PixelSize(header.Width, header.Height);
+                return (wanted.Width <= ScreenPixels ? new Bitmap(stream) : Bitmap.DecodeToWidth(stream, ScreenPixels), wanted);
+            }
+
             var full = new Bitmap(stream);
             var size = full.PixelSize;
             if (size.Width <= ScreenPixels)

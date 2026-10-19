@@ -546,14 +546,13 @@ public partial class TrackInfoWindow : Window
         var track = _editTracks[0];
         var bmp = await AlbumArtLoader.Current.LoadAsync(track);
 
-        // The undecoded bytes, plus one full-size decode purely to learn the
-        // real pixel dimensions - bmp above is capped at MaxArtPixels and would
-        // report the cap, not the art. Off the UI thread and dropped
-        // immediately; it happens once per shown track, not once per paint.
+        // The undecoded bytes, and the real pixel dimensions read from them -
+        // bmp above is capped at MaxArtPixels and would report the cap, not
+        // the art. Off the UI thread, since the bytes come off the disk.
         var (art, pixelSize) = await Task.Run(() =>
         {
             var found = AlbumArtLoader.TryGetArt(track);
-            return (found, found is null ? null : MeasureArt(found.Bytes));
+            return (found, found is null ? null : AlbumArtLoader.MeasureArt(found.Bytes));
         });
 
         if (requestId != _artRequestId)
@@ -564,22 +563,6 @@ public partial class TrackInfoWindow : Window
         _art = art;
         _artPixelSize = pixelSize;
         UpdateArtworkTab();
-    }
-
-    private static PixelSize? MeasureArt(byte[] bytes)
-    {
-        try
-        {
-            using var ms = new MemoryStream(bytes);
-            using var full = new Bitmap(ms);
-            return full.PixelSize;
-        }
-        catch
-        {
-            // Undecodable art is already handled everywhere else by falling
-            // back to the placeholder; here it just means no dimensions line.
-            return null;
-        }
     }
 
     private string UniformOrMixed(Func<Track, string> display)
