@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -12,41 +11,36 @@ using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 
-using Material.Icons;
-
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-using Flower.Converters;
-using Flower.Importer;
-using Flower.Logging;
 using Flower.Models;
-using Flower.Persistence;
 using Flower.Services;
 using Flower.ViewModels;
 
 namespace Flower.Views;
 
+// The desktop's Track Info: what it shows and edits is TrackInfoViewModel's,
+// shared with the phone's sheet. What stays here is the window's own - the
+// tabs, Prev/Next, the art bitmaps and every way a picture moves in and out.
 public partial class TrackInfoWindow : Window
 {
-    private static readonly DurationConverter _durationConverter = new();
-
     // Only meaningful in single-track/navigable mode (see the two constructors below).
     private readonly IReadOnlyList<Track> _tracks = Array.Empty<Track>();
     // Handed in by whoever opens this window, which already has it, rather
     // than looked up in the container (docs/ARCHITECTURE-REVIEW.md Tier 2.3):
-    // the library it edits, and what a cover change needs (ArtEditorFor). The
+    // what Track Info is (TrackInfo) and what a cover change needs (ArtEditorFor). The
     // logger comes the same way, from the container's factory the view model
     // carries: a Window has no constructor the container reaches.
     private readonly MainViewModel _main;
-    private readonly Library _library;
     private readonly ILogger<TrackInfoWindow> _logger = NullLogger<TrackInfoWindow>.Instance;
     private int _index;
 
-    // The set of tracks being edited: exactly one in navigable mode (re-seeded
-    // on every Navigate()), or the whole multi-selection in batch mode.
-    private IReadOnlyList<Track> _editTracks = Array.Empty<Track>();
-    private List<EditableField> _fields = null!;
+    // The songs being edited, and everything said about them: exactly one in
+    // navigable mode (reloaded on every Navigate()), or the whole
+    // multi-selection in batch mode.
+    private readonly TrackInfoViewModel _info = null!;
+    private IReadOnlyList<Track> _editTracks => _info.Tracks;
     private int _artRequestId; // guards against a stale Navigate()'s art load winning a race
 
     // The raw bytes behind whatever the Artwork tab is currently showing (see
@@ -75,13 +69,11 @@ public partial class TrackInfoWindow : Window
         _tracks    = tracks;
         _main      = main;
         _logger    = main.LoggerFactory.CreateLogger<TrackInfoWindow>();
-        _library   = main.Library;
         _index     = index;
-        PopulateSuggestions();
-        BuildFields();
+        _info      = main.TrackInfo();
+        DataContext = _info;
         SetUpArtworkDropTarget();
-        _editTracks = [_track];
-        Populate();
+        Populate([_track]);
         UpdateNavButtons();
         NativeMenuHelper.InheritFromMainWindow(this);
     }
@@ -93,29 +85,15 @@ public partial class TrackInfoWindow : Window
         InitializeComponent();
         _main       = main;
         _logger     = main.LoggerFactory.CreateLogger<TrackInfoWindow>();
-        _library    = main.Library;
-        _editTracks = editTracks;
-        PopulateSuggestions();
-        BuildFields();
+        _info       = main.TrackInfo();
+        DataContext = _info;
         SetUpArtworkDropTarget();
-        Populate();
+        Populate(editTracks);
         PrevButton.IsVisible = false;
         NextButton.IsVisible = false;
         if (editTracks.Count > 1)
             Title = $"Track Info ({editTracks.Count} tracks)";
         NativeMenuHelper.InheritFromMainWindow(this);
-    }
-
-    // Computed once per window open from whatever the library holds right now,
-    // not live-updated while the window stays open - see TagSuggestionSource.
-    // Artists and AlbumArtists share one suggestion pool (see its own doc
-    // comment); Album gets its own.
-    private void PopulateSuggestions()
-    {
-        var artistSuggestions = TagSuggestionSource.DistinctArtists(_library.Tracks);
-        ArtistBox.ItemsSource      = artistSuggestions;
-        AlbumArtistBox.ItemsSource = artistSuggestions;
-        AlbumBox.ItemsSource       = TagSuggestionSource.DistinctAlbums(_library.Tracks);
     }
 
     // The pages under the header's tabs - one showing at a time, in the
@@ -131,8 +109,8 @@ public partial class TrackInfoWindow : Window
             pages[i].IsVisible = i == Tabs.SelectedIndex;
     }
 
-    private async void PrevButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => await Navigate(-1);
-    private async void NextButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => await Navigate(+1);
+    private void PrevButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => Navigate(-1);
+    private void NextButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => Navigate(+1);
 
     private void UpdateNavButtons()
     {
@@ -140,392 +118,28 @@ public partial class TrackInfoWindow : Window
         NextButton.IsEnabled = _index < _tracks.Count - 1;
     }
 
-    private async Task Navigate(int delta)
+    // Saved before moving on: stepping to the next song is not leaving, so
+    // what was typed for this one is kept.
+    private void Navigate(int delta)
     {
         var next = _index + delta;
         if (next < 0 || next >= _tracks.Count)
             return;
-        await SaveChanges();
+        _info.Save();
         _index = next;
-        _editTracks = [_track];
-        Populate();
+        Populate([_track]);
         UpdateNavButtons();
         TrackNavigated?.Invoke(this, _track);
     }
 
-    // One row per editable field: how to read a display string off a Track, and
-    // how to apply an edited string to both a Track and a TagLib tag. Built once
-    // so the same field list drives population and save uniformly - the
-    // alternative is ~23 fields each hand-written twice over.
-    //
-    // Dirty-tracking is done by comparing GetText() against OriginalText at save
-    // time, NOT via TextChanged + a "currently populating" guard flag - Avalonia's
-    // TextBox.TextChanged doesn't fire synchronously with a `.Text =` assignment,
-    // it's deferred, so by the time it actually fires Populate() has already
-    // returned and reset any such guard, incorrectly marking every field dirty
-    // (confirmed via logging: every TextChanged during population fired with the
-    // guard already back to false). Comparing final text state at save time
-    // sidesteps that timing entirely.
-    //
-    // Backed by accessor delegates rather than a concrete control reference so
-    // both plain TextBox fields and the AutoCompleteBox-backed Artist/Album/
-    // Album Artist fields (see PopulateSuggestions) can share one field list -
-    // AutoCompleteBox doesn't inherit from TextBox, so a single typed Box
-    // reference can't hold either.
-    private sealed class EditableField(
-        Func<string> getText, Action<string> setText, Action<string?> setWatermark, Action<bool> setEnabled,
-        TrackTagField field)
+    private void Populate(IReadOnlyList<Track> tracks)
     {
-        public readonly Action<bool> SetEnabled = setEnabled;
-        public readonly Func<string> GetText = getText;
-        public readonly Action<string> SetText = setText;
-        public readonly Action<string?> SetWatermark = setWatermark;
-        public readonly TrackTagField Field = field;
-        public Func<Track, string> Display => Field.Display;
-        public string OriginalText = "";
-        public bool IsDirty => GetText() != OriginalText;
-    }
-
-    private static EditableField FromTextBox(TextBox box, TrackTagField field) =>
-        new(() => box.Text ?? "", v => box.Text = v, w => box.PlaceholderText = w, e => box.IsEnabled = e, field);
-
-    private static EditableField FromAutoComplete(AutoCompleteBox box, TrackTagField field) =>
-        new(() => box.Text ?? "", v => box.Text = v, w => box.PlaceholderText = w, e => box.IsEnabled = e, field);
-
-    // The tags themselves - what each box shows and how it is written - are
-    // TrackTagFields', shared with the phone's Track Info.
-    private void BuildFields()
-    {
-        _fields =
-        [
-            FromTextBox(TitleBox, TrackTagFields.Title),
-            FromAutoComplete(ArtistBox, TrackTagFields.Artists),
-            FromAutoComplete(AlbumBox, TrackTagFields.Album),
-
-            FromTextBox(TrackNumBox, TrackTagFields.TrackNumber),
-            FromTextBox(TrackTotalBox, TrackTagFields.TrackCount),
-            FromTextBox(DiscNumBox, TrackTagFields.DiscNumber),
-            FromTextBox(DiscTotalBox, TrackTagFields.DiscCount),
-            FromTextBox(YearBox, TrackTagFields.Year),
-            FromTextBox(GenreBox, TrackTagFields.Genre),
-            FromTextBox(BpmBox, TrackTagFields.BeatsPerMinute),
-            FromTextBox(KeyBox, TrackTagFields.InitialKey),
-            FromTextBox(GroupingBox, TrackTagFields.Grouping),
-
-            FromAutoComplete(AlbumArtistBox, TrackTagFields.AlbumArtists),
-            FromTextBox(ComposerBox, TrackTagFields.Composers),
-            FromTextBox(ConductorBox, TrackTagFields.Conductor),
-            FromTextBox(RemixedByBox, TrackTagFields.RemixedBy),
-
-            FromTextBox(SubtitleBox, TrackTagFields.Subtitle),
-            FromTextBox(DescriptionBox, TrackTagFields.Description),
-            FromTextBox(CommentBox, TrackTagFields.Comment),
-            FromTextBox(PublisherBox, TrackTagFields.Publisher),
-            FromTextBox(CopyrightBox, TrackTagFields.Copyright),
-            FromTextBox(ISRCBox, TrackTagFields.ISRC),
-
-            FromTextBox(LyricsBox, TrackTagFields.Lyrics),
-
-            // Options tab. The compilation flag on the same tab has no place
-            // on the generic Tag and is handled separately in SaveChanges.
-            FromTextBox(TitleSortBox, TrackTagFields.TitleSort),
-            FromTextBox(ArtistSortBox, TrackTagFields.ArtistsSort),
-            FromTextBox(AlbumSortBox, TrackTagFields.AlbumSort),
-            FromTextBox(ComposerSortBox, TrackTagFields.ComposersSort),
-        ];
-    }
-
-    private void Populate()
-    {
-        // Tags are for whoever may edit them (MainViewModel.CanEditTagsOf):
-        // anyone, of a song of their own; an administrator, of the server's.
-        // Shown but not editable otherwise, rather than editable and ignored.
-        var editable = _editTracks.Count > 0 && _editTracks.All(_main.CanEditTagsOf);
-
-        foreach (var field in _fields)
-        {
-            field.SetEnabled(editable);
-            var values = _editTracks.Select(field.Display).Distinct().ToList();
-            if (values.Count == 1)
-            {
-                field.SetText(values[0]);
-                field.SetWatermark(null);
-                field.OriginalText = values[0];
-            }
-            else
-            {
-                field.SetText("");
-                field.SetWatermark("Multiple values");
-                field.OriginalText = ""; // untouched sentinel for a mixed field
-            }
-        }
-
-        // Persistent header display (read-only - editing happens via the
-        // Title/Artist/Album fields under the Info tab, part of _fields above).
-        TitleDisplay.Text  = UniformOrMixed(t => t.Title   ?? "");
-        ArtistDisplay.Text = UniformOrMixed(t => t.Artists ?? "");
-        AlbumDisplay.Text  = UniformOrMixed(t => t.Album   ?? "");
-
-        // Technical (read-only)
-        DurationValue.Text   = UniformOrMixed(t => _durationConverter.Convert(t.Duration, typeof(string), null, CultureInfo.CurrentCulture) as string ?? "—");
-        CodecValue.Text      = UniformOrMixed(t => t.Codec ?? "—");
-        BitrateValue.Text    = UniformOrMixed(t => t.Bitrate > 0 ? $"{t.Bitrate} kbps" : "—");
-        SampleRateValue.Text = UniformOrMixed(t => t.SampleRate > 0 ? $"{t.SampleRate / 1000.0:0.###} kHz" : "—");
-        ChannelsValue.Text   = UniformOrMixed(t => t.Channels switch { 1 => "Mono", 2 => "Stereo", > 2 => $"{t.Channels} channels", _ => "—" });
-        DateAddedValue.Text  = UniformOrMixed(t => t.DateAdded.LocalDateTime.ToString("MMM d, yyyy"));
-
-        BitDepthValue.Text   = UniformOrMixed(t => t.BitsPerSample > 0 ? $"{t.BitsPerSample}-bit" : "—");
-        // Read at import like every other technical field, not parsed here on
-        // demand - see Track.EncoderProfile. Which also means a server-only
-        // track has one, and it can be a column.
-        EncodingValue.Text   = UniformOrMixed(t => t.EncoderProfile ?? "—");
-
-        // "File" only names a file when there is one; for a track that lives
-        // only on the paired server, the source is the server itself.
-        var serverName = PairedServerSourceName();
-        ServerSourcePanel.IsVisible = serverName != null;
-        PathValue.IsVisible = serverName == null;
-        FileLabel.Text = serverName != null ? "Source" : "File";
-        if (serverName != null)
-            ServerSourceName.Text = serverName;
-        else
-            PathValue.Text = UniformOrMixed(t => t.Path ?? "—");
-
-        UpdateListening();
-        UpdateOptions();
-
+        _info.Load(tracks);
         _ = LoadAlbumArtAsync();
     }
 
-    // Plays and the star - Flower's own record of what has been listened to,
-    // not tags, so this reads straight off the Track rather than through
-    // _fields. Refreshed on its own (rather than only from Populate) because
-    // the star writes as soon as it is clicked and has to redraw itself.
-    private void UpdateListening()
-    {
-        // The sum of this device's own count, whatever was imported from iTunes
-        // and every other device's - see Track.TotalPlayCount, which is the same
-        // number the track list's Plays column shows.
-        PlayCountValue.Text = UniformOrMixed(t => t.TotalPlayCount.ToString(CultureInfo.CurrentCulture));
-
-        // Recorded on play-start rather than on finishing a track (see
-        // Track.LastPlayedAt), and null for anything that has never been
-        // played - including a track whose whole play count was imported from
-        // iTunes, which is why a "—" here next to a non-zero Plays above is
-        // correct rather than a bug. The time is shown as well as the date: it
-        // is the only field in this window that answers "was that just now?".
-        LastPlayedValue.Text = UniformOrMixed(t =>
-            t.LastPlayedAt is { } at
-                ? $"{at.LocalDateTime.ToString("MMM d, yyyy", CultureInfo.CurrentCulture)} {at.LocalDateTime.ToShortTimeString()}"
-                : "—");
-
-        var starred = _editTracks.Count(t => t.Starred);
-        var all = _editTracks.Count > 0 && starred == _editTracks.Count;
-        var some = starred > 0 && !all;
-
-        StarIcon.Kind = all ? MaterialIconKind.Star : some ? MaterialIconKind.StarHalfFull : MaterialIconKind.StarOutline;
-        StarIcon.Opacity = all || some ? 1 : 0.45;
-        StarText.Text = all
-            ? _editTracks.Count > 1 ? "Starred" : StarredOnText(_editTracks[0])
-            : some ? $"{starred} of {_editTracks.Count} starred"
-            : "Not starred";
-        StarText.Opacity = all || some ? 1 : 0.45;
-        StarButton.IsEnabled = _editTracks.Count > 0;
-        ToolTip.SetTip(StarButton, all ? "Remove the star" : "Star");
-    }
-
-    // ── Options tab ────────────────────────────────────────────────────────
-    //
-    // Two halves with different save rules, which is the one thing worth
-    // keeping straight here. Compilation and the four sort boxes are tags:
-    // staged, written on OK, undone by Cancel, exactly like the Info tab. The
-    // three playback options underneath are Flower's own per-track state (see
-    // Track's "Per-track playback options"), so they write the moment they are
-    // changed, like the star - there is no file write to batch them with, and
-    // no OK to wait for.
-
-    // The compilation flag as the track(s) had it when this window opened, so
-    // save can tell an untouched checkbox from one deliberately set to the same
-    // value. Null for a mixed selection, which is also what the three-state
-    // checkbox shows - and leaving it in that state is what "don't change it"
-    // means.
-    private bool? _compilationOriginal;
-
-    // Suppresses the immediate writes below while Populate is filling the
-    // controls in. Unlike the tag fields (see EditableField's remarks on why
-    // those compare text at save time instead), a CheckBox/Slider raises its
-    // change event synchronously from the assignment, so a plain guard flag is
-    // both sufficient and reliable here.
-    private bool _populatingOptions;
-
-    private void UpdateOptions()
-    {
-        _populatingOptions = true;
-        try
-        {
-            // Three-state so a mixed selection has somewhere to sit. Turned off
-            // again once the value is uniform, so a single track's checkbox
-            // cannot be cycled into an indeterminate state that means nothing.
-            var compilation = UniformFlag(t => t.IsCompilation);
-            CompilationBox.IsThreeState = compilation is null;
-            CompilationBox.IsChecked = compilation;
-            _compilationOriginal = compilation;
-
-            // The real value as the watermark, so an empty box reads as "sorts
-            // under its own name" rather than as a field nobody filled in.
-            // Skipped where Populate already put "Multiple values" there.
-            SetSortWatermark(TitleSortBox, t => t.Title);
-            SetSortWatermark(ArtistSortBox, t => t.Artists);
-            SetSortWatermark(AlbumSortBox, t => t.Album);
-            SetSortWatermark(ComposerSortBox, t => t.Composers);
-
-            RememberPositionBox.IsThreeState = UniformFlag(t => t.RememberPlaybackPosition) is null;
-            RememberPositionBox.IsChecked = UniformFlag(t => t.RememberPlaybackPosition);
-            IgnoreInShuffleBox.IsThreeState = UniformFlag(t => t.IgnoreWhenShuffling) is null;
-            IgnoreInShuffleBox.IsChecked = UniformFlag(t => t.IgnoreWhenShuffling);
-
-            var adjustments = _editTracks.Select(t => t.VolumeAdjustment).Distinct().ToList();
-            VolumeAdjustmentSlider.Value = adjustments.Count == 1 ? adjustments[0] : 0;
-            UpdateVolumeAdjustmentText();
-            UpdateResumePositionText();
-
-            // The playback half works for anything (it is library state); the
-            // tag half needs somewhere for a tag to be written - a file here,
-            // or the paired server's (MainViewModel.CanEditTagsOf).
-            var writable = _editTracks.Count > 0 && _editTracks.All(_main.CanEditTagsOf);
-            CompilationBox.IsEnabled = writable;
-            TitleSortBox.IsEnabled = writable;
-            ArtistSortBox.IsEnabled = writable;
-            AlbumSortBox.IsEnabled = writable;
-            ComposerSortBox.IsEnabled = writable;
-            OptionsUnavailableText.IsVisible = !writable;
-            OptionsUnavailableText.Text = writable
-                ? ""
-                : "Compilation and the sort tags live in the file's own tags, and this track has no file here or on a server this device administers. "
-                  + "The playback options still apply - those are Flower's own, not tags.";
-        }
-        finally
-        {
-            _populatingOptions = false;
-        }
-    }
-
-    // True/false when every track agrees, null when they don't.
-    private bool? UniformFlag(Func<Track, bool> get)
-    {
-        if (_editTracks.Count == 0)
-            return false;
-
-        var first = get(_editTracks[0]);
-        return _editTracks.All(t => get(t) == first) ? first : null;
-    }
-
-    private void SetSortWatermark(TextBox box, Func<Track, string?> display)
-    {
-        if (box.PlaceholderText != null)
-            return;
-
-        var values = _editTracks.Select(t => display(t) ?? "").Distinct().ToList();
-        box.PlaceholderText = values.Count == 1 && values[0].Length > 0 ? values[0] : null;
-    }
-
-    private void UpdateResumePositionText()
-    {
-        var positions = _editTracks.Select(t => t.ResumePosition).Distinct().ToList();
-        ResumePositionText.Text = positions is [{ } position] && position > TimeSpan.Zero
-            ? $@"— currently at {position:h\:mm\:ss}"
-            : "";
-    }
-
-    private void UpdateVolumeAdjustmentText()
-    {
-        var value = (int)Math.Round(VolumeAdjustmentSlider.Value);
-        VolumeAdjustmentText.Text = value == 0 ? "None" : value.ToString("+0;-0", CultureInfo.CurrentCulture) + "%";
-        VolumeAdjustmentText.Opacity = value == 0 ? 0.45 : 1;
-    }
-
-    // The three immediate writes. Each one mutates the tracks and persists
-    // through the library in the same breath - see the region comment above.
-    private void RememberPositionBox_Changed(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        if (_populatingOptions || RememberPositionBox.IsChecked is not { } value)
-            return;
-
-        foreach (var track in _editTracks)
-        {
-            track.RememberPlaybackPosition = value;
-            // Turning it off throws away where the track had got to, rather
-            // than parking it for a later re-tick to resurrect. Half a
-            // listening session remembered from an unknown time in the past is
-            // worse than starting over.
-            if (!value)
-                track.ResumePosition = null;
-        }
-
-        RememberPositionBox.IsThreeState = false;
-        UpdateResumePositionText();
-        PersistOptions();
-    }
-
-    private void IgnoreInShuffleBox_Changed(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        if (_populatingOptions || IgnoreInShuffleBox.IsChecked is not { } value)
-            return;
-
-        foreach (var track in _editTracks)
-            track.IgnoreWhenShuffling = value;
-
-        IgnoreInShuffleBox.IsThreeState = false;
-        PersistOptions();
-    }
-
-    private void VolumeAdjustmentSlider_Changed(object? sender, Avalonia.Controls.Primitives.RangeBaseValueChangedEventArgs e)
-    {
-        UpdateVolumeAdjustmentText();
-        if (_populatingOptions)
-            return;
-
-        var value = (int)Math.Round(VolumeAdjustmentSlider.Value);
-        foreach (var track in _editTracks)
-            track.VolumeAdjustment = value;
-
-        PersistOptions();
-    }
-
-    // One event for every edited track, per change. None of the three shows up
-    // in a track list, so TrackChanged's subscribers only refresh rows and
-    // smart playlists (IgnoreWhenShuffling is a rule field) - no rebuild and no
-    // catalog sync, which would otherwise be one per drag of the volume slider.
-    private void PersistOptions() =>
-        _library.NotifyTracksChanged(_editTracks, TrackChange.Options);
-
-    private static string StarredOnText(Track track) =>
-        track.StarredAt is { } at ? $"Starred {at.LocalDateTime:MMM d, yyyy}" : "Starred";
-
-    // Immediate, like the artwork below and unlike every tag field in this
-    // window: there is no file write to batch it with, and Library.SetStarred
-    // is the one path that both mutates the track and persists the change, so
-    // routing it through this window's own OK would mean a second way to do the
-    // same thing.
-    private void StarButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        if (_editTracks.Count == 0)
-            return;
-
-        var starred = _editTracks.All(t => t.Starred);
-        foreach (var track in _editTracks)
-            _library.SetStarred(StarTarget.Song, track.Id.ToString(), !starred);
-
-        UpdateListening();
-    }
-
-    // The paired server's sidebar name, but only when every track being shown
-    // is one of its placeholders (Path == null and the origin is that same
-    // server). Anything else - a local file, a placeholder from a peer this
-    // device is no longer paired with, a mixed selection - falls back to the
-    // plain path display, which already has a "Multiple values" answer for the
-    // mixed case.
-    private string? PairedServerSourceName() => _main.PairedServerSourceName(_editTracks);
+    private void StarButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
+        _info.ToggleStar();
 
     // Shows the first selected track's art (embedded tag picture, falling back
     // to a cover/folder image file - see AlbumArtLoader). For a batch selection
@@ -565,60 +179,15 @@ public partial class TrackInfoWindow : Window
         UpdateArtworkTab();
     }
 
-    private string UniformOrMixed(Func<Track, string> display)
+    private void OkButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        var values = _editTracks.Select(display).Distinct().ToList();
-        return values.Count == 1 ? values[0] : "Multiple values";
-    }
-
-    private async void OkButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        await SaveChanges();
+        _info.Save();
         Close();
     }
 
     private void CancelButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         Close();
-    }
-
-    private async Task SaveChanges()
-    {
-        var dirty = _fields.Where(f => f.IsDirty).ToList();
-
-        // The Options tab's compilation checkbox, which cannot ride along in
-        // _fields: the flag has no home on the generic TagLib.Tag those all
-        // write through, and needs a per-format write instead (see
-        // CompilationFlag). Null means either "still mixed" or "untouched" -
-        // both of which mean leave every track's flag as it is.
-        var compilation = CompilationBox.IsChecked == _compilationOriginal ? null : CompilationBox.IsChecked;
-
-        if (dirty.Count == 0 && compilation == null)
-            return;
-
-        // The songs whose tags actually changed, file first - see
-        // TrackTagEdits, shared with the phone's Track Info.
-        var edited = TrackTagEdits.Apply(
-            _editTracks,
-            dirty.Select(f => (f.Field, f.GetText())).ToList(),
-            _main.CanEditTagsOf,
-            _logger,
-            perFile: (file, _) => compilation is not { } isCompilation || CompilationFlag.Write(file, isCompilation),
-            afterFile: track =>
-            {
-                if (compilation is { } isCompilation)
-                    track.IsCompilation = isCompilation;
-            });
-
-        // Refreshes views bound to the library and persists the edited tracks
-        // - one upsert each, where this used to rewrite the whole library to
-        // push a handful of changed rows.
-        //
-        // NotifyTracksChanged, not UpdateTracks(_library.Tracks) - see
-        // MainViewModel.SyncITunesPlayCountAsync's comment on why passing
-        // Tracks back into UpdateTracks as a "fresh scan" silently doubles
-        // every placeholder track.
-        _library.NotifyTracksChanged(edited, TrackChange.Tags);
     }
 
     // ── Artwork tab ────────────────────────────────────────────────────────
@@ -808,7 +377,7 @@ public partial class TrackInfoWindow : Window
 
         var viewer = new Window
         {
-            Title = UniformOrMixed(t => t.Album ?? t.Title ?? "Artwork"),
+            Title = _info.ArtworkTitle,
             Width = Math.Max(160, full.PixelSize.Width * factor),
             Height = Math.Max(160, full.PixelSize.Height * factor),
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -937,47 +506,6 @@ public partial class TrackInfoWindow : Window
         RemoveArtButton.IsEnabled = canWrite && hasArt;
         OpenArtButton.IsEnabled = hasArt;
 
-        ArtworkInfoText.Text = DescribeArtwork(hasArt, writable, serverAlbums);
+        ArtworkInfoText.Text = _info.DescribeArtwork(_art, _artPixelSize, writable, serverAlbums);
     }
-
-    private string DescribeArtwork(bool hasArt, int writable, int serverAlbums)
-    {
-        if (_editTracks.Count == 0)
-            return "";
-
-        if (writable == 0 && serverAlbums == 0)
-            return _art?.Bytes is { Length: > 0 }
-                // Art there is - it came from the server's own copy - but no
-                // way to change it: either this device is not an admin of that
-                // server, or the server is not reachable from here right now.
-                ? "Only on the server, which can't be reached to change this."
-                : "Only on the server — there's nothing here to write artwork into.";
-
-        var parts = new List<string>();
-        if (hasArt)
-        {
-            if (_artPixelSize is { } size)
-                parts.Add($"{size.Width} × {size.Height}");
-            if (FormatName(_art!.MimeType) is string format)
-                parts.Add(format);
-            parts.Add(FormatBytes(_art!.Bytes.Length));
-        }
-        else
-        {
-            parts.Add("No artwork");
-        }
-
-        parts.Add("Drop an image or click Change");
-        return string.Join("  ·  ", parts);
-    }
-
-    // Null for a placeholder track's art, whose bytes come from the content-
-    // addressed cache with no MIME type recorded (see AlbumArtLoader.TryGetArt).
-    private static string? FormatName(string mimeType) =>
-        mimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase) && mimeType.Length > 6
-            ? mimeType[6..].ToUpperInvariant()
-            : null;
-
-    private static string FormatBytes(int count) =>
-        count >= 1024 * 1024 ? $"{count / (1024.0 * 1024.0):0.#} MB" : $"{count / 1024.0:0} KB";
 }

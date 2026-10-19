@@ -507,7 +507,7 @@ picture is decoded once at the size it is shown.
 
 ## D. One source of truth
 
-### D1. Track Info is implemented twice, in code-behind, where nothing can test it
+### D1. Track Info is implemented twice, in code-behind, where nothing can test it — **fixed**
 
 `Flower/Views/TrackInfoWindow.axaml.cs` (1000 lines),
 `Flower/Views/Mobile/TrackInfoView.axaml.cs` (681 lines)
@@ -530,6 +530,17 @@ All of this is logic about tracks, not layout, and CLAUDE.md's own rule puts it
 in a view model. **Fix:** a `TrackInfoViewModel` (or a pure `TrackInfoSummary`)
 that owns the fields, the mixed-value rule, formatting, editability and the
 pending edits. Both views bind to it, and the drift above becomes a test.
+
+**Fixed** as proposed. `TrackInfoViewModel` (`MainViewModel.TrackInfo()`)
+owns every box (`TrackInfoField`: its text, its "Multiple values"
+placeholder, what it showed), the one mixed-value rule, every read-only value
+written out once, who may edit, the compilation flag staged with the tags,
+the star and the three playback options written at once, and `Save`. Both
+views bind to it. The phone gains the Encoding row and the compilation
+checkbox, so it can set the flag now and not only lose it. What stays in the
+views is theirs: tabs, Prev/Next, the art bitmaps and pickers, drag and drop,
+the suggestion chips. `TrackInfoViewModelTests` covers the rules, and
+`TrackInfoWindowTests` checks that a typed box is what OK saves.
 
 ### D2. Context menus are defined twice, once per head
 

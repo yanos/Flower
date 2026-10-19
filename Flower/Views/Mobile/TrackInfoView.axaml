@@ -4,6 +4,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
+             xmlns:info="clr-namespace:Flower.ViewModels"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              mc:Ignorable="d"
              x:Class="Flower.Views.Mobile.TrackInfoView"
@@ -114,6 +115,14 @@
       <Setter Property="FontSize" Value="13" />
       <Setter Property="TextWrapping" Value="Wrap" />
     </Style>
+    <!-- A count is a number at display size; the words for there being
+         several are not, and at that size they do not fit the card. -->
+    <Style Selector="TextBlock.playCount">
+      <Setter Property="FontSize" Value="22" />
+    </Style>
+    <Style Selector="TextBlock.playCount.mixed">
+      <Setter Property="FontSize" Value="15" />
+    </Style>
   </UserControl.Styles>
 
   <!-- Below the status bar: the sheet itself runs up under it (MobileMainView
@@ -174,7 +183,11 @@
       </Border>
     </Panel>
 
-    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+    <!-- Everything in here is the songs' Track Info (TrackInfoViewModel,
+         shared with the desktop window), set as this scroller's DataContext
+         by the code-behind each time the sheet shows songs. -->
+    <ScrollViewer Grid.Row="1" x:Name="Body" x:DataType="info:TrackInfoViewModel"
+                  VerticalScrollBarVisibility="Auto"
                   controls:SoftKeyboard.AvoidOcclusion="True">
       <StackPanel Margin="0,4,0,16">
 
@@ -239,15 +252,15 @@
           <StackPanel Spacing="10">
             <Grid ColumnDefinitions="88,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="10">
               <TextBlock Grid.Row="0" Classes="lbl" Text="Title" />
-              <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="TitleBox" Classes="val" />
+              <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="TitleBox" Text="{Binding Title.Text, Mode=TwoWay}" PlaceholderText="{Binding Title.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val" />
               <TextBlock Grid.Row="1" Classes="lbl" Text="Artist" VerticalAlignment="Top" Margin="0,10,0,0" />
               <StackPanel Grid.Row="1" Grid.Column="1">
-                <controls:TextInput x:Name="ArtistBox" Classes="val" />
+                <controls:TextInput x:Name="ArtistBox" Text="{Binding Artists.Text, Mode=TwoWay}" PlaceholderText="{Binding Artists.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val" />
                 <WrapPanel x:Name="ArtistSuggestions" Classes="suggestions" Margin="0,6,0,0" IsVisible="False" />
               </StackPanel>
               <TextBlock Grid.Row="2" Classes="lbl" Text="Album" VerticalAlignment="Top" Margin="0,10,0,0" />
               <StackPanel Grid.Row="2" Grid.Column="1">
-                <controls:TextInput x:Name="AlbumBox" Classes="val" />
+                <controls:TextInput x:Name="AlbumBox" Text="{Binding Album.Text, Mode=TwoWay}" PlaceholderText="{Binding Album.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val" />
                 <WrapPanel x:Name="AlbumSuggestions" Classes="suggestions" Margin="0,6,0,0" IsVisible="False" />
               </StackPanel>
             </Grid>
@@ -258,17 +271,17 @@
           <StackPanel Spacing="10">
             <Grid ColumnDefinitions="88,*,40,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="10">
               <TextBlock Grid.Row="0" Classes="lbl" Text="Track #" />
-              <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="TrackNumBox" Classes="val num" />
+              <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="TrackNumBox" Text="{Binding TrackNumber.Text, Mode=TwoWay}" PlaceholderText="{Binding TrackNumber.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val num" />
               <TextBlock Grid.Row="0" Grid.Column="2" Classes="lbl" Text="of" HorizontalAlignment="Center" />
-              <controls:TextInput Grid.Row="0" Grid.Column="3" x:Name="TrackTotalBox" Classes="val num" />
+              <controls:TextInput Grid.Row="0" Grid.Column="3" x:Name="TrackTotalBox" Text="{Binding TrackCount.Text, Mode=TwoWay}" PlaceholderText="{Binding TrackCount.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val num" />
 
               <TextBlock Grid.Row="1" Classes="lbl" Text="Disc #" />
-              <controls:TextInput Grid.Row="1" Grid.Column="1" x:Name="DiscNumBox" Classes="val num" />
+              <controls:TextInput Grid.Row="1" Grid.Column="1" x:Name="DiscNumBox" Text="{Binding DiscNumber.Text, Mode=TwoWay}" PlaceholderText="{Binding DiscNumber.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val num" />
               <TextBlock Grid.Row="1" Grid.Column="2" Classes="lbl" Text="of" HorizontalAlignment="Center" />
-              <controls:TextInput Grid.Row="1" Grid.Column="3" x:Name="DiscTotalBox" Classes="val num" />
+              <controls:TextInput Grid.Row="1" Grid.Column="3" x:Name="DiscTotalBox" Text="{Binding DiscCount.Text, Mode=TwoWay}" PlaceholderText="{Binding DiscCount.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val num" />
 
               <TextBlock Grid.Row="2" Classes="lbl" Text="Year" />
-              <controls:TextInput Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" x:Name="YearBox" Classes="val num" />
+              <controls:TextInput Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" x:Name="YearBox" Text="{Binding Year.Text, Mode=TwoWay}" PlaceholderText="{Binding Year.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val num" />
 
               <!-- Typed like any other field, with the library's own genres a
                    tap away on the chevron - so picking one reuses its exact
@@ -276,7 +289,7 @@
               <TextBlock Grid.Row="3" Classes="lbl" Text="Genre" VerticalAlignment="Top" Margin="0,10,0,0" />
               <StackPanel Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="3">
               <Panel>
-                <controls:TextInput x:Name="GenreBox" Classes="val" ShowsClearButton="False" Padding="12,9,44,9" />
+                <controls:TextInput x:Name="GenreBox" Text="{Binding Genre.Text, Mode=TwoWay}" PlaceholderText="{Binding Genre.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val" ShowsClearButton="False" Padding="12,9,44,9" />
                 <Button x:Name="GenreMenuButton"
                         HorizontalAlignment="Right" VerticalAlignment="Center"
                         Margin="0,0,4,0" Padding="8"
@@ -296,33 +309,41 @@
           <StackPanel Spacing="10">
             <Grid ColumnDefinitions="88,*,52,*" RowDefinitions="Auto,Auto" RowSpacing="10">
               <TextBlock Grid.Row="0" Classes="lbl" Text="BPM" />
-              <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="BpmBox" Classes="val num" />
+              <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="BpmBox" Text="{Binding BeatsPerMinute.Text, Mode=TwoWay}" PlaceholderText="{Binding BeatsPerMinute.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val num" />
               <TextBlock Grid.Row="0" Grid.Column="2" Classes="lbl" Text="Key" HorizontalAlignment="Center" />
-              <controls:TextInput Grid.Row="0" Grid.Column="3" x:Name="KeyBox" Classes="val" />
+              <controls:TextInput Grid.Row="0" Grid.Column="3" x:Name="KeyBox" Text="{Binding InitialKey.Text, Mode=TwoWay}" PlaceholderText="{Binding InitialKey.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val" />
 
               <TextBlock Grid.Row="1" Classes="lbl" Text="Grouping" />
-              <controls:TextInput Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" x:Name="GroupingBox" Classes="val" />
+              <controls:TextInput Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" x:Name="GroupingBox" Text="{Binding Grouping.Text, Mode=TwoWay}" PlaceholderText="{Binding Grouping.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val" />
             </Grid>
           </StackPanel>
         </Border>
 
         <Border Classes="card">
           <StackPanel Spacing="10">
-            <Grid ColumnDefinitions="108,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="10">
+            <Grid ColumnDefinitions="108,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="10">
               <TextBlock Grid.Row="0" Classes="lbl" Text="Album Artist" VerticalAlignment="Top" Margin="0,10,0,0" />
               <StackPanel Grid.Row="0" Grid.Column="1">
-                <controls:TextInput x:Name="AlbumArtistBox" Classes="val" />
+                <controls:TextInput x:Name="AlbumArtistBox" Text="{Binding AlbumArtists.Text, Mode=TwoWay}" PlaceholderText="{Binding AlbumArtists.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val" />
                 <WrapPanel x:Name="AlbumArtistSuggestions" Classes="suggestions" Margin="0,6,0,0" IsVisible="False" />
               </StackPanel>
               <TextBlock Grid.Row="1" Classes="lbl" Text="Composer" VerticalAlignment="Top" Margin="0,10,0,0" />
               <StackPanel Grid.Row="1" Grid.Column="1">
-                <controls:TextInput x:Name="ComposerBox" Classes="val" />
+                <controls:TextInput x:Name="ComposerBox" Text="{Binding Composers.Text, Mode=TwoWay}" PlaceholderText="{Binding Composers.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val" />
                 <WrapPanel x:Name="ComposerSuggestions" Classes="suggestions" Margin="0,6,0,0" IsVisible="False" />
               </StackPanel>
               <TextBlock Grid.Row="2" Classes="lbl" Text="Conductor" />
-              <controls:TextInput Grid.Row="2" Grid.Column="1" x:Name="ConductorBox" Classes="val" />
+              <controls:TextInput Grid.Row="2" Grid.Column="1" x:Name="ConductorBox" Text="{Binding Conductor.Text, Mode=TwoWay}" PlaceholderText="{Binding Conductor.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val" />
               <TextBlock Grid.Row="3" Classes="lbl" Text="Remixed By" />
-              <controls:TextInput Grid.Row="3" Grid.Column="1" x:Name="RemixedByBox" Classes="val" />
+              <!-- A tag like the boxes, saved with them; three-state only while
+                   the songs disagree, as on the desktop's Options tab. -->
+              <CheckBox Grid.Row="4" Grid.Column="1"
+                        Content="Part of a compilation"
+                        FontSize="15"
+                        IsChecked="{Binding IsCompilation}"
+                        IsThreeState="{Binding CompilationIsThreeState}"
+                        IsEnabled="{Binding IsEditable}" />
+              <controls:TextInput Grid.Row="3" Grid.Column="1" x:Name="RemixedByBox" Text="{Binding RemixedBy.Text, Mode=TwoWay}" PlaceholderText="{Binding RemixedBy.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val" />
             </Grid>
           </StackPanel>
         </Border>
@@ -331,24 +352,27 @@
           <StackPanel Spacing="10">
             <Grid ColumnDefinitions="108,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="10">
               <TextBlock Grid.Row="0" Classes="lbl" Text="Subtitle" />
-              <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="SubtitleBox" Classes="val" />
+              <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="SubtitleBox" Text="{Binding Subtitle.Text, Mode=TwoWay}" PlaceholderText="{Binding Subtitle.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val" />
               <TextBlock Grid.Row="1" Classes="lbl top" Text="Description" />
-              <controls:TextInput Grid.Row="1" Grid.Column="1" x:Name="DescriptionBox" Classes="val multi" />
+              <controls:TextInput Grid.Row="1" Grid.Column="1" x:Name="DescriptionBox" Text="{Binding Description.Text, Mode=TwoWay}" PlaceholderText="{Binding Description.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val multi" />
               <TextBlock Grid.Row="2" Classes="lbl top" Text="Comment" />
-              <controls:TextInput Grid.Row="2" Grid.Column="1" x:Name="CommentBox" Classes="val multi" />
+              <controls:TextInput Grid.Row="2" Grid.Column="1" x:Name="CommentBox" Text="{Binding Comment.Text, Mode=TwoWay}" PlaceholderText="{Binding Comment.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val multi" />
               <TextBlock Grid.Row="3" Classes="lbl" Text="Publisher" />
-              <controls:TextInput Grid.Row="3" Grid.Column="1" x:Name="PublisherBox" Classes="val" />
+              <controls:TextInput Grid.Row="3" Grid.Column="1" x:Name="PublisherBox" Text="{Binding Publisher.Text, Mode=TwoWay}" PlaceholderText="{Binding Publisher.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val" />
               <TextBlock Grid.Row="4" Classes="lbl" Text="Copyright" />
-              <controls:TextInput Grid.Row="4" Grid.Column="1" x:Name="CopyrightBox" Classes="val" />
+              <controls:TextInput Grid.Row="4" Grid.Column="1" x:Name="CopyrightBox" Text="{Binding Copyright.Text, Mode=TwoWay}" PlaceholderText="{Binding Copyright.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val" />
               <TextBlock Grid.Row="5" Classes="lbl" Text="ISRC" />
-              <controls:TextInput Grid.Row="5" Grid.Column="1" x:Name="ISRCBox" Classes="val" />
+              <controls:TextInput Grid.Row="5" Grid.Column="1" x:Name="ISRCBox" Text="{Binding ISRC.Text, Mode=TwoWay}" PlaceholderText="{Binding ISRC.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val" />
             </Grid>
           </StackPanel>
         </Border>
 
         <Border Classes="card">
           <StackPanel Spacing="10">
-            <controls:TextInput x:Name="LyricsBox" Classes="val multi" MinHeight="100" PlaceholderText="Lyrics" />
+            <controls:TextInput x:Name="LyricsBox" Classes="val multi" MinHeight="100"
+                                Text="{Binding Lyrics.Text, Mode=TwoWay}"
+                                PlaceholderText="{Binding Lyrics.Placeholder, TargetNullValue=Lyrics}"
+                                IsEnabled="{Binding IsEditable}" />
           </StackPanel>
         </Border>
 
@@ -359,34 +383,37 @@
           <Border Grid.Column="0" Classes="card" Margin="0">
             <StackPanel Spacing="4">
               <TextBlock Classes="lbl" Text="Play Count" />
-              <TextBlock x:Name="PlayCountValue" FontSize="22" Margin="0,0,0,10" TextWrapping="Wrap" />
+              <TextBlock x:Name="PlayCountValue" Classes="playCount" Classes.mixed="{Binding IsPlayCountMixed}"
+                         Text="{Binding PlayCountValue}" Margin="0,0,0,10" TextWrapping="Wrap" />
               <TextBlock Classes="lbl" Text="Last Played" />
-              <TextBlock x:Name="LastPlayedValue" FontSize="15" TextWrapping="Wrap" />
+              <TextBlock x:Name="LastPlayedValue" Text="{Binding LastPlayedValue}" FontSize="15" TextWrapping="Wrap" />
             </StackPanel>
           </Border>
 
           <Border Grid.Column="1" Classes="card" Margin="0">
             <StackPanel>
               <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" RowSpacing="4"
-                    RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto">
+                    RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto">
                 <TextBlock Grid.Row="0" Classes="figureLabel" Text="Duration" />
-                <TextBlock Grid.Row="0" Grid.Column="1" x:Name="DurationValue" Classes="figure" />
+                <TextBlock Grid.Row="0" Grid.Column="1" x:Name="DurationValue" Text="{Binding DurationValue}" Classes="figure" />
                 <TextBlock Grid.Row="1" Classes="figureLabel" Text="Codec" />
-                <TextBlock Grid.Row="1" Grid.Column="1" x:Name="CodecValue" Classes="figure" />
+                <TextBlock Grid.Row="1" Grid.Column="1" x:Name="CodecValue" Text="{Binding CodecValue}" Classes="figure" />
                 <TextBlock Grid.Row="2" Classes="figureLabel" Text="Bit Rate" />
-                <TextBlock Grid.Row="2" Grid.Column="1" x:Name="BitrateValue" Classes="figure" />
+                <TextBlock Grid.Row="2" Grid.Column="1" x:Name="BitrateValue" Text="{Binding BitrateValue}" Classes="figure" />
                 <TextBlock Grid.Row="3" Classes="figureLabel" Text="Sample Rate" />
-                <TextBlock Grid.Row="3" Grid.Column="1" x:Name="SampleRateValue" Classes="figure" />
+                <TextBlock Grid.Row="3" Grid.Column="1" x:Name="SampleRateValue" Text="{Binding SampleRateValue}" Classes="figure" />
                 <TextBlock Grid.Row="4" Classes="figureLabel" Text="Channels" />
-                <TextBlock Grid.Row="4" Grid.Column="1" x:Name="ChannelsValue" Classes="figure" />
+                <TextBlock Grid.Row="4" Grid.Column="1" x:Name="ChannelsValue" Text="{Binding ChannelsValue}" Classes="figure" />
                 <TextBlock Grid.Row="5" Classes="figureLabel" Text="Bit Depth" />
-                <TextBlock Grid.Row="5" Grid.Column="1" x:Name="BitDepthValue" Classes="figure" />
+                <TextBlock Grid.Row="5" Grid.Column="1" x:Name="BitDepthValue" Text="{Binding BitDepthValue}" Classes="figure" />
+                <TextBlock Grid.Row="6" Classes="figureLabel" Text="Encoding" />
+                <TextBlock Grid.Row="6" Grid.Column="1" x:Name="EncodingValue" Text="{Binding EncodingValue}" Classes="figure" />
                 <!-- "Source" and the server's name for a song that lives on
                      the paired server, which has no file here to name. -->
-                <TextBlock Grid.Row="6" x:Name="FileLabel" Classes="figureLabel" Text="File" />
-                <TextBlock Grid.Row="6" Grid.Column="1" x:Name="PathValue" Classes="figure" FontSize="11" />
-                <TextBlock Grid.Row="7" Classes="figureLabel" Text="Date Added" />
-                <TextBlock Grid.Row="7" Grid.Column="1" x:Name="DateAddedValue" Classes="figure" />
+                <TextBlock Grid.Row="7" x:Name="FileLabel" Classes="figureLabel" Text="{Binding SourceLabel}" />
+                <TextBlock Grid.Row="7" Grid.Column="1" x:Name="PathValue" Text="{Binding SourceValue}" Classes="figure" FontSize="11" />
+                <TextBlock Grid.Row="8" Classes="figureLabel" Text="Date Added" />
+                <TextBlock Grid.Row="8" Grid.Column="1" x:Name="DateAddedValue" Text="{Binding DateAddedValue}" Classes="figure" />
               </Grid>
             </StackPanel>
           </Border>

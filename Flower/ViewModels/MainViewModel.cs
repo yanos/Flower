@@ -70,6 +70,12 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public AlbumArtEditor ArtEditorFor(IReadOnlyList<Track> tracks, ILogger logger) =>
         new(tracks, Library, _appSettings, _peerTrackResolver, _peerCredentials, logger);
 
+    // What Track Info shows and edits, on either head - see TrackInfoViewModel.
+    // Built here for the same reason as ArtEditorFor: this holds who may edit
+    // what and which server a song comes from.
+    public TrackInfoViewModel TrackInfo() =>
+        new(Library, CanEditTagsOf, PairedServerSourceName, LoggerFactory.CreateLogger<TrackInfoViewModel>());
+
     // The paired server's name when every one of these tracks is one of its
     // songs rather than a file here; null otherwise. Track Info names it where
     // a file path would go.

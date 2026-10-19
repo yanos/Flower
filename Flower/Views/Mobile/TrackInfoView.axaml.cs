@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -14,29 +13,25 @@ using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 
-using CommunityToolkit.Mvvm.DependencyInjection;
-
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-using Flower.Converters;
 using Flower.Logging;
 using Flower.Models;
 using Flower.Persistence;
 using Flower.Services;
+using Flower.ViewModels;
 using Flower.ViewModels.Mobile;
 
 namespace Flower.Views.Mobile;
 
-// Mobile counterpart to the desktop TrackInfoWindow: same TagLib-backed fields,
-// but rendered as a sheet within MobileMainView rather than a child Window (mobile
-// has no concept of secondary windows). Populated whenever the host view model's
-// ActionTarget becomes the track shown by an open Track Info sheet.
+// Mobile counterpart to the desktop TrackInfoWindow, rendered as a sheet
+// within MobileMainView rather than a child Window (mobile has no concept of
+// secondary windows). What it shows and edits is TrackInfoViewModel's, the
+// same as the desktop's; what stays here is the sheet's own - the cover and
+// the ways to change it, the suggestion chips, the genre menu.
 public partial class TrackInfoView : UserControl
 {
-    private static readonly DurationConverter _durationConverter = new();
-    // Resolved via the service locator - see desktop TrackInfoWindow's own
-    // field for the same pattern.
     // This screen is instantiated by XAML and reaches its dependencies through
     // the ViewModel it is given, not through the container - see
     // docs/ARCHITECTURE-REVIEW.md Tier 2.3. The logger too, from the
@@ -45,8 +40,11 @@ public partial class TrackInfoView : UserControl
         (DataContext as MobileMainViewModel)?.Main.LoggerFactory.CreateLogger<TrackInfoView>()
         ?? NullLogger<TrackInfoView>.Instance;
     // The songs being edited - one, or every song of an album - and the first
-    // of them, whose cover the card shows.
-    private IReadOnlyList<Track> _tracks = [];
+    // of them, whose cover the card shows. A new one each time the sheet shows
+    // songs, so the suggestion pools are read fresh: a genre typed into
+    // another song a minute ago belongs in the list now.
+    private TrackInfoViewModel? _info;
+    private IReadOnlyList<Track> _tracks => _info?.Tracks ?? [];
     private Track? _track => _tracks.Count > 0 ? _tracks[0] : null;
     private int _artRequestId; // guards against a stale track's art load winning a race
     // The cover's own bytes, undecoded - what the resolution under it is
@@ -57,51 +55,15 @@ public partial class TrackInfoView : UserControl
     // A Find Online still searching or downloading, dropped with the sheet.
     private CancellationTokenSource? _findArt;
 
-    // Each box and the tag it edits (TrackTagFields, shared with the desktop
-    // window), with what it showed when the sheet opened - a box whose text
-    // still matches is not saved, which is what leaves "Multiple values"
-    // alone across several songs.
-    private (TextBox Box, TrackTagField Field)[] _fields = [];
-    private readonly Dictionary<TextBox, string> _shown = new();
-    // What a box says when empty, as the XAML gave it - the lyrics box, which
-    // has no name beside it - put back after "Multiple values".
-    private readonly Dictionary<TextBox, string?> _placeholders = new();
-
     // The library's own spellings, offered under a box as it is typed in.
     private readonly List<TagSuggestions> _suggestions = [];
 
     public TrackInfoView()
     {
         InitializeComponent();
-        _fields =
-        [
-            (TitleBox, TrackTagFields.Title),
-            (ArtistBox, TrackTagFields.Artists),
-            (AlbumBox, TrackTagFields.Album),
-            (TrackNumBox, TrackTagFields.TrackNumber),
-            (TrackTotalBox, TrackTagFields.TrackCount),
-            (DiscNumBox, TrackTagFields.DiscNumber),
-            (DiscTotalBox, TrackTagFields.DiscCount),
-            (YearBox, TrackTagFields.Year),
-            (GenreBox, TrackTagFields.Genre),
-            (BpmBox, TrackTagFields.BeatsPerMinute),
-            (KeyBox, TrackTagFields.InitialKey),
-            (GroupingBox, TrackTagFields.Grouping),
-            (AlbumArtistBox, TrackTagFields.AlbumArtists),
-            (ComposerBox, TrackTagFields.Composers),
-            (ConductorBox, TrackTagFields.Conductor),
-            (RemixedByBox, TrackTagFields.RemixedBy),
-            (SubtitleBox, TrackTagFields.Subtitle),
-            (DescriptionBox, TrackTagFields.Description),
-            (CommentBox, TrackTagFields.Comment),
-            (PublisherBox, TrackTagFields.Publisher),
-            (CopyrightBox, TrackTagFields.Copyright),
-            (ISRCBox, TrackTagFields.ISRC),
-            (LyricsBox, TrackTagFields.Lyrics),
-        ];
-
-        foreach (var (box, _) in _fields)
-            _placeholders[box] = box.PlaceholderText;
+        // Nothing until there are songs to show: left to inherit, the body
+        // would bind its Track Info against the main view model.
+        Body.DataContext = null;
 
         _suggestions.Add(new TagSuggestions(ArtistBox, ArtistSuggestions));
         _suggestions.Add(new TagSuggestions(AlbumBox, AlbumSuggestions));
@@ -131,77 +93,27 @@ public partial class TrackInfoView : UserControl
             }
 
             if (vm.IsShowingTrackInfo && vm.TrackInfoTracks.Count > 0 && !ReferenceEquals(vm.TrackInfoTracks, _tracks))
-                Populate(vm.TrackInfoTracks);
+                Populate(vm, vm.TrackInfoTracks);
         }
     }
 
-    // One value for the whole set when they agree, "Multiple values" when not.
-    private const string MixedValues = "Multiple values";
-
-    private string UniformOrMixed(Func<Track, string> display)
+    private void Populate(MobileMainViewModel vm, IReadOnlyList<Track> tracks)
     {
-        var values = _tracks.Select(display).Distinct().Take(2).ToList();
-        return values.Count == 1 ? values[0] : MixedValues;
-    }
-
-    private void Populate(IReadOnlyList<Track> tracks)
-    {
-        _tracks = tracks;
-        var vm = DataContext as MobileMainViewModel;
+        var info = _info = vm.Main.TrackInfo();
+        info.Load(tracks);
+        Body.DataContext = info;
 
         // Shown but not editable when the songs are not this phone's to edit,
         // rather than editable and ignored on Save.
-        var editable = vm != null && tracks.All(vm.Main.CanEditTagsOf);
-        SaveButton.IsVisible = editable;
+        SaveButton.IsVisible = info.IsEditable;
 
-        _shown.Clear();
-        foreach (var (box, field) in _fields)
-        {
-            box.IsEnabled = editable;
-            var common = TrackTagFields.CommonValue(field, tracks);
-            box.Text = common ?? "";
-            box.PlaceholderText = common == null ? MixedValues : _placeholders.GetValueOrDefault(box);
-            _shown[box] = common ?? "";
-        }
+        _suggestions[0].Pool = info.ArtistSuggestions;
+        _suggestions[1].Pool = info.AlbumSuggestions;
+        _suggestions[2].Pool = info.ArtistSuggestions;
+        _suggestions[3].Pool = info.ComposerSuggestions;
+        _suggestions[4].Pool = info.GenreSuggestions;
 
-        if (vm != null)
-        {
-            var library = vm.Main.Library.Tracks;
-            var artists = TagSuggestionSource.DistinctArtists(library);
-            _suggestions[0].Pool = artists;
-            _suggestions[1].Pool = TagSuggestionSource.DistinctAlbums(library);
-            _suggestions[2].Pool = artists;
-            _suggestions[3].Pool = TagSuggestionSource.DistinctComposers(library);
-            _suggestions[4].Pool = TagSuggestionSource.DistinctGenres(library);
-        }
-
-        // The same two numbers the desktop window shows - see its
-        // UpdateListening for why a play count with no last-played date is
-        // right (an iTunes import brings the count and no date).
-        PlayCountValue.Text  = UniformOrMixed(t => t.TotalPlayCount.ToString(CultureInfo.CurrentCulture));
-        // A count is a number at display size; the words for there being
-        // several are not, and at that size they do not fit the card.
-        PlayCountValue.FontSize = PlayCountValue.Text == MixedValues ? 15 : 22;
-        LastPlayedValue.Text = UniformOrMixed(t => t.LastPlayedAt is { } at
-            ? $"{at.LocalDateTime.ToString("MMM d, yyyy", CultureInfo.CurrentCulture)} {at.LocalDateTime.ToShortTimeString()}"
-            : "—");
-
-        DurationValue.Text   = UniformOrMixed(t => _durationConverter.Convert(t.Duration, typeof(string), null, CultureInfo.CurrentCulture) as string ?? "—");
-        CodecValue.Text      = UniformOrMixed(t => t.Codec ?? "—");
-        BitrateValue.Text    = UniformOrMixed(t => t.Bitrate > 0 ? $"{t.Bitrate} kbps" : "—");
-        SampleRateValue.Text = UniformOrMixed(t => t.SampleRate > 0 ? $"{t.SampleRate / 1000.0:0.###} kHz" : "—");
-        ChannelsValue.Text   = UniformOrMixed(t => t.Channels switch { 1 => "Mono", 2 => "Stereo", > 2 => $"{t.Channels} channels", _ => "—" });
-        BitDepthValue.Text   = UniformOrMixed(t => t.BitsPerSample > 0 ? $"{t.BitsPerSample}-bit" : "—");
-
-        // A song that lives on the paired server has no file here to name, so
-        // it names the server instead, as the desktop window does.
-        var serverName = vm?.Main.PairedServerSourceName(tracks);
-        FileLabel.Text = serverName != null ? "Source" : "File";
-        PathValue.Text = serverName ?? UniformOrMixed(t => t.Path ?? "—");
-        DateAddedValue.Text = UniformOrMixed(t => t.DateAdded.LocalDateTime.ToString("MMM d, yyyy"));
-
-        GenreMenuButton.IsVisible = editable && vm != null
-            && TagSuggestionSource.DistinctGenres(vm.Main.Library.Tracks).Count > 0;
+        GenreMenuButton.IsVisible = info.IsEditable && info.GenreSuggestions.Count > 0;
 
         // Only where a cover can be written: a file on this phone, or - for a
         // song of the paired server's - an admin's right to have the server
@@ -301,9 +213,9 @@ public partial class TrackInfoView : UserControl
         if (_track is not { } track)
             return;
 
-        var album = FirstNonBlank(AlbumBox.Text, track.Album);
-        var artist = FirstNonBlank(AlbumArtistBox.Text, ArtistBox.Text, track.EffectiveAlbumArtist);
-        var title = FirstNonBlank(TitleBox.Text, track.Title);
+        var album = FirstNonBlank(_info?.Album.Text, track.Album);
+        var artist = FirstNonBlank(_info?.AlbumArtists.Text, _info?.Artists.Text, track.EffectiveAlbumArtist);
+        var title = FirstNonBlank(_info?.Title.Text, track.Title);
 
         _findArt?.Cancel();
         var find = _findArt = new CancellationTokenSource();
@@ -387,7 +299,7 @@ public partial class TrackInfoView : UserControl
             var position = found.Count > 1 ? $" \u00b7 {index + 1} of {found.Count}" : "";
             viewer.ShowPicture(picture.Bitmap,
                 string.IsNullOrEmpty(candidate.Artist) ? candidate.Album : $"{candidate.Album} \u2014 {candidate.Artist}",
-                Resolution(picture.Size) + position);
+                TrackInfoViewModel.Resolution(picture.Size) + position);
         }
 
         viewer.NextRequested += async (_, _) =>
@@ -466,12 +378,9 @@ public partial class TrackInfoView : UserControl
 
         ArtView.AlbumArt = bitmap;
         _artBytes = bytes;
-        ArtResolution.Text = size is { } pixels ? Resolution(pixels) : "";
+        ArtResolution.Text = size is { } pixels ? TrackInfoViewModel.Resolution(pixels) : "";
         ArtResolution.IsVisible = size is not null;
     }
-
-    private static string Resolution(PixelSize size) =>
-        $"{size.Width.ToString(CultureInfo.CurrentCulture)} \u00d7 {size.Height.ToString(CultureInfo.CurrentCulture)}";
 
     // A picture for the full screen: its own size, or 2048 wide where it is
     // wider - sharp on any phone, without holding a 3000-pixel decode.
@@ -539,7 +448,7 @@ public partial class TrackInfoView : UserControl
             picture.Bitmap.Dispose();
             return;
         }
-        viewer.ShowPicture(picture.Bitmap, Resolution(picture.Size));
+        viewer.ShowPicture(picture.Bitmap, TrackInfoViewModel.Resolution(picture.Size));
     }
 
     private ArtworkViewer OpenArtwork(bool offersChoice)
@@ -559,18 +468,16 @@ public partial class TrackInfoView : UserControl
 
     // ── Genre ──────────────────────────────────────────────────────────────
 
-    // Built on each open rather than once: a genre typed into another song a
-    // minute ago belongs in the list now.
     private void GenreMenu_Click(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is not MobileMainViewModel vm)
+        if (_info is not { } info)
             return;
 
         var flyout = new MenuFlyout { Placement = PlacementMode.BottomEdgeAlignedRight };
-        foreach (var genre in TagSuggestionSource.DistinctGenres(vm.Main.Library.Tracks))
+        foreach (var genre in info.GenreSuggestions)
         {
             var item = new MenuItem { Header = genre };
-            item.Click += (_, _) => GenreBox.Text = genre;
+            item.Click += (_, _) => info.Genre.Text = genre;
             flyout.Items.Add(item);
         }
 
@@ -582,48 +489,21 @@ public partial class TrackInfoView : UserControl
         (DataContext as MobileMainViewModel)?.CloseSheetCommand.Execute(null);
     }
 
-    private async void Save_Click(object? sender, RoutedEventArgs e)
+    private void Save_Click(object? sender, RoutedEventArgs e)
     {
-        await SaveChanges();
+        _info?.Save();
         (DataContext as MobileMainViewModel)?.CloseSheetCommand.Execute(null);
     }
 
-    private async void Previous_Click(object? sender, RoutedEventArgs e) => await Step(-1);
-    private async void Next_Click(object? sender, RoutedEventArgs e) => await Step(+1);
+    private void Previous_Click(object? sender, RoutedEventArgs e) => Step(-1);
+    private void Next_Click(object? sender, RoutedEventArgs e) => Step(+1);
 
     // Saved before moving on, as the desktop window's Prev/Next do: stepping
     // to the next song is not leaving, so what was typed for this one is kept.
-    private async Task Step(int delta)
+    private void Step(int delta)
     {
-        await SaveChanges();
+        _info?.Save();
         (DataContext as MobileMainViewModel)?.StepTrackInfo(delta);
-    }
-
-    // The boxes whose text changed since the sheet opened, applied to every
-    // song this phone may edit - a song of its own, or one of a server it
-    // administers (MainViewModel.CanEditTagsOf) - file first, by the same
-    // code the desktop window saves with (TrackTagEdits). A song this phone
-    // only streams is edited on the song and the edit sent up.
-    private Task SaveChanges()
-    {
-        if (_tracks.Count == 0 || DataContext is not MobileMainViewModel vm)
-            return Task.CompletedTask;
-
-        var edits = _fields
-            .Where(f => (f.Box.Text ?? "") != _shown.GetValueOrDefault(f.Box, ""))
-            .Select(f => (f.Field, f.Box.Text ?? ""))
-            .ToList();
-        if (edits.Count == 0)
-            return Task.CompletedTask;
-
-        var edited = TrackTagEdits.Apply(_tracks, edits, vm.Main.CanEditTagsOf, _logger);
-
-        // NotifyTracksChanged, not UpdateTracks(Library.Tracks) - see
-        // MainViewModel.SyncITunesPlayCountAsync's comment on why passing
-        // Tracks back into UpdateTracks as a "fresh scan" silently doubles
-        // every placeholder track. Persists just these rows.
-        vm.Main.Library.NotifyTracksChanged(edited, TrackChange.Tags);
-        return Task.CompletedTask;
     }
 
     // The library's own spellings under a box, as it is typed in: names
