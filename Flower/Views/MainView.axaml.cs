@@ -1094,7 +1094,7 @@ public partial class MainView : UserControl
         var groups = ActionMenus.ForSongs(
             vm.MenuFactsFor(tracks, LibraryRemovalDialog.Service),
             canRemoveFromQueue: vm.IsShowingQueue && MusicList.SelectedRows.Any(vm.Queue.CanRemove),
-            canLocateFiles: true);
+            canLocateFiles: PlatformShell.IsAvailable);
         PlatformContextMenu.Open(DesktopActionMenu.Build(groups, RunTrackListAction, tracks, vm), MusicList);
     }
 
@@ -1735,7 +1735,7 @@ public partial class MainView : UserControl
     public void LocateSelectedFile()
     {
         if (SelectedSongs() is [var first, ..])
-            FileLocator.Reveal(first.Path);
+            PlatformShell.Reveal(first.Path);
     }
 
     public void DownloadSelectedSongs() => StartDownload(SelectedSongs());
@@ -1999,7 +1999,7 @@ public partial class MainView : UserControl
     {
         if (MusicList.SelectedTrack is not Track track)
             return;
-        FileLocator.Reveal(track.Path);
+        PlatformShell.Reveal(track.Path);
     }
 
     // ── Sidebar ───────────────────────────────────────────────────────────────

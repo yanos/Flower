@@ -2,11 +2,9 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
-using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
@@ -1205,7 +1203,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             var client = CreateServerAdminClient(http, device);
 
             var pairing = await client.IssuePairingCodeAsync(grantsAdmin: true);
-            OpenUrlInBrowser(pairing.BrowserUrl);
+            if (!PlatformShell.OpenUrl(pairing.BrowserUrl))
+                ServerSettingsError = "Could not open a browser.";
         }
         catch (Exception ex)
         {
@@ -1216,19 +1215,6 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         {
             IsOpeningServerSettings = false;
         }
-    }
-
-    // Same per-OS launch shape as OpenAppDataLocation below, against a URL rather
-    // than a folder. UseShellExecute is what makes a non-Windows Process.Start
-    // hand a URL to the desktop's default handler at all.
-    private static void OpenUrlInBrowser(string url)
-    {
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-            Process.Start(new ProcessStartInfo { FileName = "open", ArgumentList = { url } });
-        else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
-        else
-            Process.Start(new ProcessStartInfo { FileName = "xdg-open", ArgumentList = { url } });
     }
 
 
@@ -2472,12 +2458,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     {
         var dir = Path.GetDirectoryName(LibraryStore.StorePath)!;
         Directory.CreateDirectory(dir);
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-            Process.Start(new ProcessStartInfo { FileName = "open", ArgumentList = { dir } });
-        else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            Process.Start(new ProcessStartInfo { FileName = "explorer.exe", ArgumentList = { dir } });
-        else
-            Process.Start(new ProcessStartInfo { FileName = "xdg-open", ArgumentList = { dir } });
+        PlatformShell.OpenFolder(dir);
     }
 
     private async Task RebuildDatabaseAsync()

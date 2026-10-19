@@ -145,14 +145,14 @@
                   Margin="0,20,0,0"
                   HorizontalAlignment="Left"
                   Click="OpenAppDataLocationButton_Click"
-                  IsVisible="{Binding Capabilities.RevealAppDataLocation}"/>
+                  IsVisible="{Binding Capabilities.RevealInFileManager}"/>
 
           <TextBlock Text="Data directory"
                      FontWeight="SemiBold" Margin="0,20,0,4"
-                     IsVisible="{Binding !Capabilities.RevealAppDataLocation}"/>
+                     IsVisible="{Binding !Capabilities.RevealInFileManager}"/>
           <SelectableTextBlock Text="{Binding DataDirectory}"
                                FontSize="11" Opacity="0.7" TextWrapping="Wrap"
-                               IsVisible="{Binding !Capabilities.RevealAppDataLocation}"/>
+                               IsVisible="{Binding !Capabilities.RevealInFileManager}"/>
 
           <!-- Read off against what a paired device shows as "Verified as" on
                that server's page. The device knows what it pinned; only the
@@ -393,6 +393,7 @@
                         <Button Grid.Column="2"
                                 Width="26" Height="26" Padding="4"
                                 Click="RevealFolderButton_Click"
+                                IsVisible="{Binding #PathsList.((vm:SettingsViewModel)DataContext).Capabilities.RevealInFileManager}"
                                 ToolTip.Tip="Reveal in File Manager">
                           <materialIcons:MaterialIcon Kind="FolderOpen" Width="16" Height="16"/>
                         </Button>

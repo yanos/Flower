@@ -925,7 +925,7 @@ sort of thing that stops being harmless the moment a third role appears.
 (`_armedDrainedHandler`, `_armedFaultedHandler`), and `ClearArmedSlot`, the
 one way out of the armed slot, promotion included, unsubscribes them.
 
-### E7. `Process.Start` is called directly, and two platforms cannot run it
+### E7. `Process.Start` is called directly, and two platforms cannot run it — **fixed (October 2026)**
 
 `Flower/Views/MainView.axaml.cs` (`LocateFile`),
 `Flower/ViewModels/MainViewModel.cs` (`OpenDatabaseLocation`)
@@ -942,6 +942,33 @@ Inherited from `CROSS-PLATFORM-PLAN.md` item #2, the last unbuilt item in that
 document, which is why the document is gone and this is here. Its item #8
 (vendor the LibVLC natives for macOS) went with it as void rather than open —
 there is no LibVLC to vendor.
+
+**Fixed (October 2026)**, as one class rather than a service per platform.
+By then there were four sites, not two — `FileLocator.Reveal` (the song menus'
+Locate File), `OpenAppDataLocation`, the server-settings button's
+`OpenUrlInBrowser`, and the reveal button beside each library folder in
+`SettingsPanel` — and all four go through `PlatformShell` now: `Reveal`,
+`OpenFolder`, `OpenUrl`, and `IsAvailable`, true on macOS, Windows and Linux
+and false everywhere else, with no else-as-Linux branch left for a phone to
+fall into. A registered `IPlatformShell` would have had the two desktop heads
+register identical code and the other three register nothing, so it is a
+static, as `PlatformShortcuts` is. A launch that fails (a Linux desktop
+without `xdg-open`) returns false instead of throwing out of a click handler,
+and the server-settings button says so in `ServerSettingsError`.
+
+The phones turned out to be covered already — the phone shell's song menu
+never offered Locate File, and neither `SettingsPanel` nor the desktop's
+Server Settings button is reachable there. What the fix found instead was the
+same mistake on the two heads that *are* reachable: the browser tab offered
+Locate File on every song and a reveal button on every library folder, both
+doing nothing (the folder button by an `OperatingSystem.IsBrowser()` early
+return); and the desktop app, showing a *server's* settings
+(`RemoteServerSettingsBackend`), offered that reveal button too, which opened
+a path on the server's disk on the desktop's. The song menus now pass
+`PlatformShell.IsAvailable` as `canLocateFiles`, and the folder button is
+bound to the capability that already hid "Open App Data Location" for a
+remote backend, renamed `SettingsCapabilities.RevealInFileManager` since it
+now covers both, and set from `PlatformShell.IsAvailable` on the local one.
 
 ### E8. Four loose ends in the album grid
 

@@ -35,7 +35,7 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
         ITunesMasterSwitch = false,
         PairedServerPicker = true,
         TrustedDevices = false,
-        RevealAppDataLocation = true,
+        RevealInFileManager = PlatformShell.IsAvailable,
         RebuildDatabase = true,
         // The app has its own Log window (View > Log...), showing this device's
         // live log through the very same viewer this tab would - a second copy

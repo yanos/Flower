@@ -782,7 +782,7 @@ Checked against the code, not taken from the September document's own marks.
 | E3 Shell view models too large | reduced | October 2026: search, pairing, the artist page and the browser's pairing screen moved out; 2654 and 2606 lines |
 | E5 `GCHandle` leak on a second `Start` | fixed | October 2026 |
 | E6 Armed handlers kept after promotion | fixed | October 2026 |
-| E7 `Process.Start` on mobile | **open** | three sites now: `MainViewModel.cs:1411, 2764`, `SettingsPanel.axaml.cs:177` |
+| E7 `Process.Start` on mobile | fixed | October 2026: all four sites go through `PlatformShell`, and the browser's and a remote server's dead reveal buttons are hidden |
 | G2 `IAudioManager` partial on WASM | fixed | October 2026: `IAudioManager.Features`, and the equalizer is not offered without it |
 | E8, G1 | not re-checked in depth | |
 

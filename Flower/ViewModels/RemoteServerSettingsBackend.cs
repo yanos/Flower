@@ -38,7 +38,7 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
         ITunesMasterSwitch = true,
         PairedServerPicker = false,
         TrustedDevices = true,
-        RevealAppDataLocation = false,
+        RevealInFileManager = false,
         RebuildDatabase = false,
     };
 

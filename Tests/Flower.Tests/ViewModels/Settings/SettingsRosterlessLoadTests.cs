@@ -28,7 +28,7 @@ public class SettingsRosterlessLoadTests
             ThemePicker = true,
             ITunesIntegration = true,
             PairedServerPicker = true,
-            RevealAppDataLocation = true,
+            RevealInFileManager = true,
             RebuildDatabase = true,
             TrustedDevices = false,
             PairingCodes = false,

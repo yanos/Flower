@@ -143,7 +143,7 @@ public partial class AlbumTrackList : UserControl
         var groups = ActionMenus.ForSongs(
             vm.MenuFactsFor(selectedTracks, LibraryRemovalDialog.Service),
             canRemoveFromQueue: false,
-            canLocateFiles: true);
+            canLocateFiles: PlatformShell.IsAvailable);
 
         return DesktopActionMenu.Build(groups, async action =>
         {
@@ -159,7 +159,7 @@ public partial class AlbumTrackList : UserControl
                     OpenTrackInfo(selectedTracks, vm);
                     break;
                 case MenuAction.LocateFile:
-                    FileLocator.Reveal(clickedTrack.Path);
+                    PlatformShell.Reveal(clickedTrack.Path);
                     break;
                 case MenuAction.Download:
                     _ = vm.Downloads.DownloadAllAsync(selectedTracks.Where(vm.Availability.IsDownloadable).ToList());

@@ -50,9 +50,11 @@ public sealed record SettingsCapabilities
     // reason: a client accepts no incoming connections, so it has no roster.
     public bool TrustedDevices { get; init; }
 
-    // "Open App Data Location" - only meaningful when the data directory is on
-    // the machine the UI is running on.
-    public bool RevealAppDataLocation { get; init; }
+    // "Open App Data Location", and the reveal button beside each library
+    // folder: only meaningful when those paths are on the machine the UI is
+    // running on, and that machine has a file manager to show them in
+    // (PlatformShell.IsAvailable).
+    public bool RevealInFileManager { get; init; }
 
     // Advertised host, mDNS announcement, LanGuard CIDRs, the public-access
     // switch. Server-only: the app's own equivalents are not

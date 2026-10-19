@@ -1,14 +1,13 @@
 using System;
 using System.ComponentModel;
-using System.Diagnostics;
 using System.Linq;
-using System.Runtime.InteropServices;
 
 using Avalonia.Controls;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 
+using Flower.Services;
 using Flower.ViewModels;
 
 namespace Flower.Views;
@@ -161,24 +160,13 @@ public partial class SettingsPanel : UserControl
             _viewModel.AddLibraryPath(path);
     }
 
-    // Mirrors MainViewModel.OpenAppDataLocation's per-OS reveal-in-file-manager
-    // logic - opens the folder itself rather than selecting it within its parent,
-    // since these are the library folders themselves, not files.
+    // Opens the folder itself rather than selecting it within its parent, since
+    // these are the library folders themselves, not files. Only shown where the
+    // folders are on this machine (SettingsCapabilities.RevealInFileManager).
     private void RevealFolderButton_Click(object? sender, RoutedEventArgs e)
     {
-        // A browser tab cannot open a file manager, and the path it is showing is
-        // very likely on another machine entirely.
-        if (OperatingSystem.IsBrowser())
-            return;
-        if ((sender as Button)?.DataContext is not LibraryPathRow row)
-            return;
-
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-            Process.Start(new ProcessStartInfo { FileName = "open", ArgumentList = { row.Path } });
-        else if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            Process.Start(new ProcessStartInfo { FileName = "explorer.exe", ArgumentList = { row.Path } });
-        else
-            Process.Start(new ProcessStartInfo { FileName = "xdg-open", ArgumentList = { row.Path } });
+        if ((sender as Button)?.DataContext is LibraryPathRow row)
+            PlatformShell.OpenFolder(row.Path);
     }
 
     // The addresses are shown so they can be typed into another device, and a
