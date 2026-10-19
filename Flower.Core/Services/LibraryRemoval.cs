@@ -98,6 +98,7 @@ public static class LibraryRemoval
     {
         var deleted = new List<string>();
         var notDeleted = 0;
+        var rules = PathRules.For(roots);
         foreach (var path in paths)
         {
             if (!library.IsExcludedPath(path))
@@ -109,7 +110,7 @@ public static class LibraryRemoval
                 if (File.Exists(path))
                     File.Delete(path);
                 deleted.Add(path);
-                LibraryFolders.RemoveEmptyFolders(Path.GetDirectoryName(path), LibraryFolders.RootOf(path, roots));
+                LibraryFolders.RemoveEmptyFolders(Path.GetDirectoryName(path), rules.RootOf(path));
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {

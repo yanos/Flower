@@ -355,7 +355,7 @@ public sealed class LibraryIngest
         // one, and asks nothing of anybody else's copy.
         // The picture likewise (Track.ArtEditedAt).
         var now = DateTimeOffset.UtcNow;
-        var before = _library.Tracks.FirstOrDefault(t => string.Equals(t.Path, target, StringComparison.OrdinalIgnoreCase));
+        var before = _library.Tracks.FirstOrDefault(t => _library.PathRules.Equals(t.Path, target));
         DateTimeOffset? edited = before != null && TrackTags.Of(before) != TrackTags.Of(track) ? now : null;
         DateTimeOffset? repainted = hadOld && !TrackArtwork.Same(oldArt, LocalAlbumArtReader.EmbeddedIn(target)) ? now : null;
 
@@ -389,7 +389,8 @@ public sealed class LibraryIngest
             // Under whichever library folder it is in now. A move rearranges a
             // folder; it does not carry a file from one drive to another.
             var roots = _libraryRoots();
-            var root = LibraryFolders.RootOf(from, roots);
+            var rules = PathRules.For(roots);
+            var root = rules.RootOf(from);
             if (ResolveTarget(request.RelativePath, root != null ? [root] : roots, out var target) is { } refusal)
                 return refusal;
 
@@ -403,8 +404,7 @@ public sealed class LibraryIngest
                     // Only a different file is in the way. The same file under
                     // a name that differs in case alone is the move itself, on
                     // a filesystem that does not tell the two names apart.
-                    var sameFile = !OperatingSystem.IsLinux()
-                                   && string.Equals(from, target, StringComparison.OrdinalIgnoreCase);
+                    var sameFile = rules.Equals(from, target);
                     if (!sameFile && File.Exists(target))
                     {
                         if (!_library.IsExcludedPath(target))

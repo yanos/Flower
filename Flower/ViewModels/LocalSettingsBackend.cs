@@ -117,8 +117,9 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
         // yet downloaded to this device - see LibraryDownloadService) - it can't
         // be "under" any local folder, so it just doesn't count, rather than
         // crashing the whole Settings screen open.
+        var paths = ViewModel.Library.PathRules;
         return ViewModel.Library.Tracks.Count(
-            t => t.Path?.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) == true);
+            t => t.Path is { } path && path.StartsWith(prefix, paths.ComparisonFor(path)));
     }
 
     // Capabilities.TrustedDevices is false here, so the panel never renders the

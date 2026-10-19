@@ -957,6 +957,9 @@ public partial class App : Application
                 }
 
                 var stopwatch = Stopwatch.StartNew();
+                // So the scan's paths are matched the way these folders'
+                // filesystems compare names - see PathRules.
+                library.UsePathRules(PathRules.For(Importer.Importer.ScanRoots(appSettings.LibraryPaths)));
                 // Minus anything removed from the library on purpose, before
                 // the queue sees it as well as the library - see
                 // Library.RemoveTracks.

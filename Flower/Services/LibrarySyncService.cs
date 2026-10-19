@@ -400,16 +400,16 @@ public class LibrarySyncService
     // download, which live in different places.
     private void ApplyMoves(IReadOnlyList<(Track Local, string From, string To)> moves)
     {
-        var comparison = OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
         var moved = 0;
         foreach (var (local, from, to) in moves)
         {
             if (local.Path is not { } path)
                 continue;
 
+            // By the rule of the folder this copy is in - see PathRules.
             var suffix = "/" + from;
             var normalized = path.Replace('\\', '/');
-            if (!normalized.EndsWith(suffix, comparison))
+            if (!normalized.EndsWith(suffix, _library.PathRules.ComparisonFor(path)))
                 continue;
 
             var root = path[..^from.Length].TrimEnd('/', '\\');

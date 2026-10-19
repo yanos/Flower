@@ -9,34 +9,6 @@ namespace Flower.Services;
 // everything that writes, moves or deletes a file on the library's behalf.
 public static class LibraryFolders
 {
-    // Case-insensitive off Linux, matching how the importer and
-    // Library.UpdateTracks already compare paths.
-    private static StringComparison PathComparison =>
-        OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
-
-    // Whichever library folder this file is under - the deepest, where one is
-    // inside another - or null when it is under none of them.
-    public static string? RootOf(string path, IEnumerable<string> roots)
-    {
-        string? best = null;
-        foreach (var root in roots)
-        {
-            if (string.IsNullOrWhiteSpace(root))
-                continue;
-
-            var prefix = root.TrimEnd('/', '\\');
-            if (path.Length > prefix.Length
-                && path.StartsWith(prefix, PathComparison)
-                && path[prefix.Length] is '/' or '\\'
-                && (best == null || prefix.Length > best.Length))
-            {
-                best = prefix;
-            }
-        }
-
-        return best;
-    }
-
     // Tidies up after a file has left a folder: the folder goes if that left
     // it empty, then the one above it, and so on up - stopping below the
     // library folder itself, which is the user's and stays however empty.
@@ -50,12 +22,15 @@ public static class LibraryFolders
         if (root == null)
             return;
 
+        // Ignoring case only to keep the walk inside the root: the root came
+        // from this path's own PathRules.RootOf match, or is a prefix of it, so
+        // the two already agree on which folder it is.
         var stop = root.TrimEnd('/', '\\');
         try
         {
             while (folder != null
                    && folder.Length > stop.Length
-                   && folder.StartsWith(stop, PathComparison)
+                   && folder.StartsWith(stop, StringComparison.OrdinalIgnoreCase)
                    && Directory.Exists(folder)
                    && !Directory.EnumerateFileSystemEntries(folder).Any())
             {

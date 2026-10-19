@@ -2832,6 +2832,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             return;
         using var _ = _busy.BeginScope("Rebuilding library…");
         var libraryPaths = _appSettings.LibraryPaths;
+        Library.UsePathRules(PathRules.For(Importer.Importer.ScanRoots(libraryPaths)));
         var freshTracks = Library.WithoutExcluded(await _importer.ImportAsync(libraryPaths));
         _mainPlaylist.ReplaceAll(freshTracks);
         Library.UpdateTracks(freshTracks);

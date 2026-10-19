@@ -9,6 +9,7 @@ using Claunia.PropertyList;
 using Microsoft.Extensions.Logging;
 
 using Flower.Models;
+using Flower.Services;
 
 namespace Flower.Importer
 {
@@ -39,7 +40,6 @@ namespace Flower.Importer
         public List<Track> Import(IEnumerable<string>? libraryPaths = null)
         {
             var tracks = new List<Track>();
-            var seenFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             var paths = ScanRoots(libraryPaths);
             if (paths.Count == 0)
@@ -47,6 +47,11 @@ namespace Flower.Importer
                 _logger.LogInformation("No library folders configured - nothing to scan");
                 return tracks;
             }
+
+            // By each folder's own rule (PathRules). Ignoring case everywhere
+            // took "Song.flac" for "song.flac" on a filesystem where they are
+            // two files, and the second was never seen at all.
+            var seenFiles = new HashSet<string>(PathRules.For(paths));
 
             foreach (var path in paths)
             {

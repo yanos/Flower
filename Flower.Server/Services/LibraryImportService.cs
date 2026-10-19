@@ -70,6 +70,9 @@ public class LibraryImportService(
         // Before the scan rather than after: on a NAS share the scan is minutes,
         // and this is the line an owner wants at the top of a fresh log.
         writeAccess.Check(libraryPaths);
+        // So this scan, and every request after it, matches paths the way
+        // these folders' filesystems compare names - see PathRules.
+        library.UsePathRules(Flower.Services.PathRules.For(Flower.Importer.Importer.ScanRoots(libraryPaths)));
         var imported = await importer.ImportAsync(libraryPaths);
         logger.LogInformation(
             "Importer found {Count} tracks across {PathCount} configured path(s)", imported.Count, libraryPaths.Count);

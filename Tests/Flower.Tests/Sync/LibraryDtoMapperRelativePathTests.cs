@@ -18,7 +18,7 @@ public class LibraryDtoMapperRelativePathTests
     {
         var relative = LibraryDtoMapper.RelativePathOf(
             At("/srv/music/Angine de Poitrine/Vol.II/01 Fabienk.mp3"),
-            ["/srv/music"]);
+            PathRules.For(["/srv/music"]));
 
         Assert.Equal("Angine de Poitrine/Vol.II/01 Fabienk.mp3", relative);
     }
@@ -28,7 +28,7 @@ public class LibraryDtoMapperRelativePathTests
     {
         var relative = LibraryDtoMapper.RelativePathOf(
             At("/srv/music/Artist/Album/Song.mp3"),
-            ["/srv/music/"]);
+            PathRules.For(["/srv/music/"]));
 
         Assert.Equal("Artist/Album/Song.mp3", relative);
     }
@@ -40,7 +40,7 @@ public class LibraryDtoMapperRelativePathTests
     {
         var relative = LibraryDtoMapper.RelativePathOf(
             At("/srv/music/lossless/Artist/Song.flac"),
-            ["/srv/music", "/srv/music/lossless"]);
+            PathRules.For(["/srv/music", "/srv/music/lossless"]));
 
         Assert.Equal("Artist/Song.flac", relative);
     }
@@ -53,7 +53,7 @@ public class LibraryDtoMapperRelativePathTests
     {
         var relative = LibraryDtoMapper.RelativePathOf(
             At("/Users/someone/Music/Media.localized/Music/Artist/Album/01 Song.mp3"),
-            ["/srv/music"]);
+            PathRules.For(["/srv/music"]));
 
         Assert.Equal("01 Song.mp3", relative);
     }
@@ -68,7 +68,7 @@ public class LibraryDtoMapperRelativePathTests
     {
         var relative = LibraryDtoMapper.RelativePathOf(
             At(@"D:\Music\Angine de Poitrine\Vol.II\01 Fabienk.mp3"),
-            [@"D:\Music\"]);
+            PathRules.For([@"D:\Music\"]));
 
         Assert.Equal("Angine de Poitrine/Vol.II/01 Fabienk.mp3", relative);
     }
@@ -76,7 +76,7 @@ public class LibraryDtoMapperRelativePathTests
     [Fact]
     public void A_placeholder_has_no_file_and_so_no_relative_path()
     {
-        Assert.Null(LibraryDtoMapper.RelativePathOf(new Track { Title = "Fabienk" }, ["/srv/music"]));
+        Assert.Null(LibraryDtoMapper.RelativePathOf(new Track { Title = "Fabienk" }, PathRules.For(["/srv/music"])));
     }
 
     [Fact]

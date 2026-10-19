@@ -279,7 +279,7 @@ public sealed class LibraryFolderWatcher : IDisposable
         var known = _library.Tracks
             .Where(t => t.Path != null)
             .Select(t => t.Path!)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            .ToHashSet(_library.PathRules);
 
         var arrived = new List<string>();
         var vanished = new List<string>();
@@ -293,7 +293,7 @@ public sealed class LibraryFolderWatcher : IDisposable
                 var onDisk = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
                     .Where(Importer.Importer.IsImportable)
                     .Where(f => !Importer.Importer.IsUnderHiddenFolder(root, f))
-                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    .ToHashSet(_library.PathRules);
                 arrived.AddRange(onDisk.Where(f => !known.Contains(f) && !_library.IsExcludedPath(f)));
 
                 if (onDisk.Count > 0)
@@ -330,7 +330,7 @@ public sealed class LibraryFolderWatcher : IDisposable
     private int AddFiles(IEnumerable<string> files)
     {
         var added = 0;
-        foreach (var file in files.Distinct(StringComparer.OrdinalIgnoreCase))
+        foreach (var file in files.Distinct(_library.PathRules))
         {
             // A song removed from the library on purpose stays out, whatever
             // happens to its file - see Library.RemoveTracks.

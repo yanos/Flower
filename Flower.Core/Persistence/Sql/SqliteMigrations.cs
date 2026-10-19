@@ -39,7 +39,25 @@ namespace Flower.Persistence.Sql
 
         // Steps after the baseline: index 0 brings a database to
         // BaselineVersion + 1, and so on. Only ever appended.
-        private static readonly IReadOnlyList<string> Steps = [];
+        private static readonly IReadOnlyList<string> Steps =
+        [
+            // 12: excluded_paths compared paths ignoring case, which on a
+            // filesystem that respects it made "Song.flac" and "song.flac" one
+            // row - removing one from the library excluded both. Library keys
+            // them by PathRules now, and the table holds what it is given. A
+            // collation cannot be altered in place, so the table is rebuilt; on
+            // a database the baseline created without NOCASE this rebuilds an
+            // identical one.
+            """
+            CREATE TABLE excluded_paths_exact (
+                path        TEXT    NOT NULL PRIMARY KEY,
+                excluded_at INTEGER NOT NULL
+            );
+            INSERT INTO excluded_paths_exact (path, excluded_at) SELECT path, excluded_at FROM excluded_paths;
+            DROP TABLE excluded_paths;
+            ALTER TABLE excluded_paths_exact RENAME TO excluded_paths;
+            """,
+        ];
 
         public static int LatestVersion => BaselineVersion + Steps.Count;
 

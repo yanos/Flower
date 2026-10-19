@@ -336,10 +336,11 @@ public sealed class SimulatedFlowerServer : IDisposable
             return;
         }
 
+        var paths = MusicFolder == null ? null : PathRules.For([MusicFolder]);
         var songs = Library.Snapshot.Albums
             .SelectMany(album => album.Tracks)
             .Where(track => track.Path != null)
-            .Select(track => LibraryDtoMapper.ToTrackDto(track, Fingerprint, MusicFolder == null ? null : [MusicFolder]))
+            .Select(track => LibraryDtoMapper.ToTrackDto(track, Fingerprint, paths))
             .ToList();
         var removed = Library.RemovedTracks.Where(r => r.Deliberate).Select(r => r.Track.Id.ToKey()).ToList();
         await WriteJsonAsync(context, new LibrarySyncManifestDto(Fingerprint, songs, removed));

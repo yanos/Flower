@@ -135,10 +135,38 @@ namespace Flower.Models
         private readonly IPlaylistStore? _playlistStore;
 
         // Files removed from the library on purpose and kept on disk, which no
-        // rescan may bring back - see RemoveTracks. Case-insensitive for the
-        // same reason UpdateTracks' path matching is.
+        // rescan may bring back - see RemoveTracks. Keyed by PathRules, like
+        // every other path here, and so rebuilt when the rules change; guarded
+        // by _excludedGate rather than by itself for that reason. The value
+        // carries the path as it was stored, because the store compares
+        // exactly: a path that matches only by ignoring case has to be
+        // forgotten under the spelling the store holds.
         private readonly IExcludedPathStore? _excludedPathStore;
-        private readonly Dictionary<string, DateTimeOffset> _excludedPaths = new(StringComparer.OrdinalIgnoreCase);
+        private Dictionary<string, ExcludedPath> _excludedPaths = new(PathRules.Default);
+        private readonly object _excludedGate = new();
+
+        // Whether two paths name the same file, by the rule of the library
+        // folder each is under - see PathRules. The platform's rule until a
+        // host that knows its folders says otherwise (UsePathRules), which is
+        // what a test or a library with no folders gets.
+        public PathRules PathRules { get; private set; } = PathRules.Default;
+
+        // Called by each host before it scans, with the folders it is about to
+        // scan, so this library compares paths the way their filesystems do.
+        public void UsePathRules(PathRules rules)
+        {
+            lock (_lock)
+            {
+                lock (_excludedGate)
+                    _excludedPaths = new Dictionary<string, ExcludedPath>(_excludedPaths, rules);
+
+                PathRules = rules;
+
+                // The path index is keyed by the rules; nothing about the
+                // catalog changed, so the change token stays where it is.
+                Interlocked.Increment(ref _indexGeneration);
+            }
+        }
 
         // Songs that have left the library, kept so that one coming back is
         // the song it was - see RemovedTracks. Keyed by the id the track had,
@@ -357,7 +385,7 @@ namespace Flower.Models
             try
             {
                 foreach (var excluded in excludedPathStore?.LoadExcludedPaths() ?? [])
-                    _excludedPaths[excluded.Path] = excluded.ExcludedAt;
+                    _excludedPaths[excluded.Path] = excluded;
             }
             catch (Exception ex)
             {
@@ -414,8 +442,8 @@ namespace Flower.Models
                 beforeCount = Tracks.Count;
                 var previousByPath = Tracks
                     .Where(t => t.Path != null)
-                    .GroupBy(t => t.Path!, StringComparer.OrdinalIgnoreCase)
-                    .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+                    .GroupBy(t => t.Path!, PathRules)
+                    .ToDictionary(g => g.Key, g => g.First(), PathRules);
 
                 // Every path this scan turned up. Needed twice: to decide which
                 // previously-known tracks are actually missing (just below),
@@ -423,7 +451,7 @@ namespace Flower.Models
                 // carriedForwardSyncTracks further down).
                 var freshPaths = new HashSet<string>(
                     tracks.Where(t => t.Path != null).Select(t => t.Path!),
-                    StringComparer.OrdinalIgnoreCase);
+                    PathRules);
 
                 // Fallback for a track whose exact Path string no longer
                 // matches anything in this fresh scan - keyed by SyncKey
@@ -605,7 +633,7 @@ namespace Flower.Models
         // UpdateTracks' own filtering cannot reach.
         public List<Track> WithoutExcluded(List<Track> tracks)
         {
-            lock (_excludedPaths)
+            lock (_excludedGate)
             {
                 return _excludedPaths.Count == 0
                     ? tracks
@@ -619,10 +647,9 @@ namespace Flower.Models
         {
             get
             {
-                lock (_excludedPaths)
+                lock (_excludedGate)
                 {
-                    return _excludedPaths
-                        .Select(kv => new ExcludedPath(kv.Key, kv.Value))
+                    return _excludedPaths.Values
                         .OrderByDescending(e => e.ExcludedAt)
                         .ToList();
                 }
@@ -648,16 +675,21 @@ namespace Flower.Models
 
         public bool IsExcludedPath(string path)
         {
-            lock (_excludedPaths)
+            lock (_excludedGate)
                 return _excludedPaths.ContainsKey(path);
         }
 
         private int TakeOffExcludedList(IReadOnlyCollection<string> paths)
         {
             List<string> taken;
-            lock (_excludedPaths)
+            lock (_excludedGate)
             {
-                taken = paths.Where(p => _excludedPaths.Remove(p)).ToList();
+                taken = [];
+                foreach (var path in paths)
+                {
+                    if (_excludedPaths.Remove(path, out var stored))
+                        taken.Add(stored.Path);
+                }
             }
 
             if (taken.Count == 0)
@@ -687,17 +719,24 @@ namespace Flower.Models
                 return;
 
             var now = DateTimeOffset.UtcNow;
-            lock (_excludedPaths)
+            var stored = new List<string>(paths.Count);
+            lock (_excludedGate)
             {
+                // Under the spelling already on the list, where there is one,
+                // so the store holds one row for one file.
                 foreach (var path in paths)
-                    _excludedPaths[path] = now;
+                {
+                    var spelling = _excludedPaths.TryGetValue(path, out var existing) ? existing.Path : path;
+                    _excludedPaths[path] = new ExcludedPath(spelling, now);
+                    stored.Add(spelling);
+                }
             }
 
             if (_excludedPathStore is { } exclusions)
             {
                 try
                 {
-                    exclusions.AddExcludedPaths(paths);
+                    exclusions.AddExcludedPaths(stored);
                 }
                 catch (Exception ex)
                 {
@@ -887,7 +926,7 @@ namespace Flower.Models
             foreach (var present in alsoPresent)
                 taken.Add(present.Id);
 
-            var index = new RemovedTrackIndex(_removed.Values);
+            var index = new RemovedTrackIndex(_removed.Values, PathRules);
             foreach (var track in tracks)
             {
                 var removed = index.ClaimByPath(track) ?? index.ClaimByTags(track);
@@ -914,7 +953,7 @@ namespace Flower.Models
                 return revived;
 
             var taken = new HashSet<Guid>(merged.Select(t => t.Id));
-            var index = new RemovedTrackIndex(_removed.Values);
+            var index = new RemovedTrackIndex(_removed.Values, PathRules);
             var backInFavour = new List<string>();
             foreach (var placeholder in placeholders)
             {
@@ -983,13 +1022,14 @@ namespace Flower.Models
         // several qualify, and each is claimed once.
         private sealed class RemovedTrackIndex
         {
-            private readonly Dictionary<string, RemovedTrack> _byPath = new(StringComparer.OrdinalIgnoreCase);
+            private readonly Dictionary<string, RemovedTrack> _byPath;
             private readonly Dictionary<string, List<RemovedTrack>> _byKey = new();
             private readonly Dictionary<(string, string), RemovedTrack> _byOrigin = new();
             private readonly HashSet<Guid> _claimed = new();
 
-            public RemovedTrackIndex(IEnumerable<RemovedTrack> removed)
+            public RemovedTrackIndex(IEnumerable<RemovedTrack> removed, PathRules paths)
             {
+                _byPath = new Dictionary<string, RemovedTrack>(paths);
                 foreach (var entry in removed.OrderByDescending(r => r.RemovedAt))
                 {
                     var track = entry.Track;
@@ -1063,7 +1103,7 @@ namespace Flower.Models
             {
                 var replaced = track.Path == null
                     ? null
-                    : Tracks.FirstOrDefault(t => string.Equals(t.Path, track.Path, StringComparison.OrdinalIgnoreCase));
+                    : Tracks.FirstOrDefault(t => PathRules.Equals(t.Path, track.Path));
 
                 List<Guid> revived = [];
                 if (replaced != null)
@@ -2061,7 +2101,7 @@ namespace Flower.Models
         // it does, incrementing a consistent one of them beats throwing.
         private Dictionary<string, Track> BuildPathIndex()
         {
-            var index = new Dictionary<string, Track>(Tracks.Count, StringComparer.OrdinalIgnoreCase);
+            var index = new Dictionary<string, Track>(Tracks.Count, PathRules);
             foreach (var track in Tracks)
             {
                 if (track.Path != null)

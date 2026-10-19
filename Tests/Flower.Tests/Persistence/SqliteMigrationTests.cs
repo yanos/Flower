@@ -67,7 +67,6 @@ public class SqliteMigrationTests : IDisposable
         SqliteMigrations.Apply(connection);
 
         Assert.Equal(SqliteMigrations.LatestVersion, SqliteMigrations.ReadVersion(connection));
-        Assert.Equal(SqliteMigrations.BaselineVersion, SqliteMigrations.ReadVersion(connection));
         Assert.Contains("origin_album_art_id", ColumnsOf(connection, "tracks"));
         Assert.Contains("listener", ColumnsOf(connection, "playlists"));
         Assert.NotEmpty(ColumnsOf(connection, "removed_tracks"));
@@ -138,6 +137,31 @@ public class SqliteMigrationTests : IDisposable
         using var read = connection.CreateCommand();
         read.CommandText = "SELECT album_artist FROM tracks WHERE id = 't1';";
         Assert.Equal(string.Empty, read.ExecuteScalar());
+    }
+
+    // Step 12. A database the baseline built at version 11 keyed excluded_paths
+    // ignoring case, so on a filesystem where "Song.flac" and "song.flac" are
+    // two files, removing one excluded both. The rows it held are kept.
+    [Fact]
+    public void Excluded_paths_stop_ignoring_case_and_keep_what_they_held()
+    {
+        using var connection = OpenNew("nocase.db");
+        SqliteMigrations.Apply(connection);
+        Execute(connection, """
+            DROP TABLE excluded_paths;
+            CREATE TABLE excluded_paths (path TEXT NOT NULL PRIMARY KEY COLLATE NOCASE, excluded_at INTEGER NOT NULL);
+            INSERT INTO excluded_paths (path, excluded_at) VALUES ('/music/Song.flac', 5);
+            PRAGMA user_version = 11;
+            """);
+
+        SqliteMigrations.Apply(connection);
+
+        Execute(connection, "INSERT INTO excluded_paths (path, excluded_at) VALUES ('/music/song.flac', 6);");
+        using var count = connection.CreateCommand();
+        count.CommandText = "SELECT COUNT(*) FROM excluded_paths WHERE path = '/music/Song.flac' AND excluded_at = 5;";
+        Assert.Equal(1L, count.ExecuteScalar());
+        count.CommandText = "SELECT COUNT(*) FROM excluded_paths;";
+        Assert.Equal(2L, count.ExecuteScalar());
     }
 
     // Applying twice is what every startup after the first one does.

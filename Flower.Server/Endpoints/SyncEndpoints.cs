@@ -343,7 +343,7 @@ public static class SyncEndpoints
     // guest's tab, whose whole library this is, shows its own plays.
     private static IResult GetLibrary(
         HttpContext context, Library library, DeviceSigningKey signingKey, LibraryManifestCache cache,
-        IOptionsMonitor<FlowerServerOptions> options, TrustedPeerStore trustedPeers)
+        TrustedPeerStore trustedPeers)
     {
         var token = library.ChangeToken;
         context.Response.Headers.ETag = token;
@@ -365,7 +365,7 @@ public static class SyncEndpoints
                 // Under this server's own fingerprint, so a client merging
                 // this manifest files the counts as *this device's* rather
                 // than its own - see Track.RemotePlayCounts.
-                .Select(track => LibraryDtoMapper.ToTrackDto(track, signingKey.Fingerprint, options.CurrentValue.LibraryPaths))
+                .Select(track => LibraryDtoMapper.ToTrackDto(track, signingKey.Fingerprint, library.PathRules))
                 .Select(song => isOwner ? song : ForGuest(song, caller))
                 .ToList();
             // What was removed on purpose, so a device holding its own copy of

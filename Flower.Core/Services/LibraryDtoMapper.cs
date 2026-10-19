@@ -50,12 +50,11 @@ public static class LibraryDtoMapper
     // counts, which is what they did before and what a third-party Subsonic
     // client expects; a Flower client pulls its catalog through the bulk route,
     // not through those.
-    // libraryRoots is the server's configured LibraryPaths
-    // (FlowerServerOptions.LibraryPaths, re-read per request the same way the
-    // rescan re-reads it) - what RelativePath below is relative *to*. Optional
-    // only so a test can map a track without a folder configuration; every
-    // caller in the server passes it.
-    public static TrackDto ToTrackDto(Track track, string? selfFingerprint = null, IReadOnlyList<string>? libraryRoots = null)
+    // paths is the server library's own PathRules (Library.PathRules), which
+    // knows the folders it scans - what RelativePath below is relative *to*.
+    // Optional only so a test can map a track without a folder configuration;
+    // every caller in the server passes it.
+    public static TrackDto ToTrackDto(Track track, string? selfFingerprint = null, PathRules? paths = null)
     {
         var albumArtist = track.EffectiveAlbumArtist;
         var suffix = SuffixOf(track);
@@ -121,7 +120,7 @@ public static class LibraryDtoMapper
             ChannelCount: track.Channels > 0 ? track.Channels : null,
             BitDepth: track.BitsPerSample > 0 ? track.BitsPerSample : null,
             Codec: track.Codec,
-            RelativePath: RelativePathOf(track, libraryRoots),
+            RelativePath: RelativePathOf(track, paths),
             // See TrackDto.SortTitle/RememberPlaybackPosition. These reach
             // another device only here: they are not in the file, so a client
             // that holds the catalog but not the bytes has no other way to
@@ -156,43 +155,14 @@ public static class LibraryDtoMapper
     // or one adopted from Music.app - keeps its bare file name, which is still
     // better than the receiver's own track id and still says nothing about
     // where the file sits.
-    public static string? RelativePathOf(Track track, IReadOnlyList<string>? libraryRoots)
+    public static string? RelativePathOf(Track track, PathRules? paths)
     {
         if (track.Path is not { } path)
             return null;
 
-        var bestLength = 0;
-        foreach (var root in libraryRoots ?? [])
-        {
-            if (string.IsNullOrWhiteSpace(root))
-                continue;
-
-            var normalized = root.TrimEnd(Separators);
-            if (normalized.Length <= bestLength)
-                continue;
-            if (path.Length > normalized.Length
-                && IsSeparator(path[normalized.Length])
-                && path.AsSpan(0, normalized.Length).Equals(normalized, PathComparison))
-                bestLength = normalized.Length;
-        }
-
-        var relative = bestLength > 0 ? path[(bestLength + 1)..] : Path.GetFileName(path);
+        var relative = paths?.RootOf(path) is { } root ? path[(root.Length + 1)..] : Path.GetFileName(path);
         return relative.Replace('\\', '/');
     }
-
-    // Both separators, on every platform. A Windows server's own paths use
-    // '\\', but a root typed into its configuration (or carried over from a
-    // config written elsewhere) may use either, and a root that fails to match
-    // is not an error - it silently drops the track's whole folder tree and
-    // sends the bare file name instead.
-    private static readonly char[] Separators = ['/', '\\'];
-
-    private static bool IsSeparator(char c) => c is '/' or '\\';
-
-    // Case-insensitive off Linux, matching how Importer's own seen-files set
-    // and Library.UpdateTracks' path dictionary already compare paths.
-    private static StringComparison PathComparison =>
-        OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
 
     private static long SizeOf(Track track)
     {

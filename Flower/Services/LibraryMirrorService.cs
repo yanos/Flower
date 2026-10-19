@@ -242,8 +242,8 @@ public class LibraryMirrorService
             return 0;
         }
 
-        var roots = Importer.Importer.ScanRoots(_appSettings.LibraryPaths);
-        var rootIsThere = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        var roots = PathRules.For(Importer.Importer.ScanRoots(_appSettings.LibraryPaths));
+        var rootIsThere = new Dictionary<string, bool>(StringComparer.Ordinal);
         var stillHere = _library.Tracks
             .Where(t => t.Path != null && IsOnServer(t, device))
             .Select(t => t.OriginTrackId!)
@@ -259,7 +259,7 @@ public class LibraryMirrorService
             // or back where it was - or was never under a folder this device
             // scans now. Either way there is no deletion to report.
             if (path == null || File.Exists(path) || stillHere.Contains(removed.Track.OriginTrackId!)
-                || LibraryFolders.RootOf(path, roots) is not { } root)
+                || roots.RootOf(path) is not { } root)
             {
                 notNews.Add(removed.Track.Id);
                 continue;
@@ -583,7 +583,7 @@ public class LibraryMirrorService
             if (!_librarySync.HasCurrentCatalogFrom(device.Fingerprint))
                 return LibraryUploadSummary.Nothing;
 
-            var roots = Importer.Importer.ScanRoots(_appSettings.LibraryPaths);
+            var roots = PathRules.For(Importer.Importer.ScanRoots(_appSettings.LibraryPaths));
             using var http = PeerHttpClient.Create(RequestTimeout);
             var client = new ServerAdminClient(http, device.BaseUri, ServerAdminClient.SignWith(_credentials), logger: _logger);
 
@@ -731,13 +731,12 @@ public class LibraryMirrorService
     // how many it could not because it cannot write to its music folder -
     // still marked, and asked again next round.
     private async Task<(int Moved, int CannotWrite)> TellMovesAsync(
-        ServerAdminClient client, DiscoveredDevice device, IReadOnlyList<string> roots, CancellationToken ct)
+        ServerAdminClient client, DiscoveredDevice device, PathRules roots, CancellationToken ct)
     {
         var moved = 0;
         var cannotWrite = 0;
         var notMoves = new List<(Track Track, string? FileStamp, bool ClearMove)>();
         var moves = new List<(Track Track, string RelativePath)>();
-        var comparison = OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
         foreach (var track in OwnFilesOnServer(device).Where(t => t.MovedFromPath != null))
         {
             if (LibraryDtoMapper.RelativePathOf(track, roots) is not { } relativePath)
@@ -748,8 +747,10 @@ public class LibraryMirrorService
             // or iOS handing the app a new container. The file did not move
             // within the library, which is the only kind of move there is to
             // tell anyone about.
+            // By the rule of the folder it was in - see PathRules.
             var from = track.MovedFromPath!.Replace('\\', '/');
-            if (relativePath == track.OriginRelativePath || from.EndsWith("/" + relativePath, comparison))
+            if (relativePath == track.OriginRelativePath
+                || from.EndsWith("/" + relativePath, roots.ComparisonFor(track.MovedFromPath!)))
                 notMoves.Add((track, null, true));
             else
                 moves.Add((track, relativePath));
@@ -821,7 +822,7 @@ public class LibraryMirrorService
     // the same exchange, naming the song it replaces, after which the song is
     // the same song with these bytes.
     private async Task<UploadResult> UploadOneAsync(
-        ServerAdminClient client, DiscoveredDevice device, Track track, IReadOnlyList<string> roots, bool replaces,
+        ServerAdminClient client, DiscoveredDevice device, Track track, PathRules roots, bool replaces,
         CancellationToken ct)
     {
         var path = track.Path!;

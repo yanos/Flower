@@ -197,8 +197,12 @@ namespace Flower.Persistence.Sql
             -- the library folders, so without a record of the ones removed on
             -- purpose the next scan would put them straight back. Keyed by
             -- path, the one thing a scan knows about a file before reading it.
+            -- Compared exactly: whether two spellings are one file is the
+            -- library folder's question (PathRules), not this table's - see
+            -- SqliteMigrations' step 12, which takes NOCASE off a database
+            -- created before.
             CREATE TABLE excluded_paths (
-                path        TEXT    NOT NULL PRIMARY KEY COLLATE NOCASE,
+                path        TEXT    NOT NULL PRIMARY KEY,
                 excluded_at INTEGER NOT NULL
             );
 
