@@ -29,6 +29,16 @@ namespace Flower.Audio
         private const double MaxGainDb = 12.0;
         private const double QFactor = 1.41; // ~1 octave bandwidth per band, matches the spacing above
 
+        // A band is left out when its centre is this close to Nyquist. At or
+        // past it the peaking formula's w0 reaches pi and the biquad's poles
+        // land on or outside the unit circle: at 22050 Hz the 16 kHz band
+        // diverged by forty-three orders of magnitude in nine milliseconds,
+        // which OutputStage's clamp turned into full-scale noise. A device can
+        // open at 22050 or 32000 (an Android route, an ALSA setting), and a
+        // band whose frequency the device cannot carry has nothing to shape
+        // anyway - so it is bypassed, not squeezed under the limit.
+        private const double MaxCenterToSampleRate = 0.45;
+
         private readonly BiquadCoefficients[] _coefficients;
         private readonly float _preampLinear;
 
@@ -46,14 +56,23 @@ namespace Flower.Audio
 
         public static Equalizer BuildFrom(EqualizerSettings settings, uint sampleRateHz)
         {
-            var coefficients = new BiquadCoefficients[BandCount];
-            for (var i = 0; i < BandCount; i++)
+            var coefficients = new BiquadCoefficients[UsableBandCount(sampleRateHz)];
+            for (var i = 0; i < coefficients.Length; i++)
             {
                 var gainDb = Math.Clamp(settings.BandGainsDb[i], -MaxGainDb, MaxGainDb);
                 coefficients[i] = BiquadCoefficients.PeakingEq(CenterFrequenciesHz[i], QFactor, gainDb, sampleRateHz);
             }
 
             return new Equalizer(coefficients, Math.Clamp(settings.PreampDb, -MaxGainDb, MaxGainDb));
+        }
+
+        // The bands are in ascending order, so the usable ones are a prefix.
+        private static int UsableBandCount(uint sampleRateHz)
+        {
+            var count = 0;
+            while (count < BandCount && CenterFrequenciesHz[count] < MaxCenterToSampleRate * sampleRateHz)
+                count++;
+            return count;
         }
 
         // Processes interleaved stereo float PCM in place. Called only from
@@ -73,7 +92,7 @@ namespace Flower.Audio
                 var l = interleavedStereo[frame * 2] * _preampLinear;
                 var r = interleavedStereo[frame * 2 + 1] * _preampLinear;
 
-                for (var band = 0; band < BandCount; band++)
+                for (var band = 0; band < _coefficients.Length; band++)
                 {
                     l = _coefficients[band].Process(l, ref _left[band]);
                     r = _coefficients[band].Process(r, ref _right[band]);

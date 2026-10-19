@@ -158,4 +158,35 @@ public class EqualizerTests
         Assert.True(peak > short.MaxValue, $"expected the boost to exceed full scale, peaked at {peak}");
         Assert.True(float.IsFinite(peak), "the filter went unstable");
     }
+
+    // A band at or past Nyquist used to build a biquad with its poles on or
+    // outside the unit circle - at 22050 Hz the 16 kHz band diverged into
+    // full-scale noise within milliseconds. Every band boosted, every rate a
+    // device might open at: the output has to stay the size of the input.
+    [Theory]
+    [InlineData(48000u)]
+    [InlineData(44100u)]
+    [InlineData(32000u)]
+    [InlineData(22050u)]
+    [InlineData(16000u)]
+    [InlineData(8000u)]
+    public void Every_band_boosted_stays_stable_at_any_device_rate(uint sampleRate)
+    {
+        var settings = FlatSettings();
+        Array.Fill(settings.BandGainsDb, 12.0);
+        var equalizer = Equalizer.BuildFrom(settings, sampleRate);
+
+        // A second of white noise, so every band - and Nyquist - is driven.
+        var random = new Random(1);
+        var samples = new float[(int)sampleRate * 2];
+        for (var i = 0; i < samples.Length; i++)
+            samples[i] = (float)((random.NextDouble() * 2 - 1) * short.MaxValue * 0.1);
+        equalizer.ProcessInPlace(samples);
+
+        var peak = 0f;
+        foreach (var sample in samples)
+            peak = Math.Max(peak, Math.Abs(sample));
+        Assert.True(float.IsFinite(peak) && peak < short.MaxValue * 0.1 * 50,
+            $"peak {peak} at {sampleRate} Hz");
+    }
 }
