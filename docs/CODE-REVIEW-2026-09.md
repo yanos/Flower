@@ -28,7 +28,7 @@ hard the fix is. Several of the worst ones are one-line changes.
 
 ## A. Will break something
 
-### A1. The equalizer goes unstable at any output rate below 32 kHz
+### A1. The equalizer goes unstable at any output rate below 32 kHz — **fixed (October 2026)**
 
 `Flower/Audio/Equalizer.cs:26` (`CenterFrequenciesHz`), `:47` (`BuildFrom`)
 
@@ -81,6 +81,14 @@ the top octave is not what the user asked for either. The `_coefficients` array
 would carry an identity biquad, or better, `ProcessInPlace` would iterate a
 shorter list. Worth logging once at construction when bands are dropped, since a
 user whose top two bands stop responding deserves to be able to find out why.
+
+**Fixed** with the shorter list: `BuildFrom` builds only the bands below
+`0.45 * sampleRateHz`, which are a prefix because the centres ascend. Nothing is
+logged yet; `Equalizer` has no logger, and neither of its two callers is worth
+giving one for this. `EqualizerTests.Every_band_boosted_stays_stable_at_any_device_rate`
+drives white noise through every band at +12 dB at 48k, 44.1k, 32k, 22.05k, 16k
+and 8k. On the old code it failed at 22.05k, the rate the table above diverges
+at.
 
 ### A2. `Retire()` during a track promotion deadlocks the UI thread
 
@@ -225,7 +233,7 @@ deserialize from that `byte[]` (or a `ReadOnlySpan<byte>`) with
 outright. `ToArray()` can go too — `JsonSerializer` will read a `MemoryStream`,
 and `SignedRequestCanonicalizer` could take a span.
 
-### B2. `NonceReplayGuard` prunes the whole dictionary on every insert
+### B2. `NonceReplayGuard` prunes the whole dictionary on every insert — **fixed (October 2026)**
 
 `Flower.Core/Services/NonceReplayGuard.cs:22-38`
 
@@ -263,7 +271,14 @@ about the same hazard.
 `Interlocked.Exchange` guard, five lines. Consider also a hard entry ceiling
 after which `TryRecord` refuses rather than grows.
 
-### B3. `Library.Snapshot` can publish a stale snapshot that never expires
+**Fixed** as proposed, with the sweep every 15 seconds rather than once per
+retention window, which keeps an expired nonce no more than 15 seconds past its
+120. The ceiling was considered and left out: once the guard is full, it
+refuses every honest device as well as whoever filled it, so a ceiling turns a
+memory problem into a lockout. With C4's key bound, the request budgets are
+what bound the count. `NonceReplayGuardTests` is F.6's dedicated test.
+
+### B3. `Library.Snapshot` can publish a stale snapshot that never expires — **fixed (October 2026)**
 
 `Flower.Core/Models/Library.cs:111-123`
 
@@ -305,7 +320,15 @@ observed.
 by `InvalidateIndexes`, read it before building, and only publish if it has not
 moved. Roughly the pattern `GaplessRingBuffer` already uses for its generation.
 
-### B4. `SeekableHttpStream` cannot be cancelled, and parks a decode thread for up to two minutes
+**Fixed**, with one difference: the index is published either way, tagged
+with the generation it was read under, and a reader never accepts an index
+tagged older than the current generation. "Publish only if the counter has
+not moved" still leaves a gap between the check and the write. Nothing is
+nulled any more. `_byPath` gets the same treatment (`Library.PathIndex`).
+`LibrarySnapshotRaceTests` is F.3's test. Against the old code it fails on its
+first round.
+
+### B4. `SeekableHttpStream` cannot be cancelled, and parks a decode thread for up to two minutes — **fixed (October 2026)**
 
 `Flower.Core/Services/SeekableHttpStream.cs:577` (`EnsureBodyAt`), `:202-254`
 (`SendAsync`), `:174` (`EnsureProbed`)
@@ -333,7 +356,16 @@ and thread it through `SendAsync`, `EnsureBodyAt`, `ReadBody` and `SkipForward`.
 `FfmpegTrackDecoder.Retire` already disposes `_remoteStream` — it just does it on
 the far side of a join that the stream is what is blocking.
 
-### B5. Non-retryable HTTP statuses are retried as though they were transient
+**Fixed** as proposed, plus a public `Cancel()` that is safe from any thread,
+which `Dispose` is not. `FfmpegTrackDecoder.Retire` calls it *before* the join.
+A `_lifetime` source reaches the probe, the body request, the throttle wait
+and the backoff, which now waits on the token's handle instead of
+`Thread.Sleep`. It also cancels the body read through `_stall`, under the same
+lock the read takes. A cancelled read latches `_broken` and throws an
+`IOException`, which is what the decoder already expects from a failed read.
+`SeekableHttpStreamTests.Cancel_ends_a_throttle_wait_at_once` covers it.
+
+### B5. Non-retryable HTTP statuses are retried as though they were transient — **fixed (October 2026)**
 
 `Flower.Core/Services/SeekableHttpStream.cs:578`, `:495-505`
 
@@ -355,6 +387,13 @@ happen in — a revoked pairing, where every remaining queued track pays it.
 **Fix.** Catch `HttpRequestException` with a `StatusCode` in {401, 403, 404, 410}
 before the general clause and latch immediately, mirroring the
 `HttpProtocolErrorException` arm.
+
+**Fixed** one step earlier than proposed: `EnsureBodyAt` no longer calls
+`EnsureSuccessStatusCode`. It disposes the response and throws
+`HttpProtocolErrorException` for 401/403/404/410, so the existing arm handles
+it. Any other failure status is an `HttpRequestException` carrying the status,
+and is still retried. Tests: `A_refusal_is_not_retried` (one request for each of
+the four statuses) and `A_server_error_is_still_retried`.
 
 ---
 
@@ -433,10 +472,23 @@ single-user one.
 
 > **Moot by deletion, September 2026** — the surface is gone (`SYNC-PLAN.md`,
 > "OpenSubsonic, built and removed"), and with it every per-client credential.
-> But read the last paragraph before closing it: the *underlying* gap is that
-> Flower has no user model, and that is unchanged. Every paired device can still
-> delete any playlist. What went away is the surface on which a non-admin
-> credential existed to exploit it, not the missing model.
+> The *underlying* gap, that Flower had no user model and every paired device
+> could delete any playlist, outlived the adapter by a few weeks.
+>
+> **Closed, October 2026** (`b054aed`, `SECURITY.md`, "Playlists belong to a
+> listener"). The model turned out to be the one the Continue Playing shelf
+> already had, not a user column: a *listener* is the owner (every admin device
+> together) or one non-admin device on its own (`Listeners.For`), and each
+> playlist on the server belongs to one. `GET /playlists` answers with the
+> caller's listener's set, and `POST /playlists/apply` writes only that set; an
+> id belonging to someone else, pushed or named as deleted, changes nothing and
+> comes back in `Refused`. So a guest cannot read, change or delete the owner's
+> playlists, and no route lets an admin device touch a guest's. Plays split the
+> same way: a guest's are filed under its own device. Stars and per-track
+> options are the owner's, and only an admin device's report moves them
+> (`Library.MergeReportedTrackState`). Tests:
+> `SyncEndpointTests.A_guest_device_can_neither_read_nor_change_the_owners_playlists`
+> and `A_guest_devices_own_playlists_are_kept_apart_from_the_owners`.
 
 `Flower.Server/Endpoints/SubsonicEndpoints.cs:396` (`ToDto`), `:499`
 (`DeletePlaylist`), `:435` (`UpdatePlaylist`), `:509` (`SetStarred`)
@@ -509,7 +561,7 @@ catalog serialised in one response, from a route budgeted by `BrowseLimiter` at
 `offset` is unbounded too, but `Skip` on a materialised list is cheap enough not
 to matter.
 
-### C4. Attacker-controlled identity strings become dictionary keys unbounded
+### C4. Attacker-controlled identity strings become dictionary keys unbounded — **fixed (October 2026)**
 
 `Flower.Core/Services/NonceReplayGuard.cs:25`
 
@@ -526,6 +578,12 @@ dictionary that has no ceiling.
 **Fix.** Reject a fingerprint longer than the hash it is supposed to be, and a
 nonce longer than `DeviceSigningKey` generates, before either reaches a key. Both
 are fixed-width by construction on the honest path.
+
+**Fixed.** Both are 32 characters on the honest path, and the bound is 64
+(`NonceReplayGuard.MaxFingerprintLength`, `MaxNonceLength`). That keeps an entry
+small and leaves room if either width ever changes. `SignatureVerifier.Check`
+refuses an over-long one as `Invalid` before recording anything, and
+`TryRecord` refuses one too, for any other caller.
 
 ---
 
@@ -758,7 +816,7 @@ contradicts the documented default is a trap regardless of which way it is
 resolved**, and the composition root passing the right value explicitly is what
 hides it rather than what fixes it.
 
-### E5. `MiniaudioSink.Start` leaks a `GCHandle` if called more than once
+### E5. `MiniaudioSink.Start` leaks a `GCHandle` if called more than once — **fixed (October 2026)**
 
 `Flower/Audio/MiniaudioSink.cs:453`
 
@@ -776,7 +834,9 @@ during construction. Cheap to make safe (`if (!_selfHandle.IsAllocated)`), and
 the failure mode if it ever does happen is a rooted object graph holding a ring
 buffer and a device, which is not the kind of leak that announces itself.
 
-### E6. Promoted decoders keep the event handlers they were given while armed
+**Fixed** as proposed.
+
+### E6. Promoted decoders keep the event handlers they were given while armed — **fixed (October 2026)**
 
 `Flower/Audio/GaplessCoordinator.cs:659-660` (armed wiring), `:815-821`
 (promotion wiring)
@@ -790,6 +850,10 @@ decoder, so the behaviour is correct.
 Cosmetic, and bounded — a decoder is promoted once. Listed because the two
 handler sets having different guard conditions (`_armed` vs `_current`) is the
 sort of thing that stops being harmless the moment a third role appears.
+
+**Fixed.** `ArmAsync` keeps the two handlers it subscribes
+(`_armedDrainedHandler`, `_armedFaultedHandler`), and `ClearArmedSlot`, the
+one way out of the armed slot, promotion included, unsubscribes them.
 
 ### E7. `Process.Start` is called directly, and two platforms cannot run it
 
@@ -851,7 +915,8 @@ are right. These are the specific gaps the findings above walked through.
 
 3. **`Library.Snapshot` under concurrent invalidation.** A test that reads
    `Snapshot` on one thread while `UpdateTracks` runs on another, then asserts the
-   snapshot eventually reflects the new tracks. Catches B3.
+   snapshot eventually reflects the new tracks. Catches B3. **Written**
+   (`LibrarySnapshotRaceTests`).
 
 4. **Cancellation of `SeekableHttpStream`.** `StreamingNetworkOutageTests` and
    `SeekableHttpStreamTests` cover the 429 and reopen behaviour; neither covers
@@ -859,15 +924,17 @@ are right. These are the specific gaps the findings above walked through.
    already provides the fixture. Catches B4, and would catch the decoder leak it
    causes.
 
-5. **Playlist authorisation.** There is nothing to test until there is a model
-   (C1). The adapter that made this reachable by a non-admin credential is gone;
-   what remains untested is that any paired device can delete any playlist, which
-   is worth pinning as a decision on Flower's own surface.
+5. **Playlist authorisation.** Resolved with C1: playlists belong to a
+   listener, and `SyncEndpointTests` pins that a guest can neither read nor
+   change the owner's.
 
 6. **`NonceReplayGuard` has no dedicated test file.** It is exercised indirectly
    through `PeerSignatureAuthTests` and five others. A direct one covering
    expiry, the fingerprint-scoping of keys, and — once B2 is fixed — that the
    prune is throttled, would be worth having for a class this load-bearing.
+   **Resolved (October 2026):** `NonceReplayGuardTests` covers the scoping,
+   that expired nonces are still swept out under the throttle, and the C4
+   bound.
 
 7. **Already known and recorded, not re-litigated here:** the native CoreAudio
    PCM-shape counters have no S24 path, so `MaxSampleDelta`, `AbruptFrames`,
