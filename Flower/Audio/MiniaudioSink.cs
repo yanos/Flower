@@ -61,6 +61,12 @@ namespace Flower.Audio
         // can be left to miniaudio.
         private OutputStage _outputStage = new(GaplessFormat.DefaultSampleRate);
 
+        // What this sink renders - see IAudioSink.Format. Start sets the sample
+        // format asked for, and the first OpenDevice settles both halves.
+        private PcmFormat _format = PcmFormat.Default;
+
+        public PcmFormat Format => _format;
+
         // Prime latch: after a flush the ring is empty and the decoder is
         // still opening the file, so the callback would render a trickle of
         // starved fragments interleaved with silence for the whole media-open
@@ -205,12 +211,12 @@ namespace Flower.Audio
         // by the switch. Printed as n/a instead, until the native side grows an
         // s24 path (which needs the vendored binaries rebuilt - see
         // native/miniaudio/README.md).
-        private static bool PcmShapeCountersApply => GaplessFormat.SampleFormat == PcmSampleFormat.S16;
+        private bool PcmShapeCountersApply => _format.SampleFormat == PcmSampleFormat.S16;
 
-        private static string PcmShapeCounter(ulong value) =>
+        private string PcmShapeCounter(ulong value) =>
             PcmShapeCountersApply ? value.ToString() : "n/a";
 
-        private static string PcmShapeCounter(uint value) =>
+        private string PcmShapeCounter(uint value) =>
             PcmShapeCountersApply ? value.ToString() : "n/a";
 
         public event EventHandler? Playing;
@@ -499,11 +505,13 @@ namespace Flower.Audio
 
         public void ApplyTiming(AudioTimingSettings timing) => _outputStage.Timing = timing;
 
-        public void Start(GaplessRingBuffer ringBuffer)
+        public void Start(GaplessRingBuffer ringBuffer, PcmSampleFormat sampleFormat = GaplessFormat.DefaultSampleFormat)
         {
             lock (_gate)
             {
                 _ringBuffer = ringBuffer;
+                if (!_hasNegotiatedFormat)
+                    _format = _format with { SampleFormat = sampleFormat };
 
                 // Once per sink, however many times Start runs - including
                 // again after a first call that bailed below without a device.
@@ -586,14 +594,14 @@ namespace Flower.Audio
         private bool OpenDevice()
         {
             var config = ma.device_config_init(ma_device_type.ma_device_type_playback);
-            config.playback.format = MiniaudioFormatFor(GaplessFormat.SampleFormat);
+            config.playback.format = MiniaudioFormatFor(_format.SampleFormat);
             config.playback.channels = GaplessFormat.Channels;
             // During the first open, zero asks miniaudio for the endpoint's
             // native rate. The decoder is configured from that result before
             // playback begins, leaving LibVLC as the only sample-rate
             // converter in the chain. Keep that rate on later device changes:
             // existing current and armed decoders cannot safely change format.
-            config.sampleRate = _hasNegotiatedFormat ? GaplessFormat.SampleRate : 0;
+            config.sampleRate = _hasNegotiatedFormat ? _format.SampleRate : 0;
             // The bridge's callback is a native symbol in the same library
             // miniaudio itself came from, so installing it costs nothing and
             // needs no managed thunk. It renders silence until AttachTo binds
@@ -677,12 +685,12 @@ namespace Flower.Audio
             // and cannot change format underneath the ring they share.
             if (result != ma_result.MA_SUCCESS
                 && !_hasNegotiatedFormat
-                && GaplessFormat.SampleFormat != PcmSampleFormat.S16)
+                && _format.SampleFormat != PcmSampleFormat.S16)
             {
                 _logger.LogWarning(
                     "miniaudio refused a {Format} playback device ({Result}); falling back to 16-bit",
-                    GaplessFormat.SampleFormat, result);
-                GaplessFormat.ConfigureSampleFormat(PcmSampleFormat.S16);
+                    _format.SampleFormat, result);
+                _format = _format with { SampleFormat = PcmSampleFormat.S16 };
                 config.playback.format = MiniaudioFormatFor(PcmSampleFormat.S16);
 
                 result = ma.device_init(_context, &config, device);
@@ -702,9 +710,9 @@ namespace Flower.Audio
             {
                 var nativeSampleRate = device->sampleRate;
                 if (nativeSampleRate == 0)
-                    _logger.LogWarning("miniaudio did not report a device sample rate; retaining {SampleRate}Hz", GaplessFormat.SampleRate);
+                    _logger.LogWarning("miniaudio did not report a device sample rate; retaining {SampleRate}Hz", _format.SampleRate);
                 else
-                    GaplessFormat.ConfigureSampleRate(nativeSampleRate);
+                    _format = _format with { SampleRate = nativeSampleRate };
 
                 // Said out loud because the failure it guards against is
                 // otherwise completely silent. This value is frozen here and
@@ -741,15 +749,15 @@ namespace Flower.Audio
                 // them on any path that reached this block without changing
                 // anything. OpenDevice only runs while the output callback is
                 // stopped, so a replacement cannot race the render path.
-                if (_outputStage.SampleRate != GaplessFormat.SampleRate
-                    || _outputStage.SampleFormat != GaplessFormat.SampleFormat)
+                if (_outputStage.SampleRate != _format.SampleRate
+                    || _outputStage.SampleFormat != _format.SampleFormat)
                 {
-                    _outputStage = new OutputStage(GaplessFormat.SampleRate, GaplessFormat.SampleFormat);
+                    _outputStage = new OutputStage(_format.SampleRate, _format.SampleFormat);
                 }
 
                 _logger.LogInformation(
                     "Rendering the output device's native {SampleRate}Hz at {Format}",
-                    GaplessFormat.SampleRate, GaplessFormat.SampleFormat);
+                    _format.SampleRate, _format.SampleFormat);
 
                 _hasNegotiatedFormat = true;
             }
@@ -765,10 +773,10 @@ namespace Flower.Audio
             // in the rate actually being rendered rather than the assumed one.
             if (useBridge && _ringBuffer is { } ringBuffer)
             {
-                var capacity = _outputStage.Timing.NativeBufferMs * (long)GaplessFormat.SampleRate
-                    * GaplessFormat.BytesPerFrame / 1000;
+                var capacity = _outputStage.Timing.NativeBufferMs * (long)_format.SampleRate
+                    * _format.BytesPerFrame / 1000;
                 _bridge = NativeAudioBridge.TryCreate(
-                    (int)capacity, GaplessFormat.BytesPerFrame, GaplessFormat.BytesPerSample);
+                    (int)capacity, _format.BytesPerFrame, _format.BytesPerSample);
                 if (_bridge == null)
                 {
                     // Nothing to fall back to: the device was initialised with
@@ -1075,7 +1083,7 @@ namespace Flower.Audio
         [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
         private static void DataCallback(ma_device* pDevice, void* pOutput, void* pInput, uint frameCount)
         {
-            var byteCount = checked((int)frameCount * GaplessFormat.BytesPerFrame);
+            var byteCount = checked((int)frameCount * BytesPerFrameOf(pDevice));
             var dest = new Span<byte>(pOutput, byteCount);
 
             try
@@ -1087,6 +1095,24 @@ namespace Flower.Audio
                 RecordCallbackException(pDevice);
                 dest.Clear();
             }
+        }
+
+        // The device was opened in its sink's format, settled before it
+        // started. Asked here rather than in Render because the silence on
+        // the exception path needs the length too.
+        private static int BytesPerFrameOf(ma_device* pDevice)
+        {
+            try
+            {
+                if (pDevice != null && GCHandle.FromIntPtr((IntPtr)pDevice->pUserData).Target is MiniaudioSink sink)
+                    return sink._format.BytesPerFrame;
+            }
+            catch
+            {
+                // Same boundary as DataCallback's own catch.
+            }
+
+            return PcmFormat.Default.BytesPerFrame;
         }
 
         // The unmanaged callback boundary cannot let a managed exception
@@ -1145,8 +1171,8 @@ namespace Flower.Audio
 
                 if (!sink._primed)
                 {
-                    var required = sink._outputStage.Timing.PrebufferMs * (long)GaplessFormat.SampleRate
-                        * GaplessFormat.BytesPerFrame / 1000;
+                    var required = sink._outputStage.Timing.PrebufferMs * (long)sink._format.SampleRate
+                        * sink._format.BytesPerFrame / 1000;
                     sink._primed = ring.AvailableBytes >= required
                         || Stopwatch.GetTimestamp() >= sink._primeDeadlineTimestamp;
                 }
@@ -1206,7 +1232,7 @@ namespace Flower.Audio
             }
             finally
             {
-                sink._callbackTiming.Record(callbackStartedAt, Stopwatch.GetTimestamp(), frameCount, GaplessFormat.SampleRate);
+                sink._callbackTiming.Record(callbackStartedAt, Stopwatch.GetTimestamp(), frameCount, sink._format.SampleRate);
             }
         }
 
@@ -1338,8 +1364,8 @@ namespace Flower.Audio
                 Thread.Sleep(1);
         }
 
-        private static int FadeFrames(int milliseconds) =>
-            (int)(milliseconds * (long)GaplessFormat.SampleRate / 1000);
+        private int FadeFrames(int milliseconds) =>
+            (int)(milliseconds * (long)_format.SampleRate / 1000);
 
         // See IAudioSink.BufferedBytes - zero without a bridge, where nothing
         // sits between the shared ring and the speaker.

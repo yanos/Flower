@@ -42,9 +42,18 @@ namespace Flower.Audio
 
         // Begins consuming ringBuffer. Called once, at construction time of
         // whichever GaplessAudioManager owns this sink - the sink runs for
-        // the app's entire lifetime after this, the same way the old
-        // the former VlcAudioManager's single MediaPlayer did.
-        void Start(GaplessRingBuffer ringBuffer);
+        // the app's entire lifetime after this, the same way the former
+        // VlcAudioManager's single MediaPlayer did.
+        //
+        // sampleFormat is what the decoder would like to carry. The sink may
+        // narrow it (a device that will not open at 24 bits), and settles the
+        // rate from the device; Format is the answer.
+        void Start(GaplessRingBuffer ringBuffer, PcmSampleFormat sampleFormat = GaplessFormat.DefaultSampleFormat);
+
+        // The PCM this sink renders, and so what everything feeding it must
+        // produce. Settled by Start and frozen from then on, device changes
+        // included; PcmFormat.Default before it.
+        PcmFormat Format { get; }
 
         // Swaps in a new EQ processor (rebuilt from settings), or clears it
         // (null = true bypass - the render callback skips processing

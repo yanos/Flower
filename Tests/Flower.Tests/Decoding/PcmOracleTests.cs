@@ -17,11 +17,11 @@ public class PcmOracleTests
 
     private static byte[] Tone(double hz, TimeSpan duration, short amplitude = 16384)
     {
-        var frames = (int)(duration.TotalSeconds * GaplessFormat.SampleRate);
-        var pcm = new byte[frames * GaplessFormat.BytesPerFrame];
+        var frames = (int)(duration.TotalSeconds * PcmFormat.Default.SampleRate);
+        var pcm = new byte[frames * PcmFormat.Default.BytesPerFrame];
         for (var frame = 0; frame < frames; frame++)
         {
-            var sample = (short)Math.Round(amplitude * Math.Sin(2 * Math.PI * hz * frame / GaplessFormat.SampleRate));
+            var sample = (short)Math.Round(amplitude * Math.Sin(2 * Math.PI * hz * frame / PcmFormat.Default.SampleRate));
             for (var channel = 0; channel < (int)GaplessFormat.Channels; channel++)
                 BitConverter.TryWriteBytes(pcm.AsSpan((frame * (int)GaplessFormat.Channels + channel) * 2), sample);
         }
@@ -36,7 +36,7 @@ public class PcmOracleTests
     // The album that played nothing.
     [Fact]
     public void Silence_is_caught() =>
-        Assert.NotNull(PcmOracle.ToneMismatch(new byte[GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame], ToneHz));
+        Assert.NotNull(PcmOracle.ToneMismatch(new byte[PcmFormat.Default.SampleRate * PcmFormat.Default.BytesPerFrame], ToneHz));
 
     [Fact]
     public void No_audio_at_all_is_caught() =>
@@ -56,7 +56,7 @@ public class PcmOracleTests
     public void Noise_is_caught()
     {
         var random = new Random(1);
-        var pcm = new byte[GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame];
+        var pcm = new byte[PcmFormat.Default.SampleRate * PcmFormat.Default.BytesPerFrame];
         random.NextBytes(pcm);
 
         Assert.NotNull(PcmOracle.ToneMismatch(pcm, ToneHz));

@@ -15,7 +15,7 @@ namespace Flower.Tests.Audio;
 // LibVLC's amem seam truncates every track to 16 bits before Flower sees a
 // byte of it (docs/AUDIOPHILE-PLAN.md, "The 16-bit ceiling, measured"), and
 // ffaudio exists to get past that. But moving the ceiling out of LibVLC
-// is not the same as removing it: GaplessFormat.BytesPerSample was a const 2,
+// is not the same as removing it: PcmFormat.Default.BytesPerSample was a const 2,
 // and every stage between the decoder and the sound card was built on it, so a
 // 24-bit decode would have been narrowed one stage later by the pipeline
 // itself. FfmpegDecoderTests proves the decoder can carry 24 bits; this proves
@@ -74,7 +74,7 @@ public class CanonicalFormatTests
     // gets, so a test measuring something else is not measuring that.
     private static OutputStage Stage(PcmSampleFormat format)
     {
-        var stage = new OutputStage(GaplessFormat.SampleRate, format) { Timing = Silent() };
+        var stage = new OutputStage(PcmFormat.Default.SampleRate, format) { Timing = Silent() };
         stage.TargetGain = 1f;
         stage.Process(new byte[4800 * Channels * GaplessFormat.BytesPerSampleOf(format)], generation: 1);
         return stage;
@@ -172,7 +172,7 @@ public class CanonicalFormatTests
         Array.Fill(boosted.BandGainsDb, 12.0);
 
         var stage = Stage(PcmSampleFormat.S24);
-        stage.Equalizer = Equalizer.BuildFrom(boosted, GaplessFormat.SampleRate);
+        stage.Equalizer = Equalizer.BuildFrom(boosted, PcmFormat.Default.SampleRate);
 
         var samples = new int[4800 * Channels];
         for (var i = 0; i < samples.Length; i++)

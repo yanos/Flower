@@ -284,7 +284,7 @@ public class ImporterTests : IDisposable
         var track = Assert.Single(NewImporter().Import([_root]));
 
         Assert.Equal(TimeSpan.FromSeconds(1), track.Duration);
-        Assert.Equal((int)Flower.Audio.GaplessFormat.SampleRate, track.SampleRate);
+        Assert.Equal((int)Flower.Audio.PcmFormat.Default.SampleRate, track.SampleRate);
         Assert.Equal((int)Flower.Audio.GaplessFormat.Channels, track.Channels);
         Assert.False(string.IsNullOrEmpty(track.Codec));
     }

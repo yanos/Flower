@@ -114,7 +114,7 @@ public class LibraryStoreTests : IsolatedHome
         public void Resume() { }
         public void Pause() { }
         public void Stop() { }
-        public void ApplyEqualizer(Flower.Audio.Equalizer? equalizer) { }
+        public void ApplyEqualizer(Flower.Audio.EqualizerSettings? settings) { }
         public void ApplyAudioTiming(Flower.Audio.AudioTimingSettings timing) { }
         public System.Collections.Generic.IReadOnlyList<Flower.Audio.AudioOutputDevice> GetOutputDevices() => [];
         public string? OutputDeviceId => null;

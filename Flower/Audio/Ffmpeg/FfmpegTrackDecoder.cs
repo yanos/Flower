@@ -52,14 +52,13 @@ namespace Flower.Audio.Ffmpeg
         private readonly Func<bool> _isRetired;
         private readonly ILogger<FfmpegTrackDecoder>? _logger;
 
-        // Captured once, at construction, rather than read live from
-        // GaplessFormat on each use. In the app the two are the same thing -
-        // the canonical format is negotiated before any decoder exists and
-        // frozen after - but a decoder that re-reads it is a decoder whose
-        // frame size can change halfway through a track, which is not a state
-        // anything downstream is written for. Taking it as a parameter also
-        // lets Flower.DeviceChecks run one decoder at S16 and another at S24
-        // in the same process without moving a global out from under either.
+        // Given once, at construction: the format the sink settled, handed
+        // down through GaplessCoordinator. A decoder whose format could change
+        // is one whose frame size can change halfway through a track, which is
+        // not a state anything downstream is written for. Taking it as a
+        // parameter also lets Flower.DeviceChecks run one decoder at S16 and
+        // another at S24 in the same process.
+        private readonly PcmFormat _format;
         private readonly PcmSampleFormat _sampleFormat;
         private readonly int _bytesPerFrame;
 
@@ -112,11 +111,12 @@ namespace Flower.Audio.Ffmpeg
 
         public FfmpegTrackDecoder(Track track, GaplessRingBuffer initialTarget,
                                   ILogger<FfmpegTrackDecoder>? logger = null,
-                                  PcmSampleFormat? sampleFormat = null)
+                                  PcmFormat? format = null)
         {
             Track = track;
-            _sampleFormat = sampleFormat ?? GaplessFormat.SampleFormat;
-            _bytesPerFrame = GaplessFormat.BytesPerSampleOf(_sampleFormat) * (int)GaplessFormat.Channels;
+            _format = format ?? PcmFormat.Default;
+            _sampleFormat = _format.SampleFormat;
+            _bytesPerFrame = _format.BytesPerFrame;
             _writer = new RetargetableRingWriter(initialTarget);
             _isRetired = () => Volatile.Read(ref _retired) == 1;
             _logger = logger;
@@ -202,7 +202,7 @@ namespace Flower.Audio.Ffmpeg
                 _decoder = Decoder.OpenStream(
                     _remoteStream,
                     FormatFor(_sampleFormat),
-                    (int)GaplessFormat.SampleRate,
+                    (int)_format.SampleRate,
                     (int)GaplessFormat.Channels,
                     DemuxerHintFor(Track),
                     logger: _logger);
@@ -212,7 +212,7 @@ namespace Flower.Audio.Ffmpeg
                 _decoder = Decoder.OpenPath(
                     path,
                     FormatFor(_sampleFormat),
-                    (int)GaplessFormat.SampleRate,
+                    (int)_format.SampleRate,
                     (int)GaplessFormat.Channels);
             }
         }
@@ -487,7 +487,7 @@ namespace Flower.Audio.Ffmpeg
                         _logger?.LogInformation(
                             "Decode drain for {Path}: TaggedDurationMs={TaggedDurationMs} DecodedMs={DecodedMs} BytesProduced={BytesProduced}",
                             LogPath.Short(Track.Path), Track.Duration.TotalMilliseconds,
-                            BytesProduced / (double)(GaplessFormat.SampleRate * _bytesPerFrame) * 1000,
+                            BytesProduced / (double)(_format.SampleRate * _bytesPerFrame) * 1000,
                             BytesProduced);
                         ReportDrained();
 
@@ -707,7 +707,7 @@ namespace Flower.Audio.Ffmpeg
                 : long.MaxValue;
 
         private long BytesForSeconds(double seconds) =>
-            (long)(seconds * GaplessFormat.SampleRate) * _bytesPerFrame;
+            (long)(seconds * _format.SampleRate) * _bytesPerFrame;
 
         private static bool IsRemote(string path) =>
             path.StartsWith("http://", StringComparison.OrdinalIgnoreCase)

@@ -41,7 +41,7 @@ public class StreamingNetworkOutageTests : IDisposable
         new() { Title = "Test", Path = path, Duration = duration };
 
     private static int BytesFor(TimeSpan duration) =>
-        (int)(duration.TotalSeconds * GaplessFormat.SampleRate) * GaplessFormat.BytesPerFrame;
+        (int)(duration.TotalSeconds * PcmFormat.Default.SampleRate) * PcmFormat.Default.BytesPerFrame;
 
     private static void WaitUntil(Func<bool> condition, string because) =>
         PlaybackWait.UntilTrue(condition, because);
@@ -179,7 +179,7 @@ public class StreamingNetworkOutageTests : IDisposable
         var durationB = TimeSpan.FromSeconds(1);
         var trackB = MakeTrack(SyntheticWav.CreateFile(_tempDir, "b.wav", durationB, SyntheticWav.Marker(0x44)), durationB);
 
-        var sharedRing = new GaplessRingBuffer(8 * (int)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
+        var sharedRing = new GaplessRingBuffer(8 * (int)PcmFormat.Default.SampleRate * PcmFormat.Default.BytesPerFrame);
         var coordinator = new GaplessCoordinator(sharedRing, NullLogger<GaplessCoordinator>.Instance);
 
         // A queue of every settle event, not a "last track seen" field,

@@ -38,7 +38,11 @@ namespace Flower.Audio
         private readonly GaplessRingBuffer _ring;
         private readonly IAudioBridge _bridge;
         private readonly OutputStage _outputStage;
-        private readonly byte[] _chunk = new byte[ChunkFrames * GaplessFormat.BytesPerFrame];
+
+        // The stage is built for the format the device was opened in, so its
+        // rate and width are this feeder's too.
+        private readonly PcmFormat _format;
+        private readonly byte[] _chunk;
 
         private Thread? _thread;
         private volatile bool _running;
@@ -70,6 +74,8 @@ namespace Flower.Audio
             _ring = ring;
             _bridge = bridge;
             _outputStage = outputStage;
+            _format = new PcmFormat(outputStage.SampleRate, outputStage.SampleFormat);
+            _chunk = new byte[ChunkFrames * _format.BytesPerFrame];
 
             // Adopt the ring's generation rather than flushing on the first
             // tick: a freshly built bridge holds nothing, and a flush nobody
@@ -205,7 +211,7 @@ namespace Flower.Audio
                 // whole. That matters: these bytes are already gone from the
                 // shared ring by the time the write happens.
                 var free = _bridge.Capacity - _bridge.Available;
-                if (free < GaplessFormat.BytesPerFrame)
+                if (free < _format.BytesPerFrame)
                     break;
 
                 var want = Math.Min(_chunk.Length, free);
@@ -226,8 +232,8 @@ namespace Flower.Audio
             if (_primed)
                 return;
 
-            var required = _outputStage.Timing.PrebufferMs * (long)GaplessFormat.SampleRate
-                * GaplessFormat.BytesPerFrame / 1000;
+            var required = _outputStage.Timing.PrebufferMs * (long)_format.SampleRate
+                * _format.BytesPerFrame / 1000;
             if (_bridge.Available < required && Stopwatch.GetTimestamp() < _primeDeadlineTimestamp)
                 return;
 

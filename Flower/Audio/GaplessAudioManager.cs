@@ -63,18 +63,18 @@ namespace Flower.Audio
             ILogger<GaplessCoordinator>? coordinatorLogger,
             ILogger<FfmpegTrackDecoder>? ffmpegDecoderLogger)
             : this(sharedRing,
-                   new GaplessCoordinator(sharedRing, coordinatorLogger, ffmpegDecoderLogger: ffmpegDecoderLogger),
+                   new GaplessCoordinator(sharedRing, coordinatorLogger, ffmpegDecoderLogger: ffmpegDecoderLogger, format: sink.Format),
                    sink, logger, sinkAlreadyStarted: true)
         {
         }
 
         // The whole of the canonical format's ordering, in one place because
-        // getting it wrong is silent: the sample format has to be settled
-        // before the sink opens a device (that open is the device's chance to
+        // getting it wrong is silent: the sample format has to be asked for
+        // when the sink opens a device (that open is the device's chance to
         // refuse it) and before any decoder is constructed against it, and the
         // sink's Start is also what settles the rate. Everything downstream -
         // the coordinator, its staging rings, every decoder - is built after
-        // this returns.
+        // this returns, from the sink's Format.
         private static GaplessRingBuffer StartSink(IAudioSink sink)
         {
             // S24 is simply what the decoder carries now. It used to be the
@@ -84,7 +84,7 @@ namespace Flower.Audio
             // the width. With one decoder left there is nothing to elect, and
             // MiniaudioSink keeps the only vote that remains: a device that
             // will not open at 24 bits narrows this back and reopens.
-            GaplessFormat.ConfigureSampleFormat(PcmSampleFormat.S24);
+            const PcmSampleFormat decoderFormat = PcmSampleFormat.S24;
 
             // Before the open, because the open is what freezes the rate. A
             // platform whose output is not ready yet answers "what rate are
@@ -107,7 +107,7 @@ namespace Flower.Audio
             // little less; MaxBytesPerFrame keeps that depth from halving if
             // the format then negotiates up to 24-bit.
             var ring = new GaplessRingBuffer(2 * (int)GaplessFormat.DefaultSampleRate * GaplessFormat.MaxBytesPerFrame);
-            sink.Start(ring);
+            sink.Start(ring, decoderFormat);
             return ring;
         }
 
@@ -172,7 +172,7 @@ namespace Flower.Audio
             _sink.Stopped += (_, e) => Stopped?.Invoke(this, e);
             _userVolume = _sink.Volume;
             if (!sinkAlreadyStarted)
-                _sink.Start(_sharedRing);
+                _sink.Start(_sharedRing, _coordinator.Format.SampleFormat);
 
             // The former VlcAudioManager's single MediaPlayer used to raise
             // PositionChanged on its own as it played; splitting decode from
@@ -250,7 +250,8 @@ namespace Flower.Audio
                 // sink that buffers downstream of it reads ahead of the
                 // speaker by exactly that much.
                 var bytesProduced = Math.Max(0, _coordinator.CurrentTrackBytesProduced - _sink.BufferedBytes);
-                return (long)(bytesProduced / (double)GaplessFormat.BytesPerFrame / GaplessFormat.SampleRate * 1000);
+                var format = _coordinator.Format;
+                return (long)(bytesProduced / (double)format.BytesPerFrame / format.SampleRate * 1000);
             }
         }
 
@@ -305,7 +306,10 @@ namespace Flower.Audio
                 _platformAudioSession?.DeactivateAfterPlayback();
         }
 
-        public void ApplyEqualizer(Equalizer? equalizer) => _sink.ApplyEqualizer(equalizer);
+        // Built here, at the rate the sink renders, which nothing above this
+        // class needs to know.
+        public void ApplyEqualizer(EqualizerSettings? settings) =>
+            _sink.ApplyEqualizer(settings == null ? null : Equalizer.BuildFrom(settings, _coordinator.Format.SampleRate));
 
         public void ApplyAudioTiming(AudioTimingSettings timing) => _sink.ApplyTiming(timing);
 

@@ -61,7 +61,7 @@ public class FfmpegTrackDecoderTests : IDisposable
     {
         var duration = TimeSpan.FromSeconds(1);
         var track = Fixture(duration, SyntheticWav.Ramp());
-        var expectedBytes = (long)duration.TotalSeconds * GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame;
+        var expectedBytes = (long)duration.TotalSeconds * PcmFormat.Default.SampleRate * PcmFormat.Default.BytesPerFrame;
 
         var ring = new GaplessRingBuffer(64 * 1024);
         using var decoder = new FfmpegTrackDecoder(track, ring);
@@ -79,7 +79,7 @@ public class FfmpegTrackDecoderTests : IDisposable
 
         Assert.Equal(expectedBytes, pcm.Length);
         for (var frame = 0; frame < 4096; frame++)
-            Assert.Equal(unchecked((short)frame), BitConverter.ToInt16(pcm, frame * GaplessFormat.BytesPerFrame));
+            Assert.Equal(unchecked((short)frame), BitConverter.ToInt16(pcm, frame * PcmFormat.Default.BytesPerFrame));
     }
 
     [Fact]
@@ -135,14 +135,14 @@ public class FfmpegTrackDecoderTests : IDisposable
         decoder.Seek(0.5f);
 
         var landedBytes = await settled.Task.WaitAsync(Patience, TestContext.Current.CancellationToken);
-        var landedSeconds = landedBytes / (double)(GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
+        var landedSeconds = landedBytes / (double)(PcmFormat.Default.SampleRate * PcmFormat.Default.BytesPerFrame);
         Assert.InRange(landedSeconds, 4.5, 5.0);
 
         // The first frame that arrives after the landing carries its own
         // index, so this is the seek verified in the audio rather than in the
         // decoder's own bookkeeping.
         var afterSeek = await ReadOneFrameAsync(ring);
-        var expectedFrame = unchecked((short)(landedBytes / GaplessFormat.BytesPerFrame));
+        var expectedFrame = unchecked((short)(landedBytes / PcmFormat.Default.BytesPerFrame));
         Assert.InRange(Math.Abs(BitConverter.ToInt16(afterSeek) - expectedFrame), 0, 2048);
     }
 
@@ -167,7 +167,7 @@ public class FfmpegTrackDecoderTests : IDisposable
         var track = Fixture(duration, SyntheticWav.Ramp(), "fully-decoded.wav");
 
         var ring = new GaplessRingBuffer(
-            (int)(duration.TotalSeconds + 1) * (int)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
+            (int)(duration.TotalSeconds + 1) * (int)PcmFormat.Default.SampleRate * PcmFormat.Default.BytesPerFrame);
         using var decoder = new FfmpegTrackDecoder(track, ring);
         Assert.Equal(DecodePrepareResult.Ready, await decoder.PrepareAsync(TestContext.Current.CancellationToken));
 
@@ -184,7 +184,7 @@ public class FfmpegTrackDecoderTests : IDisposable
         decoder.Seek(0.5f);
 
         var landedBytes = await settled.Task.WaitAsync(Patience, TestContext.Current.CancellationToken);
-        var landedSeconds = landedBytes / (double)(GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
+        var landedSeconds = landedBytes / (double)(PcmFormat.Default.SampleRate * PcmFormat.Default.BytesPerFrame);
         Assert.InRange(landedSeconds, 2.0, 2.6);
 
         // And it is a live decoder afterwards, not just one that answered an
@@ -193,7 +193,7 @@ public class FfmpegTrackDecoderTests : IDisposable
         // ApplySeek resets it again once the demuxer has moved, so everything
         // still in there was decoded from the landing point.
         var afterSeek = await ReadOneFrameAsync(ring);
-        var expectedFrame = unchecked((short)(landedBytes / GaplessFormat.BytesPerFrame));
+        var expectedFrame = unchecked((short)(landedBytes / PcmFormat.Default.BytesPerFrame));
         Assert.InRange(Math.Abs(BitConverter.ToInt16(afterSeek) - expectedFrame), 0, 2048);
     }
 
@@ -305,7 +305,7 @@ public class FfmpegTrackDecoderTests : IDisposable
 
         // Opened by probing, so it found what the bytes actually are rather
         // than what the caller claimed they were.
-        Assert.Equal(GaplessFormat.SampleRate, (uint)decoder.Format.SourceSampleRate);
+        Assert.Equal(PcmFormat.Default.SampleRate, (uint)decoder.Format.SourceSampleRate);
 
         var buffer = new byte[4096];
         Assert.True(decoder.Read(buffer) > 0);
@@ -313,7 +313,7 @@ public class FfmpegTrackDecoderTests : IDisposable
 
     private static async Task<byte[]> ReadOneFrameAsync(GaplessRingBuffer ring)
     {
-        var frame = new byte[GaplessFormat.BytesPerFrame];
+        var frame = new byte[PcmFormat.Default.BytesPerFrame];
         var deadline = Stopwatch.StartNew();
         var read = 0;
         while (read < frame.Length && deadline.Elapsed < Patience)

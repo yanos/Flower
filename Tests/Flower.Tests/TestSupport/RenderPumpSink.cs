@@ -29,7 +29,7 @@ public sealed class RenderPumpSink : IAudioSink
     private readonly object _gate = new();
     private readonly MemoryStream _captured = new();
     private readonly int _periodFrames;
-    private readonly OutputStage _outputStage = new(GaplessFormat.SampleRate);
+    private readonly OutputStage _outputStage = new(GaplessFormat.DefaultSampleRate);
 
     private GaplessRingBuffer? _ring;
     private CancellationTokenSource? _pumpCts;
@@ -90,7 +90,12 @@ public sealed class RenderPumpSink : IAudioSink
     public Equalizer? AppliedEqualizer { get; private set; }
     public AudioTimingSettings? AppliedTiming { get; private set; }
 
-    public void Start(GaplessRingBuffer ringBuffer) => _ring = ringBuffer;
+    // Always the default: its output stage is built for it, so this sink
+    // narrows whatever it is asked for, as a device that refuses 24 bits does.
+    public PcmFormat Format => PcmFormat.Default;
+
+    public void Start(GaplessRingBuffer ringBuffer, PcmSampleFormat sampleFormat = GaplessFormat.DefaultSampleFormat) =>
+        _ring = ringBuffer;
 
     public void ApplyEqualizer(Equalizer? equalizer)
     {
@@ -134,8 +139,8 @@ public sealed class RenderPumpSink : IAudioSink
 
     private void Pump(GaplessRingBuffer ring, CancellationToken token)
     {
-        var period = new byte[_periodFrames * GaplessFormat.BytesPerFrame];
-        var delayMs = Math.Max(1, _periodFrames * 1000 / (int)GaplessFormat.SampleRate);
+        var period = new byte[_periodFrames * Format.BytesPerFrame];
+        var delayMs = Math.Max(1, _periodFrames * 1000 / (int)Format.SampleRate);
 
         while (!token.IsCancellationRequested)
         {

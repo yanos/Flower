@@ -56,7 +56,7 @@ public sealed record Fixture(string Name, string Extension, string ResourceName,
     // codec does, and so does the resampler any rate but the pipeline's goes
     // through. Everything else is asked whether it is audible and in tune,
     // which PcmOracle.ToneMismatch makes a real question.
-    public bool ByteExact => Lossless && SampleRate == GaplessFormat.SampleRate;
+    public bool ByteExact => Lossless && SampleRate == GaplessFormat.DefaultSampleRate;
 
     // The samples every byte-exact fixture must decode back to, header
     // stripped.

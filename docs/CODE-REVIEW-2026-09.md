@@ -802,7 +802,7 @@ acted on too — the comments were the valuable part, and the `amem` history and
 the seek-freeze that motivated the move to miniaudio now live in
 `MiniaudioSink`'s own header.
 
-### E2. `GaplessFormat` is process-wide mutable static, and tests run in parallel
+### E2. `GaplessFormat` is process-wide mutable static, and tests run in parallel — **fixed (October 2026)**
 
 `Flower/Audio/GaplessFormat.cs:71-78`
 
@@ -823,6 +823,18 @@ explaining that this is what lets a test build a stage in either format.
 Worth spreading that pattern rather than relying on nobody adding a parallel test
 that touches it. `GaplessCoordinator`, `MiniaudioSink` and the decoders all read
 the statics directly.
+
+**Fixed** that way. `GaplessFormat` keeps only what does not vary: the
+defaults, the channel count and the widest frame. What was negotiated is a
+`PcmFormat` (rate and sample format). The sink is asked for a sample format in
+`Start` and reports the answer as `IAudioSink.Format`. `MiniaudioSink` keeps it
+as a field, narrowing it on a refusal and setting the device's rate.
+`GaplessAudioManager` builds the coordinator in that format, the coordinator
+hands it to every decoder, and the position math and `AudioFeeder` read it from
+what they were given. The equalizer is built by the manager at its own rate
+(`IAudioManager.ApplyEqualizer` takes the settings now), so no view model needs
+the rate either. The test that used to save and restore the statics around the
+production constructor no longer has anything to restore.
 
 ### E3. The mobile shell never got Tier 4.2's decomposition
 

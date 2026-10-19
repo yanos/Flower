@@ -154,7 +154,7 @@ public class StreamedTrackDecodeTests : IDisposable
     // One second of stereo S16 at the session rate, give or take the
     // resampler's edges.
     private static long ExpectedBytes() =>
-        GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame;
+        PcmFormat.Default.SampleRate * PcmFormat.Default.BytesPerFrame;
 
     [Fact]
     public void A_streamed_track_decodes_through_Flowers_own_HTTP_stream()

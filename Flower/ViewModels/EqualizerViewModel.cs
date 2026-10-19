@@ -80,7 +80,7 @@ namespace Flower.ViewModels
 
         private void ApplyAndSave()
         {
-            _audioManager.ApplyEqualizer(_settings.Enabled ? Equalizer.BuildFrom(_settings, GaplessFormat.SampleRate) : null);
+            _audioManager.ApplyEqualizer(_settings.Enabled ? _settings : null);
             _ = _appSettingsStore.SaveAsync(_appSettings);
         }
     }

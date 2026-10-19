@@ -57,7 +57,10 @@ public sealed class FakeAudioManager : IAudioManager
     public void Resume() => ResumeCount++;
     public void Pause() { }
     public void Stop() { }
-    public void ApplyEqualizer(Equalizer? equalizer) => LastAppliedEqualizer = equalizer;
+    // Built the way GaplessAudioManager builds it, so a test can tell one
+    // apply from the next.
+    public void ApplyEqualizer(EqualizerSettings? settings) =>
+        LastAppliedEqualizer = settings == null ? null : Equalizer.BuildFrom(settings, GaplessFormat.DefaultSampleRate);
 
     public AudioTimingSettings? LastAppliedTiming { get; private set; }
 

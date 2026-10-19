@@ -36,7 +36,7 @@ namespace Flower.Tests.Audio
 
         private static AudioFeeder Feeder(GaplessRingBuffer ring, IAudioBridge bridge, AudioTimingSettings? timing = null)
         {
-            var stage = new OutputStage(GaplessFormat.SampleRate) { Timing = timing ?? Transparent() };
+            var stage = new OutputStage(PcmFormat.Default.SampleRate) { Timing = timing ?? Transparent() };
             return new AudioFeeder(ring, bridge, stage);
         }
 
@@ -47,7 +47,7 @@ namespace Flower.Tests.Audio
         private static void AssertHandedOver(byte[] expected, FakeAudioBridge bridge)
         {
             Assert.Equal(expected.Length, bridge.Drained.Count);
-            Assert.Equal(expected[GaplessFormat.BytesPerFrame..], bridge.Drained.Skip(GaplessFormat.BytesPerFrame));
+            Assert.Equal(expected[PcmFormat.Default.BytesPerFrame..], bridge.Drained.Skip(PcmFormat.Default.BytesPerFrame));
         }
 
         private static byte[] Ramp(int byteCount)
@@ -222,7 +222,7 @@ namespace Flower.Tests.Audio
             // 100ms of prebuffer at the canonical format.
             var timing = Transparent();
             timing.PrebufferMs = 100;
-            var required = 100 * (long)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame / 1000;
+            var required = 100 * (long)PcmFormat.Default.SampleRate * PcmFormat.Default.BytesPerFrame / 1000;
 
             var ring = new GaplessRingBuffer(1024 * 1024);
             var bridge = new FakeAudioBridge(1024 * 1024);
@@ -242,7 +242,7 @@ namespace Flower.Tests.Audio
         {
             var timing = Transparent();
             timing.PrebufferMs = 100;
-            var required = (int)(100 * (long)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame / 1000);
+            var required = (int)(100 * (long)PcmFormat.Default.SampleRate * PcmFormat.Default.BytesPerFrame / 1000);
 
             var ring = new GaplessRingBuffer(1024 * 1024);
             var bridge = new FakeAudioBridge(1024 * 1024);
@@ -281,7 +281,7 @@ namespace Flower.Tests.Audio
             // callback is left with a copy and a fade.
             var ring = new GaplessRingBuffer(64 * 1024);
             var bridge = new FakeAudioBridge(64 * 1024);
-            var stage = new OutputStage(GaplessFormat.SampleRate) { Timing = Transparent(), TargetGain = 0.5f };
+            var stage = new OutputStage(PcmFormat.Default.SampleRate) { Timing = Transparent(), TargetGain = 0.5f };
             using var feeder = new AudioFeeder(ring, bridge, stage);
 
             var samples = Enumerable.Repeat((short)10000, 2048).ToArray();

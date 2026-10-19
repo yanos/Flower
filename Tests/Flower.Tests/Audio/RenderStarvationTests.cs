@@ -23,7 +23,7 @@ namespace Flower.Tests.Audio;
 // this runs in CI.
 public class RenderStarvationTests
 {
-    private static readonly int RingBytes = 100 * (int)GaplessFormat.DefaultSampleRate * GaplessFormat.BytesPerFrame / 1000; // 100ms
+    private static readonly int RingBytes = 100 * (int)GaplessFormat.DefaultSampleRate * PcmFormat.Default.BytesPerFrame / 1000; // 100ms
 
     private static Track T(string title) =>
         new() { Title = title, Path = $"/music/{title}.mp3", Duration = TimeSpan.FromSeconds(1) };
@@ -75,7 +75,7 @@ public class RenderStarvationTests
 
         private void Decode()
         {
-            var buffer = new byte[_framesPerWrite * GaplessFormat.BytesPerFrame];
+            var buffer = new byte[_framesPerWrite * PcmFormat.Default.BytesPerFrame];
             var samples = MemoryMarshal.Cast<byte, short>(buffer.AsSpan());
 
             for (var frame = 0; frame < _totalFrames && !_retired; frame += _framesPerWrite)

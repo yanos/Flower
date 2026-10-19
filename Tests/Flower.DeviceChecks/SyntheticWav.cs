@@ -49,7 +49,7 @@ public static class SyntheticWav
 
     public static byte[] Build(TimeSpan duration, Func<int, short> sampleAt)
     {
-        var frameCount = (int)(duration.TotalSeconds * GaplessFormat.SampleRate);
+        var frameCount = (int)(duration.TotalSeconds * GaplessFormat.DefaultSampleRate);
         var dataSize = frameCount * BytesPerFrame;
         var buffer = new byte[HeaderSize + dataSize];
 
@@ -71,8 +71,8 @@ public static class SyntheticWav
         BinaryPrimitives.WriteInt32LittleEndian(span[16..], 16); // PCM fmt chunk size
         BinaryPrimitives.WriteInt16LittleEndian(span[20..], 1); // AudioFormat = PCM
         BinaryPrimitives.WriteInt16LittleEndian(span[22..], (short)GaplessFormat.Channels);
-        BinaryPrimitives.WriteInt32LittleEndian(span[24..], (int)GaplessFormat.SampleRate);
-        BinaryPrimitives.WriteInt32LittleEndian(span[28..], (int)GaplessFormat.SampleRate * BytesPerFrame); // byte rate
+        BinaryPrimitives.WriteInt32LittleEndian(span[24..], (int)GaplessFormat.DefaultSampleRate);
+        BinaryPrimitives.WriteInt32LittleEndian(span[28..], (int)GaplessFormat.DefaultSampleRate * BytesPerFrame); // byte rate
         BinaryPrimitives.WriteInt16LittleEndian(span[32..], (short)BytesPerFrame); // block align
         BinaryPrimitives.WriteInt16LittleEndian(span[34..], (short)(BytesPerSample * 8)); // bits per sample
 

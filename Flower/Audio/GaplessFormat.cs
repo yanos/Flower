@@ -1,5 +1,3 @@
-using System.Threading;
-
 namespace Flower.Audio
 {
     // The one canonical PCM format every track is decoded to before it ever
@@ -22,12 +20,15 @@ namespace Flower.Audio
     // Frozen rather than merely defaulted: a decoder already open cannot
     // change format, so a device change mid-session keeps the negotiated one.
     // See MiniaudioSink.OpenDevice's _hasNegotiatedFormat.
+    //
+    // What was negotiated is a PcmFormat, which the sink reports and each
+    // piece of the pipeline is handed. This class keeps only what does not
+    // vary: the defaults, the channel count and the widest frame.
     public static class GaplessFormat
     {
         // The fallback also keeps test fixtures and headless sinks
-        // deterministic. MiniaudioSink replaces the process's session rate
-        // with the opened output device's native rate before any decoder is
-        // constructed, avoiding its otherwise unavoidable second resample.
+        // deterministic. MiniaudioSink replaces it with the opened output
+        // device's native rate before any decoder is constructed, avoiding its otherwise unavoidable second resample.
         public const uint DefaultSampleRate = 48000;
 
         // What the pipeline carries until something negotiates otherwise -
@@ -47,31 +48,7 @@ namespace Flower.Audio
         public const int MaxBytesPerSample = 3;
         public const int MaxBytesPerFrame = MaxBytesPerSample * (int)Channels;
 
-        private static uint _sampleRate = DefaultSampleRate;
-        private static int _sampleFormat = (int)DefaultSampleFormat;
-
-        public static uint SampleRate => Volatile.Read(ref _sampleRate);
-
-        public static PcmSampleFormat SampleFormat => (PcmSampleFormat)Volatile.Read(ref _sampleFormat);
-
-        public static int BytesPerSample => BytesPerSampleOf(SampleFormat);
-
-        public static int BytesPerFrame => BytesPerSample * (int)Channels;
-
         public static int BytesPerSampleOf(PcmSampleFormat format) =>
             format == PcmSampleFormat.S24 ? 3 : 2;
-
-        // Both configured before the first decoder exists and not touched
-        // afterwards, so neither needs to be safe against a decode in flight -
-        // the Volatile pair is for the render callback's read, not for a
-        // change underneath it.
-        internal static void ConfigureSampleRate(uint sampleRate)
-        {
-            if (sampleRate != 0)
-                Volatile.Write(ref _sampleRate, sampleRate);
-        }
-
-        internal static void ConfigureSampleFormat(PcmSampleFormat format) =>
-            Volatile.Write(ref _sampleFormat, (int)format);
     }
 }

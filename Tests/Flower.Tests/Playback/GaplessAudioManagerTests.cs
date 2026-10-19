@@ -37,7 +37,7 @@ public class GaplessAudioManagerTests
         // Large enough to hold several seconds of canonical PCM in one
         // TryWrite() call - Time/Position tests below write/read whole
         // multi-second chunks at once rather than looping in small pieces.
-        var ring = new GaplessRingBuffer(10 * (int)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
+        var ring = new GaplessRingBuffer(10 * (int)PcmFormat.Default.SampleRate * PcmFormat.Default.BytesPerFrame);
         FakeTrackDecoder? created = null;
         var coordinator = new GaplessCoordinator(ring, (t, r) =>
         {
@@ -180,7 +180,7 @@ public class GaplessAudioManagerTests
         manager.Pause();
 
         // 2 seconds of canonical PCM, consumed by the sink.
-        var bytes = GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame * 2;
+        var bytes = PcmFormat.Default.SampleRate * PcmFormat.Default.BytesPerFrame * 2;
         ring.TryWrite(new byte[bytes]);
         ring.Read(new byte[bytes]);
 
@@ -442,14 +442,6 @@ public class GaplessAudioManagerTests
     {
         var previousSession = PlatformAudioSession.Current;
 
-        // The production constructor settles the canonical format as a side
-        // effect - that is the whole of what StartSink is for - and both of
-        // those are process-wide. Left set, S24 changes BytesPerFrame for every
-        // test that runs afterwards, which is how this test first announced
-        // itself: as an unrelated failure in GaplessCoordinatorTests.
-        var previousFormat = GaplessFormat.SampleFormat;
-        var previousRate = GaplessFormat.SampleRate;
-
         var sink = new FakeAudioSink();
         var session = new RecordingPlatformAudioSession();
         var sinkWasStartedFirst = true;
@@ -467,9 +459,22 @@ public class GaplessAudioManagerTests
         finally
         {
             PlatformAudioSession.Current = previousSession;
-            GaplessFormat.ConfigureSampleFormat(previousFormat);
-            GaplessFormat.ConfigureSampleRate(previousRate);
         }
+    }
+
+    // The production constructor asks the sink for the decoder's 24 bits and
+    // builds everything after from the sink's answer. That used to be a
+    // process-wide static it set, and left set it moved BytesPerFrame under
+    // every test running beside it - which is how the test above first
+    // announced itself, as an unrelated failure in GaplessCoordinatorTests.
+    [Fact]
+    public void The_production_constructor_asks_the_sink_for_24_bits()
+    {
+        var sink = new FakeAudioSink();
+
+        using var manager = new GaplessAudioManager(sink, NullLogger<GaplessAudioManager>.Instance);
+
+        Assert.Equal(PcmSampleFormat.S24, sink.Format.SampleFormat);
     }
 
     private sealed class RecordingPlatformAudioSession : IPlatformAudioSession

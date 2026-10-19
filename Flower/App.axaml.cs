@@ -648,10 +648,8 @@ public partial class App : Application
         // Re-apply the persisted EQ curve before the very first frame of audio
         // plays, rather than waiting for the user to open the Equalizer window
         // this session - see EqualizerViewModel.
-        if (audioManager is GaplessAudioManager gapless && appSettings.EqualizerSettings is { Enabled: true } eqSettings)
-        {
-            gapless.ApplyEqualizer(Flower.Audio.Equalizer.BuildFrom(eqSettings, GaplessFormat.SampleRate));
-        }
+        if (appSettings.EqualizerSettings is { Enabled: true } eqSettings)
+            audioManager.ApplyEqualizer(eqSettings);
 
         // Same idea for the render path's own tuning - prebuffer depth, fade
         // and ramp lengths. Clamped on the way in, since settings.json is

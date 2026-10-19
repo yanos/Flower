@@ -102,7 +102,7 @@ public class GaplessCoordinatorTests
         var a = T("A");
         h.Coordinator.Play(a);
         WaitUntil(() => h.LatestDecoderFor(a).StartDecodingCalled, "A should start");
-        h.LatestDecoderFor(a).BytesProduced = 3 * 60 * (long)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame;
+        h.LatestDecoderFor(a).BytesProduced = 3 * 60 * (long)PcmFormat.Default.SampleRate * PcmFormat.Default.BytesPerFrame;
         h.SharedRing.TryWrite(new byte[24_000]);
 
         h.LatestDecoderFor(a).RaiseDrained();
@@ -542,7 +542,7 @@ public class GaplessCoordinatorTests
         // A is 3 minutes (see T()); half way in is 90s worth of canonical
         // PCM - reported immediately, before any post-seek audio has
         // actually reached the sink.
-        var targetBytes = (long)(90 * GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
+        var targetBytes = (long)(90 * PcmFormat.Default.SampleRate * PcmFormat.Default.BytesPerFrame);
         Assert.Equal(targetBytes, h.Coordinator.CurrentTrackBytesProduced);
         Assert.Equal(0.5f, h.LatestDecoderFor(a).LastSeekPosition);
 
@@ -562,12 +562,12 @@ public class GaplessCoordinatorTests
         WaitUntil(() => h.LatestDecoderFor(a).StartDecodingCalled, "A should start");
 
         h.Coordinator.Seek(0.5f);
-        var targetBytes = (long)(90 * GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
+        var targetBytes = (long)(90 * PcmFormat.Default.SampleRate * PcmFormat.Default.BytesPerFrame);
         Assert.Equal(targetBytes, h.Coordinator.CurrentTrackBytesProduced);
 
         // The demuxer put it two seconds short of the request - a lossy
         // seek landing on the nearest frame boundary it could use.
-        var landedBytes = targetBytes - (long)(2 * GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
+        var landedBytes = targetBytes - (long)(2 * PcmFormat.Default.SampleRate * PcmFormat.Default.BytesPerFrame);
         h.LatestDecoderFor(a).RaiseSeekSettled(landedBytes);
 
         Assert.Equal(landedBytes, h.Coordinator.CurrentTrackBytesProduced);
@@ -594,7 +594,7 @@ public class GaplessCoordinatorTests
         h.SharedRing.TryWrite(new byte[500]);
         h.SharedRing.Read(new byte[500]);
 
-        var landedBytes = (long)(88 * GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
+        var landedBytes = (long)(88 * PcmFormat.Default.SampleRate * PcmFormat.Default.BytesPerFrame);
         h.LatestDecoderFor(a).RaiseSeekSettled(landedBytes);
 
         Assert.Equal(landedBytes + 500, h.Coordinator.CurrentTrackBytesProduced);
@@ -618,7 +618,7 @@ public class GaplessCoordinatorTests
         WaitUntil(() => h.LatestDecoderFor(b).StartDecodingCalled, "B should start");
         Assert.Equal(0, h.Coordinator.CurrentTrackBytesProduced);
 
-        staleDecoder.RaiseSeekSettled((long)(88 * GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame));
+        staleDecoder.RaiseSeekSettled((long)(88 * PcmFormat.Default.SampleRate * PcmFormat.Default.BytesPerFrame));
 
         Assert.Equal(0, h.Coordinator.CurrentTrackBytesProduced);
     }

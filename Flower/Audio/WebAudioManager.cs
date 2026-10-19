@@ -201,7 +201,7 @@ namespace Flower.Audio
         }
 
         // No in-browser EQ in v1 - see class remarks.
-        public void ApplyEqualizer(Equalizer? equalizer)
+        public void ApplyEqualizer(EqualizerSettings? settings)
         {
         }
 

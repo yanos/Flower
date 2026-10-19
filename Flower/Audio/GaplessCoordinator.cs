@@ -35,8 +35,8 @@ namespace Flower.Audio
         // well ahead of playback without unbounded memory growth. Doesn't
         // rely on any assumption about how fast a decoder paces itself
         // relative to real time.
-        public static int DefaultStagingCapacityBytes =>
-            60 * (int)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame;
+        private static int DefaultStagingCapacityBytes(PcmFormat format) =>
+            60 * (int)format.SampleRate * format.BytesPerFrame;
 
         // Only ever non-default in tests, which shrink it so decode-ahead
         // fills it in a fraction of a second - the "staging ring already
@@ -157,13 +157,15 @@ namespace Flower.Audio
             GaplessRingBuffer sharedRing,
             ILogger<GaplessCoordinator>? logger = null,
             int stagingCapacityBytes = 0,
-            ILogger<FfmpegTrackDecoder>? ffmpegDecoderLogger = null)
+            ILogger<FfmpegTrackDecoder>? ffmpegDecoderLogger = null,
+            PcmFormat? format = null)
             : this(sharedRing,
-                   (track, ring) => new FfmpegTrackDecoder(track, ring, ffmpegDecoderLogger),
+                   (track, ring) => new FfmpegTrackDecoder(track, ring, ffmpegDecoderLogger, format),
                    logger,
-                   stagingCapacityBytes)
+                   stagingCapacityBytes,
+                   format)
         {
-            logger?.LogInformation("Decoding through ffaudio at {Format}", GaplessFormat.SampleFormat);
+            logger?.LogInformation("Decoding through ffaudio at {Format}", Format.SampleFormat);
         }
 
         // Lets tests substitute a fake ITrackDecoder to exercise this
@@ -174,14 +176,20 @@ namespace Flower.Audio
             GaplessRingBuffer sharedRing,
             Func<Track, GaplessRingBuffer, ITrackDecoder> decoderFactory,
             ILogger<GaplessCoordinator>? logger = null,
-            int stagingCapacityBytes = 0)
+            int stagingCapacityBytes = 0,
+            PcmFormat? format = null)
         {
-            _stagingCapacityBytes = stagingCapacityBytes == 0 ? DefaultStagingCapacityBytes : stagingCapacityBytes;
+            Format = format ?? PcmFormat.Default;
+            _stagingCapacityBytes = stagingCapacityBytes == 0 ? DefaultStagingCapacityBytes(Format) : stagingCapacityBytes;
             _sharedRing = sharedRing;
             _currentDecoderFactory = decoderFactory;
             _armedDecoderFactory = decoderFactory;
             _logger = logger;
         }
+
+        // What the sink renders and so what every decoder here produces - the
+        // unit of every byte count this class keeps. See IAudioSink.Format.
+        public PcmFormat Format { get; }
 
         // Both of these are read every 250ms by the position timer, on the UI
         // thread, and both used to take _gate - which is also held across
@@ -539,7 +547,7 @@ namespace Flower.Audio
                     // the scrubber drifting away from the audio across
                     // repeated seeks.
                     var targetSeconds = _current.Track.Duration.TotalSeconds * position;
-                    var targetBytes = (long)(targetSeconds * GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
+                    var targetBytes = (long)(targetSeconds * Format.SampleRate * Format.BytesPerFrame);
                     _currentTrackReadSplit = -targetBytes;
                     PublishCurrent();
                 }
@@ -1025,11 +1033,11 @@ namespace Flower.Audio
             _armedAlreadyDrained = false;
         }
 
-        private static long BytesForDuration(TimeSpan duration) =>
-            (long)(duration.TotalSeconds * GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
+        private long BytesForDuration(TimeSpan duration) =>
+            (long)(duration.TotalSeconds * Format.SampleRate * Format.BytesPerFrame);
 
-        private static double BytesToMilliseconds(long bytes) =>
-            bytes / (double)(GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame) * 1000;
+        private double BytesToMilliseconds(long bytes) =>
+            bytes / (double)(Format.SampleRate * Format.BytesPerFrame) * 1000;
 
         public void Dispose()
         {

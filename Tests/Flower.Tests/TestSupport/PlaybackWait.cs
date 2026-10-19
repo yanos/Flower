@@ -9,7 +9,7 @@ namespace Flower.Tests.TestSupport;
 // build rather than finding a bug.
 //
 // **A flat deadline measures the runner, not the code.** FakeAudioSink paces
-// itself to GaplessFormat.SampleRate, so it can only ever be slower than real
+// itself to PcmFormat.Default.SampleRate, so it can only ever be slower than real
 // time, never faster - Thread.Sleep(n) sleeps *at least* n, and the overshoot
 // compounds once several decode-heavy test classes run in parallel on a
 // three-core hosted runner. Asking for three seconds of audio inside fifteen

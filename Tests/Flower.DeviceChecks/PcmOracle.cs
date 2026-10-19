@@ -123,7 +123,7 @@ public static class PcmOracle
 
     private static double Magnitude(double[] samples, double frequencyHz)
     {
-        var w = 2.0 * Math.PI * frequencyHz / GaplessFormat.SampleRate;
+        var w = 2.0 * Math.PI * frequencyHz / GaplessFormat.DefaultSampleRate;
         var coefficient = 2.0 * Math.Cos(w);
         double s1 = 0, s2 = 0;
 
@@ -137,5 +137,5 @@ public static class PcmOracle
         return Math.Sqrt(s1 * s1 + s2 * s2 - coefficient * s1 * s2) / samples.Length;
     }
 
-    private static double Milliseconds(int frames) => frames * 1000.0 / GaplessFormat.SampleRate;
+    private static double Milliseconds(int frames) => frames * 1000.0 / GaplessFormat.DefaultSampleRate;
 }

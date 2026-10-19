@@ -64,9 +64,14 @@ public sealed class FakeAudioSink : IAudioSink
     // has to have run already. See GaplessAudioManager.StartSink.
     public bool IsStarted { get; private set; }
 
-    public void Start(GaplessRingBuffer ringBuffer)
+    // A device that takes whatever sample format it is asked for, at the
+    // default rate - as a real one at 48kHz does.
+    public PcmFormat Format { get; private set; } = PcmFormat.Default;
+
+    public void Start(GaplessRingBuffer ringBuffer, PcmSampleFormat sampleFormat = GaplessFormat.DefaultSampleFormat)
     {
         _ring = ringBuffer;
+        Format = Format with { SampleFormat = sampleFormat };
         IsStarted = true;
     }
 
@@ -118,7 +123,7 @@ public sealed class FakeAudioSink : IAudioSink
     private void Pump(GaplessRingBuffer ring, CancellationToken token)
     {
         // Paced to roughly real playback speed (matching a real render
-        // device pulling PCM at GaplessFormat.SampleRate) rather than
+        // device pulling PCM at its own rate) rather than
         // draining as fast as the CPU allows - a consumer this fast makes
         // even the *current* decoder's writes race ahead unrealistically
         // quickly (production paces the current decoder to real time via
@@ -139,8 +144,9 @@ public sealed class FakeAudioSink : IAudioSink
                 lock (_gate)
                     _captured.Write(chunk[..read]);
 
-                var frames = read / GaplessFormat.BytesPerFrame;
-                var delayMs = frames * 1000 / (int)GaplessFormat.SampleRate;
+                var format = Format;
+                var frames = read / format.BytesPerFrame;
+                var delayMs = frames * 1000 / (int)format.SampleRate;
                 if (delayMs > 0)
                     Thread.Sleep(delayMs);
             }

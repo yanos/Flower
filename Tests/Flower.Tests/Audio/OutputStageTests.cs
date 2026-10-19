@@ -30,11 +30,11 @@ public class OutputStageTests
 
     private static byte[] Sine(double frequencyHz, int frameCount, float amplitude = 0.5f)
     {
-        var bytes = new byte[frameCount * GaplessFormat.BytesPerFrame];
+        var bytes = new byte[frameCount * PcmFormat.Default.BytesPerFrame];
         var samples = MemoryMarshal.Cast<byte, short>(bytes.AsSpan());
         for (var i = 0; i < frameCount; i++)
         {
-            var value = (short)(amplitude * short.MaxValue * Math.Sin(2 * Math.PI * frequencyHz * i / GaplessFormat.SampleRate));
+            var value = (short)(amplitude * short.MaxValue * Math.Sin(2 * Math.PI * frequencyHz * i / PcmFormat.Default.SampleRate));
             samples[i * 2] = value;
             samples[i * 2 + 1] = value;
         }
@@ -46,7 +46,7 @@ public class OutputStageTests
     // it - any step at all is the stage's doing.
     private static byte[] Constant(short value, int frameCount)
     {
-        var bytes = new byte[frameCount * GaplessFormat.BytesPerFrame];
+        var bytes = new byte[frameCount * PcmFormat.Default.BytesPerFrame];
         var samples = MemoryMarshal.Cast<byte, short>(bytes.AsSpan());
         samples.Fill(value);
         return bytes;
@@ -54,7 +54,7 @@ public class OutputStageTests
 
     private static OutputStage Stage(AudioTimingSettings? timing = null)
     {
-        var stage = new OutputStage(GaplessFormat.SampleRate) { Timing = timing ?? Timing() };
+        var stage = new OutputStage(PcmFormat.Default.SampleRate) { Timing = timing ?? Timing() };
 
         // Past the declick fade-in the first buffer of a new generation always
         // gets, so a test measuring something else isn't measuring that.
@@ -213,7 +213,7 @@ public class OutputStageTests
         stage.TargetGain = 0.75f;
         stage.Equalizer = Equalizer.BuildFrom(
             new EqualizerSettings { Enabled = true, PreampDb = 3, BandGainsDb = new double[Equalizer.BandCount] },
-            GaplessFormat.SampleRate);
+            PcmFormat.Default.SampleRate);
 
         var buffer = Sine(1000, 480);
 
@@ -256,7 +256,7 @@ public class OutputStageTests
         var buffer = Sine(1000, 4800, amplitude: 0.4f);
         stage.Process(buffer, generation: 1);
 
-        stage.Equalizer = Equalizer.BuildFrom(settings, GaplessFormat.SampleRate);
+        stage.Equalizer = Equalizer.BuildFrom(settings, PcmFormat.Default.SampleRate);
 
         var swapped = Sine(1000, 4800, amplitude: 0.4f);
         stage.Process(swapped, generation: 1);
@@ -267,7 +267,7 @@ public class OutputStageTests
         // own, and the question is only whether the swap added anything to it.
         var reference = Stage(Timing(gainRampMs: 0, declickMs: 0));
         reference.TargetGain = 1f;
-        reference.Equalizer = Equalizer.BuildFrom(settings, GaplessFormat.SampleRate);
+        reference.Equalizer = Equalizer.BuildFrom(settings, PcmFormat.Default.SampleRate);
         reference.Process(Sine(1000, 4800, amplitude: 0.4f), generation: 1);
         var settled = Sine(1000, 4800, amplitude: 0.4f);
         reference.Process(settled, generation: 1);

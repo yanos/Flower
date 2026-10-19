@@ -86,9 +86,9 @@ namespace Flower.Audio
 
         // Applies (or, passing null, true-bypasses) the EQ - see
         // IAudioSink.ApplyEqualizer for exact bypass semantics. Every change
-        // rebuilds and swaps the whole processor; there is no partial-update
-        // path.
-        void ApplyEqualizer(Equalizer? equalizer);
+        // rebuilds and swaps the whole processor, at the rate this manager
+        // renders; there is no partial-update path.
+        void ApplyEqualizer(EqualizerSettings? settings);
 
         // Output routing, forwarded straight to the underlying IAudioSink -
         // see IAudioSink.GetOutputDevices/OutputDeviceId/SetOutputDevice for

@@ -80,7 +80,7 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
 
         // Smaller than A, so playback paces A's decoder and it cannot finish
         // before SetUpcoming arms B - see A_handover_puts_Bs_first_frame_exactly_where_As_last_one_ended.
-        var sharedRing = new GaplessRingBuffer((int)GaplessFormat.SampleRate / 2 * GaplessFormat.BytesPerFrame);
+        var sharedRing = new GaplessRingBuffer((int)PcmFormat.Default.SampleRate / 2 * PcmFormat.Default.BytesPerFrame);
         var coordinator = new GaplessCoordinator(sharedRing, NullLogger<GaplessCoordinator>.Instance);
         var sink = new FakeAudioSink();
         sink.Start(sharedRing);
@@ -99,20 +99,20 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
         // stop and inspect everything gathered so far. FakeAudioSink paces
         // itself to real time regardless of how fast decode-ahead finished,
         // so this reliably takes about durationA + 0.2s of wall-clock time.
-        var targetBytes = (long)((durationA.TotalSeconds + 0.2) * GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
+        var targetBytes = (long)((durationA.TotalSeconds + 0.2) * PcmFormat.Default.SampleRate * PcmFormat.Default.BytesPerFrame);
         PlaybackWait.UntilReaches(() => sink.CapturedCount, targetBytes, "playback never reached the splice");
         sink.Pause();
 
         Assert.Contains(trackA, endReachedTracks);
 
         var captured = sink.Captured;
-        Assert.Equal(0, captured.Length % GaplessFormat.BytesPerFrame);
+        Assert.Equal(0, captured.Length % PcmFormat.Default.BytesPerFrame);
 
-        var frameCount = captured.Length / GaplessFormat.BytesPerFrame;
+        var frameCount = captured.Length / PcmFormat.Default.BytesPerFrame;
         int? firstBFrame = null;
         for (var i = 0; i < frameCount; i++)
         {
-            var frame = captured.AsSpan(i * GaplessFormat.BytesPerFrame, 2);
+            var frame = captured.AsSpan(i * PcmFormat.Default.BytesPerFrame, 2);
             var sample = BinaryPrimitives.ReadInt16LittleEndian(frame);
 
             Assert.True(sample is markerA or markerB, $"frame {i} had unexpected sample {sample}, splice likely corrupted");
@@ -160,10 +160,10 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
 
         // A tenth of a second of staging against a two-second current
         // track: B's decode-ahead fills it and parks long before A ends.
-        var stagingCapacity = (int)GaplessFormat.SampleRate / 10 * GaplessFormat.BytesPerFrame;
+        var stagingCapacity = (int)PcmFormat.Default.SampleRate / 10 * PcmFormat.Default.BytesPerFrame;
         // Smaller than A, so playback paces A's decoder and it cannot finish
         // before SetUpcoming arms B - see A_handover_puts_Bs_first_frame_exactly_where_As_last_one_ended.
-        var sharedRing = new GaplessRingBuffer((int)GaplessFormat.SampleRate / 2 * GaplessFormat.BytesPerFrame);
+        var sharedRing = new GaplessRingBuffer((int)PcmFormat.Default.SampleRate / 2 * PcmFormat.Default.BytesPerFrame);
         var coordinator = new GaplessCoordinator(
             sharedRing,
             NullLogger<GaplessCoordinator>.Instance,
@@ -180,7 +180,7 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
         // resumed, so playback stopped at the end of that backlog. Getting
         // a full second of B out the other side is the actual proof that
         // the promoted decoder kept producing.
-        var targetBytes = (long)((durationA.TotalSeconds + 1.0) * GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
+        var targetBytes = (long)((durationA.TotalSeconds + 1.0) * PcmFormat.Default.SampleRate * PcmFormat.Default.BytesPerFrame);
         PlaybackWait.UntilReaches(
             () => sink.CapturedCount,
             targetBytes,
@@ -189,12 +189,12 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
         sink.Pause();
 
         var captured = sink.Captured;
-        var frameCount = captured.Length / GaplessFormat.BytesPerFrame;
+        var frameCount = captured.Length / PcmFormat.Default.BytesPerFrame;
         int? firstBFrame = null;
         var bFrames = 0;
         for (var i = 0; i < frameCount; i++)
         {
-            var sample = BinaryPrimitives.ReadInt16LittleEndian(captured.AsSpan(i * GaplessFormat.BytesPerFrame, 2));
+            var sample = BinaryPrimitives.ReadInt16LittleEndian(captured.AsSpan(i * PcmFormat.Default.BytesPerFrame, 2));
             Assert.True(sample is markerA or markerB, $"frame {i} had unexpected sample {sample}, splice likely corrupted");
 
             if (sample == markerB)
@@ -210,7 +210,7 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
 
         Assert.NotNull(firstBFrame);
         Assert.True(
-            bFrames > stagingCapacity / GaplessFormat.BytesPerFrame * 2,
+            bFrames > stagingCapacity / PcmFormat.Default.BytesPerFrame * 2,
             $"only {bFrames} frames of B came through - about the size of the staged backlog, so the promoted decoder stopped producing after the handover");
 
         coordinator.Dispose();
@@ -234,7 +234,7 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
         var expected = SyntheticWav.Build(duration, SyntheticWav.Ramp());
         var track = MakeTrack(SyntheticWav.CreateFile(_tempDir, "exact.wav", duration, SyntheticWav.Ramp()), duration);
 
-        var sharedRing = new GaplessRingBuffer(4 * (int)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
+        var sharedRing = new GaplessRingBuffer(4 * (int)PcmFormat.Default.SampleRate * PcmFormat.Default.BytesPerFrame);
         var coordinator = new GaplessCoordinator(sharedRing, NullLogger<GaplessCoordinator>.Instance);
         var sink = new FakeAudioSink();
         sink.Start(sharedRing);
@@ -313,7 +313,7 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
         // docs/CODE-REVIEW-2026-09.md, "A late arm is dropped". In the app it
         // degrades to a seam rather than silence, because Play's preserveTail
         // path keeps the buffered tail, which is why it has never been heard.
-        var sharedRing = new GaplessRingBuffer((int)GaplessFormat.SampleRate / 2 * GaplessFormat.BytesPerFrame);
+        var sharedRing = new GaplessRingBuffer((int)PcmFormat.Default.SampleRate / 2 * PcmFormat.Default.BytesPerFrame);
         var log = new RecordingLogger<GaplessCoordinator>();
         var coordinator = new GaplessCoordinator(sharedRing, log);
         var sink = new FakeAudioSink();
@@ -323,7 +323,7 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
         coordinator.Play(trackA);
         coordinator.SetUpcoming(trackB);
 
-        var targetBytes = (long)((durationA.TotalSeconds + 0.3) * GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
+        var targetBytes = (long)((durationA.TotalSeconds + 0.3) * PcmFormat.Default.SampleRate * PcmFormat.Default.BytesPerFrame);
         PlaybackWait.UntilReaches(() => sink.CapturedCount, targetBytes,
             () => "playback never reached the splice; the coordinator said:\n  "
                 + string.Join("\n  ", log.Entries.Select(e => $"[{e.Level}] {e.Message}")));
@@ -357,7 +357,7 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
 
         // The whole of A, and B starting on the very next frame. Exact: a
         // handover that dropped or duplicated even one frame fails here.
-        var expectedAFrames = (int)(durationA.TotalSeconds * GaplessFormat.SampleRate);
+        var expectedAFrames = (int)(durationA.TotalSeconds * PcmFormat.Default.SampleRate);
         Assert.Equal(expectedAFrames, aFrames);
         Assert.Equal(expectedAFrames, firstBFrame);
 
@@ -377,7 +377,7 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
 
         // Smaller than A, so playback paces A's decoder and it cannot finish
         // before SetUpcoming arms B - see A_handover_puts_Bs_first_frame_exactly_where_As_last_one_ended.
-        var sharedRing = new GaplessRingBuffer((int)GaplessFormat.SampleRate / 2 * GaplessFormat.BytesPerFrame);
+        var sharedRing = new GaplessRingBuffer((int)PcmFormat.Default.SampleRate / 2 * PcmFormat.Default.BytesPerFrame);
         var coordinator = new GaplessCoordinator(sharedRing, NullLogger<GaplessCoordinator>.Instance);
         var sink = new FakeAudioSink();
         sink.Start(sharedRing);
@@ -386,7 +386,7 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
         coordinator.Play(trackA);
         coordinator.SetUpcoming(trackB);
 
-        var targetBytes = (long)((duration.TotalSeconds + 0.3) * GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
+        var targetBytes = (long)((duration.TotalSeconds + 0.3) * PcmFormat.Default.SampleRate * PcmFormat.Default.BytesPerFrame);
         PlaybackWait.UntilReaches(() => sink.CapturedCount, targetBytes, "playback never reached the splice");
         sink.Pause();
 
@@ -433,7 +433,7 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
         var duration = TimeSpan.FromSeconds(4);
         var track = MakeTrack(SyntheticWav.CreateFile(_tempDir, "seek.wav", duration, SyntheticWav.Ramp()), duration);
 
-        var sharedRing = new GaplessRingBuffer(2 * (int)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame);
+        var sharedRing = new GaplessRingBuffer(2 * (int)PcmFormat.Default.SampleRate * PcmFormat.Default.BytesPerFrame);
         var coordinator = new GaplessCoordinator(sharedRing, NullLogger<GaplessCoordinator>.Instance);
         var sink = new FakeAudioSink();
         sink.Start(sharedRing);
@@ -445,7 +445,7 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
         // to leak if the flush is late.
         Assert.True(
             SpinWait.SpinUntil(
-                () => sink.CapturedCount > (long)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame / 2,
+                () => sink.CapturedCount > (long)PcmFormat.Default.SampleRate * PcmFormat.Default.BytesPerFrame / 2,
                 TimeSpan.FromSeconds(15)),
             "the head of the track never played");
 
@@ -466,7 +466,7 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
         // ahead the decoder happened to be.
         Assert.True(
             SpinWait.SpinUntil(
-                () => sink.CapturedCount > capturedAtSeek + (long)GaplessFormat.SampleRate * GaplessFormat.BytesPerFrame / 4,
+                () => sink.CapturedCount > capturedAtSeek + (long)PcmFormat.Default.SampleRate * PcmFormat.Default.BytesPerFrame / 4,
                 TimeSpan.FromSeconds(15)),
             "nothing played after the seek");
         sink.Pause();
@@ -484,7 +484,7 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
         }
 
         Assert.True(
-            lowValueFrames < (int)GaplessFormat.SampleRate / 10,
+            lowValueFrames < (int)PcmFormat.Default.SampleRate / 10,
             $"{lowValueFrames} frames of pre-seek audio played after the seek");
 
         coordinator.Dispose();

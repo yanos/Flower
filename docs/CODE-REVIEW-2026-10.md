@@ -749,7 +749,7 @@ Checked against the code, not taken from the September document's own marks.
 | D3 `SortedSet` per scroll | fixed | |
 | D4 Watchdog timer for the life of the process | fixed | October 2026: runs only while playing, one tick at a time |
 | D5 `ThreadCount` sees pool threads only | fixed | October 2026: `LiveDecoders` counts the decoders themselves |
-| E2 `GaplessFormat` process-wide statics | **open** | |
+| E2 `GaplessFormat` process-wide statics | fixed | October 2026: a `PcmFormat` the sink settles and every piece is handed |
 | E3 Shell view models too large | **worse** | `MobileMainViewModel` 1609 → 3215 lines, `MainViewModel` 1885 → 2893 |
 | E5 `GCHandle` leak on a second `Start` | fixed | October 2026 |
 | E6 Armed handlers kept after promotion | fixed | October 2026 |

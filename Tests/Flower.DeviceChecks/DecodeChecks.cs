@@ -82,7 +82,7 @@ public static class DecodeChecks
 
         if (Decoder.IsAvailable)
             decoders.Add(new("FFmpeg", PcmSampleFormat.S24,
-                (track, ring) => new FfmpegTrackDecoder(track, ring, sampleFormat: PcmSampleFormat.S24)));
+                (track, ring) => new FfmpegTrackDecoder(track, ring, format: PcmFormat.Default with { SampleFormat = PcmSampleFormat.S24 })));
 
         return decoders;
     }
@@ -437,7 +437,7 @@ public static class DecodeChecks
         // read back through the pipeline's own frame size rather than the
         // fixture's.
         var landedAtSeconds = landedAt
-            / (double)(GaplessFormat.SampleRate * GaplessFormat.BytesPerSampleOf(subject.Format) * GaplessFormat.Channels);
+            / (double)(GaplessFormat.DefaultSampleRate * GaplessFormat.BytesPerSampleOf(subject.Format) * GaplessFormat.Channels);
         if (landedAtSeconds < 3.5 || landedAtSeconds > 6.5)
             throw new CheckFailedException($"a seek to the middle of a 10s track landed at {landedAtSeconds:F2}s");
 
@@ -525,14 +525,14 @@ public static class DecodeChecks
     // pipeline to. See InFixtureUnits.
     private const int FixtureBytesPerFrame = 2 * (int)GaplessFormat.Channels;
 
-    private static int BytesPerSecond() => (int)GaplessFormat.SampleRate * FixtureBytesPerFrame;
+    private static int BytesPerSecond() => (int)GaplessFormat.DefaultSampleRate * FixtureBytesPerFrame;
 
     // The same second, counted in the bytes the decoder under check actually
     // writes: FFmpeg's are half as many again as the fixture's. Used only for
     // measuring what the ring holds against what the decoder produced, which
     // is a question in the pipeline's units rather than the fixture's.
     private static int PipelineBytesPerSecond(DecoderUnderTest subject) =>
-        (int)GaplessFormat.SampleRate * GaplessFormat.BytesPerSampleOf(subject.Format) * (int)GaplessFormat.Channels;
+        (int)GaplessFormat.DefaultSampleRate * GaplessFormat.BytesPerSampleOf(subject.Format) * (int)GaplessFormat.Channels;
 
     // Whatever the decoder delivered, in the fixture's units.
     //

@@ -213,7 +213,7 @@ public static class Pcm
         for (var harmonic = 2; harmonic <= 10; harmonic++)
         {
             var frequency = fundamentalHz * harmonic;
-            if (frequency >= GaplessFormat.SampleRate / 2.0)
+            if (frequency >= PcmFormat.Default.SampleRate / 2.0)
                 break;
 
             var magnitude = GoertzelMagnitude(mono, frequency);
@@ -225,7 +225,7 @@ public static class Pcm
 
     private static double GoertzelMagnitude(double[] samples, double frequencyHz)
     {
-        var omega = 2 * Math.PI * frequencyHz / GaplessFormat.SampleRate;
+        var omega = 2 * Math.PI * frequencyHz / PcmFormat.Default.SampleRate;
         var coefficient = 2 * Math.Cos(omega);
 
         double s1 = 0, s2 = 0;
@@ -241,5 +241,5 @@ public static class Pcm
         return Math.Sqrt(real * real + imaginary * imaginary) / samples.Length;
     }
 
-    private static double FramesToMilliseconds(int frames) => frames * 1000.0 / GaplessFormat.SampleRate;
+    private static double FramesToMilliseconds(int frames) => frames * 1000.0 / PcmFormat.Default.SampleRate;
 }
