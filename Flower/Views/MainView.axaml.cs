@@ -372,6 +372,17 @@ public partial class MainView : UserControl
             case nameof(MainViewModel.BusyMessage):
                 ShowStatusMessage(_viewModel!.BusyMessage);
                 break;
+            // Said like a step of work, and taken down the same way once it is
+            // cleared - unless work is still going on, whose message it was
+            // standing in front of.
+            case nameof(MainViewModel.PlaybackNotice):
+                if (_viewModel!.PlaybackNotice is { } notice)
+                    ShowStatusMessage(notice);
+                else if (_viewModel.IsBusy)
+                    ShowStatusMessage(_viewModel.BusyMessage);
+                else
+                    HideStatusBarSoon();
+                break;
             case nameof(MainViewModel.Rows):
                 ApplyRows();
                 break;

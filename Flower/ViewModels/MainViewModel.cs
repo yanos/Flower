@@ -869,6 +869,47 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public bool    IsBusy      => _busy.IsBusy;
     public string? BusyMessage => _busy.Message;
 
+    // A sentence about a song that would not play, where the person can see
+    // it: the desktop's status bar, and on the phone the mini player's second
+    // line, in place of the artist. Skipping one is said for a few seconds;
+    // giving up on a run of them (PlaylistControlViewModel.
+    // MaxConsecutiveFailures) stays until something plays, because that is
+    // the moment the app looks like it is playing with nothing coming out.
+    private string? _playbackNotice;
+    public string? PlaybackNotice
+    {
+        get => _playbackNotice;
+        private set => SetProperty(ref _playbackNotice, value);
+    }
+
+    private static readonly TimeSpan SkippedNoticeDuration = TimeSpan.FromSeconds(5);
+    private DispatcherTimer? _playbackNoticeTimer;
+    private bool _playbackNoticeLastsUntilPlaying;
+
+    private void ShowPlaybackNotice(PlaybackFailedEventArgs e)
+    {
+        _playbackNoticeTimer?.Stop();
+        _playbackNoticeLastsUntilPlaying = e.StoppedPlayback;
+        var title = string.IsNullOrWhiteSpace(e.Track.Title) ? "a song" : $"\"{e.Track.Title}\"";
+        PlaybackNotice = e.StoppedPlayback
+            ? "Stopped: the last few songs could not be played."
+            : $"Could not play {title}. Skipped it.";
+
+        if (e.StoppedPlayback)
+            return;
+
+        if (_playbackNoticeTimer == null)
+        {
+            _playbackNoticeTimer = new DispatcherTimer { Interval = SkippedNoticeDuration };
+            _playbackNoticeTimer.Tick += (_, _) =>
+            {
+                _playbackNoticeTimer.Stop();
+                PlaybackNotice = null;
+            };
+        }
+        _playbackNoticeTimer.Start();
+    }
+
     // Public entry point for App.axaml.cs's startup sequence, which needs to
     // keep the spinner up across the whole rescan + both iTunes syncs as one
     // continuous scope (nesting further scopes inside it just updates
@@ -1935,6 +1976,19 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         },
             h => Home.PropertyChanged += h, h => Home.PropertyChanged -= h);
 
+        _subscriptions.Add<EventHandler<PlaybackFailedEventArgs>>((_, e) => ShowPlaybackNotice(e),
+            h => playlistControlViewModel.PlaybackFailed += h, h => playlistControlViewModel.PlaybackFailed -= h);
+        _subscriptions.Add<PropertyChangedEventHandler>((_, e) =>
+        {
+            if (e.PropertyName == nameof(PlaylistControlViewModel.IsPlaying)
+                && _playbackNoticeLastsUntilPlaying && playlistControlViewModel.IsPlaying)
+            {
+                _playbackNoticeLastsUntilPlaying = false;
+                PlaybackNotice = null;
+            }
+        },
+            h => playlistControlViewModel.PropertyChanged += h, h => playlistControlViewModel.PropertyChanged -= h);
+
         Queue = new QueueViewModel(playlistControlViewModel,
             () => (StreamingServerFingerprint, IsStreamingServerReachable));
         _subscriptions.Add<System.ComponentModel.PropertyChangedEventHandler>((_, e) =>
@@ -2253,6 +2307,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public void Dispose()
     {
         _subscriptions.Dispose();
+        _playbackNoticeTimer?.Stop();
         Home.Dispose();
         Queue.Dispose();
         Sync.Dispose();

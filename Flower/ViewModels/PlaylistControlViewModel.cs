@@ -15,6 +15,15 @@ using Flower.Persistence;
 
 namespace Flower.ViewModels
 {
+    // PlaylistControlViewModel.PlaybackFailed: the track that would not play,
+    // and whether it was the last straw - the run of failures that stops
+    // playback rather than skipping on (MaxConsecutiveFailures).
+    public sealed class PlaybackFailedEventArgs(Track track, bool stoppedPlayback) : EventArgs
+    {
+        public Track Track { get; } = track;
+        public bool StoppedPlayback { get; } = stoppedPlayback;
+    }
+
     public class PlaylistControlViewModel : ViewModelBase, IDisposable
     {
         private readonly ILogger<PlaylistControlViewModel> _logger;
@@ -359,9 +368,10 @@ namespace Flower.ViewModels
             _subscriptions.Add<EventHandler<TrackFailedEventArgs>>((_, e) => OnUiThread(() =>
             {
                 _logger.LogWarning("Skipping {Title} ({Path}) - it could not be played", e.Track.Title, LogPath.Short(e.Track.Path));
-                PlaybackFailed?.Invoke(this, e);
 
-                if (++_consecutiveFailures >= MaxConsecutiveFailures)
+                var gaveUp = ++_consecutiveFailures >= MaxConsecutiveFailures;
+                PlaybackFailed?.Invoke(this, new PlaybackFailedEventArgs(e.Track, gaveUp));
+                if (gaveUp)
                 {
                     _logger.LogWarning(
                         "Stopping after {Count} tracks in a row that could not be played - at that point the problem is the source, not any one track",
@@ -447,10 +457,10 @@ namespace Flower.ViewModels
         // the next test's playback events.
         public void Dispose() => _subscriptions.Dispose();
 
-        // Surfaced for the UI to show a "couldn't play this" message. Nothing
-        // consumes it yet - see docs/ARCHITECTURE-REVIEW.md - so today the Log
-        // window is where a failed track shows up.
-        public event EventHandler<TrackFailedEventArgs>? PlaybackFailed;
+        // A track that could not be played, on the UI thread, saying whether
+        // it was the one that made playback give up (MaxConsecutiveFailures).
+        // MainViewModel turns it into a status message on both heads.
+        public event EventHandler<PlaybackFailedEventArgs>? PlaybackFailed;
 
         // The Home screen's Continue Playing shelf - which albums are part-way
         // through, and where. Fed from here because every start, end and pause
