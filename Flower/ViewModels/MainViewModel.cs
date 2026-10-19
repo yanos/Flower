@@ -76,6 +76,15 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public TrackInfoViewModel TrackInfo() =>
         new(Library, CanEditTagsOf, PairedServerSourceName, LoggerFactory.CreateLogger<TrackInfoViewModel>());
 
+    // What decides a song or album menu's entries for these songs - see
+    // ActionMenus. removal is null on a head with no LibraryRemovalService,
+    // which then offers no Remove from Library.
+    public MenuFacts MenuFactsFor(IReadOnlyList<Track> tracks, LibraryRemovalService? removal) =>
+        new(tracks.Count(Availability.IsDownloadable),
+            Downloads.IsBulkDownloading,
+            LocalFileDeletion.LocalFiles(tracks).Count,
+            removal?.Removable(tracks).Count ?? 0);
+
     // The paired server's name when every one of these tracks is one of its
     // songs rather than a file here; null otherwise. Track Info names it where
     // a file path would go.

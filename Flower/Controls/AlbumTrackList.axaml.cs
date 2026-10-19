@@ -134,75 +134,44 @@ public partial class AlbumTrackList : UserControl
         return true;
     }
 
-    // Built fresh per right-click rather than reusing MainView's own
-    // _trackMenu: that menu acts on MusicList.SelectedTracks (the main track
-    // list's selection), which is unrelated to a selection made here.
+    // Built fresh per right-click: it acts on this album's own selection,
+    // which is unrelated to the main track list's. The same song menu as the
+    // track list's (ActionMenus.ForSongs), with Locate File for the row
+    // clicked, since revealing several files at once is not one action.
     private ContextMenu BuildTrackContextMenu(Track clickedTrack, IReadOnlyList<Track> selectedTracks, MainViewModel vm)
     {
-        var getInfoItem = new MenuItem { Header = "Get Info" }.WithIcon(MaterialIconKind.InformationOutline);
-        getInfoItem.Click += (_, _) => OpenTrackInfo(selectedTracks, vm);
+        var groups = ActionMenus.ForSongs(
+            vm.MenuFactsFor(selectedTracks, LibraryRemovalDialog.Service),
+            canRemoveFromQueue: false,
+            canLocateFiles: true);
 
-        var addToPlaylistItem = new MenuItem { Header = "Add to Playlist" }.WithIcon(MaterialIconKind.PlaylistPlus);
-        PopulateAddToPlaylistMenu(addToPlaylistItem, selectedTracks, vm);
-
-        var locateFileItem = new MenuItem { Header = "Locate File" }.WithIcon(MaterialIconKind.FolderOpenOutline);
-        locateFileItem.Click += (_, _) => FileLocator.Reveal(clickedTrack.Path);
-
-        var downloadable = selectedTracks.Where(vm.Availability.IsDownloadable).ToList();
-        var downloadItem = new MenuItem
+        return DesktopActionMenu.Build(groups, async action =>
         {
-            Header    = downloadable.Count > 1 ? $"Download {downloadable.Count} Songs" : "Download",
-            IsVisible = downloadable.Count > 0,
-            IsEnabled = !vm.Downloads.IsBulkDownloading,
-        }.WithIcon(MaterialIconKind.CloudDownloadOutline);
-        downloadItem.Click += (_, _) => _ = vm.Downloads.DownloadAllAsync(downloadable);
-
-        var deleteLocalFileItem = new MenuItem { Header = "Delete Local File" }.WithIcon(MaterialIconKind.TrashCanOutline);
-        LocalFileDeletionDialog.UpdateMenuItem(deleteLocalFileItem, selectedTracks);
-        deleteLocalFileItem.Click += async (_, _) =>
-            await LocalFileDeletionDialog.DeleteAsync(TopLevel.GetTopLevel(this), vm, selectedTracks);
-
-        var removeFromLibraryItem = new MenuItem().WithIcon(MaterialIconKind.MusicNoteOff);
-        LibraryRemovalDialog.UpdateMenuItem(removeFromLibraryItem, selectedTracks);
-        removeFromLibraryItem.Click += async (_, _) =>
-            await LibraryRemovalDialog.RemoveAsync(TopLevel.GetTopLevel(this), selectedTracks);
-
-        var playNextItem = new MenuItem { Header = "Play Next" }.WithIcon(MaterialIconKind.PlaylistPlay);
-        playNextItem.Click += (_, _) => vm.PlayNext(selectedTracks);
-        var addToQueueItem = new MenuItem { Header = "Add to Queue" }.WithIcon(MaterialIconKind.PlaylistMusic);
-        addToQueueItem.Click += (_, _) => vm.AddToQueue(selectedTracks);
-
-        var menu = new ContextMenu();
-        menu.Items.Add(playNextItem);
-        menu.Items.Add(addToQueueItem);
-        menu.Items.Add(addToPlaylistItem);
-        menu.Items.Add(new Separator());
-        menu.Items.Add(getInfoItem);
-        menu.Items.Add(locateFileItem);
-        menu.Items.Add(downloadItem);
-        menu.Items.Add(new Separator());
-        menu.Items.Add(deleteLocalFileItem);
-        menu.Items.Add(removeFromLibraryItem);
-        return menu;
-    }
-
-    private static void PopulateAddToPlaylistMenu(MenuItem addToPlaylistItem, IReadOnlyList<Track> tracks, MainViewModel vm)
-    {
-        var newPlaylistItem = new MenuItem { Header = "New Playlist" }.WithIcon(MaterialIconKind.Plus);
-        newPlaylistItem.Click += async (_, _) => await vm.CreatePlaylistWithTracks(tracks);
-        addToPlaylistItem.Items.Add(newPlaylistItem);
-
-        if (vm.Library.Playlists.Count > 0)
-        {
-            addToPlaylistItem.Items.Add(new Separator());
-            foreach (var playlist in vm.Library.Playlists)
+            switch (action)
             {
-                var target = playlist; // capture
-                var item = new MenuItem { Header = target.Name };
-                item.Click += async (_, _) => await vm.AddTracksToPlaylist(tracks, target);
-                addToPlaylistItem.Items.Add(item);
+                case MenuAction.PlayNext:
+                    vm.PlayNext(selectedTracks);
+                    break;
+                case MenuAction.AddToQueue:
+                    vm.AddToQueue(selectedTracks);
+                    break;
+                case MenuAction.GetInfo:
+                    OpenTrackInfo(selectedTracks, vm);
+                    break;
+                case MenuAction.LocateFile:
+                    FileLocator.Reveal(clickedTrack.Path);
+                    break;
+                case MenuAction.Download:
+                    _ = vm.Downloads.DownloadAllAsync(selectedTracks.Where(vm.Availability.IsDownloadable).ToList());
+                    break;
+                case MenuAction.DeleteLocalFiles:
+                    await LocalFileDeletionDialog.DeleteAsync(TopLevel.GetTopLevel(this), vm, selectedTracks);
+                    break;
+                case MenuAction.RemoveFromLibrary:
+                    await LibraryRemovalDialog.RemoveAsync(TopLevel.GetTopLevel(this), selectedTracks);
+                    break;
             }
-        }
+        }, selectedTracks, vm);
     }
 
     // Several songs selected open together for a batch edit; one opens with

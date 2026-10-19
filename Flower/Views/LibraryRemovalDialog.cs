@@ -10,8 +10,9 @@ using Flower.Services;
 
 namespace Flower.Views;
 
-// "Remove from Library" for the desktop's three track menus - the track list,
-// an album tile, and a song row inside an expanded album - kept in one place
+// "Remove from Library" for the desktop's song and album menus (ActionMenus,
+// DesktopActionMenu) - the track list, an album tile, and a song row inside
+// an expanded album - kept in one place
 // for the same reason LocalFileDeletionDialog is: so no one menu can word the
 // warning differently, or skip it.
 //
@@ -19,14 +20,10 @@ namespace Flower.Views;
 // browser, which has no peer stack), rather than shown and failing.
 internal static class LibraryRemovalDialog
 {
-    private static LibraryRemovalService? Service => Ioc.Default.GetService<LibraryRemovalService>();
-
-    public static void UpdateMenuItem(MenuItem item, IReadOnlyList<Track> tracks)
-    {
-        var removable = Service?.Removable(tracks).Count ?? 0;
-        item.IsVisible = removable > 0;
-        item.Header = removable > 1 ? $"Remove {removable} Songs from Library" : "Remove from Library";
-    }
+    // Also what the desktop's menus count removable songs with
+    // (MainViewModel.MenuFactsFor), so an entry is offered exactly when this
+    // has something to remove.
+    public static LibraryRemovalService? Service => Ioc.Default.GetService<LibraryRemovalService>();
 
     public static async Task RemoveAsync(TopLevel? topLevel, IReadOnlyList<Track> tracks)
     {

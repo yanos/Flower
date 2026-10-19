@@ -542,7 +542,7 @@ views is theirs: tabs, Prev/Next, the art bitmaps and pickers, drag and drop,
 the suggestion chips. `TrackInfoViewModelTests` covers the rules, and
 `TrackInfoWindowTests` checks that a typed box is what OK saves.
 
-### D2. Context menus are defined twice, once per head
+### D2. Context menus are defined twice, once per head — **fixed for the song and album menus**
 
 `Flower/Views/MainView.axaml.cs:1097-1210, 1471-1660` (desktop, built in
 code-behind), `Flower/ViewModels/Mobile/MobileMainViewModel.ScreenMenu.cs` with
@@ -557,6 +557,24 @@ menu already exists (`ContextMenuEntry`, built for the macOS `NSMenu` path). If
 the view models produced those for track, album and playlist targets, desktop
 would render them as `ContextMenu`/`NSMenu`, the phone would render them as its
 sheets, and a test could cover them.
+
+**Fixed** for the song and album menus, with a description of its own rather
+than `ContextMenuEntry`, which is the macOS drawing of an Avalonia menu and
+would have had to carry the phone's sheets as well. `ActionMenus.ForSongs` and
+`ForAlbum` list the entries (`ActionMenuEntry`: a `MenuAction`, its title and
+icon, destructive or not), in groups, from `MenuFacts` that
+`MainViewModel.MenuFactsFor` works out with the rules that were already shared.
+The desktop draws them as a `ContextMenu` (`DesktopActionMenu`), so `NSMenu`
+still comes for free, and the phone's two sheets list them. Each head runs an
+entry its own way: dialogs on one, confirmation sheets on the other.
+
+The desktop had three song menus, not one: the track list's, the album grid's
+expanded rows' (`AlbumTrackList`), whose Add to Playlist offered smart
+playlists, and the album tile's. All three are `ActionMenus` now. The desktop's
+album menu gains Shuffle, and Remove from Continue Playing on a Home tile. Both
+heads now say the same thing: "Get Info", "Play", and counts in Download,
+Delete and Remove. Not done: the sidebar's playlist menu and the phone's screen
+menus, which were never pairs.
 
 ### D3. "Play these songs as the queue" is written three times — **fixed**
 

@@ -257,7 +257,7 @@ public class LibrarySyncMergeTests
         // earlier version of this behavior), so a later "delete downloaded
         // file" action can tell this copy is recoverable from that peer rather
         // than treating it as an unrecoverable delete - see
-        // MobileMainViewModel.CanDeleteDownloadedFile/IsRecoverableDownload.
+        // MobileMainViewModel.IsRecoverableDownload.
         var local = new Track { Title = "Same Song", Artists = "A", Album = "Al", Duration = TimeSpan.FromSeconds(100), Path = "/music/local.mp3" };
         var library = new Library(new List<Track> { local });
         var remote = new Track { Title = "Same Song", Artists = "A", Album = "Al", Duration = TimeSpan.FromSeconds(100), OriginDeviceFingerprint = "peer-1" };

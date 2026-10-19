@@ -152,10 +152,9 @@
          entry, which a placeholder fully is, and the playlist stores
          a track reference rather than a path (see playlists.json).
          Deleting the downloaded file is the file-dependent one, and
-         it gates itself on having a Path - see
-         MobileMainViewModel.CanDeleteDownloadedFile - so an
+         it gates itself on having a Path - see ActionMenus - so an
          undownloaded track opens this sheet without it. Downloading
-         is the other way round (CanDownloadActionTarget).
+         is the other way round.
 
          Handed the row rather than its Track, because downloading
          from the menu goes through the row: that is what spins the

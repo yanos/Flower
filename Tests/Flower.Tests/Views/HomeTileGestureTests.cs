@@ -97,7 +97,8 @@ public class HomeTileGestureTests : PinnedDataDirectory, IDisposable
         Dispatcher.UIThread.RunJobs();
 
         var menu = Assert.Single(recorder.Shown);
-        Assert.Equal("Play Album", menu[0].Title);
+        // The album menu's first entry; a song's starts with Play Next.
+        Assert.Equal("Play", menu[0].Title);
         window.Close();
     }
 

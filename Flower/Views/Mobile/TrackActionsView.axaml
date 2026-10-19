@@ -3,6 +3,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
+             xmlns:menus="clr-namespace:Flower.ViewModels"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:controls="clr-namespace:Flower.Controls"
              mc:Ignorable="d"
@@ -16,6 +17,9 @@
       <Setter Property="HorizontalAlignment" Value="Stretch" />
       <Setter Property="HorizontalContentAlignment" Value="Left" />
       <Setter Property="Padding" Value="20,14" />
+    </Style>
+    <Style Selector="TextBlock.danger">
+      <Setter Property="Foreground" Value="{DynamicResource AppDangerBrush}" />
     </Style>
   </UserControl.Styles>
 
@@ -62,88 +66,33 @@
           </Button>
         </Grid>
 
-        <!-- Into the queue that is playing rather than in place of it: straight
-             after the song playing, or at the end. See
-             PlaylistControlViewModel.PlayNext/AddToQueue. -->
-        <Button Classes="action" Command="{Binding PlayNextActionTargetCommand}">
-          <StackPanel Orientation="Horizontal" Spacing="14">
-            <materialIcons:MaterialIcon Kind="PlaylistPlay" Width="22" Height="22" />
-            <TextBlock Text="Play Next" FontSize="16" VerticalAlignment="Center" />
-          </StackPanel>
-        </Button>
-
-        <Button Classes="action" Command="{Binding AddActionTargetToQueueCommand}">
-          <StackPanel Orientation="Horizontal" Spacing="14">
-            <materialIcons:MaterialIcon Kind="PlaylistMusic" Width="22" Height="22" />
-            <TextBlock Text="Add to Queue" FontSize="16" VerticalAlignment="Center" />
-          </StackPanel>
-        </Button>
-
-        <!-- Straight after the two that put the song somewhere else, as on the
-             album menu (AlbumActionsView) - not after the entries that only
-             some songs have, which moved it down the sheet for those. -->
-        <Button Classes="action" Command="{Binding OpenAddToPlaylistCommand}">
-          <StackPanel Orientation="Horizontal" Spacing="14">
-            <materialIcons:MaterialIcon Kind="PlaylistPlus" Width="22" Height="22" />
-            <TextBlock Text="Add to Playlist" FontSize="16" VerticalAlignment="Center" />
-          </StackPanel>
-        </Button>
-
-        <!-- Only on the Queue's own rows, and not on the song playing. -->
-        <Button Classes="action" Command="{Binding RemoveActionTargetFromQueueCommand}"
-                IsVisible="{Binding CanRemoveActionTargetFromQueue}">
-          <StackPanel Orientation="Horizontal" Spacing="14">
-            <materialIcons:MaterialIcon Kind="PlaylistRemove" Width="22" Height="22" />
-            <TextBlock Text="Remove from Queue" FontSize="16" VerticalAlignment="Center" />
-          </StackPanel>
-        </Button>
-
-        <Button Classes="action" Command="{Binding ViewTrackInfoCommand}">
-          <StackPanel Orientation="Horizontal" Spacing="14">
-            <materialIcons:MaterialIcon Kind="InformationOutline" Width="22" Height="22" />
-            <TextBlock Text="View Info" FontSize="16" VerticalAlignment="Center" />
-          </StackPanel>
-        </Button>
-
-        <!-- Only while the row's own download icon would show (see
-             MobileMainViewModel.CanDownloadActionTarget), and the opposite of
-             the entry below: a track has either this or that, or neither when
-             the server that has it is out of reach. -->
-        <Button Classes="action" Command="{Binding DownloadActionTargetCommand}"
-                IsVisible="{Binding CanDownloadActionTarget}">
-          <StackPanel Orientation="Horizontal" Spacing="14">
-            <materialIcons:MaterialIcon Kind="CloudDownloadOutline" Width="22" Height="22" />
-            <TextBlock Text="Download" FontSize="16" VerticalAlignment="Center" />
-          </StackPanel>
-        </Button>
-
-        <!-- Any track with a real local file (see
-             MobileMainViewModel.CanDeleteDownloadedFile) - reverts it back to
-             a not-yet-downloaded placeholder and frees the local file's
-             storage, rather than removing the track from the library. Opens a
-             confirm sheet (ConfirmDeleteFileView) that warns first if this
-             particular file wouldn't come back on its own - see
-             IsRecoverableDownload. -->
-        <Button Classes="action" Command="{Binding DeleteDownloadedFileCommand}"
-                IsVisible="{Binding CanDeleteDownloadedFile}">
-          <StackPanel Orientation="Horizontal" Spacing="14">
-            <materialIcons:MaterialIcon Kind="TrashCanOutline" Width="22" Height="22" />
-            <TextBlock Text="Delete Local File" FontSize="16" VerticalAlignment="Center" Foreground="{DynamicResource AppDangerBrush}" />
-          </StackPanel>
-        </Button>
-
-        <!-- Takes the song out of the library itself, not just its file -
-             and off the server too when an admin does it. Confirmed first,
-             with a choice to delete the files (ConfirmRemoveFromLibraryView).
-             Hidden for a server song on a phone that is not the server's
-             admin: see LibraryRemovalService. -->
-        <Button Classes="action" Command="{Binding RemoveFromLibraryCommand}"
-                IsVisible="{Binding CanRemoveActionTargetFromLibrary}">
-          <StackPanel Orientation="Horizontal" Spacing="14">
-            <materialIcons:MaterialIcon Kind="MusicNoteOff" Width="22" Height="22" />
-            <TextBlock Text="Remove from Library" FontSize="16" VerticalAlignment="Center" Foreground="{DynamicResource AppDangerBrush}" />
-          </StackPanel>
-        </Button>
+        <!-- The entries ActionMenus gives, in its order - the same as the
+             desktop's context menu. A destructive entry's words are in the
+             danger colour; the album menu's Play is ringed. -->
+        <ItemsControl ItemsSource="{Binding SongActions}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="menus:ActionMenuEntry">
+              <Button Classes="action"
+                      IsEnabled="{Binding IsEnabled}"
+                      Command="{Binding $parent[ItemsControl].((vm:MobileMainViewModel)DataContext).RunSongActionCommand}"
+                      CommandParameter="{Binding}">
+                <StackPanel Orientation="Horizontal" Spacing="14">
+                  <Border Classes="ring"
+                          Width="26" Height="26" Margin="-2"
+                          CornerRadius="9999" BorderThickness="1"
+                          BorderBrush="{DynamicResource AppChromeBorderBrush}"
+                          IsVisible="{Binding IsPrimary}">
+                    <materialIcons:MaterialIcon Kind="{Binding Icon}" Width="15" Height="15" />
+                  </Border>
+                  <materialIcons:MaterialIcon Kind="{Binding Icon}" Width="22" Height="22"
+                                              IsVisible="{Binding !IsPrimary}" />
+                  <TextBlock Text="{Binding Title}" FontSize="16" VerticalAlignment="Center"
+                             Classes.danger="{Binding IsDestructive}" />
+                </StackPanel>
+              </Button>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
       </StackPanel>
     </Border>
   </Grid>

@@ -273,8 +273,8 @@ public partial class MobileMainViewModel
     //
     // Delete Local Files once anything on screen has a file here. Remove from
     // Library wherever the album menu would offer it: not on a playlist, or
-    // the list of them, for the reason CanRemoveAlbumActionTargetFromLibrary
-    // gives - there it reads as deleting the playlist, and takes every song
+    // the list of them, for the reason ActionMenus.ForAlbum gives - there it
+    // reads as deleting the playlist, and takes every song
     // in it out of the library instead.
     private List<ScreenMenuEntry> DestructiveEntries(MobileNavigationFrame frame)
     {

@@ -42,14 +42,6 @@ public partial class MainView : UserControl
         _viewModel?.LoggerFactory.CreateLogger<MainView>() ?? NullLogger<MainView>.Instance;
 
     private ContextMenu _columnMenu = new();
-    private ContextMenu _trackMenu  = new();
-    private MenuItem    _addToPlaylistItem = new();
-    // Hidden unless the right-clicked selection actually has something to
-    // fetch - see UpdateDownloadItem.
-    private MenuItem    _downloadItem = new();
-    private MenuItem    _deleteLocalFileItem = new();
-    private MenuItem    _removeFromLibraryItem = new();
-    private MenuItem    _removeFromQueueItem = new();
     private readonly ContextMenu _sidebarItemMenu = new();
     private SidebarItem? _dropTargetPlaylistItem;
 
@@ -1081,13 +1073,54 @@ public partial class MainView : UserControl
         // either preserved (row was already selected) or collapsed to just this
         // row (it wasn't) before this fires, so SelectedTracks is always the
         // right set to act on here.
-        PopulateAddToPlaylistMenu(MusicList.SelectedTracks);
-        _removeFromQueueItem.IsVisible = _viewModel is { IsShowingQueue: true } vm
-            && MusicList.SelectedRows.Any(vm.Queue.CanRemove);
-        UpdateDownloadItem(_downloadItem, MusicList.SelectedTracks);
-        LocalFileDeletionDialog.UpdateMenuItem(_deleteLocalFileItem, MusicList.SelectedTracks);
-        LibraryRemovalDialog.UpdateMenuItem(_removeFromLibraryItem, MusicList.SelectedTracks);
-        PlatformContextMenu.Open(_trackMenu, MusicList);
+        if (_viewModel is not { } vm)
+            return;
+
+        var tracks = MusicList.SelectedTracks;
+        // Remove from Queue only on the Queue page, and only when the
+        // selection holds something other than the song playing.
+        var groups = ActionMenus.ForSongs(
+            vm.MenuFactsFor(tracks, LibraryRemovalDialog.Service),
+            canRemoveFromQueue: vm.IsShowingQueue && MusicList.SelectedRows.Any(vm.Queue.CanRemove),
+            canLocateFiles: true);
+        PlatformContextMenu.Open(DesktopActionMenu.Build(groups, RunTrackListAction, tracks, vm), MusicList);
+    }
+
+    // The track list's song menu, over its selection - in the order the list
+    // shows it rather than the order it was clicked in, for what queues.
+    private async void RunTrackListAction(MenuAction action)
+    {
+        if (_viewModel is not { } vm)
+            return;
+
+        var tracks = MusicList.SelectedTracks;
+        switch (action)
+        {
+            case MenuAction.PlayNext:
+                vm.PlayNext(SelectedTracksInListOrder());
+                break;
+            case MenuAction.AddToQueue:
+                vm.AddToQueue(SelectedTracksInListOrder());
+                break;
+            case MenuAction.RemoveFromQueue:
+                vm.Queue.Remove(MusicList.SelectedRows);
+                break;
+            case MenuAction.GetInfo:
+                OpenTrackInfo();
+                break;
+            case MenuAction.LocateFile:
+                LocateFile();
+                break;
+            case MenuAction.Download:
+                StartDownload(tracks);
+                break;
+            case MenuAction.DeleteLocalFiles:
+                await LocalFileDeletionDialog.DeleteAsync(TopLevel.GetTopLevel(this), vm, tracks);
+                break;
+            case MenuAction.RemoveFromLibrary:
+                await LibraryRemovalDialog.RemoveAsync(TopLevel.GetTopLevel(this), tracks);
+                break;
+        }
     }
 
     private void OnHeaderContextMenu(object? sender, EventArgs e)
@@ -1498,63 +1531,7 @@ public partial class MainView : UserControl
             };
             _columnMenu.Items.Add(item);
         }
-
-        var getInfoItem = new MenuItem
-        {
-            Header       = "Get Info",
-            InputGesture = new KeyGesture(Key.I, PlatformShortcuts.Primary),
-        }.WithIcon(MaterialIconKind.InformationOutline);
-        getInfoItem.Click += (_, _) => OpenTrackInfo();
-
-        var locateFileItem = new MenuItem { Header = "Locate File" }.WithIcon(MaterialIconKind.FolderOpenOutline);
-        locateFileItem.Click += (_, _) => LocateFile();
-
-        _addToPlaylistItem = new MenuItem { Header = "Add to Playlist" }.WithIcon(MaterialIconKind.PlaylistPlus);
-
-        _downloadItem = new MenuItem { Header = "Download" }.WithIcon(MaterialIconKind.CloudDownloadOutline);
-        _downloadItem.Click += (_, _) => StartDownload(MusicList.SelectedTracks);
-
-        _deleteLocalFileItem = new MenuItem { Header = "Delete Local File" }.WithIcon(MaterialIconKind.TrashCanOutline);
-        _deleteLocalFileItem.Click += async (_, _) =>
-        {
-            if (_viewModel is { } vm)
-                await LocalFileDeletionDialog.DeleteAsync(TopLevel.GetTopLevel(this), vm, MusicList.SelectedTracks);
-        };
-
-        _removeFromLibraryItem = new MenuItem { Header = "Remove from Library" }.WithIcon(MaterialIconKind.MusicNoteOff);
-        _removeFromLibraryItem.Click += async (_, _) =>
-            await LibraryRemovalDialog.RemoveAsync(TopLevel.GetTopLevel(this), MusicList.SelectedTracks);
-
-        // The selection in the order the list shows it, not the order it was
-        // clicked in.
-        var playNextItem = new MenuItem { Header = "Play Next" }.WithIcon(MaterialIconKind.PlaylistPlay);
-        playNextItem.Click += (_, _) => _viewModel?.PlayNext(SelectedTracksInListOrder());
-        var addToQueueItem = new MenuItem { Header = "Add to Queue" }.WithIcon(MaterialIconKind.PlaylistMusic);
-        addToQueueItem.Click += (_, _) => _viewModel?.AddToQueue(SelectedTracksInListOrder());
-
-        // Only on the Queue page, and only when the selection holds something
-        // other than the song playing - see OnRowContextMenu.
-        _removeFromQueueItem = new MenuItem { Header = "Remove from Queue" }.WithIcon(MaterialIconKind.PlaylistRemove);
-        _removeFromQueueItem.Click += (_, _) => _viewModel?.Queue.Remove(MusicList.SelectedRows);
-
-        // Where the songs go first - the queue, a playlist - then what they
-        // are, then taking them away.
-        _trackMenu = new ContextMenu();
-        _trackMenu.Items.Add(playNextItem);
-        _trackMenu.Items.Add(addToQueueItem);
-        _trackMenu.Items.Add(_addToPlaylistItem);
-        _trackMenu.Items.Add(_removeFromQueueItem);
-        _trackMenu.Items.Add(new Separator());
-        _trackMenu.Items.Add(getInfoItem);
-        _trackMenu.Items.Add(locateFileItem);
-        _trackMenu.Items.Add(_downloadItem);
-        _trackMenu.Items.Add(new Separator());
-        _trackMenu.Items.Add(_deleteLocalFileItem);
-        _trackMenu.Items.Add(_removeFromLibraryItem);
     }
-
-    private void PopulateAddToPlaylistMenu(IReadOnlyList<Track> tracks)
-        => PopulateAddToPlaylistMenu(_addToPlaylistItem, tracks);
 
     private List<Track> SelectedTracksInListOrder()
     {
@@ -1564,118 +1541,56 @@ public partial class MainView : UserControl
         return ShownRows.Where(selected.Contains).Select(r => r.Track).ToList();
     }
 
-    // Shared by the track list's own _trackMenu (via the overload above) and
-    // BuildAlbumContextMenu below - same New Playlist / existing-playlists
-    // submenu either way, just acting on a different set of tracks.
-    private void PopulateAddToPlaylistMenu(MenuItem addToPlaylistItem, IReadOnlyList<Track> tracks)
-    {
-        if (_viewModel is not MainViewModel vm)
-            return;
-
-        addToPlaylistItem.Items.Clear();
-
-        var newPlaylistItem = new MenuItem { Header = "New Playlist" }.WithIcon(MaterialIconKind.Plus);
-        newPlaylistItem.Click += async (_, _) => await vm.CreatePlaylistWithTracks(tracks);
-        addToPlaylistItem.Items.Add(newPlaylistItem);
-
-        // Smart playlists are left out rather than listed and disabled: adding
-        // to one is not a thing that can be done later or under some condition,
-        // it is not a thing at all (PlaylistManagementViewModel.AddTracks
-        // refuses it), and a greyed row invites the user to wonder why.
-        var targets = vm.Library.Playlists.Where(p => !p.IsSmart).ToList();
-        if (targets.Count > 0)
-        {
-            addToPlaylistItem.Items.Add(new Separator());
-            foreach (var playlist in targets)
-            {
-                var target = playlist; // capture
-                var item = new MenuItem { Header = target.Name };
-                item.Click += async (_, _) => await vm.AddTracksToPlaylist(tracks, target);
-                addToPlaylistItem.Items.Add(item);
-            }
-        }
-    }
-
-    // Play Album / Get Info / Add to Playlist for a right-clicked album tile -
-    // see AlbumGrid_ContextRequested. Built fresh per-request rather than a
-    // shared field, same as AlbumGridRowControl.BuildTrackContextMenu (its
-    // song-level equivalent) does for its own right-click menu. Play always
-    // targets just the tile actually clicked, same "not a coherent multi-target
-    // action" reasoning as that method's own Locate File; Get Info/Add To
-    // Playlist act on the full current album selection via tracks.
+    // The album menu for a right-clicked album tile - see
+    // AlbumGrid_ContextRequested. Built fresh per request. Play and Shuffle
+    // play just the tile clicked; everything else acts on the full current
+    // album selection, via tracks.
     //
     // getInfo is what Get Info opens: the grid's album selection unless the
     // caller says otherwise (a Home tile, which has none).
     private ContextMenu BuildAlbumContextMenu(IReadOnlyList<Track> tracks, AlbumTileViewModel clickedTile, Action? getInfo = null)
     {
-        var playItem = new MenuItem { Header = "Play Album" }.WithIcon(MaterialIconKind.Play);
-        playItem.Click += (_, _) => _viewModel?.PlayAlbum(clickedTile);
+        var vm = _viewModel!;
+        var groups = ActionMenus.ForAlbum(
+            vm.MenuFactsFor(tracks, LibraryRemovalDialog.Service),
+            isContinuing: vm.Home.IsContinuing(clickedTile));
 
-        var getInfoItem = new MenuItem { Header = "Get Info" }.WithIcon(MaterialIconKind.InformationOutline);
-        getInfoItem.Click += (_, _) =>
+        return DesktopActionMenu.Build(groups, async action =>
         {
-            if (getInfo != null)
-                getInfo();
-            else
-                OpenTrackInfoForSelectedAlbums();
-        };
-
-        var addToPlaylistItem = new MenuItem { Header = "Add to Playlist" }.WithIcon(MaterialIconKind.PlaylistPlus);
-        PopulateAddToPlaylistMenu(addToPlaylistItem, tracks);
-
-        // Acts on the whole album selection, same as Get Info/Add to Playlist
-        // above - "Download Album" when that is one album's worth of songs.
-        var downloadItem = new MenuItem().WithIcon(MaterialIconKind.CloudDownloadOutline);
-        UpdateDownloadItem(downloadItem, tracks, "Download Album");
-        downloadItem.Click += (_, _) => StartDownload(tracks);
-
-        var playNextItem = new MenuItem { Header = "Play Next" }.WithIcon(MaterialIconKind.PlaylistPlay);
-        playNextItem.Click += (_, _) => _viewModel?.PlayNext(tracks);
-        var addToQueueItem = new MenuItem { Header = "Add to Queue" }.WithIcon(MaterialIconKind.PlaylistMusic);
-        addToQueueItem.Click += (_, _) => _viewModel?.AddToQueue(tracks);
-
-        var menu = new ContextMenu();
-        menu.Items.Add(playItem);
-        menu.Items.Add(playNextItem);
-        menu.Items.Add(addToQueueItem);
-        menu.Items.Add(addToPlaylistItem);
-        menu.Items.Add(new Separator());
-        menu.Items.Add(getInfoItem);
-        menu.Items.Add(downloadItem);
-        var deleteLocalFileItem = new MenuItem { Header = "Delete Local File" }.WithIcon(MaterialIconKind.TrashCanOutline);
-        LocalFileDeletionDialog.UpdateMenuItem(deleteLocalFileItem, tracks);
-        deleteLocalFileItem.Click += async (_, _) =>
-        {
-            if (_viewModel is { } vm)
-                await LocalFileDeletionDialog.DeleteAsync(TopLevel.GetTopLevel(this), vm, tracks);
-        };
-        var removeFromLibraryItem = new MenuItem().WithIcon(MaterialIconKind.MusicNoteOff);
-        LibraryRemovalDialog.UpdateMenuItem(removeFromLibraryItem, tracks);
-        removeFromLibraryItem.Click += async (_, _) =>
-            await LibraryRemovalDialog.RemoveAsync(TopLevel.GetTopLevel(this), tracks);
-        menu.Items.Add(new Separator());
-        menu.Items.Add(deleteLocalFileItem);
-        menu.Items.Add(removeFromLibraryItem);
-        return menu;
-    }
-
-    // Shows the item only when the target set actually contains something
-    // this device can fetch right now - a library with no paired server, or a
-    // selection that is already fully downloaded, gets no dead menu entry at
-    // all rather than a disabled one. The count is in the header because these
-    // menus act on a whole multi-selection, not just the row clicked.
-    private void UpdateDownloadItem(MenuItem item, IReadOnlyList<Track> tracks, string singular = "Download")
-    {
-        if (_viewModel is not { } vm)
-            return;
-
-        var count = tracks.Count(vm.Availability.IsDownloadable);
-        item.IsVisible = count > 0;
-        item.Header = count > 1 ? $"Download {count} Songs" : singular;
-        // A batch already in flight owns the per-row spinners the next one
-        // would fight over - see TrackDownloadRunner.DownloadAllAsync, which
-        // refuses a second overlapping run anyway.
-        item.IsEnabled = !vm.Downloads.IsBulkDownloading;
+            switch (action)
+            {
+                case MenuAction.Play:
+                    vm.PlayAlbum(clickedTile);
+                    break;
+                case MenuAction.Shuffle:
+                    vm.PlayTracks(clickedTile.Tracks, shuffle: true);
+                    break;
+                case MenuAction.PlayNext:
+                    vm.PlayNext(tracks);
+                    break;
+                case MenuAction.AddToQueue:
+                    vm.AddToQueue(tracks);
+                    break;
+                case MenuAction.GetInfo:
+                    if (getInfo != null)
+                        getInfo();
+                    else
+                        OpenTrackInfoForSelectedAlbums();
+                    break;
+                case MenuAction.Download:
+                    StartDownload(tracks);
+                    break;
+                case MenuAction.ForgetProgress:
+                    vm.Home.Forget(clickedTile);
+                    break;
+                case MenuAction.DeleteLocalFiles:
+                    await LocalFileDeletionDialog.DeleteAsync(TopLevel.GetTopLevel(this), vm, tracks);
+                    break;
+                case MenuAction.RemoveFromLibrary:
+                    await LibraryRemovalDialog.RemoveAsync(TopLevel.GetTopLevel(this), tracks);
+                    break;
+            }
+        }, tracks, vm);
     }
 
     private void StartDownload(IReadOnlyList<Track> tracks)

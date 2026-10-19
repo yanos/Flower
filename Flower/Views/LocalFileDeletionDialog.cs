@@ -14,13 +14,6 @@ namespace Flower.Views;
 // imported file as disposable cache while another warns about it.
 internal static class LocalFileDeletionDialog
 {
-    public static void UpdateMenuItem(MenuItem item, IReadOnlyList<Track> tracks)
-    {
-        var localFiles = LocalFileDeletion.LocalFiles(tracks);
-        item.IsVisible = localFiles.Count > 0;
-        item.Header = localFiles.Count == 1 ? "Delete Local File" : $"Delete {localFiles.Count} Local Files";
-    }
-
     public static async Task DeleteAsync(TopLevel? topLevel, MainViewModel viewModel, IReadOnlyList<Track> tracks)
     {
         var localFiles = LocalFileDeletion.LocalFiles(tracks);

@@ -50,7 +50,7 @@ public class MobileRemoveFromLibraryTests : PinnedDataDirectory
         using var scope = Build(library);
         scope.Mobile.OpenTrackActionsCommand.Execute(scope.Mobile.Main.Rows.Single());
 
-        Assert.True(scope.Mobile.CanRemoveActionTargetFromLibrary);
+        Assert.Contains(scope.Mobile.SongActions, e => e.Action == Flower.ViewModels.MenuAction.RemoveFromLibrary);
         scope.Mobile.RemoveFromLibraryCommand.Execute(null);
 
         Assert.True(scope.Mobile.IsShowingConfirmRemoveFromLibrary);

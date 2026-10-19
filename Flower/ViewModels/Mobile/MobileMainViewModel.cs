@@ -1389,10 +1389,8 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         {
             _albumActionTarget = value;
             OnPropertyChanged();
-            OnPropertyChanged(nameof(CanDownloadAlbumActionTarget));
-            OnPropertyChanged(nameof(CanDeleteAlbumActionTargetLocalFiles));
-            OnPropertyChanged(nameof(CanRemoveAlbumActionTargetFromLibrary));
             OnPropertyChanged(nameof(CanForgetAlbumActionTargetProgress));
+            OnPropertyChanged(nameof(AlbumActions));
         }
     }
 
@@ -1419,21 +1417,11 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             _playlistActionTarget = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsActingOnAPlaylist));
-            OnPropertyChanged(nameof(CanRemoveAlbumActionTargetFromLibrary));
+            OnPropertyChanged(nameof(AlbumActions));
         }
     }
 
     public bool IsActingOnAPlaylist => PlaylistActionTarget?.Playlist != null;
-
-    // Shown when the album's own download button would be: something in it
-    // to fetch, from a server that is there to fetch it from.
-    public bool CanDownloadAlbumActionTarget =>
-        AlbumActionTarget?.IsDownloadable == true && Main.CanForceSync;
-
-    // Shown once any song in the album has a file on this device - the
-    // album's counterpart to a song's own Delete (CanDeleteDownloadedFile).
-    public bool CanDeleteAlbumActionTargetLocalFiles =>
-        AlbumActionTarget?.Tracks.Any(t => t.Path != null) == true;
 
     // A tile's tracks come in library order, so they are put in the album's
     // own before anything plays them - the order its track list shows. An
@@ -1535,27 +1523,21 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             _actionTarget = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(ActionRow));
-            OnPropertyChanged(nameof(CanDeleteDownloadedFile));
-            OnPropertyChanged(nameof(CanDownloadActionTarget));
             OnPropertyChanged(nameof(IsRecoverableDownload));
             OnPropertyChanged(nameof(ConfirmDeleteFileTitle));
             OnPropertyChanged(nameof(ConfirmDeleteFileMessage));
-            OnPropertyChanged(nameof(CanRemoveActionTargetFromLibrary));
+            OnPropertyChanged(nameof(SongActions));
         }
     }
 
     // Any real local file can be deleted to free up space - a still-
-    // undownloaded placeholder has no file yet to delete. Whether it's safe
+    // undownloaded placeholder has no file yet to delete, so its menu has no
+    // Delete (ActionMenus, LocalFileDeletion.LocalFiles). Whether it's safe
     // to get back later (see IsRecoverableDownload) is surfaced as a warning
-    // in the confirm sheet (ConfirmDeleteFileMessage) rather than gating this
-    // outright - a track this device only has a copy of because the user
-    // imported it directly (or a peer that once had it is no longer the
+    // in the confirm sheet (ConfirmDeleteFileMessage) rather than gating the
+    // entry outright - a track this device only has a copy of because the
+    // user imported it directly (or a peer that once had it is no longer the
     // paired Server) should still be deletable, just with eyes open.
-    public bool CanDeleteDownloadedFile => ActionTarget?.Path != null;
-
-    // The menu's Download entry shows exactly when the row's own download icon
-    // does: a placeholder the paired server can serve right now.
-    public bool CanDownloadActionTarget => _actionRow?.IsDownloadable == true;
 
     // Whether ActionTarget's file, once deleted, would actually come back on
     // its own - true only if the currently paired Server is the same device
@@ -1601,16 +1583,6 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
 
     private readonly LibraryRemovalService? _libraryRemoval;
     private LibraryRemovalPrompt? _removalPrompt;
-
-    public bool CanRemoveActionTargetFromLibrary =>
-        ActionTarget is { } track && _libraryRemoval?.CanRemove(track) == true;
-
-    // Not over a playlist: there it would sit beside Delete Playlist, which
-    // leaves the songs alone, and the two are far too easy to mistake for
-    // each other when one of them takes every song in the list out of the
-    // library. A playlist's songs can still be removed one at a time.
-    public bool CanRemoveAlbumActionTargetFromLibrary =>
-        AlbumActionTarget is { } tile && !IsActingOnAPlaylist && _libraryRemoval?.Removable(tile.Tracks).Count > 0;
 
     public string RemoveFromLibraryTitle => _removalPrompt?.Title ?? "";
     public string RemoveFromLibraryMessage => _removalPrompt?.Message ?? "";
@@ -2159,6 +2131,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             _playlistTargets = null;
             ActionTarget = row.Track;
             OnPropertyChanged(nameof(CanRemoveActionTargetFromQueue));
+            OnPropertyChanged(nameof(SongActions));
             ActiveSheet = MobileSheet.TrackActions;
         });
         OpenAlbumActionsCommand = new RelayCommand<AlbumTileViewModel>(tile =>

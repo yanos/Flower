@@ -3,6 +3,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
+             xmlns:menus="clr-namespace:Flower.ViewModels"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:controls="clr-namespace:Flower.Controls"
              mc:Ignorable="d"
@@ -21,7 +22,10 @@
        shuffle, add these songs somewhere and download them are the same
        questions asked of a different pile of songs, and asking them twice in
        two sheets is how the two would start to differ. The playlist's own two
-       entries appear underneath, on IsActingOnAPlaylist. -->
+       entries appear underneath (ActionMenus.ForAlbum's isPlaylist).
+
+       What is listed is ActionMenus', the same entries as the desktop's
+       album menu; each runs the command MobileMainViewModel has for it. -->
   <UserControl.Styles>
     <Style Selector="Button.action">
       <Setter Property="Background" Value="Transparent" />
@@ -29,6 +33,9 @@
       <Setter Property="HorizontalAlignment" Value="Stretch" />
       <Setter Property="HorizontalContentAlignment" Value="Left" />
       <Setter Property="Padding" Value="20,14" />
+    </Style>
+    <Style Selector="TextBlock.danger">
+      <Setter Property="Foreground" Value="{DynamicResource AppDangerBrush}" />
     </Style>
   </UserControl.Styles>
 
@@ -73,123 +80,33 @@
           </Button>
         </Grid>
 
-        <Button Classes="action" Command="{Binding PlayAlbumActionTargetCommand}">
-          <StackPanel Orientation="Horizontal" Spacing="14">
-            <Border Classes="ring"
-                    Width="26" Height="26" Margin="-2"
-                    CornerRadius="9999" BorderThickness="1"
-                    BorderBrush="{DynamicResource AppChromeBorderBrush}">
-              <materialIcons:MaterialIcon Kind="Play" Width="15" Height="15" />
-            </Border>
-            <TextBlock Text="Play" FontSize="16" VerticalAlignment="Center" />
-          </StackPanel>
-        </Button>
-
-        <Button Classes="action" Command="{Binding ShuffleAlbumActionTargetCommand}">
-          <StackPanel Orientation="Horizontal" Spacing="14">
-            <materialIcons:MaterialIcon Kind="Shuffle" Width="22" Height="22" />
-            <TextBlock Text="Shuffle" FontSize="16" VerticalAlignment="Center" />
-          </StackPanel>
-        </Button>
-
-        <!-- Every song here, into the queue that is playing - see
-             MobileMainViewModel.AlbumActionTargetTracks for their order. -->
-        <Button Classes="action" Command="{Binding PlayNextAlbumActionTargetCommand}">
-          <StackPanel Orientation="Horizontal" Spacing="14">
-            <materialIcons:MaterialIcon Kind="PlaylistPlay" Width="22" Height="22" />
-            <TextBlock Text="Play Next" FontSize="16" VerticalAlignment="Center" />
-          </StackPanel>
-        </Button>
-
-        <Button Classes="action" Command="{Binding AddAlbumActionTargetToQueueCommand}">
-          <StackPanel Orientation="Horizontal" Spacing="14">
-            <materialIcons:MaterialIcon Kind="PlaylistMusic" Width="22" Height="22" />
-            <TextBlock Text="Add to Queue" FontSize="16" VerticalAlignment="Center" />
-          </StackPanel>
-        </Button>
-
-        <Button Classes="action" Command="{Binding AddAlbumActionTargetToPlaylistCommand}">
-          <StackPanel Orientation="Horizontal" Spacing="14">
-            <materialIcons:MaterialIcon Kind="PlaylistPlus" Width="22" Height="22" />
-            <TextBlock Text="Add to Playlist" FontSize="16" VerticalAlignment="Center" />
-          </StackPanel>
-        </Button>
-
-        <!-- Every song of the album at once, in Track Info. Not over a
-             playlist, whose songs share nothing a tag says. -->
-        <Button Classes="action" Command="{Binding ViewAlbumActionTargetTrackInfoCommand}"
-                IsVisible="{Binding !IsActingOnAPlaylist}">
-          <StackPanel Orientation="Horizontal" Spacing="14">
-            <materialIcons:MaterialIcon Kind="InformationOutline" Width="22" Height="22" />
-            <TextBlock Text="Track Info" FontSize="16" VerticalAlignment="Center" />
-          </StackPanel>
-        </Button>
-
-        <Button Classes="action" Command="{Binding DownloadAlbumActionTargetCommand}"
-                IsVisible="{Binding CanDownloadAlbumActionTarget}">
-          <StackPanel Orientation="Horizontal" Spacing="14">
-            <materialIcons:MaterialIcon Kind="CloudDownloadOutline" Width="22" Height="22" />
-            <TextBlock Text="Download All" FontSize="16" VerticalAlignment="Center" />
-          </StackPanel>
-        </Button>
-
-        <!-- An album on Home's Continue Playing shelf comes off it here. -->
-        <Button Classes="action" Command="{Binding ForgetAlbumActionTargetProgressCommand}"
-                IsVisible="{Binding CanForgetAlbumActionTargetProgress}">
-          <StackPanel Orientation="Horizontal" Spacing="14">
-            <materialIcons:MaterialIcon Kind="PlaylistRemove" Width="22" Height="22" />
-            <TextBlock Text="Remove from Continue Playing" FontSize="16" VerticalAlignment="Center" />
-          </StackPanel>
-        </Button>
-
-        <!-- The two entries a playlist has that an album does not: it is a
-             thing the user made, so it can be called something else or thrown
-             away. Both act on the row the menu was opened from, not on
-             whatever the screen behind is showing - see
-             MobileMainViewModel.PlaylistActionTarget. -->
-        <Button Classes="action" Command="{Binding RenamePlaylistActionTargetCommand}"
-                IsVisible="{Binding IsActingOnAPlaylist}">
-          <StackPanel Orientation="Horizontal" Spacing="14">
-            <materialIcons:MaterialIcon Kind="PencilOutline" Width="22" Height="22" />
-            <TextBlock Text="Rename" FontSize="16" VerticalAlignment="Center" />
-          </StackPanel>
-        </Button>
-
-        <!-- Once any song in the album has a file on this device
-             (CanDeleteAlbumActionTargetLocalFiles): every such file, reverted to
-             a placeholder the way a song's own Delete Local File does, through
-             the same confirm sheet and its warning when a file would not come
-             back. -->
-        <Button Classes="action" Command="{Binding DeleteAlbumActionTargetLocalFilesCommand}"
-                IsVisible="{Binding CanDeleteAlbumActionTargetLocalFiles}">
-          <StackPanel Orientation="Horizontal" Spacing="14">
-            <materialIcons:MaterialIcon Kind="TrashCanOutline" Width="22" Height="22" />
-            <TextBlock Text="Delete Local Files" FontSize="16" VerticalAlignment="Center" Foreground="{DynamicResource AppDangerBrush}" />
-          </StackPanel>
-        </Button>
-
-        <!-- Every song on the album (or by the artist) that this device may
-             remove - see the song menu's own entry. Never shown over a
-             playlist; see CanRemoveAlbumActionTargetFromLibrary. -->
-        <Button Classes="action" Command="{Binding RemoveAlbumFromLibraryCommand}"
-                IsVisible="{Binding CanRemoveAlbumActionTargetFromLibrary}">
-          <StackPanel Orientation="Horizontal" Spacing="14">
-            <materialIcons:MaterialIcon Kind="MusicNoteOff" Width="22" Height="22" />
-            <TextBlock Text="Remove from Library" FontSize="16" VerticalAlignment="Center" Foreground="{DynamicResource AppDangerBrush}" />
-          </StackPanel>
-        </Button>
-
-        <!-- Last, and in the destructive colour, under everything that is not:
-             it is the one entry here that cannot be undone. It confirms first
-             (ConfirmDeletePlaylistView) - and the songs themselves are
-             untouched, which is what that prompt says. -->
-        <Button Classes="action" Command="{Binding DeletePlaylistActionTargetCommand}"
-                IsVisible="{Binding IsActingOnAPlaylist}">
-          <StackPanel Orientation="Horizontal" Spacing="14">
-            <materialIcons:MaterialIcon Kind="PlaylistRemove" Width="22" Height="22" />
-            <TextBlock Text="Delete Playlist" FontSize="16" VerticalAlignment="Center" Foreground="{DynamicResource AppDangerBrush}" />
-          </StackPanel>
-        </Button>
+        <!-- The entries ActionMenus gives, in its order - the same as the
+             desktop's context menu. A destructive entry's words are in the
+             danger colour; the album menu's Play is ringed. -->
+        <ItemsControl ItemsSource="{Binding AlbumActions}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="menus:ActionMenuEntry">
+              <Button Classes="action"
+                      IsEnabled="{Binding IsEnabled}"
+                      Command="{Binding $parent[ItemsControl].((vm:MobileMainViewModel)DataContext).RunAlbumActionCommand}"
+                      CommandParameter="{Binding}">
+                <StackPanel Orientation="Horizontal" Spacing="14">
+                  <Border Classes="ring"
+                          Width="26" Height="26" Margin="-2"
+                          CornerRadius="9999" BorderThickness="1"
+                          BorderBrush="{DynamicResource AppChromeBorderBrush}"
+                          IsVisible="{Binding IsPrimary}">
+                    <materialIcons:MaterialIcon Kind="{Binding Icon}" Width="15" Height="15" />
+                  </Border>
+                  <materialIcons:MaterialIcon Kind="{Binding Icon}" Width="22" Height="22"
+                                              IsVisible="{Binding !IsPrimary}" />
+                  <TextBlock Text="{Binding Title}" FontSize="16" VerticalAlignment="Center"
+                             Classes.danger="{Binding IsDestructive}" />
+                </StackPanel>
+              </Button>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
       </StackPanel>
     </Border>
   </Grid>
