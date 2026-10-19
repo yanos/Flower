@@ -194,7 +194,7 @@ fails on the old code.
 
 ## B. Correctness and resource handling
 
-### B1. Sync request bodies are materialised three times, before authentication
+### B1. Sync request bodies are materialised three times, before authentication — **fixed (October 2026)**
 
 `Flower.Server/Endpoints/SyncEndpoints.cs:117-126` (the filter), and all four
 POST handlers: `:329` (`ApplyPlaylists`), `:374` (`ReportLog`), `:416`
@@ -232,6 +232,16 @@ deserialize from that `byte[]` (or a `ReadOnlySpan<byte>`) with
 `JsonSerializer.Deserialize`. That removes the second read and the UTF-16 string
 outright. `ToArray()` can go too — `JsonSerializer` will read a `MemoryStream`,
 and `SignedRequestCanonicalizer` could take a span.
+
+**Fixed**, slightly further than proposed. The gate reads the body once,
+into one array the size `Content-Length` declared, which is already held to
+the route's cap before anything is read. The handlers deserialize those same
+bytes (`RequestGate.BodyOf`), and `Request.Body` is swapped for a read-only
+stream over them, so the admin routes that read it, uploads included, read
+from memory too. There is no `EnableBuffering`, no `MemoryStream`, no
+`ToArray` and no UTF-16 string any more, so a 20 MB body costs 20 MB. It is
+still read before the signature is checked, because nothing can verify a
+body signature without the body.
 
 ### B2. `NonceReplayGuard` prunes the whole dictionary on every insert — **fixed (October 2026)**
 
@@ -589,7 +599,7 @@ refuses an over-long one as `Invalid` before recording anything, and
 
 ## D. Performance and memory
 
-### D1. Every oversized album cover is decoded twice
+### D1. Every oversized album cover is decoded twice — **fixed (October 2026)**
 
 `Flower/Services/AlbumArtLoader.cs:171-180`
 
@@ -620,7 +630,16 @@ first pass.
 This is the most expensive single thing in the cold-scroll path, and cold scroll
 on a phone is where the user's heat complaint started.
 
-### D2. `Retain` sweeps the entire weak cache on every hit and every miss
+**Fixed** as proposed, in `Flower.Core` (`ImageHeader`): PNG's IHDR, a walk
+of a JPEG's segments to the frame header that skips each one by its length (an
+Exif block can be tens of kilobytes), and WebP's three layouts. Anything else,
+or a header it cannot read, returns nothing, and the caller decodes twice as
+before. That covers the art loader and both Track Info views (October C4):
+`AlbumArtLoader.MeasureArt` replaced the two views' copies, and the phone's
+full-screen picture decodes once. `ImageHeaderTests` reads Skia's own encoder
+output, plus a JPEG with a 60 KB Exif block in front of the frame.
+
+### D2. `Retain` sweeps the entire weak cache on every hit and every miss — **fixed (October 2026)**
 
 `Flower/Services/AlbumArtLoader.cs:126-130`
 
@@ -640,6 +659,12 @@ the more interesting half: it serialises the UI thread against every background
 art load. Uncontended it is a few nanoseconds; under a cold scroll with loads
 completing on thread-pool threads it is a real serialisation point.
 
+**Fixed** along with October's C3. The sweep runs at most every thirty
+seconds. A cache hit no longer replaces its own `WeakReference`, and the strong
+LRU finds an entry through a dictionary instead of walking its list. There is
+no process-wide lock left to worry about: each LRU has its own, held for a
+dictionary lookup and two list moves.
+
 ### D3. Every scroll event allocates a `SortedSet` and a `List`
 
 `Flower/Controls/MusicListPanel.cs:126-143`
@@ -658,7 +683,7 @@ one reusable buffer and no tree.
 Gen0 pressure during scrolling is exactly the kind of cost that shows up as heat
 rather than as a visible stall, which is what makes it worth a mention.
 
-### D4. `MiniaudioSink`'s watchdog timer runs for the life of the process
+### D4. `MiniaudioSink`'s watchdog timer runs for the life of the process — **fixed (October 2026)**
 
 `Flower/Audio/MiniaudioSink.cs:252-254`
 
@@ -674,7 +699,14 @@ ticks would violate.
 **Fix.** Start it from `Start()` and stop it from `Dispose`/`CloseDevice`; set
 `AutoReset = false` and re-arm at the end of the handler.
 
-### D5. `ResourceMonitor.ThreadCount` cannot see the threads that matter
+**Fixed**, quieter than proposed. Stopping it in `CloseDevice` would still
+leave it ticking for as long as a device is open, and on a paused phone a
+device stays open. Instead it is armed wherever playback starts, and each tick
+re-arms it only while playing. So one last tick after a stop logs the stop,
+and then the timer goes quiet until something plays. `AutoReset` is off, and a
+guard means a slow tick is skipped rather than overlapped.
+
+### D5. `ResourceMonitor.ThreadCount` cannot see the threads that matter — **fixed (October 2026)**
 
 `Flower.Core/Diagnostics/ResourceMonitor.cs:160`
 
@@ -698,6 +730,13 @@ timeout explicitly logs) will not move it at all.
 `System.Diagnostics.Process` in) or — better and cheaper — have the decoders
 maintain their own live-instance counter and report that, since "how many
 decoders are alive" is the actual question.
+
+**Fixed** the second way. `LiveDecoders` counts each `FfmpegTrackDecoder`
+from its constructor until its native decoder is closed. A decoder that is
+leaked because its thread would not stop stays counted. The sample reports it
+beside `PoolThreadCount`, which is renamed to say what it is and loses the
+`+ 1`. The playback snapshot logs `PoolThreads=` and `Decoders=`, and the
+phone's resource readout says "N in the pool, M decoding".
 
 ---
 

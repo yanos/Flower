@@ -418,7 +418,7 @@ moves on every play, so every device still downloads the whole catalog, now
 cheaply merged), the server rewriting everything after a rescan that found
 nothing new, and the client's iTunes imports.
 
-### C2. The server reads cover art from the audio file on every request
+### C2. The server reads cover art from the audio file on every request — **fixed**
 
 `Flower.Server/Endpoints/MediaEndpoints.cs` (`GetCoverArt`,
 `CoverArtCandidates`), `Flower.Core/Services/LocalAlbumArt.cs:133-175`
@@ -443,7 +443,34 @@ mime)`, or simply to the bytes, invalidated by `ChangeToken` and by
 once per album, not once per track. Send an `ETag`. A thumbnail size parameter
 on the batch route can come later.
 
-### C3. Every art cache hit walks two lists
+**Fixed** (`CoverArtCache`, used by both routes), differently in three ways.
+
+- **Not invalidated by `ChangeToken`.** That token moves on every play, so a
+  house with a few listeners would empty the cache constantly. Instead, a
+  rescan or any artwork, tag or file change in the library empties it, and a
+  play does not.
+- **Checked against the disk.** Each answer, a picture or "none", is kept
+  with every file and folder the search went through: the songs whose tags had
+  no picture, the folders it listed, and the file the picture came from. Before
+  the answer is used again, each of those is checked to be the same size and
+  age, which costs a stat apiece instead of a parse and a listing. A cover
+  replaced on disk behind Flower's back changes its own file. One added,
+  deleted or renamed changes its folder's modified time. Either way the next
+  request notices. A folder the search never reached, because a song before it
+  has a picture in its tags and that wins, cannot change the answer and is not
+  checked.
+
+The pictures are held up to 64 MB, least recently asked for going first.
+`LocalAlbumArtReader.FirstFor` lists each folder once per album and keeps the
+old precedence exactly: song by song, embedded picture then folder image.
+
+There is no `ETag` yet. The native clients keep their own disk cache, and
+`HttpClient` has no HTTP cache to revalidate with. The browser tab could use
+one, and that is left for later along with the thumbnail parameter.
+`CoverArtCacheTests` covers a changed cover, a cover added to a folder that had
+none, a deleted one, and a play that clears nothing.
+
+### C3. Every art cache hit walks two lists — **fixed**
 
 `Flower/Services/AlbumArtLoader.cs:164-176` (`Retain`), `:109-145`
 (`StrongLru`)
@@ -458,7 +485,11 @@ tile-appearance rate.
 **Fix.** Back the LRU with a dictionary of key to node, which makes it O(1),
 and throttle the weak sweep (D2's fix).
 
-### C4. Track Info decodes the whole picture to read its size, in three places
+**Fixed** as proposed. The sweep runs at most every thirty seconds, and a hit
+no longer allocates a new `WeakReference` for the entry it found. See
+September's D2.
+
+### C4. Track Info decodes the whole picture to read its size, in three places — **fixed**
 
 `Flower/Views/TrackInfoWindow.axaml.cs:569`,
 `Flower/Views/Mobile/TrackInfoView.axaml.cs:476, 496`
@@ -467,6 +498,10 @@ This is September's D1 again, in the two Track Info views: `new Bitmap(...)`
 of the full image just to read `PixelSize`, and the mobile view decodes it a
 second time for the screen. The header-reading helper D1 proposes would cover
 all four call sites.
+
+**Fixed** with September's D1: `ImageHeader`, behind
+`AlbumArtLoader.MeasureArt` for both views, and the phone's full-screen
+picture is decoded once at the size it is shown.
 
 ---
 
@@ -626,7 +661,8 @@ code would trust it.
   Library.UpdateTracks". False, see B2.~~ Gone with B2's fix.
 - `LibraryMirrorService.cs:222`: "the folder it lived in". The code checks the
   root, see B4.
-- `LocalAlbumArt.cs:148`: "Debug, not Warning", above a `LogTrace`.
+- ~~`LocalAlbumArt.cs:148`: "Debug, not Warning", above a `LogTrace`.~~ Rewritten
+  with C2's fix.
 - `PlaylistControlViewModel.cs:426-427` points at `ARCHITECTURE-REVIEW.md` for
   a "couldn't play this" surface, and `GaplessAudioManager.cs:144-147` waits for
   one too. That is B3, and it is tracked here now.
@@ -668,13 +704,13 @@ through. Each would have caught the finding it is listed against.
    writes no rows.
 6. **Track Info's read side** (D1). There is nothing to test until D1 moves the
    logic out of code-behind.
-7. **Still open from September's F list:** the equalizer at 44.1/32/22.05 kHz
-   (F.1, which is still the most valuable missing test), `Library.Snapshot`
-   under concurrent invalidation (F.3, now `LibrarySnapshotRaceTests`), cancelling a throttled
-   `SeekableHttpStream` (F.4). The dedicated `NonceReplayGuard` test (F.6) now
-   exists (`NonceReplayGuardTests`).
-   F.2 is resolved: September's A2 is fixed, and
-   `GaplessHandoverResponsivenessTests` is its regression test.
+7. **September's F list is all written now:** the equalizer at
+   44.1/32/22.05 kHz (F.1, `EqualizerTests`), `Library.Snapshot` under
+   concurrent invalidation (F.3, `LibrarySnapshotRaceTests`), cancelling a
+   throttled `SeekableHttpStream` (F.4, `SeekableHttpStreamTests`), and the
+   dedicated `NonceReplayGuard` test (F.6, `NonceReplayGuardTests`). F.2 is
+   resolved: September's A2 is fixed, and `GaplessHandoverResponsivenessTests`
+   is its regression test.
 8. **Untested logic files** (no test names the type and none drives it
    indirectly): `PlaylistSessionOverlay.Apply`, the conflict overlay every
    playlist sync goes through (`PlaylistThreeWayMerge` beside it is well
@@ -690,7 +726,7 @@ Checked against the code, not taken from the September document's own marks.
 |---|---|---|
 | A1 Equalizer unstable below 32 kHz | fixed | October 2026: bands at or above 0.45 × the rate are bypassed |
 | A2 Retire/PromoteTarget deadlock | fixed | as recorded |
-| B1 Sync bodies materialised three times | **open** | `RequestGate.ReadBodyAsync` buffers into a `MemoryStream` with `EnableBuffering` on as well, and the handlers then `ReadToEndAsync` the body again |
+| B1 Sync bodies materialised three times | fixed | October 2026: read once into one array, which the handlers deserialize (`RequestGate.BodyOf`) |
 | B2 Nonce prune on every insert | fixed | October 2026: the sweep runs every 15 s, as `RateLimiter`'s does |
 | B3 Stale `Library.Snapshot` | fixed | October 2026: each index is tagged with the generation it was built for |
 | B4 Uncancellable stream waits | fixed | October 2026: `SeekableHttpStream.Cancel`, called before the decoder's join |
@@ -698,11 +734,11 @@ Checked against the code, not taken from the September document's own marks.
 | B6 Late arm dropped | fixed | |
 | C2 Log ingestion unbounded | fixed | `MaxEntriesPerReport`, `MaxBytesPerDevice` |
 | C4 Unbounded nonce/fingerprint key lengths | fixed | October 2026: over 64 characters is refused as malformed before it becomes a key |
-| D1 Double decode of oversized covers | **open** | plus the Track Info copies in C4 above |
-| D2 Weak-cache sweep on every hit | **open** | made worse by C3 above |
+| D1 Double decode of oversized covers | fixed | October 2026: the size comes from the header (`ImageHeader`), here and in Track Info (C4) |
+| D2 Weak-cache sweep on every hit | fixed | October 2026: at most every 30 s, with C3's O(1) LRU |
 | D3 `SortedSet` per scroll | fixed | |
-| D4 Watchdog timer for the life of the process | **open** | still `System.Timers.Timer` with `AutoReset` true, started in the constructor |
-| D5 `ThreadCount` sees pool threads only | **open** | |
+| D4 Watchdog timer for the life of the process | fixed | October 2026: runs only while playing, one tick at a time |
+| D5 `ThreadCount` sees pool threads only | fixed | October 2026: `LiveDecoders` counts the decoders themselves |
 | E2 `GaplessFormat` process-wide statics | **open** | |
 | E3 Shell view models too large | **worse** | `MobileMainViewModel` 1609 → 3215 lines, `MainViewModel` 1885 → 2893 |
 | E5 `GCHandle` leak on a second `Start` | fixed | October 2026 |
