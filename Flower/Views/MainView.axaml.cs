@@ -1989,10 +1989,20 @@ public partial class MainView : UserControl
         {
             if (MusicList.SelectedTrack is not Track track)
                 return;
-            var tracks = vm.DisplayedTracks;
-            var index  = tracks.ToList().IndexOf(track);
+            // Prev/Next browse the rows the list is drawing, which on the
+            // Queue page are the queue's and not the browser's - and by row,
+            // since the queue can hold one song twice. A track the rows do
+            // not hold gets a window of its own rather than someone else's.
+            var rows   = ShownRows;
+            var tracks = rows.Select(r => r.Track).ToList();
+            var index  = MusicList.SelectedRows is [var row] ? rows.ToList().IndexOf(row) : -1;
             if (index < 0)
-                index = 0;
+                index = tracks.IndexOf(track);
+            if (index < 0)
+            {
+                tracks = [track];
+                index  = 0;
+            }
             infoWindow = new TrackInfoWindow(tracks, index, vm) { ShowInTaskbar = false };
             infoWindow.TrackNavigated += (_, t) => MusicList.SelectedTrack = t;
         }
