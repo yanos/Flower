@@ -251,10 +251,54 @@ namespace Flower.Audio
         {
             _logger = logger;
 
-            _watchdog = new Timer(1000);
-            _watchdog.Elapsed += (_, _) => LogWatchdogTick();
-            _watchdog.Start();
+            // Armed when playback starts, not here: a timer started with the
+            // sink woke the process once a second for its whole life, idle in
+            // a phone's background included. One shot at a time and re-armed
+            // by the tick itself, so a slow tick cannot overlap the next -
+            // FoldBridgeCounters must run once per tick and nowhere else.
+            _watchdog = new Timer(1000) { AutoReset = false };
+            _watchdog.Elapsed += (_, _) => WatchdogTick();
         }
+
+        // Called wherever playback starts. Starting a timer that is already
+        // running leaves it as it is.
+        private void ArmWatchdog()
+        {
+            if (!_disposed)
+                _watchdog.Start();
+        }
+
+        // Re-armed while playing, and so once more after playback stops: the
+        // tick that sees the device stopped is the one that logs it, and the
+        // last until something plays.
+        private void WatchdogTick()
+        {
+            if (Interlocked.Exchange(ref _watchdogTicking, 1) == 1)
+                return;
+
+            try
+            {
+                LogWatchdogTick();
+            }
+            finally
+            {
+                Volatile.Write(ref _watchdogTicking, 0);
+            }
+
+            if (_started)
+            {
+                try
+                {
+                    ArmWatchdog();
+                }
+                catch (ObjectDisposedException)
+                {
+                    // Disposed between the check and the start.
+                }
+            }
+        }
+
+        private int _watchdogTicking;
 
         private void LogWatchdogTick()
         {
@@ -904,6 +948,7 @@ namespace Flower.Audio
                 // believes playback is running, because as far as it knows it
                 // is.
                 _started = true;
+                ArmWatchdog();
 
                 if (!reopened)
                 {
@@ -1231,6 +1276,7 @@ namespace Flower.Audio
                 _feeder?.Resume();
 
                 _started = true;
+                ArmWatchdog();
                 Playing?.Invoke(this, EventArgs.Empty);
             }
         }
@@ -1382,6 +1428,8 @@ namespace Flower.Audio
                     // old one and OpenDevice built another, parked.
                     _feeder?.Resume();
                     _started = true;
+                    ArmWatchdog();
+                ArmWatchdog();
                 }
                 else
                 {
