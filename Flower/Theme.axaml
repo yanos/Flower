@@ -204,8 +204,12 @@
 
   <!-- Under a round button: just enough to lift it off the page. -->
   <BoxShadows x:Key="AppButtonShadow">0 1 4 0 #1A000000</BoxShadows>
-  <!-- Under the mini player and the tab bar, over a list scrolling past. -->
-  <BoxShadows x:Key="AppOvalShadow">0 4 20 0 #2E000000</BoxShadows>
+  <!-- Under the mini player and the tab bar, over a list scrolling past: a
+       tight, darker shadow just under the oval's edge over a softer spread,
+       so it reads as lifted rather than hazed. Rendered against the page, it
+       darkens it by 70/255 at the edge and fades out over about 10px - the
+       single soft one before it reached 32. -->
+  <BoxShadows x:Key="AppOvalShadow">0 6 16 0 #38000000, 0 2 5 0 #26000000</BoxShadows>
   <!-- Under a cover that is the page's subject (an album's, Now Playing's). -->
   <BoxShadows x:Key="AppCoverShadow">0 6 20 0 #38000000</BoxShadows>
   <!-- Under something dropped down over the page (recent searches). -->
