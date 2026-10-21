@@ -19,6 +19,20 @@
     <conv:EnumIndexConverter x:Key="EnumIndexConverter"/>
   </UserControl.Resources>
 
+  <UserControl.Styles>
+    <!-- A Home shelf's row, and the one being dragged (.lifted, from
+         HandleDragReorder): raised on a shadow and opaque, since it passes
+         over the rows it is dragged across. -->
+    <Style Selector="Border.shelfRow">
+      <Setter Property="Padding" Value="0,3"/>
+      <Setter Property="CornerRadius" Value="6"/>
+    </Style>
+    <Style Selector="Border.shelfRow.lifted">
+      <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundChromeMediumBrush}"/>
+      <Setter Property="BoxShadow" Value="{DynamicResource AppOvalShadow}"/>
+    </Style>
+  </UserControl.Styles>
+
   <Grid RowDefinitions="*,Auto,Auto" Margin="16">
 
     <TabControl Grid.Row="0" x:Name="Tabs" SelectionChanged="Tabs_SelectionChanged">
@@ -84,30 +98,36 @@
                     IsVisible="{Binding Capabilities.PlaybackControlsPicker}"/>
 
           <!-- How much Home's shelves hold - see AppSettings.
-               HomeContinuePlayingLimit. The phone sets the same three in its
+               HomeContinuePlayingLimit - and the order they come in, dragged
+               by the handle at the start of each row (HandleDragReorder,
+               MainViewModel.MoveHomeShelf). The phone sets the same in its
                own Settings (SettingsView's Home card). -->
           <StackPanel IsVisible="{Binding Capabilities.HomeShelves}">
             <TextBlock Text="Home" FontWeight="SemiBold" Margin="0,20,0,8"/>
-            <Grid ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="10">
-              <TextBlock Grid.Row="0" Text="Continue Playing" VerticalAlignment="Center"/>
-              <NumericUpDown Grid.Row="0" Grid.Column="1" Width="120"
-                             Value="{Binding Device.HomeContinuePlayingLimit, Mode=TwoWay}"
-                             Minimum="0" Maximum="{Binding MaxHomeShelfAlbums}" Increment="1" FormatString="0"/>
-              <TextBlock Grid.Row="0" Grid.Column="2" Text="albums" Opacity="0.6" VerticalAlignment="Center"/>
-
-              <TextBlock Grid.Row="1" Text="Recently Played" VerticalAlignment="Center"/>
-              <NumericUpDown Grid.Row="1" Grid.Column="1" Width="120"
-                             Value="{Binding Device.HomeRecentlyPlayedLimit, Mode=TwoWay}"
-                             Minimum="0" Maximum="{Binding MaxHomeShelfAlbums}" Increment="1" FormatString="0"/>
-              <TextBlock Grid.Row="1" Grid.Column="2" Text="albums" Opacity="0.6" VerticalAlignment="Center"/>
-
-              <TextBlock Grid.Row="2" Text="Recently Added" VerticalAlignment="Center"/>
-              <NumericUpDown Grid.Row="2" Grid.Column="1" Width="120"
-                             Value="{Binding Device.HomeRecentlyAddedMonths, Mode=TwoWay}"
-                             Minimum="0" Maximum="{Binding MaxHomeRecentlyAddedMonths}" Increment="1" FormatString="0"/>
-              <TextBlock Grid.Row="2" Grid.Column="2" Text="months" Opacity="0.6" VerticalAlignment="Center"/>
-            </Grid>
-            <TextBlock Text="0 hides that shelf."
+            <!-- Not clipped, so the lifted row's shadow is not cut off at the
+                 list's edges. -->
+            <ItemsControl x:Name="HomeShelfList" ItemsSource="{Binding Device.HomeShelfSettings}"
+                          ClipToBounds="False">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:HomeShelfSettingRow">
+                  <Border Classes="shelfRow">
+                    <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="10">
+                      <Border Grid.Column="0" Classes="dragHandle" Width="24" Background="Transparent"
+                              Cursor="SizeNorthSouth" ToolTip.Tip="Drag to reorder">
+                        <materialIcons:MaterialIcon Classes="chrome" Kind="DragHorizontalVariant" Width="16" Height="16"
+                                                    IsHitTestVisible="False"/>
+                      </Border>
+                      <TextBlock Grid.Column="1" Text="{Binding Title}" VerticalAlignment="Center"/>
+                      <NumericUpDown Grid.Column="2" Width="120"
+                                     Value="{Binding Value, Mode=TwoWay}"
+                                     Minimum="0" Maximum="{Binding Maximum}" Increment="1" FormatString="0"/>
+                      <TextBlock Grid.Column="3" Text="{Binding Unit}" Width="50" Opacity="0.6" VerticalAlignment="Center"/>
+                    </Grid>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock Text="0 hides that shelf. Drag a row by its handle to move that shelf on the page."
                        Margin="0,6,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
           </StackPanel>
 

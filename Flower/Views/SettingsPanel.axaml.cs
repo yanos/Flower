@@ -7,6 +7,7 @@ using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 
+using Flower.Controls;
 using Flower.Services;
 using Flower.ViewModels;
 
@@ -33,7 +34,15 @@ public partial class SettingsPanel : UserControl
 
     // Satisfies Avalonia's runtime-XAML-loader/previewer check (AVLN3001) - never
     // called directly; Initialize below is what actually wires it up.
-    public SettingsPanel() => InitializeComponent();
+    public SettingsPanel()
+    {
+        InitializeComponent();
+
+        // Home's shelves, dragged into the order the page shows them in.
+        _ = new HandleDragReorder(HomeShelfList,
+            item => item is HomeShelfSettingRow row && _viewModel?.Device is { } device ? device.HomeShelfSettings.IndexOf(row) : -1,
+            (item, to) => _viewModel?.Device?.MoveHomeShelf(((HomeShelfSettingRow)item).Shelf, to));
+    }
 
     public SettingsPanel(SettingsViewModel viewModel, MainViewModel? mainViewModel = null) : this() =>
         Initialize(viewModel, mainViewModel);

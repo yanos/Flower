@@ -130,6 +130,30 @@
       <Setter Property="FontSize" Value="16" />
     </Style>
 
+    <!-- Home's shelves, dragged by their handle: the row under the finger
+         (.lifted, from HandleDragReorder) is raised off the card on a shadow,
+         ringed, and its handle drawn in the accent - the Navigation Bar
+         page's lifted row. Opaque, since it passes over the rows it is
+         dragged across. -->
+    <Style Selector="Border.shelfRow">
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="Margin" Value="-8,0" />
+      <Setter Property="Padding" Value="0,0,8,0" />
+    </Style>
+    <Style Selector="Border.shelfRow materialIcons|MaterialIcon.grip">
+      <Setter Property="Foreground" Value="{DynamicResource AppChromeBrush}" />
+    </Style>
+    <Style Selector="Border.shelfRow.lifted">
+      <Setter Property="Background" Value="{DynamicResource AppBackgroundBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppChromeBorderBrush}" />
+      <Setter Property="BoxShadow" Value="{DynamicResource AppOvalShadow}" />
+    </Style>
+    <Style Selector="Border.shelfRow.lifted materialIcons|MaterialIcon.grip">
+      <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}" />
+    </Style>
+
     <!-- A bare switch, as on the Navigation Bar page: Fluent's ToggleSwitch
          sets aside room for "On" and "Off" beside the track. -->
     <Style Selector="ToggleSwitch">
@@ -267,40 +291,43 @@
 
       <!-- How much Home's shelves hold - see AppSettings.
            HomeContinuePlayingLimit; desktop sets the same three on Settings'
-           General tab. Applied as they are stepped, like the switches above. -->
+           General tab - and the order they come in on the page, dragged by
+           the handle at the start of each row (HandleDragReorder, as on the
+           Navigation Bar page; MainViewModel.MoveHomeShelf). Applied as they
+           are stepped or dropped, like the switches above. -->
       <Border Classes="card">
-        <StackPanel Spacing="12">
+        <StackPanel Spacing="8">
           <TextBlock Classes="section-header" Text="HOME" />
-          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14" Classes="badgeRow">
-            <Border Grid.Column="0" Classes="badge" VerticalAlignment="Center">
-              <materialIcons:MaterialIcon Kind="PlayCircleOutline" />
-            </Border>
-            <TextBlock Grid.Column="1" Classes="rowTitle" FontWeight="Normal" Text="Continue Playing"
-                       VerticalAlignment="Center" />
-            <controls:Stepper Grid.Column="2"
-                              Value="{Binding Main.HomeContinuePlayingLimit}"
-                              Maximum="{x:Static fvm:HomeViewModel.MaxAlbumsPerShelf}" />
-          </Grid>
-          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14" Classes="badgeRow">
-            <Border Grid.Column="0" Classes="badge" VerticalAlignment="Center">
-              <materialIcons:MaterialIcon Kind="History" />
-            </Border>
-            <TextBlock Grid.Column="1" Classes="rowTitle" FontWeight="Normal" Text="Recently Played"
-                       VerticalAlignment="Center" />
-            <controls:Stepper Grid.Column="2"
-                              Value="{Binding Main.HomeRecentlyPlayedLimit}"
-                              Maximum="{x:Static fvm:HomeViewModel.MaxAlbumsPerShelf}" />
-          </Grid>
-          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14" Classes="badgeRow">
-            <Border Grid.Column="0" Classes="badge" VerticalAlignment="Center">
-              <materialIcons:MaterialIcon Kind="CalendarClock" />
-            </Border>
-            <TextBlock Grid.Column="1" Classes="rowTitle" FontWeight="Normal" Text="Recently Added"
-                       VerticalAlignment="Center" />
-            <controls:Stepper Grid.Column="2"
-                              Value="{Binding Main.HomeRecentlyAddedMonths}"
-                              Maximum="{x:Static fvm:HomeViewModel.MaxRecentlyAddedMonths}" />
-          </Grid>
+          <!-- Not clipped: each row reaches 8 past the list either side, so
+               its rounded ends and the lifted row's shadow have room on the
+               card - an ItemsControl clips to its bounds, and cut them off
+               square. -->
+          <ItemsControl x:Name="HomeShelfList" ItemsSource="{Binding Main.HomeShelfSettings}"
+                        ClipToBounds="False">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="fvm:HomeShelfSettingRow">
+                <Border Classes="shelfRow">
+                  <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6">
+                    <Border Grid.Column="0"
+                            Classes="dragHandle"
+                            Width="36" Height="44"
+                            Background="Transparent">
+                      <materialIcons:MaterialIcon Classes="grip"
+                                                  Kind="DragHorizontalVariant"
+                                                  Width="20" Height="20"
+                                                  IsHitTestVisible="False" />
+                    </Border>
+                    <TextBlock Grid.Column="1" Classes="rowTitle" FontWeight="Normal"
+                               Text="{Binding Title}"
+                               VerticalAlignment="Center" />
+                    <controls:Stepper Grid.Column="2"
+                                      Value="{Binding Value}"
+                                      Maximum="{Binding Maximum}" />
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
         </StackPanel>
       </Border>
 

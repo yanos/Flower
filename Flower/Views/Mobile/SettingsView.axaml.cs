@@ -9,7 +9,10 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 
 using Flower.Audio.Ffmpeg;
+using Flower.Controls;
 using Flower.Services;
+using Flower.ViewModels;
+using Flower.ViewModels.Mobile;
 
 namespace Flower.Views.Mobile;
 
@@ -29,7 +32,14 @@ public partial class SettingsView : UserControl
 
         AttachedToVisualTree += (_, _) => Hook();
         DetachedFromVisualTree += (_, _) => Unhook();
+
+        // Home's shelves, dragged into the order the page shows them in.
+        _ = new HandleDragReorder(HomeShelfList,
+            item => item is HomeShelfSettingRow row && Main is { } main ? main.HomeShelfSettings.IndexOf(row) : -1,
+            (item, to) => Main?.MoveHomeShelf(((HomeShelfSettingRow)item).Shelf, to));
     }
+
+    private MainViewModel? Main => (DataContext as MobileMainViewModel)?.Main;
 
     // SoftKeyboard.AvoidOcclusion on the scroller ends the viewport above the
     // keyboard, but nothing then moves the box being typed into up into what

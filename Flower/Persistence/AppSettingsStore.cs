@@ -127,6 +127,10 @@ namespace Flower.Persistence
         public int HomeRecentlyPlayedLimit  { get; set; } = 6;
         public int HomeRecentlyAddedMonths  { get; set; } = 3;
 
+        // The order of those shelves, top to bottom, by name - see
+        // HomeShelfOrder. Null is its default.
+        public List<string>? HomeShelfOrder { get; set; }
+
         // Which sidebar view (and, for a Playlist, which one - by name, since
         // Playlist objects themselves aren't stable across a relaunch) and how
         // far scrolled into it the user was, saved on close (MainWindow.Closing,

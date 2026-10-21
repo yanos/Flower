@@ -6,7 +6,8 @@ using Flower.ViewModels.Mobile;
 namespace Flower.ViewModels;
 
 // Home's three shelves as one list of rows - a shelf's heading, then its
-// covers so many to a row - for a virtualizing list to show, the way the album
+// covers so many to a row, the shelves in the user's order (HomeViewModel.
+// ShelfOrder) - for a virtualizing list to show, the way the album
 // grids show theirs (AlbumGridView, AlbumGridRow). Only the rows on screen are
 // built: Recently Added is months of albums, and on a library scanned within
 // that window it is the whole library, which laid out cover by cover made
@@ -45,15 +46,23 @@ public static class HomeShelfRows
         if (columns < 1)
             columns = 1;
 
-        if (home.HasContinuePlaying)
+        foreach (var shelf in home.ShelfOrder)
         {
-            rows.Add(new HomeShelfHeaderRow("Continue Playing", rows.Count == 0));
-            foreach (var chunk in home.ContinuePlaying.Chunk(columns))
-                rows.Add(new HomeContinuePlayingRow(chunk, columns));
+            switch (shelf)
+            {
+                case HomeShelf.ContinuePlaying when home.HasContinuePlaying:
+                    rows.Add(new HomeShelfHeaderRow(HomeShelfOrder.Title(shelf), rows.Count == 0));
+                    foreach (var chunk in home.ContinuePlaying.Chunk(columns))
+                        rows.Add(new HomeContinuePlayingRow(chunk, columns));
+                    break;
+                case HomeShelf.RecentlyPlayed:
+                    AddShelf(rows, HomeShelfOrder.Title(shelf), home.RecentlyPlayed, columns);
+                    break;
+                case HomeShelf.RecentlyAdded:
+                    AddShelf(rows, HomeShelfOrder.Title(shelf), home.RecentlyAdded, columns);
+                    break;
+            }
         }
-
-        AddShelf(rows, "Recently Played", home.RecentlyPlayed, columns);
-        AddShelf(rows, "Recently Added", home.RecentlyAdded, columns);
         return rows;
     }
 

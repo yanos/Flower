@@ -153,6 +153,45 @@ public class HomeShelfSettingsTests : PinnedDataDirectory
         Assert.Equal(9, parts.Main.Home.RecentlyAddedMonths);
     }
 
+    // The shelves come in the order Settings put them in, on either head.
+    [AvaloniaFact]
+    public void The_shelves_come_in_the_order_chosen()
+    {
+        using var home = Home(Enumerable.Range(0, 3).Select(i => Album($"A{i}", addedDaysAgo: i + 1, playedMinutesAgo: i * 10)));
+        home.Rebuild();
+
+        home.ShelfOrder = [HomeShelf.RecentlyAdded, HomeShelf.ContinuePlaying, HomeShelf.RecentlyPlayed];
+        var titles = HomeShelfRows.Build(home, columns: 4).OfType<HomeShelfHeaderRow>().Select(h => h.Title);
+
+        Assert.Equal(new[] { "Recently Added", "Recently Played" }, titles);
+    }
+
+    // A shelf dragged to a new place is there at once, and still there at the
+    // next launch.
+    [AvaloniaFact]
+    public void A_shelf_moved_in_settings_moves_on_home_and_is_saved()
+    {
+        var settings = new Flower.Persistence.AppSettings();
+        using var parts = MainViewModelHarness.BuildParts(new Library([]), new MainPlaylist([]), settings);
+        var main = parts.Main;
+
+        main.MoveHomeShelf(HomeShelf.RecentlyAdded, 0);
+
+        var moved = new[] { HomeShelf.RecentlyAdded, HomeShelf.ContinuePlaying, HomeShelf.RecentlyPlayed };
+        Assert.Equal(moved, main.Home.ShelfOrder);
+        Assert.Equal(moved, main.HomeShelfSettings.Select(r => r.Shelf));
+        Assert.Equal(moved, HomeShelfOrder.Parse(settings.HomeShelfOrder));
+    }
+
+    [AvaloniaFact]
+    public void Home_starts_in_the_saved_order()
+    {
+        var settings = new Flower.Persistence.AppSettings { HomeShelfOrder = ["RecentlyPlayed", "RecentlyAdded", "ContinuePlaying"] };
+        using var parts = MainViewModelHarness.BuildParts(new Library([]), new MainPlaylist([]), settings);
+
+        Assert.Equal(new[] { HomeShelf.RecentlyPlayed, HomeShelf.RecentlyAdded, HomeShelf.ContinuePlaying }, parts.Main.Home.ShelfOrder);
+    }
+
     // The desktop's page header is over Home now, and its filter box is
     // Home's filter - but only while Home is the page.
     [AvaloniaFact]

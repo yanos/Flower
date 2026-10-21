@@ -130,6 +130,21 @@ public sealed class HomeViewModel : ViewModelBase, IDisposable
         set => SetSetting(ref _recentlyAddedMonths, Math.Clamp(value, 0, MaxRecentlyAddedMonths));
     }
 
+    // Top to bottom (HomeShelfOrder). Only where the shelves go, not what is
+    // on them, so a change re-lays the rows without rebuilding a shelf.
+    private IReadOnlyList<HomeShelf> _shelfOrder = HomeShelfOrder.Default;
+    public IReadOnlyList<HomeShelf> ShelfOrder
+    {
+        get => _shelfOrder;
+        set
+        {
+            if (value.SequenceEqual(_shelfOrder))
+                return;
+            _shelfOrder = value;
+            ShelvesChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
     // Trimmed, and null for nothing, so a box holding a stray space filters
     // nothing out.
     private string? _filter;

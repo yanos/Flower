@@ -466,6 +466,24 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             () => Home.RecentlyAddedMonths);
     }
 
+    // The shelves as Settings lists them on either head, in Home's order,
+    // each with its amount - dragged by a handle to move one (MoveHomeShelf).
+    public ObservableCollection<HomeShelfSettingRow> HomeShelfSettings { get; } = new();
+
+    public void MoveHomeShelf(HomeShelf shelf, int index)
+    {
+        var order = HomeShelfOrder.Move(Home.ShelfOrder, shelf, index);
+        if (order.SequenceEqual(Home.ShelfOrder))
+            return;
+
+        Home.ShelfOrder = order;
+        _appSettings.HomeShelfOrder = order.Select(s => s.ToString()).ToList();
+        SaveSettings();
+
+        var from = HomeShelfSettings.ToList().FindIndex(row => row.Shelf == shelf);
+        HomeShelfSettings.Move(from, order.ToList().IndexOf(shelf));
+    }
+
     // Home clamps; what it kept is what gets saved, so a value typed past the
     // ceiling is stored as the ceiling rather than as what was typed.
     private void SetHomeSetting(int value, Action<int> store, Action<int> apply, Func<int> applied,
@@ -1610,7 +1628,10 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             ContinuePlayingLimit = _appSettings.HomeContinuePlayingLimit,
             RecentlyPlayedLimit = _appSettings.HomeRecentlyPlayedLimit,
             RecentlyAddedMonths = _appSettings.HomeRecentlyAddedMonths,
+            ShelfOrder = HomeShelfOrder.Parse(_appSettings.HomeShelfOrder),
         };
+        foreach (var shelf in Home.ShelfOrder)
+            HomeShelfSettings.Add(new HomeShelfSettingRow(shelf, this));
         _subscriptions.Add<System.ComponentModel.PropertyChangedEventHandler>((_, e) =>
         {
             if (e.PropertyName == nameof(HomeViewModel.ShownCount) && IsShowingHome)
