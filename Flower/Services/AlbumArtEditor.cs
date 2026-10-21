@@ -65,6 +65,22 @@ public sealed class AlbumArtEditor(
         return [.. tracks.Select(CatalogIdentity.AlbumIdFor).Distinct(StringComparer.Ordinal)];
     }
 
+    // How many files a change rewrites, for the phone to say while it does:
+    // the songs' own files here, or - the server writing by album - every
+    // song of each album the change covers, which is more than were picked
+    // when one song of an album was.
+    public int FileCount
+    {
+        get
+        {
+            if (LocalTargets() is { Count: > 0 } local)
+                return local.Count;
+
+            var albums = ServerAlbumIds().ToHashSet(StringComparer.Ordinal);
+            return albums.Count == 0 ? 0 : library.Tracks.Count(t => albums.Contains(CatalogIdentity.AlbumIdFor(t)));
+        }
+    }
+
     // Somewhere to write - and, for a song of the paired server's, the right
     // to (SyncRolePolicy.MayEditSong): a cover is changed for everybody, so on
     // a guest's device the server's songs are not this to change, downloaded

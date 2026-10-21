@@ -119,4 +119,27 @@
   <Style Selector="Button.primary:disabled">
     <Setter Property="Opacity" Value="0.5" />
   </Style>
+
+  <!-- An icon turning in place while something is under way: the connection
+       icon's sync arrows, and the cover being written in Track Info. Once,
+       here, rather than once per host file, which is where it was first
+       declared - in MainView, ServerPickerView and mobile SettingsView in
+       turn - before it lived in ConnectionStatusIcon. A pooled row's spinner
+       is driven from its view model instead (DownloadIndicatorViewModel.
+       SpinAngle), since an animation does not survive the row being reused. -->
+  <Style Selector="materialIcons|MaterialIcon.spinning">
+    <Setter Property="RenderTransform" Value="rotate(0deg)"/>
+  </Style>
+  <Style Selector="materialIcons|MaterialIcon.spinning">
+    <Style.Animations>
+      <Animation Duration="0:0:1" IterationCount="INFINITE">
+        <KeyFrame Cue="0%">
+          <Setter Property="RotateTransform.Angle" Value="0"/>
+        </KeyFrame>
+        <KeyFrame Cue="100%">
+          <Setter Property="RotateTransform.Angle" Value="360"/>
+        </KeyFrame>
+      </Animation>
+    </Style.Animations>
+  </Style>
 </Styles>

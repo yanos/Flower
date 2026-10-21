@@ -55,10 +55,21 @@
       <materialIcons:MaterialIcon Kind="Close" Width="22" Height="22" Foreground="White" />
     </Button>
 
+    <!-- The spinner turns while a cover downloads, in place of the
+         picture, and while the one chosen is written into the songs, over
+         it - dimmed, so it reads as taken rather than still on offer. -->
     <Panel Grid.Row="1" Margin="0,8">
       <Image x:Name="Picture" Stretch="Uniform" />
-      <TextBlock x:Name="Status" Classes="caption"
-                 VerticalAlignment="Center" IsVisible="False" />
+      <Border x:Name="PictureDim" Background="#99000000" IsVisible="False" />
+      <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="14" Margin="20,0">
+        <materialIcons:MaterialIcon x:Name="Spinner"
+                                    Classes="spinning"
+                                    Kind="Loading"
+                                    Width="40" Height="40"
+                                    Foreground="White"
+                                    IsVisible="False" />
+        <TextBlock x:Name="Status" Classes="caption" IsVisible="False" />
+      </StackPanel>
     </Panel>
 
     <StackPanel Grid.Row="2" Spacing="12" Margin="20,8,20,16">

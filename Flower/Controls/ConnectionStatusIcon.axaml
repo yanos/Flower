@@ -36,25 +36,4 @@
                                 IsVisible="False"/>
   </Grid>
 
-  <UserControl.Styles>
-    <!-- The spin, previously declared once per host file (MainView,
-         ServerPickerView, mobile SettingsView) because a sidebar row is a
-         bound ItemTemplate instance rather than a named element some
-         DispatcherTimer could reach. It travels with the icon now. -->
-    <Style Selector="materialIcons|MaterialIcon.spinning">
-      <Setter Property="RenderTransform" Value="rotate(0deg)"/>
-    </Style>
-    <Style Selector="materialIcons|MaterialIcon.spinning">
-      <Style.Animations>
-        <Animation Duration="0:0:1" IterationCount="INFINITE">
-          <KeyFrame Cue="0%">
-            <Setter Property="RotateTransform.Angle" Value="0"/>
-          </KeyFrame>
-          <KeyFrame Cue="100%">
-            <Setter Property="RotateTransform.Angle" Value="360"/>
-          </KeyFrame>
-        </Animation>
-      </Style.Animations>
-    </Style>
-  </UserControl.Styles>
 </UserControl>

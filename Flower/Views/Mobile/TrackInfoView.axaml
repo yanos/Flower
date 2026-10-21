@@ -200,9 +200,40 @@
         <Border Classes="card">
           <Grid ColumnDefinitions="128,*" RowDefinitions="Auto,Auto" ColumnSpacing="14">
             <StackPanel Grid.Column="0" Spacing="6" VerticalAlignment="Top">
-              <controls:AlbumArtView x:Name="ArtView"
-                                     Width="128" Height="128" ArtCornerRadius="12"
-                                     Tapped="Art_Tapped" />
+              <!-- While a cover is being written, the cover dims under a
+                   spinner (ArtBusy), and the line under the card says how
+                   many files are being rewritten. The bin in its corner takes
+                   the cover out of the songs, at once, as the desktop
+                   window's Remove does - shown only over a cover there is,
+                   on songs this phone may change. -->
+              <Panel Width="128" Height="128">
+                <controls:AlbumArtView x:Name="ArtView"
+                                       ArtCornerRadius="12"
+                                       Tapped="Art_Tapped" />
+                <Border x:Name="ArtBusy"
+                        CornerRadius="12"
+                        Background="#80000000"
+                        IsVisible="False">
+                  <materialIcons:MaterialIcon Classes="spinning"
+                                              Kind="Loading"
+                                              Width="36" Height="36"
+                                              Foreground="White" />
+                </Border>
+                <Border x:Name="RemoveArtPill"
+                        Classes="floating"
+                        Width="32" Height="32" CornerRadius="16"
+                        HorizontalAlignment="Right" VerticalAlignment="Top"
+                        Margin="0,6,6,0"
+                        IsVisible="False">
+                  <Button x:Name="RemoveArtButton"
+                          Classes="pill"
+                          Padding="6"
+                          HorizontalAlignment="Center"
+                          Click="RemoveArt_Click">
+                    <materialIcons:MaterialIcon Kind="TrashCanOutline" Width="18" Height="18" />
+                  </Button>
+                </Border>
+              </Panel>
               <TextBlock x:Name="ArtResolution"
                          FontSize="12"
                          Foreground="{DynamicResource AppTextMutedBrush}"

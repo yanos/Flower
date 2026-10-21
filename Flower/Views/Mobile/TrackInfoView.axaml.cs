@@ -121,7 +121,7 @@ public partial class TrackInfoView : UserControl
         _findArt?.Cancel();
         CloseArtwork();
         ArtButtons.IsVisible = ArtEditor() is { CanWrite: true };
-        SetArtButtonsEnabled(true);
+        SetArtBusy(false);
         ArtMessage.IsVisible = false;
 
         if (_track is { } first)
@@ -264,7 +264,7 @@ public partial class TrackInfoView : UserControl
             var showing = ++shown;
             var candidate = found[index];
             picked = null;
-            viewer.ShowStatus("Downloading…");
+            viewer.ShowStatus("Downloading…", busy: true);
 
             byte[] bytes;
             try
@@ -311,7 +311,7 @@ public partial class TrackInfoView : UserControl
         {
             if (picked is not { } bytes)
                 return;
-            viewer.SetBusy(true);
+            viewer.SetBusy(true, UpdatingFilesText());
             await WriteArtAsync(track, bytes, LocalAlbumArtReader.MimeTypeForBytes(bytes) ?? "image/jpeg");
             viewer.Close();
         };
@@ -323,32 +323,62 @@ public partial class TrackInfoView : UserControl
     private static string FirstNonBlank(params string?[] values) =>
         values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v))?.Trim() ?? "";
 
+    private Task WriteArtAsync(Track track, byte[] bytes, string mimeType) =>
+        ChangeArtAsync(track, editor => editor.WriteAsync(bytes, mimeType));
+
+    // The bin on the cover: the picture taken out of every song being edited.
+    private async void RemoveArt_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_track is { } track)
+            await ChangeArtAsync(track, editor => editor.RemoveAsync());
+    }
+
     // Every way of changing the cover ends here: written into every song
     // being edited, and the card's cover read back from what was written.
-    private async Task WriteArtAsync(Track track, byte[] bytes, string mimeType)
+    // Rewriting the files - or the server rewriting its own - takes a while
+    // for an album, so the cover spins under the count of files until it is
+    // done, and nothing else that would change it can be pressed meanwhile.
+    private async Task ChangeArtAsync(Track track, Func<AlbumArtEditor, Task<string?>> change)
     {
         if (ArtEditor() is not { CanWrite: true } editor)
             return;
 
-        SetArtButtonsEnabled(false);
+        SetArtBusy(true);
+        ShowArtMessage(UpdatingFilesText(editor));
+        string? message;
         try
         {
-            if (await editor.WriteAsync(bytes, mimeType) is { } message)
-                ShowArtMessage(message);
+            message = await change(editor);
         }
         finally
         {
-            SetArtButtonsEnabled(true);
+            SetArtBusy(false);
         }
+
+        if (message is not null)
+            ShowArtMessage(message);
+        else
+            ArtMessage.IsVisible = false;
         if (_track == track)
             await LoadAlbumArtAsync(track);
     }
 
-    private void SetArtButtonsEnabled(bool enabled)
+    // "Updating 12 files…": how many songs will have the picture rewritten
+    // into them, which for a song of the server's is its whole album
+    // (AlbumArtEditor.FileCount).
+    private string UpdatingFilesText(AlbumArtEditor? editor = null)
     {
-        ChoosePhotoButton.IsEnabled = enabled;
-        FindArtButton.IsEnabled = enabled;
-        PasteArtButton.IsEnabled = enabled;
+        var count = (editor ?? ArtEditor())?.FileCount ?? _tracks.Count;
+        return count == 1 ? "Updating 1 file\u2026" : $"Updating {count} files\u2026";
+    }
+
+    private void SetArtBusy(bool busy)
+    {
+        ArtBusy.IsVisible = busy;
+        ChoosePhotoButton.IsEnabled = !busy;
+        FindArtButton.IsEnabled = !busy;
+        PasteArtButton.IsEnabled = !busy;
+        RemoveArtButton.IsEnabled = !busy;
     }
 
     private void ShowArtMessage(string message)
@@ -365,6 +395,7 @@ public partial class TrackInfoView : UserControl
         var requestId = ++_artRequestId;
         ArtView.AlbumArt = null;
         ArtResolution.IsVisible = false;
+        RemoveArtPill.IsVisible = false;
         _artBytes = null;
 
         var bitmap = await AlbumArtLoader.Current.LoadAsync(track);
@@ -380,6 +411,7 @@ public partial class TrackInfoView : UserControl
         _artBytes = bytes;
         ArtResolution.Text = size is { } pixels ? TrackInfoViewModel.Resolution(pixels) : "";
         ArtResolution.IsVisible = size is not null;
+        RemoveArtPill.IsVisible = bitmap is not null && ArtButtons.IsVisible;
     }
 
     // A picture for the full screen: its own size, or 2048 wide where it is

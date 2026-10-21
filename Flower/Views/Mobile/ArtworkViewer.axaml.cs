@@ -59,26 +59,35 @@ public partial class ArtworkViewer : UserControl
     {
         ReplacePicture(picture);
         Status.IsVisible = false;
+        Spinner.IsVisible = false;
         Caption.Text = caption;
         Detail.Text = detail;
         Detail.IsVisible = !string.IsNullOrEmpty(detail);
         SetBusy(false);
     }
 
-    // Words where the picture goes - "Downloading…", or why there is none.
-    public void ShowStatus(string status)
+    // Words where the picture goes - "Downloading…" with the spinner
+    // turning, or why there is none.
+    public void ShowStatus(string status, bool busy = false)
     {
         ReplacePicture(null);
         Status.Text = status;
         Status.IsVisible = true;
+        Spinner.IsVisible = busy;
+        PictureDim.IsVisible = false;
         Caption.Text = "";
         Detail.IsVisible = false;
     }
 
-    public void SetBusy(bool busy)
+    // The picture taken and being written - "Updating 12 files…" over it.
+    public void SetBusy(bool busy, string? status = null)
     {
         UseButton.IsEnabled = !busy;
         NextButton.IsEnabled = !busy;
+        PictureDim.IsVisible = busy && _picture is not null;
+        Spinner.IsVisible = busy;
+        Status.Text = status ?? "";
+        Status.IsVisible = busy && status is not null;
     }
 
     public void Open(Visual anchor)
