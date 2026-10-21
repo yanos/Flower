@@ -428,7 +428,7 @@
                 <materialIcons:MaterialIcon Kind="CloudUploadOutline" />
               </Border>
               <TextBlock Grid.Column="1" Classes="rowTitle" FontWeight="Normal"
-                         Text="Transfer songs over cellular"
+                         Text="Upload imported songs to the server over cellular"
                          TextWrapping="Wrap"
                          VerticalAlignment="Center" />
               <ToggleSwitch Grid.Column="2" IsChecked="{Binding Main.UploadWhenAwayFromHome}" />
