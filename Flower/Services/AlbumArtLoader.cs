@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
@@ -12,6 +13,7 @@ using System.Text.Json;
 
 using Avalonia;
 using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -419,15 +421,54 @@ public class AlbumArtLoader
     }
 
     // Bumped by Invalidate below. Views that have already published a
-    // bitmap poll this rather than subscribe to an event: a rewritten cover
-    // leaves the Track instance untouched, so nothing in the row-merge path
-    // (TrackRowViewModel.ArtSourceMatches) can notice, and a library-sized list
-    // of rows attaching handlers to a static event is a worse trade than an int
-    // compare on the paint path. Deliberately not per-album - an invalidation
-    // is rare (a user replacing artwork), and the cost of the over-broad answer
-    // is one re-read of a file that is almost certainly still in the OS cache.
+    // bitmap compare against this when their art is next read: a rewritten
+    // cover leaves the Track instance untouched, so nothing in the row-merge
+    // path (TrackRowViewModel.ArtSourceMatches) can notice. Deliberately not
+    // per-album - an invalidation is rare (a user replacing artwork), and the
+    // cost of the over-broad answer is one re-read of a file that is almost
+    // certainly still in the OS cache.
     public static int CacheGeneration => Volatile.Read(ref _cacheGeneration);
     private static int _cacheGeneration;
+
+    // What reads the art again - comparing against CacheGeneration - is a
+    // view asking for it, and a view asks only when told the art changed. So a
+    // screen already showing a cover kept showing the old one: on the phone,
+    // the album page kept alive under Track Info, which the user goes straight
+    // back to. Each holder that has published a cover is remembered here and
+    // told when one is replaced, and raises its own change if what it showed
+    // is now stale; whatever is showing it reads it again, and the read
+    // reloads it. Weakly, and only once a cover has been shown: a holder
+    // nothing draws any more is collected out of the table, and one never
+    // drawn is not in it - telling a library's worth of rows to load their
+    // covers because one changed would be the opposite of lazy.
+    public interface IShowsAlbumArt
+    {
+        void AlbumArtReplaced();
+    }
+
+    private static readonly ConditionalWeakTable<IShowsAlbumArt, object?> Showing = new();
+    private static int _replacementPosted;
+
+    public static void Shown(IShowsAlbumArt holder) => Showing.AddOrUpdate(holder, null);
+
+    // Once per batch of invalidations - an album's worth of tracks rewritten
+    // together is one replacement - and on the UI thread, where the holders'
+    // changes are raised.
+    private static void TellShowing()
+    {
+        if (Interlocked.Exchange(ref _replacementPosted, 1) != 0)
+            return;
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            Volatile.Write(ref _replacementPosted, 0);
+            var holders = new List<IShowsAlbumArt>();
+            foreach (var (holder, _) in Showing)
+                holders.Add(holder);
+            foreach (var holder in holders)
+                holder.AlbumArtReplaced();
+        });
+    }
 
     // Drops a track's album whose art was just rewritten (Track Info's Artwork
     // tab) out of the caches, so the next LoadAsync fetches it again instead of
@@ -447,6 +488,7 @@ public class AlbumArtLoader
     public static void Invalidate(Track track)
     {
         Interlocked.Increment(ref _cacheGeneration);
+        TellShowing();
 
         Forget(LocalCacheKey(track));
         Forget(Keyed(LocalCacheKey(track), ArtSize.Thumbnail));

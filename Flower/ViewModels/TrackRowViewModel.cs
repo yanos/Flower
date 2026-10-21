@@ -8,7 +8,7 @@ using Flower.Services;
 
 namespace Flower.ViewModels;
 
-public class TrackRowViewModel : DownloadIndicatorViewModel
+public class TrackRowViewModel : DownloadIndicatorViewModel, AlbumArtLoader.IShowsAlbumArt
 {
     // The same 34 an album's songs are, opened in the Albums grid
     // (AlbumGridRowControl.TrackRowHeight).
@@ -393,5 +393,14 @@ public class TrackRowViewModel : DownloadIndicatorViewModel
         Volatile.Write(ref _artCacheGeneration, cacheGeneration);
         Interlocked.Exchange(ref _artState, 2);
         AlbumArt = bmp;
+        AlbumArtLoader.Shown(this);
+    }
+
+    // A cover replaced since this one was loaded: whatever shows it reads it
+    // again, and the getter above reloads it - see AlbumArtLoader.Shown.
+    public void AlbumArtReplaced()
+    {
+        if (Volatile.Read(ref _artState) == 2 && Volatile.Read(ref _artCacheGeneration) != AlbumArtLoader.CacheGeneration)
+            OnPropertyChanged(nameof(AlbumArt));
     }
 }

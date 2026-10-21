@@ -17,7 +17,7 @@ namespace Flower.ViewModels;
 // made of the art of the most played of them (see AlbumArtView for how
 // it is drawn). Built from the songs it stands for; the art is only read once
 // something binds CoverArt.
-public sealed class AlbumCollage : ObservableObject
+public sealed class AlbumCollage : ObservableObject, AlbumArtLoader.IShowsAlbumArt
 {
     // Albums by name alone, as an artist's own grid groups them - one artist's
     // album is one album whoever the album artist says it is.
@@ -119,5 +119,13 @@ public sealed class AlbumCollage : ObservableObject
         Volatile.Write(ref _artCacheGeneration, cacheGeneration);
         Interlocked.Exchange(ref _artState, 2);
         CoverArt = art;
+        AlbumArtLoader.Shown(this);
+    }
+
+    // As TrackRowViewModel's, for every cover at once.
+    public void AlbumArtReplaced()
+    {
+        if (Volatile.Read(ref _artState) == 2 && Volatile.Read(ref _artCacheGeneration) != AlbumArtLoader.CacheGeneration)
+            OnPropertyChanged(nameof(CoverArt));
     }
 }

@@ -36,7 +36,7 @@ public readonly record struct AlbumTileKey(string Name, string? Artist);
 // MostRecentlyAdded is the max DateAdded among an album's tracks.
 // RepresentativeTrack is whichever of the album's tracks was added most
 // recently - its embedded art is what the tile shows.
-public sealed class AlbumTileViewModel : DownloadIndicatorViewModel
+public sealed class AlbumTileViewModel : DownloadIndicatorViewModel, AlbumArtLoader.IShowsAlbumArt
 {
     public required string Name { get; init; }
     public string? Artist { get; init; }
@@ -196,5 +196,14 @@ public sealed class AlbumTileViewModel : DownloadIndicatorViewModel
         Volatile.Write(ref _artCacheGeneration, cacheGeneration);
         Interlocked.Exchange(ref _artState, 2);
         AlbumArt = bmp;
+        AlbumArtLoader.Shown(this);
+    }
+
+    // As TrackRowViewModel's: told the cover was replaced, says so if it was
+    // showing the old one.
+    public void AlbumArtReplaced()
+    {
+        if (Volatile.Read(ref _artState) == 2 && Volatile.Read(ref _artCacheGeneration) != AlbumArtLoader.CacheGeneration)
+            OnPropertyChanged(nameof(AlbumArt));
     }
 }

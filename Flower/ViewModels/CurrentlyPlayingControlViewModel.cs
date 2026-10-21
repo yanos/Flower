@@ -16,7 +16,7 @@ using Flower.Models;
 
 namespace Flower.ViewModels
 {
-    public class CurrentlyPlayingControlViewModel : ViewModelBase, IDisposable
+    public class CurrentlyPlayingControlViewModel : ViewModelBase, IDisposable, AlbumArtLoader.IShowsAlbumArt
     {
         private readonly PlaylistControlViewModel _playlistControlViewModel;
         private readonly IAudioManager _audioManager;
@@ -192,6 +192,8 @@ namespace Flower.ViewModels
             });
         }
 
+        public void AlbumArtReplaced() => LoadAlbumArt(_playlistControlViewModel.CurrentlyPlayingTrack);
+
         public CurrentlyPlayingControlViewModel(
             PlaylistControlViewModel playlistControlViewModel,
             IAudioManager audioManager,
@@ -204,6 +206,10 @@ namespace Flower.ViewModels
             _library = library;
             _albumArtLoader = albumArtLoader;
             _logger = logger;
+
+            // Always showing a cover, or about to: one replaced is loaded again
+            // for the song playing, whichever album it was (AlbumArtLoader.Shown).
+            AlbumArtLoader.Shown(this);
 
             _seekDebounceTimer = new Timer(150) { AutoReset = false };
             _seekDebounceTimer.Elapsed += (_, _) => _audioManager.Position = _pendingSeekPosition;
