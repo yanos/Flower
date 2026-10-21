@@ -92,7 +92,7 @@ public partial class TrackInfoWindow : Window
         PrevButton.IsVisible = false;
         NextButton.IsVisible = false;
         if (editTracks.Count > 1)
-            Title = $"Track Info ({editTracks.Count} tracks)";
+            Title = $"Info ({editTracks.Count} tracks)";
         NativeMenuHelper.InheritFromMainWindow(this);
     }
 

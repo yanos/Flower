@@ -149,7 +149,7 @@
             <materialIcons:MaterialIcon Kind="ChevronLeft" Width="22" Height="22" />
           </Button>
         </Border>
-        <TextBlock Text="Track Info"
+        <TextBlock Text="Info"
                    FontFamily="{DynamicResource AppDisplayFontFamily}"
                    FontSize="32"
                    FontWeight="SemiBold"

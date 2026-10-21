@@ -73,7 +73,7 @@ public static class ActionMenus
         if (canRemoveFromQueue)
             where.Add(new(MenuAction.RemoveFromQueue, "Remove from Queue", MaterialIconKind.PlaylistRemove));
 
-        var what = new List<ActionMenuEntry> { new(MenuAction.GetInfo, "Get Info", MaterialIconKind.InformationOutline) };
+        var what = new List<ActionMenuEntry> { new(MenuAction.GetInfo, "Info", MaterialIconKind.InformationOutline) };
         if (canLocateFiles && facts.LocalFiles > 0)
             what.Add(new(MenuAction.LocateFile, "Locate File", MaterialIconKind.FolderOpenOutline));
         if (Download(facts, "Download") is { } download)
@@ -103,7 +103,7 @@ public static class ActionMenus
         // Every song of the album at once. Not over a playlist, whose songs
         // share nothing a tag says.
         if (!isPlaylist)
-            what.Add(new(MenuAction.GetInfo, "Get Info", MaterialIconKind.InformationOutline));
+            what.Add(new(MenuAction.GetInfo, "Info", MaterialIconKind.InformationOutline));
         if (Download(facts, "Download Album") is { } download)
             what.Add(download);
         // The one way off the shelf without playing the album to its end.

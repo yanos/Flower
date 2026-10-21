@@ -188,7 +188,7 @@ public partial class MainWindow : Window
                 SetIcon("Go to Current Song", MaterialIconKind.Crosshairs);
                 SetIcon("Increase Volume", MaterialIconKind.VolumePlus);
                 SetIcon("Decrease Volume", MaterialIconKind.VolumeMinus);
-                SetIcon("Get Info",        MaterialIconKind.InformationOutline);
+                SetIcon("Info",        MaterialIconKind.InformationOutline);
                 SetIcon("Play Next",       MaterialIconKind.PlaylistPlay);
                 SetIcon("Add to Queue",    MaterialIconKind.PlaylistMusic);
                 SetIcon("Locate File",     MaterialIconKind.FolderOpenOutline);
@@ -232,7 +232,7 @@ public partial class MainWindow : Window
         On("Decrease Volume", () => MainContent.ChangeVolume(-10), Key.Down);
 
         // Song
-        On("Get Info", MainContent.GetInfo, Key.I);
+        On("Info", MainContent.GetInfo, Key.I);
         On("Play Next", () => Vm()?.PlayNext(MainContent.SelectedSongs()));
         On("Add to Queue", () => Vm()?.AddToQueue(MainContent.SelectedSongs()));
         On("Locate File", MainContent.LocateSelectedFile);
@@ -289,11 +289,11 @@ public partial class MainWindow : Window
                 item.IsEnabled = enabled;
         }
 
-        WhenOpened("Get Info", () =>
+        WhenOpened("Info", () =>
         {
             var songs = MainContent.SelectedSongs();
             var vm = Vm();
-            Enable("Get Info", songs.Count > 0 || vm?.NowPlaying.CurrentlyPlayingTrack != null);
+            Enable("Info", songs.Count > 0 || vm?.NowPlaying.CurrentlyPlayingTrack != null);
             Enable("Play Next", songs.Count > 0);
             Enable("Add to Queue", songs.Count > 0);
             Enable("Locate File", LocalFileDeletion.LocalFiles(songs).Count > 0);

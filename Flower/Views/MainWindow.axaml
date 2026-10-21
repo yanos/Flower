@@ -59,7 +59,7 @@
       <NativeMenuItem Header="Song">
         <NativeMenuItem.Menu>
           <NativeMenu>
-            <NativeMenuItem Header="Get Info"/>
+            <NativeMenuItem Header="Info"/>
             <NativeMenuItemSeparator/>
             <NativeMenuItem Header="Play Next"/>
             <NativeMenuItem Header="Add to Queue"/>

@@ -5,7 +5,7 @@
         xmlns:vm="clr-namespace:Flower.ViewModels"
         x:Class="Flower.Views.TrackInfoWindow"
         x:DataType="vm:TrackInfoViewModel"
-        Title="Track Info"
+        Title="Info"
         Width="760"
         Height="640"
         CanResize="False"

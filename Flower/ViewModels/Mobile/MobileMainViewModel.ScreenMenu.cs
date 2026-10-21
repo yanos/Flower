@@ -353,7 +353,7 @@ public partial class MobileMainViewModel
             // Every song of the album at once - its common tags, and what is
             // typed applied to them all.
             if (frame.IsAlbumTrackList)
-                actions.Add(new ScreenMenuEntry("Track Info", MaterialIconKind.InformationOutline,
+                actions.Add(new ScreenMenuEntry("Info", MaterialIconKind.InformationOutline,
                     () => OpenTrackInfo(CurrentTrackRows.Select(r => r.Track).ToList())));
             if (Main.CanForceSync && DownloadAllIndicator.IsDownloadable && !DownloadAllIndicator.IsDownloading)
                 downloadAll = new ScreenMenuEntry("Download All", MaterialIconKind.CloudDownloadOutline,
@@ -430,7 +430,7 @@ public partial class MobileMainViewModel
                     () => OpenSongSheetForPlaying(MobileSheet.AddToPlaylist)),
                 new ScreenMenuEntry("Show Queue", MaterialIconKind.PlaylistMusic,
                     () => SelectTabCommand.Execute(nameof(MobileTab.Queue))),
-                new ScreenMenuEntry("Track Info", MaterialIconKind.InformationOutline,
+                new ScreenMenuEntry("Info", MaterialIconKind.InformationOutline,
                     () => OpenSongSheetForPlaying(MobileSheet.TrackInfo)),
             ]));
         }

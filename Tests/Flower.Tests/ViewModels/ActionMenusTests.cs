@@ -21,13 +21,13 @@ public class ActionMenusTests
     [Fact]
     public void A_song_menu_offers_only_what_can_be_done_to_these_songs()
     {
-        Assert.Equal(["Play Next", "Add to Queue", "Add to Playlist", "Get Info"],
+        Assert.Equal(["Play Next", "Add to Queue", "Add to Playlist", "Info"],
             Titles(ActionMenus.ForSongs(Nothing, canRemoveFromQueue: false, canLocateFiles: false)));
 
         var everything = new MenuFacts(Downloadable: 1, IsBulkDownloading: false, LocalFiles: 1, Removable: 1);
         Assert.Equal(
             ["Play Next", "Add to Queue", "Add to Playlist", "Remove from Queue",
-             "Get Info", "Locate File", "Download",
+             "Info", "Locate File", "Download",
              "Delete Local File", "Remove from Library"],
             Titles(ActionMenus.ForSongs(everything, canRemoveFromQueue: true, canLocateFiles: true)));
     }

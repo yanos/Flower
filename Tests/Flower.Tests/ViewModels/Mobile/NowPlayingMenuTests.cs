@@ -46,7 +46,7 @@ public class NowPlayingMenuTests : PinnedDataDirectory
         using var scope = PlayingOnTheSheet();
 
         Assert.Equal(
-            new[] { "Go to Album", "Go to Artist", "Add to Playlist", "Show Queue", "Track Info", "Settings" },
+            new[] { "Go to Album", "Go to Artist", "Add to Playlist", "Show Queue", "Info", "Settings" },
             Labels(scope.Mobile));
     }
 
@@ -83,7 +83,7 @@ public class NowPlayingMenuTests : PinnedDataDirectory
         using var scope = PlayingOnTheSheet();
         var mobile = scope.Mobile;
 
-        Pick(mobile, "Track Info");
+        Pick(mobile, "Info");
 
         Assert.Equal(MobileSheet.TrackInfo, mobile.ActiveSheet);
         Assert.Equal("Windflower", mobile.ActionTarget?.Title);

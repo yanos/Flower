@@ -149,13 +149,13 @@ public class MobileScreenMenuTests : PinnedDataDirectory
         vm.SelectAlbumOrArtistCommand.Execute("Bee Thousand");
         await WaitForRows(vm, 2);
 
-        Assert.Equal(["Shuffle", "Play Next", "Add to Queue", "Add to Playlist", "Track Info", "Delete Local Files", "Settings"], Labels(vm));
+        Assert.Equal(["Shuffle", "Play Next", "Add to Queue", "Add to Playlist", "Info", "Delete Local Files", "Settings"], Labels(vm));
         Entry(vm, "Add to Playlist").Invoke();
         Assert.True(vm.IsShowingAddToPlaylist);
 
         // Track Info over every song of the album at once.
         vm.CloseSheetCommand.Execute(null);
-        Entry(vm, "Track Info").Invoke();
+        Entry(vm, "Info").Invoke();
         Assert.True(vm.IsShowingTrackInfo);
         Assert.Equal(2, vm.TrackInfoTracks.Count);
     }
