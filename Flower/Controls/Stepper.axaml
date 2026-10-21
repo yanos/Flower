@@ -10,7 +10,7 @@
        are too small to hit. Each button greys out at its end of the range. -->
   <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
     <Button x:Name="DecreaseButton" Classes="pill" Click="Decrease_Click" ToolTip.Tip="Fewer">
-      <materialIcons:MaterialIcon Kind="Minus" Width="20" Height="20" />
+      <materialIcons:MaterialIcon Classes="chrome" Kind="Minus" Width="20" Height="20" />
     </Button>
     <TextBlock Text="{Binding #Root.Value}"
                MinWidth="28"
@@ -18,7 +18,7 @@
                TextAlignment="Center"
                VerticalAlignment="Center" />
     <Button x:Name="IncreaseButton" Classes="pill" Click="Increase_Click" ToolTip.Tip="More">
-      <materialIcons:MaterialIcon Kind="Plus" Width="20" Height="20" />
+      <materialIcons:MaterialIcon Classes="chrome" Kind="Plus" Width="20" Height="20" />
     </Button>
   </StackPanel>
 </UserControl>

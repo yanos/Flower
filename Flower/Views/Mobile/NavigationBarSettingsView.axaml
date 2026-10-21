@@ -49,7 +49,7 @@
       <Setter Property="Fill" Value="{DynamicResource AppTextPrimaryBrush}" />
     </Style>
     <Style Selector="Border.tabRow materialIcons|MaterialIcon.grip">
-      <Setter Property="Foreground" Value="{DynamicResource AppTextMutedBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource AppChromeBrush}" />
     </Style>
 
     <!-- The row under the finger (.lifted, from the code-behind): raised off
