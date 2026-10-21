@@ -345,13 +345,14 @@
   <SolidColorBrush x:Key="SystemControlForegroundBaseMediumLowBrush" Color="{DynamicResource PaletteIconDisabled}" />
   <SolidColorBrush x:Key="SystemControlForegroundBaseLowBrush" Color="{DynamicResource PaletteDivider}" />
 
-  <!-- Every text box's outline, in the accent: half strength at rest, the
-       hover accent under the pointer, full while the caret is in it. Named outright because
+  <!-- Every text box's outline: the frame's colour (PaletteChrome) at rest
+       and under the pointer, the accent while the caret is in it - so the one
+       box being typed into is the one in colour. Named outright because
        Fluent resolves its own text-box brushes inside its own dictionary,
        where the aliases above never reach, so a focused box came out the
        platform's blue. -->
-  <SolidColorBrush x:Key="TextControlBorderBrush" Color="{DynamicResource PaletteAccent}" Opacity="0.5" />
-  <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="{DynamicResource PaletteAccentHover}" />
+  <SolidColorBrush x:Key="TextControlBorderBrush" Color="{DynamicResource PaletteChrome}" />
+  <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="{DynamicResource PaletteChrome}" />
   <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="{DynamicResource PaletteAccent}" />
   <!-- The line under the selected tab (Track Info's, Settings'), which
        Fluent otherwise draws in its own blue whatever the palette says. -->
