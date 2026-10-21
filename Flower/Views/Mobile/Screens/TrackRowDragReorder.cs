@@ -20,6 +20,9 @@ namespace Flower.Views.Mobile.Screens;
 // (it's a class-less ResourceDictionary - see the template's own comment), so
 // they're attached to the list instead, tunnel routed and keyed off e.Source -
 // the same technique MobileMainView.axaml.cs uses for its swipe gesture.
+// Every event of a drag is kept from the list's ScrollGestureRecognizer
+// (PreventGestureRecognition), which is handed each touch handled or not and
+// would otherwise take the pointer and scroll - see HandleDragReorder.
 internal sealed class TrackRowDragReorder
 {
     private const double DragThreshold = 10.0;
@@ -64,6 +67,7 @@ internal sealed class TrackRowDragReorder
         _dragStartY = e.GetPosition(_list).Y;
         _isDragging = false;
         e.Pointer.Capture(handle);
+        e.PreventGestureRecognition();
         e.Handled = true;
     }
 
@@ -71,6 +75,7 @@ internal sealed class TrackRowDragReorder
     {
         if (_draggedRow == null)
             return;
+        e.PreventGestureRecognition();
         var y = e.GetPosition(_list).Y;
 
         if (!_isDragging)
@@ -106,6 +111,7 @@ internal sealed class TrackRowDragReorder
             if (insertBefore != _draggedRow)
                 _drop(_draggedRow, insertBefore);
         }
+        e.PreventGestureRecognition();
         e.Pointer.Capture(null);
         EndDrag();
     }
