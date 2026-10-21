@@ -1163,6 +1163,8 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
 
     public ICommand ForgetAlbumActionTargetProgressCommand { get; private set; } = null!;
 
+    public ICommand HideAlbumActionTargetFromRecentlyPlayedCommand { get; private set; } = null!;
+
     // The playlist row whose "..." raised that same menu, and null whenever
     // it was raised over an album. The menu is one sheet for both because
     // most of what it offers - play, shuffle, add these songs somewhere,
@@ -1996,6 +1998,13 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             ActiveSheet = MobileSheet.None;
             if (tile != null)
                 Main.Home.Forget(tile);
+        });
+        HideAlbumActionTargetFromRecentlyPlayedCommand = new RelayCommand(() =>
+        {
+            var tile = AlbumActionTarget;
+            ActiveSheet = MobileSheet.None;
+            if (tile != null)
+                Main.Home.HideFromRecentlyPlayed(tile);
         });
         DeleteAlbumActionTargetLocalFilesCommand = new RelayCommand(() =>
         {

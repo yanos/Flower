@@ -63,6 +63,21 @@
               Background="{DynamicResource AppAccentBrush}">
         <materialIcons:MaterialIcon Kind="Play" Width="24" Height="24" Foreground="{DynamicResource AppOnPrimaryBrush}" />
       </Border>
+      <!-- Continue Playing's and Recently Played's: takes the album off the
+           shelf without playing it (DismissCommand). Dark glass and a white cross, so it
+           reads over any cover; a button of its own, so a press on it is
+           its alone, as the "..." below is. -->
+      <Button x:Name="DismissButton"
+              IsVisible="False"
+              Width="26" Height="26" CornerRadius="13" Padding="0"
+              Margin="0,7,7,0"
+              HorizontalAlignment="Right" VerticalAlignment="Top"
+              HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+              Background="#8C000000"
+              BorderThickness="0"
+              Click="Dismiss_Click">
+        <materialIcons:MaterialIcon Kind="Close" Width="16" Height="16" Foreground="White" />
+      </Button>
     </Panel>
     <ProgressBar x:Name="ProgressLine"
                  IsVisible="False"

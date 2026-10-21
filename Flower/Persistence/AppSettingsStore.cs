@@ -127,6 +127,11 @@ namespace Flower.Persistence
         public int HomeRecentlyPlayedLimit  { get; set; } = 6;
         public int HomeRecentlyAddedMonths  { get; set; } = 3;
 
+        // Albums taken off Recently Played by its x, each with the last time
+        // one of its songs had started when it was - see
+        // HomeViewModel.HideFromRecentlyPlayedCommand. Keyed by album id.
+        public Dictionary<string, DateTimeOffset> HomeRecentlyPlayedHidden { get; set; } = new();
+
         // The order of those shelves, top to bottom, by name - see
         // HomeShelfOrder. Null is its default.
         public List<string>? HomeShelfOrder { get; set; }

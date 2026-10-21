@@ -59,6 +59,22 @@ public partial class AlbumTileView : Button
 
     private void Show(AlbumTileViewModel tile, double? progress, string? detail)
     {
+        // The x that takes the album off its shelf: Continue Playing's, or
+        // the one Home's row hands its covers (Recently Played's).
+        if (DataContext is ContinuePlayingItemViewModel item)
+        {
+            Card.DismissCommand = item.Home.ForgetCommand;
+            Card.DismissParameter = item;
+            Card.DismissTip = "Remove from Continue Playing";
+        }
+        else
+        {
+            var row = this.FindAncestorOfType<TileRowPanel>()?.DataContext as HomeAlbumRow;
+            Card.DismissCommand = row?.DismissCommand;
+            Card.DismissParameter = tile;
+            Card.DismissTip = row?.DismissTip;
+        }
+
         LongPress.SetCommandParameter(this, tile);
         Card.Tile = tile;
         Card.ShowsProgress = progress != null;

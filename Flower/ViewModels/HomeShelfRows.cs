@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Windows.Input;
 
 using Flower.ViewModels.Mobile;
 
@@ -32,10 +33,16 @@ public sealed class HomeContinuePlayingRow(IReadOnlyList<ContinuePlayingItemView
     public int Columns { get; } = columns;
 }
 
-public sealed class HomeAlbumRow(IReadOnlyList<AlbumTileViewModel> tiles, int columns) : HomeShelfRow
+public sealed class HomeAlbumRow(IReadOnlyList<AlbumTileViewModel> tiles, int columns,
+    ICommand? dismissCommand = null, string? dismissTip = null) : HomeShelfRow
 {
     public IReadOnlyList<AlbumTileViewModel> Tiles { get; } = tiles;
     public int Columns { get; } = columns;
+
+    // The x on each cover, where the shelf has one (Recently Played's),
+    // run with the tile - see AlbumCard.DismissCommand.
+    public ICommand? DismissCommand { get; } = dismissCommand;
+    public string? DismissTip { get; } = dismissTip;
 }
 
 public static class HomeShelfRows
@@ -56,7 +63,8 @@ public static class HomeShelfRows
                         rows.Add(new HomeContinuePlayingRow(chunk, columns));
                     break;
                 case HomeShelf.RecentlyPlayed:
-                    AddShelf(rows, HomeShelfOrder.Title(shelf), home.RecentlyPlayed, columns);
+                    AddShelf(rows, HomeShelfOrder.Title(shelf), home.RecentlyPlayed, columns,
+                        home.HideFromRecentlyPlayedCommand, "Remove from Recently Played");
                     break;
                 case HomeShelf.RecentlyAdded:
                     AddShelf(rows, HomeShelfOrder.Title(shelf), home.RecentlyAdded, columns);
@@ -66,13 +74,14 @@ public static class HomeShelfRows
         return rows;
     }
 
-    private static void AddShelf(List<HomeShelfRow> rows, string title, IReadOnlyList<AlbumTileViewModel> tiles, int columns)
+    private static void AddShelf(List<HomeShelfRow> rows, string title, IReadOnlyList<AlbumTileViewModel> tiles, int columns,
+        ICommand? dismissCommand = null, string? dismissTip = null)
     {
         if (tiles.Count == 0)
             return;
 
         rows.Add(new HomeShelfHeaderRow(title, rows.Count == 0));
         foreach (var chunk in tiles.Chunk(columns))
-            rows.Add(new HomeAlbumRow(chunk, columns));
+            rows.Add(new HomeAlbumRow(chunk, columns, dismissCommand, dismissTip));
     }
 }

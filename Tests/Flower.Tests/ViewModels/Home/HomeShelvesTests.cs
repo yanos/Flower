@@ -94,6 +94,22 @@ public class HomeShelvesTests
         Assert.Equal("Red", Assert.Single(tiles).Name);
     }
 
+    // Taken off by its x, an album stays off until one of its songs is played
+    // again.
+    [Fact]
+    public void Recently_played_leaves_out_a_hidden_album_until_it_is_played_again()
+    {
+        var blue = Album("Blue", 2, playedMinutesAgo: 5);
+        var red = Album("Red", 2, playedMinutesAgo: 10);
+        var library = LibrarySnapshot.Build(blue.Concat(red).ToList());
+        var hidden = new Dictionary<string, DateTimeOffset> { [AlbumProgressTracker.AlbumIdOf(blue[0])!] = blue.Max(t => t.LastPlayedAt)!.Value };
+
+        Assert.Equal("Red", Assert.Single(HomeShelves.RecentlyPlayed(library, new HashSet<string>(), 10, hidden)).Name);
+
+        blue[1].LastPlayedAt = Now;
+        Assert.Equal(new[] { "Blue", "Red" }, HomeShelves.RecentlyPlayed(library, new HashSet<string>(), 10, hidden).Select(t => t.Name));
+    }
+
     [Fact]
     public void Recently_added_is_newest_first_since_the_cutoff_and_only_real_albums()
     {

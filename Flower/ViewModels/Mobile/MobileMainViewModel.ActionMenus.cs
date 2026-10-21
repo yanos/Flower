@@ -28,6 +28,7 @@ public partial class MobileMainViewModel
         ? ActionMenus.Flat(ActionMenus.ForAlbum(
             Main.MenuFactsFor(AlbumActionTargetTracks(), _libraryRemoval),
             isContinuing: CanForgetAlbumActionTargetProgress,
+            isRecentlyPlayed: Main.Home.IsOnRecentlyPlayed(tile),
             isPlaylist: IsActingOnAPlaylist))
         : [];
 
@@ -60,6 +61,7 @@ public partial class MobileMainViewModel
             MenuAction.GetInfo => ViewAlbumActionTargetTrackInfoCommand,
             MenuAction.Download => DownloadAlbumActionTargetCommand,
             MenuAction.ForgetProgress => ForgetAlbumActionTargetProgressCommand,
+            MenuAction.HideFromRecentlyPlayed => HideAlbumActionTargetFromRecentlyPlayedCommand,
             MenuAction.RenamePlaylist => RenamePlaylistActionTargetCommand,
             MenuAction.DeleteLocalFiles => DeleteAlbumActionTargetLocalFilesCommand,
             MenuAction.RemoveFromLibrary => RemoveAlbumFromLibraryCommand,

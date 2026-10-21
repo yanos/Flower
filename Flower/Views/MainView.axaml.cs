@@ -1565,7 +1565,8 @@ public partial class MainView : UserControl
         var vm = _viewModel!;
         var groups = ActionMenus.ForAlbum(
             vm.MenuFactsFor(tracks, LibraryRemovalDialog.Service),
-            isContinuing: vm.Home.IsContinuing(clickedTile));
+            isContinuing: vm.Home.IsContinuing(clickedTile),
+            isRecentlyPlayed: vm.Home.IsOnRecentlyPlayed(clickedTile));
 
         return DesktopActionMenu.Build(groups, async action =>
         {
@@ -1594,6 +1595,9 @@ public partial class MainView : UserControl
                     break;
                 case MenuAction.ForgetProgress:
                     vm.Home.Forget(clickedTile);
+                    break;
+                case MenuAction.HideFromRecentlyPlayed:
+                    vm.Home.HideFromRecentlyPlayed(clickedTile);
                     break;
                 case MenuAction.DeleteLocalFiles:
                     await LocalFileDeletionDialog.DeleteAsync(TopLevel.GetTopLevel(this), vm, tracks);

@@ -23,6 +23,7 @@ public enum MenuAction
     LocateFile,
     Download,
     ForgetProgress,
+    HideFromRecentlyPlayed,
     RenamePlaylist,
     DeleteLocalFiles,
     RemoveFromLibrary,
@@ -82,11 +83,12 @@ public static class ActionMenus
     }
 
     // isContinuing: the album is on Home's Continue Playing shelf.
+    // isRecentlyPlayed: the menu was raised over a Recently Played cover.
     // isPlaylist: the phone's playlist row opens this same menu, since play,
     // shuffle and putting the songs somewhere are the same questions of a
     // different pile of songs; the playlist adds its own two.
     public static IReadOnlyList<IReadOnlyList<ActionMenuEntry>> ForAlbum(
-        MenuFacts facts, bool isContinuing = false, bool isPlaylist = false)
+        MenuFacts facts, bool isContinuing = false, bool isRecentlyPlayed = false, bool isPlaylist = false)
     {
         var where = new List<ActionMenuEntry>
         {
@@ -107,6 +109,9 @@ public static class ActionMenus
         // The one way off the shelf without playing the album to its end.
         if (isContinuing)
             what.Add(new(MenuAction.ForgetProgress, "Remove from Continue Playing", MaterialIconKind.PlaylistRemove));
+        // The cover's x, as an entry - until the album is next played.
+        if (isRecentlyPlayed)
+            what.Add(new(MenuAction.HideFromRecentlyPlayed, "Remove from Recently Played", MaterialIconKind.PlaylistRemove));
         if (isPlaylist)
             what.Add(new(MenuAction.RenamePlaylist, "Rename", MaterialIconKind.PencilOutline));
 

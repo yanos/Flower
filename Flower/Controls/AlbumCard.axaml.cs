@@ -28,6 +28,15 @@ public partial class AlbumCard : UserControl
     public static readonly StyledProperty<ICommand?> MenuCommandProperty =
         AvaloniaProperty.Register<AlbumCard, ICommand?>(nameof(MenuCommand));
 
+    public static readonly StyledProperty<ICommand?> DismissCommandProperty =
+        AvaloniaProperty.Register<AlbumCard, ICommand?>(nameof(DismissCommand));
+
+    public static readonly StyledProperty<object?> DismissParameterProperty =
+        AvaloniaProperty.Register<AlbumCard, object?>(nameof(DismissParameter));
+
+    public static readonly StyledProperty<string?> DismissTipProperty =
+        AvaloniaProperty.Register<AlbumCard, string?>(nameof(DismissTip));
+
     // The "..." was pressed. Bubbles, so a view hosting many tiles handles it
     // once rather than per tile; the tile is the event's source.
     public static readonly RoutedEvent<RoutedEventArgs> MenuRequestedEvent =
@@ -67,6 +76,29 @@ public partial class AlbumCard : UserControl
         set => SetValue(MenuCommandProperty, value);
     }
 
+    // The round x on the cover, shown only where there is one to run: Continue
+    // Playing's tiles, on both heads, take the album off the shelf with it
+    // (HomeViewModel.ForgetCommand, the parameter its item), and Recently
+    // Played's the same (HideFromRecentlyPlayedCommand, the parameter the tile).
+    public ICommand? DismissCommand
+    {
+        get => GetValue(DismissCommandProperty);
+        set => SetValue(DismissCommandProperty, value);
+    }
+
+    public object? DismissParameter
+    {
+        get => GetValue(DismissParameterProperty);
+        set => SetValue(DismissParameterProperty, value);
+    }
+
+    // What the x says it does - which shelf it takes the album off.
+    public string? DismissTip
+    {
+        get => GetValue(DismissTipProperty);
+        set => SetValue(DismissTipProperty, value);
+    }
+
     public event System.EventHandler<RoutedEventArgs> MenuRequested
     {
         add => AddHandler(MenuRequestedEvent, value);
@@ -91,6 +123,10 @@ public partial class AlbumCard : UserControl
             _tile.Watch(Tile);
         else if (change.Property == ShowsProgressProperty || change.Property == ProgressProperty || change.Property == DetailProperty)
             ShowProgress();
+        else if (change.Property == DismissCommandProperty)
+            DismissButton.IsVisible = DismissCommand != null;
+        else if (change.Property == DismissTipProperty)
+            ToolTip.SetTip(DismissButton, DismissTip);
     }
 
     private void Show()
@@ -109,6 +145,13 @@ public partial class AlbumCard : UserControl
         ProgressLine.Value = Progress;
         DetailLine.Text = Detail;
         DetailLine.IsVisible = !string.IsNullOrEmpty(Detail);
+    }
+
+    private void Dismiss_Click(object? sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        if (DismissCommand is { } command && command.CanExecute(DismissParameter))
+            command.Execute(DismissParameter);
     }
 
     private void Menu_Click(object? sender, RoutedEventArgs e)

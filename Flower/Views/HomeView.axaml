@@ -91,7 +91,10 @@
                     <controls:AlbumCard Tile="{Binding Tile}"
                                         ShowsProgress="True"
                                         Progress="{Binding Progress}"
-                                        Detail="{Binding Detail}" />
+                                        Detail="{Binding Detail}"
+                                        DismissCommand="{Binding Home.ForgetCommand}"
+                                        DismissParameter="{Binding}"
+                                        DismissTip="Remove from Continue Playing" />
                   </Button>
                 </DataTemplate>
               </controls:TileRowPanel.ItemTemplate>
@@ -105,7 +108,10 @@
                   <Button Classes="homeTile"
                           Command="{Binding $parent[UserControl].((vm:HomeViewModel)DataContext).OpenAlbumCommand}"
                           CommandParameter="{Binding}">
-                    <controls:AlbumCard Tile="{Binding}" />
+                    <controls:AlbumCard Tile="{Binding}"
+                                        DismissCommand="{Binding $parent[controls:TileRowPanel].((vm:HomeAlbumRow)DataContext).DismissCommand}"
+                                        DismissParameter="{Binding}"
+                                        DismissTip="{Binding $parent[controls:TileRowPanel].((vm:HomeAlbumRow)DataContext).DismissTip}" />
                   </Button>
                 </DataTemplate>
               </controls:TileRowPanel.ItemTemplate>

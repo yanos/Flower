@@ -168,6 +168,28 @@ public sealed class HomeViewModel : ViewModelBase, IDisposable
     // Takes it off the Continue Playing shelf without playing it.
     public ICommand ForgetCommand { get; }
 
+    // Takes an album off Recently Played until one of its songs is next
+    // played - the shelf is the play history, so a hidden album that is played
+    // again has earned its place back. Remembered in settings
+    // (AppSettings.HomeRecentlyPlayedHidden, saved by MainViewModel on
+    // HiddenFromRecentlyPlayedChanged).
+    public ICommand HideFromRecentlyPlayedCommand { get; }
+
+    // Album id to the last time one of its songs had started when it was
+    // hidden.
+    private Dictionary<string, DateTimeOffset> _hiddenFromRecentlyPlayed = new();
+    public IReadOnlyDictionary<string, DateTimeOffset> HiddenFromRecentlyPlayed
+    {
+        get => _hiddenFromRecentlyPlayed;
+        set
+        {
+            _hiddenFromRecentlyPlayed = new Dictionary<string, DateTimeOffset>(value);
+            Invalidate();
+        }
+    }
+
+    public event EventHandler? HiddenFromRecentlyPlayedChanged;
+
     // A Recently Played or Recently Added cover tapped - where that goes is
     // the head's to decide (an album screen on a phone, the Albums grid with it
     // open on desktop), so it is handed back up.
@@ -188,6 +210,11 @@ public sealed class HomeViewModel : ViewModelBase, IDisposable
         {
             if (item != null)
                 _progress.Forget(item.Item.Entry.AlbumId);
+        });
+        HideFromRecentlyPlayedCommand = new RelayCommand<AlbumTileViewModel>(tile =>
+        {
+            if (tile != null)
+                HideFromRecentlyPlayed(tile);
         });
         OpenAlbumCommand = new RelayCommand<AlbumTileViewModel>(tile =>
         {
@@ -324,7 +351,7 @@ public sealed class HomeViewModel : ViewModelBase, IDisposable
 
         var continuing = HomeShelves.ContinuePlaying(_progress.Entries, snapshot, _continuePlayingLimit);
         var onShelf = continuing.Select(c => c.Entry.AlbumId).ToHashSet();
-        var played = HomeShelves.RecentlyPlayed(snapshot, onShelf, _recentlyPlayedLimit);
+        var played = HomeShelves.RecentlyPlayed(snapshot, onShelf, _recentlyPlayedLimit, _hiddenFromRecentlyPlayed);
         var added = _recentlyAddedMonths == 0
             ? []
             : HomeShelves.RecentlyAdded(snapshot, _clock.GetLocalNow().AddMonths(-_recentlyAddedMonths));
@@ -375,6 +402,32 @@ public sealed class HomeViewModel : ViewModelBase, IDisposable
     {
         if (AlbumIdOf(tile) is { } id)
             _progress.Forget(id);
+    }
+
+    // Is this cover one of Recently Played's - for a menu offering to take it
+    // off. The cover itself rather than its album, so the entry is offered on
+    // the shelf and not over the same album in the Albums grid.
+    public bool IsOnRecentlyPlayed(AlbumTileViewModel tile) => RecentlyPlayed.Contains(tile);
+
+    public void HideFromRecentlyPlayed(AlbumTileViewModel tile)
+    {
+        if (AlbumIdOf(tile) is not { } id || tile.Tracks.Max(t => t.LastPlayedAt) is not { } lastPlayed)
+            return;
+
+        // The album's own last play rather than the time now, so a play
+        // recorded on another device's clock is compared with plays, not with
+        // this one. Albums since played again, or gone from the library, have
+        // nothing left to hide and are dropped on the way.
+        var snapshot = _library.Snapshot;
+        foreach (var (albumId, at) in _hiddenFromRecentlyPlayed.ToList())
+        {
+            if (snapshot.Album(albumId) is not { } album || album.Tracks.Max(t => t.LastPlayedAt) > at)
+                _hiddenFromRecentlyPlayed.Remove(albumId);
+        }
+
+        _hiddenFromRecentlyPlayed[id] = lastPlayed;
+        HiddenFromRecentlyPlayedChanged?.Invoke(this, EventArgs.Empty);
+        Invalidate();
     }
 
     // Null for a tile that is not one album - the album menu is also raised

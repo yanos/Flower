@@ -98,4 +98,11 @@ public class ActionMenusTests
         Assert.DoesNotContain(ActionMenus.Flat(ActionMenus.ForAlbum(Nothing)), e => e.Action == MenuAction.ForgetProgress);
         Assert.Contains(ActionMenus.Flat(ActionMenus.ForAlbum(Nothing, isContinuing: true)), e => e.Action == MenuAction.ForgetProgress);
     }
+
+    [Fact]
+    public void A_Recently_Played_cover_can_be_taken_off_the_shelf()
+    {
+        Assert.DoesNotContain(ActionMenus.Flat(ActionMenus.ForAlbum(Nothing)), e => e.Action == MenuAction.HideFromRecentlyPlayed);
+        Assert.Contains(ActionMenus.Flat(ActionMenus.ForAlbum(Nothing, isRecentlyPlayed: true)), e => e.Action == MenuAction.HideFromRecentlyPlayed);
+    }
 }

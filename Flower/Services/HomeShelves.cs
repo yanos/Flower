@@ -64,12 +64,15 @@ public static class HomeShelves
 
     // Most recently played first, by the last time any of an album's songs
     // started - leaving out albums already on the Continue Playing shelf,
-    // which says the same thing about them and more.
-    public static List<AlbumTileViewModel> RecentlyPlayed(LibrarySnapshot library, IReadOnlySet<string> exclude, int limit) =>
+    // which says the same thing about them and more, and albums taken off the
+    // shelf (`hidden`, album id to when it was last played at the time) that
+    // have not been played since.
+    public static List<AlbumTileViewModel> RecentlyPlayed(LibrarySnapshot library, IReadOnlySet<string> exclude, int limit,
+        IReadOnlyDictionary<string, DateTimeOffset>? hidden = null) =>
         library.Albums
             .Where(a => !IsUntitled(a) && !exclude.Contains(a.Id))
             .Select(a => (Album: a, LastPlayed: a.Tracks.Max(t => t.LastPlayedAt)))
-            .Where(a => a.LastPlayed != null)
+            .Where(a => a.LastPlayed != null && !IsHidden(a.Album, a.LastPlayed.Value, hidden))
             .OrderByDescending(a => a.LastPlayed)
             .Take(limit)
             .Select(a => TileFor(a.Album))
@@ -84,6 +87,9 @@ public static class HomeShelves
             .OrderByDescending(a => a.NewestDateAdded)
             .Select(TileFor)
             .ToList();
+
+    private static bool IsHidden(AlbumEntry album, DateTimeOffset lastPlayed, IReadOnlyDictionary<string, DateTimeOffset>? hidden) =>
+        hidden != null && hidden.TryGetValue(album.Id, out var at) && lastPlayed <= at;
 
     // Songs with no album tag group together under an empty one, which is not
     // an album anybody listened to.

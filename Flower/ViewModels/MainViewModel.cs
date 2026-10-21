@@ -1629,7 +1629,14 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             RecentlyPlayedLimit = _appSettings.HomeRecentlyPlayedLimit,
             RecentlyAddedMonths = _appSettings.HomeRecentlyAddedMonths,
             ShelfOrder = HomeShelfOrder.Parse(_appSettings.HomeShelfOrder),
+            HiddenFromRecentlyPlayed = _appSettings.HomeRecentlyPlayedHidden,
         };
+        _subscriptions.Add<EventHandler>((_, _) =>
+        {
+            _appSettings.HomeRecentlyPlayedHidden = new Dictionary<string, DateTimeOffset>(Home.HiddenFromRecentlyPlayed);
+            SaveSettings();
+        },
+            h => Home.HiddenFromRecentlyPlayedChanged += h, h => Home.HiddenFromRecentlyPlayedChanged -= h);
         foreach (var shelf in Home.ShelfOrder)
             HomeShelfSettings.Add(new HomeShelfSettingRow(shelf, this));
         _subscriptions.Add<System.ComponentModel.PropertyChangedEventHandler>((_, e) =>
