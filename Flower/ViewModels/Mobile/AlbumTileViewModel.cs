@@ -56,9 +56,14 @@ public sealed class AlbumTileViewModel : DownloadIndicatorViewModel, AlbumArtLoa
     // an album of a given name and artist have to be writable. Same trade
     // TrackRowViewModel.Track makes, for the same reason.
     // Null for the one header that stands for no album at all: a playlist's
-    // (see MobileMainViewModel.CurrentPlaylistHeader), which shows the same
-    // empty cover the art view draws for a track with no art of its own.
+    // (see MobileMainViewModel.CurrentPlaylistHeader), which shows Collage
+    // instead.
     public required Track? RepresentativeTrack { get; set; }
+
+    // A playlist header's cover: the same collage of its most played albums
+    // its row in the picker shows (SidebarItem.PlaylistCover). Null on every
+    // album, whose cover is AlbumArt.
+    public AlbumCollage? Collage { get; init; }
     public DateTimeOffset MostRecentlyAdded { get; set; }
 
     // What identifies this tile among its grid's tiles - see AlbumTileKey.

@@ -839,6 +839,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             // place - how many songs, and how long they run, here in words.
             Artist = PlaylistSummaryText.ForHeader(tracks),
             RepresentativeTrack = null,
+            Collage = AlbumCollage.ByAlbumAndArtist(tracks),
             MostRecentlyAdded = tracks.Count == 0 ? default : tracks.Max(t => t.DateAdded),
             Tracks = tracks,
         };

@@ -12,8 +12,8 @@
        actions, the type and the spacing can only ever be changed for both.
        A playlist arrives here as an AlbumTileViewModel like any album (see
        MobileMainViewModel.CurrentPlaylistHeader), with how many songs it
-       holds where the artist goes and no cover of its own yet, which draws as
-       AlbumArtView's own empty one.
+       holds where the artist goes and, for a cover, the collage of its most
+       played albums that its row in the picker shows (Collage).
 
        The art and the words are two templates rather than one, because the
        wide album layout pins the art down the left and leaves the words in
@@ -36,6 +36,7 @@
     <Border CornerRadius="16"
             BoxShadow="{DynamicResource AppCoverShadow}">
       <controls:SquareAlbumArtView AlbumArt="{Binding AlbumArt}"
+                                   Covers="{Binding Collage.CoverArt, FallbackValue={x:Null}}"
                                    ArtCornerRadius="16"
                                    Classes.dimmed="{Binding IsUnavailable}" />
     </Border>
@@ -140,8 +141,9 @@
 
   <!-- The two of them stacked, which is the whole header for everything but
        the wide album layout: a narrow album screen, and a playlist either way
-       up (a playlist has no art to pin, so there is nothing for the wide
-       layout to do differently). 300 is the art's width on a phone: most of
+       up (a playlist's header sits in its virtualized list rather than in a
+       scroller of its own - see TrackListScreenView - so there is no column
+       to pin its cover in). 300 is the art's width on a phone: most of
        the screen's width, the page's subject, with a few songs still showing
        under it on all but the smallest phones. -->
   <DataTemplate x:Key="AlbumHeaderTemplate" x:DataType="vm:AlbumTileViewModel">
