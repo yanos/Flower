@@ -254,7 +254,6 @@ public partial class TrackInfoView : UserControl
         }
 
         var viewer = OpenArtwork(offersChoice: true);
-        viewer.SetHasNext(found.Count > 1);
         var index = 0;
         var shown = 0;
         byte[]? picked = null;
@@ -264,6 +263,7 @@ public partial class TrackInfoView : UserControl
             var showing = ++shown;
             var candidate = found[index];
             picked = null;
+            viewer.SetPosition(index, found.Count);
             viewer.ShowStatus("Downloading…", busy: true);
 
             byte[] bytes;
@@ -296,15 +296,21 @@ public partial class TrackInfoView : UserControl
             }
 
             picked = bytes;
+            var source = OnlineCoverArt.SourceDomain(candidate.ArtworkUrl) is { } domain ? $" \u00b7 {domain}" : "";
             var position = found.Count > 1 ? $" \u00b7 {index + 1} of {found.Count}" : "";
             viewer.ShowPicture(picture.Bitmap,
                 string.IsNullOrEmpty(candidate.Artist) ? candidate.Album : $"{candidate.Album} \u2014 {candidate.Artist}",
-                TrackInfoViewModel.Resolution(picture.Size) + position);
+                TrackInfoViewModel.Resolution(picture.Size) + source + position);
         }
 
+        viewer.PreviousRequested += async (_, _) =>
+        {
+            index--;
+            await ShowCandidateAsync();
+        };
         viewer.NextRequested += async (_, _) =>
         {
-            index = (index + 1) % found.Count;
+            index++;
             await ShowCandidateAsync();
         };
         viewer.Accepted += async (_, _) =>

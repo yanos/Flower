@@ -11,8 +11,9 @@ using Avalonia.Threading;
 namespace Flower.Views.Mobile;
 
 // A cover on the whole screen, black around it: what tapping the cover in
-// Track Info opens, and where a cover Find Online came back with is shown to
-// be taken or passed over (OffersChoice).
+// Track Info opens, and where the covers Find Online came back with are shown
+// one at a time, stepped through by the arrows or a swipe, to be taken or
+// passed over (OffersChoice).
 //
 // Placed on the window's overlay layer rather than inside the sheet, so it
 // covers the status bar and the home indicator too - the sheet itself stops
@@ -22,15 +23,29 @@ public partial class ArtworkViewer : UserControl
     private OverlayLayer? _layer;
     private Bitmap? _picture;
 
-    // Use This Cover, and Try Another - only offered with OffersChoice.
+    // Use This Cover, and the cover either side of this one - only offered
+    // with OffersChoice.
     public event EventHandler? Accepted;
+    public event EventHandler? PreviousRequested;
     public event EventHandler? NextRequested;
     public event EventHandler? Closed;
+
+    // How far a finger has to travel sideways, and more sideways than down,
+    // to be a swipe to the next cover rather than a tap or a wobble.
+    private const double SwipeDistance = 50;
+
+    private int _index;
+    private int _count;
+    private bool _busy;
+    private Point? _swipeStart;
 
     public ArtworkViewer()
     {
         InitializeComponent();
         Tapped += Viewer_Tapped;
+        // Handled ones too: a swipe that starts on a button is still a swipe.
+        AddHandler(PointerPressedEvent, Viewer_PointerPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
+        AddHandler(PointerReleasedEvent, Viewer_PointerReleased, RoutingStrategies.Tunnel, handledEventsToo: true);
     }
 
     public bool IsOpen => _layer != null;
@@ -43,13 +58,24 @@ public partial class ArtworkViewer : UserControl
         set => Choices.IsVisible = value;
     }
 
-    // Try Another, only while there is another to try; Use This Cover takes
-    // the row on its own otherwise.
-    public void SetHasNext(bool hasNext)
+    // Which of how many covers is showing. The arrows only when there is more
+    // than one, each greyed at its end - Use This Cover takes the row on its
+    // own otherwise.
+    public void SetPosition(int index, int count)
     {
-        NextButton.IsVisible = hasNext;
-        Grid.SetColumn(UseButton, hasNext ? 1 : 0);
-        Grid.SetColumnSpan(UseButton, hasNext ? 1 : 2);
+        _index = index;
+        _count = count;
+        PreviousButton.IsVisible = NextButton.IsVisible = count > 1;
+        UpdateArrows();
+    }
+
+    private bool CanGoBack => !_busy && _index > 0;
+    private bool CanGoForward => !_busy && _index < _count - 1;
+
+    private void UpdateArrows()
+    {
+        PreviousButton.IsEnabled = CanGoBack;
+        NextButton.IsEnabled = CanGoForward;
     }
 
     // The picture, which this now owns and disposes when it is replaced or
@@ -82,8 +108,9 @@ public partial class ArtworkViewer : UserControl
     // The picture taken and being written - "Updating 12 files…" over it.
     public void SetBusy(bool busy, string? status = null)
     {
+        _busy = busy;
         UseButton.IsEnabled = !busy;
-        NextButton.IsEnabled = !busy;
+        UpdateArrows();
         PictureDim.IsVisible = busy && _picture is not null;
         Spinner.IsVisible = busy;
         Status.Text = status ?? "";
@@ -155,5 +182,39 @@ public partial class ArtworkViewer : UserControl
 
     private void Use_Click(object? sender, RoutedEventArgs e) => Accepted?.Invoke(this, EventArgs.Empty);
 
-    private void Next_Click(object? sender, RoutedEventArgs e) => NextRequested?.Invoke(this, EventArgs.Empty);
+    private void Previous_Click(object? sender, RoutedEventArgs e) => GoBack();
+
+    private void Next_Click(object? sender, RoutedEventArgs e) => GoForward();
+
+    private void GoBack()
+    {
+        if (CanGoBack)
+            PreviousRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void GoForward()
+    {
+        if (CanGoForward)
+            NextRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void Viewer_PointerPressed(object? sender, PointerPressedEventArgs e) =>
+        _swipeStart = OffersChoice ? e.GetPosition(this) : null;
+
+    // Right to left is the next cover, as a photo viewer turns.
+    private void Viewer_PointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (_swipeStart is not { } start)
+            return;
+        _swipeStart = null;
+
+        var travel = e.GetPosition(this) - start;
+        if (Math.Abs(travel.X) < SwipeDistance || Math.Abs(travel.X) < Math.Abs(travel.Y))
+            return;
+
+        if (travel.X < 0)
+            GoForward();
+        else
+            GoBack();
+    }
 }

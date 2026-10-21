@@ -320,6 +320,21 @@ public sealed partial class OnlineCoverArt(ILogger logger)
             ? value.GetString()
             : null;
 
+    // Where a cover comes from, to say beside it: the artwork's host without
+    // the server in front of the domain - "mzstatic.com" rather than
+    // "is1-ssl.mzstatic.com", "coverartarchive.org". Null for an address that
+    // has no host.
+    public static string? SourceDomain(string artworkUrl)
+    {
+        if (!Uri.TryCreate(artworkUrl, UriKind.Absolute, out var uri) || string.IsNullOrEmpty(uri.Host))
+            return null;
+
+        var labels = uri.Host.Split('.');
+        return labels.Length <= 2 || uri.HostNameType != UriHostNameType.Dns
+            ? uri.Host
+            : string.Join('.', labels[^2..]);
+    }
+
     // Apple's thumbnail URLs name their size in the last path segment
     // (".../source/100x100bb.jpg"), and the image server renders whatever size
     // that segment asks for.

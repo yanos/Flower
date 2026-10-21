@@ -25,6 +25,13 @@ public class OnlineCoverArtTests
         Assert.Equal("https://is1-ssl.mzstatic.com/image/thumb/Music/v4/ab/cd/100x100/source/1400x1400bb.jpg", url);
     }
 
+    [Theory]
+    [InlineData("https://is1-ssl.mzstatic.com/image/thumb/Music/source/1400x1400bb.jpg", "mzstatic.com")]
+    [InlineData("https://coverartarchive.org/release/abc/123-1200.jpg", "coverartarchive.org")]
+    [InlineData("not a url", null)]
+    public void Names_the_domain_a_cover_comes_from(string url, string? domain) =>
+        Assert.Equal(domain, OnlineCoverArt.SourceDomain(url));
+
     [Fact]
     public void Reads_album_results_and_skips_those_without_artwork()
     {

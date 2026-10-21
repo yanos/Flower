@@ -28,6 +28,17 @@
       <Setter Property="HorizontalAlignment" Value="Stretch" />
       <Setter Property="HorizontalContentAlignment" Value="Center" />
     </Style>
+    <Style Selector="Button.arrow">
+      <Setter Property="Width" Value="44" />
+      <Setter Property="Height" Value="44" />
+      <Setter Property="CornerRadius" Value="22" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.arrow:disabled">
+      <Setter Property="Opacity" Value="0.35" />
+    </Style>
     <Style Selector="Button.glass">
       <Setter Property="Foreground" Value="White" />
     </Style>
@@ -77,12 +88,20 @@
       <TextBlock x:Name="Detail" Classes="caption" FontSize="13" Foreground="#80FFFFFF" IsVisible="False" />
       <!-- Only for a cover that is not the song's yet - one Find Online came
            back with - so taking it is a deliberate tap, never the sheet's own
-           Save. -->
-      <Grid x:Name="Choices" ColumnDefinitions="*,*" ColumnSpacing="10" IsVisible="False">
-        <Button Grid.Column="0" x:Name="NextButton" Classes="choice glass" Click="Next_Click"
-                Content="Try Another" />
+           Save. The arrows either side step through what was found, as a
+           swipe across the screen does; shown only when there is more than
+           one. -->
+      <Grid x:Name="Choices" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" IsVisible="False">
+        <Button Grid.Column="0" x:Name="PreviousButton" Classes="arrow glass" Click="Previous_Click"
+                ToolTip.Tip="Previous cover">
+          <materialIcons:MaterialIcon Kind="ChevronLeft" Width="26" Height="26" Foreground="White" />
+        </Button>
         <Button Grid.Column="1" x:Name="UseButton" Classes="choice primary" Click="Use_Click"
                 Content="Use This Cover" />
+        <Button Grid.Column="2" x:Name="NextButton" Classes="arrow glass" Click="Next_Click"
+                ToolTip.Tip="Next cover">
+          <materialIcons:MaterialIcon Kind="ChevronRight" Width="26" Height="26" Foreground="White" />
+        </Button>
       </Grid>
     </StackPanel>
   </Grid>
