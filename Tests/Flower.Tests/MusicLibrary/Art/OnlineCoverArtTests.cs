@@ -6,10 +6,11 @@ using Xunit;
 
 namespace Flower.Tests.MusicLibrary.Art;
 
-// Find Online's half that is not the network: reading what the iTunes search
-// answers with, and deciding which of its results are the album being looked
-// for. A search by name answers with everything sharing a word with it, so
-// what this leaves out matters as much as the order.
+// Find Online's half that is not the network: reading what the iTunes search,
+// MusicBrainz and the Cover Art Archive answer with, what is asked of them,
+// and deciding which of the results are the album being looked for. A search
+// by name answers with everything sharing a word with it, so what this leaves
+// out matters as much as the order.
 public class OnlineCoverArtTests
 {
     private static OnlineCoverArt.Candidate Album(string name, string artist, string art = "") =>
@@ -112,5 +113,69 @@ public class OnlineCoverArtTests
     public void Nothing_to_search_for_finds_nothing()
     {
         Assert.Empty(OnlineCoverArt.Rank([Album("Rumours", "Fleetwood Mac")], "  ", "Fleetwood Mac"));
+    }
+
+    // What a rip adds to an album's name is not part of it, and a store's
+    // search wants every word it is given: "69 Love Songs Disc 1" found
+    // nothing anywhere.
+    [Fact]
+    public void A_disc_number_is_not_part_of_the_album()
+    {
+        Assert.Equal("69 Love Songs", OnlineCoverArt.BareName("69 Love Songs Disc 1"));
+        Assert.Equal("The Wall", OnlineCoverArt.BareName("The Wall (CD 2 of 2)"));
+        Assert.Equal("Tome 8", OnlineCoverArt.BareName("Tome 8"));
+        Assert.Single(OnlineCoverArt.Rank([Album("69 Love Songs", "The Magnetic Fields")], "69 Love Songs Disc 1", "Magnetic Fields"));
+    }
+
+    [Fact]
+    public void Reads_release_groups_with_their_credited_artists()
+    {
+        const string json = """
+            {"release-groups":[
+              {"id":"4e765614","title":"Transit of Venus","artist-credit":[
+                {"name":"Hangedup","joinphrase":" & "},{"name":"Tony Conrad"}]},
+              {"title":"No id"}
+            ]}
+            """;
+
+        var group = Assert.Single(OnlineCoverArt.ParseMusicBrainz(json));
+        Assert.Equal("Transit of Venus", group.Album);
+        Assert.Equal("Hangedup & Tony Conrad", group.Artist);
+        Assert.Equal("https://coverartarchive.org/release-group/4e765614", group.ArtworkUrl);
+    }
+
+    [Fact]
+    public void Takes_the_front_cover_from_the_archive_at_its_large_size_over_https()
+    {
+        const string json = """
+            {"images":[
+              {"front":false,"image":"http://a.test/back.jpg","thumbnails":{"1200":"http://a.test/back-1200.jpg"}},
+              {"front":true,"image":"http://a.test/front.jpg","thumbnails":{"250":"http://a.test/front-250.jpg","1200":"http://a.test/front-1200.jpg"}}
+            ]}
+            """;
+
+        Assert.Equal("https://a.test/front-1200.jpg", OnlineCoverArt.ParseCoverArtListing(json));
+        Assert.Null(OnlineCoverArt.ParseCoverArtListing("""{"images":[{"front":false,"image":"https://a.test/b.jpg"}]}"""));
+    }
+
+    // MusicBrainz indexes a credit word by word, so the album and its lead
+    // artist go as phrases and the rest of a credit stays out of it.
+    [Fact]
+    public void Asks_musicbrainz_for_the_album_by_its_lead_artist()
+    {
+        Assert.Equal("releasegroup:\"Transit Of Venus\" AND artist:\"Hangedup\"",
+            OnlineCoverArt.MusicBrainzQuery("Transit Of Venus", "Hangedup and Tony Conrad"));
+        Assert.Equal("releasegroup:\"69 Love Songs\" AND artist:\"Takashi Kokubo\"",
+            OnlineCoverArt.MusicBrainzQuery("69 Love Songs Disc 2", "Takashi Kokubo (小久保隆)"));
+        Assert.Equal("releasegroup:\"Say \\\"Hi\\\"\"", OnlineCoverArt.MusicBrainzQuery("Say \"Hi\"", ""));
+    }
+
+    [Fact]
+    public void The_lead_artist_is_the_first_of_a_credit()
+    {
+        Assert.Equal("Daft Punk", OnlineCoverArt.LeadArtist("Daft Punk, Pharrell Williams"));
+        Assert.Equal("Simon", OnlineCoverArt.LeadArtist("Simon & Garfunkel"));
+        Assert.Equal("Kendrick Lamar", OnlineCoverArt.LeadArtist("Kendrick Lamar feat. SZA"));
+        Assert.Equal("Feathers", OnlineCoverArt.LeadArtist("Feathers"));
     }
 }
