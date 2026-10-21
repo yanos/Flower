@@ -11,8 +11,7 @@
              mc:Ignorable="d"
              x:Class="Flower.Views.Mobile.SettingsView"
              x:DataType="vm:MobileMainViewModel"
-             Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
-             Padding="{DynamicResource SheetBottomInset}">
+             Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}">
 
   <UserControl.Styles>
     <!-- Each section is a card lighter than the page, as on the Navigation
@@ -168,28 +167,19 @@
     <x:Double x:Key="ToggleSwitchThemeMinWidth">0</x:Double>
   </UserControl.Resources>
 
-  <Grid RowDefinitions="Auto,*">
-
-    <!-- The same round back button MobileMainView floats over its screens,
-         and at the same spot (Border.floating and Button.pill are styled in
-         Styles/IconButtons.axaml): a 40px circle 12 in. The title is on its
-         own line under it, in the scroller, as on every screen. -->
-    <Grid Grid.Row="0" Height="52" Margin="12,4,16,4">
-      <Border Classes="floating" Width="40" HorizontalAlignment="Left">
-        <Button Classes="pill"
-                Command="{Binding CloseSheetCommand}"
-                HorizontalAlignment="Center">
-          <materialIcons:MaterialIcon Kind="ChevronLeft" Width="22" Height="22" />
-        </Button>
-      </Border>
-    </Grid>
+  <!-- Laid out as a screen is (ScreenSlot): the whole sheet scrolls, from
+       under the status bar to the bottom edge, and the back button floats over
+       it, so the page goes on up behind the button and the clock - blurred
+       there - rather than stopping at a band of its own. -->
+  <Panel>
 
     <!-- Scrolls because the content is taller than a small phone. The
          diagnostics card is the last thing on the screen and would otherwise
-         simply be unreachable on a 13 mini. -->
-    <ScrollViewer x:Name="ContentScroller" Grid.Row="1" VerticalScrollBarVisibility="Auto"
+         simply be unreachable on a 13 mini. Its content starts below the back
+         button and ends clear of the home indicator (SheetScrollInset). -->
+    <ScrollViewer x:Name="ContentScroller" VerticalScrollBarVisibility="Auto"
                   controls:SoftKeyboard.AvoidOcclusion="True">
-    <StackPanel Margin="0,4,0,16">
+    <StackPanel Margin="{DynamicResource SheetScrollInset}">
 
       <!-- A heading, so the serif and the frame's colour - see ScreenTitle. -->
       <TextBlock Text="Settings"
@@ -706,5 +696,28 @@
                  Margin="20,2,20,8" />
     </StackPanel>
     </ScrollViewer>
-  </Grid>
+
+    <!-- The screens' header blur (ScreenSlot): what scrolls up under the
+         clock and the back button loses its detail there. -->
+    <controls:BackdropBlur VerticalAlignment="Top"
+                           Height="{DynamicResource HeaderBlurHeight}"
+                           IsHitTestVisible="False"
+                           Radius="18"
+                           Mask="{DynamicResource AppHeaderBlurMask}" />
+
+    <!-- The same round back button MobileMainView floats over its screens,
+         and at the same spot (Border.floating and Button.pill are styled in
+         Styles/IconButtons.axaml): a 40px circle 12 in, centred in the 52px
+         band below the status bar. The title is on its own line under it, in
+         the scroller, as on every screen. -->
+    <Grid Height="52" Margin="{DynamicResource StatusBarInset}" VerticalAlignment="Top">
+      <Border Classes="floating" Width="40" HorizontalAlignment="Left" Margin="12,0,0,0">
+        <Button Classes="pill"
+                Command="{Binding CloseSheetCommand}"
+                HorizontalAlignment="Center">
+          <materialIcons:MaterialIcon Kind="ChevronLeft" Width="22" Height="22" />
+        </Button>
+      </Border>
+    </Grid>
+  </Panel>
 </UserControl>

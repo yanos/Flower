@@ -328,6 +328,10 @@ public partial class MobileMainView : UserControl
         // sheet (Settings, Track Info) takes as its own Padding. Now Playing
         // takes NowPlayingBottomInset instead, the tab oval over it.
         Resources["SheetBottomInset"] = new Thickness(0, 0, 0, safeArea.Bottom);
+        // Settings, which scrolls as a screen does - up under its back button
+        // and the clock - starts its content where a screen's starts, and ends
+        // it clear of the home indicator.
+        Resources["SheetScrollInset"] = new Thickness(0, safeArea.Top + ScreenSlot.HeaderHeight + ScreenSlot.ContentGap, 0, safeArea.Bottom + 16);
     }
 
     // ── Tab bar ───────────────────────────────────────────────────────

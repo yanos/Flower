@@ -29,6 +29,10 @@
            screen's header keeps clear of it by the first. Replaced from the
            code-behind with the safe area. -->
       <Thickness x:Key="StatusBarInset">0,0,0,0</Thickness>
+      <!-- Where Settings' content starts and ends, under its floating back
+           button and over the home indicator - replaced from the code-behind
+           with the safe area. -->
+      <Thickness x:Key="SheetScrollInset">0,64,0,16</Thickness>
       <!-- How tall each screen's header blur is (ScreenSlot): the status
            bar, the header band, and the fade below them. Replaced from the
            code-behind with the safe area. -->
@@ -790,7 +794,10 @@
          raising something over what is already there. Its dismiss is the back
          arrow the rest of the app pushes screens with, not the ChevronDown the
          sheets that rise from the bottom use - see SettingsView. -->
+    <!-- Pulled up under the status bar like the screens, since it scrolls as
+         they do: its content runs on up under the clock. -->
     <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"
+                            Margin="{DynamicResource ScreenStackBleed}"
                             IsOpen="{Binding IsShowingSettings}"
                             DismissCommand="{Binding CloseSheetCommand}">
       <views:SettingsView />
