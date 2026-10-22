@@ -26,14 +26,18 @@ public class LibraryDownloadService
     private readonly DeviceIdentity _deviceIdentity;
     private readonly DeviceSigningKey _signingKey;
     private readonly AppSettings _appSettings;
+    private readonly FlowerFolder _flowerFolder;
     private readonly ILogger<LibraryDownloadService> _logger;
 
-    public LibraryDownloadService(Library library, DeviceIdentity deviceIdentity, DeviceSigningKey signingKey, AppSettings appSettings, ILogger<LibraryDownloadService> logger)
+    public LibraryDownloadService(
+        Library library, DeviceIdentity deviceIdentity, DeviceSigningKey signingKey, AppSettings appSettings,
+        FlowerFolder flowerFolder, ILogger<LibraryDownloadService> logger)
     {
         _library = library;
         _deviceIdentity = deviceIdentity;
         _signingKey = signingKey;
         _appSettings = appSettings;
+        _flowerFolder = flowerFolder;
         _logger = logger;
     }
 
@@ -55,9 +59,16 @@ public class LibraryDownloadService
 
         try
         {
-            var client = PeerMediaClientFactory.Create(peer, _deviceIdentity, _appSettings, _signingKey);
+            // Flower's own folder (see FlowerFolder) - which, the first time,
+            // may mean asking whether a folder of that name already there can
+            // be had.
+            if (await _flowerFolder.ClaimAsync() is not { } folder)
+            {
+                _logger.LogWarning("Cannot download {Title}: Flower's folder is not Flower's to write to yet", track.Title);
+                return TrackDownloadResult.Failed;
+            }
 
-            var folder = ResolveDownloadFolder();
+            var client = PeerMediaClientFactory.Create(peer, _deviceIdentity, _appSettings, _signingKey);
             var destination = ResolveDestination(track, folder);
             Directory.CreateDirectory(Path.GetDirectoryName(destination) ?? folder);
 
@@ -119,7 +130,12 @@ public class LibraryDownloadService
         // origins or after a sanitize - rare, but silently overwriting one
         // track's audio with another's is not an acceptable way to find out.
         // The id goes back in for the loser, which is unique by construction.
-        if (_library.Tracks.Any(t => !ReferenceEquals(t, track)
+        //
+        // Nor any file at all that is already there: the library not knowing
+        // it does not make it nobody's. The same folder holds songs dropped on
+        // the window (LibraryDrop), and whatever was put there by hand.
+        if (File.Exists(destination)
+            || _library.Tracks.Any(t => !ReferenceEquals(t, track)
                 && t.Path != null
                 && string.Equals(t.Path, destination, StringComparison.OrdinalIgnoreCase)))
         {
@@ -159,10 +175,10 @@ public class LibraryDownloadService
 
     // The file is local now, so read what it actually is off the bytes rather
     // than keeping what the origin said about its own copy. Nothing else will:
-    // a downloaded file deliberately lands outside every configured library
-    // folder (see ResolveDownloadFolder), which is the whole reason
-    // Library.UpdateTracks carries it forward instead of rediscovering it - so
-    // no folder scan is ever going to visit this path and fill these in.
+    // Library.UpdateTracks carries a download forward rather than rediscovering
+    // it, Flower's folder is scanned only on a paired device, and Android's
+    // lands where no scan ever looks - so no scan can be counted on to visit
+    // this path and fill these in.
     //
     // Before this, a downloaded track kept whatever the sync manifest carried,
     // and until TrackDto grew the technical fields that was nothing at all: an
@@ -220,32 +236,5 @@ public class LibraryDownloadService
         track.Path = null;
         track.IsLocallyDownloaded = false;
         _library.NotifyTrackChanged(track, TrackChange.File);
-    }
-
-    // Test-only override, checked first below. Unlike AppDataDirectory (see
-    // PlatformDataDirectory.Current), SpecialFolder.MyMusic/.Personal resolve
-    // via native OS APIs that don't respect a HOME env var override on
-    // macOS - without this, a test exercising DownloadAsync's success path
-    // would actually write into the real developer's ~/Music. Left null
-    // everywhere else.
-    public static string? DownloadFolderOverride { get; set; }
-
-    // Same folders Importer/AndroidMediaStoreImporter already treat as this
-    // platform's own music location (see Importer.ResolveMusicPath) - except on
-    // Android, where a downloaded file deliberately lives in app-private storage
-    // rather than anywhere MediaStore would index it (MediaStore is a read-only
-    // system index Flower can't easily insert into); Library.UpdateTracks' carry-
-    // forward is what keeps such a file known across rescans on that platform,
-    // not rediscovery. Not yet verified on a real Android device.
-    private static string ResolveDownloadFolder()
-    {
-        if (DownloadFolderOverride != null)
-            return DownloadFolderOverride;
-        if (OperatingSystem.IsIOS())
-            return Environment.GetFolderPath(Environment.SpecialFolder.Personal);
-        if (OperatingSystem.IsAndroid() && PlatformDataDirectory.Current is { } androidRoot)
-            return Path.Combine(androidRoot, "Downloads");
-
-        return Environment.GetFolderPath(Environment.SpecialFolder.MyMusic);
     }
 }

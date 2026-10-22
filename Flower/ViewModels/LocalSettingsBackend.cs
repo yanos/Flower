@@ -160,7 +160,7 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
     public Task<string> DeleteRemovedFilesAsync(IReadOnlyList<string> paths, CancellationToken ct = default)
     {
         var (deleted, notDeleted) = LibraryRemoval.DeleteRemovedFiles(
-            ViewModel.Library, paths, Flower.Importer.Importer.ScanRoots(ViewModel.LibraryPaths),
+            ViewModel.Library, paths, Flower.Importer.Importer.ScanRoots(ViewModel.ScannedFolders ?? ViewModel.LibraryPaths),
             ViewModel.LoggerFactory.CreateLogger<LocalSettingsBackend>());
         return Task.FromResult(DeletedMessage(deleted, notDeleted));
     }

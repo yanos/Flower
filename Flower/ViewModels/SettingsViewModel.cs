@@ -232,13 +232,22 @@ public sealed partial class SettingsViewModel : ViewModelBase
 
     public bool ShowsITunesSource => MayImportITunesHistory;
 
+    // The songs themselves, on a device paired to a server - see
+    // AppSettings.AddSongsFromMusicApp. Shown to any paired device with a
+    // Music.app library, and switchable by an administrator's
+    // (SyncRolePolicy.MayAddSongsFromMusicApp), so a guest can see what it
+    // is not offered rather than not see it at all. This device's own
+    // setting, bound through Device rather than drafted.
+    public bool ShowsAddSongsFromMusicApp => Device != null && _snapshot.IsPairedToServer && HasAppleMusicFolder;
+    public bool CanAddSongsFromMusicApp => _snapshot.AdministersPairedServer;
+
     // What the two switches do on a paired device, or why they are off there -
     // the panel's other note (ITunesUnavailableMessage) covers a machine with
     // no Music.app library at all. Null where neither applies.
     public string? ITunesImportNote =>
         !_snapshot.IsPairedToServer || !HasAppleMusicFolder ? null
         : !_snapshot.AdministersPairedServer
-            ? "Only an administrator's device can bring Music.app history to the server."
+            ? "Only an administrator's device can bring Music.app songs and history to the server."
         : _snapshot.PairedServerImportsMusicAppPlays
             ? "Dates added go to the server. Play counts come from the server's own Music.app library."
         : "Play counts and dates added go to the server. With several Macs, it keeps each song's highest Music.app count.";
@@ -491,6 +500,8 @@ public sealed partial class SettingsViewModel : ViewModelBase
             OnPropertyChanged(nameof(CanSyncFromITunes));
             OnPropertyChanged(nameof(CanSyncPlayCountFromITunes));
             OnPropertyChanged(nameof(ShowsITunesSource));
+            OnPropertyChanged(nameof(ShowsAddSongsFromMusicApp));
+            OnPropertyChanged(nameof(CanAddSongsFromMusicApp));
             OnPropertyChanged(nameof(ITunesImportNote));
             OnPropertyChanged(nameof(ShowsITunesUnavailable));
             OnPropertyChanged(nameof(ITunesUnavailableMessage));

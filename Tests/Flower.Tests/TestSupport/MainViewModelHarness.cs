@@ -246,6 +246,7 @@ public static class MainViewModelHarness
             NullLogger<Flower.Importer.Importer>.Instance);
         var libraryDownloadService = new LibraryDownloadService(
             library, deviceIdentity, signingKey, appSettings,
+            new FlowerFolder(appSettings, () => Task.CompletedTask, NullLogger<FlowerFolder>.Instance),
             NullLogger<LibraryDownloadService>.Instance);
         var peerPairingService = new PeerPairingService(
             deviceIdentity, signingKey, NullLogger<PeerPairingService>.Instance);

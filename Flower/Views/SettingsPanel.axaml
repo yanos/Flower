@@ -312,22 +312,36 @@
                 </Style>
               </Grid.Styles>
 
-              <CheckBox Grid.Row="0"
-                        Content="Use iTunes/Music.app library"
-                        IsChecked="{Binding IntegrateWithITunes, Mode=TwoWay}">
-                <CheckBox.IsVisible>
-                  <MultiBinding Converter="{x:Static BoolConverters.And}">
-                    <Binding Path="Capabilities.ITunesIntegration"/>
-                    <Binding Path="Capabilities.ITunesMasterSwitch"/>
-                  </MultiBinding>
-                </CheckBox.IsVisible>
-                <CheckBox.IsEnabled>
-                  <MultiBinding Converter="{x:Static BoolConverters.And}">
-                    <Binding Path="CanIntegrateWithITunes"/>
-                    <Binding Path="IntegrateWithITunesLock.IsEditable"/>
-                  </MultiBinding>
-                </CheckBox.IsEnabled>
-              </CheckBox>
+              <StackPanel Grid.Row="0">
+                <!-- A paired administrator's Mac: the songs themselves, beside
+                     the history - see AppSettings.AddSongsFromMusicApp. Bound
+                     to this device rather than drafted, like the upload switch:
+                     a server has its own master switch instead, just below. -->
+                <StackPanel IsVisible="{Binding ShowsAddSongsFromMusicApp}">
+                  <CheckBox Content="Add songs from Music.app to Flower"
+                            IsChecked="{Binding Device.AddSongsFromMusicApp, Mode=TwoWay}"
+                            IsEnabled="{Binding CanAddSongsFromMusicApp}"/>
+                  <TextBlock Text="Sends the server the songs it doesn't have yet. A song Music.app deletes stays on the server."
+                             Margin="20,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"
+                             IsEnabled="{Binding CanAddSongsFromMusicApp}"/>
+                </StackPanel>
+
+                <CheckBox Content="Use iTunes/Music.app library"
+                          IsChecked="{Binding IntegrateWithITunes, Mode=TwoWay}">
+                  <CheckBox.IsVisible>
+                    <MultiBinding Converter="{x:Static BoolConverters.And}">
+                      <Binding Path="Capabilities.ITunesIntegration"/>
+                      <Binding Path="Capabilities.ITunesMasterSwitch"/>
+                    </MultiBinding>
+                  </CheckBox.IsVisible>
+                  <CheckBox.IsEnabled>
+                    <MultiBinding Converter="{x:Static BoolConverters.And}">
+                      <Binding Path="CanIntegrateWithITunes"/>
+                      <Binding Path="IntegrateWithITunesLock.IsEditable"/>
+                    </MultiBinding>
+                  </CheckBox.IsEnabled>
+                </CheckBox>
+              </StackPanel>
 
               <CheckBox Grid.Row="1"
                         Classes="itunesImport"

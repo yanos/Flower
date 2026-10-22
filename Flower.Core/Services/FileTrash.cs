@@ -31,7 +31,7 @@ public static class FileTrash
 
     // Test-only, checked first: a test suite that removed songs with their
     // files would otherwise fill the developer's real Trash on every run.
-    // Same shape as LibraryDownloadService.DownloadFolderOverride. Null
+    // Same shape as FlowerFolder.Override. Null
     // everywhere else.
     public static Func<string, bool>? Override { get; set; }
 

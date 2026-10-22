@@ -360,6 +360,14 @@ public partial class App : Application
                 credentials: sp.GetRequiredService<IPeerCredentials>()))
             .AddSingleton<PlaylistSyncService>()
             .AddSingleton<LibrarySyncService>()
+            // Where downloads, and a paired device's imports, are kept - and
+            // the one place that asks before taking over a folder by that name
+            // that is somebody else's (the desktop wires the question up once
+            // its window exists).
+            .AddSingleton(sp => new FlowerFolder(
+                sp.GetRequiredService<AppSettings>(),
+                () => sp.GetRequiredService<AppSettingsStore>().SaveAsync(sp.GetRequiredService<AppSettings>()),
+                sp.GetRequiredService<ILogger<FlowerFolder>>()))
             .AddSingleton<LibraryDownloadService>()
             .AddSingleton<PeerPairingService>()
             .AddSingleton<PairedServerReachability>()
@@ -736,6 +744,21 @@ public partial class App : Application
                 window.Opened += AskAboutITunesLibrary;
             }
 
+            // A ~/Music/Flower that somebody else made is asked about, over
+            // this window, the first time Flower needs the folder - a
+            // download, a drop, the move of old downloads below.
+            if (provider.GetService<FlowerFolder>() is { } flowerFolder)
+            {
+                flowerFolder.AskToTakeOver = folder => Dispatcher.UIThread.InvokeAsync(() => ConfirmDialogWindow.ShowAsync(
+                    window,
+                    "Use This Folder?",
+                    $"{folder} already has files in it that Flower didn't put there.\n\n"
+                    + "Flower keeps the songs it downloads, and the songs you add, in a folder of its own, "
+                    + "and moves and deletes files in it. If it uses this one, what is already there becomes part of your library.",
+                    "Use It",
+                    "Use Another Folder"));
+            }
+
             // Avalonia's DBus integration can tear down after the dispatcher
             // has already stopped, and its observers then throw an unhandled
             // TaskCanceledException on a thread-pool thread, crashing the
@@ -945,9 +968,23 @@ public partial class App : Application
                 // A remote catalog has no paths, and logging this device's
                 // (which still default to ~/Music even where nothing can read
                 // it) would misdescribe what is about to happen.
+                // What this device scans - its library folders, or on a
+                // paired device Flower's own folder and Music.app's music -
+                // see DeviceLibraryFolders.
+                var scanPaths = DeviceLibraryFolders.ScanPaths(appSettings);
                 if (isLocalImporter)
                 {
-                    rescanLogger.LogInformation("Startup rescan starting for paths: {LibraryPaths}", string.Join(", ", appSettings.LibraryPaths));
+                    // Downloads from before Flower had a folder of its own
+                    // sat in ~/Music. Moved in before the scan, so it finds
+                    // them where they now are.
+                    if (watchesLibraryFolders && provider.GetService<FlowerFolder>() is { } flowerFolder)
+                    {
+                        await flowerFolder.MoveOldDownloadsAsync(library);
+                        scanPaths = DeviceLibraryFolders.ScanPaths(appSettings);
+                    }
+
+                    mainViewModel.ScannedFolders = scanPaths;
+                    rescanLogger.LogInformation("Startup rescan starting for paths: {LibraryPaths}", string.Join(", ", scanPaths));
                 }
                 else
                 {
@@ -957,11 +994,11 @@ public partial class App : Application
                 var stopwatch = Stopwatch.StartNew();
                 // So the scan's paths are matched the way these folders'
                 // filesystems compare names - see PathRules.
-                library.UsePathRules(PathRules.For(Importer.Importer.ScanRoots(appSettings.LibraryPaths)));
+                library.UsePathRules(PathRules.For(Importer.Importer.ScanRoots(scanPaths)));
                 // Minus anything removed from the library on purpose, before
                 // the queue sees it as well as the library - see
                 // Library.RemoveTracks.
-                var freshTracks = library.WithoutExcluded(await importer.ImportAsync(appSettings.LibraryPaths));
+                var freshTracks = library.WithoutExcluded(await importer.ImportAsync(scanPaths));
                 rescanLogger.LogInformation("Startup rescan found {TrackCount} tracks in {ElapsedMs}ms", freshTracks.Count, stopwatch.ElapsedMilliseconds);
 
                 // A tab has no system fonts, so the ones this catalog's text
@@ -1044,7 +1081,7 @@ public partial class App : Application
                         library, mainViewModel.RescanLibraryAsync,
                         provider.GetRequiredService<ILogger<LibraryFolderWatcher>>(),
                         provider.GetRequiredService<ILogger<Importer.Importer>>());
-                    watcher.Watch(appSettings.LibraryPaths);
+                    watcher.Watch(scanPaths);
                     mainViewModel.FolderWatcher = watcher;
                 }
             }

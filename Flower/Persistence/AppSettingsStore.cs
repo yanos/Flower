@@ -247,6 +247,22 @@ namespace Flower.Persistence
         // cover, is small, and goes over whatever connection there is.
         public bool UploadWhenAwayFromHome { get; set; }
 
+        // Whether an admin device takes the songs in its Music.app library into
+        // Flower and sends the server the ones it lacks - Settings > Library's
+        // "Add songs from Music.app to Flower". Only on a device paired to a
+        // server as one of its administrators (SyncRolePolicy.
+        // MayAddSongsFromMusicApp); a device of its own takes the folder in as
+        // a library folder instead. Add-only: a song Music.app deletes is
+        // dropped from this device and from nothing else (DeviceLibraryFolders).
+        //
+        // Off by default, because turning it on can send gigabytes.
+        public bool AddSongsFromMusicApp { get; set; }
+
+        // Where Flower's own folder is, when it is not where it would be by
+        // default - set once, when ~/Music/Flower turned out to be somebody
+        // else's and the answer was not to take it over. See FlowerFolder.
+        public string? FlowerFolderPath { get; set; }
+
         // Log viewer preferences, remembered between launches the same way
         // IsRepeatEnabled/IsShuffleEnabled are - see LogViewerViewModel. Shared
         // by both places a log is read: the app's own Log window (View > Log...)

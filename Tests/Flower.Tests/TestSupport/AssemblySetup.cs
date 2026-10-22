@@ -86,6 +86,18 @@ internal static class AssemblySetup
     {
         Flower.Services.FileTrash.Override = MoveToTestTrash;
     }
+
+    // Where Flower's own folder is for any test that has not set one of its
+    // own: never the developer's ~/Music/Flower. See FlowerFolder.Override.
+    // Restored to this, not to null, by the tests that set it.
+    public static string DefaultFlowerFolder { get; } =
+        Path.Combine(Directory.CreateTempSubdirectory("flower-test-music").FullName, "Flower");
+
+    [ModuleInitializer]
+    public static void KeepEveryTestOutOfTheRealMusicFolder()
+    {
+        Flower.Services.FlowerFolder.Override = DefaultFlowerFolder;
+    }
 }
 
 // ── A note on Dispatcher.UIThread.MainLoop in tests ──────────────────────────

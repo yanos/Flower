@@ -29,7 +29,7 @@ namespace Flower.Tests.Sync;
 //
 // Isolated from the real developer's library.json (PlatformDataDirectory,
 // same pattern as LibraryStoreTests) and from the real ~/Music folder
-// (LibraryDownloadService.DownloadFolderOverride, since SpecialFolder.MyMusic
+// (FlowerFolder.Override, since SpecialFolder.MyMusic
 // doesn't respect a HOME override the way AppDataDirectory does).
 [Collection("PlatformDataDirectory")]
 public class LibraryDownloadServiceTests : IDisposable
@@ -44,13 +44,13 @@ public class LibraryDownloadServiceTests : IDisposable
         PlatformDataDirectory.Current = _tempHome;
 
         _downloadFolder = Path.Combine(_tempHome, "Downloads");
-        LibraryDownloadService.DownloadFolderOverride = _downloadFolder;
+        FlowerFolder.Override = _downloadFolder;
     }
 
     public void Dispose()
     {
         PlatformDataDirectory.Current = AssemblySetup.DefaultDataDirectory;
-        LibraryDownloadService.DownloadFolderOverride = null;
+        FlowerFolder.Override = AssemblySetup.DefaultFlowerFolder;
         try { Directory.Delete(_tempHome, recursive: true); } catch { /* best effort */ }
     }
 
@@ -84,6 +84,9 @@ public class LibraryDownloadServiceTests : IDisposable
         return new DeviceSigningKey(ecdsa, raw);
     }
 
+    private static FlowerFolder FolderFor(AppSettings settings) =>
+        new(settings, () => Task.CompletedTask, NullLogger<FlowerFolder>.Instance);
+
     private static LibraryDownloadService MakeService(Track track, out Library library)
     {
         // A real TrackRepository, because persistence is Library's own now
@@ -92,7 +95,7 @@ public class LibraryDownloadServiceTests : IDisposable
         var identity = new DeviceIdentity { Fingerprint = "my-fp", Alias = "Me" };
         var signingKey = MakeSigningKey();
         var appSettings = new AppSettings();
-        return new LibraryDownloadService(library, identity, signingKey, appSettings, NullLogger<LibraryDownloadService>.Instance);
+        return new LibraryDownloadService(library, identity, signingKey, appSettings, FolderFor(appSettings), NullLogger<LibraryDownloadService>.Instance);
     }
 
     [Fact]
@@ -256,13 +259,35 @@ public class LibraryDownloadServiceTests : IDisposable
         var library = new Library([occupant, track], NullLogger<Library>.Instance, new TrackRepository(FlowerDb.OpenDefault()));
         var service = new LibraryDownloadService(
             library, new DeviceIdentity { Fingerprint = "my-fp", Alias = "Me" }, MakeSigningKey(),
-            new AppSettings(), NullLogger<LibraryDownloadService>.Instance);
+            new AppSettings(), FolderFor(new AppSettings()), NullLogger<LibraryDownloadService>.Instance);
 
         var result = await service.DownloadAsync(track, PeerAt(server.Port));
 
         Assert.Equal(TrackDownloadResult.Downloaded, result);
         Assert.Equal(Path.Combine(_downloadFolder, $"{track.Id:N}.wav"), track.Path);
         Assert.Equal(taken, occupant.Path);
+    }
+
+    // The same, for a file the library does not know at all: the folder holds
+    // songs dropped on the window and whatever was put there by hand, and
+    // the library not knowing a file does not make it nobody's.
+    [Fact]
+    public async Task DownloadAsync_does_not_overwrite_a_file_the_library_does_not_know()
+    {
+        using var server = ServingAudio(SyntheticWav.Build(TimeSpan.FromSeconds(1), SyntheticWav.Marker(1)));
+        var taken = Path.Combine(_downloadFolder, "Artist", "Album", "01 Song.wav");
+        Directory.CreateDirectory(Path.GetDirectoryName(taken)!);
+        File.WriteAllText(Path.Combine(_downloadFolder, FlowerFolder.MarkerName), "");
+        File.WriteAllText(taken, "not this download");
+        var track = Placeholder(extension: "wav");
+        track.OriginRelativePath = "Artist/Album/01 Song.wav";
+        var service = MakeService(track, out _);
+
+        var result = await service.DownloadAsync(track, PeerAt(server.Port));
+
+        Assert.Equal(TrackDownloadResult.Downloaded, result);
+        Assert.Equal(Path.Combine(_downloadFolder, $"{track.Id:N}.wav"), track.Path);
+        Assert.Equal("not this download", File.ReadAllText(taken));
     }
 
     [Fact]

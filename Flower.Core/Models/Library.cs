@@ -1241,6 +1241,40 @@ namespace Flower.Models
             return current;
         }
 
+        // These files of this device's are the paired server's songs now, lent
+        // to it - imported here, and since taken in by the server. From now on
+        // each is a download like any other: deleting it frees the space and
+        // takes the song from nobody, it is never offered up again, and a
+        // rescan carries it forward. Returns how many changed.
+        public int LendFiles(IReadOnlyCollection<Track> tracks)
+        {
+            var lent = new List<Track>(tracks.Count);
+            lock (_lock)
+            {
+                foreach (var track in tracks)
+                {
+                    var current = ResolveCurrent(track);
+                    if (current.Path == null || current.IsLocallyDownloaded)
+                        continue;
+
+                    current.IsLocallyDownloaded = true;
+                    current.MovedFromPath = null;
+                    lent.Add(current);
+                }
+            }
+
+            if (lent.Count == 0)
+                return 0;
+
+            Persist(() =>
+            {
+                foreach (var track in lent)
+                    _store!.Upsert(track);
+            });
+            RaiseTrackChanged(lent, TrackChange.File);
+            return lent.Count;
+        }
+
         // What these files looked like when they were first matched with the
         // server's copies, or a move that turned out not to be one: bookkeeping
         // about this device's own files that nothing draws and no other device

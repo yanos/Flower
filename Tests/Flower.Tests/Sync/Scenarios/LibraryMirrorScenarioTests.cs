@@ -45,11 +45,21 @@ public class LibraryMirrorScenarioTests : PinnedDataDirectory
         // refused is remembered between syncs.
         private LibraryMirrorService? _mirror;
 
-        public Device()
+        // Flower's own folder, and a Music.app media folder - for a device
+        // that, paired, picks no library folders (DeviceLibraryFolders).
+        public string FlowerFolderPath { get; }
+        public string MediaFolder { get; }
+
+        // pairedSources is a device with no library folders: what it holds
+        // comes from Flower's folder and, when switched on, Music.app's.
+        public Device(bool pairedSources = false)
         {
             MusicFolder = Path.Combine(_dataDirectory, "Music");
             Directory.CreateDirectory(MusicFolder);
-            Settings = new AppSettings { LibraryPaths = [MusicFolder] };
+            FlowerFolderPath = Path.Combine(_dataDirectory, "Flower");
+            MediaFolder = Path.Combine(_dataDirectory, "Media.localized");
+            Directory.CreateDirectory(Path.Combine(MediaFolder, "Music"));
+            Settings = new AppSettings { LibraryPaths = pairedSources ? [] : [MusicFolder] };
             LibrarySync = new LibrarySyncService(
                 Library, Identity, Key, Settings,
                 new ServerStarBaselineStore(NullLogger<ServerStarBaselineStore>.Instance),
@@ -114,8 +124,50 @@ public class LibraryMirrorScenarioTests : PinnedDataDirectory
             return file.Tag.Title;
         }
 
+        public string MusicAppPathOf(string relativePath) =>
+            Path.Combine(MediaFolder, "Music", relativePath.Replace('/', Path.DirectorySeparatorChar));
+
+        public string FlowerPathOf(string relativePath) =>
+            Path.Combine(FlowerFolderPath, relativePath.Replace('/', Path.DirectorySeparatorChar));
+
+        // A song arriving in Music.app: under its media folder's Music.
+        public void AddToMusicApp(string relativePath, string title, byte seed = 1) =>
+            TaggedAudioFile.Create(Path.Combine(MediaFolder, "Music"), relativePath, title, seed: seed);
+
+        // Paired to this server before its first scan, the way a device that
+        // has been paired for a while scans: from its paired sources.
+        public void PairWith(SimulatedFlowerServer server, bool addSongsFromMusicApp = false)
+        {
+            Settings.PairedServerFingerprint = server.Fingerprint;
+            Settings.PairedServerGrantsAdmin = server.CallerIsAdmin;
+            Settings.AddSongsFromMusicApp = addSongsFromMusicApp;
+        }
+
+        // Songs dropped on the window, as MainViewModel.AddDroppedSongsAsync
+        // does it on a paired device: copied into Flower's folder, and read in.
+        public async Task DropAsync(params string[] paths)
+        {
+            UseOwnFolders();
+            var folder = await new FlowerFolder(Settings, () => Task.CompletedTask, NullLogger<FlowerFolder>.Instance).ClaimAsync();
+            var result = await new LibraryDrop([folder!], NullLogger.Instance).PrepareAsync(paths);
+            foreach (var file in result.Files)
+                Library.AddScannedTrack(_importer.ImportFile(file)!);
+        }
+
         // What the app does at launch and whenever its folders change.
-        public void Scan() => Library.UpdateTracks(_importer.Import(Settings.LibraryPaths));
+        public void Scan()
+        {
+            UseOwnFolders();
+            Library.UpdateTracks(_importer.Import(DeviceLibraryFolders.ScanPaths(Settings)));
+        }
+
+        // Both are process-wide, like PlatformDataDirectory.Current, so each
+        // device points them at its own before it does anything.
+        private void UseOwnFolders()
+        {
+            FlowerFolder.Override = FlowerFolderPath;
+            DeviceLibraryFolders.MusicAppMediaFolderOverride = MediaFolder;
+        }
 
         public Track Single(string title) => Library.Tracks.Single(t => t.Title == title);
 
@@ -131,6 +183,7 @@ public class LibraryMirrorScenarioTests : PinnedDataDirectory
         public async Task<LibraryUploadSummary> SyncAsync(SimulatedFlowerServer server, bool away = false)
         {
             PlatformDataDirectory.Current = _dataDirectory;
+            UseOwnFolders();
             Settings.PairedServerFingerprint = server.Fingerprint;
             _mirror ??= new LibraryMirrorService(
                 Library, Settings, LibrarySync, new SignedDeviceCredentials(Identity, Key),
@@ -167,12 +220,14 @@ public class LibraryMirrorScenarioTests : PinnedDataDirectory
 
         public void Dispose()
         {
+            FlowerFolder.Override = AssemblySetup.DefaultFlowerFolder;
+            DeviceLibraryFolders.MusicAppMediaFolderOverride = null;
             Key.Dispose();
             TempDirectory.DeleteWhenReleased(_dataDirectory);
         }
     }
 
-    private Device NewDevice() => Own(new Device());
+    private Device NewDevice(bool pairedSources = false) => Own(new Device(pairedSources));
 
     private SimulatedFlowerServer NewServer(bool callerIsAdmin = true) =>
         Own(new SimulatedFlowerServer([], musicFolder: Path.Combine(DataDirectory, $"server-music-{Guid.NewGuid():N}"))
@@ -1482,5 +1537,156 @@ public class LibraryMirrorScenarioTests : PinnedDataDirectory
 
         Assert.Equal(scanned, theirs.DateAdded);
         Assert.Equal(scanned, phone.Single("A").DateAdded);
+    }
+
+    // ── A paired device's own sources: Music.app, and Flower's folder ─────
+    //
+    // See docs/SYNC-PLAN.md, "A paired device has two sources of files, and no
+    // folders".
+
+    [Fact]
+    public async Task A_new_song_in_MusicApp_goes_up_to_the_server_from_an_admin_device_that_takes_them_in()
+    {
+        var server = NewServer();
+        var mac = NewDevice(pairedSources: true);
+        mac.PairWith(server, addSongsFromMusicApp: true);
+        mac.AddToMusicApp("Beirut/The Rip Tide/01 A Candle's Fire.wav", "A Candle's Fire");
+        mac.Scan();
+
+        var summary = await mac.SyncAsync(server);
+
+        Assert.Equal(1, summary.Uploaded);
+        Assert.True(File.Exists(ServerPath(server, "Beirut/The Rip Tide/01 A Candle's Fire.wav")));
+        Assert.Equal(["A Candle's Fire"], server.Library.Tracks.Select(t => t.Title));
+    }
+
+    [Fact]
+    public void MusicApps_songs_are_not_taken_in_with_the_switch_off()
+    {
+        var server = NewServer();
+        var mac = NewDevice(pairedSources: true);
+        mac.PairWith(server, addSongsFromMusicApp: false);
+        mac.AddToMusicApp("a.wav", "A");
+
+        mac.Scan();
+
+        Assert.Empty(mac.Library.Tracks);
+    }
+
+    // Music.app deletes files of its own accord - Optimize Storage, Remove
+    // Download - so a file gone from its folder takes the song off this device
+    // and nowhere else. The device streams it from then on.
+    [Fact]
+    public async Task A_file_gone_from_MusicApp_drops_it_from_this_device_and_leaves_the_server_alone()
+    {
+        var server = NewServer();
+        var mac = NewDevice(pairedSources: true);
+        mac.PairWith(server, addSongsFromMusicApp: true);
+        mac.AddToMusicApp("keep.wav", "Keep");
+        mac.AddToMusicApp("album/gone.wav", "Gone");
+        mac.Scan();
+        await mac.SyncAsync(server);
+        Assert.Equal(2, server.Library.Tracks.Count);
+
+        File.Delete(mac.MusicAppPathOf("album/gone.wav"));
+        mac.Scan();
+        await mac.SyncAsync(server);
+
+        Assert.Equal(["Gone", "Keep"], server.Library.Tracks.Select(t => t.Title).Order());
+        Assert.True(File.Exists(ServerPath(server, "album/gone.wav")));
+        Assert.Empty(server.Library.RemovedTracks);
+
+        var gone = mac.Single("Gone");
+        Assert.Null(gone.Path);
+        Assert.Equal(server.Library.Tracks.Single(t => t.Title == "Gone").Id.ToKey(), gone.OriginTrackId);
+    }
+
+    [Fact]
+    public async Task Only_the_music_in_MusicApps_media_folder_is_taken_in()
+    {
+        var server = NewServer();
+        var mac = NewDevice(pairedSources: true);
+        mac.PairWith(server, addSongsFromMusicApp: true);
+        mac.AddToMusicApp("Artist/Album/song.wav", "Song");
+        // Music.app moves these into Music as it takes them in; sent from
+        // here they would go up twice.
+        TaggedAudioFile.Create(Path.Combine(mac.MediaFolder, "Automatically Add to Music.localized"), "pending.wav", "Pending");
+        TaggedAudioFile.Create(Path.Combine(mac.MediaFolder, "Podcasts"), "Show/episode.wav", "Episode");
+        File.WriteAllBytes(mac.MusicAppPathOf("Artist/Album/protected.m4p"), [0, 0, 0, 0x20, (byte)'f', (byte)'t', (byte)'y', (byte)'p']);
+
+        mac.Scan();
+        await mac.SyncAsync(server);
+
+        Assert.Equal(["Song"], mac.Library.Tracks.Select(t => t.Title));
+        Assert.Equal(["Song"], server.Library.Tracks.Select(t => t.Title));
+    }
+
+    [Fact]
+    public async Task A_song_dropped_on_a_paired_device_goes_to_Flowers_folder_up_to_the_server_and_then_is_a_download()
+    {
+        var server = NewServer();
+        var mac = NewDevice(pairedSources: true);
+        mac.PairWith(server);
+        var outside = TaggedAudioFile.Create(DataDirectory, "Desktop/new.wav", "New", artist: "Grouper", album: "Shade");
+
+        await mac.DropAsync(outside);
+        Assert.Equal(mac.FlowerPathOf("Grouper/Shade/new.wav"), mac.Single("New").Path);
+        Assert.False(mac.Single("New").IsLocallyDownloaded);
+
+        var summary = await mac.SyncAsync(server);
+
+        Assert.Equal(1, summary.Uploaded);
+        Assert.True(File.Exists(ServerPath(server, "Grouper/Shade/new.wav")));
+        // The server's song now, lent to this device.
+        Assert.True(mac.Single("New").IsLocallyDownloaded);
+
+        // So deleting it frees the space and takes the song from nobody.
+        File.Delete(mac.FlowerPathOf("Grouper/Shade/new.wav"));
+        mac.Scan();
+        await mac.SyncAsync(server);
+
+        Assert.Equal(["New"], server.Library.Tracks.Select(t => t.Title));
+        Assert.Empty(server.Library.RemovedTracks);
+    }
+
+    // The server already had it: nothing goes up, and the copy is lent all the
+    // same - or deleting it would take the server's song away.
+    [Fact]
+    public async Task A_dropped_song_the_server_already_has_is_lent_without_being_uploaded()
+    {
+        var server = NewServer();
+        ServerFile(server, "Grouper/Shade/new.wav", "New");
+        var mac = NewDevice(pairedSources: true);
+        mac.PairWith(server);
+        var outside = TaggedAudioFile.Create(DataDirectory, "Desktop/new.wav", "New");
+
+        await mac.DropAsync(outside);
+        var begun = UploadsBegun(server);
+        await mac.SyncAsync(server);
+
+        Assert.Equal(begun, UploadsBegun(server));
+        var mine = mac.Single("New");
+        Assert.NotNull(mine.Path);
+        Assert.True(mine.IsLocallyDownloaded);
+    }
+
+    // A guest uploads nothing, so what it drops stays its own and goes nowhere.
+    [Fact]
+    public async Task A_guests_dropped_song_stays_on_the_guest()
+    {
+        var server = NewServer(callerIsAdmin: false);
+        var phone = NewDevice(pairedSources: true);
+        phone.PairWith(server);
+        var outside = TaggedAudioFile.Create(DataDirectory, "Desktop/mine.wav", "Mine");
+
+        await phone.DropAsync(outside);
+        var summary = await phone.SyncAsync(server);
+
+        Assert.Equal(0, summary.Uploaded);
+        Assert.Equal(0, UploadsBegun(server));
+        Assert.Empty(server.Library.Tracks);
+        var mine = phone.Single("Mine");
+        Assert.NotNull(mine.Path);
+        Assert.False(mine.IsLocallyDownloaded);
     }
 }

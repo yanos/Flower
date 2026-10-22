@@ -38,6 +38,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     private readonly PlaylistControlViewModel _playlistControlViewModel;
     private AppSettings _appSettings;
     private IMusicImporter? _importer;
+    private readonly FlowerFolder? _flowerFolder;
     private MainPlaylist?      _mainPlaylist;
     private DeviceIdentity? _deviceIdentity;
 
@@ -108,6 +109,26 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public bool PairedServerImportsMusicAppPlays => _appSettings.PairedServerImportsMusicAppPlays;
     public bool MayImportFromMusicApp => SyncRolePolicy.MayImportFromMusicApp(_appSettings);
     public bool MayImportPlayCountsFromMusicApp => SyncRolePolicy.MayImportPlayCountsFromMusicApp(_appSettings);
+    public bool MayAddSongsFromMusicApp => SyncRolePolicy.MayAddSongsFromMusicApp(_appSettings);
+
+    // Whether this administrator's Mac takes the songs in its Music.app
+    // library in, and sends the server the ones it lacks - see
+    // AppSettings.AddSongsFromMusicApp. Persist-immediately, like the two
+    // switches below, and the folder is scanned (or let go of) at once.
+    public bool AddSongsFromMusicApp
+    {
+        get => _appSettings.AddSongsFromMusicApp;
+        set
+        {
+            if (_appSettings.AddSongsFromMusicApp == value)
+                return;
+            _logger.LogInformation("AddSongsFromMusicApp changed {Old} -> {New}", _appSettings.AddSongsFromMusicApp, value);
+            _appSettings.AddSongsFromMusicApp = value;
+            OnPropertyChanged();
+            SaveSettings();
+            FollowScanFolders();
+        }
+    }
 
     public void ScheduleContentSync() => Sync.ScheduleContentSync();
 
@@ -1545,9 +1566,13 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         IPeerCredentials? peerCredentials = null,
         // Trailing + defaulted like the rest of the sync stack: only a head
         // with files of its own and a server to send them to has one.
-        LibraryMirrorService? libraryMirrorService = null)
+        LibraryMirrorService? libraryMirrorService = null,
+        // Trailing + defaulted like the rest: only a head with files of its
+        // own has a folder of its own to put dropped songs in.
+        FlowerFolder? flowerFolder = null)
     {
         Library                = library;
+        _flowerFolder          = flowerFolder;
         SmartPlaylists         = smartPlaylists;
         _playlistControlViewModel = playlistControlViewModel;
         Volume                 = volume;
@@ -1774,6 +1799,9 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             else
                 _deviceSidebar.UnpinPairedServerRow();
             _deviceSidebar.SyncPairedServerRow();
+            // Pairing, unpairing and being made an administrator each change
+            // which folders this device scans - see DeviceLibraryFolders.
+            FollowScanFolders();
         },
             h => Sync.PairingChanged += h, h => Sync.PairingChanged -= h);
 
@@ -2494,7 +2522,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         if (_importer == null || _mainPlaylist == null)
             return;
         using var _ = _busy.BeginScope("Rebuilding library…");
-        var libraryPaths = _appSettings.LibraryPaths;
+        var libraryPaths = DeviceLibraryFolders.ScanPaths(_appSettings);
+        ScannedFolders = libraryPaths;
         Library.UsePathRules(PathRules.For(Importer.Importer.ScanRoots(libraryPaths)));
         var freshTracks = Library.WithoutExcluded(await _importer.ImportAsync(libraryPaths));
         _mainPlaylist.ReplaceAll(freshTracks);
@@ -2515,7 +2544,32 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
         _appSettings.LibraryPaths = paths;
         await (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
-        FolderWatcher?.Watch(paths);
+        FolderWatcher?.Watch(DeviceLibraryFolders.ScanPaths(_appSettings));
+    }
+
+    // The folders the last scan walked (DeviceLibraryFolders.ScanPaths) - set
+    // by the startup scan and every rescan. Null until the startup scan has
+    // begun, which is what tells FollowScanFolders there is nothing to follow
+    // yet: that scan reads the folders as they are by then.
+    public IReadOnlyList<string>? ScannedFolders { get; set; }
+
+    // Rescans, and watches the new set, when the folders this device scans are
+    // no longer the ones it last scanned - after pairing, unpairing, being made
+    // an administrator, or a change to the Music.app switch. Every other time
+    // it is asked, nothing has changed and it does nothing.
+    public void FollowScanFolders()
+    {
+        if (_importer?.ScansLocalFiles != true || OperatingSystem.IsBrowser() || ScannedFolders is not { } scanned)
+            return;
+
+        var folders = DeviceLibraryFolders.ScanPaths(_appSettings);
+        if (folders.SequenceEqual(scanned, StringComparer.OrdinalIgnoreCase))
+            return;
+
+        _logger.LogInformation("The folders this device scans changed to [{Folders}] - rescanning", string.Join(", ", folders));
+        ScannedFolders = folders;
+        FolderWatcher?.Watch(folders);
+        _ = RescanLibraryAsync();
     }
 
     // Keeps the library in step with its folders between scans - desktop
@@ -2536,7 +2590,23 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         if (!AcceptsDroppedSongs || paths.Count == 0)
             return;
 
-        var roots = Importer.Importer.ScanRoots(_appSettings.LibraryPaths);
+        // On a device paired to a server, a song from anywhere else goes into
+        // Flower's own folder - never a library folder, and never Music.app's
+        // even when that one is taken in. See docs/SYNC-PLAN.md, "A paired
+        // device has two sources of files, and no folders".
+        var roots = Importer.Importer.ScanRoots(DeviceLibraryFolders.ScanPaths(_appSettings));
+        if (!string.IsNullOrEmpty(_appSettings.PairedServerFingerprint) && _flowerFolder != null)
+        {
+            if (await _flowerFolder.ClaimAsync() is not { } flower)
+            {
+                using var refused = _busy.BeginScope("Flower's folder isn't available, so the songs were not added");
+                await Task.Delay(TimeSpan.FromSeconds(4));
+                return;
+            }
+
+            roots = [flower, .. roots.Where(r => !string.Equals(r, flower, StringComparison.OrdinalIgnoreCase))];
+        }
+
         if (roots.Count == 0)
         {
             // Said where the drop was made, for long enough to read.
@@ -2556,6 +2626,12 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             await FolderWatcher.AddFilesAsync(result.Files);
         else
             await RescanLibraryAsync();
+
+        // The first drop on a paired device is what makes Flower's folder one
+        // this device scans. After the songs are in, not before: a rescan that
+        // read the folder ahead of the copy would write the library back
+        // without them.
+        FollowScanFolders();
     }
 
     // Mobile has no library-paths UI to rescan as a side effect of (desktop's

@@ -30,6 +30,15 @@ public partial class ConfirmDialogWindow : Window
     public static Task<bool> ShowAsync(Window owner, string title, string message, string confirmText)
         => new ConfirmDialogWindow(title, message, confirmText).ShowDialog<bool>(owner);
 
+    // The same, for a question whose other answer is not "never mind" but a
+    // choice of its own, and says which.
+    public static Task<bool> ShowAsync(Window owner, string title, string message, string confirmText, string cancelText)
+    {
+        var dialog = new ConfirmDialogWindow(title, message, confirmText);
+        dialog.CancelButton.Content = cancelText;
+        return dialog.ShowDialog<bool>(owner);
+    }
+
     // The same confirmation with one checkbox under the message, off by
     // default. Null when cancelled, otherwise whether the box was ticked.
     public static async Task<bool?> ShowWithOptionAsync(

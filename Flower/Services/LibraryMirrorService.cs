@@ -63,9 +63,12 @@ public sealed record UnwrittenChanges(string ServerFingerprint, string ServerAli
 //
 // "Of this device's own" is doing real work in both. A file downloaded from
 // the server is the server's, lent: it is never offered back, and deleting the
-// download is not deleting the song. And a file the server once listed and
-// stopped listing (Track.WithdrawnByOrigin) is not offered again either, or no
-// removal made on one device would survive another device holding a copy.
+// download is not deleting the song. A song added to Flower's own folder
+// becomes one of those as soon as the server has it (LendImports), and a file
+// gone from Music.app's folder is never news (DeviceLibraryFolders.
+// AddOnlyRoots). And a file the server once listed and stopped listing
+// (Track.WithdrawnByOrigin) is not offered again either, or no removal made on
+// one device would survive another device holding a copy.
 public class LibraryMirrorService
 {
     // Half the server's ceiling for one piece (LibraryIngest.MaxChunkBytes).
@@ -242,7 +245,8 @@ public class LibraryMirrorService
             return 0;
         }
 
-        var roots = PathRules.For(Importer.Importer.ScanRoots(_appSettings.LibraryPaths));
+        var roots = PathRules.For(Importer.Importer.ScanRoots(DeviceLibraryFolders.ScanPaths(_appSettings)));
+        var addOnly = DeviceLibraryFolders.AddOnlyRoots(_appSettings);
         var rootIsThere = new Dictionary<string, bool>(StringComparer.Ordinal);
         var stillHere = _library.Tracks
             .Where(t => t.Path != null && IsOnServer(t, device))
@@ -257,8 +261,11 @@ public class LibraryMirrorService
 
             // The song is still here as a file - found again somewhere else,
             // or back where it was - or was never under a folder this device
-            // scans now. Either way there is no deletion to report.
+            // scans now, or under one whose files going is never news
+            // (DeviceLibraryFolders.AddOnlyRoots). Either way there is no
+            // deletion to report.
             if (path == null || File.Exists(path) || stillHere.Contains(removed.Track.OriginTrackId!)
+                || DeviceLibraryFolders.IsUnderAny(addOnly, path)
                 || roots.RootOf(path) is not { } root)
             {
                 notNews.Add(removed.Track.Id);
@@ -569,7 +576,10 @@ public class LibraryMirrorService
             if (!_librarySync.HasCurrentCatalogFrom(device.Fingerprint))
                 return LibraryUploadSummary.Nothing;
 
-            var roots = PathRules.For(Importer.Importer.ScanRoots(_appSettings.LibraryPaths));
+            // Before anything that treats a file as this device's own.
+            LendImports(device);
+
+            var roots = PathRules.For(Importer.Importer.ScanRoots(DeviceLibraryFolders.ScanPaths(_appSettings)));
             using var http = PeerHttpClient.Create(RequestTimeout);
             var client = new ServerAdminClient(http, device.BaseUri, ServerAdminClient.SignWith(_credentials), logger: _logger);
 
@@ -645,6 +655,7 @@ public class LibraryMirrorService
                 {
                     case UploadResult.Uploaded:
                         uploaded++;
+                        LendImports(device);
                         break;
                     case UploadResult.Refused:
                         refused++;
@@ -685,6 +696,25 @@ public class LibraryMirrorService
     }
 
     private bool _saidWaitingForHome;
+
+    // Songs in Flower's own folder that the server now holds - uploaded from
+    // here, or matched by a pull with one it already had - are its songs,
+    // lent to this device, exactly as if they had been downloaded from it.
+    // Until then an import is this device's own and is offered up like any
+    // other file. See Library.LendFiles, and docs/SYNC-PLAN.md, "An import
+    // becomes a download once the server has it".
+    internal void LendImports(DiscoveredDevice device)
+    {
+        if (FlowerFolder.UsablePath(_appSettings) is not { } folder)
+            return;
+
+        var imports = _library.Tracks
+            .Where(t => t.Path != null && !t.IsLocallyDownloaded && IsOnServer(t, device)
+                        && LibraryFolderWatcher.IsUnder(folder, t.Path))
+            .ToList();
+        if (_library.LendFiles(imports) is var lent and > 0)
+            _logger.LogInformation("{Count} song(s) added on this device are {Server}'s now, kept here as downloads", lent, device.Alias);
+    }
 
     // Which of this device's own files have been written to since the server
     // got them - and, in the same pass, the first look at any file the two

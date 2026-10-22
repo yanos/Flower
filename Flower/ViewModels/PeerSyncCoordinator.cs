@@ -953,9 +953,15 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         if (_appSettings.PairedServerGrantsAdmin != device.WeAreAdmin
             || _appSettings.PairedServerImportsMusicAppPlays != device.ServerImportsMusicAppPlays)
         {
+            var adminChanged = _appSettings.PairedServerGrantsAdmin != device.WeAreAdmin;
             _appSettings.PairedServerGrantsAdmin = device.WeAreAdmin;
             _appSettings.PairedServerImportsMusicAppPlays = device.ServerImportsMusicAppPlays;
             _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
+
+            // Being made an administrator, or no longer being one, changes
+            // what this device takes in from Music.app (DeviceLibraryFolders).
+            if (adminChanged)
+                Dispatcher.UIThread.Post(NotifyPairingChanged);
         }
     }
 
