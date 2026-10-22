@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 
@@ -431,7 +432,7 @@ namespace Flower.Models
 
         public void UpdateTracks(List<Track> tracks)
         {
-            int beforeCount, afterCount, carriedForwardCount, vanishedCount, revivedCount;
+            int beforeCount, afterCount, carriedForwardCount, vanishedCount, revivedCount, deletedDownloadCount;
             lock (_lock)
             {
                 // Before anything else: a file removed on purpose is not a file
@@ -452,6 +453,7 @@ namespace Flower.Models
                 var freshPaths = new HashSet<string>(
                     tracks.Where(t => t.Path != null).Select(t => t.Path!),
                     PathRules);
+                var rootIsThere = new Dictionary<string, bool>(StringComparer.Ordinal);
 
                 // Fallback for a track whose exact Path string no longer
                 // matches anything in this fresh scan - keyed by SyncKey
@@ -573,6 +575,28 @@ namespace Flower.Models
                 // RemoveTracksFromOrigin); this is what heals a library that
                 // was already in that state before it did.
                 var freshSyncKeys = new HashSet<string>(tracks.Select(t => t.SyncKey));
+
+                // A download whose file is gone, though, goes back to being
+                // the server's song, streamed - as Remove Download leaves it
+                // (LibraryDownloadService.DeleteDownloadedFileAsync) - rather
+                // than staying a row that says downloaded and plays nothing.
+                // Deleting one in Finder is how that happens, and the folder
+                // watcher has this scan run straight after. The disk is asked
+                // rather than the scan, which is silent about the downloads it
+                // never looks at - see DeletedDownload.
+                var deletedDownloads = Tracks.Where(t =>
+                    t is { IsLocallyDownloaded: true, Path: { } path }
+                    && !freshPaths.Contains(path)
+                    && !freshSyncKeys.Contains(t.SyncKey)
+                    && DeletedDownload(path, rootIsThere))
+                    .ToList();
+                foreach (var track in deletedDownloads)
+                {
+                    track.Path = null;
+                    track.IsLocallyDownloaded = false;
+                }
+                deletedDownloadCount = deletedDownloads.Count;
+
                 var carriedForwardSyncTracks = Tracks.Where(t =>
                     (t.Path == null || t.IsLocallyDownloaded)
                     && (t.Path == null || !freshPaths.Contains(t.Path))
@@ -618,6 +642,11 @@ namespace Flower.Models
 
             _logger.LogInformation("Library updated: {FreshCount} track(s) from scan, {CarriedForwardCount} placeholder/downloaded track(s) carried forward, {TotalBefore} -> {TotalAfter}",
                 tracks.Count, carriedForwardCount, beforeCount, afterCount);
+            if (deletedDownloadCount > 0)
+            {
+                _logger.LogInformation("{Count} downloaded song(s) are no longer on disk and are streamed again",
+                    deletedDownloadCount);
+            }
             if (vanishedCount > 0 || revivedCount > 0)
             {
                 _logger.LogInformation("{VanishedCount} song(s) are no longer on disk and were put on record; {RevivedCount} came back and were restored from it",
@@ -625,6 +654,22 @@ namespace Flower.Models
             }
 
             LibraryChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        // Whether a download's file was deleted: gone from a folder this
+        // device scans that is still there and holds something. Not gone from
+        // a drive that is unplugged, or a share that did not mount - its
+        // downloads stay downloads until it is back (LibraryFolders.IsPresent).
+        // Nor from anywhere outside the scanned folders, where there is no
+        // folder to ask about. Each folder is asked once a scan.
+        private bool DeletedDownload(string path, Dictionary<string, bool> rootIsThere)
+        {
+            if (PathRules.RootOf(path) is not { } root || File.Exists(path))
+                return false;
+
+            if (!rootIsThere.TryGetValue(root, out var there))
+                rootIsThere[root] = there = LibraryFolders.IsPresent(root);
+            return there;
         }
 
         // A scan's result minus the files removed from the library on purpose -

@@ -266,7 +266,7 @@ public class LibraryMirrorService
             }
 
             if (!rootIsThere.TryGetValue(root, out var there))
-                rootIsThere[root] = there = IsPresent(root);
+                rootIsThere[root] = there = LibraryFolders.IsPresent(root);
 
             if (there)
                 gone.Add(removed);
@@ -304,20 +304,6 @@ public class LibraryMirrorService
         }
 
         return reported;
-    }
-
-    // There, and not an empty mount point - which is what a share that failed
-    // to mount leaves behind on Linux, and reads as "every file deleted".
-    private static bool IsPresent(string root)
-    {
-        try
-        {
-            return Directory.Exists(root) && Directory.EnumerateFileSystemEntries(root).Any();
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return false;
-        }
     }
 
     // ── Tags edited here ──────────────────────────────────────────────────

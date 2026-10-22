@@ -45,6 +45,22 @@ public static class LibraryFolders
         }
     }
 
+    // There, and not an empty mount point - which is what a share that failed
+    // to mount leaves behind on Linux, and reads as "every file deleted". A
+    // file missing from a folder that passes this was deleted; one missing
+    // from a folder that does not says nothing about the file.
+    public static bool IsPresent(string root)
+    {
+        try
+        {
+            return Directory.Exists(root) && Directory.EnumerateFileSystemEntries(root).Any();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
     // Whether a file can be created in this folder, found out the only way that
     // is true on every filesystem: by creating one. Permission bits do not
     // answer it - a read-only mount shows a writable directory to a process
