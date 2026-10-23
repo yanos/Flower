@@ -41,12 +41,12 @@
       <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
     <!-- Parallel to TextBox.val above - AutoCompleteBox doesn't inherit from
-         TextBox, so that selector doesn't match it. It backs the three fields
-         with suggestions: Artist, Album and Album Artist - see
-         TrackInfoViewModel's suggestion pools. -->
+         TextBox, so that selector doesn't match it. It backs the five fields
+         with suggestions: Artist, Album Artist, Album, Composer and Genre -
+         see TrackInfoViewModel's suggestion pools. -->
     <!-- Its own Background is what its inner box paints, so the app-wide
          text-box fill (App.axaml's :is(TextBox)) has to be restated here or
-         these three fields stand out white among the rest. -->
+         these fields stand out white among the rest. -->
     <Style Selector="AutoCompleteBox.val">
       <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}"/>
       <Setter Property="FontSize" Value="13"/>
@@ -192,7 +192,7 @@
                 <Border Grid.Row="4" Grid.ColumnSpan="2" Classes="rule"/>
 
                 <TextBlock Grid.Row="5" Text="Composer" Classes="lbl"/>
-                <controls:TextInput Grid.Row="5" Grid.Column="1" x:Name="ComposerBox" Text="{Binding Composers.Text, Mode=TwoWay}" PlaceholderText="{Binding Composers.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val"/>
+                <AutoCompleteBox Grid.Row="5" Grid.Column="1" x:Name="ComposerBox" Text="{Binding Composers.Text, Mode=TwoWay}" PlaceholderText="{Binding Composers.Placeholder}" IsEnabled="{Binding IsEditable}" ItemsSource="{Binding ComposerSuggestions}" Classes="val"/>
 
                 <TextBlock Grid.Row="6" Text="Conductor" Classes="lbl"/>
                 <controls:TextInput Grid.Row="6" Grid.Column="1" x:Name="ConductorBox" Text="{Binding Conductor.Text, Mode=TwoWay}" PlaceholderText="{Binding Conductor.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val"/>
@@ -220,7 +220,19 @@
                 <controls:TextInput Grid.Row="2" Grid.Column="1" x:Name="YearBox" Text="{Binding Year.Text, Mode=TwoWay}" PlaceholderText="{Binding Year.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val"/>
 
                 <TextBlock Grid.Row="3" Text="Genre" Classes="lbl"/>
-                <controls:TextInput Grid.Row="3" Grid.Column="1" x:Name="GenreBox" Text="{Binding Genre.Text, Mode=TwoWay}" PlaceholderText="{Binding Genre.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val"/>
+                <!-- The library's genres as they are typed, and all of them
+                     behind the chevron - a short list worth reading whole,
+                     which the phone's sheet offers the same way. -->
+                <Grid Grid.Row="3" Grid.Column="1" ColumnDefinitions="*,Auto">
+                  <AutoCompleteBox x:Name="GenreBox" Text="{Binding Genre.Text, Mode=TwoWay}" PlaceholderText="{Binding Genre.Placeholder}" IsEnabled="{Binding IsEditable}" ItemsSource="{Binding GenreSuggestions}" Classes="val"/>
+                  <Button Grid.Column="1" x:Name="GenreMenuButton"
+                          Margin="4,0,0,0" Padding="4" VerticalAlignment="Center"
+                          Background="Transparent" BorderThickness="0"
+                          ToolTip.Tip="Choose a genre"
+                          Click="GenreMenu_Click">
+                    <materialIcons:MaterialIcon Kind="ChevronDown" Width="18" Height="18"/>
+                  </Button>
+                </Grid>
 
                 <Border Grid.Row="4" Grid.ColumnSpan="2" Classes="rule"/>
 

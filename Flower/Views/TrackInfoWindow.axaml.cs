@@ -143,7 +143,22 @@ public partial class TrackInfoWindow : Window
     {
         StopFindingArt();
         _info.Load(tracks);
+        GenreMenuButton.IsVisible = _info.IsEditable && _info.GenreSuggestions.Count > 0;
         _ = LoadAlbumArtAsync();
+    }
+
+    // Every genre the library has, behind the chevron beside the box.
+    private void GenreMenu_Click(object? sender, RoutedEventArgs e)
+    {
+        var flyout = new MenuFlyout { Placement = PlacementMode.BottomEdgeAlignedRight };
+        foreach (var genre in _info.GenreSuggestions)
+        {
+            var item = new MenuItem { Header = genre };
+            item.Click += (_, _) => _info.Genre.Text = genre;
+            flyout.Items.Add(item);
+        }
+
+        flyout.ShowAt(GenreMenuButton);
     }
 
     private void StarButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
