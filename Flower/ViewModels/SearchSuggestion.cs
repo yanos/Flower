@@ -80,18 +80,34 @@ public sealed record SearchSuggestion(string Text, SearchSuggestionKind Kind, st
             Consider(track.Title, SearchSuggestionKind.Song, track.Artists, plays);
         }
 
+        var ranked = new List<SearchSuggestion>();
         foreach (var (suggestion, _, _) in found.Values
                      .OrderBy(f => f.Score)
                      .ThenBy(f => f.Suggestion.Kind)
                      .ThenByDescending(f => f.Plays)
                      .ThenBy(f => f.Suggestion.Text.Length))
         {
-            if (suggestions.Count >= max)
-                break;
             if (seen.Add(suggestion.Text))
-                suggestions.Add(suggestion);
+                ranked.Add(suggestion);
         }
 
+        // The best of each kind first, so one kind cannot fill every row:
+        // "monk" begins the names of a dozen of Monk's albums and songs, and
+        // the artist, whose name only has a word that begins with it, came
+        // after all of them and never showed. Then the rest, in their order,
+        // and all of it shown in that order.
+        var room = max - suggestions.Count;
+        var chosen = new HashSet<int>();
+        foreach (var kind in new[] { SearchSuggestionKind.Artist, SearchSuggestionKind.Album, SearchSuggestionKind.Song })
+        {
+            var best = ranked.FindIndex(s => s.Kind == kind);
+            if (best >= 0 && chosen.Count < room)
+                chosen.Add(best);
+        }
+        for (var i = 0; i < ranked.Count && chosen.Count < room; i++)
+            chosen.Add(i);
+
+        suggestions.AddRange(chosen.Order().Select(i => ranked[i]));
         return suggestions;
     }
 }

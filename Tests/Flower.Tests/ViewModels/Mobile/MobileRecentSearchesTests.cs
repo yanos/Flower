@@ -124,6 +124,25 @@ public class MobileRecentSearchesTests : PinnedDataDirectory
             vm.Search.Suggestions.Select(s => (s.Text, s.Kind)));
     }
 
+    // Monk's albums and songs all begin with "Monk", his own name only has a
+    // word that does - and the artist never made the five rows.
+    [Fact]
+    public void An_artist_is_offered_when_more_albums_and_songs_than_there_are_rows_match_better()
+    {
+        var tracks = new[] { "Monk's Dream", "Monk's Mood", "Monk's Music", "Monk's Point", "Monk's Blues", "Monkery" }
+            .Select((name, i) => new Track
+            {
+                Title = name, Album = name, Artists = "Thelonious Monk", Path = $"/music/{i}.mp3",
+            })
+            .ToList();
+
+        var suggestions = SearchSuggestion.For("monk", [], tracks, SearchViewModel.MaxSuggestions);
+
+        Assert.Equal(SearchViewModel.MaxSuggestions, suggestions.Count);
+        Assert.Contains(suggestions, s => s is { Text: "Thelonious Monk", Kind: SearchSuggestionKind.Artist });
+        Assert.Contains(suggestions, s => s.Kind == SearchSuggestionKind.Album);
+    }
+
     // Past searches are cleared from the Search screen's menu.
     [AvaloniaFact]
     public void The_search_menu_clears_past_searches()
