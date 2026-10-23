@@ -1201,7 +1201,7 @@ public class LibraryMirrorScenarioTests : PinnedDataDirectory
     public async Task New_artwork_reaches_the_server_and_every_other_devices_copy()
     {
         var before = SyntheticPng.Build(4, 4, red: 0x10);
-        var after = SyntheticPng.Build(4, 4, red: 0xF0);
+        var after = SyntheticPng.Build(8, 6, red: 0xF0);
         var server = NewServer();
         var desktop = NewDevice();
         var laptop = NewDevice();
@@ -1237,6 +1237,11 @@ public class LibraryMirrorScenarioTests : PinnedDataDirectory
 
         Assert.Equal(after, laptop.ArtIn("song.wav"));
         Assert.Equal(after, guest.ArtIn("downloads/song.wav"));
+
+        // And each copy knows how big the new one is, which is what a smart
+        // playlist of songs with small covers asks (Track.ArtWidth).
+        foreach (var track in new[] { server.Library.Tracks.Single(), laptop.Single("Song"), guest.Single("Song") })
+            Assert.Equal((8, 6), (track.ArtWidth, track.ArtHeight));
 
         // Receiving a picture is not changing one: nothing comes back up.
         var second = await laptop.SyncAsync(server);

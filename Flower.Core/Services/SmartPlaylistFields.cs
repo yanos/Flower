@@ -61,6 +61,14 @@ public static class SmartPlaylistFields
         Number(SmartField.Bitrate,        "Bitrate",     t => t.Bitrate),
         Number(SmartField.SampleRate,     "Sample Rate", t => t.SampleRate),
 
+        // The shorter side, in pixels: what "is this cover big enough" means
+        // for a picture that is not square, where a 3000x600 banner is no
+        // better than a 600x600 cover. A song with no picture has no size,
+        // rather than a size of zero - so "less than 600" finds small covers
+        // and not missing ones, which Has Artwork below is for, and Any of the
+        // two finds both.
+        Number(SmartField.ArtworkSize,    "Artwork Size", t => t.ArtWidth > 0 && t.ArtHeight > 0 ? Math.Min(t.ArtWidth, t.ArtHeight) : null),
+
         new Descriptor(SmartField.Duration, "Duration", SmartValueKind.Duration, Duration: t => t.Duration),
 
         Date(SmartField.DateAdded,    "Date Added",   t => t.DateAdded),
@@ -71,6 +79,7 @@ public static class SmartPlaylistFields
         Bool(SmartField.IsCompilation,       "Compilation",          t => t.IsCompilation),
         Bool(SmartField.IsLocallyDownloaded, "Downloaded",           t => t.IsLocallyDownloaded),
         Bool(SmartField.IgnoreWhenShuffling, "Skip When Shuffling",  t => t.IgnoreWhenShuffling),
+        Bool(SmartField.HasArtwork,          "Has Artwork",          t => t.ArtWidth > 0 && t.ArtHeight > 0),
 
         // No accessor: membership is a property of a playlist, not of a track,
         // so the evaluator resolves this one against its context instead.

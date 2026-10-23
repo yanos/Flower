@@ -346,7 +346,7 @@ public class LibrarySyncMapperTests
     // and B on the other. The options are in no file at all, so this is the
     // only road they have.
     [Fact]
-    public void ToPlaceholderTrack_carries_the_sort_tags_and_the_playback_options()
+    public void ToPlaceholderTrack_carries_the_sort_tags_the_playback_options_and_the_artwork_size()
     {
         var song = new TrackDto(
             Id: "some-id", Title: "Come Together", Album: "Abbey Road", Artist: "The Beatles",
@@ -356,7 +356,8 @@ public class LibrarySyncMapperTests
             SortAlbum: "Abbey Road", SortComposer: "Lennon, John",
             RememberPlaybackPosition: true, ResumePositionSeconds: 754,
             IgnoreWhenShuffling: true, VolumeAdjustment: -20,
-            EncoderProfile: "LAME 3.100, VBR (V0)");
+            EncoderProfile: "LAME 3.100, VBR (V0)",
+            ArtWidth: 1400, ArtHeight: 1200);
 
         var track = LibrarySyncMapper.ToPlaceholderTrack(song, "peer-1", "self-1");
 
@@ -369,6 +370,7 @@ public class LibrarySyncMapperTests
         Assert.True(track.IgnoreWhenShuffling);
         Assert.Equal(-20, track.VolumeAdjustment);
         Assert.Equal("LAME 3.100, VBR (V0)", track.EncoderProfile);
+        Assert.Equal((1400, 1200), (track.ArtWidth, track.ArtHeight));
         // And "sorts as itself" survives as itself - a blank override would put
         // the track above everything (see Track.SortAs).
         Assert.Equal("Beatles, The", track.ArtistsSortValue);
@@ -393,6 +395,7 @@ public class LibrarySyncMapperTests
         Assert.False(track.IgnoreWhenShuffling);
         Assert.Equal(0, track.VolumeAdjustment);
         Assert.Null(track.EncoderProfile);
+        Assert.Equal((0, 0), (track.ArtWidth, track.ArtHeight));
         // Falls back to the display value, so it still sorts under "The".
         Assert.Equal("The Beatles", track.ArtistsSortValue);
     }

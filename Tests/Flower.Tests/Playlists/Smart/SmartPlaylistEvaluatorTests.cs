@@ -283,6 +283,54 @@ public class SmartPlaylistEvaluatorTests
             new SmartCondition(SmartField.Playlist, SmartOperator.IsNot, missing)), tracks).Count);
     }
 
+    // --- Artwork ----------------------------------------------------------
+
+    private static Track WithArt(string title, int width, int height)
+    {
+        var track = T(title: title);
+        track.ArtWidth = width;
+        track.ArtHeight = height;
+        return track;
+    }
+
+    [Fact]
+    public void Has_artwork_finds_the_songs_without_a_picture()
+    {
+        var tracks = new List<Track> { WithArt("Cover", 600, 600), WithArt("Bare", 0, 0) };
+
+        var matched = Evaluate(SmartPlaylistRules.MatchAll(
+            new SmartCondition(SmartField.HasArtwork, SmartOperator.Is, new SmartValue.Flag(false))), tracks);
+
+        Assert.Equal("Bare", Assert.Single(matched).Title);
+    }
+
+    // A wide banner is no bigger a cover than its height - the shorter side is
+    // the size.
+    [Fact]
+    public void Artwork_size_is_the_shorter_side_of_the_picture()
+    {
+        var tracks = new List<Track> { WithArt("Square", 1000, 1000), WithArt("Banner", 3000, 400) };
+
+        var matched = Evaluate(SmartPlaylistRules.MatchAll(
+            new SmartCondition(SmartField.ArtworkSize, SmartOperator.LessThan, new SmartValue.Number(500))), tracks);
+
+        Assert.Equal("Banner", Assert.Single(matched).Title);
+    }
+
+    // No picture is no size, not a size of zero: "smaller than 500" is about
+    // the covers there are, and the missing ones are Has Artwork's - with Any
+    // of the two finding everything that wants a better cover.
+    [Fact]
+    public void A_song_with_no_picture_is_not_a_small_one_but_any_of_the_two_finds_both()
+    {
+        var tracks = new List<Track> { WithArt("Small", 300, 300), WithArt("Bare", 0, 0), WithArt("Big", 1400, 1400) };
+        var small = new SmartCondition(SmartField.ArtworkSize, SmartOperator.LessThan, new SmartValue.Number(500));
+        var bare = new SmartCondition(SmartField.HasArtwork, SmartOperator.IsNot, new SmartValue.Flag(true));
+
+        Assert.Equal("Small", Assert.Single(Evaluate(SmartPlaylistRules.MatchAll(small), tracks)).Title);
+        Assert.Equal(["Small", "Bare"], Evaluate(SmartPlaylistRules.MatchAny(small, bare), tracks).Select(t => t.Title));
+    }
+
     // --- Match modes ------------------------------------------------------
 
     [Fact]

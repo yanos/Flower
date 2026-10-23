@@ -137,7 +137,9 @@ public static class LibraryDtoMapper
             TagsEditedAt: track.TagsEditedAt,
             Tags: track.TagsEditedAt != null ? TrackTags.Of(track) : null,
             ArtEditedAt: track.ArtEditedAt,
-            FileReplacedAt: track.FileReplacedAt);
+            FileReplacedAt: track.FileReplacedAt,
+            ArtWidth: track.ArtWidth > 0 ? track.ArtWidth : null,
+            ArtHeight: track.ArtHeight > 0 ? track.ArtHeight : null);
     }
 
     // The part of the file's path below whichever configured library folder it

@@ -30,7 +30,7 @@ public static class TrackArtwork
     public static LibraryArtEditResponseDto ApplyEdit(
         Library library, IReadOnlyList<string> trackIds, DateTimeOffset editedAt, LocalAlbumArt? art, ILogger logger)
     {
-        var applied = new List<(Track Track, DateTimeOffset EditedAt, string? FileStamp)>();
+        var applied = new List<(Track Track, DateTimeOffset EditedAt, string? FileStamp, ArtworkDimensions Artwork)>();
         var notWritten = new List<string>();
         foreach (var id in trackIds)
         {
@@ -45,7 +45,7 @@ public static class TrackArtwork
                 ? AlbumArtWriter.TryWrite(path, art.Bytes, art.MimeType, logger)
                 : AlbumArtWriter.TryRemove(path, logger);
             if (written)
-                applied.Add((track, editedAt, null));
+                applied.Add((track, editedAt, null, ArtworkDimensions.OfFile(path)));
             else
                 notWritten.Add(id);
         }

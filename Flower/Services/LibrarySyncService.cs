@@ -577,7 +577,7 @@ public class LibrarySyncService
         if (newer.Count == 0)
             return;
 
-        var applied = new List<(Track Track, DateTimeOffset EditedAt, string? FileStamp)>();
+        var applied = new List<(Track Track, DateTimeOffset EditedAt, string? FileStamp, ArtworkDimensions Artwork)>();
         foreach (var (local, remote) in newer)
         {
             if (local.Path is not { } path || remote.ArtEditedAt is not { } editedAt || remote.OriginTrackId is not { } id)
@@ -608,7 +608,7 @@ public class LibrarySyncService
                 if (!written)
                     continue;
 
-                applied.Add((local, editedAt, LibraryMirrorService.StampOf(path)));
+                applied.Add((local, editedAt, LibraryMirrorService.StampOf(path), ArtworkDimensions.OfFile(path)));
                 AlbumArtLoader.Invalidate(local);
             }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.IO.IOException)

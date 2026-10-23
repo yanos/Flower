@@ -298,10 +298,14 @@ public sealed class SmartConditionRowViewModel : ViewModelBase
     // The controls that keep their own widths and wrap as a group.
     public bool ShowWrappedValues => ShowDateBox || ShowRelative || ShowBoolBox;
 
-    // Told rather than shown for a duration, since the row is already three
-    // controls wide and has no space for a format label. Null everywhere else,
-    // which leaves the box with no tooltip at all.
-    public string? ValueHint => Kind == SmartValueKind.Duration ? "A length, written as m:ss - 3:30, or 1:03:30." : null;
+    // Told rather than shown, since the row is already three controls wide
+    // and has no space for a format label: a duration's format, and the unit
+    // an artwork size is in. Null everywhere else, which leaves the box with
+    // no tooltip at all.
+    public string? ValueHint =>
+        Field.Field == SmartField.ArtworkSize ? "In pixels, along the shorter side - a 600 × 600 cover is 600."
+        : Kind == SmartValueKind.Duration ? "A length, written as m:ss - 3:30, or 1:03:30."
+        : null;
 
     private void NotifyLayoutChanged()
     {

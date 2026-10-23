@@ -124,6 +124,9 @@ public static class LibrarySyncMapper
             VolumeAdjustment = song.VolumeAdjustment,
             // See TrackDto.EncoderProfile - a placeholder has no file to parse it out of.
             EncoderProfile = song.EncoderProfile,
+            // See TrackDto.ArtWidth - nor one to look for a picture in.
+            ArtWidth = song.ArtWidth ?? 0,
+            ArtHeight = song.ArtHeight ?? 0,
         };
 
         // A song whose tags somebody has edited arrives with all of them (see

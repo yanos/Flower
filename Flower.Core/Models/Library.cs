@@ -1873,6 +1873,8 @@ namespace Flower.Models
             existing.BitsPerSample = remote.BitsPerSample;
             existing.Codec = remote.Codec;
             existing.EncoderProfile = remote.EncoderProfile;
+            existing.ArtWidth = remote.ArtWidth;
+            existing.ArtHeight = remote.ArtHeight;
             existing.TitleSort = remote.TitleSort;
             existing.ArtistsSort = remote.ArtistsSort;
             existing.AlbumSort = remote.AlbumSort;
@@ -2031,7 +2033,8 @@ namespace Flower.Models
             bool RememberPlaybackPosition, TimeSpan? ResumePosition, bool IgnoreWhenShuffling, int VolumeAdjustment,
             TrackTagsDto? PlaceholderTags, TimeSpan Duration, int Bitrate, int SampleRate, int Channels,
             int BitsPerSample, string? Codec, string? EncoderProfile,
-            DateTimeOffset? TagsEditedAt, DateTimeOffset? ArtEditedAt, DateTimeOffset? FileReplacedAt)
+            DateTimeOffset? TagsEditedAt, DateTimeOffset? ArtEditedAt, DateTimeOffset? FileReplacedAt,
+            int ArtWidth, int ArtHeight)
         {
             public static MergedTrackState Of(Track track)
             {
@@ -2049,7 +2052,8 @@ namespace Flower.Models
                     track.RememberPlaybackPosition, track.ResumePosition, track.IgnoreWhenShuffling, track.VolumeAdjustment,
                     track.Path == null ? TrackTags.Of(track) : null, track.Duration, track.Bitrate, track.SampleRate,
                     track.Channels, track.BitsPerSample, track.Codec, track.EncoderProfile,
-                    track.TagsEditedAt, track.ArtEditedAt, track.FileReplacedAt);
+                    track.TagsEditedAt, track.ArtEditedAt, track.FileReplacedAt,
+                    track.ArtWidth, track.ArtHeight);
             }
 
             // Which kinds of change separate this state from `after`; zero for
@@ -2076,7 +2080,7 @@ namespace Flower.Models
                     || (Duration, Bitrate, SampleRate, Channels, BitsPerSample, Codec, EncoderProfile, TagsEditedAt, FileReplacedAt)
                     != (after.Duration, after.Bitrate, after.SampleRate, after.Channels, after.BitsPerSample, after.Codec, after.EncoderProfile, after.TagsEditedAt, after.FileReplacedAt))
                     change |= TrackChange.Tags;
-                if (ArtEditedAt != after.ArtEditedAt)
+                if ((ArtEditedAt, ArtWidth, ArtHeight) != (after.ArtEditedAt, after.ArtWidth, after.ArtHeight))
                     change |= TrackChange.Artwork;
                 return change;
             }
@@ -2727,8 +2731,10 @@ namespace Flower.Models
 
         // The artwork counterpart: a picture changed somewhere else, already
         // written into the file by the caller where there is one. Dated,
-        // persisted, and announced as Remote for the reason above.
-        public void ApplySyncedArt(IReadOnlyList<(Track Track, DateTimeOffset EditedAt, string? FileStamp)> edits)
+        // persisted, and announced as Remote for the reason above. Artwork is
+        // what the file's picture measures now that it is written - the
+        // caller's to say, since this class reads no files.
+        public void ApplySyncedArt(IReadOnlyList<(Track Track, DateTimeOffset EditedAt, string? FileStamp, ArtworkDimensions Artwork)> edits)
         {
             if (edits.Count == 0)
                 return;
@@ -2736,10 +2742,11 @@ namespace Flower.Models
             var changed = new List<Track>(edits.Count);
             lock (_lock)
             {
-                foreach (var (track, editedAt, fileStamp) in edits)
+                foreach (var (track, editedAt, fileStamp, artwork) in edits)
                 {
                     var current = ResolveCurrent(track);
                     current.ArtEditedAt = editedAt;
+                    artwork.ApplyTo(current);
                     if (fileStamp != null && current.OriginFileStamp != null)
                         current.OriginFileStamp = fileStamp;
                     changed.Add(current);

@@ -125,13 +125,17 @@ namespace Flower.Importer
                 .Where(IsImportable)
                 .Where(f => !IsUnderHiddenFolder(path, f));
 
+            // What each folder's cover file measures, so an album with no
+            // embedded art lists its folder once rather than once per song.
+            var coverFiles = new Dictionary<string, ArtworkDimensions>(StringComparer.Ordinal);
+
             foreach (var file in files)
             {
                 // Skip files already imported from an overlapping configured path.
                 if (!seenFiles.Add(file))
                     continue;
 
-                if (ImportFile(file) is { } track)
+                if (ImportFile(file, coverFiles) is { } track)
                     tracks.Add(track);
             }
         }
@@ -140,7 +144,9 @@ namespace Flower.Importer
         // half of a scan, and the whole of what an upload needs (see
         // LibraryIngest), which has exactly one new file to read and no reason
         // to walk the rest of the library to find it.
-        public Track? ImportFile(string file)
+        public Track? ImportFile(string file) => ImportFile(file, coverFiles: null);
+
+        private Track? ImportFile(string file, IDictionary<string, ArtworkDimensions>? coverFiles)
         {
             try
             {
@@ -149,6 +155,7 @@ namespace Flower.Importer
                 var props = tagFile.Properties;
                 var technical = AudioTechnicalProperties.From(props);
                 var id3v23 = Id3v23(tagFile);
+                var artwork = ArtworkDimensions.Read(tagFile, file, coverFiles);
 
                 return new Track
                 {
@@ -200,6 +207,9 @@ namespace Flower.Importer
                     // not in the tag and TagLib's Properties describe the
                     // decoded stream, not how it was produced.
                     EncoderProfile = EncodingProfile.Describe(file),
+
+                    ArtWidth       = artwork.Width,
+                    ArtHeight      = artwork.Height,
 
                     Path = file
                 };

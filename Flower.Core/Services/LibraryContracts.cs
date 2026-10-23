@@ -182,4 +182,11 @@ public sealed record TrackDto(
     // Flower-specific. When this song's file was last replaced by a new
     // version of it (Track.FileReplacedAt). A device whose own copy is of an
     // older version downloads the file again.
-    System.DateTimeOffset? FileReplacedAt = null);
+    System.DateTimeOffset? FileReplacedAt = null,
+    // Flower-specific. The pixel size of this song's own picture
+    // (Track.ArtWidth), null for a song with none. CoverArt above cannot say:
+    // it names the album, and is sent whether or not any file of it has a
+    // picture. What a device that holds the catalog but not the file asks a
+    // smart playlist about "songs with no cover" with.
+    int? ArtWidth = null,
+    int? ArtHeight = null);

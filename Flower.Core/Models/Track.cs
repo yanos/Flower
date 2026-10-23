@@ -167,6 +167,19 @@ namespace Flower.Models
         // the file.
         public string? EncoderProfile { get; set; }
 
+        // The pixel size of this file's own picture - its embedded one, or else
+        // a cover.*/folder.* image beside it, which is what the app draws for
+        // it (LocalAlbumArtReader.ForFile). Zero for a file with neither, and
+        // for a picture whose size cannot be read from its header, which is
+        // also one nothing here can draw (see ArtworkDimensions).
+        //
+        // Stored for the reason EncoderProfile above is: a smart playlist asks
+        // "which songs have no cover, or a small one" of the whole library at
+        // once, and of a phone's placeholders, which have no file to look in.
+        // Measured at scan and again wherever a picture is written into a file.
+        public int ArtWidth { get; set; }
+        public int ArtHeight { get; set; }
+
         // File
         public string? Path { get; set; }
 

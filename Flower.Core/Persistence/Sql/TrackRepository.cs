@@ -32,7 +32,8 @@ namespace Flower.Persistence.Sql
             is_locally_downloaded, origin_relative_path,
             title_sort, artists_sort, composers_sort,
             remember_playback_position, resume_position_ticks, ignore_when_shuffling, volume_adjustment,
-            encoder_profile, withdrawn_by_origin, moved_from_path, origin_file_stamp, tags_edited_at, art_edited_at, file_replaced_at
+            encoder_profile, withdrawn_by_origin, moved_from_path, origin_file_stamp, tags_edited_at, art_edited_at, file_replaced_at,
+            art_width, art_height
             """;
 
         public List<Track> LoadAll()
@@ -454,7 +455,8 @@ namespace Flower.Persistence.Sql
                 is_locally_downloaded, origin_relative_path,
                 title_sort, artists_sort, composers_sort,
                 remember_playback_position, resume_position_ticks, ignore_when_shuffling, volume_adjustment,
-                encoder_profile, withdrawn_by_origin, moved_from_path, origin_file_stamp, tags_edited_at, art_edited_at, file_replaced_at
+                encoder_profile, withdrawn_by_origin, moved_from_path, origin_file_stamp, tags_edited_at, art_edited_at, file_replaced_at,
+            art_width, art_height
             ) VALUES (
                 $id, $path, $title, $subtitle, $artists, $album_artists, $is_compilation,
                 $album, $album_sort, $year, $track_number, $track_count, $disc_number, $disc_count,
@@ -468,7 +470,8 @@ namespace Flower.Persistence.Sql
                 $is_locally_downloaded, $origin_relative_path,
                 $title_sort, $artists_sort, $composers_sort,
                 $remember_playback_position, $resume_position_ticks, $ignore_when_shuffling, $volume_adjustment,
-                $encoder_profile, $withdrawn_by_origin, $moved_from_path, $origin_file_stamp, $tags_edited_at, $art_edited_at, $file_replaced_at
+                $encoder_profile, $withdrawn_by_origin, $moved_from_path, $origin_file_stamp, $tags_edited_at, $art_edited_at, $file_replaced_at,
+                $art_width, $art_height
             )
             ON CONFLICT (id) DO UPDATE SET
                 path = excluded.path,
@@ -531,7 +534,9 @@ namespace Flower.Persistence.Sql
                 origin_file_stamp = excluded.origin_file_stamp,
                 tags_edited_at = excluded.tags_edited_at,
                 art_edited_at = excluded.art_edited_at,
-                file_replaced_at = excluded.file_replaced_at;
+                file_replaced_at = excluded.file_replaced_at,
+                art_width = excluded.art_width,
+                art_height = excluded.art_height;
             """;
 
         private static readonly string[] UpsertParameterNames =
@@ -549,6 +554,7 @@ namespace Flower.Persistence.Sql
             "$title_sort", "$artists_sort", "$composers_sort",
             "$remember_playback_position", "$resume_position_ticks", "$ignore_when_shuffling", "$volume_adjustment",
             "$encoder_profile", "$withdrawn_by_origin", "$moved_from_path", "$origin_file_stamp", "$tags_edited_at", "$art_edited_at", "$file_replaced_at",
+            "$art_width", "$art_height",
         ];
 
         // Parameters are added once and then only have their Value reassigned
@@ -632,6 +638,8 @@ namespace Flower.Persistence.Sql
             p["$tags_edited_at"].Value = (object?)track.TagsEditedAt?.UtcTicks ?? DBNull.Value;
             p["$art_edited_at"].Value = (object?)track.ArtEditedAt?.UtcTicks ?? DBNull.Value;
             p["$file_replaced_at"].Value = (object?)track.FileReplacedAt?.UtcTicks ?? DBNull.Value;
+            p["$art_width"].Value = track.ArtWidth;
+            p["$art_height"].Value = track.ArtHeight;
         }
 
         private static object Nullable(string? value) => (object?)value ?? DBNull.Value;
@@ -702,6 +710,8 @@ namespace Flower.Persistence.Sql
             TagsEditedAt = reader.IsDBNull(59) ? null : new DateTimeOffset(reader.GetInt64(59), TimeSpan.Zero),
             ArtEditedAt = reader.IsDBNull(60) ? null : new DateTimeOffset(reader.GetInt64(60), TimeSpan.Zero),
             FileReplacedAt = reader.IsDBNull(61) ? null : new DateTimeOffset(reader.GetInt64(61), TimeSpan.Zero),
+            ArtWidth = (int)reader.GetInt64(62),
+            ArtHeight = (int)reader.GetInt64(63),
         };
 
         private static string? Text(SqliteDataReader reader, int ordinal) =>

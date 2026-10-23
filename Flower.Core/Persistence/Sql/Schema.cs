@@ -104,6 +104,10 @@ namespace Flower.Persistence.Sql
                 composers_sort            TEXT,
                 encoder_profile           TEXT,
 
+                -- See Track.ArtWidth: re-measured by every rescan.
+                art_width                 INTEGER NOT NULL DEFAULT 0,
+                art_height                INTEGER NOT NULL DEFAULT 0,
+
                 -- Flower's own per-track playback state, carried across
                 -- rescans by Library.CarryForwardMutableState.
                 remember_playback_position INTEGER NOT NULL DEFAULT 0,

@@ -121,6 +121,7 @@ public enum SmartField
     DiscNumber     = 24,
     Bitrate        = 25,
     SampleRate     = 26,
+    ArtworkSize    = 27,
 
     Duration       = 40,
 
@@ -132,6 +133,7 @@ public enum SmartField
     IsCompilation       = 71,
     IsLocallyDownloaded = 72,
     IgnoreWhenShuffling = 73,
+    HasArtwork          = 74,
 
     // The one field that is not a property of a track at all: "is / is not in
     // playlist X". What makes smart playlists compose, and the only source of

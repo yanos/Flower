@@ -8,8 +8,8 @@ namespace Flower.Services;
 // pixel. Every place that needed the size used to decode the whole picture for
 // it and throw the decode away - a 1400x1400 cover is ~7.8 MB of RGBA and a
 // JPEG decompression, once per cover on a cold scroll, and twice more each time
-// Track Info opened. The size is in the first few dozen bytes of a PNG or a
-// WebP, and behind a short walk of a JPEG's segments.
+// Track Info opened. The size is in the first few dozen bytes of a PNG, a WebP,
+// a GIF or a BMP, and behind a short walk of a JPEG's segments.
 //
 // Null for anything else - another format, a truncated or malformed header -
 // and the caller decodes to find out, as it always did. So a format missing
@@ -42,7 +42,7 @@ public static class ImageHeader
                 return Valid(Jpeg(stream));
             }
 
-            return Valid(Png(head) ?? WebP(head));
+            return Valid(Png(head) ?? WebP(head) ?? Gif(head) ?? Bmp(head));
         }
         catch (IOException)
         {
@@ -93,6 +93,29 @@ public static class ImageHeader
             return (UInt24(head[24..]) + 1, UInt24(head[27..]) + 1);
 
         return null;
+    }
+
+    // The logical screen's size, straight after the six-byte signature.
+    private static (int, int)? Gif(ReadOnlySpan<byte> head)
+    {
+        if (head.Length < 10 || !(head[..6].SequenceEqual("GIF87a"u8) || head[..6].SequenceEqual("GIF89a"u8)))
+            return null;
+
+        return (BinaryPrimitives.ReadUInt16LittleEndian(head[6..]), BinaryPrimitives.ReadUInt16LittleEndian(head[8..]));
+    }
+
+    // The file header, then the DIB header, whose own length says which kind
+    // it is: the 12-byte OS/2 one has 16-bit sizes, every later one 32-bit, with
+    // a negative height for a picture stored top row first.
+    private static (int, int)? Bmp(ReadOnlySpan<byte> head)
+    {
+        if (head.Length < 26 || head[0] != 'B' || head[1] != 'M')
+            return null;
+
+        if (BinaryPrimitives.ReadInt32LittleEndian(head[14..]) == 12)
+            return (BinaryPrimitives.ReadUInt16LittleEndian(head[18..]), BinaryPrimitives.ReadUInt16LittleEndian(head[20..]));
+
+        return (BinaryPrimitives.ReadInt32LittleEndian(head[18..]), Math.Abs(BinaryPrimitives.ReadInt32LittleEndian(head[22..])));
     }
 
     private static int UInt24(ReadOnlySpan<byte> bytes) => bytes[0] | bytes[1] << 8 | bytes[2] << 16;

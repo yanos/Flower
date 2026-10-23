@@ -45,7 +45,7 @@ public class LibraryDtoMapperTests
     // Both sides of the wire have to agree or the fields simply never arrive -
     // which is what happened to the technical fields for a whole release.
     [Fact]
-    public void The_sort_tags_the_playback_options_and_the_encoder_profile_are_sent()
+    public void The_sort_tags_the_playback_options_the_encoder_profile_and_the_artwork_size_are_sent()
     {
         var track = new Track
         {
@@ -56,6 +56,7 @@ public class LibraryDtoMapperTests
             RememberPlaybackPosition = true, ResumePosition = TimeSpan.FromSeconds(754),
             IgnoreWhenShuffling = true, VolumeAdjustment = -20,
             EncoderProfile = "LAME 3.100, VBR (V0)",
+            ArtWidth = 1400, ArtHeight = 1200,
         };
 
         var song = LibraryDtoMapper.ToTrackDto(track);
@@ -69,6 +70,9 @@ public class LibraryDtoMapperTests
         Assert.True(song.IgnoreWhenShuffling);
         Assert.Equal(-20, song.VolumeAdjustment);
         Assert.Equal("LAME 3.100, VBR (V0)", song.EncoderProfile);
+        Assert.Equal((1400, 1200), (song.ArtWidth, song.ArtHeight));
+        // And a song with no picture says nothing, rather than a size of zero.
+        Assert.Null(LibraryDtoMapper.ToTrackDto(new Track { Title = "Bare", Path = "/music/bare.mp3" }).ArtWidth);
     }
 
     // The downloading side names its saved file with this, so a leading dot or

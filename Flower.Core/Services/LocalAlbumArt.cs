@@ -119,16 +119,30 @@ public static class LocalAlbumArtReader
         try
         {
             using var tagFile = TagLib.File.Create(path);
-            var pic = tagFile.Tag.Pictures.FirstOrDefault();
-            return pic?.Data?.Data is { Length: > 0 } data
-                ? new LocalAlbumArt(data, string.IsNullOrEmpty(pic.MimeType) ? "image/jpeg" : pic.MimeType)
-                : null;
+            return PictureIn(tagFile);
         }
         catch (Exception)
         {
             return null;
         }
     }
+
+    // The same, from a file whose tags are already open - the importer's, which
+    // measures the picture (ArtworkDimensions) while it reads everything else
+    // and has no reason to open the file a second time to do it.
+    public static LocalAlbumArt? PictureIn(TagLib.File tagFile)
+    {
+        var pic = tagFile.Tag.Pictures.FirstOrDefault();
+        return pic?.Data?.Data is { Length: > 0 } data
+            ? new LocalAlbumArt(data, string.IsNullOrEmpty(pic.MimeType) ? "image/jpeg" : pic.MimeType)
+            : null;
+    }
+
+    // The cover.*/folder.* image in this folder, if there is one - the second
+    // half of ForFile, for the same caller: a scan asks it once per folder
+    // rather than once per song in it.
+    public static LocalAlbumArt? CoverFileIn(string directory, ILogger? logger = null) =>
+        CoverFileIn(directory, directory, logger)?.Art;
 
     public static LocalAlbumArt? ForFile(string? path, ILogger? logger = null) =>
         FirstFor([path], logger)?.Art;
@@ -180,9 +194,7 @@ public static class LocalAlbumArtReader
         try
         {
             using var tagFile = TagLib.File.Create(path);
-            var pic = tagFile.Tag.Pictures.FirstOrDefault();
-            if (pic?.Data?.Data is { Length: > 0 } data)
-                return new LocalAlbumArt(data, string.IsNullOrEmpty(pic.MimeType) ? "image/jpeg" : pic.MimeType);
+            return PictureIn(tagFile);
         }
         catch (Exception ex)
         {

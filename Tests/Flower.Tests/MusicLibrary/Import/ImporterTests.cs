@@ -289,6 +289,25 @@ public class ImporterTests : IDisposable
         Assert.False(string.IsNullOrEmpty(track.Codec));
     }
 
+    // What a smart playlist's Has Artwork and Artwork Size read (see
+    // Track.ArtWidth): the file's own picture first, a cover file beside it
+    // otherwise - the order the app draws them in - and nothing for neither.
+    [Fact]
+    public void Import_measures_the_embedded_picture_ahead_of_a_cover_file_beside_it()
+    {
+        var album = Dir("album");
+        File.WriteAllBytes(Path.Combine(album, "cover.png"), SyntheticPng.Build(300, 300));
+        Audio(album, "embedded.wav", f => f.Tag.Pictures = [new TagLib.Picture(new TagLib.ByteVector(SyntheticPng.Build(600, 500)))]);
+        Audio(album, "bare.wav");
+        Audio(Dir("no art"), "nothing.wav");
+
+        var tracks = NewImporter().Import([_root]).ToDictionary(t => Path.GetFileName(t.Path!));
+
+        Assert.Equal((600, 500), (tracks["embedded.wav"].ArtWidth, tracks["embedded.wav"].ArtHeight));
+        Assert.Equal((300, 300), (tracks["bare.wav"].ArtWidth, tracks["bare.wav"].ArtHeight));
+        Assert.Equal((0, 0), (tracks["nothing.wav"].ArtWidth, tracks["nothing.wav"].ArtHeight));
+    }
+
     // The formats a scan takes beyond the original five each have a tag layer
     // of their own in TagLib# - Xiph comments in Ogg Vorbis and Opus, ID3v2 in
     // an AIFF chunk, APEv2 on Monkey's Audio - so taking the extension is only

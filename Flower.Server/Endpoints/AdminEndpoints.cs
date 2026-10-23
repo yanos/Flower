@@ -809,14 +809,14 @@ public static class AdminEndpoints
             return Problems.NotFound("No track on this server has that id.");
 
         var written = 0;
-        var repainted = new List<(Track Track, DateTimeOffset EditedAt, string? FileStamp)>();
+        var repainted = new List<(Track Track, DateTimeOffset EditedAt, string? FileStamp, ArtworkDimensions Artwork)>();
         var now = DateTimeOffset.UtcNow;
         foreach (var candidate in candidates)
         {
             if (candidate.Path is { Length: > 0 } path && write(path))
             {
                 written++;
-                repainted.Add((candidate, now, null));
+                repainted.Add((candidate, now, null, ArtworkDimensions.OfFile(path)));
             }
         }
 

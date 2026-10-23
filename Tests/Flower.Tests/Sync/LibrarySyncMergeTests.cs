@@ -87,6 +87,7 @@ public class LibrarySyncMergeTests
             Bitrate = 320, SampleRate = 44100, Channels = 2, BitsPerSample = 16,
             Codec = "MPEG Version 1 Audio, Layer 3",
             EncoderProfile = "LAME 3.100, VBR (V0)",
+            ArtWidth = 1400, ArtHeight = 1200,
             ArtistsSort = "Beatles, The",
         };
 
@@ -109,6 +110,9 @@ public class LibrarySyncMergeTests
         Assert.Equal(16, merged.BitsPerSample);
         Assert.Equal("MPEG Version 1 Audio, Layer 3", merged.Codec);
         Assert.Equal("LAME 3.100, VBR (V0)", merged.EncoderProfile);
+        // And the picture's size, which is what a smart playlist of songs with
+        // no cover reads on a device that has none of their files.
+        Assert.Equal((1400, 1200), (merged.ArtWidth, merged.ArtHeight));
         // The sort tags too: a placeholder has no file to read them off, so
         // without this it would file under its display text while the origin
         // filed it somewhere else.

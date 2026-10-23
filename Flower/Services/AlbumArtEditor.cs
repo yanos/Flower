@@ -102,6 +102,7 @@ public sealed class AlbumArtEditor(
         ApplyAsync(
             path => AlbumArtWriter.TryWrite(path, bytes, mimeType, logger),
             (client, albumId) => client.SetCoverArtAsync(albumId, bytes, mimeType),
+            ArtworkDimensions.Of(bytes),
             "The artwork couldn't be written to");
 
     // The counterpart: takes the picture back out.
@@ -109,11 +110,18 @@ public sealed class AlbumArtEditor(
         ApplyAsync(
             path => AlbumArtWriter.TryRemove(path, logger),
             (client, albumId) => client.RemoveCoverArtAsync(albumId),
+            ArtworkDimensions.None,
             "The artwork couldn't be removed from");
 
+    // serverArtwork is what a song the server rewrote now measures, as far as
+    // this device can tell without its file: the picture sent, which goes into
+    // the tag and so is the one drawn, or none for a removal - where a cover
+    // file beside the server's copy would still be found, and the next pull's
+    // catalog says so (TrackDto.ArtWidth).
     private async Task<string?> ApplyAsync(
         Func<string, bool> writeLocal,
         Func<ServerAdminClient, string, Task<CoverArtWriteDto>> writeServer,
+        ArtworkDimensions serverArtwork,
         string failureVerb)
     {
         var targets = LocalTargets();
@@ -124,7 +132,12 @@ public sealed class AlbumArtEditor(
         string? message = null;
         if (targets.Count > 0)
         {
-            var failed = await Task.Run(() => targets.Count(track => !writeLocal(track.Path!)));
+            var failed = await Task.Run(() => targets.Count(track =>
+            {
+                var written = writeLocal(track.Path!);
+                ArtworkDimensions.OfFile(track.Path!).ApplyTo(track);
+                return !written;
+            }));
             if (failed > 0)
                 message = failed == targets.Count
                     ? $"{failureVerb} the file."
@@ -134,6 +147,11 @@ public sealed class AlbumArtEditor(
         {
             var (written, error) = await ApplyServerArtAsync(albumIds, writeServer);
             message = error ?? (written == 0 ? "The server didn't change any files." : null);
+            if (written > 0)
+            {
+                foreach (var track in tracks)
+                    serverArtwork.ApplyTo(track);
+            }
         }
 
         // The cached bitmap was decoded from bytes that are no longer what the

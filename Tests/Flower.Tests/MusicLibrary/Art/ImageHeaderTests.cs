@@ -77,6 +77,55 @@ public class ImageHeaderTests
         Assert.Equal((300, 200), ImageHeader.TryReadSize(webp));
     }
 
+    // Skia decodes GIF and BMP but encodes neither, so these two are built by
+    // hand - and held to what Skia reads back from them, which is the size a
+    // cover file of either kind is drawn at.
+    [Fact]
+    public void Reads_a_gif()
+    {
+        // A 1x1 frame on a 320x240 logical screen, which is the picture's size.
+        byte[] gif =
+        [
+            .. "GIF89a"u8, 0x40, 0x01, 0xF0, 0x00, 0x80, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF,
+            0x2C, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00,
+            0x02, 0x02, 0x44, 0x01, 0x00,
+            0x3B,
+        ];
+
+        Assert.Equal((320, 240), SkiaSize(gif));
+        Assert.Equal((320, 240), ImageHeader.TryReadSize(gif));
+    }
+
+    // A negative height is a picture stored top row first, not a negative one.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Reads_a_bmp(bool topDown)
+    {
+        const int width = 7, height = 3;
+        var stride = (width * 3 + 3) & ~3;
+        var bmp = new byte[54 + stride * height];
+        bmp[0] = (byte)'B';
+        bmp[1] = (byte)'M';
+        BinaryPrimitives.WriteInt32LittleEndian(bmp.AsSpan(2), bmp.Length);
+        BinaryPrimitives.WriteInt32LittleEndian(bmp.AsSpan(10), 54);
+        BinaryPrimitives.WriteInt32LittleEndian(bmp.AsSpan(14), 40);
+        BinaryPrimitives.WriteInt32LittleEndian(bmp.AsSpan(18), width);
+        BinaryPrimitives.WriteInt32LittleEndian(bmp.AsSpan(22), topDown ? -height : height);
+        BinaryPrimitives.WriteInt16LittleEndian(bmp.AsSpan(26), 1);
+        BinaryPrimitives.WriteInt16LittleEndian(bmp.AsSpan(28), 24);
+
+        Assert.Equal((width, height), SkiaSize(bmp));
+        Assert.Equal((width, height), ImageHeader.TryReadSize(bmp));
+    }
+
+    private static (int, int) SkiaSize(byte[] bytes)
+    {
+        using var bitmap = SKBitmap.Decode(bytes);
+        return (bitmap.Width, bitmap.Height);
+    }
+
     [Fact]
     public void Leaves_the_stream_where_it_was_so_the_decode_can_follow()
     {
@@ -95,7 +144,8 @@ public class ImageHeaderTests
 
         Assert.Null(ImageHeader.TryReadSize(jpeg[..20]));
         Assert.Null(ImageHeader.TryReadSize(SyntheticPng.Build(64, 64)[..20]));
-        Assert.Null(ImageHeader.TryReadSize("GIF89a not handled here"u8.ToArray()));
+        Assert.Null(ImageHeader.TryReadSize("GIF89a"u8.ToArray()));
+        Assert.Null(ImageHeader.TryReadSize("II*\0 a TIFF, not handled here"u8.ToArray()));
         Assert.Null(ImageHeader.TryReadSize([]));
     }
 }

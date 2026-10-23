@@ -261,6 +261,7 @@ public class LibraryStoreTests : IsolatedHome
             Comment = "Cm", Description = "D", Copyright = "Co", Lyrics = "L",
             Duration = TimeSpan.FromSeconds(123.456), Bitrate = 320, SampleRate = 44100,
             Channels = 2, BitsPerSample = 16, Codec = "flac", EncoderProfile = "LAME 3.100, VBR (V0)",
+            ArtWidth = 1400, ArtHeight = 1200,
             Path = "/music/a.flac",
             OriginDeviceFingerprint = "fp", OriginTrackId = "otid",
             OriginFileExtension = "flac", OriginAlbumArtId = "al-art",
@@ -290,6 +291,7 @@ public class LibraryStoreTests : IsolatedHome
         Assert.True(reloaded.IgnoreWhenShuffling);
         Assert.Equal(-35, reloaded.VolumeAdjustment);
         Assert.Equal("LAME 3.100, VBR (V0)", reloaded.EncoderProfile);
+        Assert.Equal((1400, 1200), (reloaded.ArtWidth, reloaded.ArtHeight));
         Assert.Equal("1999", reloaded.Year);
         Assert.Equal(3u, reloaded.TrackNumber);
         Assert.Equal(12u, reloaded.TrackCount);

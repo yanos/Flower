@@ -46,6 +46,22 @@ public class AlbumArtEditorTests
         Assert.Same(track, Assert.Single(changed!.Tracks));
     }
 
+    // The picture's size is stored on the track (Track.ArtWidth), so a smart
+    // playlist of songs without one has to hear that a song now has one - and
+    // that a removed one is gone.
+    [Fact]
+    public async Task Writing_and_removing_a_cover_measures_the_file_again()
+    {
+        var track = new Track { Title = "T", Path = NewTrackFile() };
+        var editor = new AlbumArtEditor([track], new Library([track]), new AppSettings(), null, null, NullLogger.Instance);
+
+        await editor.WriteAsync(SyntheticPng.Build(640, 480), "image/png");
+        Assert.Equal((640, 480), (track.ArtWidth, track.ArtHeight));
+
+        await editor.RemoveAsync();
+        Assert.Equal((0, 0), (track.ArtWidth, track.ArtHeight));
+    }
+
     [Fact]
     public async Task A_file_that_cannot_be_written_is_reported_rather_than_thrown()
     {
