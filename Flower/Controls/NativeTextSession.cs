@@ -63,8 +63,16 @@ internal sealed class NativeTextSession
             return null;
 
         var session = new NativeTextSession(box, topLevel, field);
-        field.Text = box.Text ?? "";
-        field.Select(box.SelectionStart, box.SelectionEnd);
+        var text = box.Text ?? "";
+        field.Text = text;
+        // A selection the box was given - a name selected whole to be typed
+        // over - is the field's. A bare caret is not: nothing types in the box
+        // itself, so its caret is wherever text put in by a binding left it,
+        // which is the start, and a box tapped back into began there.
+        if (box.SelectionStart != box.SelectionEnd)
+            field.Select(box.SelectionStart, box.SelectionEnd);
+        else
+            field.Select(text.Length, text.Length);
         field.TextChanged += session.OnFieldTextChanged;
         field.ReturnPressed += session.OnFieldReturn;
         field.EditingEnded += session.OnFieldEditingEnded;

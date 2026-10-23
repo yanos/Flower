@@ -61,6 +61,37 @@ public sealed class TextInputNativeEditingTests : IDisposable
         window.Close();
     }
 
+    // The Search box tapped back into after a suggestion put its text there.
+    [AvaloniaFact]
+    public void A_box_focused_again_types_on_from_the_end_of_its_text()
+    {
+        var (window, box, second) = Show();
+        box.Focus();
+        Pump();
+        box.Text = "Thelonious Monk";
+        second.Focus();
+        Pump();
+
+        box.Focus();
+        Pump();
+
+        Assert.Equal((15, 15), _factory.Created.Last().Selection);
+        window.Close();
+    }
+
+    [AvaloniaFact]
+    public void A_selection_the_box_was_given_is_the_fields()
+    {
+        var (window, box, _) = Show("Old Name");
+        box.SelectAll();
+
+        box.Focus();
+        Pump();
+
+        Assert.Equal((0, 8), Field().Selection);
+        window.Close();
+    }
+
     [AvaloniaFact]
     public void What_is_typed_in_the_field_is_the_boxs_text()
     {
