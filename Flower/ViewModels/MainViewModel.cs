@@ -955,6 +955,36 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // a track list.
     public bool IsShowingArtistPage => _selectedSidebarItem?.Kind == SidebarItemKind.Artists;
 
+    public bool IsShowingPlaylist => _selectedSidebarItem?.Kind == SidebarItemKind.Playlist;
+
+    // ── Download All (desktop) ───────────────────────────────────────────────
+    //
+    // One icon for every song on the page not yet on this device - a
+    // playlist's, or the picked artist's - the phone's album and playlist
+    // headers' Download All. Not over Songs: the whole library behind one
+    // click is a trap rather than a shortcut. Its own indicator, so it spins
+    // for as long as its batch runs (TrackDownloadRunner.DownloadAlbumAsync);
+    // an album opened in the grid has its tile's.
+    public BulkDownloadIndicatorViewModel PageDownload { get; } = new();
+
+    private IReadOnlyList<Track> PageDownloadTracks =>
+        IsShowingArtistPage ? ArtistPage.AllTracks
+        : IsShowingPlaylist ? DisplayedTracks
+        : [];
+
+    // Not while its own batch runs: a song landing mid-batch is a library
+    // change, and the last one going local would take the spinner away
+    // before the batch is over.
+    private void RefreshPageDownload()
+    {
+        if (PageDownload.IsDownloading)
+            return;
+        var availability = Availability;
+        PageDownload.IsDownloadable = PageDownloadTracks.Any(availability.IsDownloadable);
+    }
+
+    public Task DownloadPageAsync() => Downloads.DownloadAlbumAsync(PageDownload, PageDownloadTracks.ToList());
+
     public bool IsShowingDeviceDetail => _selectedSidebarItem?.Kind == SidebarItemKind.Device;
 
     // The browser's Server Settings page, shown in the content area beside the
@@ -1638,16 +1668,21 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
                 switch (e.PropertyName)
                 {
                     case nameof(LibraryBrowserViewModel.DisplayedTracks):
+                        OnPropertyChanged(nameof(PageSubtitle));
+                        RefreshPageDownload();
+                        break;
                     case nameof(LibraryBrowserViewModel.AlbumGridTiles):
                         OnPropertyChanged(nameof(PageSubtitle));
                         break;
                     case nameof(LibraryBrowserViewModel.SelectedSubItems):
                         RefreshArtistPage();
+                        RefreshPageDownload();
                         break;
                     // A rescan or a sync replaced the library: the cards hold
                     // the tracks they were built from.
                     case nameof(LibraryBrowserViewModel.SubListItems):
                         RefreshArtistPage(force: true);
+                        RefreshPageDownload();
                         OnPropertyChanged(nameof(PageSubtitle));
                         break;
                     case nameof(LibraryBrowserViewModel.VisibleSubListItems):
@@ -1664,6 +1699,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         {
             if (e.PropertyName is nameof(CurrentlyPlayingTrack) or nameof(Availability))
                 ArtistPage.UpdateRows(Availability, CurrentlyPlayingTrack?.Id);
+            if (e.PropertyName is nameof(Availability))
+                RefreshPageDownload();
         };
 
         Playlists = new PlaylistManagementViewModel(library, _sidebarItems, this);
@@ -2520,12 +2557,14 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         Queue.IsActive = IsShowingQueue;
         OnPropertyChanged(nameof(IsShowingTrackList));
         OnPropertyChanged(nameof(IsShowingArtistPage));
+        OnPropertyChanged(nameof(IsShowingPlaylist));
         OnPropertyChanged(nameof(IsShowingDeviceDetail));
         OnPropertyChanged(nameof(IsShowingServerSettings));
         OnPropertyChanged(nameof(ShowsPageHeader));
         OnPropertyChanged(nameof(PageTitle));
         OnPropertyChanged(nameof(PageSubtitle));
         RefreshArtistPage();
+        RefreshPageDownload();
         OnPropertyChanged(nameof(SelectedDevice));
         // A code typed for one server must never be submitted against
         // another, so the box empties whenever the selection moves.

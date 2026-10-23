@@ -85,6 +85,13 @@ public partial class AlbumGridRowControl : UserControl
             this.FindDataContext<MainViewModel>()?.PlayTracks(row.ExpandedTracks, shuffle);
     }
 
+    // Every song of the album not yet here, behind the tile's own icon.
+    private void Download_Requested(object? sender, DownloadIndicatorViewModel indicator)
+    {
+        if (_row is { ExpandedTracks.Count: > 0 } row && this.FindDataContext<MainViewModel>() is { } main)
+            _ = main.Downloads.DownloadAlbumAsync(indicator, row.ExpandedTracks);
+    }
+
     private void Menu_Click(object? sender, RoutedEventArgs e)
     {
         e.Handled = true;

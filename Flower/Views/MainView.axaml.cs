@@ -1912,6 +1912,10 @@ public partial class MainView : UserControl
         equalizerWindow.Show();
     }
 
+    // The playlist's or the artist's Download All - see MainViewModel.PageDownload.
+    private void PageDownload_Requested(object? sender, DownloadIndicatorViewModel indicator) =>
+        _viewModel?.DownloadPageAsync().Forget(Logger, "Downloading a page's songs");
+
     // The page's orders (BrowseSort), the one in use ticked with an arrow for
     // which way it runs - picked again, it turns round. The Artists page has
     // two lists to put in order, under a heading each.

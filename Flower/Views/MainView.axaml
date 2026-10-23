@@ -338,6 +338,24 @@
                   Orientation="Horizontal"
                   Spacing="10"
                   VerticalAlignment="Center">
+        <!-- Every song in the playlist not yet here (MainViewModel.
+             PageDownload), shown only while there is one. Its own IsVisible
+             is the indicator's answer, so the page gate goes on a wrapper -
+             the two are different questions. The Artists page has its own,
+             beside its play and shuffle. -->
+        <Panel IsVisible="{Binding IsShowingPlaylist}" VerticalAlignment="Center">
+          <Border Classes="floating" Width="40" Height="40" CornerRadius="20"
+                  IsVisible="{Binding #PlaylistDownloadButton.IsVisible}">
+            <controls:TrackDownloadButton x:Name="PlaylistDownloadButton"
+                                          DataContext="{Binding PageDownload}"
+                                          HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          IconSize="20"
+                                          IconPadding="10"
+                                          Label="Download all"
+                                          DownloadRequested="PageDownload_Requested"/>
+          </Border>
+        </Panel>
         <!-- The orders the page can be in, as the phone's screen menus
              offer them - see SortButton_Click. -->
         <Button x:Name="SortButton"
@@ -460,6 +478,19 @@
                           Command="{Binding ShuffleViewCommand}">
                     <materialIcons:MaterialIcon Kind="Shuffle" Width="24" Height="24"/>
                   </Button>
+                </Border>
+                <!-- Everything by them not yet here (MainViewModel.
+                     PageDownload), shown only while there is some. -->
+                <Border Classes="floating" Width="48" Height="48" CornerRadius="24"
+                        IsVisible="{Binding #ArtistDownloadButton.IsVisible}">
+                  <controls:TrackDownloadButton x:Name="ArtistDownloadButton"
+                                                DataContext="{Binding PageDownload}"
+                                                HorizontalAlignment="Center"
+                                                VerticalAlignment="Center"
+                                                IconSize="24"
+                                                IconPadding="10"
+                                                Label="Download all"
+                                                DownloadRequested="PageDownload_Requested"/>
                 </Border>
               </StackPanel>
             </Grid>
