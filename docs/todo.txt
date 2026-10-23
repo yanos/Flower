@@ -22,12 +22,3 @@ short term
  folder in playlist
  better song rating integration in the ui
  transform plans to actual documentation
-
-----
-
-Lambda's side is now writable: Docker mounts the volume read-write, and the NFS mount inside the container says rw. The refusal comes from the NAS. The write got Read-only file system, an error that only a server exporting the share read-only to this client gives. Once that's fixed there's a second layer, the file permissions.
-
-1. The export. The NAS (uid 1026 and group users suggest a Synology) gives lambda read-only access to /volume1/audio. In DSM that's Control Panel → Shared Folder → audio → Edit → NFS Permissions. Edit the rule matching 192.168.50.52 (or *) and set Privilege to Read/Write.
-2. Who the write happens as. Everything there is owned by 1026:100 with drwxr-xr-x, so only uid 1026 can write. The server writes as uid 1654, so even with a read/write export it would get "Permission denied". In the same NFS rule:
-   - Simplest: set Squash to Map all users to admin, so writes from lambda happen as the NAS admin. Keep the rule's hostname/IP set to 192.168.50.52 only, not *, so no other machine on your network gets that.
-   - Narrower: keep "No mapping" and give a NAS user with uid 1654 (or group 100 with group-write) write permission on the share. That's more fiddly on a Synology.
