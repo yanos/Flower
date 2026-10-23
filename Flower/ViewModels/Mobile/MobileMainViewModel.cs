@@ -1191,6 +1191,10 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
 
     public bool IsActingOnAPlaylist => PlaylistActionTarget?.Playlist != null;
 
+    // Whether the album menu was raised over an artist's name, whose stand-in
+    // tile (BuildArtistTile) is everything by them rather than one album.
+    private bool _isActingOnAnArtist;
+
     // A tile's tracks come in library order, so they are put in the album's
     // own before anything plays them - the order its track list shows. An
     // artist's stand-in tile holds several albums, which play one after
@@ -1895,6 +1899,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
                 return;
             _playlistTargets = null;
             ActionTarget = null;
+            _isActingOnAnArtist = false;
             AlbumActionTarget = tile;
             ActiveSheet = MobileSheet.AlbumActions;
         });
@@ -1907,6 +1912,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
                 return;
             _playlistTargets = null;
             ActionTarget = null;
+            _isActingOnAnArtist = false;
             AlbumActionTarget = BuildPlaylistHeader(playlist);
             PlaylistActionTarget = item;
             ActiveSheet = MobileSheet.AlbumActions;
@@ -1967,6 +1973,8 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             if (artist == null || BuildArtistTile(artist) is not { } tile)
                 return;
             OpenAlbumActionsCommand.Execute(tile);
+            _isActingOnAnArtist = true;
+            OnPropertyChanged(nameof(AlbumActions));
         });
         PlayAlbumActionTargetCommand = new RelayCommand(() => PlayAlbumActionTarget(shuffle: false));
         ShuffleAlbumActionTargetCommand = new RelayCommand(() => PlayAlbumActionTarget(shuffle: true));

@@ -87,8 +87,11 @@ public static class ActionMenus
     // isPlaylist: the phone's playlist row opens this same menu, since play,
     // shuffle and putting the songs somewhere are the same questions of a
     // different pile of songs; the playlist adds its own two.
+    // isArtist: the same menu over everything by one artist - an artist's
+    // name long-pressed on the phone, right-clicked in the desktop's column.
     public static IReadOnlyList<IReadOnlyList<ActionMenuEntry>> ForAlbum(
-        MenuFacts facts, bool isContinuing = false, bool isRecentlyPlayed = false, bool isPlaylist = false)
+        MenuFacts facts, bool isContinuing = false, bool isRecentlyPlayed = false, bool isPlaylist = false,
+        bool isArtist = false)
     {
         var where = new List<ActionMenuEntry>
         {
@@ -104,7 +107,9 @@ public static class ActionMenus
         // share nothing a tag says.
         if (!isPlaylist)
             what.Add(new(MenuAction.GetInfo, "Info", MaterialIconKind.InformationOutline));
-        if (Download(facts, "Download Album") is { } download)
+        // "Album" only where it is one - an artist's songs or a playlist's
+        // are not.
+        if (Download(facts, isPlaylist || isArtist ? "Download" : "Download Album") is { } download)
             what.Add(download);
         // The one way off the shelf without playing the album to its end.
         if (isContinuing)

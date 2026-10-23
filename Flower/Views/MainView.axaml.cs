@@ -101,6 +101,7 @@ public partial class MainView : UserControl
         AddHandler(DragDrop.DropEvent, OnSongsDropped);
 
         SidebarList.ContextRequested += SidebarList_ContextRequested;
+        SubList.ContextRequested += SubList_ContextRequested;
 
         // Drag album/artist names from SubList onto a sidebar playlist. Also
         // fully owns SubList's click-to-select behavior (see SubList_PointerPressed)
@@ -1196,40 +1197,48 @@ public partial class MainView : UserControl
         }
         else if (item is { Kind: SidebarItemKind.Playlist, Playlist: { } playlist })
         {
-            // Reuses the same IsEditing/RenameBox flow CreatePlaylistWithTrack
-            // already drops a freshly-created playlist into - see
-            // RenameBox_Loaded/KeyDown/LostFocus and CommitRename below.
-            var playNextItem = new MenuItem { Header = "Play Next" }.WithIcon(MaterialIconKind.PlaylistPlay);
-            playNextItem.Click += (_, _) => vm.PlayNext(playlist.Tracks.ToList());
-            _sidebarItemMenu.Items.Add(playNextItem);
-
-            var addToQueueItem = new MenuItem { Header = "Add to Queue" }.WithIcon(MaterialIconKind.PlaylistMusic);
-            addToQueueItem.Click += (_, _) => vm.AddToQueue(playlist.Tracks.ToList());
-            _sidebarItemMenu.Items.Add(addToQueueItem);
-            _sidebarItemMenu.Items.Add(new Separator());
-
-            var renameItem = new MenuItem { Header = "Rename Playlist" }.WithIcon(MaterialIconKind.Pencil);
-            renameItem.Click += (_, _) => BeginRename(item);
-            _sidebarItemMenu.Items.Add(renameItem);
-
-            var deleteItem = new MenuItem { Header = "Delete Playlist" }.WithIcon(MaterialIconKind.TrashCanOutline);
-            deleteItem.Click += async (_, _) => await vm.DeletePlaylistAsync(playlist);
-            _sidebarItemMenu.Items.Add(deleteItem);
+            // The phone's playlist menu (ActionMenus.ForAlbum over a
+            // playlist), with a smart playlist's two of its own after Rename.
+            // Rename reuses the same IsEditing/RenameBox flow
+            // CreatePlaylistWithTrack drops a freshly-created playlist into -
+            // see RenameBox_Loaded/KeyDown/LostFocus and CommitRename below.
+            var tracks = playlist.Tracks.ToList();
+            var groups = ActionMenus.ForAlbum(vm.MenuFactsFor(tracks, LibraryRemovalDialog.Service), isPlaylist: true);
+            var menu = DesktopActionMenu.Build(groups, async action =>
+            {
+                switch (action)
+                {
+                    case MenuAction.RenamePlaylist:
+                        BeginRename(item);
+                        break;
+                    case MenuAction.DeletePlaylist:
+                        await vm.DeletePlaylistAsync(playlist);
+                        break;
+                    default:
+                        await RunOverSongsAsync(action, tracks);
+                        break;
+                }
+            }, tracks, vm);
 
             // Only on a smart playlist, and only when there is a refresher to
             // recompute what the editor saves - see MainViewModel.SmartPlaylists.
-            if (playlist.IsSmart && vm.SmartPlaylists != null)
+            if (playlist.IsSmart && vm.SmartPlaylists != null
+                && menu.Items.OfType<MenuItem>().FirstOrDefault(i => (string?)i.Header == "Rename") is { } rename)
             {
-                _sidebarItemMenu.Items.Add(new Separator());
+                var at = menu.Items.IndexOf(rename) + 1;
 
                 var editRulesItem = new MenuItem { Header = "Edit Rules…" }.WithIcon(MaterialIconKind.Tune);
                 editRulesItem.Click += (_, _) => vm.EditSmartPlaylist(playlist);
-                _sidebarItemMenu.Items.Add(editRulesItem);
+                menu.Items.Insert(at, editRulesItem);
 
                 var convertItem = new MenuItem { Header = "Convert to Ordinary Playlist" }.WithIcon(MaterialIconKind.PlaylistEdit);
                 convertItem.Click += async (_, _) => await vm.ConvertPlaylistToOrdinary(playlist);
-                _sidebarItemMenu.Items.Add(convertItem);
+                menu.Items.Insert(at + 1, convertItem);
             }
+
+            PlatformContextMenu.Open(menu, SidebarList);
+            e.Handled = true;
+            return;
         }
         // A rename can only persist against a resolved fingerprint (see
         // DeviceNicknameStore, keyed by fingerprint rather than the mDNS
@@ -1262,6 +1271,76 @@ public partial class MainView : UserControl
 
         PlatformContextMenu.Open(_sidebarItemMenu, SidebarList);
         e.Handled = true;
+    }
+
+    // ── A menu over a pile of songs ─────────────────────────────────────────────
+    //
+    // What an artist's or a playlist's menu does that is the same whatever the
+    // pile is - each runs these through the same dialogs the song and album
+    // menus use. Play and Shuffle take the songs in the order given.
+
+    private async Task RunOverSongsAsync(MenuAction action, IReadOnlyList<Track> tracks)
+    {
+        if (_viewModel is not { } vm || tracks.Count == 0)
+            return;
+
+        switch (action)
+        {
+            case MenuAction.Play:
+                vm.PlayTracks(tracks, shuffle: false);
+                break;
+            case MenuAction.Shuffle:
+                vm.PlayTracks(tracks, shuffle: true);
+                break;
+            case MenuAction.PlayNext:
+                vm.PlayNext(tracks);
+                break;
+            case MenuAction.AddToQueue:
+                vm.AddToQueue(tracks);
+                break;
+            case MenuAction.GetInfo:
+                OpenTrackInfo(tracks);
+                break;
+            case MenuAction.Download:
+                StartDownload(tracks);
+                break;
+            case MenuAction.DeleteLocalFiles:
+                await LocalFileDeletionDialog.DeleteAsync(TopLevel.GetTopLevel(this), vm, tracks);
+                break;
+            case MenuAction.RemoveFromLibrary:
+                await LibraryRemovalDialog.RemoveAsync(TopLevel.GetTopLevel(this), tracks);
+                break;
+        }
+    }
+
+    // Right-click on a name in the Artists column: the album menu, over
+    // everything by that artist, as the phone's long press on a name opens
+    // it. Over every artist picked when the one clicked is among them, and
+    // that artist alone otherwise - the sidebar's rule, the Finder's.
+    private void SubList_ContextRequested(object? sender, ContextRequestedEventArgs e)
+    {
+        if (_viewModel is not { IsShowingArtistPage: true } vm || e.Source is not Visual visual)
+            return;
+        if (visual.FindAncestorOfType<ListBoxItem>(includeSelf: true)?.DataContext is not string clicked)
+            return;
+        e.Handled = true;
+
+        IReadOnlyList<string> artists = vm.SelectedSubItems.Count > 1 && vm.SelectedSubItems.Contains(clicked)
+            ? vm.VisibleSubListItems.Where(vm.SelectedSubItems.Contains).ToList()
+            : [clicked];
+        // Album by album, each in its own order, as the phone's artist menu
+        // queues them.
+        var tracks = vm.GetTracksForSubListItems(artists)
+            .OrderBy(t => TrackListBuilder.SortKey(t.Album))
+            .ThenBy(t => t.DiscNumber)
+            .ThenBy(t => t.TrackNumber)
+            .ToList();
+        if (tracks.Count == 0)
+            return;
+
+        var groups = ActionMenus.ForAlbum(vm.MenuFactsFor(tracks, LibraryRemovalDialog.Service), isArtist: true);
+        var menu = DesktopActionMenu.Build(groups, action => RunOverSongsAsync(action, tracks).Forget(Logger, "An artist's menu"), tracks, vm);
+        PlatformContextMenu.Open(menu, SubList);
     }
 
     // ── Drag a track onto a sidebar playlist ────────────────────────────────────

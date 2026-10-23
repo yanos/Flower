@@ -67,6 +67,20 @@ public class ActionMenusTests
         Assert.False(download.IsEnabled);
     }
 
+    // One song left to fetch is "Download Album" only over an album: an
+    // artist's songs or a playlist's are not one.
+    [Fact]
+    public void Download_names_an_album_only_over_an_album()
+    {
+        var one = new MenuFacts(Downloadable: 1, IsBulkDownloading: false, LocalFiles: 0, Removable: 0);
+
+        Assert.Contains("Download Album", Titles(ActionMenus.ForAlbum(one)));
+        Assert.Contains("Download", Titles(ActionMenus.ForAlbum(one, isArtist: true)));
+        Assert.Contains("Download", Titles(ActionMenus.ForAlbum(one, isPlaylist: true)));
+        Assert.DoesNotContain("Download Album", Titles(ActionMenus.ForAlbum(one, isArtist: true)));
+        Assert.DoesNotContain("Download Album", Titles(ActionMenus.ForAlbum(one, isPlaylist: true)));
+    }
+
     [Fact]
     public void An_album_can_be_played_in_order_or_shuffled_on_every_head()
     {

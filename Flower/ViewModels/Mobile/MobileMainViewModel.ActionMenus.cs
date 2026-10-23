@@ -29,7 +29,8 @@ public partial class MobileMainViewModel
             Main.MenuFactsFor(AlbumActionTargetTracks(), _libraryRemoval),
             isContinuing: CanForgetAlbumActionTargetProgress,
             isRecentlyPlayed: Main.Home.IsOnRecentlyPlayed(tile),
-            isPlaylist: IsActingOnAPlaylist))
+            isPlaylist: IsActingOnAPlaylist,
+            isArtist: _isActingOnAnArtist))
         : [];
 
     public ICommand RunSongActionCommand => _runSongAction ??= new RelayCommand<ActionMenuEntry>(entry =>
