@@ -69,6 +69,10 @@ public sealed class SimulatedFlowerServer : IDisposable
     public List<string> Requests { get; } = new();
     public int PlaylistApplyCount { get; private set; }
 
+    // True makes POST /playlists/apply fail with a 500, taking nothing - the
+    // way a server a release behind answers a playlist it cannot read.
+    public bool FailsPlaylistApply { get; set; }
+
     // Where this server keeps its music, when a test gives it somewhere - the
     // folder an upload lands in (LibraryIngest) and the one RelativePath is
     // relative to. Null leaves the server with paths that name no real file,
@@ -175,6 +179,11 @@ public sealed class SimulatedFlowerServer : IDisposable
                     return;
                 case ("POST", ApplyPath):
                 {
+                    if (FailsPlaylistApply)
+                    {
+                        context.Response.StatusCode = 500;
+                        return;
+                    }
                     var manifest = await ReadJsonAsync<PlaylistSyncManifestDto>(context);
                     var applied = PlaylistSyncMapper.ApplyPushedManifest(Library, manifest!, ListenerOf(context));
                     PlaylistApplyCount++;

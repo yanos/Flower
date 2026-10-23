@@ -203,6 +203,13 @@ public class PlaylistSyncService
         // PlaylistSyncMapper.ApplyPushedManifest).
         var deletedHere = new List<Guid>();
 
+        // The playlists whose new baseline is this device's version rather
+        // than one the server sent: agreed only once the push below lands.
+        // Saved before it, a push that failed left a playlist made here with
+        // a baseline the server never had, so the next session found it
+        // missing there, unedited here, and deleted it as deleted there.
+        var agreedOnPush = new HashSet<Guid>();
+
         foreach (var decision in decisions)
         {
             var name = decision.Local?.Name ?? decision.Remote?.Name ?? "?";
@@ -221,7 +228,10 @@ public class PlaylistSyncService
             {
                 newBaselines.Remove(decision.PlaylistId);
                 if (decision.Remote != null)
+                {
                     deletedHere.Add(decision.PlaylistId);
+                    agreedOnPush.Add(decision.PlaylistId);
+                }
                 continue;
             }
 
@@ -236,6 +246,8 @@ public class PlaylistSyncService
 
             finalPlaylists.Add(resolved);
             newBaselines[decision.PlaylistId] = resolved.UpdatedAt;
+            if (decision.Kind != PlaylistSyncDecisionKind.NoChange && ReferenceEquals(resolved, decision.Local))
+                agreedOnPush.Add(decision.PlaylistId);
         }
 
         // Persisted by Library.PlaylistsChanged. Laid over what the user did
@@ -254,7 +266,10 @@ public class PlaylistSyncService
         // An edit made here mid-session and combined with the other side's
         // is a new version, and is agreed once the push below lands.
         foreach (var playlist in installed.Where(p => result.Merged.Contains(p.Id)))
+        {
             newBaselines[playlist.Id] = playlist.UpdatedAt;
+            agreedOnPush.Add(playlist.Id);
+        }
 
         // One that could not be combined is not agreed at all: its baseline
         // goes back to what it was, so the session the edit scheduled finds
@@ -270,7 +285,17 @@ public class PlaylistSyncService
                 newBaselines.Remove(id);
         }
 
-        await _syncStateStore.SaveBaselinesAsync(device.Fingerprint, newBaselines);
+        // What the server already holds is agreed now, whatever the push does;
+        // the rest keeps the baseline it came into the session with.
+        var agreedBeforePush = new Dictionary<Guid, DateTimeOffset>(newBaselines);
+        foreach (var id in agreedOnPush)
+        {
+            if (baselines.TryGetValue(id, out var agreed))
+                agreedBeforePush[id] = agreed;
+            else
+                agreedBeforePush.Remove(id);
+        }
+        await _syncStateStore.SaveBaselinesAsync(device.Fingerprint, agreedBeforePush);
 
         try
         {
@@ -286,6 +311,8 @@ public class PlaylistSyncService
             await AddSignedIdentityHeadersAsync(postRequest, bodyBytes);
             using var postResponse = await Http.SendAsync(postRequest);
             postResponse.EnsureSuccessStatusCode();
+            if (agreedOnPush.Count > 0)
+                await _syncStateStore.SaveBaselinesAsync(device.Fingerprint, newBaselines);
             _logger.LogInformation("Playlist sync with {Alias}: pushed {Count} playlist(s) to their /apply successfully",
                 device.Alias, installed.Count);
 

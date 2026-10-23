@@ -604,6 +604,47 @@ public class SyncScenarioTests : PinnedDataDirectory
         Assert.Equal(["Shared"], Titles(server.Library.Playlists.Single()));
     }
 
+    // A phone a release ahead of its server made a smart playlist on a field
+    // the server could not read, so the push failed - and the next session
+    // deleted the playlist on the phone, as one the server had deleted.
+    [Fact]
+    public async Task A_playlist_made_here_whose_push_failed_goes_up_on_the_next_sync()
+    {
+        var a = ServerTrack("A");
+        using var server = new SimulatedFlowerServer([a]);
+        var client = NewClient();
+        await client.PullLibraryAsync(server);
+        client.Library.AddPlaylist(new Playlist("Shitty Cover", [client.Single("A")]));
+
+        server.FailsPlaylistApply = true;
+        await client.SyncPlaylistsAsync(server);
+        server.FailsPlaylistApply = false;
+        await client.SyncPlaylistsAsync(server);
+
+        Assert.Equal(["A"], Titles(client.Playlist("Shitty Cover")));
+        Assert.Equal("Shitty Cover", server.Library.Playlists.Single().Name);
+    }
+
+    [Fact]
+    public async Task A_playlist_deleted_here_whose_push_failed_is_deleted_there_on_the_next_sync()
+    {
+        var a = ServerTrack("A");
+        using var server = new SimulatedFlowerServer([a]);
+        server.Library.AddPlaylist(new Playlist("Old Mix", [a]));
+        var client = NewClient();
+        await client.PullLibraryAsync(server);
+        await client.SyncPlaylistsAsync(server);
+        client.Library.RemovePlaylist(client.Playlist("Old Mix"));
+
+        server.FailsPlaylistApply = true;
+        await client.SyncPlaylistsAsync(server);
+        server.FailsPlaylistApply = false;
+        await client.SyncPlaylistsAsync(server);
+
+        Assert.Empty(client.Library.Playlists);
+        Assert.Empty(server.Library.Playlists);
+    }
+
     [Fact]
     public async Task The_same_song_twice_in_a_playlist_stays_twice_on_both_sides()
     {
