@@ -2,11 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
@@ -49,6 +51,11 @@ public partial class TrackInfoWindow : Window
     // really" nor "open it full size".
     private LocalAlbumArt? _art;
     private PixelSize? _artPixelSize;
+
+    // A Find Online still searching or downloading, and the covers it found
+    // while they are on show - both dropped on Prev/Next and on closing.
+    private CancellationTokenSource? _findArt;
+    private ArtworkViewer? _viewer;
 
     private Track _track => _tracks[_index];
 
@@ -134,6 +141,7 @@ public partial class TrackInfoWindow : Window
 
     private void Populate(IReadOnlyList<Track> tracks)
     {
+        StopFindingArt();
         _info.Load(tracks);
         _ = LoadAlbumArtAsync();
     }
@@ -216,6 +224,7 @@ public partial class TrackInfoWindow : Window
 
     private void SetUpArtworkDropTarget()
     {
+        Closed += (_, _) => StopFindingArt();
         DragDrop.SetAllowDrop(ArtDropTarget, true);
         ArtDropTarget.AddHandler(DragDrop.DragOverEvent, ArtDropTarget_DragOver);
         ArtDropTarget.AddHandler(DragDrop.DropEvent, ArtDropTarget_Drop);
@@ -312,6 +321,7 @@ public partial class TrackInfoWindow : Window
 
         ChangeArtButton.IsEnabled = false;
         PasteArtButton.IsEnabled = false;
+        FindArtButton.IsEnabled = false;
         RemoveArtButton.IsEnabled = false;
 
         var message = await change(editor);
@@ -334,6 +344,82 @@ public partial class TrackInfoWindow : Window
             return;
         }
         await WriteArtAsync(png, ClipboardArt.MimeType);
+    }
+
+    // A cover found online for the album the Info tab's boxes name - the
+    // boxes rather than the song, so a misspelt album can be corrected and
+    // searched again before OK. Chosen over the whole window
+    // (OnlineCoverPicker, shared with the phone's sheet), and written at once
+    // like Change, once Use This Cover is pressed.
+    private async void FindArtButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_editTracks.Count == 0 || !ArtEditor().CanWrite)
+            return;
+
+        var track = _editTracks[0];
+        var album = OnlineCoverPicker.FirstNonBlank(_info.Album.Text, track.Album);
+        var artist = OnlineCoverPicker.FirstNonBlank(_info.AlbumArtists.Text, _info.Artists.Text, track.EffectiveAlbumArtist);
+        var title = OnlineCoverPicker.FirstNonBlank(_info.Title.Text, track.Title);
+
+        StopFindingArt();
+        var find = _findArt = new CancellationTokenSource();
+        FindArtButton.IsEnabled = false;
+        FindArtButton.Content = "Searching…";
+
+        var finder = new OnlineCoverArt(_logger);
+        IReadOnlyList<OnlineCoverArt.Candidate>? found;
+        try
+        {
+            found = await finder.SearchAsync(album, artist, title, find.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        finally
+        {
+            FindArtButton.Content = "Find Online…";
+            FindArtButton.IsEnabled = ArtEditor().CanWrite;
+        }
+
+        if (find.IsCancellationRequested)
+            return;
+        if (OnlineCoverPicker.NothingFound(found, album, title) is { } nothing)
+        {
+            ArtworkInfoText.Text = nothing;
+            return;
+        }
+
+        var viewer = _viewer = new ArtworkViewer { OffersChoice = true };
+        viewer.Closed += (_, _) =>
+        {
+            find.Cancel();
+            if (_viewer == viewer)
+                _viewer = null;
+        };
+        viewer.Open(this);
+        var message = await OnlineCoverPicker.ChooseAsync(viewer, finder, found!,
+            WriteArtAsync,
+            UpdatingFilesText,
+            find.Token);
+        if (message is not null && !find.IsCancellationRequested)
+            ArtworkInfoText.Text = message;
+    }
+
+    private void StopFindingArt()
+    {
+        _findArt?.Cancel();
+        _findArt = null;
+        _viewer?.Close();
+    }
+
+    // "Updating 12 files…": how many songs will have the picture rewritten
+    // into them, which for a song of the server's is its whole album
+    // (AlbumArtEditor.FileCount).
+    private string UpdatingFilesText()
+    {
+        var count = ArtEditor().FileCount;
+        return count == 1 ? "Updating 1 file\u2026" : $"Updating {count} files\u2026";
     }
 
     private void OpenArtButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
@@ -503,6 +589,7 @@ public partial class TrackInfoWindow : Window
         ArtDropHint.IsVisible = !hasArt && canWrite;
         ChangeArtButton.IsEnabled = canWrite;
         PasteArtButton.IsEnabled = canWrite;
+        FindArtButton.IsEnabled = canWrite;
         RemoveArtButton.IsEnabled = canWrite && hasArt;
         OpenArtButton.IsEnabled = hasArt;
 

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -15,7 +16,7 @@ using Microsoft.Extensions.Logging;
 namespace Flower.Services;
 
 // A cover found on the internet for an album that has none, or the wrong one -
-// the phone Track Info's Find Online. Three searches at once, none needing a
+// the phone Track Info's Find Online. Four searches at once, none needing a
 // key or an account:
 //
 //   - Apple's iTunes Search API, in this device's own country's store and in
@@ -29,6 +30,13 @@ namespace Flower.Services;
 //     cover. That is where the albums the stores lack were found: asked for
 //     forty albums from a real library, iTunes alone came back empty for
 //     eleven, and MusicBrainz had a cover for most of those.
+//   - Bandcamp, which is where an independent label keeps its catalogue -
+//     often its whole website, and otherwise the store it links to - and
+//     where a self-released record is sold when it is sold anywhere. Its
+//     search is the one the site's own search box uses, and finds an album
+//     whether it sits on the label's page or the artist's. A label's own
+//     website is not searched: there is no knowing where it is from the
+//     Publisher tag, nor where on it an album's cover would be.
 //
 // The results are ranked together (Rank), so a source only adds candidates
 // that name the album. Null only when every search failed (no connection), as
@@ -64,8 +72,9 @@ public sealed partial class OnlineCoverArt(ILogger logger)
     public sealed record Candidate(string Album, string Artist, string ArtworkUrl);
 
     // Searched as an album when there is an album name, and otherwise as the
-    // song - whose result still carries its album's art. MusicBrainz is asked
-    // only for an album: its covers belong to releases, not songs.
+    // song - whose result still carries its album's art. MusicBrainz and
+    // Bandcamp are asked only for an album: their covers belong to releases,
+    // not songs.
     public async Task<IReadOnlyList<Candidate>?> SearchAsync(string album, string artist, string title, CancellationToken ct = default)
     {
         var byAlbum = !string.IsNullOrWhiteSpace(album);
@@ -77,7 +86,10 @@ public sealed partial class OnlineCoverArt(ILogger logger)
             .Select(country => SearchITunesAsync(country, name, artist, byAlbum, ct))
             .ToList();
         if (byAlbum)
+        {
             searches.Add(SearchMusicBrainzAsync(name, artist, ct));
+            searches.Add(SearchBandcampAsync(name, artist, ct));
+        }
 
         var answers = await Task.WhenAll(searches);
         ct.ThrowIfCancellationRequested();
@@ -91,8 +103,41 @@ public sealed partial class OnlineCoverArt(ILogger logger)
         return ranked;
     }
 
-    public async Task<byte[]> DownloadAsync(Candidate candidate, CancellationToken ct = default) =>
-        await Http.GetByteArrayAsync(candidate.ArtworkUrl, ct);
+    public sealed record Download(Candidate Candidate, byte[] Bytes);
+
+    // Every cover found, fetched at once and offered largest first (Largest):
+    // which is biggest is only known once it has arrived, since a source's
+    // size is a ceiling and the original is served when it is smaller. There
+    // are at most MaxCandidates of them, so the wait is the slowest one's and
+    // paging between them afterwards costs nothing. One that will not
+    // download is left out rather than offered as an empty page.
+    public async Task<IReadOnlyList<Download>> DownloadAllAsync(IReadOnlyList<Candidate> candidates, CancellationToken ct = default)
+    {
+        var downloads = await Task.WhenAll(candidates.Select(candidate => TryDownloadAsync(candidate, ct)));
+        ct.ThrowIfCancellationRequested();
+        return Largest(downloads.OfType<Download>().ToList());
+    }
+
+    private async Task<Download?> TryDownloadAsync(Candidate candidate, CancellationToken ct)
+    {
+        try
+        {
+            return new Download(candidate, await Http.GetByteArrayAsync(candidate.ArtworkUrl, ct));
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested)
+        {
+            logger.LogWarning(ex, "Could not download the cover found for {Album}", candidate.Album);
+            return null;
+        }
+    }
+
+    // Most pixels first, by the image header alone; equal ones keep Rank's
+    // order, and a picture whose size cannot be read goes last.
+    public static IReadOnlyList<Download> Largest(IReadOnlyList<Download> downloads) =>
+        downloads.OrderByDescending(download => PixelsIn(download.Bytes)).ToList();
+
+    private static long PixelsIn(byte[] bytes) =>
+        ArtworkDimensions.Of(bytes) is { IsNone: false } size ? (long)size.Width * size.Height : 0;
 
     // This device's country's store first, then the US one, which is what the
     // search answers from when no country is named and the largest catalogue.
@@ -145,6 +190,46 @@ public sealed partial class OnlineCoverArt(ILogger logger)
             return [.. covers.OfType<Candidate>()];
         });
     }
+
+    // Albums only, by the words a person would type into Bandcamp's own
+    // search box - which is what this asks, through the endpoint that box
+    // calls. It answers a POST of JSON, with its best few matches.
+    private async Task<IReadOnlyList<Candidate>?> SearchBandcampAsync(string album, string artist, CancellationToken ct)
+    {
+        var term = $"{LeadArtist(artist)} {BareName(album)}".Trim();
+        var body = BandcampSearchBody(term);
+        return await FetchAsync("Bandcamp", term, album, artist, ct, async token =>
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, BandcampSearchUrl)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json"),
+            };
+            request.Headers.UserAgent.TryParseAdd(UserAgent);
+            using var response = await Http.SendAsync(request, token);
+            response.EnsureSuccessStatusCode();
+            return ParseBandcamp(await response.Content.ReadAsStringAsync(token));
+        });
+    }
+
+    // What Bandcamp's search box sends: "a" for albums only, and no signed-in
+    // fan whose purchases would otherwise come first. Written by hand, as the
+    // answers are read, so the trimmed NativeAOT build needs no contract.
+    private static string BandcampSearchBody(string term)
+    {
+        using var buffer = new MemoryStream();
+        using (var json = new Utf8JsonWriter(buffer))
+        {
+            json.WriteStartObject();
+            json.WriteString("search_text", term);
+            json.WriteString("search_filter", "a");
+            json.WriteBoolean("full_page", false);
+            json.WriteNull("fan_id");
+            json.WriteEndObject();
+        }
+        return Encoding.UTF8.GetString(buffer.ToArray());
+    }
+
+    private const string BandcampSearchUrl = "https://bandcamp.com/api/bcsearch_public_api/1/autocomplete_elastic";
 
     // Each listing on its own: one the archive is slow to answer, or fails,
     // costs that candidate and not the albums MusicBrainz found beside it.
@@ -260,6 +345,32 @@ public sealed partial class OnlineCoverArt(ILogger logger)
                     artist.Append(StringOf(credit, "name")).Append(StringOf(credit, "joinphrase"));
             }
             found.Add(new Candidate(name, artist.ToString(), $"https://coverartarchive.org/release-group/{id}"));
+        }
+        return found;
+    }
+
+    // A Bandcamp search: each album's name, who it is by, and its cover at
+    // 1200 pixels (the "_10" rendition). The "img" it answers with is a
+    // 100-pixel thumbnail of the same picture, so the cover is addressed by
+    // its art_id instead; the original ("_0") can be a large scan, as at the
+    // Cover Art Archive.
+    public static IReadOnlyList<Candidate> ParseBandcamp(string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        if (!doc.RootElement.TryGetProperty("auto", out var auto)
+            || !auto.TryGetProperty("results", out var results)
+            || results.ValueKind != JsonValueKind.Array)
+            return [];
+
+        var found = new List<Candidate>();
+        foreach (var result in results.EnumerateArray())
+        {
+            var name = StringOf(result, "name");
+            if (StringOf(result, "type") != "a" || name is null
+                || !result.TryGetProperty("art_id", out var art) || art.ValueKind != JsonValueKind.Number
+                || !art.TryGetInt64(out var artId))
+                continue;
+            found.Add(new Candidate(name, StringOf(result, "band_name") ?? "", $"https://f4.bcbits.com/img/a{artId}_10.jpg"));
         }
         return found;
     }

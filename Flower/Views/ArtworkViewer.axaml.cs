@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 
 using Avalonia;
 using Avalonia.Controls;
@@ -8,16 +9,20 @@ using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 
-namespace Flower.Views.Mobile;
+using Flower.Services;
+
+namespace Flower.Views;
 
 // A cover on the whole screen, black around it: what tapping the cover in
-// Track Info opens, and where the covers Find Online came back with are shown
-// one at a time, stepped through by the arrows or a swipe, to be taken or
-// passed over (OffersChoice).
+// the phone's Track Info opens, and where the covers Find Online came back
+// with are shown one at a time, on either head, stepped through by the
+// arrows, a swipe or the arrow keys, to be taken or passed over
+// (OffersChoice - see OnlineCoverPicker).
 //
 // Placed on the window's overlay layer rather than inside the sheet, so it
 // covers the status bar and the home indicator too - the sheet itself stops
-// below the one, and every view under it would show around the picture.
+// below the one, and every view under it would show around the picture. On
+// the desktop the window is Track Info's own, so it fills that window.
 public partial class ArtworkViewer : UserControl
 {
     private OverlayLayer? _layer;
@@ -46,6 +51,40 @@ public partial class ArtworkViewer : UserControl
         // Handled ones too: a swipe that starts on a button is still a swipe.
         AddHandler(PointerPressedEvent, Viewer_PointerPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
         AddHandler(PointerReleasedEvent, Viewer_PointerReleased, RoutingStrategies.Tunnel, handledEventsToo: true);
+        KeyDown += Viewer_KeyDown;
+    }
+
+    // A picture for the full screen: its own size, or 2048 wide where it is
+    // wider - sharp on any phone and most monitors, without holding a
+    // 3000-pixel decode. The size is the picture's own, for the caption.
+    private const int ScreenPixels = 2048;
+
+    public static (Bitmap Bitmap, PixelSize Size)? DecodeForScreen(byte[] bytes)
+    {
+        try
+        {
+            using var stream = new MemoryStream(bytes);
+            // The size from the header where it can be read, so the picture is
+            // decoded once, at the size it is shown.
+            if (ImageHeader.TryReadSize(stream) is { } header)
+            {
+                var wanted = new PixelSize(header.Width, header.Height);
+                return (wanted.Width <= ScreenPixels ? new Bitmap(stream) : Bitmap.DecodeToWidth(stream, ScreenPixels), wanted);
+            }
+
+            var full = new Bitmap(stream);
+            var size = full.PixelSize;
+            if (size.Width <= ScreenPixels)
+                return (full, size);
+
+            full.Dispose();
+            stream.Position = 0;
+            return (Bitmap.DecodeToWidth(stream, ScreenPixels), size);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     public bool IsOpen => _layer != null;
@@ -131,7 +170,13 @@ public partial class ArtworkViewer : UserControl
         if (TopLevel.GetTopLevel(anchor)?.InsetsManager?.SafeAreaPadding is { } safeArea)
             Frame.Margin = safeArea;
 
-        Dispatcher.UIThread.Post(() => Opacity = 1);
+        Dispatcher.UIThread.Post(() =>
+        {
+            Opacity = 1;
+            // For the keys: a desktop's arrows step, Return takes the cover
+            // and Escape closes, as a phone's hardware keyboard does too.
+            Focus();
+        });
     }
 
     public void Close()
@@ -196,6 +241,28 @@ public partial class ArtworkViewer : UserControl
     {
         if (CanGoForward)
             NextRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void Viewer_KeyDown(object? sender, KeyEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case Key.Escape:
+                Close();
+                break;
+            case Key.Left when OffersChoice:
+                GoBack();
+                break;
+            case Key.Right when OffersChoice:
+                GoForward();
+                break;
+            case Key.Enter when OffersChoice && UseButton.IsEnabled:
+                Accepted?.Invoke(this, EventArgs.Empty);
+                break;
+            default:
+                return;
+        }
+        e.Handled = true;
     }
 
     private void Viewer_PointerPressed(object? sender, PointerPressedEventArgs e) =>

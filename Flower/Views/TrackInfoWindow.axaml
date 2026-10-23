@@ -329,7 +329,8 @@
 
       <!-- ── Artwork ──
            The art at a size worth looking at, plus the ways to move a picture
-           in and out of it: drop a file on it or pick one to replace it, drag
+           in and out of it: drop a file on it or pick one to replace it, find
+           one online (chosen over the whole window - OnlineCoverPicker), drag
            it off to anywhere that takes a file to get a full-size copy,
            double-click to open it at its own size, Remove to take it out of the
            tag. Every one of those writes straight into the file's own tag -
@@ -381,6 +382,8 @@
             <Button x:Name="ChangeArtButton"  Content="Change…"        Height="30" Padding="12,0" VerticalContentAlignment="Center" Click="ChangeArtButton_Click"/>
             <Button x:Name="PasteArtButton"   Content="Paste"          Height="30" Padding="12,0" VerticalContentAlignment="Center" Click="PasteArtButton_Click"
                     ToolTip.Tip="Use the image on the clipboard as the cover."/>
+            <Button x:Name="FindArtButton"    Content="Find Online…"   Height="30" Padding="12,0" VerticalContentAlignment="Center" Click="FindArtButton_Click"
+                    ToolTip.Tip="Search online for the cover of the album named on the Info tab."/>
             <Button x:Name="RemoveArtButton"  Content="Remove"         Height="30" Padding="12,0" VerticalContentAlignment="Center" Click="RemoveArtButton_Click"/>
             <Button x:Name="OpenArtButton"    Content="Open Full Size" Height="30" Padding="12,0" VerticalContentAlignment="Center" Click="OpenArtButton_Click"/>
           </StackPanel>

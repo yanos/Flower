@@ -126,7 +126,8 @@
              frame's colour (PaletteChrome, Theme.axaml): an icon in one of the
              ovals or rings (a round button, a pill, the ring round play), like
              the rim round it; every icon on a surface marked .chromeIcons (the
-             song and album menus, Add to Playlist, the hamburger's card); and
+             song and album menus, Add to Playlist, the hamburger's card, the
+             cover buttons in the phone's Info); and
              one marked .chrome itself (the "..." on a row, a drag handle,
              the stepper's minus and plus). An oval holding an icon and its
              words (Shuffle, New Playlist) holds them in a StackPanel, one step

@@ -204,18 +204,17 @@ public partial class TrackInfoView : UserControl
         await WriteArtAsync(track, png, ClipboardArt.MimeType);
     }
 
-    // A cover found online for the album the boxes name (OnlineCoverArt) -
-    // the boxes rather than the song, so a misspelt album can be corrected
-    // and searched again before Save. What comes back is shown on the whole
-    // screen, one candidate at a time, and only Use This Cover writes it.
+    // A cover found online for the album the boxes name (OnlineCoverArt),
+    // chosen on the whole screen - see OnlineCoverPicker, which the desktop's
+    // Track Info shares.
     private async void FindArt_Click(object? sender, RoutedEventArgs e)
     {
         if (_track is not { } track)
             return;
 
-        var album = FirstNonBlank(_info?.Album.Text, track.Album);
-        var artist = FirstNonBlank(_info?.AlbumArtists.Text, _info?.Artists.Text, track.EffectiveAlbumArtist);
-        var title = FirstNonBlank(_info?.Title.Text, track.Title);
+        var album = OnlineCoverPicker.FirstNonBlank(_info?.Album.Text, track.Album);
+        var artist = OnlineCoverPicker.FirstNonBlank(_info?.AlbumArtists.Text, _info?.Artists.Text, track.EffectiveAlbumArtist);
+        var title = OnlineCoverPicker.FirstNonBlank(_info?.Title.Text, track.Title);
 
         _findArt?.Cancel();
         var find = _findArt = new CancellationTokenSource();
@@ -241,93 +240,21 @@ public partial class TrackInfoView : UserControl
 
         if (find.IsCancellationRequested || _track != track)
             return;
-        if (found is null)
+        if (OnlineCoverPicker.NothingFound(found, album, title) is { } nothing)
         {
-            ShowArtMessage("Couldn't search online. Check the connection, then try again.");
-            return;
-        }
-        if (found.Count == 0)
-        {
-            var named = string.IsNullOrWhiteSpace(album) ? title : album;
-            ShowArtMessage($"No cover found online for \u201c{named}\u201d. Check the album and artist below, then try again.");
+            ShowArtMessage(nothing);
             return;
         }
 
         var viewer = OpenArtwork(offersChoice: true);
-        var index = 0;
-        var shown = 0;
-        byte[]? picked = null;
-
-        async Task ShowCandidateAsync()
-        {
-            var showing = ++shown;
-            var candidate = found[index];
-            picked = null;
-            viewer.SetPosition(index, found.Count);
-            viewer.ShowStatus("Downloading…", busy: true);
-
-            byte[] bytes;
-            try
-            {
-                bytes = await finder.DownloadAsync(candidate, find.Token);
-            }
-            catch (Exception ex) when (!find.IsCancellationRequested)
-            {
-                _logger.LogWarning(ex, "Could not download the cover found for {Album}", candidate.Album);
-                if (showing == shown)
-                    viewer.ShowStatus("This cover couldn't be downloaded.");
-                return;
-            }
-            catch (OperationCanceledException)
-            {
-                return;
-            }
-
-            var decoded = await Task.Run(() => DecodeForScreen(bytes));
-            if (showing != shown || !viewer.IsOpen)
-            {
-                decoded?.Bitmap.Dispose();
-                return;
-            }
-            if (decoded is not { } picture)
-            {
-                viewer.ShowStatus("This cover couldn't be read.");
-                return;
-            }
-
-            picked = bytes;
-            var source = OnlineCoverArt.SourceDomain(candidate.ArtworkUrl) is { } domain ? $" \u00b7 {domain}" : "";
-            var position = found.Count > 1 ? $" \u00b7 {index + 1} of {found.Count}" : "";
-            viewer.ShowPicture(picture.Bitmap,
-                string.IsNullOrEmpty(candidate.Artist) ? candidate.Album : $"{candidate.Album} \u2014 {candidate.Artist}",
-                TrackInfoViewModel.Resolution(picture.Size) + source + position);
-        }
-
-        viewer.PreviousRequested += async (_, _) =>
-        {
-            index--;
-            await ShowCandidateAsync();
-        };
-        viewer.NextRequested += async (_, _) =>
-        {
-            index++;
-            await ShowCandidateAsync();
-        };
-        viewer.Accepted += async (_, _) =>
-        {
-            if (picked is not { } bytes)
-                return;
-            viewer.SetBusy(true, UpdatingFilesText());
-            await WriteArtAsync(track, bytes, LocalAlbumArtReader.MimeTypeForBytes(bytes) ?? "image/jpeg");
-            viewer.Close();
-        };
         viewer.Closed += (_, _) => find.Cancel();
-
-        await ShowCandidateAsync();
+        var message = await OnlineCoverPicker.ChooseAsync(viewer, finder, found!,
+            (bytes, mimeType) => WriteArtAsync(track, bytes, mimeType),
+            () => UpdatingFilesText(),
+            find.Token);
+        if (message is not null && _track == track)
+            ShowArtMessage(message);
     }
-
-    private static string FirstNonBlank(params string?[] values) =>
-        values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v))?.Trim() ?? "";
 
     private Task WriteArtAsync(Track track, byte[] bytes, string mimeType) =>
         ChangeArtAsync(track, editor => editor.WriteAsync(bytes, mimeType));
@@ -420,38 +347,6 @@ public partial class TrackInfoView : UserControl
         RemoveArtPill.IsVisible = bitmap is not null && ArtButtons.IsVisible;
     }
 
-    // A picture for the full screen: its own size, or 2048 wide where it is
-    // wider - sharp on any phone, without holding a 3000-pixel decode.
-    private const int ScreenPixels = 2048;
-
-    private static (Bitmap Bitmap, PixelSize Size)? DecodeForScreen(byte[] bytes)
-    {
-        try
-        {
-            using var stream = new MemoryStream(bytes);
-            // The size from the header where it can be read, so the picture is
-            // decoded once, at the size it is shown.
-            if (ImageHeader.TryReadSize(stream) is { } header)
-            {
-                var wanted = new PixelSize(header.Width, header.Height);
-                return (wanted.Width <= ScreenPixels ? new Bitmap(stream) : Bitmap.DecodeToWidth(stream, ScreenPixels), wanted);
-            }
-
-            var full = new Bitmap(stream);
-            var size = full.PixelSize;
-            if (size.Width <= ScreenPixels)
-                return (full, size);
-
-            full.Dispose();
-            stream.Position = 0;
-            return (Bitmap.DecodeToWidth(stream, ScreenPixels), size);
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
     private static byte[]? ReencodeAsPng(byte[] bytes)
     {
         try
@@ -476,7 +371,7 @@ public partial class TrackInfoView : UserControl
 
         e.Handled = true;
         var viewer = OpenArtwork(offersChoice: false);
-        if (await Task.Run(() => DecodeForScreen(bytes)) is not { } picture)
+        if (await Task.Run(() => ArtworkViewer.DecodeForScreen(bytes)) is not { } picture)
         {
             viewer.ShowStatus("This cover couldn't be read.");
             return;

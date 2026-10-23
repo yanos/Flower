@@ -1,13 +1,14 @@
 using System.Linq;
 
 using Flower.Services;
+using Flower.Tests.TestSupport;
 
 using Xunit;
 
 namespace Flower.Tests.MusicLibrary.Art;
 
 // Find Online's half that is not the network: reading what the iTunes search,
-// MusicBrainz and the Cover Art Archive answer with, what is asked of them,
+// MusicBrainz, the Cover Art Archive and Bandcamp answer with, what is asked of them,
 // and deciding which of the results are the album being looked for. A search
 // by name answers with everything sharing a word with it, so what this leaves
 // out matters as much as the order.
@@ -116,6 +117,26 @@ public class OnlineCoverArtTests
         Assert.Single(ranked);
     }
 
+    // A wide cover can be smaller than a square one, and a picture whose size
+    // cannot be read is still offered, after the rest; equal sizes keep the
+    // order Rank gave them.
+    [Fact]
+    public void The_cover_with_the_most_pixels_is_offered_first()
+    {
+        OnlineCoverArt.Download Found(string name, byte[] bytes) => new(Album(name, "Fleetwood Mac"), bytes);
+
+        var largest = OnlineCoverArt.Largest(
+        [
+            Found("unreadable", [1, 2, 3]),
+            Found("wide", SyntheticPng.Build(60, 20)),
+            Found("square", SyntheticPng.Build(40, 40)),
+            Found("also square", SyntheticPng.Build(40, 40)),
+            Found("small", SyntheticPng.Build(10, 10)),
+        ]);
+
+        Assert.Equal(["square", "also square", "wide", "small", "unreadable"], largest.Select(d => d.Candidate.Album));
+    }
+
     [Fact]
     public void Nothing_to_search_for_finds_nothing()
     {
@@ -163,6 +184,28 @@ public class OnlineCoverArtTests
 
         Assert.Equal("https://a.test/front-1200.jpg", OnlineCoverArt.ParseCoverArtListing(json));
         Assert.Null(OnlineCoverArt.ParseCoverArtListing("""{"images":[{"front":false,"image":"https://a.test/b.jpg"}]}"""));
+    }
+
+    // Bandcamp's answer carries a 100-pixel thumbnail; the cover is asked for
+    // by its art id at 1200 instead. Its search also lists artists, labels
+    // and tracks when not told otherwise, none of which is an album's cover.
+    [Fact]
+    public void Reads_bandcamp_albums_at_their_large_size()
+    {
+        const string json = """
+            {"auto":{"results":[
+              {"type":"a","art_id":1319487325,"name":"Transit Of Venus","band_name":"Hangedup & Tony Conrad",
+               "img":"https://f4.bcbits.com/img/1319487325_3.jpg"},
+              {"type":"b","art_id":42,"name":"Constellation"},
+              {"type":"a","art_id":null,"name":"No art"}
+            ]}}
+            """;
+
+        var album = Assert.Single(OnlineCoverArt.ParseBandcamp(json));
+        Assert.Equal("Transit Of Venus", album.Album);
+        Assert.Equal("Hangedup & Tony Conrad", album.Artist);
+        Assert.Equal("https://f4.bcbits.com/img/a1319487325_10.jpg", album.ArtworkUrl);
+        Assert.Equal("bcbits.com", OnlineCoverArt.SourceDomain(album.ArtworkUrl));
     }
 
     // MusicBrainz indexes a credit word by word, so the album and its lead

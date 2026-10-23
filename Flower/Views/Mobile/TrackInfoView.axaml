@@ -191,8 +191,9 @@
       <StackPanel Margin="0,4,0,16">
 
         <!-- The cover, its size in pixels under it, and beside it the ways to
-             change it: a photo from the phone, one found online for the album
-             named in the boxes below, or the clipboard's image (ClipboardArt).
+             change it: a photo from the phone, the clipboard's image
+             (ClipboardArt), or one found online for the album named in the
+             boxes below.
              Each writes at once, like the desktop Artwork tab's buttons,
              rather than waiting for Save: a picture goes into the file, not
              into a box. Tapping the cover shows it on the whole screen. -->
@@ -239,7 +240,9 @@
                          HorizontalAlignment="Center"
                          IsVisible="False" />
             </StackPanel>
-            <StackPanel Grid.Column="1" x:Name="ArtButtons" Spacing="8" VerticalAlignment="Top">
+            <!-- .chromeIcons: the buttons' glyphs in the frame's colour, like
+                 the bin over the cover (App.axaml). -->
+            <StackPanel Grid.Column="1" x:Name="ArtButtons" Classes="chromeIcons" Spacing="8" VerticalAlignment="Top">
               <Button x:Name="ChoosePhotoButton"
                       Classes="soft"
                       HorizontalAlignment="Stretch"
@@ -249,15 +252,6 @@
                   <TextBlock Text="Choose Photo" VerticalAlignment="Center" />
                 </StackPanel>
               </Button>
-              <Button x:Name="FindArtButton"
-                      Classes="soft"
-                      HorizontalAlignment="Stretch"
-                      Click="FindArt_Click">
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                  <materialIcons:MaterialIcon Kind="ImageSearch" />
-                  <TextBlock x:Name="FindArtLabel" Text="Find Online" VerticalAlignment="Center" />
-                </StackPanel>
-              </Button>
               <Button x:Name="PasteArtButton"
                       Classes="soft"
                       HorizontalAlignment="Stretch"
@@ -265,6 +259,15 @@
                 <StackPanel Orientation="Horizontal" Spacing="8">
                   <materialIcons:MaterialIcon Kind="ContentPaste" />
                   <TextBlock Text="Paste" VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+              <Button x:Name="FindArtButton"
+                      Classes="soft"
+                      HorizontalAlignment="Stretch"
+                      Click="FindArt_Click">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <materialIcons:MaterialIcon Kind="ImageSearch" />
+                  <TextBlock x:Name="FindArtLabel" Text="Find Online" VerticalAlignment="Center" />
                 </StackPanel>
               </Button>
             </StackPanel>

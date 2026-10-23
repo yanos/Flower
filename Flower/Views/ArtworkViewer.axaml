@@ -1,8 +1,9 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
-             x:Class="Flower.Views.Mobile.ArtworkViewer"
+             x:Class="Flower.Views.ArtworkViewer"
              Background="Black"
+             Focusable="True"
              Opacity="0">
 
   <UserControl.Transitions>
