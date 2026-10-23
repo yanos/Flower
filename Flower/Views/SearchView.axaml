@@ -1,0 +1,185 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:sys="using:System"
+             xmlns:controls="clr-namespace:Flower.Controls"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:vm="clr-namespace:Flower.ViewModels"
+             xmlns:mvm="clr-namespace:Flower.ViewModels.Mobile"
+             x:Class="Flower.Views.SearchView"
+             x:DataType="vm:MainViewModel">
+
+  <!-- The desktop's Search page - MainViewModel.Search, the phone's Search
+       tab's SearchViewModel: one box, finishing the words typed from past
+       searches and the library's names; with nothing in it, the past searches
+       to pick again; with something, the albums, artists and songs it finds
+       across the whole library. An album opens in the Albums grid and an
+       artist on the Artists page, the way the phone's results lead to their
+       screens; the songs are a list of their own (AlbumTrackList), played,
+       selected and given the song menu as an album's are. Each section is
+       capped (SearchViewModel.MaxResultsPerSection), so the page is a plain
+       scroller rather than a virtualizing list. -->
+  <UserControl.Styles>
+    <Style Selector="TextBlock.sectionTitle">
+      <Setter Property="FontSize" Value="24" />
+      <Setter Property="FontWeight" Value="Bold" />
+      <Setter Property="Margin" Value="8,24,0,8" />
+    </Style>
+    <!-- Home's cover buttons (HomeView's Button.homeTile), here at a fixed
+         width since the covers wrap rather than fill a shelf's columns. -->
+    <Style Selector="Button.homeTile">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="8" />
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="Width" Value="196" />
+      <Setter Property="VerticalAlignment" Value="Top" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="Button.artistResult, Button.recentSearch">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+    </Style>
+    <Style Selector="Button.artistResult">
+      <Setter Property="Padding" Value="8" />
+      <Setter Property="Width" Value="300" />
+    </Style>
+    <Style Selector="Button.recentSearch">
+      <Setter Property="Padding" Value="10,7" />
+    </Style>
+  </UserControl.Styles>
+
+  <Grid RowDefinitions="Auto,*">
+    <StackPanel Grid.Row="0" Margin="28,18,24,10" Spacing="12">
+      <TextBlock Classes="screenTitle" Text="Search" FontSize="44" />
+      <!-- The suggestions are SearchViewModel's (SearchSuggestion.For), not
+           the box's own filtering of a list - FilterMode None shows them as
+           they are, past searches first. Picking one fills the box with it. -->
+      <AutoCompleteBox x:Name="Box"
+                       Text="{Binding Search.Query, Mode=TwoWay}"
+                       ItemsSource="{Binding Search.Suggestions}"
+                       ValueMemberBinding="{Binding Text, x:DataType=vm:SearchSuggestion}"
+                       FilterMode="None"
+                       MinimumPrefixLength="1"
+                       Watermark="Artists, albums and songs"
+                       FontSize="16"
+                       MaxWidth="560"
+                       HorizontalAlignment="Left"
+                       Width="560"
+                       KeyDown="Box_KeyDown"
+                       LostFocus="Box_LostFocus">
+        <AutoCompleteBox.ItemTemplate>
+          <DataTemplate x:DataType="vm:SearchSuggestion">
+            <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,3">
+              <materialIcons:MaterialIcon Kind="{Binding Icon}" Classes="chrome" Width="16" Height="16"
+                                          Opacity="0.6" VerticalAlignment="Center" />
+              <TextBlock Text="{Binding Text}" VerticalAlignment="Center" />
+              <TextBlock Text="{Binding Detail}" IsVisible="{Binding HasDetail}"
+                         VerticalAlignment="Center"
+                         Foreground="{DynamicResource AppTextSecondaryBrush}" />
+            </StackPanel>
+          </DataTemplate>
+        </AutoCompleteBox.ItemTemplate>
+      </AutoCompleteBox>
+    </StackPanel>
+
+    <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+      <StackPanel Margin="20,0,24,24">
+
+        <!-- Nothing typed: what was looked for before, to look for again. -->
+        <StackPanel IsVisible="{Binding !Search.HasQuery}">
+          <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding Search.HasRecentSearches}">
+            <TextBlock Grid.Column="0" Classes="sectionTitle" Text="Recent Searches" />
+            <Button Grid.Column="1" Content="Clear"
+                    VerticalAlignment="Bottom" Margin="0,0,0,8"
+                    Command="{Binding Search.ClearRecentSearchesCommand}" />
+          </Grid>
+          <ItemsControl ItemsSource="{Binding Search.RecentSearches}" MaxWidth="560" HorizontalAlignment="Left">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="sys:String">
+                <Button Classes="recentSearch"
+                        Command="{Binding $parent[UserControl].((vm:MainViewModel)DataContext).Search.ApplySuggestionCommand}"
+                        CommandParameter="{Binding}">
+                  <StackPanel Orientation="Horizontal" Spacing="10">
+                    <materialIcons:MaterialIcon Kind="History" Classes="chrome" Width="16" Height="16" Opacity="0.6" />
+                    <TextBlock Text="{Binding}" FontSize="14" />
+                  </StackPanel>
+                </Button>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+
+        <!-- Albums: Home's covers, wrapping. A click opens the album in the
+             Albums grid; the "..." and a right-click open its menu, as on
+             Home (MainView). -->
+        <TextBlock Classes="sectionTitle" Text="Albums" IsVisible="{Binding Search.HasAlbumResults}" />
+        <ItemsControl ItemsSource="{Binding Search.AlbumResults}" IsVisible="{Binding Search.HasAlbumResults}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <WrapPanel />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="mvm:AlbumTileViewModel">
+              <Button Classes="homeTile" Click="Album_Click">
+                <controls:AlbumCard Tile="{Binding}" />
+              </Button>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- Artists: the phone's artist row - their covers as a circle, the
+             name, how much there is. A click opens their page. -->
+        <TextBlock Classes="sectionTitle" Text="Artists" IsVisible="{Binding Search.HasArtistResults}" />
+        <ItemsControl ItemsSource="{Binding Search.ArtistResults}" IsVisible="{Binding Search.HasArtistResults}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <WrapPanel />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="mvm:ArtistPickerRow">
+              <Button Classes="artistResult" Click="Artist_Click">
+                <Grid ColumnDefinitions="Auto,*">
+                  <controls:AlbumArtView Grid.Column="0"
+                                         Covers="{Binding Cover.CoverArt}"
+                                         Width="56" Height="56"
+                                         ArtCornerRadius="28"
+                                         Margin="0,0,12,0" />
+                  <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                    <TextBlock Text="{Binding Name}" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{Binding SummaryText}" FontSize="12"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}" />
+                  </StackPanel>
+                </Grid>
+              </Button>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <TextBlock Classes="sectionTitle" Text="Songs" IsVisible="{Binding Search.HasSongResults}" />
+        <controls:AlbumTrackList DataContext="{Binding SearchSongs}"
+                                 ShowsArtist="True"
+                                 Classes="divided"
+                                 IsVisible="{Binding $parent[UserControl].((vm:MainViewModel)DataContext).Search.HasSongResults}" />
+
+        <!-- One line for every section, since usually none or all of them
+             are over the cap together - see SearchViewModel.HasMoreResults. -->
+        <TextBlock Text="Showing the first matches of each kind. Type more to narrow them down."
+                   IsVisible="{Binding Search.HasMoreResults}"
+                   FontSize="12" Opacity="0.6" Margin="8,16,0,0" />
+
+        <StackPanel HorizontalAlignment="Center" Spacing="8" Opacity="0.6" MaxWidth="360" Margin="0,64,0,0"
+                    IsVisible="{Binding Search.ShowsNoResults}">
+          <materialIcons:MaterialIcon Kind="Magnify" Classes="chrome" Width="40" Height="40" />
+          <TextBlock Text="No results" FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center" />
+          <TextBlock Text="Nothing in the library matches what you typed."
+                     FontSize="13" TextWrapping="Wrap" TextAlignment="Center" />
+        </StackPanel>
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

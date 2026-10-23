@@ -11,8 +11,9 @@
              Focusable="True">
 
   <!-- One album's songs as a short list of their own, numbered: the Albums
-       grid's expanded album (AlbumGridRowControl, with a line between each)
-       and an album card on the Artists page (MainView). A click
+       grid's expanded album (AlbumGridRowControl, with a line between each),
+       an album card on the Artists page (MainView), and - unnumbered, each
+       with its artist and album - the songs the Search page found. A click
        selects, Ctrl/Cmd and Shift extend, the arrows move, Enter or a
        double-click plays the album from that song, and a right-click - or
        the row's "..." - opens the song menu. The state is the DataContext's
@@ -62,7 +63,17 @@
                        Foreground="{DynamicResource AppTextSecondaryBrush}"/>
             <controls:TrackDownloadButton Grid.Column="1" Margin="0,0,4,0"
                                           DownloadRequested="TrackRow_DownloadRequested"/>
-            <TextBlock Grid.Column="2" Text="{Binding Track.Title}" TextTrimming="CharacterEllipsis" FontSize="13"/>
+            <!-- Under the title, whose it is - the Search page's songs, which
+                 are from every album rather than one. -->
+            <StackPanel Grid.Column="2" VerticalAlignment="Center">
+              <TextBlock Text="{Binding Track.Title}" TextTrimming="CharacterEllipsis" FontSize="13"/>
+              <TextBlock Text="{Binding ArtistAndAlbumText}"
+                         IsVisible="{Binding #Root.ShowsArtist}"
+                         TextTrimming="CharacterEllipsis"
+                         FontSize="12"
+                         Margin="0,1,0,0"
+                         Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+            </StackPanel>
             <TextBlock Grid.Column="3" Text="{Binding Track.Duration, Converter={StaticResource DurationConverter}}"
                        FontSize="13" Opacity="0.6" Margin="8,0,0,0"/>
             <!-- The song menu, for anyone who does not know to right-click -

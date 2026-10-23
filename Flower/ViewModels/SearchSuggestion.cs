@@ -7,7 +7,7 @@ using Material.Icons;
 using Flower.Models;
 using Flower.Services;
 
-namespace Flower.ViewModels.Mobile;
+namespace Flower.ViewModels;
 
 public enum SearchSuggestionKind { Recent, Artist, Album, Song }
 

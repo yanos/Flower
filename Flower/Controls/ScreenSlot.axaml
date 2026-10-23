@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
+             xmlns:shared="clr-namespace:Flower.ViewModels"
              xmlns:controls="clr-namespace:Flower.Controls"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="Flower.Controls.ScreenSlot"
@@ -226,7 +227,7 @@
 
     <!-- Suggestions for what is being typed - past searches, then artists,
          albums and songs - dropped down under the box while it has focus and
-         holds something: see MobileSearchViewModel.Suggestions. The width of the
+         holds something: see SearchViewModel.Suggestions. The width of the
          box (the buttons' 12 + 40, and its own 10, in from each side), and after the screen's content so it is drawn over the results
          rather than under them. The rows cannot take focus: a press on one
          would otherwise take it from the box, which closes this dropdown
@@ -257,7 +258,7 @@
            an album, a song - and an album or a song whose it is. -->
       <ItemsControl ItemsSource="{Binding Search.Suggestions}" Margin="0,4">
         <ItemsControl.ItemTemplate>
-          <DataTemplate x:DataType="vm:SearchSuggestion">
+          <DataTemplate x:DataType="shared:SearchSuggestion">
             <Button Classes="pickerRow"
                     Focusable="False"
                     Padding="12,8"

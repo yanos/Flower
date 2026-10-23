@@ -517,9 +517,10 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
             SidebarItemKind.Artists
                 => new List<Track>(),
             // Home draws its shelves from the library itself (HomeViewModel),
-            // and the Queue its rows from the queue (QueueViewModel), so a
-            // row per track would be built for nothing.
-            SidebarItemKind.Device or SidebarItemKind.Home or SidebarItemKind.Queue
+            // Search its results (SearchViewModel), and the Queue its rows
+            // from the queue (QueueViewModel), so a row per track would be
+            // built for nothing.
+            SidebarItemKind.Device or SidebarItemKind.Home or SidebarItemKind.Search or SidebarItemKind.Queue
                 => new List<Track>(),
             // Never-played tracks would otherwise just clutter the bottom/top of
             // a "newest played first" sort with a meaningless null - History only

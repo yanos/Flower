@@ -200,6 +200,7 @@ public partial class MainWindow : Window
                 SetIcon("Add Playlist to Queue", MaterialIconKind.PlaylistMusic);
                 SetIcon("Edit Rules…",     MaterialIconKind.Tune);
                 SetIcon("Home",            MaterialIconKind.HomeOutline);
+                SetIcon("Search",          MaterialIconKind.Magnify);
                 SetIcon("Queue",           MaterialIconKind.PlaylistMusic);
                 SetIcon("History",         MaterialIconKind.ClockTimeEightOutline);
                 SetIcon("Songs",           MaterialIconKind.Music);
@@ -267,7 +268,8 @@ public partial class MainWindow : Window
                 _ = Vm()?.ConvertPlaylistToOrdinary(playlist);
         });
 
-        // View - the sidebar's Library rows, Cmd/Ctrl+1 to 6 in its order.
+        // View - the sidebar's Library rows, Cmd/Ctrl+1 to 6 in its order,
+        // and Search, Cmd/Ctrl+F.
         foreach (var (kind, key) in MainView.SectionKeys)
         {
             var section = kind;

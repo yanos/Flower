@@ -31,6 +31,17 @@ public partial class AlbumTrackList : UserControl
         set => SetValue(ShowsNumbersProperty, value);
     }
 
+    public static readonly StyledProperty<bool> ShowsArtistProperty =
+        AvaloniaProperty.Register<AlbumTrackList, bool>(nameof(ShowsArtist));
+
+    // Each song's artist and album under its title - the Search page's songs,
+    // which come from everywhere.
+    public bool ShowsArtist
+    {
+        get => GetValue(ShowsArtistProperty);
+        set => SetValue(ShowsArtistProperty, value);
+    }
+
     public AlbumTrackList()
     {
         InitializeComponent();

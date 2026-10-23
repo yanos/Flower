@@ -95,6 +95,7 @@
           <NativeMenu>
             <!-- The sidebar's Library rows, in its order. -->
             <NativeMenuItem Header="Home"/>
+            <NativeMenuItem Header="Search"/>
             <NativeMenuItem Header="Queue"/>
             <NativeMenuItem Header="History"/>
             <NativeMenuItem Header="Songs"/>

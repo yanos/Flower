@@ -948,7 +948,55 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public bool IsShowingQueue => _selectedSidebarItem?.Kind == SidebarItemKind.Queue;
 
     public bool IsShowingTrackList =>
-        !IsShowingDeviceDetail && !IsShowingAlbumGrid && !IsShowingHome && !IsShowingServerSettings && !IsShowingArtistPage;
+        !IsShowingDeviceDetail && !IsShowingAlbumGrid && !IsShowingHome && !IsShowingSearch && !IsShowingServerSettings && !IsShowingArtistPage;
+
+    // ── Search (desktop) ─────────────────────────────────────────────────────
+    //
+    // The phone's Search tab as a page of its own: one box, and what it finds
+    // across the whole library as albums, artists and songs - the same
+    // SearchViewModel, suggestions and past searches included. Not the page
+    // header's filter, which narrows the page it heads; this is a lookup that
+    // leads to an album or an artist, or plays a song.
+    public bool IsShowingSearch => _selectedSidebarItem?.Kind == SidebarItemKind.Search;
+
+    // Made the first time the page is shown: the phone has its own, and
+    // never opens this page.
+    private SearchViewModel? _search;
+    public SearchViewModel Search => _search ??= CreateSearch();
+
+    // The songs found, as the Albums grid's open album lists its own
+    // (AlbumTrackList): selected, played, downloaded and given the song menu
+    // the same way. Played from, they are the queue.
+    public SearchSongsViewModel SearchSongs { get; } = new();
+
+    private SearchViewModel CreateSearch()
+    {
+        var search = new SearchViewModel(this);
+        search.ResultsChanged += (_, _) =>
+        {
+            SearchSongs.Availability = Availability;
+            SearchSongs.CurrentlyPlayingTrackId = CurrentlyPlayingTrack?.Id;
+            SearchSongs.ExpandedTracks = search.SongResults.Select(r => r.Track).ToList();
+        };
+        PropertyChanged += (_, e) =>
+        {
+            switch (e.PropertyName)
+            {
+                case nameof(RecentSearches):
+                    search.RefreshSuggestions();
+                    break;
+                case nameof(CurrentlyPlayingTrack):
+                    SearchSongs.CurrentlyPlayingTrackId = CurrentlyPlayingTrack?.Id;
+                    break;
+                case nameof(Availability):
+                    search.ApplyAvailability(StreamingServerFingerprint, IsStreamingServerReachable);
+                    SearchSongs.Availability = Availability;
+                    break;
+            }
+        };
+        return search;
+    }
+
 
     // Artists: the column of names beside the picked artist's page - their
     // header and an album card each (ArtistHeader, ArtistAlbums) - in place of
@@ -1893,6 +1941,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         _subscriptions.Add<EventHandler>((_, _) => Dispatcher.UIThread.Post(() =>
         {
             Browser.Repopulate();
+            if (IsShowingSearch)
+                Search.RefreshNow();
             // A merge in flight means this fired because one of our own
             // syncs just merged something (see RunTrackedSync's doc comment) -
             // not a genuine local change - so don't treat it as one.
@@ -2264,6 +2314,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         _sidebarItems.Clear();
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.Header,        "Library"));
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.Home,    "Home",    MaterialIconKind.HomeOutline));
+        _sidebarItems.Add(new SidebarItem(SidebarItemKind.Search,  "Search",  MaterialIconKind.Magnify));
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.Queue,   "Queue",   MaterialIconKind.PlaylistMusic));
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.History, "History", MaterialIconKind.ClockTimeEightOutline));
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.Songs,   "Songs",   MaterialIconKind.Music));
@@ -2561,6 +2612,14 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         OnPropertyChanged(nameof(IsShowingTrackList));
         OnPropertyChanged(nameof(IsShowingArtistPage));
         OnPropertyChanged(nameof(IsShowingPlaylist));
+        OnPropertyChanged(nameof(IsShowingSearch));
+        // What it finds is scanned again on the way in, the library having
+        // perhaps changed while it was away; the query and the results stay
+        // meanwhile, so coming back shows them at once.
+        if (IsShowingSearch)
+            Search.RefreshNow();
+        else
+            _search?.CancelRebuild();
         OnPropertyChanged(nameof(IsShowingDeviceDetail));
         OnPropertyChanged(nameof(IsShowingServerSettings));
         OnPropertyChanged(nameof(ShowsPageHeader));

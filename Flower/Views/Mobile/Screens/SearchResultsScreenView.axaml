@@ -18,7 +18,7 @@
   </UserControl.Resources>
 
   <!-- Search tab results: Artists/Albums/Songs sections, each hidden when
-       empty - see MobileSearchViewModel. A plain
+       empty - see SearchViewModel. A plain
        ScrollViewer+StackPanel rather than TrackListScreenView's virtualized
        ListBox - search results are bounded by the query, not the whole
        library, so virtualization isn't worth the extra complexity here. -->
@@ -44,7 +44,7 @@
 
   <!-- Each section's rows are built once and handed the next search's
        results as the query is typed (RecyclingItemsControl); none is
-       virtualized, each being capped (MobileSearchViewModel.MaxResultsPerSection). -->
+       virtualized, each being capped (SearchViewModel.MaxResultsPerSection). -->
   <ScrollViewer Classes="screenScroll" controls:RubberBandScroll.IsEnabled="True">
     <StackPanel>
       <StackPanel IsVisible="{Binding Search.HasArtistResults}">
@@ -89,7 +89,7 @@
         <controls:RecyclingItemsControl ItemsSource="{Binding Search.SongResults}" ItemTemplate="{StaticResource TrackRowTemplate}" />
       </StackPanel>
 
-      <!-- See MobileSearchViewModel.MaxResultsPerSection - each section
+      <!-- See SearchViewModel.MaxResultsPerSection - each section
            above is capped, so a very broad query needs to say so rather
            than silently looking like the whole match set. -->
       <TextBlock IsVisible="{Binding Search.HasMoreResults}"

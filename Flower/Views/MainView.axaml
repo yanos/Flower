@@ -587,6 +587,12 @@
                                 Availability="{Binding Availability}"
                                 CurrentlyPlayingTrackId="{Binding CurrentlyPlayingTrack.Id}"/>
 
+        <!-- Search: the whole library's albums, artists and songs for what is
+             typed - see SearchView. -->
+        <Panel Grid.Column="0" Grid.ColumnSpan="2" Grid.RowSpan="2" IsVisible="{Binding IsShowingSearch}">
+          <views:SearchView x:Name="SearchPage"/>
+        </Panel>
+
         <!-- Home: Continue Playing, Recently Played, Recently Added - see
              HomeViewModel. -->
         <Panel Grid.Column="0" Grid.ColumnSpan="2" Grid.RowSpan="2" IsVisible="{Binding IsShowingHome}">

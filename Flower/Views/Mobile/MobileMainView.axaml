@@ -497,7 +497,7 @@
                     Spacing="10"
                     MaxWidth="280">
           <!-- Out of the way of the search suggestions dropdown, which it would
-               otherwise be drawn over - see MobileSearchViewModel.IsDropdownOpen. -->
+               otherwise be drawn over - see SearchViewModel.IsDropdownOpen. -->
           <StackPanel.IsVisible>
             <MultiBinding Converter="{x:Static BoolConverters.And}">
               <Binding Path="IsContentEmpty" />

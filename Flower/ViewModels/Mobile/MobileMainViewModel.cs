@@ -93,8 +93,8 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     }
 
     // The Search tab - its query, results and suggestions. See
-    // MobileSearchViewModel.
-    public MobileSearchViewModel Search { get; }
+    // SearchViewModel.
+    public SearchViewModel Search { get; }
 
     public ICommand SelectTabCommand { get; }
     public ICommand SelectAlbumOrArtistCommand { get; }
@@ -533,7 +533,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     //
     // Not the Search tab's query either, which is a lookup across the whole
     // library rather than a narrowing of what is already on screen - see
-    // Search's query (MobileSearchViewModel), and the Search screen, which has no pull-down box.
+    // Search's query (SearchViewModel), and the Search screen, which has no pull-down box.
     private string? _screenFilter;
     public string? ScreenFilter
     {
@@ -1632,7 +1632,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         _logger = logger;
         _libraryRemoval = libraryRemoval;
 
-        Search = new MobileSearchViewModel(main);
+        Search = new SearchViewModel(main);
         Search.QueryChanged += (_, _) =>
         {
             OnPropertyChanged(nameof(IsShowingSearchPrompt));
@@ -1679,7 +1679,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         _subscriptions.Add<PropertyChangedEventHandler>((_, e) =>
         {
             // Songs/Albums/Artists picker empty-states only - Search has its
-            // own query-driven path (MobileSearchViewModel) and no
+            // own query-driven path (SearchViewModel) and no
             // longer touches Main.Rows at all.
             if (e.PropertyName == nameof(MainViewModel.SubListItems))
                 RebuildArtistPickerRows();
@@ -2290,7 +2290,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
 
     // Search deliberately maps to no sidebar item (same as Home and
     // Playlists) - it renders entirely from its own query and results
-    // (MobileSearchViewModel), scanning Main.Library.Tracks directly rather
+    // (SearchViewModel), scanning Main.Library.Tracks directly rather
     // than through Main.SelectedSidebarItem/Main.Rows the way it used to.
     private void ApplyTabSelection()
     {
@@ -2634,7 +2634,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         OnPropertyChanged(nameof(AlbumDetailRows));
         RaiseDetailHeaderChanged();
         // Search's query and its matched results survive leaving the Search tab
-        // (see MobileSearchViewModel) - deliberately NOT cleared here
+        // (see SearchViewModel) - deliberately NOT cleared here
         // on the way out, so they're still there the instant the user comes
         // back, with no rescan flash of "no results" in between. Re-running
         // the scan on the way back in (rather than trusting the stale

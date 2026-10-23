@@ -1,3 +1,5 @@
+using System.Linq;
+
 using Flower.Models;
 
 namespace Flower.ViewModels;
@@ -12,6 +14,11 @@ namespace Flower.ViewModels;
 public sealed class ExpandedTrackRowViewModel : DownloadIndicatorViewModel
 {
     public required Track Track { get; init; }
+
+    // "Artist — Album", under the title where a list holds songs from more
+    // than one album (AlbumTrackList.ShowsArtist).
+    public string ArtistAndAlbumText =>
+        string.Join(" \u2014 ", new[] { Track.Artists, Track.Album }.Where(s => !string.IsNullOrEmpty(s)));
 
     // Greyed-out state, same rule and same look as the main track list's
     // TrackRowViewModel.IsUnavailable: a not-yet-downloaded track with nobody

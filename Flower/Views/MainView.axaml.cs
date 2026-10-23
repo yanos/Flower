@@ -706,7 +706,10 @@ public partial class MainView : UserControl
         if (source is not Visual visual)
             return null;
         var tile = visual.GetSelfAndVisualAncestors().OfType<Button>().FirstOrDefault(b => b.Classes.Contains("homeTile"));
-        if (tile?.FindAncestorOfType<HomeView>() == null || tile.Content is not AlbumCard { Tile: not null } card)
+        // Search's album covers are Home's, menu and drag included.
+        if (tile is null
+            || (tile.FindAncestorOfType<HomeView>() == null && tile.FindAncestorOfType<SearchView>() == null)
+            || tile.Content is not AlbumCard { Tile: not null } card)
             return null;
         return (tile, card);
     }
@@ -1831,10 +1834,12 @@ public partial class MainView : UserControl
         !vm.IsShowingHome && !vm.IsShowingArtistPage && !vm.IsShowingDeviceDetail && !vm.IsShowingServerSettings;
 
     // The sidebar's Library rows, in its order, and the Cmd/Ctrl+number
-    // that shows each - MainWindow's View menu lists them.
+    // that shows each - MainWindow's View menu lists them. Search is Cmd/Ctrl+F,
+    // as finding is everywhere, rather than a number of its own.
     public static readonly (SidebarItemKind Kind, Key Key)[] SectionKeys =
     [
         (SidebarItemKind.Home, Key.D1),
+        (SidebarItemKind.Search, Key.F),
         (SidebarItemKind.Queue, Key.D2),
         (SidebarItemKind.History, Key.D3),
         (SidebarItemKind.Songs, Key.D4),
@@ -1846,6 +1851,8 @@ public partial class MainView : UserControl
     {
         if (_viewModel is { } vm && vm.SidebarItems.FirstOrDefault(i => i.Kind == kind) is { } row)
             vm.SelectedSidebarItem = row;
+        if (kind == SidebarItemKind.Search)
+            SearchPage.FocusBox();
     }
 
     // Cmd/Ctrl+K: the page header's filter box, where the page has one.

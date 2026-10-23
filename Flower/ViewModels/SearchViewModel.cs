@@ -10,8 +10,9 @@ using CommunityToolkit.Mvvm.Input;
 
 using Flower.Models;
 using Flower.Services;
+using Flower.ViewModels.Mobile;
 
-namespace Flower.ViewModels.Mobile;
+namespace Flower.ViewModels;
 
 // The phone's Search tab: its query, the three sections of results, and the
 // suggestions under the box. Its own class rather than a region of
@@ -28,7 +29,7 @@ namespace Flower.ViewModels.Mobile;
 // Main.FilterText and kept narrowing the Songs tab's own list for a moment
 // (or, in the worst case, until something else happened to clear it) after
 // switching tabs.
-public sealed class MobileSearchViewModel : ViewModelBase
+public sealed class SearchViewModel : ViewModelBase
 {
     // Albums matching by Album name, Artists matching by Artists (the same raw
     // per-track field the Artists tab's own picker groups by - see
@@ -46,7 +47,7 @@ public sealed class MobileSearchViewModel : ViewModelBase
 
     private readonly MainViewModel _main;
 
-    public MobileSearchViewModel(MainViewModel main)
+    public SearchViewModel(MainViewModel main)
     {
         _main = main;
         ClearRecentSearchesCommand = new RelayCommand(_main.ClearRecentSearches);
@@ -72,6 +73,8 @@ public sealed class MobileSearchViewModel : ViewModelBase
                 return;
             _query = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(HasQuery));
+            OnPropertyChanged(nameof(ShowsNoResults));
             QueryChanged?.Invoke(this, EventArgs.Empty);
             RefreshSuggestions();
             ScheduleRebuild();
@@ -106,6 +109,10 @@ public sealed class MobileSearchViewModel : ViewModelBase
     public bool HasArtistResults => ArtistResults.Count > 0;
     public bool HasSongResults => SongResults.Count > 0;
     public bool HasAnyResults => HasAlbumResults || HasArtistResults || HasSongResults;
+
+    // Something typed, and nothing found for it - the desktop page's empty
+    // state.
+    public bool ShowsNoResults => HasQuery && !HasAnyResults;
 
     // True if any section had more matches than the cap - one "refine your
     // search" caption rather than one per section, since usually either none
@@ -260,6 +267,7 @@ public sealed class MobileSearchViewModel : ViewModelBase
         OnPropertyChanged(nameof(HasArtistResults));
         OnPropertyChanged(nameof(HasSongResults));
         OnPropertyChanged(nameof(HasAnyResults));
+        OnPropertyChanged(nameof(ShowsNoResults));
         ResultsChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -319,6 +327,27 @@ public sealed class MobileSearchViewModel : ViewModelBase
     // (RefreshSuggestions, from the shell).
     public void Remember() => _main.RememberSearch(_query);
 
-    public void RefreshSuggestions() =>
+    public void RefreshSuggestions()
+    {
         Suggestions = SearchSuggestion.For(_query, _main.RecentSearches, _main.Library.Tracks, MaxSuggestions);
+        RecentSearches = [.. _main.RecentSearches];
+    }
+
+    // The past searches themselves, newest first - the desktop page lists
+    // them while nothing is typed. A copy each time, since the setting's own
+    // list changes in place and a binding to it would never hear of it.
+    private IReadOnlyList<string> _recentSearches = [];
+
+    public IReadOnlyList<string> RecentSearches
+    {
+        get => _recentSearches;
+        private set
+        {
+            _recentSearches = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(HasRecentSearches));
+        }
+    }
+
+    public bool HasRecentSearches => _recentSearches.Count > 0;
 }
