@@ -76,7 +76,7 @@ public sealed class SearchViewModel : ViewModelBase
             OnPropertyChanged(nameof(HasQuery));
             OnPropertyChanged(nameof(ShowsNoResults));
             QueryChanged?.Invoke(this, EventArgs.Empty);
-            RefreshSuggestions();
+            ScheduleSuggestions(SuggestionDelay);
             ScheduleRebuild();
         }
     }
@@ -327,10 +327,57 @@ public sealed class SearchViewModel : ViewModelBase
     // (RefreshSuggestions, from the shell).
     public void Remember() => _main.RememberSearch(_query);
 
+    // Shorter than the results' 250ms: the dropdown is what is being read
+    // while typing, and one scan is far cheaper than rebuilding three
+    // sections of tiles and rows.
+    private static readonly TimeSpan SuggestionDelay = TimeSpan.FromMilliseconds(150);
+
+    private CancellationTokenSource? _suggesting;
+
+    // The past searches changed - one remembered or the history cleared. Not
+    // once per keystroke, so the scan starts at once rather than debounced.
     public void RefreshSuggestions()
     {
-        Suggestions = SearchSuggestion.For(_query, _main.RecentSearches, _main.Library.Tracks, MaxSuggestions);
         RecentSearches = [.. _main.RecentSearches];
+        ScheduleSuggestions(TimeSpan.Zero);
+    }
+
+    // SearchSuggestion.For walks every track in the library, and it used to
+    // do that on the UI thread on every keystroke. So it waits for typing to
+    // pause, the same cancel-and-restart shape as ScheduleRebuild, and runs
+    // on the pool. An empty box is answered at once, with nothing, so the
+    // dropdown closes the moment the box is cleared rather than after a scan.
+    private void ScheduleSuggestions(TimeSpan delay)
+    {
+        _suggesting?.Cancel();
+        _suggesting = null;
+        if (string.IsNullOrWhiteSpace(_query))
+        {
+            Suggestions = [];
+            return;
+        }
+
+        _suggesting = new CancellationTokenSource();
+        // A copy: the setting's own list changes in place on this thread.
+        _ = SuggestAsync(_query, [.. _main.RecentSearches], _main.Library.Tracks, delay, _suggesting.Token);
+    }
+
+    private async Task SuggestAsync(string query, IReadOnlyList<string> recentSearches, IReadOnlyList<Track> tracks,
+        TimeSpan delay, CancellationToken token)
+    {
+        try
+        {
+            if (delay > TimeSpan.Zero)
+                await Task.Delay(delay, token);
+            var suggestions = await Task.Run(
+                () => SearchSuggestion.For(query, recentSearches, tracks, MaxSuggestions), token);
+            if (!token.IsCancellationRequested)
+                Suggestions = suggestions;
+        }
+        catch (OperationCanceledException)
+        {
+            // A newer keystroke, or the box emptied - that call answers instead.
+        }
     }
 
     // The past searches themselves, newest first - the desktop page lists

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 
 using Avalonia;
 using Avalonia.Controls;
@@ -67,7 +68,7 @@ public class MobileRecentSearchesTests : PinnedDataDirectory
     }
 
     [AvaloniaFact]
-    public void What_is_typed_narrows_the_suggestions_and_is_not_offered_back()
+    public async Task What_is_typed_narrows_the_suggestions_and_is_not_offered_back()
     {
         using var parts = Build();
         var vm = parts.Mobile;
@@ -78,6 +79,7 @@ public class MobileRecentSearchesTests : PinnedDataDirectory
 
         vm.SelectTabCommand.Execute(nameof(MobileTab.Search));
         vm.Search.Query = "nat";
+        await UiWait.Until(() => vm.Search.HasSuggestions, "the suggestions never arrived");
 
         Assert.Equal(new[] { "nat king cole", "the national" }, vm.Search.Suggestions.Select(s => s.Text));
     }
@@ -99,7 +101,7 @@ public class MobileRecentSearchesTests : PinnedDataDirectory
     // typed before names with a later word that does, and each kind says
     // what it is.
     [AvaloniaFact]
-    public void The_library_s_names_are_offered_after_past_searches()
+    public async Task The_library_s_names_are_offered_after_past_searches()
     {
         var tracks = new List<Track>
         {
@@ -112,6 +114,7 @@ public class MobileRecentSearchesTests : PinnedDataDirectory
 
         vm.SelectTabCommand.Execute(nameof(MobileTab.Search));
         vm.Search.Query = "wil";
+        await UiWait.Until(() => vm.Search.HasSuggestions, "the suggestions never arrived");
 
         Assert.Equal(
             new[]
@@ -187,9 +190,8 @@ public class MobileRecentSearchesTests : PinnedDataDirectory
         Assert.Null(Row(window, "radiohead"));
 
         box.Text = "rad";
-        Pump(100);
+        UiWait.Settle(() => Row(window, "radiohead") != null, "the suggestion never showed");
         var row = Row(window, "radiohead");
-        Assert.NotNull(row);
         Assert.Null(Row(window, "bjork"));
 
         var centre = row!.TranslatePoint(new Point(row.Bounds.Width / 2, row.Bounds.Height / 2), window)!.Value;
