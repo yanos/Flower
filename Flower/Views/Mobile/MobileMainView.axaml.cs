@@ -35,6 +35,7 @@ public partial class MobileMainView : UserControl
         // itself, and a tap on the empty part of a screen still has to reach
         // this.
         AddHandler(PointerPressedEvent, DismissKeyboardOnEmptyTap, RoutingStrategies.Bubble, handledEventsToo: true);
+        AddHandler(ScrollGestureEvent, DismissKeyboardOnScroll, RoutingStrategies.Bubble, handledEventsToo: true);
         AddHandler(PointerPressedEvent, CloseEmptyFilterOnPressElsewhere, RoutingStrategies.Tunnel, handledEventsToo: true);
 
         MiniPlayerHost.RenderTransform = _miniPlayerTransform;
@@ -112,9 +113,7 @@ public partial class MobileMainView : UserControl
     // clearing focus is what drops it on both phones.
     private void DismissKeyboardOnEmptyTap(object? sender, PointerPressedEventArgs e)
     {
-        if (TopLevel.GetTopLevel(this)?.FocusManager is not { } focus
-            || focus.GetFocusedElement() is not TextBox box
-            || !ScreenStack.IsVisualAncestorOf(box))
+        if (ScreenBoxFocus() is not { } focus)
             return;
 
         for (var v = e.Source as Visual; v != null; v = v.GetVisualParent())
@@ -125,6 +124,21 @@ public partial class MobileMainView : UserControl
 
         focus.Focus(null);
     }
+
+    // A screen scrolled by a finger puts its box down too, as a phone's own
+    // lists do. The press that began it kept the focus if it landed on a row
+    // (above), which is most of a list, so the keyboard and the search
+    // suggestions stayed up over a list being scrolled under them.
+    private void DismissKeyboardOnScroll(object? sender, ScrollGestureEventArgs e) =>
+        ScreenBoxFocus()?.Focus(null);
+
+    // The focus manager, while a screen's text box holds the focus.
+    private IFocusManager? ScreenBoxFocus() =>
+        TopLevel.GetTopLevel(this)?.FocusManager is { } focus
+        && focus.GetFocusedElement() is TextBox box
+        && ScreenStack.IsVisualAncestorOf(box)
+            ? focus
+            : null;
 
     // A filter pulled open and left empty goes as soon as anything else is
     // pressed - a row, a tile, a tab, or nothing at all. The box keeps its
