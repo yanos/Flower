@@ -60,7 +60,7 @@ internal static class DesktopActionMenu
     // thing that can be done later or under some condition, it is not a thing
     // at all (PlaylistManagementViewModel.AddTracks refuses it), and a greyed
     // row invites the user to wonder why.
-    private static void FillAddToPlaylist(MenuItem addToPlaylistItem, IReadOnlyList<Track> tracks, MainViewModel vm)
+    public static void FillAddToPlaylist(MenuItem addToPlaylistItem, IReadOnlyList<Track> tracks, MainViewModel vm)
     {
         var newPlaylistItem = new MenuItem { Header = "New Playlist" }.WithIcon(MaterialIconKind.Plus);
         newPlaylistItem.Click += async (_, _) => await vm.CreatePlaylistWithTracks(tracks);

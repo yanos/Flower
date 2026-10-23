@@ -59,7 +59,10 @@
               BorderBrush="{DynamicResource AppDividerBrush}"
               TextElement.Foreground="{DynamicResource AppTextPrimaryBrush}">
         <Grid ColumnDefinitions="*,Auto,*">
+          <!-- A right-click on what is playing opens its menu - see
+               NowPlaying_ContextRequested. -->
           <usercontrols:CurrentlyPlayingControl
+            x:Name="NowPlayingInfo"
             Grid.Column="0"
             DataContext="{Binding NowPlaying}"
             Margin="0,0,128,0"
@@ -356,6 +359,13 @@
                                           DownloadRequested="PageDownload_Requested"/>
           </Border>
         </Panel>
+        <!-- Everything queued but the song playing, as the phone's Queue
+             menu offers it. -->
+        <Button Content="Clear Queue"
+                IsVisible="{Binding IsShowingQueue}"
+                IsEnabled="{Binding Queue.CanClear}"
+                Click="ClearQueue_Click"
+                VerticalAlignment="Center"/>
         <!-- The orders the page can be in, as the phone's screen menus
              offer them - see SortButton_Click. -->
         <Button x:Name="SortButton"

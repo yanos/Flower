@@ -140,6 +140,15 @@ public sealed class QueueViewModel : ViewModelBase, IDisposable
             _playback.RemoveQueueEntry(slot);
     }
 
+    /// <summary>Whether there is anything to clear: the queue holds more than the song playing.</summary>
+    public bool CanClear => _playback.CanClearQueue;
+
+    /// <summary>
+    /// Empties the queue of everything but the song playing, which finishes
+    /// and is the last - see PlaylistControlViewModel.ClearQueue.
+    /// </summary>
+    public void Clear() => _playback.ClearQueue();
+
     /// <summary>
     /// Moves <paramref name="dragged"/> to before <paramref name="insertBefore"/>,
     /// or to the end of the queue when that is null.
@@ -188,6 +197,7 @@ public sealed class QueueViewModel : ViewModelBase, IDisposable
     {
         OnPropertyChanged(nameof(Caption));
         OnPropertyChanged(nameof(IsReorderable));
+        OnPropertyChanged(nameof(CanClear));
         if (_isActive)
             Rebuild();
         else

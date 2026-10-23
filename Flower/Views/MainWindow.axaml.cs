@@ -186,6 +186,9 @@ public partial class MainWindow : Window
                 SetIcon("Select Columns…", MaterialIconKind.ViewColumn);
                 SetIcon("Zoom",            MaterialIconKind.WindowMaximize);
                 SetIcon("Go to Current Song", MaterialIconKind.Crosshairs);
+                SetIcon("Go to Current Album", MaterialIconKind.Album);
+                SetIcon("Go to Current Artist", MaterialIconKind.AccountMusicOutline);
+                SetIcon("Clear Queue",     MaterialIconKind.PlaylistRemove);
                 SetIcon("Increase Volume", MaterialIconKind.VolumePlus);
                 SetIcon("Decrease Volume", MaterialIconKind.VolumeMinus);
                 SetIcon("Info",        MaterialIconKind.InformationOutline);
@@ -228,6 +231,9 @@ public partial class MainWindow : Window
 
         // Controls
         On("Go to Current Song", () => _ = Vm()?.GoToCurrentlyPlayingTrackAsync(), Key.L);
+        On("Go to Current Album", () => _ = Vm()?.GoToCurrentlyPlayingAlbumAsync());
+        On("Go to Current Artist", () => _ = Vm()?.GoToCurrentlyPlayingArtistAsync());
+        On("Clear Queue", () => Vm()?.Queue.Clear());
         On("Increase Volume", () => MainContent.ChangeVolume(10), Key.Up);
         On("Decrease Volume", () => MainContent.ChangeVolume(-10), Key.Down);
 
@@ -289,6 +295,14 @@ public partial class MainWindow : Window
                 item.IsEnabled = enabled;
         }
 
+        WhenOpened("Go to Current Song", () =>
+        {
+            var playing = Vm()?.NowPlaying.CurrentlyPlayingTrack;
+            Enable("Go to Current Song", playing != null);
+            Enable("Go to Current Album", !string.IsNullOrEmpty(playing?.Album));
+            Enable("Go to Current Artist", !string.IsNullOrEmpty(playing?.Artists));
+            Enable("Clear Queue", Vm()?.Queue.CanClear == true);
+        });
         WhenOpened("Info", () =>
         {
             var songs = MainContent.SelectedSongs();

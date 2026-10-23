@@ -36,6 +36,10 @@
             <NativeMenuItem Header="Previous Track" Command="{Binding PreviousTrackCommand}"/>
             <NativeMenuItemSeparator/>
             <NativeMenuItem Header="Go to Current Song"/>
+            <NativeMenuItem Header="Go to Current Album"/>
+            <NativeMenuItem Header="Go to Current Artist"/>
+            <NativeMenuItemSeparator/>
+            <NativeMenuItem Header="Clear Queue"/>
             <NativeMenuItemSeparator/>
             <NativeMenuItem Header="Increase Volume"/>
             <NativeMenuItem Header="Decrease Volume"/>

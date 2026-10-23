@@ -2136,7 +2136,10 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // place a click on it there leads, so there is one way an album is shown
     // on desktop rather than a second screen for albums reached from Home.
     // Matched by name, which is what the Albums grid groups by.
-    public async Task ShowAlbumAsync(AlbumTileViewModel album)
+    public Task ShowAlbumAsync(AlbumTileViewModel album) =>
+        ShowAlbumAsync(tiles => tiles.FirstOrDefault(t => t.Name == album.Name));
+
+    private async Task ShowAlbumAsync(Func<IReadOnlyList<AlbumTileViewModel>, AlbumTileViewModel?> pick)
     {
         if (_sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Albums) is not { } albums)
             return;
@@ -2147,7 +2150,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         if (!await RebuildRowsImmediatelyAsync())
             return;
 
-        if (AlbumGridTiles.FirstOrDefault(t => t.Name == album.Name) is not { } tile)
+        if (pick(AlbumGridTiles) is not { } tile)
             return;
 
         if (Browser.ExpandedAlbumKey != tile.Key)
@@ -2770,4 +2773,43 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
         NavigateToTrackRequested?.Invoke(this, track);
     }
+
+    // ── Go to the album or artist playing ────────────────────────────────────
+    //
+    // The player bar's menu and the Controls menu, as the phone's Now Playing
+    // menu has them: the album open in the Albums grid, or the artist's page.
+    // The album is the tile holding the very song playing, where one does -
+    // two albums can share a name - and by name otherwise.
+
+    public Task GoToCurrentlyPlayingAlbumAsync()
+    {
+        if (CurrentlyPlayingTrack is not { } track || string.IsNullOrEmpty(track.Album))
+            return Task.CompletedTask;
+
+        return ShowAlbumAsync(tiles =>
+            tiles.FirstOrDefault(t => t.Tracks.Any(x => x.Id == track.Id))
+            ?? tiles.FirstOrDefault(t => t.Name == track.Album));
+    }
+
+    public Task GoToCurrentlyPlayingArtistAsync() =>
+        CurrentlyPlayingTrack?.Artists is { Length: > 0 } artist ? ShowArtistAsync(artist) : Task.CompletedTask;
+
+    // The artist's page, their name picked and scrolled to in the column of
+    // names (ArtistRevealRequested). By the same raw field the column lists.
+    public async Task ShowArtistAsync(string artist)
+    {
+        if (_sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Artists) is not { } artists)
+            return;
+
+        if (!string.IsNullOrEmpty(FilterText))
+            FilterText = null;
+        SelectedSidebarItem = artists;
+        SelectedSubItem = artist;
+        if (!await RebuildRowsImmediatelyAsync())
+            return;
+
+        ArtistRevealRequested?.Invoke(this, artist);
+    }
+
+    public event EventHandler<string>? ArtistRevealRequested;
 }

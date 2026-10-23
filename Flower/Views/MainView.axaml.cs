@@ -102,6 +102,7 @@ public partial class MainView : UserControl
 
         SidebarList.ContextRequested += SidebarList_ContextRequested;
         SubList.ContextRequested += SubList_ContextRequested;
+        NowPlayingInfo.ContextRequested += NowPlaying_ContextRequested;
 
         // Drag album/artist names from SubList onto a sidebar playlist. Also
         // fully owns SubList's click-to-select behavior (see SubList_PointerPressed)
@@ -188,6 +189,7 @@ public partial class MainView : UserControl
             _viewModel.EqualizerWindowRequested -= OnEqualizerWindowRequested;
             _viewModel.NavigateToTrackRequested -= OnNavigateToTrackRequested;
             _viewModel.AlbumRevealRequested -= OnAlbumRevealRequested;
+            _viewModel.ArtistRevealRequested -= OnArtistRevealRequested;
             _viewModel.Home.AlbumOpened -= OnHomeAlbumOpened;
             _viewModel.Queue.PropertyChanged -= OnQueuePropertyChanged;
             _viewModel.PlaylistConflictRequested -= OnPlaylistConflictRequested;
@@ -212,6 +214,7 @@ public partial class MainView : UserControl
             _viewModel.EqualizerWindowRequested += OnEqualizerWindowRequested;
             _viewModel.NavigateToTrackRequested += OnNavigateToTrackRequested;
             _viewModel.AlbumRevealRequested += OnAlbumRevealRequested;
+            _viewModel.ArtistRevealRequested += OnArtistRevealRequested;
             _viewModel.Home.AlbumOpened += OnHomeAlbumOpened;
             _viewModel.PlaylistConflictRequested += OnPlaylistConflictRequested;
             _viewModel.RenamePlaylistRequested += OnRenamePlaylistRequested;
@@ -1870,6 +1873,10 @@ public partial class MainView : UserControl
     private void OnAlbumRevealRequested(object? sender, AlbumTileKey key) =>
         Dispatcher.UIThread.Post(() => AlbumGrid.ScrollToTile(key));
 
+    // Posted the same way, for the column of names the rebuild just replaced.
+    private void OnArtistRevealRequested(object? sender, string artist) =>
+        Dispatcher.UIThread.Post(() => SubList.ScrollIntoView(artist));
+
     private void OnSettingsRequested(object? sender, EventArgs e) => OpenSettingsWindow();
 
     private void OnColumnSelectorRequested(object? sender, EventArgs e) => OpenColumnSelectorWindow();
@@ -1990,6 +1997,59 @@ public partial class MainView : UserControl
         var equalizerWindow = new EqualizerWindow(_viewModel.Equalizer);
         equalizerWindow.Show();
     }
+
+    // ── What is playing ───────────────────────────────────────────────────────
+    //
+    // The player bar's menu, as the phone's Now Playing has one: where the
+    // song is from, then what can be done with it. On the library's own track
+    // rather than the one playing - a streamed song plays as a copy carrying
+    // its stream address (same Id), and an edit or a playlist entry belongs to
+    // the song in the library.
+
+    private void NowPlaying_ContextRequested(object? sender, ContextRequestedEventArgs e)
+    {
+        if (_viewModel is not { } vm || vm.NowPlaying.CurrentlyPlayingTrack is not { } playing)
+            return;
+        e.Handled = true;
+
+        var track = vm.Library.Snapshot.ById.GetValueOrDefault(playing.Id) ?? playing;
+        var menu = new ContextMenu();
+
+        if (!string.IsNullOrEmpty(track.Album))
+        {
+            var album = new MenuItem { Header = "Go to Album" }.WithIcon(MaterialIconKind.Album);
+            album.Click += (_, _) => vm.GoToCurrentlyPlayingAlbumAsync().Forget(Logger, "Going to the album playing");
+            menu.Items.Add(album);
+        }
+        if (!string.IsNullOrEmpty(track.Artists))
+        {
+            var artist = new MenuItem { Header = "Go to Artist" }.WithIcon(MaterialIconKind.AccountMusicOutline);
+            artist.Click += (_, _) => vm.GoToCurrentlyPlayingArtistAsync().Forget(Logger, "Going to the artist playing");
+            menu.Items.Add(artist);
+        }
+        if (menu.Items.Count > 0)
+            menu.Items.Add(new Separator());
+
+        var addToPlaylist = new MenuItem { Header = "Add to Playlist" }.WithIcon(MaterialIconKind.PlaylistPlus);
+        DesktopActionMenu.FillAddToPlaylist(addToPlaylist, [track], vm);
+        menu.Items.Add(addToPlaylist);
+
+        var queue = new MenuItem { Header = "Show Queue" }.WithIcon(MaterialIconKind.PlaylistMusic);
+        queue.Click += (_, _) => ShowSection(SidebarItemKind.Queue);
+        menu.Items.Add(queue);
+
+        var info = new MenuItem
+        {
+            Header = "Info",
+            InputGesture = new KeyGesture(Key.I, PlatformShortcuts.Primary),
+        }.WithIcon(MaterialIconKind.InformationOutline);
+        info.Click += (_, _) => OpenTrackInfo([track]);
+        menu.Items.Add(info);
+
+        PlatformContextMenu.Open(menu, NowPlayingInfo);
+    }
+
+    private void ClearQueue_Click(object? sender, RoutedEventArgs e) => _viewModel?.Queue.Clear();
 
     // The playlist's or the artist's Download All - see MainViewModel.PageDownload.
     private void PageDownload_Requested(object? sender, DownloadIndicatorViewModel indicator) =>
