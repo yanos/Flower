@@ -72,6 +72,10 @@ public partial class SettingsPanel : UserControl
         Loaded += OnPanelLoaded;
         Unloaded += (_, _) => _viewModel.SetLogTabActive(false);
 
+        // The Technical details figures, sampled only while they can be read.
+        Loaded += (_, _) => viewModel.Device?.Resources.Start();
+        Unloaded += (_, _) => viewModel.Device?.Resources.Stop();
+
         if (_mainViewModel != null)
         {
             // Pairing/unpairing happens inside ServerPickerView, not through

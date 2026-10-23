@@ -255,6 +255,42 @@
             </ItemsControl>
           </Border>
 
+          <!-- What Flower is costing this machine, and a frame-rate readout
+               over the window: the phone's Technical Details (MainViewModel's
+               "Technical details"). This device's own settings only - a
+               server's page has no Device, and these would be the figures of
+               the machine reading them. Sampled only while this panel is on
+               screen (SettingsPanel.Initialize). -->
+          <StackPanel Margin="0,20,0,0"
+                      IsVisible="{Binding Device, Converter={x:Static ObjectConverters.IsNotNull}}">
+            <TextBlock Text="Technical details" FontWeight="SemiBold" Margin="0,0,0,6"/>
+            <Grid ColumnDefinitions="80,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="3">
+              <Grid.Styles>
+                <Style Selector="TextBlock">
+                  <Setter Property="FontSize" Value="12"/>
+                </Style>
+                <Style Selector="TextBlock.label">
+                  <Setter Property="Opacity" Value="0.6"/>
+                </Style>
+              </Grid.Styles>
+              <TextBlock Grid.Row="0" Classes="label" Text="CPU"/>
+              <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Device.Resources.CpuText, FallbackValue=''}"/>
+              <TextBlock Grid.Row="1" Classes="label" Text="Memory"/>
+              <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Device.Resources.MemoryText, FallbackValue=''}"/>
+              <TextBlock Grid.Row="2" Classes="label" Text="Heap"/>
+              <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Device.Resources.HeapText, FallbackValue=''}"/>
+              <TextBlock Grid.Row="3" Classes="label" Text="GC"/>
+              <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding Device.Resources.GcText, FallbackValue=''}"/>
+              <TextBlock Grid.Row="4" Classes="label" Text="Threads"/>
+              <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding Device.Resources.ThreadsText, FallbackValue=''}"/>
+            </Grid>
+            <CheckBox Content="Show frame timing"
+                      Margin="0,12,0,0"
+                      IsChecked="{Binding Device.ShowsFrameMeter, Mode=TwoWay, FallbackValue=False}"/>
+            <TextBlock Text="Draws how often the window redraws while something moves, the longest gap, and the collections, over the top of the window. Off again when Flower quits."
+                       Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
+          </StackPanel>
+
           <TextBlock Text="{Binding VersionDisplay}"
                      Margin="0,16,0,0" FontSize="11" Opacity="0.5"/>
         </StackPanel>

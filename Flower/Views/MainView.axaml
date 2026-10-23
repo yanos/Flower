@@ -770,6 +770,16 @@
         </Border>
       </Panel>
 
+      <!-- The frame-rate readout Settings can turn on (MainViewModel.
+           ShowsFrameMeter), over the page's top edge, centred - the phone's,
+           under its status bar. -->
+      <controls:FrameMeter Grid.Row="1" Grid.Column="2"
+                           VerticalAlignment="Top"
+                           HorizontalAlignment="Center"
+                           Margin="0,4,0,0"
+                           IsHitTestVisible="False"
+                           IsVisible="{Binding ShowsFrameMeter}"/>
+
       <!-- Floating "what you're dragging" ghost for the drag-onto-playlist gesture
            (see MusicListView's TrackDragFormat / MainView.axaml.cs's
            ContentGrid_DragOver). Spans all 3 columns of ContentGrid so it can

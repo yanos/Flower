@@ -1001,18 +1001,21 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         }
     }
 
-    // Live CPU/memory for the settings screen. See ResourceUsageViewModel -
-    // it is a debugging readout, not a feature for listeners.
-    public ResourceUsageViewModel Resources { get; } = new();
+    // Live CPU/memory for the settings screen, and whether the frame-rate
+    // readout is drawn over the app - Main's, which the desktop's Settings
+    // shows too (MainViewModel's "Technical details").
+    public ResourceUsageViewModel Resources => Main.Resources;
 
-    // Whether the frame-rate readout (FrameMeter) is drawn over the app - the
-    // Settings switch beside the figures above. For this session only, like
-    // them: a debugging aid, so it is gone on the next launch.
-    private bool _showsFrameMeter;
     public bool ShowsFrameMeter
     {
-        get => _showsFrameMeter;
-        set => SetProperty(ref _showsFrameMeter, value);
+        get => Main.ShowsFrameMeter;
+        set
+        {
+            if (Main.ShowsFrameMeter == value)
+                return;
+            Main.ShowsFrameMeter = value;
+            OnPropertyChanged();
+        }
     }
 
     public bool IsShowingNowPlaying => ActiveSheet == MobileSheet.NowPlaying;
@@ -1609,7 +1612,6 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
-        Resources.Dispose();
         _subscriptions.Dispose();
     }
 

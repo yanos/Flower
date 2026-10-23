@@ -2003,9 +2003,26 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // process exit and never matters. It exists for the case that used to be
     // impossible: constructing a MainViewModel, using it, and letting go of it
     // without leaving sixteen handlers attached to services that outlive it.
+    // ── Technical details ────────────────────────────────────────────────────
+    //
+    // Settings' debugging corner on both heads: what Flower is costing this
+    // device (ResourceUsageViewModel - polled only while a settings screen
+    // showing it is open, which starts and stops it), and whether the
+    // frame-rate readout (FrameMeter) is drawn over the window. That one for
+    // this session only: a debugging aid, gone on the next launch.
+    public ResourceUsageViewModel Resources { get; } = new();
+
+    private bool _showsFrameMeter;
+    public bool ShowsFrameMeter
+    {
+        get => _showsFrameMeter;
+        set => SetProperty(ref _showsFrameMeter, value);
+    }
+
     public void Dispose()
     {
         _subscriptions.Dispose();
+        Resources.Dispose();
         _playbackNoticeTimer?.Stop();
         Home.Dispose();
         Queue.Dispose();
