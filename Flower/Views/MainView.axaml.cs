@@ -1912,6 +1912,56 @@ public partial class MainView : UserControl
         equalizerWindow.Show();
     }
 
+    // The page's orders (BrowseSort), the one in use ticked with an arrow for
+    // which way it runs - picked again, it turns round. The Artists page has
+    // two lists to put in order, under a heading each.
+    private void SortButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel is not { } vm)
+            return;
+
+        var menu = new ContextMenu();
+        void AddSection(string? header, BrowseSortScreen screen)
+        {
+            if (header != null)
+            {
+                if (menu.Items.Count > 0)
+                    menu.Items.Add(new Separator());
+                menu.Items.Add(new MenuItem { Header = header, IsEnabled = false });
+            }
+
+            var (current, ascending) = vm.SortOf(screen);
+            foreach (var order in BrowseSort.SortsFor(screen))
+            {
+                var item = new MenuItem { Header = BrowseSort.LabelFor(order) };
+                if (order == current)
+                {
+                    item.Icon = new MaterialIcon
+                    {
+                        Kind = ascending ? MaterialIconKind.ArrowUp : MaterialIconKind.ArrowDown,
+                        Width = 14,
+                        Height = 14,
+                    };
+                }
+                var picked = order;
+                item.Click += (_, _) => vm.ChooseSort(screen, picked);
+                menu.Items.Add(item);
+            }
+        }
+
+        if (vm.IsShowingArtistPage)
+        {
+            AddSection("Artists", BrowseSortScreen.Artists);
+            AddSection("Albums", BrowseSortScreen.ArtistAlbums);
+        }
+        else
+        {
+            AddSection(null, BrowseSortScreen.Albums);
+        }
+
+        PlatformContextMenu.Open(menu, SortButton);
+    }
+
     // ── Track actions ─────────────────────────────────────────────────────────
 
     private void OpenTrackInfo()

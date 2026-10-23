@@ -34,6 +34,9 @@ public interface ILibraryBrowseHost
     // History's is per-session, same as it always was.
     void PersistSort(string column, bool ascending);
     void PersistSortArtistAlbumsByYear(bool value);
+
+    // The order the Albums grid and the Artists column are in - see BrowseSort.
+    (BrowseSortOrder Order, bool Ascending) SortOf(BrowseSortScreen screen);
 }
 
 // Everything about *displaying* the library: the flat row list, the search
@@ -302,11 +305,18 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
     {
         var mergedAlbums = AlbumTileMerge.Apply(AlbumGridTiles, albums, out var retiredAlbums);
 
-        AlbumGridTiles = new ObservableCollection<AlbumTileViewModel>(mergedAlbums);
+        AlbumGridTiles = new ObservableCollection<AlbumTileViewModel>(
+            BrowseSort.InGridOrder(mergedAlbums, _host.SortOf(BrowseSortScreen.Albums)));
 
         foreach (var tile in retiredAlbums)
             tile.Dispose();
     }
+
+    // The grid put in the order just picked, the same tiles in it - a sort
+    // is not a rebuild, and a tile's download spinner keeps turning.
+    public void ResortAlbumGrid() =>
+        AlbumGridTiles = new ObservableCollection<AlbumTileViewModel>(
+            BrowseSort.InGridOrder(AlbumGridTiles, _host.SortOf(BrowseSortScreen.Albums)));
 
     private void RebuildAlbumGrids()
     {
@@ -400,8 +410,18 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         _host.CurrentKind == SidebarItemKind.Artists
             ? (_lastSelectedArtist != null && _subListItems.Contains(_lastSelectedArtist)
                 ? _lastSelectedArtist
-                : _subListItems.FirstOrDefault())
+                : FirstListedArtist())
             : null;
+
+    // The top of the column as it is sorted - which is the first name only
+    // until another order is picked.
+    private string? FirstListedArtist()
+    {
+        var sort = _host.SortOf(BrowseSortScreen.Artists);
+        return sort == BrowseSort.DefaultFor(BrowseSortScreen.Artists)
+            ? _subListItems.FirstOrDefault()
+            : InArtistOrder(_subListItems, sort).FirstOrDefault();
+    }
 
     // The desktop Artists column: SubListItems narrowed by the filter, whose
     // box sits at that column's head - the artists whose name it finds, the
@@ -416,17 +436,40 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         private set { _visibleSubListItems = value; OnPropertyChanged(); }
     }
 
+    //
+    // In the order picked from the page's Sort button (BrowseSort) - this
+    // list only, never SubListItems, which the phone sorts for itself and
+    // would then turn round twice.
     private void RebuildVisibleSubListItems()
     {
+        var sort = _host.CurrentKind == SidebarItemKind.Artists
+            ? _host.SortOf(BrowseSortScreen.Artists)
+            : BrowseSort.DefaultFor(BrowseSortScreen.Artists);
+        var unsorted = sort == BrowseSort.DefaultFor(BrowseSortScreen.Artists);
+
         if (string.IsNullOrWhiteSpace(_filterText) || _host.CurrentKind != SidebarItemKind.Artists)
         {
-            if (!ReferenceEquals(_visibleSubListItems, _subListItems))
-                VisibleSubListItems = _subListItems;
+            if (unsorted)
+            {
+                if (!ReferenceEquals(_visibleSubListItems, _subListItems))
+                    VisibleSubListItems = _subListItems;
+                return;
+            }
+            VisibleSubListItems = new ObservableCollection<string>(InArtistOrder(_subListItems, sort));
             return;
         }
         var filter = _filterText;
-        VisibleSubListItems = new ObservableCollection<string>(_subListItems.Where(a => SearchText.Contains(a, filter)));
+        var found = _subListItems.Where(a => SearchText.Contains(a, filter)).ToList();
+        VisibleSubListItems = new ObservableCollection<string>(unsorted ? found : InArtistOrder(found, sort));
     }
+
+    private List<string> InArtistOrder(IReadOnlyList<string> names, (BrowseSortOrder Order, bool Ascending) sort)
+    {
+        var byArtist = BrowseSort.TracksByArtist(_allTracks);
+        return BrowseSort.InArtistOrder(names, n => byArtist.GetValueOrDefault(n) ?? [], sort);
+    }
+
+    public void ResortArtists() => RebuildVisibleSubListItems();
 
     public void RebuildSubListItems()
     {

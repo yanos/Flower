@@ -742,7 +742,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             _selectedSidebarItem?.Kind == SidebarItemKind.Artists && SelectedSubItems.Count == 1
                 ? SelectedSubItems.First()
                 : null,
-            Library.Tracks, Availability, CurrentlyPlayingTrack?.Id, force);
+            Library.Tracks, Availability, CurrentlyPlayingTrack?.Id, SortOf(BrowseSortScreen.ArtistAlbums), force);
 
     // The band above a list on desktop: the page's name in the display serif,
     // how much is in it, and the filter box. Over every list and over Home -
@@ -754,6 +754,11 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // Not over the queue, as on the phone: it is in the order it plays in,
     // and a filtered one would hide what is next.
     public bool ShowsPageFilter => !IsShowingQueue;
+
+    // The Sort button beside it, over the two pages whose order is a choice
+    // (BrowseSort): the Albums grid, and the Artists page - its column of
+    // names and the picked artist's albums. Songs sorts by its column headers.
+    public bool ShowsSortButton => IsShowingAlbumGrid || IsShowingArtistPage;
 
     public string? PageTitle => _selectedSidebarItem?.Name;
 
@@ -775,16 +780,36 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     private static string CountOf(int count, string noun) =>
         count == 1 ? $"1 {noun}" : $"{count:N0} {noun}s";
 
-    // What a phone screen's header menu last sorted it by - null when never
-    // chosen. See MobileMainViewModel's "Screen menu".
-    public string? MobileSortFor(string screen) =>
-        _appSettings.MobileSorts.GetValueOrDefault(screen);
+    // The order an album or artist screen is in - picked from a phone
+    // screen's header menu or the desktop's Sort button (BrowseSort). Read
+    // through to settings every time rather than cached: it is asked on a
+    // rebuild and on a menu opening, neither of which is a hot path.
+    public (BrowseSortOrder Order, bool Ascending) SortOf(BrowseSortScreen screen) =>
+        BrowseSort.Parse(_appSettings.ScreenSorts.GetValueOrDefault(screen.ToString()), screen);
 
-    public void PersistMobileSort(string screen, string order)
+    // Picks an order for a screen - picked again, it turns round - and puts
+    // the desktop's own screens in it. The phone rebuilds its own.
+    public void ChooseSort(BrowseSortScreen screen, BrowseSortOrder order)
     {
-        _appSettings.MobileSorts[screen] = order;
+        var (picked, ascending) = BrowseSort.Pick(SortOf(screen), order);
+        _appSettings.ScreenSorts[screen.ToString()] = BrowseSort.Format(picked, ascending);
         SaveSettings();
+
+        switch (screen)
+        {
+            case BrowseSortScreen.Albums:
+                Browser.ResortAlbumGrid();
+                break;
+            case BrowseSortScreen.Artists:
+                Browser.ResortArtists();
+                break;
+            case BrowseSortScreen.ArtistAlbums:
+                RefreshArtistPage(force: true);
+                break;
+        }
     }
+
+    (BrowseSortOrder Order, bool Ascending) ILibraryBrowseHost.SortOf(BrowseSortScreen screen) => SortOf(screen);
 
     // The tabs a phone's bar shows, in order - null when never chosen. See
     // MobileMainViewModel's "Tab bar".
@@ -2491,6 +2516,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         Home.IsActive = IsShowingHome;
         OnPropertyChanged(nameof(IsShowingQueue));
         OnPropertyChanged(nameof(ShowsPageFilter));
+        OnPropertyChanged(nameof(ShowsSortButton));
         Queue.IsActive = IsShowingQueue;
         OnPropertyChanged(nameof(IsShowingTrackList));
         OnPropertyChanged(nameof(IsShowingArtistPage));

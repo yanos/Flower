@@ -34,7 +34,7 @@ public sealed class ArtistPageViewModel : ViewModelBase
     // does not reach the cards: it finds artists by name, in the column beside
     // them, and the page is whichever one is picked, whole.
     public void Show(string? name, IReadOnlyList<Track> library, TrackAvailabilityContext availability,
-        Guid? playing, bool force = false)
+        Guid? playing, (BrowseSortOrder Order, bool Ascending) sort, bool force = false)
     {
         if (!force && name == Header?.Name)
             return;
@@ -60,11 +60,9 @@ public sealed class ArtistPageViewModel : ViewModelBase
             Header = new ArtistHeaderInfo(name, AlbumCollage.ByAlbumName(tracks),
                 $"{ArtistPickerRow.Summary(albums, tracks.Count)} · {length}");
 
-            var tiles = AlbumGridBuilder.Build(tracks)
-                .OrderBy(t => ArtistAlbumSectionViewModel.Year(t) == null)
-                .ThenBy(t => ArtistAlbumSectionViewModel.Year(t))
-                .ThenBy(t => TrackListBuilder.SortKey(t.Name))
-                .ToList();
+            // In the order picked from the page's Sort button - oldest first
+            // until one is (BrowseSort.DefaultFor).
+            var tiles = BrowseSort.InGridOrder(AlbumGridBuilder.Build(tracks), sort);
             // Songs on no album still belong to the artist: they go in a card
             // of their own, last.
             var loose = tracks.Where(t => string.IsNullOrEmpty(t.Album)).ToList();

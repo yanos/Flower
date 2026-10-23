@@ -338,6 +338,17 @@
                   Orientation="Horizontal"
                   Spacing="10"
                   VerticalAlignment="Center">
+        <!-- The orders the page can be in, as the phone's screen menus
+             offer them - see SortButton_Click. -->
+        <Button x:Name="SortButton"
+                Classes="pill"
+                Padding="8"
+                ToolTip.Tip="Sort"
+                IsVisible="{Binding ShowsSortButton}"
+                Click="SortButton_Click"
+                VerticalAlignment="Center">
+          <materialIcons:MaterialIcon Classes="chrome" Kind="Sort" Width="20" Height="20"/>
+        </Button>
         <usercontrols:FilterControl
           Width="260"
           IsVisible="{Binding ShowsPageFilter}"

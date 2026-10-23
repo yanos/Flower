@@ -33,6 +33,9 @@ public class LibraryBrowserViewModelTests
         public bool? PersistedArtistAlbumsByYear;
         public void PersistSort(string column, bool ascending) => PersistedSort = (column, ascending);
         public void PersistSortArtistAlbumsByYear(bool value) => PersistedArtistAlbumsByYear = value;
+        public Dictionary<BrowseSortScreen, (BrowseSortOrder Order, bool Ascending)> Sorts { get; } = new();
+        public (BrowseSortOrder Order, bool Ascending) SortOf(BrowseSortScreen screen) =>
+            Sorts.TryGetValue(screen, out var sort) ? sort : BrowseSort.DefaultFor(screen);
     }
 
     private static Track Song(string title, string album, string artist, DateTimeOffset? lastPlayed = null) =>
@@ -42,6 +45,18 @@ public class LibraryBrowserViewModelTests
             Path = $"/music/{artist}/{album}/{title}.mp3",
             LastPlayedAt = lastPlayed,
         };
+
+    private static Track Played(Track track, int plays)
+    {
+        track.PlayCount = plays;
+        return track;
+    }
+
+    private static Track From(Track track, string year)
+    {
+        track.Year = year;
+        return track;
+    }
 
     private static (LibraryBrowserViewModel Vm, Host Host) Make(params Track[] tracks)
     {
@@ -78,6 +93,51 @@ public class LibraryBrowserViewModelTests
         await vm.RebuildRowsImmediatelyAsync();
         Assert.Equal(new[] { "a", "b", "c" }, vm.Rows.Select(r => r.Track.Title).Order());
         Assert.Equal(3, vm.GetTracksForSubListItems(new[] { "Add N to (X)" }).Count());
+    }
+
+    // The desktop's column of names is put in the order picked from the
+    // Artists page's Sort button; SubListItems, which the phone sorts for
+    // itself, stays alphabetical - sorted twice, a reversed order would come
+    // back the right way round.
+    [AvaloniaFact]
+    public void The_artist_column_takes_the_order_picked_and_the_names_behind_it_do_not()
+    {
+        var (vm, host) = Make(
+            Played(Song("a", "One", "Abba"), 1),
+            Played(Song("b", "Two", "Blur"), 9),
+            Played(Song("c", "Three", "Cure"), 4));
+        host.CurrentKind = SidebarItemKind.Artists;
+        vm.Repopulate();
+
+        host.Sorts[BrowseSortScreen.Artists] = (BrowseSortOrder.MostPlayed, false);
+        vm.ResortArtists();
+        Assert.Equal(new[] { "Blur", "Cure", "Abba" }, vm.VisibleSubListItems);
+
+        host.Sorts[BrowseSortScreen.Artists] = (BrowseSortOrder.Name, false);
+        vm.ResortArtists();
+        Assert.Equal(new[] { "Cure", "Blur", "Abba" }, vm.VisibleSubListItems);
+        Assert.Equal(new[] { "Abba", "Blur", "Cure" }, vm.SubListItems);
+    }
+
+    [AvaloniaFact]
+    public void The_album_grid_takes_the_order_picked()
+    {
+        var (vm, host) = Make(
+            From(Song("a", "Alpha", "X"), "2001"),
+            From(Song("b", "Beta", "X"), "1999"),
+            Song("c", "Gamma", "X"));
+        host.CurrentKind = SidebarItemKind.Albums;
+        vm.Repopulate();
+        Assert.Equal(new[] { "Alpha", "Beta", "Gamma" }, vm.AlbumGridTiles.Select(t => t.Name));
+
+        // Oldest first, and an album with no year last either way round.
+        host.Sorts[BrowseSortScreen.Albums] = (BrowseSortOrder.Year, true);
+        vm.ResortAlbumGrid();
+        Assert.Equal(new[] { "Beta", "Alpha", "Gamma" }, vm.AlbumGridTiles.Select(t => t.Name));
+
+        host.Sorts[BrowseSortScreen.Albums] = (BrowseSortOrder.Year, false);
+        vm.ResortAlbumGrid();
+        Assert.Equal(new[] { "Alpha", "Beta", "Gamma" }, vm.AlbumGridTiles.Select(t => t.Name));
     }
 
     [AvaloniaFact]

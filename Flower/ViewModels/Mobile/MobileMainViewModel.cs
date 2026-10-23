@@ -872,7 +872,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             Name = albumName,
             Artist = artist,
             // The earliest, as the artist page's album sections take it
-            // (ArtistAlbumSectionViewModel.Year): a reissue's bonus tracks
+            // (BrowseSort.YearOf): a reissue's bonus tracks
             // carry the reissue's.
             Year = tracks.Select(t => t.Year).Where(y => !string.IsNullOrWhiteSpace(y)).Min(),
             RepresentativeTrack = representative,
@@ -2237,7 +2237,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     }
 
     private void RebuildAlbumGrid() =>
-        RefillAlbumRows(_albumGrid, InGridOrder(AlbumGridBuilder.Build(Main.Library.Tracks), MobileSortScreen.Albums));
+        RefillAlbumRows(_albumGrid, InGridOrder(AlbumGridBuilder.Build(Main.Library.Tracks), BrowseSortScreen.Albums));
 
     // Re-chunks a grid from freshly built tiles, keeping the tile instances
     // that are still on screen - these grids are rebuilt on every library
@@ -2277,7 +2277,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         RefillAlbumRows(
             _artistAlbumGrid,
             InGridOrder(AlbumGridBuilder.Build(Main.Library.Tracks.Where(t => ArtistNames.Same(t.Artists, _selectedArtistName))),
-                MobileSortScreen.ArtistAlbums));
+                BrowseSortScreen.ArtistAlbums));
     }
 
     // Search deliberately maps to no sidebar item (same as Home and

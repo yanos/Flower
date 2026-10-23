@@ -72,10 +72,10 @@ namespace Flower.Persistence
         // however they happened to appear - see MainViewModel.SortArtistAlbumsByYear.
         public bool SortArtistAlbumsByYear { get; set; }
 
-        // The order a phone's screens are in, picked from the menu in their
-        // header, by screen - see MobileMainViewModel's "Screen menu". Keys and
-        // values are its MobileSortScreen and MobileSortOrder names.
-        public Dictionary<string, string> MobileSorts { get; set; } = new();
+        // The order the album and artist screens are in, by screen - picked
+        // from a phone screen's header menu, or the desktop's Sort button.
+        // Keys are BrowseSortScreen names, values BrowseSort.Format's.
+        public Dictionary<string, string> ScreenSorts { get; set; } = new();
 
         // The tabs a phone's bar shows, left to right, by MobileTab name - set
         // in the phone's Settings. Null until changed there, which is

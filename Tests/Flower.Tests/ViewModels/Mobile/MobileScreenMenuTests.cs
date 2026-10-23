@@ -9,6 +9,7 @@ using Avalonia.Threading;
 
 using Flower.Models;
 using Flower.Tests.TestSupport;
+using Flower.ViewModels;
 using Flower.ViewModels.Mobile;
 
 using Xunit;
@@ -85,7 +86,7 @@ public class MobileScreenMenuTests : PinnedDataDirectory
 
         Assert.Equal(newestFirst, vm.Main.Rows.Take(2).Select(r => r.Track.Title));
         Assert.Equal(ListSortDirection.Descending, Entry(vm, "Date Added").Direction);
-        Assert.Equal("DateAdded:desc", vm.Main.MobileSortFor(nameof(MobileSortScreen.Songs)));
+        Assert.Equal((BrowseSortOrder.DateAdded, false), vm.Main.SortOf(BrowseSortScreen.Songs));
     }
 
     [AvaloniaFact]
