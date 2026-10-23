@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 using Avalonia;
@@ -59,13 +60,21 @@ public partial class AlbumArtView : UserControl
             if (e.Property == AlbumCollageSurface.HasArtProperty)
                 UpdateLayers();
         };
+        ClipBorder.PropertyChanged += (_, e) =>
+        {
+            if (e.Property == BoundsProperty)
+                UpdateStretch();
+        };
         UpdateLayers();
+        UpdateStretch();
     }
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
 
+        if (change.Property == AlbumArtProperty || change.Property == StretchProperty)
+            UpdateStretch();
         if (change.Property == AlbumArtProperty || change.Property == CoversProperty)
         {
             UpdateLayers();
@@ -78,6 +87,29 @@ public partial class AlbumArtView : UserControl
         var radius = new CornerRadius(ArtCornerRadius);
         ClipBorder.CornerRadius = radius;
         Outline.CornerRadius = radius;
+    }
+
+    // How far a cover may be zoomed past its own edges to fill the box: a
+    // cover a little off square loses a sliver rather than gaining two thin
+    // bars, while one much further off - a wide CD booklet scan, a portrait
+    // photo - is shown whole rather than have a band of it cut away.
+    private const double MaxFillZoom = 1.10;
+
+    private void UpdateStretch() =>
+        ArtImage.Stretch = StretchFor(Stretch, AlbumArt?.PixelSize, ClipBorder.Bounds.Size);
+
+    // UniformToFill becomes Uniform when filling the box would mean zooming
+    // in by more than MaxFillZoom; every other stretch is left as asked. A
+    // box not yet laid out is taken to be square, as every cover cell is.
+    private static Stretch StretchFor(Stretch requested, PixelSize? art, Size box)
+    {
+        if (requested != Stretch.UniformToFill || art is not { Width: > 0, Height: > 0 } pixels)
+            return requested;
+
+        var artAspect = (double)pixels.Width / pixels.Height;
+        var boxAspect = box.Width > 0 && box.Height > 0 ? box.Width / box.Height : 1;
+        var zoom = Math.Max(artAspect / boxAspect, boxAspect / artAspect);
+        return zoom <= MaxFillZoom ? Stretch.UniformToFill : Stretch.Uniform;
     }
 
     // The collage if it has any art loaded, else the single cover, else the

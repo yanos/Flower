@@ -10,8 +10,10 @@
        AlbumArtPlaceholder note glyph when there is neither. Used by the main track list rows, the currently playing control,
        and the Track Info window, so the outline/placeholder look only ever
        needs to change in one place. Stretch defaults to UniformToFill (crop
-       to fill a square cell); Track Info sets it to Uniform instead so
-       non-square art isn't cropped. The outline is AppArtOutlineBrush, the
+       to fill a square cell) - but only for a cover within 10% of the box's
+       shape; one further off is shown whole, the background showing in the
+       space left over (StretchFor). Track Info sets it to Uniform instead so
+       non-square art is never cropped. The outline is AppArtOutlineBrush, the
        theme's text colour faint - dark on the light theme, light on the dark
        one - so it defines a cover's edge against either background. -->
   <!-- Background="Transparent" on the Border below isn't decorative - a
@@ -54,8 +56,8 @@
                 IsVisible="False"
                 HorizontalAlignment="Stretch"
                 VerticalAlignment="Stretch">
-          <Image Source="{Binding #Root.AlbumArt}"
-                 Stretch="{Binding #Root.Stretch}"
+          <Image x:Name="ArtImage"
+                 Source="{Binding #Root.AlbumArt}"
                  Width="{Binding #ClipBorder.Bounds.Width}"
                  Height="{Binding #ClipBorder.Bounds.Height}"/>
         </Canvas>
