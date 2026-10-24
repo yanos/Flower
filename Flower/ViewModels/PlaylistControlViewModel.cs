@@ -990,12 +990,9 @@ namespace Flower.ViewModels
             // so the gapless pipeline can splice it in with no gap.
             ArmUpcoming(GetUpcomingEntry(track, _queueIndex).Track);
 
-            // Drives the History sidebar view - see Track.LastPlayedAt/
-            // Library.RecordPlayed for why this stamps here rather than
-            // alongside IncrementPlayCount, which waits until the track has
-            // been heard (see ListenMeter). Raises TrackChanged as a
-            // PlayStarted - same reasoning as the EndReached handler above.
-            _library.RecordPlayed(track);
+            // Nothing about the play is written down yet: LastPlayedAt and
+            // the count move together once the track has been heard (see
+            // ListenMeter and Library.IncrementPlayCount).
             SaveQueue();
         }
 

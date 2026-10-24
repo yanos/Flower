@@ -445,8 +445,7 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
         {
             var report = new PlayReportDto(
             [
-                new PlayEventDto(Guid.NewGuid().ToString("N"), track.Id.ToKey(),
-                    DateTimeOffset.UtcNow, Started: true, Completed: true),
+                new PlayEventDto(Guid.NewGuid().ToString("N"), track.Id.ToKey(), DateTimeOffset.UtcNow),
             ]);
             await SendAsync(device, "POST", "/api/flower/v1/plays", "10.0.2.8",
                 body: JsonSerializer.Serialize(report));
@@ -521,9 +520,8 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
         }
     }
 
-    // The two halves a browser tab reports separately, so the server ends up
-    // with the History a local player would have had - a skipped track stamped
-    // as played without its count claiming a listen. See IPlayReporter.
+    // One reported play moves the count and History together, as playing it
+    // here would. See IPlayReporter.
     [Fact]
     public async Task A_reported_play_counts_and_stamps_the_track_it_names()
     {
@@ -537,10 +535,7 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
         {
             var report = new PlayReportDto(
             [
-                new PlayEventDto(Guid.NewGuid().ToString("N"), track.Id.ToKey(),
-                    DateTimeOffset.UtcNow, Started: true, Completed: false),
-                new PlayEventDto(Guid.NewGuid().ToString("N"), track.Id.ToKey(),
-                    DateTimeOffset.UtcNow, Started: false, Completed: true),
+                new PlayEventDto(Guid.NewGuid().ToString("N"), track.Id.ToKey(), DateTimeOffset.UtcNow),
             ]);
 
             var (status, _, _) = await SendAsync(
@@ -575,8 +570,7 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
         {
             var body = JsonSerializer.Serialize(new PlayReportDto(
             [
-                new PlayEventDto("event-sent-twice", track.Id.ToKey(),
-                    DateTimeOffset.UtcNow, Started: true, Completed: true),
+                new PlayEventDto("event-sent-twice", track.Id.ToKey(), DateTimeOffset.UtcNow),
             ]));
 
             await SendAsync(device, "POST", "/api/flower/v1/plays", "10.0.2.6", body: body);
@@ -609,10 +603,7 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
         {
             var report = new PlayReportDto(
             [
-                new PlayEventDto(Guid.NewGuid().ToString("N"), track.Id.ToKey(),
-                    DateTimeOffset.UtcNow, Started: true, Completed: false),
-                new PlayEventDto(Guid.NewGuid().ToString("N"), track.Id.ToKey(),
-                    DateTimeOffset.UtcNow, Started: false, Completed: true),
+                new PlayEventDto(Guid.NewGuid().ToString("N"), track.Id.ToKey(), DateTimeOffset.UtcNow),
             ]);
 
             var (status, _, _) = await SendAsync(
@@ -644,13 +635,13 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
         try
         {
             var tooMany = new PlayReportDto(Enumerable.Range(0, PlayReportDto.MaxEvents + 1)
-                .Select(_ => new PlayEventDto(Guid.NewGuid().ToString("N"), trackId, DateTimeOffset.UtcNow, false, false))
+                .Select(_ => new PlayEventDto(Guid.NewGuid().ToString("N"), trackId, DateTimeOffset.UtcNow))
                 .ToList());
             var (manyStatus, _, _) = await SendAsync(device, "POST", "/api/flower/v1/plays", "10.0.2.25",
                 body: JsonSerializer.Serialize(tooMany));
             Assert.Equal(HttpStatusCode.BadRequest, manyStatus);
 
-            var longId = new PlayReportDto([new PlayEventDto(new string('x', PlayReportDto.MaxIdLength + 1), trackId, DateTimeOffset.UtcNow, false, false)]);
+            var longId = new PlayReportDto([new PlayEventDto(new string('x', PlayReportDto.MaxIdLength + 1), trackId, DateTimeOffset.UtcNow)]);
             var (longStatus, _, _) = await SendAsync(device, "POST", "/api/flower/v1/plays", "10.0.2.25",
                 body: JsonSerializer.Serialize(longId));
             Assert.Equal(HttpStatusCode.BadRequest, longStatus);
@@ -681,10 +672,8 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
         {
             var report = new PlayReportDto(
             [
-                new PlayEventDto(Guid.NewGuid().ToString("N"), Guid.NewGuid().ToKey(),
-                    DateTimeOffset.UtcNow, Started: true, Completed: true),
-                new PlayEventDto(Guid.NewGuid().ToString("N"), track.Id.ToKey(),
-                    DateTimeOffset.UtcNow, Started: true, Completed: true),
+                new PlayEventDto(Guid.NewGuid().ToString("N"), Guid.NewGuid().ToKey(), DateTimeOffset.UtcNow),
+                new PlayEventDto(Guid.NewGuid().ToString("N"), track.Id.ToKey(), DateTimeOffset.UtcNow),
             ]);
 
             var (status, _, _) = await SendAsync(

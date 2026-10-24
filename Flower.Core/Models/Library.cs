@@ -18,14 +18,15 @@ namespace Flower.Models
     // device's report states a count, a star and the options together, and a
     // scrobble is both halves of a play.
     //
-    // The two halves of a play stay apart because Flower triggers them at
-    // different moments - LastPlayedAt when a track starts (so History means
-    // "what I put on"), PlayCount once nine tenths of it has been heard (so a
-    // skip does not count as a listen) - see Track.LastPlayedAt.
+    // The two halves of a play are one event on this device - counted and
+    // stamped together once nine tenths of the track has been heard (see
+    // Library.IncrementPlayCount) - but stay two flags, because what arrives
+    // from elsewhere moves one without the other: another device's count, or
+    // a later LastPlayedAt reported by the owner's own phone.
     [Flags]
     public enum TrackChange
     {
-        PlayStarted  = 1,
+        LastPlayed  = 1,
         PlayFinished = 2,
         Starred      = 4,
 
@@ -53,7 +54,7 @@ namespace Flower.Models
         // (see Library.RecordOrigin). Nothing a row draws.
         Origin = 512,
 
-        Plays = PlayStarted | PlayFinished,
+        Plays = LastPlayed | PlayFinished,
 
         // What a paired device tells its server about a track - see
         // LibrarySyncService.PushTrackStateAsync.
@@ -1581,6 +1582,10 @@ namespace Flower.Models
         // the last time this device and it agreed - see MergeStar. Null when
         // there has never been a pull from it, in which case its stars win.
         //
+        // resumeBaseline is, by the source's id, the resume position it last
+        // served - see MergePlaybackOptions. Null the same way, with the same
+        // answer.
+        //
         // ownersDevice is true on a device the source made an admin - one of
         // the owner's own, as against a guest's. Two things follow from it.
         //
@@ -1621,7 +1626,7 @@ namespace Flower.Models
         public int MergeSyncedTracks(
             string sourceDeviceFingerprint, IReadOnlyList<Track> incoming, IReadOnlySet<string>? starBaseline = null,
             bool ownersDevice = false, IReadOnlySet<string>? removedAtSource = null,
-            SyncedFileWork? fileWork = null)
+            SyncedFileWork? fileWork = null, IReadOnlyDictionary<string, TimeSpan?>? resumeBaseline = null)
         {
             int removedCount;
             bool reshaped;
@@ -1691,7 +1696,7 @@ namespace Flower.Models
                         // Before MergeLastPlayed: which side played last is
                         // what decides the options, and that has to be read
                         // before the server's date is taken.
-                        MergePlaybackOptions(existing, remote);
+                        MergePlaybackOptions(existing, remote, resumeBaseline);
                         MergeLastPlayed(existing, remote);
                         MergeStar(existing, remote, starBaseline);
 
@@ -1961,13 +1966,32 @@ namespace Flower.Models
         // it - and losing that race costs one setting on one track, which is
         // the cheaper end of the trade against giving up server-to-client
         // propagation of these entirely.
-        private static void MergePlaybackOptions(Track existing, Track remote)
+        //
+        // Except for the position within a listen both sides agree on. A
+        // listen only moves LastPlayedAt when it is counted, so a podcast
+        // paused here and not yet reported ties with the server's copy - and
+        // a tie handed to the origin put back the position the server had
+        // before the pause. So, the way MergeStar settles a star: a position
+        // the server has not moved since it last said it (resumeBaseline),
+        // that this device's differs from, is this device's own and on its
+        // way up, and is kept for the push that follows.
+        private static void MergePlaybackOptions(
+            Track existing, Track remote, IReadOnlyDictionary<string, TimeSpan?>? resumeBaseline)
         {
             if (existing.LastPlayedAt is { } mine && (remote.LastPlayedAt is not { } theirs || mine > theirs))
                 return;
 
+            var ownUnreportedPosition =
+                existing.LastPlayedAt == remote.LastPlayedAt
+                && remote.OriginTrackId is { } id
+                && resumeBaseline != null
+                && resumeBaseline.TryGetValue(id, out var served)
+                && served == remote.ResumePosition
+                && existing.ResumePosition != served;
+
             existing.RememberPlaybackPosition = remote.RememberPlaybackPosition;
-            existing.ResumePosition = remote.ResumePosition;
+            if (!ownUnreportedPosition)
+                existing.ResumePosition = remote.ResumePosition;
             existing.IgnoreWhenShuffling = remote.IgnoreWhenShuffling;
             existing.VolumeAdjustment = remote.VolumeAdjustment;
         }
@@ -2069,7 +2093,7 @@ namespace Flower.Models
                 if ((RemoteCountDevices, RemoteCountTotal, ImportedPlayCount) != (after.RemoteCountDevices, after.RemoteCountTotal, after.ImportedPlayCount))
                     change |= TrackChange.PlayFinished;
                 if (LastPlayedAt != after.LastPlayedAt)
-                    change |= TrackChange.PlayStarted;
+                    change |= TrackChange.LastPlayed;
                 if ((Starred, StarredAt) != (after.Starred, after.StarredAt))
                     change |= TrackChange.Starred;
                 if ((RememberPlaybackPosition, IgnoreWhenShuffling, VolumeAdjustment) != (after.RememberPlaybackPosition, after.IgnoreWhenShuffling, after.VolumeAdjustment))
@@ -2106,11 +2130,17 @@ namespace Flower.Models
         // (see the comment on _lock above). playedTrack itself is the fallback for
         // tracks with no Path. Returns the object that was actually incremented,
         // since it may not be playedTrack.
+        //
+        // Stamps LastPlayedAt in the same step: a play is one event, counted
+        // once it has been heard (ListenMeter), and a song is never "last
+        // played" without having been played. They used to be two - the stamp
+        // at play-start, the count once heard - so a song started and skipped
+        // sat in History and in a "Plays is 0" smart playlist at once.
         public Track IncrementPlayCount(Track playedTrack)
         {
-            var current = BumpPlayCount(playedTrack);
+            var current = StampLastPlayed(BumpPlayCount(playedTrack));
             Persist(() => _store!.UpdateStats(current));
-            RaiseTrackChanged([current], TrackChange.PlayFinished);
+            RaiseTrackChanged([current], TrackChange.Plays);
             return current;
         }
 
@@ -2201,22 +2231,10 @@ namespace Flower.Models
             BumpChangeToken();
         }
 
-        // Atomically resolves whichever Track object currently represents
-        // playedTrack.Path in the library and stamps LastPlayedAt to now - same
-        // resolve-under-lock pattern as IncrementPlayCount above, for the same
-        // reason (a concurrent rescan replacing Tracks mid-flight). Called from
-        // PlaylistControlViewModel.Play at the moment a track starts playing, not
-        // from the EndReached/IncrementPlayCount "finished naturally" path - see
-        // Track.LastPlayedAt's own doc comment for why those two are deliberately
-        // different triggers.
-        public Track RecordPlayed(Track playedTrack)
-        {
-            var current = StampLastPlayed(playedTrack);
-            Persist(() => _store!.UpdateStats(current));
-            RaiseTrackChanged([current], TrackChange.PlayStarted);
-            return current;
-        }
-
+        // Resolves whichever Track object currently represents playedTrack and
+        // stamps LastPlayedAt to now, under the lock for the same reason
+        // BumpPlayCount takes it (a concurrent rescan replacing Tracks
+        // mid-flight).
         private Track StampLastPlayed(Track playedTrack)
         {
             lock (_lock)
@@ -2269,34 +2287,20 @@ namespace Flower.Models
         // head reporting what it played back to the origin server that lent it
         // the track (see IPlayReporter).
         //
-        // Both halves by default, because a scrobble is both: the count bump
-        // and the played-at stamp live on separate methods above only because
-        // the *local* player triggers them at different moments (see
-        // Track.LastPlayedAt), which a single scrobble request does not. One
-        // stats write covers whichever halves were asked for, rather than one
-        // per half.
-        //
-        // A caller that does distinguish them - a head reporting a start when
-        // playback begins and a finish once it has been heard, so the far side
-        // ends up with the same History a local player would have had - passes
-        // the half it means instead.
+        // The count and the played-at stamp move together, as
+        // IncrementPlayCount moves them on this device, in one stats write.
         //
         // Announced as Remote: the play happened on whatever reported it, and
         // that already knows.
-        public bool RecordPlay(string? id, TrackChange change = TrackChange.Plays)
+        public bool RecordPlay(string? id)
         {
             if (Find(id) is not { } track)
                 return false;
 
-            var current = track;
-            if (change.HasFlag(TrackChange.PlayFinished))
-                current = BumpPlayCount(current);
-            if (change.HasFlag(TrackChange.PlayStarted))
-                current = StampLastPlayed(current);
-
+            var current = StampLastPlayed(BumpPlayCount(track));
             Persist(() => _store!.UpdateStats(current));
 
-            RaiseTrackChanged([current], change & TrackChange.Plays, ChangeSource.Remote);
+            RaiseTrackChanged([current], TrackChange.Plays, ChangeSource.Remote);
             return true;
         }
 
@@ -2364,7 +2368,7 @@ namespace Flower.Models
         // rather than one blanket last-writer-wins:
         //
         //  - LastPlayedAt moves forward only. It is a high-water mark of "when
-        //    was this last put on, anywhere", and a device reporting a session
+        //    was this last played, anywhere", and a device reporting a play
         //    older than one the server already knows about is not news.
         //  - ResumePosition rides with it, exactly as MergePlaybackOptions has
         //    it ride in the pulling direction: a resume position is not a
@@ -2505,23 +2509,16 @@ namespace Flower.Models
                 moved |= TrackChange.DateAdded;
             }
 
-            // Nothing to say about listening: a report from before this server's
-            // own last-played, or from a device that has never played the track,
-            // leaves both the timestamp and the position that rides with it alone.
-            if (entry.LastPlayedAt is not { } reportedAt)
-                return moved;
-            if (track.LastPlayedAt is { } knownAt && knownAt > reportedAt)
-                return moved;
-
             var resume = entry.ResumePositionSeconds is { } seconds
                 ? TimeSpan.FromSeconds(seconds)
                 : (TimeSpan?)null;
 
-            // The same sitting, reported again: the listen is already known, but
-            // where it got to has moved - a pause, a track change, the app going
-            // away. Taken, because the device that started the sitting is the
-            // one still in it.
-            if (track.LastPlayedAt == reportedAt)
+            // The same listen: a position belongs to the listen since the
+            // last play was counted (LastPlayedAt moves only when one is), so
+            // a device that agrees on that play - or, for a track nobody has
+            // finished yet, agrees there was none - is saying where this one
+            // has got to: a pause, a track change, the app going away.
+            if (entry.LastPlayedAt == track.LastPlayedAt)
             {
                 if (track.ResumePosition == resume)
                     return moved;
@@ -2530,10 +2527,18 @@ namespace Flower.Models
                 return moved | TrackChange.ResumePosition;
             }
 
+            // Nothing to say about listening: a device that has not heard of
+            // this server's last play, or whose own is older, leaves both the
+            // timestamp and the position that rides with it alone.
+            if (entry.LastPlayedAt is not { } reportedAt)
+                return moved;
+            if (track.LastPlayedAt is { } knownAt && knownAt > reportedAt)
+                return moved;
+
             track.LastPlayedAt = reportedAt;
             track.ResumePosition = resume;
 
-            return moved | TrackChange.PlayStarted;
+            return moved | TrackChange.LastPlayed;
         }
 
         // Stars or unstars every track behind one id - a song, or every

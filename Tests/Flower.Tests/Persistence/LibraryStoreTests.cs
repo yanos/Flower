@@ -209,9 +209,8 @@ public class LibraryStoreTests : IsolatedHome
 
         // Through Library, not through a store method: the write is Library's
         // own now (see its ITrackStore), so a caller cannot bump a count and
-        // forget to persist it. Playing one song fires two of these -
-        // RecordPlayed when it starts, IncrementPlayCount when it ends - and
-        // each has to land on its own: this used to be debounced by 3s, and
+        // forget to persist it. Each play has to land on its own, count and
+        // date together: this used to be debounced by 3s, and
         // anything that killed the process inside that window (a crash, or a
         // phone backgrounding the app, which had no flush hook at all)
         // silently dropped the increment.
@@ -219,12 +218,10 @@ public class LibraryStoreTests : IsolatedHome
 
         library.IncrementPlayCount(track);
         Assert.Equal(1, Assert.Single(store.Load()).PlayCount);
+        Assert.NotNull(Assert.Single(store.Load()).LastPlayedAt);
 
         library.IncrementPlayCount(track);
         Assert.Equal(2, Assert.Single(store.Load()).PlayCount);
-
-        library.RecordPlayed(track);
-        Assert.NotNull(Assert.Single(store.Load()).LastPlayedAt);
     }
 
     [Fact]

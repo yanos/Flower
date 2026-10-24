@@ -85,36 +85,19 @@ public class OriginPlayReporterTests
         public void Dispose() => Server.Dispose();
     }
 
+    // A play is one event: counted and stamped together once it has been
+    // heard (Library.IncrementPlayCount), so one report carries both.
     [Fact]
-    public async Task A_finished_play_reaches_the_origin_as_a_completion()
+    public async Task A_heard_play_reaches_the_origin_as_one_event()
     {
         using var origin = new RecordingOrigin();
         var reporter = Reporter(origin.Server);
 
-        reporter.Report(Changed(Placeholder(), TrackChange.PlayFinished));
+        reporter.Report(Changed(Placeholder(), TrackChange.Plays));
         await reporter.InFlight;
 
         var play = Assert.Single(Assert.Single(origin.Batches).Plays);
         Assert.Equal("tr-1", play.TrackId);
-        Assert.True(play.Completed);
-        Assert.False(play.Started);
-    }
-
-    // The two halves stay distinct on the wire, so the far side ends up with
-    // the History a local player would have had rather than counting a skip as
-    // a listen - see Library.TrackChange.
-    [Fact]
-    public async Task A_started_play_is_reported_as_a_start_and_not_as_a_count()
-    {
-        using var origin = new RecordingOrigin();
-        var reporter = Reporter(origin.Server);
-
-        reporter.Report(Changed(Placeholder(), TrackChange.PlayStarted));
-        await reporter.InFlight;
-
-        var play = Assert.Single(Assert.Single(origin.Batches).Plays);
-        Assert.True(play.Started);
-        Assert.False(play.Completed);
     }
 
     // A desktop's own file, or a track imported from somewhere that is not this

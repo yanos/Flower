@@ -135,29 +135,6 @@ public class LibraryRescanTests
     }
 
     [Fact]
-    public void RecordPlayed_resolves_the_current_track_by_path_and_stamps_it()
-    {
-        var oldTrack = new Track { Path = "/music/a.mp3" };
-        var library = new Library(new List<Track> { oldTrack });
-
-        // A rescan swapped in a brand-new Track instance for the same file -
-        // like the Track a caller still holding a reference to oldTrack (e.g.
-        // PlaylistControlViewModel.CurrentlyPlayingTrack) would now be stale
-        // against.
-        var newTrack = new Track { Path = "/music/a.mp3" };
-        library.UpdateTracks(new List<Track> { newTrack });
-
-        var before = DateTimeOffset.UtcNow;
-        var played = library.RecordPlayed(oldTrack);
-        var after = DateTimeOffset.UtcNow;
-
-        Assert.Same(newTrack, played);
-        Assert.NotNull(newTrack.LastPlayedAt);
-        Assert.InRange(newTrack.LastPlayedAt!.Value, before, after);
-        Assert.Null(oldTrack.LastPlayedAt);
-    }
-
-    [Fact]
     public void IncrementPlayCount_resolves_the_current_track_by_path_and_increments_it()
     {
         var oldTrack = new Track { Path = "/music/a.mp3" };
@@ -170,17 +147,21 @@ public class LibraryRescanTests
         var newTrack = new Track { Path = "/music/a.mp3" };
         library.UpdateTracks(new List<Track> { newTrack });
 
+        var before = DateTimeOffset.UtcNow;
         var incremented = library.IncrementPlayCount(oldTrack);
+        var after = DateTimeOffset.UtcNow;
 
         Assert.Same(newTrack, incremented);
         Assert.Equal(1, newTrack.PlayCount);
+        Assert.InRange(newTrack.LastPlayedAt!.Value, before, after);
         Assert.Equal(0, oldTrack.PlayCount);
+        Assert.Null(oldTrack.LastPlayedAt);
     }
 
     // The browser head's case. PlaylistControlViewModel.ResolveForPlaybackAsync
     // hands the audio manager a *clone* of the queued placeholder carrying a
     // minted stream URL in Path, and that clone is what comes back through
-    // IncrementPlayCount/RecordPlayed - so resolving by path alone matched
+    // IncrementPlayCount - so resolving by path alone matched
     // nothing and every play a tab made was counted onto an object thrown away
     // at the next track change. Clone() keeps Id, which is what this resolves on.
     [Fact]
@@ -193,10 +174,8 @@ public class LibraryRescanTests
         streaming.Path = "http://origin.local/rest/stream?id=tr-7&ticket=abc";
 
         var incremented = library.IncrementPlayCount(streaming);
-        var played = library.RecordPlayed(streaming);
 
         Assert.Same(placeholder, incremented);
-        Assert.Same(placeholder, played);
         Assert.Equal(1, placeholder.PlayCount);
         Assert.NotNull(placeholder.LastPlayedAt);
         Assert.Equal(0, streaming.PlayCount);

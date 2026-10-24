@@ -21,10 +21,12 @@ namespace Flower.Services;
 // refresh converges, under max-merge, on "whatever the highest single session
 // happened to reach", silently discarding everything after it.
 
-// One play, at one moment. Started and Completed are the two halves Flower
-// keeps deliberately separate (see Library.TrackChange): a skipped track
-// reports a start and never a completion, so the far side's History matches
-// what the user actually put on without its play count claiming they listened.
+// One play, at one moment: a track heard (see ListenMeter), which moves the
+// far side's play count and its LastPlayed together, as it does on the device
+// that heard it (Library.IncrementPlayCount). A track started and skipped is
+// not reported at all. There used to be two halves here, a start and a
+// completion, sent minutes apart; History then showed songs the play count
+// said were never played.
 //
 // EventId exists only so a retry is safe. A batch that reached the server and
 // whose response was lost is re-sent by the reporter, and increments are not
@@ -32,14 +34,11 @@ namespace Flower.Services;
 public sealed record PlayEventDto(
     string EventId,
     string TrackId,
-    DateTimeOffset At,
-    bool Started,
-    bool Completed);
+    DateTimeOffset At);
 
 // POST /api/flower/v1/plays. A batch rather than one request per event
-// because the two halves of a single track's play are usually minutes apart
-// but the tail of one track and the head of the next are not, and because a
-// failed send has to be able to carry its backlog along with the next one.
+// because a failed send has to be able to carry its backlog along with the
+// next one.
 public sealed record PlayReportDto(List<PlayEventDto> Plays)
 {
     // What one report may carry. The reporter holds at most this many (see

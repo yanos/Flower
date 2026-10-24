@@ -310,10 +310,18 @@ public class LibrarySyncService
             // (PushTrackStateAsync below), and lets go of its own copy of a
             // song the server says was removed; everyone else mirrors the
             // server's dates and keeps the files they imported themselves.
+            // Where the server last said each resume position was, from
+            // before this pull reseeds it (SeedKnownServerState, below) - so
+            // the merge can tell a position this device moved and has not
+            // reported yet from one the server moved.
+            var resumeBaseline = _knownServerState.TryGetValue(device.Fingerprint, out var known)
+                ? known.ToDictionary(kv => kv.Key, kv => kv.Value.ResumePosition)
+                : null;
+
             removedCount = _library.MergeSyncedTracks(
                 device.Fingerprint, placeholders, _starBaselines.Load(device.Fingerprint),
                 ownersDevice: device.WeAreAdmin, removedAtSource: removedAtServer,
-                fileWork: fileWork);
+                fileWork: fileWork, resumeBaseline: resumeBaseline);
         }
         finally
         {
@@ -890,15 +898,17 @@ public class LibrarySyncService
         private bool MovesListeningForward(TrackStateSnapshot served) =>
             LastPlayedAt is { } mine && (served.LastPlayedAt is not { } theirs || mine > theirs);
 
-        // Where a sitting the server already knows about has since got to - a
-        // pause, a track change, the app going away. Only for that same
-        // sitting: where an older one got to is refused (see
+        // Where the listen the server already knows about has since got to - a
+        // pause, a track change, the app going away. A listen is what follows
+        // the last counted play, so "the same one" is agreeing on LastPlayedAt,
+        // including agreeing that no play has been counted yet: a podcast's
+        // first listen has none. Where an older listen got to is refused (see
         // ApplyReportedOwnerState), since a position only means something
         // attached to its own listen. Whole seconds, because that is what a
         // catalog serves it in (LibraryDtoMapper), and a finer difference would
         // read as news after every pull and go out again each time.
         private bool MovesPositionWithinTheSameListen(TrackStateSnapshot served) =>
-            LastPlayedAt is { } mine && served.LastPlayedAt == mine
+            served.LastPlayedAt == LastPlayedAt
             && WholeSeconds(ResumePosition) != WholeSeconds(served.ResumePosition);
 
         private static int? WholeSeconds(TimeSpan? position) =>

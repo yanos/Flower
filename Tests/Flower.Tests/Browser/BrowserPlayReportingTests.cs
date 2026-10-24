@@ -16,8 +16,8 @@ using Xunit;
 namespace Flower.Tests.Browser;
 
 // The chain a play actually travels on the browser head, wired exactly as
-// App.axaml.cs wires it: playback moves a counter on Library, Library raises
-// TrackChanged saying which half moved, and the reporter forwards it to
+// App.axaml.cs wires it: playback counts a play on Library, Library raises
+// TrackChanged, and the reporter forwards it to
 // the origin server. OriginPlayReporterTests covers the far end of that (the
 // HTTP), and SyncEndpointTests the server's; this covers the join, which is
 // where "the play reached the reporter at all" is decided.
@@ -78,33 +78,28 @@ public class BrowserPlayReportingTests : PinnedDataDirectory
         return (playback, audio, reporter, placeholder);
     }
 
-    // Starting a track is a History entry, not a listen. The server has to be
-    // told the same thing, or a tab's History and the server's diverge in
-    // content rather than merely in timing - a skipped track appears in one
-    // and not the other.
+    // Starting a track is not a play - not in the tab's History, and so not
+    // in the server's either.
     [Fact]
-    public void Starting_a_streamed_track_reports_the_started_half()
+    public void Starting_a_streamed_track_reports_nothing()
     {
         var (playback, _, reporter, placeholder) = BrowserTab();
 
         playback.Play(placeholder);
 
-        var (track, change) = Assert.Single(reporter.Reported);
-        Assert.Equal(TrackChange.PlayStarted, change);
-        Assert.Equal("tr-42", track.OriginTrackId);
+        Assert.Empty(reporter.Reported);
     }
 
     [Fact]
-    public void A_track_that_ended_naturally_reports_the_finished_half()
+    public void A_track_that_ended_naturally_reports_one_play()
     {
         var (playback, audio, reporter, placeholder) = BrowserTab();
 
         playback.Play(placeholder);
-        reporter.Reported.Clear();
         audio.RaiseEndReached();
 
         var (track, change) = Assert.Single(reporter.Reported);
-        Assert.Equal(TrackChange.PlayFinished, change);
+        Assert.Equal(TrackChange.Plays, change);
         Assert.Equal("tr-42", track.OriginTrackId);
     }
 

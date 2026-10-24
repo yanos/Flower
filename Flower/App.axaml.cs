@@ -935,9 +935,8 @@ public partial class App : Application
         if (playlistWriter != null)
             library.PlaylistsChanged += (_, _) => playlistWriter.Schedule(library.Playlists);
 
-        // Likewise the browser only - see IPlayReporter. Both halves of a play
-        // raise TrackChanged (the played-at stamp when a track starts, the
-        // count bump once it has been heard) and say which half they were, so
+        // Likewise the browser only - see IPlayReporter. A play raises
+        // TrackChanged once it has been heard (Library.IncrementPlayCount), so
         // this needs no knowledge of the playback pipeline. The reporter picks
         // the plays out of everything else the event carries.
         var playReporter = provider.GetService<Importer.IPlayReporter>();

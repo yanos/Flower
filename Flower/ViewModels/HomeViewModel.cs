@@ -229,7 +229,7 @@ public sealed class HomeViewModel : ViewModelBase, IDisposable
         // counts change nothing here.
         _subscriptions.Add<EventHandler<TrackChangedEventArgs>>((_, e) =>
         {
-            if ((e.Change & (TrackChange.PlayStarted | TrackChange.Reshaping)) != 0)
+            if ((e.Change & (TrackChange.LastPlayed | TrackChange.Reshaping)) != 0)
                 Invalidate();
         },
             h => library.TrackChanged += h, h => library.TrackChanged -= h);

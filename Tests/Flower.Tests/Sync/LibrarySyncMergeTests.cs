@@ -185,6 +185,63 @@ public class LibrarySyncMergeTests
         Assert.Equal(TimeSpan.FromMinutes(50), library.Tracks.Single().ResumePosition);
     }
 
+    // A listen moves LastPlayedAt only once it is counted, so a podcast paused
+    // here ties with the server's copy until then. A pull landing before the
+    // pause was reported must not put back where the server last had it.
+    [Fact]
+    public void MergeSyncedTracks_keeps_a_position_this_device_moved_and_has_not_reported()
+    {
+        var mine = new Track
+        {
+            Title = "Long Set", Artists = "DJ", Album = "Mixes",
+            Duration = TimeSpan.FromSeconds(100), Path = "/music/set.mp3",
+            OriginTrackId = "srv-1", RememberPlaybackPosition = true,
+            ResumePosition = TimeSpan.FromMinutes(20),
+        };
+        var library = new Library(new List<Track> { mine });
+        var incoming = new Track
+        {
+            Title = "Long Set", Artists = "DJ", Album = "Mixes",
+            Duration = TimeSpan.FromSeconds(100), Path = null,
+            OriginDeviceFingerprint = "peer-1", OriginTrackId = "srv-1",
+            RememberPlaybackPosition = true,
+            ResumePosition = TimeSpan.FromMinutes(10),
+        };
+
+        library.MergeSyncedTracks("peer-1", new List<Track> { incoming },
+            resumeBaseline: new Dictionary<string, TimeSpan?> { ["srv-1"] = TimeSpan.FromMinutes(10) });
+
+        Assert.Equal(TimeSpan.FromMinutes(20), library.Tracks.Single().ResumePosition);
+    }
+
+    // The other side of the same rule: the server moving the position - the
+    // phone carried on with the episode - is taken.
+    [Fact]
+    public void MergeSyncedTracks_takes_a_position_the_server_moved_in_the_same_listen()
+    {
+        var mine = new Track
+        {
+            Title = "Long Set", Artists = "DJ", Album = "Mixes",
+            Duration = TimeSpan.FromSeconds(100), Path = "/music/set.mp3",
+            OriginTrackId = "srv-1", RememberPlaybackPosition = true,
+            ResumePosition = TimeSpan.FromMinutes(10),
+        };
+        var library = new Library(new List<Track> { mine });
+        var incoming = new Track
+        {
+            Title = "Long Set", Artists = "DJ", Album = "Mixes",
+            Duration = TimeSpan.FromSeconds(100), Path = null,
+            OriginDeviceFingerprint = "peer-1", OriginTrackId = "srv-1",
+            RememberPlaybackPosition = true,
+            ResumePosition = TimeSpan.FromMinutes(30),
+        };
+
+        library.MergeSyncedTracks("peer-1", new List<Track> { incoming },
+            resumeBaseline: new Dictionary<string, TimeSpan?> { ["srv-1"] = TimeSpan.FromMinutes(10) });
+
+        Assert.Equal(TimeSpan.FromMinutes(30), library.Tracks.Single().ResumePosition);
+    }
+
     // A real local file's tags belong to the importer that read them off that
     // file. A peer's copy must not overwrite them - the next rescan would only
     // put the local values back, so the two would fight indefinitely.

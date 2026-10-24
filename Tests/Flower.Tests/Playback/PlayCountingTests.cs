@@ -86,6 +86,30 @@ public class PlayCountingTests : PinnedDataDirectory
         Assert.Equal(1, song.PlayCount);
     }
 
+    // "Last played" is the same event as the count: a song started and
+    // skipped is in neither, so a "Plays is 0" smart playlist and History
+    // cannot disagree about it.
+    [Fact]
+    public void Last_played_is_stamped_with_the_count_and_not_when_the_track_starts()
+    {
+        var song = T("Song", ThreeMinutes);
+        var next = T("Next", ThreeMinutes);
+        var vm = Player(song, next);
+        vm.Play(song);
+
+        HearUpTo(TimeSpan.FromSeconds(60));
+        Assert.Null(song.LastPlayedAt);
+
+        vm.Play(next);
+        _audio.Time = 0;
+        Assert.Null(song.LastPlayedAt);
+        Assert.Equal(0, song.PlayCount);
+
+        HearUpTo(TimeSpan.FromSeconds(162));
+        Assert.Equal(1, next.PlayCount);
+        Assert.NotNull(next.LastPlayedAt);
+    }
+
     [Fact]
     public void Playing_on_to_the_end_does_not_count_it_a_second_time()
     {

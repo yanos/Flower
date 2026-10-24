@@ -389,17 +389,17 @@ client only logs it: its next sync drops those playlists the ordinary way.
 
 ### `POST /plays`
 
-`{"Plays": [{"EventId", "TrackId", "At", "Started", "Completed"}]}` → `204`.
+`{"Plays": [{"EventId", "TrackId", "At"}]}` → `204`.
 
 Events, not totals, because a browser tab has no durable counter to state a
 total from. `EventId` makes a retry safe: the server drops one the same device
-has already sent, remembering up to 5,000 per device for six hours. `Started`
-and `Completed` are separate so a skipped track reaches History without
-inflating its play count.
+has already sent, remembering up to 5,000 per device for six hours. An event
+is a play heard, sent once it has been: the play count and `LastPlayed` move
+together, and a skipped track is not reported at all.
 
 Who signed decides where a play lands. An admin device's plays move the
-library's own `PlayCount` and `LastPlayed`. Any other device's finished plays
-go under its own fingerprint in `PlayCounts`, and its starts move nothing. A
+library's own `PlayCount` and `LastPlayed`. Any other device's plays go under
+its own fingerprint in `PlayCounts`, and move nothing else. A
 report holds at most 500 events, with ids of at most 64 characters; past either
 limit it is a `400`.
 

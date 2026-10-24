@@ -384,6 +384,36 @@ public class TrackStateReportingTests
         Assert.Equal(754, Assert.Single(report).ResumePositionSeconds);
     }
 
+    // A podcast's first listen: no play has been counted anywhere yet, so
+    // neither side has a LastPlayedAt, and that agreement is the same listen.
+    [Fact]
+    public void An_admin_device_reports_where_a_first_listen_has_got_to()
+    {
+        var served = Played("Episode", "server-track-7", 0);
+        var track = Played("Episode", "server-track-7", 0);
+        track.ResumePosition = TimeSpan.FromSeconds(754);
+
+        var report = LibrarySyncService.UnreportedTrackState(
+            [track], new Dictionary<string, int>(),
+            ServerSaid("server-track-7", served), includeOwnerState: true);
+
+        Assert.Equal(754, Assert.Single(report).ResumePositionSeconds);
+    }
+
+    // And the server takes it, for the same reason.
+    [Fact]
+    public void A_server_takes_where_a_first_listen_has_got_to()
+    {
+        var episode = new Track { Title = "Episode", Path = "/music/episode.mp3" };
+        var server = new Library([episode]);
+
+        server.MergeReportedTrackState(
+            "owner-phone", [new TrackStateDto(episode.Id.ToKey(), 0, ResumePositionSeconds: 754)], callerIsAdmin: true);
+
+        Assert.Equal(TimeSpan.FromSeconds(754), episode.ResumePosition);
+        Assert.Null(episode.LastPlayedAt);
+    }
+
     // Where an older sitting got to only means something attached to that
     // sitting, and the server would refuse it.
     [Fact]

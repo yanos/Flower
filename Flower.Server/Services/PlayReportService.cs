@@ -58,17 +58,6 @@ public sealed class PlayReportService(Library library, ILogger<PlayReportService
         var applied = 0;
         foreach (var play in report.Plays)
         {
-            var change = default(TrackChange);
-            if (play.Started)
-                change |= TrackChange.PlayStarted;
-            if (play.Completed)
-                change |= TrackChange.PlayFinished;
-
-            // Neither half set says nothing happened. Dropped before the id is
-            // recorded, so it cannot burn an id that a real event might reuse.
-            if (change == default)
-                continue;
-
             if (!TryRemember(deviceFingerprint, play.EventId, now))
             {
                 logger.LogDebug("Ignoring play event {EventId}, already applied", play.EventId);
@@ -76,8 +65,8 @@ public sealed class PlayReportService(Library library, ILogger<PlayReportService
             }
 
             var recorded = callerIsAdmin
-                ? library.RecordPlay(play.TrackId, change)
-                : change.HasFlag(TrackChange.PlayFinished) && library.RecordPlayFor(play.TrackId, deviceFingerprint);
+                ? library.RecordPlay(play.TrackId)
+                : library.RecordPlayFor(play.TrackId, deviceFingerprint);
 
             if (recorded)
             {
@@ -86,7 +75,7 @@ public sealed class PlayReportService(Library library, ILogger<PlayReportService
             else
             {
                 logger.LogDebug(
-                    "Nothing to record for play event {EventId} of {TrackId}: no such track here, or a start from a device that is not an admin",
+                    "Nothing to record for play event {EventId} of {TrackId}: no such track here",
                     play.EventId, play.TrackId);
             }
         }

@@ -91,9 +91,7 @@ public sealed class OriginPlayReporter(
         var play = new PlayEventDto(
             Guid.NewGuid().ToString("N"),
             originTrackId,
-            DateTimeOffset.UtcNow,
-            change.HasFlag(TrackChange.PlayStarted),
-            change.HasFlag(TrackChange.PlayFinished));
+            DateTimeOffset.UtcNow);
 
         lock (_gate)
         {

@@ -72,12 +72,12 @@ public class LibraryChangeEventTests
         // means a full UI rebuild and a peer library sync - twice per song change.
         Assert.Equal(0, libraryChanged);
         Assert.Same(track, Assert.Single(changed!.Tracks));
-        Assert.Equal(TrackChange.PlayFinished, changed.Change);
+        Assert.Equal(TrackChange.Plays, changed.Change);
         Assert.Equal(ChangeSource.Local, changed.Source);
     }
 
     [Fact]
-    public void RecordPlayed_raises_TrackChanged_with_the_resolved_track()
+    public void IncrementPlayCount_raises_TrackChanged_with_the_resolved_track()
     {
         var oldTrack = new Track { Title = "A", Path = "/music/a.mp3" };
         var library  = new Library(new List<Track> { oldTrack });
@@ -90,10 +90,10 @@ public class LibraryChangeEventTests
         TrackChangedEventArgs? changed = null;
         library.TrackChanged += (_, e) => changed = e;
 
-        library.RecordPlayed(oldTrack);
+        library.IncrementPlayCount(oldTrack);
 
         Assert.Same(rescanned, Assert.Single(changed!.Tracks));
-        Assert.Equal(TrackChange.PlayStarted, changed.Change);
+        Assert.Equal(TrackChange.Plays, changed.Change);
         Assert.NotNull(rescanned.LastPlayedAt);
     }
 
@@ -272,10 +272,7 @@ public class LibraryChangeEventTests
         Assert.True(seen.Add(library.ChangeToken), "UpdateTracks must move the token");
 
         library.IncrementPlayCount(track);
-        Assert.True(seen.Add(library.ChangeToken), "A play count rides along in the manifest");
-
-        library.RecordPlayed(track);
-        Assert.True(seen.Add(library.ChangeToken), "LastPlayedAt rides along in the manifest");
+        Assert.True(seen.Add(library.ChangeToken), "A play rides along in the manifest");
 
         library.MergeSyncedTracks("peer", [new Track { Title = "C", OriginDeviceFingerprint = "peer" }]);
         Assert.True(seen.Add(library.ChangeToken), "MergeSyncedTracks must move the token");

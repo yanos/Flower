@@ -399,12 +399,13 @@ namespace Flower.Models
         public int PlayCount { get; set; }
         public int ImportedPlayCount { get; set; }
 
-        // When this track last started playing (see PlaylistControlViewModel.Play,
-        // via Library.RecordPlayed) - null if never played. Deliberately stamped at
-        // play-start, not once it has been heard like PlayCount above: "History"
-        // (the sidebar view this drives) means "you played this", not "you sat
-        // through the whole thing". Library.UpdateTracks carries it forward across
-        // rescans the same way DateAdded/PlayCount are.
+        // When this track was last played - null if never. Stamped in the same
+        // step as PlayCount above (Library.IncrementPlayCount), once nine
+        // tenths of it has been heard, so a song started and skipped is in
+        // neither History nor any count: the two used to have separate
+        // triggers, start and heard, and a "Plays is 0" smart playlist showed
+        // songs History said were played. Library.UpdateTracks carries it
+        // forward across rescans the same way DateAdded/PlayCount are.
         public DateTimeOffset? LastPlayedAt { get; set; }
 
         // A "starred" flag, inherited from the OpenSubsonic surface that first
