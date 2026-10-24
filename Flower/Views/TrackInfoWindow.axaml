@@ -61,6 +61,20 @@
     <Style Selector="CheckBox.option">
       <Setter Property="FontSize" Value="13"/>
     </Style>
+    <!-- Songs whose covers differ (AlbumArtLoader.ShareOneCover) have none
+         to show, and say so over the empty frame in place of the note. -->
+    <Style Selector="controls|AlbumArtView.multipleArt TextBlock.placeholderGlyph">
+      <Setter Property="IsVisible" Value="False"/>
+    </Style>
+    <Style Selector="TextBlock.multipleArt">
+      <Setter Property="Text" Value="Multiple Album Art"/>
+      <Setter Property="Opacity" Value="0.6"/>
+      <Setter Property="TextAlignment" Value="Center"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+      <Setter Property="HorizontalAlignment" Value="Center"/>
+      <Setter Property="VerticalAlignment" Value="Center"/>
+      <Setter Property="IsHitTestVisible" Value="False"/>
+    </Style>
     <!-- A rule between groups of fields, across the column it is in. -->
     <Style Selector="Border.rule">
       <Setter Property="Height" Value="1"/>
@@ -133,13 +147,14 @@
            box doesn't collapse to zero width before art loads. A glance-level
            "which track am I editing" cue: the Artwork tab is where the art is
            actually looked at (and replaced) at size. -->
-      <controls:AlbumArtView x:Name="AlbumArtView"
-              Grid.Column="0" Grid.RowSpan="2"
-              Height="112" MinWidth="112" Margin="0,0,24,12"
-              ArtCornerRadius="6"
-              Stretch="Uniform"
-              VerticalAlignment="Top"
-              DoubleTapped="Artwork_DoubleTapped"/>
+      <Panel Grid.Column="0" Grid.RowSpan="2" Margin="0,0,24,12" VerticalAlignment="Top">
+        <controls:AlbumArtView x:Name="AlbumArtView"
+                Height="112" MinWidth="112"
+                ArtCornerRadius="6"
+                Stretch="Uniform"
+                DoubleTapped="Artwork_DoubleTapped"/>
+        <TextBlock x:Name="MultipleArtLabel" Classes="multipleArt" FontSize="12" Margin="8,0" IsVisible="False"/>
+      </Panel>
 
       <StackPanel x:Name="TitleStack" Grid.Column="1" VerticalAlignment="Top" Spacing="2">
         <SelectableTextBlock x:Name="TitleDisplay" Text="{Binding TitleText}"  FontSize="22" FontWeight="Medium" TextWrapping="Wrap"/>
@@ -372,6 +387,7 @@
                   PointerReleased="ArtDropTarget_PointerReleased">
             <Panel>
               <controls:AlbumArtView x:Name="ArtworkLargeView" Stretch="Uniform"/>
+              <TextBlock x:Name="MultipleArtLargeLabel" Classes="multipleArt" FontSize="16" IsVisible="False"/>
               <TextBlock x:Name="ArtDropHint"
                          Text="Drop an image here"
                          FontSize="12"

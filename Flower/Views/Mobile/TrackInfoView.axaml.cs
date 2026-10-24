@@ -40,7 +40,7 @@ public partial class TrackInfoView : UserControl
         (DataContext as MobileMainViewModel)?.Main.LoggerFactory.CreateLogger<TrackInfoView>()
         ?? NullLogger<TrackInfoView>.Instance;
     // The songs being edited - one, or every song of an album - and the first
-    // of them, whose cover the card shows. A new one each time the sheet shows
+    // of them, whose cover the card shows when they share one. A new one each time the sheet shows
     // songs, so the suggestion pools are read fresh: a genre typed into
     // another song a minute ago belongs in the list now.
     private TrackInfoViewModel? _info;
@@ -323,13 +323,26 @@ public partial class TrackInfoView : UserControl
     // The cover on the card, and under it its real size: measured from the
     // undecoded bytes (AlbumArtLoader.TryGetArt), since the bitmap the card
     // draws is capped at the loader's display size and would report the cap.
+    // Songs that do not share one cover (AlbumArtLoader.ShareOneCover) show
+    // "Multiple Album Art" instead - the first one's would read as everyone's.
     private async Task LoadAlbumArtAsync(Track track)
     {
         var requestId = ++_artRequestId;
         ArtView.AlbumArt = null;
         ArtResolution.IsVisible = false;
         RemoveArtPill.IsVisible = false;
+        ShowMultipleArt(false);
         _artBytes = null;
+
+        var tracks = _tracks;
+        if (tracks.Count > 1 && !await Task.Run(() => AlbumArtLoader.ShareOneCover(tracks)))
+        {
+            if (requestId != _artRequestId)
+                return;
+            ShowMultipleArt(true);
+            RemoveArtPill.IsVisible = ArtButtons.IsVisible;
+            return;
+        }
 
         var bitmap = await AlbumArtLoader.Current.LoadAsync(track);
         var (bytes, size) = await Task.Run(() =>
@@ -345,6 +358,12 @@ public partial class TrackInfoView : UserControl
         ArtResolution.Text = size is { } pixels ? TrackInfoViewModel.Resolution(pixels) : "";
         ArtResolution.IsVisible = size is not null;
         RemoveArtPill.IsVisible = bitmap is not null && ArtButtons.IsVisible;
+    }
+
+    private void ShowMultipleArt(bool multiple)
+    {
+        MultipleArtLabel.IsVisible = multiple;
+        ArtView.Classes.Set("multipleArt", multiple);
     }
 
     private static byte[]? ReencodeAsPng(byte[] bytes)

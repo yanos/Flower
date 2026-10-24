@@ -398,6 +398,30 @@ public class AlbumArtLoader
         }
     }
 
+    // Whether these songs all carry the same cover - none at all counts, so a
+    // selection where some have one and some do not does not. Track Info shows
+    // "Multiple Album Art" when they do not, rather than the first song's
+    // cover as if it were everyone's. Songs of the server's name their cover
+    // by album (LibraryDtoMapper's CoverArt), so for those the name is enough;
+    // anything else is read and compared, stopping at the first that differs.
+    // Reads files, so off the UI thread.
+    public static bool ShareOneCover(IReadOnlyList<Track> tracks)
+    {
+        if (tracks.Count < 2)
+            return true;
+        if (tracks.All(t => !string.IsNullOrEmpty(t.OriginAlbumArtId)))
+            return tracks.All(t => t.OriginAlbumArtId == tracks[0].OriginAlbumArtId);
+
+        var first = TryGetArt(tracks[0])?.Bytes ?? [];
+        for (var i = 1; i < tracks.Count; i++)
+        {
+            var bytes = TryGetArt(tracks[i])?.Bytes ?? [];
+            if (!bytes.AsSpan().SequenceEqual(first))
+                return false;
+        }
+        return true;
+    }
+
     // The art's own pixel size - what Track Info writes under the cover, on
     // both heads. Read from the header (ImageHeader), and decoded only for a
     // format that cannot read; both views used to decode the whole picture for

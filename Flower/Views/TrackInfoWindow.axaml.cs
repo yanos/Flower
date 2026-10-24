@@ -52,6 +52,10 @@ public partial class TrackInfoWindow : Window
     private LocalAlbumArt? _art;
     private PixelSize? _artPixelSize;
 
+    // The songs edited together do not all carry one cover, so there is none
+    // to show - see AlbumArtLoader.ShareOneCover.
+    private bool _multipleArt;
+
     // A Find Online still searching or downloading, and the covers it found
     // while they are on show - both dropped on Prev/Next and on closing.
     private CancellationTokenSource? _findArt;
@@ -164,11 +168,10 @@ public partial class TrackInfoWindow : Window
     private void StarButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
         _info.ToggleStar();
 
-    // Shows the first selected track's art (embedded tag picture, falling back
-    // to a cover/folder image file - see AlbumArtLoader). For a batch selection
-    // spanning multiple albums this is necessarily just one representative
-    // thumbnail, not a "mixed" indicator - album art has no text form to show
-    // "Multiple values" with.
+    // Shows the songs' art (embedded tag picture, falling back to a
+    // cover/folder image file - see AlbumArtLoader) where they share one, and
+    // "Multiple Album Art" where they do not: the first song's cover would
+    // read as everyone's.
     private async Task LoadAlbumArtAsync()
     {
         var requestId = ++_artRequestId;
@@ -176,11 +179,22 @@ public partial class TrackInfoWindow : Window
         ArtworkLargeView.AlbumArt = null;
         _art = null;
         _artPixelSize = null;
+        _multipleArt = false;
         UpdateArtworkTab();
         if (_editTracks.Count == 0)
             return;
 
-        var track = _editTracks[0];
+        var tracks = _editTracks;
+        if (tracks.Count > 1 && !await Task.Run(() => AlbumArtLoader.ShareOneCover(tracks)))
+        {
+            if (requestId != _artRequestId)
+                return;
+            _multipleArt = true;
+            UpdateArtworkTab();
+            return;
+        }
+
+        var track = tracks[0];
         var bmp = await AlbumArtLoader.Current.LoadAsync(track);
 
         // The undecoded bytes, and the real pixel dimensions read from them -
@@ -601,13 +615,16 @@ public partial class TrackInfoWindow : Window
         var canWrite = writable > 0 || serverAlbums > 0;
         var hasArt = _art?.Bytes is { Length: > 0 };
 
-        ArtDropHint.IsVisible = !hasArt && canWrite;
+        ArtDropHint.IsVisible = !hasArt && canWrite && !_multipleArt;
+        MultipleArtLabel.IsVisible = _multipleArt;
+        MultipleArtLargeLabel.IsVisible = _multipleArt;
+        AlbumArtView.Classes.Set("multipleArt", _multipleArt);
         ChangeArtButton.IsEnabled = canWrite;
         PasteArtButton.IsEnabled = canWrite;
         FindArtButton.IsEnabled = canWrite;
-        RemoveArtButton.IsEnabled = canWrite && hasArt;
+        RemoveArtButton.IsEnabled = canWrite && (hasArt || _multipleArt);
         OpenArtButton.IsEnabled = hasArt;
 
-        ArtworkInfoText.Text = _info.DescribeArtwork(_art, _artPixelSize, writable, serverAlbums);
+        ArtworkInfoText.Text = _info.DescribeArtwork(_art, _artPixelSize, writable, serverAlbums, _multipleArt);
     }
 }
