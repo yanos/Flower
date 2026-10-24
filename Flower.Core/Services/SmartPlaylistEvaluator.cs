@@ -339,11 +339,8 @@ public static class SmartPlaylistEvaluator
         _ => throw new SmartPlaylistRuleException($"Unknown relative unit {relative.Unit}."),
     };
 
-    private static bool MatchesBool(bool actual, SmartCondition condition)
-    {
-        var expected = Expect<SmartValue.Flag>(condition).Value;
-        return condition.Operator == SmartOperator.Is ? actual == expected : actual != expected;
-    }
+    private static bool MatchesBool(bool actual, SmartCondition condition) =>
+        actual == Expect<SmartValue.Flag>(condition).Value;
 
     private static bool MatchesPlaylist(Track track, SmartCondition condition, SmartPlaylistContext context)
     {

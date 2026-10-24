@@ -129,6 +129,7 @@ public class SmartPlaylistEditorViewModelTests
         Assert.Equal(date, row.ShowDateBox);
         Assert.Equal(relative, row.ShowRelative);
         Assert.Equal(boolean, row.ShowBoolBox);
+        Assert.Equal(!boolean, row.ShowOperatorBox);
     }
 
     [Fact]

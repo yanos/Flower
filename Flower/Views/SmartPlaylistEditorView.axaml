@@ -186,11 +186,6 @@
                     SelectedItem="{Binding SelectedRelativeUnit, Mode=TwoWay}"
                     IsVisible="{Binding ShowRelative}"
                     MinWidth="110" VerticalAlignment="Center"/>
-
-          <ComboBox ItemsSource="{Binding BoolValues}"
-                    SelectedItem="{Binding BoolValue, Mode=TwoWay}"
-                    IsVisible="{Binding ShowBoolBox}"
-                    MinWidth="90" VerticalAlignment="Center"/>
         </WrapPanel>
 
         <ComboBox ItemsSource="{Binding Playlists}"
@@ -234,7 +229,13 @@
 
         <ComboBox Grid.Column="1" Margin="0,0,6,0" HorizontalAlignment="Stretch"
                   ItemsSource="{Binding Operators}"
-                  SelectedItem="{Binding Operator, Mode=TwoWay}"/>
+                  SelectedItem="{Binding Operator, Mode=TwoWay}"
+                  IsVisible="{Binding ShowOperatorBox}"/>
+
+        <ComboBox Grid.Column="1" Margin="0,0,6,0" HorizontalAlignment="Stretch"
+                  ItemsSource="{Binding BoolValues}"
+                  SelectedItem="{Binding BoolValue, Mode=TwoWay}"
+                  IsVisible="{Binding ShowBoolBox}"/>
 
         <ContentControl Grid.Column="2" Content="{Binding}"
                         ContentTemplate="{StaticResource ValueControls}"/>
@@ -258,7 +259,13 @@
 
           <ComboBox Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="2" HorizontalAlignment="Stretch"
                     ItemsSource="{Binding Operators}"
-                    SelectedItem="{Binding Operator, Mode=TwoWay}"/>
+                    SelectedItem="{Binding Operator, Mode=TwoWay}"
+                    IsVisible="{Binding ShowOperatorBox}"/>
+
+          <ComboBox Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="2" HorizontalAlignment="Stretch"
+                    ItemsSource="{Binding BoolValues}"
+                    SelectedItem="{Binding BoolValue, Mode=TwoWay}"
+                    IsVisible="{Binding ShowBoolBox}"/>
 
           <ContentControl Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
                           Content="{Binding}"

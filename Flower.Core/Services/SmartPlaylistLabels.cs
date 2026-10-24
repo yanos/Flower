@@ -40,7 +40,6 @@ public static class SmartPlaylistLabels
     {
         (SmartOperator.GreaterThan, SmartValueKind.Date) => "is after",
         (SmartOperator.LessThan,    SmartValueKind.Date) => "is before",
-        (SmartOperator.Is,          SmartValueKind.Bool) => "is",
         _ => Name(op),
     };
 

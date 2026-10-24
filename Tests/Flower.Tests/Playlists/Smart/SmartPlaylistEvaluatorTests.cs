@@ -244,14 +244,14 @@ public class SmartPlaylistEvaluatorTests
     // --- Booleans and membership -----------------------------------------
 
     [Fact]
-    public void Booleans_match_both_ways_round()
+    public void Booleans_match_yes_and_no()
     {
         var tracks = new List<Track> { T(title: "Starred", starred: true), T(title: "Not") };
 
         Assert.Equal("Starred", Assert.Single(Evaluate(SmartPlaylistRules.MatchAll(
             new SmartCondition(SmartField.Starred, SmartOperator.Is, new SmartValue.Flag(true))), tracks)).Title);
         Assert.Equal("Not", Assert.Single(Evaluate(SmartPlaylistRules.MatchAll(
-            new SmartCondition(SmartField.Starred, SmartOperator.IsNot, new SmartValue.Flag(true))), tracks)).Title);
+            new SmartCondition(SmartField.Starred, SmartOperator.Is, new SmartValue.Flag(false))), tracks)).Title);
     }
 
     [Fact]
@@ -325,7 +325,7 @@ public class SmartPlaylistEvaluatorTests
     {
         var tracks = new List<Track> { WithArt("Small", 300, 300), WithArt("Bare", 0, 0), WithArt("Big", 1400, 1400) };
         var small = new SmartCondition(SmartField.ArtworkSize, SmartOperator.LessThan, new SmartValue.Number(500));
-        var bare = new SmartCondition(SmartField.HasArtwork, SmartOperator.IsNot, new SmartValue.Flag(true));
+        var bare = new SmartCondition(SmartField.HasArtwork, SmartOperator.Is, new SmartValue.Flag(false));
 
         Assert.Equal("Small", Assert.Single(Evaluate(SmartPlaylistRules.MatchAll(small), tracks)).Title);
         Assert.Equal(["Small", "Bare"], Evaluate(SmartPlaylistRules.MatchAny(small, bare), tracks).Select(t => t.Title));

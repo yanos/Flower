@@ -55,8 +55,9 @@ public sealed class SmartConditionRowViewModel : ViewModelBase
     public static ImmutableArray<RelativeUnitOption> AllRelativeUnits { get; } =
         [.. Enum.GetValues<RelativeUnit>().Select(u => new RelativeUnitOption(u, SmartPlaylistLabels.Name(u)))];
 
-    // "Yes"/"No" rather than a CheckBox, so a bool row reads as the same
-    // three-part sentence as every other row: "Starred / is / Yes".
+    // "Yes"/"No" rather than a CheckBox, so a bool row is picked from a box
+    // like every other row - and in the operator's place, since "is" is the
+    // only operator a bool has: "Starred / Yes".
     public static ImmutableArray<string> BoolOptions { get; } = ["Yes", "No"];
 
     // Instance-facing views of the three static tables above: a compiled
@@ -285,6 +286,8 @@ public sealed class SmartConditionRowViewModel : ViewModelBase
 
     public bool ShowBoolBox => Kind == SmartValueKind.Bool;
 
+    public bool ShowOperatorBox => !ShowBoolBox;
+
     public bool ShowPlaylistBox => Kind == SmartValueKind.Playlist;
 
     public bool ShowSecondValueBox => IsBetween && ShowValueBox;
@@ -296,7 +299,7 @@ public sealed class SmartConditionRowViewModel : ViewModelBase
     public bool ShowSingleValueBox => ShowValueBox && !IsBetween;
 
     // The controls that keep their own widths and wrap as a group.
-    public bool ShowWrappedValues => ShowDateBox || ShowRelative || ShowBoolBox;
+    public bool ShowWrappedValues => ShowDateBox || ShowRelative;
 
     // Told rather than shown, since the row is already three controls wide
     // and has no space for a format label: a duration's format, and the unit
@@ -313,6 +316,7 @@ public sealed class SmartConditionRowViewModel : ViewModelBase
         OnPropertyChanged(nameof(ShowDateBox));
         OnPropertyChanged(nameof(ShowRelative));
         OnPropertyChanged(nameof(ShowBoolBox));
+        OnPropertyChanged(nameof(ShowOperatorBox));
         OnPropertyChanged(nameof(ShowPlaylistBox));
         OnPropertyChanged(nameof(ShowSecondValueBox));
         OnPropertyChanged(nameof(ShowSecondDateBox));

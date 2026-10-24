@@ -124,7 +124,10 @@ public static class SmartPlaylistFields
             SmartOperator.InTheLast, SmartOperator.NotInTheLast,
             SmartOperator.IsEmpty, SmartOperator.IsNotEmpty,
         ],
-        SmartValueKind.Bool or SmartValueKind.Playlist =>
+        // Yes or No says everything "is not" would: "Starred is not Yes" is
+        // "Starred is No".
+        SmartValueKind.Bool => [SmartOperator.Is],
+        SmartValueKind.Playlist =>
         [
             SmartOperator.Is, SmartOperator.IsNot,
         ],
