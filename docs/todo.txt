@@ -8,9 +8,6 @@ long term:
  UI tests (Playwright?)
  
 external services
- most popular track for an artist service
- artist image service
- lyric service
  bandcamp integration
  other streaming platform integration if possible
  
