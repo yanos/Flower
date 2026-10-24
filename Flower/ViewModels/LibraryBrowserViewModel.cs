@@ -358,6 +358,17 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
     private string? _lastSelectedArtist;
     private HashSet<string> _selectedSubItems = new();
 
+    // The songs of the artists picked, as of the pick or the last rebuild -
+    // taken then because a rename changes the very Track objects the library
+    // holds, so by the next Repopulate there is no asking which songs carried
+    // the old name. See FollowRenamedArtists.
+    private HashSet<Guid> _pickedArtistSongs = new();
+
+    private HashSet<Guid> PickedArtistSongs() =>
+        _host.CurrentKind == SidebarItemKind.Artists
+            ? GetTracksForSubListItems(_selectedSubItems).Select(t => t.Id).ToHashSet()
+            : new HashSet<Guid>();
+
     // The full multi-selection of album/artist names in SubList - drives both
     // the track-list union filter (GetBaseTracksForFilter) and what gets
     // dragged onto a playlist (GetTracksForSubListItems). SelectedSubItem below
@@ -388,6 +399,7 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
     {
         _selectedSubItems = new HashSet<string>(items);
         _selectedSubItem  = items.Count > 0 ? items[0] : null;
+        _pickedArtistSongs = PickedArtistSongs();
         RememberSubItemSelection(_selectedSubItem);
         OnPropertyChanged(nameof(SelectedSubItem));
         OnPropertyChanged(nameof(SelectedSubItems));
@@ -474,7 +486,9 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
 
     public void ResortArtists() => RebuildVisibleSubListItems();
 
-    public void RebuildSubListItems()
+    // followRenamedArtists only from Repopulate: on a move between pages the
+    // pick is still the last page's, and is about to be replaced anyway.
+    public void RebuildSubListItems(bool followRenamedArtists = false)
     {
         if (_host.CurrentKind == SidebarItemKind.Albums)
             SubListItems = new ObservableCollection<string>(
@@ -483,7 +497,46 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
             SubListItems = new ObservableCollection<string>(ArtistNames.Of(_allTracks));
         else
             SubListItems = new ObservableCollection<string>();
+
+        var followed = followRenamedArtists && FollowRenamedArtists();
         RebuildVisibleSubListItems();
+        if (followed)
+        {
+            OnPropertyChanged(nameof(SelectedSubItem));
+            OnPropertyChanged(nameof(SelectedSubItems));
+        }
+    }
+
+    // An artist renamed while picked - in Track Info, or by a sync - is no
+    // longer in the column, and the desktop then picked the first artist
+    // listed and scrolled the column to the top to show it. The pick follows
+    // the songs instead, to whatever they are by now. Done before the new
+    // names are published, so nothing sees the pick on a name the column has
+    // lost, and only where a picked name is gone: an artist some of whose
+    // songs were renamed is still there, and stays picked.
+    private bool FollowRenamedArtists()
+    {
+        if (_host.CurrentKind != SidebarItemKind.Artists || _selectedSubItems.Count == 0)
+            return false;
+
+        var listed = new HashSet<string>(_subListItems, ArtistNames.Comparer);
+        if (_selectedSubItems.All(listed.Contains))
+            return false;
+
+        var byName = _subListItems.ToDictionary(n => n, ArtistNames.Comparer);
+        var now = _allTracks
+            .Where(t => _pickedArtistSongs.Contains(t.Id) && t.Artists != null && byName.ContainsKey(t.Artists))
+            .Select(t => byName[t.Artists!])
+            .Concat(_selectedSubItems.Where(listed.Contains).Select(n => byName[n]))
+            .Distinct()
+            .ToList();
+        if (now.Count == 0)
+            return false;
+
+        _selectedSubItems = new HashSet<string>(now);
+        _selectedSubItem  = now[0];
+        RememberSubItemSelection(_selectedSubItem);
+        return true;
     }
 
     // Resolves the tracks behind a set of SubListItems entries (album or artist
@@ -561,7 +614,8 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
     {
         _allTracks = new List<Track>(_library.Tracks);
         _logger.LogInformation("Library view repopulated: {Count} track(s)", _allTracks.Count);
-        RebuildSubListItems();
+        RebuildSubListItems(followRenamedArtists: true);
+        _pickedArtistSongs = PickedArtistSongs();
         RebuildAlbumGrids();
         ScheduleFilter();
     }

@@ -95,6 +95,27 @@ public class LibraryBrowserViewModelTests
         Assert.Equal(3, vm.GetTracksForSubListItems(new[] { "Add N to (X)" }).Count());
     }
 
+    // Renaming the artist on screen takes the old name out of the column; the
+    // pick goes with the songs to the new one, rather than to the top of the
+    // column, which is where the desktop then scrolled to show it.
+    [AvaloniaFact]
+    public async Task A_picked_artist_renamed_stays_picked_under_the_new_name()
+    {
+        var a = Song("a", "One", "Blur");
+        var b = Song("b", "One", "Blur");
+        var (vm, host) = Make(Song("c", "Two", "Abba"), a, b, Song("d", "Three", "Cure"));
+        host.CurrentKind = SidebarItemKind.Artists;
+        vm.Repopulate();
+        vm.SetSelectedSubItems(new[] { "Blur" });
+
+        a.Artists = b.Artists = "Blur (UK)";
+        vm.Repopulate();
+        await vm.RebuildRowsImmediatelyAsync();
+
+        Assert.Equal(new[] { "Blur (UK)" }, vm.SelectedSubItems);
+        Assert.Equal(new[] { "a", "b" }, vm.Rows.Select(r => r.Track.Title).Order());
+    }
+
     // The desktop's column of names is put in the order picked from the
     // Artists page's Sort button; SubListItems, which the phone sorts for
     // itself, stays alphabetical - sorted twice, a reversed order would come
