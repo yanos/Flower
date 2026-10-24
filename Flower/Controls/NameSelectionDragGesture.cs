@@ -46,9 +46,9 @@ public sealed class NameSelectionDragGesture
     /// <param name="selectOnPlainPress">
     /// Whether an unmodified press on a not-yet-selected item collapses the
     /// selection onto it immediately. True for SubList, whose click both selects
-    /// and navigates; false for the album grids, where a plain click expands a
-    /// tile in place without touching the tile-level selection at all, and
-    /// where the drag path falls back to the pressed item on its own anyway.
+    /// and navigates; false for the album grids, which select a plain click's
+    /// tile on release, once it has not become a drag - so pressing one of
+    /// several selected tiles can still drag them all.
     /// </param>
     public NameSelectionDragGesture(
         Func<IReadOnlyList<string>> orderedItems,
@@ -76,9 +76,7 @@ public sealed class NameSelectionDragGesture
 
     /// <summary>
     /// Applies a press on <paramref name="item"/> and arms the drag threshold.
-    /// Returns whether the item was already selected *before* this press -
-    /// which is what the album grids use to decide a plain click is a
-    /// pending expand/collapse rather than a selection change.
+    /// Returns whether the item was already selected *before* this press.
     /// </summary>
     public bool Press(string item, Point position, bool shift, bool toggle)
     {

@@ -514,14 +514,14 @@ public partial class MainView : UserControl
     // both share.
 
     // The same gesture as SubList's (see SubList_PointerPressed's doc comment
-    // for the base rationale) - a plain click activates via
-    // MainViewModel.ToggleAlbumExpandedCommand, and a Shift+click range runs
+    // for the base rationale) - a plain click selects the tile alone and
+    // activates it via MainViewModel.ToggleAlbumExpandedCommand, so the open
+    // album is always the selected one, and a Shift+click range runs
     // over the grid's alphabetical order (see MainViewModel.AlbumGridTiles),
     // driving MainViewModel.SelectedSubItems.
     private NameSelectionDragGesture? _albumGridGesture;
 
-    // A plain (unmodified) press on a not-yet-selected tile might still turn
-    // into a drag - see AlbumGrid_PointerMoved/Released. Toggling the
+    // A plain (unmodified) press on a tile might still turn into a drag - see AlbumGrid_PointerMoved/Released. Toggling the
     // expansion immediately on press (what this used to do, back when a
     // plain click drilled into a whole separate track-list view rather than
     // expanding in place) hid the grid the instant you pressed down, before
@@ -566,14 +566,15 @@ public partial class MainView : UserControl
             return;
         }
 
-        // A plain press deliberately leaves the selection alone (the gesture
-        // is constructed with selectOnPlainPress: false) - the drag path
-        // falls back to just this tile on its own if it isn't selected.
-        bool alreadySelected = gesture.Press(tile.Name, e.GetPosition(grid), shift, toggle);
+        // A plain press leaves the selection alone until release (the gesture
+        // is constructed with selectOnPlainPress: false), so pressing one of
+        // several selected tiles can still drag them all - the drag path falls
+        // back to just this tile on its own if it isn't selected.
+        gesture.Press(tile.Name, e.GetPosition(grid), shift, toggle);
 
         e.Handled = true;
 
-        _albumGridPendingActivate = !shift && !toggle && !alreadySelected;
+        _albumGridPendingActivate = !shift && !toggle;
         _albumGridPendingTile = _albumGridPendingActivate ? tile : null;
         e.Pointer.Capture(grid);
     }
@@ -600,8 +601,10 @@ public partial class MainView : UserControl
             CompleteNameDrop(grid, e.GetPosition(grid), items);
         else if (_albumGridPendingActivate && _albumGridPendingTile is { } tile)
         {
-            // No drag happened - a genuine plain click, now safe to
-            // expand/collapse (see _albumGridPendingActivate's doc comment).
+            // No drag happened - a genuine plain click, now safe to select
+            // the tile alone and expand/collapse it (see
+            // _albumGridPendingActivate's doc comment).
+            _viewModel?.SetSelectedSubItems(new[] { tile.Name });
             _viewModel?.ToggleAlbumExpandedCommand?.Execute(tile);
         }
 
