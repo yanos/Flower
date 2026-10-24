@@ -111,12 +111,15 @@
            its text back into the ViewModel on the way out - which put a
            cancelled name back after Cancel had cleared it, and a just-used one
            back after Enter had already made the playlist. Two playlists, one
-           of them from an Escape. -->
+           of them from an Escape.
+           AutoCapitalization so a phone's keyboard starts on a capital, as a
+           name usually does; Avalonia's default is off. -->
       <controls:TextInput Grid.Column="1"
                           x:Name="NameBox"
                           Classes="nameBox"
                           Text="{Binding NewPlaylistName, UpdateSourceTrigger=PropertyChanged}"
                           PlaceholderText="Playlist Name"
+                          TextInputOptions.AutoCapitalization="True"
                           VerticalAlignment="Center"
                           KeyDown="NameBox_KeyDown"
                           LostFocus="NameBox_LostFocus" />

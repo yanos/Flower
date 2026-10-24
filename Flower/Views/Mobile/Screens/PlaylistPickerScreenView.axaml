@@ -91,6 +91,7 @@
                 <controls:TextInput Grid.Column="1"
                                     Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                     IsVisible="{Binding IsEditing}"
+                                    TextInputOptions.AutoCapitalization="True"
                                     FontSize="17"
                                     VerticalAlignment="Center"
                                     Loaded="RenameBox_Loaded"
