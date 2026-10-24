@@ -17,7 +17,8 @@ namespace Flower.Services;
 public static class PlaylistSyncMapper
 {
     public static PlaylistSyncPlaylistDto ToDto(Playlist playlist) =>
-        new(playlist.Id, playlist.Name, playlist.UpdatedAt, playlist.Tracks.Select(ToDto).ToList(), playlist.Rules);
+        new(playlist.Id, playlist.Name, playlist.UpdatedAt, playlist.Tracks.Select(ToDto).ToList(), playlist.Rules,
+            playlist.IsFolder, playlist.ParentId);
 
     // Track.RoundedSeconds, not a separate inline Math.Round - must agree with
     // Track.SyncKey's own rounding (see its doc comment) or a duration near a
@@ -70,7 +71,8 @@ public static class PlaylistSyncMapper
                 string.Join("; ", unmatched.Select(t => $"{t.Artists} - {t.Title} [{t.Album}, {t.DurationSeconds}s]")));
         }
 
-        return new(dto.Id, dto.Name, tracks, dto.UpdatedAt, rules: dto.Rules, listener: listener);
+        return new(dto.Id, dto.Name, tracks, dto.UpdatedAt, rules: dto.Rules, listener: listener,
+            isFolder: dto.IsFolder, parentId: dto.ParentId);
     }
 
     // What a server does with a manifest a device pushed to /playlists/apply,

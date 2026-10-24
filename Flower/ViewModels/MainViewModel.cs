@@ -1751,7 +1751,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
                 RefreshPageDownload();
         };
 
-        Playlists = new PlaylistManagementViewModel(library, _sidebarItems, this);
+        Playlists = new PlaylistManagementViewModel(library, _sidebarItems, this, _appSettings.CollapsedPlaylistFolders);
         Downloads = CreateDownloadRunner();
 
         // Where a cover tapped on it leads is the view's to decide - the Albums
@@ -2324,8 +2324,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         if (Library.Playlists.Count > 0)
         {
             _sidebarItems.Add(new SidebarItem(SidebarItemKind.Header, "Playlists"));
-            foreach (var pl in Library.Playlists)
-                _sidebarItems.Add(new SidebarItem(SidebarItemKind.Playlist, pl.Name, SidebarItem.IconFor(pl), pl));
+            foreach (var row in Playlists.CreateSidebarRows())
+                _sidebarItems.Add(row);
         }
 
         // The paired server's row is pinned in place for the whole session
@@ -2534,7 +2534,11 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     public Task CreatePlaylistWithTrack(Track? track) => Playlists.CreateWithTrack(track);
 
-    public Task CreatePlaylistWithTracks(IEnumerable<Track> tracks) => Playlists.CreateWithTracks(tracks);
+    public Task CreatePlaylistWithTracks(IEnumerable<Track> tracks, Playlist? folder = null) => Playlists.CreateWithTracks(tracks, folder);
+
+    public Task CreatePlaylistFolder(Playlist? parent) => Playlists.CreateFolder(parent);
+
+    public Task MovePlaylists(IReadOnlyList<Playlist> playlists, Playlist? folder) => Playlists.Move(playlists, folder);
 
     // The mobile flow: the name is typed before anything is created - see
     // PlaylistManagementViewModel.CreateNamed.
@@ -2595,6 +2599,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // well over a second on a phone, before jumping to where it was dropped.
     void IPlaylistManagementHost.PlaylistContentChanged() =>
         RebuildRowsImmediatelyAsync().Forget(_logger, "Playlist content rebuild");
+
+    void IPlaylistManagementHost.PlaylistFoldersCollapsedChanged() => SaveSettings();
 
     private void OnSidebarSelectionChanged()
     {
@@ -2814,7 +2820,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         switch (_selectedSidebarItem?.Kind)
         {
             case SidebarItemKind.Playlist
-                when _selectedSidebarItem.Playlist?.Tracks.Any(t => t.Id == track.Id) != true:
+                when _selectedSidebarItem.Playlist is not { } shown
+                     || !PlaylistTree.TracksOf(shown, Library.Playlists).Any(t => t.Id == track.Id):
                 var songs = _sidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Songs);
                 if (songs != null)
                     SelectedSidebarItem = songs;

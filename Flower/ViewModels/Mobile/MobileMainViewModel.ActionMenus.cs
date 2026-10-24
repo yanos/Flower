@@ -30,7 +30,10 @@ public partial class MobileMainViewModel
             isContinuing: CanForgetAlbumActionTargetProgress,
             isRecentlyPlayed: Main.Home.IsOnRecentlyPlayed(tile),
             isPlaylist: IsActingOnAPlaylist,
-            isArtist: _isActingOnAnArtist))
+            isArtist: _isActingOnAnArtist,
+            isFolder: PlaylistActionTarget?.Playlist is { IsFolder: true },
+            canMoveToFolder: CanMoveActionTargetToFolder,
+            isSmart: PlaylistActionTarget?.Playlist is { IsSmart: true } && CanCreateSmartPlaylist))
         : [];
 
     public ICommand RunSongActionCommand => _runSongAction ??= new RelayCommand<ActionMenuEntry>(entry =>
@@ -64,6 +67,11 @@ public partial class MobileMainViewModel
             MenuAction.ForgetProgress => ForgetAlbumActionTargetProgressCommand,
             MenuAction.HideFromRecentlyPlayed => HideAlbumActionTargetFromRecentlyPlayedCommand,
             MenuAction.RenamePlaylist => RenamePlaylistActionTargetCommand,
+            MenuAction.EditRules => EditRulesActionTargetCommand,
+            MenuAction.ConvertToOrdinary => ConvertActionTargetToOrdinaryCommand,
+            MenuAction.NewPlaylistInFolder => NewPlaylistInFolderCommand,
+            MenuAction.NewFolderInFolder => NewFolderInFolderCommand,
+            MenuAction.MoveToFolder => OpenMoveToFolderCommand,
             MenuAction.DeleteLocalFiles => DeleteAlbumActionTargetLocalFilesCommand,
             MenuAction.RemoveFromLibrary => RemoveAlbumFromLibraryCommand,
             MenuAction.DeletePlaylist => DeletePlaylistActionTargetCommand,

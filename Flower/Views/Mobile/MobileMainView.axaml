@@ -788,6 +788,12 @@
                             IsOpen="{Binding IsShowingAddToPlaylist}">
       <views:AddToPlaylistView />
     </controls:SlidingSheet>
+    <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"
+                            Margin="{DynamicResource ScreenStackBleed}"
+                            Entrance="FromBottom"
+                            IsOpen="{Binding IsShowingMoveToFolder}">
+      <views:MoveToFolderView />
+    </controls:SlidingSheet>
     <!-- The other sheet that arrives from the right, like a pushed screen -
          it is reached from a gear pinned above the screens rather than
          from a row's own menu, and reads as going somewhere rather than

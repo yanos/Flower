@@ -55,6 +55,32 @@ public class PlaylistThreeWayMergeTests
         Assert.Equal(expected, Merge(before, ours, theirs));
     }
 
+    // Which folder it is in combines the way its name does.
+    [Fact]
+    public void A_move_on_one_side_and_an_addition_on_the_other_are_both_kept()
+    {
+        var folder = Guid.NewGuid();
+        var ours = Version("ABC", minutesLater: 1);
+        ours.ParentId = folder;
+
+        var merged = PlaylistThreeWayMerge.Merge(PlannedPlaylist.Of(Version("ABC")), ours, Version("ABCD", minutesLater: 2));
+
+        Assert.NotNull(merged);
+        Assert.Equal(folder, merged.ParentId);
+        Assert.Equal("ABCD", string.Concat(merged.Tracks.Select(t => t.Title)));
+    }
+
+    [Fact]
+    public void Both_sides_moving_it_to_different_folders_cannot_be_combined()
+    {
+        var ours = Version("ABC", minutesLater: 1);
+        ours.ParentId = Guid.NewGuid();
+        var theirs = Version("ABC", minutesLater: 2);
+        theirs.ParentId = Guid.NewGuid();
+
+        Assert.Null(PlaylistThreeWayMerge.Merge(PlannedPlaylist.Of(Version("ABC")), ours, theirs));
+    }
+
     [Fact]
     public void Both_sides_reordering_differently_cannot_be_combined()
     {

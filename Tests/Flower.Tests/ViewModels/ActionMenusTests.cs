@@ -106,6 +106,20 @@ public class ActionMenusTests
         Assert.True(entries[^1].IsDestructive);
     }
 
+    // Both heads build a playlist's menu here, so a smart playlist's rules are
+    // reachable from the phone's playlist row as well as the desktop sidebar.
+    [Fact]
+    public void Only_a_smart_playlist_offers_its_rules_after_its_name()
+    {
+        var ordinary = ActionMenus.Flat(ActionMenus.ForAlbum(Nothing, isPlaylist: true)).Select(e => e.Action).ToList();
+        var smart = ActionMenus.Flat(ActionMenus.ForAlbum(Nothing, isPlaylist: true, isSmart: true)).Select(e => e.Action).ToList();
+
+        Assert.DoesNotContain(MenuAction.EditRules, ordinary);
+        Assert.DoesNotContain(MenuAction.ConvertToOrdinary, ordinary);
+        var rename = smart.IndexOf(MenuAction.RenamePlaylist);
+        Assert.Equal([MenuAction.EditRules, MenuAction.ConvertToOrdinary], smart.Skip(rename + 1).Take(2));
+    }
+
     [Fact]
     public void An_album_on_the_Continue_Playing_shelf_can_be_taken_off_it()
     {

@@ -4,6 +4,7 @@
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
              xmlns:svm="clr-namespace:Flower.ViewModels"
+             xmlns:conv="clr-namespace:Flower.Converters"
              x:Class="Flower.Views.Mobile.Screens.PlaylistPickerScreenView"
              x:DataType="vm:MobileMainViewModel"
              Background="{DynamicResource AppBackgroundBrush}">
@@ -43,6 +44,19 @@
         </Border>
       </Button>
 
+      <!-- And a folder to keep them in, drawn the same way. Named in the
+           draft row above (NewPlaylistEntry), which says "Folder Name" for
+           it. -->
+      <Button Classes="pickerRow"
+              Command="{Binding BeginCreateFolderCommand}">
+        <Border Classes="floating" Height="40" CornerRadius="20" Padding="12,0,18,0" HorizontalAlignment="Left">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <materialIcons:MaterialIcon Kind="Plus" Width="20" Height="20" VerticalAlignment="Center" />
+            <TextBlock Text="New Folder" FontSize="17" VerticalAlignment="Center" />
+          </StackPanel>
+        </Border>
+      </Button>
+
       <!-- Set apart from the two rows above: those make a playlist, these
            are the playlists. -->
       <ItemsControl ItemsSource="{Binding PlaylistPickerItems}" Margin="0,16,0,0">
@@ -61,8 +75,13 @@
                  arrangement as a song row - see TrackRowTemplate). Like a
                  song row, a download icon before the menu while any of its
                  songs is not yet on the device. -->
+            <!-- A playlist in a folder is pushed in under it by how deep it
+                 sits, and a folder's row opens and closes it rather than
+                 opening a screen (SelectPlaylistCommand): a folder glyph
+                 where the cover goes, how many playlists it holds under its
+                 name, and a chevron where a playlist has its download. -->
             <Button Classes="pickerRow"
-                    Padding="16,0,8,0"
+                    Padding="{Binding Depth, Converter={x:Static conv:DepthIndentConverter.Instance}, ConverterParameter='16,0,8,0'}"
                     Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).SelectPlaylistCommand}"
                     CommandParameter="{Binding}">
               <Grid ColumnDefinitions="Auto,*,Auto,Auto">
@@ -71,10 +90,19 @@
                         BorderThickness="0,0,0,1"
                         IsHitTestVisible="False" />
                 <controls:AlbumArtView Grid.Column="0"
+                                           IsVisible="{Binding !IsFolder}"
                                            Covers="{Binding PlaylistCover.CoverArt}"
                                            ArtCornerRadius="6"
                                            Width="64" Height="64"
                                            Margin="0,12,14,12" />
+                <Border Grid.Column="0"
+                        IsVisible="{Binding IsFolder}"
+                        Background="{DynamicResource AppSurfaceBrush}"
+                        CornerRadius="6"
+                        Width="64" Height="64"
+                        Margin="0,12,14,12">
+                  <materialIcons:MaterialIcon Classes="chrome" Kind="FolderOutline" Width="32" Height="32" />
+                </Border>
                 <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Center"
                             IsVisible="{Binding !IsEditing}">
                   <TextBlock Text="{Binding Name}" FontSize="17" TextTrimming="CharacterEllipsis" />
@@ -100,6 +128,13 @@
                 <!-- Sized and padded as a song row's (TrackRowView). Its own
                      IsVisible is the indicator's answer, so the server gate
                      goes on a wrapper, as on an album's header. -->
+                <Panel Grid.Column="2"
+                       VerticalAlignment="Center"
+                       Margin="5,0,3,0"
+                       IsVisible="{Binding IsFolder}">
+                  <materialIcons:MaterialIcon Classes="chrome" Kind="ChevronDown" Width="24" Height="24" Opacity="0.6" IsVisible="{Binding IsExpanded}" />
+                  <materialIcons:MaterialIcon Classes="chrome" Kind="ChevronRight" Width="24" Height="24" Opacity="0.6" IsVisible="{Binding !IsExpanded}" />
+                </Panel>
                 <Panel Grid.Column="2"
                        VerticalAlignment="Center"
                        IsVisible="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).Main.CanForceSync}">

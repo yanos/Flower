@@ -15,6 +15,9 @@ public static class PlaylistSummaryText
 {
     public static string Songs(int count) => count == 1 ? "1 song" : $"{count:N0} songs";
 
+    // A folder's row, which holds playlists rather than songs.
+    public static string Playlists(int count) => count == 1 ? "1 playlist" : $"{count:N0} playlists";
+
     /// <summary>
     /// The total, written the way a song's own length is (see
     /// <see cref="DurationText"/>) - the same reading beside the same kind of

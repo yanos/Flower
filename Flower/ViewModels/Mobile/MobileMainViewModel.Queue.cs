@@ -48,7 +48,7 @@ public partial class MobileMainViewModel
     // or copies them goes through here - Play and Add to Playlist once sorted
     // a playlist by album, because the tile standing for it is an album's.
     private IReadOnlyList<Track> AlbumActionTargetTracks() =>
-        PlaylistActionTarget?.Playlist is { } playlist ? playlist.Tracks.ToList()
+        PlaylistActionTarget?.Playlist is { } playlist ? PlaylistTree.TracksOf(playlist, Main.Library.Playlists).ToList()
         : AlbumActionTarget is { } tile ? InAlbumOrder(tile)
         : [];
 

@@ -9,9 +9,9 @@ namespace Flower.Services;
 // A playlist as a sync session found it when it began planning. Cheap to take:
 // a playlist swaps in a new track list on every edit rather than changing the
 // one it has (see Playlist.Tracks), so holding the reference holds the version.
-public sealed record PlannedPlaylist(string Name, IReadOnlyList<Track> Tracks, DateTimeOffset UpdatedAt)
+public sealed record PlannedPlaylist(string Name, IReadOnlyList<Track> Tracks, DateTimeOffset UpdatedAt, Guid? ParentId = null)
 {
-    public static PlannedPlaylist Of(Playlist playlist) => new(playlist.Name, playlist.Tracks, playlist.UpdatedAt);
+    public static PlannedPlaylist Of(Playlist playlist) => new(playlist.Name, playlist.Tracks, playlist.UpdatedAt, playlist.ParentId);
 }
 
 // What a session installs: its merge laid over what the user did while it ran.
@@ -130,11 +130,22 @@ public static class PlaylistThreeWayMerge
         if (name == null)
             return null;
 
+        // Which folder it is in combines the way the name does: one side
+        // moving it is kept, both moving it to different folders is not.
+        Guid? parentId;
+        if (ours.ParentId == before.ParentId)
+            parentId = theirs.ParentId;
+        else if (theirs.ParentId == before.ParentId || theirs.ParentId == ours.ParentId)
+            parentId = ours.ParentId;
+        else
+            return null;
+
         var tracks = MergeTracks(before.Tracks, ours.Tracks, theirs.Tracks);
         if (tracks == null)
             return null;
 
-        var result = new Playlist(ours.Id, name, tracks, ours.UpdatedAt, ours.Comment, ours.IsPublic, ours.CreatedAt, listener: ours.Listener);
+        var result = new Playlist(ours.Id, name, tracks, ours.UpdatedAt, ours.Comment, ours.IsPublic, ours.CreatedAt,
+            listener: ours.Listener, isFolder: ours.IsFolder, parentId: parentId);
         // Newer than both, so the other side takes it from the push.
         result.MarkEditedAfter(ours.UpdatedAt > theirs.UpdatedAt ? ours.UpdatedAt : theirs.UpdatedAt);
         return result;

@@ -836,7 +836,7 @@ public partial class MainView : UserControl
             return;
         MusicList.AllowReorder = _viewModel.IsShowingQueue
             ? _viewModel.Queue.IsReorderable
-            : _viewModel.SelectedSidebarItem is { Kind: SidebarItemKind.Playlist, Playlist: { IsSmart: false } };
+            : _viewModel.SelectedSidebarItem is { Kind: SidebarItemKind.Playlist, Playlist.IsOrdinary: true };
         MusicList.UpdateSortIndicators(_viewModel.IsShowingQueue ? "" : _viewModel.SortColumn, _viewModel.SortAscending);
     }
 
@@ -1167,6 +1167,14 @@ public partial class MainView : UserControl
         {
             // Rename and Edit Rules are about one playlist, so they are not
             // offered here.
+            if (DesktopActionMenu.CanMoveToFolder(selectedPlaylists, vm))
+            {
+                var moveAllItem = new MenuItem { Header = "Move to Folder" }.WithIcon(MaterialIconKind.FolderMoveOutline);
+                DesktopActionMenu.FillMoveToFolder(moveAllItem, selectedPlaylists, vm);
+                _sidebarItemMenu.Items.Add(moveAllItem);
+                _sidebarItemMenu.Items.Add(new Separator());
+            }
+
             var deleteAllItem = new MenuItem { Header = $"Delete {selectedPlaylists.Count} Playlists" }.WithIcon(MaterialIconKind.TrashCanOutline);
             deleteAllItem.Click += async (_, _) => await vm.DeletePlaylistsAsync(selectedPlaylists);
             _sidebarItemMenu.Items.Add(deleteAllItem);
@@ -1193,12 +1201,19 @@ public partial class MainView : UserControl
         else if (item is { Kind: SidebarItemKind.Playlist, Playlist: { } playlist })
         {
             // The phone's playlist menu (ActionMenus.ForAlbum over a
-            // playlist), with a smart playlist's two of its own after Rename.
-            // Rename reuses the same IsEditing/RenameBox flow
+            // playlist). Rename reuses the same IsEditing/RenameBox flow
             // CreatePlaylistWithTrack drops a freshly-created playlist into -
             // see RenameBox_Loaded/KeyDown/LostFocus and CommitRename below.
-            var tracks = playlist.Tracks.ToList();
-            var groups = ActionMenus.ForAlbum(vm.MenuFactsFor(tracks, LibraryRemovalDialog.Service), isPlaylist: true);
+            //
+            // A folder's is the same menu over its playlists' songs, with a
+            // playlist and a folder to make inside it.
+            var tracks = PlaylistTree.TracksOf(playlist, vm.Library.Playlists).ToList();
+            var groups = ActionMenus.ForAlbum(
+                vm.MenuFactsFor(tracks, LibraryRemovalDialog.Service),
+                isPlaylist: true,
+                isFolder: playlist.IsFolder,
+                canMoveToFolder: DesktopActionMenu.CanMoveToFolder([playlist], vm),
+                isSmart: playlist.IsSmart && vm.SmartPlaylists != null);
             var menu = DesktopActionMenu.Build(groups, async action =>
             {
                 switch (action)
@@ -1206,30 +1221,26 @@ public partial class MainView : UserControl
                     case MenuAction.RenamePlaylist:
                         BeginRename(item);
                         break;
+                    case MenuAction.EditRules:
+                        vm.EditSmartPlaylist(playlist);
+                        break;
+                    case MenuAction.ConvertToOrdinary:
+                        await vm.ConvertPlaylistToOrdinary(playlist);
+                        break;
                     case MenuAction.DeletePlaylist:
                         await vm.DeletePlaylistAsync(playlist);
+                        break;
+                    case MenuAction.NewPlaylistInFolder:
+                        await vm.CreatePlaylistWithTracks([], playlist);
+                        break;
+                    case MenuAction.NewFolderInFolder:
+                        await vm.CreatePlaylistFolder(playlist);
                         break;
                     default:
                         await RunOverSongsAsync(action, tracks);
                         break;
                 }
-            }, tracks, vm);
-
-            // Only on a smart playlist, and only when there is a refresher to
-            // recompute what the editor saves - see MainViewModel.SmartPlaylists.
-            if (playlist.IsSmart && vm.SmartPlaylists != null
-                && menu.Items.OfType<MenuItem>().FirstOrDefault(i => (string?)i.Header == "Rename") is { } rename)
-            {
-                var at = menu.Items.IndexOf(rename) + 1;
-
-                var editRulesItem = new MenuItem { Header = "Edit Rules…" }.WithIcon(MaterialIconKind.Tune);
-                editRulesItem.Click += (_, _) => vm.EditSmartPlaylist(playlist);
-                menu.Items.Insert(at, editRulesItem);
-
-                var convertItem = new MenuItem { Header = "Convert to Ordinary Playlist" }.WithIcon(MaterialIconKind.PlaylistEdit);
-                convertItem.Click += async (_, _) => await vm.ConvertPlaylistToOrdinary(playlist);
-                menu.Items.Insert(at + 1, convertItem);
-            }
+            }, tracks, vm, moving: [playlist]);
 
             PlatformContextMenu.Open(menu, SidebarList);
             e.Handled = true;
@@ -1255,6 +1266,10 @@ public partial class MainView : UserControl
             var newPlaylistItem = new MenuItem { Header = "New Playlist" }.WithIcon(MaterialIconKind.PlaylistPlus);
             newPlaylistItem.Click += async (_, _) => await vm.CreatePlaylistWithTrack(null);
             _sidebarItemMenu.Items.Add(newPlaylistItem);
+
+            var newFolderItem = new MenuItem { Header = "New Folder" }.WithIcon(MaterialIconKind.FolderPlusOutline);
+            newFolderItem.Click += async (_, _) => await vm.CreatePlaylistFolder(null);
+            _sidebarItemMenu.Items.Add(newFolderItem);
 
             if (vm.SmartPlaylists != null)
             {
@@ -1369,6 +1384,8 @@ public partial class MainView : UserControl
         // them - the drag carries them in the order they were clicked.
         if (target?.IsQueue == true)
             _viewModel?.AddToQueue(SelectedTracksInListOrder());
+        else if (target?.PlaylistItem?.Playlist is { IsFolder: true } folder)
+            _ = _viewModel?.CreatePlaylistWithTracks(e.tracks, folder);
         else if (target?.PlaylistItem?.Playlist is { } playlist)
             _ = _viewModel?.AddTracksToPlaylist(e.tracks, playlist);
         else if (target?.CreateNew == true)
@@ -1459,6 +1476,8 @@ public partial class MainView : UserControl
     {
         if (target?.IsQueue == true)
             _viewModel?.AddToQueue(tracks);
+        else if (target?.PlaylistItem?.Playlist is { IsFolder: true } folder)
+            _ = _viewModel?.CreatePlaylistWithTracks(tracks, folder);
         else if (target?.PlaylistItem?.Playlist is { } playlist)
             _ = _viewModel?.AddTracksToPlaylist(tracks, playlist);
         else if (target?.CreateNew == true)
@@ -1506,7 +1525,8 @@ public partial class MainView : UserControl
             // A smart playlist holds what its rules say and nothing else, so
             // this is a refusal, not a miss: neither the row's highlight nor
             // the create-a-new-playlist band below should light up while the
-            // pointer is over it.
+            // pointer is over it. A folder takes them, as a new playlist
+            // inside it (CompleteTracksDrop).
             return item.Playlist is { IsSmart: true }
                 ? new SidebarDropTarget(null, false)
                 : new SidebarDropTarget(item, false);
@@ -1906,9 +1926,13 @@ public partial class MainView : UserControl
             return;
         }
 
-        var (title, message) = e.Playlists.Count == 1
-            ? ("Delete Playlist?", $"\"{e.Playlists[0].Name}\" will be permanently deleted. This cannot be undone.")
-            : ($"Delete {e.Playlists.Count} Playlists?", $"{e.Playlists.Count} playlists will be permanently deleted. This cannot be undone.");
+        var (title, message) = e.Playlists switch
+        {
+            [{ IsFolder: true } folder] => ("Delete Folder?",
+                $"\"{folder.Name}\" will be permanently deleted. The playlists in it are kept, and move out of it."),
+            [var one] => ("Delete Playlist?", $"\"{one.Name}\" will be permanently deleted. This cannot be undone."),
+            _ => ($"Delete {e.Playlists.Count} Playlists?", $"{e.Playlists.Count} playlists will be permanently deleted. This cannot be undone."),
+        };
         var confirmed = await ConfirmDialogWindow.ShowAsync(owner, title, message, "Delete");
         e.Confirmed.TrySetResult(confirmed);
     }
@@ -2199,6 +2223,14 @@ public partial class MainView : UserControl
     private bool _settlingSidebarSelection;
 
     // Multiple selection is on for playlists only - see SidebarSelection.
+    // A folder row's chevron: open or close it, leaving the selection alone.
+    private void SidebarFolderToggle_Click(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Control { DataContext: SidebarItem { Playlist: { IsFolder: true } folder } })
+            _viewModel?.Playlists.ToggleFolder(folder);
+        e.Handled = true;
+    }
+
     private void SidebarList_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
         if (_settlingSidebarSelection || sender is not ListBox { SelectedItems: { } selectedItems } list)

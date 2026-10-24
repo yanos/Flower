@@ -97,7 +97,7 @@ public static class PlaylistSyncPlanner
             // side would look changed against the baseline, landing every smart
             // playlist in Conflict forever.
             //
-            // So: same query, same name, nothing to do. Otherwise someone
+            // So: same query, same name, same folder, nothing to do. Otherwise someone
             // really did edit the query (the only thing about a smart playlist
             // that moves UpdatedAt) and the newer edit wins outright. No
             // conflict window, because there is nothing of the user's to lose -
@@ -121,7 +121,7 @@ public static class PlaylistSyncPlanner
             if (l.IsSmart || r.Rules != null)
             {
                 var smartKind =
-                    l.Name == r.Name && SmartPlaylistRules.Equivalent(l.Rules, r.Rules)
+                    l.Name == r.Name && l.ParentId == r.ParentId && SmartPlaylistRules.Equivalent(l.Rules, r.Rules)
                         ? PlaylistSyncDecisionKind.NoChange
                     : l.UpdatedAt != r.UpdatedAt
                         ? l.UpdatedAt > r.UpdatedAt
@@ -181,7 +181,7 @@ public static class PlaylistSyncPlanner
     // hold, and is not a difference it can do anything about.
     private static bool ContentEquals(Playlist local, PlaylistSyncPlaylistDto remote, PlaylistTrackIndex? index)
     {
-        if (local.Name != remote.Name)
+        if (local.Name != remote.Name || local.ParentId != remote.ParentId)
             return false;
 
         if (index != null)

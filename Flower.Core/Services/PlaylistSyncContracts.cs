@@ -31,7 +31,12 @@ public sealed record PlaylistSyncPlaylistDto(
     // rather than a compromise (on a phone holding a subset, "Recently Added"
     // should mean recently added there). Tracks still travels, and is still
     // what a peer holding no rules of its own ends up with.
-    SmartPlaylistRules? Rules = null);
+    SmartPlaylistRules? Rules = null,
+    // A folder (Playlist.IsFolder), which carries no tracks, and the folder
+    // this playlist sits in. Moving a playlist is an edit of the playlist, so
+    // it travels the way a rename does: a newer UpdatedAt with a new ParentId.
+    bool IsFolder = false,
+    Guid? ParentId = null);
 
 // GET /api/flower/v1/playlists returns one of these describing the responding
 // device's current playlists. POST /api/flower/v1/playlists/apply sends one back:

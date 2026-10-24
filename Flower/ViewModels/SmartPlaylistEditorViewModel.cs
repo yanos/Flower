@@ -227,8 +227,11 @@ public sealed class SmartPlaylistEditorViewModel : ViewModelBase
         var byId = _library.Playlists.ToDictionary(p => p.Id);
         var candidates = SmartPlaylistGraph.ReferenceCandidates(_playlist.Id, byId.Keys, smart);
 
+        // Not a folder: membership is read from a playlist's own Tracks,
+        // which a folder has none of, so a rule naming one would match
+        // nothing however full its playlists were.
         return [.. candidates
-            .Where(byId.ContainsKey)
+            .Where(id => byId.TryGetValue(id, out var playlist) && !playlist.IsFolder)
             .Select(id => new SmartConditionRowViewModel.PlaylistOption(id, byId[id].Name))
             .OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase)];
     }

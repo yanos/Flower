@@ -149,6 +149,12 @@ namespace Flower.Persistence
         public string? LastPlaylistName   { get; set; }
         public double  LastScrollOffsetY  { get; set; }
 
+        // The playlist folders shown closed in the sidebar, by Playlist.Id's
+        // key - see PlaylistManagementViewModel.SetFolderExpanded. A folder
+        // not listed is open, so a new one, and one that arrived by sync,
+        // shows what is in it. This device's view only: it never syncs.
+        public List<string> CollapsedPlaylistFolders { get; set; } = new();
+
         // The one server this device currently syncs with, picked manually
         // from MainViewModel.AvailableServers - null if not yet paired. PairedServerAlias is a display-only cache so Settings can
         // show the paired server's name even while it is not currently

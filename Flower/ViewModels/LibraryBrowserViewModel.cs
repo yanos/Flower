@@ -508,7 +508,7 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         return _host.CurrentKind switch
         {
             SidebarItemKind.Playlist when _host.CurrentPlaylist != null
-                => new List<Track>(_host.CurrentPlaylist.Tracks),
+                => new List<Track>(PlaylistTree.TracksOf(_host.CurrentPlaylist, _library.Playlists)),
             SidebarItemKind.Albums when _selectedSubItems.Count > 0
                 => _allTracks.Where(t => t.Album != null && _selectedSubItems.Contains(t.Album)).ToList(),
             SidebarItemKind.Albums

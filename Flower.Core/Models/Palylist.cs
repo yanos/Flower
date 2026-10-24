@@ -88,6 +88,48 @@ namespace Flower.Models
 
         public bool IsSmart => _rules != null;
 
+        // A folder: a row that holds other playlists rather than songs, the
+        // way Music.app's are. A playlist rather than a type of its own so
+        // that everything a playlist already has - an id stable across
+        // renames, UpdatedAt, a listener, a row in playlists, a place in the
+        // sync manifest and its deletes - a folder has without a second copy
+        // of any of it. Its Tracks are always empty: what it plays is its
+        // playlists' songs (PlaylistTree.TracksOf), never a list of its own.
+        // Fixed at creation, like Listener - nothing turns one into the other.
+        public bool IsFolder { get; }
+
+        // A list of songs somebody picked: what a song can be added to, dropped
+        // on, or dragged into a new order in. A smart playlist's songs are its
+        // rules' and a folder has none, so neither is.
+        public bool IsOrdinary => !IsSmart && !IsFolder;
+
+        private Guid? _parentId;
+
+        // The folder this playlist sits in, or null at the top level. An id
+        // rather than a reference, because a folder and what is in it reach a
+        // device separately - in one manifest, but resolved one by one - and
+        // because an id that names nothing has an answer that needs no repair:
+        // a parent that is missing, not a folder, or inside this playlist
+        // itself reads as the top level (PlaylistTree.ParentOf). So a folder
+        // deleted on one device while another moved a playlist into it leaves
+        // that playlist at the top level rather than nowhere.
+        //
+        // A Touch()ing property: moving a playlist is an edit of it, and the
+        // one thing about it that sync has to carry for the move to reach
+        // another device.
+        public Guid? ParentId
+        {
+            get => _parentId;
+            set
+            {
+                if (_parentId == value)
+                    return;
+
+                _parentId = value;
+                Touch();
+            }
+        }
+
         // Whose playlist this is on a server shared by several listeners - see
         // Listeners. Always Listeners.Owner on a client, whose playlists are
         // its own user's; on a server, the fingerprint of the non-admin device
@@ -156,6 +198,9 @@ namespace Flower.Models
         {
         }
 
+        public static Playlist NewFolder(string name, Guid? parentId = null) =>
+            new(Guid.NewGuid(), name, [], DateTimeOffset.UtcNow, isFolder: true, parentId: parentId);
+
         public Playlist(
             Guid id,
             string name,
@@ -165,10 +210,14 @@ namespace Flower.Models
             bool isPublic = false,
             DateTimeOffset? createdAt = null,
             SmartPlaylistRules? rules = null,
-            string listener = Listeners.Owner)
+            string listener = Listeners.Owner,
+            bool isFolder = false,
+            Guid? parentId = null)
         {
             Id = id;
             Listener = listener;
+            IsFolder = isFolder;
+            _parentId = parentId;
             _name = name;
             _comment = comment;
             _isPublic = isPublic;

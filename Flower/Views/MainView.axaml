@@ -172,7 +172,7 @@
                              LetterSpacing="1.2"/>
                   <StackPanel IsVisible="{Binding IsSelectable}"
                               Orientation="Horizontal"
-                              Margin="12,8,8,8">
+                              Margin="{Binding Indent}">
                     <Panel Width="20" Height="20" Margin="0,0,12,0" VerticalAlignment="Center">
                       <materialIcons:MaterialIcon Classes="rowIcon"
                                                  Kind="{Binding Icon}"
@@ -236,6 +236,23 @@
                                  Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                     </StackPanel>
                   </StackPanel>
+                  <!-- A folder's open/closed chevron, at the row's end in the
+                       room SidebarItem.Indent leaves for it, so the folder's
+                       name lines up with the playlists beside it; the rows
+                       inside it are indented by their Depth. Its own button,
+                       so opening a folder does not also select it. -->
+                  <Button Classes="pill"
+                          IsVisible="{Binding IsFolder}"
+                          HorizontalAlignment="Right"
+                          VerticalAlignment="Center"
+                          Margin="0,0,6,0"
+                          Padding="4"
+                          Click="SidebarFolderToggle_Click">
+                    <Panel>
+                      <materialIcons:MaterialIcon Classes="chrome" Kind="ChevronDown" Width="16" Height="16" IsVisible="{Binding IsExpanded}"/>
+                      <materialIcons:MaterialIcon Classes="chrome" Kind="ChevronRight" Width="16" Height="16" IsVisible="{Binding !IsExpanded}"/>
+                    </Panel>
+                  </Button>
                 </Panel>
               </DataTemplate>
             </ListBox.ItemTemplate>

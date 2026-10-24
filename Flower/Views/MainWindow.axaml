@@ -78,6 +78,7 @@
           <NativeMenu>
             <NativeMenuItem Header="New Playlist" Command="{Binding NewPlaylistCommand}"/>
             <NativeMenuItem Header="New Smart Playlist…" Command="{Binding NewSmartPlaylistCommand}"/>
+            <NativeMenuItem Header="New Folder"/>
             <NativeMenuItemSeparator/>
             <NativeMenuItem Header="Play Playlist Next"/>
             <NativeMenuItem Header="Add Playlist to Queue"/>

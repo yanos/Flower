@@ -63,6 +63,27 @@ public class PlaylistStoreTests : IsolatedHome
         Assert.Equal(Flower.Services.Listeners.Owner, loaded["The owner's"].Listener);
     }
 
+    // A folder, and which folder a playlist is in: written with the row, and
+    // a playlist moved back out of its folder saves as at the top level.
+    [Fact]
+    public void Folders_and_what_is_in_them_round_trip_through_the_repository()
+    {
+        var track = new Track { Title = "A", Path = "/music/a.mp3" };
+        var folder = Playlist.NewFolder("Rock");
+        var inside = new Playlist("Live", [track]) { ParentId = folder.Id };
+        var leaving = new Playlist("Studio", [track]) { ParentId = folder.Id };
+
+        PlaylistRepo().Save([folder, inside, leaving]);
+        leaving.ParentId = null;
+        PlaylistRepo().Save([folder, inside, leaving]);
+
+        var loaded = new PlaylistStore().Load([track]).ToDictionary(p => p.Name);
+        Assert.True(loaded["Rock"].IsFolder);
+        Assert.False(loaded["Live"].IsFolder);
+        Assert.Equal(folder.Id, loaded["Live"].ParentId);
+        Assert.Null(loaded["Studio"].ParentId);
+    }
+
     [Fact]
     public async Task PlaylistStore_Load_skips_tracks_no_longer_present_in_the_library()
     {

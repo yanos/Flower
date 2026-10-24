@@ -180,7 +180,15 @@ namespace Flower.Persistence.Sql
                 -- Whose playlist this is, on a server shared by an owner and a
                 -- few listeners - see Listeners and Playlist.Listener. A
                 -- client's own database leaves it at the default for good.
-                listener   TEXT    NOT NULL DEFAULT 'owner'
+                listener   TEXT    NOT NULL DEFAULT 'owner',
+
+                -- Folders - see Playlist.IsFolder and ParentId. A folder is a
+                -- row here with no playlist_tracks of its own, and parent_id
+                -- is deliberately not a foreign key: an id naming a folder
+                -- this database no longer has means the top level
+                -- (PlaylistTree), not a row to cascade or refuse.
+                is_folder  INTEGER NOT NULL DEFAULT 0,
+                parent_id  TEXT
             );
 
             -- track_id is deliberately NOT a foreign key into tracks: a rescan

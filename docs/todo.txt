@@ -19,6 +19,5 @@ short term
  Event bus?
  add an issue link in about box
  write a readme
- folder in playlist
  better song rating integration in the ui
  transform plans to actual documentation

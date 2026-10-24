@@ -41,7 +41,7 @@ public enum MobileNavigationTransition { None, FromRight, FromLeft }
 
 // Full-screen overlays shown on top of the tab content, e.g. the expanded
 // now-playing view opened by tapping the mini-player.
-public enum MobileSheet { None, NowPlaying, TrackActions, AlbumActions, TrackInfo, AddToPlaylist, Settings, SmartPlaylistEditor, ConfirmPairServer, ConfirmDeleteFile, ConfirmDeletePlaylist, ConfirmUnpairServer, ConfirmRemoveFromLibrary }
+public enum MobileSheet { None, NowPlaying, TrackActions, AlbumActions, TrackInfo, AddToPlaylist, Settings, SmartPlaylistEditor, ConfirmPairServer, ConfirmDeleteFile, ConfirmDeletePlaylist, ConfirmUnpairServer, ConfirmRemoveFromLibrary, MoveToFolder }
 
 // Translates the desktop MainViewModel's sidebar+sublist (side-by-side master-detail)
 // navigation model into tab+drill-down navigation for a phone screen, without changing
@@ -210,6 +210,10 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     // A playlist row's own download icon: every song in it not yet here.
     public ICommand DownloadPlaylistCommand { get; }
     public ICommand RenamePlaylistActionTargetCommand { get; }
+    // A smart playlist row's menu: its rules in the editor sheet, or its
+    // rules dropped so it keeps the songs it has.
+    public ICommand EditRulesActionTargetCommand { get; }
+    public ICommand ConvertActionTargetToOrdinaryCommand { get; }
     public ICommand CommitPlaylistRenameCommand { get; }
     // The pencil in a playlist screen's own header, beside play and shuffle:
     // a smart playlist's rules, or an ordinary one's name, edited right there.
@@ -831,7 +835,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
 
     private AlbumTileViewModel? BuildPlaylistHeader(Playlist playlist)
     {
-        var tracks = playlist.Tracks.ToList();
+        var tracks = PlaylistTree.TracksOf(playlist, Main.Library.Playlists).ToList();
         var header = new AlbumTileViewModel
         {
             Name = playlist.Name,
@@ -966,6 +970,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
                 ActionTarget = null;
                 AlbumActionTarget = null;
                 PlaylistActionTarget = null;
+                _moving = null;
                 _playlistTargets = null;
                 _albumDeleteTargets = null;
                 _removalPrompt = null;
@@ -989,6 +994,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             OnPropertyChanged(nameof(IsShowingConfirmDeletePlaylist));
             OnPropertyChanged(nameof(IsShowingConfirmUnpairServer));
             OnPropertyChanged(nameof(IsShowingConfirmRemoveFromLibrary));
+            OnPropertyChanged(nameof(IsShowingMoveToFolder));
 
             // Sampling costs a timer tick a second, so it runs only while the
             // readout that consumes it is actually on screen - a diagnostics
@@ -1283,6 +1289,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         IsNamingNewPlaylist = false;
         NewPlaylistName = "";
         _newPlaylistTracks = null;
+        ForgetNamingTarget();
     }
 
     // The track a row's "..." action menu (and, in turn, the Track Info sheet) applies to.
@@ -1482,8 +1489,9 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         ? $"Delete \"{one[0].Name}\"?"
         : $"Delete {_pendingPlaylistDelete?.Playlists.Count ?? 0} playlists?";
 
-    public string ConfirmDeletePlaylistMessage =>
-        "The playlist goes away. The songs in it stay in your library.";
+    public string ConfirmDeletePlaylistMessage => _pendingPlaylistDelete?.Playlists is [{ IsFolder: true }]
+        ? "The folder goes away. The playlists in it stay, outside it."
+        : "The playlist goes away. The songs in it stay in your library.";
 
     private void AskToDeletePlaylist(DeletePlaylistConfirmationEventArgs e)
     {
@@ -1933,6 +1941,20 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
                 other.IsEditing = false;
             item.IsEditing = true;
         });
+        EditRulesActionTargetCommand = new RelayCommand(() =>
+        {
+            var playlist = PlaylistActionTarget?.Playlist;
+            ActiveSheet = MobileSheet.None;
+            if (playlist is { IsSmart: true })
+                Main.EditSmartPlaylist(playlist);
+        });
+        ConvertActionTargetToOrdinaryCommand = new RelayCommand(async () =>
+        {
+            var playlist = PlaylistActionTarget?.Playlist;
+            ActiveSheet = MobileSheet.None;
+            if (playlist != null)
+                await Main.ConvertPlaylistToOrdinary(playlist);
+        });
         CommitPlaylistRenameCommand = new RelayCommand<SidebarItem>(async item =>
         {
             if (item is { IsEditing: true })
@@ -2047,6 +2069,9 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         });
         AddTrackToPlaylistCommand = new RelayCommand<SidebarItem>(async item =>
         {
+            // A folder opens to show what is in it, and the sheet stays up.
+            if (ToggleIfFolder(item))
+                return;
             if (item?.Playlist is { } playlist)
             {
                 if (_playlistTargets != null)
@@ -2063,12 +2088,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         // cleared the moment it closes (see ActiveSheet's setter), and the
         // commit closes it before it creates anything.
         BeginCreatePlaylistCommand = new RelayCommand(() =>
-        {
-            _newPlaylistTracks = _playlistTargets
-                ?? (ActionTarget is { } track ? [track] : []);
-            NewPlaylistName = "";
-            IsNamingNewPlaylist = true;
-        });
+            BeginNaming(folder: false, parent: null, _playlistTargets ?? (ActionTarget is { } track ? [track] : [])));
         CommitNewPlaylistCommand = new RelayCommand(async () =>
         {
             // One name, one playlist: committing is reachable from both Enter
@@ -2079,6 +2099,8 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
 
             var name = NewPlaylistName?.Trim();
             var tracks = _newPlaylistTracks ?? [];
+            var folder = _newPlaylistIsFolder;
+            var parent = _newPlaylistFolder;
             EndNamingNewPlaylist();
 
             // An empty name is how the user says no - the draft row simply goes
@@ -2087,7 +2109,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
                 return;
 
             ActiveSheet = MobileSheet.None;
-            await Main.CreatePlaylistNamed(name, tracks);
+            await CreateNamed(name, tracks, folder, parent);
         });
         CancelNewPlaylistCommand = new RelayCommand(EndNamingNewPlaylist);
         NewSmartPlaylistCommand = new RelayCommand(Main.NewSmartPlaylist);
@@ -2444,7 +2466,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
 
     private void SelectPlaylist(SidebarItem? item)
     {
-        if (item == null)
+        if (item == null || ToggleIfFolder(item))
             return;
         PushHistory();
         DrillIntoAsync(item).Forget(_logger, "Playlist drill-in");

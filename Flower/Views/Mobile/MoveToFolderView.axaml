@@ -1,0 +1,79 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:controls="clr-namespace:Flower.Controls"
+             mc:Ignorable="d"
+             x:Class="Flower.Views.Mobile.MoveToFolderView"
+             x:DataType="vm:MobileMainViewModel">
+
+  <!-- Move to Folder, from a playlist's menu: the top level and every folder
+       it can go into, indented as the Playlists tab shows them. The folder it
+       is in now is greyed, since picking it would move nothing. The card the
+       add-to-playlist sheet is (AddToPlaylistView), with a tap on the
+       backdrop to dismiss it, since nothing here is destructive. -->
+  <UserControl.Styles>
+    <Style Selector="Button.action">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+    </Style>
+  </UserControl.Styles>
+
+  <Grid>
+    <Button Command="{Binding CloseSheetCommand}"
+            Background="{DynamicResource AppScrimBrush}"
+            BorderThickness="0"
+            HorizontalAlignment="Stretch"
+            VerticalAlignment="Stretch" />
+
+    <Border VerticalAlignment="Bottom"
+            Classes="chromeIcons"
+            controls:SlidingSheet.IsCard="True"
+            MaxHeight="420"
+            Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
+            CornerRadius="12,12,0,0"
+            Padding="0,8,0,16">
+      <DockPanel Margin="{DynamicResource SheetBottomInset}">
+        <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12" Margin="20,8,8,8">
+          <materialIcons:MaterialIcon Grid.Column="0" Kind="FolderMoveOutline" Width="24" Height="24" />
+          <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+            <TextBlock Text="Move to Folder" FontSize="16" FontWeight="SemiBold" />
+            <TextBlock Text="{Binding MovingPlaylistName}"
+                       FontSize="13"
+                       Opacity="0.65"
+                       TextTrimming="CharacterEllipsis" />
+          </StackPanel>
+          <Button Grid.Column="2"
+                  Classes="pill"
+                  VerticalAlignment="Top"
+                  Command="{Binding CloseSheetCommand}">
+            <materialIcons:MaterialIcon Kind="Close" Width="22" Height="22" Opacity="0.7" />
+          </Button>
+        </Grid>
+
+        <ScrollViewer>
+          <ItemsControl ItemsSource="{Binding FolderChoices}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:MobileMainViewModel+FolderChoice">
+                <Button Classes="action"
+                        Padding="{Binding Indent}"
+                        IsEnabled="{Binding !IsCurrent}"
+                        Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).MoveToFolderCommand}"
+                        CommandParameter="{Binding}">
+                  <StackPanel Orientation="Horizontal" Spacing="12">
+                    <materialIcons:MaterialIcon Kind="{Binding Icon}" Width="22" Height="22" />
+                    <TextBlock Text="{Binding Name}" FontSize="16" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                  </StackPanel>
+                </Button>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+      </DockPanel>
+    </Border>
+  </Grid>
+</UserControl>

@@ -247,15 +247,20 @@ public partial class MainWindow : Window
 
         // Playlist - the one selected in the sidebar.
         Playlist? Selected() => Vm()?.SelectedSidebarItem?.Playlist;
+        List<Track> SelectedSongs() => Selected() is { } playlist && Vm() is { } vm
+            ? PlaylistTree.TracksOf(playlist, vm.Library.Playlists).ToList()
+            : [];
+        // Inside the folder selected, the way Music.app's does, or at the top.
+        On("New Folder", () => _ = Vm()?.CreatePlaylistFolder(Selected() is { IsFolder: true } folder ? folder : null));
         On("Play Playlist Next", () =>
         {
-            if (Selected() is { } playlist)
-                Vm()?.PlayNext(playlist.Tracks.ToList());
+            if (SelectedSongs() is { Count: > 0 } songs)
+                Vm()?.PlayNext(songs);
         });
         On("Add Playlist to Queue", () =>
         {
-            if (Selected() is { } playlist)
-                Vm()?.AddToQueue(playlist.Tracks.ToList());
+            if (SelectedSongs() is { Count: > 0 } songs)
+                Vm()?.AddToQueue(songs);
         });
         On("Edit Rules…", () =>
         {
@@ -318,8 +323,9 @@ public partial class MainWindow : Window
         WhenOpened("Edit Rules…", () =>
         {
             var playlist = Selected();
-            Enable("Play Playlist Next", playlist is { Tracks.Count: > 0 });
-            Enable("Add Playlist to Queue", playlist is { Tracks.Count: > 0 });
+            var hasSongs = SelectedSongs().Count > 0;
+            Enable("Play Playlist Next", hasSongs);
+            Enable("Add Playlist to Queue", hasSongs);
             Enable("Edit Rules…", playlist is { IsSmart: true } && Vm()?.SmartPlaylists != null);
             Enable("Convert to Ordinary Playlist", playlist is { IsSmart: true });
         });

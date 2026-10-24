@@ -103,7 +103,7 @@
           Margin="{Binding #Root.RowPadding}"
           IsVisible="{Binding IsNamingNewPlaylist}">
       <Border Grid.Column="0" Classes="editorSlot">
-        <materialIcons:MaterialIcon Kind="PlaylistPlay" Width="22" Height="22"
+        <materialIcons:MaterialIcon Kind="{Binding NewPlaylistIcon}" Width="22" Height="22"
                                     HorizontalAlignment="Center" VerticalAlignment="Center" />
       </Border>
       <!-- PropertyChanged rather than a TextBox's own default of LostFocus:
@@ -118,7 +118,7 @@
                           x:Name="NameBox"
                           Classes="nameBox"
                           Text="{Binding NewPlaylistName, UpdateSourceTrigger=PropertyChanged}"
-                          PlaceholderText="Playlist Name"
+                          PlaceholderText="{Binding NewPlaylistPlaceholder}"
                           TextInputOptions.AutoCapitalization="True"
                           VerticalAlignment="Center"
                           KeyDown="NameBox_KeyDown"

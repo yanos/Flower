@@ -1,3 +1,5 @@
+using Avalonia;
+
 using Flower.Models;
 using Flower.Services;
 
@@ -35,6 +37,25 @@ public class SidebarItem : ViewModelBase
 
     public Playlist? Playlist { get; }
 
+    // How many folders deep a playlist row sits (PlaylistTree.Flatten), which
+    // the sidebar indents it by, and for a folder whether its playlists are
+    // showing beneath it. Both are set when the row is built; a folder opened
+    // or closed is a rebuild of the section (PlaylistManagementViewModel.
+    // SetFolderExpanded), not a change to the row.
+    public int Depth { get; init; }
+
+    private bool _isExpanded;
+    public bool IsExpanded
+    {
+        get => _isExpanded;
+        set { _isExpanded = value; OnPropertyChanged(); }
+    }
+
+    public bool IsFolder => Playlist?.IsFolder == true;
+
+    // Room on the right of a folder for its chevron.
+    public Thickness Indent => new(12 + Depth * 16, 8, IsFolder ? 34 : 8, 8);
+
     // Settable (not just init) - see MainViewModel.FindDeviceSidebarItem: a
     // device row can end up re-pointed at a different DiscoveredDevice
     // instance than the one it was created with, once a Fingerprint collision
@@ -53,7 +74,13 @@ public class SidebarItem : ViewModelBase
     // MobileMainViewModel's PlaylistsChanged subscription, which is what asks
     // for it to be read again.
     public string PlaylistSummary =>
-        Playlist is { } playlist ? PlaylistSummaryText.For(playlist.Tracks) : "";
+        Playlist is { IsFolder: true } ? PlaylistSummaryText.Playlists(FolderSize)
+        : Playlist is { } playlist ? PlaylistSummaryText.For(playlist.Tracks)
+        : "";
+
+    // How many playlists (and folders) sit directly in a folder's row - what
+    // its summary says in place of a song count.
+    public int FolderSize { get; init; }
 
     // A playlist's cover, made of the most played albums among its songs -
     // what the phone's Playlists tab shows where a song row's art goes. Built
@@ -174,7 +201,9 @@ public class SidebarItem : ViewModelBase
     // visibly different icon because the difference is not otherwise apparent
     // until the user tries to drag a track onto it and nothing happens.
     public static MaterialIconKind IconFor(Playlist playlist) =>
-        playlist.IsSmart ? MaterialIconKind.PlaylistStar : MaterialIconKind.PlaylistPlay;
+        playlist.IsFolder ? MaterialIconKind.FolderOutline
+        : playlist.IsSmart ? MaterialIconKind.PlaylistStar
+        : MaterialIconKind.PlaylistPlay;
 
     public SidebarItem(SidebarItemKind kind, string name, MaterialIconKind icon = MaterialIconKind.MusicNote,
         Playlist? playlist = null, DiscoveredDevice? device = null)

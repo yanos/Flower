@@ -25,6 +25,11 @@ public enum MenuAction
     ForgetProgress,
     HideFromRecentlyPlayed,
     RenamePlaylist,
+    EditRules,
+    ConvertToOrdinary,
+    NewPlaylistInFolder,
+    NewFolderInFolder,
+    MoveToFolder,
     DeleteLocalFiles,
     RemoveFromLibrary,
     DeletePlaylist,
@@ -89,9 +94,15 @@ public static class ActionMenus
     // different pile of songs; the playlist adds its own two.
     // isArtist: the same menu over everything by one artist - an artist's
     // name long-pressed on the phone, right-clicked in the desktop's column.
+    // isFolder: a playlist folder, whose songs are its playlists' - the same
+    // menu as a playlist's, with somewhere to make a playlist or a folder
+    // inside it. canMoveToFolder: there is a folder this playlist could go
+    // into, or it is in one and could come out.
+    // isSmart: a smart playlist, on a head that can recompute one
+    // (MainViewModel.SmartPlaylists) - its rules to edit, after its name.
     public static IReadOnlyList<IReadOnlyList<ActionMenuEntry>> ForAlbum(
         MenuFacts facts, bool isContinuing = false, bool isRecentlyPlayed = false, bool isPlaylist = false,
-        bool isArtist = false)
+        bool isArtist = false, bool isFolder = false, bool canMoveToFolder = false, bool isSmart = false)
     {
         var where = new List<ActionMenuEntry>
         {
@@ -117,8 +128,20 @@ public static class ActionMenus
         // The cover's x, as an entry - until the album is next played.
         if (isRecentlyPlayed)
             what.Add(new(MenuAction.HideFromRecentlyPlayed, "Remove from Recently Played", MaterialIconKind.PlaylistRemove));
+        if (isFolder)
+        {
+            what.Add(new(MenuAction.NewPlaylistInFolder, "New Playlist", MaterialIconKind.PlaylistPlus));
+            what.Add(new(MenuAction.NewFolderInFolder, "New Folder", MaterialIconKind.FolderPlusOutline));
+        }
         if (isPlaylist)
             what.Add(new(MenuAction.RenamePlaylist, "Rename", MaterialIconKind.PencilOutline));
+        if (isPlaylist && isSmart)
+        {
+            what.Add(new(MenuAction.EditRules, "Edit Rules…", MaterialIconKind.Tune));
+            what.Add(new(MenuAction.ConvertToOrdinary, "Convert to Ordinary Playlist", MaterialIconKind.PlaylistEdit));
+        }
+        if (isPlaylist && canMoveToFolder)
+            what.Add(new(MenuAction.MoveToFolder, "Move to Folder", MaterialIconKind.FolderMoveOutline));
 
         // Not Remove from Library over a playlist: beside Delete Playlist,
         // which leaves the songs alone, the two are far too easy to mistake
@@ -126,7 +149,11 @@ public static class ActionMenus
         // Delete Playlist last, under everything: the one entry here that
         // cannot be undone.
         var away = Removals(facts, offerRemoval: !isPlaylist);
-        if (isPlaylist)
+        // A folder's playlists are not deleted with it, they move out of it -
+        // see PlaylistManagementViewModel.DeleteAsync.
+        if (isFolder)
+            away.Add(new(MenuAction.DeletePlaylist, "Delete Folder", MaterialIconKind.FolderRemoveOutline, IsDestructive: true));
+        else if (isPlaylist)
             away.Add(new(MenuAction.DeletePlaylist, "Delete Playlist", MaterialIconKind.PlaylistRemove, IsDestructive: true));
 
         return Groups(where, what, away);

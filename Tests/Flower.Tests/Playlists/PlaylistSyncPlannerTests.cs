@@ -55,6 +55,53 @@ public class PlaylistSyncPlannerTests
         Assert.Equal(PlaylistSyncDecisionKind.NoChange, Assert.Single(decisions).Kind);
     }
 
+    // Moving a playlist into a folder changes nothing about its songs or its
+    // name, and has to read as an edit all the same or it never leaves the
+    // device it was made on.
+    [Fact]
+    public void A_playlist_moved_into_a_folder_is_a_change_to_carry()
+    {
+        var id = Guid.NewGuid();
+        var baseline = DateTimeOffset.UtcNow.AddMinutes(-10);
+        var folder = Guid.NewGuid();
+        var local = new Playlist(id, "Favorites", new List<Track> { T("A") }, baseline);
+        var remote = new PlaylistSyncPlaylistDto(id, "Favorites", baseline.AddMinutes(5), new List<PlaylistSyncTrackDto> { Dto("A") }, ParentId: folder);
+
+        var decisions = PlaylistSyncPlanner.Plan(new List<Playlist> { local }, new List<PlaylistSyncPlaylistDto> { remote }, _ => baseline);
+
+        Assert.Equal(PlaylistSyncDecisionKind.AdoptRemote, Assert.Single(decisions).Kind);
+    }
+
+    // The same for a smart playlist, which is compared by name and rules
+    // rather than by songs.
+    [Fact]
+    public void A_smart_playlist_moved_into_a_folder_is_a_change_to_carry()
+    {
+        var id = Guid.NewGuid();
+        var then = DateTimeOffset.UtcNow.AddMinutes(-10);
+        var rules = SmartPlaylistRules.MatchAll(new SmartCondition(SmartField.Title, SmartOperator.IsNotEmpty, SmartValue.None.Instance));
+        var local = new Playlist(id, "Titled", new List<Track>(), then, rules: rules);
+        var remote = new PlaylistSyncPlaylistDto(id, "Titled", then.AddMinutes(5), new List<PlaylistSyncTrackDto>(), rules, ParentId: Guid.NewGuid());
+
+        var decisions = PlaylistSyncPlanner.Plan(new List<Playlist> { local }, new List<PlaylistSyncPlaylistDto> { remote }, _ => then);
+
+        Assert.Equal(PlaylistSyncDecisionKind.AdoptRemote, Assert.Single(decisions).Kind);
+    }
+
+    [Fact]
+    public void A_folder_and_where_a_playlist_sits_travel_and_come_back()
+    {
+        var folder = Playlist.NewFolder("Rock");
+        var inside = new Playlist("Live", new List<Track>()) { ParentId = folder.Id };
+
+        var folderBack = PlaylistSyncMapper.ToPlaylist(PlaylistSyncMapper.ToDto(folder), new List<Track>());
+        var insideBack = PlaylistSyncMapper.ToPlaylist(PlaylistSyncMapper.ToDto(inside), new List<Track>());
+
+        Assert.True(folderBack.IsFolder);
+        Assert.Equal(folder.Id, insideBack.ParentId);
+        Assert.Equal(inside.UpdatedAt, insideBack.UpdatedAt);
+    }
+
     [Fact]
     public void Only_local_changed_since_baseline_keeps_local()
     {

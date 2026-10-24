@@ -43,6 +43,11 @@ public interface IPlaylistManagementHost
 
     // A local playlist edit happened - schedule the debounced peer resync.
     void ScheduleContentSync();
+
+    // A folder was opened or closed in the sidebar, so the set handed to the
+    // constructor as collapsedFolders changed and wants saving. Which folders
+    // are closed is this device's own view of the sidebar and never syncs.
+    void PlaylistFoldersCollapsedChanged() { }
 }
 
 // Playlist creation, deletion, membership and ordering, plus the sidebar's
@@ -54,11 +59,19 @@ public sealed class PlaylistManagementViewModel
     private readonly ObservableCollection<SidebarItem> _items;
     private readonly IPlaylistManagementHost _host;
 
-    public PlaylistManagementViewModel(Library library, ObservableCollection<SidebarItem> items, IPlaylistManagementHost host)
+    // The folders shown closed in the sidebar, by Playlist.Id's key - the
+    // caller's own collection (AppSettings.CollapsedPlaylistFolders), so a
+    // change is already in what the host saves.
+    private readonly ICollection<string> _collapsedFolders;
+
+    public PlaylistManagementViewModel(
+        Library library, ObservableCollection<SidebarItem> items, IPlaylistManagementHost host,
+        ICollection<string>? collapsedFolders = null)
     {
         _library = library;
         _items   = items;
         _host    = host;
+        _collapsedFolders = collapsedFolders ?? new List<string>();
     }
 
     // See DeletePlaylistConfirmationEventArgs above.
@@ -69,7 +82,12 @@ public sealed class PlaylistManagementViewModel
     // whole Library.Playlists list (see Library.ReplacePlaylists), so the
     // previously selected Playlist object reference may no longer be the one
     // shown.
-    public void RefreshSidebarItems()
+    public void RefreshSidebarItems() => RefreshSidebarItems(renaming: null);
+
+    // renaming is a playlist just created, whose row comes back already in
+    // its inline rename box - built that way rather than flipped afterwards,
+    // so its TextBox is realized fresh and RenameBox_Loaded focuses it.
+    private void RefreshSidebarItems(Playlist? renaming)
     {
         var selectedPlaylistId = _host.SelectedSidebarItem?.Kind == SidebarItemKind.Playlist
             ? _host.SelectedSidebarItem.Playlist?.Id
@@ -103,19 +121,126 @@ public sealed class PlaylistManagementViewModel
         if (header == null)
             _items.Insert(insertAt++, new SidebarItem(SidebarItemKind.Header, "Playlists"));
 
-        foreach (var pl in _library.Playlists)
+        foreach (var row in CreateSidebarRows())
         {
-            if (editingIds.Contains(pl.Id))
+            if (editingIds.Contains(row.Playlist!.Id))
                 continue;
-            _items.Insert(insertAt++, new SidebarItem(SidebarItemKind.Playlist, pl.Name, SidebarItem.IconFor(pl), pl));
+            if (row.Playlist == renaming)
+                row.IsEditing = true;
+            _items.Insert(insertAt++, row);
         }
 
         if (selectedPlaylistId != null)
-        {
-            var reselected = _items.FirstOrDefault(i => i.Kind == SidebarItemKind.Playlist && i.Playlist?.Id == selectedPlaylistId);
-            _host.SelectedSidebarItem = reselected ?? _host.DefaultSelection;
-        }
+            _host.SelectedSidebarItem = RowShowing(selectedPlaylistId.Value) ?? _host.DefaultSelection;
     }
+
+    // The Playlists section's rows, in tree order, without its heading - for
+    // the refresh above and for MainViewModel's first build of the sidebar.
+    public List<SidebarItem> CreateSidebarRows()
+    {
+        var all = _library.Playlists;
+        var sizes = all
+            .Select(p => PlaylistTree.ParentOf(p, all))
+            .OfType<Playlist>()
+            .GroupBy(folder => folder.Id)
+            .ToDictionary(g => g.Key, g => g.Count());
+
+        return PlaylistTree.Flatten(all, IsCollapsed)
+            .Select(row => new SidebarItem(SidebarItemKind.Playlist, row.Playlist.Name, SidebarItem.IconFor(row.Playlist), row.Playlist)
+            {
+                Depth = row.Depth,
+                IsExpanded = !IsCollapsed(row.Playlist),
+                FolderSize = sizes.GetValueOrDefault(row.Playlist.Id),
+            })
+            .ToList();
+    }
+
+    // The row for a playlist, or while it is hidden in a closed folder the
+    // row of the folder it is hidden in - which is where the selection goes
+    // when the folder it was in is closed over it.
+    private SidebarItem? RowShowing(Guid playlistId)
+    {
+        var playlist = _library.Playlists.FirstOrDefault(p => p.Id == playlistId);
+        for (var at = playlist; at != null; at = PlaylistTree.ParentOf(at, _library.Playlists))
+        {
+            if (_items.FirstOrDefault(i => i.Kind == SidebarItemKind.Playlist && i.Playlist == at) is { } row)
+                return row;
+        }
+        return null;
+    }
+
+    private bool IsCollapsed(Playlist playlist) => playlist.IsFolder && _collapsedFolders.Contains(playlist.Id.ToKey());
+
+    // ── Folders ───────────────────────────────────────────────────────────────
+
+    public void SetFolderExpanded(Playlist folder, bool expanded)
+    {
+        if (!folder.IsFolder || IsCollapsed(folder) != expanded)
+            return;
+
+        if (expanded)
+            _collapsedFolders.Remove(folder.Id.ToKey());
+        else
+            _collapsedFolders.Add(folder.Id.ToKey());
+
+        _host.PlaylistFoldersCollapsedChanged();
+        RefreshSidebarItems();
+    }
+
+    public void ToggleFolder(Playlist folder) => SetFolderExpanded(folder, IsCollapsed(folder));
+
+    // Opens a folder and every folder it sits in, so a playlist just put
+    // there can be seen arriving.
+    private void Reveal(Playlist? folder)
+    {
+        var changed = false;
+        for (var at = folder; at != null; at = PlaylistTree.ParentOf(at, _library.Playlists))
+            changed |= _collapsedFolders.Remove(at.Id.ToKey());
+
+        if (changed)
+            _host.PlaylistFoldersCollapsedChanged();
+    }
+
+    // A new folder, inside the one given or at the top level, opened in its
+    // rename box the way a new playlist is.
+    public Task CreateFolder(Playlist? parent)
+    {
+        var folder = Playlist.NewFolder("New Folder", parent is { IsFolder: true } ? parent.Id : null);
+        AddAndRename(folder);
+        return Task.CompletedTask;
+    }
+
+    // Puts each playlist in the folder, or at the top level for null - every
+    // one that can go there, and the rest (the folder itself, or one it sits
+    // in) left where they are.
+    public Task Move(IReadOnlyList<Playlist> playlists, Playlist? folder)
+    {
+        var moved = false;
+        foreach (var playlist in playlists)
+        {
+            if (!PlaylistTree.CanMove(playlist, folder, _library.Playlists))
+                continue;
+            if (playlist.ParentId == folder?.Id)
+                continue;
+
+            playlist.ParentId = folder?.Id;
+            moved = true;
+        }
+
+        if (!moved)
+            return Task.CompletedTask;
+
+        Reveal(folder);
+        RefreshSidebarItems();
+        _host.ScheduleContentSync();
+        return Task.CompletedTask;
+    }
+
+    // Whether the list on screen is made of this playlist's songs: it is
+    // the one shown, or it is in the folder shown.
+    private bool IsShowing(Playlist playlist) =>
+        _host.SelectedSidebarItem?.Playlist is { } shown
+        && (shown == playlist || shown.IsFolder && PlaylistTree.DescendantsOf(shown, _library.Playlists).Contains(playlist));
 
     // Where a new playlist's row goes: under the last playlist, or under a
     // Playlists header made for it where there was none. Never the end of the
@@ -151,21 +276,43 @@ public sealed class PlaylistManagementViewModel
     public Task CreateWithTrack(Track? track)
         => CreateWithTracks(track != null ? new List<Track> { track } : new List<Track>());
 
-    public Task CreateWithTracks(IEnumerable<Track> tracks)
+    // In the folder given, when there is one - New Playlist on a folder's
+    // menu, or songs dropped on a folder's row.
+    public Task CreateWithTracks(IEnumerable<Track> tracks, Playlist? folder = null)
     {
-        var playlist = new Playlist("New Playlist", tracks.ToList());
+        var playlist = new Playlist("New Playlist", tracks.ToList())
+        {
+            ParentId = folder is { IsFolder: true } ? folder.Id : null,
+        };
+        AddAndRename(playlist);
+        return Task.CompletedTask;
+    }
+
+    private void AddAndRename(Playlist playlist)
+    {
         _library.AddPlaylist(playlist);
 
-        var sidebarItem = new SidebarItem(SidebarItemKind.Playlist, playlist.Name, SidebarItem.IconFor(playlist), playlist)
+        // At the top level a new row goes at the end of the section, where
+        // the tree puts it anyway; in a folder it goes where the tree says,
+        // with the folder opened to show it.
+        if (playlist.ParentId == null)
         {
-            IsEditing = true
-        };
-        _items.Insert(EndOfPlaylists(), sidebarItem);
+            var sidebarItem = new SidebarItem(SidebarItemKind.Playlist, playlist.Name, SidebarItem.IconFor(playlist), playlist)
+            {
+                IsEditing = true,
+                IsExpanded = true,
+            };
+            _items.Insert(EndOfPlaylists(), sidebarItem);
+        }
+        else
+        {
+            Reveal(PlaylistTree.ParentOf(playlist, _library.Playlists));
+            RefreshSidebarItems(renaming: playlist);
+        }
 
-        _host.SelectedSidebarItem = sidebarItem;
+        _host.SelectedSidebarItem = _items.FirstOrDefault(i => i.Playlist == playlist);
 
         _host.ScheduleContentSync();
-        return Task.CompletedTask;
     }
 
     // Named before it exists, rather than created as "New Playlist" and renamed
@@ -175,10 +322,23 @@ public sealed class PlaylistManagementViewModel
     // BeginCreatePlaylistCommand/CommitNewPlaylistCommand). Which also means
     // no row is ever left behind by a create the user changed their mind about,
     // and nothing here comes back IsEditing.
-    public Task CreateNamed(string name, IEnumerable<Track> tracks)
+    public Task CreateNamed(string name, IEnumerable<Track> tracks, Playlist? folder = null)
     {
-        var playlist = new Playlist(name, tracks.ToList());
+        var playlist = new Playlist(name, tracks.ToList())
+        {
+            ParentId = folder is { IsFolder: true } ? folder.Id : null,
+        };
+        return AddNamed(playlist);
+    }
+
+    // The phone's New Folder, named before it exists for the same reason.
+    public Task CreateFolderNamed(string name, Playlist? parent = null) =>
+        AddNamed(Playlist.NewFolder(name, parent is { IsFolder: true } ? parent.Id : null));
+
+    private Task AddNamed(Playlist playlist)
+    {
         _library.AddPlaylist(playlist);
+        Reveal(PlaylistTree.ParentOf(playlist, _library.Playlists));
         RefreshSidebarItems();
 
         _host.SelectedSidebarItem = _items.FirstOrDefault(i => i.Playlist == playlist);
@@ -204,6 +364,22 @@ public sealed class PlaylistManagementViewModel
             handler.Invoke(this, new DeletePlaylistConfirmationEventArgs { Playlists = playlists, Confirmed = confirmed });
             if (!await confirmed.Task)
                 return;
+        }
+
+        // A folder's playlists are not deleted with it: they move up to
+        // wherever the folder was, so deleting a folder only ever deletes
+        // what was selected. Done before the removal, while the tree still
+        // has the folders in it to walk.
+        var doomed = playlists.Select(p => p.Id).ToHashSet();
+        foreach (var playlist in _library.Playlists)
+        {
+            if (doomed.Contains(playlist.Id) || PlaylistTree.ParentOf(playlist, _library.Playlists) is not { } parent || !doomed.Contains(parent.Id))
+                continue;
+
+            var to = parent;
+            while (to != null && doomed.Contains(to.Id))
+                to = PlaylistTree.ParentOf(to, _library.Playlists);
+            playlist.ParentId = to?.Id;
         }
 
         foreach (var playlist in playlists)
@@ -244,13 +420,14 @@ public sealed class PlaylistManagementViewModel
         // menu, the mobile view) so none of them can forget - the UI also hides
         // the affordance, and this is what makes that a presentation detail
         // rather than the only thing standing between a user and a confusing
-        // no-op. See docs/SMART-PLAYLIST-PLAN.md, "UI".
-        if (playlist.IsSmart)
+        // no-op. See docs/SMART-PLAYLIST-PLAN.md, "UI". A folder has no songs
+        // of its own to add to, for the same effect.
+        if (!playlist.IsOrdinary)
             return Task.CompletedTask;
 
         foreach (var track in tracks)
             playlist.AppendTrack(track);
-        if (_host.SelectedSidebarItem?.Playlist == playlist)
+        if (IsShowing(playlist))
             _host.PlaylistContentChanged();
 
         _host.ScheduleContentSync();
@@ -261,7 +438,8 @@ public sealed class PlaylistManagementViewModel
     {
         // Same reasoning as AddTracks: the order of a smart playlist is the
         // order its rules produced, and a drag would last until the next pass.
-        if (playlist.IsSmart)
+        // A folder's order is its playlists'.
+        if (!playlist.IsOrdinary)
             return Task.CompletedTask;
 
         // Was an open-coded Remove()+Insert() on playlist.Tracks, which bumped
