@@ -1338,13 +1338,7 @@ public partial class MainView : UserControl
         IReadOnlyList<string> artists = vm.SelectedSubItems.Count > 1 && vm.SelectedSubItems.Contains(clicked)
             ? vm.VisibleSubListItems.Where(vm.SelectedSubItems.Contains).ToList()
             : [clicked];
-        // Album by album, each in its own order, as the phone's artist menu
-        // queues them.
-        var tracks = vm.GetTracksForSubListItems(artists)
-            .OrderBy(t => TrackListBuilder.SortKey(t.Album))
-            .ThenBy(t => t.DiscNumber)
-            .ThenBy(t => t.TrackNumber)
-            .ToList();
+        var tracks = SongsByArtists(vm, artists);
         if (tracks.Count == 0)
             return;
 
@@ -1352,6 +1346,19 @@ public partial class MainView : UserControl
         var menu = DesktopActionMenu.Build(groups, action => RunOverSongsAsync(action, tracks).Forget(Logger, "An artist's menu"), tracks, vm);
         PlatformContextMenu.Open(menu, SubList);
     }
+
+    // Everything by these artists, album by album and each in its own order,
+    // as the phone's artist menu queues them.
+    private static List<Track> SongsByArtists(MainViewModel vm, IEnumerable<string> artists) =>
+        vm.GetTracksForSubListItems(artists)
+            .OrderBy(t => TrackListBuilder.SortKey(t.Album))
+            .ThenBy(t => t.DiscNumber)
+            .ThenBy(t => t.TrackNumber)
+            .ToList();
+
+    // Those of the artists picked in the Artists column, in the column's order.
+    private static List<Track> SelectedArtistsSongs(MainViewModel vm) =>
+        SongsByArtists(vm, vm.VisibleSubListItems.Where(vm.SelectedSubItems.Contains));
 
     // ── Drag a track onto a sidebar playlist ────────────────────────────────────
     // See MusicListView's TrackDragMoved/TrackDragEnded for the source side and why
@@ -1796,9 +1803,10 @@ public partial class MainView : UserControl
     // What MainWindow's menus run that only the view can: they act on what
     // is on screen and selected in it, which the view model does not hold.
 
-    // Get Info, from anywhere: the songs selected in the list, or the albums
-    // selected in the grid, or - with nothing selected where focus is, Home
-    // and the Artists page included - the song playing.
+    // Get Info, from anywhere: the songs selected in the list, the albums
+    // selected in the grid, or everything by the artists picked in the
+    // Artists column - the songs their right-click menu's Info shows - or,
+    // with nothing selected where focus is, Home included, the song playing.
     public void GetInfo()
     {
         if (_viewModel is not { } vm)
@@ -1806,6 +1814,11 @@ public partial class MainView : UserControl
 
         if (vm.IsShowingAlbumGrid && OpenTrackInfoForSelectedAlbums())
             return;
+        if (vm.IsShowingArtistPage && SelectedArtistsSongs(vm) is { Count: > 0 } songs)
+        {
+            OpenTrackInfo(songs);
+            return;
+        }
         if (ShowsTrackList(vm) && MusicList.SelectedTracks.Count > 0)
         {
             OpenTrackInfo();
@@ -1816,7 +1829,8 @@ public partial class MainView : UserControl
     }
 
     // The songs the Song menu acts on: those selected in the list on screen,
-    // or under the albums selected in the grid.
+    // under the albums selected in the grid, or by the artists picked in the
+    // Artists column.
     public IReadOnlyList<Track> SelectedSongs()
     {
         if (_viewModel is not { } vm)
@@ -1827,6 +1841,8 @@ public partial class MainView : UserControl
             var songs = AlbumGrid.GetExpandedRowSelectedTracks();
             return songs.Count > 0 ? songs : vm.GetTracksForSubListItems(vm.SelectedSubItems).ToList();
         }
+        if (vm.IsShowingArtistPage)
+            return SelectedArtistsSongs(vm);
         return ShowsTrackList(vm) ? SelectedTracksInListOrder() : [];
     }
 
