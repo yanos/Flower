@@ -434,7 +434,7 @@
                    and the accent on the name when picked. -->
               <Style Selector="ListBox.names ListBoxItem">
                 <Setter Property="Margin" Value="10,1"/>
-                <Setter Property="Padding" Value="12,7"/>
+                <Setter Property="Padding" Value="12,3.5"/>
                 <Setter Property="MinHeight" Value="0"/>
                 <Setter Property="CornerRadius" Value="10"/>
                 <Setter Property="FontSize" Value="14"/>
@@ -454,8 +454,15 @@
               </ItemsPanelTemplate>
             </ListBox.ItemsPanel>
             <ListBox.ItemTemplate>
+              <!-- The line's height pinned, not the font's own: a name Inter
+                   has no glyphs for (２８１４, 竹内まりや) falls back to a
+                   taller system face, and UniformRowPanel takes every row's
+                   height from the top one - so scrolling one such name to the
+                   top of the window resized the whole list under the pointer.
+                   24 is AlbumCard's for the same size and the same reason;
+                   the padding above gives back what it adds. -->
               <DataTemplate x:DataType="sys:String">
-                <controls:RowText Text="{Binding}" TextTrimming="CharacterEllipsis"/>
+                <controls:RowText Text="{Binding}" LineHeight="24" TextTrimming="CharacterEllipsis"/>
               </DataTemplate>
             </ListBox.ItemTemplate>
           </controls:RecyclingListBox>
