@@ -16,17 +16,6 @@ namespace Flower.Controls;
 // swapped, not just added, each time to avoid leaking one per recycle.
 public partial class AlbumGridRowControl : UserControl
 {
-    // The album card's "..." was pressed. Bubbles to MainView, which opens the
-    // album menu over the album the card shows; the row is the source.
-    public static readonly RoutedEvent<RoutedEventArgs> AlbumMenuRequestedEvent =
-        RoutedEvent.Register<AlbumGridRowControl, RoutedEventArgs>(nameof(AlbumMenuRequested), RoutingStrategies.Bubble);
-
-    public event EventHandler<RoutedEventArgs> AlbumMenuRequested
-    {
-        add => AddHandler(AlbumMenuRequestedEvent, value);
-        remove => RemoveHandler(AlbumMenuRequestedEvent, value);
-    }
-
     private AlbumGridRowViewModel? _row;
 
     public AlbumGridRowControl()
@@ -90,11 +79,5 @@ public partial class AlbumGridRowControl : UserControl
     {
         if (_row is { ExpandedTracks.Count: > 0 } row && this.FindDataContext<MainViewModel>() is { } main)
             _ = main.Downloads.DownloadAlbumAsync(indicator, row.ExpandedTracks);
-    }
-
-    private void Menu_Click(object? sender, RoutedEventArgs e)
-    {
-        e.Handled = true;
-        RaiseEvent(new RoutedEventArgs(AlbumMenuRequestedEvent, sender as Control ?? this));
     }
 }

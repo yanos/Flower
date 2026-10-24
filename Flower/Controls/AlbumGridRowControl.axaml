@@ -8,7 +8,7 @@
              x:CompileBindings="True">
 
   <UserControl.Styles>
-    <!-- Play's glyph stays in the words' colour on the accent, pointed at and
+    <!-- Play's glyph stays in the text colour on the accent, pointed at and
          pressed too - App.axaml turns every button's icon the accent then,
          which on this one would be the accent on the accent. -->
     <Style Selector="Button.primary materialIcons|MaterialIcon, Button.primary:pointerover materialIcons|MaterialIcon, Button.primary:pressed materialIcons|MaterialIcon">
@@ -16,11 +16,7 @@
     </Style>
     <Style Selector="Button.albumAction">
       <Setter Property="CornerRadius" Value="9999"/>
-      <Setter Property="Padding" Value="16,8"/>
-      <Setter Property="HorizontalAlignment" Value="Stretch"/>
-      <Setter Property="HorizontalContentAlignment" Value="Center"/>
-      <Setter Property="FontSize" Value="14"/>
-      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Padding" Value="8"/>
     </Style>
     <Style Selector="Button.albumAction:not(.primary)">
       <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}"/>
@@ -40,7 +36,7 @@
     </controls:TileRowPanel>
 
     <!-- The album opened in this row: its cover, name, artist and year with
-         play, shuffle and the album menu under them, and its songs beside.
+         play and shuffle under them, and its songs beside.
          Opens and closes by Reveal - the fraction of the card that shows -
          rather than by a Height worked out ahead, so it opens to the card's
          real height whatever the songs come to (RevealDecorator). -->
@@ -78,35 +74,24 @@
             <!-- The download is the tile's own indicator, and is there only
                  while the album has songs to fetch (TrackDownloadButton) - the
                  phone's album header's Download All. -->
-            <Grid ColumnDefinitions="*,*,Auto,Auto" Margin="0,16,0,0">
-              <Button Grid.Column="0" Classes="albumAction primary" Margin="0,0,8,0"
+            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,16,0,0">
+              <Button Classes="albumAction primary"
+                      ToolTip.Tip="Play"
                       Click="Play_Click">
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                  <materialIcons:MaterialIcon Kind="Play" Width="18" Height="18"/>
-                  <TextBlock Text="Play" VerticalAlignment="Center"/>
-                </StackPanel>
+                <materialIcons:MaterialIcon Kind="Play" Width="20" Height="20"/>
               </Button>
-              <Button Grid.Column="1" Classes="albumAction" Margin="0,0,8,0"
+              <Button Classes="albumAction"
+                      ToolTip.Tip="Shuffle"
                       Click="Shuffle_Click">
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                  <materialIcons:MaterialIcon Kind="Shuffle" Width="18" Height="18"/>
-                  <TextBlock Text="Shuffle" VerticalAlignment="Center"/>
-                </StackPanel>
+                <materialIcons:MaterialIcon Kind="Shuffle" Width="20" Height="20"/>
               </Button>
-              <controls:TrackDownloadButton Grid.Column="2"
-                                            DataContext="{Binding ExpandedTile}"
+              <controls:TrackDownloadButton DataContext="{Binding ExpandedTile}"
                                             Label="Download album"
                                             IconSize="20"
                                             IconPadding="8"
-                                            Margin="0,0,8,0"
                                             VerticalAlignment="Center"
                                             DownloadRequested="Download_Requested"/>
-              <Button Grid.Column="3" Classes="albumAction" Padding="8"
-                      ToolTip.Tip="More"
-                      Click="Menu_Click">
-                <materialIcons:MaterialIcon Kind="DotsHorizontal" Width="20" Height="20"/>
-              </Button>
-            </Grid>
+            </StackPanel>
           </StackPanel>
 
           <Border Grid.Column="1"
