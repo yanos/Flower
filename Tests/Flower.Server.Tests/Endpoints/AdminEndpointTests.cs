@@ -61,9 +61,9 @@ public class AdminEndpointTests(FlowerServerFixture server) : IClassFixture<Flow
     private static async Task<HttpContext> SignedOnAsync(
         FlowerServerFixture target,
         DeviceSigningKey device, string method, string path, string? query = null, string? body = null,
-        string? remoteIp = null, string? host = null)
+        string? remoteIp = null, string? host = null, byte[]? image = null)
     {
-        var bodyBytes = body == null ? [] : Encoding.UTF8.GetBytes(body);
+        var bodyBytes = image ?? (body == null ? [] : Encoding.UTF8.GetBytes(body));
         var queryPairs = ParseQuery(query);
         var identity = new List<(string Key, string Value)>
         {
@@ -86,9 +86,9 @@ public class AdminEndpointTests(FlowerServerFixture server) : IClassFixture<Flow
             c.Request.Headers["X-Flower-Signature"] = signature;
             c.Request.Headers["X-Flower-Timestamp"] = timestamp;
             c.Request.Headers["X-Flower-Nonce"] = nonce;
-            if (body != null)
+            if (body != null || image != null)
             {
-                c.Request.ContentType = "application/json";
+                c.Request.ContentType = image != null ? "image/png" : "application/json";
                 c.Request.Body = new MemoryStream(bodyBytes);
                 c.Request.ContentLength = bodyBytes.Length;
             }
@@ -351,6 +351,59 @@ public class AdminEndpointTests(FlowerServerFixture server) : IClassFixture<Flow
         // The seeded file is mostly underscore-prefixed documentation an
         // operator may have added to - a settings write must not flatten it.
         Assert.Contains("_LibraryPaths", written);
+    }
+
+    // Enough of a PNG for the sniffing that decides what an upload is.
+    private static readonly byte[] Png = [0x89, (byte)'P', (byte)'N', (byte)'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0x0D, 1, 2, 3];
+
+    // A server shows as an emoji or as a picture, never both: each chosen
+    // takes the other away, and the paired device reads the picture back from
+    // the sync surface by the token the settings name.
+    [Fact]
+    public async Task A_server_icon_is_an_emoji_or_a_picture_and_choosing_one_drops_the_other()
+    {
+        await using var isolated = new FlowerServerFixture();
+        await isolated.InitializeAsync();
+        using var admin = await NewAdminOnAsync(isolated);
+
+        var emoji = await SignedOnAsync(isolated, admin, "PUT", "/api/admin/settings", body: """{"iconEmoji":" 🌻 extra "}""");
+        Assert.Equal("🌻", (await ReadAsync<ServerSettingsDto>(emoji)).IconEmoji);
+
+        var upload = await SignedOnAsync(isolated, admin, "PUT", ServerIcon.AdminImagePath, image: Png);
+        Assert.Equal(StatusCodes.Status204NoContent, upload.Response.StatusCode);
+
+        var withPicture = await ReadAsync<ServerSettingsDto>(await SignedOnAsync(isolated, admin, "GET", "/api/admin/settings"));
+        Assert.Equal("", withPicture.IconEmoji);
+        Assert.Equal(ServerIcon.TokenOf(Png), withPicture.IconToken);
+
+        var fetched = await SignedOnAsync(isolated, admin, "GET", ServerIcon.ImagePath);
+        Assert.Equal(StatusCodes.Status200OK, fetched.Response.StatusCode);
+        using var bytes = new MemoryStream();
+        await fetched.Response.Body.CopyToAsync(bytes, TestContext.Current.CancellationToken);
+        Assert.Equal(Png, bytes.ToArray());
+
+        var back = await ReadAsync<ServerSettingsDto>(
+            await SignedOnAsync(isolated, admin, "PUT", "/api/admin/settings", body: """{"iconEmoji":"🎧"}"""));
+        Assert.Equal("🎧", back.IconEmoji);
+        Assert.Null(back.IconToken);
+        Assert.Equal(StatusCodes.Status404NotFound,
+            (await SignedOnAsync(isolated, admin, "GET", ServerIcon.ImagePath)).Response.StatusCode);
+    }
+
+    [Fact]
+    public async Task A_server_icon_that_is_not_an_image_is_refused()
+    {
+        using var admin = await NewAdminAsync();
+        try
+        {
+            var context = await SignedAsync(admin, "PUT", ServerIcon.AdminImagePath, body: "not a picture at all");
+
+            Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        }
+        finally
+        {
+            await server.Services.GetRequiredService<TrustedPeerStore>().RevokeAsync(admin.Fingerprint);
+        }
     }
 
     [Fact]

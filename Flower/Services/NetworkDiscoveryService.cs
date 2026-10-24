@@ -123,6 +123,13 @@ public class DiscoveredDevice
     // track catalog. Empty until resolved.
     public string PlaylistsToken { get; set; } = "";
 
+    // The server's icon (ServerIcon): the emoji it shows as, and the token
+    // naming its picture - told only to a device it trusts, which is the only
+    // kind that can fetch it. Empty for none; unlike the fields above, an
+    // answer without them says there is none, rather than nothing.
+    public string IconEmoji { get; set; } = "";
+    public string IconToken { get; set; } = "";
+
     // Every address this peer says it can be reached on, from the same /info
     // handshake as the rest (SyncInfoResponseDto.Addresses). Empty for a peer
     // that predates the field. A client persists these for the server it paired
@@ -748,6 +755,29 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
                 device.PlaylistsToken = playlistsToken;
                 changed = true;
             }
+            var iconEmoji = doc.RootElement.TryGetProperty("iconEmoji", out var emojiProp) &&
+                            emojiProp.ValueKind == JsonValueKind.String
+                ? ServerIcon.CleanEmoji(emojiProp.GetString())
+                : "";
+            if (iconEmoji != device.IconEmoji)
+            {
+                device.IconEmoji = iconEmoji;
+                changed = true;
+            }
+            // Only from an answer that says it trusts us: the token is told to
+            // nobody else, so its absence from any other answer - one whose
+            // signature did not verify, say - says nothing about the picture.
+            var iconToken = doc.RootElement.TryGetProperty("iconToken", out var iconTokenProp) &&
+                            iconTokenProp.ValueKind == JsonValueKind.String
+                ? iconTokenProp.GetString() ?? ""
+                : "";
+            if (doc.RootElement.TryGetProperty("trustsCaller", out var trustedProp) &&
+                trustedProp.ValueKind == JsonValueKind.True &&
+                iconToken != device.IconToken)
+            {
+                device.IconToken = iconToken;
+                changed = true;
+            }
             // Where this peer says it can be reached. Replaced wholesale rather
             // than merged: an address the peer has stopped reporting is one it
             // no longer has, and merging would leave a client probing a stale
@@ -1107,6 +1137,8 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
                     ServerImportsMusicAppPlays = existing.ServerImportsMusicAppPlays,
                     LibraryToken = existing.LibraryToken,
                     PlaylistsToken = existing.PlaylistsToken,
+                    IconEmoji = existing.IconEmoji,
+                    IconToken = existing.IconToken,
                     Addresses = existing.Addresses,
                     IsRemembered = true,
                     IsResponding = false,

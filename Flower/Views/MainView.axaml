@@ -178,6 +178,16 @@
                                                  Kind="{Binding Icon}"
                                                  IsVisible="{Binding UsesMaterialIcon}"
                                                  Width="20" Height="20"/>
+                      <!-- A server's own icon in place of the glyph (ServerIcon):
+                           the emoji it chose, or its picture, rounded like a
+                           cover. -->
+                      <TextBlock Text="{Binding IconEmoji}"
+                                 IsVisible="{Binding UsesServerEmoji}"
+                                 FontSize="16"
+                                 HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                      <Border IsVisible="{Binding UsesServerImage}" CornerRadius="5" ClipToBounds="True">
+                        <Image Source="{Binding IconImage}" Stretch="UniformToFill"/>
+                      </Border>
                       <!-- At Material's scale for a 20px icon (App.axaml's
                            SongNoteGeometry), so the note is no larger than the
                            glyphs around it, only taller-stemmed. Coloured as

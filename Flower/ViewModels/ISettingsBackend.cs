@@ -69,6 +69,10 @@ public sealed record SettingsCapabilities
     // A Logs tab reading the log of the thing being configured.
     public bool Log { get; init; }
 
+    // The icon a server shows as beside its name (ServerIcon): an emoji, or a
+    // picture. Server-only - a device's own name is never shown with one.
+    public bool ServerIconPicker { get; init; }
+
     // "Rebuild Database" versus a plain rescan. The app rebuilds; the server
     // rescans (its schema is migrated by FlowerDb on construction, so there is
     // nothing to rebuild).
@@ -81,6 +85,10 @@ public sealed record SettingsCapabilities
 public sealed record SettingsSnapshot
 {
     public string Alias { get; init; } = "";
+    // The server's icon - see SettingsCapabilities.ServerIconPicker. The
+    // picture itself is fetched on its own (ISettingsBackend.LoadServerIconAsync).
+    public string IconEmoji { get; init; } = "";
+    public bool HasIconPicture { get; init; }
     public IReadOnlyList<string> LibraryPaths { get; init; } = [];
     // A server's only - see SettingsCapabilities.ITunesMasterSwitch. The app's
     // own backend leaves it unset here and ignores it in the draft.
@@ -160,6 +168,7 @@ public sealed record SettingsSnapshot
 public sealed record SettingsDraft
 {
     public required string Alias { get; init; }
+    public required string IconEmoji { get; init; }
     public required IReadOnlyList<string> LibraryPaths { get; init; }
     public required bool LibraryPathsChanged { get; init; }
     public required bool IntegrateWithITunes { get; init; }
@@ -195,6 +204,17 @@ public interface ISettingsBackend
     MainViewModel? Device => null;
 
     Task<SettingsSnapshot> LoadAsync(CancellationToken ct = default);
+
+    // The server's picture (Capabilities.ServerIconPicker). Setting and
+    // removing it apply at once rather than on Save, like a pairing code: a
+    // picture is bytes, not a field the draft carries. png is already sized
+    // for it - see ServerIconPicture.
+    Task<byte[]?> LoadServerIconAsync(CancellationToken ct = default) =>
+        throw new NotSupportedException("Only a server has an icon.");
+    Task SetServerIconAsync(byte[] png, CancellationToken ct = default) =>
+        throw new NotSupportedException("Only a server has an icon.");
+    Task RemoveServerIconAsync(CancellationToken ct = default) =>
+        throw new NotSupportedException("Only a server has an icon.");
 
     // Returns a human-readable note about anything that did not take effect
     // immediately (a server alias needs a restart to be re-announced over mDNS),

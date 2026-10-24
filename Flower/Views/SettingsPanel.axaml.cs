@@ -173,6 +173,40 @@ public partial class SettingsPanel : UserControl
             _viewModel.AddLibraryPath(path);
     }
 
+    // The server's icon picture, read from wherever the picker hands it: the
+    // browser has no local path to give.
+    private async void ChooseIconPictureButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (TopLevel.GetTopLevel(this)?.StorageProvider is not { } storageProvider)
+            return;
+
+        var files = await storageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Choose a Picture for This Server",
+            AllowMultiple = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("Images")
+                {
+                    Patterns = [.. LocalAlbumArtReader.ImageExtensions.Select(ext => "*" + ext)],
+                },
+            ],
+        });
+        if (files.FirstOrDefault() is not { } file)
+            return;
+
+        byte[] bytes;
+        await using (var stream = await file.OpenReadAsync())
+        {
+            using var copy = new System.IO.MemoryStream();
+            await stream.CopyToAsync(copy);
+            bytes = copy.ToArray();
+        }
+        file.Dispose();
+
+        await _viewModel.SetIconPictureAsync(bytes);
+    }
+
     // Opens the folder itself rather than selecting it within its parent, since
     // these are the library folders themselves, not files. Only shown where the
     // folders are on this machine (SettingsCapabilities.RevealInFileManager).

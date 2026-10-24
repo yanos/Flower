@@ -67,18 +67,49 @@ public sealed class DeviceSidebarSection
     // behaviour this whole class used to have unconditionally.
     private readonly IPeerEndpointResolver? _endpoints;
 
+    // The paired server's icon as this device holds it - see RefreshIcons.
+    // Null where there is no peer stack, and in tests about the rows alone.
+    private readonly PairedServerIcon? _pairedIcon;
+
     public DeviceSidebarSection(
         ObservableCollection<SidebarItem> items,
         IDeviceSidebarHost host,
         DeviceNicknameStore? nicknames,
         PairedServerReachability? reachability,
-        IPeerEndpointResolver? endpoints = null)
+        IPeerEndpointResolver? endpoints = null,
+        PairedServerIcon? pairedIcon = null)
     {
         _items        = items;
         _host         = host;
         _nicknames    = nicknames;
         _reachability = reachability;
         _endpoints    = endpoints;
+        _pairedIcon   = pairedIcon;
+    }
+
+    // Each server row's icon (ServerIcon): the paired server's as this device
+    // holds it, picture included - which it alone may fetch, and which is
+    // kept for while the server is out of reach - and any other server's
+    // emoji, as its /info answer gave it. Cheap enough to run after anything
+    // that might have moved which row is which.
+    public void RefreshIcons()
+    {
+        foreach (var item in _items)
+        {
+            if (item.Kind != SidebarItemKind.Device)
+                continue;
+
+            if (item.IsPairedServer && _pairedIcon != null)
+            {
+                item.IconEmoji = _pairedIcon.Emoji;
+                item.IconImage = _pairedIcon.Image;
+            }
+            else
+            {
+                item.IconEmoji = item.Device?.IconEmoji ?? "";
+                item.IconImage = null;
+            }
+        }
     }
 
     // The address to show and dial for a peer this section has just been told
@@ -128,6 +159,7 @@ public sealed class DeviceSidebarSection
             RemoveDuplicates(existing, device);
             RefreshDisplayNames();
             SyncPairedServerRow();
+            RefreshIcons();
             return;
         }
 
@@ -140,6 +172,7 @@ public sealed class DeviceSidebarSection
         RemoveDuplicates(added, device);
         RefreshDisplayNames();
         SyncPairedServerRow();
+        RefreshIcons();
     }
 
     // Single place that syncs the sidebar's one pinned "paired Server" row's
@@ -178,6 +211,7 @@ public sealed class DeviceSidebarSection
             RemoveItem(pinnedItem, clearSyncDedup: false);
         else
             pinnedItem.IsPairedServer = false;
+        RefreshIcons();
     }
 
     // Pins a freshly-paired device's row as the paired Server (identity only -
@@ -187,6 +221,7 @@ public sealed class DeviceSidebarSection
         var item = _items.FirstOrDefault(i => i.Kind == SidebarItemKind.Device && i.Device?.Fingerprint == fingerprint);
         if (item != null)
             item.IsPairedServer = true;
+        RefreshIcons();
     }
 
     // Pushes the current sync state onto whichever row represents the paired

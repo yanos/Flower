@@ -5,12 +5,14 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
+using Avalonia.Media;
 using Avalonia.Threading;
 
 using CommunityToolkit.Mvvm.Input;
 
 using Flower.Logging;
 using Flower.Persistence;
+using Flower.Services;
 
 using Microsoft.Extensions.Logging;
 
@@ -168,6 +170,73 @@ public sealed partial class SettingsViewModel : ViewModelBase
         get => _alias;
         set => SetProperty(ref _alias, value);
     }
+
+    // The server's icon (ServerIcon): an emoji, saved with everything else on
+    // Save, or a picture, which applies the moment it is chosen or removed. The
+    // preview beside them shows what Save will leave: an emoji typed wins over
+    // the picture, since saving one takes the picture away.
+    private string _iconEmoji = "";
+    public string IconEmoji
+    {
+        get => _iconEmoji;
+        set
+        {
+            if (!SetProperty(ref _iconEmoji, value))
+                return;
+            OnPropertyChanged(nameof(IconPreviewEmoji));
+            OnIconPreviewChanged();
+        }
+    }
+
+    private IImage? _iconPicture;
+    public IImage? IconPicture
+    {
+        get => _iconPicture;
+        private set
+        {
+            if (!SetProperty(ref _iconPicture, value))
+                return;
+            OnPropertyChanged(nameof(HasIconPicture));
+            OnIconPreviewChanged();
+        }
+    }
+
+    public bool HasIconPicture => IconPicture != null;
+    public string IconPreviewEmoji => ServerIcon.CleanEmoji(IconEmoji);
+    public bool PreviewsIconEmoji => IconPreviewEmoji.Length > 0;
+    public bool PreviewsIconPicture => !PreviewsIconEmoji && HasIconPicture;
+    public bool PreviewsNoIcon => !PreviewsIconEmoji && !HasIconPicture;
+    public SettingLock IconEmojiLock => LockFor("IconEmoji");
+
+    private void OnIconPreviewChanged()
+    {
+        OnPropertyChanged(nameof(PreviewsIconEmoji));
+        OnPropertyChanged(nameof(PreviewsIconPicture));
+        OnPropertyChanged(nameof(PreviewsNoIcon));
+    }
+
+    // A picture file's bytes, made into what the server is sent
+    // (ServerIconPicture) before they go. Choosing one clears the emoji here
+    // as the server clears it there.
+    public Task SetIconPictureAsync(byte[] picture) => RunAsync(async ct =>
+    {
+        if (await Task.Run(() => ServerIconPicture.Prepare(picture), ct) is not { } png)
+        {
+            ErrorMessage = "That file isn't a picture Flower can read.";
+            return;
+        }
+
+        await _backend.SetServerIconAsync(png, ct);
+        IconPicture = ServerIconPicture.Decode(png);
+        IconEmoji = "";
+    });
+
+    [RelayCommand]
+    private Task RemoveIconPictureAsync() => RunAsync(async ct =>
+    {
+        await _backend.RemoveServerIconAsync(ct);
+        IconPicture = null;
+    });
 
     // This device, when these are its own settings - see ISettingsBackend.
     // Device. Null for a server's.
@@ -455,6 +524,9 @@ public sealed partial class SettingsViewModel : ViewModelBase
             _snapshot = await _backend.LoadAsync(ct);
 
             Alias = _snapshot.Alias;
+            IconEmoji = _snapshot.IconEmoji;
+            if (Capabilities.ServerIconPicker)
+                IconPicture = _snapshot.HasIconPicture ? ServerIconPicture.Decode(await _backend.LoadServerIconAsync(ct)) : null;
             _integrateWithITunes = _snapshot.IntegrateWithITunes;
             OnPropertyChanged(nameof(IntegrateWithITunes));
             SyncPlayCountFromITunes = _snapshot.SyncPlayCountFromITunes;
@@ -476,6 +548,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
             OnPropertyChanged(nameof(PublicAddressDisplay));
             OnPropertyChanged(nameof(HasPublicAddress));
             OnPropertyChanged(nameof(AliasLock));
+            OnPropertyChanged(nameof(IconEmojiLock));
             OnPropertyChanged(nameof(AdvertisedHostLock));
             OnPropertyChanged(nameof(AdvertiseOnLanLock));
             OnPropertyChanged(nameof(TrustTailscaleRangeLock));
@@ -545,6 +618,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
             StatusMessage = await _backend.SaveAsync(new SettingsDraft
             {
                 Alias = Alias,
+                IconEmoji = ServerIcon.CleanEmoji(IconEmoji),
                 LibraryPaths = _paths.ToList(),
                 LibraryPathsChanged = pathsChanged,
                 IntegrateWithITunes = IntegrateWithITunes,

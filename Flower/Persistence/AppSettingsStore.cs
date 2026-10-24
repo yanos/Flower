@@ -162,6 +162,13 @@ namespace Flower.Persistence
         public string? PairedServerFingerprint { get; set; }
         public string? PairedServerAlias       { get; set; }
 
+        // The paired server's icon (ServerIcon), remembered for the same
+        // reason as its alias: the sidebar row shows it from launch, before
+        // the server has answered, and while it cannot. The picture itself is
+        // a file beside this one (PairedServerIcon); the token names which.
+        public string PairedServerIconEmoji { get; set; } = "";
+        public string PairedServerIconToken { get; set; } = "";
+
         // Set once a bulk sync with PairedServerFingerprint has actually
         // succeeded - i.e. the server really did accept the redeemed pairing
         // code, not merely that this device pointed itself at one. False the whole time

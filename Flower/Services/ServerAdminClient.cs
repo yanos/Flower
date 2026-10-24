@@ -231,6 +231,28 @@ public sealed class ServerAdminClient(
         return await ReadJsonAsync<CoverArtWriteDto>(response, "DELETE", "/api/admin/cover-art", ct);
     }
 
+    // The picture the server shows as (ServerIcon). Read from the sync
+    // surface, where every paired device reads it - it is not an admin's
+    // secret - and written through the admin one.
+    public async Task<byte[]?> GetServerIconAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await SendAsync(HttpMethod.Get, ServerIcon.ImagePath, [], null, ct);
+            return await response.Content.ReadAsByteArrayAsync(ct);
+        }
+        catch (ServerAdminException ex) when (ex.Status == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+    }
+
+    public Task SetServerIconAsync(byte[] png, CancellationToken ct = default) =>
+        SendAsync(HttpMethod.Put, ServerIcon.AdminImagePath, png, "image/png", ct);
+
+    public Task RemoveServerIconAsync(CancellationToken ct = default) =>
+        SendAsync(HttpMethod.Delete, ServerIcon.AdminImagePath, [], null, ct);
+
     private async Task<T> SendAsync<T>(HttpMethod method, string pathAndQuery, object? body, CancellationToken ct)
     {
         var response = await SendAsync(method, pathAndQuery, body, ct);

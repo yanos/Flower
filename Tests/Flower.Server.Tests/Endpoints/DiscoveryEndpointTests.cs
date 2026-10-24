@@ -128,6 +128,33 @@ public class DiscoveryEndpointTests(FlowerServerFixture server) : IClassFixture<
                     || trusts.ValueKind == JsonValueKind.Null);
     }
 
+    // The server's picture is for the devices paired with it, so its token -
+    // the only way to know there is one to fetch - goes to them alone.
+    [Fact]
+    public async Task Names_the_servers_picture_only_to_a_device_it_trusts()
+    {
+        var icons = server.Services.GetRequiredService<ServerIconStore>();
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var device = NewDevice();
+        await trustedPeers.ApproveAsync(device.Fingerprint, "Test peer", device.PublicKeyBase64);
+        byte[] png = [0x89, (byte)'P', (byte)'N', (byte)'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0x0D, 1];
+        await icons.SetAsync(png, "image/png", TestContext.Current.CancellationToken);
+        try
+        {
+            var (_, anonymous) = await GetInfoAsync();
+            var (_, trusted) = await GetInfoAsync(signer: device);
+
+            Assert.True(!anonymous.TryGetProperty("iconToken", out var hidden)
+                        || hidden.ValueKind == JsonValueKind.Null);
+            Assert.Equal(ServerIcon.TokenOf(png), trusted.GetProperty("iconToken").GetString());
+        }
+        finally
+        {
+            icons.Remove();
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
     // A revoked device still holds the key it paired with, and signs with it;
     // that is what earns it a "no" rather than the null a bare claim gets.
     [Fact]

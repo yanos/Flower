@@ -64,8 +64,14 @@ public static class SyncProtocol
 // be counted twice: once in the server's own figures, once as the device's
 // tally (see SyncRolePolicy.MayImportPlayCountsFromMusicApp). Administrators
 // only, null for everyone else: it describes the machine the server runs on.
+//
+// IconEmoji and IconToken are the server's icon (ServerIcon): the emoji for
+// anyone, like the alias beside it, and the token naming its picture only for
+// a verified caller, since only a paired device can fetch the picture. Null
+// when the server has none of either.
 public sealed record SyncInfoResponseDto(
     string Alias, string Version, string? DeviceModel, string DeviceType,
     string Fingerprint, string PublicKey, bool Download, bool? TrustsCaller,
     string LibraryToken, List<string>? Addresses = null, bool? CallerIsAdmin = null,
-    string? PlaylistsToken = null, bool? ImportsMusicAppPlays = null);
+    string? PlaylistsToken = null, bool? ImportsMusicAppPlays = null,
+    string? IconEmoji = null, string? IconToken = null);

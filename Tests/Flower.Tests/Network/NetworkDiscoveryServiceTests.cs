@@ -497,6 +497,37 @@ public class NetworkDiscoveryServiceTests : IDisposable
         Assert.True(discovered!.ServerImportsMusicAppPlays);
     }
 
+    // A server's icon: its emoji as any answer gives it, and its picture's
+    // token only from an answer that says it trusts us - the server tells it
+    // to nobody else, so its absence anywhere else says nothing.
+    [Fact]
+    public void Resolves_the_servers_icon_and_takes_its_picture_only_from_a_trusting_answer()
+    {
+        var untrusted = Routable(43, 4601);
+        _handler.RespondWith(untrusted.Port,
+            """{"alias":"Basement NAS","fingerprint":"icon-fp","iconEmoji":"🌻","iconToken":"abc"}""");
+        var trusted = Routable(44, 4602);
+        _handler.RespondWith(trusted.Port,
+            """{"alias":"Attic NAS","fingerprint":"trusted-icon-fp","trustsCaller":true,"iconToken":"abc"}""");
+
+        var discovered = new Dictionary<string, DiscoveredDevice>();
+        _service.DeviceDiscovered += (_, d) =>
+        {
+            lock (discovered)
+                discovered[d.Fingerprint] = d;
+        };
+
+        _backend.RaiseInstanceFound(InstanceName("Basement-NAS"), untrusted);
+        _backend.RaiseInstanceFound(InstanceName("Attic-NAS"), trusted);
+
+        WaitUntil(() => { lock (discovered) return discovered.ContainsKey("icon-fp") && discovered.ContainsKey("trusted-icon-fp"); },
+            "both servers' info should resolve");
+        Assert.Equal("🌻", discovered["icon-fp"].IconEmoji);
+        Assert.Equal("", discovered["icon-fp"].IconToken);
+        Assert.Equal("", discovered["trusted-icon-fp"].IconEmoji);
+        Assert.Equal("abc", discovered["trusted-icon-fp"].IconToken);
+    }
+
     // The resting state is the cautious one, the opposite way round from
     // TrustsUs: a peer that says nothing about it leaves the admin-only
     // controls hidden rather than showing ones it would refuse.

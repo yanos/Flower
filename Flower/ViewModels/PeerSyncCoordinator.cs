@@ -665,6 +665,8 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
 
         _appSettings.PairedServerFingerprint = device.Fingerprint;
         _appSettings.PairedServerAlias = device.Alias;
+        _appSettings.PairedServerIconEmoji = "";
+        _appSettings.PairedServerIconToken = "";
         _appSettings.PairedServerTrustConfirmed = false; // a fresh request - see ConfirmServerTrust
         _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
 
@@ -913,6 +915,8 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
 
         _appSettings.PairedServerFingerprint = null;
         _appSettings.PairedServerAlias = null;
+        _appSettings.PairedServerIconEmoji = "";
+        _appSettings.PairedServerIconToken = "";
         _appSettings.PairedServerTrustConfirmed = false;
         _appSettings.PairedServerGrantsAdmin = false;
         _appSettings.PairedServerImportsMusicAppPlays = false;

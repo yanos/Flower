@@ -63,6 +63,37 @@
                      Foreground="{DynamicResource AppWarningBrush}"
                      Margin="0,4,0,0" FontSize="11" TextWrapping="Wrap"/>
 
+          <!-- What a server shows beside its name in a client's sidebar
+               (ServerIcon): an emoji, saved with the rest, or a picture, which
+               goes as soon as it is chosen - see SettingsViewModel.IconEmoji.
+               The square on the left is what Save will leave. -->
+          <StackPanel IsVisible="{Binding Capabilities.ServerIconPicker}">
+            <TextBlock Text="Icon" FontWeight="SemiBold" Margin="0,20,0,8"/>
+            <StackPanel Orientation="Horizontal" Spacing="10">
+              <Border Width="36" Height="36" CornerRadius="8" ClipToBounds="True"
+                      Background="{DynamicResource AppPlaceholderBrush}">
+                <Panel>
+                  <TextBlock Text="{Binding IconPreviewEmoji}" IsVisible="{Binding PreviewsIconEmoji}"
+                             FontSize="22" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                  <Image Source="{Binding IconPicture}" IsVisible="{Binding PreviewsIconPicture}"
+                         Stretch="UniformToFill"/>
+                  <materialIcons:MaterialIcon Kind="Server" IsVisible="{Binding PreviewsNoIcon}"
+                                              Width="20" Height="20" Opacity="0.6"/>
+                </Panel>
+              </Border>
+              <controls:TextInput Text="{Binding IconEmoji, Mode=TwoWay}" Width="90"
+                                  PlaceholderText="Emoji"
+                                  IsEnabled="{Binding IconEmojiLock.IsEditable}"
+                                  VerticalAlignment="Center"/>
+              <Button Content="Choose Picture…" Click="ChooseIconPictureButton_Click" VerticalAlignment="Center"/>
+              <Button Content="Remove Picture" Command="{Binding RemoveIconPictureCommand}"
+                      IsVisible="{Binding HasIconPicture}" VerticalAlignment="Center"/>
+            </StackPanel>
+            <TextBlock Text="{Binding IconEmojiLock.Message}"
+                       IsVisible="{Binding IconEmojiLock.IsLocked}"
+                       Margin="0,4,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
+          </StackPanel>
+
           <!-- From here to the uploads switch, this device's own settings:
                bound to Device and applied as they are touched, not on Save -
                see ISettingsBackend.Device. Hidden on a server's page, where

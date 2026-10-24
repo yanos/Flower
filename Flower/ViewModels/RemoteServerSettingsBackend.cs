@@ -33,6 +33,7 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
         ServerNetwork = true,
         PairingCodes = true,
         Log = true,
+        ServerIconPicker = true,
         ThemePicker = false,
         ITunesIntegration = true,
         ITunesMasterSwitch = true,
@@ -50,6 +51,8 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
         return new SettingsSnapshot
         {
             Alias = settings.Alias,
+            IconEmoji = settings.IconEmoji,
+            HasIconPicture = settings.IconToken != null,
             LibraryPaths = settings.LibraryPaths,
             IntegrateWithITunes = settings.IntegrateWithITunes,
             SyncPlayCountFromITunes = settings.SyncPlayCountFromITunes,
@@ -90,7 +93,8 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
                 draft.IntegrateWithITunes,
                 draft.SyncPlayCountFromITunes,
                 draft.SyncDateAddedFromITunes,
-                draft.AllowPublicAccess),
+                draft.AllowPublicAccess,
+                draft.IconEmoji),
             ct);
         _lastLoaded = result;
 
@@ -102,6 +106,10 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
 
         return draft.LibraryPathsChanged ? "Saved. Scanning the library folders now." : null;
     }
+
+    public Task<byte[]?> LoadServerIconAsync(CancellationToken ct = default) => client.GetServerIconAsync(ct);
+    public Task SetServerIconAsync(byte[] png, CancellationToken ct = default) => client.SetServerIconAsync(png, ct);
+    public Task RemoveServerIconAsync(CancellationToken ct = default) => client.RemoveServerIconAsync(ct);
 
     // A server's catalog is not in this process, and attributing tracks to folders
     // would mean pulling the whole thing over the wire just to render a subtitle.

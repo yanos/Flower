@@ -64,7 +64,7 @@ so devices behind one proxy, tunnel or CGNAT do not share a budget:
 | Budget | Keyed by | Routes | Limit |
 |---|---|---|---|
 | Bulk | device | `/api/flower/v1/*` not listed below | 60 / 60s |
-| Art | device | `/cover-art`, `/cover-art/batch` | 600 / 60s |
+| Art | device | `/cover-art`, `/cover-art/batch`, `/server-icon` | 600 / 60s |
 | Media | device | `/stream`, `/download`, `/stream-tickets` | 240 / 60s |
 | Admin | device | `/api/admin/*` not listed below | 120 / 60s |
 | Mirror | device | `/api/admin/library/uploads*`, `/move`, `/tags`, `/artwork` | 3000 / 60s |
@@ -258,7 +258,9 @@ device it answers more, on that device's budget, and the answer is signed back.
   "addresses": ["https://192.168.1.40:4534", "http://192.168.1.40:4533"],
   "callerIsAdmin": false,
   "playlistsToken": "…",
-  "importsMusicAppPlays": false
+  "importsMusicAppPlays": false,
+  "iconEmoji": "🌻",
+  "iconToken": null
 }
 ```
 
@@ -272,6 +274,8 @@ device it answers more, on that device's budget, and the answer is signed back.
 | `addresses` | Every origin the server believes it is reachable on, https first, the public one last. **Verified callers only**, `null` otherwise |
 | `callerIsAdmin` | **Verified callers only**, `null` otherwise. A hint for showing admin controls; it grants nothing |
 | `importsMusicAppPlays` | **Verified administrators only**, `null` otherwise. Whether this server reads play counts from a Music.app library of its own; an admin device that brings its own Music.app plays leaves them alone while this is `true`, so they are not counted twice |
+| `iconEmoji` | The emoji the server shows as beside `alias`, `null` for none. Told to anyone, as `alias` is |
+| `iconToken` | Names the server's icon picture, `null` for none. **Verified callers only**, `null` otherwise — only they can fetch it, from `GET /server-icon`. A server has an emoji or a picture, never both |
 
 A verified call also carries the device's current `X-Flower-Alias`, and this is
 where a rename lands in the server's device list. A signed call's answer is
@@ -329,6 +333,7 @@ PascalCase JSON.
 | GET | `/log/watermark` | What the server already holds of them |
 | GET | `/cover-art?id=` | One picture |
 | POST | `/cover-art/batch` | Up to 32 pictures |
+| GET | `/server-icon` | The server's icon picture, or `404` when it has none |
 | GET | `/stream?id=` | A track's bytes, ranged |
 | GET | `/download?id=` | The same bytes, as a named file |
 
@@ -535,15 +540,28 @@ set. A revoked device learns of it from `trustsCaller: false` on its next
 `ServerSettingsUpdateDto` and returns the settings as they now are
 (`ServerAdminContracts.cs`).
 
-Editable: `alias`, `advertisedHost`, `advertiseOnLan`, `trustTailscaleRange`,
-`allowedCidrs`, `libraryPaths`, `integrateWithITunes`,
+Editable: `alias`, `iconEmoji`, `advertisedHost`, `advertiseOnLan`,
+`trustTailscaleRange`, `allowedCidrs`, `libraryPaths`, `integrateWithITunes`,
 `syncPlayCountFromITunes`, `syncDateAddedFromITunes`, `allowPublicAccess`.
 Every field is optional and an absent one is left alone. Read-only alongside
 them: `dataDirectory`, `version`, `addresses`, `publicAddress`, `publicOrigin`,
 `publicReachability`, `fingerprint`, `advertisedAs`, `appleMusicFolder`,
-`iTunesLibraryDescription`, and `overridden` — settings pinned by the
-environment or command line, each with what sets it. A write to an overridden
-setting is silently skipped.
+`iTunesLibraryDescription`, `iconToken`, and `overridden` — settings pinned by
+the environment or command line, each with what sets it. A write to an
+overridden setting is silently skipped.
+
+`iconEmoji` keeps the first character a reader would count as one, an emoji of
+several code points included; empty removes it. A non-empty one removes the
+icon picture, which is set apart from the other settings:
+
+| Method | Path | Body | Answers |
+|---|---|---|---|
+| PUT | `/server-icon` | image bytes, at most 512 KB | `204`, and clears `iconEmoji` |
+| DELETE | `/server-icon` | — | `204` |
+
+The picture is kept as `server-icon` in the data directory. Its type is sniffed
+from the bytes, as for `/cover-art`; a client sends a square PNG of at most 256
+pixels (`ServerIconPicture`).
 
 Changes are written to `flower-server.json` in the data directory.
 `allowPublicAccess` and `allowedCidrs` take effect on the next request.

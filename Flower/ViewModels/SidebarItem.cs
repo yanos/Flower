@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Media;
 
 using Flower.Models;
 using Flower.Services;
@@ -115,7 +116,40 @@ public class SidebarItem : ViewModelBase
     // place of Icon, whose Material Music glyph has stems too short to read as
     // anything but squat beside it.
     public bool UsesSongNote => Kind == SidebarItemKind.Songs;
-    public bool UsesMaterialIcon => !UsesSongNote;
+    public bool UsesMaterialIcon => !UsesSongNote && !UsesServerEmoji && !UsesServerImage;
+
+    // A server's own icon in place of the generic glyph (ServerIcon): its
+    // emoji, or for the paired server the picture it chose. Set by
+    // DeviceSidebarSection, the one place that knows which server is which.
+    private string _iconEmoji = "";
+    public string IconEmoji
+    {
+        get => _iconEmoji;
+        set
+        {
+            _iconEmoji = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(UsesServerEmoji));
+            OnPropertyChanged(nameof(UsesMaterialIcon));
+        }
+    }
+
+    private IImage? _iconImage;
+    public IImage? IconImage
+    {
+        get => _iconImage;
+        set
+        {
+            _iconImage = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(UsesServerImage));
+            OnPropertyChanged(nameof(UsesServerEmoji));
+            OnPropertyChanged(nameof(UsesMaterialIcon));
+        }
+    }
+
+    public bool UsesServerImage => IconImage != null;
+    public bool UsesServerEmoji => !UsesServerImage && IconEmoji.Length > 0;
 
     // Second line shown under Name in the sidebar - currently only used for a
     // Device row whose display name collides with another device's (see

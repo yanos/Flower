@@ -69,6 +69,8 @@ public static class SyncEndpoints
     private const string CoverArtPath = GroupPrefix + CoverArtRoute;
     private const string CoverArtBatchRoute = "/cover-art/batch";
     private const string CoverArtBatchPath = GroupPrefix + CoverArtBatchRoute;
+    private const string ServerIconRoute = "/server-icon";
+    private const string ServerIconPath = GroupPrefix + ServerIconRoute;
     private const string StreamRoute = "/stream";
     private const string StreamPath = GroupPrefix + StreamRoute;
     private const string DownloadRoute = "/download";
@@ -232,19 +234,28 @@ public static class SyncEndpoints
         // bodies already.
         sync.MapPost(CoverArtBatchRoute, (HttpContext context, CoverArtCache covers) => GetCoverArtBatch(context, covers));
 
+        // The picture this server shows as (ServerIcon), for the devices
+        // paired with it - which is why it is behind this group's gate and
+        // /info names it only to them.
+        sync.MapGet(ServerIconRoute, (ServerIconStore icons) =>
+            icons.Current is { } picture
+                ? Results.Bytes(picture.Bytes, picture.MimeType)
+                : Problems.NotFound());
+
         // The bytes themselves (see MediaEndpoints): the door every Flower client
         // uses, and the only one a stream ticket opens.
         sync.MapGet(StreamRoute, MediaEndpoints.Stream);
         sync.MapGet(DownloadRoute, MediaEndpoints.Download);
     }
 
-    // Both cover-art routes are the art plane - the batch one especially,
+    // Both cover-art routes, and the server's own icon, are the art plane - the batch one especially,
     // since it exists so art stops competing with playback, and putting it
     // back in the bulk budget would undo exactly that.
     private static RequestGate.Plane PlaneFor(PathString path)
     {
         if (path.Equals(CoverArtPath, StringComparison.OrdinalIgnoreCase) ||
-            path.Equals(CoverArtBatchPath, StringComparison.OrdinalIgnoreCase))
+            path.Equals(CoverArtBatchPath, StringComparison.OrdinalIgnoreCase) ||
+            path.Equals(ServerIconPath, StringComparison.OrdinalIgnoreCase))
         {
             return RequestGate.Plane.Art;
         }

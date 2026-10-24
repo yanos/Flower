@@ -91,6 +91,7 @@ public static class AdminEndpoints
     private const string TagsPath = "/api/admin" + TagsRoute;
     private const string ArtworkRoute = "/library/artwork";
     private const string ArtworkPath = "/api/admin" + ArtworkRoute;
+    private const string ServerIconRoute = "/server-icon";
 
     // What a device keeping this server's files in step with its own sends:
     // files, and - one request a song - the news that a file has moved. A
@@ -240,9 +241,9 @@ public static class AdminEndpoints
         authenticated.MapGet("/settings", async (
             HttpContext context, IOptionsMonitor<FlowerServerOptions> options, IServer boundServer,
             PublicAddressProbe publicAddress, PublicReachability publicReachability, DeviceSigningKey signingKey,
-            MdnsAdvertiser advertiser, IConfiguration configuration) =>
+            MdnsAdvertiser advertiser, IConfiguration configuration, ServerIconStore icons) =>
             Results.Json(
-                await DescribeAsync(options.CurrentValue, boundServer, publicAddress, publicReachability, advertiser, configuration, signingKey, context.RequestAborted),
+                await DescribeAsync(options.CurrentValue, boundServer, publicAddress, publicReachability, advertiser, configuration, signingKey, icons, context.RequestAborted),
                 jsonOptions));
 
         // Read from the raw (buffered, rewound) stream rather than a bound
@@ -250,7 +251,8 @@ public static class AdminEndpoints
         authenticated.MapPut("/settings", async (
             HttpContext context, IOptionsMonitor<FlowerServerOptions> options, IConfiguration configuration,
             LibraryRescanCoordinator rescans, IServer boundServer, PublicAddressProbe publicAddress,
-            PublicReachability publicReachability, DeviceSigningKey signingKey, MdnsAdvertiser advertiser) =>
+            PublicReachability publicReachability, DeviceSigningKey signingKey, MdnsAdvertiser advertiser,
+            ServerIconStore icons) =>
         {
             ServerSettingsUpdateDto? update;
             try
@@ -285,6 +287,7 @@ public static class AdminEndpoints
                 DataDirectory = before.DataDirectory,
                 WebUiPath = before.WebUiPath,
                 Alias = before.Alias,
+                IconEmoji = before.IconEmoji,
                 AdvertisedHost = before.AdvertisedHost,
                 AdvertiseOnLan = before.AdvertiseOnLan,
                 TrustTailscaleRange = before.TrustTailscaleRange,
@@ -306,6 +309,15 @@ public static class AdminEndpoints
             {
                 after.Alias = alias.Trim();
                 values[nameof(FlowerServerOptions.Alias)] = JsonValue.Create(after.Alias);
+            }
+            // One emoji or a picture, never both: an emoji chosen replaces the
+            // picture, as a picture chosen replaces the emoji (/server-icon).
+            var removePicture = false;
+            if (update.IconEmoji is { } iconEmoji && ServerIcon.CleanEmoji(iconEmoji) != before.IconEmoji && Editable(nameof(FlowerServerOptions.IconEmoji)))
+            {
+                after.IconEmoji = ServerIcon.CleanEmoji(iconEmoji);
+                values[nameof(FlowerServerOptions.IconEmoji)] = JsonValue.Create(after.IconEmoji);
+                removePicture = after.IconEmoji.Length > 0;
             }
             if (update.AdvertisedHost is { } advertisedHost && advertisedHost.Trim() != before.AdvertisedHost && Editable(nameof(FlowerServerOptions.AdvertisedHost)))
             {
@@ -368,6 +380,8 @@ public static class AdminEndpoints
                 // reads the previous configuration and appears to have ignored the
                 // change, which is exactly what the page just promised it did.
                 (configuration as IConfigurationRoot)?.Reload();
+                if (removePicture)
+                    icons.Remove();
 
                 logger.LogInformation(
                     "{Fingerprint} updated server settings: {Keys}",
@@ -390,8 +404,46 @@ public static class AdminEndpoints
             }
 
             return Results.Json(
-                await DescribeAsync(after, boundServer, publicAddress, publicReachability, advertiser, configuration, signingKey, context.RequestAborted),
+                await DescribeAsync(after, boundServer, publicAddress, publicReachability, advertiser, configuration, signingKey, icons, context.RequestAborted),
                 jsonOptions);
+        });
+
+        // The picture this server shows as (ServerIcon), in place of an
+        // emoji: the image is the body, sniffed rather than trusted for the
+        // reason the cover-art write below gives. Clears the emoji, since a
+        // server has one icon or the other.
+        authenticated.MapPut(ServerIconRoute, async (
+            HttpContext context, IOptionsMonitor<FlowerServerOptions> options, IConfiguration configuration,
+            ServerIconStore icons) =>
+        {
+            var bytes = RequestGate.BodyOf(context);
+            if (bytes.Length == 0)
+                return Problems.BadRequest("An image body is required.");
+            if (bytes.Length > ServerIcon.MaxImageBytes)
+                return Problems.Of(StatusCodes.Status413PayloadTooLarge, ProblemCodes.TooLarge,
+                    $"A server icon can be at most {ServerIcon.MaxImageBytes / 1024} KB.");
+            if (LocalAlbumArtReader.MimeTypeForBytes(bytes) is not { } mimeType)
+                return Problems.BadRequest("That body is not an image Flower can read.");
+
+            await icons.SetAsync(bytes, mimeType, context.RequestAborted);
+            if (options.CurrentValue.IconEmoji.Length > 0
+                && !SettingsOverrides.Describe(configuration).ContainsKey(nameof(FlowerServerOptions.IconEmoji)))
+            {
+                await ServerSettingsWriter.WriteAsync(options.CurrentValue.DataDirectory,
+                    new Dictionary<string, JsonNode?> { [nameof(FlowerServerOptions.IconEmoji)] = JsonValue.Create("") },
+                    context.RequestAborted);
+                (configuration as IConfigurationRoot)?.Reload();
+            }
+
+            logger.LogInformation("{Fingerprint} set the server's icon to a picture.", context.Items[AdminFingerprintKey]);
+            return Results.NoContent();
+        });
+
+        authenticated.MapDelete(ServerIconRoute, (HttpContext context, ServerIconStore icons) =>
+        {
+            icons.Remove();
+            logger.LogInformation("{Fingerprint} removed the server's icon picture.", context.Items[AdminFingerprintKey]);
+            return Results.NoContent();
         });
 
         authenticated.MapGet("/library", (LibraryRescanCoordinator rescans, LibraryWriteAccess writeAccess) =>
@@ -919,7 +971,7 @@ public static class AdminEndpoints
     private static async Task<ServerSettingsDto> DescribeAsync(
         FlowerServerOptions options, IServer boundServer, PublicAddressProbe publicAddress,
         PublicReachability publicReachability, MdnsAdvertiser advertiser, IConfiguration configuration,
-        DeviceSigningKey signingKey, CancellationToken ct)
+        DeviceSigningKey signingKey, ServerIconStore icons, CancellationToken ct)
     {
 
         var reachability = await publicReachability.CheckAsync(options, ct);
@@ -944,7 +996,9 @@ public static class AdminEndpoints
             Overridden: SettingsOverrides.Describe(configuration),
             AdvertisedAs: advertiser.ClaimedInsteadOf == MdnsAdvertiser.InstanceName(options) ? advertiser.Name : null,
             PublicOrigin: reachability?.Origin,
-            PublicReachability: reachability?.Status.ToString());
+            PublicReachability: reachability?.Status.ToString(),
+            IconEmoji: options.IconEmoji,
+            IconToken: icons.Current?.Token);
     }
 
     // The host in the invite is the address the admin's own browser reached

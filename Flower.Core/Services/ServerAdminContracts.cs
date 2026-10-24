@@ -83,7 +83,12 @@ public sealed record ServerSettingsDto(
     // the command line) wins over anything saved here; see SettingsOverrides.
     Dictionary<string, string>? Overridden = null,
     string? PublicOrigin = null,
-    string? PublicReachability = null);
+    string? PublicReachability = null,
+    // The server's icon (ServerIcon): its emoji, empty for none, and the token
+    // naming its picture, null for none - the picture itself is fetched from
+    // ServerIcon.ImagePath, like any paired device's.
+    string IconEmoji = "",
+    string? IconToken = null);
 
 public sealed record ServerSettingsUpdateDto(
     string? Alias,
@@ -95,7 +100,9 @@ public sealed record ServerSettingsUpdateDto(
     bool? IntegrateWithITunes,
     bool? SyncPlayCountFromITunes,
     bool? SyncDateAddedFromITunes,
-    bool? AllowPublicAccess);
+    bool? AllowPublicAccess,
+    // Empty to have none; a non-empty one replaces the server's picture.
+    string? IconEmoji = null);
 
 // POST /api/admin/library/remove - "Remove from Library" from an admin device,
 // carried out on the server's own library (see LibraryRemoval). TrackIds are

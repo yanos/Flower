@@ -51,6 +51,7 @@ public static class ServerDataDirectory
           "Flower": {
             "_LibraryPaths": ["Folders to scan for music, e.g. /music or /srv/media/library."],
             "_Alias": "The name this server shows up as in a Flower client's sidebar. Defaults to the machine name.",
+            "_IconEmoji": "An emoji to show beside that name instead of the generic server icon. A picture can be set instead from the settings page.",
             "_AdvertisedHost": "host:port to put in pairing invites when the address a device should dial isn't the one the request arrived on (reverse proxy, remapped container port).",
             "_AdvertiseOnLan": "false to stop announcing this server over mDNS - for tailnet/reverse-proxy-only deployments.",
             "_LibraryListingMinutes": "How often to list the library folders for songs added or removed behind the server's back, in minutes - 5 by default, 0 to turn it off. Changes on a local disk are noticed at once anyway; this is for a network share, which does not report what other machines do to it.",

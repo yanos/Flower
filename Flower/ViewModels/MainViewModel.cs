@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
 
+using Avalonia.Media;
 using Avalonia.Threading;
 
 using CommunityToolkit.Mvvm.Input;
@@ -53,6 +54,18 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     private readonly PeerTrackResolver? _peerTrackResolver;
     private readonly IPeerCredentials? _peerCredentials;
     private PairedServerReachability? _reachability;
+
+    // The paired server's icon (ServerIcon), shown on its sidebar row and the
+    // phone's server row. Null on a head with no peer stack - the browser,
+    // whose one server is the page it is on.
+    public PairedServerIcon? PairedIcon { get; }
+
+    // The same, for the phone's server row to bind: one of the two, or
+    // neither.
+    public IImage? PairedServerIconImage => PairedIcon?.Image;
+    public string PairedServerIconEmoji => PairedIcon?.Image == null ? PairedIcon?.Emoji ?? "" : "";
+    public bool HasPairedServerIconEmoji => PairedServerIconEmoji.Length > 0;
+    public bool HasPairedServerIconImage => PairedServerIconImage != null;
     private AppSettingsStore? _appSettingsStore;
 
     // The P2P sync coordinator - when to sync, with whom, and the
@@ -1699,6 +1712,11 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         ITunesImport           = iTunesImport;
         _logger                = logger;
         LoggerFactory          = loggerFactory;
+        if (networkDiscovery != null && peerCredentials != null)
+        {
+            PairedIcon = new PairedServerIcon(appSettings, appSettingsStore, peerCredentials,
+                PeerHttpClient.Create(TimeSpan.FromSeconds(15)), LoggerFactory.CreateLogger<PairedServerIcon>());
+        }
 
         Browser = new LibraryBrowserViewModel(library, this, LoggerFactory.CreateLogger<LibraryBrowserViewModel>(), animationClock);
         Browser.RestoreSort(
@@ -1865,7 +1883,19 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             libraryDownloadService, peerPairingService, peerTrackResolver, trustedPeerStore, deviceIdentity, signingKey,
             Library, libraryMirrorService);
 
-        _deviceSidebar = new DeviceSidebarSection(_sidebarItems, this, deviceNicknameStore, reachability, networkDiscovery);
+        _deviceSidebar = new DeviceSidebarSection(_sidebarItems, this, deviceNicknameStore, reachability, networkDiscovery, PairedIcon);
+        if (PairedIcon != null)
+        {
+            _subscriptions.Add<EventHandler>((_, _) => Dispatcher.UIThread.Post(() =>
+            {
+                _deviceSidebar.RefreshIcons();
+                OnPropertyChanged(nameof(PairedServerIconImage));
+                OnPropertyChanged(nameof(PairedServerIconEmoji));
+                OnPropertyChanged(nameof(HasPairedServerIconEmoji));
+                OnPropertyChanged(nameof(HasPairedServerIconImage));
+            }),
+                h => PairedIcon.Changed += h, h => PairedIcon.Changed -= h);
+        }
 
         // The coordinator owns the state; these re-raise it on this ViewModel,
         // which is what every binding actually watches.
@@ -1909,6 +1939,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             else
                 _deviceSidebar.UnpinPairedServerRow();
             _deviceSidebar.SyncPairedServerRow();
+            PairedIcon?.FollowPairing();
+            _deviceSidebar.RefreshIcons();
             // Pairing, unpairing and being made an administrator each change
             // which folders this device scans - see DeviceLibraryFolders.
             FollowScanFolders();
@@ -1985,6 +2017,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
                 OnPropertyChanged(nameof(ManualServerAddresses));
             });
             Sync.HandlePeerTrustChanged(device);
+            if (PairedIcon != null)
+                PairedIcon.ObserveAsync(device).Forget(_logger, "The paired server's icon");
             TriggerSyncIfPeerCatalogChanged(device);
             TriggerSyncIfPeerPlaylistsChanged(device);
             TriggerSyncIfReady(device);
@@ -2343,6 +2377,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             {
                 IsPairedServer = true,
                 IsReachable = false,
+                IconEmoji = PairedIcon?.Emoji ?? "",
+                IconImage = PairedIcon?.Image,
             });
         }
 

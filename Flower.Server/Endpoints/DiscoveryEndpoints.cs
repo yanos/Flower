@@ -61,7 +61,7 @@ public static class DiscoveryEndpoints
             HttpContext context, IOptionsMonitor<FlowerServerOptions> optionsMonitor,
             DeviceSigningKey signingKey, TrustedPeerStore trustedPeers, Library library,
             NonceReplayGuard replayGuard, IServer boundServer, PublicReachability publicReachability,
-            MdnsAdvertiser advertiser, RequestGate gate) =>
+            MdnsAdvertiser advertiser, RequestGate gate, ServerIconStore icons) =>
         {
             // Monitor, not IOptions, for the same reason Program.cs's LanGuard
             // gate uses one: both settings this reads - the alias and
@@ -218,7 +218,12 @@ public static class DiscoveryEndpoints
                 // device imports anything.
                 callerIsTrusted && trustedPeers.IsAdmin(caller.Fingerprint!)
                     ? ImportsMusicAppPlays(options)
-                    : null);
+                    : null,
+                // The icon (ServerIcon): the emoji for anyone, as the alias
+                // is, and the picture's token only for a caller who could
+                // fetch the picture it names.
+                options.IconEmoji.Length > 0 ? options.IconEmoji : null,
+                callerIsTrusted ? icons.Current?.Token : null);
 
             // Signed, over the bytes sent, whenever the caller signed its
             // request: trustsCaller: false is how a revoked device finds out,

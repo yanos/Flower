@@ -70,6 +70,11 @@ public sealed class FlowerServerOptions : MusicLibrarySettings
     // one-server-on-the-LAN case and wrong the moment there are two.
     public string Alias { get; set; } = "";
 
+    // The emoji shown beside Alias in a client's sidebar, empty for none - see
+    // ServerIcon. A picture in its place is not a setting but a file in the
+    // data directory (ServerIconStore), and setting either clears the other.
+    public string IconEmoji { get; set; } = "";
+
     // Whether to announce this server on the local network at all. On by
     // default: a self-hoster on their own LAN wants the client to find the
     // server without being told an address. Turn it off for a deployment

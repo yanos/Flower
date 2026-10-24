@@ -284,6 +284,7 @@ builder.Services.AddSingleton<TrustedPeerStore>();
 builder.Services.AddSingleton<AlbumProgressLedger>();
 builder.Services.AddSingleton<LibraryManifestCache>();
 builder.Services.AddSingleton<CoverArtCache>();
+builder.Services.AddSingleton<ServerIconStore>();
 builder.Services.AddSingleton<PlayReportService>();
 // Where a paired device's pushed log snapshot lands (SyncEndpoints'
 // /log/report) and is read back from (AdminEndpoints' /devices/{fp}/logs).

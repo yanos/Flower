@@ -59,6 +59,31 @@ public class DeviceSidebarSectionTests
         return (new DeviceSidebarSection(items, host, nicknames: null, reachability: null), items, host);
     }
 
+    // A server's row shows its own icon: the paired server's as this device
+    // keeps it, and any other server's emoji as its /info gave it.
+    [AvaloniaFact]
+    public void A_server_row_shows_that_servers_icon()
+    {
+        var items = new ObservableCollection<SidebarItem> { new(SidebarItemKind.Songs, "Songs") };
+        var host = new Host { DefaultSelection = items[0], PairedServerFingerprint = "paired-fp" };
+        var settings = new Flower.Persistence.AppSettings { PairedServerFingerprint = "paired-fp", PairedServerIconEmoji = "🏠" };
+        var pairedIcon = new PairedServerIcon(settings, null, new TestSupport.StaticPeerCredentials("X-Test", "1"),
+            new System.Net.Http.HttpClient(), NullLogger<PairedServerIcon>.Instance,
+            System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"flower-icon-{Guid.NewGuid():N}"));
+        var section = new DeviceSidebarSection(items, host, nicknames: null, reachability: null, pairedIcon: pairedIcon);
+
+        var other = Device("attic.local", "other-fp", "Attic");
+        other.IconEmoji = "🎧";
+        other.IconToken = "not-ours-to-fetch";
+        section.AddOrUpdate(Device("home.local", "paired-fp", "Home"));
+        section.AddOrUpdate(other);
+
+        Assert.Equal("🏠", items.Single(i => i.Name == "Home").IconEmoji);
+        var attic = items.Single(i => i.Name == "Attic");
+        Assert.Equal("🎧", attic.IconEmoji);
+        Assert.Null(attic.IconImage);
+    }
+
     [Fact]
     public void A_peer_with_no_resolved_fingerprint_yet_gets_no_row()
     {
