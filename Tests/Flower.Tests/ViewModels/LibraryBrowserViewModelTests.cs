@@ -237,6 +237,25 @@ public class LibraryBrowserViewModelTests
         Assert.Empty(vm.AlbumGridTiles);
     }
 
+    // A library change rebuilds the grid twice: at once, and again once the
+    // debounced row rebuild lands. Both have to agree, or a filtered grid is
+    // the whole library for that second - every album shuffling into place
+    // over the ones being looked at, then back - which is what a cover change
+    // made of a grid filtered down to its album.
+    [AvaloniaFact]
+    public async Task A_library_change_keeps_the_album_grid_filtered_while_it_rebuilds()
+    {
+        var (vm, host) = Make(Song("Karma Police", "OK Computer", "Radiohead"), Song("Heroes", "Heroes", "Bowie"));
+        host.CurrentKind = SidebarItemKind.Albums;
+        vm.Repopulate();
+        vm.FilterText = "computer";
+        await vm.RebuildRowsImmediatelyAsync();
+
+        vm.Repopulate();
+
+        Assert.Equal("OK Computer", Assert.Single(vm.AlbumGridTiles).Name);
+    }
+
     [AvaloniaFact]
     public void History_keeps_sort_state_independent_of_songs()
     {

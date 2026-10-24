@@ -318,9 +318,12 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         AlbumGridTiles = new ObservableCollection<AlbumTileViewModel>(
             BrowseSort.InGridOrder(AlbumGridTiles, _host.SortOf(BrowseSortScreen.Albums)));
 
+    // Filtered as RebuildRowsAsync filters it. The debounced rebuild that
+    // follows lays the grid out again, and when the two disagreed a filtered
+    // grid was the whole library for a second in between.
     private void RebuildAlbumGrids()
     {
-        SetTiles(AlbumGridBuilder.Build(_allTracks));
+        SetTiles(AlbumGridBuilder.Build(TrackListBuilder.Filter(_allTracks, _filterText, TrackListBuilder.AlbumMatches)));
         ApplyTileAvailability();
 
         // An expanded album's tracks came from a tile built against the
