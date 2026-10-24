@@ -1,8 +1,6 @@
 long term:
- server multiple libraries?
  artist / playlist icon instead of album art
  localisation
- Currently playing controls that looks like an lcd panel
  visualizers
  themes / ui customization
  UI tests (Playwright?)
