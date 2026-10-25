@@ -602,6 +602,11 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         SidebarItemKind.History       => "history",
         SidebarItemKind.Home          => "home",
         SidebarItemKind.Queue         => "queue",
+        // Both build no rows (GetBaseTracksForFilter). Keyed as Songs, a
+        // rebuild there - a play or a sync while away - kept nothing as Songs'
+        // own rows, and Songs came back empty.
+        SidebarItemKind.Search        => "search",
+        SidebarItemKind.Device        => "device",
         _                             => "songs"
     };
 

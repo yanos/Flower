@@ -102,6 +102,30 @@ public class ScopeRowsCacheTests : PinnedDataDirectory
         Assert.Same(c, vm.Rows[0].Track);
     }
 
+    // Search shows its own results rather than rows, so a rebuild there
+    // builds none - and kept them as Songs' own, the two sharing a key. A
+    // play, a sync or a download while away was enough to have one run, and
+    // Songs came back empty with the whole library behind it.
+    [AvaloniaFact]
+    public async Task Songs_comes_back_whole_from_a_page_that_lists_no_songs()
+    {
+        var c = T("C", "Y");
+        var library = new Library(new List<Track> { T("A", "X"), T("B", "X"), c });
+        var vm = MakeViewModel(library);
+
+        vm.SelectedSidebarItem = Item(vm, SidebarItemKind.Songs);
+        await vm.RebuildRowsImmediatelyAsync();
+
+        vm.SelectedSidebarItem = Item(vm, SidebarItemKind.Search);
+        library.IncrementPlayCount(c);
+        await vm.RebuildRowsImmediatelyAsync();
+
+        vm.SelectedSidebarItem = Item(vm, SidebarItemKind.Songs);
+        await vm.RebuildRowsImmediatelyAsync();
+
+        Assert.Equal(3, vm.Rows.Count);
+    }
+
     [AvaloniaFact]
     public async Task A_scope_left_before_the_library_changed_is_rebuilt_on_return()
     {
