@@ -61,6 +61,12 @@
     <Style Selector="CheckBox.option">
       <Setter Property="FontSize" Value="13"/>
     </Style>
+    <!-- The Artwork tab's empty frame is a drop target, and says so in words
+         (ArtDropHint); the note glyph every other missing cover shows would
+         only sit on top of them. -->
+    <Style Selector="controls|AlbumArtView#ArtworkLargeView TextBlock.placeholderGlyph">
+      <Setter Property="IsVisible" Value="False"/>
+    </Style>
     <!-- Songs whose covers differ (AlbumArtLoader.ShareOneCover) have none
          to show, and say so over the empty frame in place of the note. -->
     <Style Selector="controls|AlbumArtView.multipleArt TextBlock.placeholderGlyph">
