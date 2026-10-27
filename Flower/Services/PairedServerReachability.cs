@@ -55,6 +55,10 @@ public class PairedServerReachability : IDisposable
     // got slow" a question with no answer anywhere in the app.
     public ServerRoute Route { get; private set; } = ServerRoute.Unreachable;
 
+    // Where the paired server last answered, kept after it stops answering -
+    // see RouteStream.
+    private volatile DiscoveredDevice? _lastAnswered;
+
     public event EventHandler? Changed;
 
     public PairedServerReachability(
@@ -91,10 +95,14 @@ public class PairedServerReachability : IDisposable
     // starts probing them. Call once at startup, after AppSettings has loaded -
     // this is what gives a client that has never seen an mDNS announcement in
     // this session anything at all to talk to.
+    //
+    // All at once, because each one waits for its /info to answer or time out.
+    // One after another, a phone launched away from home sat out three seconds
+    // on every LAN address before reaching the public one, and pressing play
+    // in those nine seconds did nothing at all.
     public async Task RestoreRememberedAsync()
     {
-        foreach (var address in Candidates().ToList())
-            await _networkDiscovery.AddRememberedAsync(address);
+        await Task.WhenAll(Candidates().ToList().Select(address => _networkDiscovery.AddRememberedAsync(address)));
 
         Recompute();
     }
@@ -233,6 +241,8 @@ public class PairedServerReachability : IDisposable
         // not something to report as reachable.
         if (device is { IsResponding: false })
             device = null;
+        if (device != null)
+            _lastAnswered = device;
         var reachable = device != null;
         var route = RouteOf(device);
         if (device == PairedServerDevice && reachable == IsReachable && route == Route)
@@ -255,12 +265,19 @@ public class PairedServerReachability : IDisposable
     // Only stream URLs are moved, and only onto the paired server: that is
     // the one server a client ever streams from (PeerTrackResolver), and the
     // request is re-signed per send (PeerCredentialsHandler), so nothing baked
-    // into the URL is tied to the address it was built for. With no paired
-    // server answering right now the URL is left as it was - the reopen then
-    // fails, and is retried until one answers.
+    // into the URL is tied to the address it was built for.
+    //
+    // With no address answering right now, the stream stays where the server
+    // last answered, and the reopen is retried there until one does. It used
+    // to fall back to the URL as built, which is the LAN address for any track
+    // started at home: a phone out on a weak cellular link, whose public
+    // address had answered a moment before and missed one three-second
+    // /info, moved its stream to 192.168, where it could not possibly play.
     public Uri RouteStream(Uri uri)
     {
-        if (PairedServerDevice is not { } device
+        var device = PairedServerDevice
+            ?? (_lastAnswered is { } last && last.Fingerprint == _appSettings.PairedServerFingerprint ? last : null);
+        if (device == null
             || !uri.AbsolutePath.Equals(PeerMediaClient.StreamPath, StringComparison.Ordinal)
             || uri.GetLeftPart(UriPartial.Authority).Equals(device.Origin, StringComparison.OrdinalIgnoreCase))
         {

@@ -40,15 +40,22 @@ public class RemoteServerReachabilityTests : PinnedDataDirectory
         // candidate was probed over and not merely that it answered.
         public List<Uri> Requested { get; } = [];
 
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        // Runs before each answer, by port, so a test can hold one probe until
+        // another has been dialled.
+        public Func<int, Task>? BeforeAnswering { get; set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             lock (Requested)
                 Requested.Add(request.RequestUri!);
 
+            if (BeforeAnswering is { } hold)
+                await hold(request.RequestUri!.Port);
+
             if (!_responsesByPort.TryGetValue(request.RequestUri!.Port, out var json))
                 throw new HttpRequestException("simulated unreachable peer");
 
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json) });
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json) };
         }
     }
 
@@ -124,6 +131,35 @@ public class RemoteServerReachabilityTests : PinnedDataDirectory
         Assert.Equal(ServerRoute.Tailnet, _reachability.Route);
     }
 
+    // Away from home the LAN addresses come first and do not answer. Probed
+    // one after another, each sat out its whole timeout before the next was
+    // tried, and a phone relaunched on cellular could play nothing until the
+    // last one, the one that works, had its turn.
+    [Fact]
+    public async Task Remembered_addresses_are_probed_at_once_rather_than_in_turn()
+    {
+        var farAddressDialled = new TaskCompletionSource();
+        var lanProbeWaitedOut = false;
+        _handler.BeforeAnswering = async port =>
+        {
+            if (port == 4534)
+            {
+                farAddressDialled.TrySetResult();
+                return;
+            }
+
+            if (await Task.WhenAny(farAddressDialled.Task, Task.Delay(TimeSpan.FromSeconds(5))) != farAddressDialled.Task)
+                lanProbeWaitedOut = true;
+        };
+        _handler.RespondWith(4534, ServerInfo);
+        _appSettings.PairedServerAddresses = ["http://192.168.1.40:4533", "http://100.101.102.103:4534"];
+
+        await _reachability.RestoreRememberedAsync();
+
+        Assert.False(lanProbeWaitedOut, "the far address should be dialled while the LAN one is still waiting");
+        Assert.True(_reachability.IsReachable);
+    }
+
     [Fact]
     public async Task The_route_follows_the_client_out_of_the_house_and_back()
     {
@@ -186,6 +222,28 @@ public class RemoteServerReachabilityTests : PinnedDataDirectory
 
         var opened = new Uri("http://192.168.1.40:4533/api/flower/v1/stream?id=abc");
         Assert.Equal(opened, _reachability.RouteStream(opened));
+    }
+
+    // Out of the house on a weak link, the far address answers, then misses
+    // one probe. Nothing answers for that moment, and the stream must stay
+    // on the far address rather than go back to the LAN one it was built
+    // against, which cannot answer from where the phone is.
+    [Fact]
+    public async Task A_stream_stays_where_the_server_last_answered_when_nothing_answers()
+    {
+        _handler.RespondWith(4533, ServerInfo);
+        _handler.RespondWith(4534, ServerInfo);
+        _appSettings.PairedServerAddresses = ["http://192.168.1.40:4533", "http://100.101.102.103:4534"];
+        await _reachability.RestoreRememberedAsync();
+        var opened = new Uri("http://192.168.1.40:4533/api/flower/v1/stream?id=abc");
+
+        _handler.StopResponding(4533);
+        await _discovery.AddRememberedAsync("http://192.168.1.40:4533", TestContext.Current.CancellationToken);
+        _handler.StopResponding(4534);
+        await _discovery.AddRememberedAsync("http://100.101.102.103:4534", TestContext.Current.CancellationToken);
+
+        Assert.False(_reachability.IsReachable);
+        Assert.Equal(new Uri("http://100.101.102.103:4534/api/flower/v1/stream?id=abc"), _reachability.RouteStream(opened));
     }
 
     [Fact]
