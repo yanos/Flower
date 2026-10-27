@@ -112,6 +112,66 @@
            sets it apart from the page instead of a rule down its edge. -->
       <Border x:Name="Sidebar" Grid.Row="1" Grid.Column="0" Background="{DynamicResource AppSidebarBrush}">
         <DockPanel>
+        <!-- Back and Forward through the pages visited, above Library
+             (MainViewModel.GoBackAsync/GoForwardAsync). Greyed while there is
+             nowhere to go. -->
+        <!-- Over the list, which the margin's -4 tucks the Library heading's
+             own top margin under, so the buttons keep their full height to
+             click. -->
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="4" Margin="20,14,16,-4" ZIndex="1">
+          <!-- As the October 2026 redesign draws them: rounded squares, a thin
+               chevron in the sidebar rows' icon colour, the selected tint
+               behind it and the ink in it when pointed at, and no fill at all
+               while greyed - Fluent's own disabled fill included. -->
+          <StackPanel.Styles>
+            <Style Selector="Button.history">
+              <Setter Property="Width" Value="36"/>
+              <Setter Property="Height" Value="36"/>
+              <Setter Property="Padding" Value="9"/>
+              <Setter Property="CornerRadius" Value="10"/>
+            </Style>
+            <Style Selector="Button.history:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+              <Setter Property="Background" Value="{DynamicResource AppSelectedBrush}"/>
+            </Style>
+            <Style Selector="Button.history:disabled /template/ ContentPresenter#PART_ContentPresenter">
+              <Setter Property="Background" Value="Transparent"/>
+            </Style>
+            <Style Selector="Button.history Path">
+              <Setter Property="Stroke" Value="{DynamicResource AppIconBrush}"/>
+              <Setter Property="StrokeThickness" Value="1.8"/>
+              <Setter Property="StrokeLineCap" Value="Round"/>
+              <Setter Property="StrokeJoin" Value="Round"/>
+            </Style>
+            <Style Selector="Button.history:pointerover Path">
+              <Setter Property="Stroke" Value="{DynamicResource AppTextPrimaryBrush}"/>
+            </Style>
+            <Style Selector="Button.history:disabled Path">
+              <Setter Property="Stroke" Value="{DynamicResource AppTextDisabledBrush}"/>
+            </Style>
+          </StackPanel.Styles>
+          <!-- Drawn on a 24px grid and scaled to 18, stroke and all, as the
+               redesign's own icons are. -->
+          <Button Classes="pill history"
+                  ToolTip.Tip="Back"
+                  AutomationProperties.Name="Back"
+                  Command="{Binding GoBackCommand}">
+            <Viewbox Width="18" Height="18">
+              <Canvas Width="24" Height="24">
+                <Path Data="M15,5 L8,12 L15,19"/>
+              </Canvas>
+            </Viewbox>
+          </Button>
+          <Button Classes="pill history"
+                  ToolTip.Tip="Forward"
+                  AutomationProperties.Name="Forward"
+                  Command="{Binding GoForwardCommand}">
+            <Viewbox Width="18" Height="18">
+              <Canvas Width="24" Height="24">
+                <Path Data="M9,5 L16,12 L9,19"/>
+              </Canvas>
+            </Viewbox>
+          </Button>
+        </StackPanel>
         <Panel>
           <ListBox x:Name="SidebarList"
                    Classes="sidebar"

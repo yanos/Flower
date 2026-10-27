@@ -110,6 +110,15 @@ public partial class MainView : UserControl
         AddHandler(DragDrop.DragOverEvent, OnSongsDragOver);
         AddHandler(DragDrop.DropEvent, OnSongsDropped);
 
+        // A mouse's back and forward buttons, wherever the pointer is - on the
+        // Tunnel phase, so a list under it does not take the press first.
+        AddHandler(PointerPressedEvent, MouseBackForward_PointerPressed, RoutingStrategies.Tunnel);
+        // And a Mac trackpad's swipe between pages: with three fingers it is a
+        // gesture of its own; with two, the default, it comes as sideways
+        // scrolling - only what no list scrolled by, so the Bubble phase.
+        AddHandler(PointerTouchPadGestureSwipeEvent, TrackpadSwipe_Swiped);
+        AddHandler(PointerWheelChangedEvent, TrackpadSwipe_PointerWheelChanged, RoutingStrategies.Bubble);
+
         SidebarList.ContextRequested += SidebarList_ContextRequested;
         SidebarList.ContainerPrepared += SidebarList_ContainerPrepared;
         // Tunnel, as SubList's below: a press on a heading is stopped before
@@ -1746,6 +1755,18 @@ public partial class MainView : UserControl
             ChangeVolume(e.Key == Key.Up ? VolumeStep : -VolumeStep);
             e.Handled = true;
         }
+        // Back and Forward: Cmd/Ctrl+[ and ], as the View menu shows them, and
+        // Alt+Left/Right off macOS, where that is the usual pair - on macOS it
+        // moves by word in a text field.
+        else if ((e.Key is Key.OemOpenBrackets or Key.OemCloseBrackets && e.KeyModifiers == PlatformShortcuts.Primary)
+                 || (e.Key is Key.Left or Key.Right && e.KeyModifiers == KeyModifiers.Alt && !OperatingSystem.IsMacOS()))
+        {
+            if (e.Key is Key.OemOpenBrackets or Key.Left)
+                _viewModel?.GoBackCommand.Execute(null);
+            else
+                _viewModel?.GoForwardCommand.Execute(null);
+            e.Handled = true;
+        }
         else if (e.KeyModifiers == PlatformShortcuts.Primary && SectionKeys.FirstOrDefault(s => s.Key == e.Key) is { Kind: not SidebarItemKind.Header } section)
         {
             ShowSection(section.Kind);
@@ -2248,6 +2269,76 @@ public partial class MainView : UserControl
     {
         if (sender is Control { DataContext: SidebarItem { Playlist: { IsFolder: true } folder } })
             _viewModel?.Playlists.ToggleFolder(folder);
+        e.Handled = true;
+    }
+
+    private void MouseBackForward_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        var button = e.GetCurrentPoint(this).Properties.PointerUpdateKind;
+        if (button == PointerUpdateKind.XButton1Pressed)
+            _viewModel?.GoBackCommand.Execute(null);
+        else if (button == PointerUpdateKind.XButton2Pressed)
+            _viewModel?.GoForwardCommand.Execute(null);
+        else
+            return;
+        e.Handled = true;
+    }
+
+    // Fingers moving right go back, as in Safari and Finder.
+    private void TrackpadSwipe_Swiped(object? sender, PointerDeltaEventArgs e)
+    {
+        if (Math.Abs(e.Delta.X) <= Math.Abs(e.Delta.Y))
+            return;
+        if (e.Delta.X > 0)
+            _viewModel?.GoBackCommand.Execute(null);
+        else
+            _viewModel?.GoForwardCommand.Execute(null);
+        e.Handled = true;
+    }
+
+    // How far sideways two fingers go before it counts as a swipe - in wheel
+    // steps, about 50px each in a list - and how long the scrolling must stop
+    // before another can start, so one swipe's glide does not go two pages.
+    private const double TwoFingerSwipeDistance = 2.5;
+    private const ulong TwoFingerSwipeQuietMs = 300;
+    private double _twoFingerSwipeX;
+    private ulong _twoFingerSwipeLastAt;
+    private bool _twoFingerSwipeSpent;
+
+    private void TrackpadSwipe_PointerWheelChanged(object? sender, PointerWheelEventArgs e)
+    {
+        // Elsewhere a sideways wheel is a tilted mouse wheel, not a swipe.
+        if (!OperatingSystem.IsMacOS())
+            return;
+
+        if (e.Timestamp - _twoFingerSwipeLastAt > TwoFingerSwipeQuietMs)
+        {
+            _twoFingerSwipeX = 0;
+            _twoFingerSwipeSpent = false;
+        }
+        _twoFingerSwipeLastAt = e.Timestamp;
+
+        // Mostly up or down is scrolling, and starts the count again.
+        if (Math.Abs(e.Delta.X) <= 2 * Math.Abs(e.Delta.Y))
+        {
+            _twoFingerSwipeX = 0;
+            return;
+        }
+        if (_twoFingerSwipeSpent)
+        {
+            e.Handled = true;
+            return;
+        }
+
+        _twoFingerSwipeX += e.Delta.X;
+        if (Math.Abs(_twoFingerSwipeX) < TwoFingerSwipeDistance)
+            return;
+
+        _twoFingerSwipeSpent = true;
+        if (_twoFingerSwipeX > 0)
+            _viewModel?.GoBackCommand.Execute(null);
+        else
+            _viewModel?.GoForwardCommand.Execute(null);
         e.Handled = true;
     }
 

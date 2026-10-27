@@ -281,6 +281,11 @@ public partial class MainWindow : Window
             On(section.ToString(), () => MainContent.ShowSection(section), key);
         }
         On("Filter", MainContent.FocusFilter, Key.K);
+        // Back and Forward run by their commands; only their keys are set here.
+        if (Item("Back") is { } back)
+            back.Gesture = new KeyGesture(Key.OemOpenBrackets, PlatformShortcuts.Primary);
+        if (Item("Forward") is { } forward)
+            forward.Gesture = new KeyGesture(Key.OemCloseBrackets, PlatformShortcuts.Primary);
 
         // Greyed while there is nothing for them to act on, worked out as
         // each menu opens - and only then, so a menu that somehow never

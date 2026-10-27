@@ -103,6 +103,10 @@
             <NativeMenuItem Header="Albums"/>
             <NativeMenuItem Header="Artists"/>
             <NativeMenuItemSeparator/>
+            <!-- The sidebar's arrows; greyed by their commands. -->
+            <NativeMenuItem Header="Back" Command="{Binding GoBackCommand}"/>
+            <NativeMenuItem Header="Forward" Command="{Binding GoForwardCommand}"/>
+            <NativeMenuItemSeparator/>
             <NativeMenuItem Header="Filter"/>
             <NativeMenuItemSeparator/>
             <NativeMenuItem Header="Device Logs…" Command="{Binding OpenLogWindowCommand}"/>

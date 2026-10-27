@@ -961,6 +961,9 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             if (value != null && !value.IsSelectable)
                 return;
             _selectedSidebarItem = value;
+            // Before the page changes, so the album it closes on the way out
+            // stays open in the page left behind (RecordOpenAlbum).
+            ScheduleRecordPlace();
             OnPropertyChanged();
             OnSidebarSelectionChanged();
         }
@@ -1770,6 +1773,11 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
                     case nameof(LibraryBrowserViewModel.SelectedSubItems):
                         RefreshArtistPage();
                         RefreshPageDownload();
+                        if (IsShowingArtistPage)
+                            ScheduleRecordPlace();
+                        break;
+                    case nameof(LibraryBrowserViewModel.ExpandedAlbumKey):
+                        RecordOpenAlbum();
                         break;
                     // A rescan or a sync replaced the library: the cards hold
                     // the tracks they were built from.
@@ -2944,4 +2952,93 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     public event EventHandler<string>? ArtistRevealRequested;
 
+    // ── Back and Forward (desktop) ───────────────────────────────────────────
+    //
+    // Through the pages visited - a sidebar row, the artist picked on Artists,
+    // with the album that was open on Albums - by the sidebar's arrows, the
+    // View menu, and a mouse's own back and forward buttons.
+
+    private readonly NavigationHistory _history = new();
+    private bool _recordPlacePending;
+
+    public bool CanGoBack => _history.CanGoBack;
+    public bool CanGoForward => _history.CanGoForward;
+
+    private RelayCommand? _goBackCommand;
+    public IRelayCommand GoBackCommand => _goBackCommand ??= new RelayCommand(() => GoBackAsync().Forget(_logger, "Back"), () => CanGoBack);
+
+    private RelayCommand? _goForwardCommand;
+    public IRelayCommand GoForwardCommand => _goForwardCommand ??= new RelayCommand(() => GoForwardAsync().Forget(_logger, "Forward"), () => CanGoForward);
+
+    public Task GoBackAsync()
+    {
+        RecordPlaceNow();
+        return GoToAsync(_history.Back(IsThere));
+    }
+
+    public Task GoForwardAsync()
+    {
+        RecordPlaceNow();
+        return GoToAsync(_history.Forward(IsThere));
+    }
+
+    private NavigationPlace? CurrentPlace() =>
+        _selectedSidebarItem is { IsSelectable: true } item
+            ? NavigationPlace.Of(item, SelectedSubItem, Browser.ExpandedAlbumKey)
+            : null;
+
+    private bool IsThere(NavigationPlace place) => _sidebarItems.Any(place.IsRow);
+
+    // Once whatever moved the window has finished moving it: a jump to an
+    // artist picks Artists, then whoever it remembered, then the one asked for,
+    // and only the last is a page visited.
+    private void ScheduleRecordPlace()
+    {
+        if (_recordPlacePending)
+            return;
+        _recordPlacePending = true;
+        Dispatcher.UIThread.Post(RecordPlaceNow);
+    }
+
+    private void RecordPlaceNow()
+    {
+        if (!_recordPlacePending)
+            return;
+        _recordPlacePending = false;
+        if (CurrentPlace() is { } place)
+            _history.Visit(place);
+        NotifyHistoryChanged();
+    }
+
+    // An album opened or closed in the grid belongs to the page it is on. One
+    // closed because the page is being left is left to RecordPlaceNow, which
+    // has not yet recorded the next page.
+    private void RecordOpenAlbum()
+    {
+        if (_recordPlacePending || !IsShowingAlbumGrid || CurrentPlace() is not { } place)
+            return;
+        _history.Visit(place);
+    }
+
+    private async Task GoToAsync(NavigationPlace? place)
+    {
+        NotifyHistoryChanged();
+        if (place is null || _sidebarItems.FirstOrDefault(place.IsRow) is not { } item)
+            return;
+
+        if (place.Artist is { } artist)
+            await ShowArtistAsync(artist);
+        else if (place.Album is { } album)
+            await ShowAlbumAsync(tiles => tiles.FirstOrDefault(t => t.Key == album));
+        else
+            SelectedSidebarItem = item;
+    }
+
+    private void NotifyHistoryChanged()
+    {
+        OnPropertyChanged(nameof(CanGoBack));
+        OnPropertyChanged(nameof(CanGoForward));
+        _goBackCommand?.NotifyCanExecuteChanged();
+        _goForwardCommand?.NotifyCanExecuteChanged();
+    }
 }
