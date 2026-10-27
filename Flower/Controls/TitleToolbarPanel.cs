@@ -8,8 +8,9 @@ namespace Flower.Controls;
 // A heading and its row of buttons: side by side, the buttons at the right
 // edge, while the whole heading fits beside them; otherwise the heading on a
 // line of its own, trimmed to the width if it must be, and the buttons under
-// it at the left. The desktop artist's name, whose length is anybody's, over
-// Play, Shuffle, Download, Sort and the filter. Two children, heading first.
+// it across the width, for a toolbar that keeps some of itself at the right.
+// The desktop artist's name, whose length is anybody's, over Play, Shuffle and
+// Download, with Sort and the filter at the right. Two children, heading first.
 public class TitleToolbarPanel : Panel
 {
     public static readonly StyledProperty<double> SpacingProperty =
@@ -60,7 +61,7 @@ public class TitleToolbarPanel : Panel
         {
             title.Arrange(new Rect(0, 0, finalSize.Width, title.DesiredSize.Height));
             toolbar.Arrange(new Rect(0, title.DesiredSize.Height + Spacing,
-                Math.Min(finalSize.Width, toolbar.DesiredSize.Width), toolbar.DesiredSize.Height));
+                finalSize.Width, toolbar.DesiredSize.Height));
             return finalSize;
         }
 
