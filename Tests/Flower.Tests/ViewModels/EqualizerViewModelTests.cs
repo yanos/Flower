@@ -31,6 +31,30 @@ public class EqualizerViewModelTests : PinnedDataDirectory
                                       new AppSettingsStore(NullLogger<AppSettingsStore>.Instance));
     }
 
+    // Reset flattens the curve and the preamp, applies that once, and leaves
+    // the equalizer on or off as it was.
+    [Fact]
+    public void Reset_puts_every_band_and_the_preamp_back_to_zero()
+    {
+        var vm = Make(out var audio);
+        vm.Enabled = true;
+        vm.PreampDb = -3;
+        vm.Bands[2].GainDb = 4;
+        vm.Bands[7].GainDb = -6;
+        var raised = new List<string?>();
+        vm.Bands[2].PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+        var before = audio.LastAppliedEqualizer;
+
+        vm.Reset();
+
+        Assert.True(vm.Enabled);
+        Assert.Equal(0, vm.PreampDb);
+        Assert.All(vm.Bands, b => Assert.Equal(0, b.GainDb));
+        Assert.Contains(nameof(EqualizerBandViewModel.GainDb), raised);
+        Assert.NotNull(audio.LastAppliedEqualizer);
+        Assert.NotSame(before, audio.LastAppliedEqualizer);
+    }
+
     [Fact]
     public void It_builds_one_band_per_equalizer_band_labelled_by_centre_frequency()
     {

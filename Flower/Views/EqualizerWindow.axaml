@@ -3,42 +3,142 @@
         xmlns:vm="using:Flower.ViewModels"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d" d:DesignWidth="640" d:DesignHeight="380"
+        mc:Ignorable="d" d:DesignWidth="720" d:DesignHeight="500"
         x:Class="Flower.Views.EqualizerWindow"
         x:DataType="vm:EqualizerViewModel"
         Title="Equalizer"
-        Width="640" Height="380"
-        CanResize="False">
-  <DockPanel Margin="16">
+        Width="720" Height="500"
+        CanResize="False"
+        Background="{DynamicResource AppBackgroundBrush}">
 
-    <!-- Bypass toggle + preamp, above the band sliders. Unchecking Enabled
-         is true bypass (Equalizer.ApplyEqualizer(null)), not a flat filter -
-         see EqualizerViewModel.ApplyAndSave. -->
-    <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*,Auto,140" Margin="0,0,0,16">
-      <CheckBox Grid.Column="0" Content="Enabled" IsChecked="{Binding Enabled, Mode=TwoWay}" VerticalAlignment="Center"/>
-      <TextBlock Grid.Column="2" Text="Preamp" VerticalAlignment="Center" Margin="12,0,8,0" Opacity="0.75"/>
-      <Slider Grid.Column="3" Minimum="-12" Maximum="12" TickFrequency="1" Value="{Binding PreampDb, Mode=TwoWay}" VerticalAlignment="Center"/>
+  <!-- Laid out from the October 2026 redesign's Equalizer board: the switch
+       and Reset along the top, the ten bands on a card of the surface colour
+       with their scale at the left, and the preamp under them. Not playback,
+       so the sliders are the slider colour rather than the red (Slider.control,
+       App.axaml). -->
+  <Window.Styles>
+    <Style Selector="Button.reset">
+      <Setter Property="Height" Value="36"/>
+      <Setter Property="Padding" Value="14,0"/>
+      <Setter Property="CornerRadius" Value="10"/>
+      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource AppControlBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+    <Style Selector="Button.reset:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppHoverBrush}"/>
+    </Style>
+    <!-- Bypassed, the bands and the preamp fade and take no input. -->
+    <Style Selector="Border#Bands:disabled, Grid#Preamp:disabled">
+      <Setter Property="Opacity" Value="0.45"/>
+    </Style>
+    <Style Selector="TextBlock.scale">
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
+      <Setter Property="HorizontalAlignment" Value="Right"/>
+    </Style>
+  </Window.Styles>
+
+  <DockPanel Margin="28,24">
+
+    <!-- On and off, and Reset. Off is true bypass
+         (Equalizer.ApplyEqualizer(null)), not a flat filter - see
+         EqualizerViewModel.ApplyAndSave. Reset flattens the bands and the
+         preamp and leaves the switch alone (EqualizerViewModel.Reset). -->
+    <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="12" Margin="0,0,0,20">
+      <ToggleSwitch Grid.Column="0"
+                    IsChecked="{Binding Enabled, Mode=TwoWay}"
+                    OnContent="" OffContent=""
+                    MinWidth="0"
+                    VerticalAlignment="Center"/>
+      <TextBlock Grid.Column="1" Text="Equalizer" FontWeight="SemiBold" VerticalAlignment="Center"/>
+      <Button Grid.Column="3" Classes="reset" Content="Reset" Click="Reset_Click"/>
     </Grid>
 
-    <!-- 10 vertical band sliders, grayed out and non-interactive while
-         bypassed - IsEnabled cascades down to every child automatically. -->
-    <Border IsEnabled="{Binding Enabled}">
-      <ItemsControl ItemsSource="{Binding Bands}">
-        <ItemsControl.ItemsPanel>
-          <ItemsPanelTemplate>
-            <UniformGrid Rows="1"/>
-          </ItemsPanelTemplate>
-        </ItemsControl.ItemsPanel>
-        <ItemsControl.ItemTemplate>
-          <DataTemplate x:DataType="vm:EqualizerBandViewModel">
-            <StackPanel Margin="4" HorizontalAlignment="Center">
-              <TextBlock Text="{Binding GainDb, StringFormat={}{0:0.0} dB}" HorizontalAlignment="Center" FontSize="10" Opacity="0.75" Margin="0,0,0,4"/>
-              <Slider Orientation="Vertical" Height="180" Minimum="-12" Maximum="12" TickFrequency="1" Value="{Binding GainDb, Mode=TwoWay}" HorizontalAlignment="Center"/>
-              <TextBlock Text="{Binding FrequencyLabel}" HorizontalAlignment="Center" Margin="0,4,0,0"/>
-            </StackPanel>
-          </DataTemplate>
-        </ItemsControl.ItemTemplate>
-      </ItemsControl>
+    <!-- The preamp, under the bands. -->
+    <Grid x:Name="Preamp" DockPanel.Dock="Bottom"
+          IsEnabled="{Binding Enabled}"
+          ColumnDefinitions="64,*,72" ColumnSpacing="16" Margin="0,20,0,0">
+      <TextBlock Grid.Column="0" Text="Preamp" FontWeight="Medium" VerticalAlignment="Center"/>
+      <Slider Grid.Column="1" Classes="control"
+              Minimum="-12" Maximum="12" TickFrequency="1"
+              Value="{Binding PreampDb, Mode=TwoWay}"
+              VerticalAlignment="Center"/>
+      <TextBlock Grid.Column="2" Text="{Binding PreampDb, StringFormat={}{0:0.0} dB}"
+                 FontWeight="Medium" TextAlignment="Right" VerticalAlignment="Center"/>
+    </Grid>
+
+    <!-- The ten bands, greyed out and taking no input while bypassed -
+         IsEnabled cascades down to every child. -->
+    <Border x:Name="Bands"
+            IsEnabled="{Binding Enabled}"
+            Background="{DynamicResource AppSurfaceBrush}"
+            BorderBrush="{DynamicResource AppBorderBrush}"
+            BorderThickness="1"
+            CornerRadius="16"
+            Padding="8,16,16,12">
+      <Grid ColumnDefinitions="36,*,20" ColumnSpacing="8">
+        <!-- The scale, level with the sliders' ends and middle. -->
+        <Grid Grid.Column="0" RowDefinitions="26,*,*,32" Height="258" VerticalAlignment="Top">
+          <TextBlock Grid.Row="1" Classes="scale" Text="+12" VerticalAlignment="Top" Margin="0,0,0,0"/>
+          <TextBlock Grid.Row="1" Classes="scale" Text="0" VerticalAlignment="Bottom" Margin="0,0,0,-7"/>
+          <TextBlock Grid.Row="2" Classes="scale" Text="−12" VerticalAlignment="Bottom"/>
+        </Grid>
+
+        <Panel Grid.Column="1">
+          <!-- 0 dB across the bands. -->
+          <Line StartPoint="0,0" EndPoint="1,0"
+                Stretch="Fill"
+                Height="1"
+                VerticalAlignment="Top"
+                Margin="0,126,0,0"
+                Stroke="{DynamicResource AppControlBorderBrush}"
+                StrokeThickness="1"
+                StrokeDashArray="3,3"
+                IsHitTestVisible="False"/>
+          <!-- The curve the bands make, faint, through each thumb - placed
+               from where the thumbs are laid out (TraceCurve). -->
+          <Polyline x:Name="Curve"
+                    Stroke="{DynamicResource AppControlSliderBrush}"
+                    StrokeThickness="2"
+                    StrokeJoin="Round"
+                    StrokeLineCap="Round"
+                    Opacity="0.35"
+                    IsHitTestVisible="False"/>
+          <ItemsControl x:Name="BandList" ItemsSource="{Binding Bands}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <UniformGrid Rows="1"/>
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:EqualizerBandViewModel">
+                <StackPanel HorizontalAlignment="Center" Spacing="8">
+                  <TextBlock Text="{Binding GainDb, StringFormat={}{0:0.0} dB}"
+                             Height="18"
+                             FontSize="12" FontWeight="Medium"
+                             Foreground="{DynamicResource AppTextValueBrush}"
+                             HorizontalAlignment="Center"/>
+                  <Slider Orientation="Vertical" Classes="control"
+                          Height="200"
+                          Minimum="-12" Maximum="12" TickFrequency="1"
+                          Value="{Binding GainDb, Mode=TwoWay}"
+                          HorizontalAlignment="Center"/>
+                  <TextBlock Text="{Binding FrequencyLabel}"
+                             FontSize="13" FontWeight="SemiBold"
+                             HorizontalAlignment="Center"/>
+                </StackPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </Panel>
+
+        <TextBlock Grid.Column="2" Text="Hz" Classes="scale"
+                   HorizontalAlignment="Left"
+                   VerticalAlignment="Bottom" Margin="0,0,0,2"/>
+      </Grid>
     </Border>
   </DockPanel>
 </Window>

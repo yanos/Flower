@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 using Flower.Audio;
@@ -68,6 +69,19 @@ namespace Flower.ViewModels
             for (var i = 0; i < Equalizer.BandCount; i++)
                 bands[i] = new EqualizerBandViewModel(i, Equalizer.CenterFrequenciesHz[i], this);
             Bands = bands;
+        }
+
+        // Every band and the preamp back to 0 dB, at once - one apply and one
+        // save rather than eleven. Whether the equalizer is on is left as it
+        // is.
+        public void Reset()
+        {
+            Array.Clear(_settings.BandGainsDb);
+            _settings.PreampDb = 0;
+            foreach (var band in Bands)
+                band.NotifyGainChanged();
+            OnPropertyChanged(nameof(PreampDb));
+            ApplyAndSave();
         }
 
         internal double GetBandGainDb(int index) => _settings.BandGainsDb[index];

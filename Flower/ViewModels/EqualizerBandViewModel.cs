@@ -21,6 +21,9 @@ namespace Flower.ViewModels
             }
         }
 
+        // Its gain was set from outside the slider - EqualizerViewModel.Reset.
+        internal void NotifyGainChanged() => OnPropertyChanged(nameof(GainDb));
+
         internal EqualizerBandViewModel(int index, double centerFreqHz, EqualizerViewModel owner)
         {
             _index = index;
