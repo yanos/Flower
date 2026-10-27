@@ -4,8 +4,8 @@
         x:Class="Flower.Views.SettingsWindow"
         Title="Settings"
         Width="480" Height="560"
-        WindowStartupLocation="CenterOwner"
-        CanResize="False">
+        MinWidth="420" MinHeight="400"
+        WindowStartupLocation="CenterOwner">
 
   <!-- Nothing but a frame. The screen itself is SettingsPanel, which is shared
        with the browser UI, where Avalonia is single-view and this Window cannot
