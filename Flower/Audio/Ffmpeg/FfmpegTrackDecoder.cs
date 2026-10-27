@@ -66,6 +66,11 @@ namespace Flower.Audio.Ffmpeg
         private SeekableHttpStream? _remoteStream;
         private Thread? _thread;
 
+        // Held while Open publishes _decoder/_remoteStream and while Retire
+        // takes them, so an open that loses the race to a retirement disposes
+        // what it made instead of handing it to a decoder nobody will close.
+        private readonly object _resourceGate = new();
+
         private long _bytesProduced;
         private int _retired;
         private int _started;
@@ -174,7 +179,10 @@ namespace Flower.Audio.Ffmpeg
 
         private void LogOpened(string path)
         {
-            var format = _decoder!.Format;
+            if (_decoder is not { } decoder)
+                return;
+
+            var format = decoder.Format;
             _logger?.LogInformation(
                 "Opened {Path}: Source={SourceRate}Hz/{SourceDepth}-bit/{SourceChannels}ch Delivering={Rate}Hz/{Format}/{Channels}ch Duration={DurationMs}ms",
                 LogPath.Short(path), format.SourceSampleRate, format.SourceBitDepth, format.SourceChannels,
@@ -196,25 +204,56 @@ namespace Flower.Audio.Ffmpeg
                 // it before this decoder: range requests, a known
                 // length, a real seek, and every byte fetched on Flower's own
                 // pinned client.
-                _remoteStream = new SeekableHttpStream(AudioHttpClient, new Uri(path), logger: _logger, route: RouteStream);
-                LiveStreams.TryAdd(_remoteStream, 0);
-                _remoteStream.ProbeAsync(cancellationToken).GetAwaiter().GetResult();
-                _decoder = Decoder.OpenStream(
-                    _remoteStream,
+                //
+                // Published before the probe so Retire can cancel it, but read
+                // back only through the local: Retire nulls the field from
+                // another thread, and shuffling retires the armed decoder while
+                // it is mid-open - which handed FFmpeg a null stream.
+                var stream = new SeekableHttpStream(AudioHttpClient, new Uri(path), logger: _logger, route: RouteStream);
+                lock (_resourceGate)
+                {
+                    if (Volatile.Read(ref _retired) == 1)
+                    {
+                        stream.Dispose();
+                        throw new OperationCanceledException();
+                    }
+                    _remoteStream = stream;
+                    LiveStreams.TryAdd(stream, 0);
+                }
+                stream.ProbeAsync(cancellationToken).GetAwaiter().GetResult();
+                Publish(Decoder.OpenStream(
+                    stream,
                     FormatFor(_sampleFormat),
                     (int)_format.SampleRate,
                     (int)GaplessFormat.Channels,
                     DemuxerHintFor(Track),
-                    logger: _logger);
+                    logger: _logger));
             }
             else
             {
-                _decoder = Decoder.OpenPath(
+                Publish(Decoder.OpenPath(
                     path,
                     FormatFor(_sampleFormat),
                     (int)_format.SampleRate,
-                    (int)GaplessFormat.Channels);
+                    (int)GaplessFormat.Channels));
             }
+        }
+
+        // A decoder opened after Retire has already taken the fields would
+        // otherwise be one nothing ever closes.
+        private void Publish(Decoder decoder)
+        {
+            lock (_resourceGate)
+            {
+                if (Volatile.Read(ref _retired) == 0)
+                {
+                    _decoder = decoder;
+                    return;
+                }
+            }
+
+            decoder.Dispose();
+            throw new OperationCanceledException();
         }
 
         // A prepare is an optimisation, not a precondition. GaplessCoordinator
@@ -455,7 +494,9 @@ namespace Flower.Audio.Ffmpeg
             if (_decoder is null && !OpenForUnpreparedStart())
                 return;
 
-            var decoder = _decoder!;
+            // Read once: a retirement since the open has already nulled it.
+            if (_decoder is not { } decoder)
+                return;
 
             try
             {
@@ -662,10 +703,15 @@ namespace Flower.Audio.Ffmpeg
             _wakeForSeek.Set();
 
             var thread = _thread;
-            var decoder = _decoder;
-            var stream = _remoteStream;
-            _decoder = null;
-            _remoteStream = null;
+            Decoder? decoder;
+            SeekableHttpStream? stream;
+            lock (_resourceGate)
+            {
+                decoder = _decoder;
+                stream = _remoteStream;
+                _decoder = null;
+                _remoteStream = null;
+            }
             if (stream != null)
                 LiveStreams.TryRemove(stream, out _);
 
