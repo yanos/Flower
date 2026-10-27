@@ -15,6 +15,11 @@
   <UserControl.Styles>
     <!-- "AlbumTileControl", not ":is(UserControl)": the AlbumCard inside is a
          UserControl too, and a pointer over it would otherwise match. -->
+    <!-- Hidden by a style rather than on the element, whose own IsVisible
+         would be a local value outranking the one below. -->
+    <Style Selector="Border#HoverBorder">
+      <Setter Property="IsVisible" Value="False"/>
+    </Style>
     <Style Selector="controls|AlbumTileControl:pointerover Border#HoverBorder">
       <Setter Property="IsVisible" Value="True"/>
     </Style>
@@ -23,38 +28,18 @@
   <Panel>
     <Border x:Name="SelectionBorder"
             IsVisible="False"
-            Background="{DynamicResource AppAccentSoftBrush}"
-            CornerRadius="12"/>
+            Background="{DynamicResource AppSelectedBrush}"
+            CornerRadius="14"/>
     <Border x:Name="HoverBorder"
-            IsVisible="False"
-            Background="{DynamicResource AppAccentHoverSoftBrush}"
-            CornerRadius="12"/>
-    <!-- Bottom margin is 16 (not the 8 on every other side) - the extra 8px
-         is reserved unconditionally (not just when expanded) so the caret
-         below always has real room to sit fully inside this control's own
-         bounds. A protruding-past-the-edge caret (negative margin) was tried
-         first and never rendered - ItemsControl's per-item container clips
-         its content to bounds, so anything hanging outside AlbumTileControl's
-         own edge was silently cut off. -->
-    <!-- The album's tile, the phone's own (AlbumCard): its "..." raises
-         AlbumCard.MenuRequested, which MainView answers with the same menu a
-         right-click on the tile opens. Downloading the album is in that menu. -->
+            Background="{DynamicResource AppHoverBrush}"
+            CornerRadius="14"/>
+    <!-- The album's tile, the phone's own (AlbumCard) with the desktop's
+         captions: its "..." raises AlbumCard.MenuRequested, which MainView
+         answers with the same menu a right-click on the tile opens.
+         Downloading the album is in that menu. Opened, the tile takes the
+         selected tint (Show), which is what points at the album card below. -->
     <controls:AlbumCard x:Name="TileContent"
-                        Margin="8,8,8,16"/>
-    <!-- Caret pointing down at the album card below (AlbumGridRowControl),
-         in the card's colour -
-         lives here, not there, so it's centered under THIS tile purely by
-         layout (HorizontalAlignment=Center) regardless of which column this
-         tile sits in, rather than a hand-computed pixel offset (which
-         previously got the math wrong and only ever pointed at one column).
-         Sits within the reserved bottom margin above, flush with this
-         control's own bottom edge (no bottom margin of its own) so its tip
-         touches the album card below with no gap. -->
-    <Polygon x:Name="Caret"
-             IsVisible="False"
-             Points="0,8 16,8 8,0"
-             Fill="{DynamicResource AppSidebarBrush}"
-             HorizontalAlignment="Center"
-             VerticalAlignment="Bottom"/>
+                        Classes="desktop"
+                        Margin="8"/>
   </Panel>
 </UserControl>

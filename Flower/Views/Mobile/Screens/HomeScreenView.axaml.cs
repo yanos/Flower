@@ -7,7 +7,7 @@ using Flower.ViewModels.Mobile;
 
 namespace Flower.Views.Mobile.Screens;
 
-public partial class HomeScreenView : UserControl, IAlbumTileHost
+public partial class HomeScreenView : UserControl, IAlbumTileHost, ITrackRowHost
 {
     private readonly HomeShelfRowsHost _rows;
 
@@ -20,4 +20,10 @@ public partial class HomeScreenView : UserControl, IAlbumTileHost
     }
 
     public ICommand? OpenAlbumCommand => (DataContext as MobileMainViewModel)?.SelectHomeAlbumCommand;
+
+    // Recently Played's rows are songs from anywhere, so they carry their
+    // artist and are neither an album's nor a playlist's.
+    public bool IsAlbumMode => false;
+    public bool IsPlaylistMode => false;
+    public bool ShowsRowArtist => true;
 }

@@ -3,7 +3,8 @@
              x:Class="Flower.App"
              Name="Flower"
              RequestedThemeVariant="Default"
-             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia">
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:controls="clr-namespace:Flower.Controls">
 
     <!-- Defines just the native macOS app menu (the bold "Flower" title's own
          dropdown - About/Settings/Hide/Quit), replacing Avalonia's default
@@ -34,8 +35,8 @@
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <!-- The design palette, light and dark (warm neutrals and a
-                     coral accent) - see Theme.axaml, the one file that holds
+                <!-- The design palette, light and dark (warm neutrals, and a
+                     red accent for playback alone) - see Theme.axaml, the one file that holds
                      a colour value. Every control below reads its keys
                      instead of a raw hex colour, so the whole app repaints
                      from one palette. -->
@@ -111,19 +112,19 @@
              see the file. -->
         <StyleInclude Source="avares://Flower/Styles/IconButtons.axaml"/>
 
-        <!-- Every icon is drawn in the primary red, rather than inheriting the
+        <!-- Every icon is drawn in the icon grey, rather than inheriting the
              text colour of whatever it sits in. The note Paths and the
              placeholder's ♫ glyph say the same thing themselves. An icon that
              carries a meaning of its own keeps its colour by setting it where
-             it is declared: a server's standing in
-             success or warning, a lit toggle or selected pill in AppAccentBrush.
+             it is declared: a server's standing in success or warning, the
+             song playing, or a lit transport toggle in the text's ink.
              Set directly on the icon, so a disabled button's greyed foreground
              no longer reaches it; the disabled style below greys it again. -->
         <Style Selector="materialIcons|MaterialIcon">
-            <Setter Property="Foreground" Value="{DynamicResource AppPrimaryBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource AppIconBrush}"/>
         </Style>
         <!-- ...except where the icon is part of the app's frame, which is the
-             frame's colour (PaletteChrome, Theme.axaml): an icon in one of the
+             frame's ink (AppChromeBrush, Theme.axaml): an icon in one of the
              ovals or rings (a round button, a pill, the ring round play), like
              the rim round it; every icon on a surface marked .chromeIcons (the
              song and album menus, Add to Playlist, the hamburger's card, the
@@ -135,43 +136,151 @@
              child - answers to its own marking. The download button marks
              its own glyphs .chrome, in an oval or not. A delete's icon is
              the frame's too; its words say danger (AppDangerBrush).
-             After the red so it wins over it; before the disabled grey and
-             the hover and pressed accents below, so they still win over it. -->
+             After the grey so it wins over it; before the disabled grey and
+             the hover and pressed ink below, so they still win over it. -->
         <Style Selector="Border.floating > Button.pill > materialIcons|MaterialIcon, Border.floating > materialIcons|MaterialIcon, Border.floating > StackPanel > materialIcons|MaterialIcon, Border.ring > materialIcons|MaterialIcon, :is(Control).chromeIcons materialIcons|MaterialIcon, materialIcons|MaterialIcon.chrome">
             <Setter Property="Foreground" Value="{DynamicResource AppChromeBrush}"/>
         </Style>
         <Style Selector="materialIcons|MaterialIcon:disabled">
             <Setter Property="Foreground" Value="{DynamicResource AppTextDisabledBrush}"/>
         </Style>
-        <!-- The missing-cover note (AlbumArtPlaceholder). A style rather than
-             a local value, so the rows and tiles that dim what cannot be
-             played can grey it along with their icons. -->
+        <!-- The missing-cover note (AlbumArtPlaceholder): muted, on the
+             placeholder's grey. A style rather than a local value, so the rows
+             and tiles that dim what cannot be played can grey it along with
+             their icons. -->
         <Style Selector="TextBlock.placeholderGlyph">
-            <Setter Property="Foreground" Value="{DynamicResource AppPrimaryBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource AppTextMutedBrush}"/>
         </Style>
         <!-- A page's name, where it heads the page: the phone's screens
              (ScreenTitle) and the desktop's lists (MainView's page header).
-             The display serif in the frame's colour (PaletteChrome), like a
-             playlist's name; the serif is what a heading is in this app,
-             Inter what everything under it is. Each sets its own size. -->
+             The display serif in the frame's ink, like a playlist's name; the
+             serif is what a heading is in this app, Geist what everything
+             under it is. Each sets its own size. -->
+        <!-- A desktop page's name, at the head of the page: the display
+             serif's large cut, set tight. -->
+        <Style Selector="TextBlock.pageTitle">
+            <Setter Property="FontFamily" Value="{DynamicResource AppDisplayFontFamily}"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontSize" Value="56"/>
+            <Setter Property="LineHeight" Value="56"/>
+            <Setter Property="LetterSpacing" Value="-1.1"/>
+            <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
+            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+        </Style>
+        <!-- A heading inside a desktop page - an album card's name, a Home
+             shelf's - in the display serif's text cut, which is drawn for
+             these smaller sizes. -->
+        <Style Selector="TextBlock.sectionTitle">
+            <Setter Property="FontFamily" Value="{DynamicResource AppDisplayTextFontFamily}"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
+            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+        </Style>
+        <!-- A TabControl whose tabs are one segmented control over the page:
+             the settings screen's. The picked tab is a raised chip of the
+             surface colour with its name in bold ink, the others in the
+             value colour on the tint - Track Info's tabs, for a TabControl.
+             Its own templates, so Fluent's pipe under the selected tab is
+             not drawn. -->
+        <Style Selector="TabControl.segmented">
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <DockPanel>
+                        <Border DockPanel.Dock="Top"
+                                HorizontalAlignment="Left"
+                                Background="{DynamicResource AppHoverBrush}"
+                                CornerRadius="10"
+                                Padding="3">
+                            <ItemsPresenter Name="PART_ItemsPresenter" ItemsPanel="{TemplateBinding ItemsPanel}"/>
+                        </Border>
+                        <ContentPresenter Name="PART_SelectedContentHost"
+                                          Margin="{TemplateBinding Padding}"
+                                          Content="{TemplateBinding SelectedContent}"
+                                          ContentTemplate="{TemplateBinding SelectedContentTemplate}"/>
+                    </DockPanel>
+                </ControlTemplate>
+            </Setter>
+            <Setter Property="ItemsPanel">
+                <ItemsPanelTemplate>
+                    <StackPanel Orientation="Horizontal" Spacing="2"/>
+                </ItemsPanelTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="TabControl.segmented > TabItem">
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="Medium"/>
+            <Setter Property="Padding" Value="14,0"/>
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource AppTextValueBrush}"/>
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Name="Chip"
+                            Background="{TemplateBinding Background}"
+                            CornerRadius="8"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter Content="{TemplateBinding Header}"
+                                          ContentTemplate="{TemplateBinding HeaderTemplate}"
+                                          VerticalAlignment="Center"/>
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="TabControl.segmented > TabItem:pointerover">
+            <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
+        </Style>
+        <Style Selector="TabControl.segmented > TabItem:selected">
+            <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+        <Style Selector="TabControl.segmented > TabItem:selected /template/ Border#Chip">
+            <Setter Property="BoxShadow" Value="{DynamicResource AppButtonShadow}"/>
+        </Style>
+        <!-- The desktop's A-Z strip (the Albums grid, the Artists column):
+             muted letters, the one under the pointer on the selected tint. -->
+        <Style Selector="controls|ScrollIndexBar.desktop">
+            <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
+            <Setter Property="ActiveBackground" Value="{DynamicResource AppSelectedBrush}"/>
+            <Setter Property="BubbleBackground" Value="{DynamicResource AppSurfaceBrush}"/>
+            <Setter Property="BubbleForeground" Value="{DynamicResource AppTextPrimaryBrush}"/>
+        </Style>
         <Style Selector="TextBlock.screenTitle">
             <Setter Property="FontFamily" Value="{DynamicResource AppDisplayFontFamily}"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Foreground" Value="{DynamicResource AppChromeBrush}"/>
             <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
         </Style>
-        <!-- An icon on a button pointed at or pressed takes the hover or
-             pressed accent, whatever colour it rests in - the button's own
-             highlight behind it is Fluent's, set in Theme.axaml. Last in this
-             list so it outranks every icon colour above it; a view that
-             colours its own icons nearer than this states its own pressed
-             colour beside them (the tab bar, the player's shuffle and repeat,
-             Now Playing). -->
+        <!-- The equalizer's sliders: not playback, so the slider colour rather
+             than the accent the seek bar and volume are filled with
+             (SliderTrackValueFill, Theme.axaml). -->
+        <Style Selector="Slider.control">
+            <Setter Property="Foreground" Value="{DynamicResource AppControlSliderBrush}"/>
+            <Style.Resources>
+                <SolidColorBrush x:Key="SliderTrackValueFill" Color="{DynamicResource PaletteControlSlider}"/>
+                <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Color="{DynamicResource PaletteControlSlider}"/>
+                <SolidColorBrush x:Key="SliderTrackValueFillPressed" Color="{DynamicResource PaletteControlSlider}"/>
+                <SolidColorBrush x:Key="SliderThumbBackground" Color="{DynamicResource PaletteControlSlider}"/>
+                <SolidColorBrush x:Key="SliderThumbBackgroundPointerOver" Color="{DynamicResource PaletteControlSlider}"/>
+                <SolidColorBrush x:Key="SliderThumbBackgroundPressed" Color="{DynamicResource PaletteControlSlider}"/>
+            </Style.Resources>
+        </Style>
+        <!-- The thumb finds the colour its theme names through a lookup that
+             misses the resources above, so it is restated on the part. -->
+        <Style Selector="Slider.control /template/ Thumb">
+            <Setter Property="Background" Value="{DynamicResource AppControlSliderBrush}"/>
+        </Style>
+        <!-- An icon on a button pointed at or pressed turns to the ink,
+             whatever colour it rests in. Last in this list so it outranks
+             every icon colour above it; a view that colours its own icons
+             nearer than this states its own pressed colour beside them (the
+             tab bar, the player's shuffle and repeat, Now Playing). -->
         <Style Selector=":is(Button):pointerover materialIcons|MaterialIcon">
-            <Setter Property="Foreground" Value="{DynamicResource AppAccentHoverBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource AppIconHoverBrush}"/>
         </Style>
         <Style Selector=":is(Button):pressed materialIcons|MaterialIcon">
-            <Setter Property="Foreground" Value="{DynamicResource AppAccentPressedBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource AppIconPressedBrush}"/>
         </Style>
     </Application.Styles>
 </Application>

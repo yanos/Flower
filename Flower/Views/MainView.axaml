@@ -31,7 +31,7 @@
           RowDefinitions="Auto,*,Auto"
           Classes.controlsAtBottom="{Binding PlaybackControlsAtBottom}">
       <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="220" MinWidth="170" MaxWidth="320"/>
+        <ColumnDefinition Width="240" MinWidth="170" MaxWidth="320"/>
         <ColumnDefinition Width="Auto"/>
         <ColumnDefinition Width="*"/>
       </Grid.ColumnDefinitions>
@@ -39,6 +39,7 @@
         <Style Selector="Grid#ContentGrid > Border#PlayerBar">
           <Setter Property="Grid.Row" Value="0"/>
           <Setter Property="BorderThickness" Value="0,0,0,1"/>
+          <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}"/>
         </Style>
         <Style Selector="Grid#ContentGrid.controlsAtBottom > Border#PlayerBar">
           <Setter Property="Grid.Row" Value="2"/>
@@ -47,48 +48,41 @@
       </Grid.Styles>
 
       <!-- Player bar, across the whole window over or under the sidebar and
-           the page: what is playing at the left, the transport in the middle
-           - the middle of the window, since the halves either side are equal
-           - and the volume and output at the right. Washed in the album's
-           colour (AppSettings.TintPlayerBarWithAlbumColor), everything on it
-           then drawn as on the phone's Now Playing - see ApplyPlayerBarTint
-           in the code-behind. -->
+           the page: what is playing at the left, its cover flush with the
+           bar's edge; the transport in the middle, over the seek bar - the
+           middle of the window, since the halves either side are equal; and
+           the output and the volume at the right. On the surface colour,
+           whatever the cover. -->
       <Border x:Name="PlayerBar"
               Grid.ColumnSpan="3"
-              Padding="16,8,16,8"
+              Padding="6,6,24,6"
               BorderBrush="{DynamicResource AppDividerBrush}"
               TextElement.Foreground="{DynamicResource AppTextPrimaryBrush}">
-        <Grid ColumnDefinitions="*,Auto,*">
+        <Grid ColumnDefinitions="*,Auto,*" ColumnSpacing="32">
           <!-- A right-click on what is playing opens its menu - see
                NowPlaying_ContextRequested. -->
           <usercontrols:CurrentlyPlayingControl
             x:Name="NowPlayingInfo"
             Grid.Column="0"
             DataContext="{Binding NowPlaying}"
-            Margin="0,0,128,0"
-            HorizontalAlignment="Stretch"
+            HorizontalAlignment="Left"
             VerticalAlignment="Center"/>
 
-          <usercontrols:PlaylistControls
-            x:Name="PlaybackControls"
-            Grid.Column="1"
-            DataContext="{Binding PlaybackControls}"
-            VerticalAlignment="Center"/>
+          <StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center">
+            <usercontrols:PlaylistControls
+              x:Name="PlaybackControls"
+              DataContext="{Binding PlaybackControls}"
+              HorizontalAlignment="Center"/>
+            <usercontrols:SeekBar DataContext="{Binding NowPlaying}" Width="560"/>
+          </StackPanel>
 
           <StackPanel Grid.Column="2"
                       Orientation="Horizontal"
-                      Spacing="6"
-                      Margin="24,0,0,0"
+                      Spacing="4"
                       HorizontalAlignment="Right"
                       VerticalAlignment="Center">
-            <usercontrols:VolumeControl
-              DataContext="{Binding Volume}"
-              VerticalAlignment="Center"
-              Height="24"
-              Width="240" />
             <usercontrols:OutputDeviceControl
               DataContext="{Binding OutputDevice}"
-              Margin="12,0,0,0"
               VerticalAlignment="Center" />
             <!-- Apple's own AirPlay route button, hosted natively, and nothing
                  at all on platforms with no such control (see RoutePickerControl)
@@ -101,14 +95,21 @@
             <usercontrols:RoutePickerControl
               x:Name="RoutePicker"
               Width="28" Height="28"
+              Margin="8,0"
               VerticalAlignment="Center" />
+            <usercontrols:VolumeControl
+              DataContext="{Binding Volume}"
+              Margin="8,0,0,0"
+              VerticalAlignment="Center"
+              Height="24"
+              Width="150" />
           </StackPanel>
         </Grid>
       </Border>
 
       <!-- Sidebar: the library, playlists and server under small capital
-           headings. Its own tint (AppSidebarBrush) sets it apart from the
-           page instead of a rule down its edge. -->
+           headings, the server at the foot. Its own tint (AppSidebarBrush)
+           sets it apart from the page instead of a rule down its edge. -->
       <Border x:Name="Sidebar" Grid.Row="1" Grid.Column="0" Background="{DynamicResource AppSidebarBrush}">
         <DockPanel>
         <Panel>
@@ -118,49 +119,83 @@
                    SelectedItem="{Binding SelectedSidebarItem, Mode=TwoWay}"
                    SelectionMode="Multiple"
                    Background="Transparent"
-                   Padding="0,12,0,8"
+                   Padding="0,0,0,24"
                    SelectionChanged="SidebarList_SelectionChanged">
             <ListBox.Styles>
               <!-- Each row a rounded pill inset from the column's edges: the
-                   selected one in the accent's faint wash with its icon and
-                   name in the accent, the others' icons in the secondary text
-                   colour, so the one red thing in the column is where you
-                   are. Headings are not pills and never light up. -->
-              <Style Selector="ListBox.sidebar ListBoxItem">
+                   selected one on the selected tint, its icon and name in ink
+                   and its name in bold, the others' icons and names a shade
+                   softer until pointed at. Headings are not pills and never
+                   light up. -->
+              <Style Selector="ListBox.sidebar ListBoxItem" x:DataType="vm:SidebarItem">
+                <Setter Property="controls:BottomPinnedStackPanel.PinsFromHere" Value="{Binding PinsToBottom}"/>
                 <Setter Property="Padding" Value="0"/>
                 <Setter Property="MinHeight" Value="0"/>
-                <Setter Property="Margin" Value="12,1"/>
+                <Setter Property="Margin" Value="16,1"/>
                 <Setter Property="CornerRadius" Value="10"/>
               </Style>
               <Style Selector="ListBox.sidebar ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
-                <Setter Property="Background" Value="{DynamicResource SystemControlHighlightListAccentLowBrush}"/>
+                <Setter Property="Background" Value="{DynamicResource AppSelectedBrush}"/>
               </Style>
               <Style Selector="ListBox.sidebar ListBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-                <Setter Property="Background" Value="{DynamicResource SystemControlHighlightListAccentMediumBrush}"/>
+                <Setter Property="Background" Value="{DynamicResource AppSelectedBrush}"/>
               </Style>
               <Style Selector="ListBox.sidebar ListBoxItem materialIcons|MaterialIcon.rowIcon">
-                <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
+                <Setter Property="Foreground" Value="{DynamicResource AppIconBrush}"/>
               </Style>
               <Style Selector="ListBox.sidebar ListBoxItem Path.rowIcon">
-                <Setter Property="Fill" Value="{DynamicResource AppTextSecondaryBrush}"/>
+                <Setter Property="Fill" Value="{DynamicResource AppIconBrush}"/>
               </Style>
-              <Style Selector="ListBox.sidebar ListBoxItem:selected materialIcons|MaterialIcon.rowIcon">
-                <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}"/>
+              <Style Selector="ListBox.sidebar ListBoxItem TextBlock#SidebarRowName">
+                <Setter Property="Foreground" Value="{DynamicResource AppIconBrush}"/>
               </Style>
-              <Style Selector="ListBox.sidebar ListBoxItem:selected Path.rowIcon">
-                <Setter Property="Fill" Value="{DynamicResource AppAccentBrush}"/>
+              <Style Selector="ListBox.sidebar ListBoxItem:pointerover materialIcons|MaterialIcon.rowIcon, ListBox.sidebar ListBoxItem:selected materialIcons|MaterialIcon.rowIcon">
+                <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
+              </Style>
+              <Style Selector="ListBox.sidebar ListBoxItem:pointerover Path.rowIcon, ListBox.sidebar ListBoxItem:selected Path.rowIcon">
+                <Setter Property="Fill" Value="{DynamicResource AppTextPrimaryBrush}"/>
+              </Style>
+              <Style Selector="ListBox.sidebar ListBoxItem:pointerover TextBlock#SidebarRowName, ListBox.sidebar ListBoxItem:selected TextBlock#SidebarRowName">
+                <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
               </Style>
               <Style Selector="ListBox.sidebar ListBoxItem:selected TextBlock#SidebarRowName">
-                <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}"/>
+                <Setter Property="FontWeight" Value="SemiBold"/>
+              </Style>
+              <!-- A server's row is a card of its own under its heading: the
+                   page's colour inside a hairline, its name in bold. Picked,
+                   it takes the selected tint like any other row. -->
+              <Style Selector="ListBox.sidebar ListBoxItem Border.serverCard">
+                <Setter Property="Background" Value="{DynamicResource AppBackgroundBrush}"/>
+              </Style>
+              <Style Selector="ListBox.sidebar ListBoxItem:pointerover Border.serverCard">
+                <Setter Property="Background" Value="{DynamicResource AppHoverBrush}"/>
+              </Style>
+              <Style Selector="ListBox.sidebar ListBoxItem:selected Border.serverCard">
+                <Setter Property="Background" Value="{DynamicResource AppSelectedBrush}"/>
+              </Style>
+              <Style Selector="ListBox.sidebar ListBoxItem TextBlock#SidebarRowName.card">
+                <Setter Property="FontWeight" Value="SemiBold"/>
               </Style>
             </ListBox.Styles>
+            <!-- The server's section at the foot of the column, as long as
+                 there is room below the playlists for it. -->
+            <ListBox.ItemsPanel>
+              <ItemsPanelTemplate>
+                <controls:BottomPinnedStackPanel/>
+              </ItemsPanelTemplate>
+            </ListBox.ItemsPanel>
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="vm:SidebarItem">
                 <Panel>
                   <!-- Highlighted while a dragged track hovers this playlist row -->
+                  <Border Classes="serverCard"
+                          IsVisible="{Binding IsServerCard}"
+                          BorderThickness="1"
+                          BorderBrush="{DynamicResource AppBorderBrush}"
+                          CornerRadius="12"/>
                   <Border IsVisible="{Binding IsDropTarget}"
-                          Background="{DynamicResource AppAccentBrush}"
-                          Opacity="0.25"
+                          Background="{DynamicResource AppInkBrush}"
+                          Opacity="0.12"
                           CornerRadius="10"
                           IsHitTestVisible="False"/>
                   <TextBlock Text="{Binding Name, Converter={x:Static conv:UpperCaseConverter.Instance}}"
@@ -168,8 +203,23 @@
                              FontSize="11"
                              FontWeight="SemiBold"
                              Foreground="{DynamicResource AppTextSecondaryBrush}"
-                             Margin="10,18,8,6"
-                             LetterSpacing="1.2"/>
+                             Margin="12,28,8,8"
+                             LetterSpacing="0.9"
+                             VerticalAlignment="Bottom"/>
+                  <!-- The Playlists heading's own way to start one, File >
+                       New Playlist's command. -->
+                  <Button Classes="pill"
+                          IsVisible="{Binding IsPlaylistsHeader}"
+                          Command="{Binding $parent[UserControl].((vm:MainViewModel)DataContext).NewPlaylistCommand}"
+                          ToolTip.Tip="New Playlist"
+                          HorizontalAlignment="Right"
+                          VerticalAlignment="Bottom"
+                          Margin="0,0,0,0"
+                          Width="32" Height="32"
+                          Padding="8">
+                    <materialIcons:MaterialIcon Kind="Plus" Width="16" Height="16"
+                                                Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                  </Button>
                   <StackPanel IsVisible="{Binding IsSelectable}"
                               Orientation="Horizontal"
                               Margin="{Binding Indent}">
@@ -177,7 +227,7 @@
                       <materialIcons:MaterialIcon Classes="rowIcon"
                                                  Kind="{Binding Icon}"
                                                  IsVisible="{Binding UsesMaterialIcon}"
-                                                 Width="20" Height="20"/>
+                                                 Width="19" Height="19"/>
                       <!-- A server's own icon in place of the glyph (ServerIcon):
                            the emoji it chose, or its picture, rounded like a
                            cover. -->
@@ -201,7 +251,11 @@
                     </Panel>
                     <StackPanel VerticalAlignment="Center" Spacing="1">
                       <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding !IsEditing}">
-                        <TextBlock x:Name="SidebarRowName" Text="{Binding Name}" FontSize="15" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="SidebarRowName"
+                                   Classes.card="{Binding IsServerCard}"
+                                   Text="{Binding Name}"
+                                   FontSize="14"
+                                   VerticalAlignment="Center"/>
                         <!-- Paired-server standing - see SidebarItem.
                              ShowReachableIcon/ShowUnreachableIcon. Only ever
                              set on the one Device row for MainViewModel's
@@ -214,6 +268,7 @@
                             IsConnected="{Binding ShowReachableIcon}"
                             IsUnreachable="{Binding ShowUnreachableIcon}"
                             IsBusy="{Binding IsSyncing}"
+                            ConnectedAsDot="True"
                             VerticalAlignment="Center"/>
                       </StackPanel>
                       <!-- The one field in the app that is a plain TextBox
@@ -231,7 +286,7 @@
                                MinHeight="0"
                                Padding="4,0"
                                MinWidth="80"
-                               SelectionBrush="{DynamicResource AppAccentSoftBrush}"
+                               SelectionBrush="{DynamicResource AppSelectedBrush}"
                                SelectionForegroundBrush="{DynamicResource AppTextPrimaryBrush}"
                                Loaded="RenameBox_Loaded"
                                KeyDown="RenameBox_KeyDown"
@@ -279,12 +334,12 @@
                   IsVisible="False"
                   IsHitTestVisible="False"
                   ClipToBounds="True"
-                  Background="{DynamicResource AppAccentSoftBrush}"
-                  BorderBrush="{DynamicResource AppAccentBrush}"
+                  Background="{DynamicResource AppSelectedBrush}"
+                  BorderBrush="{DynamicResource AppInkBrush}"
                   BorderThickness="1"
                   CornerRadius="10"
                   VerticalAlignment="Top"
-                  Margin="12,1">
+                  Margin="16,1">
             <TextBlock Text="New Playlist"
                        FontSize="11"
                        Opacity="0.7"
@@ -317,10 +372,8 @@
             IsVisible="{Binding HasServerLibraryWriteWarning}"
             Padding="12,8,8,8"
             BorderThickness="0,0,0,1"
-            BorderBrush="{DynamicResource AppWarningBrush}">
-      <Border.Background>
-        <SolidColorBrush Color="{DynamicResource PaletteWarning}" Opacity="0.14"/>
-      </Border.Background>
+            BorderBrush="{DynamicResource AppWarningBrush}"
+            Background="{DynamicResource AppWarningBackgroundBrush}">
       <Grid ColumnDefinitions="Auto,*,Auto">
         <materialIcons:MaterialIcon Grid.Column="0"
                                     Kind="AlertOutline"
@@ -346,42 +399,61 @@
       </Grid>
     </Border>
 
-    <!-- A list's header: its name in the display serif, how much is in it,
-         and the filter box, which used to sit in the top bar and now heads
-         what it acts on. Not over Home, Artists (whose column of
-         names carries the filter instead) or a server's page - see
-         MainViewModel.ShowsPageHeader. -->
+    <!-- A list's header: its name in the display serif and how much is in
+         it, and at the right what the page can do - Play and Shuffle over a
+         list of songs, Download over a playlist, Sort where the order is a
+         choice, and the filter box, which heads what it acts on. Not over
+         Artists, whose column of names carries its own, or a server's page -
+         see MainViewModel.ShowsPageHeader. -->
     <Grid Grid.Row="1"
           IsVisible="{Binding ShowsPageHeader}"
           ColumnDefinitions="*,Auto"
-          Margin="28,18,24,14">
-      <StackPanel Grid.Column="0" VerticalAlignment="Bottom">
-        <TextBlock Classes="screenTitle"
-                   Text="{Binding PageTitle}"
-                   FontSize="44"/>
+          ColumnSpacing="20"
+          Margin="40,40,40,24">
+      <StackPanel Grid.Column="0" Spacing="8">
+        <TextBlock Classes="pageTitle" Text="{Binding PageTitle}"/>
         <TextBlock Text="{Binding PageSubtitle}"
+                   IsVisible="{Binding ShowsPageSubtitle}"
                    FontSize="14"
-                   Margin="2,2,0,0"
                    Foreground="{DynamicResource AppTextSecondaryBrush}"/>
       </StackPanel>
       <StackPanel Grid.Column="1"
                   Orientation="Horizontal"
                   Spacing="10"
-                  VerticalAlignment="Center">
+                  VerticalAlignment="Top">
+        <!-- Everything on the page from the top, or shuffled: the songs as
+             listed, filter and all (MainViewModel.PlayView). -->
+        <Button Classes="play pagePlay"
+                IsVisible="{Binding ShowsPagePlay}"
+                Command="{Binding PlayViewCommand}">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <materialIcons:MaterialIcon Kind="Play" Width="20" Height="20"/>
+            <TextBlock Text="Play" FontWeight="SemiBold" VerticalAlignment="Center"/>
+          </StackPanel>
+        </Button>
+        <Border Classes="outlined" Width="44" Height="44"
+                IsVisible="{Binding ShowsPagePlay}">
+          <Button Classes="pill" Padding="12"
+                  HorizontalAlignment="Center"
+                  ToolTip.Tip="Shuffle"
+                  Command="{Binding ShuffleViewCommand}">
+            <materialIcons:MaterialIcon Classes="chrome" Kind="Shuffle" Width="18" Height="18"/>
+          </Button>
+        </Border>
         <!-- Every song in the playlist not yet here (MainViewModel.
              PageDownload), shown only while there is one. Its own IsVisible
              is the indicator's answer, so the page gate goes on a wrapper -
              the two are different questions. The Artists page has its own,
              beside its play and shuffle. -->
         <Panel IsVisible="{Binding IsShowingPlaylist}" VerticalAlignment="Center">
-          <Border Classes="floating" Width="40" Height="40" CornerRadius="20"
+          <Border Classes="outlined" Width="44" Height="44"
                   IsVisible="{Binding #PlaylistDownloadButton.IsVisible}">
             <controls:TrackDownloadButton x:Name="PlaylistDownloadButton"
                                           DataContext="{Binding PageDownload}"
                                           HorizontalAlignment="Center"
                                           VerticalAlignment="Center"
-                                          IconSize="20"
-                                          IconPadding="10"
+                                          IconSize="18"
+                                          IconPadding="12"
                                           Label="Download all"
                                           DownloadRequested="PageDownload_Requested"/>
           </Border>
@@ -389,23 +461,26 @@
         <!-- Everything queued but the song playing, as the phone's Queue
              menu offers it. -->
         <Button Content="Clear Queue"
+                Classes="outlined"
                 IsVisible="{Binding IsShowingQueue}"
                 IsEnabled="{Binding Queue.CanClear}"
                 Click="ClearQueue_Click"
                 VerticalAlignment="Center"/>
         <!-- The orders the page can be in, as the phone's screen menus
              offer them - see SortButton_Click. -->
-        <Button x:Name="SortButton"
-                Classes="pill"
-                Padding="8"
-                ToolTip.Tip="Sort"
-                IsVisible="{Binding ShowsSortButton}"
-                Click="SortButton_Click"
-                VerticalAlignment="Center">
-          <materialIcons:MaterialIcon Classes="chrome" Kind="Sort" Width="20" Height="20"/>
-        </Button>
+        <Border Classes="outlined" Width="40" Height="40"
+                IsVisible="{Binding ShowsSortButton}">
+          <Button Classes="pill"
+                  Padding="11"
+                  HorizontalAlignment="Center"
+                  ToolTip.Tip="Sort"
+                  Click="SortButton_Click">
+            <materialIcons:MaterialIcon Classes="chrome" Kind="Sort" Width="16" Height="16"/>
+          </Button>
+        </Border>
         <usercontrols:FilterControl
-          Width="260"
+          Width="240"
+          VerticalAlignment="Center"
           IsVisible="{Binding ShowsPageFilter}"
           FilterText="{Binding FilterText}"/>
       </StackPanel>
@@ -423,172 +498,274 @@
              list) but was replaced by the art-tile grid below, matching
              mobile's own Albums/Recently Added tabs - see MainViewModel's
              IsSubListVisible/IsShowingAlbumGrid doc comments. -->
-        <!-- Artists: the names, narrowed by the page header's filter
-             (VisibleSubListItems), beside the picked artist's page. -->
+        <!-- Artists: the column of names under its own heading - the page's
+             name, how many artists its filter leaves, and that filter, which
+             finds names alone (ArtistFilterText, VisibleSubListItems) - beside
+             the picked artist's page, with an A-Z strip down its right edge
+             (ScrollIndexBar, as on the phone). -->
         <Border Grid.Column="0" Grid.RowSpan="2"
                 IsVisible="{Binding IsSubListVisible}"
-                Width="250"
+                Width="280"
                 BorderThickness="0,0,1,0"
                 BorderBrush="{DynamicResource AppDividerBrush}">
-          <!-- Each name built once and handed name after name as the list
-               scrolls (RecyclingListBox, UniformRowPanel), as on the phone. -->
-          <controls:RecyclingListBox x:Name="SubList"
-                   Classes="names"
-                   ItemsSource="{Binding VisibleSubListItems}"
-                   SelectionMode="Multiple"
-                   Background="Transparent"
-                   Padding="0,4,0,8"
-                   SelectionChanged="SubList_SelectionChanged">
-            <ListBox.Styles>
-              <!-- The sidebar's pills: inset, rounded, the accent's wash
-                   and the accent on the name when picked. -->
-              <Style Selector="ListBox.names ListBoxItem">
-                <Setter Property="Margin" Value="10,1"/>
-                <Setter Property="Padding" Value="12,3.5"/>
-                <Setter Property="MinHeight" Value="0"/>
-                <Setter Property="CornerRadius" Value="10"/>
-                <Setter Property="FontSize" Value="14"/>
-              </Style>
-              <Style Selector="ListBox.names ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
-                <Setter Property="Background" Value="{DynamicResource SystemControlHighlightListAccentLowBrush}"/>
-                <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}"/>
-              </Style>
-              <Style Selector="ListBox.names ListBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-                <Setter Property="Background" Value="{DynamicResource SystemControlHighlightListAccentMediumBrush}"/>
-                <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}"/>
-              </Style>
-            </ListBox.Styles>
-            <ListBox.ItemsPanel>
-              <ItemsPanelTemplate>
-                <controls:UniformRowPanel/>
-              </ItemsPanelTemplate>
-            </ListBox.ItemsPanel>
-            <ListBox.ItemTemplate>
-              <!-- The line's height pinned, not the font's own: a name Inter
-                   has no glyphs for (２８１４, 竹内まりや) falls back to a
-                   taller system face, and UniformRowPanel takes every row's
-                   height from the top one - so scrolling one such name to the
-                   top of the window resized the whole list under the pointer.
-                   24 is AlbumCard's for the same size and the same reason;
-                   the padding above gives back what it adds. -->
-              <DataTemplate x:DataType="sys:String">
-                <controls:RowText Text="{Binding}" LineHeight="24" TextTrimming="CharacterEllipsis"/>
-              </DataTemplate>
-            </ListBox.ItemTemplate>
-          </controls:RecyclingListBox>
+          <DockPanel>
+            <StackPanel DockPanel.Dock="Top" Margin="16,32,16,12" Spacing="14">
+              <Grid ColumnDefinitions="*,Auto" Margin="4,0">
+                <TextBlock Grid.Column="0"
+                           Classes="pageTitle"
+                           Text="{Binding PageTitle}"
+                           FontSize="32"
+                           LineHeight="32"
+                           LetterSpacing="0"/>
+                <TextBlock Grid.Column="1"
+                           Text="{Binding VisibleSubListItems.Count, StringFormat={}{0:N0}}"
+                           FontSize="12"
+                           Foreground="{DynamicResource AppTextSecondaryBrush}"
+                           VerticalAlignment="Bottom"
+                           Margin="0,0,0,3"/>
+              </Grid>
+              <usercontrols:FilterControl FilterText="{Binding ArtistFilterText}"/>
+            </StackPanel>
+            <Grid ColumnDefinitions="*,Auto">
+              <!-- Each name built once and handed name after name as the list
+                   scrolls (RecyclingListBox, UniformRowPanel), as on the phone. -->
+              <controls:RecyclingListBox x:Name="SubList"
+                       Grid.Column="0"
+                       Classes="names"
+                       ItemsSource="{Binding VisibleSubListItems}"
+                       SelectionMode="Multiple"
+                       Background="Transparent"
+                       Padding="0,0,0,16"
+                       SelectionChanged="SubList_SelectionChanged">
+                <ListBox.Styles>
+                  <!-- The sidebar's pills: inset, rounded, the selected tint
+                       and the name in bold when picked. -->
+                  <Style Selector="ListBox.names ListBoxItem">
+                    <Setter Property="Margin" Value="12,1,4,0"/>
+                    <Setter Property="Padding" Value="10,7"/>
+                    <Setter Property="MinHeight" Value="0"/>
+                    <Setter Property="CornerRadius" Value="10"/>
+                    <Setter Property="FontSize" Value="14"/>
+                  </Style>
+                  <Style Selector="ListBox.names ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+                    <Setter Property="Background" Value="{DynamicResource AppSelectedBrush}"/>
+                    <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
+                  </Style>
+                  <Style Selector="ListBox.names ListBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+                    <Setter Property="Background" Value="{DynamicResource AppSelectedBrush}"/>
+                    <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
+                  </Style>
+                  <Style Selector="ListBox.names ListBoxItem:selected controls|RowText">
+                    <Setter Property="FontWeight" Value="SemiBold"/>
+                  </Style>
+                </ListBox.Styles>
+                <ListBox.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <controls:UniformRowPanel/>
+                  </ItemsPanelTemplate>
+                </ListBox.ItemsPanel>
+                <ListBox.ItemTemplate>
+                  <!-- The line's height pinned, not the font's own: a name the
+                       UI font has no glyphs for (２８１４, 竹内まりや) falls
+                       back to a taller system face, and UniformRowPanel takes
+                       every row's height from the top one - so scrolling one
+                       such name to the top of the window resized the whole
+                       list under the pointer. The initials' circle beside it
+                       is the row's height. -->
+                  <DataTemplate x:DataType="sys:String">
+                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                      <Border Grid.Column="0"
+                              Width="26" Height="26"
+                              CornerRadius="13"
+                              Background="{DynamicResource AppSelectedBrush}">
+                        <TextBlock Text="{Binding Converter={x:Static conv:InitialsConverter.Instance}}"
+                                   FontSize="11"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource AppTextValueBrush}"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"/>
+                      </Border>
+                      <controls:RowText Grid.Column="1"
+                                        Text="{Binding}"
+                                        LineHeight="24"
+                                        VerticalAlignment="Center"
+                                        TextTrimming="CharacterEllipsis"/>
+                    </Grid>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </controls:RecyclingListBox>
+              <controls:ScrollIndexBar x:Name="SubListIndexBar"
+                                       Grid.Column="1"
+                                       Classes="desktop"
+                                       Target="{Binding #SubList}"
+                                       ShowsLetters="{Binding ArtistsAreAlphabetical}"
+                                       LettersDescending="{Binding ArtistsRunZToA}"
+                                       Margin="0,0,4,16"/>
+            </Grid>
+          </DockPanel>
         </Border>
 
         <!-- The picked artist's page: who they are - their covers as a round
-             collage, the name in the display serif, how much there is, and the
-             phone's album-header circles to play it all or shuffle it - then
-             each of their albums as a card: its cover, its name and a line
-             about it, play and the album menu, and its songs under it
-             (AlbumTrackList, the Albums grid's expanded-album list, here
-             under a band naming its columns). Oldest album first. -->
+             collage, the name in the display serif, the red Play and the
+             circles to shuffle it all, fetch it and put it in order, then how
+             much there is - and then each of their albums as a card: its
+             cover, its name and a line about it and its own Play, Shuffle,
+             Download and "..." down the left, its songs at the right under a
+             band naming their columns (AlbumTrackList, the Albums grid's
+             expanded-album list). In the order the Sort button picks. -->
         <ScrollViewer Grid.Column="1" Grid.RowSpan="2"
                       IsVisible="{Binding IsShowingArtistPage}"
                       HorizontalScrollBarVisibility="Disabled">
-          <StackPanel Margin="24,4,24,24" Spacing="16">
+          <StackPanel Margin="40,40,40,40" Spacing="28">
             <!-- Bound through ArtistPage.Header rather than switching the data
                  context to it: a DataContext binding on the element that also
                  declares the new x:DataType is resolved by Avalonia against
                  the parent's type, but by Rider's inspection against the new
                  one, which then reports ArtistPage.Header as missing. -->
             <Grid IsVisible="{Binding ArtistPage.Header, Converter={x:Static ObjectConverters.IsNotNull}}"
-                  ColumnDefinitions="Auto,*,Auto">
+                  ColumnDefinitions="Auto,*">
               <controls:AlbumArtView Grid.Column="0"
                                      Covers="{Binding ArtistPage.Header.Cover.CoverArt}"
-                                     Width="96" Height="96"
-                                     ArtCornerRadius="48"
-                                     Margin="0,0,20,0"/>
-              <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                <TextBlock Classes="screenTitle" Text="{Binding ArtistPage.Header.Name}" FontSize="40"/>
+                                     Width="132" Height="132"
+                                     ArtCornerRadius="66"
+                                     Margin="0,0,24,0"/>
+              <StackPanel Grid.Column="1" Spacing="8" VerticalAlignment="Center">
+                <!-- The buttons go under the name when it would not fit
+                     beside them. -->
+                <controls:TitleToolbarPanel Spacing="16">
+                <TextBlock Classes="pageTitle"
+                           Text="{Binding ArtistPage.Header.Name}"
+                           VerticalAlignment="Center"/>
+                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                  <Button Classes="play pagePlay"
+                          Command="{Binding PlayViewCommand}">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <materialIcons:MaterialIcon Kind="Play" Width="20" Height="20"/>
+                      <TextBlock Text="Play" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    </StackPanel>
+                  </Button>
+                  <Border Classes="outlined" Width="44" Height="44">
+                    <Button Classes="pill" Padding="12" HorizontalAlignment="Center"
+                            ToolTip.Tip="Shuffle"
+                            Command="{Binding ShuffleViewCommand}">
+                      <materialIcons:MaterialIcon Classes="chrome" Kind="Shuffle" Width="18" Height="18"/>
+                    </Button>
+                  </Border>
+                  <!-- Everything by them not yet here (MainViewModel.
+                       PageDownload), shown only while there is some. -->
+                  <Border Classes="outlined" Width="44" Height="44"
+                          IsVisible="{Binding #ArtistDownloadButton.IsVisible}">
+                    <controls:TrackDownloadButton x:Name="ArtistDownloadButton"
+                                                  DataContext="{Binding PageDownload}"
+                                                  HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center"
+                                                  IconSize="18"
+                                                  IconPadding="12"
+                                                  Label="Download all"
+                                                  DownloadRequested="PageDownload_Requested"/>
+                  </Border>
+                  <!-- The artists' order and their albums' - see
+                       SortButton_Click. -->
+                  <Border Classes="outlined" Width="40" Height="40">
+                    <Button Classes="pill" Padding="11" HorizontalAlignment="Center"
+                            ToolTip.Tip="Sort"
+                            Click="SortButton_Click">
+                      <materialIcons:MaterialIcon Classes="chrome" Kind="Sort" Width="16" Height="16"/>
+                    </Button>
+                  </Border>
+                  <!-- Their songs, by title or album (ArtistPageViewModel
+                       .Show); the column's box finds the artists. -->
+                  <usercontrols:FilterControl Width="240"
+                                              VerticalAlignment="Center"
+                                              FilterText="{Binding FilterText}"/>
+                </StackPanel>
+                </controls:TitleToolbarPanel>
                 <TextBlock Text="{Binding ArtistPage.Header.Summary}"
                            FontSize="14"
-                           Margin="2,2,0,0"
                            Foreground="{DynamicResource AppTextSecondaryBrush}"/>
               </StackPanel>
-              <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                <Border Classes="floating" Width="48" Height="48" CornerRadius="24">
-                  <Button Classes="pill" Padding="10" HorizontalAlignment="Center" VerticalAlignment="Center"
-                          ToolTip.Tip="Play all"
-                          Command="{Binding PlayViewCommand}">
-                    <materialIcons:MaterialIcon Kind="Play" Width="24" Height="24"/>
-                  </Button>
-                </Border>
-                <Border Classes="floating" Width="48" Height="48" CornerRadius="24">
-                  <Button Classes="pill" Padding="10" HorizontalAlignment="Center" VerticalAlignment="Center"
-                          ToolTip.Tip="Shuffle"
-                          Command="{Binding ShuffleViewCommand}">
-                    <materialIcons:MaterialIcon Kind="Shuffle" Width="24" Height="24"/>
-                  </Button>
-                </Border>
-                <!-- Everything by them not yet here (MainViewModel.
-                     PageDownload), shown only while there is some. -->
-                <Border Classes="floating" Width="48" Height="48" CornerRadius="24"
-                        IsVisible="{Binding #ArtistDownloadButton.IsVisible}">
-                  <controls:TrackDownloadButton x:Name="ArtistDownloadButton"
-                                                DataContext="{Binding PageDownload}"
-                                                HorizontalAlignment="Center"
-                                                VerticalAlignment="Center"
-                                                IconSize="24"
-                                                IconPadding="10"
-                                                Label="Download all"
-                                                DownloadRequested="PageDownload_Requested"/>
-                </Border>
-              </StackPanel>
             </Grid>
+
+            <TextBlock Text="Nothing by them matches the filter."
+                       IsVisible="{Binding ArtistPage.ShowsNoMatches}"
+                       FontSize="14"
+                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
 
             <ItemsControl ItemsSource="{Binding ArtistPage.Albums}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="vm:ArtistAlbumSectionViewModel">
                   <Border Background="{DynamicResource AppSidebarBrush}"
-                          CornerRadius="14"
-                          Padding="16"
-                          Margin="0,0,0,16">
-                    <Grid ColumnDefinitions="Auto,*">
-                      <controls:AlbumArtView Grid.Column="0"
-                                             AlbumArt="{Binding Tile.AlbumArt}"
-                                             Width="140" Height="140"
-                                             ArtCornerRadius="10"
-                                             Margin="0,0,20,0"
-                                             VerticalAlignment="Top"/>
-                      <StackPanel Grid.Column="1">
-                        <Grid ColumnDefinitions="*,Auto">
-                          <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                            <TextBlock Classes="screenTitle" Text="{Binding Tile.Name}" FontSize="28"/>
-                            <TextBlock Text="{Binding Meta}"
-                                       FontSize="13"
-                                       Margin="2,2,0,0"
-                                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                          </StackPanel>
-                          <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                            <Border Classes="floating" Width="40" Height="40">
-                              <Button Classes="pill" Padding="8" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                      ToolTip.Tip="Play album"
-                                      Click="ArtistAlbumPlay_Click">
-                                <materialIcons:MaterialIcon Kind="Play" Width="22" Height="22"/>
-                              </Button>
-                            </Border>
-                            <Button Classes="pill" Padding="8"
+                          BorderBrush="{DynamicResource AppBorderBrush}"
+                          BorderThickness="1"
+                          CornerRadius="18"
+                          Padding="28"
+                          Margin="0,0,0,28">
+                    <Grid ColumnDefinitions="220,*" ColumnSpacing="32">
+                      <StackPanel Grid.Column="0" Spacing="14" VerticalAlignment="Top">
+                        <controls:AlbumArtView AlbumArt="{Binding Tile.AlbumArt}"
+                                               Width="220" Height="220"
+                                               ArtCornerRadius="12"/>
+                        <StackPanel Spacing="4">
+                          <TextBlock Classes="sectionTitle"
+                                     Text="{Binding Tile.Name}"
+                                     FontSize="22"
+                                     ToolTip.Tip="{Binding Tile.Name}"/>
+                          <TextBlock Text="{Binding Meta}"
+                                     FontSize="13"
+                                     TextWrapping="Wrap"
+                                     Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                        </StackPanel>
+                        <WrapPanel Orientation="Horizontal" ItemSpacing="10" LineSpacing="10">
+                          <Button Classes="play pagePlay"
+                                  Click="ArtistAlbumPlay_Click">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                              <materialIcons:MaterialIcon Kind="Play" Width="20" Height="20"/>
+                              <TextBlock Text="Play" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            </StackPanel>
+                          </Button>
+                          <Border Classes="outlined" Width="44" Height="44">
+                            <Button Classes="pill" Padding="12" HorizontalAlignment="Center"
+                                    ToolTip.Tip="Shuffle album"
+                                    Click="ArtistAlbumShuffle_Click">
+                              <materialIcons:MaterialIcon Classes="chrome" Kind="Shuffle" Width="18" Height="18"/>
+                            </Button>
+                          </Border>
+                          <!-- The album's own indicator, shown while it has
+                               songs to fetch (TrackDownloadButton). -->
+                          <Border Classes="outlined" Width="44" Height="44"
+                                  IsVisible="{Binding #AlbumCardDownload.IsVisible}">
+                            <controls:TrackDownloadButton x:Name="AlbumCardDownload"
+                                                          DataContext="{Binding Tile}"
+                                                          HorizontalAlignment="Center"
+                                                          VerticalAlignment="Center"
+                                                          IconSize="18"
+                                                          IconPadding="12"
+                                                          Label="Download album"
+                                                          DownloadRequested="ArtistAlbumDownload_Requested"/>
+                          </Border>
+                          <Border Classes="outlined" Width="44" Height="44">
+                            <Button Classes="pill" Padding="12" HorizontalAlignment="Center"
                                     ToolTip.Tip="More"
                                     Click="ArtistAlbumMenu_Click">
-                              <materialIcons:MaterialIcon Classes="chrome" Kind="DotsVertical" Width="20" Height="20" Opacity="0.6"/>
+                              <materialIcons:MaterialIcon Classes="chrome" Kind="DotsVertical" Width="18" Height="18"/>
                             </Button>
-                          </StackPanel>
-                        </Grid>
-                        <!-- The songs' column names, in the track list's
-                             header band; the widths are AlbumTrackList's
-                             row template's - the number, the download well,
-                             the title, the time, the "...". -->
-                        <Border Background="{DynamicResource AppSurfaceBrush}"
-                                CornerRadius="8"
-                                Margin="0,12,0,2"
-                                Padding="12,6,32,6">
-                          <Grid ColumnDefinitions="Auto,20,*,Auto">
-                            <TextBlock Grid.Column="0" Text="#" MinWidth="26" FontSize="13" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                            <TextBlock Grid.Column="2" Text="Title" FontSize="13" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                            <TextBlock Grid.Column="3" Text="Duration" FontSize="13" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                          </Border>
+                        </WrapPanel>
+                      </StackPanel>
+                      <StackPanel Grid.Column="1">
+                        <!-- The songs' column names over a hairline; the
+                             widths are AlbumTrackList's row template's - the
+                             number, the download well, the title, the time,
+                             the "...". -->
+                        <Border BorderThickness="0,0,0,1"
+                                BorderBrush="{DynamicResource AppBorderBrush}"
+                                Height="36"
+                                Margin="0,0,0,6"
+                                Padding="8,0,36,0">
+                          <Grid ColumnDefinitions="Auto,20,*,Auto" VerticalAlignment="Center">
+                            <TextBlock Grid.Column="0" Text="#" MinWidth="26" FontSize="12" FontWeight="Medium" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                            <TextBlock Grid.Column="2" Text="Title" FontSize="12" FontWeight="Medium" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                            <TextBlock Grid.Column="3" Text="Duration" FontSize="12" FontWeight="Medium" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                           </Grid>
                         </Border>
                         <controls:AlbumTrackList ShowsNumbers="True"/>
@@ -619,7 +796,19 @@
                                 ExpandedKey="{Binding ExpandedAlbumKey}"
                                 ExpandedTracks="{Binding ExpandedAlbumTracks}"
                                 Availability="{Binding Availability}"
-                                CurrentlyPlayingTrackId="{Binding CurrentlyPlayingTrack.Id}"/>
+                                CurrentlyPlayingTrackId="{Binding CurrentlyPlayingTrack.Id}"
+                                Margin="0,0,36,0"/>
+        <!-- Its A-Z strip, down the right of the page beside the grid rather
+             than over it, so it never scrolls (ScrollIndexBar). Pointed at
+             the grid's rows, and told where a letter is, in the code-behind. -->
+        <controls:ScrollIndexBar x:Name="AlbumGridIndexBar"
+                                 Grid.Column="0" Grid.ColumnSpan="2" Grid.RowSpan="2"
+                                 Classes="desktop"
+                                 HorizontalAlignment="Right"
+                                 IsVisible="{Binding IsShowingAlbumGrid}"
+                                 ShowsLetters="{Binding AlbumGridIsAlphabetical}"
+                                 LettersDescending="{Binding AlbumGridRunsZToA}"
+                                 Margin="0,0,12,16"/>
 
         <!-- Search: the whole library's albums, artists and songs for what is
              typed - see SearchView. -->
@@ -640,6 +829,7 @@
              leaving that header row visible peeking above it otherwise. -->
         <controls:MusicListView Grid.Column="1" Grid.Row="1"
                                 x:Name="MusicList"
+                                Margin="38,0,16,0"
                                 IsVisible="{Binding IsShowingTrackList}"
                                 SelectedTrack="{Binding SelectedTrack, Mode=TwoWay}"/>
 
@@ -654,7 +844,7 @@
               <Binding Path="Queue.IsEmpty"/>
             </MultiBinding>
           </StackPanel.IsVisible>
-          <materialIcons:MaterialIcon Kind="PlaylistMusic" Width="40" Height="40"/>
+          <materialIcons:MaterialIcon Kind="PlaylistMusicOutline" Width="40" Height="40"/>
           <TextBlock Text="{x:Static vm:QueueViewModel.EmptyTitle}" FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center"/>
           <TextBlock Text="{x:Static vm:QueueViewModel.EmptyMessage}"
                      FontSize="13" TextWrapping="Wrap" TextAlignment="Center"/>
@@ -693,7 +883,7 @@
              twice. -->
         <Grid Grid.Column="0" Grid.ColumnSpan="2" Grid.RowSpan="2"
               IsVisible="{Binding IsShowingDeviceDetail}"
-              Margin="24" RowDefinitions="Auto,*">
+              Margin="28,24,28,16" RowDefinitions="Auto,*">
           <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,0,0,16">
             <StackPanel VerticalAlignment="Center" Spacing="2">
               <StackPanel Orientation="Horizontal" Spacing="6">
@@ -701,7 +891,7 @@
                      row already resolves a local nickname override (DeviceNicknameStore)
                      over the peer's raw self-reported alias and keeps it live-updated
                      on rename; SelectedDevice.Alias is that raw, unresolved value. -->
-                <TextBlock Text="{Binding SelectedSidebarItem.Name}" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                <TextBlock Classes="sectionTitle" Text="{Binding SelectedSidebarItem.Name}" FontSize="26" VerticalAlignment="Center"/>
                 <!-- Reachable/unreachable come from the selected sidebar row
                      itself (SidebarItem.ShowReachableIcon/ShowUnreachableIcon),
                      the same two properties the row's own glyph binds, so the
@@ -723,7 +913,9 @@
               <!-- Collapsed rather than blank with no live endpoint (the
                    pinned row of a paired server that has dropped off the
                    network): an empty line still takes its height. -->
-              <TextBlock Text="{Binding SelectedDevice.Origin}" Opacity="0.5" FontSize="13"
+              <TextBlock Text="{Binding SelectedDevice.Origin}" FontSize="12"
+                         FontFamily="{DynamicResource AppMonospaceFontFamily}"
+                         Foreground="{DynamicResource AppTextValueBrush}"
                          IsVisible="{Binding SelectedDevice, Converter={x:Static avc:ObjectConverters.IsNotNull}}"/>
               <!-- The key this device actually pinned, so it can be compared
                    against what the server says about itself. Only useful for a
@@ -735,9 +927,11 @@
                    PeerSyncCoordinator.PairedServerPinnedFingerprint. -->
               <StackPanel Orientation="Horizontal" Spacing="5"
                           IsVisible="{Binding HasSelectedDevicePinnedFingerprint}">
-                <TextBlock Text="Verified as" Opacity="0.4" FontSize="11" VerticalAlignment="Center"/>
+                <TextBlock Text="Verified as" FontSize="12" VerticalAlignment="Center"
+                           Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                 <SelectableTextBlock Text="{Binding SelectedDevicePinnedFingerprint}"
-                                     Opacity="0.55" FontSize="11" FontFamily="monospace"
+                                     FontSize="12" FontFamily="{DynamicResource AppMonospaceFontFamily}"
+                                     Foreground="{DynamicResource AppTextValueBrush}"
                                      VerticalAlignment="Center"
                                      ToolTip.Tip="The server identity this device pinned when it paired. Every later connection is checked against it. Compare it with the fingerprint the server shows in its own settings."/>
               </StackPanel>
@@ -761,6 +955,8 @@
                                 KeyDown="PairingCodeBox_KeyDown"
                                 Margin="12,0,0,0" VerticalAlignment="Center"/>
             <Button Content="{Binding PairActionLabel}"
+                    Classes="outlined"
+                    Height="36"
                     IsVisible="{Binding CanPairWithSelectedDevice}"
                     IsEnabled="{Binding IsPairActionEnabled}"
                     Click="PairActionButton_Click"
@@ -784,6 +980,8 @@
                  browser, where the tab spends that code on a keypair of its
                  own. -->
             <Button Content="Open in Browser…"
+                    Classes="outlined"
+                    Height="36"
                     ToolTip.Tip="Pairs a browser tab with this server as an administrator and opens its settings page there."
                     IsVisible="{Binding CanOpenSelectedServerSettings}"
                     IsEnabled="{Binding IsOpenSelectedServerSettingsEnabled}"

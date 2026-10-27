@@ -162,7 +162,7 @@ public class PlaylistScreenTests : PinnedDataDirectory
         Tap(window, HeaderButton(window, MaterialIconKind.Shuffle));
         Assert.True(harness.Vm.PlaylistControl.IsShuffleEnabled, "shuffle did not answer the tap");
 
-        Tap(window, HeaderButton(window, MaterialIconKind.Pencil));
+        Tap(window, HeaderButton(window, MaterialIconKind.PencilOutline));
         Assert.True(harness.Vm.CurrentPlaylistItem?.IsEditing, "the pencil did not answer the tap");
     }
 

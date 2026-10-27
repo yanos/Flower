@@ -25,10 +25,14 @@ namespace Flower.Tests.ViewModels;
 public class CurrentlyPlayingControlViewModelTests : PinnedDataDirectory
 {
     private static CurrentlyPlayingControlViewModel Make(
-        out FakeAudioManager audio, out PlaylistControlViewModel playback, params Track[] tracks)
+        out FakeAudioManager audio, out PlaylistControlViewModel playback, params Track[] tracks) =>
+        Make(out audio, out playback, out _, tracks);
+
+    private static CurrentlyPlayingControlViewModel Make(
+        out FakeAudioManager audio, out PlaylistControlViewModel playback, out Library library, params Track[] tracks)
     {
         audio = new FakeAudioManager();
-        var library = new Library(tracks.ToList());
+        library = new Library(tracks.ToList());
         playback = new PlaylistControlViewModel(
             audio, new MainPlaylist(tracks.ToList()), library, new AppSettings(),
             new AppSettingsStore(NullLogger<AppSettingsStore>.Instance),
@@ -50,11 +54,11 @@ public class CurrentlyPlayingControlViewModelTests : PinnedDataDirectory
 
         Assert.Null(vm.CurrentlyPlayingTrack);
         Assert.Equal("Flower", vm.Title);
-        Assert.Equal($"Version {AppVersion.Display}", vm.Subtitle);
+        Assert.Equal($"Version {AppVersion.Display}", vm.ArtistLine);
     }
 
     [AvaloniaFact]
-    public void Title_and_subtitle_are_the_track_once_a_track_is_playing()
+    public void Title_artist_and_album_lines_are_the_track_once_a_track_is_playing()
     {
         var track = T("A");
         var vm = Make(out _, out var playback, track);
@@ -62,11 +66,12 @@ public class CurrentlyPlayingControlViewModelTests : PinnedDataDirectory
         playback.Play(track);
 
         Assert.Equal("A", vm.Title);
-        Assert.Equal("An Artist — An Album (1999)", vm.Subtitle);
+        Assert.Equal("An Artist", vm.ArtistLine);
+        Assert.Equal("An Album (1999)", vm.AlbumLine);
     }
 
     [AvaloniaFact]
-    public void A_track_change_re_raises_the_title_subtitle_and_total_time()
+    public void A_track_change_re_raises_the_title_artist_and_total_time()
     {
         var track = T("A");
         var vm = Make(out _, out var playback, track);
@@ -77,8 +82,31 @@ public class CurrentlyPlayingControlViewModelTests : PinnedDataDirectory
 
         Assert.Contains(nameof(vm.CurrentlyPlayingTrack), raised);
         Assert.Contains(nameof(vm.Title), raised);
-        Assert.Contains(nameof(vm.Subtitle), raised);
+        Assert.Contains(nameof(vm.ArtistLine), raised);
         Assert.Contains(nameof(vm.TotalTime), raised);
+    }
+
+    // The player bar's star stars the song playing in the library itself,
+    // and follows a star set anywhere else.
+    [AvaloniaFact]
+    public void The_star_is_the_playing_song_s_own()
+    {
+        var track = T("A");
+        var vm = Make(out _, out var playback, out var library, track);
+        playback.Play(track);
+        Assert.False(vm.IsStarred);
+
+        vm.ToggleStar();
+        Assert.True(track.Starred);
+        Assert.True(vm.IsStarred);
+
+        var raised = new List<string?>();
+        vm.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+        library.SetStarred(StarTarget.Song, track.Id.ToString(), false);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.False(vm.IsStarred);
+        Assert.Contains(nameof(vm.IsStarred), raised);
     }
 
     [Fact]

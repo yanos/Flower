@@ -541,20 +541,6 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     public bool PlaybackControlsAtBottom => PlaybackControlsPlacement == PlaybackControlsPlacement.Bottom;
 
-    // Settings > General - see AppSettings.TintPlayerBarWithAlbumColor.
-    public bool TintPlayerBarWithAlbumColor
-    {
-        get => _appSettings.TintPlayerBarWithAlbumColor;
-        set
-        {
-            if (_appSettings.TintPlayerBarWithAlbumColor == value)
-                return;
-            _appSettings.TintPlayerBarWithAlbumColor = value;
-            SaveSettings();
-            OnPropertyChanged();
-        }
-    }
-
     // Both delegate to ITunesImportCoordinator, which owns the cooldown and
     // the apply/notify/save sequence - kept here as forwarders because
     // App.axaml.cs's startup rescan and SettingsWindow both reach them through
@@ -685,6 +671,14 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         set => Browser.FilterText = value;
     }
 
+    // The Artists column's box, over the names alone - see
+    // LibraryBrowserViewModel.ArtistFilterText.
+    public string? ArtistFilterText
+    {
+        get => Browser.ArtistFilterText;
+        set => Browser.ArtistFilterText = value;
+    }
+
     public string SortColumn   => Browser.SortColumn;
     public bool   SortAscending => Browser.SortAscending;
 
@@ -755,14 +749,23 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             _selectedSidebarItem?.Kind == SidebarItemKind.Artists && SelectedSubItems.Count == 1
                 ? SelectedSubItems.First()
                 : null,
-            Library.Tracks, Availability, CurrentlyPlayingTrack?.Id, SortOf(BrowseSortScreen.ArtistAlbums), force);
+            Library.Tracks, FilterText, Availability, CurrentlyPlayingTrack?.Id, SortOf(BrowseSortScreen.ArtistAlbums), force);
 
     // The band above a list on desktop: the page's name in the display serif,
     // how much is in it, and the filter box. Over every list and over Home -
-    // not over a server's page, which is about the server.
+    // not over a server's page, which is about the server, nor over Artists,
+    // whose column of names heads itself and whose artist has a header of
+    // their own.
     public bool ShowsPageHeader => _selectedSidebarItem?.Kind is
         SidebarItemKind.Home or SidebarItemKind.Queue or SidebarItemKind.Songs or SidebarItemKind.Albums
-        or SidebarItemKind.Artists or SidebarItemKind.History or SidebarItemKind.Playlist;
+        or SidebarItemKind.History or SidebarItemKind.Playlist;
+
+    // Home's name stands alone; its shelves say what they hold.
+    public bool ShowsPageSubtitle => !IsShowingHome;
+
+    // Play and Shuffle in the header, over the pages that are a list of songs.
+    public bool ShowsPagePlay => _selectedSidebarItem?.Kind is
+        SidebarItemKind.Songs or SidebarItemKind.History or SidebarItemKind.Playlist;
 
     // Not over the queue, as on the phone: it is in the order it plays in,
     // and a filtered one would hide what is next.
@@ -775,18 +778,17 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     public string? PageTitle => _selectedSidebarItem?.Name;
 
-    // What the page holds once filtered: albums over the grid, the artists
-    // listed on Artists, songs anywhere else.
+    // What the page holds once filtered: albums over the grid, songs
+    // anywhere else. Not over Home (ShowsPageSubtitle) or Artists, whose
+    // column of names counts them itself.
     public string PageSubtitle => _selectedSidebarItem?.Kind switch
     {
         SidebarItemKind.Albums => CountOf(AlbumGridTiles.Count, "album"),
-        SidebarItemKind.Home => CountOf(Home.ShownCount, "album"),
         // How long the queue is, and - when what plays next is not simply the
         // next row down - why not.
         SidebarItemKind.Queue => Queue.Caption is { } caption
             ? $"{CountOf(Queue.UpcomingCount, "song")} · {caption}"
             : CountOf(Queue.UpcomingCount, "song"),
-        SidebarItemKind.Artists => CountOf(VisibleSubListItems.Count, "artist"),
         _ => CountOf(DisplayedTracks.Count, "song"),
     };
 
@@ -812,15 +814,40 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         {
             case BrowseSortScreen.Albums:
                 Browser.ResortAlbumGrid();
+                OnPropertyChanged(nameof(AlbumGridIsAlphabetical));
+                OnPropertyChanged(nameof(AlbumGridRunsZToA));
                 break;
             case BrowseSortScreen.Artists:
                 Browser.ResortArtists();
+                OnPropertyChanged(nameof(ArtistsAreAlphabetical));
+                OnPropertyChanged(nameof(ArtistsRunZToA));
                 break;
             case BrowseSortScreen.ArtistAlbums:
                 RefreshArtistPage(force: true);
                 break;
         }
     }
+
+    // Whether the album grid and the artists are sorted on something with a
+    // letter, and so whether their index bar can be letters (ScrollIndexBar.
+    // ShowsLetters) - on both heads. Any other order - a year, a date, a
+    // count - has no letter to jump to, and the bar is dots, a scrubber over
+    // the whole scroll. The ZToA pair turns the bar round with a reversed
+    // sort (ScrollIndexBar.LettersDescending).
+    public bool AlbumGridIsAlphabetical =>
+        SortOf(BrowseSortScreen.Albums).Order is BrowseSortOrder.Name or BrowseSortOrder.Artist;
+
+    public bool AlbumGridRunsZToA => AlbumGridIsAlphabetical && !SortOf(BrowseSortScreen.Albums).Ascending;
+
+    public bool ArtistsAreAlphabetical =>
+        SortOf(BrowseSortScreen.Artists).Order == BrowseSortOrder.Name;
+
+    public bool ArtistsRunZToA => ArtistsAreAlphabetical && !SortOf(BrowseSortScreen.Artists).Ascending;
+
+    // What an album on the grid is filed under on the bar: its artist when the
+    // grid is sorted by artist, its own name otherwise.
+    public string? AlbumGridLetterText(AlbumTileViewModel tile) =>
+        SortOf(BrowseSortScreen.Albums).Order == BrowseSortOrder.Artist ? tile.Artist : tile.Name;
 
     (BrowseSortOrder Order, bool Ascending) ILibraryBrowseHost.SortOf(BrowseSortScreen screen) => SortOf(screen);
 
@@ -1282,7 +1309,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     private void AddServerSettingsSidebarRows()
     {
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.Header, "Server"));
-        _sidebarItems.Add(new SidebarItem(SidebarItemKind.ServerSettings, "Server Settings", MaterialIconKind.Cog));
+        _sidebarItems.Add(new SidebarItem(SidebarItemKind.ServerSettings, "Server Settings", MaterialIconKind.CogOutline));
     }
 
     // Set when minting a browser session against the selected server failed -
@@ -1756,6 +1783,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
                         break;
                     case nameof(LibraryBrowserViewModel.FilterText):
                         SyncHomeFilter();
+                        RefreshArtistPage();
+                        RefreshPageDownload();
                         break;
                 }
             },
@@ -1792,12 +1821,6 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             h => Home.HiddenFromRecentlyPlayedChanged += h, h => Home.HiddenFromRecentlyPlayedChanged -= h);
         foreach (var shelf in Home.ShelfOrder)
             HomeShelfSettings.Add(new HomeShelfSettingRow(shelf, this));
-        _subscriptions.Add<System.ComponentModel.PropertyChangedEventHandler>((_, e) =>
-        {
-            if (e.PropertyName == nameof(HomeViewModel.ShownCount) && IsShowingHome)
-                OnPropertyChanged(nameof(PageSubtitle));
-        },
-            h => Home.PropertyChanged += h, h => Home.PropertyChanged -= h);
 
         _subscriptions.Add<EventHandler<PlaybackFailedEventArgs>>((_, e) => ShowPlaybackNotice(e),
             h => playlistControlViewModel.PlaybackFailed += h, h => playlistControlViewModel.PlaybackFailed -= h);
@@ -2349,11 +2372,11 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.Header,        "Library"));
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.Home,    "Home",    MaterialIconKind.HomeOutline));
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.Search,  "Search",  MaterialIconKind.Magnify));
-        _sidebarItems.Add(new SidebarItem(SidebarItemKind.Queue,   "Queue",   MaterialIconKind.PlaylistMusic));
+        _sidebarItems.Add(new SidebarItem(SidebarItemKind.Queue,   "Queue",   MaterialIconKind.PlaylistMusicOutline));
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.History, "History", MaterialIconKind.ClockTimeEightOutline));
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.Songs,   "Songs",   MaterialIconKind.Music));
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.Albums,  "Albums",  MaterialIconKind.Album));
-        _sidebarItems.Add(new SidebarItem(SidebarItemKind.Artists, "Artists", MaterialIconKind.Account));
+        _sidebarItems.Add(new SidebarItem(SidebarItemKind.Artists, "Artists", MaterialIconKind.AccountOutline));
 
         if (Library.Playlists.Count > 0)
         {
@@ -2373,7 +2396,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         if (_appSettings.PairedServerFingerprint is { Length: > 0 } && _appSettings.PairedServerAlias is { } pairedAlias)
         {
             _sidebarItems.Add(new SidebarItem(SidebarItemKind.Header, "Servers"));
-            _sidebarItems.Add(new SidebarItem(SidebarItemKind.Device, pairedAlias, MaterialIconKind.Server)
+            _sidebarItems.Add(new SidebarItem(SidebarItemKind.Device, pairedAlias, MaterialIconKind.ServerOutline)
             {
                 IsPairedServer = true,
                 IsReachable = false,
@@ -2665,6 +2688,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         OnPropertyChanged(nameof(IsShowingDeviceDetail));
         OnPropertyChanged(nameof(IsShowingServerSettings));
         OnPropertyChanged(nameof(ShowsPageHeader));
+        OnPropertyChanged(nameof(ShowsPageSubtitle));
+        OnPropertyChanged(nameof(ShowsPagePlay));
         OnPropertyChanged(nameof(PageTitle));
         OnPropertyChanged(nameof(PageSubtitle));
         RefreshArtistPage();
@@ -2866,6 +2891,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
                 SelectedSubItem = track.Album;
                 break;
             case SidebarItemKind.Artists:
+                if (!string.IsNullOrEmpty(ArtistFilterText))
+                    ArtistFilterText = null;
                 SelectedSubItem = track.Artists;
                 break;
         }
@@ -2905,6 +2932,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
         if (!string.IsNullOrEmpty(FilterText))
             FilterText = null;
+        if (!string.IsNullOrEmpty(ArtistFilterText))
+            ArtistFilterText = null;
         SelectedSidebarItem = artists;
         SelectedSubItem = artist;
         if (!await RebuildRowsImmediatelyAsync())
@@ -2914,4 +2943,5 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     }
 
     public event EventHandler<string>? ArtistRevealRequested;
+
 }

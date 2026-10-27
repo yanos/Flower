@@ -14,8 +14,9 @@ using Xunit;
 namespace Flower.Tests.ViewModels;
 
 // The desktop Artists page: the picked artist, and an album card each with
-// its songs under it (ArtistPageViewModel.Albums). The page header's filter
-// narrows the column of names, by name alone, and leaves the cards whole.
+// its songs under it (ArtistPageViewModel.Albums). Two filters: the column's
+// (ArtistFilterText) narrows the names, by name alone, and leaves the cards
+// whole; the one beside the artist's name (FilterText) narrows their songs.
 [Collection("PlatformDataDirectory")]
 public class ArtistPageTests : PinnedDataDirectory
 {
@@ -61,32 +62,56 @@ public class ArtistPageTests : PinnedDataDirectory
     // A song's title, an album's name: neither is an artist's, so neither
     // finds anyone - and the artist still picked keeps every card.
     [AvaloniaFact]
-    public void The_filter_finds_artists_by_name_alone_and_leaves_the_cards_whole()
+    public void The_column_filter_finds_artists_by_name_alone_and_leaves_the_cards_whole()
     {
         var vm = OnArtist("SAINT PEPSI");
 
-        vm.FilterText = "pepsi";
+        vm.ArtistFilterText = "pepsi";
         Assert.Equal(new[] { "SAINT PEPSI" }, vm.VisibleSubListItems);
         Assert.Equal(new[] { "Hit Vibes", "Winner's Circle" }, Cards(vm));
         Assert.Equal(2, Songs(vm, "Hit Vibes").Length);
 
-        vm.FilterText = "carpark";
+        vm.ArtistFilterText = "carpark";
         Assert.Empty(vm.VisibleSubListItems);
 
-        vm.FilterText = "winner";
+        vm.ArtistFilterText = "winner";
         Assert.Empty(vm.VisibleSubListItems);
     }
 
     [AvaloniaFact]
-    public void The_filter_narrows_the_column_of_names_and_clearing_it_brings_every_card_back()
+    public void The_column_filter_narrows_the_names_and_clearing_it_brings_every_card_back()
     {
         var vm = OnArtist("SAINT PEPSI");
 
-        vm.FilterText = "metal";
+        vm.ArtistFilterText = "metal";
         Assert.Equal(new[] { "Metallica" }, vm.VisibleSubListItems);
 
-        vm.FilterText = null;
+        vm.ArtistFilterText = null;
         Assert.Equal(2, vm.VisibleSubListItems.Count);
+        Assert.Equal(new[] { "Hit Vibes", "Winner's Circle" }, Cards(vm));
+    }
+
+    // By a song's title or its album's name; a card with nothing left goes,
+    // and the names and the header stay whole.
+    [AvaloniaFact]
+    public void The_artist_filter_keeps_the_songs_it_finds_and_leaves_the_names_alone()
+    {
+        var vm = OnArtist("SAINT PEPSI");
+
+        vm.FilterText = "carpark";
+        Assert.Equal(new[] { "Winner's Circle" }, Cards(vm));
+        Assert.Equal(new[] { "Carpark" }, Songs(vm, "Winner's Circle"));
+        Assert.Equal(2, vm.VisibleSubListItems.Count);
+        Assert.Equal("SAINT PEPSI", vm.ArtistPage.Header?.Name);
+
+        vm.FilterText = "hit vibes";
+        Assert.Equal(2, Songs(vm, "Hit Vibes").Length);
+
+        vm.FilterText = "nothing of theirs";
+        Assert.Empty(vm.ArtistPage.Albums);
+        Assert.True(vm.ArtistPage.ShowsNoMatches);
+
+        vm.FilterText = null;
         Assert.Equal(new[] { "Hit Vibes", "Winner's Circle" }, Cards(vm));
     }
 
@@ -101,12 +126,12 @@ public class ArtistPageTests : PinnedDataDirectory
         var vm = OnArtist("SAINT PEPSI");
         _ = new MainView { DataContext = vm };
 
-        vm.FilterText = "metal";
+        vm.ArtistFilterText = "metal";
 
         Assert.Equal(new[] { "Metallica" }, vm.SelectedSubItems);
         Assert.Equal(new[] { "...And Justice for All" }, Cards(vm));
 
-        vm.FilterText = "nothing by anybody";
+        vm.ArtistFilterText = "nothing by anybody";
 
         Assert.Empty(vm.SelectedSubItems);
         Assert.Empty(vm.ArtistPage.Albums);

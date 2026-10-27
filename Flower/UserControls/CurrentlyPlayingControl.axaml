@@ -4,41 +4,57 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:Flower.ViewModels"
              xmlns:controls="using:Flower.Controls"
-             xmlns:usercontrols="using:Flower.UserControls"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              mc:Ignorable="d"
              x:Class="Flower.UserControls.CurrentlyPlayingControl"
              x:DataType="vm:CurrentlyPlayingControlViewModel">
 
-  <!-- What is playing, beside the transport: the cover, the song's title in
-       the display serif - as on the phone's Now Playing, where a song's title
-       is the subject of the screen - and the artist and album under it, level
-       with the cover's top, and the seek bar level with its bottom, the times
-       under the bar's ends. Shuffle and repeat are the transport's now
-       (PlaylistControls). -->
-  <Grid ColumnDefinitions="Auto,*">
+  <!-- What is playing, at the left of the player bar: the cover, flush with
+       the bar's edge, then three lines - the song's title in the display
+       serif, as on the phone's Now Playing, where a song's title is the
+       subject of the screen; who it is by; and the album - and the song's
+       star beside them (CurrentlyPlayingControlViewModel.IsStarred). The seek
+       bar is under the transport now (MainView). -->
+  <Grid ColumnDefinitions="Auto,Auto,Auto" ColumnSpacing="16">
 
     <controls:AlbumArtView Grid.Column="0"
-                           Width="84" Height="84"
-                           ArtCornerRadius="6"
-                           Margin="0,0,16,0"
+                           Width="92" Height="92"
+                           ArtCornerRadius="8"
                            VerticalAlignment="Center"
                            AlbumArt="{Binding AlbumArt}"/>
 
-    <Grid Grid.Column="1" RowDefinitions="Auto,Auto,*,Auto">
-      <TextBlock Grid.Row="0"
-                 Text="{Binding Title}"
-                 FontFamily="{DynamicResource AppDisplayFontFamily}"
-                 FontSize="22"
+    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+      <TextBlock Text="{Binding Title}"
+                 FontFamily="{DynamicResource AppDisplayTextFontFamily}"
+                 FontSize="18"
                  FontWeight="SemiBold"
                  TextTrimming="CharacterEllipsis"/>
-
-      <TextBlock Grid.Row="1"
-                 Text="{Binding Subtitle}"
+      <TextBlock Text="{Binding ArtistLine}"
                  FontSize="13"
+                 Foreground="{DynamicResource AppTextValueBrush}"
+                 TextTrimming="CharacterEllipsis"/>
+      <TextBlock Text="{Binding AlbumLine}"
+                 IsVisible="{Binding CurrentlyPlayingTrack, Converter={x:Static ObjectConverters.IsNotNull}}"
+                 FontSize="12"
                  Foreground="{DynamicResource AppTextSecondaryBrush}"
                  TextTrimming="CharacterEllipsis"/>
+    </StackPanel>
 
-      <usercontrols:SeekBar Grid.Row="3"/>
-    </Grid>
+    <Button Grid.Column="2"
+            Classes="pill"
+            Padding="13"
+            VerticalAlignment="Center"
+            IsVisible="{Binding CurrentlyPlayingTrack, Converter={x:Static ObjectConverters.IsNotNull}}"
+            ToolTip.Tip="Star"
+            Click="Star_Click">
+      <Panel>
+        <materialIcons:MaterialIcon Kind="StarOutline" Width="18" Height="18"
+                                    Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                    IsVisible="{Binding !IsStarred}"/>
+        <materialIcons:MaterialIcon Kind="Star" Width="18" Height="18"
+                                    Foreground="{DynamicResource AppTextPrimaryBrush}"
+                                    IsVisible="{Binding IsStarred}"/>
+      </Panel>
+    </Button>
   </Grid>
 </UserControl>

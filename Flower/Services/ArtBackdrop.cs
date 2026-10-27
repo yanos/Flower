@@ -40,12 +40,11 @@ public static class ArtBackdrop
     private static readonly ConditionalWeakTable<Bitmap, object> Tints = new();
 
     // What Now Playing falls back to with no cover to take a colour from: the
-    // theme's pressed accent - the palette's Deep Coral - (Theme.axaml),
-    // darkened the way a cover's
-    // colour is.
+    // theme's hover accent, its deepest red (Theme.axaml), darkened the way a
+    // cover's colour is.
     public static Color FallbackTint =>
         Application.Current is { } app
-        && app.TryGetResource("PaletteAccentPressed", app.ActualThemeVariant, out var value)
+        && app.TryGetResource("PaletteAccentHover", app.ActualThemeVariant, out var value)
         && value is Color color
             ? color
             : default;

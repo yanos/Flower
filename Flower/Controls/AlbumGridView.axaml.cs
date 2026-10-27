@@ -51,6 +51,25 @@ public partial class AlbumGridView : UserControl
 
     private IReadOnlyList<AlbumTileViewModel> _tiles = Array.Empty<AlbumTileViewModel>();
     private List<AlbumGridRowViewModel> _rows = new();
+
+    // The row whose albums first reach a letter - what the A-Z strip beside
+    // the grid scrolls to, since it scrolls rows and a row holds several
+    // albums. As the phone's grid answers it (AlbumGridScreenView).
+    public int RowOfLetter(char letter, Func<AlbumTileViewModel, char> letterOf, bool descending)
+    {
+        var tiles = new List<(AlbumTileViewModel Tile, int Row)>();
+        for (var row = 0; row < _rows.Count; row++)
+        {
+            foreach (var tile in _rows[row].Tiles)
+                tiles.Add((tile, row));
+        }
+
+        var index = AlphabetIndex.FirstIndexFor(tiles, t => letterOf(t.Tile), letter, descending);
+        return index < 0 ? -1 : tiles[index].Row;
+    }
+
+    // The list of rows, for the strip to scroll.
+    public ItemsControl RowsControl => RowsList;
     private int _columns = 1;
 
     public static readonly StyledProperty<IEnumerable?> ItemsSourceProperty =

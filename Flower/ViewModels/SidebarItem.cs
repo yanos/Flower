@@ -54,8 +54,10 @@ public class SidebarItem : ViewModelBase
 
     public bool IsFolder => Playlist?.IsFolder == true;
 
-    // Room on the right of a folder for its chevron.
-    public Thickness Indent => new(12 + Depth * 16, 8, IsFolder ? 34 : 8, 8);
+    // Room on the right of a folder for its chevron. A server's card has
+    // padding all round instead, the hairline inside it.
+    public Thickness Indent =>
+        IsServerCard ? new(12, 12, 12, 12) : new(12 + Depth * 16, 10, IsFolder ? 34 : 8, 10);
 
     // Settable (not just init) - see MainViewModel.FindDeviceSidebarItem: a
     // device row can end up re-pointed at a different DiscoveredDevice
@@ -111,6 +113,18 @@ public class SidebarItem : ViewModelBase
 
     public bool IsHeader => Kind == SidebarItemKind.Header;
     public bool IsSelectable => !IsHeader;
+
+    // The heading that carries a New Playlist button beside it.
+    public bool IsPlaylistsHeader => IsHeader && Name == "Playlists";
+
+    // A server's row, drawn as a card under the Server heading.
+    public bool IsServerCard => Kind == SidebarItemKind.Device;
+
+    // The heading of the sidebar's last section, the server's - which, with
+    // everything under it, sits at the foot of the column
+    // (BottomPinnedStackPanel). "Servers" over a paired or discovered server,
+    // "Server" over a browser tab's own settings row.
+    public bool PinsToBottom => IsHeader && Name is "Servers" or "Server";
 
     // Songs draws the long-stemmed note (App.axaml's SongNoteGeometry) in
     // place of Icon, whose Material Music glyph has stems too short to read as

@@ -14,12 +14,14 @@ namespace Flower.ViewModels.Mobile;
 public partial class MobileMainViewModel
 {
     // The song menu, for ActionTarget. A phone has no file manager to show a
-    // file in, so no Locate File.
+    // file in, so no Locate File. Raised on Home, it is over a Recently Played
+    // song - the one list of songs Home has.
     public IReadOnlyList<ActionMenuEntry> SongActions => ActionTarget is { } track
         ? ActionMenus.Flat(ActionMenus.ForSongs(
             Main.MenuFactsFor([track], _libraryRemoval),
             canRemoveFromQueue: CanRemoveActionTargetFromQueue,
-            canLocateFiles: false))
+            canLocateFiles: false,
+            isRecentlyPlayed: IsShowingHome))
         : [];
 
     // The album menu, for AlbumActionTarget - or for the playlist whose row
@@ -28,7 +30,6 @@ public partial class MobileMainViewModel
         ? ActionMenus.Flat(ActionMenus.ForAlbum(
             Main.MenuFactsFor(AlbumActionTargetTracks(), _libraryRemoval),
             isContinuing: CanForgetAlbumActionTargetProgress,
-            isRecentlyPlayed: Main.Home.IsOnRecentlyPlayed(tile),
             isPlaylist: IsActingOnAPlaylist,
             isArtist: _isActingOnAnArtist,
             isFolder: PlaylistActionTarget?.Playlist is { IsFolder: true },
@@ -44,6 +45,7 @@ public partial class MobileMainViewModel
             MenuAction.AddToQueue => AddActionTargetToQueueCommand,
             MenuAction.AddToPlaylist => OpenAddToPlaylistCommand,
             MenuAction.RemoveFromQueue => RemoveActionTargetFromQueueCommand,
+            MenuAction.HideFromRecentlyPlayed => HideActionTargetFromRecentlyPlayedCommand,
             MenuAction.GetInfo => ViewTrackInfoCommand,
             MenuAction.Download => DownloadActionTargetCommand,
             MenuAction.DeleteLocalFiles => DeleteDownloadedFileCommand,
@@ -65,7 +67,6 @@ public partial class MobileMainViewModel
             MenuAction.GetInfo => ViewAlbumActionTargetTrackInfoCommand,
             MenuAction.Download => DownloadAlbumActionTargetCommand,
             MenuAction.ForgetProgress => ForgetAlbumActionTargetProgressCommand,
-            MenuAction.HideFromRecentlyPlayed => HideAlbumActionTargetFromRecentlyPlayedCommand,
             MenuAction.RenamePlaylist => RenamePlaylistActionTargetCommand,
             MenuAction.EditRules => EditRulesActionTargetCommand,
             MenuAction.ConvertToOrdinary => ConvertActionTargetToOrdinaryCommand,

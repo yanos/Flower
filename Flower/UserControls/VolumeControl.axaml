@@ -21,21 +21,21 @@
          level's outline a different width, so the speaker moved and resized
          as the volume crossed from one to the next. -->
     <Viewbox Grid.Column="0"
-             Width="26" Height="26"
+             Width="20" Height="20"
              VerticalAlignment="Center"
-             Margin="0,0,6,0">
+             Margin="0,0,10,0">
       <Canvas Width="24" Height="24">
         <Path Data="{Binding Icon, Converter={StaticResource MaterialIconGeometryConverter}}"
-              Fill="{DynamicResource AppTextPrimaryBrush}"/>
+              Fill="{DynamicResource AppTextSecondaryBrush}"/>
       </Canvas>
     </Viewbox>
 
     <!-- The seek bar's slider (SeekBar): the same size, thumb and rail, and
-         the same text-coloured fill up to the thumb. The negative margin
-         crops the room Fluent's template keeps above and below for a tick
-         bar it has not got, as the seek bar's does - 2 more at the top than
-         the bottom, which otherwise left the rail that much below the middle
-         of the speaker beside it (measured off a screenshot). -->
+         the same slider-ink fill up to the thumb. The negative margin crops the
+         room Fluent's template keeps above and below for a tick bar it has
+         not got, as the seek bar's does - 2 more at the top than the bottom,
+         which otherwise left the rail that much below the middle of the
+         speaker beside it (measured off a screenshot). -->
     <Slider x:Name="slider"
             Grid.Column="1"
             Padding="0"
@@ -46,12 +46,12 @@
             VerticalAlignment="Center">
       <Slider.Resources>
         <x:Double x:Key="SliderTrackThemeHeight">4</x:Double>
-        <SolidColorBrush x:Key="SliderTrackValueFill" Color="{DynamicResource PaletteTextPrimary}"/>
-        <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Color="{DynamicResource PaletteTextPrimary}" Opacity="0.8"/>
-        <SolidColorBrush x:Key="SliderTrackValueFillPressed" Color="{DynamicResource PaletteTextPrimary}" Opacity="0.8"/>
-        <SolidColorBrush x:Key="SliderThumbBackground" Color="{DynamicResource PaletteTextPrimary}"/>
-        <SolidColorBrush x:Key="SliderThumbBackgroundPointerOver" Color="{DynamicResource PaletteTextPrimary}" Opacity="0.8"/>
-        <SolidColorBrush x:Key="SliderThumbBackgroundPressed" Color="{DynamicResource PaletteTextPrimary}" Opacity="0.8"/>
+        <SolidColorBrush x:Key="SliderTrackValueFill" Color="{DynamicResource PaletteControlSlider}"/>
+        <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Color="{DynamicResource PaletteControlSlider}" Opacity="0.85"/>
+        <SolidColorBrush x:Key="SliderTrackValueFillPressed" Color="{DynamicResource PaletteControlSlider}" Opacity="0.85"/>
+        <SolidColorBrush x:Key="SliderThumbBackground" Color="{DynamicResource PaletteControlSlider}"/>
+        <SolidColorBrush x:Key="SliderThumbBackgroundPointerOver" Color="{DynamicResource PaletteControlSlider}" Opacity="0.85"/>
+        <SolidColorBrush x:Key="SliderThumbBackgroundPressed" Color="{DynamicResource PaletteControlSlider}" Opacity="0.85"/>
       </Slider.Resources>
     </Slider>
 

@@ -29,15 +29,24 @@ public sealed class ArtistPageViewModel : ViewModelBase
     // play and shuffle circles queue.
     public List<Track> AllTracks => Albums.SelectMany(a => a.ExpandedTracks).ToList();
 
-    // name is the one artist picked, or null for none (or several). force:
-    // the library changed under the page, so everything is rebuilt. The filter
-    // does not reach the cards: it finds artists by name, in the column beside
-    // them, and the page is whichever one is picked, whole.
-    public void Show(string? name, IReadOnlyList<Track> library, TrackAvailabilityContext availability,
+    // Nothing of theirs left by the filter beside their name.
+    public bool ShowsNoMatches => Header != null && Albums.Count == 0;
+
+    private string? _filter;
+
+    // name is the one artist picked, or null for none (or several). filter is
+    // the box beside their name: it keeps the songs whose title or album it
+    // finds, and the cards that still have one - the header stays the whole
+    // artist. force: the library changed under the page, so everything is
+    // rebuilt.
+    public void Show(string? name, IReadOnlyList<Track> library, string? filter, TrackAvailabilityContext availability,
         Guid? playing, (BrowseSortOrder Order, bool Ascending) sort, bool force = false)
     {
-        if (!force && name == Header?.Name)
+        filter = string.IsNullOrWhiteSpace(filter) ? null : filter;
+        var samePerson = !force && name == Header?.Name;
+        if (samePerson && filter == _filter)
             return;
+        _filter = filter;
 
         foreach (var section in Albums)
         {
@@ -54,11 +63,16 @@ public sealed class ArtistPageViewModel : ViewModelBase
         else
         {
             var tracks = library.Where(t => ArtistNames.Same(t.Artists, name)).ToList();
-            var albums = tracks.Where(t => !string.IsNullOrEmpty(t.Album)).Select(t => t.Album).Distinct().Count();
-            var total = TimeSpan.FromTicks(tracks.Sum(t => t.Duration.Ticks));
-            var length = total.TotalHours >= 1 ? $"{(int)total.TotalHours}h {total.Minutes}m" : $"{total.Minutes}m";
-            Header = new ArtistHeaderInfo(name, AlbumCollage.ByAlbumName(tracks),
-                $"{ArtistPickerRow.Summary(albums, tracks.Count)} · {length}");
+            if (!samePerson)
+            {
+                var albums = tracks.Where(t => !string.IsNullOrEmpty(t.Album)).Select(t => t.Album).Distinct().Count();
+                var total = TimeSpan.FromTicks(tracks.Sum(t => t.Duration.Ticks));
+                var length = total.TotalHours >= 1 ? $"{(int)total.TotalHours}h {total.Minutes}m" : $"{total.Minutes}m";
+                Header = new ArtistHeaderInfo(name, AlbumCollage.ByAlbumName(tracks),
+                    $"{ArtistPickerRow.Summary(albums, tracks.Count)} · {length}");
+            }
+            if (filter != null)
+                tracks = tracks.Where(t => TrackListBuilder.TitleMatches(t, filter) || TrackListBuilder.AlbumMatches(t, filter)).ToList();
 
             // In the order picked from the page's Sort button - oldest first
             // until one is (BrowseSort.DefaultFor).
@@ -90,6 +104,7 @@ public sealed class ArtistPageViewModel : ViewModelBase
         }
         OnPropertyChanged(nameof(Header));
         OnPropertyChanged(nameof(Albums));
+        OnPropertyChanged(nameof(ShowsNoMatches));
     }
 
     // A song starting, or the server coming and going, changes how the cards'

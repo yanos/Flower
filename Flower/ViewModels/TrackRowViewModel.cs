@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
@@ -94,6 +95,7 @@ public class TrackRowViewModel : DownloadIndicatorViewModel, AlbumArtLoader.ISho
             OnPropertyChanged(nameof(LastPlayedDisplay));
             _durationDisplay = null;
             OnPropertyChanged(nameof(DurationDisplay));
+            OnPropertyChanged(nameof(ArtistAndAlbumText));
             OnPropertyChanged(nameof(IsPlaceholder));
             OnPropertyChanged(nameof(IsUnavailable));
             RefreshDownloadable();
@@ -281,6 +283,11 @@ public class TrackRowViewModel : DownloadIndicatorViewModel, AlbumArtLoader.ISho
     // Track changes it (ApplyPlan).
     private string? _durationDisplay;
     public string DurationDisplay => _durationDisplay ??= DurationText.Compact(Track.Duration);
+
+    // "Artist · Album", under the title where a row stands without the
+    // columns that say them - Home's Recently Played.
+    public string ArtistAndAlbumText =>
+        string.Join(" · ", new[] { Track.Artists, Track.Album }.Where(s => !string.IsNullOrEmpty(s)));
 
     // ── Selection / playing ───────────────────────────────────────────────────
 

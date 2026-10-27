@@ -72,11 +72,21 @@ public partial class MainView : UserControl
     {
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
-        ActualThemeVariantChanged += (_, _) =>
-        {
-            _playerBarOnArt = null;
-            ApplyPlayerBarTint();
-        };
+
+        // The A-Z strips, as the phone's screens set theirs. The grid's albums
+        // are sorted on their TrackListBuilder.SortKey, which drops
+        // punctuation, so the letter does too; the names are sorted on the
+        // raw name (LibraryBrowserViewModel.RebuildSubListItems), hence no
+        // skipping punctuation there.
+        AlbumGridIndexBar.Target = AlbumGrid.RowsControl;
+        AlbumGridIndexBar.IndexOfLetter = letter => _viewModel is { } vm
+            ? AlbumGrid.RowOfLetter(letter, tile => AlphabetIndex.LetterOf(vm.AlbumGridLetterText(tile), skipPunctuation: true),
+                vm.AlbumGridRunsZToA)
+            : -1;
+        SubListIndexBar.IndexOfLetter = letter => _viewModel is { } vm
+            ? AlphabetIndex.FirstIndexFor(vm.VisibleSubListItems, name => AlphabetIndex.LetterOf(name, skipPunctuation: false), letter,
+                descending: vm.ArtistsRunZToA)
+            : -1;
         PlaybackControls.PlayOrPauseRequested += (_, _) => _viewModel?.PlayOrPauseFromCurrentView();
 
         // Wire MusicListView events
@@ -190,12 +200,12 @@ public partial class MainView : UserControl
             _viewModel.AlbumRevealRequested -= OnAlbumRevealRequested;
             _viewModel.ArtistRevealRequested -= OnArtistRevealRequested;
             _viewModel.Home.AlbumOpened -= OnHomeAlbumOpened;
+            _viewModel.Home.HistoryRequested -= OnHomeHistoryRequested;
             _viewModel.Queue.PropertyChanged -= OnQueuePropertyChanged;
             _viewModel.PlaylistConflictRequested -= OnPlaylistConflictRequested;
             _viewModel.RenamePlaylistRequested -= OnRenamePlaylistRequested;
             _viewModel.DeletePlaylistConfirmationRequested -= OnDeletePlaylistConfirmationRequested;
             _viewModel.SmartPlaylistEditorRequested -= OnSmartPlaylistEditorRequested;
-            _viewModel.NowPlaying.PropertyChanged -= OnNowPlayingPropertyChanged;
             HideStatusBar();
         }
 
@@ -215,11 +225,11 @@ public partial class MainView : UserControl
             _viewModel.AlbumRevealRequested += OnAlbumRevealRequested;
             _viewModel.ArtistRevealRequested += OnArtistRevealRequested;
             _viewModel.Home.AlbumOpened += OnHomeAlbumOpened;
+            _viewModel.Home.HistoryRequested += OnHomeHistoryRequested;
             _viewModel.PlaylistConflictRequested += OnPlaylistConflictRequested;
             _viewModel.RenamePlaylistRequested += OnRenamePlaylistRequested;
             _viewModel.DeletePlaylistConfirmationRequested += OnDeletePlaylistConfirmationRequested;
             _viewModel.SmartPlaylistEditorRequested += OnSmartPlaylistEditorRequested;
-            _viewModel.NowPlaying.PropertyChanged += OnNowPlayingPropertyChanged;
             BuildColumnMenu();
             ShowStatusMessage(_viewModel.BusyMessage);
 
@@ -249,76 +259,7 @@ public partial class MainView : UserControl
 
             UpdateServerSettingsPane();
         }
-
-        ApplyPlayerBarTint();
     }
-
-    private void OnNowPlayingPropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName == nameof(CurrentlyPlayingControlViewModel.AlbumArt))
-            ApplyPlayerBarTint();
-    }
-
-    // The player bar washed in the album's colour, the way the phone's Now
-    // Playing sheet is (NowPlayingView): ArtBackdrop's colour and gradient,
-    // and with no cover - nothing playing included - the same fallback. Everything on the bar
-    // is then drawn in the colour for things over a cover's (PaletteOnArt),
-    // as everything on that sheet is: the colours the bar's controls are
-    // drawn with are restated for the bar alone (PlayerBarOnArt), so the
-    // controls themselves do not know which way they are being drawn.
-    private ResourceDictionary? _playerBarOnArt;
-
-    private void ApplyPlayerBarTint()
-    {
-        var merged = PlayerBar.Resources.MergedDictionaries;
-        if (_viewModel is not { TintPlayerBarWithAlbumColor: true } vm)
-        {
-            merged.Clear();
-            PlayerBar.ClearValue(Border.BackgroundProperty);
-            RoutePicker.GlyphColor = null;
-            return;
-        }
-
-        _playerBarOnArt ??= PlayerBarOnArt();
-        if (!merged.Contains(_playerBarOnArt))
-        {
-            merged.Clear();
-            merged.Add(_playerBarOnArt);
-        }
-        PlayerBar.Background = ArtBackdrop.SheetBrush(ArtBackdrop.DominantColor(vm.NowPlaying.AlbumArt));
-        RoutePicker.GlyphColor = OnArtColor();
-    }
-
-    private object? AppResource(string key) =>
-        Application.Current?.TryGetResource(key, ActualThemeVariant, out var value) == true ? value : null;
-
-    private Color OnArtColor() => AppResource("PaletteOnArt") is Color color ? color : default;
-
-    // What each colour the bar's controls name is on a cover's colour - the
-    // phone's Now Playing's choices (NowPlayingView.axaml), every one of them
-    // Theme.axaml's AppOnArt* on PaletteOnArt: words and glyphs in it, the
-    // artist line and the times dimmer, shuffle and repeat half as bright off
-    // and full on, a press dimming it rather than turning it the accent, the
-    // ring round play in it, and the sliders' rails faint. Hover is new here
-    // - a phone has none - and dims a little less than a press. The divider
-    // is gone: the bar's colour already sets it apart from the page. Built
-    // for the theme in use, and again when it changes.
-    private ResourceDictionary PlayerBarOnArt() => new()
-    {
-        ["PaletteTextPrimary"] = OnArtColor(),
-        ["AppTextPrimaryBrush"] = AppResource("AppOnArtBrush"),
-        ["AppTextSecondaryBrush"] = AppResource("AppOnArtSecondaryBrush"),
-        ["AppTextDisabledBrush"] = AppResource("AppOnArtMutedBrush"),
-        ["AppAccentBrush"] = AppResource("AppOnArtBrush"),
-        ["AppAccentHoverBrush"] = AppResource("AppOnArtHoverBrush"),
-        ["AppAccentPressedBrush"] = AppResource("AppOnArtRingBrush"),
-        ["AppChromeBrush"] = AppResource("AppOnArtBrush"),
-        ["AppChromeBorderBrush"] = AppResource("AppOnArtBrush"),
-        ["AppDividerBrush"] = Brushes.Transparent,
-        ["SliderTrackFill"] = AppResource("AppOnArtTrackBrush"),
-        ["SliderTrackFillPointerOver"] = AppResource("AppOnArtTrackBrush"),
-        ["SliderTrackFillPressed"] = AppResource("AppOnArtTrackBrush"),
-    };
 
     // The three name-selection gestures all read and write the same
     // MainViewModel.SelectedSubItems, so they only exist while there is a
@@ -382,9 +323,6 @@ public partial class MainView : UserControl
                 break;
             case nameof(MainViewModel.Rows):
                 ApplyRows();
-                break;
-            case nameof(MainViewModel.TintPlayerBarWithAlbumColor):
-                ApplyPlayerBarTint();
                 break;
             case nameof(MainViewModel.SortColumn):
             case nameof(MainViewModel.SortAscending):
@@ -450,10 +388,9 @@ public partial class MainView : UserControl
     //  - Artists restored at launch is selected before there are any names,
     //    so the pick a sidebar click makes (InitialSubItemForCurrentView)
     //    found nobody and the page sat empty. The first names make it instead.
-    //  - The filter narrows the names and the artist on screen is no longer
-    //    among them: the page moves to the first that is, the way the cards
-    //    under it narrow to what the filter finds - and shows nobody when
-    //    the filter finds no one.
+    //  - The column's filter (ArtistFilterText) narrows the names and the
+    //    artist on screen is no longer among them: the page moves to the
+    //    first that is - and shows nobody when the filter finds no one.
     // Here rather than in the shared view model, because the phone sits on
     // Artists with nobody picked on purpose - that is its list of names.
     private void KeepAListedArtistPicked()
@@ -468,12 +405,12 @@ public partial class MainView : UserControl
 
         if (listed.Count == 0)
         {
-            if (picked.Count > 0 && !string.IsNullOrWhiteSpace(vm.FilterText))
+            if (picked.Count > 0 && !string.IsNullOrWhiteSpace(vm.ArtistFilterText))
                 vm.SetSelectedSubItems([]);
             return;
         }
 
-        var next = string.IsNullOrWhiteSpace(vm.FilterText)
+        var next = string.IsNullOrWhiteSpace(vm.ArtistFilterText)
             ? vm.Browser.InitialSubItemForCurrentView() ?? listed[0]
             : listed[0];
         vm.SetSelectedSubItems([next]);
@@ -793,6 +730,23 @@ public partial class MainView : UserControl
     {
         if ((sender as Control)?.DataContext is ArtistAlbumSectionViewModel { ExpandedTracks: [var first, ..] } album)
             _viewModel?.PlayTrackInAlbum(album.ExpandedTracks, first);
+    }
+
+    private void ArtistAlbumShuffle_Click(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is ArtistAlbumSectionViewModel { ExpandedTracks.Count: > 0 } album)
+            _viewModel?.PlayTracks(album.ExpandedTracks, shuffle: true);
+    }
+
+    // Every song of the album not yet here, behind its tile's own indicator,
+    // as the Albums grid's open album fetches its own.
+    private void ArtistAlbumDownload_Requested(object? sender, DownloadIndicatorViewModel indicator)
+    {
+        if ((sender as Control)?.DataContext is not AlbumTileViewModel tile || _viewModel is not { } vm)
+            return;
+        var album = vm.ArtistPage.Albums.FirstOrDefault(a => a.Tile == tile);
+        if (album is { ExpandedTracks.Count: > 0 })
+            vm.Downloads.DownloadAlbumAsync(indicator, album.ExpandedTracks).Forget(Logger, "Downloading an artist's album");
     }
 
     // An album card's "...": the album menu over that album alone, as a Home
@@ -1252,7 +1206,7 @@ public partial class MainView : UserControl
         // freshly-discovered device's /info handshake resolves it.
         else if (item is { Kind: SidebarItemKind.Device, Device.Fingerprint.Length: > 0 })
         {
-            var renameItem = new MenuItem { Header = "Rename Device" }.WithIcon(MaterialIconKind.Pencil);
+            var renameItem = new MenuItem { Header = "Rename Device" }.WithIcon(MaterialIconKind.PencilOutline);
             renameItem.Click += (_, _) => BeginRename(item);
             _sidebarItemMenu.Items.Add(renameItem);
         }
@@ -1546,14 +1500,14 @@ public partial class MainView : UserControl
     }
 
     // The "drop here to create a new playlist" zone spans everything below the
-    // Library section (Songs/Albums/Artists) and above Devices/Server (if
-    // either is present - see MainViewModel.DeviceSectionHeaderName) - so a
-    // drop that misses a specific playlist row still creates a playlist rather
-    // than silently doing nothing, and this works even with zero playlists (no
-    // "Playlists" header exists yet in that case). Computed from realized
-    // container bounds rather than a real stretchy layout element, since
-    // SidebarList's items are sized to content and don't grow to fill its
-    // leftover height.
+    // Library section (Songs/Albums/Artists) and above the server's heading
+    // at the foot of the column (SidebarItem.PinsToBottom), if there is one -
+    // so a drop that misses a specific playlist row still creates a playlist
+    // rather than silently doing nothing, and this works even with zero
+    // playlists (no "Playlists" header exists yet in that case). Computed from
+    // realized container bounds rather than a real stretchy layout element,
+    // since SidebarList's items are sized to content - the room above the
+    // server is a gap BottomPinnedStackPanel leaves, not a row.
     private Rect? GetPlaylistsDropBand()
     {
         if (_viewModel is not { } vm)
@@ -1572,7 +1526,7 @@ public partial class MainView : UserControl
         var devicesHeaderIndex = -1;
         for (var i = libraryEndIndex + 1; i < items.Count; i++)
         {
-            if (items[i] is { Kind: SidebarItemKind.Header, Name: "Devices" or "Server" })
+            if (items[i].PinsToBottom)
             {
                 devicesHeaderIndex = i;
                 break;
@@ -1606,7 +1560,7 @@ public partial class MainView : UserControl
 
         if (target?.CreateNew == true && GetPlaylistsDropBand() is { } band)
         {
-            NewPlaylistDropZone.Margin = new Thickness(4, band.Top + 1, 4, 0);
+            NewPlaylistDropZone.Margin = new Thickness(16, band.Top + 1, 16, 0);
             NewPlaylistDropZone.Height = Math.Max(0, band.Height - 2);
             NewPlaylistDropZone.IsVisible = true;
         }
@@ -1666,8 +1620,7 @@ public partial class MainView : UserControl
         var vm = _viewModel!;
         var groups = ActionMenus.ForAlbum(
             vm.MenuFactsFor(tracks, LibraryRemovalDialog.Service),
-            isContinuing: vm.Home.IsContinuing(clickedTile),
-            isRecentlyPlayed: vm.Home.IsOnRecentlyPlayed(clickedTile));
+            isContinuing: vm.Home.IsContinuing(clickedTile));
 
         return DesktopActionMenu.Build(groups, async action =>
         {
@@ -1696,9 +1649,6 @@ public partial class MainView : UserControl
                     break;
                 case MenuAction.ForgetProgress:
                     vm.Home.Forget(clickedTile);
-                    break;
-                case MenuAction.HideFromRecentlyPlayed:
-                    vm.Home.HideFromRecentlyPlayed(clickedTile);
                     break;
                 case MenuAction.DeleteLocalFiles:
                     await LocalFileDeletionDialog.DeleteAsync(TopLevel.GetTopLevel(this), vm, tracks);
@@ -1900,6 +1850,56 @@ public partial class MainView : UserControl
     private void OnHomeAlbumOpened(object? sender, AlbumTileViewModel album) =>
         _viewModel?.ShowAlbumAsync(album).Forget(Logger, "Opening an album from Home");
 
+    // Recently Played's "See full history": the History page.
+    private void OnHomeHistoryRequested(object? sender, EventArgs e)
+    {
+        if (_viewModel is { } vm && vm.SidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.History) is { } history)
+            vm.SelectedSidebarItem = history;
+    }
+
+    // The song menu over one of Home's Recently Played songs (HomeView): the
+    // track list's own, for that song alone, with the shelf's Remove from
+    // Recently Played.
+    internal void OpenRecentlyPlayedMenu(TrackRowViewModel row, Control target)
+    {
+        if (_viewModel is not { } vm)
+            return;
+
+        IReadOnlyList<Track> tracks = [row.Track];
+        var groups = ActionMenus.ForSongs(
+            vm.MenuFactsFor(tracks, LibraryRemovalDialog.Service),
+            canRemoveFromQueue: false,
+            canLocateFiles: false,
+            isRecentlyPlayed: true);
+        PlatformContextMenu.Open(DesktopActionMenu.Build(groups, async action =>
+        {
+            switch (action)
+            {
+                case MenuAction.PlayNext:
+                    vm.PlayNext(tracks);
+                    break;
+                case MenuAction.AddToQueue:
+                    vm.AddToQueue(tracks);
+                    break;
+                case MenuAction.GetInfo:
+                    OpenTrackInfo(tracks);
+                    break;
+                case MenuAction.Download:
+                    StartDownload(tracks);
+                    break;
+                case MenuAction.HideFromRecentlyPlayed:
+                    vm.Home.HideFromRecentlyPlayed(row.Track);
+                    break;
+                case MenuAction.DeleteLocalFiles:
+                    await LocalFileDeletionDialog.DeleteAsync(TopLevel.GetTopLevel(this), vm, tracks);
+                    break;
+                case MenuAction.RemoveFromLibrary:
+                    await LibraryRemovalDialog.RemoveAsync(TopLevel.GetTopLevel(this), tracks);
+                    break;
+            }
+        }, tracks, vm), target);
+    }
+
     // Posted for the same reason RestoreScrollOffsetForKey is: the grid's
     // tiles arrive just after the rows that raised this.
     private void OnAlbumRevealRequested(object? sender, AlbumTileKey key) =>
@@ -2070,7 +2070,7 @@ public partial class MainView : UserControl
         DesktopActionMenu.FillAddToPlaylist(addToPlaylist, [track], vm);
         menu.Items.Add(addToPlaylist);
 
-        var queue = new MenuItem { Header = "Show Queue" }.WithIcon(MaterialIconKind.PlaylistMusic);
+        var queue = new MenuItem { Header = "Show Queue" }.WithIcon(MaterialIconKind.PlaylistMusicOutline);
         queue.Click += (_, _) => ShowSection(SidebarItemKind.Queue);
         menu.Items.Add(queue);
 
@@ -2138,7 +2138,7 @@ public partial class MainView : UserControl
             AddSection(null, BrowseSortScreen.Albums);
         }
 
-        PlatformContextMenu.Open(menu, SortButton);
+        PlatformContextMenu.Open(menu, sender as Control ?? this);
     }
 
     // ── Track actions ─────────────────────────────────────────────────────────

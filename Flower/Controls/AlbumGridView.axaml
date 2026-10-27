@@ -24,7 +24,7 @@
                 BringIntoViewOnFocusChange="False"
                 HorizontalScrollBarVisibility="Disabled"
                 VerticalScrollBarVisibility="Auto">
-    <controls:RecyclingItemsControl x:Name="RowsList" Margin="16">
+    <controls:RecyclingItemsControl x:Name="RowsList" Margin="32,0,4,16">
       <ItemsControl.ItemsPanel>
         <ItemsPanelTemplate>
           <controls:UniformRowPanel HasTallRows="True"/>

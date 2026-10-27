@@ -1173,7 +1173,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
 
     public ICommand ForgetAlbumActionTargetProgressCommand { get; private set; } = null!;
 
-    public ICommand HideAlbumActionTargetFromRecentlyPlayedCommand { get; private set; } = null!;
+    public ICommand HideActionTargetFromRecentlyPlayedCommand { get; private set; } = null!;
 
     // The playlist row whose "..." raised that same menu, and null whenever
     // it was raised over an album. The menu is one sheet for both because
@@ -1807,6 +1807,10 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             // is the queue, and a tap on it is a jump along it.
             if (IsShowingQueue && Main.Queue.Play(row!))
                 return;
+            // Home's one list of songs, Recently Played, plays as itself from
+            // that song down.
+            if (IsShowingHome && Main.Home.PlayRecentlyPlayed(row!))
+                return;
             // Desktop's own row-activation path (MainViewModel.PlayTrack) always
             // re-anchors the Next/Previous queue to whatever's currently on
             // screen before playing - this was missing here entirely, so
@@ -2032,12 +2036,12 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             if (tile != null)
                 Main.Home.Forget(tile);
         });
-        HideAlbumActionTargetFromRecentlyPlayedCommand = new RelayCommand(() =>
+        HideActionTargetFromRecentlyPlayedCommand = new RelayCommand(() =>
         {
-            var tile = AlbumActionTarget;
+            var track = ActionTarget;
             ActiveSheet = MobileSheet.None;
-            if (tile != null)
-                Main.Home.HideFromRecentlyPlayed(tile);
+            if (track != null)
+                Main.Home.HideFromRecentlyPlayed(track);
         });
         DeleteAlbumActionTargetLocalFilesCommand = new RelayCommand(() =>
         {

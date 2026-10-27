@@ -69,45 +69,41 @@ public class HomeShelvesTests
     }
 
     [Fact]
-    public void Recently_played_is_most_recent_first_and_leaves_out_the_unplayed()
+    public void Recently_played_is_songs_most_recent_first_leaving_out_the_unplayed()
     {
         var older = Album("Older", 2, playedMinutesAgo: 600);
         var newer = Album("Newer", 2, playedMinutesAgo: 5);
         var never = Album("Never", 2);
         var library = LibrarySnapshot.Build(older.Concat(newer).Concat(never).ToList());
 
-        var tiles = HomeShelves.RecentlyPlayed(library, new HashSet<string>(), 10);
+        var songs = HomeShelves.RecentlyPlayed(library, 10);
 
-        Assert.Equal(new[] { "Newer", "Older" }, tiles.Select(t => t.Name));
+        Assert.Equal(new[] { "Newer 1", "Newer 2", "Older 1", "Older 2" }, songs.Select(t => t.Title));
     }
 
-    // Continue Playing already says it was played lately, and more.
+    // The limit is songs, not albums: one album played through fills it.
     [Fact]
-    public void Recently_played_leaves_out_what_continue_playing_shows()
+    public void Recently_played_holds_so_many_songs()
     {
-        var blue = Album("Blue", 2, playedMinutesAgo: 5);
-        var red = Album("Red", 2, playedMinutesAgo: 10);
-        var library = LibrarySnapshot.Build(blue.Concat(red).ToList());
+        var blue = Album("Blue", 6, playedMinutesAgo: 5);
+        var library = LibrarySnapshot.Build(blue);
 
-        var tiles = HomeShelves.RecentlyPlayed(library, new HashSet<string> { AlbumProgressTracker.AlbumIdOf(blue[0])! }, 10);
-
-        Assert.Equal("Red", Assert.Single(tiles).Name);
+        Assert.Equal(new[] { "Blue 1", "Blue 2", "Blue 3" }, HomeShelves.RecentlyPlayed(library, 3).Select(t => t.Title));
     }
 
-    // Taken off by its x, an album stays off until one of its songs is played
-    // again.
+    // Taken off from its menu, a song stays off until it is played again -
+    // and only that song: the rest of its album stays.
     [Fact]
-    public void Recently_played_leaves_out_a_hidden_album_until_it_is_played_again()
+    public void Recently_played_leaves_out_a_hidden_song_until_it_is_played_again()
     {
         var blue = Album("Blue", 2, playedMinutesAgo: 5);
-        var red = Album("Red", 2, playedMinutesAgo: 10);
-        var library = LibrarySnapshot.Build(blue.Concat(red).ToList());
-        var hidden = new Dictionary<string, DateTimeOffset> { [AlbumProgressTracker.AlbumIdOf(blue[0])!] = blue.Max(t => t.LastPlayedAt)!.Value };
+        var library = LibrarySnapshot.Build(blue);
+        var hidden = new Dictionary<string, DateTimeOffset> { [blue[0].Id.ToKey()] = blue[0].LastPlayedAt!.Value };
 
-        Assert.Equal("Red", Assert.Single(HomeShelves.RecentlyPlayed(library, new HashSet<string>(), 10, hidden)).Name);
+        Assert.Equal("Blue 2", Assert.Single(HomeShelves.RecentlyPlayed(library, 10, hidden)).Title);
 
-        blue[1].LastPlayedAt = Now;
-        Assert.Equal(new[] { "Blue", "Red" }, HomeShelves.RecentlyPlayed(library, new HashSet<string>(), 10, hidden).Select(t => t.Name));
+        blue[0].LastPlayedAt = Now;
+        Assert.Equal(new[] { "Blue 1", "Blue 2" }, HomeShelves.RecentlyPlayed(library, 10, hidden).Select(t => t.Title));
     }
 
     [Fact]

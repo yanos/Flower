@@ -19,14 +19,6 @@ namespace Flower.Services
         Control CreatePicker();
     }
 
-    // A picker whose glyph can be drawn in a colour of the app's choosing -
-    // white, on the desktop's player bar washed in the album's colour
-    // (MainView). Null is the platform's own label colour.
-    public interface IRoutePickerGlyphColor
-    {
-        Avalonia.Media.Color? GlyphColor { set; }
-    }
-
     // Set by the platform entry point (Flower.iOS's AppDelegate) before
     // Avalonia starts - same timing/convention as PlatformNowPlaying.Current.
     public static class PlatformRoutePicker

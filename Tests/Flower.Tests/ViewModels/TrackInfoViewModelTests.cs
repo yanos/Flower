@@ -151,7 +151,8 @@ public class TrackInfoViewModelTests : PinnedDataDirectory
         library.SetStarred(StarTarget.Song, songs[0].Id.ToString(), true);
         info.Load(songs);
 
-        Assert.Equal("1 of 2 starred", info.StarText);
+        Assert.True(info.IsAnyStarred);
+        Assert.False(info.IsAllStarred);
         info.ToggleStar();
         Assert.All(songs, s => Assert.True(s.Starred));
 

@@ -6,25 +6,26 @@
         x:Class="Flower.Views.TrackInfoWindow"
         x:DataType="vm:TrackInfoViewModel"
         Title="Info"
-        Width="760"
-        Height="640"
+        Width="780"
+        Height="720"
         CanResize="False"
+        Background="{DynamicResource AppBackgroundBrush}"
         WindowStartupLocation="CenterOwner">
 
-  <!-- Laid out from the October 2026 mockups (mockups/Image ChatGPT 6 oct.):
-       the cover beside the title, artist and album, the tabs under them
-       rather than centred across the window, a rule under the lot, and each
-       tab's fields in two columns split by rules rather than under small
-       capital headings. -->
+  <!-- Laid out from the October 2026 redesign's Song Info board: the cover
+       beside the title - its star beside it - the artist and the album; the
+       tabs under them as one segmented control; each tab's fields on the
+       surface colour between two hairlines, labels at the left; and Previous,
+       Next, Cancel and Save along the bottom. -->
   <Window.Styles>
-    <!-- The label beside a field or a value, in the secondary text colour. -->
+    <!-- The label beside a field or a value. -->
     <Style Selector="TextBlock.lbl">
       <Setter Property="FontSize" Value="13"/>
-      <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource AppTextValueBrush}"/>
       <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
     <Style Selector="TextBlock.val">
-      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="FontSize" Value="14"/>
       <Setter Property="TextWrapping" Value="Wrap"/>
       <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
@@ -32,12 +33,18 @@
          as in every other form; Description and Comment set their own
          wrapping. -->
     <Style Selector=":is(TextBox).val">
-      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="FontSize" Value="14"/>
+      <Setter Property="MinHeight" Value="36"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
       <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
     <Style Selector=":is(TextBox).numVal">
-      <Setter Property="FontSize" Value="13"/>
-      <Setter Property="Width" Value="80"/>
+      <Setter Property="FontSize" Value="14"/>
+      <Setter Property="MinHeight" Value="36"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+      <Setter Property="Width" Value="64"/>
       <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
     <!-- Parallel to TextBox.val above - AutoCompleteBox doesn't inherit from
@@ -46,25 +53,32 @@
          see TrackInfoViewModel's suggestion pools. -->
     <!-- Its own Background is what its inner box paints, so the app-wide
          text-box fill (App.axaml's :is(TextBox)) has to be restated here or
-         these fields stand out white among the rest. -->
+         these fields stand out among the rest. -->
     <Style Selector="AutoCompleteBox.val">
       <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}"/>
-      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="FontSize" Value="14"/>
       <Setter Property="VerticalAlignment" Value="Center"/>
       <Setter Property="FilterMode" Value="Contains"/>
       <Setter Property="MinimumPrefixLength" Value="1"/>
     </Style>
-    <!-- The star and the volume shift, while they say "none". -->
-    <Style Selector="materialIcons|MaterialIcon.dim, TextBlock.dim">
+    <Style Selector="AutoCompleteBox.val /template/ TextBox">
+      <Setter Property="MinHeight" Value="36"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+    <!-- The volume shift, while it says "none". -->
+    <Style Selector="TextBlock.dim">
       <Setter Property="Opacity" Value="0.45"/>
     </Style>
     <Style Selector="CheckBox.option">
-      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="FontSize" Value="14"/>
     </Style>
     <!-- The Artwork tab's empty frame is a drop target, and says so in words
          (ArtDropHint); the note glyph every other missing cover shows would
-         only sit on top of them. -->
-    <Style Selector="controls|AlbumArtView#ArtworkLargeView TextBlock.placeholderGlyph">
+         only sit on top of them. Found through the frame rather than the
+         cover inside it: AlbumArtView names its own root (x:Name="Root"), and
+         a selector naming it ArtworkLargeView never matched. -->
+    <Style Selector="Border#ArtDropTarget TextBlock.placeholderGlyph">
       <Setter Property="IsVisible" Value="False"/>
     </Style>
     <!-- Songs whose covers differ (AlbumArtLoader.ShareOneCover) have none
@@ -81,395 +95,259 @@
       <Setter Property="VerticalAlignment" Value="Center"/>
       <Setter Property="IsHitTestVisible" Value="False"/>
     </Style>
-    <!-- A rule between groups of fields, across the column it is in. -->
-    <Style Selector="Border.rule">
-      <Setter Property="Height" Value="1"/>
-      <Setter Property="Background" Value="{DynamicResource AppDividerBrush}"/>
-      <Setter Property="Margin" Value="0,4"/>
-    </Style>
-    <!-- One line of the Technical table: a rule under every row but the
-         last of its column. -->
+    <!-- One line of the File tab's table: a hairline under each. -->
     <Style Selector="Border.techRow">
-      <Setter Property="BorderBrush" Value="{DynamicResource AppDividerBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}"/>
       <Setter Property="BorderThickness" Value="0,0,0,1"/>
-      <Setter Property="Padding" Value="8,11"/>
+      <Setter Property="Padding" Value="0,9"/>
     </Style>
-    <Style Selector="Border.techRow.last">
-      <Setter Property="BorderThickness" Value="0"/>
+    <!-- The tabs: one segmented control, the picked one a raised chip of the
+         surface colour with its name in bold ink, the others in the value
+         colour on the tint. Its own template, so Fluent's pipe under the
+         selected tab is not drawn. -->
+    <Style Selector="TabStrip#Tabs">
+      <Setter Property="Background" Value="{DynamicResource AppHoverBrush}"/>
+      <Setter Property="CornerRadius" Value="10"/>
+      <Setter Property="Padding" Value="3"/>
+      <Setter Property="HorizontalAlignment" Value="Left"/>
     </Style>
-    <!-- The tabs, under the title: the page's name in the secondary colour,
-         the selected one in the primary with the accent under it. -->
     <Style Selector="TabStrip#Tabs TabStripItem">
-      <Setter Property="FontSize" Value="14"/>
-      <Setter Property="Padding" Value="12,0"/>
-      <Setter Property="MinHeight" Value="40"/>
-      <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
+      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="FontWeight" Value="Medium"/>
+      <Setter Property="Padding" Value="14,0"/>
+      <Setter Property="Height" Value="32"/>
+      <Setter Property="MinHeight" Value="0"/>
+      <Setter Property="Margin" Value="0,0,2,0"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="Foreground" Value="{DynamicResource AppTextValueBrush}"/>
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Background="{TemplateBinding Background}"
+                  CornerRadius="8"
+                  Padding="{TemplateBinding Padding}">
+            <ContentPresenter Content="{TemplateBinding Content}"
+                              VerticalAlignment="Center"/>
+          </Border>
+        </ControlTemplate>
+      </Setter>
     </Style>
-    <Style Selector="TabStrip#Tabs TabStripItem:selected">
+    <Style Selector="TabStrip#Tabs TabStripItem:pointerover">
       <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
     </Style>
-    <Style Selector="Button.nav">
-      <Setter Property="Width" Value="40"/>
-      <Setter Property="Height" Value="34"/>
-      <Setter Property="Padding" Value="4"/>
+    <Style Selector="TabStrip#Tabs TabStripItem:selected">
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
     </Style>
-    <Style Selector="Button.nav materialIcons|MaterialIcon">
-      <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}"/>
+    <Style Selector="TabStrip#Tabs TabStripItem:selected /template/ Border">
+      <Setter Property="BoxShadow" Value="{DynamicResource AppButtonShadow}"/>
+    </Style>
+    <!-- Previous and Next: small outlined squares. -->
+    <Style Selector="Button.nav">
+      <Setter Property="Width" Value="36"/>
+      <Setter Property="Height" Value="36"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="CornerRadius" Value="10"/>
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource AppControlBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+    <Style Selector="Button.nav:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.footer:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppHoverBrush}"/>
+    </Style>
+    <Style Selector="Button.footer">
+      <Setter Property="Height" Value="36"/>
+      <Setter Property="Padding" Value="16,0"/>
+      <Setter Property="CornerRadius" Value="10"/>
+      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="FontWeight" Value="Medium"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+    <Style Selector="Button.footer:not(.primary)">
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource AppControlBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+    <!-- The Artwork tab's buttons, the same outlined rounded rectangles. -->
+    <Style Selector="StackPanel#ArtButtons Button">
+      <Setter Property="Height" Value="36"/>
+      <Setter Property="Padding" Value="16,0"/>
+      <Setter Property="CornerRadius" Value="10"/>
+      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="FontWeight" Value="Medium"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource AppControlBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+    <Style Selector="StackPanel#ArtButtons Button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppHoverBrush}"/>
     </Style>
   </Window.Styles>
 
   <DockPanel>
 
     <!-- ── Button bar (always visible at bottom) ── -->
-    <Border DockPanel.Dock="Bottom" Padding="24,10,24,18">
+    <Border DockPanel.Dock="Bottom" Padding="24,14,24,18">
       <Grid ColumnDefinitions="Auto,*,Auto">
         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8">
           <Button x:Name="PrevButton" Classes="nav" Click="PrevButton_Click" ToolTip.Tip="Previous track">
-            <materialIcons:MaterialIcon Kind="ChevronLeft" Width="22" Height="22"/>
+            <materialIcons:MaterialIcon Kind="ChevronLeft" Width="20" Height="20"/>
           </Button>
           <Button x:Name="NextButton" Classes="nav" Click="NextButton_Click" ToolTip.Tip="Next track">
-            <materialIcons:MaterialIcon Kind="ChevronRight" Width="22" Height="22"/>
+            <materialIcons:MaterialIcon Kind="ChevronRight" Width="20" Height="20"/>
           </Button>
         </StackPanel>
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
-          <Button x:Name="CancelButton" Content="Cancel" Width="90" Height="34" FontSize="13"
-                  HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+          <Button x:Name="CancelButton" Content="Cancel" Classes="footer"
                   IsCancel="True" Click="CancelButton_Click"/>
-          <Button x:Name="OkButton" Content="OK" Width="90" Height="34" FontSize="13"
-                  HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+          <Button x:Name="OkButton" Content="Save" Classes="footer primary" Padding="20,0"
                   IsDefault="True" Click="OkButton_Click"/>
         </StackPanel>
       </Grid>
     </Border>
 
-    <!-- ── Persistent header: the cover, the read-only title/artist/album,
-         and the tabs under them - shown whichever tab is selected. Display
-         only: the editable Title/Artist/Album live in the Info tab. ── -->
-    <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*" RowDefinitions="*,Auto" Margin="24,20,24,0">
-      <!-- Fixed 112×112 box; Stretch="Uniform" letterboxes non-square art
+    <!-- ── Persistent header: the cover, the read-only title - with the
+         star beside it - artist and album, shown whichever tab is selected.
+         Display only: the editable Title/Artist/Album live in the Details
+         tab. ── -->
+    <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*" Margin="24,22,24,16">
+      <!-- Fixed 88×88 box; Stretch="Uniform" letterboxes non-square art
            inside it rather than cropping it (AlbumArtView's default
            UniformToFill would crop). MinWidth is a floor for when there's no
            image yet (still loading, or the track has no art at all) so the
            box doesn't collapse to zero width before art loads. A glance-level
            "which track am I editing" cue: the Artwork tab is where the art is
            actually looked at (and replaced) at size. -->
-      <Panel Grid.Column="0" Grid.RowSpan="2" Margin="0,0,24,12" VerticalAlignment="Top">
+      <Panel Grid.Column="0" Margin="0,0,18,0" VerticalAlignment="Top">
         <controls:AlbumArtView x:Name="AlbumArtView"
-                Height="112" MinWidth="112"
-                ArtCornerRadius="6"
+                Height="88" MinWidth="88"
+                ArtCornerRadius="10"
                 Stretch="Uniform"
                 DoubleTapped="Artwork_DoubleTapped"/>
         <TextBlock x:Name="MultipleArtLabel" Classes="multipleArt" FontSize="12" Margin="8,0" IsVisible="False"/>
       </Panel>
 
-      <StackPanel x:Name="TitleStack" Grid.Column="1" VerticalAlignment="Top" Spacing="2">
-        <SelectableTextBlock x:Name="TitleDisplay" Text="{Binding TitleText}"  FontSize="22" FontWeight="Medium" TextWrapping="Wrap"/>
-        <SelectableTextBlock x:Name="ArtistDisplay" Text="{Binding ArtistText}" FontSize="16" Foreground="{DynamicResource AppTextSecondaryBrush}" TextWrapping="Wrap"/>
-        <SelectableTextBlock x:Name="AlbumDisplay" Text="{Binding AlbumText}"  FontSize="16" Foreground="{DynamicResource AppTextSecondaryBrush}" TextWrapping="Wrap"/>
+      <StackPanel x:Name="TitleStack" Grid.Column="1" VerticalAlignment="Center" Spacing="4">
+        <!-- The star beside the name: Flower's own record rather than a tag,
+             kept per track in the library rather than in the file (see
+             Track's "Stats" region), which is why it writes immediately
+             instead of waiting for Save, like the artwork and the playback
+             options, and unlike every tag field. One star, on or off, because
+             that is what a rating is in Flower and on the server it syncs
+             with. -->
+        <Grid ColumnDefinitions="Auto,Auto">
+          <SelectableTextBlock x:Name="TitleDisplay" Grid.Column="0"
+                               Text="{Binding TitleText}"
+                               FontFamily="{DynamicResource AppDisplayTextFontFamily}"
+                               FontSize="26" FontWeight="SemiBold"
+                               TextTrimming="CharacterEllipsis"
+                               VerticalAlignment="Center"/>
+          <Button Grid.Column="1" x:Name="StarButton"
+                  Classes="pill"
+                  Padding="7"
+                  Margin="6,0,0,0"
+                  VerticalAlignment="Center"
+                  Click="StarButton_Click"
+                  ToolTip.Tip="{Binding StarToolTip}">
+            <materialIcons:MaterialIcon x:Name="StarIcon" Kind="{Binding StarIcon}"
+                                        Width="18" Height="18"
+                                        Foreground="{DynamicResource AppTextPrimaryBrush}"/>
+          </Button>
+        </Grid>
+        <SelectableTextBlock x:Name="ArtistDisplay" Text="{Binding ArtistText}" FontSize="14" Foreground="{DynamicResource AppTextValueBrush}" TextTrimming="CharacterEllipsis"/>
+        <SelectableTextBlock x:Name="AlbumDisplay" Text="{Binding AlbumText}" FontSize="14" Foreground="{DynamicResource AppTextValueBrush}" TextTrimming="CharacterEllipsis"/>
       </StackPanel>
-
-      <!-- A TabStrip over a panel of pages rather than a TabControl: a
-           TabControl draws its strip across the top of its own content, and
-           here the strip belongs in the header beside the cover. The pages
-           below swap on its selection - see Tabs_SelectionChanged. -->
-      <TabStrip x:Name="Tabs" Grid.Row="1" Grid.Column="1"
-                Margin="-12,10,0,0"
-                SelectedIndex="0"
-                SelectionChanged="Tabs_SelectionChanged">
-        <TabStripItem Content="Info"/>
-        <TabStripItem Content="Descriptions"/>
-        <TabStripItem Content="Lyrics"/>
-        <TabStripItem Content="Artwork"/>
-        <TabStripItem Content="Options"/>
-        <TabStripItem Content="Technical"/>
-      </TabStrip>
     </Grid>
 
-    <Border DockPanel.Dock="Top" Classes="rule" Margin="24,0"/>
+    <!-- A TabStrip over a panel of pages rather than a TabControl: a
+         TabControl draws its strip in its own frame, and here the strip is a
+         segmented control under the header. The pages below swap on its
+         selection - see Tabs_SelectionChanged. -->
+    <TabStrip x:Name="Tabs" DockPanel.Dock="Top"
+              Margin="24,0,24,14"
+              SelectedIndex="0"
+              SelectionChanged="Tabs_SelectionChanged">
+      <TabStrip.ItemsPanel>
+        <ItemsPanelTemplate>
+          <StackPanel Orientation="Horizontal"/>
+        </ItemsPanelTemplate>
+      </TabStrip.ItemsPanel>
+      <TabStripItem Content="Details"/>
+      <TabStripItem Content="Extra"/>
+      <TabStripItem Content="Sorting"/>
+      <TabStripItem Content="Lyrics"/>
+      <TabStripItem Content="Artwork"/>
+      <TabStripItem Content="File"/>
+    </TabStrip>
 
+    <Border BorderThickness="0,1"
+            BorderBrush="{DynamicResource AppBorderBrush}"
+            Background="{DynamicResource AppSurfaceBrush}">
     <Panel x:Name="TabPages">
 
-      <!-- ── Info (default) ──
-           What the song is on the left, where it sits in the album on the
-           right; who else made it under the first, how it plays under the
-           second; and below a rule, what Flower knows of it being listened to. -->
-      <Panel x:Name="InfoPage">
+      <!-- ── Details (default) ──
+           What the song is, where it sits in the album, and how it plays:
+           the two playback options and the volume shift are Flower's own
+           state, kept in the library and not in the file - so, like the
+           star, they are written the moment they are changed and Cancel does
+           not undo them. -->
+      <Panel x:Name="DetailsPage">
         <ScrollViewer>
-          <StackPanel Margin="24,18,24,8" Spacing="14">
-            <Grid ColumnDefinitions="*,32,300">
-              <Grid Grid.Column="0" ColumnDefinitions="100,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="10">
+          <StackPanel Margin="24,20,24,20" Spacing="22">
+            <Grid ColumnDefinitions="104,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="12" RowSpacing="10">
                 <TextBlock Grid.Row="0" Text="Title" Classes="lbl"/>
                 <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="TitleBox" Text="{Binding Title.Text, Mode=TwoWay}" PlaceholderText="{Binding Title.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val"/>
-
                 <TextBlock Grid.Row="1" Text="Artist" Classes="lbl"/>
                 <AutoCompleteBox Grid.Row="1" Grid.Column="1" x:Name="ArtistBox" Text="{Binding Artists.Text, Mode=TwoWay}" PlaceholderText="{Binding Artists.Placeholder}" IsEnabled="{Binding IsEditable}" ItemsSource="{Binding ArtistSuggestions}" Classes="val"/>
+                <TextBlock Grid.Row="2" Text="Album" Classes="lbl"/>
+                <AutoCompleteBox Grid.Row="2" Grid.Column="1" x:Name="AlbumBox" Text="{Binding Album.Text, Mode=TwoWay}" PlaceholderText="{Binding Album.Placeholder}" IsEnabled="{Binding IsEditable}" ItemsSource="{Binding AlbumSuggestions}" Classes="val"/>
+                <TextBlock Grid.Row="3" Text="Album artist" Classes="lbl"/>
+                <AutoCompleteBox Grid.Row="3" Grid.Column="1" x:Name="AlbumArtistBox" Text="{Binding AlbumArtists.Text, Mode=TwoWay}" PlaceholderText="{Binding AlbumArtists.Placeholder}" IsEnabled="{Binding IsEditable}" ItemsSource="{Binding ArtistSuggestions}" Classes="val"/>
+            </Grid>
 
-                <TextBlock Grid.Row="2" Text="Album Artist" Classes="lbl"/>
-                <AutoCompleteBox Grid.Row="2" Grid.Column="1" x:Name="AlbumArtistBox" Text="{Binding AlbumArtists.Text, Mode=TwoWay}" PlaceholderText="{Binding AlbumArtists.Placeholder}" IsEnabled="{Binding IsEditable}" ItemsSource="{Binding ArtistSuggestions}" Classes="val"/>
-
-                <TextBlock Grid.Row="3" Text="Album" Classes="lbl"/>
-                <AutoCompleteBox Grid.Row="3" Grid.Column="1" x:Name="AlbumBox" Text="{Binding Album.Text, Mode=TwoWay}" PlaceholderText="{Binding Album.Placeholder}" IsEnabled="{Binding IsEditable}" ItemsSource="{Binding AlbumSuggestions}" Classes="val"/>
-
-                <Border Grid.Row="4" Grid.ColumnSpan="2" Classes="rule"/>
-
-                <TextBlock Grid.Row="5" Text="Composer" Classes="lbl"/>
-                <AutoCompleteBox Grid.Row="5" Grid.Column="1" x:Name="ComposerBox" Text="{Binding Composers.Text, Mode=TwoWay}" PlaceholderText="{Binding Composers.Placeholder}" IsEnabled="{Binding IsEditable}" ItemsSource="{Binding ComposerSuggestions}" Classes="val"/>
-
-                <TextBlock Grid.Row="6" Text="Conductor" Classes="lbl"/>
-                <controls:TextInput Grid.Row="6" Grid.Column="1" x:Name="ConductorBox" Text="{Binding Conductor.Text, Mode=TwoWay}" PlaceholderText="{Binding Conductor.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val"/>
-
-                <TextBlock Grid.Row="7" Text="Remixed By" Classes="lbl"/>
-                <controls:TextInput Grid.Row="7" Grid.Column="1" x:Name="RemixedByBox" Text="{Binding RemixedBy.Text, Mode=TwoWay}" PlaceholderText="{Binding RemixedBy.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val"/>
-              </Grid>
-
-              <Grid Grid.Column="2" ColumnDefinitions="80,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="10">
+            <Grid ColumnDefinitions="*,32,*">
+              <Grid Grid.Column="0" ColumnDefinitions="104,*" RowDefinitions="Auto,Auto" ColumnSpacing="12" RowSpacing="10">
                 <TextBlock Grid.Row="0" Text="Track" Classes="lbl"/>
                 <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" Spacing="8">
                   <controls:TextInput x:Name="TrackNumBox" Text="{Binding TrackNumber.Text, Mode=TwoWay}" PlaceholderText="{Binding TrackNumber.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="numVal"/>
-                  <TextBlock Text="/" Classes="lbl"/>
+                  <TextBlock Text="of" Classes="lbl" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                   <controls:TextInput x:Name="TrackTotalBox" Text="{Binding TrackCount.Text, Mode=TwoWay}" PlaceholderText="{Binding TrackCount.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="numVal"/>
                 </StackPanel>
 
                 <TextBlock Grid.Row="1" Text="Disc" Classes="lbl"/>
                 <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="8">
                   <controls:TextInput x:Name="DiscNumBox" Text="{Binding DiscNumber.Text, Mode=TwoWay}" PlaceholderText="{Binding DiscNumber.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="numVal"/>
-                  <TextBlock Text="/" Classes="lbl"/>
+                  <TextBlock Text="of" Classes="lbl" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                   <controls:TextInput x:Name="DiscTotalBox" Text="{Binding DiscCount.Text, Mode=TwoWay}" PlaceholderText="{Binding DiscCount.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="numVal"/>
                 </StackPanel>
+              </Grid>
 
-                <TextBlock Grid.Row="2" Text="Year" Classes="lbl"/>
-                <controls:TextInput Grid.Row="2" Grid.Column="1" x:Name="YearBox" Text="{Binding Year.Text, Mode=TwoWay}" PlaceholderText="{Binding Year.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val"/>
+              <Grid Grid.Column="2" ColumnDefinitions="104,*" RowDefinitions="Auto,Auto" ColumnSpacing="12" RowSpacing="10">
+                <TextBlock Grid.Row="0" Text="Year" Classes="lbl"/>
+                <controls:TextInput Grid.Row="0" Grid.Column="1" Width="96" HorizontalAlignment="Left" x:Name="YearBox" Text="{Binding Year.Text, Mode=TwoWay}" PlaceholderText="{Binding Year.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val"/>
 
-                <TextBlock Grid.Row="3" Text="Genre" Classes="lbl"/>
+                <TextBlock Grid.Row="1" Text="Genre" Classes="lbl"/>
                 <!-- The library's genres as they are typed, and all of them
                      behind the chevron - a short list worth reading whole,
                      which the phone's sheet offers the same way. -->
-                <Grid Grid.Row="3" Grid.Column="1" ColumnDefinitions="*,Auto">
+                <Grid Grid.Row="1" Grid.Column="1" ColumnDefinitions="*,Auto">
                   <AutoCompleteBox x:Name="GenreBox" Text="{Binding Genre.Text, Mode=TwoWay}" PlaceholderText="{Binding Genre.Placeholder}" IsEnabled="{Binding IsEditable}" ItemsSource="{Binding GenreSuggestions}" Classes="val"/>
                   <Button Grid.Column="1" x:Name="GenreMenuButton"
-                          Margin="4,0,0,0" Padding="4" VerticalAlignment="Center"
-                          Background="Transparent" BorderThickness="0"
+                          Classes="pill"
+                          Margin="4,0,0,0" Padding="6" VerticalAlignment="Center"
                           ToolTip.Tip="Choose a genre"
                           Click="GenreMenu_Click">
                     <materialIcons:MaterialIcon Kind="ChevronDown" Width="18" Height="18"/>
                   </Button>
                 </Grid>
-
-                <Border Grid.Row="4" Grid.ColumnSpan="2" Classes="rule"/>
-
-                <TextBlock Grid.Row="5" Text="BPM" Classes="lbl"/>
-                <controls:TextInput Grid.Row="5" Grid.Column="1" x:Name="BpmBox" Text="{Binding BeatsPerMinute.Text, Mode=TwoWay}" PlaceholderText="{Binding BeatsPerMinute.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val"/>
-
-                <TextBlock Grid.Row="6" Text="Key" Classes="lbl"/>
-                <controls:TextInput Grid.Row="6" Grid.Column="1" x:Name="KeyBox" Text="{Binding InitialKey.Text, Mode=TwoWay}" PlaceholderText="{Binding InitialKey.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val"/>
-
-                <TextBlock Grid.Row="7" Text="Grouping" Classes="lbl"/>
-                <controls:TextInput Grid.Row="7" Grid.Column="1" x:Name="GroupingBox" Text="{Binding Grouping.Text, Mode=TwoWay}" PlaceholderText="{Binding Grouping.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val"/>
               </Grid>
             </Grid>
 
-            <Border Classes="rule"/>
-
-            <!-- ── Listening ──
-                 The only two fields in this window that are not tags: they are
-                 Flower's own record of what has been listened to, kept per
-                 track in the library rather than in the file (see Track's
-                 "Stats" region). Which is also why the star writes immediately
-                 instead of waiting for OK, like the artwork and unlike every
-                 field above it - there is no tag write to batch it with. One
-                 star, on or off, because that is what a rating is in Flower and
-                 on the server it syncs with. -->
-            <Grid ColumnDefinitions="*,32,300">
-              <Grid Grid.Column="0" ColumnDefinitions="100,*" RowDefinitions="Auto,Auto" RowSpacing="8">
-                <TextBlock Grid.Row="0" Text="Play Count" Classes="lbl"/>
-                <TextBlock Grid.Row="0" Grid.Column="1" x:Name="PlayCountValue" Text="{Binding PlayCountValue}" Classes="val"/>
-
-                <TextBlock Grid.Row="1" Text="Last played" Classes="lbl"/>
-                <TextBlock Grid.Row="1" Grid.Column="1" x:Name="LastPlayedValue" Text="{Binding LastPlayedValue}" Classes="val"/>
-              </Grid>
-
-              <Grid Grid.Column="2" ColumnDefinitions="80,*" VerticalAlignment="Top">
-                <TextBlock Text="Rating" Classes="lbl"/>
-                <Button Grid.Column="1" x:Name="StarButton"
-                        Background="Transparent" BorderThickness="0"
-                        Padding="0,0,6,0"
-                        HorizontalAlignment="Left" Click="StarButton_Click"
-                        ToolTip.Tip="{Binding StarToolTip}">
-                  <StackPanel Orientation="Horizontal" Spacing="8">
-                    <materialIcons:MaterialIcon x:Name="StarIcon" Kind="{Binding StarIcon}" Classes.dim="{Binding !IsAnyStarred}"
-                                                Width="20" Height="20" VerticalAlignment="Center"
-                                                Foreground="{DynamicResource AppAccentBrush}"/>
-                    <TextBlock x:Name="StarText" Text="{Binding StarText}" Classes.dim="{Binding !IsAnyStarred}" FontSize="13" VerticalAlignment="Center"
-                               Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-                  </StackPanel>
-                </Button>
-              </Grid>
-            </Grid>
-          </StackPanel>
-        </ScrollViewer>
-      </Panel>
-
-      <!-- ── Descriptions ── -->
-      <Panel x:Name="DescriptionsPage" IsVisible="False">
-        <ScrollViewer>
-          <StackPanel Margin="24,18,24,8" Spacing="14">
-            <Grid ColumnDefinitions="*,32,*">
-              <Grid Grid.Column="0" ColumnDefinitions="100,*" RowDefinitions="Auto,Auto" RowSpacing="10">
-                <TextBlock Grid.Row="0" Text="Subtitle" Classes="lbl"/>
-                <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="SubtitleBox" Text="{Binding Subtitle.Text, Mode=TwoWay}" PlaceholderText="{Binding Subtitle.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val"/>
-
-                <TextBlock Grid.Row="1" Text="Publisher" Classes="lbl"/>
-                <controls:TextInput Grid.Row="1" Grid.Column="1" x:Name="PublisherBox" Text="{Binding Publisher.Text, Mode=TwoWay}" PlaceholderText="{Binding Publisher.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val"/>
-              </Grid>
-
-              <Grid Grid.Column="2" ColumnDefinitions="80,*" RowDefinitions="Auto,Auto" RowSpacing="10">
-                <TextBlock Grid.Row="0" Text="Copyright" Classes="lbl"/>
-                <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="CopyrightBox" Text="{Binding Copyright.Text, Mode=TwoWay}" PlaceholderText="{Binding Copyright.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val"/>
-
-                <TextBlock Grid.Row="1" Text="ISRC" Classes="lbl"/>
-                <controls:TextInput Grid.Row="1" Grid.Column="1" x:Name="ISRCBox" Text="{Binding ISRC.Text, Mode=TwoWay}" PlaceholderText="{Binding ISRC.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val"/>
-              </Grid>
-            </Grid>
-
-            <Border Classes="rule"/>
-
-            <Grid ColumnDefinitions="100,*" RowDefinitions="Auto,Auto" RowSpacing="10">
-              <TextBlock Grid.Row="0" Text="Description" Classes="lbl" VerticalAlignment="Top" Margin="0,8,0,0"/>
-              <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="DescriptionBox" Text="{Binding Description.Text, Mode=TwoWay}" PlaceholderText="{Binding Description.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="80"/>
-
-              <TextBlock Grid.Row="1" Text="Comment" Classes="lbl" VerticalAlignment="Top" Margin="0,8,0,0"/>
-              <controls:TextInput Grid.Row="1" Grid.Column="1" x:Name="CommentBox" Text="{Binding Comment.Text, Mode=TwoWay}" PlaceholderText="{Binding Comment.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="80"/>
-            </Grid>
-          </StackPanel>
-        </ScrollViewer>
-      </Panel>
-
-      <!-- ── Lyrics ──
-           Its own tab rather than a section at the bottom of Descriptions: it
-           is the one field with no natural height, and sharing a scroller with
-           six single-line boxes meant it got whatever was left over. Here it
-           fills the tab and grows with the window instead. -->
-      <Panel x:Name="LyricsPage" IsVisible="False">
-        <TextBox x:Name="LyricsBox" Text="{Binding Lyrics.Text, Mode=TwoWay}" PlaceholderText="{Binding Lyrics.Placeholder}" IsEnabled="{Binding IsEditable}"
-                 Margin="24,18,24,8"
-                 FontSize="13"
-                 TextWrapping="Wrap"
-                 AcceptsReturn="True"
-                 VerticalAlignment="Stretch"
-                 VerticalContentAlignment="Top"
-                 ScrollViewer.VerticalScrollBarVisibility="Auto"/>
-      </Panel>
-
-      <!-- ── Artwork ──
-           The art at a size worth looking at, plus the ways to move a picture
-           in and out of it: drop a file on it or pick one to replace it, find
-           one online (chosen over the whole window - OnlineCoverPicker), drag
-           it off to anywhere that takes a file to get a full-size copy,
-           double-click to open it at its own size, Remove to take it out of the
-           tag. Every one of those writes straight into the file's own tag -
-           there is no pending state here and OK/Cancel do not apply to it,
-           which is why the buttons say what they do rather than staging an edit
-           like every other field in this window. -->
-      <Panel x:Name="ArtworkPage" IsVisible="False">
-        <!-- The art takes nine tenths of the free height rather than all of it;
-             the last tenth is the empty row below the buttons, which is what
-             keeps this tab's button row from sitting flush against the window's
-             own OK/Cancel row underneath it. -->
-        <Grid Margin="24,12,24,8" RowDefinitions="9*,Auto,Auto,1*">
-          <!-- Background is what makes the whole framed area a drop target:
-               a Border with no painted background doesn't hit-test, so
-               without it only the art itself would accept a drop and the
-               surrounding letterbox margins would silently reject one. -->
-          <Border Grid.Row="0"
-                  x:Name="ArtDropTarget"
-                  Background="Transparent"
-                  BorderBrush="{DynamicResource AppBorderBrush}"
-                  BorderThickness="1"
-                  CornerRadius="6"
-                  Padding="10"
-                  DoubleTapped="Artwork_DoubleTapped"
-                  PointerPressed="ArtDropTarget_PointerPressed"
-                  PointerMoved="ArtDropTarget_PointerMoved"
-                  PointerReleased="ArtDropTarget_PointerReleased">
-            <Panel>
-              <controls:AlbumArtView x:Name="ArtworkLargeView" Stretch="Uniform"/>
-              <TextBlock x:Name="MultipleArtLargeLabel" Classes="multipleArt" FontSize="16" IsVisible="False"/>
-              <TextBlock x:Name="ArtDropHint"
-                         Text="Drop an image here"
-                         FontSize="12"
-                         Opacity="0.6"
-                         IsVisible="False"
-                         HorizontalAlignment="Center"
-                         VerticalAlignment="Center"/>
-            </Panel>
-          </Border>
-
-          <TextBlock Grid.Row="1"
-                     x:Name="ArtworkInfoText"
-                     FontSize="11"
-                     Opacity="0.55"
-                     Margin="0,8,0,0"
-                     HorizontalAlignment="Center"
-                     TextWrapping="Wrap"/>
-
-          <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8" Margin="0,10,0,0" HorizontalAlignment="Center">
-            <Button x:Name="ChangeArtButton"  Content="Change…"        Height="30" Padding="12,0" VerticalContentAlignment="Center" Click="ChangeArtButton_Click"/>
-            <Button x:Name="PasteArtButton"   Content="Paste"          Height="30" Padding="12,0" VerticalContentAlignment="Center" Click="PasteArtButton_Click"
-                    ToolTip.Tip="Use the image on the clipboard as the cover."/>
-            <Button x:Name="FindArtButton"    Content="Find Online…"   Height="30" Padding="12,0" VerticalContentAlignment="Center" Click="FindArtButton_Click"
-                    ToolTip.Tip="Search online for the cover of the album named on the Info tab."/>
-            <Button x:Name="RemoveArtButton"  Content="Remove"         Height="30" Padding="12,0" VerticalContentAlignment="Center" Click="RemoveArtButton_Click"/>
-            <Button x:Name="OpenArtButton"    Content="Open Full Size" Height="30" Padding="12,0" VerticalContentAlignment="Center" Click="OpenArtButton_Click"/>
-          </StackPanel>
-        </Grid>
-      </Panel>
-
-      <!-- ── Options ──
-           Everything about a track that is not a description of it: how it
-           should be filed, and how it should behave when it plays.
-
-           Split by who owns the value, which is also why the tab is not
-           uniformly staged-until-OK like Info and Descriptions are.
-           Compilation and the four "sort as" fields are tags, written into the
-           file when OK is pressed, alongside every other tag edit. The three
-           below the first rule are Flower's own state, kept in the library and
-           not in the file - so, exactly like the star on the Info tab, they
-           are written the moment they are changed and Cancel does not undo
-           them. -->
-      <Panel x:Name="OptionsPage" IsVisible="False">
-        <ScrollViewer>
-          <StackPanel Margin="24,18,24,8" Spacing="14">
-
-            <!-- The sort tags. Each box overrides what the field beside it in
-                 the Info tab sorts under, and nothing else - the track lists
-                 still display the real value. Watermarked with that real value
-                 so an empty box reads as "sorts as itself" rather than as an
-                 empty field. -->
-            <Grid ColumnDefinitions="140,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="10">
-              <TextBlock Grid.Row="0" Text="Sort title" Classes="lbl"/>
-              <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="TitleSortBox" Text="{Binding TitleSort.Text, Mode=TwoWay}" PlaceholderText="{Binding TitleSort.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val"/>
-
-              <TextBlock Grid.Row="1" Text="Sort artist" Classes="lbl"/>
-              <controls:TextInput Grid.Row="1" Grid.Column="1" x:Name="ArtistSortBox" Text="{Binding ArtistsSort.Text, Mode=TwoWay}" PlaceholderText="{Binding ArtistsSort.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val"/>
-
-              <TextBlock Grid.Row="2" Text="Sort album" Classes="lbl"/>
-              <controls:TextInput Grid.Row="2" Grid.Column="1" x:Name="AlbumSortBox" Text="{Binding AlbumSort.Text, Mode=TwoWay}" PlaceholderText="{Binding AlbumSort.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val"/>
-
-              <TextBlock Grid.Row="3" Text="Sort composer" Classes="lbl"/>
-              <controls:TextInput Grid.Row="3" Grid.Column="1" x:Name="ComposerSortBox" Text="{Binding ComposersSort.Text, Mode=TwoWay}" PlaceholderText="{Binding ComposersSort.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val"/>
-            </Grid>
-
-            <Border Classes="rule"/>
-
-            <StackPanel Spacing="8">
-              <CheckBox x:Name="CompilationBox"
-                        Classes="option"
-                        IsChecked="{Binding IsCompilation}"
-                        IsThreeState="{Binding CompilationIsThreeState}"
-                        IsEnabled="{Binding IsEditable}"
-                        Content="Part of a compilation"
-                        ToolTip.Tip="Groups this album as one, under Various Artists, even when every track has a different artist."/>
-
+            <StackPanel Spacing="10">
               <CheckBox x:Name="RememberPositionBox"
                         Classes="option"
                         IsChecked="{Binding RememberPlaybackPosition}"
@@ -487,23 +365,22 @@
                         IsChecked="{Binding IgnoreWhenShuffling}"
                         IsThreeState="{Binding IgnoreWhenShufflingIsThreeState}"
                         ToolTip.Tip="Shuffle never picks this track. It still plays when the queue reaches it in order."/>
+
+              <Grid ColumnDefinitions="136,*,80" ColumnSpacing="12" Margin="0,4,0,0">
+                <TextBlock Grid.Column="0" Text="Volume adjustment" Classes="lbl"/>
+                <Slider Grid.Column="1" x:Name="VolumeAdjustmentSlider"
+                        Classes="control"
+                        Minimum="-100" Maximum="100"
+                        TickFrequency="25" IsSnapToTickEnabled="False"
+                        VerticalAlignment="Center"
+                        Value="{Binding VolumeAdjustment}"
+                        ToolTip.Tip="Shifts the volume while this track plays, and puts it back afterwards - for the one track mastered far quieter or louder than the rest."/>
+                <TextBlock Grid.Column="2" x:Name="VolumeAdjustmentText"
+                           Text="{Binding VolumeAdjustmentText}" Classes.dim="{Binding !IsVolumeAdjusted}"
+                           Classes="lbl"
+                           HorizontalAlignment="Right"/>
+              </Grid>
             </StackPanel>
-
-            <Border Classes="rule"/>
-
-            <Grid ColumnDefinitions="140,*,90">
-              <TextBlock Grid.Column="0" Text="Volume" Classes="lbl"/>
-              <Slider Grid.Column="1" x:Name="VolumeAdjustmentSlider"
-                      Minimum="-100" Maximum="100"
-                      TickFrequency="25" IsSnapToTickEnabled="False"
-                      VerticalAlignment="Center"
-                      Value="{Binding VolumeAdjustment}"
-                      ToolTip.Tip="Shifts the volume while this track plays, and puts it back afterwards - for the one track mastered far quieter or louder than the rest."/>
-              <TextBlock Grid.Column="2" x:Name="VolumeAdjustmentText"
-                         Text="{Binding VolumeAdjustmentText}" Classes.dim="{Binding !IsVolumeAdjusted}"
-                         Classes="lbl" Margin="16,0,0,0"
-                         HorizontalAlignment="Left"/>
-            </Grid>
 
             <!-- Says why the controls above are greyed out, when they are:
                  a server-only track has no local file to write a tag into. -->
@@ -511,98 +388,269 @@
                        Text="{Binding OptionsUnavailableText}"
                        FontSize="12" Foreground="{DynamicResource AppTextSecondaryBrush}" TextWrapping="Wrap"
                        IsVisible="{Binding !IsEditable}"/>
-
           </StackPanel>
         </ScrollViewer>
       </Panel>
 
-      <!-- ── Technical ──
-           A table, two columns of it: what the audio is on the left, where it
-           came from and when on the right, a rule under every row but the
-           last of each column. -->
-      <Panel x:Name="TechnicalPage" IsVisible="False">
-        <Grid Margin="24,14,24,4" ColumnDefinitions="*,32,*" VerticalAlignment="Top">
-          <StackPanel Grid.Column="0">
-            <Border Classes="techRow">
-              <Grid ColumnDefinitions="110,*">
-                <TextBlock Text="Duration" Classes="lbl"/>
-                <TextBlock Grid.Column="1" x:Name="DurationValue" Text="{Binding DurationValue}" Classes="val"/>
-              </Grid>
-            </Border>
-            <Border Classes="techRow">
-              <Grid ColumnDefinitions="110,*">
-                <TextBlock Text="Codec" Classes="lbl"/>
-                <TextBlock Grid.Column="1" x:Name="CodecValue" Text="{Binding CodecValue}" Classes="val"/>
-              </Grid>
-            </Border>
-            <Border Classes="techRow">
-              <Grid ColumnDefinitions="110,*">
-                <TextBlock Text="Bit Rate" Classes="lbl"/>
-                <TextBlock Grid.Column="1" x:Name="BitrateValue" Text="{Binding BitrateValue}" Classes="val"/>
-              </Grid>
-            </Border>
-            <Border Classes="techRow last">
-              <Grid ColumnDefinitions="110,*">
-                <TextBlock Text="Sample Rate" Classes="lbl"/>
-                <TextBlock Grid.Column="1" x:Name="SampleRateValue" Text="{Binding SampleRateValue}" Classes="val"/>
-              </Grid>
-            </Border>
-          </StackPanel>
+      <!-- ── Extra ── Who else made it, and what else is said about it. -->
+      <Panel x:Name="ExtraPage" IsVisible="False">
+        <ScrollViewer>
+          <StackPanel Margin="24,20,24,20" Spacing="24">
+            <Grid ColumnDefinitions="104,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" ColumnSpacing="12" RowSpacing="10">
+                <TextBlock Grid.Row="0" Text="Composer" Classes="lbl"/>
+                <AutoCompleteBox Grid.Row="0" Grid.Column="1" x:Name="ComposerBox" Text="{Binding Composers.Text, Mode=TwoWay}" PlaceholderText="{Binding Composers.Placeholder}" IsEnabled="{Binding IsEditable}" ItemsSource="{Binding ComposerSuggestions}" Classes="val"/>
+                <TextBlock Grid.Row="1" Text="Conductor" Classes="lbl"/>
+                <controls:TextInput Grid.Row="1" Grid.Column="1" x:Name="ConductorBox" Text="{Binding Conductor.Text, Mode=TwoWay}" PlaceholderText="{Binding Conductor.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val"/>
+                <TextBlock Grid.Row="2" Text="Remixed by" Classes="lbl"/>
+                <controls:TextInput Grid.Row="2" Grid.Column="1" x:Name="RemixedByBox" Text="{Binding RemixedBy.Text, Mode=TwoWay}" PlaceholderText="{Binding RemixedBy.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val"/>
+                <TextBlock Grid.Row="3" Text="Publisher" Classes="lbl"/>
+                <controls:TextInput Grid.Row="3" Grid.Column="1" x:Name="PublisherBox" Text="{Binding Publisher.Text, Mode=TwoWay}" PlaceholderText="{Binding Publisher.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val"/>
+                <TextBlock Grid.Row="4" Text="Copyright" Classes="lbl"/>
+                <controls:TextInput Grid.Row="4" Grid.Column="1" x:Name="CopyrightBox" Text="{Binding Copyright.Text, Mode=TwoWay}" PlaceholderText="{Binding Copyright.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val"/>
+            </Grid>
 
-          <StackPanel Grid.Column="2">
-            <Border Classes="techRow">
-              <Grid ColumnDefinitions="110,*">
-                <TextBlock Text="Channels" Classes="lbl"/>
-                <TextBlock Grid.Column="1" x:Name="ChannelsValue" Text="{Binding ChannelsValue}" Classes="val"/>
-              </Grid>
-            </Border>
-            <!-- "—" for a lossy stream (mp3/aac - most of a typical
-                 library), which has no bit depth to report; lossless files
-                 (FLAC/WAV/ALAC) fill it in - see
-                 AudioTechnicalProperties.BitsPerSampleOf. The row stays put
-                 either way: a field that disappears when it has nothing to
-                 say cannot be told apart from one that does not exist. -->
-            <Border Classes="techRow">
-              <Grid ColumnDefinitions="110,*">
-                <TextBlock x:Name="BitDepthLabel" Text="Bit Depth" Classes="lbl"/>
-                <TextBlock Grid.Column="1" x:Name="BitDepthValue" Text="{Binding BitDepthValue}" Classes="val"/>
-              </Grid>
-            </Border>
-            <!-- The encoder's own record of how it was told to encode -
-                 "LAME 3.100, VBR (V0)". Only an MP3 carries this, so
-                 everything else reads "—", same as Bit Depth above. See
-                 EncodingProfile. -->
-            <Border Classes="techRow">
-              <Grid ColumnDefinitions="110,*">
-                <TextBlock Text="Encoding" Classes="lbl"/>
-                <TextBlock Grid.Column="1" x:Name="EncodingValue" Text="{Binding EncodingValue}" Classes="val"/>
-              </Grid>
-            </Border>
+            <Grid ColumnDefinitions="104,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" ColumnSpacing="12" RowSpacing="10">
+                <TextBlock Grid.Row="0" Text="Subtitle" Classes="lbl"/>
+                <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="SubtitleBox" Text="{Binding Subtitle.Text, Mode=TwoWay}" PlaceholderText="{Binding Subtitle.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val"/>
+                <TextBlock Grid.Row="1" Text="Grouping" Classes="lbl"/>
+                <controls:TextInput Grid.Row="1" Grid.Column="1" x:Name="GroupingBox" Text="{Binding Grouping.Text, Mode=TwoWay}" PlaceholderText="{Binding Grouping.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val"/>
+                <Grid Grid.Row="2" Grid.ColumnSpan="2" ColumnDefinitions="104,*,24,Auto,*,24,Auto,*" ColumnSpacing="12">
+                  <TextBlock Grid.Column="0" Text="BPM" Classes="lbl"/>
+                  <controls:TextInput Grid.Column="1" x:Name="BpmBox" Text="{Binding BeatsPerMinute.Text, Mode=TwoWay}" PlaceholderText="{Binding BeatsPerMinute.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val"/>
+                  <TextBlock Grid.Column="3" Text="Key" Classes="lbl"/>
+                  <controls:TextInput Grid.Column="4" x:Name="KeyBox" Text="{Binding InitialKey.Text, Mode=TwoWay}" PlaceholderText="{Binding InitialKey.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val"/>
+                  <TextBlock Grid.Column="6" Text="ISRC" Classes="lbl"/>
+                  <controls:TextInput Grid.Column="7" x:Name="ISRCBox" Text="{Binding ISRC.Text, Mode=TwoWay}" PlaceholderText="{Binding ISRC.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val"/>
+                </Grid>
+                <TextBlock Grid.Row="3" Text="Description" Classes="lbl" VerticalAlignment="Top" Margin="0,9,0,0"/>
+                <controls:TextInput Grid.Row="3" Grid.Column="1" x:Name="DescriptionBox" Text="{Binding Description.Text, Mode=TwoWay}" PlaceholderText="{Binding Description.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="80"/>
+                <TextBlock Grid.Row="4" Text="Comment" Classes="lbl" VerticalAlignment="Top" Margin="0,9,0,0"/>
+                <controls:TextInput Grid.Row="4" Grid.Column="1" x:Name="CommentBox" Text="{Binding Comment.Text, Mode=TwoWay}" PlaceholderText="{Binding Comment.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="80"/>
+            </Grid>
+          </StackPanel>
+        </ScrollViewer>
+      </Panel>
+
+      <!-- ── Sorting ──
+           The sort tags. Each box overrides what the field beside it in the
+           Details tab sorts under, and nothing else - the track lists still
+           display the real value. Watermarked with that real value so an
+           empty box reads as "sorts as itself" rather than as an empty field.
+           Compilation and the four "sort as" fields are tags, written into
+           the file when Save is pressed, alongside every other tag edit. -->
+      <Panel x:Name="SortingPage" IsVisible="False">
+        <ScrollViewer>
+          <StackPanel Margin="24,20,24,20" Spacing="22">
+            <Grid ColumnDefinitions="104,*" RowDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="12" RowSpacing="10">
+                <TextBlock Grid.Row="0" Text="Sort title" Classes="lbl"/>
+                <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="TitleSortBox" Text="{Binding TitleSort.Text, Mode=TwoWay}" PlaceholderText="{Binding TitleSort.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val"/>
+                <TextBlock Grid.Row="1" Text="Sort artist" Classes="lbl"/>
+                <controls:TextInput Grid.Row="1" Grid.Column="1" x:Name="ArtistSortBox" Text="{Binding ArtistsSort.Text, Mode=TwoWay}" PlaceholderText="{Binding ArtistsSort.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val"/>
+                <TextBlock Grid.Row="2" Text="Sort album" Classes="lbl"/>
+                <controls:TextInput Grid.Row="2" Grid.Column="1" x:Name="AlbumSortBox" Text="{Binding AlbumSort.Text, Mode=TwoWay}" PlaceholderText="{Binding AlbumSort.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val"/>
+                <TextBlock Grid.Row="3" Text="Sort composer" Classes="lbl"/>
+                <controls:TextInput Grid.Row="3" Grid.Column="1" x:Name="ComposerSortBox" Text="{Binding ComposersSort.Text, Mode=TwoWay}" PlaceholderText="{Binding ComposersSort.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val"/>
+            </Grid>
+
+            <CheckBox x:Name="CompilationBox"
+                      Classes="option"
+                      Margin="116,0,0,0"
+                      IsChecked="{Binding IsCompilation}"
+                      IsThreeState="{Binding CompilationIsThreeState}"
+                      IsEnabled="{Binding IsEditable}">
+              <StackPanel Spacing="2">
+                <TextBlock Text="Part of a compilation"/>
+                <TextBlock Text="Groups the album under Various Artists, even when every track has a different artist."
+                           FontSize="12"
+                           TextWrapping="Wrap"
+                           Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+              </StackPanel>
+            </CheckBox>
+          </StackPanel>
+        </ScrollViewer>
+      </Panel>
+
+      <!-- ── Lyrics ──
+           Its own tab: it is the one field with no natural height, and
+           sharing a scroller with single-line boxes meant it got whatever was
+           left over. Here it fills the tab and grows with the window
+           instead. -->
+      <Panel x:Name="LyricsPage" IsVisible="False">
+        <TextBox x:Name="LyricsBox" Text="{Binding Lyrics.Text, Mode=TwoWay}" PlaceholderText="{Binding Lyrics.Placeholder}" IsEnabled="{Binding IsEditable}"
+                 Margin="24,20,24,20"
+                 FontSize="15"
+                 CornerRadius="8"
+                 TextWrapping="Wrap"
+                 AcceptsReturn="True"
+                 VerticalAlignment="Stretch"
+                 VerticalContentAlignment="Top"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"/>
+      </Panel>
+
+      <!-- ── Artwork ──
+           The art at a size worth looking at, plus the ways to move a picture
+           in and out of it: drop a file on it or pick one to replace it, find
+           one online (chosen over the whole window - OnlineCoverPicker), drag
+           it off to anywhere that takes a file to get a full-size copy,
+           double-click to open it at its own size, Remove to take it out of the
+           tag. Every one of those writes straight into the file's own tag -
+           there is no pending state here and Save/Cancel do not apply to it,
+           which is why the buttons say what they do rather than staging an edit
+           like every other field in this window. -->
+      <Panel x:Name="ArtworkPage" IsVisible="False">
+        <StackPanel Margin="24,20,24,20" Spacing="8" HorizontalAlignment="Center">
+          <!-- Background is what makes the whole framed area a drop target:
+               a Border with no painted background doesn't hit-test, so
+               without it only the art itself would accept a drop and the
+               surrounding letterbox margins would silently reject one. -->
+          <Border x:Name="ArtDropTarget"
+                  Width="356" Height="356"
+                  Background="Transparent"
+                  BorderBrush="{DynamicResource AppControlBorderBrush}"
+                  BorderThickness="1"
+                  CornerRadius="12"
+                  ClipToBounds="True"
+                  DoubleTapped="Artwork_DoubleTapped"
+                  PointerPressed="ArtDropTarget_PointerPressed"
+                  PointerMoved="ArtDropTarget_PointerMoved"
+                  PointerReleased="ArtDropTarget_PointerReleased">
+            <Panel>
+              <controls:AlbumArtView x:Name="ArtworkLargeView" Stretch="Uniform" ArtCornerRadius="11"/>
+              <TextBlock x:Name="MultipleArtLargeLabel" Classes="multipleArt" FontSize="16" IsVisible="False"/>
+              <TextBlock x:Name="ArtDropHint"
+                         Text="Drop an image here"
+                         FontSize="13"
+                         Foreground="{DynamicResource AppTextSecondaryBrush}"
+                         IsVisible="False"
+                         HorizontalAlignment="Center"
+                         VerticalAlignment="Center"/>
+            </Panel>
+          </Border>
+
+          <TextBlock x:Name="ArtworkInfoText"
+                     FontSize="13"
+                     Foreground="{DynamicResource AppTextSecondaryBrush}"
+                     HorizontalAlignment="Center"
+                     TextAlignment="Center"
+                     TextWrapping="Wrap"/>
+
+          <StackPanel x:Name="ArtButtons" Orientation="Horizontal" Spacing="8" Margin="0,4,0,0" HorizontalAlignment="Center">
+            <Button x:Name="ChangeArtButton"  Content="Choose File…"   Click="ChangeArtButton_Click"/>
+            <Button x:Name="FindArtButton"    Content="Find Online…"   Click="FindArtButton_Click"
+                    ToolTip.Tip="Search online for the cover of the album named on the Details tab."/>
+            <Button x:Name="PasteArtButton"   Content="Paste"          Click="PasteArtButton_Click"
+                    ToolTip.Tip="Use the image on the clipboard as the cover."/>
+            <Button x:Name="OpenArtButton"    Content="Open Full Size" Click="OpenArtButton_Click"/>
+            <Button x:Name="RemoveArtButton"  Content="Remove"         Click="RemoveArtButton_Click"/>
+          </StackPanel>
+        </StackPanel>
+      </Panel>
+
+      <!-- ── File ──
+           A table, two columns of it: what Flower knows of it being listened
+           to and where it came from on the left, what the audio is on the
+           right, then where the file is. -->
+      <Panel x:Name="FilePage" IsVisible="False">
+        <ScrollViewer>
+          <StackPanel Margin="24,12,24,20" Spacing="0">
+            <Grid ColumnDefinitions="*,32,*">
+              <StackPanel Grid.Column="0">
+                <Border Classes="techRow">
+                  <Grid ColumnDefinitions="120,*" ColumnSpacing="12">
+                    <TextBlock Text="Play count" Classes="lbl"/>
+                    <TextBlock Grid.Column="1" x:Name="PlayCountValue" Text="{Binding PlayCountValue}" Classes="val"/>
+                  </Grid>
+                </Border>
+                <Border Classes="techRow">
+                  <Grid ColumnDefinitions="120,*" ColumnSpacing="12">
+                    <TextBlock Text="Last played" Classes="lbl"/>
+                    <TextBlock Grid.Column="1" x:Name="LastPlayedValue" Text="{Binding LastPlayedValue}" Classes="val"/>
+                  </Grid>
+                </Border>
+                <Border Classes="techRow">
+                  <Grid ColumnDefinitions="120,*" ColumnSpacing="12">
+                    <TextBlock Text="Date added" Classes="lbl"/>
+                    <TextBlock Grid.Column="1" x:Name="DateAddedValue" Text="{Binding DateAddedValue}" Classes="val"/>
+                  </Grid>
+                </Border>
+                <Border Classes="techRow">
+                  <Grid ColumnDefinitions="120,*" ColumnSpacing="12">
+                    <TextBlock Text="Channels" Classes="lbl"/>
+                    <TextBlock Grid.Column="1" x:Name="ChannelsValue" Text="{Binding ChannelsValue}" Classes="val"/>
+                  </Grid>
+                </Border>
+                <!-- The encoder's own record of how it was told to encode -
+                     "LAME 3.100, VBR (V0)". Only an MP3 carries this, so
+                     everything else reads "—", same as Bit Depth. See
+                     EncodingProfile. -->
+                <Border Classes="techRow">
+                  <Grid ColumnDefinitions="120,*" ColumnSpacing="12">
+                    <TextBlock Text="Encoding" Classes="lbl"/>
+                    <TextBlock Grid.Column="1" x:Name="EncodingValue" Text="{Binding EncodingValue}" Classes="val"/>
+                  </Grid>
+                </Border>
+              </StackPanel>
+
+              <StackPanel Grid.Column="2">
+                <Border Classes="techRow">
+                  <Grid ColumnDefinitions="120,*" ColumnSpacing="12">
+                    <TextBlock Text="Duration" Classes="lbl"/>
+                    <TextBlock Grid.Column="1" x:Name="DurationValue" Text="{Binding DurationValue}" Classes="val"/>
+                  </Grid>
+                </Border>
+                <Border Classes="techRow">
+                  <Grid ColumnDefinitions="120,*" ColumnSpacing="12">
+                    <TextBlock Text="Codec" Classes="lbl"/>
+                    <TextBlock Grid.Column="1" x:Name="CodecValue" Text="{Binding CodecValue}" Classes="val"/>
+                  </Grid>
+                </Border>
+                <Border Classes="techRow">
+                  <Grid ColumnDefinitions="120,*" ColumnSpacing="12">
+                    <TextBlock Text="Bit rate" Classes="lbl"/>
+                    <TextBlock Grid.Column="1" x:Name="BitrateValue" Text="{Binding BitrateValue}" Classes="val"/>
+                  </Grid>
+                </Border>
+                <Border Classes="techRow">
+                  <Grid ColumnDefinitions="120,*" ColumnSpacing="12">
+                    <TextBlock Text="Sample rate" Classes="lbl"/>
+                    <TextBlock Grid.Column="1" x:Name="SampleRateValue" Text="{Binding SampleRateValue}" Classes="val"/>
+                  </Grid>
+                </Border>
+                <!-- "—" for a lossy stream (mp3/aac - most of a typical
+                     library), which has no bit depth to report; lossless files
+                     (FLAC/WAV/ALAC) fill it in - see
+                     AudioTechnicalProperties.BitsPerSampleOf. The row stays put
+                     either way: a field that disappears when it has nothing to
+                     say cannot be told apart from one that does not exist. -->
+                <Border Classes="techRow">
+                  <Grid ColumnDefinitions="120,*" ColumnSpacing="12">
+                    <TextBlock x:Name="BitDepthLabel" Text="Bit depth" Classes="lbl"/>
+                    <TextBlock Grid.Column="1" x:Name="BitDepthValue" Text="{Binding BitDepthValue}" Classes="val"/>
+                  </Grid>
+                </Border>
+              </StackPanel>
+            </Grid>
+
             <!-- "File" and its path for a song on this device; "Source" and the
                  paired server's name - the same Server glyph and alias the
                  sidebar row uses - for one that only exists there. -->
             <Border Classes="techRow">
-              <Grid ColumnDefinitions="110,*">
+              <Grid ColumnDefinitions="120,*" ColumnSpacing="12">
                 <TextBlock x:Name="FileLabel" Text="{Binding SourceLabel}" Classes="lbl" VerticalAlignment="Top"/>
-                <SelectableTextBlock Grid.Column="1" x:Name="PathValue" Text="{Binding PathValue}" IsVisible="{Binding !IsFromServer}" FontSize="11" Foreground="{DynamicResource AppTextSecondaryBrush}" TextWrapping="Wrap"/>
+                <SelectableTextBlock Grid.Column="1" x:Name="PathValue" Text="{Binding PathValue}" IsVisible="{Binding !IsFromServer}" FontSize="13" TextWrapping="Wrap"/>
                 <StackPanel Grid.Column="1" x:Name="ServerSourcePanel"
                             Orientation="Horizontal" Spacing="6" IsVisible="{Binding IsFromServer}">
-                  <materialIcons:MaterialIcon Kind="Server" Width="14" Height="14" Opacity="0.6" VerticalAlignment="Center"/>
-                  <TextBlock x:Name="ServerSourceName" Text="{Binding ServerSourceName}" FontSize="13" VerticalAlignment="Center"/>
+                  <materialIcons:MaterialIcon Kind="ServerOutline" Width="14" Height="14" VerticalAlignment="Center"/>
+                  <TextBlock x:Name="ServerSourceName" Text="{Binding ServerSourceName}" FontSize="14" VerticalAlignment="Center"/>
                 </StackPanel>
               </Grid>
             </Border>
-            <Border Classes="techRow last">
-              <Grid ColumnDefinitions="110,*">
-                <TextBlock Text="Date Added" Classes="lbl"/>
-                <TextBlock Grid.Column="1" x:Name="DateAddedValue" Text="{Binding DateAddedValue}" Classes="val"/>
-              </Grid>
-            </Border>
           </StackPanel>
-        </Grid>
+        </ScrollViewer>
       </Panel>
 
     </Panel>
+    </Border>
 
   </DockPanel>
 </Window>

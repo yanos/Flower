@@ -96,7 +96,7 @@
          focusable, so the tap leaves the keyboard where it is. -->
     <Style Selector="WrapPanel.suggestions > Button">
       <Setter Property="Focusable" Value="False" />
-      <Setter Property="Background" Value="{DynamicResource AppAccentTintBrush}" />
+      <Setter Property="Background" Value="{DynamicResource AppHoverBrush}" />
       <Setter Property="BorderThickness" Value="0" />
       <Setter Property="CornerRadius" Value="9999" />
       <Setter Property="Padding" Value="12,6" />
@@ -265,7 +265,7 @@
                       HorizontalAlignment="Stretch"
                       Click="ChoosePhoto_Click">
                 <StackPanel Orientation="Horizontal" Spacing="8">
-                  <materialIcons:MaterialIcon Kind="ImageMultiple" />
+                  <materialIcons:MaterialIcon Kind="ImageMultipleOutline" />
                   <TextBlock Text="Choose Photo" VerticalAlignment="Center" />
                 </StackPanel>
               </Button>
@@ -283,7 +283,7 @@
                       HorizontalAlignment="Stretch"
                       Click="FindArt_Click">
                 <StackPanel Orientation="Horizontal" Spacing="8">
-                  <materialIcons:MaterialIcon Kind="ImageSearch" />
+                  <materialIcons:MaterialIcon Kind="ImageSearchOutline" />
                   <TextBlock x:Name="FindArtLabel" Text="Find Online" VerticalAlignment="Center" />
                 </StackPanel>
               </Button>

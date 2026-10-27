@@ -43,37 +43,42 @@ public static class AppTheme
 
         var background = C("PaletteBackground");
         var surface = C("PaletteSurface");
-        var divider = C("PaletteDivider");
+        var subtle = C("PaletteBackgroundSubtle");
+        var hover = C("PaletteBackgroundHover");
+        var border = C("PaletteBackgroundSelected");
         var textPrimary = C("PaletteTextPrimary");
         var textSecondary = C("PaletteTextSecondary");
-        var iconInactive = C("PaletteIconInactive");
-        var iconDisabled = C("PaletteIconDisabled");
+        var textMuted = C("PaletteTextMuted");
+        var textDisabled = C("PaletteTextDisabled");
 
         return new ColorPaletteResources
         {
-            Accent = C("PaletteAccent"),
+            // The ink, not the red: what Fluent fills with its accent - a
+            // ticked box, a switch that is on, the tab showing, a selection -
+            // is not playback, and the red is kept for playback alone.
+            Accent = textPrimary,
             AltHigh = background,
             AltMediumHigh = surface,
             AltMedium = surface,
-            AltMediumLow = divider,
-            AltLow = divider,
+            AltMediumLow = border,
+            AltLow = border,
             BaseHigh = textPrimary,
             BaseMediumHigh = textSecondary,
-            BaseMedium = iconInactive,
-            BaseMediumLow = iconDisabled,
-            BaseLow = divider,
-            ChromeHigh = divider,
-            ChromeMedium = surface,
+            BaseMedium = textMuted,
+            BaseMediumLow = textDisabled,
+            BaseLow = border,
+            ChromeHigh = border,
+            ChromeMedium = subtle,
             ChromeMediumLow = surface,
             ChromeLow = background,
             ChromeAltLow = textSecondary,
-            ChromeDisabledHigh = divider,
-            ChromeDisabledLow = iconDisabled,
-            ChromeGray = iconInactive,
-            ListLow = surface,
-            ListMedium = divider,
+            ChromeDisabledHigh = border,
+            ChromeDisabledLow = textDisabled,
+            ChromeGray = textMuted,
+            ListLow = hover,
+            ListMedium = border,
             RegionColor = background,
-            ErrorText = C("PaletteError"),
+            ErrorText = C("PaletteDanger"),
         };
     }
 

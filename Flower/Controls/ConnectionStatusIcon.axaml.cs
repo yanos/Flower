@@ -87,6 +87,15 @@ public partial class ConnectionStatusIcon : UserControl
         set => SetValue(IsUnreachableProperty, value);
     }
 
+    public static readonly StyledProperty<bool> ConnectedAsDotProperty =
+        AvaloniaProperty.Register<ConnectionStatusIcon, bool>(nameof(ConnectedAsDot));
+
+    public bool ConnectedAsDot
+    {
+        get => GetValue(ConnectedAsDotProperty);
+        set => SetValue(ConnectedAsDotProperty, value);
+    }
+
     public double IconSize
     {
         get => GetValue(IconSizeProperty);
@@ -142,7 +151,8 @@ public partial class ConnectionStatusIcon : UserControl
         if (change.Property == IsConnectedProperty
             || change.Property == IsBusyProperty
             || change.Property == IsUnreachableProperty
-            || change.Property == IconSizeProperty)
+            || change.Property == IconSizeProperty
+            || change.Property == ConnectedAsDotProperty)
         {
             Apply();
         }
@@ -193,7 +203,8 @@ public partial class ConnectionStatusIcon : UserControl
     {
         var state = State;
 
-        ConnectedIcon.IsVisible = state == ConnectionState.Connected;
+        ConnectedIcon.IsVisible = state == ConnectionState.Connected && !ConnectedAsDot;
+        ConnectedDot.IsVisible = state == ConnectionState.Connected && ConnectedAsDot;
         BusyIcon.IsVisible = state == ConnectionState.Busy;
         UnreachableIcon.IsVisible = state == ConnectionState.Unreachable;
 

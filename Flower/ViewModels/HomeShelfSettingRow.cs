@@ -17,8 +17,14 @@ public sealed class HomeShelfSettingRow(HomeShelf shelf, MainViewModel main) : O
 
     public MaterialIconKind Icon => HomeShelfOrder.Icon(Shelf);
 
-    // Recently Added is months back; the other two are albums.
-    public string Unit => Shelf == HomeShelf.RecentlyAdded ? "months" : "albums";
+    // Continue Playing is albums, Recently Played songs, Recently Added
+    // months back.
+    public string Unit => Shelf switch
+    {
+        HomeShelf.ContinuePlaying => "albums",
+        HomeShelf.RecentlyPlayed => "songs",
+        _ => "months",
+    };
 
     public int Maximum => Shelf == HomeShelf.RecentlyAdded ? HomeViewModel.MaxRecentlyAddedMonths : HomeViewModel.MaxAlbumsPerShelf;
 

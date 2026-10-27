@@ -11,10 +11,11 @@
 
   <!-- Home: Continue Playing, Recently Played and Recently Added - see
        HomeViewModel, which desktop's HomeView draws too, for what is on each
-       and how many. Each is laid out like the Albums grid, as many ~150px
-       covers across as fit and wrapping onto rows below, in a virtualizing
-       list of rows at AlbumGridRow's tile width and gutters, rather than a
-       row that scrolls sideways. Pulling the page down opens the filter oval,
+       and how many. The album shelves are laid out like the Albums grid, as
+       many ~150px covers across as fit and wrapping onto rows below, in a
+       virtualizing list of rows at AlbumGridRow's tile width and gutters,
+       rather than a row that scrolls sideways; Recently Played is songs, a
+       song list's rows. Pulling the page down opens the filter oval,
        as on Albums. A Continue Playing cover picks its album up where it was
        left; any other cover opens its album, the way a tile in the Albums
        grid does. A long press on any of them is the album menu, which is also
@@ -80,6 +81,20 @@
                 </controls:TileRowPanel.ItemTemplate>
               </controls:TileRowPanel>
             </DataTemplate>
+
+            <!-- Recently Played's songs, one to a row and the whole width of
+                 the screen, as a song list's are (TrackRowView). A tap plays
+                 the shelf from that song down; a long press or the "..." is
+                 the song menu. -->
+            <DataTemplate DataType="fvm:HomeSongRow">
+              <controls:TileRowPanel Columns="{Binding Columns}" Items="{Binding Songs}" Margin="-12,0,0,0">
+                <controls:TileRowPanel.ItemTemplate>
+                  <DataTemplate>
+                    <views:TrackRowView />
+                  </DataTemplate>
+                </controls:TileRowPanel.ItemTemplate>
+              </controls:TileRowPanel>
+            </DataTemplate>
           </ItemsControl.DataTemplates>
         </controls:RecyclingItemsControl>
 
@@ -88,7 +103,7 @@
                     HorizontalAlignment="Center">
           <materialIcons:MaterialIcon Kind="HomeOutline" Classes="chrome" Width="40" Height="40" />
           <TextBlock Text="Nothing here yet" FontSize="17" FontWeight="SemiBold" HorizontalAlignment="Center" />
-          <TextBlock Text="Albums you play and albums you add will show up here."
+          <TextBlock Text="Songs you play and albums you add will show up here."
                      FontSize="14" TextWrapping="Wrap" TextAlignment="Center" />
         </StackPanel>
 

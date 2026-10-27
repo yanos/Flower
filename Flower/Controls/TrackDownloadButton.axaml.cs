@@ -8,6 +8,8 @@ using Avalonia.Media;
 
 using Flower.ViewModels;
 
+using Material.Icons;
+
 namespace Flower.Controls;
 
 public partial class TrackDownloadButton : UserControl
@@ -47,6 +49,20 @@ public partial class TrackDownloadButton : UserControl
     {
         get => GetValue(LabelProperty);
         set => SetValue(LabelProperty, value);
+    }
+
+    // Set by a host's own .playing style on the song playing, whose row's
+    // words are bold: the glyph goes bold with them. Material icons have no
+    // weight of their own, so bold is a heavier glyph - Download, the same
+    // arrow onto a bar as ArrowCollapseDown, filled rather than drawn in
+    // lines. Only the idle icon: a spinner or a failure says something else.
+    public static readonly StyledProperty<bool> IsBoldProperty =
+        AvaloniaProperty.Register<TrackDownloadButton, bool>(nameof(IsBold));
+
+    public bool IsBold
+    {
+        get => GetValue(IsBoldProperty);
+        set => SetValue(IsBoldProperty, value);
     }
 
     // For the hosts that have a command to hand (mobile's row template and its
@@ -93,6 +109,13 @@ public partial class TrackDownloadButton : UserControl
     {
         base.OnDataContextChanged(e);
         _indicator.Watch(DataContext as DownloadIndicatorViewModel);
+    }
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property == IsBoldProperty)
+            IdleIcon.Kind = IsBold ? MaterialIconKind.Download : MaterialIconKind.ArrowCollapseDown;
     }
 
     private void Show()

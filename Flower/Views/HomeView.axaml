@@ -8,34 +8,81 @@
              x:DataType="vm:HomeViewModel">
 
   <!-- Desktop's Home: three shelves under the page header MainView draws over
-       every list (the name, the count, the filter box), each laid out like
-       the Albums grid - as many columns as fit, wrapping onto rows below, in
-       a virtualizing list of rows at the grid's own cell width - rather than
-       one row that scrolls sideways. See HomeViewModel for what is on them and how
-       many. The phone's is HomeScreenView - the same shelves, but tapped and
-       long-pressed rather than clicked and right-clicked, and inside the
-       phone's own screen scroller. Every cover is the album tile the phone
-       draws (AlbumCard); its "..." opens the tile's menu - MainView answers
-       AlbumCard.MenuRequested. -->
+       every list (the name and the filter box). The album shelves are laid
+       out like the Albums grid - as many columns as fit, wrapping onto rows
+       below, in a virtualizing list of rows at the grid's own cell width -
+       rather than one row that scrolls sideways; Recently Played is songs,
+       two side by side, with a way through to History. See HomeViewModel for
+       what is on them and how many. The phone's is HomeScreenView - the same
+       shelves, but tapped and long-pressed rather than clicked and
+       right-clicked, and inside the phone's own screen scroller. Every cover
+       is the album tile the phone draws (AlbumCard); its "..." opens the
+       tile's menu - MainView answers AlbumCard.MenuRequested. A song's "..."
+       and a right-click on it open the song menu (Song_ContextRequested). -->
   <UserControl.Styles>
-    <!-- The phone's shelf headings (HomeScreenView), each leaving room above
-         it for the shelf before. -->
-    <Style Selector="TextBlock.shelfTitle">
-      <Setter Property="FontSize" Value="24" />
-      <Setter Property="FontWeight" Value="Bold" />
-      <Setter Property="Margin" Value="8,28,0,12" />
+    <!-- Each shelf's heading in the display serif, leaving room above it for
+         the shelf before. -->
+    <Style Selector="Grid.shelfTitle">
+      <Setter Property="Margin" Value="8,40,8,14" />
     </Style>
-    <Style Selector="TextBlock.shelfTitle.first">
-      <Setter Property="Margin" Value="8,0,0,12" />
+    <Style Selector="Grid.shelfTitle.first">
+      <Setter Property="Margin" Value="8,0,8,14" />
+    </Style>
+    <!-- A song on Recently Played: a rounded row over a hairline, grey under
+         the pointer, its words bold while it plays and faded while it cannot
+         be played. -->
+    <Style Selector="Button.homeSong">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0,0,0,1" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}" />
+      <Setter Property="CornerRadius" Value="10" />
+      <Setter Property="Padding" Value="8,0" />
+      <Setter Property="Height" Value="60" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.homeSong:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppHoverBrush}" />
+    </Style>
+    <Style Selector="TextBlock.songTitle">
+      <Setter Property="FontWeight" Value="Medium" />
+    </Style>
+    <Style Selector="Button.homeSong.playing TextBlock.songTitle">
+      <Setter Property="FontWeight" Value="Bold" />
+    </Style>
+    <Style Selector="Button.homeSong.playing controls|TrackDownloadButton">
+      <Setter Property="IsBold" Value="True" />
+    </Style>
+    <Style Selector="Button.homeSong.dimmed Grid#SongCells">
+      <Setter Property="Opacity" Value="0.5" />
+    </Style>
+    <!-- "See full history": words that grey like a button when pointed at. -->
+    <Style Selector="Button.link">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="10,0" />
+      <Setter Property="Height" Value="32" />
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="FontWeight" Value="Medium" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.link:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppHoverBrush}" />
     </Style>
     <Style Selector="Button.homeTile">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />
       <Setter Property="Padding" Value="8" />
-      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="CornerRadius" Value="14" />
       <Setter Property="VerticalAlignment" Value="Top" />
       <Setter Property="HorizontalAlignment" Value="Stretch" />
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+    <!-- Grey under the pointer, as a tile in the Albums grid is. -->
+    <Style Selector="Button.homeTile:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppHoverBrush}" />
     </Style>
   </UserControl.Styles>
 
@@ -47,7 +94,7 @@
          (RecyclingItemsControl), as on the phone. Its own ScrollViewer, as
          AlbumGridView has: an ItemsControl's template has none. -->
     <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-      <controls:RecyclingItemsControl x:Name="Rows" Margin="16,0,16,24">
+      <controls:RecyclingItemsControl x:Name="Rows" Margin="32,0,32,40">
         <ItemsControl.ItemsPanel>
           <ItemsPanelTemplate>
             <VirtualizingStackPanel Orientation="Vertical" />
@@ -55,7 +102,15 @@
         </ItemsControl.ItemsPanel>
         <ItemsControl.DataTemplates>
           <DataTemplate DataType="vm:HomeShelfHeaderRow">
-            <TextBlock Classes="shelfTitle" Classes.first="{Binding IsFirst}" Text="{Binding Title}" />
+            <Grid Classes="shelfTitle" Classes.first="{Binding IsFirst}" ColumnDefinitions="*,Auto">
+              <TextBlock Grid.Column="0" Classes="sectionTitle" FontSize="26" Text="{Binding Title}" VerticalAlignment="Bottom" />
+              <Button Grid.Column="1"
+                      Classes="link"
+                      Content="See full history"
+                      IsVisible="{Binding ShowsHistoryLink}"
+                      Command="{Binding HistoryLink.ShowHistoryCommand}"
+                      VerticalAlignment="Bottom" />
+            </Grid>
           </DataTemplate>
 
           <!-- Each shelf's covers, so many to a row (TileRowPanel, which
@@ -88,7 +143,8 @@
                         </MenuItem>
                       </ContextMenu>
                     </Button.ContextMenu>
-                    <controls:AlbumCard Tile="{Binding Tile}"
+                    <controls:AlbumCard Classes="desktop"
+                                        Tile="{Binding Tile}"
                                         ShowsProgress="True"
                                         Progress="{Binding Progress}"
                                         Detail="{Binding Detail}"
@@ -108,10 +164,62 @@
                   <Button Classes="homeTile"
                           Command="{Binding $parent[UserControl].((vm:HomeViewModel)DataContext).OpenAlbumCommand}"
                           CommandParameter="{Binding}">
-                    <controls:AlbumCard Tile="{Binding}"
-                                        DismissCommand="{Binding $parent[controls:TileRowPanel].((vm:HomeAlbumRow)DataContext).DismissCommand}"
-                                        DismissParameter="{Binding}"
-                                        DismissTip="{Binding $parent[controls:TileRowPanel].((vm:HomeAlbumRow)DataContext).DismissTip}" />
+                    <controls:AlbumCard Classes="desktop" Tile="{Binding}" />
+                  </Button>
+                </DataTemplate>
+              </controls:TileRowPanel.ItemTemplate>
+            </controls:TileRowPanel>
+          </DataTemplate>
+
+          <!-- Recently Played's songs, two to a row with a gutter between -
+               each song's right margin, given back by the row's. A click
+               plays the shelf from that song down. -->
+          <DataTemplate DataType="vm:HomeSongRow">
+            <controls:TileRowPanel Columns="{Binding Columns}" Items="{Binding Songs}" Margin="0,0,-32,2">
+              <controls:TileRowPanel.ItemTemplate>
+                <DataTemplate x:DataType="vm:TrackRowViewModel">
+                  <Button Classes="homeSong"
+                          Classes.playing="{Binding IsCurrentlyPlaying}"
+                          Classes.dimmed="{Binding IsUnavailable}"
+                          Margin="0,0,32,0"
+                          Command="{Binding $parent[UserControl].((vm:HomeViewModel)DataContext).PlayRecentlyPlayedCommand}"
+                          CommandParameter="{Binding}"
+                          ContextRequested="Song_ContextRequested">
+                    <Grid x:Name="SongCells" ColumnDefinitions="40,*,Auto,Auto,Auto" ColumnSpacing="12">
+                      <controls:AlbumArtView Grid.Column="0"
+                                             Width="40" Height="40"
+                                             ArtCornerRadius="8"
+                                             AlbumArt="{Binding AlbumArt}" />
+                      <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Center">
+                        <TextBlock Classes="songTitle"
+                                   Text="{Binding Track.Title}"
+                                   FontSize="14"
+                                   TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding ArtistAndAlbumText}"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                   TextTrimming="CharacterEllipsis" />
+                      </StackPanel>
+                      <controls:TrackDownloadButton Grid.Column="2"
+                                                    IconSize="17"
+                                                    IconPadding="11"
+                                                    Label="Download"
+                                                    DownloadRequested="Song_DownloadRequested" />
+                      <TextBlock Grid.Column="3"
+                                 Text="{Binding DurationDisplay}"
+                                 MinWidth="44"
+                                 TextAlignment="Right"
+                                 VerticalAlignment="Center"
+                                 Foreground="{DynamicResource AppTextValueBrush}" />
+                      <Button Grid.Column="4"
+                              Classes="pill"
+                              Padding="11"
+                              ToolTip.Tip="More"
+                              Click="SongMenu_Click">
+                        <materialIcons:MaterialIcon Kind="DotsVertical" Width="18" Height="18"
+                                                    Foreground="{DynamicResource AppTextSecondaryBrush}" />
+                      </Button>
+                    </Grid>
                   </Button>
                 </DataTemplate>
               </controls:TileRowPanel.ItemTemplate>
@@ -126,7 +234,7 @@
                 Spacing="8" Opacity="0.6" MaxWidth="360">
       <materialIcons:MaterialIcon Kind="HomeOutline" Classes="chrome" Width="40" Height="40" />
       <TextBlock Text="Nothing here yet" FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center" />
-      <TextBlock Text="Albums you play and albums you add will show up here."
+      <TextBlock Text="Songs you play and albums you add will show up here."
                  FontSize="13" TextWrapping="Wrap" TextAlignment="Center" />
     </StackPanel>
 

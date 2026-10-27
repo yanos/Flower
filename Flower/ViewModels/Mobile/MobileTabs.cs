@@ -62,11 +62,11 @@ public static class MobileTabs
     // UsesSongNote first.
     public static MaterialIconKind Icon(MobileTab tab) => tab switch
     {
-        MobileTab.Home => MaterialIconKind.Home,
+        MobileTab.Home => MaterialIconKind.HomeOutline,
         MobileTab.Albums => MaterialIconKind.Album,
-        MobileTab.Artists => MaterialIconKind.Account,
+        MobileTab.Artists => MaterialIconKind.AccountOutline,
         MobileTab.Playlists => MaterialIconKind.PlaylistPlay,
-        MobileTab.Queue => MaterialIconKind.PlaylistMusic,
+        MobileTab.Queue => MaterialIconKind.PlaylistMusicOutline,
         MobileTab.Search => MaterialIconKind.Magnify,
         _ => MaterialIconKind.MusicNote,
     };

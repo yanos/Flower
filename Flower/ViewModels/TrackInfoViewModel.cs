@@ -304,16 +304,6 @@ public sealed class TrackInfoViewModel : ViewModelBase
     public MaterialIconKind StarIcon =>
         IsAllStarred ? MaterialIconKind.Star : IsAnyStarred ? MaterialIconKind.StarHalfFull : MaterialIconKind.StarOutline;
 
-    public string StarText
-    {
-        get
-        {
-            if (IsAllStarred)
-                return Tracks.Count > 1 ? "Starred" : Tracks[0].StarredAt is { } at ? $"Starred {at.LocalDateTime:MMM d, yyyy}" : "Starred";
-            return IsAnyStarred ? $"{StarredCount} of {Tracks.Count} starred" : "Not starred";
-        }
-    }
-
     public string StarToolTip => IsAllStarred ? "Remove the star" : "Star";
 
     // Library.SetStarred is the one path that both changes a song and
@@ -330,7 +320,6 @@ public sealed class TrackInfoViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsAllStarred));
         OnPropertyChanged(nameof(IsAnyStarred));
         OnPropertyChanged(nameof(StarIcon));
-        OnPropertyChanged(nameof(StarText));
         OnPropertyChanged(nameof(StarToolTip));
     }
 
@@ -480,7 +469,7 @@ public sealed class TrackInfoViewModel : ViewModelBase
             parts.Add("No artwork");
         }
 
-        parts.Add("Drop an image or click Change");
+        parts.Add("Drop an image or choose a file");
         return string.Join("  ·  ", parts);
     }
 

@@ -66,13 +66,14 @@ public static class ActionMenus
     // song playing. canLocateFiles: the head can show a file in the platform's
     // file manager, which a phone cannot - and then only when one of the songs
     // has a file here to show, which one streamed from the server does not.
+    // isRecentlyPlayed: opened over a song on Home's Recently Played.
     public static IReadOnlyList<IReadOnlyList<ActionMenuEntry>> ForSongs(
-        MenuFacts facts, bool canRemoveFromQueue, bool canLocateFiles)
+        MenuFacts facts, bool canRemoveFromQueue, bool canLocateFiles, bool isRecentlyPlayed = false)
     {
         var where = new List<ActionMenuEntry>
         {
             new(MenuAction.PlayNext, "Play Next", MaterialIconKind.PlaylistPlay),
-            new(MenuAction.AddToQueue, "Add to Queue", MaterialIconKind.PlaylistMusic),
+            new(MenuAction.AddToQueue, "Add to Queue", MaterialIconKind.PlaylistMusicOutline),
             new(MenuAction.AddToPlaylist, "Add to Playlist", MaterialIconKind.PlaylistPlus),
         };
         if (canRemoveFromQueue)
@@ -83,12 +84,14 @@ public static class ActionMenus
             what.Add(new(MenuAction.LocateFile, "Locate File", MaterialIconKind.FolderOpenOutline));
         if (Download(facts, "Download") is { } download)
             what.Add(download);
+        // Off the shelf until the song is next played.
+        if (isRecentlyPlayed)
+            what.Add(new(MenuAction.HideFromRecentlyPlayed, "Remove from Recently Played", MaterialIconKind.PlaylistRemove));
 
         return Groups(where, what, Removals(facts));
     }
 
     // isContinuing: the album is on Home's Continue Playing shelf.
-    // isRecentlyPlayed: the menu was raised over a Recently Played cover.
     // isPlaylist: the phone's playlist row opens this same menu, since play,
     // shuffle and putting the songs somewhere are the same questions of a
     // different pile of songs; the playlist adds its own two.
@@ -101,7 +104,7 @@ public static class ActionMenus
     // isSmart: a smart playlist, on a head that can recompute one
     // (MainViewModel.SmartPlaylists) - its rules to edit, after its name.
     public static IReadOnlyList<IReadOnlyList<ActionMenuEntry>> ForAlbum(
-        MenuFacts facts, bool isContinuing = false, bool isRecentlyPlayed = false, bool isPlaylist = false,
+        MenuFacts facts, bool isContinuing = false, bool isPlaylist = false,
         bool isArtist = false, bool isFolder = false, bool canMoveToFolder = false, bool isSmart = false)
     {
         var where = new List<ActionMenuEntry>
@@ -109,7 +112,7 @@ public static class ActionMenus
             new(MenuAction.Play, "Play", MaterialIconKind.Play),
             new(MenuAction.Shuffle, "Shuffle", MaterialIconKind.Shuffle),
             new(MenuAction.PlayNext, "Play Next", MaterialIconKind.PlaylistPlay),
-            new(MenuAction.AddToQueue, "Add to Queue", MaterialIconKind.PlaylistMusic),
+            new(MenuAction.AddToQueue, "Add to Queue", MaterialIconKind.PlaylistMusicOutline),
             new(MenuAction.AddToPlaylist, "Add to Playlist", MaterialIconKind.PlaylistPlus),
         };
 
@@ -125,9 +128,6 @@ public static class ActionMenus
         // The one way off the shelf without playing the album to its end.
         if (isContinuing)
             what.Add(new(MenuAction.ForgetProgress, "Remove from Continue Playing", MaterialIconKind.PlaylistRemove));
-        // The cover's x, as an entry - until the album is next played.
-        if (isRecentlyPlayed)
-            what.Add(new(MenuAction.HideFromRecentlyPlayed, "Remove from Recently Played", MaterialIconKind.PlaylistRemove));
         if (isFolder)
         {
             what.Add(new(MenuAction.NewPlaylistInFolder, "New Playlist", MaterialIconKind.PlaylistPlus));

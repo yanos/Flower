@@ -128,9 +128,11 @@ public class ActionMenusTests
     }
 
     [Fact]
-    public void A_Recently_Played_cover_can_be_taken_off_the_shelf()
+    public void A_Recently_Played_song_can_be_taken_off_the_shelf()
     {
-        Assert.DoesNotContain(ActionMenus.Flat(ActionMenus.ForAlbum(Nothing)), e => e.Action == MenuAction.HideFromRecentlyPlayed);
-        Assert.Contains(ActionMenus.Flat(ActionMenus.ForAlbum(Nothing, isRecentlyPlayed: true)), e => e.Action == MenuAction.HideFromRecentlyPlayed);
+        Assert.DoesNotContain(ActionMenus.Flat(ActionMenus.ForSongs(Nothing, canRemoveFromQueue: false, canLocateFiles: false)),
+            e => e.Action == MenuAction.HideFromRecentlyPlayed);
+        Assert.Contains(ActionMenus.Flat(ActionMenus.ForSongs(Nothing, canRemoveFromQueue: false, canLocateFiles: false, isRecentlyPlayed: true)),
+            e => e.Action == MenuAction.HideFromRecentlyPlayed);
     }
 }

@@ -62,7 +62,7 @@
       <Setter Property="BoxShadow" Value="{DynamicResource AppOvalShadow}" />
     </Style>
     <Style Selector="Border.tabRow.lifted Panel.wash">
-      <Setter Property="Background" Value="{DynamicResource AppAccentHoverSoftBrush}" />
+      <Setter Property="Background" Value="{DynamicResource AppHoverBrush}" />
     </Style>
     <Style Selector="Border.tabRow.lifted Border.divider">
       <Setter Property="IsVisible" Value="False" />

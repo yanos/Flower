@@ -46,7 +46,7 @@
     <Panel>
       <materialIcons:MaterialIcon x:Name="IdleIcon"
                                   Classes="chrome"
-                                  Kind="CloudDownloadOutline"
+                                  Kind="ArrowCollapseDown"
                                   Width="{Binding #Root.IconSize}" Height="{Binding #Root.IconSize}" Opacity="0.7"
                                   ToolTip.Tip="{Binding #Root.Label}"/>
       <!-- Rotation driven by the indicator's own SpinAngle, not a View-side

@@ -37,7 +37,7 @@
       <Setter Property="Width" Value="44" />
       <Setter Property="Height" Value="44" />
       <Setter Property="CornerRadius" Value="22" />
-      <Setter Property="Background" Value="{DynamicResource AppAccentTintBrush}" />
+      <Setter Property="Background" Value="{DynamicResource AppHoverBrush}" />
       <Setter Property="VerticalAlignment" Value="Top" />
     </Style>
     <Style Selector="Border.badge > materialIcons|MaterialIcon">
@@ -254,7 +254,7 @@
         <Button Classes="cardLink" Command="{Binding OpenNavigationBarSettingsCommand}">
           <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14" Classes="badgeRow">
             <Border Grid.Column="0" Classes="badge" VerticalAlignment="Center">
-              <materialIcons:MaterialIcon Kind="PlaylistMusic" />
+              <materialIcons:MaterialIcon Kind="PlaylistMusicOutline" />
             </Border>
             <TextBlock Grid.Column="1" Classes="rowTitle" Text="Customize navigation bar"
                        VerticalAlignment="Center" />
@@ -331,7 +331,7 @@
           <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14" Classes="badgeRow"
                 IsVisible="{Binding Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}">
             <Border Grid.Column="0" Classes="badge" VerticalAlignment="Center">
-              <materialIcons:MaterialIcon Kind="Database" />
+              <materialIcons:MaterialIcon Kind="DatabaseOutline" />
             </Border>
             <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
               <!-- The server's own icon before its name, when it has one
@@ -406,7 +406,7 @@
           <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14" Classes="badgeRow"
                 IsVisible="{Binding Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNullOrEmpty}}">
             <Border Grid.Column="0" Classes="badge" VerticalAlignment="Center">
-              <materialIcons:MaterialIcon Kind="Database" />
+              <materialIcons:MaterialIcon Kind="DatabaseOutline" />
             </Border>
             <TextBlock Grid.Column="1" Classes="note" FontSize="15"
                        Text="Not paired" VerticalAlignment="Center" />
@@ -497,7 +497,7 @@
                       IsVisible="{Binding Main.PairingCodes.Code, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}">
             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
               <Border Grid.Column="0"
-                      Background="{DynamicResource AppAccentTintBrush}"
+                      Background="{DynamicResource AppHoverBrush}"
                       CornerRadius="10" Padding="16,8">
                 <SelectableTextBlock Text="{Binding Main.PairingCodes.Code}"
                                      FontSize="24" FontWeight="Bold" LetterSpacing="2"

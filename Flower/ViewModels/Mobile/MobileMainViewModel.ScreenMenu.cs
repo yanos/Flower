@@ -78,15 +78,14 @@ public partial class MobileMainViewModel
     // other order - a year, a date, a count - has no letter to jump to, and
     // the bar is dots, a scrubber over the whole scroll. The ZToA pair turns
     // the bar round with a reversed sort (ScrollIndexBar.LettersDescending).
-    public bool AlbumGridIsAlphabetical =>
-        SortOf(BrowseSortScreen.Albums).Order is BrowseSortOrder.Name or BrowseSortOrder.Artist;
+    // The grid's and the artists' are the desktop's too (MainViewModel).
+    public bool AlbumGridIsAlphabetical => Main.AlbumGridIsAlphabetical;
 
-    public bool AlbumGridRunsZToA => AlbumGridIsAlphabetical && !SortOf(BrowseSortScreen.Albums).Ascending;
+    public bool AlbumGridRunsZToA => Main.AlbumGridRunsZToA;
 
-    public bool ArtistPickerIsAlphabetical =>
-        SortOf(BrowseSortScreen.Artists).Order == BrowseSortOrder.Name;
+    public bool ArtistPickerIsAlphabetical => Main.ArtistsAreAlphabetical;
 
-    public bool ArtistPickerRunsZToA => ArtistPickerIsAlphabetical && !SortOf(BrowseSortScreen.Artists).Ascending;
+    public bool ArtistPickerRunsZToA => Main.ArtistsRunZToA;
 
     public bool SongsAreAlphabetical =>
         SortOf(BrowseSortScreen.Songs).Order is BrowseSortOrder.Name or BrowseSortOrder.Artist or BrowseSortOrder.Album;
@@ -102,10 +101,7 @@ public partial class MobileMainViewModel
         _ => track.TitleSortValue,
     };
 
-    // What an album on the grid is filed under on the bar: its artist when the
-    // grid is sorted by artist, its own name otherwise.
-    public string? AlbumGridLetterText(AlbumTileViewModel tile) =>
-        SortOf(BrowseSortScreen.Albums).Order == BrowseSortOrder.Artist ? tile.Artist : tile.Name;
+    public string? AlbumGridLetterText(AlbumTileViewModel tile) => Main.AlbumGridLetterText(tile);
 
     // The sort in use, picked again, turns round (BrowseSort.Pick).
     private void ChooseSort(BrowseSortScreen screen, BrowseSortOrder order)
@@ -206,7 +202,7 @@ public partial class MobileMainViewModel
     private IEnumerable<ScreenMenuEntry> QueueEntries(Func<IReadOnlyList<Track>> tracks) =>
     [
         new ScreenMenuEntry("Play Next", MaterialIconKind.PlaylistPlay, () => LineUp(tracks(), next: true)),
-        new ScreenMenuEntry("Add to Queue", MaterialIconKind.PlaylistMusic, () => LineUp(tracks(), next: false)),
+        new ScreenMenuEntry("Add to Queue", MaterialIconKind.PlaylistMusicOutline, () => LineUp(tracks(), next: false)),
     ];
 
     /// <summary>
@@ -236,7 +232,7 @@ public partial class MobileMainViewModel
         // album's does not - its name if it is a plain one, its rules if it is
         // smart (EditCurrentPlaylistCommand decides which).
         if (frame.IsPlaylistTrackList && CanEditCurrentPlaylist)
-            actions.Add(new ScreenMenuEntry("Edit", MaterialIconKind.Pencil,
+            actions.Add(new ScreenMenuEntry("Edit", MaterialIconKind.PencilOutline,
                 () => EditCurrentPlaylistCommand.Execute(null)));
         if (TracksOnScreen(frame).Count > 0)
             actions.Add(new ScreenMenuEntry("Shuffle", MaterialIconKind.Shuffle,
@@ -296,7 +292,7 @@ public partial class MobileMainViewModel
             sections.Add(new ScreenMenuSection(null, destructive));
 
         sections.Add(new ScreenMenuSection(null,
-            [new ScreenMenuEntry("Settings", MaterialIconKind.Cog, () => OpenSettingsCommand.Execute(null))]));
+            [new ScreenMenuEntry("Settings", MaterialIconKind.CogOutline, () => OpenSettingsCommand.Execute(null))]));
         return sections;
     }
 
@@ -325,7 +321,7 @@ public partial class MobileMainViewModel
             [
                 new ScreenMenuEntry("Add to Playlist", MaterialIconKind.PlaylistPlus,
                     () => OpenSongSheetForPlaying(MobileSheet.AddToPlaylist)),
-                new ScreenMenuEntry("Show Queue", MaterialIconKind.PlaylistMusic,
+                new ScreenMenuEntry("Show Queue", MaterialIconKind.PlaylistMusicOutline,
                     () => SelectTabCommand.Execute(nameof(MobileTab.Queue))),
                 new ScreenMenuEntry("Info", MaterialIconKind.InformationOutline,
                     () => OpenSongSheetForPlaying(MobileSheet.TrackInfo)),
@@ -333,7 +329,7 @@ public partial class MobileMainViewModel
         }
 
         sections.Add(new ScreenMenuSection(null,
-            [new ScreenMenuEntry("Settings", MaterialIconKind.Cog, () => OpenSettingsCommand.Execute(null))]));
+            [new ScreenMenuEntry("Settings", MaterialIconKind.CogOutline, () => OpenSettingsCommand.Execute(null))]));
         return sections;
     }
 

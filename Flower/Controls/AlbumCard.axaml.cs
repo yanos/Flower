@@ -78,8 +78,7 @@ public partial class AlbumCard : UserControl
 
     // The round x on the cover, shown only where there is one to run: Continue
     // Playing's tiles, on both heads, take the album off the shelf with it
-    // (HomeViewModel.ForgetCommand, the parameter its item), and Recently
-    // Played's the same (HideFromRecentlyPlayedCommand, the parameter the tile).
+    // (HomeViewModel.ForgetCommand, the parameter its item).
     public ICommand? DismissCommand
     {
         get => GetValue(DismissCommandProperty);

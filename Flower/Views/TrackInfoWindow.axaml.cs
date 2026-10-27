@@ -112,10 +112,10 @@ public partial class TrackInfoWindow : Window
     private void Tabs_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
         // Raised once while the XAML is still loading (SelectedIndex="0"),
-        // before the pages are there - Info is the one showing by default.
-        if (InfoPage is null)
+        // before the pages are there - Details is the one showing by default.
+        if (DetailsPage is null)
             return;
-        Control[] pages = [InfoPage, DescriptionsPage, LyricsPage, ArtworkPage, OptionsPage, TechnicalPage];
+        Control[] pages = [DetailsPage, ExtraPage, SortingPage, LyricsPage, ArtworkPage, FilePage];
         for (var i = 0; i < pages.Length; i++)
             pages[i].IsVisible = i == Tabs.SelectedIndex;
     }
@@ -230,14 +230,14 @@ public partial class TrackInfoWindow : Window
     // ── Artwork tab ────────────────────────────────────────────────────────
     //
     // Unlike every other field in this window, artwork is not staged and
-    // applied on OK: a change here writes the picture into the tag immediately
+    // applied on Save: a change here writes the picture into the tag immediately
     // (AlbumArtEditor). Two reasons. The tag write is a whole-file rewrite
-    // of megabytes, not a string assignment, so batching it behind OK would make
+    // of megabytes, not a string assignment, so batching it behind Save would make
     // Cancel look free while the expensive part still had to happen; and the
     // preview the user is looking at *is* the file's art once it is written, so
-    // there is nothing left for OK to confirm. Cancel therefore does not undo an
-    // artwork change - which is why the buttons name actions ("Change…",
-    // "Remove") rather than reading as pending edits.
+    // there is nothing left for Save to confirm. Cancel therefore does not undo an
+    // artwork change - which is why the buttons name actions ("Choose
+    // File…", "Remove") rather than reading as pending edits.
     //
     // "The file" is not always one of this device's: a track that only exists on
     // the paired server is written by asking that server to do it - see
@@ -375,9 +375,9 @@ public partial class TrackInfoWindow : Window
         await WriteArtAsync(png, ClipboardArt.MimeType);
     }
 
-    // A cover found online for the album the Info tab's boxes name - the
+    // A cover found online for the album the Details tab's boxes name - the
     // boxes rather than the song, so a misspelt album can be corrected and
-    // searched again before OK. Chosen over the whole window
+    // searched again before Save. Chosen over the whole window
     // (OnlineCoverPicker, shared with the phone's sheet), and written at once
     // like Change, once Use This Cover is pressed.
     private async void FindArtButton_Click(object? sender, RoutedEventArgs e)

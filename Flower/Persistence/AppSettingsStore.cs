@@ -112,24 +112,18 @@ namespace Flower.Persistence
         // PlaybackControlsPlacement above.
         public PlaybackControlsPlacement PlaybackControlsPlacement { get; set; } = PlaybackControlsPlacement.Top;
 
-        // Settings > General. The desktop's player bar washed in the playing
-        // album's colour, its words and controls drawn over it the way the
-        // phone's Now Playing draws them (ArtBackdrop, MainView's
-        // PlayerBarOnArt) - on by default; off, the bar is the page's own.
-        public bool TintPlayerBarWithAlbumColor { get; set; } = true;
-
         // What Home's shelves hold, on every head - set in Settings (the
         // desktop's General tab, the phone's Home card) and read by
-        // HomeViewModel. Continue Playing and Recently Played are capped at so
-        // many albums, Recently Added at so many months back. Zero hides that
-        // shelf.
+        // HomeViewModel. Continue Playing is capped at so many albums, Recently
+        // Played at so many songs, Recently Added at so many months back. Zero
+        // hides that shelf.
         public int HomeContinuePlayingLimit { get; set; } = 6;
-        public int HomeRecentlyPlayedLimit  { get; set; } = 6;
+        public int HomeRecentlyPlayedLimit  { get; set; } = 8;
         public int HomeRecentlyAddedMonths  { get; set; } = 3;
 
-        // Albums taken off Recently Played by its x, each with the last time
-        // one of its songs had started when it was - see
-        // HomeViewModel.HideFromRecentlyPlayedCommand. Keyed by album id.
+        // Songs taken off Recently Played from their menu, each with the last
+        // time it had started when it was - see
+        // HomeViewModel.HideFromRecentlyPlayed. Keyed by song id.
         public Dictionary<string, DateTimeOffset> HomeRecentlyPlayedHidden { get; set; } = new();
 
         // The order of those shelves, top to bottom, by name - see

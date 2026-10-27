@@ -13,16 +13,16 @@ using Microsoft.Extensions.Logging;
 
 namespace Flower.Services;
 
-// The browser head's fonts beyond Inter.
+// The browser head's fonts beyond Geist and Inter.
 //
 // Every other head borrows its CJK and emoji fonts from the operating system -
 // FlowerFonts names Hiragino, Yu Gothic, Noto CJK and so on, and the system
 // cascade does the rest. A browser tab cannot: it runs as WebAssembly, draws
 // into a canvas with its own Skia, and a web page is not allowed to read the
 // machine's installed fonts (that list is a fingerprint). So the tab only has
-// the font files it is handed, and until this it was handed Inter and nothing
-// else - every Japanese title and every emoji drew as a box, and so did the ♫
-// on the album art placeholder.
+// the font files it is handed, and until this it was handed the UI font and
+// nothing else - every Japanese title and every emoji drew as a box, and so did
+// the ♫ on the album art placeholder.
 //
 // The fonts that cover those scripts are large (4-8 MB each), and which ones a
 // tab needs depends on the library, so they are not bundled. They sit next to
@@ -33,8 +33,8 @@ namespace Flower.Services;
 // catalog is handed to the UI (see App's browser rescan), so rows are first
 // laid out with the fonts already there and nothing has to be redrawn.
 //
-// The one font every tab needs is the one for the app's own chrome: ♫ is not
-// in Inter. Noto Sans Symbols is 227 KB and is bundled in Flower.Web itself
+// The one font every tab needs is the one for the app's own chrome: ♫ is in
+// neither Geist nor Inter. Noto Sans Symbols is 227 KB and is bundled in Flower.Web itself
 // (Assets/Fonts), so it is there from the first frame.
 //
 // All Noto, under the SIL Open Font License (the licences sit beside the files).
@@ -79,10 +79,11 @@ public static class BrowserFonts
     //   - Symbols next, for the app's own chrome: the ♫ the emoji font does
     //     not have.
     //
-    // No order reaches what Inter itself draws: it is the primary font, asked
-    // before any of these, and it has a text-style ❤. So "❤️" draws black
-    // here, as it does on the desktop, which has Inter first too. Honouring
-    // U+FE0F would take emoji-presentation handling in text layout itself.
+    //   - Inter ahead of them all, as on the other heads (FlowerFonts): it is
+    //     what draws the Greek and the rest of what Geist, the primary font,
+    //     lacks, and it has a text-style ❤ - so "❤️" draws black here, as it
+    //     does on the desktop, which has Inter first too. Honouring U+FE0F
+    //     would take emoji-presentation handling in text layout itself.
     //   - Japanese before Chinese, for the reason FlowerFonts gives: the Han
     //     characters the two share go to whichever comes first, and the
     //     library this was written for is Japanese far more often than not.
@@ -91,6 +92,7 @@ public static class BrowserFonts
     // of them from the start.
     public static FontFallback[] Fallbacks =>
     [
+        FlowerFonts.Inter,
         Fallback(Emoji),
         new() { FontFamily = new FontFamily($"{SymbolsCollection}#Noto Sans Symbols") },
         Fallback(Japanese),
@@ -185,8 +187,8 @@ public static class BrowserFonts
         public bool Emoji;
         public bool Kana;
         public bool Hangul;
-        // CJK punctuation and fullwidth forms, which Inter does not carry and
-        // a Japanese font does.
+        // CJK punctuation and fullwidth forms, which neither UI font carries
+        // and a Japanese font does.
         public bool OtherCjk;
         public readonly HashSet<int> Han = [];
 
@@ -204,9 +206,9 @@ public static class BrowserFonts
             for (var i = 0; i < text.Length; i++)
             {
                 var c = text[i];
-                // Everything Inter draws sits below here - Latin, Greek,
-                // Cyrillic, general punctuation - so most characters of most
-                // libraries cost one comparison.
+                // Everything Geist and Inter draw between them sits below
+                // here - Latin, Greek, Cyrillic, general punctuation - so most
+                // characters of most libraries cost one comparison.
                 if (c < '←')
                     continue;
 
@@ -239,7 +241,7 @@ public static class BrowserFonts
 
     // Emoji by block rather than by the full Extended_Pictographic property:
     // the blocks below are where a song title's emoji live, and the property
-    // would also claim symbols Inter or the symbols font already draw in the
+    // would also claim symbols the UI fonts or the symbols font already draw in the
     // text style a title would want. U+FE0F, the emoji-style selector, asks
     // for the emoji font whatever precedes it.
     private static bool IsEmoji(int c) =>

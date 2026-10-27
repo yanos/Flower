@@ -30,6 +30,30 @@
        Latin glyph, and the gap that made between the name and the artist read
        as two separate captions. -->
   <UserControl.Styles>
+    <!-- The captions' sizes: the phone's, and the desktop's smaller ones -
+         a bold name and the artist in the muted colour - when the host
+         classes the card desktop. -->
+    <Style Selector="controls|RowText#AlbumName">
+      <Setter Property="FontSize" Value="17" />
+      <Setter Property="LineHeight" Value="29" />
+      <Setter Property="FontWeight" Value="Medium" />
+    </Style>
+    <Style Selector="controls|RowText#ArtistName">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="LineHeight" Value="24" />
+      <Setter Property="Opacity" Value="0.6" />
+    </Style>
+    <Style Selector="controls|AlbumCard.desktop controls|RowText#AlbumName">
+      <Setter Property="FontSize" Value="15" />
+      <Setter Property="LineHeight" Value="26" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="controls|AlbumCard.desktop controls|RowText#ArtistName">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="LineHeight" Value="23" />
+      <Setter Property="Opacity" Value="1" />
+      <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}" />
+    </Style>
     <!-- Nothing in it can be played right now (AlbumTileViewModel
          .IsUnavailable): faded, with its icons and missing-cover note grey
          rather than the faded red dimming alone would leave them. -->
@@ -63,8 +87,8 @@
               Background="{DynamicResource AppAccentBrush}">
         <materialIcons:MaterialIcon Kind="Play" Width="24" Height="24" Foreground="{DynamicResource AppOnPrimaryBrush}" />
       </Border>
-      <!-- Continue Playing's and Recently Played's: takes the album off the
-           shelf without playing it (DismissCommand). Dark glass and a white cross, so it
+      <!-- Continue Playing's: takes the album off the shelf without playing
+           it (DismissCommand). Dark glass and a white cross, so it
            reads over any cover; a button of its own, so a press on it is
            its alone, as the "..." below is. -->
       <Button x:Name="DismissButton"
@@ -86,8 +110,8 @@
                  Margin="0,6,0,2"
                  Foreground="{DynamicResource AppAccentBrush}" />
     <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto" Margin="2,0,0,0">
-      <controls:RowText x:Name="AlbumName" Grid.Row="0" Grid.ColumnSpan="2" FontSize="17" LineHeight="29" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
-      <controls:RowText x:Name="ArtistName" Grid.Row="1" Grid.Column="0" Margin="0,-5,0,0" FontSize="14" LineHeight="24" Opacity="0.6" TextTrimming="CharacterEllipsis" />
+      <controls:RowText x:Name="AlbumName" Grid.Row="0" Grid.ColumnSpan="2" TextTrimming="CharacterEllipsis" />
+      <controls:RowText x:Name="ArtistName" Grid.Row="1" Grid.Column="0" Margin="0,-5,0,0" TextTrimming="CharacterEllipsis" />
       <!-- On the artist's line rather than the name's: an album name is
            what gets cut short on a narrow tile, and the artist is usually the
            shorter of the two. The negative margins keep a comfortable target

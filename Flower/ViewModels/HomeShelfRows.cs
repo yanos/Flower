@@ -1,13 +1,13 @@
 using System.Collections.Generic;
 using System.Linq;
-using System.Windows.Input;
 
 using Flower.ViewModels.Mobile;
 
 namespace Flower.ViewModels;
 
 // Home's three shelves as one list of rows - a shelf's heading, then its
-// covers so many to a row, the shelves in the user's order (HomeViewModel.
+// covers (or Recently Played's songs) so many to a row, the shelves in the
+// user's order (HomeViewModel.
 // ShelfOrder) - for a virtualizing list to show, the way the album
 // grids show theirs (AlbumGridView, AlbumGridRow). Only the rows on screen are
 // built: Recently Added is months of albums, and on a library scanned within
@@ -18,13 +18,19 @@ namespace Flower.ViewModels;
 // short last row keeps the full count so its covers are as wide as the rest.
 public abstract class HomeShelfRow;
 
-public sealed class HomeShelfHeaderRow(string title, bool isFirst) : HomeShelfRow
+public sealed class HomeShelfHeaderRow(string title, bool isFirst, HomeViewModel? historyLink = null) : HomeShelfRow
 {
     public string Title { get; } = title;
 
     // The first heading sits at the top of the page; the others leave room
     // above them for the shelf they follow.
     public bool IsFirst { get; } = isFirst;
+
+    // Recently Played's "See full history", on a head with a History page
+    // to go to (HomeViewModel.ShowHistoryCommand) - null for none.
+    public HomeViewModel? HistoryLink { get; } = historyLink;
+
+    public bool ShowsHistoryLink => HistoryLink != null;
 }
 
 public sealed class HomeContinuePlayingRow(IReadOnlyList<ContinuePlayingItemViewModel> items, int columns) : HomeShelfRow
@@ -33,25 +39,32 @@ public sealed class HomeContinuePlayingRow(IReadOnlyList<ContinuePlayingItemView
     public int Columns { get; } = columns;
 }
 
-public sealed class HomeAlbumRow(IReadOnlyList<AlbumTileViewModel> tiles, int columns,
-    ICommand? dismissCommand = null, string? dismissTip = null) : HomeShelfRow
+public sealed class HomeAlbumRow(IReadOnlyList<AlbumTileViewModel> tiles, int columns) : HomeShelfRow
 {
     public IReadOnlyList<AlbumTileViewModel> Tiles { get; } = tiles;
     public int Columns { get; } = columns;
+}
 
-    // The x on each cover, where the shelf has one (Recently Played's),
-    // run with the tile - see AlbumCard.DismissCommand.
-    public ICommand? DismissCommand { get; } = dismissCommand;
-    public string? DismissTip { get; } = dismissTip;
+// Recently Played's songs, so many to a row - two side by side on the
+// desktop, one on a phone.
+public sealed class HomeSongRow(IReadOnlyList<TrackRowViewModel> songs, int columns) : HomeShelfRow
+{
+    public IReadOnlyList<TrackRowViewModel> Songs { get; } = songs;
+    public int Columns { get; } = columns;
 }
 
 public static class HomeShelfRows
 {
-    public static List<HomeShelfRow> Build(HomeViewModel home, int columns)
+    // songColumns: how many of Recently Played's songs go side by side.
+    // historyLink: whether the head has a History page for Recently Played's
+    // heading to lead to.
+    public static List<HomeShelfRow> Build(HomeViewModel home, int columns, int songColumns = 1, bool historyLink = false)
     {
         var rows = new List<HomeShelfRow>();
         if (columns < 1)
             columns = 1;
+        if (songColumns < 1)
+            songColumns = 1;
 
         foreach (var shelf in home.ShelfOrder)
         {
@@ -62,26 +75,18 @@ public static class HomeShelfRows
                     foreach (var chunk in home.ContinuePlaying.Chunk(columns))
                         rows.Add(new HomeContinuePlayingRow(chunk, columns));
                     break;
-                case HomeShelf.RecentlyPlayed:
-                    AddShelf(rows, HomeShelfOrder.Title(shelf), home.RecentlyPlayed, columns,
-                        home.HideFromRecentlyPlayedCommand, "Remove from Recently Played");
+                case HomeShelf.RecentlyPlayed when home.HasRecentlyPlayed:
+                    rows.Add(new HomeShelfHeaderRow(HomeShelfOrder.Title(shelf), rows.Count == 0, historyLink ? home : null));
+                    foreach (var chunk in home.RecentlyPlayed.Chunk(songColumns))
+                        rows.Add(new HomeSongRow(chunk, songColumns));
                     break;
-                case HomeShelf.RecentlyAdded:
-                    AddShelf(rows, HomeShelfOrder.Title(shelf), home.RecentlyAdded, columns);
+                case HomeShelf.RecentlyAdded when home.HasRecentlyAdded:
+                    rows.Add(new HomeShelfHeaderRow(HomeShelfOrder.Title(shelf), rows.Count == 0));
+                    foreach (var chunk in home.RecentlyAdded.Chunk(columns))
+                        rows.Add(new HomeAlbumRow(chunk, columns));
                     break;
             }
         }
         return rows;
-    }
-
-    private static void AddShelf(List<HomeShelfRow> rows, string title, IReadOnlyList<AlbumTileViewModel> tiles, int columns,
-        ICommand? dismissCommand = null, string? dismissTip = null)
-    {
-        if (tiles.Count == 0)
-            return;
-
-        rows.Add(new HomeShelfHeaderRow(title, rows.Count == 0));
-        foreach (var chunk in tiles.Chunk(columns))
-            rows.Add(new HomeAlbumRow(chunk, columns, dismissCommand, dismissTip));
     }
 }

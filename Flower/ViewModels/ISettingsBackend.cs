@@ -21,9 +21,7 @@ public sealed record SettingsCapabilities
     public bool ThemePicker { get; init; }
 
     // Where the desktop's playback controls sit (AppSettings.
-    // PlaybackControlsPlacement), and whether their bar takes the album's
-    // colour (TintPlayerBarWithAlbumColor). The app's own only: a server has
-    // no window.
+    // PlaybackControlsPlacement). The app's own only: a server has no window.
     public bool PlaybackControlsPicker { get; init; }
 
     // How much Home's shelves hold (AppSettings.HomeContinuePlayingLimit and

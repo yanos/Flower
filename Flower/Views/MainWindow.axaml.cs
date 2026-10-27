@@ -193,19 +193,19 @@ public partial class MainWindow : Window
                 SetIcon("Decrease Volume", MaterialIconKind.VolumeMinus);
                 SetIcon("Info",        MaterialIconKind.InformationOutline);
                 SetIcon("Play Next",       MaterialIconKind.PlaylistPlay);
-                SetIcon("Add to Queue",    MaterialIconKind.PlaylistMusic);
+                SetIcon("Add to Queue",    MaterialIconKind.PlaylistMusicOutline);
                 SetIcon("Locate File",     MaterialIconKind.FolderOpenOutline);
                 SetIcon("Download",        MaterialIconKind.CloudDownloadOutline);
                 SetIcon("Play Playlist Next",    MaterialIconKind.PlaylistPlay);
-                SetIcon("Add Playlist to Queue", MaterialIconKind.PlaylistMusic);
+                SetIcon("Add Playlist to Queue", MaterialIconKind.PlaylistMusicOutline);
                 SetIcon("Edit Rules…",     MaterialIconKind.Tune);
                 SetIcon("Home",            MaterialIconKind.HomeOutline);
                 SetIcon("Search",          MaterialIconKind.Magnify);
-                SetIcon("Queue",           MaterialIconKind.PlaylistMusic);
+                SetIcon("Queue",           MaterialIconKind.PlaylistMusicOutline);
                 SetIcon("History",         MaterialIconKind.ClockTimeEightOutline);
                 SetIcon("Songs",           MaterialIconKind.Music);
                 SetIcon("Albums",          MaterialIconKind.Album);
-                SetIcon("Artists",         MaterialIconKind.Account);
+                SetIcon("Artists",         MaterialIconKind.AccountOutline);
                 SetIcon("Filter",          MaterialIconKind.Magnify);
             }
         }

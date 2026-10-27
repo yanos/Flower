@@ -15,9 +15,10 @@ using Xunit;
 
 namespace Flower.Tests.ViewModels.Home;
 
-// How much Home shows - so many albums on Continue Playing and Recently
-// Played, so many months of Recently Added (AppSettings.HomeContinuePlayingLimit
-// and friends) - and the page filter narrowing what it shows.
+// How much Home shows - so many albums on Continue Playing, so many songs on
+// Recently Played, so many months of Recently Added
+// (AppSettings.HomeContinuePlayingLimit and friends) - and the page filter
+// narrowing what it shows.
 [Collection("PlatformDataDirectory")]
 public class HomeShelfSettingsTests : PinnedDataDirectory
 {
@@ -48,16 +49,16 @@ public class HomeShelfSettingsTests : PinnedDataDirectory
     }
 
     [AvaloniaFact]
-    public void Recently_played_shows_six_albums_unless_told_otherwise()
+    public void Recently_played_shows_eight_songs_unless_told_otherwise()
     {
         using var home = Home(Enumerable.Range(0, 10).Select(i => Album($"P{i}", addedDaysAgo: 400, playedMinutesAgo: i * 10)));
 
         home.Rebuild();
-        Assert.Equal(6, home.RecentlyPlayed.Count);
+        Assert.Equal(8, home.RecentlyPlayed.Count);
 
-        home.RecentlyPlayedLimit = 2;
+        home.RecentlyPlayedLimit = 3;
         home.Rebuild();
-        Assert.Equal(new[] { "P0", "P1" }, home.RecentlyPlayed.Select(t => t.Name));
+        Assert.Equal(new[] { "P0 1", "P0 2", "P1 1" }, home.RecentlyPlayed.Select(r => r.Track.Title));
     }
 
     [AvaloniaFact]
@@ -104,13 +105,12 @@ public class HomeShelfSettingsTests : PinnedDataDirectory
     {
         using var home = Home([Album("Blue", 10, playedMinutesAgo: 5), Album("Red", 20, playedMinutesAgo: 50)]);
         home.Rebuild();
-        Assert.Equal(4, home.ShownCount);
+        Assert.Equal(4, home.RecentlyPlayed.Count);
 
         home.Filter = "red band";
         home.Rebuild();
-        Assert.Equal(new[] { "Red" }, home.RecentlyPlayed.Select(t => t.Name));
+        Assert.Equal(new[] { "Red 1", "Red 2" }, home.RecentlyPlayed.Select(r => r.Track.Title));
         Assert.Equal(new[] { "Red" }, home.RecentlyAdded.Select(t => t.Name));
-        Assert.Equal(2, home.ShownCount);
 
         home.Filter = "green";
         home.Rebuild();
@@ -119,7 +119,7 @@ public class HomeShelfSettingsTests : PinnedDataDirectory
 
         home.Filter = "  ";
         home.Rebuild();
-        Assert.Equal(4, home.ShownCount);
+        Assert.Equal(4, home.RecentlyPlayed.Count);
     }
 
     // Set on either head through MainViewModel, applied to the shelves and
@@ -213,7 +213,7 @@ public class HomeShelfSettingsTests : PinnedDataDirectory
     // One list of rows for a virtualizing panel: each shelf's heading, then
     // its covers so many to a row, a short last row keeping the full count.
     [AvaloniaFact]
-    public void The_shelves_become_headed_rows_of_covers()
+    public void The_shelves_become_headed_rows_of_songs_and_covers()
     {
         using var home = Home(Enumerable.Range(0, 5).Select(i => Album($"A{i}", addedDaysAgo: i + 1, playedMinutesAgo: i * 10)));
         home.RecentlyPlayedLimit = 2;
@@ -224,14 +224,15 @@ public class HomeShelfSettingsTests : PinnedDataDirectory
         var header = Assert.IsType<HomeShelfHeaderRow>(rows[0]);
         Assert.Equal("Recently Played", header.Title);
         Assert.True(header.IsFirst);
-        Assert.Equal(2, Assert.IsType<HomeAlbumRow>(rows[1]).Tiles.Count);
-        var added = Assert.IsType<HomeShelfHeaderRow>(rows[2]);
+        Assert.Single(Assert.IsType<HomeSongRow>(rows[1]).Songs);
+        Assert.Single(Assert.IsType<HomeSongRow>(rows[2]).Songs);
+        var added = Assert.IsType<HomeShelfHeaderRow>(rows[3]);
         Assert.Equal("Recently Added", added.Title);
         Assert.False(added.IsFirst);
         var last = Assert.IsType<HomeAlbumRow>(rows[^1]);
         Assert.Single(last.Tiles);
         Assert.Equal(2, last.Columns);
-        Assert.Equal(6, rows.Count); // 2 headings, 1 + 3 rows
+        Assert.Equal(7, rows.Count); // 2 headings, 2 + 3 rows
     }
 
     [Theory]

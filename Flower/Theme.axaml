@@ -7,19 +7,19 @@
        restates the background, text and accent colours for itself.
 
        1. The palette (Palette*), per theme variant: the design's own named
-          colours - Background, the Accent and its hover and pressed states,
-          the two text colours, Surface and Divider, the two icon neutrals -
-          plus the few roles it
-          does not name (what reads on the accent, what reads on a sheet tinted
-          with a cover's colour, the status colours, the scrim behind a card).
-          Change one here and everything drawn in that role follows.
+          colours ("Never played - refonte", its Palette board), each with a
+          light and a dark value under one name - warm neutrals everywhere,
+          and a red accent kept for playback alone: play and pause, the song
+          playing, the seek bar and the volume. Plus the few roles the design
+          does not name (what reads on a sheet tinted with a cover's colour,
+          the scrim behind a card). Change one here and everything drawn in
+          that role follows.
 
        2. FluentTheme's own colours: set from these same palette colours at
           startup, through Fluent's Palettes (AppTheme.ApplyPalette), so what
-          Fluent draws for itself (check boxes, menus, scrollbars) matches.
-          Only its accent shades are aliased here, to the hover and pressed
-          accents, which its Palettes would otherwise derive by a rule of
-          its own.
+          Fluent draws for itself (check boxes, switches, menus, scrollbars)
+          matches. Fluent's accent is the ink, not the red: a ticked box, a
+          switch that is on and the tab showing are not playback.
 
        3. Every brush anything names - the app's own App* roles and the Fluent
           brushes the views use directly - defined once for both variants, each
@@ -31,90 +31,115 @@
        Shadows (BoxShadows) are here too, for the same reason: no view states a
        colour, a shadow's included. -->
 
-  <!-- The display face: a song's title where it is the subject of the screen
-       (Now Playing), set in a serif against Inter everywhere else. Bundled
-       rather than named, since no platform ships it; subset to Latin,
-       Latin Extended and Vietnamese (1MB down to 180KB) because a title in
-       any other script falls back to the system either way. OFL - the licence
-       sits beside the font. -->
-  <FontFamily x:Key="AppDisplayFontFamily">avares://Flower/Assets/Fonts#Cormorant Garamond</FontFamily>
+  <!-- The UI face, Geist, wherever Fluent's templates set a font - which is
+       every window, so everything under one; FlowerFonts.UiFamily says the
+       same for a TextBlock outside them. Inter stands behind it for the
+       scripts Geist lacks (FlowerFonts). -->
+  <FontFamily x:Key="ContentControlThemeFontFamily">avares://Flower/Assets/Fonts#Geist</FontFamily>
+  <!-- The display face: a page's title and the song playing where it is the
+       screen's subject, in Newsreader's 72pt cut, drawn for large sizes. The
+       design's Newsreader sets its optical size from the size it is set at,
+       which a static font cannot, so small headings - a section's, the player
+       bar's title - take the 16pt cut instead (AppDisplayTextFontFamily).
+       Bundled rather than named, since no platform ships it; the one weight
+       the design uses. OFL - the licence sits beside the fonts. -->
+  <FontFamily x:Key="AppDisplayFontFamily">avares://Flower/Assets/Fonts#Newsreader 72pt</FontFamily>
+  <FontFamily x:Key="AppDisplayTextFontFamily">avares://Flower/Assets/Fonts#Newsreader 16pt</FontFamily>
+  <!-- Addresses, fingerprints and log lines. -->
+  <FontFamily x:Key="AppMonospaceFontFamily">avares://Flower/Assets/Fonts#JetBrains Mono</FontFamily>
 
   <ResourceDictionary.ThemeDictionaries>
 
     <ResourceDictionary x:Key="Light">
-      <!-- The design palette ("Flower Home - Color Palette"). -->
-      <Color x:Key="PaletteBackground">#FEFBF8</Color>
-      <Color x:Key="PaletteAccent">#EF2D46</Color>
-      <!-- A control's accent under the pointer, and while it is pressed -
-           the latter is the palette's Deep Coral. -->
-      <Color x:Key="PaletteAccentHover">#E52943</Color>
-      <Color x:Key="PaletteAccentPressed">#D21F36</Color>
-      <Color x:Key="PaletteTextPrimary">#1A1314</Color>
-      <Color x:Key="PaletteTextSecondary">#6E6566</Color>
-      <Color x:Key="PaletteSurface">#F5EEEB</Color>
-      <Color x:Key="PaletteDivider">#E6DDD8</Color>
-      <Color x:Key="PaletteIconInactive">#8C7F7F</Color>
-      <Color x:Key="PaletteIconDisabled">#C9BEBE</Color>
-      <!-- The app's frame: every oval and ring (the back and menu buttons,
-           the filter, the mini player, the tab bar, an album's actions) -
-           their rims, their icons and the tab showing - the cards dropped
-           from them, every page's title and the A-Z bar. Black on this almost-white page, where the accent red read
-           as too much; the dark theme keeps the accent. -->
-      <Color x:Key="PaletteChrome">#000000</Color>
+      <!-- Surfaces, from the field's white down to the row picked. -->
+      <!-- Fields, outlined buttons, the player bar, the log. -->
+      <Color x:Key="PaletteSurface">#FFFFFF</Color>
+      <Color x:Key="PaletteBackground">#FBF8F6</Color>
+      <!-- The sidebar, a second column, a panel. -->
+      <Color x:Key="PaletteBackgroundSubtle">#F3EEEB</Color>
+      <!-- Under the pointer; a missing cover; behind a segmented control. -->
+      <Color x:Key="PaletteBackgroundHover">#EFE9E6</Color>
+      <!-- What is picked: a row, the page in the sidebar. -->
+      <Color x:Key="PaletteBackgroundSelected">#E6DED9</Color>
 
-      <!-- Roles the palette does not name. -->
-      <Color x:Key="PaletteOnAccent">#FFFFFF</Color>
+      <Color x:Key="PaletteTextPrimary">#1D1A19</Color>
+      <!-- Values: an album, a length. -->
+      <Color x:Key="PaletteTextSecondary">#4A4240</Color>
+      <!-- An artist, metadata, a column's heading, a subtitle. -->
+      <Color x:Key="PaletteTextMuted">#645B58</Color>
+      <!-- Grips and what is off - never text anybody has to read. -->
+      <Color x:Key="PaletteTextDisabled">#B3A9A5</Color>
+      <Color x:Key="PaletteTextOnAccent">#FFFFFF</Color>
+
+      <!-- The outline of a field and of a secondary button. -->
+      <Color x:Key="PaletteBorderControl">#D9CDC8</Color>
+      <!-- Every slider (seek, volume, the equalizer's), and an icon at rest
+           in the sidebar. -->
+      <Color x:Key="PaletteControlSlider">#3B3432</Color>
+      <!-- A switch that is off. -->
+      <Color x:Key="PaletteControlOff">#CFC5C0</Color>
+      <!-- A switch's knob, on either side. -->
+      <Color x:Key="PaletteSwitchKnob">#FFFFFF</Color>
+
+      <!-- Playback only. Hover is also pressed. -->
+      <Color x:Key="PaletteAccent">#A3203A</Color>
+      <Color x:Key="PaletteAccentHover">#7E1529</Color>
+      <!-- What cannot be undone (Unpair, a delete), in words only. -->
+      <Color x:Key="PaletteDanger">#8E1C30</Color>
+
+      <!-- States, always beside a word that says the same. -->
+      <Color x:Key="PaletteSuccess">#2F8A55</Color>
+      <Color x:Key="PaletteSuccessText">#24613B</Color>
+      <Color x:Key="PaletteSuccessBackground">#E3F0E7</Color>
+
+      <!-- A log line's level, its tag's fill and its words. -->
+      <Color x:Key="PaletteLogInfo">#E4ECF6</Color>
+      <Color x:Key="PaletteLogInfoText">#24497A</Color>
+      <Color x:Key="PaletteLogWarning">#FBEBD3</Color>
+      <Color x:Key="PaletteLogWarningText">#7A4A0B</Color>
+      <Color x:Key="PaletteLogError">#F8E0E3</Color>
+
+      <!-- Roles the design does not name. -->
       <Color x:Key="PaletteOnArt">#FFFFFF</Color>
       <Color x:Key="PaletteScrim">#000000</Color>
-      <Color x:Key="PaletteSuccess">#4CAF7B</Color>
-      <Color x:Key="PaletteWarning">#E0A12E</Color>
-      <Color x:Key="PaletteError">#D64545</Color>
-      <!-- What cannot be undone: the words of a menu entry that deletes or
-           removes, and the button that confirms one. Not an error - the
-           same red today, kept apart so the two can part. -->
-      <Color x:Key="PaletteDanger">#D64545</Color>
-
-      <!-- Fluent's accent shades, as the palette's hover and pressed
-           accents: its Palettes (AppTheme.ApplyPalette) set the rest of its
-           colours and would derive these from the accent by its own rule. -->
-      <StaticResource x:Key="SystemAccentColorDark1" ResourceKey="PaletteAccentHover" />
-      <StaticResource x:Key="SystemAccentColorDark2" ResourceKey="PaletteAccentPressed" />
-      <StaticResource x:Key="SystemAccentColorDark3" ResourceKey="PaletteAccentPressed" />
     </ResourceDictionary>
 
     <ResourceDictionary x:Key="Dark">
-      <!-- The design palette ("Flower Home - Dark Theme Color Palette"). -->
-      <Color x:Key="PaletteBackground">#151112</Color>
-      <Color x:Key="PaletteAccent">#F13A4F</Color>
-      <!-- A control's accent under the pointer, and while it is pressed -
-           the latter is the palette's Deep Coral. -->
-      <Color x:Key="PaletteAccentHover">#E93248</Color>
-      <Color x:Key="PaletteAccentPressed">#D6283E</Color>
-      <Color x:Key="PaletteTextPrimary">#F6EFEC</Color>
-      <Color x:Key="PaletteTextSecondary">#B7A8A8</Color>
-      <Color x:Key="PaletteSurface">#21191B</Color>
-      <Color x:Key="PaletteDivider">#3B2F31</Color>
-      <Color x:Key="PaletteIconInactive">#8E7D7F</Color>
-      <Color x:Key="PaletteIconDisabled">#5F5053</Color>
-      <!-- See the light theme's: the accent here. -->
-      <StaticResource x:Key="PaletteChrome" ResourceKey="PaletteAccent" />
+      <Color x:Key="PaletteSurface">#2A2524</Color>
+      <Color x:Key="PaletteBackground">#1C1918</Color>
+      <Color x:Key="PaletteBackgroundSubtle">#221E1D</Color>
+      <Color x:Key="PaletteBackgroundHover">#302A28</Color>
+      <Color x:Key="PaletteBackgroundSelected">#3D3633</Color>
 
-      <!-- Roles the palette does not name. -->
-      <Color x:Key="PaletteOnAccent">#FFFFFF</Color>
+      <Color x:Key="PaletteTextPrimary">#F2ECE8</Color>
+      <Color x:Key="PaletteTextSecondary">#D2C8C3</Color>
+      <Color x:Key="PaletteTextMuted">#ABA19C</Color>
+      <Color x:Key="PaletteTextDisabled">#6E6562</Color>
+      <Color x:Key="PaletteTextOnAccent">#FFFFFF</Color>
+
+      <Color x:Key="PaletteBorderControl">#4D4542</Color>
+      <Color x:Key="PaletteControlSlider">#D2C8C3</Color>
+      <Color x:Key="PaletteControlOff">#625956</Color>
+      <!-- The page's own colour, so it reads on the light ink a switch that
+           is on is filled with. -->
+      <Color x:Key="PaletteSwitchKnob">#1C1918</Color>
+
+      <Color x:Key="PaletteAccent">#D13B57</Color>
+      <Color x:Key="PaletteAccentHover">#B8304B</Color>
+      <Color x:Key="PaletteDanger">#F2909F</Color>
+
+      <Color x:Key="PaletteSuccess">#4CB57A</Color>
+      <Color x:Key="PaletteSuccessText">#8AD6A8</Color>
+      <Color x:Key="PaletteSuccessBackground">#1E3528</Color>
+
+      <Color x:Key="PaletteLogInfo">#1E2B3D</Color>
+      <Color x:Key="PaletteLogInfoText">#A3C4EE</Color>
+      <Color x:Key="PaletteLogWarning">#3A2C14</Color>
+      <Color x:Key="PaletteLogWarningText">#F0C77F</Color>
+      <Color x:Key="PaletteLogError">#40212A</Color>
+
       <Color x:Key="PaletteOnArt">#FFFFFF</Color>
       <Color x:Key="PaletteScrim">#000000</Color>
-      <Color x:Key="PaletteSuccess">#3DAA6B</Color>
-      <Color x:Key="PaletteWarning">#E0A82E</Color>
-      <Color x:Key="PaletteError">#E0524D</Color>
-      <!-- See the light theme's. -->
-      <Color x:Key="PaletteDanger">#E0524D</Color>
-
-      <!-- Fluent's accent shades, as the palette's hover and pressed
-           accents: its Palettes (AppTheme.ApplyPalette) set the rest of its
-           colours and would derive these from the accent by its own rule. -->
-      <StaticResource x:Key="SystemAccentColorDark1" ResourceKey="PaletteAccentHover" />
-      <StaticResource x:Key="SystemAccentColorDark2" ResourceKey="PaletteAccentPressed" />
-      <StaticResource x:Key="SystemAccentColorDark3" ResourceKey="PaletteAccentPressed" />
     </ResourceDictionary>
 
   </ResourceDictionary.ThemeDictionaries>
@@ -122,83 +147,108 @@
   <!-- ── The app's own roles ─────────────────────────────────────────── -->
 
   <SolidColorBrush x:Key="AppBackgroundBrush" Color="{DynamicResource PaletteBackground}" />
-  <!-- Cards, the mini player and tab bar, sheets, text boxes. -->
+  <!-- Fields, outlined buttons, sheets, the mini player and tab bar. -->
   <SolidColorBrush x:Key="AppSurfaceBrush" Color="{DynamicResource PaletteSurface}" />
-  <!-- The desktop sidebar: the surface, half there over the background, so
-       the column reads as set apart from the page beside it without being as
-       heavy as a card - a shade darker than the page in the light theme and a
-       shade lighter in the dark. -->
-  <SolidColorBrush x:Key="AppSidebarBrush" Color="{DynamicResource PaletteSurface}" Opacity="0.6" />
-  <!-- The square standing in for a missing cover: a step off the surface it
-       sits on, so it still reads as a square there. -->
-  <SolidColorBrush x:Key="AppPlaceholderBrush" Color="{DynamicResource PaletteDivider}" />
-  <SolidColorBrush x:Key="AppBorderBrush" Color="{DynamicResource PaletteDivider}" />
+  <!-- The desktop sidebar, a second column, a panel. -->
+  <SolidColorBrush x:Key="AppSidebarBrush" Color="{DynamicResource PaletteBackgroundSubtle}" />
+  <SolidColorBrush x:Key="AppSubtleBrush" Color="{DynamicResource PaletteBackgroundSubtle}" />
+  <!-- Under the pointer: a row, a menu entry, a plain button. -->
+  <SolidColorBrush x:Key="AppHoverBrush" Color="{DynamicResource PaletteBackgroundHover}" />
+  <!-- What is picked: a row, the page in the sidebar, a drop target. -->
+  <SolidColorBrush x:Key="AppSelectedBrush" Color="{DynamicResource PaletteBackgroundSelected}" />
+  <!-- The square standing in for a missing cover. -->
+  <SolidColorBrush x:Key="AppPlaceholderBrush" Color="{DynamicResource PaletteBackgroundHover}" />
+  <!-- A panel's edge, the rule between rows. -->
+  <SolidColorBrush x:Key="AppBorderBrush" Color="{DynamicResource PaletteBackgroundSelected}" />
+  <SolidColorBrush x:Key="AppDividerBrush" Color="{DynamicResource PaletteBackgroundSelected}" />
+  <!-- The outline of a field and of a secondary button. -->
+  <SolidColorBrush x:Key="AppControlBorderBrush" Color="{DynamicResource PaletteBorderControl}" />
   <!-- The hairline over a cover's edge (AlbumArtView): the text colour, faint,
        so it reads as the cover's edge over art and placeholder alike. In the
        divider colour instead it matched the page, not the cover: over art it
        looked like background and cut the corner in, over the placeholder -
        the same colour - it vanished, and the two showed different corners. -->
   <SolidColorBrush x:Key="AppArtOutlineBrush" Color="{DynamicResource PaletteTextPrimary}" Opacity="0.12" />
-  <SolidColorBrush x:Key="AppDividerBrush" Color="{DynamicResource PaletteDivider}" />
   <!-- The unfilled part of the desktop volume bar. -->
-  <SolidColorBrush x:Key="AppTrackBrush" Color="{DynamicResource PaletteDivider}" />
+  <SolidColorBrush x:Key="AppTrackBrush" Color="{DynamicResource PaletteBackgroundSelected}" />
 
   <SolidColorBrush x:Key="AppTextPrimaryBrush" Color="{DynamicResource PaletteTextPrimary}" />
-  <!-- A line explaining the one above it (a page's subtitle). -->
-  <SolidColorBrush x:Key="AppTextSecondaryBrush" Color="{DynamicResource PaletteTextSecondary}" />
+  <!-- A line explaining the one above it: a page's subtitle, an artist under
+       a title. The design's text-muted - named for its role here, since every
+       view already names it. -->
+  <SolidColorBrush x:Key="AppTextSecondaryBrush" Color="{DynamicResource PaletteTextMuted}" />
+  <!-- A value: an album, a length (the design's text-secondary). -->
+  <SolidColorBrush x:Key="AppTextValueBrush" Color="{DynamicResource PaletteTextSecondary}" />
   <!-- An icon or label at rest (a tab not showing, a toggle off). -->
-  <SolidColorBrush x:Key="AppTextMutedBrush" Color="{DynamicResource PaletteIconInactive}" />
-  <SolidColorBrush x:Key="AppTextDisabledBrush" Color="{DynamicResource PaletteIconDisabled}" />
+  <SolidColorBrush x:Key="AppTextMutedBrush" Color="{DynamicResource PaletteTextMuted}" />
+  <SolidColorBrush x:Key="AppTextDisabledBrush" Color="{DynamicResource PaletteTextDisabled}" />
+  <!-- An icon at rest wherever it is not the frame's: the sidebar's, a row's. -->
+  <SolidColorBrush x:Key="AppIconBrush" Color="{DynamicResource PaletteControlSlider}" />
+  <!-- ...and pointed at or pressed (App.axaml): the ink. -->
+  <SolidColorBrush x:Key="AppIconHoverBrush" Color="{DynamicResource PaletteTextPrimary}" />
+  <SolidColorBrush x:Key="AppIconPressedBrush" Color="{DynamicResource PaletteTextPrimary}" />
 
-  <!-- The accent: an icon, the playing row, a lit toggle, a primary button's
-       fill. Primary and Accent are the same colour; both names stay because
-       the views use both, the one for a fill and the other for a highlight. -->
+  <!-- The ink: the fill of a button that is not playback (Done, Save, OK),
+       and what reads on it; a shade lighter under the pointer. -->
+  <SolidColorBrush x:Key="AppInkBrush" Color="{DynamicResource PaletteTextPrimary}" />
+  <SolidColorBrush x:Key="AppInkHoverBrush" Color="{DynamicResource PaletteTextSecondary}" />
+  <SolidColorBrush x:Key="AppOnInkBrush" Color="{DynamicResource PaletteSurface}" />
+
+  <!-- The accent, for playback alone: the play button, the song playing, the
+       seek bar and the volume. Primary and Accent are the same colour; both
+       names stay because the views use both, the one for a fill and the other
+       for a highlight. -->
   <SolidColorBrush x:Key="AppPrimaryBrush" Color="{DynamicResource PaletteAccent}" />
   <SolidColorBrush x:Key="AppAccentBrush" Color="{DynamicResource PaletteAccent}" />
   <!-- An accent-filled control under the pointer, and while it is pressed
-       (Button.primary, Styles/IconButtons.axaml). -->
+       (Button.play, Styles/IconButtons.axaml). -->
   <SolidColorBrush x:Key="AppAccentHoverBrush" Color="{DynamicResource PaletteAccentHover}" />
-  <SolidColorBrush x:Key="AppAccentPressedBrush" Color="{DynamicResource PaletteAccentPressed}" />
-  <SolidColorBrush x:Key="AppAccentSoftBrush" Color="{DynamicResource PaletteAccent}" Opacity="0.2" />
-  <!-- The faintest wash of the accent, behind something rather than under a
-       finger: a settings row's icon disc, the pairing code's box. -->
-  <SolidColorBrush x:Key="AppAccentTintBrush" Color="{DynamicResource PaletteAccent}" Opacity="0.1" />
-  <SolidColorBrush x:Key="AppOnPrimaryBrush" Color="{DynamicResource PaletteOnAccent}" />
+  <SolidColorBrush x:Key="AppAccentPressedBrush" Color="{DynamicResource PaletteAccentHover}" />
+  <SolidColorBrush x:Key="AppOnPrimaryBrush" Color="{DynamicResource PaletteTextOnAccent}" />
 
-  <!-- The frame (PaletteChrome): the icons in the floating ovals and rings,
-       the tab showing, every page's title and the A-Z bar; at half strength,
-       the rim of every oval, ring and dropped-down card - at full strength a
-       one-pixel ring outshouted the icon inside it; and the soft pill behind
-       the tab showing. -->
-  <SolidColorBrush x:Key="AppChromeBrush" Color="{DynamicResource PaletteChrome}" />
-  <SolidColorBrush x:Key="AppChromeBorderBrush" Color="{DynamicResource PaletteChrome}" Opacity="0.5" />
-  <SolidColorBrush x:Key="AppChromeSoftBrush" Color="{DynamicResource PaletteChrome}" Opacity="0.2" />
+  <!-- The frame: the icons in the floating ovals and rings, the tab showing,
+       every page's title and the A-Z bar - the ink, in both themes; at the
+       outline's colour, the rim of every oval, ring and dropped-down card. -->
+  <SolidColorBrush x:Key="AppChromeBrush" Color="{DynamicResource PaletteTextPrimary}" />
+  <SolidColorBrush x:Key="AppChromeBorderBrush" Color="{DynamicResource PaletteBorderControl}" />
 
   <SolidColorBrush x:Key="AppSuccessBrush" Color="{DynamicResource PaletteSuccess}" />
-  <SolidColorBrush x:Key="AppWarningBrush" Color="{DynamicResource PaletteWarning}" />
-  <SolidColorBrush x:Key="AppErrorBrush" Color="{DynamicResource PaletteError}" />
-  <!-- A destructive act (PaletteDanger): its menu entry's words - the icon
-       beside them stays the frame's - and the fill of the button confirming
-       it; faint, behind a softer one (Settings' Unpair). -->
+  <SolidColorBrush x:Key="AppSuccessTextBrush" Color="{DynamicResource PaletteSuccessText}" />
+  <SolidColorBrush x:Key="AppSuccessBackgroundBrush" Color="{DynamicResource PaletteSuccessBackground}" />
+  <!-- A warning across the page (the library-write banner): the log's
+       warning colours, the design's only ones. -->
+  <SolidColorBrush x:Key="AppWarningBrush" Color="{DynamicResource PaletteLogWarningText}" />
+  <SolidColorBrush x:Key="AppWarningBackgroundBrush" Color="{DynamicResource PaletteLogWarning}" />
+  <!-- An error's words: the danger colour, as the design has it. -->
+  <SolidColorBrush x:Key="AppErrorBrush" Color="{DynamicResource PaletteDanger}" />
+  <!-- A destructive act: its menu entry's words - the icon beside them stays
+       the frame's - and a button's words; faint, behind a softer one. -->
   <SolidColorBrush x:Key="AppDangerBrush" Color="{DynamicResource PaletteDanger}" />
   <SolidColorBrush x:Key="AppDangerTintBrush" Color="{DynamicResource PaletteDanger}" Opacity="0.1" />
+
+  <!-- A log line's level tag: its fill and its words, per level. Debug and
+       below are the hover grey and the muted text; an error's words are the
+       danger colour. -->
+  <SolidColorBrush x:Key="AppLogDebugBrush" Color="{DynamicResource PaletteBackgroundHover}" />
+  <SolidColorBrush x:Key="AppLogDebugTextBrush" Color="{DynamicResource PaletteTextMuted}" />
+  <SolidColorBrush x:Key="AppLogInfoBrush" Color="{DynamicResource PaletteLogInfo}" />
+  <SolidColorBrush x:Key="AppLogInfoTextBrush" Color="{DynamicResource PaletteLogInfoText}" />
+  <SolidColorBrush x:Key="AppLogWarningBrush" Color="{DynamicResource PaletteLogWarning}" />
+  <SolidColorBrush x:Key="AppLogWarningTextBrush" Color="{DynamicResource PaletteLogWarningText}" />
+  <SolidColorBrush x:Key="AppLogErrorBrush" Color="{DynamicResource PaletteLogError}" />
+  <SolidColorBrush x:Key="AppLogErrorTextBrush" Color="{DynamicResource PaletteDanger}" />
 
   <!-- Dimmed behind a card raised over the screen (the action sheets). -->
   <SolidColorBrush x:Key="AppScrimBrush" Color="{DynamicResource PaletteScrim}" Opacity="0.4" />
 
-  <!-- On a sheet washed in a cover's colour (Now Playing - see
-       ArtBackdrop.SheetBrush - and the desktop's player bar), which is dark
-       whatever the theme: the words and the filled controls, the same faint
-       for what is off, and a ring between the two. Then, for the desktop's
-       bar (MainView.PlayerBarOnArt): the words under a title, a control
-       pointed at, and a slider's empty rail. (Now Playing's own sliders'
-       brushes are NowPlayingView's, on PaletteOnArt.) -->
+  <!-- On a sheet washed in a cover's colour (the phone's Now Playing and
+       album page - see ArtBackdrop.SheetBrush), which is dark whatever the
+       theme: the words and the filled controls, the same faint for what is
+       off, and a ring between the two. (Now Playing's own sliders' brushes
+       are NowPlayingView's, on PaletteOnArt.) -->
   <SolidColorBrush x:Key="AppOnArtBrush" Color="{DynamicResource PaletteOnArt}" />
   <SolidColorBrush x:Key="AppOnArtMutedBrush" Color="{DynamicResource PaletteOnArt}" Opacity="0.5" />
   <SolidColorBrush x:Key="AppOnArtRingBrush" Color="{DynamicResource PaletteOnArt}" Opacity="0.6" />
-  <SolidColorBrush x:Key="AppOnArtSecondaryBrush" Color="{DynamicResource PaletteOnArt}" Opacity="0.65" />
-  <SolidColorBrush x:Key="AppOnArtHoverBrush" Color="{DynamicResource PaletteOnArt}" Opacity="0.8" />
-  <SolidColorBrush x:Key="AppOnArtTrackBrush" Color="{DynamicResource PaletteOnArt}" Opacity="0.25" />
 
   <!-- ── Shadows ─────────────────────────────────────────────────────── -->
 
@@ -237,141 +287,164 @@
   </LinearGradientBrush>
 
   <!-- ── Pointer-over and pressed, on every control Fluent draws ────────── -->
-  <!-- Every control, when pointed at or pressed, in the palette's hover and
-       pressed accents: a control that fills with the accent when on (a
-       checked box, a toggle switch, a radio button's ring) deepens to them,
-       and one that is plain at rest (a button, a menu row, a tab, a combo
-       box) takes them faintly behind it, and the pressed one on its text.
+  <!-- A control that is plain at rest (a button, a menu row, a tab, a combo
+       box) takes the hover grey behind it when pointed at and the picked grey
+       when pressed, keeping its outline and its words; one filled with the ink
+       when on (a ticked box, a switch, a radio button's ring) lightens a shade.
        Fluent keeps a brush per control per state and fills them with its own
-       greys, so each is named here. A Button is the exception: it keeps its
-       resting look and only its icon takes the accent (Styles/IconButtons.axaml,
-       and App.axaml's Button:pointerover / Button:pressed icon rules). -->
-  <SolidColorBrush x:Key="AppAccentHoverSoftBrush" Color="{DynamicResource PaletteAccentHover}" Opacity="0.12" />
-  <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="{DynamicResource PaletteAccentHover}" Opacity="0.12" />
-  <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="{DynamicResource PaletteAccentPressed}" Opacity="0.22" />
-  <SolidColorBrush x:Key="ButtonForegroundPressed" Color="{DynamicResource PaletteAccentPressed}" />
-  <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="{DynamicResource PaletteAccentHover}" />
-  <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="{DynamicResource PaletteAccentPressed}" />
-  <SolidColorBrush x:Key="RepeatButtonBackgroundPointerOver" Color="{DynamicResource PaletteAccentHover}" Opacity="0.12" />
-  <SolidColorBrush x:Key="RepeatButtonBackgroundPressed" Color="{DynamicResource PaletteAccentPressed}" Opacity="0.22" />
-  <SolidColorBrush x:Key="RepeatButtonForegroundPressed" Color="{DynamicResource PaletteAccentPressed}" />
-  <SolidColorBrush x:Key="RepeatButtonBorderBrushPointerOver" Color="{DynamicResource PaletteAccentHover}" />
-  <SolidColorBrush x:Key="RepeatButtonBorderBrushPressed" Color="{DynamicResource PaletteAccentPressed}" />
-  <SolidColorBrush x:Key="ToggleButtonBackgroundPointerOver" Color="{DynamicResource PaletteAccentHover}" Opacity="0.12" />
-  <SolidColorBrush x:Key="ToggleButtonBackgroundPressed" Color="{DynamicResource PaletteAccentPressed}" Opacity="0.22" />
-  <SolidColorBrush x:Key="ToggleButtonForegroundPressed" Color="{DynamicResource PaletteAccentPressed}" />
-  <SolidColorBrush x:Key="ToggleButtonBorderBrushPointerOver" Color="{DynamicResource PaletteAccentHover}" />
-  <SolidColorBrush x:Key="ToggleButtonBorderBrushPressed" Color="{DynamicResource PaletteAccentPressed}" />
-  <SolidColorBrush x:Key="ToggleButtonBackgroundCheckedPointerOver" Color="{DynamicResource PaletteAccentHover}" />
-  <SolidColorBrush x:Key="ToggleButtonBackgroundCheckedPressed" Color="{DynamicResource PaletteAccentPressed}" />
-  <SolidColorBrush x:Key="ToggleButtonBorderBrushCheckedPointerOver" Color="{DynamicResource PaletteAccentHover}" />
-  <SolidColorBrush x:Key="ToggleButtonBorderBrushCheckedPressed" Color="{DynamicResource PaletteAccentPressed}" />
-  <SolidColorBrush x:Key="SplitButtonBackgroundPointerOver" Color="{DynamicResource PaletteAccentHover}" Opacity="0.12" />
-  <SolidColorBrush x:Key="SplitButtonBackgroundPressed" Color="{DynamicResource PaletteAccentPressed}" Opacity="0.22" />
-  <SolidColorBrush x:Key="SplitButtonForegroundPressed" Color="{DynamicResource PaletteAccentPressed}" />
-  <SolidColorBrush x:Key="SplitButtonBorderBrushPointerOver" Color="{DynamicResource PaletteAccentHover}" />
-  <SolidColorBrush x:Key="SplitButtonBorderBrushPressed" Color="{DynamicResource PaletteAccentPressed}" />
-  <SolidColorBrush x:Key="SplitButtonBackgroundCheckedPointerOver" Color="{DynamicResource PaletteAccentHover}" />
-  <SolidColorBrush x:Key="SplitButtonBackgroundCheckedPressed" Color="{DynamicResource PaletteAccentPressed}" />
-  <SolidColorBrush x:Key="HyperlinkButtonForegroundPointerOver" Color="{DynamicResource PaletteAccentHover}" />
-  <SolidColorBrush x:Key="HyperlinkButtonForegroundPressed" Color="{DynamicResource PaletteAccentPressed}" />
-  <SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="{DynamicResource PaletteAccentHover}" Opacity="0.12" />
-  <SolidColorBrush x:Key="ComboBoxBackgroundPressed" Color="{DynamicResource PaletteAccentPressed}" Opacity="0.22" />
-  <SolidColorBrush x:Key="ComboBoxBorderBrushPointerOver" Color="{DynamicResource PaletteAccentHover}" />
-  <SolidColorBrush x:Key="ComboBoxBorderBrushPressed" Color="{DynamicResource PaletteAccentPressed}" />
-  <SolidColorBrush x:Key="ComboBoxItemBackgroundPointerOver" Color="{DynamicResource PaletteAccentHover}" Opacity="0.12" />
-  <SolidColorBrush x:Key="ComboBoxItemBackgroundPressed" Color="{DynamicResource PaletteAccentPressed}" Opacity="0.22" />
-  <SolidColorBrush x:Key="ComboBoxItemBackgroundSelectedPointerOver" Color="{DynamicResource PaletteAccentHover}" Opacity="0.12" />
-  <SolidColorBrush x:Key="ComboBoxItemBackgroundSelectedPressed" Color="{DynamicResource PaletteAccentPressed}" Opacity="0.22" />
-  <SolidColorBrush x:Key="ComboBoxItemForegroundPressed" Color="{DynamicResource PaletteAccentPressed}" />
-  <SolidColorBrush x:Key="MenuFlyoutItemBackgroundPointerOver" Color="{DynamicResource PaletteAccentHover}" Opacity="0.12" />
-  <SolidColorBrush x:Key="MenuFlyoutItemBackgroundPressed" Color="{DynamicResource PaletteAccentPressed}" Opacity="0.22" />
-  <SolidColorBrush x:Key="MenuFlyoutItemForegroundPressed" Color="{DynamicResource PaletteAccentPressed}" />
-  <SolidColorBrush x:Key="TabItemHeaderBackgroundUnselectedPointerOver" Color="{DynamicResource PaletteAccentHover}" Opacity="0.12" />
-  <SolidColorBrush x:Key="TabItemHeaderBackgroundUnselectedPressed" Color="{DynamicResource PaletteAccentPressed}" Opacity="0.22" />
-  <SolidColorBrush x:Key="TabItemHeaderBackgroundSelectedPointerOver" Color="{DynamicResource PaletteAccentHover}" Opacity="0.12" />
-  <SolidColorBrush x:Key="TabItemHeaderBackgroundSelectedPressed" Color="{DynamicResource PaletteAccentPressed}" Opacity="0.22" />
-  <SolidColorBrush x:Key="TabItemHeaderForegroundUnselectedPressed" Color="{DynamicResource PaletteAccentPressed}" />
-  <SolidColorBrush x:Key="TabItemHeaderForegroundSelectedPressed" Color="{DynamicResource PaletteAccentPressed}" />
-  <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillCheckedPointerOver" Color="{DynamicResource PaletteAccentHover}" />
-  <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillCheckedPressed" Color="{DynamicResource PaletteAccentPressed}" />
-  <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeCheckedPointerOver" Color="{DynamicResource PaletteAccentHover}" />
-  <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeCheckedPressed" Color="{DynamicResource PaletteAccentPressed}" />
-  <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeUncheckedPointerOver" Color="{DynamicResource PaletteAccentHover}" />
-  <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeUncheckedPressed" Color="{DynamicResource PaletteAccentPressed}" />
-  <SolidColorBrush x:Key="RadioButtonOuterEllipseCheckedFillPointerOver" Color="{DynamicResource PaletteAccentHover}" />
-  <SolidColorBrush x:Key="RadioButtonOuterEllipseCheckedFillPressed" Color="{DynamicResource PaletteAccentPressed}" />
-  <SolidColorBrush x:Key="RadioButtonOuterEllipseCheckedStrokePointerOver" Color="{DynamicResource PaletteAccentHover}" />
-  <SolidColorBrush x:Key="RadioButtonOuterEllipseCheckedStrokePressed" Color="{DynamicResource PaletteAccentPressed}" />
-  <SolidColorBrush x:Key="RadioButtonOuterEllipseStrokePointerOver" Color="{DynamicResource PaletteAccentHover}" />
-  <SolidColorBrush x:Key="RadioButtonOuterEllipseStrokePressed" Color="{DynamicResource PaletteAccentPressed}" />
-  <SolidColorBrush x:Key="ToggleSwitchFillOnPointerOver" Color="{DynamicResource PaletteAccentHover}" />
-  <SolidColorBrush x:Key="ToggleSwitchFillOnPressed" Color="{DynamicResource PaletteAccentPressed}" />
-  <SolidColorBrush x:Key="ToggleSwitchStrokeOnPointerOver" Color="{DynamicResource PaletteAccentHover}" />
-  <SolidColorBrush x:Key="ToggleSwitchStrokeOnPressed" Color="{DynamicResource PaletteAccentPressed}" />
-  <SolidColorBrush x:Key="ToggleSwitchStrokeOffPointerOver" Color="{DynamicResource PaletteAccentHover}" />
-  <SolidColorBrush x:Key="ToggleSwitchStrokeOffPressed" Color="{DynamicResource PaletteAccentPressed}" />
+       greys, so each is named here. -->
+  <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="{DynamicResource PaletteBackgroundHover}" />
+  <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="{DynamicResource PaletteBackgroundSelected}" />
+  <SolidColorBrush x:Key="ButtonForegroundPointerOver" Color="{DynamicResource PaletteTextPrimary}" />
+  <SolidColorBrush x:Key="ButtonForegroundPressed" Color="{DynamicResource PaletteTextPrimary}" />
+  <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="{DynamicResource PaletteBorderControl}" />
+  <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="{DynamicResource PaletteBorderControl}" />
+  <SolidColorBrush x:Key="RepeatButtonBackgroundPointerOver" Color="{DynamicResource PaletteBackgroundHover}" />
+  <SolidColorBrush x:Key="RepeatButtonBackgroundPressed" Color="{DynamicResource PaletteBackgroundSelected}" />
+  <SolidColorBrush x:Key="RepeatButtonForegroundPressed" Color="{DynamicResource PaletteTextPrimary}" />
+  <SolidColorBrush x:Key="RepeatButtonBorderBrushPointerOver" Color="{DynamicResource PaletteBorderControl}" />
+  <SolidColorBrush x:Key="RepeatButtonBorderBrushPressed" Color="{DynamicResource PaletteBorderControl}" />
+  <SolidColorBrush x:Key="ToggleButtonBackgroundPointerOver" Color="{DynamicResource PaletteBackgroundHover}" />
+  <SolidColorBrush x:Key="ToggleButtonBackgroundPressed" Color="{DynamicResource PaletteBackgroundSelected}" />
+  <SolidColorBrush x:Key="ToggleButtonForegroundPressed" Color="{DynamicResource PaletteTextPrimary}" />
+  <SolidColorBrush x:Key="ToggleButtonBorderBrushPointerOver" Color="{DynamicResource PaletteBorderControl}" />
+  <SolidColorBrush x:Key="ToggleButtonBorderBrushPressed" Color="{DynamicResource PaletteBorderControl}" />
+  <!-- A toggle that is on (Group repeats, Wrap): the picked grey, not a fill
+       of the ink. -->
+  <SolidColorBrush x:Key="ToggleButtonBackgroundChecked" Color="{DynamicResource PaletteBackgroundSelected}" />
+  <SolidColorBrush x:Key="ToggleButtonBackgroundCheckedPointerOver" Color="{DynamicResource PaletteBackgroundSelected}" />
+  <SolidColorBrush x:Key="ToggleButtonBackgroundCheckedPressed" Color="{DynamicResource PaletteBackgroundSelected}" />
+  <SolidColorBrush x:Key="ToggleButtonForegroundChecked" Color="{DynamicResource PaletteTextPrimary}" />
+  <SolidColorBrush x:Key="ToggleButtonForegroundCheckedPointerOver" Color="{DynamicResource PaletteTextPrimary}" />
+  <SolidColorBrush x:Key="ToggleButtonForegroundCheckedPressed" Color="{DynamicResource PaletteTextPrimary}" />
+  <SolidColorBrush x:Key="ToggleButtonBorderBrushChecked" Color="{DynamicResource PaletteBorderControl}" />
+  <SolidColorBrush x:Key="ToggleButtonBorderBrushCheckedPointerOver" Color="{DynamicResource PaletteBorderControl}" />
+  <SolidColorBrush x:Key="ToggleButtonBorderBrushCheckedPressed" Color="{DynamicResource PaletteBorderControl}" />
+  <SolidColorBrush x:Key="SplitButtonBackgroundPointerOver" Color="{DynamicResource PaletteBackgroundHover}" />
+  <SolidColorBrush x:Key="SplitButtonBackgroundPressed" Color="{DynamicResource PaletteBackgroundSelected}" />
+  <SolidColorBrush x:Key="SplitButtonForegroundPressed" Color="{DynamicResource PaletteTextPrimary}" />
+  <SolidColorBrush x:Key="SplitButtonBorderBrushPointerOver" Color="{DynamicResource PaletteBorderControl}" />
+  <SolidColorBrush x:Key="SplitButtonBorderBrushPressed" Color="{DynamicResource PaletteBorderControl}" />
+  <SolidColorBrush x:Key="SplitButtonBackgroundCheckedPointerOver" Color="{DynamicResource PaletteTextSecondary}" />
+  <SolidColorBrush x:Key="SplitButtonBackgroundCheckedPressed" Color="{DynamicResource PaletteTextSecondary}" />
+  <SolidColorBrush x:Key="HyperlinkButtonForeground" Color="{DynamicResource PaletteTextPrimary}" />
+  <SolidColorBrush x:Key="HyperlinkButtonForegroundPointerOver" Color="{DynamicResource PaletteTextSecondary}" />
+  <SolidColorBrush x:Key="HyperlinkButtonForegroundPressed" Color="{DynamicResource PaletteTextSecondary}" />
+  <SolidColorBrush x:Key="ComboBoxBackground" Color="{DynamicResource PaletteSurface}" />
+  <SolidColorBrush x:Key="ComboBoxBorderBrush" Color="{DynamicResource PaletteBorderControl}" />
+  <SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="{DynamicResource PaletteBackgroundHover}" />
+  <SolidColorBrush x:Key="ComboBoxBackgroundPressed" Color="{DynamicResource PaletteBackgroundSelected}" />
+  <SolidColorBrush x:Key="ComboBoxBorderBrushPointerOver" Color="{DynamicResource PaletteBorderControl}" />
+  <SolidColorBrush x:Key="ComboBoxBorderBrushPressed" Color="{DynamicResource PaletteBorderControl}" />
+  <SolidColorBrush x:Key="ComboBoxItemBackgroundPointerOver" Color="{DynamicResource PaletteBackgroundHover}" />
+  <SolidColorBrush x:Key="ComboBoxItemBackgroundPressed" Color="{DynamicResource PaletteBackgroundSelected}" />
+  <SolidColorBrush x:Key="ComboBoxItemBackgroundSelected" Color="{DynamicResource PaletteBackgroundSelected}" />
+  <SolidColorBrush x:Key="ComboBoxItemBackgroundSelectedPointerOver" Color="{DynamicResource PaletteBackgroundSelected}" />
+  <SolidColorBrush x:Key="ComboBoxItemBackgroundSelectedPressed" Color="{DynamicResource PaletteBackgroundSelected}" />
+  <SolidColorBrush x:Key="ComboBoxItemForegroundPressed" Color="{DynamicResource PaletteTextPrimary}" />
+  <SolidColorBrush x:Key="MenuFlyoutItemBackgroundPointerOver" Color="{DynamicResource PaletteBackgroundHover}" />
+  <SolidColorBrush x:Key="MenuFlyoutItemBackgroundPressed" Color="{DynamicResource PaletteBackgroundSelected}" />
+  <SolidColorBrush x:Key="MenuFlyoutItemForegroundPressed" Color="{DynamicResource PaletteTextPrimary}" />
+  <SolidColorBrush x:Key="TabItemHeaderBackgroundUnselectedPointerOver" Color="{DynamicResource PaletteBackgroundHover}" />
+  <SolidColorBrush x:Key="TabItemHeaderBackgroundUnselectedPressed" Color="{DynamicResource PaletteBackgroundSelected}" />
+  <SolidColorBrush x:Key="TabItemHeaderBackgroundSelectedPointerOver" Color="{DynamicResource PaletteBackgroundHover}" />
+  <SolidColorBrush x:Key="TabItemHeaderBackgroundSelectedPressed" Color="{DynamicResource PaletteBackgroundSelected}" />
+  <SolidColorBrush x:Key="TabItemHeaderForegroundUnselectedPressed" Color="{DynamicResource PaletteTextPrimary}" />
+  <SolidColorBrush x:Key="TabItemHeaderForegroundSelectedPressed" Color="{DynamicResource PaletteTextPrimary}" />
+  <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillCheckedPointerOver" Color="{DynamicResource PaletteTextSecondary}" />
+  <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillCheckedPressed" Color="{DynamicResource PaletteTextSecondary}" />
+  <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeCheckedPointerOver" Color="{DynamicResource PaletteTextSecondary}" />
+  <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeCheckedPressed" Color="{DynamicResource PaletteTextSecondary}" />
+  <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeUnchecked" Color="{DynamicResource PaletteBorderControl}" />
+  <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeUncheckedPointerOver" Color="{DynamicResource PaletteTextMuted}" />
+  <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeUncheckedPressed" Color="{DynamicResource PaletteTextMuted}" />
+  <SolidColorBrush x:Key="CheckBoxCheckGlyphForegroundChecked" Color="{DynamicResource PaletteSurface}" />
+  <SolidColorBrush x:Key="CheckBoxCheckGlyphForegroundCheckedPointerOver" Color="{DynamicResource PaletteSurface}" />
+  <SolidColorBrush x:Key="CheckBoxCheckGlyphForegroundCheckedPressed" Color="{DynamicResource PaletteSurface}" />
+  <SolidColorBrush x:Key="RadioButtonOuterEllipseCheckedFillPointerOver" Color="{DynamicResource PaletteTextSecondary}" />
+  <SolidColorBrush x:Key="RadioButtonOuterEllipseCheckedFillPressed" Color="{DynamicResource PaletteTextSecondary}" />
+  <SolidColorBrush x:Key="RadioButtonOuterEllipseCheckedStrokePointerOver" Color="{DynamicResource PaletteTextSecondary}" />
+  <SolidColorBrush x:Key="RadioButtonOuterEllipseCheckedStrokePressed" Color="{DynamicResource PaletteTextSecondary}" />
+  <SolidColorBrush x:Key="RadioButtonOuterEllipseStroke" Color="{DynamicResource PaletteBorderControl}" />
+  <SolidColorBrush x:Key="RadioButtonOuterEllipseStrokePointerOver" Color="{DynamicResource PaletteTextMuted}" />
+  <SolidColorBrush x:Key="RadioButtonOuterEllipseStrokePressed" Color="{DynamicResource PaletteTextMuted}" />
+  <SolidColorBrush x:Key="ToggleSwitchFillOnPointerOver" Color="{DynamicResource PaletteTextSecondary}" />
+  <SolidColorBrush x:Key="ToggleSwitchFillOnPressed" Color="{DynamicResource PaletteTextSecondary}" />
+  <SolidColorBrush x:Key="ToggleSwitchStrokeOnPointerOver" Color="{DynamicResource PaletteTextSecondary}" />
+  <SolidColorBrush x:Key="ToggleSwitchStrokeOnPressed" Color="{DynamicResource PaletteTextSecondary}" />
   <!-- A switch that is off is a filled grey track, not Fluent's outline: the
-     knob is the same white on it as on the accent, so on and off differ by the
+     knob is the same on it as on the ink, so on and off differ by the
      track's colour and the knob's side and nothing else. -->
-  <SolidColorBrush x:Key="ToggleSwitchFillOff" Color="{DynamicResource PaletteIconDisabled}" />
-  <SolidColorBrush x:Key="ToggleSwitchStrokeOff" Color="{DynamicResource PaletteIconDisabled}" />
-  <SolidColorBrush x:Key="ToggleSwitchKnobFillOff" Color="{DynamicResource PaletteOnAccent}" />
-  <SolidColorBrush x:Key="ToggleSwitchKnobFillOffPointerOver" Color="{DynamicResource PaletteOnAccent}" />
-  <SolidColorBrush x:Key="ToggleSwitchKnobFillOffPressed" Color="{DynamicResource PaletteOnAccent}" />
-  <SolidColorBrush x:Key="ToggleSwitchKnobFillOn" Color="{DynamicResource PaletteOnAccent}" />
-  <SolidColorBrush x:Key="ScrollBarThumbFillPointerOver" Color="{DynamicResource PaletteAccentHover}" />
-  <SolidColorBrush x:Key="ScrollBarThumbFillPressed" Color="{DynamicResource PaletteAccentPressed}" />
-  <SolidColorBrush x:Key="TextControlButtonBackgroundPointerOver" Color="{DynamicResource PaletteAccentHover}" Opacity="0.12" />
-  <SolidColorBrush x:Key="TextControlButtonBackgroundPressed" Color="{DynamicResource PaletteAccentPressed}" Opacity="0.22" />
-  <SolidColorBrush x:Key="TextControlButtonForegroundPressed" Color="{DynamicResource PaletteAccentPressed}" />
-  <SolidColorBrush x:Key="SystemControlHighlightListMediumBrush" Color="{DynamicResource PaletteAccentPressed}" Opacity="0.22" />
+  <SolidColorBrush x:Key="ToggleSwitchFillOff" Color="{DynamicResource PaletteControlOff}" />
+  <SolidColorBrush x:Key="ToggleSwitchFillOffPointerOver" Color="{DynamicResource PaletteControlOff}" />
+  <SolidColorBrush x:Key="ToggleSwitchFillOffPressed" Color="{DynamicResource PaletteControlOff}" />
+  <SolidColorBrush x:Key="ToggleSwitchStrokeOff" Color="{DynamicResource PaletteControlOff}" />
+  <SolidColorBrush x:Key="ToggleSwitchStrokeOffPointerOver" Color="{DynamicResource PaletteControlOff}" />
+  <SolidColorBrush x:Key="ToggleSwitchStrokeOffPressed" Color="{DynamicResource PaletteControlOff}" />
+  <SolidColorBrush x:Key="ToggleSwitchKnobFillOff" Color="{DynamicResource PaletteSwitchKnob}" />
+  <SolidColorBrush x:Key="ToggleSwitchKnobFillOffPointerOver" Color="{DynamicResource PaletteSwitchKnob}" />
+  <SolidColorBrush x:Key="ToggleSwitchKnobFillOffPressed" Color="{DynamicResource PaletteSwitchKnob}" />
+  <SolidColorBrush x:Key="ToggleSwitchKnobFillOn" Color="{DynamicResource PaletteSwitchKnob}" />
+  <SolidColorBrush x:Key="ToggleSwitchKnobFillOnPointerOver" Color="{DynamicResource PaletteSwitchKnob}" />
+  <SolidColorBrush x:Key="ToggleSwitchKnobFillOnPressed" Color="{DynamicResource PaletteSwitchKnob}" />
+  <SolidColorBrush x:Key="ScrollBarThumbFillPointerOver" Color="{DynamicResource PaletteTextMuted}" />
+  <SolidColorBrush x:Key="ScrollBarThumbFillPressed" Color="{DynamicResource PaletteTextSecondary}" />
+  <SolidColorBrush x:Key="TextControlButtonBackgroundPointerOver" Color="{DynamicResource PaletteBackgroundHover}" />
+  <SolidColorBrush x:Key="TextControlButtonBackgroundPressed" Color="{DynamicResource PaletteBackgroundSelected}" />
+  <SolidColorBrush x:Key="TextControlButtonForegroundPressed" Color="{DynamicResource PaletteTextPrimary}" />
+  <SolidColorBrush x:Key="SystemControlHighlightListMediumBrush" Color="{DynamicResource PaletteBackgroundSelected}" />
 
   <!-- ── Fluent brushes the app sets ─────────────────────────────────── -->
   <!-- Fluent resolves these from its own colours when it loads, so the
        aliases above never reach them; the views name several directly. -->
 
-  <!-- Selected list rows: the accent, faint, a step stronger under the
-       pointer and another when pressed. -->
-  <SolidColorBrush x:Key="SystemControlHighlightListAccentLowBrush" Color="{DynamicResource PaletteAccent}" Opacity="0.14" />
-  <SolidColorBrush x:Key="SystemControlHighlightListAccentMediumBrush" Color="{DynamicResource PaletteAccent}" Opacity="0.2" />
-  <SolidColorBrush x:Key="SystemControlHighlightListAccentHighBrush" Color="{DynamicResource PaletteAccent}" Opacity="0.26" />
+  <!-- Selected list rows: the picked grey, whether pointed at or pressed. -->
+  <SolidColorBrush x:Key="SystemControlHighlightListAccentLowBrush" Color="{DynamicResource PaletteBackgroundSelected}" />
+  <SolidColorBrush x:Key="SystemControlHighlightListAccentMediumBrush" Color="{DynamicResource PaletteBackgroundSelected}" />
+  <SolidColorBrush x:Key="SystemControlHighlightListAccentHighBrush" Color="{DynamicResource PaletteBackgroundSelected}" />
 
   <!-- Sheets and the floating chrome. -->
   <SolidColorBrush x:Key="SystemControlBackgroundChromeMediumBrush" Color="{DynamicResource PaletteSurface}" />
   <SolidColorBrush x:Key="SystemControlBackgroundAltHighBrush" Color="{DynamicResource PaletteBackground}" />
-  <SolidColorBrush x:Key="SystemControlBackgroundBaseLowBrush" Color="{DynamicResource PaletteDivider}" />
-  <SolidColorBrush x:Key="SystemControlBackgroundListLowBrush" Color="{DynamicResource PaletteSurface}" />
-  <SolidColorBrush x:Key="SystemControlBackgroundListMediumBrush" Color="{DynamicResource PaletteDivider}" />
+  <SolidColorBrush x:Key="SystemControlBackgroundBaseLowBrush" Color="{DynamicResource PaletteBackgroundSelected}" />
+  <SolidColorBrush x:Key="SystemControlBackgroundListLowBrush" Color="{DynamicResource PaletteBackgroundHover}" />
+  <SolidColorBrush x:Key="SystemControlBackgroundListMediumBrush" Color="{DynamicResource PaletteBackgroundSelected}" />
   <!-- A list row under the pointer (Fluent's ListBoxItem - the desktop
-       sidebar): the hover accent, faint. -->
-  <SolidColorBrush x:Key="SystemControlHighlightListLowBrush" Color="{DynamicResource PaletteAccentHover}" Opacity="0.12" />
-  <SolidColorBrush x:Key="SystemControlForegroundBaseMediumLowBrush" Color="{DynamicResource PaletteIconDisabled}" />
-  <SolidColorBrush x:Key="SystemControlForegroundBaseLowBrush" Color="{DynamicResource PaletteDivider}" />
+       sidebar): the hover grey. -->
+  <SolidColorBrush x:Key="SystemControlHighlightListLowBrush" Color="{DynamicResource PaletteBackgroundHover}" />
+  <SolidColorBrush x:Key="SystemControlForegroundBaseMediumLowBrush" Color="{DynamicResource PaletteTextDisabled}" />
+  <SolidColorBrush x:Key="SystemControlForegroundBaseLowBrush" Color="{DynamicResource PaletteBackgroundSelected}" />
 
-  <!-- Every text box's outline: the frame's colour (PaletteChrome) at rest
-       and under the pointer, the accent while the caret is in it - so the one
-       box being typed into is the one in colour. Named outright because
-       Fluent resolves its own text-box brushes inside its own dictionary,
-       where the aliases above never reach, so a focused box came out the
-       platform's blue. -->
-  <SolidColorBrush x:Key="TextControlBorderBrush" Color="{DynamicResource PaletteChrome}" />
-  <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="{DynamicResource PaletteChrome}" />
-  <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="{DynamicResource PaletteAccent}" />
+  <!-- Every text box: a white field in the outline colour, at rest and under
+       the pointer, and the ink's outline while the caret is in it. Named
+       outright because Fluent resolves its own text-box brushes inside its
+       own dictionary, where the aliases above never reach, so a focused box
+       came out the platform's blue. -->
+  <SolidColorBrush x:Key="TextControlBorderBrush" Color="{DynamicResource PaletteBorderControl}" />
+  <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="{DynamicResource PaletteBorderControl}" />
+  <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="{DynamicResource PaletteTextPrimary}" />
+  <SolidColorBrush x:Key="TextControlPlaceholderForeground" Color="{DynamicResource PaletteTextMuted}" />
+  <SolidColorBrush x:Key="TextControlPlaceholderForegroundPointerOver" Color="{DynamicResource PaletteTextMuted}" />
+  <SolidColorBrush x:Key="TextControlPlaceholderForegroundFocused" Color="{DynamicResource PaletteTextMuted}" />
   <!-- The line under the selected tab (Track Info's, Settings'), which
        Fluent otherwise draws in its own blue whatever the palette says. -->
-  <SolidColorBrush x:Key="TabItemHeaderSelectedPipeFill" Color="{DynamicResource PaletteAccent}" />
+  <SolidColorBrush x:Key="TabItemHeaderSelectedPipeFill" Color="{DynamicResource PaletteTextPrimary}" />
 
-  <!-- Fluent's Slider - the seek bars and the phone's volume: filled and
-       thumbed in the accent, its hover and pressed states under the pointer
-       and the press, and disabled-grey when disabled. Named outright for the
-       same reason as the text boxes'. -->
+  <!-- Fluent's Slider - the seek bars and the volume, which are playback:
+       filled and thumbed in the accent, its hover state under the pointer and
+       the press, and disabled-grey when disabled. Named outright for the same
+       reason as the text boxes'. The equalizer's are not playback, and take
+       the slider colour instead (Slider.control, App.axaml). -->
   <SolidColorBrush x:Key="SliderTrackValueFill" Color="{DynamicResource PaletteAccent}" />
   <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Color="{DynamicResource PaletteAccentHover}" />
-  <SolidColorBrush x:Key="SliderTrackValueFillPressed" Color="{DynamicResource PaletteAccentPressed}" />
-  <SolidColorBrush x:Key="SliderTrackValueFillDisabled" Color="{DynamicResource PaletteIconDisabled}" />
+  <SolidColorBrush x:Key="SliderTrackValueFillPressed" Color="{DynamicResource PaletteAccentHover}" />
+  <SolidColorBrush x:Key="SliderTrackValueFillDisabled" Color="{DynamicResource PaletteTextDisabled}" />
+  <SolidColorBrush x:Key="SliderTrackFill" Color="{DynamicResource PaletteBackgroundSelected}" />
+  <SolidColorBrush x:Key="SliderTrackFillPointerOver" Color="{DynamicResource PaletteBackgroundSelected}" />
+  <SolidColorBrush x:Key="SliderTrackFillPressed" Color="{DynamicResource PaletteBackgroundSelected}" />
   <SolidColorBrush x:Key="SliderThumbBackground" Color="{DynamicResource PaletteAccent}" />
   <SolidColorBrush x:Key="SliderThumbBackgroundPointerOver" Color="{DynamicResource PaletteAccentHover}" />
-  <SolidColorBrush x:Key="SliderThumbBackgroundPressed" Color="{DynamicResource PaletteAccentPressed}" />
-  <SolidColorBrush x:Key="SliderThumbBackgroundDisabled" Color="{DynamicResource PaletteIconDisabled}" />
+  <SolidColorBrush x:Key="SliderThumbBackgroundPressed" Color="{DynamicResource PaletteAccentHover}" />
+  <SolidColorBrush x:Key="SliderThumbBackgroundDisabled" Color="{DynamicResource PaletteTextDisabled}" />
+  <SolidColorBrush x:Key="AppControlSliderBrush" Color="{DynamicResource PaletteControlSlider}" />
 </ResourceDictionary>

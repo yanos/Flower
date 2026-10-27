@@ -11,7 +11,7 @@
              Focusable="True">
 
   <!-- One album's songs as a short list of their own, numbered: the Albums
-       grid's expanded album (AlbumGridRowControl, with a line between each),
+       grid's expanded album (AlbumGridRowControl),
        an album card on the Artists page (MainView), and - unnumbered, each
        with its artist and album - the songs the Search page found. A click
        selects, Ctrl/Cmd and Shift extend, the arrows move, Enter or a
@@ -38,21 +38,21 @@
               PointerPressed="TrackRow_PointerPressed"
               DoubleTapped="TrackRow_DoubleTapped"
               ContextRequested="TrackRow_ContextRequested">
-        <Panel Margin="4,3">
+        <Panel Margin="0,1">
           <Border IsVisible="{Binding IsHovered}"
                   IsHitTestVisible="False"
-                  Background="{DynamicResource AppAccentHoverSoftBrush}"
-                  CornerRadius="5"/>
+                  Background="{DynamicResource AppHoverBrush}"
+                  CornerRadius="10"/>
           <Border IsVisible="{Binding IsSelected}"
                   IsHitTestVisible="False"
-                  Background="{DynamicResource AppAccentSoftBrush}"
-                  CornerRadius="5"/>
-          <!-- The currently-playing song is bold and in the accent, the way
-               the main track list marks it (TrackRowControl's own .playing
-               style). The download well is a fixed width ahead of the title,
-               as there: a collapsing column would move the title itself on
-               every row that has nothing to fetch. -->
-          <Grid ColumnDefinitions="Auto,20,*,Auto,Auto" Margin="8,6,2,6"
+                  Background="{DynamicResource AppSelectedBrush}"
+                  CornerRadius="10"/>
+          <!-- The currently-playing song is bold, the way the main track
+               list marks it (TrackRowControl's own .playing style). The
+               download button trails the title, as there: the title's star
+               column keeps every icon at the same x, and a row with nothing
+               to fetch gives the title that room back. -->
+          <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" Margin="8,13,4,13"
                 Classes.dimmedTrack="{Binding IsUnavailable}"
                 Classes.playingTrack="{Binding IsCurrentlyPlaying}">
             <TextBlock Grid.Column="0"
@@ -60,13 +60,12 @@
                        IsVisible="{Binding #Root.ShowsNumbers}"
                        MinWidth="26"
                        FontSize="13"
+                       VerticalAlignment="Center"
                        Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-            <controls:TrackDownloadButton Grid.Column="1" Margin="0,0,4,0"
-                                          DownloadRequested="TrackRow_DownloadRequested"/>
             <!-- Under the title, whose it is - the Search page's songs, which
                  are from every album rather than one. -->
-            <StackPanel Grid.Column="2" VerticalAlignment="Center">
-              <TextBlock Text="{Binding Track.Title}" TextTrimming="CharacterEllipsis" FontSize="13"/>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+              <TextBlock Classes="trackTitle" Text="{Binding Track.Title}" TextTrimming="CharacterEllipsis" FontSize="14"/>
               <TextBlock Text="{Binding ArtistAndAlbumText}"
                          IsVisible="{Binding #Root.ShowsArtist}"
                          TextTrimming="CharacterEllipsis"
@@ -74,14 +73,19 @@
                          Margin="0,1,0,0"
                          Foreground="{DynamicResource AppTextSecondaryBrush}"/>
             </StackPanel>
+            <controls:TrackDownloadButton Grid.Column="2" Margin="8,0,0,0"
+                                          DownloadRequested="TrackRow_DownloadRequested"/>
             <TextBlock Grid.Column="3" Text="{Binding Track.Duration, Converter={StaticResource DurationConverter}}"
-                       FontSize="13" Opacity="0.6" Margin="8,0,0,0"/>
+                       Classes="trackTime"
+                       FontSize="14" Margin="8,0,0,0"
+                       VerticalAlignment="Center"/>
             <!-- The song menu, for anyone who does not know to right-click -
                  the phone's rows end in the same "..." (TrackRowTemplate). -->
-            <Button Grid.Column="4" Classes="pill" Padding="2" Margin="6,-4,0,-4"
+            <Button Grid.Column="4" Classes="pill" Padding="4" Margin="6,-6,0,-6"
                     ToolTip.Tip="More"
                     Click="TrackRow_MenuClick">
-              <materialIcons:MaterialIcon Classes="chrome" Kind="DotsVertical" Width="16" Height="16" Opacity="0.6"/>
+              <materialIcons:MaterialIcon Kind="DotsVertical" Width="18" Height="18"
+                                          Foreground="{DynamicResource AppTextSecondaryBrush}"/>
             </Button>
           </Grid>
         </Panel>
@@ -90,14 +94,6 @@
   </UserControl.Resources>
 
   <UserControl.Styles>
-    <!-- A line under every song but the last - the Albums grid's open album. -->
-    <Style Selector="controls|AlbumTrackList.divided Border.expandedTrack">
-      <Setter Property="BorderThickness" Value="0,0,0,1"/>
-      <Setter Property="BorderBrush" Value="{DynamicResource AppDividerBrush}"/>
-    </Style>
-    <Style Selector="controls|AlbumTrackList.divided ContentPresenter:nth-last-child(1) Border.expandedTrack">
-      <Setter Property="BorderThickness" Value="0"/>
-    </Style>
     <!-- A song that can't be played right now - not downloaded, and no
          reachable server to stream it from. Same 0.5 dim as the main track
          list's own unavailable rows (TrackRowControl) and mobile's
@@ -114,9 +110,21 @@
     <Style Selector="Grid.dimmedTrack TextBlock.placeholderGlyph">
       <Setter Property="Foreground" Value="{DynamicResource AppTextDisabledBrush}"/>
     </Style>
+    <!-- Set here rather than on the elements, so the playing style below
+         - a style too - can outrank them. -->
+    <Style Selector="TextBlock.trackTitle">
+      <Setter Property="FontWeight" Value="Medium"/>
+    </Style>
+    <Style Selector="TextBlock.trackTime">
+      <Setter Property="Foreground" Value="{DynamicResource AppTextValueBrush}"/>
+    </Style>
+    <!-- Bold and nothing else, like every other track list: the accent is
+         the app's colour for things to press, not for the song playing. -->
     <Style Selector="Grid.playingTrack TextBlock">
       <Setter Property="FontWeight" Value="Bold"/>
-      <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}"/>
+    </Style>
+    <Style Selector="Grid.playingTrack controls|TrackDownloadButton">
+      <Setter Property="IsBold" Value="True"/>
     </Style>
   </UserControl.Styles>
 

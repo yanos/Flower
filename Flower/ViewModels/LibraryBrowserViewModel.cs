@@ -203,8 +203,24 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         {
             _filterText = value;
             OnPropertyChanged();
-            RebuildVisibleSubListItems();
             ScheduleFilter();
+        }
+    }
+
+    // The desktop Artists column's own box, over the names: the artists whose
+    // name it finds (VisibleSubListItems). FilterText, beside the picked
+    // artist's name, narrows that artist's songs instead (ArtistPageViewModel).
+    private string? _artistFilterText;
+    public string? ArtistFilterText
+    {
+        get => _artistFilterText;
+        set
+        {
+            if (_artistFilterText == value)
+                return;
+            _artistFilterText = value;
+            OnPropertyChanged();
+            RebuildVisibleSubListItems();
         }
     }
 
@@ -438,8 +454,8 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
             : InArtistOrder(_subListItems, sort).FirstOrDefault();
     }
 
-    // The desktop Artists column: SubListItems narrowed by the filter, whose
-    // box sits at that column's head - the artists whose name it finds, the
+    // The desktop Artists column: SubListItems narrowed by ArtistFilterText,
+    // whose box sits at that column's head - the artists whose name it finds, the
     // way the phone's artist list filters (MobileMainViewModel
     // .FilterArtistPicker). A list of its own rather than SubListItems
     // narrowed in place: the phone builds its artist list from SubListItems,
@@ -462,7 +478,7 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
             : BrowseSort.DefaultFor(BrowseSortScreen.Artists);
         var unsorted = sort == BrowseSort.DefaultFor(BrowseSortScreen.Artists);
 
-        if (string.IsNullOrWhiteSpace(_filterText) || _host.CurrentKind != SidebarItemKind.Artists)
+        if (string.IsNullOrWhiteSpace(_artistFilterText) || _host.CurrentKind != SidebarItemKind.Artists)
         {
             if (unsorted)
             {
@@ -473,7 +489,7 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
             VisibleSubListItems = new ObservableCollection<string>(InArtistOrder(_subListItems, sort));
             return;
         }
-        var filter = _filterText;
+        var filter = _artistFilterText;
         var found = _subListItems.Where(a => SearchText.Contains(a, filter)).ToList();
         VisibleSubListItems = new ObservableCollection<string>(unsorted ? found : InArtistOrder(found, sort));
     }

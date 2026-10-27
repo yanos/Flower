@@ -7,22 +7,6 @@
              x:DataType="vm:AlbumGridRowViewModel"
              x:CompileBindings="True">
 
-  <UserControl.Styles>
-    <!-- Play's glyph stays in the text colour on the accent, pointed at and
-         pressed too - App.axaml turns every button's icon the accent then,
-         which on this one would be the accent on the accent. -->
-    <Style Selector="Button.primary materialIcons|MaterialIcon, Button.primary:pointerover materialIcons|MaterialIcon, Button.primary:pressed materialIcons|MaterialIcon">
-      <Setter Property="Foreground" Value="{DynamicResource AppOnPrimaryBrush}"/>
-    </Style>
-    <Style Selector="Button.albumAction">
-      <Setter Property="CornerRadius" Value="9999"/>
-      <Setter Property="Padding" Value="8"/>
-    </Style>
-    <Style Selector="Button.albumAction:not(.primary)">
-      <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}"/>
-      <Setter Property="BorderThickness" Value="0"/>
-    </Style>
-  </UserControl.Styles>
 
   <StackPanel Margin="0,0,0,16">
     <!-- The row's tiles, kept as the grid hands the row album after album
@@ -47,64 +31,85 @@
         </Transitions>
       </controls:RevealDecorator.Transitions>
 
+      <!-- A card a little apart from the row above, with a hairline round
+           it; the open tile's selected tint is what ties the two together. -->
       <Border Background="{DynamicResource AppSidebarBrush}"
-              CornerRadius="14"
-              Padding="24">
-        <Grid ColumnDefinitions="240,Auto,*">
-          <StackPanel Grid.Column="0">
+              BorderBrush="{DynamicResource AppBorderBrush}"
+              BorderThickness="1"
+              CornerRadius="18"
+              Margin="8,4,8,0"
+              Padding="32">
+        <Grid ColumnDefinitions="300,*" ColumnSpacing="40">
+          <StackPanel Grid.Column="0" Spacing="16">
             <controls:AlbumArtView AlbumArt="{Binding ExpandedTile.AlbumArt}"
-                                   Width="240" Height="240"
-                                   ArtCornerRadius="8"/>
-            <TextBlock Text="{Binding ExpandedTile.Name}"
-                       FontSize="20"
-                       FontWeight="Bold"
-                       TextWrapping="Wrap"
-                       MaxLines="2"
-                       TextTrimming="CharacterEllipsis"
-                       Margin="0,14,0,0"/>
-            <TextBlock Text="{Binding ExpandedTile.Artist}"
-                       FontSize="15"
-                       TextTrimming="CharacterEllipsis"
-                       Margin="0,2,0,0"/>
-            <TextBlock Text="{Binding ExpandedYear}"
-                       IsVisible="{Binding ExpandedYear, Converter={x:Static ObjectConverters.IsNotNull}}"
-                       FontSize="13"
-                       Foreground="{DynamicResource AppTextSecondaryBrush}"
-                       Margin="0,4,0,0"/>
+                                   Width="300" Height="300"
+                                   ArtCornerRadius="12"/>
+            <StackPanel Spacing="6">
+              <TextBlock Classes="pageTitle"
+                         Text="{Binding ExpandedTile.Name}"
+                         FontSize="28"
+                         LineHeight="32"
+                         LetterSpacing="-0.3"
+                         TextWrapping="Wrap"
+                         MaxLines="2"/>
+              <TextBlock Text="{Binding ExpandedTile.Artist}"
+                         FontSize="15"
+                         FontWeight="Medium"
+                         TextTrimming="CharacterEllipsis"/>
+              <TextBlock Text="{Binding ExpandedYear}"
+                         IsVisible="{Binding ExpandedYear, Converter={x:Static ObjectConverters.IsNotNull}}"
+                         FontSize="13"
+                         Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+            </StackPanel>
             <!-- The download is the tile's own indicator, and is there only
                  while the album has songs to fetch (TrackDownloadButton) - the
                  phone's album header's Download All. -->
-            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,16,0,0">
-              <Button Classes="albumAction primary"
-                      ToolTip.Tip="Play"
+            <StackPanel Orientation="Horizontal" Spacing="10">
+              <Button Classes="play pagePlay"
                       Click="Play_Click">
-                <materialIcons:MaterialIcon Kind="Play" Width="20" Height="20"/>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <materialIcons:MaterialIcon Kind="Play" Width="20" Height="20"/>
+                  <TextBlock Text="Play" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                </StackPanel>
               </Button>
-              <Button Classes="albumAction"
-                      ToolTip.Tip="Shuffle"
-                      Click="Shuffle_Click">
-                <materialIcons:MaterialIcon Kind="Shuffle" Width="20" Height="20"/>
-              </Button>
-              <controls:TrackDownloadButton DataContext="{Binding ExpandedTile}"
-                                            Label="Download album"
-                                            IconSize="20"
-                                            IconPadding="8"
-                                            VerticalAlignment="Center"
-                                            DownloadRequested="Download_Requested"/>
+              <Border Classes="outlined" Width="44" Height="44">
+                <Button Classes="pill" Padding="12" HorizontalAlignment="Center"
+                        ToolTip.Tip="Shuffle"
+                        Click="Shuffle_Click">
+                  <materialIcons:MaterialIcon Classes="chrome" Kind="Shuffle" Width="18" Height="18"/>
+                </Button>
+              </Border>
+              <Border Classes="outlined" Width="44" Height="44"
+                      IsVisible="{Binding #ExpandedDownload.IsVisible}">
+                <controls:TrackDownloadButton x:Name="ExpandedDownload"
+                                              DataContext="{Binding ExpandedTile}"
+                                              Label="Download album"
+                                              IconSize="18"
+                                              IconPadding="12"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              DownloadRequested="Download_Requested"/>
+              </Border>
             </StackPanel>
           </StackPanel>
 
-          <Border Grid.Column="1"
-                  Width="1"
-                  Margin="24,0"
-                  Background="{DynamicResource AppDividerBrush}"/>
-
-          <!-- The songs, numbered, a line between each (AlbumTrackList - the
-               Artists page's album cards draw theirs with it too). -->
-          <controls:AlbumTrackList Grid.Column="2"
-                                   ShowsNumbers="True"
-                                   Classes="divided"
-                                   VerticalAlignment="Top"/>
+          <!-- The songs, numbered, under a band naming their columns
+               (AlbumTrackList - the Artists page's album cards draw theirs
+               with it too). -->
+          <StackPanel Grid.Column="1" VerticalAlignment="Top">
+            <Border BorderThickness="0,0,0,1"
+                    BorderBrush="{DynamicResource AppBorderBrush}"
+                    Height="36"
+                    Margin="0,0,0,6"
+                    Padding="8,0,36,0">
+              <Grid ColumnDefinitions="Auto,20,*,Auto" VerticalAlignment="Center">
+                <TextBlock Grid.Column="0" Text="#" MinWidth="26" FontSize="12" FontWeight="Medium" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                <TextBlock Grid.Column="2" Text="Title" FontSize="12" FontWeight="Medium" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                <TextBlock Grid.Column="3" Text="Duration" FontSize="12" FontWeight="Medium" Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+              </Grid>
+            </Border>
+            <controls:AlbumTrackList ShowsNumbers="True"/>
+          </StackPanel>
         </Grid>
       </Border>
     </controls:RevealDecorator>

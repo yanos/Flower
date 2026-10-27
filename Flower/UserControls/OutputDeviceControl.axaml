@@ -14,15 +14,14 @@
        like every other one (PlatformContextMenu), and elsewhere Avalonia's,
        opening upward from the player bar it sits in. -->
   <Button x:Name="PickerButton"
-          Background="Transparent"
-          BorderThickness="0"
-          Padding="4,2"
+          Classes="pill"
+          Padding="13"
           VerticalAlignment="Center"
           ToolTip.Tip="Audio output"
           Click="PickerButton_Click">
     <materialIcons:MaterialIcon Kind="SpeakerMultiple"
-                                Width="20" Height="20"
-                                Foreground="{DynamicResource AppTextPrimaryBrush}"/>
+                                Width="18" Height="18"
+                                Foreground="{DynamicResource AppTextSecondaryBrush}"/>
   </Button>
 
 </UserControl>

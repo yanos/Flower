@@ -14,6 +14,15 @@
        That is what makes a state change a swap rather than a reflow of
        everything to the right of it. -->
   <Grid>
+    <!-- Connected, said with a dot rather than a check where the row has
+         one already (ConnectedAsDot) - the sidebar's server card. -->
+    <Ellipse x:Name="ConnectedDot"
+             Width="8" Height="8"
+             Fill="{DynamicResource AppSuccessBrush}"
+             VerticalAlignment="Center"
+             HorizontalAlignment="Center"
+             IsVisible="False"/>
+
     <materialIcons:MaterialIcon x:Name="ConnectedIcon"
                                 Kind="CheckCircle"
                                 Foreground="{DynamicResource AppSuccessBrush}"

@@ -118,7 +118,7 @@
                 IsVisible="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).CanEditCurrentPlaylist}">
           <Button Classes="pill" Padding="10" HorizontalAlignment="Center" VerticalAlignment="Center"
                   Command="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).EditCurrentPlaylistCommand}">
-            <materialIcons:MaterialIcon Kind="Pencil" Width="24" Height="24" />
+            <materialIcons:MaterialIcon Kind="PencilOutline" Width="24" Height="24" />
           </Button>
         </Border>
         <!-- Its own IsVisible is the indicator's answer, so the server gate

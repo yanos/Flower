@@ -191,8 +191,8 @@ public partial class MusicListView : UserControl
         // The drop indicators are built in field initializers, which cannot
         // bind; their colour is bound here instead, to the resource rather
         // than a copy of it, so it follows the theme like everything else.
-        _dropIndicator[!Border.BackgroundProperty] = new DynamicResourceExtension("AppAccentBrush");
-        _columnDropIndicator[!Border.BackgroundProperty] = new DynamicResourceExtension("AppAccentBrush");
+        _dropIndicator[!Border.BackgroundProperty] = new DynamicResourceExtension("AppInkBrush");
+        _columnDropIndicator[!Border.BackgroundProperty] = new DynamicResourceExtension("AppInkBrush");
         // The one container read left in this layer, and deliberately so: this
         // control is instantiated by XAML (MainView.axaml), which offers no
         // constructor to inject through and no DataContext until well after
@@ -452,7 +452,8 @@ public partial class MusicListView : UserControl
         {
             Text              = col.Header,
             VerticalAlignment = VerticalAlignment.Center,
-            FontSize          = 13,
+            FontSize          = 12,
+            FontWeight        = FontWeight.Medium,
             TextTrimming      = TextTrimming.CharacterEllipsis,
         };
         label[!TextBlock.ForegroundProperty] = new DynamicResourceExtension("AppTextSecondaryBrush");

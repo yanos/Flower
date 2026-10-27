@@ -23,9 +23,8 @@ public sealed record ContinuePlayingShelfItem(
 // how many or how far back - can be tested without a view.
 //
 // Albums are the library snapshot's (CatalogIdentity's album artist + album),
-// the grouping AlbumProgressTracker keys on, so an album on the Continue
-// Playing shelf and the same album on Recently Played are recognisably one
-// album and the second can leave it out.
+// the grouping AlbumProgressTracker keys on. Recently Played is songs rather
+// than albums.
 public static class HomeShelves
 {
     public static List<ContinuePlayingShelfItem> ContinuePlaying(
@@ -62,20 +61,17 @@ public static class HomeShelves
         return items;
     }
 
-    // Most recently played first, by the last time any of an album's songs
-    // started - leaving out albums already on the Continue Playing shelf,
-    // which says the same thing about them and more, and albums taken off the
-    // shelf (`hidden`, album id to when it was last played at the time) that
-    // have not been played since.
-    public static List<AlbumTileViewModel> RecentlyPlayed(LibrarySnapshot library, IReadOnlySet<string> exclude, int limit,
+    // Songs, most recently played first - every song with a play, whatever
+    // album it is from, so an album on the Continue Playing shelf still has
+    // its songs here - leaving out those taken off the shelf (`hidden`, song
+    // id to when it was last played at the time) that have not been played
+    // since.
+    public static List<Track> RecentlyPlayed(LibrarySnapshot library, int limit,
         IReadOnlyDictionary<string, DateTimeOffset>? hidden = null) =>
-        library.Albums
-            .Where(a => !IsUntitled(a) && !exclude.Contains(a.Id))
-            .Select(a => (Album: a, LastPlayed: a.Tracks.Max(t => t.LastPlayedAt)))
-            .Where(a => a.LastPlayed != null && !IsHidden(a.Album, a.LastPlayed.Value, hidden))
-            .OrderByDescending(a => a.LastPlayed)
+        library.Tracks
+            .Where(t => t.LastPlayedAt is { } at && !IsHidden(t, at, hidden))
+            .OrderByDescending(t => t.LastPlayedAt)
             .Take(limit)
-            .Select(a => TileFor(a.Album))
             .ToList();
 
     // Newest first, every album with a song added since then - a time window
@@ -88,8 +84,8 @@ public static class HomeShelves
             .Select(TileFor)
             .ToList();
 
-    private static bool IsHidden(AlbumEntry album, DateTimeOffset lastPlayed, IReadOnlyDictionary<string, DateTimeOffset>? hidden) =>
-        hidden != null && hidden.TryGetValue(album.Id, out var at) && lastPlayed <= at;
+    private static bool IsHidden(Track track, DateTimeOffset lastPlayed, IReadOnlyDictionary<string, DateTimeOffset>? hidden) =>
+        hidden != null && hidden.TryGetValue(track.Id.ToKey(), out var at) && lastPlayed <= at;
 
     // Songs with no album tag group together under an empty one, which is not
     // an album anybody listened to.

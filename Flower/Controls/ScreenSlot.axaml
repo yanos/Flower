@@ -33,14 +33,14 @@
   <UserControl.Styles>
     <!-- The filter oval's icons are the frame's colour like every oval's
          (App.axaml), which reaches only an oval's direct children - these
-         sit a Grid further in - and the pressed accent under a finger as
+         sit a Grid further in - and the pressed ink under a finger as
          every icon is. Before the .onArt styles below, which win over
          these. -->
     <Style Selector="Border#FilterOval materialIcons|MaterialIcon">
       <Setter Property="Foreground" Value="{DynamicResource AppChromeBrush}" />
     </Style>
     <Style Selector="Border#FilterOval Button.pill:pressed > materialIcons|MaterialIcon">
-      <Setter Property="Foreground" Value="{DynamicResource AppAccentPressedBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource AppIconPressedBrush}" />
     </Style>
 
     <!-- Over an album, whose page is washed in its cover's colour

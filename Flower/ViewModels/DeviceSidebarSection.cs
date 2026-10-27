@@ -163,7 +163,7 @@ public sealed class DeviceSidebarSection
             return;
         }
 
-        var added = new SidebarItem(SidebarItemKind.Device, ResolveDisplayName(device), MaterialIconKind.Server, device: Endpoint(device))
+        var added = new SidebarItem(SidebarItemKind.Device, ResolveDisplayName(device), MaterialIconKind.ServerOutline, device: Endpoint(device))
         {
             IsSyncing = device.Fingerprint == _host.PairedServerFingerprint && _host.IsSyncing,
             IsPairedServer = device.Fingerprint == _host.PairedServerFingerprint,

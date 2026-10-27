@@ -28,8 +28,8 @@ public partial class AlbumTileControl : UserControl
     private void Show()
     {
         var tile = DataContext as AlbumTileViewModel;
-        SelectionBorder.IsVisible = tile?.IsSelected == true;
-        Caret.IsVisible = tile?.IsExpanded == true;
+        // The album open below the row is marked as a selected one is.
+        SelectionBorder.IsVisible = tile?.IsSelected == true || tile?.IsExpanded == true;
         TileContent.Tile = tile;
     }
 }

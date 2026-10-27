@@ -55,20 +55,33 @@ namespace Flower.ViewModels
         // may not have had a year to give.
         // The album alone, with its year when there is one - the phone's Now
         // Playing gives the artist and the album a line each, each a way to
-        // that artist or album, where Subtitle runs them together.
+        // that artist or album, as the desktop's player bar does too.
         public string AlbumLine => CurrentlyPlayingTrack is { } track
             ? string.IsNullOrWhiteSpace(track.Year) ? track.Album ?? "" : $"{track.Album} ({track.Year})"
             : "";
+
+        // The song playing's star, beside its name in the desktop's player
+        // bar - set and cleared the way Track Info's star does it
+        // (Library.SetStarred), so the change is kept and synced the same.
+        public bool IsStarred => CurrentlyPlayingTrack?.Starred == true;
+
+        public void ToggleStar()
+        {
+            if (CurrentlyPlayingTrack is not { } track)
+                return;
+            _library.SetStarred(StarTarget.Song, track.Id.ToString(), !track.Starred);
+            OnPropertyChanged(nameof(IsStarred));
+        }
 
         // With nothing to play, the bar names the app and its build rather
         // than standing empty - the one place the version is on screen without
         // opening About.
         public string Title => CurrentlyPlayingTrack?.Title ?? "Flower";
 
-        public string Subtitle => CurrentlyPlayingTrack is { } track
-            ? string.IsNullOrWhiteSpace(track.Year)
-                ? $"{track.Artists} — {track.Album}"
-                : $"{track.Artists} — {track.Album} ({track.Year})"
+        // The line under the title: who it is by, the way the phone's Now
+        // Playing gives the artist a line of its own above the album's.
+        public string ArtistLine => CurrentlyPlayingTrack is { } track
+            ? track.Artists ?? ""
             : $"Version {AppVersion.Display}";
 
         // Not disposed on replacement, and deliberately so. These bitmaps come
@@ -220,8 +233,9 @@ namespace Flower.ViewModels
                 {
                     OnPropertyChanged(nameof(CurrentlyPlayingTrack));
                     OnPropertyChanged(nameof(Title));
-                    OnPropertyChanged(nameof(Subtitle));
+                    OnPropertyChanged(nameof(ArtistLine));
                     OnPropertyChanged(nameof(AlbumLine));
+                    OnPropertyChanged(nameof(IsStarred));
                     OnPropertyChanged(nameof(TotalTime));
                     LoadAlbumArt(_playlistControlViewModel.CurrentlyPlayingTrack);
                 }
@@ -235,6 +249,15 @@ namespace Flower.ViewModels
                 }
             },
                 h => _playlistControlViewModel.PropertyChanged += h, h => _playlistControlViewModel.PropertyChanged -= h);
+
+            // Starred or unstarred from anywhere else - Track Info, a menu, a
+            // sync from another device.
+            _subscriptions.Add<EventHandler<TrackChangedEventArgs>>((_, e) =>
+            {
+                if ((e.Change & TrackChange.Starred) != 0 && CurrentlyPlayingTrack is { } track && e.Tracks.Contains(track))
+                    Dispatcher.UIThread.Post(() => OnPropertyChanged(nameof(IsStarred)));
+            },
+                h => _library.TrackChanged += h, h => _library.TrackChanged -= h);
 
             _subscriptions.Add<EventHandler>((s, e) =>
             {

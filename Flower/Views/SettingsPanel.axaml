@@ -35,7 +35,7 @@
 
   <Grid RowDefinitions="*,Auto,Auto" Margin="16">
 
-    <TabControl Grid.Row="0" x:Name="Tabs" SelectionChanged="Tabs_SelectionChanged">
+    <TabControl Grid.Row="0" x:Name="Tabs" Classes="segmented" Padding="0,14,0,0" SelectionChanged="Tabs_SelectionChanged">
 
       <TabItem Header="General" x:Name="GeneralTab">
         <!-- Scrolls like every other tab here: a server's General tab carries the
@@ -77,7 +77,7 @@
                              FontSize="22" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                   <Image Source="{Binding IconPicture}" IsVisible="{Binding PreviewsIconPicture}"
                          Stretch="UniformToFill"/>
-                  <materialIcons:MaterialIcon Kind="Server" IsVisible="{Binding PreviewsNoIcon}"
+                  <materialIcons:MaterialIcon Kind="ServerOutline" IsVisible="{Binding PreviewsNoIcon}"
                                               Width="20" Height="20" Opacity="0.6"/>
                 </Panel>
               </Border>
@@ -122,11 +122,6 @@
             <ComboBoxItem Content="Top"/>
             <ComboBoxItem Content="Bottom"/>
           </ComboBox>
-          <!-- AppSettings.TintPlayerBarWithAlbumColor. -->
-          <CheckBox Content="Color the player bar with the album's cover"
-                    Margin="0,8,0,0"
-                    IsChecked="{Binding Device.TintPlayerBarWithAlbumColor, Mode=TwoWay}"
-                    IsVisible="{Binding Capabilities.PlaybackControlsPicker}"/>
 
           <!-- How much Home's shelves hold - see AppSettings.
                HomeContinuePlayingLimit - and the order they come in, dragged
@@ -255,7 +250,7 @@
                                  findable in a list at a glance, the text is what
                                  gets read out or typed in. -->
                             <Panel Grid.Column="0" VerticalAlignment="Center">
-                              <materialIcons:MaterialIcon Kind="Lock"
+                              <materialIcons:MaterialIcon Kind="LockOutline"
                                                            Width="15" Height="15" Opacity="0.55"
                                                            IsVisible="{Binding IsSecure}"/>
                               <materialIcons:MaterialIcon Kind="LockOpenVariantOutline"
@@ -496,7 +491,7 @@
                                 Click="RevealFolderButton_Click"
                                 IsVisible="{Binding #PathsList.((vm:SettingsViewModel)DataContext).Capabilities.RevealInFileManager}"
                                 ToolTip.Tip="Reveal in File Manager">
-                          <materialIcons:MaterialIcon Kind="FolderOpen" Width="16" Height="16"/>
+                          <materialIcons:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/>
                         </Button>
                       </Grid>
                     </DataTemplate>
@@ -823,18 +818,41 @@
              the owner of the server is the one who ends up diagnosing a
              listener's phone - which is also why this is the one screen that
              lists everyone. A client's own Log window shows only itself. -->
-        <Grid RowDefinitions="*" ColumnDefinitions="200,Auto,*" Margin="0,12,0,0">
-          <Grid Grid.Column="0" RowDefinitions="*,Auto">
-            <ListBox Grid.Row="0"
+        <!-- On the log's own surface between hairlines, as the board lays
+             it out: the sources down the left under a small capital heading,
+             the log beside them. -->
+        <Border BorderThickness="0,1" BorderBrush="{DynamicResource AppBorderBrush}" Margin="-16,0">
+        <Grid RowDefinitions="*" ColumnDefinitions="220,Auto,*">
+          <Grid Grid.Column="0" RowDefinitions="Auto,*,Auto" Margin="12,16,12,12">
+            <TextBlock Grid.Row="0" Text="SOURCE"
+                       FontSize="11" FontWeight="SemiBold" LetterSpacing="0.9"
+                       Foreground="{DynamicResource AppTextSecondaryBrush}"
+                       Margin="12,0,12,6"/>
+            <ListBox Grid.Row="1"
+                     Classes="logSources"
                      ItemsSource="{Binding LogSources}"
                      SelectedItem="{Binding SelectedLogSource, Mode=TwoWay}"
                      Background="Transparent">
+              <ListBox.Styles>
+                <Style Selector="ListBox.logSources ListBoxItem">
+                  <Setter Property="Padding" Value="12,10"/>
+                  <Setter Property="Margin" Value="0,0,0,4"/>
+                  <Setter Property="CornerRadius" Value="10"/>
+                </Style>
+                <Style Selector="ListBox.logSources ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter, ListBox.logSources ListBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+                  <Setter Property="Background" Value="{DynamicResource AppSelectedBrush}"/>
+                </Style>
+                <Style Selector="ListBox.logSources ListBoxItem:selected TextBlock.sourceName">
+                  <Setter Property="FontWeight" Value="SemiBold"/>
+                </Style>
+              </ListBox.Styles>
               <ListBox.ItemTemplate>
                 <DataTemplate x:DataType="vm:LogSourceRow">
-                  <StackPanel Margin="8,6">
-                    <TextBlock Text="{Binding Name}" FontWeight="Medium" TextTrimming="CharacterEllipsis"/>
+                  <StackPanel Spacing="2">
+                    <TextBlock Classes="sourceName" Text="{Binding Name}" FontWeight="Medium" TextTrimming="CharacterEllipsis"/>
                     <TextBlock Text="{Binding Detail}" IsVisible="{Binding Detail, Converter={x:Static ObjectConverters.IsNotNull}}"
-                               Opacity="0.6" FontSize="11" Margin="0,1,0,0" TextTrimming="CharacterEllipsis"/>
+                               FontSize="12" TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource AppTextSecondaryBrush}"/>
                   </StackPanel>
                 </DataTemplate>
               </ListBox.ItemTemplate>
@@ -844,18 +862,20 @@
                  SettingsViewModel.SetLogTabActive), and a device's snapshot
                  only changes when it next syncs. Refresh stays for re-reading
                  one from scratch. -->
-            <Button Grid.Row="1" Content="Refresh" Margin="0,8,8,0"
+            <Button Grid.Row="2" Content="Refresh" Margin="0,8,0,0"
+                    Classes="outlined"
                     HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                     Command="{Binding RefreshLogCommand}"/>
           </Grid>
 
-          <GridSplitter Grid.Column="1" Width="4" Background="Transparent" ResizeDirection="Columns"/>
+          <GridSplitter Grid.Column="1" Width="1" Background="{DynamicResource AppBorderBrush}" ResizeDirection="Columns"/>
 
-          <!-- The app's own log viewer, unchanged - filtering, minimum level,
-               font size, word wrap and an AvaloniaEdit document that handles a
-               real log's worth of lines. -->
+          <!-- The app's own log viewer - filtering, minimum level, grouping
+               repeats, text size, word wrap and an AvaloniaEdit document that
+               handles a real log's worth of lines. -->
           <views:LogViewer Grid.Column="2" DataContext="{Binding LogViewer}"/>
         </Grid>
+        </Border>
       </TabItem>
 
     </TabControl>

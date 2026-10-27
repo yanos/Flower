@@ -37,6 +37,8 @@ public sealed class HomeShelfRowsHost
 
     private readonly ItemsControl _list;
     private readonly Func<double, int> _columnsFor;
+    private readonly int _songColumns;
+    private readonly bool _historyLink;
     private HomeViewModel? _home;
     private int _columns;
 
@@ -49,10 +51,13 @@ public sealed class HomeShelfRowsHost
 
     private AnimationClock Clock => ClockOverride ?? AnimationClock.Current;
 
-    public HomeShelfRowsHost(ItemsControl list, Func<double, int> columnsFor)
+    // songColumns and historyLink as HomeShelfRows.Build takes them.
+    public HomeShelfRowsHost(ItemsControl list, Func<double, int> columnsFor, int songColumns = 1, bool historyLink = false)
     {
         _list = list;
         _columnsFor = columnsFor;
+        _songColumns = songColumns;
+        _historyLink = historyLink;
         list.SizeChanged += (_, e) =>
         {
             var columns = _columnsFor(e.NewSize.Width);
@@ -90,15 +95,15 @@ public sealed class HomeShelfRowsHost
         StopSliding();
 
         _columns = columns;
-        _list.ItemsSource = _home == null ? null : HomeShelfRows.Build(_home, columns);
+        _list.ItemsSource = _home == null ? null : HomeShelfRows.Build(_home, columns, _songColumns, _historyLink);
 
         if (before is { Count: > 0 })
             SlideFromAfterLayout(before);
     }
 
-    // Each cover on screen by what it shows - a Continue Playing item, or an
-    // album tile - which is the same object across a rebuild (HomeViewModel
-    // reuses them) though its container is not. A cover is what its row
+    // Each cover on screen by what it shows - a Continue Playing item, an
+    // album tile or a song's row - which is the same object across a rebuild
+    // (HomeViewModel reuses them) though its container is not. A cover is what its row
     // (TileRowPanel) holds. A row the list has recycled, or a cover its row
     // has spare, is kept hidden, and says nothing about where anything is.
     private Dictionary<object, (Control Cover, Point At)> CoverPositions()

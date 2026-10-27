@@ -19,10 +19,27 @@
        capped (SearchViewModel.MaxResultsPerSection), so the page is a plain
        scroller rather than a virtualizing list. -->
   <UserControl.Styles>
-    <Style Selector="TextBlock.sectionTitle">
-      <Setter Property="FontSize" Value="24" />
-      <Setter Property="FontWeight" Value="Bold" />
-      <Setter Property="Margin" Value="8,24,0,8" />
+    <!-- Each kind of result under a small capital heading over a hairline. -->
+    <Style Selector="Border.resultsHeading">
+      <Setter Property="BorderThickness" Value="0,0,0,1" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppBorderBrush}" />
+      <Setter Property="Padding" Value="0,0,0,8" />
+      <Setter Property="Margin" Value="8,28,8,8" />
+    </Style>
+    <Style Selector="Border.resultsHeading TextBlock">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="LetterSpacing" Value="1" />
+      <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}" />
+    </Style>
+    <!-- The box: the header's outlined oval (FilterControl's), a magnifier
+         laid over its left end. -->
+    <Style Selector="AutoCompleteBox.searchBox /template/ TextBox#PART_TextBox">
+      <Setter Property="CornerRadius" Value="20" />
+      <Setter Property="MinHeight" Value="40" />
+      <Setter Property="Padding" Value="40,0,14,0" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}" />
     </Style>
     <!-- Home's cover buttons (HomeView's Button.homeTile), here at a fixed
          width since the covers wrap rather than fill a shelf's columns. -->
@@ -30,7 +47,7 @@
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderThickness" Value="0" />
       <Setter Property="Padding" Value="8" />
-      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="CornerRadius" Value="14" />
       <Setter Property="Width" Value="196" />
       <Setter Property="VerticalAlignment" Value="Top" />
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -49,11 +66,16 @@
     <Style Selector="Button.recentSearch">
       <Setter Property="Padding" Value="10,7" />
     </Style>
+    <!-- Grey under the pointer, as a tile in the Albums grid is. -->
+    <Style Selector="Button.homeTile:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.artistResult:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.recentSearch:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppHoverBrush}" />
+    </Style>
   </UserControl.Styles>
 
   <Grid RowDefinitions="Auto,*">
-    <StackPanel Grid.Row="0" Margin="28,18,24,10" Spacing="12">
-      <TextBlock Classes="screenTitle" Text="Search" FontSize="44" />
+    <Grid Grid.Row="0" Margin="40,40,40,10" ColumnDefinitions="*,Auto" ColumnSpacing="20">
+      <TextBlock Grid.Column="0" Classes="pageTitle" Text="Search" />
+      <Panel Grid.Column="1" VerticalAlignment="Top">
       <!-- The suggestions are SearchViewModel's (SearchSuggestion.For), not
            the box's own filtering of a list - FilterMode None shows them as
            they are, past searches first. Picking one fills the box with it. -->
@@ -63,11 +85,10 @@
                        ValueMemberBinding="{Binding Text, x:DataType=vm:SearchSuggestion}"
                        FilterMode="None"
                        MinimumPrefixLength="1"
-                       Watermark="Artists, albums and songs"
-                       FontSize="16"
-                       MaxWidth="560"
-                       HorizontalAlignment="Left"
-                       Width="560"
+                       Classes="searchBox"
+                       Watermark="Artists, albums, songs"
+                       FontSize="14"
+                       Width="300"
                        KeyDown="Box_KeyDown"
                        LostFocus="Box_LostFocus">
         <AutoCompleteBox.ItemTemplate>
@@ -83,17 +104,29 @@
           </DataTemplate>
         </AutoCompleteBox.ItemTemplate>
       </AutoCompleteBox>
-    </StackPanel>
+        <materialIcons:MaterialIcon Kind="Magnify"
+                                    Width="17" Height="17"
+                                    Margin="14,0,0,0"
+                                    HorizontalAlignment="Left"
+                                    VerticalAlignment="Center"
+                                    IsHitTestVisible="False"
+                                    Foreground="{DynamicResource AppTextMutedBrush}" />
+      </Panel>
+    </Grid>
 
     <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
-      <StackPanel Margin="20,0,24,24">
+      <StackPanel Margin="32,0,32,40">
 
         <!-- Nothing typed: what was looked for before, to look for again. -->
         <StackPanel IsVisible="{Binding !Search.HasQuery}">
           <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding Search.HasRecentSearches}">
-            <TextBlock Grid.Column="0" Classes="sectionTitle" Text="Recent Searches" />
+            <Border Grid.ColumnSpan="2" Classes="resultsHeading">
+              <TextBlock Text="RECENT SEARCHES" />
+            </Border>
             <Button Grid.Column="1" Content="Clear"
-                    VerticalAlignment="Bottom" Margin="0,0,0,8"
+                    Classes="outlined"
+                    Height="32"
+                    VerticalAlignment="Bottom" Margin="0,0,8,6"
                     Command="{Binding Search.ClearRecentSearchesCommand}" />
           </Grid>
           <ItemsControl ItemsSource="{Binding Search.RecentSearches}" MaxWidth="560" HorizontalAlignment="Left">
@@ -115,7 +148,9 @@
         <!-- Albums: Home's covers, wrapping. A click opens the album in the
              Albums grid; the "..." and a right-click open its menu, as on
              Home (MainView). -->
-        <TextBlock Classes="sectionTitle" Text="Albums" IsVisible="{Binding Search.HasAlbumResults}" />
+        <Border Classes="resultsHeading" IsVisible="{Binding Search.HasAlbumResults}">
+          <TextBlock Text="ALBUMS" />
+        </Border>
         <ItemsControl ItemsSource="{Binding Search.AlbumResults}" IsVisible="{Binding Search.HasAlbumResults}">
           <ItemsControl.ItemsPanel>
             <ItemsPanelTemplate>
@@ -125,7 +160,7 @@
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="mvm:AlbumTileViewModel">
               <Button Classes="homeTile" Click="Album_Click">
-                <controls:AlbumCard Tile="{Binding}" />
+                <controls:AlbumCard Classes="desktop" Tile="{Binding}" />
               </Button>
             </DataTemplate>
           </ItemsControl.ItemTemplate>
@@ -133,7 +168,9 @@
 
         <!-- Artists: the phone's artist row - their covers as a circle, the
              name, how much there is. A click opens their page. -->
-        <TextBlock Classes="sectionTitle" Text="Artists" IsVisible="{Binding Search.HasArtistResults}" />
+        <Border Classes="resultsHeading" IsVisible="{Binding Search.HasArtistResults}">
+          <TextBlock Text="ARTISTS" />
+        </Border>
         <ItemsControl ItemsSource="{Binding Search.ArtistResults}" IsVisible="{Binding Search.HasArtistResults}">
           <ItemsControl.ItemsPanel>
             <ItemsPanelTemplate>
@@ -160,10 +197,11 @@
           </ItemsControl.ItemTemplate>
         </ItemsControl>
 
-        <TextBlock Classes="sectionTitle" Text="Songs" IsVisible="{Binding Search.HasSongResults}" />
+        <Border Classes="resultsHeading" IsVisible="{Binding Search.HasSongResults}">
+          <TextBlock Text="SONGS" />
+        </Border>
         <controls:AlbumTrackList DataContext="{Binding SearchSongs}"
                                  ShowsArtist="True"
-                                 Classes="divided"
                                  IsVisible="{Binding $parent[UserControl].((vm:MainViewModel)DataContext).Search.HasSongResults}" />
 
         <!-- One line for every section, since usually none or all of them

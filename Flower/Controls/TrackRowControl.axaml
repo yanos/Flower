@@ -14,13 +14,20 @@
        list scrolls. -->
 
   <UserControl.Styles>
-    <!-- ":is(UserControl)", not "UserControl", in every selector here: a bare
-         type selector matches that exact type and nothing derived from it, and
-         the root of this file is a TrackRowControl. Written the plain way, both
-         of the styles below silently matched nothing - the hover highlight
-         never appeared, and neither did the bolding when it was added. -->
+    <!-- "controls|TrackRowControl", the row's own type, in every selector
+         here. Not "UserControl": a bare type selector matches that exact type
+         and nothing derived from it, so written that way these matched
+         nothing. Nor "controls|TrackRowControl": that matches every UserControl above
+         the row too, MainView among them, so with the pointer anywhere in the
+         window every row took the hover grey. -->
+    <!-- Hidden by these styles rather than by the elements themselves: an
+         IsVisible set on the element is a local value, which outranks every
+         style, so the two below that show them could never have. -->
+    <Style Selector="Border#HoverBorder, Border#PlayingBorder">
+      <Setter Property="IsVisible" Value="False"/>
+    </Style>
     <!-- Hover highlight restricted to the data columns — art column is excluded -->
-    <Style Selector=":is(UserControl):pointerover Border#HoverBorder">
+    <Style Selector="controls|TrackRowControl:pointerover Border#HoverBorder">
       <Setter Property="IsVisible" Value="True"/>
     </Style>
     <!-- Dimmed: a not-yet-downloaded track with nobody to stream it from
@@ -51,17 +58,20 @@
          TrackRowPlayingTests, which reads the rendered weight rather than the
          class: the class was set correctly the whole time this style was not
          matching anything. -->
-    <Style Selector=":is(UserControl).playing StackPanel#CellsPanel controls|RowText">
+    <Style Selector="controls|TrackRowControl.playing StackPanel#CellsPanel controls|RowText">
       <Setter Property="FontWeight" Value="Bold"/>
+    </Style>
+    <!-- ...and its download icon with them (TrackDownloadButton.IsBold). -->
+    <Style Selector="controls|TrackRowControl.playing controls|TrackDownloadButton">
+      <Setter Property="IsBold" Value="True"/>
     </Style>
     <!-- A Queue row above the song playing (TrackRowViewModel.IsPlayed):
          faded, lighter than an unavailable song, since it plays fine. -->
-    <Style Selector=":is(UserControl).played StackPanel#CellsPanel, :is(UserControl).played Panel#ArtCell">
+    <Style Selector="controls|TrackRowControl.played StackPanel#CellsPanel, controls|TrackRowControl.played Panel#ArtCell">
       <Setter Property="Opacity" Value="0.6"/>
     </Style>
-    <!-- ...and sits in the accent's faint wash, the way the sidebar marks the
-         page you are on. -->
-    <Style Selector=":is(UserControl).playing Border#PlayingBorder">
+    <!-- ...and sits in a grey wash of its own. -->
+    <Style Selector="controls|TrackRowControl.playing Border#PlayingBorder">
       <Setter Property="IsVisible" Value="True"/>
     </Style>
   </UserControl.Styles>
@@ -71,35 +81,28 @@
        off) rather than fixed here, and the art cell's own visibility with
        it. -->
   <Grid x:Name="RowGrid" ColumnDefinitions="80,*">
-    <!-- The rule between one song and the next, along the row's bottom edge
-         and from the cells on, not under the art - as the phone's rows draw
-         it (TrackRowTemplate), so the covers read as a column. -->
-    <Border Grid.Column="1"
-            BorderBrush="{DynamicResource AppDividerBrush}"
-            BorderThickness="0,0,0,1"
-            IsHitTestVisible="False"/>
+    <!-- No rule between one song and the next: each row is its own
+         rounded shape when it has one - playing, pointed at or picked - and
+         the page otherwise. All three from the cells on, not under the art,
+         so the covers read as a column. Playing is the hover grey, so a
+         picked row still stands out from it. -->
     <Border Grid.Column="1"
             x:Name="PlayingBorder"
-            Background="{DynamicResource SystemControlHighlightListAccentLowBrush}"
-            CornerRadius="6"
-            IsVisible="False"
+            Background="{DynamicResource AppHoverBrush}"
+            CornerRadius="8"
             IsHitTestVisible="False"/>
     <!-- Hover background (column 1 only — stops before the art) -->
     <Border Grid.Column="1"
             x:Name="HoverBorder"
-            Background="{DynamicResource AppAccentHoverSoftBrush}"
-            CornerRadius="6"
-            IsVisible="False"
+            Background="{DynamicResource AppHoverBrush}"
+            CornerRadius="8"
             IsHitTestVisible="False"/>
-    <!-- Selection background (column 1 only). Matches the sidebar's playlist
-         drop-target highlight (see MainView.axaml's IsDropTarget Border) rather
-         than the theme's own accent-tinted selection brush, which renders too
-         dark for this app's unchanged-on-selection row text. -->
+    <!-- Selection background (column 1 only), the selected tint the sidebar
+         and the album grid pick with. -->
     <Border Grid.Column="1"
             x:Name="SelectionBorder"
-            Background="{DynamicResource AppAccentBrush}"
-            Opacity="0.25"
-            CornerRadius="6"
+            Background="{DynamicResource AppSelectedBrush}"
+            CornerRadius="8"
             IsVisible="False"
             IsHitTestVisible="False"/>
 

@@ -1,4 +1,7 @@
 using Avalonia.Controls;
+using Avalonia.Interactivity;
+
+using Flower.ViewModels;
 
 namespace Flower.UserControls
 {
@@ -11,5 +14,8 @@ namespace Flower.UserControls
         {
             InitializeComponent();
         }
+
+        private void Star_Click(object? sender, RoutedEventArgs e) =>
+            (DataContext as CurrentlyPlayingControlViewModel)?.ToggleStar();
     }
 }
