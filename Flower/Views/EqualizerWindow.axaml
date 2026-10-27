@@ -98,9 +98,9 @@
                 StrokeThickness="1"
                 StrokeDashArray="3,3"
                 IsHitTestVisible="False"/>
-          <!-- The curve the bands make, faint, through each thumb - placed
-               from where the thumbs are laid out (TraceCurve). -->
-          <Polyline x:Name="Curve"
+          <!-- The curve the bands make, faint, smooth through each thumb -
+               placed from where the thumbs are laid out (TraceCurve). -->
+          <Path x:Name="Curve"
                     Stroke="{DynamicResource AppControlSliderBrush}"
                     StrokeThickness="2"
                     StrokeJoin="Round"
