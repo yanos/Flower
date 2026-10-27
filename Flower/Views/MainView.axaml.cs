@@ -111,6 +111,10 @@ public partial class MainView : UserControl
         AddHandler(DragDrop.DropEvent, OnSongsDropped);
 
         SidebarList.ContextRequested += SidebarList_ContextRequested;
+        SidebarList.ContainerPrepared += SidebarList_ContainerPrepared;
+        // Tunnel, as SubList's below: a press on a heading is stopped before
+        // ListBoxItem's own handling selects it.
+        SidebarList.AddHandler(PointerPressedEvent, SidebarList_PointerPressed, RoutingStrategies.Tunnel);
         SubList.ContextRequested += SubList_ContextRequested;
         NowPlayingInfo.ContextRequested += NowPlaying_ContextRequested;
 
@@ -2245,6 +2249,26 @@ public partial class MainView : UserControl
         if (sender is Control { DataContext: SidebarItem { Playlist: { IsFolder: true } folder } })
             _viewModel?.Playlists.ToggleFolder(folder);
         e.Handled = true;
+    }
+
+    // A heading's row (Library, Playlists, Server) is a label, not a place:
+    // the "header" class keeps it from lighting up (MainView.axaml), and it
+    // takes no focus, so the arrow keys pass over it too.
+    private void SidebarList_ContainerPrepared(object? sender, ContainerPreparedEventArgs e)
+    {
+        var isHeader = e.Container.DataContext is SidebarItem { IsHeader: true };
+        e.Container.Classes.Set("header", isHeader);
+        e.Container.Focusable = !isHeader;
+    }
+
+    // A press on a heading selects nothing. The Playlists heading's "+" is a
+    // button of its own and still gets its press.
+    private void SidebarList_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.Source is not Visual source || source.FindAncestorOfType<Button>(includeSelf: true) is not null)
+            return;
+        if (source.FindAncestorOfType<ListBoxItem>(includeSelf: true) is { DataContext: SidebarItem { IsHeader: true } })
+            e.Handled = true;
     }
 
     private void SidebarList_SelectionChanged(object? sender, SelectionChangedEventArgs e)

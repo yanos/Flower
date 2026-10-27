@@ -57,7 +57,7 @@ public class SidebarItem : ViewModelBase
     // Room on the right of a folder for its chevron. A server's card has
     // padding all round instead, the hairline inside it.
     public Thickness Indent =>
-        IsServerCard ? new(12, 12, 12, 12) : new(12 + Depth * 16, 10, IsFolder ? 34 : 8, 10);
+        IsServerCard ? new(12, 10, 12, 10) : new(12 + Depth * 16, 7, IsFolder ? 34 : 8, 7);
 
     // Settable (not just init) - see MainViewModel.FindDeviceSidebarItem: a
     // device row can end up re-pointed at a different DiscoveredDevice

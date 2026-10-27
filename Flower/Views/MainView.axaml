@@ -140,6 +140,14 @@
               <Style Selector="ListBox.sidebar ListBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
                 <Setter Property="Background" Value="{DynamicResource AppSelectedBrush}"/>
               </Style>
+              <!-- Headings, whatever the pointer does (the "header" class -
+                   see SidebarList_ContainerPrepared). -->
+              <Style Selector="ListBox.sidebar ListBoxItem.header /template/ ContentPresenter#PART_ContentPresenter">
+                <Setter Property="Background" Value="Transparent"/>
+              </Style>
+              <Style Selector="ListBox.sidebar ListBoxItem.header">
+                <Setter Property="Cursor" Value="Arrow"/>
+              </Style>
               <Style Selector="ListBox.sidebar ListBoxItem materialIcons|MaterialIcon.rowIcon">
                 <Setter Property="Foreground" Value="{DynamicResource AppIconBrush}"/>
               </Style>
@@ -203,7 +211,7 @@
                              FontSize="11"
                              FontWeight="SemiBold"
                              Foreground="{DynamicResource AppTextSecondaryBrush}"
-                             Margin="12,28,8,8"
+                             Margin="12,20,8,6"
                              LetterSpacing="0.9"
                              VerticalAlignment="Bottom"/>
                   <!-- The Playlists heading's own way to start one, File >
