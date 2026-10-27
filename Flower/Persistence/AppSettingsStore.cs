@@ -277,6 +277,7 @@ namespace Flower.Persistence
         public double        LogFontSize        { get; set; } = 12;
         public LogEventLevel LogMinimumLevel    { get; set; } = LogEventLevel.Verbose;
         public bool          LogWordWrapEnabled { get; set; } = false;
+        public bool          LogGroupRepeats    { get; set; } = false;
 
         // Where the settings screen was left, so coming back to it comes back
         // to the same place instead of to General every time - see

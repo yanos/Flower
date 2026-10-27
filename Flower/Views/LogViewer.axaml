@@ -6,35 +6,133 @@
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="Flower.Views.LogViewer"
              x:DataType="vm:LogViewerViewModel">
-  <Grid RowDefinitions="Auto,*">
 
-    <!-- Header: font size, minimum level, word wrap, filter -->
+  <!-- Laid out from the October 2026 redesign's server Logs board: a toolbar
+       of outlined controls over the log on the surface colour, set in the
+       monospace face with each line's level on its own tint
+       (LogLevelColorizer), and Copy and Export log… under it. -->
+  <UserControl.Styles>
+    <Style Selector="Button.tool, ToggleButton.tool">
+      <Setter Property="Height" Value="36"/>
+      <Setter Property="Padding" Value="12,0"/>
+      <Setter Property="CornerRadius" Value="10"/>
+      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource AppControlBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+    <Style Selector="Button.tool:pointerover /template/ ContentPresenter#PART_ContentPresenter, ToggleButton.tool:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppHoverBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource AppControlBorderBrush}"/>
+    </Style>
+    <Style Selector="ToggleButton.tool:checked /template/ ContentPresenter#PART_ContentPresenter, ToggleButton.tool:checked:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppSelectedBrush}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource AppControlBorderBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
+    </Style>
+    <!-- The footer's two, a size down. -->
+    <Style Selector="Button.tool.small">
+      <Setter Property="Height" Value="32"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="FontSize" Value="12"/>
+    </Style>
+    <Style Selector="Button.size">
+      <Setter Property="Width" Value="34"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="CornerRadius" Value="0"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+      <Setter Property="VerticalAlignment" Value="Stretch"/>
+    </Style>
+    <Style Selector="Button.size:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppHoverBrush}"/>
+    </Style>
+    <Style Selector="ComboBox.tool">
+      <Setter Property="Height" Value="36"/>
+      <Setter Property="MinHeight" Value="36"/>
+      <Setter Property="CornerRadius" Value="10"/>
+      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+  </UserControl.Styles>
+
+  <Grid RowDefinitions="Auto,*,Auto">
+
+    <!-- The toolbar: the least level shown, grouping repeats, wrapping, the
+         text size, and the filter. -->
     <Border Grid.Row="0"
             BorderThickness="0,0,0,1"
-            BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
-      <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*" Margin="10,8">
-        <TextBlock Grid.Column="0" Text="Font Size" VerticalAlignment="Center" Opacity="0.7"/>
-        <ComboBox Grid.Column="1"
-                  Margin="6,0,16,0"
-                  Width="80"
-                  ItemsSource="{x:Static vm:LogViewerViewModel.FontSizeOptions}"
-                  SelectedItem="{Binding FontSize, Mode=TwoWay}"/>
+            BorderBrush="{DynamicResource AppBorderBrush}"
+            Padding="20,12">
+      <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto" ColumnSpacing="10">
+        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8">
+          <TextBlock Text="Minimum level" FontSize="13" VerticalAlignment="Center"
+                     Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+          <ComboBox Classes="tool"
+                    Width="130"
+                    ItemsSource="{x:Static vm:LogViewerViewModel.MinimumLevelOptions}"
+                    SelectedItem="{Binding MinimumLevel, Mode=TwoWay}"/>
+        </StackPanel>
 
-        <TextBlock Grid.Column="2" Text="Min Level" VerticalAlignment="Center" Opacity="0.7"/>
-        <ComboBox Grid.Column="3"
-                  Margin="6,0,16,0"
-                  Width="120"
-                  ItemsSource="{x:Static vm:LogViewerViewModel.MinimumLevelOptions}"
-                  SelectedItem="{Binding MinimumLevel, Mode=TwoWay}"/>
+        <ToggleButton Grid.Column="1" Classes="tool"
+                      IsChecked="{Binding IsGroupingRepeats, Mode=TwoWay}"
+                      ToolTip.Tip="Show lines that repeat the one before them as one line, with how many there were">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <materialIcons:MaterialIcon Kind="FormatListGroup" Width="16" Height="16"/>
+            <TextBlock Text="Group repeats" VerticalAlignment="Center"/>
+          </StackPanel>
+        </ToggleButton>
 
-        <CheckBox Grid.Column="4"
-                  Content="Word Wrap"
-                  Margin="0,0,16,0"
-                  IsChecked="{Binding IsWordWrapEnabled, Mode=TwoWay}"/>
+        <ToggleButton Grid.Column="2" Classes="tool"
+                      IsChecked="{Binding IsWordWrapEnabled, Mode=TwoWay}">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <materialIcons:MaterialIcon Kind="WrapDisabled" Width="16" Height="16"/>
+            <TextBlock Text="Wrap" VerticalAlignment="Center"/>
+          </StackPanel>
+        </ToggleButton>
 
-        <controls:TextInput Grid.Column="6"
-                            Text="{Binding FilterText, Mode=TwoWay}"
-                            PlaceholderText="Filter..."/>
+        <!-- A− and A+ either side of the size in use. -->
+        <Border Grid.Column="3"
+                Height="36"
+                CornerRadius="10"
+                ClipToBounds="True"
+                BorderThickness="1"
+                BorderBrush="{DynamicResource AppControlBorderBrush}"
+                Background="{DynamicResource AppSurfaceBrush}">
+          <StackPanel Orientation="Horizontal">
+            <Button Classes="size" Content="A−" FontSize="12"
+                    ToolTip.Tip="Smaller text"
+                    IsEnabled="{Binding CanMakeTextSmaller}"
+                    Click="SmallerText_Click"/>
+            <Border BorderThickness="1,0" BorderBrush="{DynamicResource AppBorderBrush}" MinWidth="44">
+              <TextBlock Text="{Binding FontSizeLabel}" FontSize="12"
+                         Foreground="{DynamicResource AppTextValueBrush}"
+                         HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <Button Classes="size" Content="A+" FontSize="15"
+                    ToolTip.Tip="Larger text"
+                    IsEnabled="{Binding CanMakeTextLarger}"
+                    Click="LargerText_Click"/>
+          </StackPanel>
+        </Border>
+
+        <Border Grid.Column="6" Classes="outlined" Height="40" Width="240" Padding="14,0,4,0">
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+            <materialIcons:MaterialIcon Grid.Column="0" Kind="Magnify" Width="17" Height="17"
+                                        VerticalAlignment="Center"
+                                        Foreground="{DynamicResource AppTextMutedBrush}"/>
+            <controls:TextInput Grid.Column="1"
+                                Classes="inOval"
+                                FontSize="14"
+                                Text="{Binding FilterText, Mode=TwoWay}"
+                                PlaceholderText="Filter"/>
+          </Grid>
+        </Border>
       </Grid>
     </Border>
 
@@ -48,13 +146,17 @@
          Manages its own scrolling internally - not wrapped in a ScrollViewer.
          Text/AppendText aren't bindable AvaloniaProperties, so
          LogViewer.axaml.cs drives them from LogViewerViewModel's
-         LinesReset/LinesAppended events instead of a XAML binding. -->
+         LinesReset/LinesAppended/LastLineReplaced events instead of a XAML
+         binding. -->
     <ae:TextEditor x:Name="LogTextEditor"
                    Grid.Row="1"
                    IsReadOnly="True"
                    ShowLineNumbers="False"
+                   Padding="20,8"
+                   Background="{DynamicResource AppSurfaceBrush}"
+                   Foreground="{DynamicResource AppTextPrimaryBrush}"
                    WordWrap="{Binding IsWordWrapEnabled}"
-                   FontFamily="Cascadia Code,Consolas,Menlo,monospace"
+                   FontFamily="{DynamicResource AppMonospaceFontFamily}"
                    FontSize="{Binding FontSize}">
       <ae:TextEditor.ContextMenu>
         <ContextMenu>
@@ -64,5 +166,29 @@
         </ContextMenu>
       </ae:TextEditor.ContextMenu>
     </ae:TextEditor>
+
+    <!-- Copy is every line shown, as shown; Export log… is the whole log
+         for this source, as it arrived, to a file (ExportText). -->
+    <Border Grid.Row="2"
+            BorderThickness="0,1,0,0"
+            BorderBrush="{DynamicResource AppBorderBrush}"
+            Padding="20,10">
+      <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+        <Button Classes="tool small" Click="CopyButton_Click">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <materialIcons:MaterialIcon Kind="ContentCopy" Width="14" Height="14"/>
+            <TextBlock Text="Copy" VerticalAlignment="Center"/>
+          </StackPanel>
+        </Button>
+        <Button x:Name="ExportButton" Classes="tool small"
+                IsEnabled="{Binding HasEntries}"
+                Click="ExportButton_Click">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <materialIcons:MaterialIcon Kind="TrayArrowDown" Width="14" Height="14"/>
+            <TextBlock Text="Export log…" VerticalAlignment="Center"/>
+          </StackPanel>
+        </Button>
+      </StackPanel>
+    </Border>
   </Grid>
 </UserControl>
