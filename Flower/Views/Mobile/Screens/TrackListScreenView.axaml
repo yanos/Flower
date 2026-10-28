@@ -53,6 +53,24 @@
     <Style Selector="ContentControl.albumText.beside">
       <Setter Property="Margin" Value="24,4,12,16" />
     </Style>
+    <!-- The artist under the name: words to tap, not a button to see - no
+         fill, no padding, and dimmer while pressed, as Now Playing's artist
+         line is (Button.nowPlayingLink). Across the whole width, so the
+         words inside centre or range left with the rest. -->
+    <Style Selector="Button.albumArtist">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    </Style>
+    <Style Selector="Button.albumArtist /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.albumArtist:pressed">
+      <Setter Property="Opacity" Value="0.6" />
+    </Style>
 
     <!-- Under an album's (or a playlist's) header the songs are set in from
          the edge, in line with the header's own breathing room, rather than

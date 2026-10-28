@@ -110,6 +110,9 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     public ICommand OpenNowPlayingCommand { get; }
     public ICommand GoToCurrentlyPlayingAlbumCommand { get; }
     public ICommand GoToCurrentlyPlayingArtistCommand { get; }
+    // An album's artist line (AlbumTileViewModel.ArtistPage).
+    public ICommand GoToArtistCommand => _goToArtist ??= new RelayCommand<string>(GoToArtist);
+    private ICommand? _goToArtist;
     public ICommand ToggleRepeatCommand { get; }
     public ICommand ToggleShuffleCommand { get; }
     public ICommand CloseSheetCommand { get; }

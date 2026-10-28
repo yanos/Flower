@@ -7,6 +7,25 @@
              x:DataType="vm:AlbumGridRowViewModel"
              x:CompileBindings="True">
 
+  <UserControl.Styles>
+    <!-- The open album's artist: words that go to the artist's page
+         (AlbumTileViewModel.ArtistPage), underlined under the pointer rather
+         than drawn as a button. In the row's own text colour, which a
+         Button's Foreground would otherwise stand between them and. -->
+    <Style Selector="Button.albumArtist">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="MinHeight" Value="0"/>
+      <Setter Property="Cursor" Value="Hand"/>
+    </Style>
+    <Style Selector="Button.albumArtist /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent"/>
+    </Style>
+    <Style Selector="Button.albumArtist:pointerover TextBlock">
+      <Setter Property="TextDecorations" Value="Underline"/>
+    </Style>
+  </UserControl.Styles>
 
   <StackPanel Margin="0,0,0,16">
     <!-- The row's tiles, kept as the grid hands the row album after album
@@ -52,10 +71,15 @@
                          LetterSpacing="-0.3"
                          TextWrapping="Wrap"
                          MaxLines="2"/>
-              <TextBlock Text="{Binding ExpandedTile.Artist}"
-                         FontSize="15"
-                         FontWeight="Medium"
-                         TextTrimming="CharacterEllipsis"/>
+              <Button Classes="albumArtist"
+                      IsHitTestVisible="{Binding ExpandedTile.ArtistPage, Converter={x:Static ObjectConverters.IsNotNull}}"
+                      Click="Artist_Click">
+                <TextBlock Text="{Binding ExpandedTile.Artist}"
+                           Foreground="{Binding $parent[UserControl].Foreground}"
+                           FontSize="15"
+                           FontWeight="Medium"
+                           TextTrimming="CharacterEllipsis"/>
+              </Button>
               <TextBlock Text="{Binding ExpandedYear}"
                          IsVisible="{Binding ExpandedYear, Converter={x:Static ObjectConverters.IsNotNull}}"
                          FontSize="13"

@@ -107,4 +107,41 @@ public class MobileAlbumHeaderTests : PinnedDataDirectory
             Song("Two", "Artist B"),
         ]));
     }
+
+    // The artist line goes to that artist's page: the page the songs are
+    // listed under, even when the line names the album artist - and no page
+    // at all for an album by several.
+    [AvaloniaFact]
+    public void The_artist_line_goes_to_the_page_the_songs_are_listed_under()
+    {
+        Assert.Equal("Explosions in the Sky", HeaderOf(
+        [
+            Song("One", "Explosions in the Sky", albumArtists: "Explosions In The Sky"),
+        ])?.ArtistPage);
+        Assert.Equal("Death From Above 1979", HeaderOf(
+        [
+            Song("One", "Death From Above 1979", albumArtists: "Death From Above 1979"),
+            Song("Two", "Death From Above 1979 feat. Someone", albumArtists: "Death From Above 1979"),
+        ])?.ArtistPage);
+        Assert.Null(HeaderOf([Song("One", "Artist A"), Song("Two", "Artist B")])?.ArtistPage);
+    }
+
+    [AvaloniaFact]
+    public void Tapping_the_artist_line_lands_on_their_albums()
+    {
+        var tracks = new List<Track> { Song("One", "Mulatu Astatke") };
+        using var parts = MainViewModelHarness.BuildMobile(new Library(tracks), new MainPlaylist(tracks));
+        var mobile = parts.Mobile;
+        mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
+        mobile.SelectAlbumOrArtistCommand.Execute("Album");
+        MainViewModelHarness.WaitForTheDrillIn(mobile, "Album");
+
+        mobile.GoToArtistCommand.Execute(mobile.CurrentAlbumHeader?.ArtistPage);
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(MobileTab.Artists, mobile.SelectedTab);
+        Assert.True(mobile.IsShowingArtistAlbumGrid);
+        Assert.Equal("Mulatu Astatke", mobile.CurrentFrame.SelectedArtistName);
+        Assert.True(mobile.CanGoBack);
+    }
 }

@@ -84,9 +84,20 @@
       <controls:PlaylistNameEditor DataContext="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).CurrentPlaylistItem}"
                                    IsVisible="{Binding IsEditing, FallbackValue=False}"
                                    CommitCommand="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).CommitPlaylistRenameCommand}" />
-      <TextBlock Text="{Binding Artist}"
-                 FontSize="16" Opacity="0.7"
-                 TextWrapping="Wrap" />
+      <!-- A way to the artist's page, where there is one page to go to
+           (ArtistPage) - and only words, wherever there is not. The words
+           take the colour the name has, which a Button's own Foreground
+           would otherwise stand between them and (Button.albumArtist, in
+           TrackListScreenView). -->
+      <Button Classes="albumArtist"
+              Command="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).GoToArtistCommand}"
+              CommandParameter="{Binding ArtistPage}"
+              IsHitTestVisible="{Binding ArtistPage, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <TextBlock Text="{Binding Artist}"
+                   Foreground="{Binding $parent[ContentControl;1].Foreground}"
+                   FontSize="16" Opacity="0.7"
+                   TextWrapping="Wrap" />
+      </Button>
       <!-- Hidden when Settings says so (ShowAlbumButtons), on a playlist as
            on an album: everything in it, a playlist's pencil included, is
            also in the screen's header menu. -->

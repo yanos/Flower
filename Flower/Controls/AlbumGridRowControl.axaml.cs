@@ -98,6 +98,13 @@ public partial class AlbumGridRowControl : UserControl
             this.FindDataContext<MainViewModel>()?.PlayTracks(row.ExpandedTracks, shuffle);
     }
 
+    // The open album's artist line, to their page.
+    private void Artist_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_row?.ExpandedTile?.ArtistPage is { } artist && this.FindDataContext<MainViewModel>() is { } main)
+            _ = main.ShowArtistAsync(artist);
+    }
+
     // Every song of the album not yet here, behind the tile's own icon.
     private void Download_Requested(object? sender, DownloadIndicatorViewModel indicator)
     {

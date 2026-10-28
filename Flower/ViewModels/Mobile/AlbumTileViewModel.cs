@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -76,6 +77,24 @@ public sealed class AlbumTileViewModel : DownloadIndicatorViewModel, AlbumArtLoa
     // recomputed whenever the paired server comes or goes, without rebuilding
     // the grid and throwing away art that is already loaded.
     public required IReadOnlyList<Track> Tracks { get; set; }
+
+    // The artist page an album's artist line goes to, on either head: its
+    // artist, spelled as the songs spell it, when any of them is listed under
+    // that name - both heads list artists by the songs' own Artist
+    // (ArtistNames) - or else the one artist every song shares. Null where
+    // there is no one page to land on: a compilation, or a playlist's header.
+    public string? ArtistPage
+    {
+        get
+        {
+            if (RepresentativeTrack == null)
+                return null;
+
+            var names = ArtistNames.Of(Tracks);
+            return names.FirstOrDefault(name => ArtistNames.Same(name, Artist))
+                ?? (names.Count == 1 ? names[0] : null);
+        }
+    }
 
     // Takes on what a freshly built tile for the same album says, so the
     // instance the grid is bound to survives the rebuild with its art, its
