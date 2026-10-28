@@ -1847,48 +1847,12 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         // before the drill-in had landed hid that entrance behind the sheet
         // for its whole length.
         GoToCurrentlyPlayingAlbumCommand = new RelayCommand(async () =>
-        {
-            var album = PlaylistControl.CurrentlyPlayingTrack?.Album;
-            if (album == null)
-                return;
-            if (IsShowingAlbumTrackList && Main.SelectedSubItem == album)
-            {
-                // Already there: the sheet was raised over that very album, so
-                // there is nothing to push and nothing to slide in. Pushing
-                // anyway put a history entry for the screen being landed on
-                // into the stack, which is a back step that goes nowhere - and
-                // ScreenStackPanel would be handed the same screen twice, one
-                // control for two slots (see its own note on the collision).
-                // A plain dismissal instead, retreating the way it arrived.
-                ActiveSheet = MobileSheet.None;
-                return;
-            }
-            PushHistory();
-            SetSelectedTabCore(MobileTab.Albums, raiseNavigationChanged: false);
-            await SelectAlbumOrArtistCore(album);
-            // Only now, with the album actually built and its own entrance
-            // already running, so the two are seen together.
-            ActiveSheet = MobileSheet.None;
-        });
+            await GoToAlbumAsync(PlaylistControl.CurrentlyPlayingTrack?.Album));
         // The same for its artist - a tap on the artist's name on the sheet, or
         // Go to Artist in its menu: the Artists tab, that artist's albums, one
         // history entry, the sheet sliding down as it arrives.
         GoToCurrentlyPlayingArtistCommand = new RelayCommand(() =>
-        {
-            var artist = PlaylistControl.CurrentlyPlayingTrack?.Artists;
-            if (string.IsNullOrEmpty(artist))
-                return;
-            if (IsShowingArtistAlbumGrid && _selectedArtistName == artist)
-            {
-                // Already there - see the album's own case above.
-                ActiveSheet = MobileSheet.None;
-                return;
-            }
-            PushHistory();
-            SetSelectedTabCore(MobileTab.Artists, raiseNavigationChanged: false);
-            SelectArtistCore(artist);
-            ActiveSheet = MobileSheet.None;
-        });
+            GoToArtist(PlaylistControl.CurrentlyPlayingTrack?.Artists));
         ToggleRepeatCommand = new RelayCommand(PlaylistControl.ToggleRepeat);
         ToggleShuffleCommand = new RelayCommand(PlaylistControl.ToggleShuffle);
         CloseSheetCommand = new RelayCommand(() => ActiveSheet = MobileSheet.None);
@@ -2363,6 +2327,53 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     }
 
     private Task SelectAlbumOrArtistCore(string name) => DrillIntoAsync(subItem: name);
+
+    // Go to Album and Go to Artist, from whatever sheet raised them - Now
+    // Playing's, or a song's or an album's menu - and the sheet closes as the
+    // page arrives under it.
+    private async Task GoToAlbumAsync(string? album)
+    {
+        if (string.IsNullOrEmpty(album))
+            return;
+        if (IsAtAlbum(album))
+        {
+            // Already there: the sheet was raised over that very album, so
+            // there is nothing to push and nothing to slide in. Pushing
+            // anyway put a history entry for the screen being landed on
+            // into the stack, which is a back step that goes nowhere - and
+            // ScreenStackPanel would be handed the same screen twice, one
+            // control for two slots (see its own note on the collision).
+            // A plain dismissal instead, retreating the way it arrived.
+            ActiveSheet = MobileSheet.None;
+            return;
+        }
+        PushHistory();
+        SetSelectedTabCore(MobileTab.Albums, raiseNavigationChanged: false);
+        await SelectAlbumOrArtistCore(album);
+        // Only now, with the album actually built and its own entrance
+        // already running, so the two are seen together.
+        ActiveSheet = MobileSheet.None;
+    }
+
+    private void GoToArtist(string? artist)
+    {
+        if (string.IsNullOrEmpty(artist))
+            return;
+        if (IsAtArtist(artist))
+        {
+            // Already there - see the album's own case above.
+            ActiveSheet = MobileSheet.None;
+            return;
+        }
+        PushHistory();
+        SetSelectedTabCore(MobileTab.Artists, raiseNavigationChanged: false);
+        SelectArtistCore(artist);
+        ActiveSheet = MobileSheet.None;
+    }
+
+    private bool IsAtAlbum(string album) => IsShowingAlbumTrackList && Main.SelectedSubItem == album;
+
+    private bool IsAtArtist(string artist) => IsShowingArtistAlbumGrid && _selectedArtistName == artist;
 
     // What SelectAlbumOrArtistCommand and SelectArtistAlbumCommand are
     // handed: a cover hands over its tile (AlbumTileView, the same on every

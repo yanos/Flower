@@ -57,4 +57,47 @@ public class MobileActionMenuTests : PinnedDataDirectory
         Assert.Contains(vm.SongActions, e => e.Action == MenuAction.GetInfo);
         Assert.DoesNotContain(vm.SongActions, e => e.Action == MenuAction.LocateFile);
     }
+
+    // The desktop's Go to Album and Go to Artist, on the song sheet: where the
+    // song is from, first, and not where the sheet was raised already.
+    [AvaloniaFact]
+    public async Task The_song_sheet_goes_to_the_songs_album()
+    {
+        var tracks = Album();
+        using var parts = MainViewModelHarness.BuildMobile(new Library(tracks), new MainPlaylist(tracks));
+        var vm = parts.Mobile;
+        await parts.Parts.Main.Browser.RebuildRowsImmediatelyAsync();
+
+        vm.OpenTrackActionsCommand.Execute(vm.Main.Rows.First(r => r.Track == tracks[0]));
+        Assert.Equal([MenuAction.GoToAlbum, MenuAction.GoToArtist], vm.SongActions.Take(2).Select(e => e.Action));
+
+        vm.RunSongActionCommand.Execute(vm.SongActions.Single(e => e.Action == MenuAction.GoToAlbum));
+        MainViewModelHarness.WaitForTheDrillIn(vm, "Avant Hard");
+
+        Assert.Equal(MobileSheet.None, vm.ActiveSheet);
+        Assert.Equal("Avant Hard", vm.Main.SelectedSubItem);
+
+        vm.OpenTrackActionsCommand.Execute(vm.AlbumDetailRows.First());
+        Assert.DoesNotContain(vm.SongActions, e => e.Action == MenuAction.GoToAlbum);
+        Assert.Contains(vm.SongActions, e => e.Action == MenuAction.GoToArtist);
+    }
+
+    [AvaloniaFact]
+    public void The_album_sheet_goes_to_the_albums_artist()
+    {
+        var tracks = Album();
+        using var parts = MainViewModelHarness.BuildMobile(new Library(tracks), new MainPlaylist(tracks));
+        var vm = parts.Mobile;
+        vm.OpenAlbumActionsCommand.Execute(new AlbumTileViewModel
+        {
+            Name = "Avant Hard", Artist = "Add N To (X)", Tracks = tracks, RepresentativeTrack = tracks[0],
+        });
+
+        vm.RunAlbumActionCommand.Execute(vm.AlbumActions.Single(e => e.Action == MenuAction.GoToArtist));
+        Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(MobileSheet.None, vm.ActiveSheet);
+        Assert.True(vm.IsShowingArtistAlbumGrid);
+        Assert.Equal("Add N To (X)", vm.CurrentFrame.SelectedArtistName);
+    }
 }

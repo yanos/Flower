@@ -116,10 +116,17 @@ public static class ActionMenus
     // into, or it is in one and could come out.
     // isSmart: a smart playlist, on a head that can recompute one
     // (MainViewModel.SmartPlaylists) - its rules to edit, after its name.
+    // canGoToArtist: the album's songs are all one artist's, and the menu is
+    // not opened on that artist's page - ForSongs' Go to Artist, for an album.
     public static IReadOnlyList<IReadOnlyList<ActionMenuEntry>> ForAlbum(
         MenuFacts facts, bool isContinuing = false, bool isPlaylist = false,
-        bool isArtist = false, bool isFolder = false, bool canMoveToFolder = false, bool isSmart = false)
+        bool isArtist = false, bool isFolder = false, bool canMoveToFolder = false, bool isSmart = false,
+        bool canGoToArtist = false)
     {
+        var from = new List<ActionMenuEntry>();
+        if (canGoToArtist)
+            from.Add(new(MenuAction.GoToArtist, "Go to Artist", MaterialIconKind.AccountMusicOutline));
+
         var where = new List<ActionMenuEntry>
         {
             new(MenuAction.Play, "Play", MaterialIconKind.Play),
@@ -169,7 +176,7 @@ public static class ActionMenus
         else if (isPlaylist)
             away.Add(new(MenuAction.DeletePlaylist, "Delete Playlist", MaterialIconKind.PlaylistRemove, IsDestructive: true));
 
-        return Groups(where, what, away);
+        return Groups(from, where, what, away);
     }
 
     // Shown only when there is something to fetch right now, with the count

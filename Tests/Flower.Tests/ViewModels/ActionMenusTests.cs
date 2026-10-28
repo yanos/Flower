@@ -146,6 +146,15 @@ public class ActionMenusTests
     }
 
     [Fact]
+    public void An_album_menu_leads_with_its_artist_when_there_is_one_to_go_to()
+    {
+        var menu = ActionMenus.ForAlbum(Nothing, canGoToArtist: true);
+
+        Assert.Equal([MenuAction.GoToArtist], menu[0].Select(e => e.Action));
+        Assert.DoesNotContain(ActionMenus.Flat(ActionMenus.ForAlbum(Nothing)), e => e.Action == MenuAction.GoToArtist);
+    }
+
+    [Fact]
     public void A_selection_goes_to_an_album_or_artist_only_when_it_shares_one()
     {
         Track Song(string? album, string? artist) => new() { Album = album, Artists = artist };

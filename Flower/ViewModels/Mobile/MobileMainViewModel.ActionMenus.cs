@@ -3,6 +3,8 @@ using System.Windows.Input;
 
 using CommunityToolkit.Mvvm.Input;
 
+using Flower.Services;
+
 namespace Flower.ViewModels.Mobile;
 
 // ── Song and album menus ──────────────────────────────────────────────
@@ -15,13 +17,16 @@ public partial class MobileMainViewModel
 {
     // The song menu, for ActionTarget. A phone has no file manager to show a
     // file in, so no Locate File. Raised on Home, it is over a Recently Played
-    // song - the one list of songs Home has.
+    // song - the one list of songs Home has. Go to Album and Go to Artist
+    // everywhere but the page they would go to.
     public IReadOnlyList<ActionMenuEntry> SongActions => ActionTarget is { } track
         ? ActionMenus.Flat(ActionMenus.ForSongs(
             Main.MenuFactsFor([track], _libraryRemoval),
             canRemoveFromQueue: CanRemoveActionTargetFromQueue,
             canLocateFiles: false,
-            isRecentlyPlayed: IsShowingHome))
+            isRecentlyPlayed: IsShowingHome,
+            canGoToAlbum: !string.IsNullOrEmpty(track.Album) && !IsAtAlbum(track.Album),
+            canGoToArtist: !string.IsNullOrEmpty(track.Artists) && !IsAtArtist(track.Artists)))
         : [];
 
     // The album menu, for AlbumActionTarget - or for the playlist whose row
@@ -34,8 +39,20 @@ public partial class MobileMainViewModel
             isArtist: _isActingOnAnArtist,
             isFolder: PlaylistActionTarget?.Playlist is { IsFolder: true },
             canMoveToFolder: CanMoveActionTargetToFolder,
-            isSmart: PlaylistActionTarget?.Playlist is { IsSmart: true } && CanCreateSmartPlaylist))
+            isSmart: PlaylistActionTarget?.Playlist is { IsSmart: true } && CanCreateSmartPlaylist,
+            canGoToArtist: AlbumActionTargetArtist() is { } artist && !IsAtArtist(artist)))
         : [];
+
+    // The one artist an album's menu can go to: an album's, not a playlist's
+    // or an artist's own, and only when every song on it is by them - a
+    // compilation's songs have no one artist page to land on.
+    private string? AlbumActionTargetArtist()
+    {
+        if (AlbumActionTarget is not { } tile || PlaylistActionTarget != null || _isActingOnAnArtist)
+            return null;
+
+        return MainViewModel.ShareArtist(tile.Tracks) ? tile.Tracks[0].Artists : null;
+    }
 
     public ICommand RunSongActionCommand => _runSongAction ??= new RelayCommand<ActionMenuEntry>(entry =>
     {
@@ -52,7 +69,12 @@ public partial class MobileMainViewModel
             MenuAction.RemoveFromLibrary => RemoveFromLibraryCommand,
             _ => null,
         };
-        command?.Execute(null);
+        if (entry?.Action == MenuAction.GoToAlbum)
+            GoToAlbumAsync(ActionTarget?.Album).Forget(_logger, "Going to a song's album");
+        else if (entry?.Action == MenuAction.GoToArtist)
+            GoToArtist(ActionTarget?.Artists);
+        else
+            command?.Execute(null);
     });
 
     public ICommand RunAlbumActionCommand => _runAlbumAction ??= new RelayCommand<ActionMenuEntry>(entry =>
@@ -78,7 +100,10 @@ public partial class MobileMainViewModel
             MenuAction.DeletePlaylist => DeletePlaylistActionTargetCommand,
             _ => null,
         };
-        command?.Execute(null);
+        if (entry?.Action == MenuAction.GoToArtist)
+            GoToArtist(AlbumActionTargetArtist());
+        else
+            command?.Execute(null);
     });
 
     private ICommand? _runSongAction;
