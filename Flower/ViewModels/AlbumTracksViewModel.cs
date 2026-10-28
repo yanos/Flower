@@ -47,7 +47,10 @@ public abstract class AlbumTracksViewModel : ViewModelBase
             // the shared AnimationClock - same reason TrackRowMerge disposes
             // the rows a rebuild discards.
             foreach (var row in _trackRows)
+            {
+                row.PropertyChanged -= Row_PropertyChanged;
                 row.Dispose();
+            }
             // Fresh ExpandedTrackRowViewModel instances each time, not just a
             // re-wrap of the same rows - a set here always means the expanded
             // album (or its track list) changed, so any previous selection is
@@ -61,6 +64,8 @@ public abstract class AlbumTracksViewModel : ViewModelBase
                     IsDownloadable = _availability.IsDownloadable(t),
                 })
                 .ToList();
+            foreach (var row in _trackRows)
+                row.PropertyChanged += Row_PropertyChanged;
             OnPropertyChanged();
             OnPropertyChanged(nameof(TrackRows));
         }
@@ -96,6 +101,25 @@ public abstract class AlbumTracksViewModel : ViewModelBase
     private List<ExpandedTrackRowViewModel> _trackRows = new();
 
     public IReadOnlyList<ExpandedTrackRowViewModel> TrackRows => _trackRows;
+
+    // A row going lit or dark may join or part from its neighbours.
+    private void Row_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(ExpandedTrackRowViewModel.IsSelected) or nameof(ExpandedTrackRowViewModel.IsHovered))
+            RefreshJoins();
+    }
+
+    // Each lit row joins the lit row directly above or below it - see
+    // ExpandedTrackRowViewModel.JoinsAbove.
+    private void RefreshJoins()
+    {
+        for (var i = 0; i < _trackRows.Count; i++)
+        {
+            var row = _trackRows[i];
+            row.JoinsAbove = row.IsLit && i > 0 && _trackRows[i - 1].IsLit;
+            row.JoinsBelow = row.IsLit && i + 1 < _trackRows.Count && _trackRows[i + 1].IsLit;
+        }
+    }
 
     // A song was picked in this list, so a page holding several of them (the
     // Artists page's album cards) can clear the others - one selection at a

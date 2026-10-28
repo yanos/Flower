@@ -54,6 +54,28 @@ public sealed class ExpandedTrackRowViewModel : DownloadIndicatorViewModel
         set { if (_isHovered != value) { _isHovered = value; OnPropertyChanged(); } }
     }
 
+    // Picked or pointed at - the rows that draw a background.
+    public bool IsLit => IsSelected || IsHovered;
+
+    // Whether the lit row above or below touches this one, so their
+    // backgrounds square the corners between them and a run of lit rows
+    // reads as one shape rounded only at its ends - the main track list's
+    // look (MusicListPanel.RefreshHighlightShape). Set by
+    // AlbumTracksViewModel, which knows the neighbours.
+    private bool _joinsAbove;
+    public bool JoinsAbove
+    {
+        get => _joinsAbove;
+        set { if (_joinsAbove != value) { _joinsAbove = value; OnPropertyChanged(); } }
+    }
+
+    private bool _joinsBelow;
+    public bool JoinsBelow
+    {
+        get => _joinsBelow;
+        set { if (_joinsBelow != value) { _joinsBelow = value; OnPropertyChanged(); } }
+    }
+
     // Bolds the row - see AlbumGridRowControl.axaml's Grid.playingTrack style,
     // the same mark TrackRowControl puts on its own playing row
     // (TrackRowViewModel.IsCurrentlyPlaying), just wired through

@@ -66,6 +66,7 @@ public partial class TrackRowControl : UserControl
         Classes.Set("playing", row.IsCurrentlyPlaying);
         Classes.Set("played", row.IsPlayed);
         SelectionBorder.IsVisible = row.IsSelected;
+        UpdateHighlighted();
         CellsPanel.Classes.Set("dimmed", row.IsUnavailable);
         ArtCell.Classes.Set("dimmed", row.IsAlbumGroupUnavailable);
 
@@ -76,6 +77,47 @@ public partial class TrackRowControl : UserControl
 
         foreach (var (text, value) in _cells)
             text.Text = value(row);
+    }
+
+    // The three backgrounds' CornerRadius in the XAML.
+    private const double HighlightRadius = 8;
+
+    // Squares the backgrounds' top and/or bottom corners where the lit row
+    // above or below touches this one, so a run of lit rows - picked, playing
+    // or pointed at - reads as one shape rounded only at its ends. All three
+    // alike, since whichever is on top is the one that shows. See
+    // MusicListPanel.RefreshHighlightShape.
+    public void JoinHighlight(bool above, bool below)
+    {
+        double top = above ? 0 : HighlightRadius;
+        double bottom = below ? 0 : HighlightRadius;
+        var corners = new CornerRadius(top, top, bottom, bottom);
+        PlayingBorder.CornerRadius = corners;
+        HoverBorder.CornerRadius = corners;
+        SelectionBorder.CornerRadius = corners;
+    }
+
+    // The row went lit or dark - picked, playing or pointed at, or not - so
+    // its neighbours' shapes may need to change with it.
+    public event EventHandler? HighlightChanged;
+
+    private bool _highlighted;
+
+    private void UpdateHighlighted()
+    {
+        bool lit = IsPointerOver
+            || DataContext is TrackRowViewModel { IsSelected: true } or TrackRowViewModel { IsCurrentlyPlaying: true };
+        if (lit == _highlighted)
+            return;
+        _highlighted = lit;
+        HighlightChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property == IsPointerOverProperty)
+            UpdateHighlighted();
     }
 
     // The row's own download icon was clicked - forwarded up through

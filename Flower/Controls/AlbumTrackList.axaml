@@ -26,9 +26,9 @@
            and CRUCIALLY its size is driven by the Panel, which measures to the
            text Grid, so to make the box bigger than the text the Grid gets an
            inner Margin (grows the Panel -> grows the highlights filling it).
-           The Panel's own Margin then insets the whole box from the row's full
-           extent on all four sides (the separation between adjacent rows).
-           This outer Border stays Background="Transparent" with no padding of
+           No gap between one row's box and the next: lit rows that touch
+           square the corners between them (Border.highlight below), so a run
+           of them reads as one shape. This outer Border stays Background="Transparent" with no padding of
            its own so the entire row - including that margin gap - still
            hit-tests for clicks (an unpainted Border doesn't register pointer
            events in Avalonia), and carries the click/hover/context handlers. -->
@@ -38,21 +38,25 @@
               PointerPressed="TrackRow_PointerPressed"
               DoubleTapped="TrackRow_DoubleTapped"
               ContextRequested="TrackRow_ContextRequested">
-        <Panel Margin="0,1">
-          <Border IsVisible="{Binding IsHovered}"
+        <Panel>
+          <Border Classes="highlight"
+                  Classes.joinAbove="{Binding JoinsAbove}"
+                  Classes.joinBelow="{Binding JoinsBelow}"
+                  IsVisible="{Binding IsHovered}"
                   IsHitTestVisible="False"
-                  Background="{DynamicResource AppHoverBrush}"
-                  CornerRadius="10"/>
-          <Border IsVisible="{Binding IsSelected}"
+                  Background="{DynamicResource AppHoverBrush}"/>
+          <Border Classes="highlight"
+                  Classes.joinAbove="{Binding JoinsAbove}"
+                  Classes.joinBelow="{Binding JoinsBelow}"
+                  IsVisible="{Binding IsSelected}"
                   IsHitTestVisible="False"
-                  Background="{DynamicResource AppSelectedBrush}"
-                  CornerRadius="10"/>
+                  Background="{DynamicResource AppSelectedBrush}"/>
           <!-- The currently-playing song is bold, the way the main track
                list marks it (TrackRowControl's own .playing style). The
                download button trails the title, as there: the title's star
                column keeps every icon at the same x, and a row with nothing
                to fetch gives the title that room back. -->
-          <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" Margin="8,13,4,13"
+          <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" Margin="8,14,4,14"
                 Classes.dimmedTrack="{Binding IsUnavailable}"
                 Classes.playingTrack="{Binding IsCurrentlyPlaying}">
             <TextBlock Grid.Column="0"
@@ -94,6 +98,22 @@
   </UserControl.Resources>
 
   <UserControl.Styles>
+    <!-- The hover and selection backgrounds, squared where the lit row above
+         or below touches this one (ExpandedTrackRowViewModel.JoinsAbove/
+         JoinsBelow) - both alike, since whichever is on top is the one that
+         shows. In this order, so a row joined both ways takes the last. -->
+    <Style Selector="Border.highlight">
+      <Setter Property="CornerRadius" Value="10"/>
+    </Style>
+    <Style Selector="Border.highlight.joinAbove">
+      <Setter Property="CornerRadius" Value="0,0,10,10"/>
+    </Style>
+    <Style Selector="Border.highlight.joinBelow">
+      <Setter Property="CornerRadius" Value="10,10,0,0"/>
+    </Style>
+    <Style Selector="Border.highlight.joinAbove.joinBelow">
+      <Setter Property="CornerRadius" Value="0"/>
+    </Style>
     <!-- A song that can't be played right now - not downloaded, and no
          reachable server to stream it from. Same 0.5 dim as the main track
          list's own unavailable rows (TrackRowControl) and mobile's

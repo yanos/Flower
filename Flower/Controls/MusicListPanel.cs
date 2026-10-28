@@ -211,6 +211,7 @@ public class MusicListPanel : Panel
             // currently holds.
             ctrl.DownloadRequested += (_, row) => RowDownloadRequested?.Invoke(this, row);
             ctrl.MenuRequested += (_, row) => RowMenuRequested?.Invoke(this, row);
+            ctrl.HighlightChanged += (_, _) => RefreshHighlightShape();
             _activeIndex.Add(-1);
             Children.Add(ctrl);
         }
@@ -232,6 +233,7 @@ public class MusicListPanel : Panel
                 _activeIndex[slot] = -1;
         }
 
+        _placing = true;
         var free = 0;
         if (leader >= 0 && !leaderShown)
             Place(leader, ref free);
@@ -243,9 +245,56 @@ public class MusicListPanel : Panel
 
         for (int slot = 0; slot < Children.Count; slot++)
             Children[slot].IsVisible = _activeIndex[slot] >= 0;
+
+        _placing = false;
+        RefreshHighlightShape();
     }
 
     private bool[] _shown = [];
+
+    // Set while RefreshActiveSet hands rows their songs: each one handed a
+    // song may go lit or dark, and the shapes are redrawn once at the end
+    // rather than for every row.
+    private bool _placing;
+
+    // A lit row - picked, playing or pointed at - touching another lit row
+    // shares a straight edge with it, so a run of them reads as one shape
+    // rounded only at its ends. Here rather than in the row, which sees only
+    // its own song: this is what knows its neighbours, and whether an album's
+    // phantom padding sits between them. Rerun when a row goes lit or dark
+    // (TrackRowControl.HighlightChanged) or the rows on screen change.
+    public void RefreshHighlightShape()
+    {
+        if (_placing)
+            return;
+
+        int hovered = -1;
+        for (int slot = 0; slot < Children.Count; slot++)
+        {
+            if (_activeIndex[slot] >= 0 && Children[slot].IsPointerOver)
+                hovered = _activeIndex[slot];
+        }
+
+        for (int slot = 0; slot < Children.Count; slot++)
+        {
+            int index = _activeIndex[slot];
+            if (index < 0)
+                continue;
+            ((TrackRowControl)Children[slot]).JoinHighlight(
+                above: LitAndTouching(index - 1, hovered),
+                below: LitAndTouching(index, hovered));
+        }
+    }
+
+    // Whether rows `index` and `index + 1` are both lit and sit one directly
+    // on top of the other.
+    private bool LitAndTouching(int index, int hovered) =>
+        index >= 0 && index + 1 < _items.Count
+        && IsLit(index, hovered) && IsLit(index + 1, hovered)
+        && _rowSlot[index + 1] == _rowSlot[index] + 1;
+
+    private bool IsLit(int index, int hovered) =>
+        index == hovered || _items[index].IsSelected || _items[index].IsCurrentlyPlaying;
 
     // Hands the song at `index` to the next row without one.
     private void Place(int index, ref int free)
