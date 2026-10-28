@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 
+using Flower.Models;
 using Flower.ViewModels;
 
 using Xunit;
@@ -125,6 +126,37 @@ public class ActionMenusTests
     {
         Assert.DoesNotContain(ActionMenus.Flat(ActionMenus.ForAlbum(Nothing)), e => e.Action == MenuAction.ForgetProgress);
         Assert.Contains(ActionMenus.Flat(ActionMenus.ForAlbum(Nothing, isContinuing: true)), e => e.Action == MenuAction.ForgetProgress);
+    }
+
+    // Where the songs are from, ahead of everything, as the player bar's
+    // menu has it - and only when the caller says there is one place to go.
+    [Fact]
+    public void A_song_menu_leads_with_its_album_and_artist_when_there_is_one_to_go_to()
+    {
+        var both = ActionMenus.ForSongs(Nothing, canRemoveFromQueue: false, canLocateFiles: false,
+            canGoToAlbum: true, canGoToArtist: true);
+
+        Assert.Equal([MenuAction.GoToAlbum, MenuAction.GoToArtist], both[0].Select(e => e.Action));
+        Assert.Equal(["Go to Album", "Go to Artist"], both[0].Select(e => e.Title));
+
+        var artistOnly = ActionMenus.Flat(ActionMenus.ForSongs(Nothing, canRemoveFromQueue: false, canLocateFiles: false,
+            canGoToArtist: true));
+        Assert.DoesNotContain(artistOnly, e => e.Action == MenuAction.GoToAlbum);
+        Assert.Equal(MenuAction.GoToArtist, artistOnly[0].Action);
+    }
+
+    [Fact]
+    public void A_selection_goes_to_an_album_or_artist_only_when_it_shares_one()
+    {
+        Track Song(string? album, string? artist) => new() { Album = album, Artists = artist };
+
+        Assert.True(MainViewModel.ShareAlbum([Song("Kid A", "Radiohead"), Song("Kid A", "Radiohead")]));
+        Assert.False(MainViewModel.ShareAlbum([Song("Kid A", "Radiohead"), Song("Amnesiac", "Radiohead")]));
+        Assert.True(MainViewModel.ShareArtist([Song("Kid A", "Radiohead"), Song("Amnesiac", "Radiohead")]));
+        Assert.False(MainViewModel.ShareArtist([Song("Kid A", "Radiohead"), Song("Kid A", "Björk")]));
+        Assert.False(MainViewModel.ShareAlbum([Song(null, null)]));
+        Assert.False(MainViewModel.ShareArtist([Song("", "")]));
+        Assert.False(MainViewModel.ShareAlbum([]));
     }
 
     [Fact]

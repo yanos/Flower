@@ -2916,11 +2916,18 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // The player bar's menu and the Controls menu, as the phone's Now Playing
     // menu has them: the album open in the Albums grid, or the artist's page.
     // The album is the tile holding the very song playing, where one does -
-    // two albums can share a name - and by name otherwise.
+    // two albums can share a name - and by name otherwise. A song list's menu
+    // goes the same way from the song right-clicked (GoToAlbumAsync).
 
-    public Task GoToCurrentlyPlayingAlbumAsync()
+    public Task GoToCurrentlyPlayingAlbumAsync() =>
+        CurrentlyPlayingTrack is { } track ? GoToAlbumAsync(track) : Task.CompletedTask;
+
+    public Task GoToCurrentlyPlayingArtistAsync() =>
+        CurrentlyPlayingTrack is { } track ? GoToArtistAsync(track) : Task.CompletedTask;
+
+    public Task GoToAlbumAsync(Track track)
     {
-        if (CurrentlyPlayingTrack is not { } track || string.IsNullOrEmpty(track.Album))
+        if (string.IsNullOrEmpty(track.Album))
             return Task.CompletedTask;
 
         return ShowAlbumAsync(tiles =>
@@ -2928,8 +2935,17 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             ?? tiles.FirstOrDefault(t => t.Name == track.Album));
     }
 
-    public Task GoToCurrentlyPlayingArtistAsync() =>
-        CurrentlyPlayingTrack?.Artists is { Length: > 0 } artist ? ShowArtistAsync(artist) : Task.CompletedTask;
+    public Task GoToArtistAsync(Track track) =>
+        track.Artists is { Length: > 0 } artist ? ShowArtistAsync(artist) : Task.CompletedTask;
+
+    // Whether a song menu over these songs has one album, or one artist, to
+    // go to: every one of them is from it, by the raw field the Albums grid
+    // and the Artists column go by.
+    public static bool ShareAlbum(IReadOnlyList<Track> tracks) =>
+        tracks.Count > 0 && !string.IsNullOrEmpty(tracks[0].Album) && tracks.All(t => t.Album == tracks[0].Album);
+
+    public static bool ShareArtist(IReadOnlyList<Track> tracks) =>
+        tracks.Count > 0 && !string.IsNullOrEmpty(tracks[0].Artists) && tracks.All(t => t.Artists == tracks[0].Artists);
 
     // The artist's page, their name picked and scrolled to in the column of
     // names (ArtistRevealRequested). By the same raw field the column lists.

@@ -7,12 +7,15 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
 
+using Flower.Logging;
 using Flower.Models;
 using Flower.Services;
 using Flower.ViewModels;
 using Flower.Views;
 
 using Material.Icons;
+
+using Microsoft.Extensions.Logging;
 
 namespace Flower.Controls;
 
@@ -21,6 +24,9 @@ namespace Flower.Controls;
 // once the Artists page's album cards needed the same list.
 public partial class AlbumTrackList : UserControl
 {
+    // Built by XAML, so there is no constructor to inject one through.
+    private static readonly ILogger Logger = AppLogging.CreateLogger(typeof(AlbumTrackList).FullName!);
+
     public static readonly StyledProperty<bool> ShowsNumbersProperty =
         AvaloniaProperty.Register<AlbumTrackList, bool>(nameof(ShowsNumbers));
 
@@ -150,18 +156,28 @@ public partial class AlbumTrackList : UserControl
     // track list's (ActionMenus.ForSongs), with Locate File for the row
     // clicked, since revealing several files at once is not one action - or,
     // when that row is streamed and has no file here, the first of the
-    // selection that has one, which is what offered the entry.
+    // selection that has one, which is what offered the entry. No Go to Album
+    // in the Albums grid's open album, which is that album already, and no
+    // Go to Artist on the Artists page, which is that artist's.
     private ContextMenu BuildTrackContextMenu(Track clickedTrack, IReadOnlyList<Track> selectedTracks, MainViewModel vm)
     {
         var groups = ActionMenus.ForSongs(
             vm.MenuFactsFor(selectedTracks, LibraryRemovalDialog.Service),
             canRemoveFromQueue: false,
-            canLocateFiles: PlatformShell.IsAvailable);
+            canLocateFiles: PlatformShell.IsAvailable,
+            canGoToAlbum: !vm.IsShowingAlbumGrid && MainViewModel.ShareAlbum(selectedTracks),
+            canGoToArtist: !vm.IsShowingArtistPage && MainViewModel.ShareArtist(selectedTracks));
 
         return DesktopActionMenu.Build(groups, async action =>
         {
             switch (action)
             {
+                case MenuAction.GoToAlbum:
+                    vm.GoToAlbumAsync(clickedTrack).Forget(Logger, "Going to a song's album");
+                    break;
+                case MenuAction.GoToArtist:
+                    vm.GoToArtistAsync(clickedTrack).Forget(Logger, "Going to a song's artist");
+                    break;
                 case MenuAction.PlayNext:
                     vm.PlayNext(selectedTracks);
                     break;

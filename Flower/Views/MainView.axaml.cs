@@ -1057,7 +1057,9 @@ public partial class MainView : UserControl
         var groups = ActionMenus.ForSongs(
             vm.MenuFactsFor(tracks, LibraryRemovalDialog.Service),
             canRemoveFromQueue: vm.IsShowingQueue && MusicList.SelectedRows.Any(vm.Queue.CanRemove),
-            canLocateFiles: PlatformShell.IsAvailable);
+            canLocateFiles: PlatformShell.IsAvailable,
+            canGoToAlbum: MainViewModel.ShareAlbum(tracks),
+            canGoToArtist: MainViewModel.ShareArtist(tracks));
         PlatformContextMenu.Open(DesktopActionMenu.Build(groups, RunTrackListAction, tracks, vm), MusicList);
     }
 
@@ -1071,6 +1073,12 @@ public partial class MainView : UserControl
         var tracks = MusicList.SelectedTracks;
         switch (action)
         {
+            case MenuAction.GoToAlbum when tracks.Count > 0:
+                vm.GoToAlbumAsync(tracks[0]).Forget(Logger, "Going to a song's album");
+                break;
+            case MenuAction.GoToArtist when tracks.Count > 0:
+                vm.GoToArtistAsync(tracks[0]).Forget(Logger, "Going to a song's artist");
+                break;
             case MenuAction.PlayNext:
                 vm.PlayNext(SelectedTracksInListOrder());
                 break;
@@ -1895,11 +1903,19 @@ public partial class MainView : UserControl
             vm.MenuFactsFor(tracks, LibraryRemovalDialog.Service),
             canRemoveFromQueue: false,
             canLocateFiles: false,
-            isRecentlyPlayed: true);
+            isRecentlyPlayed: true,
+            canGoToAlbum: MainViewModel.ShareAlbum(tracks),
+            canGoToArtist: MainViewModel.ShareArtist(tracks));
         PlatformContextMenu.Open(DesktopActionMenu.Build(groups, async action =>
         {
             switch (action)
             {
+                case MenuAction.GoToAlbum:
+                    vm.GoToAlbumAsync(row.Track).Forget(Logger, "Going to a song's album");
+                    break;
+                case MenuAction.GoToArtist:
+                    vm.GoToArtistAsync(row.Track).Forget(Logger, "Going to a song's artist");
+                    break;
                 case MenuAction.PlayNext:
                     vm.PlayNext(tracks);
                     break;

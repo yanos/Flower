@@ -19,6 +19,8 @@ public enum MenuAction
     AddToQueue,
     AddToPlaylist,
     RemoveFromQueue,
+    GoToAlbum,
+    GoToArtist,
     GetInfo,
     LocateFile,
     Download,
@@ -58,8 +60,8 @@ public sealed record MenuFacts(int Downloadable, bool IsBulkDownloading, int Loc
 // and both heads have it.
 //
 // Groups, in order: where the songs go, then what they are, then taking them
-// away. The desktop draws a rule between groups; the phone's sheet runs them
-// together.
+// away - and over songs, where they are from ahead of all that. The desktop
+// draws a rule between groups; the phone's sheet runs them together.
 public static class ActionMenus
 {
     // canRemoveFromQueue: opened on the Queue, over something other than the
@@ -67,9 +69,20 @@ public static class ActionMenus
     // file manager, which a phone cannot - and then only when one of the songs
     // has a file here to show, which one streamed from the server does not.
     // isRecentlyPlayed: opened over a song on Home's Recently Played.
+    // canGoToAlbum, canGoToArtist: every song is from the one album, or by the
+    // one artist (MainViewModel.ShareAlbum/ShareArtist), and the menu is not
+    // opened there already - the player bar's Go to Album and Go to Artist,
+    // for a song in a list.
     public static IReadOnlyList<IReadOnlyList<ActionMenuEntry>> ForSongs(
-        MenuFacts facts, bool canRemoveFromQueue, bool canLocateFiles, bool isRecentlyPlayed = false)
+        MenuFacts facts, bool canRemoveFromQueue, bool canLocateFiles, bool isRecentlyPlayed = false,
+        bool canGoToAlbum = false, bool canGoToArtist = false)
     {
+        var from = new List<ActionMenuEntry>();
+        if (canGoToAlbum)
+            from.Add(new(MenuAction.GoToAlbum, "Go to Album", MaterialIconKind.Album));
+        if (canGoToArtist)
+            from.Add(new(MenuAction.GoToArtist, "Go to Artist", MaterialIconKind.AccountMusicOutline));
+
         var where = new List<ActionMenuEntry>
         {
             new(MenuAction.PlayNext, "Play Next", MaterialIconKind.PlaylistPlay),
@@ -88,7 +101,7 @@ public static class ActionMenus
         if (isRecentlyPlayed)
             what.Add(new(MenuAction.HideFromRecentlyPlayed, "Remove from Recently Played", MaterialIconKind.PlaylistRemove));
 
-        return Groups(where, what, Removals(facts));
+        return Groups(from, where, what, Removals(facts));
     }
 
     // isContinuing: the album is on Home's Continue Playing shelf.
