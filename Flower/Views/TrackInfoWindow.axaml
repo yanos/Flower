@@ -508,6 +508,13 @@
             <Button x:Name="OpenArtButton" Classes="standard secondary"    Content="Open Full Size" Click="OpenArtButton_Click"/>
             <Button x:Name="RemoveArtButton" Classes="standard secondary"  Content="Remove"         Click="RemoveArtButton_Click"/>
           </StackPanel>
+          <!-- Where a change goes: the songs' files, or their album's folder
+               as cover.jpg (AlbumArtWriter.Apply). Kept for the next change. -->
+          <CheckBox x:Name="ArtToFolderBox"
+                    Content="Save in the album's folder"
+                    HorizontalAlignment="Center"
+                    ToolTip.Tip="Saves the cover as an image file beside the songs, and takes the pictures out of their files so it is the one shown."
+                    IsCheckedChanged="ArtToFolderBox_IsCheckedChanged"/>
         </StackPanel>
       </Panel>
 

@@ -100,16 +100,16 @@ public sealed class AlbumArtEditor(
     // it all went through, or what to tell the user when it did not.
     public Task<string?> WriteAsync(byte[] bytes, string mimeType) =>
         ApplyAsync(
-            path => AlbumArtWriter.TryWrite(path, bytes, mimeType, logger),
-            (client, albumId) => client.SetCoverArtAsync(albumId, bytes, mimeType),
+            new LocalAlbumArt(bytes, mimeType),
+            (client, albumId) => client.SetCoverArtAsync(albumId, bytes, mimeType, settings.ArtworkPlacement),
             ArtworkDimensions.Of(bytes),
             "The artwork couldn't be written to");
 
     // The counterpart: takes the picture back out.
     public Task<string?> RemoveAsync() =>
         ApplyAsync(
-            path => AlbumArtWriter.TryRemove(path, logger),
-            (client, albumId) => client.RemoveCoverArtAsync(albumId),
+            art: null,
+            (client, albumId) => client.RemoveCoverArtAsync(albumId, settings.ArtworkPlacement),
             ArtworkDimensions.None,
             "The artwork couldn't be removed from");
 
@@ -119,7 +119,7 @@ public sealed class AlbumArtEditor(
     // file beside the server's copy would still be found, and the next pull's
     // catalog says so (TrackDto.ArtWidth).
     private async Task<string?> ApplyAsync(
-        Func<string, bool> writeLocal,
+        LocalAlbumArt? art,
         Func<ServerAdminClient, string, Task<CoverArtWriteDto>> writeServer,
         ArtworkDimensions serverArtwork,
         string failureVerb)
@@ -129,19 +129,26 @@ public sealed class AlbumArtEditor(
         if (targets.Count == 0 && albumIds.Count == 0)
             return null;
 
+        // Into the files, or the folder - which can change the cover of more
+        // songs than were picked, every one in that folder (AlbumArtWriter.
+        // Apply), and they are dated and redrawn like the picked ones.
         string? message = null;
+        IReadOnlyList<Track> changed = tracks;
         if (targets.Count > 0)
         {
-            var failed = await Task.Run(() => targets.Count(track =>
+            var results = await Task.Run(() =>
             {
-                var written = writeLocal(track.Path!);
-                ArtworkDimensions.OfFile(track.Path!).ApplyTo(track);
-                return !written;
-            }));
+                var applied = AlbumArtWriter.Apply(library, targets, art, settings.ArtworkPlacement, logger);
+                foreach (var (track, _) in applied)
+                    ArtworkDimensions.OfFile(track.Path!).ApplyTo(track);
+                return applied;
+            });
+            changed = [.. tracks.Concat(results.Select(r => r.Track)).Distinct()];
+            var failed = results.Count(r => !r.Written);
             if (failed > 0)
-                message = failed == targets.Count
+                message = failed == results.Count
                     ? $"{failureVerb} the file."
-                    : $"{failureVerb} {failed} of {targets.Count} files.";
+                    : $"{failureVerb} {failed} of {results.Count} files.";
         }
         else
         {
@@ -157,10 +164,10 @@ public sealed class AlbumArtEditor(
         // The cached bitmap was decoded from bytes that are no longer what the
         // file (or the server) holds; without this every other view in the app
         // keeps painting the old cover until the process restarts.
-        foreach (var track in tracks)
+        foreach (var track in changed)
             AlbumArtLoader.Invalidate(track);
 
-        library.NotifyTracksChanged(tracks, TrackChange.Artwork);
+        library.NotifyTracksChanged(changed, TrackChange.Artwork);
         return message;
     }
 

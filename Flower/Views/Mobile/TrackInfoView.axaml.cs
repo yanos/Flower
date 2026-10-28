@@ -121,6 +121,7 @@ public partial class TrackInfoView : UserControl
         _findArt?.Cancel();
         CloseArtwork();
         ArtButtons.IsVisible = ArtEditor() is { CanWrite: true };
+        ArtToFolderBox.IsChecked = DataContext is MobileMainViewModel { Main.ArtworkPlacement: ArtworkPlacement.Folder };
         SetArtBusy(false);
         ArtMessage.IsVisible = false;
 
@@ -305,6 +306,12 @@ public partial class TrackInfoView : UserControl
         return count == 1 ? "Updating 1 file\u2026" : $"Updating {count} files\u2026";
     }
 
+    private void ArtToFolderBox_IsCheckedChanged(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is MobileMainViewModel vm)
+            vm.Main.ArtworkPlacement = ArtToFolderBox.IsChecked == true ? ArtworkPlacement.Folder : ArtworkPlacement.Files;
+    }
+
     private void SetArtBusy(bool busy)
     {
         ArtBusy.IsVisible = busy;
@@ -312,6 +319,7 @@ public partial class TrackInfoView : UserControl
         FindArtButton.IsEnabled = !busy;
         PasteArtButton.IsEnabled = !busy;
         RemoveArtButton.IsEnabled = !busy;
+        ArtToFolderBox.IsEnabled = !busy;
     }
 
     private void ShowArtMessage(string message)

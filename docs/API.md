@@ -597,6 +597,13 @@ image type is sniffed from the bytes; the `Content-Type` header is not trusted.
 `404` for an unknown id, `500` if no file could be written, and a partial
 success is a `200` with `written < total`.
 
+`&to=folder` on either puts the cover in the album's folder instead, as
+`cover.<type>` in place of any `cover.*` or `folder.*` there, and takes the
+pictures out of the songs' files, which would otherwise win over it; a removal
+there takes out both. A folder that also holds another album's songs gets no
+cover file, and its songs get the picture in their files as without it.
+`total` then counts every song in the folder, since the cover is theirs too.
+
 ### Mirroring — an admin device's files, sent to the server
 
 `LibraryIngest.cs`, `TrackTags.cs`, `TrackArtwork.cs`; the client half is
@@ -652,6 +659,8 @@ holds something newer for.
 as the body, or `DELETE` with the same query for no picture at all →
 `{applied, notWritten, libraryToken}`. The query is covered by the signature
 like a body is.
+`&to=folder` keeps it in the album's folder rather than the files, as for
+`/cover-art` above: the device sends it wherever it keeps the cover itself.
 
 Every `libraryToken` handed back is the token the caller's own change produced,
 for the reason `/track-state` returns one: so a device does not mistake its own

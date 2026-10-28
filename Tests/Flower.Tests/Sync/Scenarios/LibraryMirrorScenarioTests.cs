@@ -116,6 +116,15 @@ public class LibraryMirrorScenarioTests : PinnedDataDirectory
             Library.NotifyTrackChanged(track, TrackChange.Artwork);
         }
 
+        // The same, saved in the album's folder instead (ArtworkPlacement).
+        public void SetArtInFolder(string title, byte[] picture)
+        {
+            var results = AlbumArtWriter.Apply(
+                Library, [Single(title)], new LocalAlbumArt(picture, "image/png"), ArtworkPlacement.Folder);
+            Assert.All(results, r => Assert.True(r.Written));
+            Library.NotifyTracksChanged([.. results.Select(r => r.Track)], TrackChange.Artwork);
+        }
+
         public byte[]? ArtIn(string relativePath) => LocalAlbumArtReader.EmbeddedIn(PathOf(relativePath))?.Bytes;
 
         public string TitleInFile(string relativePath)
@@ -1252,6 +1261,30 @@ public class LibraryMirrorScenarioTests : PinnedDataDirectory
         {
             Assert.Single(server.Requests, r => r == $"PUT {SimulatedFlowerServer.ArtworkPath}");
         }
+    }
+
+    // A cover saved in the album's folder goes into the server's folder of
+    // that album the same way. Read from the song's own file, as the push
+    // used to read it, it was no picture at all - and was sent as a removal.
+    [Fact]
+    public async Task Artwork_saved_in_the_albums_folder_is_kept_in_the_servers_folder_too()
+    {
+        var before = SyntheticPng.Build(4, 4, red: 0x10);
+        var after = SyntheticPng.Build(8, 6, red: 0xF0);
+        var server = NewServer();
+        var desktop = NewDevice();
+        desktop.AddFile("album/song.wav", "Song");
+        Assert.True(AlbumArtWriter.TryWrite(desktop.PathOf("album/song.wav"), before, "image/png"));
+        desktop.Scan();
+        await desktop.SyncAsync(server);
+
+        desktop.SetArtInFolder("Song", after);
+        await desktop.SyncAsync(server);
+
+        var serverSong = ServerPath(server, "album/song.wav");
+        Assert.Null(LocalAlbumArtReader.EmbeddedIn(serverSong));
+        Assert.Equal(after, File.ReadAllBytes(ServerPath(server, "album/cover.png")));
+        Assert.Equal((8, 6), (server.Library.Tracks.Single().ArtWidth, server.Library.Tracks.Single().ArtHeight));
     }
 
     // A song re-ripped on the desktop: a different file under the same name.

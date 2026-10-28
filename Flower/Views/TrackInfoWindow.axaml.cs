@@ -608,6 +608,9 @@ public partial class TrackInfoWindow : Window
         return cleaned.Length == 0 ? "Cover" : cleaned;
     }
 
+    private void ArtToFolderBox_IsCheckedChanged(object? sender, RoutedEventArgs e) =>
+        _main.ArtworkPlacement = ArtToFolderBox.IsChecked == true ? ArtworkPlacement.Folder : ArtworkPlacement.Files;
+
     private void UpdateArtworkTab()
     {
         var writable = ArtWriteTargets().Count;
@@ -624,6 +627,8 @@ public partial class TrackInfoWindow : Window
         FindArtButton.IsEnabled = canWrite;
         RemoveArtButton.IsEnabled = canWrite && (hasArt || _multipleArt);
         OpenArtButton.IsEnabled = hasArt;
+        ArtToFolderBox.IsVisible = canWrite;
+        ArtToFolderBox.IsChecked = _main.ArtworkPlacement == ArtworkPlacement.Folder;
 
         ArtworkInfoText.Text = _info.DescribeArtwork(_art, _artPixelSize, writable, serverAlbums, _multipleArt);
     }

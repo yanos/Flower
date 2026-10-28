@@ -231,18 +231,21 @@ public static class LocalAlbumArtReader
         return null;
     }
 
+    // An album folder's picture: cover.* or folder.*, in a format Flower reads.
+    public static bool IsCoverFile(string path)
+    {
+        var stem = Path.GetFileNameWithoutExtension(path);
+        return (stem.Equals("cover", StringComparison.OrdinalIgnoreCase) ||
+                stem.Equals("folder", StringComparison.OrdinalIgnoreCase))
+            && ImageMimeTypes.ContainsKey(Path.GetExtension(path));
+    }
+
     // 2. cover.*/folder.* in the same directory.
     private static (LocalAlbumArt Art, string Source)? CoverFileIn(string directory, string path, ILogger? logger)
     {
         try
         {
-            var file = Directory.EnumerateFiles(directory).FirstOrDefault(f =>
-            {
-                var stem = Path.GetFileNameWithoutExtension(f);
-                return (stem.Equals("cover", StringComparison.OrdinalIgnoreCase) ||
-                        stem.Equals("folder", StringComparison.OrdinalIgnoreCase))
-                    && ImageMimeTypes.ContainsKey(Path.GetExtension(f));
-            });
+            var file = Directory.EnumerateFiles(directory).FirstOrDefault(IsCoverFile);
             if (file != null)
                 return (new LocalAlbumArt(File.ReadAllBytes(file), ImageMimeTypes[Path.GetExtension(file)]), file);
         }

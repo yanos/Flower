@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 using Microsoft.Extensions.Logging;
 
@@ -26,32 +27,28 @@ public sealed record LibraryArtEditResponseDto(int Applied, List<string> NotWrit
 // its own files, and a device changes the files it was told to.
 public static class TrackArtwork
 {
-    // art null removes the picture.
+    // art null removes the picture. placement is where the device that made
+    // the change keeps it, which the server keeps it the same way.
     public static LibraryArtEditResponseDto ApplyEdit(
-        Library library, IReadOnlyList<string> trackIds, DateTimeOffset editedAt, LocalAlbumArt? art, ILogger logger)
+        Library library, IReadOnlyList<string> trackIds, DateTimeOffset editedAt, LocalAlbumArt? art, ILogger logger,
+        ArtworkPlacement placement = ArtworkPlacement.Files)
     {
-        var applied = new List<(Track Track, DateTimeOffset EditedAt, string? FileStamp, ArtworkDimensions Artwork)>();
-        var notWritten = new List<string>();
-        foreach (var id in trackIds)
-        {
-            if (library.Find(id) is not { Path: { } path } track)
-                continue;
+        // The newest change wins, as it does for tags.
+        var named = trackIds
+            .Select(id => (Id: id, Track: library.Find(id)))
+            .Where(x => x.Track is { Path: not null } && !(x.Track.ArtEditedAt is { } known && known >= editedAt))
+            .ToList();
 
-            // The newest change wins, as it does for tags.
-            if (track.ArtEditedAt is { } known && known >= editedAt)
-                continue;
+        var results = AlbumArtWriter.Apply(library, [.. named.Select(x => x.Track!)], art, placement, logger);
+        var notWritten = results.Where(r => !r.Written).Select(r => r.Track).ToHashSet();
 
-            var written = art != null
-                ? AlbumArtWriter.TryWrite(path, art.Bytes, art.MimeType, logger)
-                : AlbumArtWriter.TryRemove(path, logger);
-            if (written)
-                applied.Add((track, editedAt, null, ArtworkDimensions.OfFile(path)));
-            else
-                notWritten.Add(id);
-        }
-
-        library.ApplySyncedArt(applied);
-        return new LibraryArtEditResponseDto(applied.Count, notWritten, library.ChangeToken);
+        library.ApplySyncedArt([.. results
+            .Where(r => r.Written)
+            .Select(r => (r.Track, editedAt, (string?)null, ArtworkDimensions.OfFile(r.Track.Path!)))]);
+        return new LibraryArtEditResponseDto(
+            results.Count(r => r.Written),
+            [.. named.Where(x => notWritten.Contains(x.Track!)).Select(x => x.Id)],
+            library.ChangeToken);
     }
 
     // Whether two copies of a song carry the same picture: both none, or the

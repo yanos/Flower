@@ -445,12 +445,19 @@ public class LibraryMirrorService
             using var http = PeerHttpClient.Create(TimeSpan.FromMinutes(2));
             var client = new ServerAdminClient(http, device.BaseUri, ServerAdminClient.SignWith(_credentials), logger: _logger);
 
-            // By picture and by date: the songs of one edit share both.
+            // By picture, by date and by where it is kept: the songs of one
+            // edit share all three. The picture is the one drawn, and it is
+            // kept wherever it was found - the song's own file, or its
+            // album's folder (ArtworkPlacement) - so the server keeps it
+            // where this device put it.
             var groups = owed
-                .Select(t => (Track: t, Art: LocalAlbumArtReader.EmbeddedIn(t.Path!)))
+                .Select(t => (Track: t, Found: LocalAlbumArtReader.FirstFor([t.Path])))
+                .Select(x => (x.Track, Art: x.Found?.Art,
+                    Placement: x.Found is { } found && found.Source != x.Track.Path ? ArtworkPlacement.Folder : ArtworkPlacement.Files))
                 .GroupBy(x => (
                     Picture: x.Art == null ? "" : Convert.ToHexStringLower(SHA256.HashData(x.Art.Bytes)),
-                    At: x.Track.ArtEditedAt!.Value));
+                    At: x.Track.ArtEditedAt!.Value,
+                    x.Placement));
 
             foreach (var group in groups)
             {
@@ -459,8 +466,8 @@ public class LibraryMirrorService
                 {
                     var ids = batch.Select(t => t.OriginTrackId!).ToList();
                     var response = await Throttled(() => art != null
-                        ? client.SetArtworkAsync(ids, group.Key.At, art.Bytes, art.MimeType, ct)
-                        : client.RemoveArtworkAsync(ids, group.Key.At, ct), ct);
+                        ? client.SetArtworkAsync(ids, group.Key.At, art.Bytes, art.MimeType, group.Key.Placement, ct)
+                        : client.RemoveArtworkAsync(ids, group.Key.At, group.Key.Placement, ct), ct);
                     _librarySync.NoteLibraryTokenCausedHere(device.Fingerprint, response.LibraryToken);
 
                     var notWritten = response.NotWritten.ToHashSet();

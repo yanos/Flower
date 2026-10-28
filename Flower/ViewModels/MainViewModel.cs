@@ -82,6 +82,22 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public AlbumArtEditor ArtEditorFor(IReadOnlyList<Track> tracks, ILogger logger) =>
         new(tracks, Library, _appSettings, _peerTrackResolver, _peerCredentials, logger);
 
+    // Where Track Info puts a cover it changes, picked on its Artwork tab on
+    // either head and kept for the next change (AppSettings.
+    // ArtworkPlacement).
+    public ArtworkPlacement ArtworkPlacement
+    {
+        get => _appSettings.ArtworkPlacement;
+        set
+        {
+            if (_appSettings.ArtworkPlacement == value)
+                return;
+            _appSettings.ArtworkPlacement = value;
+            SaveSettings();
+            OnPropertyChanged();
+        }
+    }
+
     // What Track Info shows and edits, on either head - see TrackInfoViewModel.
     // Built here for the same reason as ArtEditorFor: this holds who may edit
     // what and which server a song comes from.

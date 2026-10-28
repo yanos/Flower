@@ -258,7 +258,8 @@ public sealed class SimulatedFlowerServer : IDisposable
                         ? new LocalAlbumArt(body.ToArray(), LocalAlbumArtReader.MimeTypeForBytes(body.ToArray()) ?? "image/png")
                         : null;
                     var bytes = JsonSerializer.SerializeToUtf8Bytes(
-                        TrackArtwork.ApplyEdit(Library, ids, at, art, Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance), AdminJson);
+                        TrackArtwork.ApplyEdit(Library, ids, at, art, Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance,
+                            context.Request.QueryString["to"] == "folder" ? ArtworkPlacement.Folder : ArtworkPlacement.Files), AdminJson);
                     context.Response.ContentType = "application/json";
                     context.Response.ContentLength64 = bytes.Length;
                     await context.Response.OutputStream.WriteAsync(bytes);

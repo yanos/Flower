@@ -292,6 +292,12 @@
                   <TextBlock x:Name="FindArtLabel" Text="Find Online" VerticalAlignment="Center" />
                 </StackPanel>
               </Button>
+              <!-- Where a change goes: the songs' files, or their album's
+                   folder as cover.jpg (AlbumArtWriter.Apply). Kept for the
+                   next change. -->
+              <CheckBox x:Name="ArtToFolderBox"
+                        Content="Save in album folder"
+                        IsCheckedChanged="ArtToFolderBox_IsCheckedChanged" />
             </StackPanel>
             <TextBlock Grid.Row="1" Grid.ColumnSpan="2"
                        x:Name="ArtMessage"

@@ -174,24 +174,33 @@ public sealed class ServerAdminClient(
     // Artwork changed on this device, for the songs it was changed on - the
     // picture as the body, or none at all for a removal.
     public async Task<LibraryArtEditResponseDto> SetArtworkAsync(
-        IReadOnlyList<string> trackIds, DateTimeOffset editedAt, byte[] bytes, string mimeType, CancellationToken ct = default)
+        IReadOnlyList<string> trackIds, DateTimeOffset editedAt, byte[] bytes, string mimeType,
+        ArtworkPlacement placement = ArtworkPlacement.Files, CancellationToken ct = default)
     {
-        var path = ArtworkPath(trackIds, editedAt);
+        var path = ArtworkPath(trackIds, editedAt, placement);
         var response = await SendAsync(HttpMethod.Put, path, bytes, mimeType, ct);
         return await ReadJsonAsync<LibraryArtEditResponseDto>(response, "PUT", path, ct);
     }
 
     public async Task<LibraryArtEditResponseDto> RemoveArtworkAsync(
-        IReadOnlyList<string> trackIds, DateTimeOffset editedAt, CancellationToken ct = default)
+        IReadOnlyList<string> trackIds, DateTimeOffset editedAt,
+        ArtworkPlacement placement = ArtworkPlacement.Files, CancellationToken ct = default)
     {
-        var path = ArtworkPath(trackIds, editedAt);
+        var path = ArtworkPath(trackIds, editedAt, placement);
         var response = await SendAsync(HttpMethod.Delete, path, [], null, ct);
         return await ReadJsonAsync<LibraryArtEditResponseDto>(response, "DELETE", path, ct);
     }
 
-    private static string ArtworkPath(IReadOnlyList<string> trackIds, DateTimeOffset editedAt) =>
+    private static string ArtworkPath(IReadOnlyList<string> trackIds, DateTimeOffset editedAt, ArtworkPlacement placement) =>
         $"/api/admin/library/artwork?ids={Uri.EscapeDataString(string.Join(',', trackIds))}"
-        + $"&editedAt={Uri.EscapeDataString(editedAt.ToString("O", System.Globalization.CultureInfo.InvariantCulture))}";
+        + $"&editedAt={Uri.EscapeDataString(editedAt.ToString("O", System.Globalization.CultureInfo.InvariantCulture))}"
+        + PlacementQuery(placement);
+
+    // Where the server is to keep a cover (AdminEndpoints.PlacementOf):
+    // nothing for the songs' files, which is what a server that predates the
+    // choice does anyway.
+    private static string PlacementQuery(ArtworkPlacement placement) =>
+        placement == ArtworkPlacement.Folder ? "&to=folder" : "";
 
     // Tags edited on this device, for the server to write into its files.
     public Task<LibraryTagEditsResponseDto> EditTagsAsync(
@@ -217,17 +226,18 @@ public sealed class ServerAdminClient(
     // bytes on the wire, so image bytes have to travel as themselves rather than
     // be re-encoded into a JSON string on the way.
     public async Task<CoverArtWriteDto> SetCoverArtAsync(
-        string id, byte[] bytes, string mimeType, CancellationToken ct = default)
+        string id, byte[] bytes, string mimeType, ArtworkPlacement placement = ArtworkPlacement.Files, CancellationToken ct = default)
     {
         var response = await SendAsync(
-            HttpMethod.Put, $"/api/admin/cover-art?id={Uri.EscapeDataString(id)}", bytes, mimeType, ct);
+            HttpMethod.Put, $"/api/admin/cover-art?id={Uri.EscapeDataString(id)}{PlacementQuery(placement)}", bytes, mimeType, ct);
         return await ReadJsonAsync<CoverArtWriteDto>(response, "PUT", "/api/admin/cover-art", ct);
     }
 
-    public async Task<CoverArtWriteDto> RemoveCoverArtAsync(string id, CancellationToken ct = default)
+    public async Task<CoverArtWriteDto> RemoveCoverArtAsync(
+        string id, ArtworkPlacement placement = ArtworkPlacement.Files, CancellationToken ct = default)
     {
         var response = await SendAsync(
-            HttpMethod.Delete, $"/api/admin/cover-art?id={Uri.EscapeDataString(id)}", [], null, ct);
+            HttpMethod.Delete, $"/api/admin/cover-art?id={Uri.EscapeDataString(id)}{PlacementQuery(placement)}", [], null, ct);
         return await ReadJsonAsync<CoverArtWriteDto>(response, "DELETE", "/api/admin/cover-art", ct);
     }
 

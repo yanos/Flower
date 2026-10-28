@@ -633,7 +633,7 @@ public static class AdminEndpoints
         // when are in the query, which the signature covers like the body.
         // DELETE is the same statement about no picture at all.
         authenticated.MapPut(ArtworkRoute, async (
-            HttpContext context, Library library, LibraryRescanCoordinator rescans, string? ids, string? editedAt) =>
+            HttpContext context, Library library, LibraryRescanCoordinator rescans, string? ids, string? editedAt, string? to) =>
         {
             if (rescans.IsRunning)
                 return ScanInProgress(jsonOptions);
@@ -647,21 +647,21 @@ public static class AdminEndpoints
             if (LocalAlbumArtReader.MimeTypeForBytes(bytes) is not { } mimeType)
                 return Problems.BadRequest("That body is not an image Flower can read.");
 
-            var response = TrackArtwork.ApplyEdit(library, edit.Ids, edit.At, new LocalAlbumArt(bytes, mimeType), logger);
+            var response = TrackArtwork.ApplyEdit(library, edit.Ids, edit.At, new LocalAlbumArt(bytes, mimeType), logger, PlacementOf(to));
             logger.LogInformation("{Fingerprint} changed the artwork of {Applied} of {Sent} song(s)",
                 context.Items[AdminFingerprintKey], response.Applied, edit.Ids.Count);
             return Results.Json(response, jsonOptions);
         });
 
         authenticated.MapDelete(ArtworkRoute, (
-            HttpContext context, Library library, LibraryRescanCoordinator rescans, string? ids, string? editedAt) =>
+            HttpContext context, Library library, LibraryRescanCoordinator rescans, string? ids, string? editedAt, string? to) =>
         {
             if (rescans.IsRunning)
                 return ScanInProgress(jsonOptions);
             if (ParseArtworkEdit(ids, editedAt) is not { } edit)
                 return Problems.BadRequest("Name the songs and when the artwork was removed.");
 
-            var response = TrackArtwork.ApplyEdit(library, edit.Ids, edit.At, art: null, logger);
+            var response = TrackArtwork.ApplyEdit(library, edit.Ids, edit.At, art: null, logger, PlacementOf(to));
             logger.LogInformation("{Fingerprint} removed the artwork of {Applied} of {Sent} song(s)",
                 context.Items[AdminFingerprintKey], response.Applied, edit.Ids.Count);
             return Results.Json(response, jsonOptions);
@@ -754,7 +754,7 @@ public static class AdminEndpoints
         // album would leave the album still serving whichever other file the
         // read path happened to reach first, and look to the caller like the
         // change had been silently dropped.
-        authenticated.MapPut("/cover-art", async (HttpContext context, Library library, string? id) =>
+        authenticated.MapPut("/cover-art", async (HttpContext context, Library library, string? id, string? to) =>
         {
             if (string.IsNullOrEmpty(id))
                 return Problems.BadRequest("An album or song id is required.");
@@ -779,17 +779,17 @@ public static class AdminEndpoints
                 logger.LogDebug("Cover art for {Id} arrived as {Declared} but is really {Actual}; using the latter.",
                     id, contentType, sniffed);
 
-            return WriteCoverArt(id, library, logger, jsonOptions, path => AlbumArtWriter.TryWrite(path, bytes, mimeType, logger));
+            return WriteCoverArt(id, library, logger, jsonOptions, new LocalAlbumArt(bytes, mimeType), PlacementOf(to));
         });
 
         // Removing art is a write like any other, and it is deliberately not a
         // PUT with an empty body: "replace this with nothing" and "there is
         // nothing here to send" are too easy to confuse when a request is
         // truncated in flight.
-        authenticated.MapDelete("/cover-art", (Library library, string? id) =>
+        authenticated.MapDelete("/cover-art", (Library library, string? id, string? to) =>
             string.IsNullOrEmpty(id)
                 ? Problems.BadRequest("An album or song id is required.")
-                : WriteCoverArt(id, library, logger, jsonOptions, path => AlbumArtWriter.TryRemove(path, logger)));
+                : WriteCoverArt(id, library, logger, jsonOptions, art: null, PlacementOf(to)));
 
         // One paired device's rolling seven-day log, assembled from the
         // snapshots pushed at the end of its syncs (see SyncEndpoints'
@@ -853,24 +853,25 @@ public static class AdminEndpoints
         return (parsed, at);
     }
 
+    // ?to=folder puts the cover in the album's folder (ArtworkPlacement);
+    // anything else, or nothing, in the songs' files.
+    private static ArtworkPlacement PlacementOf(string? to) =>
+        string.Equals(to, "folder", StringComparison.OrdinalIgnoreCase) ? ArtworkPlacement.Folder : ArtworkPlacement.Files;
+
     private static IResult WriteCoverArt(
-        string id, Library library, ILogger logger, JsonSerializerOptions jsonOptions, Func<string, bool> write)
+        string id, Library library, ILogger logger, JsonSerializerOptions jsonOptions, LocalAlbumArt? art, ArtworkPlacement placement)
     {
         var candidates = MediaEndpoints.CoverArtCandidates(id, library);
         if (candidates.Count == 0)
             return Problems.NotFound("No track on this server has that id.");
 
-        var written = 0;
-        var repainted = new List<(Track Track, DateTimeOffset EditedAt, string? FileStamp, ArtworkDimensions Artwork)>();
         var now = DateTimeOffset.UtcNow;
-        foreach (var candidate in candidates)
-        {
-            if (candidate.Path is { Length: > 0 } path && write(path))
-            {
-                written++;
-                repainted.Add((candidate, now, null, ArtworkDimensions.OfFile(path)));
-            }
-        }
+        var results = AlbumArtWriter.Apply(library, candidates, art, placement, logger);
+        var written = results.Count(r => r.Written);
+        var repainted = results
+            .Where(r => r.Written)
+            .Select(r => (r.Track, now, (string?)null, ArtworkDimensions.OfFile(r.Track.Path!)))
+            .ToList();
 
         // Dated, so every device holding its own copy of one of these files
         // fetches the new picture into it (Track.ArtEditedAt). Until this,

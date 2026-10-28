@@ -13,6 +13,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Serilog.Events;
 
 using Flower.Audio;
+using Flower.Services;
 
 namespace Flower.Persistence
 {
@@ -120,6 +121,13 @@ namespace Flower.Persistence
         public int HomeContinuePlayingLimit { get; set; } = 6;
         public int HomeRecentlyPlayedLimit  { get; set; } = 8;
         public int HomeRecentlyAddedMonths  { get; set; } = 3;
+
+        // Where Track Info puts a cover it changes: into the songs' files, or
+        // into their album's folder (ArtworkPlacement). Picked on the Artwork
+        // tab itself, on both heads, and remembered from one change to the
+        // next.
+        [JsonConverter(typeof(JsonStringEnumConverter<ArtworkPlacement>))]
+        public ArtworkPlacement ArtworkPlacement { get; set; } = ArtworkPlacement.Files;
 
         // Songs taken off Recently Played from their menu, each with the last
         // time it had started when it was - see
