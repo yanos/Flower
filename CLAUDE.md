@@ -56,7 +56,7 @@ The app is a WIP with no released users and no data anyone else depends on. **Ba
 - `AUDIOPHILE-PLAN.md` — EQ, gapless playback, DSD/APE, hi-res passthrough.
 - `AUDIO-QUALITY-PLAN.md` — render-path defect audit (clicks, looped fragments, truncated tails) and the PCM-level test suite that should prove them fixed.
 - `MEDIA-KEYS-PLAN.md` — hardware media keys + OS now-playing integration.
-- `AUTO-UPDATE-PLAN.md` — desktop auto-update via Velopack, and the versioning (MinVer, git tags) it consumes. Cutting the first `v*` tag is Phase 1's one remaining task and gates the rest.
+- `AUTO-UPDATE-PLAN.md` — desktop auto-update via Velopack, and the versioning (MinVer, git tags) it consumes. Packaging and publishing are built; the client-side check is what is left.
 - `CRASH-REPORTING-PLAN.md` — crash reporting options.
 - `STORE-DEPLOYMENT-PLAN.md` — submitting iOS/Android to app stores, and the real-device verification still owed before that.
 - `PERFORMANCE-TRACKING-PLAN.md` — CI benchmark regression tracking + runtime timing.
@@ -433,6 +433,15 @@ change that breaks the Dockerfile surfaces at the release, and
 And the desktop auto-update
 (`docs/AUTO-UPDATE-PLAN.md`) consumes the same tags through MinVer, so a tag is
 not a private act.
+
+A tag also builds the desktop installers (`installers`, one runner per OS) and
+attaches them to the tag's GitHub release (`release`, gated on the suite like
+the image): a dmg of `Flower.MacOS`, Apple Silicon only because that is all
+FFAudio.NET.macOS ships, and `Flower.Desktop` packed by Velopack as a Windows
+`Setup.exe` and a Linux AppImage. All three come from
+`scripts/package-desktop.sh dmg|appimage|setup`, which runs only on its own OS
+(the FFmpeg payload follows the host) and is how to try one before tagging.
+None is signed yet; the release notes say how to open them anyway.
 
 ## Git Workflow
 

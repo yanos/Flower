@@ -24,7 +24,21 @@ Scope: automatic updates for **desktop** (Windows/macOS/Linux) via GitHub Releas
 
 Cut `v0.1.0` → Phase 2 on macOS only (dev machine) → Phase 3 against that manual release → Phase 4 CI automation → extend Phase 2/4 to Windows/Linux.
 
-**Phase 1 is done; 2 through 4 are not started.** This document also absorbed
+**Phase 1 is done; 2 and 4 are partly done, 3 is not started.** The first
+tags (v0.1.0 to v0.4.0) predate the installers, so no GitHub release exists
+yet. Velopack is in `Flower.Desktop` with `VelopackApp.Build().Run()` first in
+`Main`, and a `v*` tag packs it on Windows and Linux and builds a dmg of
+`Flower.MacOS` (`scripts/package-desktop.sh`, the `installers` job in
+`tests.yml`); the `release` job attaches all three to the tag's release, gated
+on the suite, with `gh release` rather than `vpk upload github` because each
+OS packs on its own runner. The pack id is `Flower.Desktop`, not `Flower`: it
+names the install folder, `%LocalAppData%\<id>`, which Velopack deletes on
+uninstall - and `%LocalAppData%\Flower` is where the library lives. The
+release carries no update feed yet (`releases.<channel>.json`, the full
+`.nupkg`), which is what Phase 3 needs first. macOS is outside Velopack:
+its output there is a `.pkg`, and updating one needs the signing above.
+
+This document also absorbed
 what was left of `VERSIONING-PLAN.md` when that finished, which is why the
 MinVer detail above is more specific than the rest: those recipes were verified
 against a real repo once and are cheap to lose.

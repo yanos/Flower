@@ -261,6 +261,125 @@ jobs:
         if: matrix.kind == 'web-build'
         run: dotnet build Flower.Web/Flower.Web.csproj --configuration Release
 
+  # The desktop installers - a dmg, an AppImage and a Setup.exe - on a `v*` tag
+  # only, built by scripts/package-desktop.sh (whose header says what each one
+  # is and why none is signed). One runner per OS, because the FFmpeg payload
+  # follows the host and Velopack cannot cross-pack an AppImage without tools
+  # a Mac lacks; and in parallel with the suite rather than after it, since
+  # nothing is published until `release` below has both.
+  #
+  # Like the image, these are built on tags only, so a change that breaks
+  # packaging surfaces at the release. The script runs the same by hand, on
+  # the OS in question, to check one before tagging.
+  installers:
+    name: ${{ matrix.name }}
+    if: startsWith(github.ref, 'refs/tags/v')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: package Flower.MacOS as a dmg (macos-27)
+            kind: dmg
+            runner: xcode-27
+          - name: package Flower.Desktop as an AppImage (linux-ubuntu-24.04)
+            kind: appimage
+            runner: ubuntu-24.04
+          - name: package Flower.Desktop as a Setup.exe (windows-2025)
+            kind: setup
+            runner: windows-2025
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      # Full history: the version in each file name and assembly is MinVer's,
+      # read from the tags.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: |
+            Flower/Flower.csproj
+            Flower.Desktop/Flower.Desktop.csproj
+            Flower.MacOS/Flower.MacOS.csproj
+
+      # On the xcode-27 image for the same reason as the macos-build leg: the
+      # 27.0 workload wants exactly Xcode 27.
+      - name: Install macOS workload
+        if: matrix.kind == 'dmg'
+        run: dotnet workload install macos
+
+      # vpk builds the AppImage's filesystem with mksquashfs, which the image
+      # does not carry.
+      - name: Install squashfs-tools
+        if: matrix.kind == 'appimage'
+        run: sudo apt-get update && sudo apt-get install -y squashfs-tools
+
+      - name: Package
+        shell: bash
+        run: scripts/package-desktop.sh ${{ matrix.kind }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.kind }}
+          path: artifacts/installers/*
+          if-no-files-found: error
+
+  # The tag's GitHub release, with the three installers attached. Only once
+  # the suite is green and all three were built, for the reason the image job
+  # below gives: a tag is a claim about the whole commit.
+  release:
+    name: Publish the desktop installers
+    needs:
+      - test
+      - installers
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+
+    # The only job that can write to the repository, and only to create the
+    # release and attach to it.
+    permissions:
+      contents: write
+
+    steps:
+      # Each runner's files in a folder of their own, then gathered here:
+      # merging them on download would let one runner's file silently replace
+      # another's of the same name.
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: installer-*
+          path: built
+
+      - name: Gather the files
+        run: |
+          mkdir installers
+          duplicates=$(find built -type f -printf '%f\n' | sort | uniq -d)
+          if [ -n "$duplicates" ]; then
+            echo "::error::two runners built a file of the same name: $duplicates"
+            exit 1
+          fi
+          find built -type f -exec mv {} installers/ \;
+          ls -l installers
+
+      # A pre-release tag (v1.2.0-beta.1) makes a pre-release, the same test
+      # the image job uses to keep one off `latest`. A re-run finds the
+      # release already made and replaces its files rather than failing.
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          PRERELEASE: ${{ contains(github.ref_name, '-') && '--prerelease' || '' }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" installers/* --clobber
+          else
+            gh release create "$TAG" installers/* --title "Flower $TAG" --verify-tag --generate-notes $PRERELEASE \
+              --notes "None of the installers is signed yet. On a Mac, open Flower once, then allow it in System Settings > Privacy & Security > Open Anyway (Apple Silicon only). On Windows, SmartScreen asks first: More info > Run anyway."
+          fi
+
   # The server image, built and pushed to GHCR - on a `v*` tag only, and only
   # once everything above it is green.
   #
@@ -286,6 +405,7 @@ jobs:
     name: Build and publish Docker image
     needs:
       - test
+      - installers
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
 

@@ -5,6 +5,8 @@ using Avalonia;
 using Flower.Logging;
 using Flower.Platform;
 
+using Velopack;
+
 namespace Flower.Desktop;
 
 class Program
@@ -15,6 +17,13 @@ class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        // First, before anything else: the Windows installer runs the app
+        // with arguments of its own while installing, updating and
+        // uninstalling, and this answers them and exits. Without it Setup.exe
+        // would open Flower's window instead. A no-op for a run that is not
+        // one of those, a plain `dotnet run` included.
+        VelopackApp.Build().Run();
+
         if (CrashReportRelaunch.RelaunchIfNeeded(args))
             return;
 

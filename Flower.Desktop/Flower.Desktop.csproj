@@ -17,6 +17,11 @@
   <ItemGroup>
     <PackageReference Include="Avalonia.Desktop" Version="12.1.0" />
     <PackageReference Include="Miniaudio-CS" Version="1.0.4" />
+    <!-- What the Windows installer and the Linux AppImage are built with
+         (scripts/package-desktop.sh), and the updater docs/AUTO-UPDATE-PLAN.md
+         chose. Keep it on the same version as vpk in .config/dotnet-tools.json:
+         the packager and the library it installs are one release. -->
+    <PackageReference Include="Velopack" Version="1.2.161" />
   </ItemGroup>
 
   <ItemGroup>
