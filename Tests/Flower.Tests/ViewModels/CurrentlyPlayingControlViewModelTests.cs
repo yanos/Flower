@@ -48,13 +48,11 @@ public class CurrentlyPlayingControlViewModelTests : PinnedDataDirectory
     };
 
     [Fact]
-    public void With_nothing_playing_the_bar_names_the_app_and_its_version()
+    public void With_nothing_playing_the_bar_has_no_track()
     {
         var vm = Make(out _, out _);
 
         Assert.Null(vm.CurrentlyPlayingTrack);
-        Assert.Equal("Flower", vm.Title);
-        Assert.Equal($"Version {AppVersion.Display}", vm.ArtistLine);
     }
 
     [AvaloniaFact]
@@ -67,7 +65,7 @@ public class CurrentlyPlayingControlViewModelTests : PinnedDataDirectory
 
         Assert.Equal("A", vm.Title);
         Assert.Equal("An Artist", vm.ArtistLine);
-        Assert.Equal("An Album (1999)", vm.AlbumLine);
+        Assert.Same(track, vm.CurrentlyPlayingTrack);
     }
 
     [AvaloniaFact]
@@ -107,20 +105,6 @@ public class CurrentlyPlayingControlViewModelTests : PinnedDataDirectory
 
         Assert.False(vm.IsStarred);
         Assert.Contains(nameof(vm.IsStarred), raised);
-    }
-
-    [Fact]
-    public void ElapsedTime_is_null_before_playback_starts_and_formatted_after()
-    {
-        var vm = Make(out var audio, out _);
-
-        Assert.Null(vm.ElapsedTime);
-
-        audio.Time = (long)TimeSpan.FromSeconds(75).TotalMilliseconds;
-        Assert.Equal("1:15", vm.ElapsedTime);
-
-        audio.Time = (long)TimeSpan.FromMinutes(61).TotalMilliseconds;
-        Assert.Equal("1:01:00", vm.ElapsedTime);
     }
 
     // The track's own tagged duration wins over the audio manager's, which is

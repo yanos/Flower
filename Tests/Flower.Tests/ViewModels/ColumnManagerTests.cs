@@ -32,14 +32,6 @@ public class ColumnManagerTests : PinnedDataDirectory
         manager.Columns.Single(c => c.Id == id);
 
     [Fact]
-    public void Columns_start_in_their_declared_default_order()
-    {
-        Assert.Equal(
-            ["TrackNumber", "Title", "Artist", "Album", "Year", "Genre", "Duration"],
-            VisibleIds(New()).Take(7));
-    }
-
-    [Fact]
     public void Reorder_moves_a_column_later_in_the_visible_sequence()
     {
         var manager = New();

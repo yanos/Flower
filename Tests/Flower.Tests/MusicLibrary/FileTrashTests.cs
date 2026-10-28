@@ -124,8 +124,7 @@ public class FileTrashTests : PinnedDataDirectory
     [Fact]
     public void On_macOS_a_file_goes_to_the_real_Trash()
     {
-        if (!OperatingSystem.IsMacOS())
-            return;
+        Assert.SkipUnless(OperatingSystem.IsMacOS(), "Requires the native macOS Trash API.");
 
         var name = $"flower-trash-test-{Guid.NewGuid():N}.mp3";
         var file = Touch(Path.Combine(DataDirectory, name));
@@ -155,8 +154,7 @@ public class FileTrashTests : PinnedDataDirectory
     [Fact]
     public void On_macOS_a_file_that_is_not_there_is_an_error_saying_why()
     {
-        if (!OperatingSystem.IsMacOS())
-            return;
+        Assert.SkipUnless(OperatingSystem.IsMacOS(), "Requires the native macOS Trash API.");
 
         var previous = FileTrash.Override;
         FileTrash.Override = null;
@@ -176,8 +174,7 @@ public class FileTrashTests : PinnedDataDirectory
     [Fact]
     public void On_Windows_a_file_goes_to_the_Recycle_Bin()
     {
-        if (!OperatingSystem.IsWindows())
-            return;
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Requires the native Windows Recycle Bin API.");
 
         var file = Touch(Path.Combine(DataDirectory, $"flower-trash-test-{Guid.NewGuid():N}.mp3"));
         var previous = FileTrash.Override;

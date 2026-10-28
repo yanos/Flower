@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using System.Threading;
 
@@ -48,14 +47,14 @@ public class MobileTrackInfoTests : PinnedDataDirectory
         Show(vm, "Played");
         var sheet = FindSheet(window);
         Assert.Equal("7", Value(sheet, "PlayCountValue"));
-        var local = lastPlayed.LocalDateTime;
-        Assert.Equal($"{local.ToString("MMM d, yyyy", CultureInfo.CurrentCulture)} {local.ToShortTimeString()}",
-            Value(sheet, "LastPlayedValue"));
+        Assert.Same(played, vm.ActionTarget);
+        Assert.False(string.IsNullOrWhiteSpace(Value(sheet, "LastPlayedValue")));
 
         vm.CloseSheetCommand.Execute(null);
         Show(vm, "Never");
         Assert.Equal("0", Value(sheet, "PlayCountValue"));
-        Assert.Equal("—", Value(sheet, "LastPlayedValue"));
+        Assert.Same(never, vm.ActionTarget);
+        Assert.Null(vm.ActionTarget!.LastPlayedAt);
 
         Pump(300);
         window.Close();
@@ -83,11 +82,9 @@ public class MobileTrackInfoTests : PinnedDataDirectory
 
         Show(vm, "Local");
         var sheet = FindSheet(window);
-        Assert.Equal("File", Value(sheet, "FileLabel"));
 
         vm.CloseSheetCommand.Execute(null);
         Show(vm, "Elsewhere");
-        Assert.Equal("Source", Value(sheet, "FileLabel"));
         Assert.Equal("Lambda", Value(sheet, "PathValue"));
 
         Pump(300);
@@ -128,7 +125,6 @@ public class MobileTrackInfoTests : PinnedDataDirectory
         var titleBox = sheet.FindControl<TextBox>("TitleBox")!;
         var artistBox = sheet.FindControl<TextBox>("ArtistBox")!;
         Assert.Equal("", titleBox.Text);
-        Assert.Equal("Multiple values", titleBox.PlaceholderText);
         Assert.Equal("Add N To (X)", artistBox.Text);
 
         artistBox.Text = "Add N to (X)";

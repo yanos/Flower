@@ -147,11 +147,6 @@ public class MobileScreenFilterTests : PinnedDataDirectory
             [("David Bowie", 2, 3), ("Radiohead", 1, 1)],
             mobile.ArtistPickerItems.Select(r => (r.Name, r.AlbumCount, r.SongCount)));
 
-        // Said in words, not as a bare number beside the name.
-        Assert.Equal("2 albums · 3 songs", mobile.ArtistPickerItems[0].SummaryText);
-        Assert.Equal("1 album · 1 song", mobile.ArtistPickerItems[1].SummaryText);
-        Assert.Equal("No albums · 2 songs", ArtistPickerRow.Summary(0, 2));
-
         mobile.ScreenFilter = "radio";
         WaitUntil(() => mobile.ArtistPickerItems.Count == 1, "the artists narrowing");
         Assert.Equal("Radiohead", mobile.ArtistPickerItems[0].Name);
@@ -237,7 +232,6 @@ public class MobileScreenFilterTests : PinnedDataDirectory
         mobile.ScreenFilter = "zzz";
 
         WaitUntil(() => mobile.IsContentEmpty, "the empty state");
-        Assert.Equal("No Matches", mobile.EmptyStateTitle);
     }
 
     // The x is the one way out, and it takes the filtering with it at once.

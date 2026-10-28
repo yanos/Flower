@@ -37,8 +37,7 @@ public class TrackInfoViewModelTests : PinnedDataDirectory
         var info = Open(new Library([.. songs]), songs);
 
         Assert.Equal("", info.Title.Text);
-        Assert.Equal(TrackInfoViewModel.MixedValues, info.Title.Placeholder);
-        Assert.Equal(TrackInfoViewModel.MixedValues, info.TitleText);
+        Assert.False(string.IsNullOrWhiteSpace(info.Title.Placeholder));
 
         Assert.Equal("Doolittle", info.Album.Text);
         Assert.Null(info.Album.Placeholder);

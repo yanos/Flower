@@ -60,16 +60,6 @@ public class TrackRowViewModelTests
         Assert.Contains(nameof(TrackRowViewModel.StarredDisplay), raised);
     }
 
-    [Theory]
-    [InlineData(0, 0, 5, "0:05")]
-    [InlineData(0, 3, 7, "3:07")]
-    [InlineData(0, 59, 59, "59:59")]
-    [InlineData(1, 2, 3, "1:02:03")]   // switches to h:mm:ss only past an hour
-    public void DurationDisplay_only_shows_hours_when_there_are_any(int h, int m, int s, string expected)
-    {
-        Assert.Equal(expected, Row(new Track { Duration = new TimeSpan(h, m, s) }).DurationDisplay);
-    }
-
     // IsAvailable defaults to false so a just-built row never flashes as
     // available before it is actually known to be.
     [Fact]

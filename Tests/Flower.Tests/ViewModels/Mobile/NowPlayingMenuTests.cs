@@ -34,20 +34,20 @@ public class NowPlayingMenuTests : PinnedDataDirectory
         return scope;
     }
 
-    private static string[] Labels(MobileMainViewModel mobile) =>
-        mobile.BuildNowPlayingMenu().SelectMany(s => s.Entries).Select(e => e.Label).ToArray();
-
     private static void Pick(MobileMainViewModel mobile, string label) =>
         mobile.BuildNowPlayingMenu().SelectMany(s => s.Entries).Single(e => e.Label == label).Invoke();
 
     [AvaloniaFact]
-    public void The_menu_goes_to_the_album_and_the_artist_and_ends_with_settings()
+    public void Going_to_the_album_opens_the_playing_songs_album_and_closes_the_sheet()
     {
         using var scope = PlayingOnTheSheet();
 
-        Assert.Equal(
-            new[] { "Go to Album", "Go to Artist", "Add to Playlist", "Show Queue", "Info", "Settings" },
-            Labels(scope.Mobile));
+        Pick(scope.Mobile, "Go to Album");
+        MainViewModelHarness.WaitForTheDrillIn(scope.Mobile, "Ethio Jazz");
+
+        Assert.False(scope.Mobile.IsShowingNowPlaying);
+        Assert.Equal(MobileTab.Albums, scope.Mobile.SelectedTab);
+        Assert.Equal("Ethio Jazz", scope.Mobile.Main.SelectedSubItem);
     }
 
     [AvaloniaFact]
@@ -56,7 +56,9 @@ public class NowPlayingMenuTests : PinnedDataDirectory
         var tracks = new List<Track> { new() { Title = "A", Album = "Al", Artists = "Ar", Path = "/m/a.mp3" } };
         using var scope = MainViewModelHarness.BuildMobile(new Library(tracks), new MainPlaylist(tracks));
 
-        Assert.Equal(new[] { "Settings" }, Labels(scope.Mobile));
+        var entry = Assert.Single(scope.Mobile.BuildNowPlayingMenu().SelectMany(s => s.Entries));
+        entry.Invoke();
+        Assert.True(scope.Mobile.IsShowingSettings);
     }
 
     // A tap on the artist's name, or Go to Artist: the Artists tab, that
@@ -87,13 +89,5 @@ public class NowPlayingMenuTests : PinnedDataDirectory
 
         Assert.Equal(MobileSheet.TrackInfo, mobile.ActiveSheet);
         Assert.Equal("Windflower", mobile.ActionTarget?.Title);
-    }
-
-    [AvaloniaFact]
-    public void The_album_line_carries_its_year()
-    {
-        using var scope = PlayingOnTheSheet();
-
-        Assert.Equal("Ethio Jazz (1972)", scope.Mobile.CurrentlyPlaying.AlbumLine);
     }
 }

@@ -86,7 +86,9 @@ public class DeviceIdentityStoreTests : IsolatedHome
         // POSIX modes only - on Windows the file relies on the per-user
         // profile directory's ACL instead, and SetUnixFileMode throws.
         if (OperatingSystem.IsWindows())
-            return;
+        {
+            Assert.Skip("POSIX file modes are unavailable on Windows, where the key relies on the user profile directory ACL.");
+        }
 
         // The key sits in plaintext JSON (no OS keychain - see DeviceKeyStore's
         // own remarks), so 0600 is what keeps another local user on a shared

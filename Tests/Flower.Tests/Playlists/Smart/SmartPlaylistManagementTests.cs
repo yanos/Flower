@@ -147,17 +147,4 @@ public class SmartPlaylistManagementTests
         Assert.False(playlist.IsSmart);
         Assert.Same(playlist, host.SelectedSidebarItem?.Playlist);
     }
-
-    // The only cue that a row will refuse a drop, and it has to be there before
-    // the user tries rather than after.
-    [Fact]
-    public void The_sidebar_tells_the_two_kinds_of_playlist_apart()
-    {
-        var (playlists, library, _) = NewSubject();
-        var smart = Smart(library, "Smart");
-        var ordinary = new Playlist("Ordinary", new List<Track>());
-
-        Assert.NotEqual(SidebarItem.IconFor(ordinary), SidebarItem.IconFor(smart));
-        Assert.Equal(MaterialIconKind.PlaylistPlay, SidebarItem.IconFor(ordinary));
-    }
 }

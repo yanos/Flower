@@ -274,8 +274,7 @@ public class LibraryFolderWatcherTests : IDisposable
     [Fact]
     public async Task A_song_copied_in_shows_up_by_itself()
     {
-        if (OperatingSystem.IsIOS())
-            return;
+        Assert.SkipWhen(OperatingSystem.IsIOS(), "FileSystemWatcher is unavailable on iOS; automatic folder watching runs on desktop and server only.");
         using var watcher = NewWatcher(listensForChanges: true);
         // Give the watcher a moment to be listening before the file lands.
         await Task.Delay(300);

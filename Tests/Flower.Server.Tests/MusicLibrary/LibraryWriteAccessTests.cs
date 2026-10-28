@@ -56,8 +56,8 @@ public class LibraryWriteAccessTests : IDisposable
     {
         var writable = Writable("music");
         var missing = Path.Combine(_root, "not-mounted");
-        if (ReadOnlyFolders.Create(_root, "read-only") is not { } readOnly)
-            return;
+        var readOnly = ReadOnlyFolders.Create(_root, "read-only");
+        Assert.SkipWhen(readOnly == null, "Requires enforced POSIX folder permissions; unsupported on Windows or when this process can bypass read-only permissions.");
 
         Assert.Equal([readOnly], LibraryFolders.Unwritable([writable, readOnly, missing, ""]));
     }
@@ -77,8 +77,8 @@ public class LibraryWriteAccessTests : IDisposable
     [Fact]
     public void A_read_only_folder_is_warned_about_by_name_once_and_not_at_every_scan()
     {
-        if (ReadOnlyFolders.Create(_root, "read-only") is not { } readOnly)
-            return;
+        var readOnly = ReadOnlyFolders.Create(_root, "read-only");
+        Assert.SkipWhen(readOnly == null, "Requires enforced POSIX folder permissions; unsupported on Windows or when this process can bypass read-only permissions.");
         var logger = new RecordingLogger();
         var access = new LibraryWriteAccess(logger);
 
@@ -95,8 +95,8 @@ public class LibraryWriteAccessTests : IDisposable
     [Fact]
     public void A_folder_that_becomes_writable_is_said_to_be_and_one_that_stops_is_warned_about_again()
     {
-        if (ReadOnlyFolders.Create(_root, "music") is not { } folder)
-            return;
+        var folder = ReadOnlyFolders.Create(_root, "music");
+        Assert.SkipWhen(folder == null, "Requires enforced POSIX folder permissions; unsupported on Windows or when this process can bypass read-only permissions.");
         var logger = new RecordingLogger();
         var access = new LibraryWriteAccess(logger);
 

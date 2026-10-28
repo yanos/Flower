@@ -53,7 +53,8 @@ public class ColumnSelectorViewModelTests : PinnedDataDirectory
         vm.Filter = "sort";
 
         var group = Assert.Single(vm.Groups);
-        Assert.Equal("Sorting", group.Name);
+        Assert.NotEmpty(group.Items);
+        Assert.All(group.Items, item => Assert.Contains("sort", item.Header, StringComparison.OrdinalIgnoreCase));
         Assert.False(vm.NoMatch);
     }
 

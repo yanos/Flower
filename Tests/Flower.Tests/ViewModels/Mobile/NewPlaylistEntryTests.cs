@@ -110,7 +110,7 @@ public class NewPlaylistEntryTests : PinnedDataDirectory
             .GetVisualDescendants().OfType<TextBox>().Single();
 
     [AvaloniaFact]
-    public void The_playlists_screen_offers_a_New_Playlist_row_above_its_playlists()
+    public void The_playlists_screen_offers_playlist_creation()
     {
         using var parts = OnThePlaylistsTab();
         parts.Parts.Main.Playlists.CreateNamed("Mixtape", []);
@@ -119,9 +119,7 @@ public class NewPlaylistEntryTests : PinnedDataDirectory
         var window = Show(new PlaylistPickerScreenView(), parts.Mobile);
 
         var entry = Assert.Single(window.GetVisualDescendants().OfType<NewPlaylistEntry>());
-        var label = Assert.Single(entry.GetVisualDescendants().OfType<TextBlock>(),
-            t => t.Text == "New Playlist");
-        Assert.True(label.IsVisible);
+        Assert.True(entry.FindControl<Button>("StartButton")!.IsEffectivelyVisible);
 
         Assert.Single(window.GetVisualDescendants().OfType<TextBlock>(), t => t.Text == "Mixtape");
 
@@ -140,11 +138,10 @@ public class NewPlaylistEntryTests : PinnedDataDirectory
         var box = NameBox(window);
         Assert.True(box.IsEffectivelyVisible);
         Assert.True(string.IsNullOrEmpty(box.Text));
-        Assert.Equal("Playlist Name", box.PlaceholderText);
         Assert.True(box.IsFocused);
         // The row it replaced is gone while it is up, rather than both showing.
-        Assert.DoesNotContain(window.GetVisualDescendants().OfType<TextBlock>()
-            .Where(t => t.Text == "New Playlist"), t => t.IsEffectivelyVisible);
+        var entry = window.GetVisualDescendants().OfType<NewPlaylistEntry>().Single();
+        Assert.False(entry.FindControl<Button>("StartButton")!.IsEffectivelyVisible);
 
         window.Close();
     }

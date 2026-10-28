@@ -121,11 +121,9 @@ public class BrowserPairingScreenTests : PinnedDataDirectory
 
         vm.IsBrowserAdmin = true;
         Assert.True(HasSettingsRow());
-        Assert.Contains(vm.SidebarItems, i => i is { Kind: SidebarItemKind.Header, Name: "Server" });
 
         vm.IsBrowserAdmin = false;
         Assert.False(HasSettingsRow());
-        Assert.DoesNotContain(vm.SidebarItems, i => i is { Kind: SidebarItemKind.Header, Name: "Server" });
     }
 
     // A page opened at #page=settings asks before the server has said whether

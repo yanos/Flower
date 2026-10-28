@@ -88,7 +88,7 @@ public class HomeTileGestureTests : PinnedDataDirectory, IDisposable
     {
         var recorder = new Recorder();
         PlatformContextMenu.Current = recorder;
-        var (window, parts, _) = ShowHome();
+        var (window, parts, album) = ShowHome();
         using var _p = parts;
 
         var at = CenterOf(window, PlayedCard(window));
@@ -97,8 +97,10 @@ public class HomeTileGestureTests : PinnedDataDirectory, IDisposable
         Dispatcher.UIThread.RunJobs();
 
         var menu = Assert.Single(recorder.Shown);
-        // The album menu's first entry; a song's starts with Play Next.
-        Assert.Equal("Play", menu[0].Title);
+        var play = menu.Single(e => e.Title == "Play");
+        play.Activate!();
+        Assert.Equal(album.Select(t => t.Id), parts.PlaylistControl.CurrentPlaylist.Tracks.Select(t => t.Id));
+        Assert.Equal(album[0].Id, parts.PlaylistControl.CurrentlyPlayingTrack?.Id);
         window.Close();
     }
 

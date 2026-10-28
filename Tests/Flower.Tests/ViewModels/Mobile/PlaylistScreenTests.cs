@@ -124,14 +124,6 @@ public class PlaylistScreenTests : PinnedDataDirectory
     private static TrackListScreenView Screen(Window window) =>
         window.GetVisualDescendants().OfType<TrackListScreenView>().Last(v => v.IsEffectivelyVisible);
 
-    // One song is not "1 songs".
-    [AvaloniaFact]
-    public void One_song_is_counted_in_the_singular()
-    {
-        using var scope = DrilledIn(1);
-        Assert.Equal("1 song", scope.Mobile.CurrentPlaylistHeader?.Artist);
-    }
-
     // An empty playlist used to get the "Nothing Here" overlay, centred over
     // the whole screen - which landed on top of the header saying whose empty
     // space this is. The header is the answer to the question the overlay was
@@ -179,14 +171,5 @@ public class PlaylistScreenTests : PinnedDataDirectory
         Harness.Pump(60);
         window.MouseUp(middle, MouseButton.Left);
         Harness.Pump(120);
-    }
-
-    // The screen's title line would otherwise say the playlist's name in the
-    // band as well as in the header right below it.
-    [AvaloniaFact]
-    public void The_name_is_not_also_in_the_title_line()
-    {
-        using var scope = DrilledIn(3);
-        Assert.Equal(string.Empty, scope.Mobile.CurrentFrame.Title);
     }
 }

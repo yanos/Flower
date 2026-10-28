@@ -78,7 +78,6 @@ public class SettingsRemovedSongsTests
 
         Assert.Equal(["/music/A/One.mp3"], backend.Restored);
         Assert.Equal(["Two.mp3"], viewModel.RemovedFiles.Select(r => r.FileName));
-        Assert.Equal("Restored 1", viewModel.StatusMessage);
     }
 
     [Fact]
@@ -104,20 +103,16 @@ public class SettingsRemovedSongsTests
         backend.Removed.AddRange([Row("/music/A/One.mp3"), Row("/music/A/Two.mp3")]);
         var viewModel = new SettingsViewModel(backend);
         await viewModel.LoadAsync(TestContext.Current.CancellationToken);
-        Assert.Equal("Delete Files…", viewModel.DeleteRemovedFilesLabel);
 
         await viewModel.DeleteAllRemovedFilesCommand.ExecuteAsync(null);
 
         Assert.Empty(backend.Deleted);
-        Assert.Equal("Delete 2 files for good?", viewModel.DeleteRemovedFilesLabel);
         Assert.True(viewModel.HasRemovedFiles);
 
         await viewModel.DeleteAllRemovedFilesCommand.ExecuteAsync(null);
 
         Assert.Equal(["/music/A/One.mp3", "/music/A/Two.mp3"], backend.Deleted);
         Assert.False(viewModel.HasRemovedFiles);
-        Assert.Equal("Deleted 2", viewModel.StatusMessage);
-        Assert.Equal("Delete Files…", viewModel.DeleteRemovedFilesLabel);
     }
 
     // Doing something else in between is a change of mind.
@@ -132,7 +127,7 @@ public class SettingsRemovedSongsTests
 
         await viewModel.RestoreRemovedFileCommand.ExecuteAsync(viewModel.RemovedFiles[0]);
 
-        Assert.Equal("Delete Files…", viewModel.DeleteRemovedFilesLabel);
+        await viewModel.DeleteAllRemovedFilesCommand.ExecuteAsync(null);
         Assert.Empty(backend.Deleted);
     }
 

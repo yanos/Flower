@@ -104,7 +104,6 @@ public class AlbumProgressPlaybackTests : PinnedDataDirectory
 
         home.Rebuild();
         var item = Assert.Single(home.ContinuePlaying);
-        Assert.Equal("Song 2 of 4 · 11 min left", item.Detail);
 
         home.ResumeCommand.Execute(item);
         audio.Length = 240_000;

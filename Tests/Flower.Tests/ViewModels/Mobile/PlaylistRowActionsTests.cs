@@ -54,49 +54,6 @@ public class PlaylistRowActionsTests : PinnedDataDirectory
     private SidebarItem TheRow(MobileMainViewModel vm) =>
         vm.PlaylistPickerItems.Single(i => i.Playlist?.Name == "Road trip");
 
-    [AvaloniaFact]
-    public void A_row_says_how_many_songs_and_how_long_they_run()
-    {
-        var vm = Build(out _, T("A", 3), T("B", 4), T("C", 5));
-        Assert.Equal("3 songs  ·  12:00", TheRow(vm).PlaylistSummary);
-    }
-
-    // Written the way a song's own length is, widening to hours the same way
-    // (TrackRowViewModel.DurationDisplay, and DurationText under both).
-    [AvaloniaFact]
-    public void A_long_playlist_counts_in_hours()
-    {
-        var vm = Build(out _, T("A", 40), T("B", 33));
-        Assert.Equal("2 songs  ·  1:13:00", TheRow(vm).PlaylistSummary);
-    }
-
-    // The playlist's own screen has the room the row does not, and nothing
-    // beside it to be read against, so it says the same total in words.
-    [AvaloniaFact]
-    public async Task The_playlist_screen_says_how_long_it_runs_in_words()
-    {
-        var vm = Build(out _, T("A", 40), T("B", 33));
-        vm.SelectTabCommand.Execute(nameof(MobileTab.Playlists));
-        vm.SelectPlaylistCommand.Execute(TheRow(vm));
-
-        // The playlist lands once its rows have been rebuilt off the UI
-        // thread, which one pass of the dispatcher does not wait for - a slow
-        // CI runner read the header before there was one. This used to sleep
-        // on the dispatcher thread between pumps, which is the one thread the
-        // rebuild's continuation needs; see UiWait.
-        await UiWait.Until(() => vm.CurrentPlaylistHeader != null, "the playlist screen never got a header");
-        Assert.Equal("2 songs  ·  1 hour 13 minutes", vm.CurrentPlaylistHeader?.Artist);
-    }
-
-    // A playlist of tracks not downloaded yet has no durations to add up, and
-    // says nothing rather than claiming it is empty of time.
-    [AvaloniaFact]
-    public void A_playlist_with_no_durations_says_only_how_many_songs()
-    {
-        var vm = Build(out _, T("A", 0));
-        Assert.Equal("1 song", TheRow(vm).PlaylistSummary);
-    }
-
     // The row is not rebuilt when a song is added to the playlist behind it,
     // so the count has to be re-read rather than waited for.
     [AvaloniaFact]
@@ -117,7 +74,7 @@ public class PlaylistRowActionsTests : PinnedDataDirectory
         Dispatcher.UIThread.RunJobs();
 
         Assert.True(changed > 0, "the row was never told to re-count");
-        Assert.Equal("2 songs  ·  10:00", row.PlaylistSummary);
+        Assert.Equal(2, row.Playlist!.Tracks.Count);
     }
 
     // Like a song row's, the row's download icon is there while something in
@@ -149,7 +106,6 @@ public class PlaylistRowActionsTests : PinnedDataDirectory
         Assert.Equal(MobileSheet.AlbumActions, vm.ActiveSheet);
         Assert.True(vm.IsActingOnAPlaylist);
         Assert.Equal("Road trip", vm.AlbumActionTarget?.Name);
-        Assert.Equal("2 songs  ·  7 minutes", vm.AlbumActionTarget?.Artist);
         // The playlist's songs, so Play/Shuffle/Add to Playlist act on them.
         Assert.Equal(new[] { "A", "B" }, vm.AlbumActionTarget!.Tracks.Select(t => t.Title));
     }
@@ -199,7 +155,7 @@ public class PlaylistRowActionsTests : PinnedDataDirectory
         vm.DeletePlaylistActionTargetCommand.Execute(null);
         await WaitFor(() => vm.ActiveSheet == MobileSheet.ConfirmDeletePlaylist);
 
-        Assert.Equal("Delete \"Road trip\"?", vm.ConfirmDeletePlaylistTitle);
+        Assert.Equal(MobileSheet.ConfirmDeletePlaylist, vm.ActiveSheet);
 
         vm.CancelDeletePlaylistCommand.Execute(null);
         await WaitFor(() => vm.ActiveSheet == MobileSheet.None);

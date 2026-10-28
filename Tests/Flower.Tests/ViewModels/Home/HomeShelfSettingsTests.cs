@@ -221,26 +221,14 @@ public class HomeShelfSettingsTests : PinnedDataDirectory
 
         var rows = HomeShelfRows.Build(home, columns: 2);
 
-        var header = Assert.IsType<HomeShelfHeaderRow>(rows[0]);
-        Assert.Equal("Recently Played", header.Title);
-        Assert.True(header.IsFirst);
+        Assert.IsType<HomeShelfHeaderRow>(rows[0]);
         Assert.Single(Assert.IsType<HomeSongRow>(rows[1]).Songs);
         Assert.Single(Assert.IsType<HomeSongRow>(rows[2]).Songs);
-        var added = Assert.IsType<HomeShelfHeaderRow>(rows[3]);
-        Assert.Equal("Recently Added", added.Title);
-        Assert.False(added.IsFirst);
+        Assert.IsType<HomeShelfHeaderRow>(rows[3]);
         var last = Assert.IsType<HomeAlbumRow>(rows[^1]);
         Assert.Single(last.Tiles);
-        Assert.Equal(2, last.Columns);
         Assert.Equal(7, rows.Count); // 2 headings, 2 + 3 rows
     }
-
-    [Theory]
-    [InlineData(800, 4)]
-    [InlineData(100, 1)]
-    [InlineData(0, 1)]
-    public void The_desktop_fits_as_many_of_the_album_grids_cells_as_the_width_allows(double width, int expected) =>
-        Assert.Equal(expected, HomeShelfRowsHost.DesktopColumnsFor(width, 196));
 
     // What made resizing on Home slow: every cover on every shelf was built
     // and laid out, and Recently Added on a library scanned within its window

@@ -353,8 +353,7 @@ public class ITunesPlayCountImporterTests : IsolatedHome
     [Fact]
     public void ResolveLibraryXmlPath_prefers_the_Music_app_export_when_both_exist()
     {
-        if (!OperatingSystem.IsMacOS())
-            return; // the resolver itself is macOS-only - nothing to exercise elsewhere
+        Assert.SkipUnless(OperatingSystem.IsMacOS(), "Automatic Music.app and iTunes XML path resolution is macOS-only.");
 
         // A machine that migrated from classic iTunes to Music.app can easily
         // have both files sitting on disk - the Music.app one is the actively
@@ -374,8 +373,7 @@ public class ITunesPlayCountImporterTests : IsolatedHome
     [Fact]
     public void ResolveLibraryXmlPath_finds_a_classic_iTunes_export_when_thats_all_that_exists()
     {
-        if (!OperatingSystem.IsMacOS())
-            return;
+        Assert.SkipUnless(OperatingSystem.IsMacOS(), "Automatic Music.app and iTunes XML path resolution is macOS-only.");
 
         // Regression coverage for the actual bug: a real classic-iTunes export
         // lives at "~/Music/iTunes/iTunes Music Library.xml" - a different

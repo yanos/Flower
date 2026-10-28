@@ -115,13 +115,11 @@ public class ImporterTests : IDisposable
     [Fact]
     public void Import_reads_the_bit_depth_of_an_ALAC_file_but_not_of_a_lossy_one()
     {
-        if (!OperatingSystem.IsMacOS())
-            return; // afconvert is the encoder here, and it is macOS-only.
+        Assert.SkipUnless(OperatingSystem.IsMacOS(), "Requires the macOS afconvert encoder to create ALAC and AAC fixtures.");
 
         var alac = Mpeg4("lossless", "alac");
         var aac = Mpeg4("lossy", "aac ");
-        if (alac == null || aac == null)
-            return;
+        Assert.SkipWhen(alac == null || aac == null, "afconvert could not create the ALAC and AAC fixtures required by this test.");
 
         var tracks = NewImporter().Import([Path.Combine(_root, "mpeg4")]);
 
@@ -143,8 +141,7 @@ public class ImporterTests : IDisposable
     [Fact]
     public void ImportsNothingWhenNoFoldersAreConfigured()
     {
-        if (OperatingSystem.IsIOS())
-            return;
+        Assert.SkipWhen(OperatingSystem.IsIOS(), "iOS always scans its sandboxed Documents directory, even with no configured folders.");
         Audio(_root, "ignored.wav");
 
         Assert.Empty(NewImporter().Import([]));

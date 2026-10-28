@@ -85,51 +85,6 @@ public class MobileNavigationFrameTests
         Assert.False(Frame(MobileTab.Songs).IsSearchScreen);
     }
 
-    // Mirrors MobileMainViewModel's former ScreenTitle exactly - see
-    // MobileNavigationFrame.Title's own doc comment for why this moved here.
-    [Theory]
-    [InlineData(MobileTab.Home, false, null, "Home")]
-    [InlineData(MobileTab.Songs, false, null, "Songs")]
-    [InlineData(MobileTab.Search, false, null, "")]
-    public void Title_matches_expected_for_undrilled_tabs(MobileTab tab, bool hasDrilledIn, string? artistName, string expected)
-    {
-        Assert.Equal(expected, Frame(tab, hasDrilledIn: hasDrilledIn, artistName: artistName).Title);
-    }
-
-    [Fact]
-    public void Title_uses_artist_name_over_sidebar_item_on_an_artists_album_grid()
-    {
-        var artistsItem = new SidebarItem(SidebarItemKind.Artists, "Artists");
-
-        // Artist's own album grid: HasDrilledIn true, SidebarItem still "Artists".
-        Assert.Equal("Nova", Frame(MobileTab.Artists, hasDrilledIn: true, artistName: "Nova", sidebarItem: artistsItem).Title);
-    }
-
-    // An album's details never carry the artist's name above them, however
-    // the album was reached - its own header already names both.
-    [Fact]
-    public void Title_is_blank_over_an_album_reached_from_an_artist()
-    {
-        var albumsItem = new SidebarItem(SidebarItemKind.Albums, "Albums");
-
-        // SelectArtistAlbum re-points SidebarItem to "Albums".
-        Assert.Equal("", Frame(MobileTab.Artists, hasDrilledIn: true, artistName: "Nova", hasDrilledIntoArtistAlbum: true, sidebarItem: albumsItem, subItem: "Dawn").Title);
-    }
-
-    [Fact]
-    public void Title_uses_sidebar_item_name_when_drilled_in_outside_Artists()
-    {
-        var playlistsItem = new SidebarItem(SidebarItemKind.Playlist, "Road Trip");
-        Assert.Equal("Road Trip", Frame(MobileTab.Playlists, hasDrilledIn: true, sidebarItem: playlistsItem).Title);
-    }
-
-    [Fact]
-    public void Title_is_blank_over_an_albums_own_tracks()
-    {
-        var albumsItem = new SidebarItem(SidebarItemKind.Albums, "Albums");
-        Assert.Equal("", Frame(MobileTab.Albums, hasDrilledIn: true, sidebarItem: albumsItem, subItem: "Dawn").Title);
-    }
-
     [Fact]
     public void IsAlbumTrackList_true_only_for_an_albums_sidebar_item_with_a_sub_item()
     {

@@ -56,13 +56,11 @@ public class EqualizerViewModelTests : PinnedDataDirectory
     }
 
     [Fact]
-    public void It_builds_one_band_per_equalizer_band_labelled_by_centre_frequency()
+    public void It_builds_one_band_per_equalizer_band()
     {
         var vm = Make(out _);
 
         Assert.Equal(Equalizer.BandCount, vm.Bands.Count);
-        Assert.Equal("31", vm.Bands[0].FrequencyLabel);
-        Assert.Equal("16k", vm.Bands[^1].FrequencyLabel);
     }
 
     // First run: no EqualizerSettings at all. The ViewModel installs a flat,

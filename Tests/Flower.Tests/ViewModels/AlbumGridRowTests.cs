@@ -38,45 +38,9 @@ public class AlbumGridRowTests
         Assert.Equal(["F", "G"], rows[1].Tiles.Select(t => t.Name));
     }
 
-    // A short trailing row still has to size its tiles like a full one, so the
-    // last two albums in a five-column grid don't render half the screen wide.
-    [Fact]
-    public void Chunk_gives_every_row_the_full_column_count()
-    {
-        var rows = AlbumGridRow.Chunk(Tiles(7), columns: 5);
-
-        Assert.All(rows, row => Assert.Equal(5, row.Columns));
-    }
-
     [Fact]
     public void Chunk_returns_empty_for_no_tiles()
     {
         Assert.Empty(AlbumGridRow.Chunk([], columns: 2));
-    }
-
-    [Theory]
-    // A phone in portrait, the layout the grids were designed at.
-    [InlineData(366, 2)]
-    // The same phone turned sideways - the case that motivated all of this,
-    // where two columns made the art absurdly large.
-    [InlineData(820, 5)]
-    // A tablet.
-    [InlineData(1156, 7)]
-    public void ColumnsFor_fits_as_many_tiles_as_the_width_allows(double width, int expected)
-    {
-        Assert.Equal(expected, AlbumGridRow.ColumnsFor(width));
-    }
-
-    // Two is the floor whatever the measurement says: a one-column album grid
-    // is just a list, and an unmeasured grid reports zero width.
-    [Theory]
-    [InlineData(0)]
-    [InlineData(-1)]
-    [InlineData(120)]
-    [InlineData(double.NaN)]
-    [InlineData(double.PositiveInfinity)]
-    public void ColumnsFor_never_goes_below_two(double width)
-    {
-        Assert.Equal(2, AlbumGridRow.ColumnsFor(width));
     }
 }

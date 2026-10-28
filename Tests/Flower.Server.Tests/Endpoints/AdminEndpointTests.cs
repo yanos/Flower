@@ -491,8 +491,7 @@ public class AdminEndpointTests(FlowerServerFixture server) : IClassFixture<Flow
             Assert.NotNull(writable.UnwritableFolders);
             Assert.Empty(writable.UnwritableFolders);
 
-            if (readOnly == null)
-                return;
+            Assert.SkipWhen(readOnly == null, "Requires enforced POSIX folder permissions; unsupported on Windows or when this process can bypass read-only permissions.");
 
             writeAccess.Check([readOnly]);
             var refused = await ReadAsync<LibraryStatusResponse>(await SignedAsync(admin, "GET", "/api/admin/library"));

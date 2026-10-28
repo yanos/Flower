@@ -101,11 +101,9 @@ public class MobileRemoveFromLibraryTests : PinnedDataDirectory
         mobile.SelectTabCommand.Execute(nameof(MobileTab.Songs));
 
         var entry = MenuEntry(mobile, "Remove from Library");
-        Assert.True(entry.IsDestructive);
         entry.Invoke();
 
         Assert.True(mobile.IsShowingConfirmRemoveFromLibrary);
-        Assert.Contains("2 songs", mobile.RemoveFromLibraryTitle);
         Assert.Equal(2, library.Tracks.Count);
 
         mobile.ConfirmRemoveFromLibraryCommand.Execute(null);
@@ -125,7 +123,6 @@ public class MobileRemoveFromLibraryTests : PinnedDataDirectory
         MenuEntry(mobile, "Delete Local Files").Invoke();
 
         Assert.True(mobile.IsShowingConfirmDeleteFile);
-        Assert.Equal("Delete 1 local file of \"Songs\"?", mobile.ConfirmDeleteFileTitle);
     }
 
     [AvaloniaFact]

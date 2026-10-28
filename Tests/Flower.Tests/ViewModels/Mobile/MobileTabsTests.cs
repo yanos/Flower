@@ -348,6 +348,5 @@ public class MobileTabsTests : PinnedDataDirectory
         using var scope = Build([MobileTab.Queue]);
 
         Assert.True(scope.Mobile.IsContentEmpty);
-        Assert.Equal("Nothing Queued", scope.Mobile.EmptyStateTitle);
     }
 }

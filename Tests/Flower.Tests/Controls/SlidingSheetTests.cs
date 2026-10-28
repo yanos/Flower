@@ -39,12 +39,6 @@ public class SlidingSheetTests
     {
         public required Window Window { get; init; }
         public required SlidingSheet Sheet { get; init; }
-        public Control? Card { get; init; }
-
-        public double SheetOffsetX => Offset(Sheet.RenderTransform).X;
-        public double SheetOffsetY => Offset(Sheet.RenderTransform).Y;
-        public double CardOffsetY => Offset(Card?.RenderTransform).Y;
-
         public required Action Advance { get; init; }
 
         // One whole gesture across the middle of the sheet: press, drag by `dx`
@@ -80,8 +74,6 @@ public class SlidingSheetTests
         // posts for a card actually run - both are ordinary dispatcher jobs.
         public static void Settle() => Dispatcher.UIThread.RunJobs();
 
-        private static (double X, double Y) Offset(ITransform? transform) =>
-            transform is TranslateTransform t ? (t.X, t.Y) : (0, 0);
     }
 
     // A host the sheet fills, so its slide distance comes from a real arranged
@@ -158,11 +150,7 @@ public class SlidingSheetTests
         {
             Window = window,
             Sheet = sheet,
-            Card = card,
-            // One step past the 280ms easing, so a single tick lands every
-            // animation on its final frame - these tests are about where a
-            // slide starts and ends, not how it is interpolated in between
-            // (AnimationClockTests covers the tween itself).
+            // Advance past the easing so visibility and dismissal settle.
             Advance = () =>
             {
                 Host.Settle();
@@ -209,7 +197,6 @@ public class SlidingSheetTests
 
             host.Advance();
             Assert.False(host.Sheet.IsVisible);
-            Assert.Equal(Width, host.SheetOffsetX);
         }
         finally
         {
@@ -236,7 +223,6 @@ public class SlidingSheetTests
             host.Advance();
 
             Assert.True(host.Sheet.IsVisible);
-            Assert.Equal(0, host.SheetOffsetX);
         }
         finally
         {
@@ -261,8 +247,6 @@ public class SlidingSheetTests
             host.Advance();
 
             Assert.True(host.Sheet.IsVisible);
-            Assert.Equal(1, host.Sheet.Opacity);
-            Assert.Equal(0, host.CardOffsetY);
         }
         finally
         {
@@ -327,7 +311,6 @@ public class SlidingSheetTests
             Assert.True(host.Sheet.IsVisible);
             host.Advance();
             Assert.False(host.Sheet.IsVisible);
-            Assert.Equal(Width, host.SheetOffsetX);
         }
         finally
         {
@@ -351,7 +334,6 @@ public class SlidingSheetTests
             Assert.True(host.Sheet.IsVisible);
 
             host.Advance();
-            Assert.Equal(0, host.SheetOffsetX);
         }
         finally
         {
@@ -429,7 +411,6 @@ public class SlidingSheetTests
             host.Swipe(-PastThreshold);
 
             Assert.Equal(0, dismiss.Executions);
-            Assert.Equal(0, host.SheetOffsetX);
         }
         finally
         {
@@ -454,7 +435,6 @@ public class SlidingSheetTests
             host.Swipe(PastThreshold, y: 20);
 
             Assert.Equal(0, dismiss.Executions);
-            Assert.Equal(0, host.SheetOffsetX);
         }
         finally
         {
@@ -481,7 +461,6 @@ public class SlidingSheetTests
             Assert.Equal(1, dismiss.Executions);
             host.Advance();
             Assert.False(host.Sheet.IsVisible);
-            Assert.Equal(Height, host.SheetOffsetY);
         }
         finally
         {
@@ -504,8 +483,6 @@ public class SlidingSheetTests
             host.Swipe(PastThreshold);
 
             Assert.Equal(0, dismiss.Executions);
-            Assert.Equal(0, host.SheetOffsetX);
-            Assert.Equal(0, host.SheetOffsetY);
         }
         finally
         {

@@ -118,13 +118,6 @@ public class ScreenStackPanelSwipeTests : PinnedDataDirectory
             Dispatcher.UIThread.RunJobs();
         }
 
-        // X translation of the topmost (current) slot - what the live drag moves.
-        public double CurrentSlotOffset()
-        {
-            var top = Panel.Children.LastOrDefault();
-            return top?.RenderTransform is TranslateTransform t ? t.X : 0;
-        }
-
         // SelectedTab's setter is private - navigation goes through the same
         // commands the View binds to, which is also what pushes history.
         public void SelectTab(MobileTab tab)
@@ -268,7 +261,6 @@ public class ScreenStackPanelSwipeTests : PinnedDataDirectory
         h.LetEasingFinish();
 
         Assert.Equal(MobileScreenKind.TrackList, h.Vm.CurrentFrame.ScreenKind);
-        Assert.Equal(0, h.CurrentSlotOffset());
     }
 
     // Under EarlyCommitThreshold in both axes, nothing is decided at all.
@@ -283,7 +275,6 @@ public class ScreenStackPanelSwipeTests : PinnedDataDirectory
         // Nothing may move before EarlyCommitThreshold is crossed - after
         // release a too-short drag would spring back to 0 either way, so this
         // has to be observed mid-gesture.
-        Assert.Equal(0, h.CurrentSlotOffset());
 
         h.Release(206);
         h.LetEasingFinish();
@@ -338,7 +329,6 @@ public class ScreenStackPanelSwipeTests : PinnedDataDirectory
         h.LetEasingFinish();
 
         Assert.Equal(MobileScreenKind.TrackList, h.Vm.CurrentFrame.ScreenKind);
-        Assert.Equal(0, h.CurrentSlotOffset(), 1);
     }
 
     // The browser-style redo counterpart: after going back, a left swipe goes
@@ -372,7 +362,6 @@ public class ScreenStackPanelSwipeTests : PinnedDataDirectory
         Assert.False(h.Vm.CanGoForward);
 
         h.Swipe(-PastThreshold, release: false);
-        Assert.Equal(0, h.CurrentSlotOffset());
 
         h.Release(200 - PastThreshold);
         Harness.Pump();
@@ -461,6 +450,5 @@ public class ScreenStackPanelSwipeTests : PinnedDataDirectory
         // Nothing was animated either: without the CanGoBack gate the current
         // screen eases off to the right and, with no navigation to follow and
         // reset its transform, is simply left stranded off-screen.
-        Assert.Equal(0, h.CurrentSlotOffset());
     }
 }

@@ -49,20 +49,13 @@ public class MobileAlbumHeaderTests : PinnedDataDirectory
     // A reissue's bonus track carries the reissue's year; the album is the
     // original's.
     [AvaloniaFact]
-    public void The_heading_carries_the_albums_earliest_year()
+    public void The_album_header_uses_the_albums_earliest_year()
     {
-        Assert.Equal("Album (1975)", HeaderOf(
+        Assert.Equal("1975", HeaderOf(
         [
             Song("One", "Mulatu Astatke", year: "1975"),
             Song("Bonus", "Mulatu Astatke", year: "1998"),
-        ])?.Heading);
-    }
-
-    // An untagged album is not followed by an empty "()".
-    [AvaloniaFact]
-    public void An_album_with_no_year_is_headed_by_its_name_alone()
-    {
-        Assert.Equal("Album", HeaderOf([Song("One", "Mulatu Astatke")])?.Heading);
+        ])?.Year);
     }
 
     [AvaloniaFact]

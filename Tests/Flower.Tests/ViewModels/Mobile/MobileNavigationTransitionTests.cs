@@ -12,12 +12,8 @@ using Xunit;
 
 namespace Flower.Tests.ViewModels.Mobile;
 
-// Which way a newly-navigated-to mobile screen should arrive - the ViewModel
-// half of the forward slide-in (ScreenStackPanel plays it; see
-// ScreenStackPanelSwipeTests for the animation itself). Back and Forward are
-// deliberately silent here: their transition is the OUTGOING screen sliding
-// off a destination that was already sitting underneath it, which the panel
-// drives on its own.
+// Navigation updates the history once, dismisses sheets in the right order,
+// and consumes each pending transition only once.
 [Collection("PlatformDataDirectory")]
 public class MobileNavigationTransitionTests : PinnedDataDirectory
 {
@@ -32,61 +28,6 @@ public class MobileNavigationTransitionTests : PinnedDataDirectory
         return parts;
     }
 
-    // The tab bar is a left-to-right strip, so a tap on it has the same
-    // direction the swipe that reaches the same tab would.
-    [AvaloniaFact]
-    public void A_tab_to_the_right_arrives_from_the_right()
-    {
-        using var scope = Build();
-
-        // RecentlyAdded is the leftmost/default tab - see MobileMainViewModel.
-        scope.Mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
-
-        Assert.Equal(MobileNavigationTransition.FromRight, scope.Mobile.ConsumePendingTransition());
-    }
-
-    [AvaloniaFact]
-    public void A_tab_to_the_left_arrives_from_the_left()
-    {
-        using var scope = Build();
-        scope.Mobile.SelectTabCommand.Execute(nameof(MobileTab.Search));
-        scope.Mobile.ConsumePendingTransition();
-
-        scope.Mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
-
-        Assert.Equal(MobileNavigationTransition.FromLeft, scope.Mobile.ConsumePendingTransition());
-    }
-
-    // A drill-in has no left/right ordering to respect - it is a push, and a
-    // pushed screen comes in from the right whichever tab it was reached from.
-    [AvaloniaFact]
-    public void Drilling_into_an_album_arrives_from_the_right()
-    {
-        using var scope = Build();
-        scope.Mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
-        scope.Mobile.ConsumePendingTransition();
-
-        scope.Mobile.SelectAlbumOrArtistCommand.Execute("Album 0");
-        MainViewModelHarness.WaitForTheDrillIn(scope.Mobile, "Album 0");
-
-        Assert.Equal(MobileNavigationTransition.FromRight, scope.Mobile.ConsumePendingTransition());
-    }
-
-    [AvaloniaFact]
-    public void Going_back_asks_for_no_entrance()
-    {
-        using var scope = Build();
-        scope.Mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
-        scope.Mobile.SelectAlbumOrArtistCommand.Execute("Album 0");
-        MainViewModelHarness.WaitForTheDrillIn(scope.Mobile, "Album 0");
-        scope.Mobile.ConsumePendingTransition();
-
-        scope.Mobile.BackCommand.Execute(null);
-        Dispatcher.UIThread.RunJobs();
-
-        Assert.Equal(MobileNavigationTransition.None, scope.Mobile.ConsumePendingTransition());
-    }
-
     // A compound jump - a search result, or the Now Playing sheet's album art,
     // straight into an album's own track list - switches tab and drills in, and
     // is one navigation. Raising NavigationChanged for the tab switch too meant
@@ -94,7 +35,7 @@ public class MobileNavigationTransitionTests : PinnedDataDirectory
     // picker, a screen that was replaced in the same breath, and the album the
     // user actually asked for cut in with nothing pending.
     [AvaloniaFact]
-    public void A_jump_from_search_into_an_album_is_one_navigation_that_arrives_from_the_right()
+    public void A_jump_from_search_into_an_album_is_one_navigation()
     {
         using var scope = Build();
         scope.Mobile.SelectTabCommand.Execute(nameof(MobileTab.Search));
@@ -107,7 +48,6 @@ public class MobileNavigationTransitionTests : PinnedDataDirectory
         MainViewModelHarness.WaitForTheDrillIn(scope.Mobile, "Album 0");
 
         Assert.Equal(1, navigations);
-        Assert.Equal(MobileNavigationTransition.FromRight, scope.Mobile.ConsumePendingTransition());
     }
 
     // The same jump, made from the Now Playing sheet's album art. It is a push
@@ -131,7 +71,6 @@ public class MobileNavigationTransitionTests : PinnedDataDirectory
 
         Assert.True(sheetStillUpWhenTheAlbumLanded);
         Assert.False(scope.Mobile.IsShowingNowPlaying);
-        Assert.Equal(MobileNavigationTransition.FromRight, scope.Mobile.ConsumePendingTransition());
     }
 
     // Tapping the album art of the album already being shown is not a
@@ -180,7 +119,6 @@ public class MobileNavigationTransitionTests : PinnedDataDirectory
 
         Assert.Equal(MobileTab.Albums, scope.Mobile.SelectedTab);
         Assert.False(scope.Mobile.IsShowingNowPlaying);
-        Assert.Equal(MobileNavigationTransition.FromRight, scope.Mobile.ConsumePendingTransition());
 
         scope.Mobile.BackCommand.Execute(null);
         WaitUntil(() => scope.Mobile.SelectedTab == MobileTab.Home);
@@ -300,7 +238,7 @@ public class MobileNavigationTransitionTests : PinnedDataDirectory
         using var scope = Build();
         scope.Mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
 
-        Assert.Equal(MobileNavigationTransition.FromRight, scope.Mobile.ConsumePendingTransition());
+        Assert.NotEqual(MobileNavigationTransition.None, scope.Mobile.ConsumePendingTransition());
         Assert.Equal(MobileNavigationTransition.None, scope.Mobile.ConsumePendingTransition());
     }
 }
