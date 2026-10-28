@@ -22,8 +22,8 @@
               FontSize="12"/>
 
     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
-      <Button x:Name="CancelButton" Content="Cancel" Click="CancelButton_Click" IsDefault="True" IsCancel="True"/>
-      <Button x:Name="ConfirmButton" Click="ConfirmButton_Click"/>
+      <Button x:Name="CancelButton" Classes="standard secondary" Content="Cancel" Click="CancelButton_Click" IsDefault="True" IsCancel="True"/>
+      <Button x:Name="ConfirmButton" Classes="standard primary" Click="ConfirmButton_Click"/>
     </StackPanel>
   </StackPanel>
 </Window>

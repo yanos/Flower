@@ -85,8 +85,8 @@
                                   PlaceholderText="Emoji"
                                   IsEnabled="{Binding IconEmojiLock.IsEditable}"
                                   VerticalAlignment="Center"/>
-              <Button Content="Choose Picture…" Click="ChooseIconPictureButton_Click" VerticalAlignment="Center"/>
-              <Button Content="Remove Picture" Command="{Binding RemoveIconPictureCommand}"
+              <Button Classes="standard secondary" Content="Choose Picture…" Click="ChooseIconPictureButton_Click" VerticalAlignment="Center"/>
+              <Button Classes="standard secondary" Content="Remove Picture" Command="{Binding RemoveIconPictureCommand}"
                       IsVisible="{Binding HasIconPicture}" VerticalAlignment="Center"/>
             </StackPanel>
             <TextBlock Text="{Binding IconEmojiLock.Message}"
@@ -187,7 +187,7 @@
                question. Shown as a button on the machine you are sitting at, and
                as plain text for a server you are not - a file manager on this
                machine cannot open a path on that one. -->
-          <Button Content="Open App Data Location"
+          <Button Classes="standard secondary" Content="Open App Data Location"
                   Margin="0,20,0,0"
                   HorizontalAlignment="Left"
                   Click="OpenAppDataLocationButton_Click"
@@ -223,9 +223,7 @@
           <TextBlock Text="Addresses"
                      FontWeight="SemiBold" Margin="0,20,0,6"
                      IsVisible="{Binding HasAddresses}"/>
-          <Border BorderThickness="1"
-                  BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
-                  CornerRadius="4"
+          <Border Classes="listFrame"
                   Padding="8,6"
                   IsVisible="{Binding HasAddresses}">
             <!-- Two levels: a heading per ServerAddressKind, then that kind's
@@ -468,10 +466,8 @@
               <TextBlock Grid.Row="5" Text="Library Folders" FontWeight="SemiBold" Margin="0,16,0,8"
                          IsEnabled="{Binding CanManageLibrary}"/>
 
-              <Border Grid.Row="6" MinHeight="140"
-                      IsEnabled="{Binding CanManageLibrary}"
-                      BorderThickness="1"
-                      BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
+              <Border Grid.Row="6" MinHeight="140" Classes="listFrame"
+                      IsEnabled="{Binding CanManageLibrary}">
                 <ListBox x:Name="PathsList" ItemsSource="{Binding LibraryPaths}">
                   <ListBox.ItemTemplate>
                     <DataTemplate x:DataType="vm:LibraryPathRow">
@@ -505,12 +501,12 @@
               <Grid Grid.Row="7" Margin="0,12,0,0" IsEnabled="{Binding CanManageLibrary}">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" Spacing="8"
                             IsEnabled="{Binding LibraryPathsLock.IsEditable}">
-                  <Button Content="Add Folder…" Click="AddFolderButton_Click"/>
-                  <Button Content="Remove Selected"
+                  <Button Classes="standard secondary" Content="Add Folder…" Click="AddFolderButton_Click"/>
+                  <Button Classes="standard secondary" Content="Remove Selected"
                           Command="{Binding RemoveLibraryPathCommand}"
                           CommandParameter="{Binding #PathsList.SelectedItem}"/>
                 </StackPanel>
-                <Button Content="Rescan Files"
+                <Button Classes="standard secondary" Content="Rescan Files"
                         HorizontalAlignment="Right"
                         Command="{Binding RescanCommand}"
                         IsVisible="{Binding !Capabilities.RebuildDatabase}"/>
@@ -524,7 +520,7 @@
                           HorizontalAlignment="Left" Spacing="8"
                           IsEnabled="{Binding CanManageLibrary}"
                           IsVisible="{Binding Capabilities.RebuildDatabase}">
-                <Button Content="Rebuild Database"
+                <Button Classes="standard secondary" Content="Rebuild Database"
                         Command="{Binding RebuildDatabaseCommand}"/>
               </StackPanel>
             </Grid>
@@ -542,18 +538,16 @@
                   <TextBlock Text="Hidden from the library. The files are still on disk until you delete them here."
                              FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
                 </StackPanel>
-                <Button Grid.Column="1" Content="Restore All" VerticalAlignment="Top" Margin="12,0,0,0"
+                <Button Grid.Column="1" Classes="standard secondary" Content="Restore All" VerticalAlignment="Top" Margin="12,0,0,0"
                         Command="{Binding RestoreAllRemovedFilesCommand}"/>
                 <!-- The library's clean-up: nothing else deletes a removed
                      song's file. Two presses - the first rewrites the label to
                      say what the second does (SettingsViewModel). -->
-                <Button Grid.Column="2" Content="{Binding DeleteRemovedFilesLabel}" VerticalAlignment="Top" Margin="8,0,0,0"
+                <Button Grid.Column="2" Classes="standard secondary" Content="{Binding DeleteRemovedFilesLabel}" VerticalAlignment="Top" Margin="8,0,0,0"
                         Command="{Binding DeleteAllRemovedFilesCommand}"/>
               </Grid>
 
-              <Border MaxHeight="240"
-                      BorderThickness="1"
-                      BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
+              <Border MaxHeight="240" Classes="listFrame">
                 <ListBox ItemsSource="{Binding RemovedFiles}">
                   <ListBox.ItemTemplate>
                     <DataTemplate x:DataType="vm:RemovedFileRow">
@@ -564,7 +558,7 @@
                                      TextTrimming="CharacterEllipsis"
                                      ToolTip.Tip="{Binding Path}"/>
                         </StackPanel>
-                        <Button Grid.Column="1" Content="Restore" Padding="10,4" VerticalAlignment="Center"
+                        <Button Grid.Column="1" Classes="standard secondary small" Content="Restore" VerticalAlignment="Center"
                                 Click="RestoreRemovedFileButton_Click"/>
                       </Grid>
                     </DataTemplate>
@@ -600,7 +594,7 @@
               <StackPanel Spacing="6" Margin="0,0,0,12"
                           IsVisible="{Binding Capabilities.PairingCodes}">
                 <StackPanel Orientation="Horizontal" Spacing="10">
-                  <Button Content="Generate Pairing Code" Command="{Binding IssuePairingCodeCommand}"/>
+                  <Button Classes="standard secondary" Content="Generate Pairing Code" Command="{Binding IssuePairingCodeCommand}"/>
                   <CheckBox Content="Administrator"
                             IsChecked="{Binding PairingCodeGrantsAdmin}"
                             VerticalAlignment="Center"/>
@@ -630,7 +624,7 @@
                                        FontSize="18" FontWeight="SemiBold"
                                        Margin="0,0,10,0"
                                        VerticalAlignment="Center"/>
-                  <Button Grid.Column="1" Content="Copy"
+                  <Button Grid.Column="1" Classes="standard secondary" Content="Copy"
                           Click="CopyPairingCodeButton_Click"
                           VerticalAlignment="Center"/>
                 </Grid>
@@ -644,7 +638,7 @@
                                        Margin="0,0,10,0"
                                        Opacity="0.7" TextWrapping="Wrap"
                                        VerticalAlignment="Center"/>
-                  <Button Grid.Column="1" Content="Copy link"
+                  <Button Grid.Column="1" Classes="standard secondary" Content="Copy link"
                           Click="CopyPairingInviteButton_Click"
                           VerticalAlignment="Center"/>
                 </Grid>
@@ -654,9 +648,7 @@
               </StackPanel>
             </StackPanel>
 
-          <Border Grid.Row="2"
-                  BorderThickness="1"
-                  BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
+          <Border Grid.Row="2" Classes="listFrame">
             <Grid>
               <TextBlock Text="No devices yet."
                          Opacity="0.6"
@@ -698,7 +690,8 @@
                            make Forget silently do nothing there. -->
                       <Button Grid.Row="0" Grid.RowSpan="3" Grid.Column="1"
                               Content="Forget"
-                              Padding="10,4" VerticalAlignment="Center" Margin="8,0,0,0"
+                              Classes="standard secondary small"
+                              VerticalAlignment="Center" Margin="8,0,0,0"
                               IsVisible="{Binding IsNotConfirmingForget}"
                               Click="ForgetButton_Click"/>
                       <StackPanel Grid.Row="0" Grid.RowSpan="3" Grid.Column="1"
@@ -706,8 +699,8 @@
                                   VerticalAlignment="Center" Margin="8,0,0,0"
                                   IsVisible="{Binding IsConfirmingForget}">
                         <TextBlock Text="Forget?" VerticalAlignment="Center" FontSize="12" Opacity="0.75"/>
-                        <Button Content="Yes" Padding="10,4" Click="ConfirmForgetButton_Click"/>
-                        <Button Content="No" Padding="10,4" Click="CancelForgetButton_Click"/>
+                        <Button Classes="standard secondary small" Content="Yes" Click="ConfirmForgetButton_Click"/>
+                        <Button Classes="standard secondary small" Content="No" Click="CancelForgetButton_Click"/>
                       </StackPanel>
                     </Grid>
                   </DataTemplate>
@@ -863,8 +856,8 @@
                  only changes when it next syncs. Refresh stays for re-reading
                  one from scratch. -->
             <Button Grid.Row="2" Content="Refresh" Margin="0,8,0,0"
-                    Classes="outlined"
-                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                    Classes="standard secondary"
+                    HorizontalAlignment="Stretch"
                     Command="{Binding RefreshLogCommand}"/>
           </Grid>
 
@@ -897,8 +890,8 @@
       <materialIcons:MaterialIcon Kind="Sync" Width="14" Height="14" Opacity="0.55"
                                    VerticalAlignment="Center"
                                    IsVisible="{Binding IsBusy}"/>
-      <Button x:Name="CancelButton" Content="Cancel" Click="CancelButton_Click" IsCancel="True"/>
-      <Button x:Name="SaveButton" Content="OK" Click="SaveButton_Click" IsDefault="True"/>
+      <Button x:Name="CancelButton" Classes="standard secondary" Content="Cancel" Click="CancelButton_Click" IsCancel="True"/>
+      <Button x:Name="SaveButton" Classes="standard primary" Content="OK" Click="SaveButton_Click" IsDefault="True"/>
     </StackPanel>
   </Grid>
 </UserControl>

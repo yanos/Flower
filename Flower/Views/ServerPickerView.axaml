@@ -11,7 +11,7 @@
                  Opacity="0.6"
                  HorizontalAlignment="Center"
                  VerticalAlignment="Center"/>
-      <Border BorderThickness="1" BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}">
+      <Border Classes="listFrame">
         <ListBox x:Name="ServersList">
           <!-- See TrustedDevicesView's identical style for why. -->
           <ListBox.Styles>
@@ -77,7 +77,7 @@
                            VerticalAlignment="Center"/>
                   <Button Content="{Binding ActionLabel}"
                           IsEnabled="{Binding IsActionEnabled}"
-                          Padding="10,4"
+                          Classes="standard secondary small"
                           Click="ActionButton_Click"/>
                 </StackPanel>
               </Grid>
@@ -105,7 +105,7 @@
            boxes, so it should read as an ordinary button like Add Folder or
            Generate Pairing Code. The compact 10,4 the list rows use is theirs
            because a row is tight, not because Pair is a smaller action. -->
-      <Button Grid.Column="2" x:Name="AddManualServerButton" Content="Pair"
+      <Button Grid.Column="2" x:Name="AddManualServerButton" Classes="standard secondary" Content="Pair"
               Click="AddManualServerButton_Click"/>
     </Grid>
     <TextBlock Grid.Row="3" x:Name="ManualAddressStatus"

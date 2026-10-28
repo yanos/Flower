@@ -17,19 +17,6 @@
        so the sliders are the slider colour rather than the red (Slider.control,
        App.axaml). -->
   <Window.Styles>
-    <Style Selector="Button.reset">
-      <Setter Property="Height" Value="36"/>
-      <Setter Property="Padding" Value="14,0"/>
-      <Setter Property="CornerRadius" Value="10"/>
-      <Setter Property="FontSize" Value="13"/>
-      <Setter Property="VerticalContentAlignment" Value="Center"/>
-      <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}"/>
-      <Setter Property="BorderBrush" Value="{DynamicResource AppControlBorderBrush}"/>
-      <Setter Property="BorderThickness" Value="1"/>
-    </Style>
-    <Style Selector="Button.reset:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="{DynamicResource AppHoverBrush}"/>
-    </Style>
     <!-- Bypassed, the bands and the preamp fade and take no input. -->
     <Style Selector="Border#Bands:disabled, Grid#Preamp:disabled">
       <Setter Property="Opacity" Value="0.45"/>
@@ -54,7 +41,7 @@
                     MinWidth="0"
                     VerticalAlignment="Center"/>
       <TextBlock Grid.Column="1" Text="Equalizer" FontWeight="SemiBold" VerticalAlignment="Center"/>
-      <Button Grid.Column="3" Classes="reset" Content="Reset" Click="Reset_Click"/>
+      <Button Grid.Column="3" Classes="standard secondary" Content="Reset" Click="Reset_Click"/>
     </Grid>
 
     <!-- The preamp, under the bands. -->

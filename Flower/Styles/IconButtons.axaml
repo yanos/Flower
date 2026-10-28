@@ -122,6 +122,54 @@
     <Setter Property="Foreground" Value="{DynamicResource AppOnInkBrush}" />
   </Style>
 
+  <!-- Every other button with words in it: the surface inside the control
+     outline, the hover grey under the pointer and the finger, the page's
+     words on it. On the presenter, for the same reason as Button.primary. -->
+  <Style Selector="Button.secondary">
+    <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource AppControlBorderBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}" />
+  </Style>
+  <Style Selector="Button.secondary /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource AppControlBorderBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}" />
+  </Style>
+  <Style Selector="Button.secondary:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.secondary:pressed /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource AppHoverBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource AppControlBorderBrush}" />
+    <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}" />
+  </Style>
+
+  <!-- The desktop's one shape for a button with words in it - a dialog's
+     Cancel and Save, Settings' Add Folder, a page's Clear Queue - so they
+     all look alike wherever they are: with Button.primary for the action the
+     window is asking for, Button.secondary for every other. Small, for one
+     inside a row of a list (Restore, Forget). A size of its own rather than
+     part of the colours: the phone's sheets use Button.primary at their own,
+     larger size. -->
+  <Style Selector="Button.standard">
+    <Setter Property="Height" Value="36" />
+    <Setter Property="MinWidth" Value="80" />
+    <Setter Property="Padding" Value="16,0" />
+    <Setter Property="CornerRadius" Value="10" />
+    <Setter Property="FontSize" Value="13" />
+    <Setter Property="FontWeight" Value="Medium" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+  </Style>
+  <Style Selector="Button.standard.primary">
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+  <Style Selector="Button.standard.small">
+    <Setter Property="Height" Value="28" />
+    <Setter Property="MinWidth" Value="0" />
+    <Setter Property="Padding" Value="10,0" />
+    <Setter Property="CornerRadius" Value="8" />
+    <Setter Property="FontSize" Value="12" />
+  </Style>
+
   <!-- Play, filled: the accent at rest, its deeper red under the pointer and
      the finger, white on it throughout - the one fill in the app that is red,
      because it starts the music. -->
@@ -150,20 +198,6 @@
     <Setter Property="BorderBrush" Value="{DynamicResource AppControlBorderBrush}" />
     <Setter Property="BorderThickness" Value="1" />
   </Style>
-  <!-- The same for a button with words in it (Clear Queue), which greys
-     like an icon button when pointed at. -->
-  <Style Selector="Button.outlined">
-    <Setter Property="Height" Value="40" />
-    <Setter Property="Padding" Value="16,0" />
-    <Setter Property="CornerRadius" Value="9999" />
-    <Setter Property="VerticalContentAlignment" Value="Center" />
-    <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}" />
-    <Setter Property="BorderBrush" Value="{DynamicResource AppControlBorderBrush}" />
-    <Setter Property="BorderThickness" Value="1" />
-  </Style>
-  <Style Selector="Button.outlined:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-    <Setter Property="Background" Value="{DynamicResource AppHoverBrush}" />
-  </Style>
   <!-- A page header's Play: the red pill with its word beside the glyph. -->
   <Style Selector="Button.pagePlay">
     <Setter Property="Height" Value="44" />
@@ -176,7 +210,7 @@
   <!-- These presenter styles outrank Fluent's own disabled one, which would
        otherwise grey them: disabled, each is the same button at half
        strength. -->
-  <Style Selector="Button.primary:disabled, Button.play:disabled, Button.outlined:disabled">
+  <Style Selector="Button.primary:disabled, Button.secondary:disabled, Button.play:disabled">
     <Setter Property="Opacity" Value="0.5" />
   </Style>
 

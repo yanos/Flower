@@ -124,8 +124,7 @@
               <TextBlock Text="RECENT SEARCHES" />
             </Border>
             <Button Grid.Column="1" Content="Clear"
-                    Classes="outlined"
-                    Height="32"
+                    Classes="standard secondary small"
                     VerticalAlignment="Bottom" Margin="0,0,8,6"
                     Command="{Binding Search.ClearRecentSearchesCommand}" />
           </Grid>

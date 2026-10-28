@@ -16,14 +16,14 @@
                Opacity="0.75"
                FontSize="12"/>
 
-    <Border BorderThickness="1" BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" Padding="10">
+    <Border Classes="listFrame" Padding="10">
       <StackPanel Spacing="4">
         <TextBlock Text="This device" FontWeight="SemiBold" FontSize="12"/>
         <TextBlock x:Name="LocalSummaryText" FontSize="12" TextWrapping="Wrap"/>
       </StackPanel>
     </Border>
 
-    <Border BorderThickness="1" BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" Padding="10">
+    <Border Classes="listFrame" Padding="10">
       <StackPanel Spacing="4">
         <TextBlock x:Name="RemoteHeaderText" FontWeight="SemiBold" FontSize="12"/>
         <TextBlock x:Name="RemoteSummaryText" FontSize="12" TextWrapping="Wrap"/>
@@ -31,8 +31,8 @@
     </Border>
 
     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
-      <Button x:Name="KeepLocalButton" Content="Keep This Device" Click="KeepLocalButton_Click"/>
-      <Button x:Name="KeepRemoteButton" Click="KeepRemoteButton_Click" IsDefault="True"/>
+      <Button x:Name="KeepLocalButton" Classes="standard secondary" Content="Keep This Device" Click="KeepLocalButton_Click"/>
+      <Button x:Name="KeepRemoteButton" Classes="standard primary" Click="KeepRemoteButton_Click" IsDefault="True"/>
     </StackPanel>
   </StackPanel>
 </Window>

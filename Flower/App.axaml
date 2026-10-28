@@ -90,6 +90,36 @@
              resolves - TextControlBorderBrush* in Theme.axaml. -->
         <Style Selector=":is(TextBox)">
             <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}"/>
+            <Setter Property="CornerRadius" Value="8"/>
+        </Style>
+        <!-- The other boxes a value is picked or typed in - a combo box, a
+             number with its stepper - are the same field: its corners, its
+             surface, its outline (ComboBoxBorderBrush, Theme.axaml). The
+             stepper's box is a TextBox already and its arrows sit inside the
+             same outline, so the corner is the one setting it needs. -->
+        <Style Selector="ComboBox">
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="MinHeight" Value="36"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="NumericUpDown">
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}"/>
+        </Style>
+        <!-- A list inside a page that needs a frame of its own (Settings'
+             library folders, removed songs, devices; the servers found): one
+             rounded field, its rows on the surface - not Fluent's grey slab in
+             a square hairline. -->
+        <Style Selector="Border.listFrame">
+            <Setter Property="CornerRadius" Value="10"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AppControlBorderBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}"/>
+            <Setter Property="Padding" Value="4"/>
+            <Setter Property="ClipToBounds" Value="True"/>
+        </Style>
+        <Style Selector="Border.listFrame ListBox">
+            <Setter Property="Background" Value="Transparent"/>
         </Style>
         <!-- While the platform's own field is laid over a box to be typed in
              (TextInput, NativeTextSession - the phones), the box's own words,

@@ -142,49 +142,14 @@
     <Style Selector="TabStrip#Tabs TabStripItem:selected /template/ Border">
       <Setter Property="BoxShadow" Value="{DynamicResource AppButtonShadow}"/>
     </Style>
-    <!-- Previous and Next: small outlined squares. -->
+    <!-- Previous and Next: small squares of Button.secondary. -->
     <Style Selector="Button.nav">
       <Setter Property="Width" Value="36"/>
       <Setter Property="Height" Value="36"/>
       <Setter Property="Padding" Value="0"/>
       <Setter Property="CornerRadius" Value="10"/>
-      <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}"/>
-      <Setter Property="BorderBrush" Value="{DynamicResource AppControlBorderBrush}"/>
-      <Setter Property="BorderThickness" Value="1"/>
       <Setter Property="HorizontalContentAlignment" Value="Center"/>
       <Setter Property="VerticalContentAlignment" Value="Center"/>
-    </Style>
-    <Style Selector="Button.nav:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.footer:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="{DynamicResource AppHoverBrush}"/>
-    </Style>
-    <Style Selector="Button.footer">
-      <Setter Property="Height" Value="36"/>
-      <Setter Property="Padding" Value="16,0"/>
-      <Setter Property="CornerRadius" Value="10"/>
-      <Setter Property="FontSize" Value="13"/>
-      <Setter Property="FontWeight" Value="Medium"/>
-      <Setter Property="HorizontalContentAlignment" Value="Center"/>
-      <Setter Property="VerticalContentAlignment" Value="Center"/>
-    </Style>
-    <Style Selector="Button.footer:not(.primary)">
-      <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}"/>
-      <Setter Property="BorderBrush" Value="{DynamicResource AppControlBorderBrush}"/>
-      <Setter Property="BorderThickness" Value="1"/>
-    </Style>
-    <!-- The Artwork tab's buttons, the same outlined rounded rectangles. -->
-    <Style Selector="StackPanel#ArtButtons Button">
-      <Setter Property="Height" Value="36"/>
-      <Setter Property="Padding" Value="16,0"/>
-      <Setter Property="CornerRadius" Value="10"/>
-      <Setter Property="FontSize" Value="13"/>
-      <Setter Property="FontWeight" Value="Medium"/>
-      <Setter Property="VerticalContentAlignment" Value="Center"/>
-      <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}"/>
-      <Setter Property="BorderBrush" Value="{DynamicResource AppControlBorderBrush}"/>
-      <Setter Property="BorderThickness" Value="1"/>
-    </Style>
-    <Style Selector="StackPanel#ArtButtons Button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-      <Setter Property="Background" Value="{DynamicResource AppHoverBrush}"/>
     </Style>
   </Window.Styles>
 
@@ -194,17 +159,17 @@
     <Border DockPanel.Dock="Bottom" Padding="24,14,24,18">
       <Grid ColumnDefinitions="Auto,*,Auto">
         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8">
-          <Button x:Name="PrevButton" Classes="nav" Click="PrevButton_Click" ToolTip.Tip="Previous track">
+          <Button x:Name="PrevButton" Classes="nav secondary" Click="PrevButton_Click" ToolTip.Tip="Previous track">
             <materialIcons:MaterialIcon Kind="ChevronLeft" Width="20" Height="20"/>
           </Button>
-          <Button x:Name="NextButton" Classes="nav" Click="NextButton_Click" ToolTip.Tip="Next track">
+          <Button x:Name="NextButton" Classes="nav secondary" Click="NextButton_Click" ToolTip.Tip="Next track">
             <materialIcons:MaterialIcon Kind="ChevronRight" Width="20" Height="20"/>
           </Button>
         </StackPanel>
         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
-          <Button x:Name="CancelButton" Content="Cancel" Classes="footer"
+          <Button x:Name="CancelButton" Content="Cancel" Classes="standard secondary"
                   IsCancel="True" Click="CancelButton_Click"/>
-          <Button x:Name="OkButton" Content="Save" Classes="footer primary" Padding="20,0"
+          <Button x:Name="OkButton" Content="Save" Classes="standard primary"
                   IsDefault="True" Click="OkButton_Click"/>
         </StackPanel>
       </Grid>
@@ -535,13 +500,13 @@
                      TextWrapping="Wrap"/>
 
           <StackPanel x:Name="ArtButtons" Orientation="Horizontal" Spacing="8" Margin="0,4,0,0" HorizontalAlignment="Center">
-            <Button x:Name="ChangeArtButton"  Content="Choose File…"   Click="ChangeArtButton_Click"/>
-            <Button x:Name="FindArtButton"    Content="Find Online…"   Click="FindArtButton_Click"
+            <Button x:Name="ChangeArtButton" Classes="standard secondary"  Content="Choose File…"   Click="ChangeArtButton_Click"/>
+            <Button x:Name="FindArtButton" Classes="standard secondary"    Content="Find Online…"   Click="FindArtButton_Click"
                     ToolTip.Tip="Search online for the cover of the album named on the Details tab."/>
-            <Button x:Name="PasteArtButton"   Content="Paste"          Click="PasteArtButton_Click"
+            <Button x:Name="PasteArtButton" Classes="standard secondary"   Content="Paste"          Click="PasteArtButton_Click"
                     ToolTip.Tip="Use the image on the clipboard as the cover."/>
-            <Button x:Name="OpenArtButton"    Content="Open Full Size" Click="OpenArtButton_Click"/>
-            <Button x:Name="RemoveArtButton"  Content="Remove"         Click="RemoveArtButton_Click"/>
+            <Button x:Name="OpenArtButton" Classes="standard secondary"    Content="Open Full Size" Click="OpenArtButton_Click"/>
+            <Button x:Name="RemoveArtButton" Classes="standard secondary"  Content="Remove"         Click="RemoveArtButton_Click"/>
           </StackPanel>
         </StackPanel>
       </Panel>

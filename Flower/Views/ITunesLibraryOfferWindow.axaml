@@ -42,8 +42,8 @@
     </StackPanel>
 
     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
-      <Button x:Name="DeclineButton" Content="Don't Add" Click="DeclineButton_Click" IsCancel="True"/>
-      <Button x:Name="AddButton" Content="Add to Library" Click="AddButton_Click" IsDefault="True"/>
+      <Button x:Name="DeclineButton" Classes="standard secondary" Content="Don't Add" Click="DeclineButton_Click" IsCancel="True"/>
+      <Button x:Name="AddButton" Classes="standard primary" Content="Add to Library" Click="AddButton_Click" IsDefault="True"/>
     </StackPanel>
   </StackPanel>
 </Window>
