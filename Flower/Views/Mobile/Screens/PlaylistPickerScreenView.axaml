@@ -139,7 +139,7 @@
                        VerticalAlignment="Center"
                        IsVisible="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).Main.CanForceSync}">
                   <controls:TrackDownloadButton DataContext="{Binding PlaylistDownload}"
-                                                IconSize="24"
+                                                IconSize="16"
                                                 IconPadding="3"
                                                 Label="Download all"
                                                 Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).DownloadPlaylistCommand}"

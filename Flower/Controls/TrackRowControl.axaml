@@ -61,10 +61,6 @@
     <Style Selector="controls|TrackRowControl.playing StackPanel#CellsPanel controls|RowText">
       <Setter Property="FontWeight" Value="Bold"/>
     </Style>
-    <!-- ...and its download icon with them (TrackDownloadButton.IsBold). -->
-    <Style Selector="controls|TrackRowControl.playing controls|TrackDownloadButton">
-      <Setter Property="IsBold" Value="True"/>
-    </Style>
     <!-- A Queue row above the song playing (TrackRowViewModel.IsPlayed):
          faded, lighter than an unavailable song, since it plays fine. -->
     <Style Selector="controls|TrackRowControl.played StackPanel#CellsPanel, controls|TrackRowControl.played Panel#ArtCell">

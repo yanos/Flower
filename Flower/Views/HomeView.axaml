@@ -51,9 +51,6 @@
     <Style Selector="Button.homeSong.playing TextBlock.songTitle">
       <Setter Property="FontWeight" Value="Bold" />
     </Style>
-    <Style Selector="Button.homeSong.playing controls|TrackDownloadButton">
-      <Setter Property="IsBold" Value="True" />
-    </Style>
     <Style Selector="Button.homeSong.dimmed Grid#SongCells">
       <Setter Property="Opacity" Value="0.5" />
     </Style>

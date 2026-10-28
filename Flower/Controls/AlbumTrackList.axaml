@@ -143,9 +143,6 @@
     <Style Selector="Grid.playingTrack TextBlock">
       <Setter Property="FontWeight" Value="Bold"/>
     </Style>
-    <Style Selector="Grid.playingTrack controls|TrackDownloadButton">
-      <Setter Property="IsBold" Value="True"/>
-    </Style>
   </UserControl.Styles>
 
   <ItemsControl ItemsSource="{Binding TrackRows}"

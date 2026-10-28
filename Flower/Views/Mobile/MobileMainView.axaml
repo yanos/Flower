@@ -428,10 +428,6 @@
       <!-- TextElement's, which both of them take theirs from. -->
       <Setter Property="TextElement.FontWeight" Value="Bold" />
     </Style>
-    <!-- The download icon goes bold with the words (TrackDownloadButton.IsBold). -->
-    <Style Selector="Button.trackRow.playing controls|TrackDownloadButton">
-      <Setter Property="IsBold" Value="True" />
-    </Style>
     <!-- Not-yet-downloaded track that can't currently be streamed/downloaded
          (see TrackRowViewModel.IsUnavailable/IsAvailable) - dimmed like
          the currently-playing/disabled treatment elsewhere, since there's
