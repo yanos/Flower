@@ -263,10 +263,13 @@ public class RefusalContractTests : IDisposable
         using var peer = Refusing(401, FlowerProblem.ContentType, Problem(401, ProblemCodes.ClockSkew, serverTime));
         using var http = PeerHttpClient.Create(TimeSpan.FromSeconds(5));
 
+        // Listener setup can perform a slow machine-name DNS lookup. Measure
+        // the expected correction after setup, against the time in the reply.
+        var expectedOffset = serverTime - DateTimeOffset.UtcNow;
         using var response = await http.GetAsync($"http://127.0.0.1:{peer.Port}/api/flower/v1/library");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
-        Assert.True((SignatureClock.Offset - TimeSpan.FromMinutes(-7)).Duration() < TimeSpan.FromSeconds(5));
+        Assert.True((SignatureClock.Offset - expectedOffset).Duration() < TimeSpan.FromSeconds(5));
         Assert.True((SignatureClock.UtcNow - serverTime).Duration() < TimeSpan.FromSeconds(5));
 
         // And the refusal is still there for the caller to read.

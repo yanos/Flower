@@ -1,15 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- A test runner, not an app: Flower.Tests, unchanged, run on the iOS
-       runtime. Flower.Tests stays plain net10.0 - an iOS app references a
-       net10.0 library the way Flower.iOS references Flower - so what differs
-       from `dotnet test` on a Mac is exactly the platform: Mono instead of
-       CoreCLR, no JIT, a sandboxed filesystem, and the iOS builds of every
-       native library. scripts/ios-tests.sh drives it on a simulator and turns
-       its last line into an exit code.
-
-       It shares its shell with Flower.DeviceChecks.iOS (Tests/iOSRunner):
-       the transcript contract and the scene delegate iOS 27 requires. -->
+  <!-- The existing Mono runner, with the same settings and native libraries.
+       Flower.Tests.iOS.Suite combines the shared/UI/decoding test sources into
+       one assembly so the process keeps one headless dispatcher and one set
+       of assembly-wide safety guards. No tests are copied or forked.
+       scripts/ios-tests.sh drives it on a simulator. -->
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -20,7 +15,7 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
 
-    <!-- Simulator by default, like Flower.DeviceChecks.iOS: run far more often
+    <!-- Simulator by default, like Flower.Tests.Decoding.iOS: run far more often
          from a script than from a device, and a simulator build needs no
          signing. -->
     <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">iossimulator-arm64</RuntimeIdentifier>
@@ -66,7 +61,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Flower.Tests\Flower.Tests.csproj" />
+    <ProjectReference Include="..\Flower.Tests.iOS.Suite\Flower.Tests.iOS.Suite.csproj" />
 
     <!-- Flows in from Flower.Tests with buildTransitive targets that demand an
          app host and generate a Main of their own, which collides with this

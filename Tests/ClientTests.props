@@ -1,0 +1,47 @@
+<Project>
+
+  <!-- Infrastructure is compiled into each test assembly: xUnit discovers
+       assembly attributes and collection definitions locally. This also keeps
+       safety redirects and headless sessions independent in desktop hosts. -->
+  <PropertyGroup>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <!-- xUnit v3 test projects build as executables, not plain class
+         libraries - required by xunit.v3.mtp-off below (Avalonia.Headless.
+         XUnit forced the move off xunit v2, which every Avalonia 12.x
+         Avalonia.Headless.XUnit release depends on). -->
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia.Headless" Version="12.1.0" />
+    <!-- Real Skia image decoding under the headless platform: without it,
+         headless stubs every Bitmap to 1x1 regardless of the bytes fed to it,
+         which makes AlbumArtLoaderTests (decode-scaling, corrupt-image
+         fallback) meaningless. See TestAppBuilder. -->
+    <PackageReference Include="Avalonia.Skia" Version="12.1.0" />
+    <PackageReference Include="Avalonia.Headless.XUnit" Version="12.1.0" />
+    <PackageReference Include="coverlet.collector" Version="10.0.1" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
+    <!-- xunit.v3.mtp-off, not plain xunit.v3: this project runs through the
+         classic VSTest `dotnet test` flow (xunit.runner.visualstudio below),
+         not Microsoft.Testing.Platform, matching the shape `dotnet new
+         xunit3 (test-runner vstest)` generates. -->
+    <PackageReference Include="xunit.v3.mtp-off" Version="3.2.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="$(MSBuildThisFileDirectory)..\Flower\Flower.csproj" />
+    <ProjectReference Include="$(MSBuildThisFileDirectory)Flower.Tests.Decoding.Scenarios\Flower.Tests.Decoding.Scenarios.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)TestSupport\**\*.cs" Link="TestSupport\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

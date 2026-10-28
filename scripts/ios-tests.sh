@@ -1,11 +1,9 @@
 #!/bin/bash
-# Runs Flower.Tests on an iOS Simulator and answers with an exit code.
+# Runs the shared client suites on an iOS Simulator and answers with an exit code.
 #
-# The same suite `dotnet test` runs on this machine, unchanged, run on the iOS
-# runtime instead: Mono rather than CoreCLR, no JIT, a sandboxed filesystem,
-# and the iOS builds of ffaudio, miniaudio and Skia. The decode checks are part
-# of that suite (DeviceChecksTests), so this covers everything
-# ios-device-checks.sh does and the rest of the suite besides.
+# The shared, headless UI and decoding suites compiled into one test assembly
+# for Mono on iOS, with a sandboxed filesystem and iOS native libraries.
+# ios-decoding-tests.sh additionally exercises decoding under NativeAOT.
 #
 #   scripts/ios-tests.sh                           # newest iPhone, newest iOS
 #   scripts/ios-tests.sh "iPhone 17 Pro"           # by name
@@ -25,7 +23,7 @@ cd "$(dirname "$0")/.."
 ios_simulator_boot "${1:-}"
 
 ios_simulator_build Tests/Flower.Tests.iOS/Flower.Tests.iOS.csproj \
-  Tests/Flower.Tests.iOS Tests/Flower.Tests Tests/Flower.DeviceChecks Flower Flower.Core
+  Tests/Flower.Tests.iOS Tests/Flower.Tests.iOS.Suite Tests/Flower.Tests.Decoding.Scenarios Flower Flower.Core
 
 # The transcript minus the per-test STARTING/FINISHED lines, then any test that
 # started and never finished - which, for a run that timed out, is the answer.
@@ -42,7 +40,7 @@ summarize() {
 }
 
 # Required, as everywhere the decode checks run: without it a façade that will
-# not load makes DeviceChecksTests check nothing and pass.
+# not load makes DecodeScenariosTests check nothing and pass.
 export SIMCTL_CHILD_FLOWER_REQUIRE_DECODERS=FFmpeg
 export SIMCTL_CHILD_FLOWER_TEST_ARGS="${FLOWER_TEST_ARGS:-}"
 

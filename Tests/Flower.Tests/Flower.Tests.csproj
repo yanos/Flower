@@ -1,42 +1,6 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
-
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <IsPackable>false</IsPackable>
-    <!-- xUnit v3 test projects build as executables, not plain class
-         libraries - required by xunit.v3.mtp-off below (Avalonia.Headess.
-         XUnit forced the move off xunit v2, which every Avalonia 12.x
-         Avalonia.Headless.XUnit release depends on). -->
-    <OutputType>Exe</OutputType>
   </PropertyGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Avalonia.Headless" Version="12.1.0" />
-    <!-- Real Skia image decoding under the headless platform: without it,
-         headless stubs every Bitmap to 1x1 regardless of the bytes fed to it,
-         which makes AlbumArtLoaderTests (decode-scaling, corrupt-image
-         fallback) meaningless. See TestAppBuilder. -->
-    <PackageReference Include="Avalonia.Skia" Version="12.1.0" />
-    <PackageReference Include="Avalonia.Headless.XUnit" Version="12.1.0" />
-    <PackageReference Include="coverlet.collector" Version="10.0.1" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
-    <!-- xunit.v3.mtp-off, not plain xunit.v3: this project runs through the
-         classic VSTest `dotnet test` flow (xunit.runner.visualstudio below),
-         not Microsoft.Testing.Platform, matching the shape `dotnet new
-         xunit3 (test-runner vstest)` generates. -->
-    <PackageReference Include="xunit.v3.mtp-off" Version="3.2.2" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Using Include="Xunit" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\..\Flower\Flower.csproj" />
-    <ProjectReference Include="..\Flower.DeviceChecks\Flower.DeviceChecks.csproj" />
-  </ItemGroup>
-
+  <Import Project="..\ClientTests.props" />
 </Project>

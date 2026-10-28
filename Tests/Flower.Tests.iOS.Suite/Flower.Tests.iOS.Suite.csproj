@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Execution bundle for Flower.Tests.iOS, not an additional desktop suite.
+       Include the same test sources exactly once, retaining one headless
+       assembly session under the existing Mono runner. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <Import Project="..\ClientTests.props" />
+  <ItemGroup>
+    <Compile Include="..\Flower.Tests\**\*.cs" Exclude="..\Flower.Tests\bin\**;..\Flower.Tests\obj\**" Link="Shared\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\Flower.Tests.UI\**\*.cs" Exclude="..\Flower.Tests.UI\bin\**;..\Flower.Tests.UI\obj\**" Link="UI\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\Flower.Tests.Decoding\**\*.cs" Exclude="..\Flower.Tests.Decoding\bin\**;..\Flower.Tests.Decoding\obj\**" Link="Decoding\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

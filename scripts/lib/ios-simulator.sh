@@ -1,5 +1,5 @@
 # Shared helpers for the scripts that run an iOS runner app on a simulator
-# (ios-device-checks.sh, ios-tests.sh). Sourced, never run.
+# (ios-decoding-tests.sh, ios-tests.sh). Sourced, never run.
 #
 # A runner reports by writing a transcript into its own Documents directory,
 # which this reads out of the simulator's data container, and its last line is
@@ -57,7 +57,7 @@ ios_simulator_boot() {
 # Builds a runner from clean, in Release: ios_simulator_build <project> <dir to clean>...
 #
 # IOS_SIMULATOR_BUILD_ARGS, when set, is passed on to `dotnet build` - how a
-# script asks for NativeAOT (see scripts/ios-device-checks.sh).
+# script asks for NativeAOT (see scripts/ios-decoding-tests.sh).
 #
 # Release because it is optimized and compiled ahead of time, which is what a
 # release runs, and running anything on iOS is only worth it for running what

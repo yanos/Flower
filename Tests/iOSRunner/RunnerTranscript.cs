@@ -4,7 +4,7 @@ using System.Text;
 
 namespace Flower.IosRunner;
 
-// The output contract of an iOS runner (Flower.DeviceChecks.iOS,
+// The output contract of an iOS runner (Flower.Tests.Decoding.iOS,
 // Flower.Tests.iOS), which is linked into both. Every line goes three places at
 // once, because each is the only one that works somewhere:
 //

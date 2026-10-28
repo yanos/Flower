@@ -3,51 +3,36 @@ name: Tests
 on:
   push:
 
+# Superseded branch runs need not occupy the mobile runners. Tags always finish.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 jobs:
-  # One leg per thing built or tested, all in parallel, each named for exactly
-  # what it builds or tests and where - so a red leg says what broke without
-  # anyone opening it. `kind` is what the steps below key on; `runner` is the
-  # machine, pinned rather than `-latest` so the version in a leg's name stays
-  # true when GitHub moves the label.
-  #
-  # The three desktops build and test Flower.Tests and Flower.Server.Tests, the
-  # server being supported on all three. The decode checks used to be a second
-  # job with the same three-OS matrix, duplicating this one's checkout and
-  # restore, because they needed a VLC install that a package mirror could fail
-  # on its own. With LibVLC gone they are simply another filter of an assembly
-  # these legs have already built. They get a step of their own anyway, so a
-  # run shows them per platform rather than folded invisibly into the suite.
-  #
-  # iOS runs Flower.Tests on the iOS runtime. Each app head is built in a leg of
-  # its own rather than after the tests in the same one, because steps in a job
-  # run one after another and a head is a long build: in its own leg it runs on
-  # its own machine, at the same time. Building one in the background of a test
-  # leg instead would have two builds writing the shared Flower project's obj/
-  # at once, on a three-core runner.
-  #
-  # Android's decode checks are local-only for now - see CLAUDE.md, "Device
-  # Checks" - so Android is build-only, as is the browser.
+  # Desktop suites share one restore/build per OS. Mobile/head builds remain
+  # independent so their long compiles run in parallel, without sharing obj/.
+  # Android decoding tests remain local-only; see CLAUDE.md.
   test:
     name: ${{ matrix.name }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: build and test Flower.Tests, Flower.Server.Tests (linux-ubuntu-24.04)
+          - name: test shared, UI, decoding, native and server suites (linux-ubuntu-24.04)
             kind: desktop-test
             runner: ubuntu-24.04
-          - name: build and test Flower.Tests, Flower.Server.Tests (windows-2025)
+            platform: Linux
+          - name: test shared, UI, decoding, native and server suites (windows-2025)
             kind: desktop-test
             runner: windows-2025
-          - name: build and test Flower.Tests, Flower.Server.Tests (macos-26)
+            platform: Windows
+          - name: test shared, UI, decoding, native and server suites (macos-26)
             kind: desktop-test
             runner: macos-26
-          - name: build and test Flower.Tests (ios-27)
+            platform: macOS
+          - name: test shared, UI and decoding suites (ios-27, Mono)
             kind: ios-test
             runner: xcode-27
-          - name: build Flower.Desktop (linux-ubuntu-24.04)
-            kind: desktop-build
-            runner: ubuntu-24.04
           - name: build Flower.MacOS (macos-27)
             kind: macos-build
             runner: xcode-27
@@ -79,64 +64,48 @@ jobs:
           dotnet-version: 10.0.x
           cache: true
           cache-dependency-path: |
-            Flower/Flower.csproj
-            Tests/Flower.Tests/Flower.Tests.csproj
-            Flower.Server/Flower.Server.csproj
-            Tests/Flower.Server.Tests/Flower.Server.Tests.csproj
-            Tests/Flower.Tests.iOS/Flower.Tests.iOS.csproj
-            Flower.iOS/Flower.iOS.csproj
-            Flower.MacOS/Flower.MacOS.csproj
-            Flower.Android/Flower.Android.csproj
-            Flower.Web/Flower.Web.csproj
+            **/*.csproj
+            Directory.Build.props
+            Tests/ClientTests.props
 
-      # The whole suite, RequiresFfmpeg included - the only filter is the decode
-      # checks, split into the next step. This used to exclude the
-      # RequiresLibVLC tests, because no hosted runner image ships VLC and
-      # installing it was flaky enough to be worth keeping out of the fast
-      # suite. There is no VLC any more: the one decoder is ffaudio, restored
-      # from the FFAudio.NET packages, and everything that decodes for real
-      # needs only that.
-      #
-      # FLOWER_REQUIRE_DECODERS is what stops this going green having checked
-      # nothing. A façade that would not load otherwise just makes DecodeChecks
-      # report an empty decoder list and every check quietly not happen - which
-      # is the exact failure this whole area keeps hitting.
-      - name: Run tests
+      # Build the project graph once; each test step then executes its suite
+      # without another restore/build. Native tests run only on their own OS.
+      - name: Build desktop test suites
+        if: matrix.kind == 'desktop-test'
+        run: dotnet build Tests/Flower.Desktop.Tests.slnf --configuration Release -p:IncludeWebUi=false
+
+      - name: Run shared behavior tests
+        if: matrix.kind == 'desktop-test'
+        run: dotnet test Tests/Flower.Tests/Flower.Tests.csproj --configuration Release --no-build
+
+      - name: Run headless UI behavior tests
         if: matrix.kind == 'desktop-test'
         env:
           FLOWER_REQUIRE_DECODERS: FFmpeg
-        run: dotnet test Tests/Flower.Tests/Flower.Tests.csproj --configuration Release --filter 'FullyQualifiedName!~DeviceChecksTests'
+        run: dotnet test Tests/Flower.Tests.UI/Flower.Tests.UI.csproj --configuration Release --no-build
 
-      # The same assembly, already built by the step above.
-      - name: Run decode checks
+      # Fail rather than pass an empty set of scenarios if the native decoder
+      # cannot load. This also applies to the simulator scripts.
+      - name: Run decoding tests
         if: matrix.kind == 'desktop-test'
         env:
           FLOWER_REQUIRE_DECODERS: FFmpeg
-        run: dotnet test Tests/Flower.Tests/Flower.Tests.csproj --configuration Release --no-build --filter 'FullyQualifiedName~DeviceChecksTests'
+        run: dotnet test Tests/Flower.Tests.Decoding/Flower.Tests.Decoding.csproj --configuration Release --no-build
 
-      # Flower.Server was once never compiled by CI at all, let alone tested -
-      # Flower.Tests only ever builds Flower -> Flower.Core
-      # (ARCHITECTURE-REVIEW Tier 5.1). That is how four entity source files
-      # under Flower.Server/Data/ stayed uncommitted - a .gitignore rule matched
-      # the source folder on case-insensitive filesystems - without anyone
-      # noticing the server could not build from a clean checkout.
-      #
-      # It used to be a job of its own, on Linux only. It runs here instead
-      # because the server is supported on all three desktops, and the bug that
-      # created it was a case-insensitive filesystem - which is macOS and
-      # Windows, the two platforms that job never ran on.
+      - name: Run native platform tests
+        if: matrix.kind == 'desktop-test' && matrix.platform != 'Linux'
+        run: dotnet test Tests/Flower.Tests.${{ matrix.platform }}/Flower.Tests.${{ matrix.platform }}.csproj --configuration Release --no-build
+
+      # The server is supported on all three desktops, including the
+      # case-insensitive filesystems where a missing-source regression occurred.
       - name: Run server tests
         if: matrix.kind == 'desktop-test'
-        run: dotnet test Tests/Flower.Server.Tests/Flower.Server.Tests.csproj --configuration Release
+        run: dotnet test Tests/Flower.Server.Tests/Flower.Server.Tests.csproj --configuration Release --no-build
 
-      # Flower.Desktop is a project no test leg reaches - they get to
-      # Flower/Flower.Core through Flower.Tests, and the server through its own
-      # tests - so without this nothing would ever compile it, and a project CI
-      # never compiles is a project that silently rots. Linux only, and that is
-      # not a gap: Flower.Desktop targets plain net10.0, so the Windows and
-      # macOS compiles of it would be the same compile.
+      # Reuse the Linux checkout, package cache and shared-library build rather
+      # than allocating a separate runner to compile this plain net10.0 head.
       - name: Build Flower.Desktop
-        if: matrix.kind == 'desktop-build'
+        if: matrix.kind == 'desktop-test' && matrix.platform == 'Linux'
         run: dotnet build Flower.Desktop/Flower.Desktop.csproj --configuration Release
 
       # Flower.MacOS is the only head that cannot be compiled anywhere but a
@@ -157,47 +126,20 @@ jobs:
         if: matrix.kind == 'macos-build'
         run: dotnet build Flower.MacOS/Flower.MacOS.csproj --configuration Release
 
-      # The test suite, on an actual iOS runtime.
-      #
-      # This asks "does this work" of the one platform where the answer has
-      # twice been no while every desktop said yes: VLC's mp4 demuxer refusing
-      # an unseekable stream, then .NET's mobile HttpClientHandler having no
-      # synchronous path at all. Both were invisible to a green desktop suite
-      # and both were found by a person listening to a phone.
-      #
-      # Flower.Tests, unchanged: Flower.Tests.iOS is an app that references it
-      # and runs xunit in-process, so what differs from the desktop legs is
-      # exactly the platform - Mono with no JIT, a sandboxed filesystem, the iOS
-      # builds of ffaudio, miniaudio and Skia. The decode checks are part of the
-      # suite (DeviceChecksTests), so this replaced the job that ran only those.
-      #
-      # The app writes a transcript into its own Documents container, and
-      # scripts/ios-tests.sh boots a simulator, installs it, waits for the tally
-      # and turns it into an exit code.
-      #
-      # Every iOS build here is Release - optimized and compiled ahead of time
-      # - even though that is most of this leg's time. It is what a release
-      # runs, and the point of running anything on iOS is to run what ships.
-      # (Without LLVM in this leg, which is what kept its build to minutes
-      # rather than most of an hour - see Flower.Tests.iOS.csproj.)
-      #
-      # This leg is the one exception to that: the app ships on NativeAOT
-      # (scripts/deploy-ios-device.sh), and the suite runs on Mono, because
-      # it cannot run anywhere else yet. xunit finds tests by reflection over
-      # the assembly's file, which a NativeAOT app does not have, and the
-      # edition of xunit built for NativeAOT (xunit.v3.aot) is not one
-      # Avalonia.Headless.XUnit - [AvaloniaFact], 658 of these tests - is built
-      # against. The other iOS leg runs the decode checks on NativeAOT.
+      # The shared, UI and decoding sources are compiled into one suite for
+      # the existing Mono iOS runner. One assembly retains the headless session
+      # and its global dispatcher. NativeAOT decoding runs separately below;
+      # Avalonia.Headless.XUnit does not yet support xUnit's AOT runner.
       #
       # Pinned, workload and Xcode both, to what a developer's Mac builds the
       # phone with: workload set 10.0.402 (iOS 27.0.10722, which
-      # net10.0-ios27.0 in the three iOS projects names) and Xcode 27.0, which
+      # net10.0-ios27.0 in the iOS projects names) and Xcode 27.0, which
       # that workload checks for exactly. Unpinned, `dotnet workload install`
       # takes the newest set for the SDK's band, and set 10.0.403 brought iOS
       # 27.1, which refuses 27.0 outright (NETSDK1140) - every iOS leg went red
       # at restore, on a commit that touched nothing iOS. The image keeps
       # 27.0 beside its default 27.1; DEVELOPER_DIR picks it without sudo.
-      # Moving to 27.1 is a change to the three TFMs, this pin and the
+      # Moving to 27.1 is a change to the iOS TFMs, this pin and the
       # developer's Xcode together.
       - name: Install iOS workload
         if: matrix.kind == 'ios-test' || matrix.kind == 'ios-build'
@@ -253,7 +195,7 @@ jobs:
         if: matrix.kind == 'ios-build'
         env:
           IOS_SIMULATOR_RUNTIME: '27'
-        run: scripts/ios-device-checks.sh
+        run: scripts/ios-decoding-tests.sh
 
       - name: Install Android workload
         if: matrix.kind == 'android-build'
@@ -262,6 +204,10 @@ jobs:
       - name: Build for Android
         if: matrix.kind == 'android-build'
         run: dotnet build Flower.Android/Flower.Android.csproj --configuration Release
+
+      - name: Build Android decoding test runner
+        if: matrix.kind == 'android-build'
+        run: dotnet build Tests/Flower.Tests.Decoding.Android/Flower.Tests.Decoding.Android.csproj --configuration Release
 
       # WasmBuildNative (see Flower.Web.csproj) needs wasm-tools' Emscripten
       # toolchain to statically link libSkiaSharp/libHarfBuzzSharp into the

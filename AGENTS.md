@@ -2,12 +2,15 @@
 
 ## Project Structure & Module Organization
 
-Flower is a .NET 10, C# cross-platform music player and self-hosted music server. `Flower/` contains shared Avalonia UI, view models, services, and persistence. Platform launchers live in `Flower.Desktop/`, `Flower.Android/`, and `Flower.iOS/`. `Flower.Core/` holds shared server/client domain code; `Flower.Server/` exposes the web API, while `Flower.Web/` contains its browser UI. Tests are in `Tests/Flower.Tests/` and `Tests/Flower.Server.Tests/`. Keep design records in `docs/` and native audio dependencies under `native/miniaudio/`.
+Flower is a .NET 10, C# cross-platform music player and self-hosted music server. `Flower/` contains shared Avalonia UI, view models, services, and persistence. Platform launchers live in `Flower.Desktop/`, `Flower.Android/`, and `Flower.iOS/`. `Flower.Core/` holds shared server/client domain code; `Flower.Server/` exposes the web API, while `Flower.Web/` contains its browser UI. Tests are organized by subject and platform under `Tests/`; see `Tests/README.md`. Keep design records in `docs/` and native audio dependencies under `native/miniaudio/`.
 
 ## Build, Test, and Development Commands
 
 - `dotnet build Flower.sln` builds all managed projects.
-- `dotnet test Tests/Flower.Tests/Flower.Tests.csproj` runs client and shared-library xUnit tests.
+- `dotnet test Tests/Flower.Desktop.Tests.slnf -m:1 -p:IncludeWebUi=false` runs all desktop suites (shared, UI, decoding, native platform, and server).
+- `dotnet test Tests/Flower.Tests/Flower.Tests.csproj` runs shared behavior tests.
+- `dotnet test Tests/Flower.Tests.UI/Flower.Tests.UI.csproj` runs headless UI behavior tests.
+- `dotnet test Tests/Flower.Tests.Decoding/Flower.Tests.Decoding.csproj` runs decoding and real-audio tests.
 - `dotnet test Tests/Flower.Server.Tests/Flower.Server.Tests.csproj` runs in-process server/API tests.
 - `dotnet run --project Flower.Server` starts the server and hosts its browser UI. Use a scratch data directory for experiments: `--Flower:DataDirectory=/tmp/flower-server`.
 - `docker compose up -d`, run from `docker/`, starts the containerized server from the published image; it needs `FLOWER_MUSIC` set (a `.env` beside the compose file is enough). To exercise a local build instead, swap `image:` for the commented-out `build:` block in `docker/docker-compose.yml` and use `docker compose up -d --build`.

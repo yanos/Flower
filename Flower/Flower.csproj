@@ -11,6 +11,11 @@
     <!-- CompositionRootTests builds the real container out of
          App.RegisterServices, which is not something any head should call. -->
     <InternalsVisibleTo Include="Flower.Tests" />
+    <InternalsVisibleTo Include="Flower.Tests.UI" />
+    <InternalsVisibleTo Include="Flower.Tests.Decoding" />
+    <InternalsVisibleTo Include="Flower.Tests.macOS" />
+    <InternalsVisibleTo Include="Flower.Tests.Windows" />
+    <InternalsVisibleTo Include="Flower.Tests.iOS.Suite" />
   </ItemGroup>
 
   

@@ -17,13 +17,8 @@ namespace Flower.Tests.MusicLibrary.Import;
 // point of this class is the file-system walk plus the tag mapping, and both
 // are only meaningful against the actual library.
 //
-// Everything here is WAV, because SyntheticWav can produce one from scratch
-// while mp3/m4a/flac would mean checking binary fixtures into the repo. TagLib#
-// reads WAV as a TagLib.Riff.File, which supports writing a real ID3v2 tag into
-// the RIFF container - so the tag mapping, including the Id3v2 branch of
-// ReadIsCompilation, is exercised on the genuine code path. The Apple (m4a) and
-// Xiph (flac) branches of that method are not reachable this way and stay
-// uncovered.
+// Synthetic WAVs exercise the writable tag layer; committed decoding fixtures
+// cover other formats without requiring a platform-specific encoder.
 //
 // Import() with an empty/unresolvable path set scans nothing at all (it used to
 // fall back to the platform music folder, which both walked the developer's real
@@ -68,37 +63,6 @@ public class ImporterTests : IDisposable
         return path;
     }
 
-    // Encodes the synthetic WAV into a real MPEG-4 file with afconvert, which
-    // ships with macOS - the one way to get genuine ALAC and AAC bytes without
-    // checking binary fixtures into the repo (see this class's own comment on
-    // why everything else here is WAV). Returns null when the encode is not
-    // available, so the caller can skip rather than fail.
-    private string? Mpeg4(string fileName, string codec)
-    {
-        var source = SyntheticWav.CreateFile(_root, $"{fileName}.source.wav", TimeSpan.FromSeconds(1), SyntheticWav.Marker(1));
-        var target = Path.Combine(Dir("mpeg4"), $"{fileName}.m4a");
-
-        try
-        {
-            using var afconvert = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("/usr/bin/afconvert")
-            {
-                ArgumentList = { "-f", "m4af", "-d", codec, source, target },
-                RedirectStandardError = true,
-                RedirectStandardOutput = true,
-            });
-            afconvert?.WaitForExit();
-            return afconvert?.ExitCode == 0 && File.Exists(target) ? target : null;
-        }
-        catch (Exception)
-        {
-            return null;
-        }
-        finally
-        {
-            File.Delete(source); // Outside the scanned folder's business - only the m4a is under test.
-        }
-    }
-
     // TagLib answers Properties.BitsPerSample only for a codec it models as
     // lossless, and its MPEG-4 sample entry is not one - so every ALAC file in a
     // library imported with a bit depth of 0, and Track Info's Technical tab
@@ -115,11 +79,11 @@ public class ImporterTests : IDisposable
     [Fact]
     public void Import_reads_the_bit_depth_of_an_ALAC_file_but_not_of_a_lossy_one()
     {
-        Assert.SkipUnless(OperatingSystem.IsMacOS(), "Requires the macOS afconvert encoder to create ALAC and AAC fixtures.");
-
-        var alac = Mpeg4("lossless", "alac");
-        var aac = Mpeg4("lossy", "aac ");
-        Assert.SkipWhen(alac == null || aac == null, "afconvert could not create the ALAC and AAC fixtures required by this test.");
+        var folder = Dir("mpeg4");
+        var alac = Path.Combine(folder, "lossless.m4a");
+        var aac = Path.Combine(folder, "lossy.m4a");
+        File.WriteAllBytes(alac, Flower.Tests.Decoding.Scenarios.Fixture.Alac.Bytes());
+        File.WriteAllBytes(aac, Flower.Tests.Decoding.Scenarios.Fixture.Aac.Bytes());
 
         var tracks = NewImporter().Import([Path.Combine(_root, "mpeg4")]);
 
@@ -317,7 +281,7 @@ public class ImporterTests : IDisposable
     [InlineData("opus")]
     public void Import_reads_tags_and_properties_of_each_added_format(string extension)
     {
-        var fixture = Flower.DeviceChecks.Fixture.All.Single(f => f.Extension == extension);
+        var fixture = Flower.Tests.Decoding.Scenarios.Fixture.All.Single(f => f.Extension == extension);
         var path = Path.Combine(_root, "song." + extension);
         File.WriteAllBytes(path, fixture.Bytes());
         using (var file = TagLib.File.Create(path))

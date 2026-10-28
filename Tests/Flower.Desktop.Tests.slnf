@@ -1,0 +1,13 @@
+{
+  "solution": {
+    "path": "../Flower.sln",
+    "projects": [
+      "Tests/Flower.Tests/Flower.Tests.csproj",
+      "Tests/Flower.Tests.UI/Flower.Tests.UI.csproj",
+      "Tests/Flower.Tests.Decoding/Flower.Tests.Decoding.csproj",
+      "Tests/Flower.Tests.macOS/Flower.Tests.macOS.csproj",
+      "Tests/Flower.Tests.Windows/Flower.Tests.Windows.csproj",
+      "Tests/Flower.Server.Tests/Flower.Server.Tests.csproj"
+    ]
+  }
+}

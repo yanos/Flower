@@ -8,14 +8,8 @@ using Flower.Tests.TestSupport;
 
 namespace Flower.Tests.MusicLibrary;
 
-// FileTrash, per platform. The freedesktop half runs everywhere against folders
-// of its own - it is plain file moves, given a mount table to consult. The
-// macOS and Windows halves can only be proved on those platforms, against the
-// real trash, so each runs on its own OS and takes back out what it put in.
-//
-// In the PlatformDataDirectory collection because two of these clear
-// FileTrash.Override (the assembly-wide redirect to a test folder) for their
-// duration, and the other tests that trash files are in that collection too.
+// Portable freedesktop trash rules and importer exclusion behavior.
+// Native Trash and Recycle Bin calls live in Flower.Tests.macOS/Windows.
 [Collection("PlatformDataDirectory")]
 public class FileTrashTests : PinnedDataDirectory
 {
@@ -115,79 +109,6 @@ public class FileTrashTests : PinnedDataDirectory
     public void A_mount_point_with_a_space_is_read_back_from_its_kernel_escape()
     {
         Assert.Equal("/media/me/My Music", LinuxTrash.UnescapeMountPath(@"/media/me/My\040Music"));
-    }
-
-    // ── The real platform trash ──────────────────────────────────────────
-
-    // Into the real Trash and straight back out again: this is the only way to
-    // know the Objective-C calls are right.
-    [Fact]
-    public void On_macOS_a_file_goes_to_the_real_Trash()
-    {
-        Assert.SkipUnless(OperatingSystem.IsMacOS(), "Requires the native macOS Trash API.");
-
-        var name = $"flower-trash-test-{Guid.NewGuid():N}.mp3";
-        var file = Touch(Path.Combine(DataDirectory, name));
-        var previous = FileTrash.Override;
-        FileTrash.Override = null;
-        try
-        {
-            Assert.True(FileTrash.TryMoveToTrash(file));
-        }
-        finally
-        {
-            FileTrash.Override = previous;
-        }
-
-        var trashed = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".Trash", name);
-        try
-        {
-            Assert.False(File.Exists(file));
-            Assert.True(File.Exists(trashed));
-        }
-        finally
-        {
-            File.Delete(trashed);
-        }
-    }
-
-    [Fact]
-    public void On_macOS_a_file_that_is_not_there_is_an_error_saying_why()
-    {
-        Assert.SkipUnless(OperatingSystem.IsMacOS(), "Requires the native macOS Trash API.");
-
-        var previous = FileTrash.Override;
-        FileTrash.Override = null;
-        try
-        {
-            var error = Assert.Throws<IOException>(() => FileTrash.TryMoveToTrash(Path.Combine(DataDirectory, "missing.mp3")));
-            Assert.Contains("missing.mp3", error.Message);
-        }
-        finally
-        {
-            FileTrash.Override = previous;
-        }
-    }
-
-    // The Recycle Bin gives nothing back to look for by name, so this proves
-    // the call succeeds, with no dialog, and the file is gone from where it was.
-    [Fact]
-    public void On_Windows_a_file_goes_to_the_Recycle_Bin()
-    {
-        Assert.SkipUnless(OperatingSystem.IsWindows(), "Requires the native Windows Recycle Bin API.");
-
-        var file = Touch(Path.Combine(DataDirectory, $"flower-trash-test-{Guid.NewGuid():N}.mp3"));
-        var previous = FileTrash.Override;
-        FileTrash.Override = null;
-        try
-        {
-            Assert.True(FileTrash.TryMoveToTrash(file));
-            Assert.False(File.Exists(file));
-        }
-        finally
-        {
-            FileTrash.Override = previous;
-        }
     }
 
     // ── And the scan that must not undo it ───────────────────────────────

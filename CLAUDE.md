@@ -81,7 +81,7 @@ dotnet build Flower.Desktop/Flower.Desktop.csproj                               
 dotnet build Flower.MacOS/Flower.MacOS.csproj                                   # macOS head, needs `sudo dotnet workload install macos`
 dotnet run --project Flower.MacOS/Flower.MacOS.csproj                           # launches it — or just hit Run in the IDE, see below
 dotnet test Tests/Flower.Tests/Flower.Tests.csproj --filter 'Category!=RequiresFfmpeg'  # fast, day-to-day
-dotnet test Tests/Flower.Tests/Flower.Tests.csproj                                    # full run
+dotnet test Tests/Flower.Desktop.Tests.slnf -m:1 -p:IncludeWebUi=false             # all desktop suites
 scripts/ios-tests.sh                                                                  # the suite again, on an iOS Simulator
 dotnet run --project Flower.Server                                              # server + its browser UI
 ```
@@ -149,7 +149,16 @@ lsof -nP -iTCP -sTCP:LISTEN | grep -i flower   # expect no output
 Also pass `--Flower:DataDirectory=<scratch>` to anything throwaway, so a test
 instance never writes to `~/Library/Application Support/Flower/Server`.
 
-`Tests/Flower.Tests/` covers `TrackListBuilder`, `Playlist`, `Library`, `PlaylistControlViewModel`, the JSON stores, and the gapless audio pipeline (`GaplessRingBuffer`, `FfmpegTrackDecoder`, `GaplessCoordinator`, `GaplessAudioManager`) — xUnit tests against pure logic plus, for the gapless pipeline specifically, layered coverage: fake-decoder unit tests (fast, no native decoder), real-decode tests against synthetic WAV fixtures generated at test time (tagged `RequiresFfmpeg`, slower, and decoding through the same FFAudio.NET payload the app ships), and full-pipeline playlist integration tests (`PlaylistPlaybackIntegrationTests`) using `Avalonia.Headless` for the `Dispatcher`-driven auto-advance path. `Tests/Flower.Tests/TestSupport/` holds the shared fakes (`FakeTrackDecoder`, `FakeAudioSink`, `FakeAudioManager`) and fixture generators (`SyntheticWav`, now in `Flower.DeviceChecks`) these all build on.
+Client tests are split by subject: `Tests/Flower.Tests/` covers shared behavior;
+`Tests/Flower.Tests.UI/` covers headless controls, views and view models;
+`Tests/Flower.Tests.Decoding/` covers real decoding and streaming. Audio pipeline
+coverage still has the same layers: fake-decoder logic tests, real-decode tests
+using the shipped FFAudio.NET payload (`RequiresFfmpeg`), and dispatcher-driven
+playlist integration tests. `Tests/TestSupport/` holds shared fakes and safety
+guards; `SyntheticWav` and committed audio fixtures live in
+`Flower.Tests.Decoding.Scenarios`. Native macOS/Windows integrations have their
+own projects. See [Tests/README.md](Tests/README.md) for the complete layout and
+commands.
 
 **Never write a test for UI placement, spacing or colour.** Nothing asserts
 how the UI looks - colours, brushes, pixels, fonts, sizes, margins, padding,
@@ -179,17 +188,14 @@ Playback position (`GaplessAudioManager.Time`/`Position`, the seek bar) is drive
 
 ### The suite on iOS
 
-`scripts/ios-tests.sh` runs `Flower.Tests`, unchanged, on an iOS Simulator, and
-CI's `build and test Flower.Tests (ios-27)` leg is that script, held to an iOS
-27 simulator by `IOS_SIMULATOR_RUNTIME` on GitHub's `xcode-27` image - the
-iOS 27.0 workload (`net10.0-ios27.0`) wants exactly Xcode 27, which the
-`macos-26` image does not have. `Flower.Tests` stays plain `net10.0`:
-`Tests/Flower.Tests.iOS` is an app that references it the way `Flower.iOS`
-references `Flower` and runs xunit in-process, so what differs from the desktop
-run is exactly the platform - Mono with no JIT, a sandboxed filesystem, the iOS
-builds of ffaudio, miniaudio and Skia. It is a Release build, trimmed and
-compiled ahead of time: about a minute to build on an Apple Silicon Mac and two
-to run.
+`scripts/ios-tests.sh` runs the shared, headless UI and decoding sources on an
+iOS Simulator. `Flower.Tests.iOS.Suite` compiles those sources into one assembly,
+which `Flower.Tests.iOS` executes in-process with xUnit. This preserves the
+existing Mono runner and its single headless session. The build settings and
+native dependencies remain the same: Mono with no JIT, a sandboxed filesystem,
+and the iOS builds of ffaudio, miniaudio and Skia. NativeAOT decoding is checked
+separately by `scripts/ios-decoding-tests.sh`. See [Tests/README.md](Tests/README.md)
+for the project layout and commands.
 
 Two settings keep the build there. With `MtouchLink=None` the whole BCL was
 compiled too - 28 minutes locally, 2h07m on a CI runner, for three minutes of
@@ -231,9 +237,9 @@ each), because iOS 27 kills an app that does not at launch - an
 `EXC_BREAKPOINT` in `UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption`
 before a line of output, which reads exactly like a hung run.
 
-## Device Checks
+## Decoding tests
 
-`Tests/Flower.DeviceChecks/` answers one question — *does this platform actually turn
+`Tests/Flower.Tests.Decoding.Scenarios/` answers one question — *does this platform actually turn
 a track into the right audio?* — on the platform in question rather than on a
 developer's Mac. `DecodeChecks.RunAll()` decodes a synthetic WAV from disk and
 over a loopback HTTP server, and compares the result to the fixture's own
@@ -274,10 +280,10 @@ running on an iOS 26.5 simulator in September 2026 disproved, every
 device and on Android, so the raw listener stays:
 
 ```bash
-dotnet test Tests/Flower.Tests/Flower.Tests.csproj --filter FullyQualifiedName~DeviceChecksTests  # here
-scripts/ios-device-checks.sh                                                                # iOS Simulator
+dotnet test Tests/Flower.Tests.Decoding/Flower.Tests.Decoding.csproj --filter FullyQualifiedName~DecodeScenariosTests  # here
+scripts/ios-decoding-tests.sh                                                                # iOS Simulator
 scripts/ios-tests.sh                                                                        # iOS Simulator, as part of the whole suite
-scripts/android-device-checks.sh                                                            # Android emulator — local only, see below
+scripts/android-decoding-tests.sh                                                            # Android emulator — local only, see below
 ```
 
 Two checks are not about decoding at all. The first is authentication:
@@ -339,18 +345,18 @@ and probes when even that hint will not open the stream.
 
 CI runs these per-OS in the three desktop test legs - they need
 nothing the fast suite does not already build - and on an iOS Simulator inside
-`build and test Flower.Tests (ios-27)`, which runs the whole suite there on Mono (see "The suite on iOS" above),
+`test shared, UI and decoding suites (ios-27, Mono)`, which runs the whole suite there on Mono (see "The suite on iOS" above),
 and again on NativeAOT - the runtime the app ships on - in
 `build Flower.iOS, run decode checks with NativeAOT (ios-27)`, through
-`Flower.DeviceChecks.iOS`, which is also the runner to put on a physical phone.
+`Flower.Tests.Decoding.iOS`, which is also the runner to put on a physical phone.
 The suite itself cannot run on NativeAOT yet: xunit finds tests by reflection
 over the assembly's file, which a NativeAOT app does not have, and
 Avalonia.Headless.XUnit (`[AvaloniaFact]`) is not built against xunit's
-NativeAOT edition. `scripts/ios-device-checks.sh` builds NativeAOT by default
+NativeAOT edition. `scripts/ios-decoding-tests.sh` builds NativeAOT by default
 and takes `--mono`. The mobile two are a head apiece
-(`Flower.DeviceChecks.iOS`, `Flower.DeviceChecks.Android`) driven by a script
+(`Flower.Tests.Decoding.iOS`, `Flower.Tests.Decoding.Android`) driven by a script
 apiece, written to be twins: a runner with no Avalonia, no audio output and no
-UI beyond a text view, reporting the same `FLOWER-CHECK`/`FLOWER-CHECKS` lines
+UI beyond a text view, reporting the same `FLOWER-CHECK`/`FLOWER-DECODING` lines
 to a transcript in its own container, which the script reads back and turns
 into an exit code. The runs are meant to be comparable line for line: when they
 disagree, the difference is the platform - and iOS is the platform where the
@@ -370,14 +376,14 @@ package in both Android heads, the same way `Miniaudio-CS` already carries one
 and for the same RID-fallback reason.
 
 Two consequences worth knowing. The checks still run on a developer's Mac via
-`scripts/android-device-checks.sh`, where the host payload is
+`scripts/android-decoding-tests.sh`, where the host payload is
 `FFAudio.NET.macOS` and no Android RID falls back to `osx-*`, so the collision
 cannot happen and the suite passes - which is exactly why it went unnoticed
-until a Linux runner built it. And nothing in CI compiles
-`Tests/Flower.DeviceChecks.Android` any more (`build Flower.Android (android-36)` builds
-`Flower.Android`, not the runner), so it is now a project CI never compiles -
-the thing the `Build Flower.Desktop` step in `tests.yml` exists to prevent.
-Both go away when the job comes back.
+until a Linux runner built it. CI now also compiles
+`Tests/Flower.Tests.Decoding.Android` in the existing Android build job, so runner
+source changes are checked. Emulator execution remains local-only; the native
+payload collision described above still needs resolving before restoring it.
+
 
 The transcript is a file rather than the obvious console, on both, for the same
 reason arrived at separately: `Console.WriteLine` from a .NET iOS app does not
@@ -466,12 +472,16 @@ to, and the dmg is offered its replacement the same way, by download.
 | `Flower.MacOS/` | macOS entry point — `net10.0-macos`, so AVKit/AppKit are reachable (needs the `macos` workload) |
 | `Flower.Android/` | Android entry point |
 | `Flower.iOS/` | iOS entry point |
-| `Tests/Flower.Tests/` | xUnit tests for the shared library |
-| `Tests/Flower.Tests.iOS/` | iOS app that runs `Flower.Tests` on a simulator or a device |
+| `Tests/Flower.Tests/` | Shared behavior tests |
+| `Tests/Flower.Tests.UI/` | Headless UI and view-model behavior tests |
+| `Tests/Flower.Tests.Decoding/` | Decoder and real-audio integration tests |
+| `Tests/Flower.Tests.macOS/`, `Tests/Flower.Tests.Windows/` | Native platform integrations |
+| `Tests/TestSupport/` | Infrastructure compiled into each client test suite |
+| `Tests/Flower.Tests.iOS/` | Existing Mono runner for the shared/UI/decoding execution bundle |
 | `Tests/iOSRunner/` | Shell shared by the two iOS runners: transcript contract and scene delegate |
-| `Tests/Flower.DeviceChecks/` | Functional decode checks that run on any platform, phone included |
-| `Tests/Flower.DeviceChecks.iOS/` | iOS head that runs them on a simulator or a device |
-| `Tests/Flower.DeviceChecks.Android/` | Android head that runs them on an emulator or a device |
+| `Tests/Flower.Tests.Decoding.Scenarios/` | Functional decode checks that run on any platform, phone included |
+| `Tests/Flower.Tests.Decoding.iOS/` | iOS head that runs them on a simulator or a device |
+| `Tests/Flower.Tests.Decoding.Android/` | Android head that runs them on an emulator or a device |
 
 All meaningful code lives in `Flower/`.
 

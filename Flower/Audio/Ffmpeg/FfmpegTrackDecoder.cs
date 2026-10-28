@@ -56,7 +56,7 @@ namespace Flower.Audio.Ffmpeg
         // down through GaplessCoordinator. A decoder whose format could change
         // is one whose frame size can change halfway through a track, which is
         // not a state anything downstream is written for. Taking it as a
-        // parameter also lets Flower.DeviceChecks run one decoder at S16 and
+        // parameter also lets Flower.Tests.Decoding.Scenarios run one decoder at S16 and
         // another at S24 in the same process.
         private readonly PcmFormat _format;
         private readonly PcmSampleFormat _sampleFormat;

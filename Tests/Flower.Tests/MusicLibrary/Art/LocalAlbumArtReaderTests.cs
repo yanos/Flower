@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 
-using Flower.DeviceChecks;
+using Flower.Tests.Decoding.Scenarios;
 using Flower.Services;
 using Flower.Tests.TestSupport;
 

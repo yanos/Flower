@@ -127,7 +127,7 @@ public class PathCaseTests
         Directory.CreateDirectory(folder);
         try
         {
-            var wav = Flower.DeviceChecks.SyntheticWav.Build(TimeSpan.FromMilliseconds(100), _ => 0);
+            var wav = Flower.Tests.Decoding.Scenarios.SyntheticWav.Build(TimeSpan.FromMilliseconds(100), _ => 0);
             System.IO.File.WriteAllBytes(Path.Combine(folder, "Debaser.wav"), wav);
             // Where the second spelling is the first file again, a Mac
             // overwrites it, and the iOS simulator refuses the write outright

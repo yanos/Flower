@@ -47,7 +47,7 @@ namespace Flower.Services;
 // supported on this platform" and the queue skipped the whole album. Blocking
 // on the async call is safe: these run on a decoder's own reading thread,
 // which has no synchronization context to deadlock against, never the UI
-// thread. Flower.DeviceChecks is what now runs this code on the platform it
+// thread. Flower.Tests.Decoding.Scenarios is what now runs this code on the platform it
 // broke on.
 //
 // It is deliberately built on plain range requests and nothing else, because

@@ -167,7 +167,7 @@ public class MediaEndpointTests(FlowerServerFixture server) : IClassFixture<Flow
 
     // The route is MapGet, so a HEAD matches no endpoint and every client
     // reaches a track's length through the ranged-GET probe instead.
-    // Flower.DeviceChecks pins the client half of this on five platforms; this
+    // Flower.Tests.Decoding.Scenarios pins the client half of this on five platforms; this
     // is the server half, and answering HEAD would take that probe out of every
     // check at once.
     //

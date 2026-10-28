@@ -14,7 +14,7 @@ using Xunit;
 // - so the assembly runs serially instead.
 [assembly: CollectionBehavior(DisableTestParallelization = true)]
 
-// Same floor as Flower.Tests/TestSupport/AssemblySetup.cs, for the same reason:
+// Same floor as TestSupport/AssemblySetup.cs, for the same reason:
 // the classes here that redirect PlatformDataDirectory.Current capture and
 // restore whatever it was, and what it *was* is null - the developer's own
 // ~/Library/Application Support/Flower. Anything writing outside a pinned

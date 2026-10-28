@@ -19,7 +19,7 @@ namespace Flower.Server.Endpoints;
 //
 // Deliberately GET-mapped so a HEAD reaches no endpoint and every
 // client finds a track's length through the ranged-GET probe instead. That is
-// not an oversight: it is the path Flower.DeviceChecks exercises on all five
+// not an oversight: it is the path Flower.Tests.Decoding.Scenarios exercises on all five
 // platforms, and answering HEAD here would take it out of every check at once.
 //
 // What a HEAD actually gets is a 404, not the 405 routing would give on its own
