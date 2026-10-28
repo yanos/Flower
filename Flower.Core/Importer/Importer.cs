@@ -210,6 +210,7 @@ namespace Flower.Importer
 
                     ArtWidth       = artwork.Width,
                     ArtHeight      = artwork.Height,
+                    ArtHash        = artwork.IsNone ? null : artwork.Hash,
 
                     Path = file
                 };

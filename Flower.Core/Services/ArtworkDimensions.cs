@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Security.Cryptography;
 
 using Flower.Models;
 
@@ -15,17 +17,23 @@ namespace Flower.Services;
 // whose header is not one of the formats that reads counts as none - which,
 // with GIF and BMP read too, leaves only TIFF and a corrupt picture, and a
 // corrupt one is drawn as the placeholder everywhere anyway.
-public readonly record struct ArtworkDimensions(int Width, int Height)
+//
+// And which picture it is (Hash, Track.ArtHash), taken from the same bytes at
+// the same moment, so the two cannot describe different pictures.
+public readonly record struct ArtworkDimensions(int Width, int Height, string? Hash = null)
 {
     public static readonly ArtworkDimensions None = default;
 
     public bool IsNone => Width <= 0 || Height <= 0;
 
-    public static ArtworkDimensions Of(LocalAlbumArt? art) =>
-        art != null && ImageHeader.TryReadSize(art.Bytes) is { } size ? new(size.Width, size.Height) : None;
+    public static ArtworkDimensions Of(LocalAlbumArt? art) => art == null ? None : Of(art.Bytes);
 
     public static ArtworkDimensions Of(byte[] bytes) =>
-        ImageHeader.TryReadSize(bytes) is { } size ? new(size.Width, size.Height) : None;
+        ImageHeader.TryReadSize(bytes) is { } size ? new(size.Width, size.Height, HashOf(bytes)) : None;
+
+    // Sixteen hex digits of a SHA-256: enough that two different covers in
+    // one library never share one, and short enough to store per song.
+    public static string HashOf(byte[] bytes) => Convert.ToHexStringLower(SHA256.HashData(bytes))[..16];
 
     // What the app would draw for this file: its own picture, or a cover file
     // beside it.
@@ -53,11 +61,12 @@ public readonly record struct ArtworkDimensions(int Width, int Height)
         return measured;
     }
 
-    public static ArtworkDimensions Of(Track track) => new(track.ArtWidth, track.ArtHeight);
+    public static ArtworkDimensions Of(Track track) => new(track.ArtWidth, track.ArtHeight, track.ArtHash);
 
     public void ApplyTo(Track track)
     {
         track.ArtWidth = IsNone ? 0 : Width;
         track.ArtHeight = IsNone ? 0 : Height;
+        track.ArtHash = IsNone ? null : Hash;
     }
 }

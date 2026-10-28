@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
+using Avalonia;
 using Avalonia.Headless.XUnit;
 
 using Flower.Models;
@@ -223,12 +224,20 @@ public class AlbumArtLoaderTests : IDisposable
         Assert.Equal(96, secondArt!.PixelSize.Width);
     }
 
+    // Measured as a scan measures it (Track.ArtHash), which is what the
+    // loader keys a file's picture on.
+    private static Track Measured(Track track)
+    {
+        ArtworkDimensions.OfFile(track.Path!).ApplyTo(track);
+        return track;
+    }
+
     [AvaloniaFact]
-    public async Task Two_tracks_of_one_album_share_a_single_decoded_bitmap()
+    public async Task Two_songs_carrying_the_same_picture_share_a_single_decoded_bitmap()
     {
         var album = Unique("Shared");
-        var first = LocalTrack(Dir("disc-one"), "a.wav", album, SyntheticPng.Build(64, 64));
-        var second = LocalTrack(Dir("disc-two"), "b.wav", album, SyntheticPng.Build(64, 64));
+        var first = Measured(LocalTrack(Dir("disc-one"), "a.wav", album, SyntheticPng.Build(64, 64)));
+        var second = Measured(LocalTrack(Dir("disc-two"), "b.wav", album, SyntheticPng.Build(64, 64)));
 
         var firstArt = await _loader.LoadAsync(first);
         var secondArt = await _loader.LoadAsync(second);
@@ -236,6 +245,39 @@ public class AlbumArtLoaderTests : IDisposable
         // Same instance, not merely an equivalent one: the cache exists so a
         // 40-tile grid decodes each cover once.
         Assert.Same(firstArt, secondArt);
+    }
+
+    // Songs of one album with different pictures each show their own - which
+    // the album used to decide for all of them, by whichever was read first.
+    [AvaloniaFact]
+    public async Task Songs_of_one_album_with_different_pictures_each_show_their_own()
+    {
+        var album = Unique("Singles");
+        var folder = Dir(Unique("singles"));
+        var red = Measured(LocalTrack(folder, "a.wav", album, SyntheticPng.Build(64, 64, red: 0xF0)));
+        var blue = Measured(LocalTrack(folder, "b.wav", album, SyntheticPng.Build(48, 32, red: 0x10)));
+
+        var redArt = await _loader.LoadAsync(red);
+        var blueArt = await _loader.LoadAsync(blue);
+
+        Assert.Equal(new PixelSize(64, 64), redArt!.PixelSize);
+        Assert.Equal(new PixelSize(48, 32), blueArt!.PixelSize);
+    }
+
+    // And one with none is drawn with its album's cover, which is the first
+    // of its songs that has one.
+    [AvaloniaFact]
+    public async Task A_song_with_no_picture_is_drawn_with_its_albums_cover()
+    {
+        var album = Unique("Moon Pix");
+        var folder = Dir(Unique("moonpix"));
+        var bare = Measured(LocalTrack(folder, "1.wav", album, picture: null));
+        bare.TrackNumber = 1;
+        var covered = Measured(LocalTrack(folder, "2.wav", album, SyntheticPng.Build(40, 40)));
+        covered.TrackNumber = 2;
+        var loader = new AlbumArtLoader(null, null, NullLogger<AlbumArtLoader>.Instance, new Library([bare, covered]));
+
+        Assert.Equal(new PixelSize(40, 40), (await loader.LoadAsync(bare))!.PixelSize);
     }
 
     // Track Info over several songs shows their cover only when it is theirs

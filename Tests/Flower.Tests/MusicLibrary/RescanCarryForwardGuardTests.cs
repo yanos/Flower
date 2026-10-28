@@ -57,7 +57,7 @@ public class RescanCarryForwardGuardTests
         nameof(Track.Channels), nameof(Track.BitsPerSample), nameof(Track.Codec),
         nameof(Track.EncoderProfile),
         // Measured off the file's picture, or the cover file beside it.
-        nameof(Track.ArtWidth), nameof(Track.ArtHeight),
+        nameof(Track.ArtWidth), nameof(Track.ArtHeight), nameof(Track.ArtHash),
     };
 
     public static IEnumerable<object[]> PersistedProperties() =>

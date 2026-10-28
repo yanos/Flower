@@ -91,14 +91,15 @@ public static class HomeShelves
     // an album anybody listened to.
     private static bool IsUntitled(AlbumEntry album) => string.IsNullOrWhiteSpace(album.Summary.Album);
 
-    // The same tile the album grids build, art from the most recently added
-    // song, so a tile already loaded in one of them is the same image here.
+    // The same tile the album grids build, its cover the album's
+    // (AlbumCover.TrackOf), so a tile already loaded in one of them is the
+    // same image here.
     private static AlbumTileViewModel TileFor(AlbumEntry album) =>
         new()
         {
             Name = album.Summary.Album!,
             Artist = album.Summary.AlbumArtist,
-            RepresentativeTrack = album.Tracks.MaxBy(t => t.DateAdded),
+            RepresentativeTrack = AlbumCover.TrackOf(album.Tracks),
             MostRecentlyAdded = album.NewestDateAdded,
             Tracks = album.Tracks,
         };

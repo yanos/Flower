@@ -180,6 +180,16 @@ namespace Flower.Models
         public int ArtWidth { get; set; }
         public int ArtHeight { get; set; }
 
+        // Which picture that is - a short hash of its bytes, null for none -
+        // measured with ArtWidth. Two songs of one album with the same hash
+        // carry the same cover, which is what lets each song show its own
+        // without an album's dozen identical ones being fetched and decoded a
+        // dozen times (AlbumArtLoader keys on it), and what tells the server
+        // that a song's cover is not its album's (AlbumCover.CoverArtId). Only
+        // for a file of this device's own: a placeholder's comes named by the
+        // server instead (OriginAlbumArtId).
+        public string? ArtHash { get; set; }
+
         // File
         public string? Path { get; set; }
 
@@ -227,9 +237,10 @@ namespace Flower.Models
         public string? OriginRelativePath { get; set; }
 
         // The origin's own id for this track's album art - TrackDto.CoverArt as it
-        // arrived at last sync, which Flower.Server fills with the album id
-        // (LibraryDtoMapper.ToTrackDto). Used as the local disk cache key for synced
-        // art; see AlbumArtLoader's remote-fetch path.
+        // arrived at last sync, which Flower.Server fills with the album id, or
+        // with the song's own id when it carries a picture that is not its
+        // album's (AlbumCover.CoverArtId). Used as the local disk cache key for
+        // synced art; see AlbumArtLoader's remote-fetch path.
         //
         // It identifies the album, deliberately, and not the bytes. The app's own
         // embedded host - since removed - used to stamp a SHA256 of the art here

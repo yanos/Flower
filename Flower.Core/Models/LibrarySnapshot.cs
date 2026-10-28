@@ -91,6 +91,11 @@ public sealed class AlbumEntry
     public required ImmutableArray<Track> Tracks { get; init; }
     public required AlbumSummary Summary { get; init; }
 
+    // The picture the album is drawn with (AlbumCover.TrackOf), by its
+    // Track.ArtHash - what each song's own is compared against when the
+    // catalog names its cover. Null for an album with none.
+    public string? CoverHash { get; init; }
+
     // getAlbumList2's "newest" orders on this. Precomputed because it is a
     // per-album aggregate over every track, and recomputing it per request is
     // exactly the full scan the SQL version was written to avoid.
@@ -108,6 +113,7 @@ public sealed class AlbumEntry
         {
             Id = group.Key,
             Tracks = tracks,
+            CoverHash = AlbumCover.TrackOf(tracks)?.ArtHash,
             NewestDateAdded = tracks.Max(t => t.DateAdded),
             Summary = new AlbumSummary(
                 AlbumId: group.Key,

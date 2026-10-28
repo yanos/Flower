@@ -75,6 +75,21 @@ public class LibraryDtoMapperTests
         Assert.Null(LibraryDtoMapper.ToTrackDto(new Track { Title = "Bare", Path = "/music/bare.mp3" }).ArtWidth);
     }
 
+    // A song's cover is named as its album's, so an album whose songs carry
+    // the same picture is fetched once - unless the song carries a picture
+    // that is not its album's, which is then named by the song.
+    [Fact]
+    public void A_song_whose_picture_is_not_its_albums_names_its_own_cover()
+    {
+        var album = CatalogIdentity.AlbumId("Artist", "Album");
+        Track Song(string? hash) => new() { Title = "Song", Album = "Album", AlbumArtists = "Artist", ArtHash = hash, Path = "/music/song.mp3" };
+
+        var own = Song("bbbb");
+        Assert.Equal(own.Id.ToKey(), LibraryDtoMapper.ToTrackDto(own, albumCoverHash: "aaaa").CoverArt);
+        Assert.Equal(album, LibraryDtoMapper.ToTrackDto(Song("aaaa"), albumCoverHash: "aaaa").CoverArt);
+        Assert.Equal(album, LibraryDtoMapper.ToTrackDto(Song(null), albumCoverHash: "aaaa").CoverArt);
+    }
+
     // The downloading side names its saved file with this, so a leading dot or
     // a stray case difference lands the track at "song..MP3".
     [Fact]

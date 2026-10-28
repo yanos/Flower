@@ -65,6 +65,11 @@ public class AlbumArtLoader
     private readonly IPeerCredentials? _credentials;
     private readonly ILogger _logger;
 
+    // Where a song with no picture of its own finds its album's (SourceOf).
+    // Null for a loader with no library - the Current fallback and tests -
+    // which then draws such a song with nothing.
+    private readonly Library? _library;
+
     // Both remote dependencies stay nullable: a head that has neither is a head
     // with no origin to fetch art from, which is what the old Ioc.Default.
     // GetService returning null meant too. What changed is that the browser is
@@ -72,11 +77,13 @@ public class AlbumArtLoader
     // BrowserPeerCredentials, so remote art works there as well as on the
     // desktop (see App.RegisterBrowserServices). The nulls now cover only tests
     // and the Current fallback below.
-    public AlbumArtLoader(ICoverArtUrlResolver? artUrls, IPeerCredentials? credentials, ILogger<AlbumArtLoader> logger)
+    public AlbumArtLoader(
+        ICoverArtUrlResolver? artUrls, IPeerCredentials? credentials, ILogger<AlbumArtLoader> logger, Library? library = null)
     {
         _artUrls = artUrls;
         _credentials = credentials;
         _logger = logger;
+        _library = library;
     }
 
     // Disk cache for art fetched from a peer, keyed by Track.OriginAlbumArtId
@@ -284,12 +291,30 @@ public class AlbumArtLoader
     /// </summary>
     public virtual Task<Bitmap?> LoadThumbnailAsync(Track track) => LoadAsync(track, ArtSize.Thumbnail);
 
+    // A song's own cover - see AlbumCover. For an album's, hand in the song
+    // AlbumCover.TrackOf picks for it.
     private async Task<Bitmap?> LoadAsync(Track track, ArtSize size)
     {
-        if (IsLocalFile(track))
-            return await LoadLocalAsync(track, size);
+        var source = SourceOf(track);
+        if (IsLocalFile(source))
+            return await LoadLocalAsync(source, size);
 
-        return await LoadRemoteAsync(track, size);
+        return await LoadRemoteAsync(source, size);
+    }
+
+    // The song whose picture this one is drawn with: itself, unless it is a
+    // file here with no picture, and then its album's cover song. A song of
+    // the server's needs no such step - the server already names its album's
+    // cover for one with none of its own (AlbumCover.CoverArtId).
+    private Track SourceOf(Track track)
+    {
+        if (!IsLocalFile(track) || AlbumCover.HasOwn(track) || _library == null || string.IsNullOrEmpty(track.Album))
+            return track;
+
+        return AlbumCover.TrackOf(_library.Snapshot.AlbumTracks(CatalogIdentity.AlbumIdFor(track))) is { } cover
+               && AlbumCover.HasOwn(cover)
+            ? cover
+            : track;
     }
 
     // A Path is not automatically a file. PlaylistControlViewModel.
@@ -302,22 +327,15 @@ public class AlbumArtLoader
     public static bool IsLocalFile(Track track) =>
         track.Path is { } path && !path.Contains("://");
 
-    // Album/EffectiveAlbumArtist, not directory - a normally-organized local
-    // library happens to have one directory per album, but a *downloaded*
-    // track (LibraryDownloadService) never does: every downloaded file lands
-    // in one shared flat folder per platform (all of "Downloads", or the
-    // Documents root on iOS), regardless of which album it's actually from.
-    // Confirmed on a real device: once one downloaded track's art got cached
-    // under that shared directory key, every other downloaded track sharing
-    // the same folder returned that same wrong bitmap - visible in practice
-    // as Recently Added's first tile always matching whatever was most
-    // recently downloaded instead of its own album's actual art. Falls back
-    // to directory only for the rare case of a blank Album tag, where there's
-    // nothing better to key on.
+    // By the picture (Track.ArtHash), not the album: songs of one album can
+    // carry different covers, and each is drawn with its own - while an
+    // album's dozen songs carrying the same one still share one decoded
+    // bitmap, and so does any other song with those bytes. It used to be the
+    // album, which drew every song with whichever of its pictures was read
+    // first. By the file, for a song not measured since the hash was added,
+    // until the next scan measures it.
     private static string LocalCacheKey(Track track) =>
-        !string.IsNullOrEmpty(track.Album)
-            ? $"album:{track.Album}|{track.EffectiveAlbumArtist}"
-            : $"dir:{Path.GetDirectoryName(track.Path ?? "") ?? ""}";
+        track.ArtHash is { } hash ? $"art:{hash}" : $"file:{track.Path}";
 
     private async Task<Bitmap?> LoadLocalAsync(Track track, ArtSize size)
     {
@@ -526,9 +544,12 @@ public class AlbumArtLoader
 
         Forget(LocalCacheKey(track));
         Forget(Keyed(LocalCacheKey(track), ArtSize.Thumbnail));
+        Forget($"file:{track.Path}");
+        Forget(Keyed($"file:{track.Path}", ArtSize.Thumbnail));
 
         if (track.OriginAlbumArtId is { Length: > 0 } artId)
         {
+            KnownBare.TryRemove(artId, out _);
             Forget($"remote:{artId}");
             Forget(Keyed($"remote:{artId}", ArtSize.Thumbnail));
             var cachePath = Path.Combine(CacheDirectory, $"{artId}.art");

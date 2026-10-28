@@ -33,7 +33,7 @@ namespace Flower.Persistence.Sql
             title_sort, artists_sort, composers_sort,
             remember_playback_position, resume_position_ticks, ignore_when_shuffling, volume_adjustment,
             encoder_profile, withdrawn_by_origin, moved_from_path, origin_file_stamp, tags_edited_at, art_edited_at, file_replaced_at,
-            art_width, art_height
+            art_width, art_height, art_hash
             """;
 
         public List<Track> LoadAll()
@@ -455,7 +455,7 @@ namespace Flower.Persistence.Sql
                 title_sort, artists_sort, composers_sort,
                 remember_playback_position, resume_position_ticks, ignore_when_shuffling, volume_adjustment,
                 encoder_profile, withdrawn_by_origin, moved_from_path, origin_file_stamp, tags_edited_at, art_edited_at, file_replaced_at,
-            art_width, art_height
+            art_width, art_height, art_hash
             ) VALUES (
                 $id, $path, $title, $subtitle, $artists, $album_artists, $is_compilation,
                 $album, $album_sort, $year, $track_number, $track_count, $disc_number, $disc_count,
@@ -470,7 +470,7 @@ namespace Flower.Persistence.Sql
                 $title_sort, $artists_sort, $composers_sort,
                 $remember_playback_position, $resume_position_ticks, $ignore_when_shuffling, $volume_adjustment,
                 $encoder_profile, $withdrawn_by_origin, $moved_from_path, $origin_file_stamp, $tags_edited_at, $art_edited_at, $file_replaced_at,
-                $art_width, $art_height
+                $art_width, $art_height, $art_hash
             )
             ON CONFLICT (id) DO UPDATE SET
                 path = excluded.path,
@@ -534,7 +534,8 @@ namespace Flower.Persistence.Sql
                 art_edited_at = excluded.art_edited_at,
                 file_replaced_at = excluded.file_replaced_at,
                 art_width = excluded.art_width,
-                art_height = excluded.art_height;
+                art_height = excluded.art_height,
+                art_hash = excluded.art_hash;
             """;
 
         private static readonly string[] UpsertParameterNames =
@@ -552,7 +553,7 @@ namespace Flower.Persistence.Sql
             "$title_sort", "$artists_sort", "$composers_sort",
             "$remember_playback_position", "$resume_position_ticks", "$ignore_when_shuffling", "$volume_adjustment",
             "$encoder_profile", "$withdrawn_by_origin", "$moved_from_path", "$origin_file_stamp", "$tags_edited_at", "$art_edited_at", "$file_replaced_at",
-            "$art_width", "$art_height",
+            "$art_width", "$art_height", "$art_hash",
         ];
 
         // Parameters are added once and then only have their Value reassigned
@@ -637,6 +638,7 @@ namespace Flower.Persistence.Sql
             p["$file_replaced_at"].Value = (object?)track.FileReplacedAt?.UtcTicks ?? DBNull.Value;
             p["$art_width"].Value = track.ArtWidth;
             p["$art_height"].Value = track.ArtHeight;
+            p["$art_hash"].Value = Nullable(track.ArtHash);
         }
 
         private static object Nullable(string? value) => (object?)value ?? DBNull.Value;
@@ -708,6 +710,7 @@ namespace Flower.Persistence.Sql
             FileReplacedAt = reader.IsDBNull(60) ? null : new DateTimeOffset(reader.GetInt64(60), TimeSpan.Zero),
             ArtWidth = (int)reader.GetInt64(61),
             ArtHeight = (int)reader.GetInt64(62),
+            ArtHash = Text(reader, 63),
         };
 
         private static string? Text(SqliteDataReader reader, int ordinal) =>

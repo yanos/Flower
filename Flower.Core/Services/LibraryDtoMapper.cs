@@ -51,7 +51,11 @@ public static class LibraryDtoMapper
     // knows the folders it scans - what RelativePath below is relative *to*.
     // Optional only so a test can map a track without a folder configuration;
     // every caller in the server passes it.
-    public static TrackDto ToTrackDto(Track track, string? selfFingerprint = null, PathRules? paths = null)
+    // albumCoverHash is the picture the track's album is drawn with
+    // (AlbumCover.TrackOf's ArtHash), which decides whether CoverArt names
+    // the album's cover or the song's own; without it, the album's.
+    public static TrackDto ToTrackDto(
+        Track track, string? selfFingerprint = null, PathRules? paths = null, string? albumCoverHash = null)
     {
         var albumArtist = track.EffectiveAlbumArtist;
         var suffix = SuffixOf(track);
@@ -83,7 +87,7 @@ public static class LibraryDtoMapper
             // fractional part was >= .5s (see Track.RoundedSeconds' comment).
             Duration: Track.RoundedSeconds(track.Duration),
             BitRate: track.Bitrate > 0 ? track.Bitrate : null,
-            CoverArt: CatalogIdentity.AlbumId(albumArtist, track.Album),
+            CoverArt: AlbumCover.CoverArtId(track, albumCoverHash),
             Starred: track.Starred,
             DateAdded: track.DateAdded,
             // This server's own tally under its own name, plus every other

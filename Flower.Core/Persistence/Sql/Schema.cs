@@ -108,6 +108,8 @@ namespace Flower.Persistence.Sql
                 -- See Track.ArtWidth: re-measured by every rescan.
                 art_width                 INTEGER NOT NULL DEFAULT 0,
                 art_height                INTEGER NOT NULL DEFAULT 0,
+                -- See Track.ArtHash: which picture that is, measured with it.
+                art_hash                  TEXT,
 
                 -- Flower's own per-track playback state, carried across
                 -- rescans by Library.CarryForwardMutableState.

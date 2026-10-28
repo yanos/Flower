@@ -860,7 +860,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         if (tracks.Count == 0)
             return null;
 
-        var representative = tracks.OrderByDescending(t => t.DateAdded).First();
+        var representative = AlbumCover.TrackOf(tracks)!;
         // The songs' own artist (Track.Artists) when they all share one,
         // whatever the case it is spelled in - the album artist is a sorting
         // tag, and often not the name the artist goes by on the songs. Songs

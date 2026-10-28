@@ -280,7 +280,8 @@ public partial class App : Application
             .AddSingleton(sp => new AlbumArtLoader(
                 sp.GetService<ICoverArtUrlResolver>(),
                 sp.GetService<IPeerCredentials>(),
-                sp.GetRequiredService<ILogger<AlbumArtLoader>>()))
+                sp.GetRequiredService<ILogger<AlbumArtLoader>>(),
+                sp.GetRequiredService<Library>()))
 
             // One per-frame clock for every animation in the app - see
             // AnimationClock. Injected into MainViewModel (which threads it

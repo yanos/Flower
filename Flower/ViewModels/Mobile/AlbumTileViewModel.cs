@@ -35,8 +35,8 @@ public readonly record struct AlbumTileKey(string Name, string? Artist);
 // AlbumGridBuilder), and on Home's shelves (grouped by album artist and album,
 // see HomeShelves).
 // MostRecentlyAdded is the max DateAdded among an album's tracks.
-// RepresentativeTrack is whichever of the album's tracks was added most
-// recently - its embedded art is what the tile shows.
+// RepresentativeTrack is the song the album's cover comes from
+// (AlbumCover.TrackOf) - its picture is what the tile shows.
 public sealed class AlbumTileViewModel : DownloadIndicatorViewModel, AlbumArtLoader.IShowsAlbumArt
 {
     public required string Name { get; init; }

@@ -139,6 +139,7 @@ public class TrackRowViewModel : DownloadIndicatorViewModel, AlbumArtLoader.ISho
         a.Album == b.Album &&
         a.Path == b.Path &&
         a.OriginAlbumArtId == b.OriginAlbumArtId &&
+        a.ArtHash == b.ArtHash &&
         a.OriginDeviceFingerprint == b.OriginDeviceFingerprint;
 
     // ── Display helpers ───────────────────────────────────────────────────────

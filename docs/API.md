@@ -457,8 +457,13 @@ send everything.
 ### `GET /cover-art?id=`
 
 `id` is an album id (`al-…`) or a track id. For an album, the first track's
-file that carries art supplies it. Answers the image bytes with their own MIME
-type, or `404`.
+file that carries art supplies it, in disc and track order. Answers the image
+bytes with their own MIME type, or `404`.
+
+A song's `CoverArt` in the catalog is the id to ask for: its album's, unless
+the song carries a picture that is not its album's, and then its own track id
+(`AlbumCover.CoverArtId`). So songs of one album with different covers each
+show theirs, and an album whose songs share one is still one picture to fetch.
 
 The server remembers where each id's art was found (`CoverArtCache`, shared
 with the batch route), along with every file and folder it looked in to find

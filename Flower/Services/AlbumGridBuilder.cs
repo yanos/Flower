@@ -19,7 +19,8 @@ public static class AlbumGridBuilder
             .GroupBy(t => t.Album!)
             .Select(g =>
             {
-                var representative = g.OrderByDescending(t => t.DateAdded).First();
+                // The song the cover comes from (AlbumCover.TrackOf).
+                var representative = AlbumCover.TrackOf(g)!;
 
                 // Grouped by Album name alone here (unlike LibrarySnapshot),
                 // so a single group can legitimately span several distinct

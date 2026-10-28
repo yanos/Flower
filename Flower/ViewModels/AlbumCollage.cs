@@ -43,8 +43,8 @@ public sealed class AlbumCollage : ObservableObject, AlbumArtLoader.IShowsAlbumA
     // Every play of every song on an album, wherever it was played
     // (Track.TotalPlayCount), and only the songs this collage stands for. A
     // library nobody has played yet falls back to the most recently added.
-    // Each album is represented by its most recently added song, whose art is
-    // the album's on its tile too.
+    // Each album is represented by the song its cover comes from
+    // (AlbumCover.TrackOf), as on its tile.
     public static IReadOnlyList<Track> AlbumsByPlays<TKey>(IEnumerable<Track> tracks, Func<Track, TKey> album) =>
         tracks
             .Where(t => !string.IsNullOrEmpty(t.Album))
@@ -53,7 +53,7 @@ public sealed class AlbumCollage : ObservableObject, AlbumArtLoader.IShowsAlbumA
                 Plays: g.Sum(t => t.TotalPlayCount),
                 Added: g.Max(t => t.DateAdded),
                 Name: g.First().Album!,
-                Cover: g.MaxBy(t => t.DateAdded)!))
+                Cover: AlbumCover.TrackOf(g)!))
             .OrderByDescending(a => a.Plays)
             .ThenByDescending(a => a.Added)
             .ThenBy(a => a.Name, StringComparer.Ordinal)

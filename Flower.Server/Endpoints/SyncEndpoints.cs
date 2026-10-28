@@ -362,12 +362,13 @@ public static class SyncEndpoints
             // Only tracks this server actually has a file for: a placeholder
             // learned from somewhere else is not this device's to advertise.
             var songs = library.Snapshot.Albums
-                .SelectMany(album => album.Tracks)
-                .Where(track => track.Path != null)
+                .SelectMany(album => album.Tracks.Select(track => (Track: track, Cover: album.CoverHash)))
+                .Where(song => song.Track.Path != null)
                 // Under this server's own fingerprint, so a client merging
                 // this manifest files the counts as *this device's* rather
-                // than its own - see Track.RemotePlayCounts.
-                .Select(track => LibraryDtoMapper.ToTrackDto(track, signingKey.Fingerprint, library.PathRules))
+                // than its own - see Track.RemotePlayCounts. Each song's cover
+                // named against its album's (AlbumCover.CoverArtId).
+                .Select(song => LibraryDtoMapper.ToTrackDto(song.Track, signingKey.Fingerprint, library.PathRules, song.Cover))
                 .Select(song => isOwner ? song : ForGuest(song, caller))
                 .ToList();
             // What was removed on purpose, so a device holding its own copy of

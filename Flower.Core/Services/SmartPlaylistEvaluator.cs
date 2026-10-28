@@ -485,19 +485,20 @@ public static class SmartPlaylistEvaluator
 // from: the app draws such a song by its folder, not by its album artist.
 public sealed class AlbumArt(IReadOnlyList<Track> tracks)
 {
-    private Dictionary<string, Track>? _firstWithArt;
+    private Dictionary<string, Track>? _covers;
 
     public Track DrawnFor(Track track)
     {
         if (HasOwn(track) || string.IsNullOrEmpty(track.Album))
             return track;
 
-        _firstWithArt ??= tracks
-            .Where(t => HasOwn(t) && !string.IsNullOrEmpty(t.Album))
+        // The album's cover song, as every album is drawn (AlbumCover.TrackOf).
+        _covers ??= tracks
+            .Where(t => !string.IsNullOrEmpty(t.Album))
             .GroupBy(CatalogIdentity.AlbumIdFor)
-            .ToDictionary(album => album.Key, album => album.First());
+            .ToDictionary(album => album.Key, album => AlbumCover.TrackOf(album)!);
 
-        return _firstWithArt.GetValueOrDefault(CatalogIdentity.AlbumIdFor(track)) ?? track;
+        return _covers.GetValueOrDefault(CatalogIdentity.AlbumIdFor(track)) is { } cover && HasOwn(cover) ? cover : track;
     }
 
     private static bool HasOwn(Track track) => track.ArtWidth > 0 && track.ArtHeight > 0;
