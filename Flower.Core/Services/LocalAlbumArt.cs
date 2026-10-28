@@ -133,9 +133,33 @@ public static class LocalAlbumArtReader
     public static LocalAlbumArt? PictureIn(TagLib.File tagFile)
     {
         var pic = tagFile.Tag.Pictures.FirstOrDefault();
-        return pic?.Data?.Data is { Length: > 0 } data
-            ? new LocalAlbumArt(data, string.IsNullOrEmpty(pic.MimeType) ? "image/jpeg" : pic.MimeType)
-            : null;
+        if (pic?.Data?.Data is not { Length: > 0 } data)
+            return null;
+
+        data = Unswallowed(data, pic.Description);
+        return new LocalAlbumArt(data, string.IsNullOrEmpty(pic.MimeType) ? "image/jpeg" : pic.MimeType);
+    }
+
+    // Some tagger wrote ID3 pictures with no description of their own, so
+    // whatever reads the frame takes the image's first bytes for one, up to
+    // the first zero byte - FF D8 FF E0, the start of every JFIF file, then
+    // the zero of the length after it - and hands back an image missing its
+    // first five bytes, starting at "\x10JFIF", which nothing can decode. Bill
+    // Callahan's Apocalypse was tagged that way. The bytes are all there,
+    // split between the two fields, so a picture that is no image whose
+    // description, put back in front of it with the zero, makes one is that
+    // image. A description that is real words never starts with an image's
+    // signature, so nothing else is touched.
+    private static byte[] Unswallowed(byte[] data, string? description)
+    {
+        if (MimeTypeForBytes(data) != null || string.IsNullOrEmpty(description) || description.Any(c => c > 0xFF))
+            return data;
+
+        var repaired = new byte[description.Length + 1 + data.Length];
+        for (var i = 0; i < description.Length; i++)
+            repaired[i] = (byte)description[i];
+        data.CopyTo(repaired, description.Length + 1);
+        return MimeTypeForBytes(repaired) != null ? repaired : data;
     }
 
     // The cover.*/folder.* image in this folder, if there is one - the second

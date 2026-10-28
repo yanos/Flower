@@ -1,7 +1,9 @@
 using System;
 using System.IO;
 
+using Flower.DeviceChecks;
 using Flower.Services;
+using Flower.Tests.TestSupport;
 
 using Xunit;
 
@@ -90,6 +92,43 @@ public class LocalAlbumArtReaderTests : IDisposable
     public void A_directory_with_no_art_at_all_yields_null_rather_than_throwing()
     {
         Assert.Null(LocalAlbumArtReader.ForFile(TrackFile()));
+    }
+
+    // A song whose picture frame a tagger wrote with no description, so the
+    // image's own first bytes - FF D8 FF E0, up to the zero after them - read
+    // as one, and the picture comes back five bytes short and undecodable.
+    // Bill Callahan's Apocalypse, as it is on the owner's server.
+    [Fact]
+    public void A_picture_whose_first_bytes_were_read_as_its_description_is_put_back_together()
+    {
+        byte[] jpeg = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, (byte)'J', (byte)'F', (byte)'I', (byte)'F', 0x00, 0x01, 0xFF, 0xD9];
+        var path = SongWithPicture(jpeg[5..], description: "\u00FF\u00D8\u00FF\u00E0");
+
+        var art = LocalAlbumArtReader.EmbeddedIn(path);
+
+        Assert.NotNull(art);
+        Assert.Equal(jpeg, art.Bytes);
+    }
+
+    // A description that is words is left alone, and so is a picture that is
+    // an image already.
+    [Fact]
+    public void A_picture_with_a_real_description_is_read_as_it_is()
+    {
+        byte[] notAnImage = [0x10, (byte)'J', (byte)'F', (byte)'I', (byte)'F'];
+        Assert.Equal(notAnImage, LocalAlbumArtReader.EmbeddedIn(SongWithPicture(notAnImage, "Front"))!.Bytes);
+
+        var png = SyntheticPng.Build(4, 4);
+        Assert.Equal(png, LocalAlbumArtReader.EmbeddedIn(SongWithPicture(png, "\u00FF\u00D8\u00FF\u00E0"))!.Bytes);
+    }
+
+    private string SongWithPicture(byte[] picture, string description)
+    {
+        var path = SyntheticWav.CreateFile(_directory, $"{Guid.NewGuid():N}.wav", TimeSpan.FromSeconds(1), SyntheticWav.Marker(1));
+        using var file = TagLib.File.Create(path);
+        file.Tag.Pictures = [new TagLib.Picture(new TagLib.ByteVector(picture)) { Description = description }];
+        file.Save();
+        return path;
     }
 
     // A placeholder track (Path == null) has no local file by definition -
