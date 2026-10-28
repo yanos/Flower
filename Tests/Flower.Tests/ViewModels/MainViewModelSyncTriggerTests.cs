@@ -355,11 +355,16 @@ public class MainViewModelSyncTriggerTests : PinnedDataDirectory
 
     // A restarted cooldown must not leave the superseded delay running and
     // fire twice.
+    //
+    // A cooldown of a second, against 40ms between calls: at the usual 150ms,
+    // an iOS simulator under the whole suite took longer than that over one
+    // 40ms wait - every pump of the dispatcher is in it - so the burst
+    // genuinely split in two and the test counted two syncs.
     [AvaloniaFact]
     public void A_burst_of_scheduled_syncs_collapses_into_one()
     {
         var vm = PairedClient(out _);
-        using var cooldown = Cooldown();
+        using var cooldown = Cooldown(1000);
         var edges = CountSyncEdges(vm);
 
         for (var i = 0; i < 5; i++)
@@ -370,7 +375,7 @@ public class MainViewModelSyncTriggerTests : PinnedDataDirectory
 
         PumpUntil(() => edges() >= 2, 5000);
         // Let every superseded cooldown that might still be running come due.
-        Wait(600);
+        Wait(1200);
 
         // Exactly one sync run, not five: 2 edges, not 10.
         Assert.Equal(2, edges());

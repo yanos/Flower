@@ -21,6 +21,10 @@ namespace Flower.Tests.Views;
 // while it has the focus (NativeTextSession). Everything that listens to the
 // box - its Text and the bindings on it, its Enter, its LostFocus - has to
 // carry on as if the box were being typed in itself.
+//
+// In a collection of its own that runs alone, because the factory it sets is
+// read by every box in the process - see NativeTextFieldCollection.
+[Collection("NativeTextField")]
 public sealed class TextInputNativeEditingTests : IDisposable
 {
     private readonly FakeNativeTextFieldFactory _factory = new();
