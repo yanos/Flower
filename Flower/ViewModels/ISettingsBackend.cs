@@ -157,6 +157,13 @@ public sealed record SettingsSnapshot
     // (SyncRolePolicy.MayImportFromMusicApp and its play-count twin).
     public bool AdministersPairedServer { get; init; }
     public bool PairedServerImportsMusicAppPlays { get; init; }
+
+    // Whether the thing being configured looks things up online
+    // (MusicLibrarySettings.LookUpOnline), and on a paired device, whether its
+    // server does - which is the answer that governs it there, so its own
+    // switch is not shown (see SettingsViewModel.LookUpOnlineNote).
+    public bool LookUpOnline { get; init; } = true;
+    public bool PairedServerLooksUpOnline { get; init; }
 }
 
 // The subset the OK button writes back. Only what the user can actually edit -
@@ -177,6 +184,7 @@ public sealed record SettingsDraft
     public required bool TrustTailscaleRange { get; init; }
     public required IReadOnlyList<string> AllowedCidrs { get; init; }
     public required bool AllowPublicAccess { get; init; }
+    public required bool LookUpOnline { get; init; }
 }
 
 // What a settings screen can do, independent of whether "settings" means this

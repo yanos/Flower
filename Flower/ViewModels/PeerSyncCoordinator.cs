@@ -920,6 +920,7 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         _appSettings.PairedServerTrustConfirmed = false;
         _appSettings.PairedServerGrantsAdmin = false;
         _appSettings.PairedServerImportsMusicAppPlays = false;
+        _appSettings.PairedServerLooksUpOnline = false;
         _appSettings.PairedServerLastSyncedAt = null;
         _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
         NotifyPairingChanged();
@@ -953,13 +954,17 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         // which is remembered for the times the server is not there to ask -
         // see AppSettings.PairedServerGrantsAdmin.
         // And, for an administrator, whether the server counts Music.app's
-        // plays itself - see AppSettings.PairedServerImportsMusicAppPlays.
+        // plays itself - see AppSettings.PairedServerImportsMusicAppPlays -
+        // and for anyone, whether it looks things up online
+        // (AppSettings.PairedServerLooksUpOnline).
         if (_appSettings.PairedServerGrantsAdmin != device.WeAreAdmin
-            || _appSettings.PairedServerImportsMusicAppPlays != device.ServerImportsMusicAppPlays)
+            || _appSettings.PairedServerImportsMusicAppPlays != device.ServerImportsMusicAppPlays
+            || _appSettings.PairedServerLooksUpOnline != device.ServerLooksUpOnline)
         {
             var adminChanged = _appSettings.PairedServerGrantsAdmin != device.WeAreAdmin;
             _appSettings.PairedServerGrantsAdmin = device.WeAreAdmin;
             _appSettings.PairedServerImportsMusicAppPlays = device.ServerImportsMusicAppPlays;
+            _appSettings.PairedServerLooksUpOnline = device.ServerLooksUpOnline;
             _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
 
             // Being made an administrator, or no longer being one, changes

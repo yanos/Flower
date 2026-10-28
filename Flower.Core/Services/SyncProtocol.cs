@@ -69,9 +69,16 @@ public static class SyncProtocol
 // anyone, like the alias beside it, and the token naming its picture only for
 // a verified caller, since only a paired device can fetch the picture. Null
 // when the server has none of either.
+//
+// LooksUpOnline is the owner's switch for looking things up on the internet
+// (MusicLibrarySettings.LookUpOnline), which governs every device paired to
+// the server: a song of the server's is looked up by the server, and a
+// device's own song is looked up by the device only when this is true - so
+// nothing paired here asks the internet behind the owner's back. Verified
+// callers only; nobody else has anything to look up.
 public sealed record SyncInfoResponseDto(
     string Alias, string Version, string? DeviceModel, string DeviceType,
     string Fingerprint, string PublicKey, bool Download, bool? TrustsCaller,
     string LibraryToken, List<string>? Addresses = null, bool? CallerIsAdmin = null,
     string? PlaylistsToken = null, bool? ImportsMusicAppPlays = null,
-    string? IconEmoji = null, string? IconToken = null);
+    string? IconEmoji = null, string? IconToken = null, bool? LooksUpOnline = null);

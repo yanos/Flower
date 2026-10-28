@@ -88,7 +88,10 @@ public sealed record ServerSettingsDto(
     // naming its picture, null for none - the picture itself is fetched from
     // ServerIcon.ImagePath, like any paired device's.
     string IconEmoji = "",
-    string? IconToken = null);
+    string? IconToken = null,
+    // Whether the server looks things up online for its library, and so for
+    // every device paired to it - see MusicLibrarySettings.LookUpOnline.
+    bool LookUpOnline = true);
 
 public sealed record ServerSettingsUpdateDto(
     string? Alias,
@@ -102,7 +105,8 @@ public sealed record ServerSettingsUpdateDto(
     bool? SyncDateAddedFromITunes,
     bool? AllowPublicAccess,
     // Empty to have none; a non-empty one replaces the server's picture.
-    string? IconEmoji = null);
+    string? IconEmoji = null,
+    bool? LookUpOnline = null);
 
 // POST /api/admin/library/remove - "Remove from Library" from an admin device,
 // carried out on the server's own library (see LibraryRemoval). TrackIds are

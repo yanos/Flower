@@ -223,7 +223,11 @@ public static class DiscoveryEndpoints
                 // is, and the picture's token only for a caller who could
                 // fetch the picture it names.
                 options.IconEmoji.Length > 0 ? options.IconEmoji : null,
-                callerIsTrusted ? icons.Current?.Token : null);
+                callerIsTrusted ? icons.Current?.Token : null,
+                // Whether this server looks things up online, which decides
+                // whether a paired device may for its own songs - see
+                // SyncInfoResponseDto.
+                callerIsTrusted ? options.LookUpOnline : null);
 
             // Signed, over the bytes sent, whenever the caller signed its
             // request: trustsCaller: false is how a revoked device finds out,

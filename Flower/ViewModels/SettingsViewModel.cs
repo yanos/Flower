@@ -341,6 +341,29 @@ public sealed partial class SettingsViewModel : ViewModelBase
         set => SetProperty(ref _syncDateAddedFromITunes, value);
     }
 
+    // Looking things up online (MusicLibrarySettings.LookUpOnline): a switch
+    // on a server and on a device on its own. A paired device has none of its
+    // own - the server's answer governs it, for its own songs as well as the
+    // server's - and says so instead (LookUpOnlineNote).
+    private bool _lookUpOnline = true;
+    public bool LookUpOnline
+    {
+        get => _lookUpOnline;
+        set => SetProperty(ref _lookUpOnline, value);
+    }
+
+    public bool ShowsLookUpOnline => !_snapshot.IsPairedToServer;
+
+    public string LookUpOnlineDescription => Capabilities.ServerNetwork
+        ? "From Deezer, for every device paired to this server too: they ask the server, which sends Deezer an artist's name and nothing about who is listening."
+        : "From Deezer. Only an artist's name is sent.";
+
+    public string? LookUpOnlineNote =>
+        !_snapshot.IsPairedToServer ? null
+        : _snapshot.PairedServerLooksUpOnline
+            ? "Artist pictures are looked up online by the server, which has this switched on."
+            : "The server has looking things up online switched off, so this device does not either.";
+
     private string _advertisedHost = "";
     public string AdvertisedHost
     {
@@ -475,6 +498,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
     public SettingLock SyncPlayCountFromITunesLock => LockFor("SyncPlayCountFromITunes");
     public SettingLock SyncDateAddedFromITunesLock => LockFor("SyncDateAddedFromITunes");
     public SettingLock AllowPublicAccessLock => LockFor("AllowPublicAccess");
+    public SettingLock LookUpOnlineLock => LockFor("LookUpOnline");
 
     private SettingLock LockFor(string setting) =>
         _snapshot.Overridden.TryGetValue(setting, out var source) ? new SettingLock(source) : SettingLock.None;
@@ -535,6 +559,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
             AdvertiseOnLan = _snapshot.AdvertiseOnLan;
             TrustTailscaleRange = _snapshot.TrustTailscaleRange;
             AllowPublicAccess = _snapshot.AllowPublicAccess;
+            LookUpOnline = _snapshot.LookUpOnline;
             AllowedCidrsText = string.Join(Environment.NewLine, _snapshot.AllowedCidrs);
 
             _paths.Clear();
@@ -558,6 +583,9 @@ public sealed partial class SettingsViewModel : ViewModelBase
             OnPropertyChanged(nameof(SyncPlayCountFromITunesLock));
             OnPropertyChanged(nameof(SyncDateAddedFromITunesLock));
             OnPropertyChanged(nameof(AllowPublicAccessLock));
+            OnPropertyChanged(nameof(LookUpOnlineLock));
+            OnPropertyChanged(nameof(ShowsLookUpOnline));
+            OnPropertyChanged(nameof(LookUpOnlineNote));
             OnPropertyChanged(nameof(HasAdvertisedAs));
             OnPropertyChanged(nameof(AdvertisedAsMessage));
             OnPropertyChanged(nameof(HasPublicReachability));
@@ -628,6 +656,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
                 AdvertiseOnLan = AdvertiseOnLan,
                 TrustTailscaleRange = TrustTailscaleRange,
                 AllowPublicAccess = AllowPublicAccess,
+                LookUpOnline = LookUpOnline,
                 AllowedCidrs = ParseCidrs(),
             }, ct);
 

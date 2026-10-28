@@ -200,6 +200,14 @@ namespace Flower.Persistence
         // answered.
         public bool PairedServerImportsMusicAppPlays { get; set; }
 
+        // Whether the paired server looks things up online
+        // (DiscoveredDevice.ServerLooksUpOnline): the owner's switch, which on
+        // a paired device decides whether this device may look up its own
+        // songs too - LookUpOnline is not consulted while paired. Off until
+        // the server has said, so a device that has just paired asks the
+        // internet nothing before its owner's answer arrives.
+        public bool PairedServerLooksUpOnline { get; set; }
+
         // When a bulk sync with PairedServerFingerprint last actually succeeded.
         // Persisted rather than kept in memory because the question it answers -
         // "is what I'm looking at current?" - is asked right after a relaunch as

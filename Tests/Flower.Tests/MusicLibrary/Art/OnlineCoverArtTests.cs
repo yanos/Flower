@@ -94,16 +94,16 @@ public class OnlineCoverArtTests
     [Fact]
     public void Accents_and_punctuation_do_not_separate_names()
     {
-        Assert.Equal(OnlineCoverArt.Normalize("Björk"), OnlineCoverArt.Normalize("bjork"));
-        Assert.Equal(OnlineCoverArt.Normalize("Sgt. Pepper's Lonely Hearts Club Band"),
-                     OnlineCoverArt.Normalize("Sgt Peppers Lonely Hearts Club Band"));
-        Assert.Equal(OnlineCoverArt.Normalize("Hounds of Love - EP"), OnlineCoverArt.Normalize("Hounds of Love"));
+        Assert.Equal(MetadataNames.Normalize("Björk"), MetadataNames.Normalize("bjork"));
+        Assert.Equal(MetadataNames.Normalize("Sgt. Pepper's Lonely Hearts Club Band"),
+                     MetadataNames.Normalize("Sgt Peppers Lonely Hearts Club Band"));
+        Assert.Equal(MetadataNames.Normalize("Hounds of Love - EP"), MetadataNames.Normalize("Hounds of Love"));
     }
 
     [Fact]
     public void A_name_that_is_all_brackets_still_has_one()
     {
-        Assert.Equal("untitled", OnlineCoverArt.Normalize("[Untitled]"));
+        Assert.Equal("untitled", MetadataNames.Normalize("[Untitled]"));
     }
 
     [Fact]
@@ -149,9 +149,9 @@ public class OnlineCoverArtTests
     [Fact]
     public void A_disc_number_is_not_part_of_the_album()
     {
-        Assert.Equal("69 Love Songs", OnlineCoverArt.BareName("69 Love Songs Disc 1"));
-        Assert.Equal("The Wall", OnlineCoverArt.BareName("The Wall (CD 2 of 2)"));
-        Assert.Equal("Tome 8", OnlineCoverArt.BareName("Tome 8"));
+        Assert.Equal("69 Love Songs", MetadataNames.BareName("69 Love Songs Disc 1"));
+        Assert.Equal("The Wall", MetadataNames.BareName("The Wall (CD 2 of 2)"));
+        Assert.Equal("Tome 8", MetadataNames.BareName("Tome 8"));
         Assert.Single(OnlineCoverArt.Rank([Album("69 Love Songs", "The Magnetic Fields")], "69 Love Songs Disc 1", "Magnetic Fields"));
     }
 
@@ -223,9 +223,9 @@ public class OnlineCoverArtTests
     [Fact]
     public void The_lead_artist_is_the_first_of_a_credit()
     {
-        Assert.Equal("Daft Punk", OnlineCoverArt.LeadArtist("Daft Punk, Pharrell Williams"));
-        Assert.Equal("Simon", OnlineCoverArt.LeadArtist("Simon & Garfunkel"));
-        Assert.Equal("Kendrick Lamar", OnlineCoverArt.LeadArtist("Kendrick Lamar feat. SZA"));
-        Assert.Equal("Feathers", OnlineCoverArt.LeadArtist("Feathers"));
+        Assert.Equal("Daft Punk", MetadataNames.LeadArtist("Daft Punk, Pharrell Williams"));
+        Assert.Equal("Simon", MetadataNames.LeadArtist("Simon & Garfunkel"));
+        Assert.Equal("Kendrick Lamar", MetadataNames.LeadArtist("Kendrick Lamar feat. SZA"));
+        Assert.Equal("Feathers", MetadataNames.LeadArtist("Feathers"));
     }
 }

@@ -64,7 +64,7 @@ so devices behind one proxy, tunnel or CGNAT do not share a budget:
 | Budget | Keyed by | Routes | Limit |
 |---|---|---|---|
 | Bulk | device | `/api/flower/v1/*` not listed below | 60 / 60s |
-| Art | device | `/cover-art`, `/cover-art/batch`, `/server-icon` | 600 / 60s |
+| Art | device | `/cover-art`, `/cover-art/batch`, `/artist-image`, `/server-icon` | 600 / 60s |
 | Media | device | `/stream`, `/download`, `/stream-tickets` | 240 / 60s |
 | Admin | device | `/api/admin/*` not listed below | 120 / 60s |
 | Mirror | device | `/api/admin/library/uploads*`, `/move`, `/tags`, `/artwork` | 3000 / 60s |
@@ -276,6 +276,7 @@ device it answers more, on that device's budget, and the answer is signed back.
 | `importsMusicAppPlays` | **Verified administrators only**, `null` otherwise. Whether this server reads play counts from a Music.app library of its own; an admin device that brings its own Music.app plays leaves them alone while this is `true`, so they are not counted twice |
 | `iconEmoji` | The emoji the server shows as beside `alias`, `null` for none. Told to anyone, as `alias` is |
 | `iconToken` | Names the server's icon picture, `null` for none. **Verified callers only**, `null` otherwise — only they can fetch it, from `GET /server-icon`. A server has an emoji or a picture, never both |
+| `looksUpOnline` | **Verified callers only**, `null` otherwise. The owner's switch for looking things up online (`lookUpOnline` in the settings). It governs every device paired here: a paired device looks up its *own* songs only while this is `true`, and never before it has heard it |
 
 A verified call also carries the device's current `X-Flower-Alias`, and this is
 where a rename lands in the server's device list. A signed call's answer is
@@ -333,6 +334,7 @@ PascalCase JSON.
 | GET | `/log/watermark` | What the server already holds of them |
 | GET | `/cover-art?id=` | One picture |
 | POST | `/cover-art/batch` | Up to 32 pictures |
+| GET | `/artist-image?artist=` | A picture of an artist, looked up online |
 | GET | `/server-icon` | The server's icon picture, or `404` when it has none |
 | GET | `/stream?id=` | A track's bytes, ranged |
 | GET | `/download?id=` | The same bytes, as a named file |
@@ -486,6 +488,27 @@ stops at 8 MB: ids that did not fit are simply absent, and the caller asks
 again for those. The two cases are distinguishable only because a found-nothing
 id is still present.
 
+### `GET /artist-image?artist=`
+
+A picture of an artist, from Deezer, looked up by the server on the caller's
+behalf (`OnlineMetadataEngine`, `docs/ONLINE-METADATA-PLAN.md`). `artist` is
+the name as the catalog's `artists` field has it, compared without case.
+
+- The image bytes with their own MIME type: a 1000×1000 JPEG, as Deezer has it.
+- `404` when there is no picture to be had: the library has no songs by that
+  artist (checked before anything is asked of the internet, so the route is
+  not a lookup service for any name), Deezer has no photo of them, none of
+  Deezer's artists of that name has an album the library has by them, or the
+  server has `lookUpOnline` off. A client may remember this for a while; the
+  app does for a day.
+- `503` `unavailable` when there may be one but it could not be found out
+  just now — the server has no way out, or Deezer refused. Ask again later.
+
+Found pictures and misses are kept under the data directory
+(`ArtistPictures/`), a miss for 30 days. Many devices asking for one artist at
+once share a single lookup, and the server's own requests to Deezer are spaced
+to stay inside its quota of fifty in five seconds.
+
 ### `GET /stream?id=` and `GET /download?id=`
 
 The file from disk with range processing on, under the track's own content
@@ -547,8 +570,8 @@ set. A revoked device learns of it from `trustsCaller: false` on its next
 
 Editable: `alias`, `iconEmoji`, `advertisedHost`, `advertiseOnLan`,
 `trustTailscaleRange`, `allowedCidrs`, `libraryPaths`, `integrateWithITunes`,
-`syncPlayCountFromITunes`, `syncDateAddedFromITunes`, `allowPublicAccess`.
-Every field is optional and an absent one is left alone. Read-only alongside
+`syncPlayCountFromITunes`, `syncDateAddedFromITunes`, `allowPublicAccess`,
+`lookUpOnline`. Every field is optional and an absent one is left alone. Read-only alongside
 them: `dataDirectory`, `version`, `addresses`, `publicAddress`, `publicOrigin`,
 `publicReachability`, `fingerprint`, `advertisedAs`, `appleMusicFolder`,
 `iTunesLibraryDescription`, `iconToken`, and `overridden` — settings pinned by

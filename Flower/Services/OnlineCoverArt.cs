@@ -59,7 +59,7 @@ public sealed partial class OnlineCoverArt(ILogger logger)
 
     // MusicBrainz asks every client to say who it is, and refuses requests
     // that do not.
-    private static readonly string UserAgent = $"Flower/{AppVersion.Display} ( https://github.com/yanos/Flower )";
+    private static readonly string UserAgent = OnlineLookup.UserAgent;
 
     // The size asked of Apple's image server. The original is served whenever
     // it is smaller, so this is a ceiling, not an upscale: 1400 is what a
@@ -166,7 +166,7 @@ public sealed partial class OnlineCoverArt(ILogger logger)
         // The store's search wants every word it is given, so a name that
         // carries "(Disc 1)" or "[Remastered]" finds nothing; Rank still
         // tells the editions apart afterwards.
-        var term = $"{artist} {BareName(name)}".Trim();
+        var term = $"{artist} {MetadataNames.BareName(name)}".Trim();
         var url = $"https://itunes.apple.com/search?media=music&entity={(byAlbum ? "album" : "song")}&limit=25&country={country}&term={Uri.EscapeDataString(term)}";
         return await FetchAsync($"the {country.ToUpperInvariant()} iTunes store", term, name, artist, ct,
             async token => Parse(await GetStringAsync(url, token), byAlbum));
@@ -196,7 +196,7 @@ public sealed partial class OnlineCoverArt(ILogger logger)
     // calls. It answers a POST of JSON, with its best few matches.
     private async Task<IReadOnlyList<Candidate>?> SearchBandcampAsync(string album, string artist, CancellationToken ct)
     {
-        var term = $"{LeadArtist(artist)} {BareName(album)}".Trim();
+        var term = $"{MetadataNames.LeadArtist(artist)} {MetadataNames.BareName(album)}".Trim();
         var body = BandcampSearchBody(term);
         return await FetchAsync("Bandcamp", term, album, artist, ct, async token =>
         {
@@ -407,24 +407,12 @@ public sealed partial class OnlineCoverArt(ILogger logger)
     // the credit it leads. The album phrase is what narrows it.
     public static string MusicBrainzQuery(string album, string artist)
     {
-        var query = $"releasegroup:\"{Phrase(BareName(album))}\"";
-        var lead = LeadArtist(artist);
+        var query = $"releasegroup:\"{Phrase(MetadataNames.BareName(album))}\"";
+        var lead = MetadataNames.LeadArtist(artist);
         return lead.Length > 0 ? $"{query} AND artist:\"{Phrase(lead)}\"" : query;
     }
 
-    public static string LeadArtist(string? artist)
-    {
-        if (string.IsNullOrWhiteSpace(artist))
-            return "";
-
-        var bare = Bracketed().Replace(artist, "");
-        return ArtistSeparator().Split(bare).Select(part => part.Trim()).FirstOrDefault(part => part.Length > 0) ?? "";
-    }
-
     private static string Phrase(string text) => text.Replace("\\", "\\\\").Replace("\"", "\\\"");
-
-    [GeneratedRegex(@"\s*(?:[,;&/+]|\bfeat\b\.?|\bft\b\.?|\bfeaturing\b|\bwith\b|\band\b)\s*", RegexOptions.IgnoreCase)]
-    private static partial Regex ArtistSeparator();
 
     private static string? StringOf(JsonElement element, string property) =>
         element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String
@@ -463,8 +451,8 @@ public sealed partial class OnlineCoverArt(ILogger logger)
     // as both clean and explicit - is shown once.
     public static IReadOnlyList<Candidate> Rank(IReadOnlyList<Candidate> found, string name, string artist)
     {
-        var wantedName = Normalize(name);
-        var wantedArtist = Normalize(artist);
+        var wantedName = MetadataNames.Normalize(name);
+        var wantedArtist = MetadataNames.Normalize(artist);
         if (wantedName.Length == 0)
             return [];
 
@@ -481,61 +469,18 @@ public sealed partial class OnlineCoverArt(ILogger logger)
 
     private static int Score(Candidate candidate, string wantedName, string wantedArtist)
     {
-        var name = Normalize(candidate.Album);
+        var name = MetadataNames.Normalize(candidate.Album);
         var nameScore = name == wantedName ? 2
             : name.Contains(wantedName, StringComparison.Ordinal) || wantedName.Contains(name, StringComparison.Ordinal) ? 1
             : 0;
         if (nameScore == 0 || name.Length == 0)
             return 0;
 
-        var artist = Normalize(candidate.Artist);
+        var artist = MetadataNames.Normalize(candidate.Artist);
         var artistScore = wantedArtist.Length > 0 && artist.Length > 0
             && (artist.Contains(wantedArtist, StringComparison.Ordinal) || wantedArtist.Contains(artist, StringComparison.Ordinal))
             ? 2
             : 0;
         return nameScore + artistScore;
     }
-
-    // Lower case, accents off, the editions off (BareName), then nothing but
-    // letters and digits: "Rumours (Super Deluxe)" and "rumours" are one
-    // album, and so are "69 Love Songs Disc 1" and "69 Love Songs".
-    public static string Normalize(string? text)
-    {
-        if (string.IsNullOrWhiteSpace(text))
-            return "";
-
-        var bare = BareName(text);
-        var builder = new StringBuilder(bare.Length);
-        foreach (var c in bare.Normalize(NormalizationForm.FormD))
-        {
-            if (CharUnicodeInfo.GetUnicodeCategory(c) == UnicodeCategory.NonSpacingMark)
-                continue;
-            if (char.IsLetterOrDigit(c))
-                builder.Append(char.ToLowerInvariant(c));
-        }
-        return builder.ToString();
-    }
-
-    // A name without what a store or a rip adds to it that a library's tags
-    // usually lack, or the other way round - "(Deluxe Edition)",
-    // "[Remastered]", " - Single", "Disc 2". A name that is nothing but those -
-    // "[Untitled]" - keeps its own words, out of their brackets, rather than
-    // matching every other such name as nothing.
-    public static string BareName(string text)
-    {
-        var bare = DiscSuffix().Replace(StoreSuffix().Replace(Bracketed().Replace(text, ""), ""), "").Trim();
-        return bare.Length > 0 ? bare : Brackets().Replace(text, "").Trim();
-    }
-
-    [GeneratedRegex(@"[\s,:\-]*\b(?:Disc|Disk|CD)\s*\d+(?:\s*(?:of|/)\s*\d+)?\s*$", RegexOptions.IgnoreCase)]
-    private static partial Regex DiscSuffix();
-
-    [GeneratedRegex(@"[\(\)\[\]]")]
-    private static partial Regex Brackets();
-
-    [GeneratedRegex(@"\s*[\(\[][^\)\]]*[\)\]]")]
-    private static partial Regex Bracketed();
-
-    [GeneratedRegex(@"\s+-\s+(Single|EP)\s*$", RegexOptions.IgnoreCase)]
-    private static partial Regex StoreSuffix();
 }

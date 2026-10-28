@@ -280,6 +280,37 @@
         </StackPanel>
       </Border>
 
+      <!-- Looking things up online (MusicLibrarySettings.LookUpOnline): this
+           device's own switch while it is on its own. A paired phone has
+           none - its server's owner decides, for this phone's own songs too
+           (AppSettings.PairedServerLooksUpOnline) - so it says so instead. -->
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <TextBlock Classes="section-header" Text="ONLINE" />
+          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14" Classes="badgeRow"
+                IsVisible="{Binding Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNullOrEmpty}}">
+            <Border Grid.Column="0" Classes="badge" VerticalAlignment="Center">
+              <materialIcons:MaterialIcon Kind="AccountMusicOutline" />
+            </Border>
+            <TextBlock Grid.Column="1" Classes="rowTitle" FontWeight="Normal"
+                       Text="Look up artist pictures online"
+                       TextWrapping="Wrap"
+                       VerticalAlignment="Center" />
+            <ToggleSwitch Grid.Column="2" IsChecked="{Binding Main.LookUpOnline}" />
+          </Grid>
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14" Classes="badgeRow"
+                IsVisible="{Binding Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}">
+            <Border Grid.Column="0" Classes="badge" VerticalAlignment="Center">
+              <materialIcons:MaterialIcon Kind="AccountMusicOutline" />
+            </Border>
+            <TextBlock Grid.Column="1" Classes="note" FontSize="15"
+                       Text="Artist pictures come from the server, when its owner has looking them up switched on."
+                       TextWrapping="Wrap"
+                       VerticalAlignment="Center" />
+          </Grid>
+        </StackPanel>
+      </Border>
+
       <!-- How much Home's shelves hold - see AppSettings.
            HomeContinuePlayingLimit; desktop sets the same three on Settings'
            General tab - and the order they come in on the page, dragged by

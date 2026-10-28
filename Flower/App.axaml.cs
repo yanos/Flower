@@ -283,6 +283,14 @@ public partial class App : Application
                 sp.GetRequiredService<ILogger<AlbumArtLoader>>(),
                 sp.GetRequiredService<Library>()))
 
+            // Artists' pictures, drawn where their covers would be - see
+            // AlbumCollage.ForArtist. Optional like AlbumArtLoader's peer
+            // dependencies: a head that registers no IOnlineMetadata draws the
+            // covers alone.
+            .AddSingleton(sp => new ArtistPictureLoader(
+                sp.GetService<IOnlineMetadata>(),
+                sp.GetRequiredService<ILogger<ArtistPictureLoader>>()))
+
             // One per-frame clock for every animation in the app - see
             // AnimationClock. Injected into MainViewModel (which threads it
             // down to the track rows); the Controls that also animate reach it
@@ -393,6 +401,37 @@ public partial class App : Application
             // Album art resolves against the same peer, by the same rule, and
             // so belongs on the same branch - see ICoverArtUrlResolver.
             .AddSingleton<ICoverArtUrlResolver, PeerCoverArtUrlResolver>()
+            // What is looked up online (docs/ONLINE-METADATA-PLAN.md): by this
+            // device for its own songs, by the paired server for the server's,
+            // chosen per artist (RoutedOnlineMetadata). On its own, this
+            // device goes by its own switch; paired, by its server's, for its
+            // own songs too - the owner's switch covers everyone.
+            .AddSingleton(sp =>
+            {
+                var appSettings = sp.GetRequiredService<AppSettings>();
+                return new OnlineMetadataEngine(
+                    OnlineLookup.CreateClient(),
+                    Path.Combine(AppDataDirectory.Path, "ArtistPictures"),
+                    () => string.IsNullOrEmpty(appSettings.PairedServerFingerprint)
+                        ? appSettings.LookUpOnline
+                        : appSettings.PairedServerLooksUpOnline,
+                    sp.GetRequiredService<ILogger<OnlineMetadataEngine>>());
+            })
+            .AddSingleton<IOnlineMetadata>(sp =>
+            {
+                var appSettings = sp.GetRequiredService<AppSettings>();
+                var reachability = sp.GetRequiredService<PairedServerReachability>();
+                return new RoutedOnlineMetadata(
+                    new LocalOnlineMetadata(sp.GetRequiredService<OnlineMetadataEngine>()),
+                    new ServerOnlineMetadata(
+                        PeerHttpClient.Create(TimeSpan.FromSeconds(30)),
+                        sp.GetRequiredService<IPeerCredentials>(),
+                        () => reachability.IsReachable && reachability.PairedServerDevice is { } server ? server.Url("/") : null,
+                        Path.Combine(AppDataDirectory.Path, "ArtistPictureCache"),
+                        closesConnection: true,
+                        sp.GetRequiredService<ILogger<ServerOnlineMetadata>>()),
+                    () => appSettings.PairedServerFingerprint);
+            })
             // Continue Playing, kept in step with the listener's other devices
             // through the paired server, while there is one to reach.
             .AddSingleton(sp =>
@@ -477,6 +516,17 @@ public partial class App : Application
             // with its own HttpClient and signs the request like any other -
             // see OriginCoverArtUrlResolver.
             .AddSingleton<ICoverArtUrlResolver>(_ => new OriginCoverArtUrlResolver(origin))
+
+            // Artists' pictures: always the origin's to look up. A tab has a
+            // server anyway, and could not ask Deezer itself - it sends no
+            // Access-Control-Allow-Origin.
+            .AddSingleton<IOnlineMetadata>(sp => new ServerOnlineMetadata(
+                sp.GetRequiredService<HttpClient>(),
+                sp.GetRequiredService<IPeerCredentials>(),
+                () => origin,
+                Path.Combine(AppDataDirectory.Path, "ArtistPictureCache"),
+                closesConnection: false,
+                sp.GetRequiredService<ILogger<ServerOnlineMetadata>>()))
 
             // The origin's playlists, mirrored read-only into this tab - see
             // OriginPlaylistImporter for why a tab is not a party to the
@@ -674,6 +724,7 @@ public partial class App : Application
         // TrackRowViewModel/AlbumTileViewModel belongs with their decomposition
         // (docs/ARCHITECTURE-REVIEW.md 4.2).
         AlbumArtLoader.Current = provider.GetRequiredService<AlbumArtLoader>();
+        ArtistPictureLoader.Current = provider.GetRequiredService<ArtistPictureLoader>();
 
         // Same seam, same reason: MainView, ScreenStackPanel and
         // RubberBandScroll animate from code-behind, where there is no

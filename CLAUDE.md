@@ -61,7 +61,7 @@ The app is a WIP with no released users and no data anyone else depends on. **Ba
 - `STORE-DEPLOYMENT-PLAN.md` — submitting iOS/Android to app stores, and the real-device verification still owed before that.
 - `PERFORMANCE-TRACKING-PLAN.md` — CI benchmark regression tracking + runtime timing.
 - `STREAMING-SERVICES-PLAN.md` — feasibility of streaming Spotify/Apple Music/YouTube Music.
-- `ONLINE-METADATA-PLAN.md` — lyrics (LRCLIB), artist pictures (Deezer) and popular songs (ListenBrainz, then Deezer), keyless. One engine in `Flower.Core` that runs wherever the song's library lives: in-process on a device on its own, on the server for a paired one.
+- `ONLINE-METADATA-PLAN.md` — lyrics (LRCLIB), artist pictures (Deezer) and popular songs (ListenBrainz, then Deezer), keyless. One engine in `Flower.Core` (`OnlineMetadataEngine`) that runs wherever the song's library lives: in-process on a device on its own, on the server for a paired one. Artist pictures are built; lyrics and popularity are not.
 
 ## Agent skills
 

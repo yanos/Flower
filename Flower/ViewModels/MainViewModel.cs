@@ -136,6 +136,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // this device may run (SyncRolePolicy.MayImportFromMusicApp).
     public bool AdministersPairedServer => _appSettings.PairedServerGrantsAdmin;
     public bool PairedServerImportsMusicAppPlays => _appSettings.PairedServerImportsMusicAppPlays;
+    public bool PairedServerLooksUpOnline => _appSettings.PairedServerLooksUpOnline;
     public bool MayImportFromMusicApp => SyncRolePolicy.MayImportFromMusicApp(_appSettings);
     public bool MayImportPlayCountsFromMusicApp => SyncRolePolicy.MayImportPlayCountsFromMusicApp(_appSettings);
     public bool MayAddSongsFromMusicApp => SyncRolePolicy.MayAddSongsFromMusicApp(_appSettings);
@@ -295,6 +296,23 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
                 if (_appSettings.ShareLogsWithPairedServer == value)
                 return;
             _appSettings.ShareLogsWithPairedServer = value;
+            OnPropertyChanged();
+            SaveSettings();
+        }
+    }
+
+    // Whether this device looks things up online for its own songs, while it
+    // is on its own (MusicLibrarySettings.LookUpOnline) - a paired device goes
+    // by its server's answer instead (PairedServerLooksUpOnline).
+    // Persist-immediately, same as above.
+    public bool LookUpOnline
+    {
+        get => _appSettings.LookUpOnline;
+        set
+        {
+            if (_appSettings.LookUpOnline == value)
+                return;
+            _appSettings.LookUpOnline = value;
             OnPropertyChanged();
             SaveSettings();
         }

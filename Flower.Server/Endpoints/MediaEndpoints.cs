@@ -144,6 +144,44 @@ public static class MediaEndpoints
             : Problems.NotFound();
     }
 
+    // A picture of an artist, at GET /api/flower/v1/artist-image?artist=<name>,
+    // looked up online by this server for a paired device that is showing the
+    // artist (OnlineMetadataEngine). The name as the device's Artists list
+    // has it, which is the catalog's Track.Artists.
+    //
+    // Only for an artist this library has songs by, and checked against
+    // their albums here: the device says who, and the server decides which
+    // of Deezer's artists of that name it is - and a paired device cannot use
+    // the server to look up whatever name it likes.
+    //
+    // 404 when there is no picture to be had, which a device remembers for a
+    // while; 503 when there may be one but it could not be found out just now
+    // (no way out, Deezer refusing), which it asks again about.
+    internal static async Task<IResult> GetArtistImage(
+        string? artist, Library library, OnlineMetadataEngine online, HttpContext context)
+    {
+        if (string.IsNullOrWhiteSpace(artist))
+            return Problems.NotFound();
+
+        var tracks = library.Snapshot.Tracks.Where(t => ArtistNames.Same(t.Artists, artist)).ToList();
+        if (tracks.Count == 0)
+            return Problems.NotFound();
+
+        var albums = tracks
+            .Select(t => t.Album)
+            .OfType<string>()
+            .Where(album => album.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var picture = await online.ArtistPictureAsync(artist, albums, context.RequestAborted);
+        if (picture == null)
+            return Problems.Of(StatusCodes.Status503ServiceUnavailable, ProblemCodes.Unavailable);
+
+        return picture.Length > 0 && LocalAlbumArtReader.MimeTypeForBytes(picture) is { } mimeType
+            ? Results.Bytes(picture, mimeType)
+            : Problems.NotFound();
+    }
+
     // Which files an art request for this id is about: every track on an album
     // for an album id, or the one track for a song id. Shared with the batch
     // route (SyncEndpoints) and the admin cover-art route (AdminEndpoints),

@@ -60,6 +60,8 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
         IsPairedToServer = !string.IsNullOrEmpty(ViewModel.PairedServerFingerprint),
         AdministersPairedServer = ViewModel.AdministersPairedServer,
         PairedServerImportsMusicAppPlays = ViewModel.PairedServerImportsMusicAppPlays,
+        LookUpOnline = ViewModel.LookUpOnline,
+        PairedServerLooksUpOnline = ViewModel.PairedServerLooksUpOnline,
     });
 
     // The Library tab's *content* only stops making sense once this device is
@@ -85,6 +87,7 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
 
         ViewModel.SyncPlayCountFromITunes = draft.SyncPlayCountFromITunes;
         ViewModel.SyncDateAddedFromITunes = draft.SyncDateAddedFromITunes;
+        ViewModel.LookUpOnline = draft.LookUpOnline;
 
         if (draft.LibraryPathsChanged)
             await ViewModel.SaveLibraryPathsAsync(draft.LibraryPaths.ToList());

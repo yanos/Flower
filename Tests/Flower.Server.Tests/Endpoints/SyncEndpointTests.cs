@@ -1278,6 +1278,43 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
         }
     }
 
+    // A paired device says which artist, and the server decides which of
+    // Deezer's people of that name it is - from the albums it holds by them.
+    // An artist it holds nothing by is refused before anything is asked of
+    // the internet, so no device can use the server to look up whatever
+    // name it likes. The fixture library is empty, so every artist is one.
+    [Fact]
+    public async Task GET_artist_image_refuses_an_artist_the_library_has_no_songs_by()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        using var device = await TrustedDeviceAsync(trustedPeers);
+
+        try
+        {
+            const string path = "/api/flower/v1/artist-image";
+            var (signature, timestamp, nonce) = device.Sign("GET", path, [("artist", "Radiohead")], []);
+            var context = await server.Server.SendAsync(c =>
+            {
+                c.Request.Method = "GET";
+                c.Request.Path = path;
+                c.Request.QueryString = new QueryString("?artist=Radiohead");
+                c.Connection.RemoteIpAddress = IPAddress.Parse("10.0.2.13");
+                c.Request.Headers["X-Flower-Fingerprint"] = device.Fingerprint;
+                c.Request.Headers["X-Flower-Alias"] = "Kitchen iPad";
+                c.Request.Headers["X-Flower-Role"] = "client";
+                c.Request.Headers["X-Flower-Signature"] = signature;
+                c.Request.Headers["X-Flower-Timestamp"] = timestamp;
+                c.Request.Headers["X-Flower-Nonce"] = nonce;
+            });
+
+            Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
     // The route that exists so art stops competing with playback at all. One
     // request per tile is what a grid naturally does and what no per-source
     // budget can absorb: 1400 albums is 1400 requests during one cold scroll.

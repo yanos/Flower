@@ -109,6 +109,11 @@ public class DiscoveredDevice
     // was, starting false: a server that says nothing is not importing.
     public bool ServerImportsMusicAppPlays { get; set; }
 
+    // Whether this server looks things up online (looksUpOnline, told to
+    // paired devices only) - see AppSettings.PairedServerLooksUpOnline.
+    // Absent leaves it as it was, starting false.
+    public bool ServerLooksUpOnline { get; set; }
+
     // This peer's Library.ChangeToken as of its last /info answer - the same
     // opaque token GET /api/flower/v1/library serves as its ETag. Empty until
     // resolved. Changing means the peer's catalog changed, which is how a
@@ -742,6 +747,16 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
                     changed = true;
                 }
             }
+            if (doc.RootElement.TryGetProperty("looksUpOnline", out var onlineProp) &&
+                onlineProp.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            {
+                var looksUpOnline = onlineProp.ValueKind == JsonValueKind.True;
+                if (looksUpOnline != device.ServerLooksUpOnline)
+                {
+                    device.ServerLooksUpOnline = looksUpOnline;
+                    changed = true;
+                }
+            }
             if (doc.RootElement.TryGetProperty("libraryToken", out var tokenProp) &&
                 tokenProp.GetString() is { } libraryToken && libraryToken != device.LibraryToken)
             {
@@ -1135,6 +1150,7 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
                     TrustsUs = existing.TrustsUs,
                     WeAreAdmin = existing.WeAreAdmin,
                     ServerImportsMusicAppPlays = existing.ServerImportsMusicAppPlays,
+                    ServerLooksUpOnline = existing.ServerLooksUpOnline,
                     LibraryToken = existing.LibraryToken,
                     PlaylistsToken = existing.PlaylistsToken,
                     IconEmoji = existing.IconEmoji,

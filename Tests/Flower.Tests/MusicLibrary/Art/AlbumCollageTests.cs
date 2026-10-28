@@ -63,7 +63,7 @@ public class AlbumCollageTests : IDisposable
     {
         var loader = new FakeArtLoader(bare.ToHashSet());
         AlbumArtLoader.Current = loader;
-        var covers = await AlbumCollage.LoadCoversAsync(AlbumCollage.ByAlbumName(tracks).AlbumsInPlayOrder);
+        var covers = await AlbumCollage.LoadCoversAsync(AlbumCollage.ForArtist("Artist", tracks, thumbnail: false).AlbumsInPlayOrder);
         return (covers.Select(c => loader.AlbumOf[c]).ToArray(), loader.Loads);
     }
 
@@ -147,7 +147,7 @@ public class AlbumCollageTests : IDisposable
         ];
 
         Assert.Equal(["Queen", "ABBA"], AlbumCollage.ByAlbumAndArtist(tracks).AlbumsInPlayOrder.Select(t => t.Artists));
-        Assert.Single(AlbumCollage.ByAlbumName(tracks).AlbumsInPlayOrder);
+        Assert.Single(AlbumCollage.ForArtist("Artist", tracks, thumbnail: false).AlbumsInPlayOrder);
     }
 
     // A song added to a playlist can change which albums are its most played,

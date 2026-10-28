@@ -297,6 +297,7 @@ public static class AdminEndpoints
                 IntegrateWithITunes = before.IntegrateWithITunes,
                 SyncPlayCountFromITunes = before.SyncPlayCountFromITunes,
                 SyncDateAddedFromITunes = before.SyncDateAddedFromITunes,
+                LookUpOnline = before.LookUpOnline,
             };
 
             // Compared against the *resolved* name, not the configured one: an
@@ -367,6 +368,15 @@ public static class AdminEndpoints
             {
                 after.SyncDateAddedFromITunes = syncDateAdded;
                 values[nameof(FlowerServerOptions.SyncDateAddedFromITunes)] = JsonValue.Create(syncDateAdded);
+            }
+
+            // No restart and no rescan: OnlineMetadataEngine reads it on every
+            // lookup through IOptionsMonitor, and a paired device hears it on
+            // its next /info.
+            if (update.LookUpOnline is { } lookUpOnline && lookUpOnline != before.LookUpOnline && Editable(nameof(FlowerServerOptions.LookUpOnline)))
+            {
+                after.LookUpOnline = lookUpOnline;
+                values[nameof(FlowerServerOptions.LookUpOnline)] = JsonValue.Create(lookUpOnline);
             }
 
             if (values.Count > 0)
@@ -999,7 +1009,8 @@ public static class AdminEndpoints
             PublicOrigin: reachability?.Origin,
             PublicReachability: reachability?.Status.ToString(),
             IconEmoji: options.IconEmoji,
-            IconToken: icons.Current?.Token);
+            IconToken: icons.Current?.Token,
+            LookUpOnline: options.LookUpOnline);
     }
 
     // The host in the invite is the address the admin's own browser reached

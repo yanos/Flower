@@ -9,9 +9,10 @@ using Flower.ViewModels.Mobile;
 namespace Flower.ViewModels;
 
 // The desktop Artists page, for the one artist picked: who they are, the way
-// the phone's artist list draws one (ArtistPickerRow - their covers as a
-// collage, how many albums and songs) and how long it all runs, and then each
-// of their albums as a card of its own with its songs under it (Albums).
+// the phone's artist list draws one (ArtistPickerRow - their picture, or
+// their covers as a collage, how many albums and songs) and how long it all
+// runs, and then each of their albums as a card of its own with its songs
+// under it (Albums).
 // Several artists picked at once for a drag have no one name to head them, so
 // the page shows nobody. Built when the pick or the library changes rather
 // than on every read, so the covers behind it are fetched once per artist.
@@ -68,7 +69,7 @@ public sealed class ArtistPageViewModel : ViewModelBase
                 var albums = tracks.Where(t => !string.IsNullOrEmpty(t.Album)).Select(t => t.Album).Distinct().Count();
                 var total = TimeSpan.FromTicks(tracks.Sum(t => t.Duration.Ticks));
                 var length = total.TotalHours >= 1 ? $"{(int)total.TotalHours}h {total.Minutes}m" : $"{total.Minutes}m";
-                Header = new ArtistHeaderInfo(name, AlbumCollage.ByAlbumName(tracks),
+                Header = new ArtistHeaderInfo(name, AlbumCollage.ForArtist(name, tracks, thumbnail: false),
                     $"{ArtistPickerRow.Summary(albums, tracks.Count)} · {length}");
             }
             if (filter != null)

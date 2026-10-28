@@ -73,6 +73,7 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
             DataDirectory = settings.DataDirectory,
             Version = settings.Version,
             Fingerprint = settings.Fingerprint,
+            LookUpOnline = settings.LookUpOnline,
         };
     }
 
@@ -94,7 +95,8 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
                 draft.SyncPlayCountFromITunes,
                 draft.SyncDateAddedFromITunes,
                 draft.AllowPublicAccess,
-                draft.IconEmoji),
+                draft.IconEmoji,
+                draft.LookUpOnline),
             ct);
         _lastLoaded = result;
 

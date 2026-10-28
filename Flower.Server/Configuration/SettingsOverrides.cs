@@ -30,6 +30,7 @@ public static class SettingsOverrides
         nameof(FlowerServerOptions.SyncPlayCountFromITunes),
         nameof(FlowerServerOptions.SyncDateAddedFromITunes),
         nameof(FlowerServerOptions.AllowPublicAccess),
+        nameof(FlowerServerOptions.LookUpOnline),
     ];
 
     // Each of PageSettings that something above flower-server.json sets, with

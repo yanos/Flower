@@ -1,11 +1,14 @@
 # Online Metadata Plan
 
 Lyrics, a picture of each artist, and which songs on an album are the popular
-ones — looked up on the internet for a library that does not carry them. Not
-started. What exists today is the neighbour this builds beside:
-`Flower/Services/OnlineCoverArt.cs` (Track Info's Find Online, keyless iTunes,
-MusicBrainz and Bandcamp searches), and `Track.Lyrics`, read from the file's
-own tag by `Importer` and edited in Track Info's Lyrics tab.
+ones — looked up on the internet for a library that does not carry them. It
+builds beside `Flower/Services/OnlineCoverArt.cs` (Track Info's Find Online,
+keyless iTunes, MusicBrainz and Bandcamp searches), and `Track.Lyrics`, read
+from the file's own tag by `Importer` and edited in Track Info's Lyrics tab.
+
+**Status (October 2026): phase 1, artist pictures, is built** in both
+topologies. Lyrics and popularity are not started. See "What phase 1 turned
+out to be" below for where the build differs from what this plan said.
 
 ## The rule that shapes it: wherever the library lives
 
@@ -190,7 +193,7 @@ default.
 
 Each phase lands in both topologies (local engine and server route) together.
 
-1. **Engine skeleton and artist pictures.** `Flower.Core` lookup engine with
+1. **Engine skeleton and artist pictures.** Built (October 2026). `Flower.Core` lookup engine with
    the shared HTTP client, `User-Agent`, normaliser and cache table; the two
    client implementations of the seam; the server route; Deezer artist search
    with the album-overlap check. Shown on the desktop artist page header and
@@ -217,6 +220,70 @@ which implementation of the seam a song gets (local song on a paired device →
 local; server song → server). Sources are faked at the `HttpMessageHandler`.
 No test calls a live service, and none asserts how a picture or a lyric looks
 on screen.
+
+## What phase 1 turned out to be
+
+The pieces, by name: `OnlineMetadataEngine` (`Flower.Core`) does the lookup
+and owns the cache; `DeezerArtistSearch` is the matching, pure and tested;
+`MetadataNames` is `OnlineCoverArt`'s normaliser, moved to `Flower.Core` and
+now used by both. On the client, `IOnlineMetadata` is the seam, with
+`LocalOnlineMetadata`, `ServerOnlineMetadata` and `RoutedOnlineMetadata`
+(which picks between them per artist); `ArtistPictureLoader` decodes, and
+`AlbumCollage.ForArtist` is what the desktop artist header and the phone's and
+search's artist rows draw. The server route is `MediaEndpoints.GetArtistImage`.
+Where that differs from the plan above, or settles something it left open:
+
+- **The cache is files, not a table.** `ArtistPictureCache` keeps a picture
+  as `<hash of normalised name>.art` and a miss as `.none` holding the time it
+  was looked for, in `ArtistPictures/` under the data directory — the same
+  code on the server (misses kept 30 days) and on a paired device for what its
+  server answered (`ArtistPictureCache/`, misses kept a day, so a picture the
+  server finds later arrives within one). Lyrics will want a table; pictures
+  are blobs.
+- **The album-overlap check, exactly.** A candidate is a Deezer artist whose
+  name normalises to the library's and who has a real photo (Deezer sends a
+  silhouette URL with an empty hash for none). Up to three are looked into,
+  each costing a request for its albums; the one sharing the most album names
+  with the library's albums by that artist wins, and none sharing any is a
+  miss. An album counts as shared when the names are equal or one holds the
+  other and the shorter is at least four characters ("OK Computer OKNOTOK
+  1997 2017" is OK Computer; "Up" is not in "Upstairs at Eric's"). The one
+  exception is an artist the library has no album by at all, who takes a
+  single exact namesake and nothing if there are two. Real collisions found
+  while building it: Nirvana and Nirvana (UK), whose names normalise alike,
+  and two acts called Ohmme.
+- **A collaboration keeps its collage.** The Artists list names
+  `Track.Artists` whole, so "Hangedup & Tony Conrad" is searched as that, and
+  no Deezer artist has that exact name. Splitting credits is a question for
+  the Artists list, not for this.
+- **Three answers, not two.** The engine answers bytes, empty for "none to be
+  had" (remembered), or null for "could not find out" (not remembered) — the
+  convention `AlbumArtLoader` already used for covers. On the wire that is
+  the picture, `404`, or `503`. Deezer refusing over quota is an HTTP 200
+  carrying `{"error": …}`, and is read as the third.
+- **The server answers only for artists it has songs by**, and decides which
+  namesake from its own albums. A paired device names the artist and nothing
+  else, so the route is not a lookup service for arbitrary names.
+- **Deezer's quota** (fifty requests in five seconds per address) is kept by
+  spacing the engine's requests 125 ms apart, one at a time. A phone scrolling
+  a long Artists tab queues lookups rather than tripping it; several devices
+  asking for one artist share one lookup.
+- **The switch is labelled for what exists**: "Look up artist pictures
+  online". It is `MusicLibrarySettings.LookUpOnline`, the base both hosts'
+  settings share, and its label grows with the phases. On a paired device the
+  server's value travels in `/info` as `looksUpOnline` (verified callers),
+  is remembered as `AppSettings.PairedServerLooksUpOnline`, and governs the
+  device's own songs as well — off until it has been heard, so a device that
+  has just paired asks the internet nothing first. Off, the engine still
+  serves what it already found; it only stops asking.
+- **On screen**, the picture replaces the collage rather than adding to it:
+  one already cached is waited for up to 150 ms so the collage never flashes
+  first, and one looked up for the first time lets the collage show and then
+  takes its place. Rows decode at thumbnail size, since a phone's Artists tab
+  holds hundreds, each with its own picture where covers are shared.
+- **The first open question below is settled as leaning**: a paired device
+  whose server is out of reach does not fall back to looking up the server's
+  songs itself. The cache covers what was already seen.
 
 ## Open questions
 

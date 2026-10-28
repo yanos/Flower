@@ -525,6 +525,27 @@
               </StackPanel>
             </Grid>
 
+            <!-- The owner's one switch for asking the internet about the
+                 library (MusicLibrarySettings.LookUpOnline): drafted like the
+                 imports above, since a server has it too. A paired device has
+                 no switch of its own - its server's answer governs it - and
+                 shows that answer instead (SettingsViewModel.LookUpOnlineNote). -->
+            <StackPanel Margin="0,24,0,0">
+              <TextBlock Text="Online" FontWeight="SemiBold" Margin="0,0,0,8"/>
+              <CheckBox Content="Look up artist pictures online"
+                        IsChecked="{Binding LookUpOnline, Mode=TwoWay}"
+                        IsEnabled="{Binding LookUpOnlineLock.IsEditable}"
+                        IsVisible="{Binding ShowsLookUpOnline}"/>
+              <TextBlock Text="{Binding LookUpOnlineDescription}"
+                         Margin="20,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"
+                         IsVisible="{Binding ShowsLookUpOnline}"/>
+              <TextBlock Text="{Binding LookUpOnlineNote}"
+                         FontSize="11" Opacity="0.6" TextWrapping="Wrap"
+                         IsVisible="{Binding LookUpOnlineNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+              <TextBlock Text="{Binding LookUpOnlineLock.Message}" IsVisible="{Binding LookUpOnlineLock.IsLocked}"
+                         Margin="20,4,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
+            </StackPanel>
+
             <!-- Songs removed from the library with their files kept, which every
                  scan leaves out until they are restored here (see
                  Library.ExcludedPaths). Outside the grid above on purpose: that

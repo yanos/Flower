@@ -953,6 +953,24 @@ public class AlbumArtLoader
         }
     }
 
+    // Any other picture drawn where album art is - an artist's
+    // (ArtistPictureLoader) - at the same two sizes, so it costs what a cover
+    // costs: MaxArtPixels for a page's header, ThumbnailPixels for a row.
+    // Null for bytes that will not decode.
+    internal static Bitmap? TryDecodePicture(byte[] bytes, bool thumbnail)
+    {
+        try
+        {
+            using var ms = new MemoryStream(bytes);
+            return Decode(ms, thumbnail ? ArtSize.Thumbnail : ArtSize.Full);
+        }
+        catch (Exception ex)
+        {
+            StaticLogger.LogDebug(ex, "Could not decode a {ByteCount}-byte picture", bytes.Length);
+            return null;
+        }
+    }
+
     private Bitmap? TryDecodeBytes(byte[] bytes, ArtSize size)
     {
         try

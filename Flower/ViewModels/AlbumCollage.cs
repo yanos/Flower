@@ -15,26 +15,36 @@ namespace Flower.ViewModels;
 
 // A cover for something that holds several albums - an artist, a playlist -
 // made of the art of the most played of them (see AlbumArtView for how
-// it is drawn). Built from the songs it stands for; the art is only read once
+// it is drawn), or for an artist, their picture when there is one. Built from the songs it stands for; the art is only read once
 // something binds CoverArt.
 public sealed class AlbumCollage : ObservableObject, AlbumArtLoader.IShowsAlbumArt
 {
-    // Albums by name alone, as an artist's own grid groups them - one artist's
-    // album is one album whoever the album artist says it is.
-    public static AlbumCollage ByAlbumName(IEnumerable<Track> tracks) =>
-        new(AlbumsByPlays(tracks, t => t.Album!));
-
     // Albums by name and album artist, as the Albums grid groups them - a
     // playlist can hold two different albums called Greatest Hits.
     public static AlbumCollage ByAlbumAndArtist(IEnumerable<Track> tracks) =>
         new(AlbumsByPlays(tracks, t => (t.Album!, t.EffectiveAlbumArtist)));
 
+    // An artist's: their picture when one can be found online
+    // (ArtistPictureLoader), and their covers when not - by album name alone,
+    // as an artist's own grid groups them: one artist's album is one album
+    // whoever the album artist says it is. tracks are all of theirs, which say
+    // who to ask and which albums tell them from a namesake. thumbnail for a
+    // row rather than a page's header: a phone's Artists tab draws hundreds of
+    // these, and each holds a picture of its own, where covers are shared
+    // with the album grids.
+    public static AlbumCollage ForArtist(string artist, IReadOnlyList<Track> tracks, bool thumbnail) =>
+        new(AlbumsByPlays(tracks, t => t.Album!), (artist, tracks, thumbnail));
+
     public static readonly AlbumCollage Empty = new([]);
 
-    private AlbumCollage(IReadOnlyList<Track> albumsByPlays)
+    private AlbumCollage(IReadOnlyList<Track> albumsByPlays,
+        (string Name, IReadOnlyList<Track> Tracks, bool Thumbnail)? artist = null)
     {
         AlbumsInPlayOrder = albumsByPlays;
+        _artist = artist;
     }
+
+    private readonly (string Name, IReadOnlyList<Track> Tracks, bool Thumbnail)? _artist;
 
     // One track per album, whose art stands for that album, most played
     // first - every album the cover could be made of.
@@ -124,7 +134,33 @@ public sealed class AlbumCollage : ObservableObject, AlbumArtLoader.IShowsAlbumA
     private async Task LoadArtAsync()
     {
         var cacheGeneration = AlbumArtLoader.CacheGeneration;
+        var picture = _artist is var (name, tracks, thumbnail)
+            ? ArtistPictureLoader.Current.LoadAsync(name, tracks, thumbnail)
+            : null;
+
+        // A picture already known is on disk, here or on the server, and
+        // arrives in moments: waited for briefly, so the covers are neither
+        // read nor shown first for nothing.
+        if (picture != null && await Task.WhenAny(picture, Task.Delay(PictureHeadStart)) == picture
+            && await picture is { } known)
+        {
+            Publish([known], cacheGeneration);
+            return;
+        }
+
         var art = await LoadCoversAsync(AlbumsInPlayOrder);
+        Publish(picture is { IsCompleted: true } && await picture is { } arrived ? [arrived] : art, cacheGeneration);
+
+        // One looked up for the first time takes as long as the internet
+        // does: the covers are shown meanwhile, and give way to it.
+        if (picture is { IsCompleted: false } && await picture is { } found)
+            CoverArt = [found];
+    }
+
+    private static readonly TimeSpan PictureHeadStart = TimeSpan.FromMilliseconds(150);
+
+    private void Publish(IReadOnlyList<Bitmap> art, int cacheGeneration)
+    {
         Volatile.Write(ref _artCacheGeneration, cacheGeneration);
         Interlocked.Exchange(ref _artState, 2);
         CoverArt = art;
