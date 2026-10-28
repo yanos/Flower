@@ -129,7 +129,18 @@ public class PathCaseTests
         {
             var wav = Flower.DeviceChecks.SyntheticWav.Build(TimeSpan.FromMilliseconds(100), _ => 0);
             System.IO.File.WriteAllBytes(Path.Combine(folder, "Debaser.wav"), wav);
-            System.IO.File.WriteAllBytes(Path.Combine(folder, "debaser.wav"), wav);
+            // Where the second spelling is the first file again, a Mac
+            // overwrites it, and the iOS simulator refuses the write outright
+            // (IO_FileExists) - while File.Exists says no such file is there,
+            // so asking first does not help. Either way the folder holds one
+            // file, and that is what the scan is held to.
+            try
+            {
+                System.IO.File.WriteAllBytes(Path.Combine(folder, "debaser.wav"), wav);
+            }
+            catch (IOException)
+            {
+            }
             var onDisk = Directory.GetFiles(folder).Length;
 
             var found = new Flower.Importer.Importer(NullLogger<Flower.Importer.Importer>.Instance).Import([folder]);
