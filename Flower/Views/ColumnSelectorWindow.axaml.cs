@@ -1,4 +1,4 @@
-using System.Linq;
+using System;
 
 using Avalonia.Controls;
 using Avalonia.Interactivity;
@@ -11,6 +11,8 @@ namespace Flower.Views;
 
 public partial class ColumnSelectorWindow : Window
 {
+    private readonly ColumnSelectorViewModel? _viewModel;
+
     // Required by the Avalonia XAML compiler (the {Binding} inside the
     // DataTemplate below needs to validate against a constructible instance);
     // never actually used by app code, which always goes through the
@@ -23,11 +25,19 @@ public partial class ColumnSelectorWindow : Window
     public ColumnSelectorWindow(ColumnManager columnManager, MainViewModel viewModel)
     {
         InitializeComponent();
-        ColumnsList.ItemsSource = columnManager.Columns.OrderBy(c => c.Order).ToList();
-        AlbumArtCheck.DataContext = columnManager;
-        DataContext = viewModel;
+        _viewModel = new ColumnSelectorViewModel(
+            columnManager,
+            () => viewModel.SortArtistAlbumsByYear,
+            value => viewModel.SortArtistAlbumsByYear = value);
+        DataContext = _viewModel;
         NativeMenuHelper.InheritFromMainWindow(this);
     }
 
-    private void CloseButton_Click(object? sender, RoutedEventArgs e) => Close();
+    protected override void OnClosed(EventArgs e)
+    {
+        _viewModel?.Dispose();
+        base.OnClosed(e);
+    }
+
+    private void DoneButton_Click(object? sender, RoutedEventArgs e) => Close();
 }

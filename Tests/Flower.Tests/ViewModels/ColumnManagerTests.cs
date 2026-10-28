@@ -162,6 +162,37 @@ public class ColumnManagerTests : PinnedDataDirectory
         Assert.Equal(1, raised);
     }
 
+    // Reset rewrites every column's visibility and order; the track list
+    // rebuilds on each ColumnsChanged, so it has to hear about it once.
+    [Fact]
+    public void Reset_tells_the_list_once()
+    {
+        var manager = New();
+        Column(manager, "Genre").IsVisible = false;
+        manager.Reorder(Column(manager, "Year"), newVisibleIndex: 0);
+        var raised = 0;
+        manager.ColumnsChanged += (_, _) => raised++;
+
+        manager.ResetToDefaults();
+
+        Assert.Equal(1, raised);
+    }
+
+    // Title was hideable before it was locked; a settings file that hid it
+    // must not leave it hidden with nothing able to show it again.
+    [Fact]
+    public void A_saved_hidden_title_comes_back_shown()
+    {
+        var settings = new AppSettings
+        {
+            ColumnStates = [new ColumnState { Id = "Title", IsVisible = false, Width = 240, Order = 1 }],
+        };
+
+        var manager = new ColumnManager(settings, new AppSettingsStore());
+
+        Assert.True(Column(manager, "Title").IsVisible);
+    }
+
     // Every field Track Info shows should be offerable as a column - the rule
     // BuildDefaults' own comment states. Lyrics is the stated exception.
     [Fact]

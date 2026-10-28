@@ -1602,7 +1602,7 @@ public partial class MainView : UserControl
         foreach (var col in columnManager.Columns)
         {
             var col1 = col; // capture
-            var item = new MenuItem { Header = col.Header };
+            var item = new MenuItem { Header = col.Header, IsEnabled = !ColumnManager.IsAlwaysShown(col) };
             SetCheckIcon(item, col.IsVisible);
             item.Click += (_, _) =>
             {

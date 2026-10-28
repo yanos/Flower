@@ -10,9 +10,19 @@ namespace Flower.Controls;
 
 public class ColumnManager
 {
+    // The one column that cannot be hidden: a row with no title is a row of
+    // metadata about nothing. The Columns window shows it locked, and the
+    // header's right-click menu offers it greyed out.
+    public const string AlwaysShownId = "Title";
+
     private readonly AppSettings _appSettings;
     private readonly AppSettingsStore _appSettingsStore;
     private CancellationTokenSource? _pendingSaveCts;
+
+    // Set while ResetToDefaults rewrites every column at once, so the track
+    // list rebuilds once at the end rather than once per property it touches.
+    private bool _batching;
+    private bool _changedWhileBatching;
 
     public List<MusicColumnDefinition> Columns { get; }
 
@@ -72,9 +82,43 @@ public class ColumnManager
                 // need the rebuild since those change which cells exist or
                 // their sequence.
                 if (e.PropertyName != nameof(MusicColumnDefinition.Width))
-                    ColumnsChanged?.Invoke(this, EventArgs.Empty);
+                {
+                    if (_batching)
+                        _changedWhileBatching = true;
+                    else
+                        ColumnsChanged?.Invoke(this, EventArgs.Empty);
+                }
                 ScheduleSave();
             };
+    }
+
+    public static bool IsAlwaysShown(MusicColumnDefinition column) => column.Id == AlwaysShownId;
+
+    // Back to first launch for everything the Columns window sets: which
+    // columns show, their order, and the art well. Widths are left alone -
+    // they are set by dragging in the list, not here, and a reset in this
+    // window throwing away a careful resize would be a surprise.
+    public void ResetToDefaults()
+    {
+        _batching = true;
+        _changedWhileBatching = false;
+        try
+        {
+            foreach (var def in BuildDefaults())
+            {
+                var col = Columns.First(c => c.Id == def.Id);
+                col.IsVisible = def.IsVisible;
+                col.Order = def.Order;
+            }
+        }
+        finally
+        {
+            _batching = false;
+        }
+
+        if (_changedWhileBatching)
+            ColumnsChanged?.Invoke(this, EventArgs.Empty);
+        ShowAlbumArt = true;
     }
 
     // Moves `column` so it becomes the `newVisibleIndex`-th visible column
@@ -119,7 +163,9 @@ public class ColumnManager
             if (col == null)
                 continue;
             col.Width = state.Width;
-            col.IsVisible = state.IsVisible;
+            // A settings file from before Title was locked may have it hidden,
+            // and nothing would show it again.
+            col.IsVisible = state.IsVisible || IsAlwaysShown(col);
             col.Order = state.Order;
         }
     }

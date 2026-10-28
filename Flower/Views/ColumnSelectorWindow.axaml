@@ -2,18 +2,27 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:Flower.ViewModels"
         xmlns:controls="clr-namespace:Flower.Controls"
+        xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
         x:Class="Flower.Views.ColumnSelectorWindow"
-        x:DataType="vm:MainViewModel"
+        x:DataType="vm:ColumnSelectorViewModel"
         Title="Select Columns"
-        SizeToContent="WidthAndHeight"
+        Width="820" Height="640"
         WindowStartupLocation="CenterOwner"
         CanResize="False"
         Background="{DynamicResource AppBackgroundBrush}">
 
   <!-- Laid out from the October 2026 redesign's Columns board: the name in
-       the display serif over a line saying what it is for, the columns on the
-       surface colour between hairlines, and Close at the bottom. -->
+       the display serif with a filter beside it; the shown columns down the
+       left on the sidebar colour, in the order the list draws them, each with
+       move and hide; every column on the right, grouped, as checkboxes; the
+       display switches under them; Reset and Done along the bottom. -->
   <Window.Styles>
+    <Style Selector="TextBlock.label">
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="LetterSpacing" Value="0.9"/>
+      <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
+    </Style>
     <Style Selector="CheckBox.column">
       <Setter Property="FontSize" Value="13"/>
       <Setter Property="MinHeight" Value="34"/>
@@ -22,79 +31,206 @@
       <Setter Property="CornerRadius" Value="8"/>
       <Setter Property="VerticalContentAlignment" Value="Center"/>
     </Style>
+    <Style Selector="CheckBox.column:checked">
+      <Setter Property="FontWeight" Value="Medium"/>
+    </Style>
+    <Style Selector="Button.move">
+      <Setter Property="Width" Value="26"/>
+      <Setter Property="Height" Value="26"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="CornerRadius" Value="6"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+    <Style Selector="Button.move:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppHoverBrush}"/>
+      <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}"/>
+    </Style>
+    <Style Selector="Button.move:disabled">
+      <Setter Property="Opacity" Value="0.3"/>
+    </Style>
+    <Style Selector="Button.move:disabled /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent"/>
+    </Style>
   </Window.Styles>
 
-  <StackPanel>
-    <StackPanel Margin="24,22,24,16" Spacing="4">
-      <TextBlock Classes="sectionTitle" Text="Columns" FontSize="24"/>
-      <TextBlock Text="Choose what song lists show. Drag a column's heading in the list to move it."
-                 FontSize="13"
-                 Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-    </StackPanel>
+  <DockPanel>
 
-    <Border BorderThickness="0,1"
-            BorderBrush="{DynamicResource AppBorderBrush}"
-            Background="{DynamicResource AppSurfaceBrush}"
-            Padding="20,12,20,16">
-      <StackPanel Spacing="12">
-        <!-- A UniformGrid, not a WrapPanel: wrapping packs each row to
-             whatever fits, so the second and third checkbox of one row
-             started at a different x than the row above it however carefully
-             the items were given a MinWidth. Fixed columns are what actually
-             lines them up, and with the full Track Info field set here there
-             are enough of them for that to matter. Four columns keeps the
-             window about as tall as the screen allows. -->
-        <ItemsControl x:Name="ColumnsList">
-          <ItemsControl.ItemsPanel>
-            <ItemsPanelTemplate>
-              <UniformGrid Columns="4"/>
-            </ItemsPanelTemplate>
-          </ItemsControl.ItemsPanel>
-          <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="controls:MusicColumnDefinition">
-              <CheckBox Classes="column"
-                        Content="{Binding Header}"
-                        IsChecked="{Binding IsVisible}"/>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-
-        <Border BorderThickness="0,1,0,0"
-                BorderBrush="{DynamicResource AppBorderBrush}"
-                Padding="0,10,0,0">
-          <StackPanel>
-            <!-- Its own DataContext (the ColumnManager, set in the
-                 constructor): the art well is track-list layout like every
-                 checkbox above it, and ColumnManager is what owns and persists
-                 that - see ColumnManager.ShowAlbumArt. The window's own
-                 DataContext, and so the checkbox below, is still the
-                 MainViewModel. -->
-            <CheckBox x:Name="AlbumArtCheck"
-                      x:DataType="controls:ColumnManager"
-                      Classes="column"
-                      Content="Show album art"
-                      IsChecked="{Binding ShowAlbumArt}"/>
-            <CheckBox Classes="column"
-                      Content="Sort artist's albums by year"
-                      IsChecked="{Binding SortArtistAlbumsByYear}"/>
-          </StackPanel>
-        </Border>
+    <!-- The name, what it is for, and the filter, which narrows the
+         checkboxes on the right and leaves the shown list alone. -->
+    <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" ColumnSpacing="16" Margin="24,22,24,16">
+      <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Bottom">
+        <TextBlock Classes="sectionTitle" Text="Columns" FontSize="24"/>
+        <TextBlock Text="Choose what song lists show, and set the order they show in."
+                   FontSize="13"
+                   Foreground="{DynamicResource AppTextSecondaryBrush}"/>
       </StackPanel>
+      <Border Grid.Column="1" Classes="outlined"
+              Width="240" Height="36" CornerRadius="10" Padding="12,0,4,0"
+              VerticalAlignment="Bottom">
+        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+          <materialIcons:MaterialIcon Grid.Column="0" Kind="Magnify"
+                                      Foreground="{DynamicResource AppTextMutedBrush}"
+                                      Width="15" Height="15"
+                                      VerticalAlignment="Center"/>
+          <controls:TextInput Grid.Column="1"
+                              x:Name="FilterBox"
+                              Classes="inOval"
+                              FontSize="13"
+                              PlaceholderText="Filter"
+                              AutomationProperties.Name="Find a column"
+                              Text="{Binding Filter}"/>
+        </Grid>
+      </Border>
+    </Grid>
+
+    <!-- Reset and Done. Done is both default and cancel, so Return and Escape
+         close the window as the old Close did - every change has already
+         been applied. -->
+    <Border DockPanel.Dock="Bottom"
+            BorderThickness="0,1,0,0"
+            BorderBrush="{DynamicResource AppBorderBrush}"
+            Padding="24,14,24,20">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <Button Grid.Column="0" Classes="standard secondary"
+                Content="Reset to default"
+                Command="{Binding ResetCommand}"/>
+        <Button Grid.Column="2"
+                x:Name="DoneButton"
+                Content="Done"
+                Classes="standard primary"
+                IsDefault="True"
+                IsCancel="True"
+                Click="DoneButton_Click"/>
+      </Grid>
     </Border>
 
-    <Button x:Name="CloseButton"
-            Content="Close"
-            Classes="primary"
-            Height="36"
-            Padding="20,0"
-            CornerRadius="10"
-            FontSize="13"
-            FontWeight="SemiBold"
-            VerticalContentAlignment="Center"
-            Margin="24,14,24,18"
-            HorizontalAlignment="Right"
-            IsDefault="True"
-            IsCancel="True"
-            Click="CloseButton_Click"/>
-  </StackPanel>
+    <!-- The two switches that are track-list layout without being columns. -->
+    <WrapPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="24,10,24,10">
+      <TextBlock Classes="label" Text="DISPLAY" VerticalAlignment="Center" Margin="0,0,28,0"/>
+      <ToggleSwitch IsChecked="{Binding ShowAlbumArt, Mode=TwoWay}"
+                    OnContent="Show album art" OffContent="Show album art"
+                    FontSize="13" MinWidth="0" Margin="0,0,28,0"
+                    VerticalAlignment="Center"/>
+      <ToggleSwitch IsChecked="{Binding SortArtistAlbumsByYear, Mode=TwoWay}"
+                    OnContent="Sort an artist’s albums by year" OffContent="Sort an artist’s albums by year"
+                    FontSize="13" MinWidth="0"
+                    VerticalAlignment="Center"/>
+    </WrapPanel>
+
+    <Border BorderThickness="0,1"
+            BorderBrush="{DynamicResource AppBorderBrush}">
+      <Grid ColumnDefinitions="260,*">
+
+        <!-- Shown, in order: the list's columns as the list draws them. -->
+        <Border Grid.Column="0"
+                Background="{DynamicResource AppSidebarBrush}"
+                BorderThickness="0,0,1,0"
+                BorderBrush="{DynamicResource AppBorderBrush}">
+          <DockPanel Margin="16,16,16,0">
+            <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,10">
+              <TextBlock Grid.Column="0" Classes="label" Text="SHOWN, IN ORDER" VerticalAlignment="Center"/>
+              <TextBlock Grid.Column="1" Text="{Binding ShownCount}"
+                         FontSize="12" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                         VerticalAlignment="Center"/>
+            </Grid>
+            <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+              <ItemsControl ItemsSource="{Binding Shown}" Margin="0,0,0,16">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <StackPanel Spacing="4"/>
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:ShownColumn">
+                    <Border Height="36"
+                            Padding="10,0,6,0"
+                            CornerRadius="8"
+                            Background="{DynamicResource AppSurfaceBrush}"
+                            BorderBrush="{DynamicResource AppBorderBrush}"
+                            BorderThickness="1">
+                      <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="2">
+                        <TextBlock Grid.Column="0" Text="{Binding Header}"
+                                   FontSize="13" FontWeight="Medium"
+                                   TextTrimming="CharacterEllipsis"
+                                   VerticalAlignment="Center"/>
+                        <materialIcons:MaterialIcon Grid.Column="1" Kind="LockOutline"
+                                                    IsVisible="{Binding IsLocked}"
+                                                    ToolTip.Tip="Always shown"
+                                                    Width="13" Height="13" Margin="0,0,6,0"
+                                                    Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                                    VerticalAlignment="Center"/>
+                        <Button Grid.Column="2" Classes="move"
+                                Command="{Binding MoveUpCommand}"
+                                AutomationProperties.Name="{Binding MoveUpLabel}"
+                                ToolTip.Tip="Move up">
+                          <materialIcons:MaterialIcon Kind="ChevronUp" Width="16" Height="16"/>
+                        </Button>
+                        <Button Grid.Column="3" Classes="move"
+                                Command="{Binding MoveDownCommand}"
+                                AutomationProperties.Name="{Binding MoveDownLabel}"
+                                ToolTip.Tip="Move down">
+                          <materialIcons:MaterialIcon Kind="ChevronDown" Width="16" Height="16"/>
+                        </Button>
+                        <Button Grid.Column="4" Classes="move"
+                                Command="{Binding HideCommand}"
+                                AutomationProperties.Name="{Binding HideLabel}"
+                                ToolTip.Tip="Hide">
+                          <materialIcons:MaterialIcon Kind="Close" Width="14" Height="14"/>
+                        </Button>
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </DockPanel>
+        </Border>
+
+        <!-- Every column there is, grouped. Three to a row in a UniformGrid
+             rather than a WrapPanel, so the checkboxes line up down the
+             group - wrapping packs each row to whatever fits. -->
+        <ScrollViewer Grid.Column="1" HorizontalScrollBarVisibility="Disabled">
+          <StackPanel Margin="20,12,20,16" Spacing="14">
+            <ItemsControl ItemsSource="{Binding Groups}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <StackPanel Spacing="14"/>
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:ColumnGroup">
+                  <StackPanel>
+                    <TextBlock Classes="label" Text="{Binding Heading}" Margin="8,6"/>
+                    <ItemsControl ItemsSource="{Binding Items}">
+                      <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                          <UniformGrid Columns="3"/>
+                        </ItemsPanelTemplate>
+                      </ItemsControl.ItemsPanel>
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ColumnOption">
+                          <CheckBox Classes="column"
+                                    Content="{Binding Header}"
+                                    IsChecked="{Binding Column.IsVisible}"
+                                    IsEnabled="{Binding CanToggle}"/>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <TextBlock IsVisible="{Binding NoMatch}"
+                       Text="No column matches that filter."
+                       Margin="8,24"
+                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+          </StackPanel>
+        </ScrollViewer>
+      </Grid>
+    </Border>
+  </DockPanel>
 </Window>
