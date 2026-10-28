@@ -285,8 +285,11 @@
     <StackPanel DockPanel.Dock="Top" Spacing="10" Margin="0,0,0,12">
       <Grid ColumnDefinitions="Auto,*">
         <TextBlock Grid.Column="0" Text="Name" VerticalAlignment="Center" Margin="0,0,10,0" Opacity="0.75"/>
+        <!-- AutoCapitalization so a phone's keyboard starts on a capital,
+             as every other box that names something does. -->
         <controls:TextInput Grid.Column="1" Text="{Binding Name, Mode=TwoWay}"
                             PlaceholderText="Playlist Name"
+                            TextInputOptions.AutoCapitalization="True"
                             controls:SoftKeyboard.ReopenOnTap="True"/>
       </Grid>
 
