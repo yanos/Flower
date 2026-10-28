@@ -462,7 +462,7 @@ public sealed class TrackInfoViewModel : ViewModelBase
                 parts.Add(Resolution(pixels));
             if (FormatName(art!.MimeType) is string format)
                 parts.Add(format);
-            parts.Add(FormatBytes(art!.Bytes.Length));
+            parts.Add(FileSize(art!.Bytes.Length));
         }
         else
         {
@@ -480,7 +480,8 @@ public sealed class TrackInfoViewModel : ViewModelBase
             ? mimeType[6..].ToUpperInvariant()
             : null;
 
-    private static string FormatBytes(int count) =>
+    // A cover's size on disk as Track Info writes it, on both heads.
+    public static string FileSize(int count) =>
         count >= 1024 * 1024 ? $"{count / (1024.0 * 1024.0):0.#} MB" : $"{count / 1024.0:0} KB";
 
     // True/false when every song agrees, null when they don't.

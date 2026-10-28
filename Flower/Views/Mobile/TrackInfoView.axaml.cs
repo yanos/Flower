@@ -330,6 +330,7 @@ public partial class TrackInfoView : UserControl
         var requestId = ++_artRequestId;
         ArtView.AlbumArt = null;
         ArtResolution.IsVisible = false;
+        ArtFileSize.IsVisible = false;
         RemoveArtPill.IsVisible = false;
         ShowMultipleArt(false);
         _artBytes = null;
@@ -357,6 +358,8 @@ public partial class TrackInfoView : UserControl
         _artBytes = bytes;
         ArtResolution.Text = size is { } pixels ? TrackInfoViewModel.Resolution(pixels) : "";
         ArtResolution.IsVisible = size is not null;
+        ArtFileSize.Text = bytes is { Length: > 0 } ? TrackInfoViewModel.FileSize(bytes.Length) : "";
+        ArtFileSize.IsVisible = bytes is { Length: > 0 };
         RemoveArtPill.IsVisible = bitmap is not null && ArtButtons.IsVisible;
     }
 

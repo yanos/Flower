@@ -256,6 +256,11 @@
                          Foreground="{DynamicResource AppTextMutedBrush}"
                          HorizontalAlignment="Center"
                          IsVisible="False" />
+              <TextBlock x:Name="ArtFileSize"
+                         FontSize="12"
+                         Foreground="{DynamicResource AppTextMutedBrush}"
+                         HorizontalAlignment="Center"
+                         IsVisible="False" />
             </StackPanel>
             <!-- .chromeIcons: the buttons' glyphs in the frame's colour, like
                  the bin over the cover (App.axaml). -->
