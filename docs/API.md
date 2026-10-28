@@ -364,7 +364,7 @@ per token and audience (the owner's, or one guest's).
 (`LibraryContracts.cs`), whose comments are the field-by-field reference:
 identity (`Id`, `AlbumId`, `ArtistId`, `CoverArt`), tags, technical fields,
 `RelativePath` below the library folder, per-device `PlayCounts` keyed by
-fingerprint, `DateAdded`, `LastPlayed`, `Starred`/`StarredAt`, the per-track
+fingerprint, `DateAdded`, `LastPlayed`, `Starred`, the per-track
 playback options, and three edit dates — `TagsEditedAt` (with the full `Tags`
 when set), `ArtEditedAt`, `FileReplacedAt` — that tell a device holding its own
 copy that the server's is newer.
@@ -416,7 +416,7 @@ limit it is a `400`.
 Totals, not events: `Count` is this device's own play count for the track —
 plays counted in Flower — filed under the fingerprint the signature proved and
 merged by max, so re-sending converges. Everything else in the record —
-`LastPlayedAt`, `Starred`, `StarredAt`, the playback options, `DateAdded`,
+`LastPlayedAt`, `Starred`, the playback options, `DateAdded`,
 `ImportedCount` — is a single-valued field on the shared library, and is
 applied **only from an admin device**. A non-admin sending them still gets
 `204`; the fields are dropped in the merge. `DateAdded` only ever moves

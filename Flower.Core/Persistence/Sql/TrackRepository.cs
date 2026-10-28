@@ -28,7 +28,7 @@ namespace Flower.Persistence.Sql
             duration_ticks, bitrate, sample_rate, channels, bits_per_sample, codec,
             origin_device_fingerprint, origin_track_id, origin_file_extension, origin_album_art_id,
             play_count, imported_play_count, last_played_at, date_added,
-            album_artist, artist_id, album_id, starred, starred_at,
+            album_artist, artist_id, album_id, starred,
             is_locally_downloaded, origin_relative_path,
             title_sort, artists_sort, composers_sort,
             remember_playback_position, resume_position_ticks, ignore_when_shuffling, volume_adjustment,
@@ -140,7 +140,7 @@ namespace Flower.Persistence.Sql
         // The caller is expected to have already applied the same change to
         // the in-memory Track objects; this is the durability half, reached
         // through ITrackStore from Library.SetStarred.
-        public void SetStarred(StarTarget target, string value, bool starred, DateTimeOffset? starredAt)
+        public void SetStarred(StarTarget target, string value, bool starred)
         {
             // The column is chosen from the enum, never interpolated from user
             // input - SQLite cannot bind an identifier. All three are indexed.
@@ -154,9 +154,8 @@ namespace Flower.Persistence.Sql
             using var connection = db.Open();
             using var command = connection.CreateCommand();
             command.CommandText =
-                $"UPDATE tracks SET starred = $starred, starred_at = $starred_at WHERE {column} = $value;";
+                $"UPDATE tracks SET starred = $starred WHERE {column} = $value;";
             command.Parameters.AddWithValue("$starred", starred ? 1 : 0);
-            command.Parameters.AddWithValue("$starred_at", (object?)starredAt?.UtcTicks ?? DBNull.Value);
             command.Parameters.AddWithValue("$value", value);
             command.ExecuteNonQuery();
         }
@@ -451,7 +450,7 @@ namespace Flower.Persistence.Sql
                 duration_ticks, bitrate, sample_rate, channels, bits_per_sample, codec,
                 origin_device_fingerprint, origin_track_id, origin_file_extension, origin_album_art_id,
                 play_count, imported_play_count, last_played_at, date_added,
-                album_artist, artist_id, album_id, starred, starred_at,
+                album_artist, artist_id, album_id, starred,
                 is_locally_downloaded, origin_relative_path,
                 title_sort, artists_sort, composers_sort,
                 remember_playback_position, resume_position_ticks, ignore_when_shuffling, volume_adjustment,
@@ -466,7 +465,7 @@ namespace Flower.Persistence.Sql
                 $duration_ticks, $bitrate, $sample_rate, $channels, $bits_per_sample, $codec,
                 $origin_device_fingerprint, $origin_track_id, $origin_file_extension, $origin_album_art_id,
                 $play_count, $imported_play_count, $last_played_at, $date_added,
-                $album_artist, $artist_id, $album_id, $starred, $starred_at,
+                $album_artist, $artist_id, $album_id, $starred,
                 $is_locally_downloaded, $origin_relative_path,
                 $title_sort, $artists_sort, $composers_sort,
                 $remember_playback_position, $resume_position_ticks, $ignore_when_shuffling, $volume_adjustment,
@@ -518,7 +517,6 @@ namespace Flower.Persistence.Sql
                 artist_id = excluded.artist_id,
                 album_id = excluded.album_id,
                 starred = excluded.starred,
-                starred_at = excluded.starred_at,
                 is_locally_downloaded = excluded.is_locally_downloaded,
                 origin_relative_path = excluded.origin_relative_path,
                 title_sort = excluded.title_sort,
@@ -549,7 +547,7 @@ namespace Flower.Persistence.Sql
             "$duration_ticks", "$bitrate", "$sample_rate", "$channels", "$bits_per_sample", "$codec",
             "$origin_device_fingerprint", "$origin_track_id", "$origin_file_extension", "$origin_album_art_id",
             "$play_count", "$imported_play_count", "$last_played_at", "$date_added",
-            "$album_artist", "$artist_id", "$album_id", "$starred", "$starred_at",
+            "$album_artist", "$artist_id", "$album_id", "$starred",
             "$is_locally_downloaded", "$origin_relative_path",
             "$title_sort", "$artists_sort", "$composers_sort",
             "$remember_playback_position", "$resume_position_ticks", "$ignore_when_shuffling", "$volume_adjustment",
@@ -622,7 +620,6 @@ namespace Flower.Persistence.Sql
             p["$artist_id"].Value = CatalogIdentity.ArtistId(albumArtist);
             p["$album_id"].Value = CatalogIdentity.AlbumId(albumArtist, track.Album);
             p["$starred"].Value = track.Starred ? 1 : 0;
-            p["$starred_at"].Value = (object?)track.StarredAt?.UtcTicks ?? DBNull.Value;
             p["$is_locally_downloaded"].Value = track.IsLocallyDownloaded ? 1 : 0;
             p["$origin_relative_path"].Value = Nullable(track.OriginRelativePath);
             p["$title_sort"].Value = Nullable(track.TitleSort);
@@ -693,25 +690,24 @@ namespace Flower.Persistence.Sql
             // and exist only so the server can group, index and filter on them.
             // See Schema.Baseline.
             Starred = reader.GetInt64(44) != 0,
-            StarredAt = reader.IsDBNull(45) ? null : new DateTimeOffset(reader.GetInt64(45), TimeSpan.Zero),
-            IsLocallyDownloaded = reader.GetInt64(46) != 0,
-            OriginRelativePath = Text(reader, 47),
-            TitleSort = Text(reader, 48),
-            ArtistsSort = Text(reader, 49),
-            ComposersSort = Text(reader, 50),
-            RememberPlaybackPosition = reader.GetInt64(51) != 0,
-            ResumePosition = reader.IsDBNull(52) ? null : TimeSpan.FromTicks(reader.GetInt64(52)),
-            IgnoreWhenShuffling = reader.GetInt64(53) != 0,
-            VolumeAdjustment = (int)reader.GetInt64(54),
-            EncoderProfile = Text(reader, 55),
-            WithdrawnByOrigin = reader.GetInt64(56) != 0,
-            MovedFromPath = Text(reader, 57),
-            OriginFileStamp = Text(reader, 58),
-            TagsEditedAt = reader.IsDBNull(59) ? null : new DateTimeOffset(reader.GetInt64(59), TimeSpan.Zero),
-            ArtEditedAt = reader.IsDBNull(60) ? null : new DateTimeOffset(reader.GetInt64(60), TimeSpan.Zero),
-            FileReplacedAt = reader.IsDBNull(61) ? null : new DateTimeOffset(reader.GetInt64(61), TimeSpan.Zero),
-            ArtWidth = (int)reader.GetInt64(62),
-            ArtHeight = (int)reader.GetInt64(63),
+            IsLocallyDownloaded = reader.GetInt64(45) != 0,
+            OriginRelativePath = Text(reader, 46),
+            TitleSort = Text(reader, 47),
+            ArtistsSort = Text(reader, 48),
+            ComposersSort = Text(reader, 49),
+            RememberPlaybackPosition = reader.GetInt64(50) != 0,
+            ResumePosition = reader.IsDBNull(51) ? null : TimeSpan.FromTicks(reader.GetInt64(51)),
+            IgnoreWhenShuffling = reader.GetInt64(52) != 0,
+            VolumeAdjustment = (int)reader.GetInt64(53),
+            EncoderProfile = Text(reader, 54),
+            WithdrawnByOrigin = reader.GetInt64(55) != 0,
+            MovedFromPath = Text(reader, 56),
+            OriginFileStamp = Text(reader, 57),
+            TagsEditedAt = reader.IsDBNull(58) ? null : new DateTimeOffset(reader.GetInt64(58), TimeSpan.Zero),
+            ArtEditedAt = reader.IsDBNull(59) ? null : new DateTimeOffset(reader.GetInt64(59), TimeSpan.Zero),
+            FileReplacedAt = reader.IsDBNull(60) ? null : new DateTimeOffset(reader.GetInt64(60), TimeSpan.Zero),
+            ArtWidth = (int)reader.GetInt64(61),
+            ArtHeight = (int)reader.GetInt64(62),
         };
 
         private static string? Text(SqliteDataReader reader, int ordinal) =>

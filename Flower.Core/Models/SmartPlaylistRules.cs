@@ -127,7 +127,6 @@ public enum SmartField
 
     DateAdded      = 50,
     LastPlayedAt   = 51,
-    StarredAt      = 52,
 
     Starred             = 70,
     IsCompilation       = 71,

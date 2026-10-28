@@ -27,7 +27,7 @@ namespace Flower.Models
     {
         void UpdateStats(Track track);
 
-        void SetStarred(StarTarget target, string value, bool starred, DateTimeOffset? starredAt);
+        void SetStarred(StarTarget target, string value, bool starred);
 
         void Upsert(Track track);
 

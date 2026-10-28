@@ -207,7 +207,6 @@ public class TrackStateReportingTests
     {
         var track = Played("Second Song", "server-track-7", 0);
         track.Starred = true;
-        track.StarredAt = DateTimeOffset.UtcNow;
 
         var report = LibrarySyncService.UnreportedTrackState(
             [track], new Dictionary<string, int>(),
@@ -216,7 +215,6 @@ public class TrackStateReportingTests
 
         var reported = Assert.Single(report);
         Assert.True(reported.Starred);
-        Assert.Equal(track.StarredAt, reported.StarredAt);
         // Nothing played here, and a zero says nothing the far side does not
         // already assume - but the field rides along rather than being omitted,
         // because a report carrying only the half that moved would need a way
@@ -225,9 +223,8 @@ public class TrackStateReportingTests
     }
 
     // Unstarring is the case a max-merge could never carry: it moves the value
-    // down, and Library.SetStarred nulls StarredAt on the way, so there is no
-    // timestamp left to order it by. Comparing against what the server served
-    // is what makes it reportable at all.
+    // down, and a star carries no timestamp to order it by. Comparing against
+    // what the server served is what makes it reportable at all.
     [Fact]
     public void An_admin_device_reports_clearing_a_star_the_server_holds()
     {
@@ -446,27 +443,6 @@ public class TrackStateReportingTests
         var track = Played("Second Song", "server-track-7", 0);
         track.LastPlayedAt = served.LastPlayedAt;
         track.ResumePosition = TimeSpan.FromSeconds(91.5);
-
-        var report = LibrarySyncService.UnreportedTrackState(
-            [track], new Dictionary<string, int>(),
-            ServerSaid("server-track-7", served), includeOwnerState: true);
-
-        Assert.Empty(report);
-    }
-
-    // StarredAt is deliberately outside the comparison: it is set on starring
-    // and nulled on unstarring, so two devices that agree on the star must not
-    // be made to disagree forever over the second it was clicked at.
-    [Fact]
-    public void A_difference_only_in_when_the_star_was_set_is_not_worth_reporting()
-    {
-        var served = Played("Second Song", "server-track-7", 0);
-        served.Starred = true;
-        served.StarredAt = DateTimeOffset.UtcNow.AddDays(-30);
-
-        var track = Played("Second Song", "server-track-7", 0);
-        track.Starred = true;
-        track.StarredAt = DateTimeOffset.UtcNow;
 
         var report = LibrarySyncService.UnreportedTrackState(
             [track], new Dictionary<string, int>(),

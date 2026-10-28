@@ -32,7 +32,6 @@ public class RemovedTrackTests
         track.ImportedPlayCount = 2;
         track.LastPlayedAt = LongAgo.AddDays(30);
         track.Starred = true;
-        track.StarredAt = LongAgo.AddDays(1);
         track.IgnoreWhenShuffling = true;
         track.VolumeAdjustment = -20;
         track.RemotePlayCounts["phone"] = 4;
@@ -47,7 +46,6 @@ public class RemovedTrackTests
         Assert.Equal(2, returned.ImportedPlayCount);
         Assert.Equal(LongAgo.AddDays(30), returned.LastPlayedAt);
         Assert.True(returned.Starred);
-        Assert.Equal(LongAgo.AddDays(1), returned.StarredAt);
         Assert.True(returned.IgnoreWhenShuffling);
         Assert.Equal(-20, returned.VolumeAdjustment);
         Assert.Equal(4, returned.RemotePlayCounts["phone"]);

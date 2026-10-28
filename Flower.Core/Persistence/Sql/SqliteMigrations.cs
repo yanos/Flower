@@ -57,6 +57,12 @@ namespace Flower.Persistence.Sql
             DROP TABLE excluded_paths;
             ALTER TABLE excluded_paths_exact RENAME TO excluded_paths;
             """,
+
+            // 13: Track.StarredAt, which only ever fed a "Date Starred" smart
+            // playlist field nobody wanted, went with it.
+            """
+            ALTER TABLE tracks DROP COLUMN starred_at;
+            """,
         ];
 
         public static int LatestVersion => BaselineVersion + Steps.Count;

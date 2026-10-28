@@ -158,10 +158,6 @@ public sealed record TrackDto(
     // the same as Track above.
     int? DiscNumber = null,
     int? DiscCount = null,
-    // When the star was set, alongside the bare flag above, so "Date Starred"
-    // reads the same on a device that learned the star by sync as on the one
-    // it was clicked on. Null when not starred.
-    System.DateTimeOffset? StarredAt = null,
     // Flower-specific. When this song's tags were last edited by a person
     // (Track.TagsEditedAt), and - only for a song that has been - the whole of
     // what they now are. A receiving device whose own stamp is older takes

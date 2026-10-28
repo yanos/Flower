@@ -1050,7 +1050,6 @@ namespace Flower.Models
             track.ImportedPlayCount        = was.ImportedPlayCount;
             track.LastPlayedAt             = was.LastPlayedAt;
             track.Starred                  = was.Starred;
-            track.StarredAt                = was.StarredAt;
             track.RememberPlaybackPosition = was.RememberPlaybackPosition;
             track.ResumePosition           = was.ResumePosition;
             track.IgnoreWhenShuffling      = was.IgnoreWhenShuffling;
@@ -1501,7 +1500,6 @@ namespace Flower.Models
             track.ImportedPlayCount       = previous.ImportedPlayCount;
             track.LastPlayedAt            = previous.LastPlayedAt;
             track.Starred                 = previous.Starred;
-            track.StarredAt               = previous.StarredAt;
             track.OriginDeviceFingerprint = previous.OriginDeviceFingerprint;
             track.OriginTrackId           = previous.OriginTrackId;
             track.OriginFileExtension     = previous.OriginFileExtension;
@@ -2033,7 +2031,6 @@ namespace Flower.Models
                 return;
 
             existing.Starred = remote.Starred;
-            existing.StarredAt = remote.StarredAt;
         }
 
         // Everything MergeSyncedTracks can move on a track this device already
@@ -2053,7 +2050,7 @@ namespace Flower.Models
             DateTimeOffset DateAdded,
             int RemoteCountDevices, long RemoteCountTotal, int ImportedPlayCount,
             DateTimeOffset? LastPlayedAt,
-            bool Starred, DateTimeOffset? StarredAt,
+            bool Starred,
             bool RememberPlaybackPosition, TimeSpan? ResumePosition, bool IgnoreWhenShuffling, int VolumeAdjustment,
             TrackTagsDto? PlaceholderTags, TimeSpan Duration, int Bitrate, int SampleRate, int Channels,
             int BitsPerSample, string? Codec, string? EncoderProfile,
@@ -2072,7 +2069,7 @@ namespace Flower.Models
                     track.DateAdded,
                     track.RemotePlayCounts.Count, total, track.ImportedPlayCount,
                     track.LastPlayedAt,
-                    track.Starred, track.StarredAt,
+                    track.Starred,
                     track.RememberPlaybackPosition, track.ResumePosition, track.IgnoreWhenShuffling, track.VolumeAdjustment,
                     track.Path == null ? TrackTags.Of(track) : null, track.Duration, track.Bitrate, track.SampleRate,
                     track.Channels, track.BitsPerSample, track.Codec, track.EncoderProfile,
@@ -2094,7 +2091,7 @@ namespace Flower.Models
                     change |= TrackChange.PlayFinished;
                 if (LastPlayedAt != after.LastPlayedAt)
                     change |= TrackChange.LastPlayed;
-                if ((Starred, StarredAt) != (after.Starred, after.StarredAt))
+                if (Starred != after.Starred)
                     change |= TrackChange.Starred;
                 if ((RememberPlaybackPosition, IgnoreWhenShuffling, VolumeAdjustment) != (after.RememberPlaybackPosition, after.IgnoreWhenShuffling, after.VolumeAdjustment))
                     change |= TrackChange.Options;
@@ -2376,9 +2373,8 @@ namespace Flower.Models
         //    played the track most recently is the one whose idea of where it
         //    got to is worth having - including a later report from that same
         //    sitting, which is how a pause reaches the server.
-        //  - Starred is taken as stated. It is a toggle with no timestamp that
-        //    survives being switched off (unstarring nulls StarredAt), so there
-        //    is no ordering to compare and max is meaningless. What keeps this
+        //  - Starred is taken as stated. It is a toggle with no timestamp, so
+        //    there is no ordering to compare and max is meaningless. What keeps this
         //    from being a clobber is on the client: it reports state only for
         //    tracks whose value differs from what this server last told it
         //    (see LibrarySyncService.UnreportedTrackState), so a star only
@@ -2469,7 +2465,6 @@ namespace Flower.Models
             if (track.Starred != entry.Starred)
             {
                 track.Starred = entry.Starred;
-                track.StarredAt = entry.StarredAt;
                 moved |= TrackChange.Starred;
             }
 
@@ -2565,14 +2560,10 @@ namespace Flower.Models
             if (matches.Count == 0)
                 return 0;
 
-            var starredAt = starred ? DateTimeOffset.UtcNow : (DateTimeOffset?)null;
             lock (_lock)
             {
                 foreach (var track in matches)
-                {
                     track.Starred = starred;
-                    track.StarredAt = starredAt;
-                }
 
                 BumpChangeToken();
             }
@@ -2589,7 +2580,7 @@ namespace Flower.Models
             // artist ids are content-derived hashes with a single spelling, so
             // they pass through unchanged.
             var stored = target == StarTarget.Song ? matches[0].Id.ToKey() : value;
-            Persist(() => _store!.SetStarred(target, stored, starred, starredAt));
+            Persist(() => _store!.SetStarred(target, stored, starred));
 
             RaiseTrackChanged(matches, TrackChange.Starred);
             return matches.Count;

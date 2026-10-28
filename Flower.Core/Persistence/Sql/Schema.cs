@@ -92,6 +92,7 @@ namespace Flower.Persistence.Sql
                 album_id                  TEXT    NOT NULL DEFAULT '',
 
                 starred                   INTEGER NOT NULL DEFAULT 0,
+                -- Dropped by SqliteMigrations' step 13.
                 starred_at                INTEGER,
 
                 -- See Track.IsLocallyDownloaded and Track.OriginRelativePath.

@@ -81,7 +81,6 @@ public static class SmartPlaylistFields
 
         Date(SmartField.DateAdded,    "Date Added",   t => t.DateAdded),
         Date(SmartField.LastPlayedAt, "Last Played",  t => t.LastPlayedAt),
-        Date(SmartField.StarredAt,    "Date Starred", t => t.StarredAt),
 
         Bool(SmartField.Starred,             "Starred",              t => t.Starred),
         Bool(SmartField.IsCompilation,       "Compilation",          t => t.IsCompilation),

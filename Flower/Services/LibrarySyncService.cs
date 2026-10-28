@@ -840,11 +840,6 @@ public class LibrarySyncService
     // device would tell a server, and what a server last told this device, in
     // the same shape so that "has this changed" is `!=` rather than six
     // hand-written comparisons that drift apart.
-    //
-    // StarredAt is deliberately not in it. It is derived from Starred - set on
-    // starring, nulled on unstarring - so including it would make two devices
-    // that agree on the star look like they disagree, forever, over the second
-    // it was clicked at.
     internal sealed record TrackStateSnapshot(
         DateTimeOffset? LastPlayedAt,
         bool Starred,
@@ -983,7 +978,7 @@ public class LibrarySyncService
             report.Add(includeOwnerState
                 ? new TrackStateDto(
                     originTrackId, total,
-                    track.LastPlayedAt, track.Starred, track.StarredAt,
+                    track.LastPlayedAt, track.Starred,
                     track.RememberPlaybackPosition, track.ResumePosition?.TotalSeconds,
                     track.IgnoreWhenShuffling, track.VolumeAdjustment, track.DateAdded,
                     track.ImportedPlayCount)

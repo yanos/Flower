@@ -416,7 +416,6 @@ namespace Flower.Models
         // consumer, and CarryForwardMutableState already named Starred as the
         // example of the kind of field a rescan must not reset.
         public bool Starred { get; set; }
-        public DateTimeOffset? StarredAt { get; set; }
 
         // Latest known play count reported by each OTHER device, keyed by
         // DeviceIdentity.Fingerprint - see LibraryDtoMapper.ToTrackDto's

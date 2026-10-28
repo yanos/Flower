@@ -497,27 +497,23 @@ public class LibrarySyncMergeTests
     [Fact]
     public void MergeSyncedTracks_takes_a_star_the_server_set_since_the_last_pull()
     {
-        var at = new DateTimeOffset(2026, 9, 17, 9, 0, 0, TimeSpan.Zero);
-        var (library, _, served) = SyncedPair(served: t => { t.Starred = true; t.StarredAt = at; });
+        var (library, _, served) = SyncedPair(served: t => t.Starred = true);
 
         library.MergeSyncedTracks("peer-1", new List<Track> { served }, starBaseline: new HashSet<string>());
 
         var merged = library.Tracks.Single();
         Assert.True(merged.Starred);
-        Assert.Equal(at, merged.StarredAt);
     }
 
     [Fact]
     public void MergeSyncedTracks_takes_an_unstar_the_server_made_since_the_last_pull()
     {
         var (library, _, served) = SyncedPair(
-            mine: t => { t.Starred = true; t.StarredAt = DateTimeOffset.UtcNow; });
+            mine: t => t.Starred = true);
 
         library.MergeSyncedTracks("peer-1", new List<Track> { served }, starBaseline: new HashSet<string> { "t1" });
 
-        var merged = library.Tracks.Single();
-        Assert.False(merged.Starred);
-        Assert.Null(merged.StarredAt);
+        Assert.False(library.Tracks.Single().Starred);
     }
 
     // The other half of the three-way merge: the server says what it said
@@ -528,7 +524,7 @@ public class LibrarySyncMergeTests
     public void MergeSyncedTracks_keeps_a_star_of_this_devices_own_the_server_has_not_heard_about()
     {
         var (library, _, served) = SyncedPair(
-            mine: t => { t.Starred = true; t.StarredAt = DateTimeOffset.UtcNow; });
+            mine: t => t.Starred = true);
 
         library.MergeSyncedTracks("peer-1", new List<Track> { served }, starBaseline: new HashSet<string>());
 

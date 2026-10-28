@@ -922,8 +922,7 @@ none of them:
   going backwards in a file is normal, so the device that played the track most
   recently is the one whose idea of where it got to is worth having, and the
   three settings stay internally consistent with it.
-- `Starred` is **taken as stated**. Unstarring nulls `StarredAt`, so there is no
-  timestamp surviving the operation to order by, and a value that moves *down* is
+- `Starred` is **taken as stated**. A star carries no timestamp to order by, and a value that moves *down* is
   not something max can carry.
 
 That last one is only safe because of what changed on the client, which is the
@@ -936,9 +935,9 @@ does not widen it — and the push then reports a field only when the local answ
 restart re-states nothing, and cannot walk back a star some other client set in
 the meantime; and a track with no seed at all (nothing pulled yet this session)
 is left alone, because with nothing to compare against there is no way to tell a
-local change from a local value. `StarredAt` is outside the comparison for the
-same reason it is outside the wire: two devices agreeing on the star must not be
-made to disagree forever over the second it was clicked at.
+local change from a local value. (A `StarredAt` used to ride along, outside the
+comparison; it fed only a "Date Starred" smart playlist field, and went with it
+in October 2026.)
 
 **Still one-directional for these fields on the way back down.** The pull now
 carries `Starred` onto a newly-created placeholder, but `MergeSyncedTracks`
@@ -1318,7 +1317,7 @@ Build order step 4 is now **done in full**: on top of scaffolding and playback, 
 - **"A paired device has two sources of files, and no folders"** (above) — steps 1–3 done, 4–6 open: moves recognised by their audio, replacing a song's file with a better one, and folders a device had before pairing. The two TODOs there (an opt-in naming scheme, transcoding for a device that asks) are later still.
 - **Real-device verification** still owed: the Android download path, and end-to-end sync against a real second device rather than a test harness.
 - **The browser's device key, in a real tab.** The server half is verified (see "The browser is a device, for real" below); the DOM half is not — a tab pairing from the fragment, its IndexedDB key surviving a reload, the settings overlay opening on `page=settings`.
-- **Ratings.** Nothing on `Track` holds a rating and no UI sets one. Stars are the one judgement that exists, and they already travel: Track Info sets them and the library merge carries `Starred`/`StarredAt` both ways. A rating would take the same road if one is ever wanted.
+- **Ratings.** Nothing on `Track` holds a rating and no UI sets one. Stars are the one judgement that exists, and they already travel: Track Info sets them and the library merge carries `Starred` both ways. A rating would take the same road if one is ever wanted.
 - **Jellyfin as a second backend**, on the `IMusicImporter` seam — optional and unstarted (see "Optional, additive: Jellyfin client support").
 
 Done since earlier revisions of this list, and dropped from it: **Docker packaging** (`docker/`: the image, published to GHCR on `v*` tags, with Caddy, cloudflared and non-Linux overrides; host networking on Linux so mDNS works, a bridge only where host networking binds to a VM); **a public domain without a VPN**, which went to Caddy in front of the server rather than LettuceEncrypt inside it, so the ACME challenge never meets `LanGuard`; and the **`IMusicImporter` settings choice**, which existed to fold the OpenSubsonic client in and went with it.

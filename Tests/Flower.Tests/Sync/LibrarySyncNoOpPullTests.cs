@@ -24,7 +24,7 @@ public class LibrarySyncNoOpPullTests
         public List<Track> Upserted { get; } = [];
 
         public void UpdateStats(Track track) { }
-        public void SetStarred(StarTarget target, string value, bool starred, DateTimeOffset? starredAt) { }
+        public void SetStarred(StarTarget target, string value, bool starred) { }
         public void Upsert(Track track) => Upserted.Add(track);
         public void UpsertMany(IReadOnlyCollection<Track> tracks) => Upserted.AddRange(tracks);
         public void ReplaceAll(IEnumerable<Track> tracks) => ReplaceAllCount++;

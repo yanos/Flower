@@ -908,7 +908,7 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
                 [
                     new TrackStateDto(
                         track.Id.ToKey(), Count: 2,
-                        LastPlayedAt: playedAt, Starred: true, StarredAt: playedAt,
+                        LastPlayedAt: playedAt, Starred: true,
                         RememberPlaybackPosition: true, ResumePositionSeconds: 91.5,
                         IgnoreWhenShuffling: true, VolumeAdjustment: -3),
                 ])));
@@ -928,7 +928,6 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
         finally
         {
             track.Starred = false;
-            track.StarredAt = null;
             track.LastPlayedAt = null;
             track.RememberPlaybackPosition = false;
             track.ResumePosition = null;
@@ -1100,9 +1099,8 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
         }
     }
 
-    // Unstarring has no timestamp to order by - Library.SetStarred nulls
-    // StarredAt when it clears the flag - so the star is taken as stated
-    // rather than compared. What keeps that from being a clobber is on the
+    // A star has no timestamp to order by, so it is taken as stated rather
+    // than compared. What keeps that from being a clobber is on the
     // client, which only speaks up when its answer differs from the one this
     // server last served it.
     [Fact]
@@ -1113,7 +1111,6 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
         using var device = await AdminDeviceAsync(trustedPeers);
         var track = library.Tracks.First(t => t.Title == "Second Song");
         track.Starred = true;
-        track.StarredAt = DateTimeOffset.UtcNow;
 
         try
         {
@@ -1124,12 +1121,10 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
 
             Assert.Equal(HttpStatusCode.NoContent, status);
             Assert.False(track.Starred);
-            Assert.Null(track.StarredAt);
         }
         finally
         {
             track.Starred = false;
-            track.StarredAt = null;
             await trustedPeers.RevokeAsync(device.Fingerprint);
         }
     }

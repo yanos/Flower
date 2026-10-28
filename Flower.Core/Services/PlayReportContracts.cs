@@ -107,7 +107,6 @@ public sealed record TrackStateDto(
     int Count,
     DateTimeOffset? LastPlayedAt = null,
     bool Starred = false,
-    DateTimeOffset? StarredAt = null,
     bool RememberPlaybackPosition = false,
     double? ResumePositionSeconds = null,
     bool IgnoreWhenShuffling = false,

@@ -95,7 +95,6 @@ public static class LibrarySyncMapper
             // third-party client was invisible to every Flower client. See
             // Library.MergeStar for how it reaches a track this device already has.
             Starred = song.Starred,
-            StarredAt = song.Starred ? song.StarredAt : null,
             // What Track Info's Technical tab reads. A placeholder has no file to
             // scan, so these can only ever be what the origin's own scan found;
             // without them a library made entirely of synced placeholders showed an

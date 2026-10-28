@@ -151,6 +151,7 @@ public class SqliteMigrationTests : IDisposable
             DROP TABLE excluded_paths;
             CREATE TABLE excluded_paths (path TEXT NOT NULL PRIMARY KEY COLLATE NOCASE, excluded_at INTEGER NOT NULL);
             INSERT INTO excluded_paths (path, excluded_at) VALUES ('/music/Song.flac', 5);
+            ALTER TABLE tracks ADD COLUMN starred_at INTEGER;
             PRAGMA user_version = 11;
             """);
 
@@ -162,6 +163,27 @@ public class SqliteMigrationTests : IDisposable
         Assert.Equal(1L, count.ExecuteScalar());
         count.CommandText = "SELECT COUNT(*) FROM excluded_paths;";
         Assert.Equal(2L, count.ExecuteScalar());
+    }
+
+    // Step 13. Track.StarredAt went with the "Date Starred" smart playlist
+    // field it fed; the star itself stays.
+    [Fact]
+    public void When_a_track_was_starred_is_dropped_and_the_star_kept()
+    {
+        using var connection = OpenNew("starred-at.db");
+        SqliteMigrations.Apply(connection);
+        Execute(connection, """
+            ALTER TABLE tracks ADD COLUMN starred_at INTEGER;
+            INSERT INTO tracks (id, path, title, date_added, starred, starred_at) VALUES ('t1', '/music/a.mp3', 'A', 0, 1, 7);
+            PRAGMA user_version = 12;
+            """);
+
+        SqliteMigrations.Apply(connection);
+
+        Assert.DoesNotContain("starred_at", ColumnsOf(connection, "tracks"));
+        using var read = connection.CreateCommand();
+        read.CommandText = "SELECT starred FROM tracks WHERE id = 't1';";
+        Assert.Equal(1L, read.ExecuteScalar());
     }
 
     // Applying twice is what every startup after the first one does.
