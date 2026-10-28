@@ -3,6 +3,7 @@ using System.ComponentModel;
 
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 
 using Flower.ViewModels;
 
@@ -55,8 +56,31 @@ public partial class AlbumGridRowControl : UserControl
 
     private void Row_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(AlbumGridRowViewModel.IsExpanded))
+        if (e.PropertyName != nameof(AlbumGridRowViewModel.IsExpanded))
+            return;
+
+        if (_row?.IsExpanded == true)
+            OpenAfterLayout();
+        else
             ShowExpansion();
+    }
+
+    // Opening waits for the card to be laid out with its album first. The row
+    // is told it is open before it is handed its songs (AlbumGridView.
+    // ApplyExpansion), and building their rows makes the first frame a slow
+    // one: a transition started before it had run most of its time by the
+    // next frame, and the card all but leapt open while closing - which has
+    // nothing to build - eased shut over the whole 220ms.
+    private void OpenAfterLayout()
+    {
+        var row = _row;
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (!ReferenceEquals(_row, row) || row?.IsExpanded != true)
+                return;
+            Expansion.UpdateLayout();
+            ShowExpansion();
+        });
     }
 
     // Scrolling the album into view is not this row's business: it cannot
