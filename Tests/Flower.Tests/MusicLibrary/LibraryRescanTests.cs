@@ -38,17 +38,6 @@ public class LibraryRescanTests
     }
 
     [Fact]
-    public void UpdateTracks_matches_paths_case_insensitively()
-    {
-        var originalDate = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero);
-        var library = new Library(new List<Track> { new Track { Path = "/Music/A.mp3", DateAdded = originalDate } });
-
-        library.UpdateTracks(new List<Track> { new Track { Path = "/music/a.mp3" } });
-
-        Assert.Equal(originalDate, library.Tracks.Single().DateAdded);
-    }
-
-    [Fact]
     public void UpdateTracks_leaves_DateAdded_alone_for_a_track_with_no_previous_match()
     {
         var freshDate = new DateTimeOffset(2024, 6, 1, 0, 0, 0, TimeSpan.Zero);

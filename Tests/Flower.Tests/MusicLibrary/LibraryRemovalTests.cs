@@ -24,12 +24,22 @@ public class LibraryRemovalTests : PinnedDataDirectory
         Path = path, Title = title, Artists = "Artist", Album = "Album", Duration = TimeSpan.FromSeconds(100),
     };
 
-    private (Library Library, TrackRepository Repository) Open(string dbPath, List<Track>? seed = null)
+    // A music folder that ignores case, as a Mac's and a Windows machine's
+    // do, stated rather than left to the platform: on Linux the platform's
+    // rule respects it, and the tests that spell one file two ways are about
+    // the removal being remembered, which has to hold on every OS. Both rules
+    // are in PathCaseTests.
+    private static readonly PathRules MusicIgnoresCase = new([("/music", true)]);
+
+    private (Library Library, TrackRepository Repository) Open(string dbPath, List<Track>? seed = null, PathRules? rules = null)
     {
         var repository = new TrackRepository(new FlowerDb(dbPath));
         if (seed != null)
             repository.ReplaceAll(seed);
-        return (new Library(repository.LoadAll(), NullLogger<Library>.Instance, repository, null, repository, repository), repository);
+        var library = new Library(repository.LoadAll(), NullLogger<Library>.Instance, repository, null, repository, repository);
+        if (rules != null)
+            library.UsePathRules(rules);
+        return (library, repository);
     }
 
     // The record of a removed song has to outlive the process, or it is only
@@ -106,11 +116,11 @@ public class LibraryRemovalTests : PinnedDataDirectory
     public void A_file_removed_and_kept_stays_out_of_rescans_after_a_restart()
     {
         var dbPath = Path.Combine(DataDirectory, "flower.db");
-        var (library, _) = Open(dbPath, [File("/music/a.mp3", "A"), File("/music/b.mp3", "B")]);
+        var (library, _) = Open(dbPath, [File("/music/a.mp3", "A"), File("/music/b.mp3", "B")], MusicIgnoresCase);
 
         LibraryRemoval.Remove(library, [library.Tracks.Single(t => t.Title == "B")], deleteFiles: false, NullLogger.Instance);
-        var (restarted, repository) = Open(dbPath);
-        restarted.UpdateTracks([File("/music/a.mp3", "A"), File("/MUSIC/B.mp3", "B")]);
+        var (restarted, repository) = Open(dbPath, rules: MusicIgnoresCase);
+        restarted.UpdateTracks([File("/music/a.mp3", "A"), File("/music/B.MP3", "B")]);
 
         Assert.Equal(["A"], restarted.Tracks.Select(t => t.Title));
         Assert.Equal(["A"], repository.LoadAll().Select(t => t.Title));
@@ -206,12 +216,12 @@ public class LibraryRemovalTests : PinnedDataDirectory
     public void A_restored_file_comes_back_with_the_next_scan_and_stays_restored_after_a_restart()
     {
         var dbPath = Path.Combine(DataDirectory, "flower.db");
-        var (library, _) = Open(dbPath, [File("/music/a.mp3", "A"), File("/music/b.mp3", "B")]);
+        var (library, _) = Open(dbPath, [File("/music/a.mp3", "A"), File("/music/b.mp3", "B")], MusicIgnoresCase);
         LibraryRemoval.Remove(library, [library.Tracks.Single(t => t.Title == "B")], deleteFiles: false, NullLogger.Instance);
         Assert.Equal(["/music/b.mp3"], library.ExcludedPaths.Select(e => e.Path));
 
-        Assert.Equal(1, library.RestoreExcludedPaths(["/MUSIC/B.MP3"]));
-        var (restarted, repository) = Open(dbPath);
+        Assert.Equal(1, library.RestoreExcludedPaths(["/music/B.MP3"]));
+        var (restarted, repository) = Open(dbPath, rules: MusicIgnoresCase);
         restarted.UpdateTracks([File("/music/a.mp3", "A"), File("/music/b.mp3", "B")]);
 
         Assert.Empty(restarted.ExcludedPaths);

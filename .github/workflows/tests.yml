@@ -188,9 +188,22 @@ jobs:
       # edition of xunit built for NativeAOT (xunit.v3.aot) is not one
       # Avalonia.Headless.XUnit - [AvaloniaFact], 658 of these tests - is built
       # against. The other iOS leg runs the decode checks on NativeAOT.
+      #
+      # Pinned, workload and Xcode both, to what a developer's Mac builds the
+      # phone with: workload set 10.0.402 (iOS 27.0.10722, which
+      # net10.0-ios27.0 in the three iOS projects names) and Xcode 27.0, which
+      # that workload checks for exactly. Unpinned, `dotnet workload install`
+      # takes the newest set for the SDK's band, and set 10.0.403 brought iOS
+      # 27.1, which refuses 27.0 outright (NETSDK1140) - every iOS leg went red
+      # at restore, on a commit that touched nothing iOS. The image keeps
+      # 27.0 beside its default 27.1; DEVELOPER_DIR picks it without sudo.
+      # Moving to 27.1 is a change to the three TFMs, this pin and the
+      # developer's Xcode together.
       - name: Install iOS workload
         if: matrix.kind == 'ios-test' || matrix.kind == 'ios-build'
-        run: dotnet workload install ios
+        run: |
+          echo "DEVELOPER_DIR=/Applications/Xcode_27.0.app/Contents/Developer" >> "$GITHUB_ENV"
+          dotnet workload install ios --version 10.0.402
 
       # The script's `rm -rf obj bin` costs nothing on a fresh runner; it is
       # there for a developer's incremental build, which used to launch into
@@ -206,8 +219,9 @@ jobs:
 
       # The iOS legs run on the xcode-27 image because the workload wants
       # it: the 27.0 packs (net10.0-ios27.0) check for exactly Xcode 27.0,
-      # and the macos-26 image stops at 26.6. Its own default Xcode is 27, with
-      # the matching simulator runtime preinstalled - the pairing that once
+      # and the macos-26 image stops at 26.6. It keeps Xcode 27.0 (selected by
+      # the workload step above; its default is now 27.1) with the matching
+      # iOS 27.0 simulator runtime preinstalled - the pairing that once
       # cost a ~10-15 minute `xcodebuild -downloadPlatform iOS` per push when
       # a pinned Xcode and the image's runtimes disagreed
       # (actions/runner-images#13317). The image is still a preview, so its

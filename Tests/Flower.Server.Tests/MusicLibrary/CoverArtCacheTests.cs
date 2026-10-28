@@ -60,6 +60,12 @@ public sealed class CoverArtCacheTests : IDisposable
         var library = new Library([song]);
         using var covers = CacheOver(library);
 
+        // Back an hour, so the cover written below moves the folder's time
+        // on wherever the test runs. On Windows a file time advances in
+        // ticks of about 15ms, and a cover written within one of the folder
+        // being created left that time where it was - a timing no person
+        // dropping in a cover can hit, which failed on a CI runner anyway.
+        Directory.SetLastWriteTimeUtc(_folder, DateTime.UtcNow.AddHours(-1));
         Assert.Null(covers.Find(song.Id.ToKey()));
 
         WriteCover([0xFF, 0xD8, 1], DateTime.UtcNow);
