@@ -76,13 +76,22 @@ public sealed class AlbumCollage : ObservableObject, AlbumArtLoader.IShowsAlbumA
     // missing, until four are in or the albums run out. Most need one round;
     // it is one request a round against a server, since AlbumArtLoader
     // batches whatever is asked for together.
+    //
+    // No further than MaxAlbumsLooked down the list, though. A playlist of
+    // songs with no cover - the smart "No Cover Art" - has no four to find,
+    // and walking all of it asked a phone's server for every album in it, a
+    // round of four at a time, each time the playlist changed. That spent the
+    // whole art budget, and the cover just edited was refused with the rest.
+    public const int MaxAlbumsLooked = 16;
+
     public static async Task<IReadOnlyList<Bitmap>> LoadCoversAsync(IReadOnlyList<Track> albumsByPlays)
     {
         var found = new List<Bitmap>();
         var next = 0;
-        while (found.Count < 4 && next < albumsByPlays.Count)
+        var albums = Math.Min(albumsByPlays.Count, MaxAlbumsLooked);
+        while (found.Count < 4 && next < albums)
         {
-            var round = albumsByPlays.Skip(next).Take(4 - found.Count).ToList();
+            var round = albumsByPlays.Skip(next).Take(Math.Min(4 - found.Count, albums - next)).ToList();
             next += round.Count;
             var art = await Task.WhenAll(round.Select(t => AlbumArtLoader.Current.LoadAsync(t)));
             found.AddRange(art.OfType<Bitmap>());

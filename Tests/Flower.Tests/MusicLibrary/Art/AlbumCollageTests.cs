@@ -105,6 +105,21 @@ public class AlbumCollageTests : IDisposable
         Assert.Equal(4, loads);
     }
 
+    // A playlist with no four covers to find - the smart "No Cover Art" -
+    // is not walked to its end: every album in it, asked for each time the
+    // playlist changed, spent a phone's whole art budget with the server.
+    [AvaloniaFact]
+    public async Task A_playlist_of_albums_without_art_stops_looking()
+    {
+        var tracks = Albums(40);
+        var bare = tracks.Select(t => t.Album!).Distinct().ToArray();
+
+        var (covers, loads) = await CoverOf(tracks, bare);
+
+        Assert.Empty(covers);
+        Assert.Equal(AlbumCollage.MaxAlbumsLooked, loads);
+    }
+
     [AvaloniaFact]
     public async Task An_artist_whose_albums_have_no_art_has_no_cover()
     {

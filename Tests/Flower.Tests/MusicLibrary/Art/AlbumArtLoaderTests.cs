@@ -671,6 +671,87 @@ public class AlbumArtLoaderTests : IDisposable
         Assert.Equal(1, requests);
     }
 
+    // Nor is it asked about again: a collage walking a playlist of bare
+    // albums asked for every one of them each time it was rebuilt, and spent
+    // the server's whole art budget doing it. Until the cover changes, which
+    // is what Invalidate says.
+    [AvaloniaFact]
+    public async Task An_album_the_server_has_no_art_for_is_not_asked_about_again_until_its_cover_changes()
+    {
+        var requests = 0;
+
+        using var peer = new FakePeerHttpServer(async context =>
+        {
+            Interlocked.Increment(ref requests);
+            var ids = await ReadBatchIdsAsync(context);
+            var frame = CoverArtBatch.Write(ids.Select(id => (id, Array.Empty<byte>())).ToList());
+            context.Response.ContentType = CoverArtBatch.ContentType;
+            await context.Response.OutputStream.WriteAsync(frame);
+            context.Response.Close();
+        });
+
+        var loader = new AlbumArtLoader(
+            new PeerCoverArtUrlResolver(new FixedPeerResolver(peer.Port)),
+            Credentials(), NullLogger<AlbumArtLoader>.Instance);
+        var track = RemoteTrack(Unique("hash"));
+
+        Assert.Null(await loader.LoadAsync(track));
+        Assert.Null(await loader.LoadAsync(track));
+        Assert.Equal(1, requests);
+
+        AlbumArtLoader.Invalidate(track);
+        Assert.Null(await loader.LoadAsync(track));
+        Assert.Equal(2, requests);
+    }
+
+    // A server that has had enough says when to come back, and the covers
+    // wait until then. Asking for each album on its own instead, as this used
+    // to, is more requests against the budget just spent, every one refused -
+    // which kept it spent while anything was on screen.
+    [AvaloniaFact]
+    public async Task A_throttled_batch_is_asked_again_once_the_server_says_rather_than_album_by_album()
+    {
+        var art = SyntheticPng.Build(32, 32);
+        var batches = 0;
+        var singles = 0;
+
+        using var peer = new FakePeerHttpServer(async context =>
+        {
+            if (!(context.Request.Url?.AbsolutePath ?? "").EndsWith("/cover-art/batch", StringComparison.Ordinal))
+            {
+                Interlocked.Increment(ref singles);
+                context.Response.StatusCode = 429;
+                context.Response.Close();
+                return;
+            }
+
+            var ids = await ReadBatchIdsAsync(context);
+            if (Interlocked.Increment(ref batches) == 1)
+            {
+                context.Response.StatusCode = 429;
+                context.Response.AddHeader("Retry-After", "1");
+                context.Response.Close();
+                return;
+            }
+
+            var frame = CoverArtBatch.Write(ids.Select(id => (id, art)).ToList());
+            context.Response.ContentType = CoverArtBatch.ContentType;
+            await context.Response.OutputStream.WriteAsync(frame);
+            context.Response.Close();
+        });
+
+        var loader = new AlbumArtLoader(
+            new PeerCoverArtUrlResolver(new FixedPeerResolver(peer.Port)),
+            Credentials(), NullLogger<AlbumArtLoader>.Instance);
+
+        var tracks = Enumerable.Range(0, 3).Select(_ => RemoteTrack(Unique("hash"))).ToList();
+        var bitmaps = await Task.WhenAll(tracks.Select(loader.LoadAsync));
+
+        Assert.All(bitmaps, bitmap => Assert.NotNull(bitmap));
+        Assert.Equal(0, singles);
+        Assert.InRange(batches, 2, 3);
+    }
+
     // A peer with no batch door, or one that answers something unreadable,
     // degrades to a request per album - the behaviour this code had before the
     // batch existed - rather than to blank tiles.

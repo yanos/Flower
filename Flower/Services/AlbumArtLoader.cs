@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Runtime.CompilerServices;
@@ -88,6 +89,15 @@ public class AlbumArtLoader
     // Key: directory path for a local track, or "remote:{albumId}" for a synced one.
     // WeakReference so GC can reclaim bitmaps under memory pressure.
     private static readonly ConcurrentDictionary<string, WeakReference<Bitmap>> Cache = new();
+
+    // Albums the origin said it has no picture for, by origin album id, so
+    // the next look at one is not another request. A library's bare albums
+    // are the ones a playlist collage walks past looking for four covers, and
+    // asking again for every one of them each time a collage was rebuilt is
+    // what spent a phone's whole art budget in a minute - after which the
+    // cover just edited was refused like the rest. Until Invalidate, which a
+    // cover added on any device reaches, and for this run of the app only.
+    private static readonly ConcurrentDictionary<string, byte> KnownBare = new(StringComparer.Ordinal);
 
     // The WeakReference cache above lets the GC reclaim art the moment nothing
     // is painting it, which for a scrolling album grid means re-decoding the
@@ -577,6 +587,9 @@ public class AlbumArtLoader
             DiscardCacheFile(cachePath);
         }
 
+        if (KnownBare.ContainsKey(artId))
+            return null;
+
         // ICoverArtUrlResolver is what actually decides where - and whether -
         // this track's art can be asked for: against a peer that rule is "only
         // the currently paired Server" (see PeerTrackResolver), and in a browser
@@ -591,9 +604,16 @@ public class AlbumArtLoader
 
         try
         {
+            // Null is a fetch that failed, and empty is the origin saying it
+            // has no picture - only the second is worth remembering.
             var bytes = await FetchArtBytesAsync(track, url);
-            if (bytes == null || bytes.Length == 0)
+            if (bytes == null)
                 return null;
+            if (bytes.Length == 0)
+            {
+                KnownBare[artId] = 0;
+                return null;
+            }
 
             // Decode off the UI thread - same reason LoadLocalAsync/the cached-file
             // path above both use Task.Run: this runs on whatever thread called
@@ -639,6 +659,13 @@ public class AlbumArtLoader
     private readonly Dictionary<string, PendingArt> _waiting = new(StringComparer.Ordinal);
     private bool _batchRunning;
 
+    // Set by a 429: no batch goes out before then (see WaitOutAsync).
+    private DateTimeOffset _throttledUntil;
+
+    // Retry-After as the server sends it is a minute (RateLimitResponse);
+    // this only bounds a header that says something stranger.
+    private static readonly TimeSpan MaxThrottle = TimeSpan.FromMinutes(2);
+
     // One album's art, and everything needed to ask for it either way: the
     // batch id, the single-request URL that is the fallback, and the callers
     // waiting on the answer. Several tracks from the same album collapse onto
@@ -646,8 +673,8 @@ public class AlbumArtLoader
     private sealed record PendingArt(string Endpoint, string Id, string Url, TaskCompletionSource<byte[]?> Completion);
 
     // The bytes for one track's art, asked for in company where that is
-    // possible. Returns null for "no art", which is a real answer and not an
-    // error: plenty of albums have no picture.
+    // possible. Empty for "no art", which is a real answer and not an error -
+    // plenty of albums have no picture - and null for a fetch that failed.
     private async Task<byte[]?> FetchArtBytesAsync(Track track, string url)
     {
         if (_artUrls!.ResolveBatch(track) is { } batch)
@@ -692,6 +719,14 @@ public class AlbumArtLoader
         while (true)
         {
             await Task.Delay(BatchDebounceMs);
+
+            TimeSpan throttled;
+            lock (_batchLock)
+            {
+                throttled = _throttledUntil - DateTimeOffset.UtcNow;
+            }
+            if (throttled > TimeSpan.Zero)
+                await Task.Delay(throttled);
 
             List<PendingArt> batch;
             lock (_batchLock)
@@ -746,6 +781,11 @@ public class AlbumArtLoader
                 request.Headers.ConnectionClose = true;
 
             using var response = await Http.SendAsync(request);
+            if (response.StatusCode == HttpStatusCode.TooManyRequests)
+            {
+                WaitOut(batch, response.Headers.RetryAfter);
+                return;
+            }
             if (!response.IsSuccessStatusCode)
             {
                 await FallBackToSingleAsync(batch, $"the server answered {(int)response.StatusCode}");
@@ -767,7 +807,7 @@ public class AlbumArtLoader
                 // the single-request path rather than being answered "none".
                 // An id that came back with zero bytes *is* an answer.
                 if (art.TryGetValue(entry.Id, out var bytes))
-                    entry.Completion.TrySetResult(bytes.Length == 0 ? null : bytes);
+                    entry.Completion.TrySetResult(bytes);
                 else
                     entry.Completion.TrySetResult(await FetchOneAsync(entry.Url));
             }
@@ -777,6 +817,40 @@ public class AlbumArtLoader
             await FallBackToSingleAsync(batch, ex.Message);
         }
     }
+
+    // Throttled: the batch goes back in the queue, and nothing more is sent
+    // until the server's Retry-After has passed. Being throttled is not the
+    // art failing - and asking for each album on its own instead, which this
+    // used to do, is up to 32 more requests against the budget that was just
+    // spent, every one refused, which kept it spent for as long as anything
+    // was on screen. The tiles wait for their covers rather than go blank.
+    private void WaitOut(List<PendingArt> batch, RetryConditionHeaderValue? retryAfter)
+    {
+        var wait = retryAfter?.Delta
+                   ?? (retryAfter?.Date is { } date ? date - DateTimeOffset.UtcNow : TimeSpan.FromSeconds(RetryAfterFallbackSeconds));
+        wait = wait < TimeSpan.Zero ? TimeSpan.Zero : wait > MaxThrottle ? MaxThrottle : wait;
+
+        lock (_batchLock)
+        {
+            var until = DateTimeOffset.UtcNow + wait;
+            if (until > _throttledUntil)
+                _throttledUntil = until;
+
+            foreach (var entry in batch)
+            {
+                // Asked for again while this batch was out: the later caller's
+                // answer is this one's too.
+                if (_waiting.TryGetValue(entry.Id, out var later))
+                    later.Completion.Task.ContinueWith(t => entry.Completion.TrySetResult(t.Result), TaskScheduler.Default);
+                else
+                    _waiting[entry.Id] = entry;
+            }
+        }
+
+        _logger.LogDebug("Album art for {Count} albums was refused for now (429); asking again in {Seconds:0}s", batch.Count, wait.TotalSeconds);
+    }
+
+    private const int RetryAfterFallbackSeconds = 60;
 
     // One request per album, which is what this code did before the batch
     // existed - so a server that has no batch door, or one that answered
@@ -815,6 +889,8 @@ public class AlbumArtLoader
                 request.Headers.ConnectionClose = true;
 
             using var response = await Http.SendAsync(request);
+            if (response.StatusCode == HttpStatusCode.NotFound)
+                return [];
             if (!response.IsSuccessStatusCode)
                 return null;
 
