@@ -29,7 +29,8 @@ public static class SmartPlaylistFields
         Func<Track, double?>? Number = null,
         Func<Track, TimeSpan?>? Duration = null,
         Func<Track, DateTimeOffset?>? Date = null,
-        Func<Track, bool>? Bool = null);
+        Func<Track, bool>? Bool = null,
+        bool ReadsAlbumArt = false);
 
     private static readonly ImmutableArray<Descriptor> Descriptors =
     [
@@ -67,7 +68,14 @@ public static class SmartPlaylistFields
         // rather than a size of zero - so "less than 600" finds small covers
         // and not missing ones, which Has Artwork below is for, and Any of the
         // two finds both.
-        Number(SmartField.ArtworkSize,    "Artwork Size", t => t.ArtWidth > 0 && t.ArtHeight > 0 ? Math.Min(t.ArtWidth, t.ArtHeight) : null),
+        //
+        // Both read the picture the app draws for a song, which for a song
+        // with none of its own is its album's (ReadsAlbumArt, see
+        // SmartPlaylistEvaluator.AlbumArt) - otherwise "Has Artwork is No"
+        // lists songs shown everywhere with a cover.
+        new Descriptor(SmartField.ArtworkSize, "Artwork Size", SmartValueKind.Number,
+            Number: t => t.ArtWidth > 0 && t.ArtHeight > 0 ? Math.Min(t.ArtWidth, t.ArtHeight) : null,
+            ReadsAlbumArt: true),
 
         new Descriptor(SmartField.Duration, "Duration", SmartValueKind.Duration, Duration: t => t.Duration),
 
@@ -79,7 +87,9 @@ public static class SmartPlaylistFields
         Bool(SmartField.IsCompilation,       "Compilation",          t => t.IsCompilation),
         Bool(SmartField.IsLocallyDownloaded, "Downloaded",           t => t.IsLocallyDownloaded),
         Bool(SmartField.IgnoreWhenShuffling, "Skip When Shuffling",  t => t.IgnoreWhenShuffling),
-        Bool(SmartField.HasArtwork,          "Has Artwork",          t => t.ArtWidth > 0 && t.ArtHeight > 0),
+        new Descriptor(SmartField.HasArtwork, "Has Artwork", SmartValueKind.Bool,
+            Bool: t => t.ArtWidth > 0 && t.ArtHeight > 0,
+            ReadsAlbumArt: true),
 
         // No accessor: membership is a property of a playlist, not of a track,
         // so the evaluator resolves this one against its context instead.

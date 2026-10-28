@@ -285,9 +285,11 @@ public class SmartPlaylistEvaluatorTests
 
     // --- Artwork ----------------------------------------------------------
 
-    private static Track WithArt(string title, int width, int height)
+    // An album apiece unless told otherwise, so no song borrows another's
+    // picture (see the album cases below).
+    private static Track WithArt(string title, int width, int height, string? album = null)
     {
-        var track = T(title: title);
+        var track = T(title: title, album: album ?? title);
         track.ArtWidth = width;
         track.ArtHeight = height;
         return track;
@@ -329,6 +331,50 @@ public class SmartPlaylistEvaluatorTests
 
         Assert.Equal("Small", Assert.Single(Evaluate(SmartPlaylistRules.MatchAll(small), tracks)).Title);
         Assert.Equal(["Small", "Bare"], Evaluate(SmartPlaylistRules.MatchAny(small, bare), tracks).Select(t => t.Title));
+    }
+
+    // A song with no picture of its own is drawn with its album's - the first
+    // song on the album that has one, as the cover-art route serves it - so it
+    // has artwork, of that size, as far as anyone looking at it can tell.
+    // "Has Artwork is No" listing songs shown everywhere with a cover was the
+    // bug.
+    [Fact]
+    public void A_song_with_no_picture_has_its_albums()
+    {
+        var tracks = new List<Track>
+        {
+            WithArt("Covered", 300, 300, album: "Moon Pix"),
+            WithArt("Peking Saint", 0, 0, album: "Moon Pix"),
+            WithArt("Alone", 0, 0, album: "Elsewhere"),
+        };
+
+        var bare = Evaluate(SmartPlaylistRules.MatchAll(
+            new SmartCondition(SmartField.HasArtwork, SmartOperator.Is, new SmartValue.Flag(false))), tracks);
+        var small = Evaluate(SmartPlaylistRules.MatchAll(
+            new SmartCondition(SmartField.ArtworkSize, SmartOperator.LessThan, new SmartValue.Number(500))), tracks);
+
+        Assert.Equal("Alone", Assert.Single(bare).Title);
+        Assert.Equal(["Covered", "Peking Saint"], small.Select(t => t.Title));
+    }
+
+    // An album is its album artist's: the same title by someone else lends
+    // nothing, and neither does a song with no album at all, which the app
+    // draws by its folder rather than by any album.
+    [Fact]
+    public void Only_the_same_album_lends_a_picture()
+    {
+        var covered = WithArt("Covered", 600, 600, album: "Greatest Hits");
+        var otherArtist = WithArt("Theirs", 0, 0, album: "Greatest Hits");
+        otherArtist.Artists = "Someone Else";
+        var noAlbum = T(title: "Loose", album: null);
+        var coveredLoose = WithArt("Also Loose", 600, 600);
+        coveredLoose.Album = null;
+
+        var bare = Evaluate(SmartPlaylistRules.MatchAll(
+            new SmartCondition(SmartField.HasArtwork, SmartOperator.Is, new SmartValue.Flag(false))),
+            [covered, otherArtist, noAlbum, coveredLoose]);
+
+        Assert.Equal(["Theirs", "Loose"], bare.Select(t => t.Title));
     }
 
     // --- Match modes ------------------------------------------------------
