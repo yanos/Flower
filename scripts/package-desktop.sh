@@ -26,6 +26,9 @@
 # bundle carries the ad hoc signature the SDK gives every arm64 build, so a
 # downloaded copy opens through System Settings > Privacy & Security > Open
 # Anyway, and Setup.exe gets SmartScreen's "More info > Run anyway".
+#
+# Setup and the AppImage also write the feed an installed copy updates itself
+# from (releases.<channel>.json and a .nupkg), which the release carries too.
 
 set -euo pipefail
 
@@ -77,10 +80,13 @@ case "$kind" in
         # CFBundleShortVersionString is numbers only, so a pre-release's
         # suffix is dropped there; the full version is still in the file
         # name and in every assembly. CreatePackage=false: publish would
-        # otherwise also build a .pkg nobody asked for.
+        # otherwise also build a .pkg nobody asked for. FlowerReleaseBuild is
+        # what makes this build, and only this one, look for a newer release
+        # (see the csproj).
         numeric="${version%%[-+]*}"
         dotnet publish "$csproj" -c Release -r "$rid" \
             -p:CreatePackage=false \
+            -p:FlowerReleaseBuild=true \
             -p:ApplicationDisplayVersion="$numeric" \
             -p:ApplicationVersion="$numeric"
 
@@ -154,5 +160,21 @@ case "$kind" in
         fi
         cp "${built[0]}" "$target"
         echo "Wrote $target"
+
+        # The feed the installed app updates from (VelopackUpdater): this OS's
+        # releases.<channel>.json and the full package it names, attached to
+        # the release beside the installers. The two OSes' file names differ
+        # by channel, which is what lets both share one GitHub release; the
+        # check below holds that, since a clash would have one overwrite the
+        # other when the release job gathers them.
+        feed=("$releases"/releases.*.json "$releases"/*-full.nupkg)
+        for file in "${feed[@]}"; do
+            if [[ ! -f "$file" ]]; then
+                echo "error: vpk wrote no $(basename "$file")" >&2
+                exit 1
+            fi
+            cp "$file" "$out/"
+            echo "Wrote $out/$(basename "$file")"
+        done
         ;;
 esac

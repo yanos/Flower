@@ -56,7 +56,7 @@ The app is a WIP with no released users and no data anyone else depends on. **Ba
 - `AUDIOPHILE-PLAN.md` — EQ, gapless playback, DSD/APE, hi-res passthrough.
 - `AUDIO-QUALITY-PLAN.md` — render-path defect audit (clicks, looped fragments, truncated tails) and the PCM-level test suite that should prove them fixed.
 - `MEDIA-KEYS-PLAN.md` — hardware media keys + OS now-playing integration.
-- `AUTO-UPDATE-PLAN.md` — desktop auto-update via Velopack, and the versioning (MinVer, git tags) it consumes. Packaging and publishing are built; the client-side check is what is left.
+- `AUTO-UPDATE-PLAN.md` — desktop auto-update via Velopack (Windows, Linux) and a GitHub-release check (the macOS dmg), and the versioning (MinVer, git tags) it consumes. Built; the first tag cut after it is its first real run.
 - `CRASH-REPORTING-PLAN.md` — crash reporting options.
 - `STORE-DEPLOYMENT-PLAN.md` — submitting iOS/Android to app stores, and the real-device verification still owed before that.
 - `PERFORMANCE-TRACKING-PLAN.md` — CI benchmark regression tracking + runtime timing.
@@ -441,7 +441,11 @@ FFAudio.NET.macOS ships, and `Flower.Desktop` packed by Velopack as a Windows
 `Setup.exe` and a Linux AppImage. All three come from
 `scripts/package-desktop.sh dmg|appimage|setup`, which runs only on its own OS
 (the FFmpeg payload follows the host) and is how to try one before tagging.
-None is signed yet; the release notes say how to open them anyway.
+None is signed yet; the release notes say how to open them anyway. The
+release also carries the Windows and Linux update feeds, which installed
+copies read once a day (`AppUpdatesViewModel`, a banner offering the new
+version) - so a tag is what every installed desktop will be told to update
+to, and the dmg is offered its replacement the same way, by download.
 
 ## Git Workflow
 

@@ -1,4 +1,6 @@
 using System;
+using System.Linq;
+using System.Reflection;
 
 using AppKit;
 
@@ -44,8 +46,21 @@ class Program
         // first window's XAML assigns one.
         PlatformContextMenu.Current = new AppleContextMenu();
 
+        // A newer dmg, looked for on GitHub - only in the dmg itself (see
+        // FlowerReleaseBuild in the csproj). Velopack updates the other two
+        // desktops in place; here it would need the app signed.
+        if (IsReleaseBuild())
+        {
+            PlatformAppUpdater.Current = new GitHubReleaseUpdater(
+                GitHubReleaseUpdater.CreateClient(), GitHubReleaseUpdater.Repository, "-macos-arm64.dmg");
+        }
+
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
+
+    private static bool IsReleaseBuild() =>
+        typeof(Program).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+            .Any(m => m.Key == "FlowerReleaseBuild" && m.Value == "true");
 
     // Avalonia configuration, don't remove; also used by visual designer.
     public static AppBuilder BuildAvaloniaApp()

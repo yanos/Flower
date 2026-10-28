@@ -327,9 +327,12 @@ jobs:
           path: artifacts/installers/*
           if-no-files-found: error
 
-  # The tag's GitHub release, with the three installers attached. Only once
-  # the suite is green and all three were built, for the reason the image job
-  # below gives: a tag is a claim about the whole commit.
+  # The tag's GitHub release, with the three installers attached, and the
+  # Windows and Linux update feeds that installed copies read from the latest
+  # stable release (Flower.Desktop's VelopackUpdater; the Mac reads the
+  # release itself, GitHubReleaseUpdater). Only once the suite is green and
+  # all three were built, for the reason the image job below gives: a tag is
+  # a claim about the whole commit.
   release:
     name: Publish the desktop installers
     needs:
@@ -346,7 +349,8 @@ jobs:
     steps:
       # Each runner's files in a folder of their own, then gathered here:
       # merging them on download would let one runner's file silently replace
-      # another's of the same name.
+      # another's of the same name, and the Windows and Linux update feeds are
+      # only kept apart by vpk naming them by channel.
       - uses: actions/download-artifact@v4
         with:
           pattern: installer-*

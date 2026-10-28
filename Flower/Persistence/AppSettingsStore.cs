@@ -151,6 +151,13 @@ namespace Flower.Persistence
         public string? LastPlaylistName   { get; set; }
         public double  LastScrollOffsetY  { get; set; }
 
+        // Whether a desktop installed from a release looks for a newer one on
+        // its own, and when it last did - see AppUpdatesViewModel, which is
+        // the only thing that reads either. The date is what keeps a check to
+        // one a day across launches as well as within one.
+        public bool            CheckForUpdatesAutomatically { get; set; } = true;
+        public DateTimeOffset? LastUpdateCheck              { get; set; }
+
         // The playlist folders shown closed in the sidebar, by Playlist.Id's
         // key - see PlaylistManagementViewModel.SetFolderExpanded. A folder
         // not listed is open, so a new one, and one that arrived by sync,

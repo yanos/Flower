@@ -796,6 +796,20 @@ public partial class App : Application
                 window.Opened += AskAboutITunesLibrary;
             }
 
+            // A newer release, looked for once a day on a desktop installed
+            // from one - see AppUpdatesViewModel.
+            if (PlatformAppUpdater.Current is { } updater)
+            {
+                var settingsStore = provider.GetRequiredService<AppSettingsStore>();
+                var updates = new AppUpdatesViewModel(
+                    updater,
+                    appSettings,
+                    () => settingsStore.SaveAsync(appSettings),
+                    provider.GetRequiredService<ILogger<AppUpdatesViewModel>>());
+                mainViewModel.Updates = updates;
+                updates.Start();
+            }
+
             // A ~/Music/Flower that somebody else made is asked about, over
             // this window, the first time Flower needs the folder - a
             // download, a drop, the move of old downloads below.

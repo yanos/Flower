@@ -24,19 +24,44 @@ Scope: automatic updates for **desktop** (Windows/macOS/Linux) via GitHub Releas
 
 Cut `v0.1.0` → Phase 2 on macOS only (dev machine) → Phase 3 against that manual release → Phase 4 CI automation → extend Phase 2/4 to Windows/Linux.
 
-**Phase 1 is done; 2 and 4 are partly done, 3 is not started.** The first
-tags (v0.1.0 to v0.4.0) predate the installers, so no GitHub release exists
-yet. Velopack is in `Flower.Desktop` with `VelopackApp.Build().Run()` first in
-`Main`, and a `v*` tag packs it on Windows and Linux and builds a dmg of
-`Flower.MacOS` (`scripts/package-desktop.sh`, the `installers` job in
-`tests.yml`); the `release` job attaches all three to the tag's release, gated
-on the suite, with `gh release` rather than `vpk upload github` because each
-OS packs on its own runner. The pack id is `Flower.Desktop`, not `Flower`: it
-names the install folder, `%LocalAppData%\<id>`, which Velopack deletes on
-uninstall - and `%LocalAppData%\Flower` is where the library lives. The
-release carries no update feed yet (`releases.<channel>.json`, the full
-`.nupkg`), which is what Phase 3 needs first. macOS is outside Velopack:
-its output there is a `.pkg`, and updating one needs the signing above.
+**All four phases are built; none has been through a real release yet.** The
+first tags (v0.1.0 to v0.4.0) predate the installers, so no GitHub release
+exists, and the first tag cut after this is the first end-to-end run. What was
+built, and where it went another way than the phases above:
+
+- **Packaging and publishing are one CI path, not a manual run first.** A `v*`
+  tag runs `scripts/package-desktop.sh` on one runner per OS (the
+  `installers` job in `tests.yml`) and the `release` job attaches everything
+  to the tag's release, gated on the suite. The files go up with `gh release`
+  rather than `vpk upload github`, because each OS packs on its own runner and
+  one job gathers them. Pre-release is decided from the tag name, as the image
+  job does; for a tag build it cannot disagree with `MinVerPreRelease`.
+- **Windows and Linux are Velopack** (`Flower.Desktop`'s `VelopackUpdater`):
+  the release carries `releases.win.json`/`releases.linux.json` and the
+  `.nupkg` each names, beside `Setup.exe` and the AppImage. vpk tells the two
+  OSes' packages apart by channel (`…-full.nupkg`, `…-linux-full.nupkg`), and
+  the release job refuses two files of one name rather than letting one
+  replace the other. The pack id is `Flower.Desktop`, not `Flower`: it names
+  the install folder, `%LocalAppData%\<id>`, which Velopack deletes on
+  uninstall - and `%LocalAppData%\Flower` is where the library lives.
+- **macOS is not Velopack.** It ships as a plain dmg of `Flower.MacOS`,
+  unsigned, because Velopack's macOS output is a `.pkg` and updating one in
+  place needs the signing above. Its update is notify-and-download
+  (`GitHubReleaseUpdater`): it reads `releases/latest`, compares the tag with
+  `AppVersion` (`ReleaseVersion`), and the banner's button opens the dmg.
+  Only the dmg looks at all - `FlowerReleaseBuild`, set by the packaging
+  script, so a run from the IDE is never offered a "newer" release that is
+  older than the code it was built from. Signing it is what would let it join
+  the other two.
+- **The client half is shared** (`AppUpdatesViewModel`, the head's
+  `IAppUpdater` in `PlatformAppUpdater.Current`): first look 30 seconds after
+  launch, then at most once a day across launches (`AppSettings.
+  LastUpdateCheck`, advanced only by a check that succeeded), off with
+  `CheckForUpdatesAutomatically` in Settings > General, which also has Check
+  Now. An update found is a dismissible banner across the page; Velopack's is
+  already downloaded by then, so its button restarts straight into it, and
+  one never pressed goes in at the next launch anyway (`VelopackApp.Run`).
+  Stable releases only, on every OS; there is no beta channel yet.
 
 This document also absorbed
 what was left of `VERSIONING-PLAN.md` when that finished, which is why the

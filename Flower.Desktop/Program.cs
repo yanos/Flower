@@ -4,6 +4,7 @@ using Avalonia;
 
 using Flower.Logging;
 using Flower.Platform;
+using Flower.Services;
 
 using Velopack;
 
@@ -26,6 +27,8 @@ class Program
 
         if (CrashReportRelaunch.RelaunchIfNeeded(args))
             return;
+
+        PlatformAppUpdater.Current = VelopackUpdater.ForThisInstall();
 
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }

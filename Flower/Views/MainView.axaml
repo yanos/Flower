@@ -435,8 +435,9 @@
          - on the owner's phone, as a refused upload or tag edit. The close
          button is for a server that is read-only on purpose; it lasts until
          the page is next loaded, or the desktop's count next changes. -->
+    <!-- One above the other, when both have something to say. -->
+    <StackPanel Grid.Row="0">
     <Border x:Name="LibraryWriteWarningBanner"
-            Grid.Row="0"
             IsVisible="{Binding HasServerLibraryWriteWarning}"
             Padding="12,8,8,8"
             BorderThickness="0,0,0,1"
@@ -466,6 +467,51 @@
         </Button>
       </Grid>
     </Border>
+
+    <!-- A newer Flower, found by AppUpdatesViewModel: across the page, asking
+         rather than acting, because nothing should restart on its own while
+         someone is listening. The close button lasts until the next launch,
+         and Settings > General still offers it. -->
+    <Panel IsVisible="{Binding Updates, Converter={x:Static avc:ObjectConverters.IsNotNull}}">
+      <Border x:Name="AppUpdateBanner"
+              DataContext="{Binding Updates}"
+              x:DataType="vm:AppUpdatesViewModel"
+              IsVisible="{Binding ShowsBanner}"
+              Padding="12,8,8,8"
+              BorderThickness="0,0,0,1"
+              BorderBrush="{DynamicResource AppDividerBrush}"
+              Background="{DynamicResource AppPlaceholderBrush}">
+        <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+          <materialIcons:MaterialIcon Grid.Column="0"
+                                      Kind="ArrowUpCircleOutline"
+                                      Width="16" Height="16"
+                                      Margin="0,0,8,0"
+                                      VerticalAlignment="Center"/>
+          <TextBlock Grid.Column="1"
+                     Text="{Binding Available.Description, FallbackValue=''}"
+                     FontSize="12"
+                     TextWrapping="Wrap"
+                     VerticalAlignment="Center"/>
+          <Button Grid.Column="2"
+                  Classes="standard primary small"
+                  Content="{Binding Available.InstallLabel, FallbackValue=''}"
+                  Command="{Binding InstallCommand}"
+                  Margin="8,0,0,0"
+                  VerticalAlignment="Center"/>
+          <Button Grid.Column="3"
+                  Command="{Binding DismissCommand}"
+                  ToolTip.Tip="Dismiss"
+                  Background="Transparent"
+                  BorderThickness="0"
+                  Padding="4"
+                  Margin="8,0,0,0"
+                  VerticalAlignment="Center">
+            <materialIcons:MaterialIcon Kind="Close" Width="14" Height="14"/>
+          </Button>
+        </Grid>
+      </Border>
+    </Panel>
+    </StackPanel>
 
     <!-- A list's header: its name in the display serif and how much is in
          it, and at the right what the page can do - Play and Shuffle over a

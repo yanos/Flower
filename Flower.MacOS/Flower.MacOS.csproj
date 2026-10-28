@@ -62,4 +62,12 @@
   <ItemGroup>
     <ProjectReference Include="..\Flower\Flower.csproj" />
   </ItemGroup>
+
+  <!-- Set by scripts/package-desktop.sh for the dmg, and by nothing else: the
+       one build that looks for a newer release (see Program.Main). A run from
+       the IDE is not a release, and offering it the latest one would be
+       offering a developer a downgrade. -->
+  <ItemGroup Condition="'$(FlowerReleaseBuild)' == 'true'">
+    <AssemblyMetadata Include="FlowerReleaseBuild" Value="true" />
+  </ItemGroup>
 </Project>

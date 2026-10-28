@@ -60,6 +60,21 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // whose one server is the page it is on.
     public PairedServerIcon? PairedIcon { get; }
 
+    // Looking for and offering a newer release - the banner across the page
+    // and the Updates rows in Settings > General. Set at startup on a desktop
+    // installed from a release (PlatformAppUpdater), and null everywhere
+    // else, which hides both.
+    private AppUpdatesViewModel? _updates;
+    public AppUpdatesViewModel? Updates
+    {
+        get => _updates;
+        set
+        {
+            _updates = value;
+            OnPropertyChanged();
+        }
+    }
+
     // The same, for the phone's server row to bind: one of the two, or
     // neither.
     public IImage? PairedServerIconImage => PairedIcon?.Image;
