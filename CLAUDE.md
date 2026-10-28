@@ -345,9 +345,9 @@ and probes when even that hint will not open the stream.
 
 CI runs these per-OS in the three desktop test legs - they need
 nothing the fast suite does not already build - and on an iOS Simulator inside
-`test shared, UI and decoding suites (ios-27, Mono)`, which runs the whole suite there on Mono (see "The suite on iOS" above),
+`iOS tests (Mono)`, which runs the whole suite there on Mono (see "The suite on iOS" above),
 and again on NativeAOT - the runtime the app ships on - in
-`build Flower.iOS, run decode checks with NativeAOT (ios-27)`, through
+`iOS build and decoding (NativeAOT)`, through
 `Flower.Tests.Decoding.iOS`, which is also the runner to put on a physical phone.
 The suite itself cannot run on NativeAOT yet: xunit finds tests by reflection
 over the assembly's file, which a NativeAOT app does not have, and
@@ -440,7 +440,7 @@ And the desktop auto-update
 (`docs/AUTO-UPDATE-PLAN.md`) consumes the same tags through MinVer, so a tag is
 not a private act.
 
-A tag also builds the desktop installers (`installers`, one runner per OS) and
+A tag also builds the desktop installers inside the Linux, Windows and macOS jobs and
 attaches them to the tag's GitHub release (`release`, gated on the suite like
 the image): a dmg of `Flower.MacOS`, Apple Silicon only because that is all
 FFAudio.NET.macOS ships, and `Flower.Desktop` packed by Velopack as a Windows

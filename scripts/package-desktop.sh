@@ -6,7 +6,7 @@
 #   scripts/package-desktop.sh setup      # on Windows:   Flower-<version>-win-x64-Setup.exe
 #   scripts/package-desktop.sh dmg <dir>  # ...into <dir> rather than artifacts/installers
 #
-# `.github/workflows/tests.yml` runs each on its own runner when a v* tag is
+# `.github/workflows/tests.yml` runs each in its platform job when a v* tag is
 # pushed and attaches all three to that tag's GitHub release. Run it by hand
 # to try a package before tagging; the version comes from MinVer, as it does
 # for every build, so an untagged tree packages as 0.4.1-alpha.0.<height>.

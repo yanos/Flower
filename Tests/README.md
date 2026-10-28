@@ -78,10 +78,22 @@ The test build skips publishing the browser bundle (`IncludeWebUi=false`); the
 browser has its own CI build and release-image bundle validation. Building before
 running tests also avoids running timing-sensitive tests alongside compilation.
 
-Each desktop OS builds `Flower.Desktop.Tests.slnf` once, then executes shared, UI,
-decoding, native-platform, and server suites in named steps with `--no-build`.
-Linux also compiles `Flower.Desktop`, reusing that checkout and its shared build.
-Mobile and browser builds remain separate parallel jobs, including the full Mono
-iOS suite and focused NativeAOT decoding run. Cache inputs cover every project and
-the shared test configuration. Superseded branch runs are canceled; tag runs and
-existing release publication gates are retained.
+CI has seven explicitly named jobs: **Linux**, **Windows**, **macOS**,
+**iOS tests (Mono)**, **iOS build and decoding (NativeAOT)**, **Android**, and
+**Web**. The two iOS jobs remain separate temporarily so their long builds run
+in parallel; the Mono runtime and runner settings are unchanged.
+
+Each desktop job builds `Flower.Desktop.Tests.slnf` once and its platform app,
+then executes shared, UI, decoding, native-platform (where applicable), and
+server suites in named steps with `--no-build`. macOS uses `xcode-27` for both
+its native app build and tests, since that head needs Apple's SDK headers.
+
+Tags additionally package and upload the desktop installer in each desktop job.
+Release and image publication wait for all seven platform jobs, so a failed
+build, test, or installer prevents publication. There is no skipped installer
+matrix with an unresolved name on ordinary branch pushes.
+
+Cache inputs cover every project and the shared test configuration. Superseded
+branch runs are canceled; tag runs finish. Android decoding runner compilation
+is checked in CI, while emulator execution retains its existing local-only
+status.

@@ -9,56 +9,21 @@ concurrency:
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
-  # Desktop suites share one restore/build per OS. Mobile/head builds remain
-  # independent so their long compiles run in parallel, without sharing obj/.
-  # Android decoding tests remain local-only; see CLAUDE.md.
-  test:
-    name: ${{ matrix.name }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: test shared, UI, decoding, native and server suites (linux-ubuntu-24.04)
-            kind: desktop-test
-            runner: ubuntu-24.04
-            platform: Linux
-          - name: test shared, UI, decoding, native and server suites (windows-2025)
-            kind: desktop-test
-            runner: windows-2025
-            platform: Windows
-          - name: test shared, UI, decoding, native and server suites (macos-26)
-            kind: desktop-test
-            runner: macos-26
-            platform: macOS
-          - name: test shared, UI and decoding suites (ios-27, Mono)
-            kind: ios-test
-            runner: xcode-27
-          - name: build Flower.MacOS (macos-27)
-            kind: macos-build
-            runner: xcode-27
-          - name: build Flower.iOS, run decode checks with NativeAOT (ios-27)
-            kind: ios-build
-            runner: xcode-27
-          - name: build Flower.Android (android-36)
-            kind: android-build
-            runner: ubuntu-24.04
-          - name: build Flower.Web (browser-wasm)
-            kind: web-build
-            runner: ubuntu-24.04
-    runs-on: ${{ matrix.runner }}
+  # Each desktop builds its app and runs all applicable client/server suites.
+  # Keep the two iOS jobs separate for now so their long builds run in parallel.
+  linux:
+    name: Linux
+    runs-on: ubuntu-24.04
+    env:
+      # Missing native decoding support must fail instead of testing nothing.
+      FLOWER_REQUIRE_DECODERS: FFmpeg
 
     steps:
-      # Full history, so MinVer sees the tags and commit height it versions
-      # these binaries from. actions/checkout defaults to depth 1, which
-      # silently yields MinVer's 0.0.0-alpha.0 fallback instead.
+      # MinVer needs full history and tags to stamp the build correctly.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # Flower.csproj (the shared library Flower.Tests references) targets
-      # net10.0 only. This comment previously claimed it multi-targeted
-      # net10.0;net9.0, which has not been true for some time - see
-      # ARCHITECTURE-REVIEW Tier 5.
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
@@ -68,190 +33,55 @@ jobs:
             Directory.Build.props
             Tests/ClientTests.props
 
-      # Build the project graph once; each test step then executes its suite
-      # without another restore/build. Native tests run only on their own OS.
-      - name: Build desktop test suites
-        if: matrix.kind == 'desktop-test'
+      # Build the shared test graph once. Browser publishing has its own job.
+      - name: Build test suites
         run: dotnet build Tests/Flower.Desktop.Tests.slnf --configuration Release -p:IncludeWebUi=false
 
+      - name: Build Flower.Desktop
+        run: dotnet build Flower.Desktop/Flower.Desktop.csproj --configuration Release
+
       - name: Run shared behavior tests
-        if: matrix.kind == 'desktop-test'
         run: dotnet test Tests/Flower.Tests/Flower.Tests.csproj --configuration Release --no-build
 
       - name: Run headless UI behavior tests
-        if: matrix.kind == 'desktop-test'
-        env:
-          FLOWER_REQUIRE_DECODERS: FFmpeg
         run: dotnet test Tests/Flower.Tests.UI/Flower.Tests.UI.csproj --configuration Release --no-build
 
-      # Fail rather than pass an empty set of scenarios if the native decoder
-      # cannot load. This also applies to the simulator scripts.
       - name: Run decoding tests
-        if: matrix.kind == 'desktop-test'
-        env:
-          FLOWER_REQUIRE_DECODERS: FFmpeg
         run: dotnet test Tests/Flower.Tests.Decoding/Flower.Tests.Decoding.csproj --configuration Release --no-build
 
-      - name: Run native platform tests
-        if: matrix.kind == 'desktop-test' && matrix.platform != 'Linux'
-        run: dotnet test Tests/Flower.Tests.${{ matrix.platform }}/Flower.Tests.${{ matrix.platform }}.csproj --configuration Release --no-build
-
-      # The server is supported on all three desktops, including the
-      # case-insensitive filesystems where a missing-source regression occurred.
+      # The server is supported on every desktop, including case-insensitive
+      # filesystems where a missing-source regression previously occurred.
       - name: Run server tests
-        if: matrix.kind == 'desktop-test'
         run: dotnet test Tests/Flower.Server.Tests/Flower.Server.Tests.csproj --configuration Release --no-build
 
-      # Reuse the Linux checkout, package cache and shared-library build rather
-      # than allocating a separate runner to compile this plain net10.0 head.
-      - name: Build Flower.Desktop
-        if: matrix.kind == 'desktop-test' && matrix.platform == 'Linux'
-        run: dotnet build Flower.Desktop/Flower.Desktop.csproj --configuration Release
+      # Velopack needs mksquashfs to build an AppImage; hosted runners lack it.
+      - name: Install packaging tools
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: sudo apt-get update && sudo apt-get install -y squashfs-tools
 
-      # Flower.MacOS is the only head that cannot be compiled anywhere but a
-      # mac. Flower.Desktop still runs on macOS, but as plain net10.0 - which is
-      # exactly the point of this head: net10.0-macos is what puts AVKit/AppKit
-      # in reach, so every Apple-framework call in the app is code that only
-      # this build can check.
-      #
-      # On the xcode-27 image, like the iOS legs: the macOS workload the .NET
-      # SDK installs is 27.0, which builds against the macOS 27 SDK for real
-      # (MM0179 without its headers) and checks for exactly Xcode 27.0 - and
-      # the macos-26 image has no Xcode 27 at all.
-      - name: Install macOS workload
-        if: matrix.kind == 'macos-build'
-        run: dotnet workload install macos
+      # Packaging stays tag-only, and publication waits for all platform jobs.
+      - name: Package desktop installer
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: scripts/package-desktop.sh appimage
 
-      - name: Build Flower.MacOS
-        if: matrix.kind == 'macos-build'
-        run: dotnet build Flower.MacOS/Flower.MacOS.csproj --configuration Release
+      - name: Upload desktop installer
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-appimage
+          path: artifacts/installers/*
+          if-no-files-found: error
 
-      # The shared, UI and decoding sources are compiled into one suite for
-      # the existing Mono iOS runner. One assembly retains the headless session
-      # and its global dispatcher. NativeAOT decoding runs separately below;
-      # Avalonia.Headless.XUnit does not yet support xUnit's AOT runner.
-      #
-      # Pinned, workload and Xcode both, to what a developer's Mac builds the
-      # phone with: workload set 10.0.402 (iOS 27.0.10722, which
-      # net10.0-ios27.0 in the iOS projects names) and Xcode 27.0, which
-      # that workload checks for exactly. Unpinned, `dotnet workload install`
-      # takes the newest set for the SDK's band, and set 10.0.403 brought iOS
-      # 27.1, which refuses 27.0 outright (NETSDK1140) - every iOS leg went red
-      # at restore, on a commit that touched nothing iOS. The image keeps
-      # 27.0 beside its default 27.1; DEVELOPER_DIR picks it without sudo.
-      # Moving to 27.1 is a change to the iOS TFMs, this pin and the
-      # developer's Xcode together.
-      - name: Install iOS workload
-        if: matrix.kind == 'ios-test' || matrix.kind == 'ios-build'
-        run: |
-          echo "DEVELOPER_DIR=/Applications/Xcode_27.0.app/Contents/Developer" >> "$GITHUB_ENV"
-          dotnet workload install ios --version 10.0.402
-
-      # The script's `rm -rf obj bin` costs nothing on a fresh runner; it is
-      # there for a developer's incremental build, which used to launch into
-      # a Mono AOT crash that reads exactly like a failing test.
-      # IOS_SIMULATOR_RUNTIME is what makes "ios-27" in this leg's name true:
-      # the script runs on an iOS 27 simulator, and fails rather than quietly
-      # picking another when the image has none.
-      - name: Run tests on a simulator
-        if: matrix.kind == 'ios-test'
-        env:
-          IOS_SIMULATOR_RUNTIME: '27'
-        run: scripts/ios-tests.sh
-
-      # The iOS legs run on the xcode-27 image because the workload wants
-      # it: the 27.0 packs (net10.0-ios27.0) check for exactly Xcode 27.0,
-      # and the macos-26 image stops at 26.6. It keeps Xcode 27.0 (selected by
-      # the workload step above; its default is now 27.1) with the matching
-      # iOS 27.0 simulator runtime preinstalled - the pairing that once
-      # cost a ~10-15 minute `xcodebuild -downloadPlatform iOS` per push when
-      # a pinned Xcode and the image's runtimes disagreed
-      # (actions/runner-images#13317). The image is still a preview, so its
-      # capacity can queue a leg that macos-26 would have started at once.
-      #
-      # Signed ad hoc (CodesignKey=-), because the runner has no signing
-      # identity and Flower.iOS carries a real entitlement - the Keychain group
-      # KeychainSecureStore needs - which a simulator build still has to sign
-      # in. An empty Entitlements.plist needed no signature at all, which is
-      # why this only started failing when the group was added.
-      #
-      # On NativeAOT, the runtime the app ships on (scripts/deploy-ios-device.sh,
-      # FlowerNativeAot in Flower.iOS.csproj). The SDK compiles NativeAOT only on
-      # its publish path and refuses to publish for a simulator, so this is a
-      # build told it is publishing (_IsPublishing) - the same compile, trim
-      # and link a phone gets, for the simulator's architecture.
-      - name: Build Flower.iOS
-        if: matrix.kind == 'ios-build'
-        run: dotnet build Flower.iOS/Flower.iOS.csproj --configuration Release -p:RuntimeIdentifier=iossimulator-arm64 -p:CodesignKey=- -p:FlowerNativeAot=true -p:_IsPublishing=true
-
-      # The decode checks, on NativeAOT on a simulator: the iOS test leg runs
-      # the same checks inside the suite, but on Mono (see above), and NativeAOT
-      # is where a P/Invoke that will not resolve or a type the trimmer took
-      # away shows up - the first NativeAOT launch on a phone died on exactly
-      # the former. It is also the runner to put on a physical phone (no
-      # Avalonia, readable on screen with no cable), so running it here keeps
-      # it from rotting as well.
-      - name: Run decode checks on a simulator
-        if: matrix.kind == 'ios-build'
-        env:
-          IOS_SIMULATOR_RUNTIME: '27'
-        run: scripts/ios-decoding-tests.sh
-
-      - name: Install Android workload
-        if: matrix.kind == 'android-build'
-        run: dotnet workload install android
-
-      - name: Build for Android
-        if: matrix.kind == 'android-build'
-        run: dotnet build Flower.Android/Flower.Android.csproj --configuration Release
-
-      - name: Build Android decoding test runner
-        if: matrix.kind == 'android-build'
-        run: dotnet build Tests/Flower.Tests.Decoding.Android/Flower.Tests.Decoding.Android.csproj --configuration Release
-
-      # WasmBuildNative (see Flower.Web.csproj) needs wasm-tools' Emscripten
-      # toolchain to statically link libSkiaSharp/libHarfBuzzSharp into the
-      # WASM bundle - without it the build fails outright (NETSDK1147), not
-      # just renders broken.
-      - name: Install wasm-tools workload
-        if: matrix.kind == 'web-build'
-        run: dotnet workload install wasm-tools
-
-      - name: Build for browser-wasm
-        if: matrix.kind == 'web-build'
-        run: dotnet build Flower.Web/Flower.Web.csproj --configuration Release
-
-  # The desktop installers - a dmg, an AppImage and a Setup.exe - on a `v*` tag
-  # only, built by scripts/package-desktop.sh (whose header says what each one
-  # is and why none is signed). One runner per OS, because the FFmpeg payload
-  # follows the host and Velopack cannot cross-pack an AppImage without tools
-  # a Mac lacks; and in parallel with the suite rather than after it, since
-  # nothing is published until `release` below has both.
-  #
-  # Like the image, these are built on tags only, so a change that breaks
-  # packaging surfaces at the release. The script runs the same by hand, on
-  # the OS in question, to check one before tagging.
-  installers:
-    name: ${{ matrix.name }}
-    if: startsWith(github.ref, 'refs/tags/v')
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: package Flower.MacOS as a dmg (macos-27)
-            kind: dmg
-            runner: xcode-27
-          - name: package Flower.Desktop as an AppImage (linux-ubuntu-24.04)
-            kind: appimage
-            runner: ubuntu-24.04
-          - name: package Flower.Desktop as a Setup.exe (windows-2025)
-            kind: setup
-            runner: windows-2025
-    runs-on: ${{ matrix.runner }}
+  windows:
+    name: Windows
+    runs-on: windows-2025
+    env:
+      # Missing native decoding support must fail instead of testing nothing.
+      FLOWER_REQUIRE_DECODERS: FFmpeg
 
     steps:
-      # Full history: the version in each file name and assembly is MinVer's,
-      # read from the tags.
+      # MinVer needs full history and tags to stamp the build correctly.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -261,43 +91,265 @@ jobs:
           dotnet-version: 10.0.x
           cache: true
           cache-dependency-path: |
-            Flower/Flower.csproj
-            Flower.Desktop/Flower.Desktop.csproj
-            Flower.MacOS/Flower.MacOS.csproj
+            **/*.csproj
+            Directory.Build.props
+            Tests/ClientTests.props
 
-      # On the xcode-27 image for the same reason as the macos-build leg: the
-      # 27.0 workload wants exactly Xcode 27.
-      - name: Install macOS workload
-        if: matrix.kind == 'dmg'
-        run: dotnet workload install macos
+      # Build the shared test graph once. Browser publishing has its own job.
+      - name: Build test suites
+        run: dotnet build Tests/Flower.Desktop.Tests.slnf --configuration Release -p:IncludeWebUi=false
 
-      # vpk builds the AppImage's filesystem with mksquashfs, which the image
-      # does not carry.
-      - name: Install squashfs-tools
-        if: matrix.kind == 'appimage'
-        run: sudo apt-get update && sudo apt-get install -y squashfs-tools
+      - name: Build Flower.Desktop
+        run: dotnet build Flower.Desktop/Flower.Desktop.csproj --configuration Release
 
-      - name: Package
+      - name: Run shared behavior tests
+        run: dotnet test Tests/Flower.Tests/Flower.Tests.csproj --configuration Release --no-build
+
+      - name: Run headless UI behavior tests
+        run: dotnet test Tests/Flower.Tests.UI/Flower.Tests.UI.csproj --configuration Release --no-build
+
+      - name: Run decoding tests
+        run: dotnet test Tests/Flower.Tests.Decoding/Flower.Tests.Decoding.csproj --configuration Release --no-build
+
+      - name: Run native Windows tests
+        run: dotnet test Tests/Flower.Tests.Windows/Flower.Tests.Windows.csproj --configuration Release --no-build
+
+      # The server is supported on every desktop, including case-insensitive
+      # filesystems where a missing-source regression previously occurred.
+      - name: Run server tests
+        run: dotnet test Tests/Flower.Server.Tests/Flower.Server.Tests.csproj --configuration Release --no-build
+
+      # Packaging stays tag-only, and publication waits for all platform jobs.
+      - name: Package desktop installer
+        if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
-        run: scripts/package-desktop.sh ${{ matrix.kind }}
+        run: scripts/package-desktop.sh setup
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload desktop installer
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
         with:
-          name: installer-${{ matrix.kind }}
+          name: installer-setup
           path: artifacts/installers/*
           if-no-files-found: error
+
+  macos:
+    name: macOS
+    runs-on: xcode-27
+    env:
+      # Missing native decoding support must fail instead of testing nothing.
+      FLOWER_REQUIRE_DECODERS: FFmpeg
+
+    steps:
+      # MinVer needs full history and tags to stamp the build correctly.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: |
+            **/*.csproj
+            Directory.Build.props
+            Tests/ClientTests.props
+
+      # The native macOS head uses Apple frameworks and needs Xcode 27 headers;
+      # the xcode-27 runner supplies the SDK its workload requires.
+      - name: Install macOS workload
+        run: dotnet workload install macos
+
+      # Build the shared test graph once. Browser publishing has its own job.
+      - name: Build test suites
+        run: dotnet build Tests/Flower.Desktop.Tests.slnf --configuration Release -p:IncludeWebUi=false
+
+      - name: Build Flower.MacOS
+        run: dotnet build Flower.MacOS/Flower.MacOS.csproj --configuration Release
+
+      - name: Run shared behavior tests
+        run: dotnet test Tests/Flower.Tests/Flower.Tests.csproj --configuration Release --no-build
+
+      - name: Run headless UI behavior tests
+        run: dotnet test Tests/Flower.Tests.UI/Flower.Tests.UI.csproj --configuration Release --no-build
+
+      - name: Run decoding tests
+        run: dotnet test Tests/Flower.Tests.Decoding/Flower.Tests.Decoding.csproj --configuration Release --no-build
+
+      - name: Run native macOS tests
+        run: dotnet test Tests/Flower.Tests.macOS/Flower.Tests.macOS.csproj --configuration Release --no-build
+
+      # The server is supported on every desktop, including case-insensitive
+      # filesystems where a missing-source regression previously occurred.
+      - name: Run server tests
+        run: dotnet test Tests/Flower.Server.Tests/Flower.Server.Tests.csproj --configuration Release --no-build
+
+      # Packaging stays tag-only, and publication waits for all platform jobs.
+      - name: Package desktop installer
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: scripts/package-desktop.sh dmg
+
+      - name: Upload desktop installer
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-dmg
+          path: artifacts/installers/*
+          if-no-files-found: error
+
+  ios-tests:
+    name: iOS tests (Mono)
+    runs-on: xcode-27
+    steps:
+      # MinVer needs full history and tags to stamp the build correctly.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: |
+            **/*.csproj
+            Directory.Build.props
+            Tests/ClientTests.props
+
+      # Pin the workload to net10.0-ios27.0 and its required Xcode 27.0.
+      # A newer workload set can require iOS/Xcode 27.1 (NETSDK1140).
+      # The xcode-27 image includes a matching simulator runtime, avoiding a
+      # platform download on every run. Update the workload, TFMs and Xcode
+      # together; the developer's device build uses this same pairing.
+      - name: Install iOS workload
+        run: |
+          echo "DEVELOPER_DIR=/Applications/Xcode_27.0.app/Contents/Developer" >> "$GITHUB_ENV"
+          dotnet workload install ios --version 10.0.402
+
+      # Preserve the existing Mono runner pending Avalonia/xUnit AOT support.
+      # Shared/UI/decoding sources use one assembly and headless dispatcher.
+      # The script clean-builds to avoid incremental Mono AOT launch crashes,
+      # then reads the app's transcript and turns its tally into an exit code.
+      - name: Run shared, UI and decoding tests on a simulator
+        env:
+          IOS_SIMULATOR_RUNTIME: '27'
+        run: scripts/ios-tests.sh
+
+  ios-nativeaot:
+    name: iOS build and decoding (NativeAOT)
+    runs-on: xcode-27
+    steps:
+      # MinVer needs full history and tags to stamp the build correctly.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: |
+            **/*.csproj
+            Directory.Build.props
+            Tests/ClientTests.props
+
+      # Pin the workload to net10.0-ios27.0 and its required Xcode 27.0.
+      # A newer workload set can require iOS/Xcode 27.1 (NETSDK1140).
+      # The xcode-27 image includes a matching simulator runtime, avoiding a
+      # platform download on every run. Update the workload, TFMs and Xcode
+      # together; the developer's device build uses this same pairing.
+      - name: Install iOS workload
+        run: |
+          echo "DEVELOPER_DIR=/Applications/Xcode_27.0.app/Contents/Developer" >> "$GITHUB_ENV"
+          dotnet workload install ios --version 10.0.402
+
+      # NativeAOT is the shipped runtime. The SDK only performs AOT on its
+      # publish path but refuses simulator publishing; _IsPublishing selects
+      # that compile/trim/link path for the simulator architecture.
+      # Ad hoc signing retains the real Keychain entitlement without needing
+      # a signing identity on the hosted runner.
+      - name: Build Flower.iOS
+        run: dotnet build Flower.iOS/Flower.iOS.csproj --configuration Release -p:RuntimeIdentifier=iossimulator-arm64 -p:CodesignKey=- -p:FlowerNativeAot=true -p:_IsPublishing=true
+
+      # Exercise the shipped native payload and runtime, where unresolved
+      # P/Invokes or trimmed types can fail despite the Mono suite passing.
+      - name: Run decoding tests on a simulator
+        env:
+          IOS_SIMULATOR_RUNTIME: '27'
+        run: scripts/ios-decoding-tests.sh
+
+  android:
+    name: Android
+    runs-on: ubuntu-24.04
+    steps:
+      # MinVer needs full history and tags to stamp the build correctly.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: |
+            **/*.csproj
+            Directory.Build.props
+            Tests/ClientTests.props
+
+      - name: Install Android workload
+        run: dotnet workload install android
+
+      - name: Build Flower.Android
+        run: dotnet build Flower.Android/Flower.Android.csproj --configuration Release
+
+      # Emulator execution remains local-only because of the existing native
+      # payload collision on Linux hosts; see CLAUDE.md. Compile the runner
+      # here so source changes are still checked.
+      - name: Build decoding test runner
+        run: dotnet build Tests/Flower.Tests.Decoding.Android/Flower.Tests.Decoding.Android.csproj --configuration Release
+
+  web:
+    name: Web
+    runs-on: ubuntu-24.04
+    steps:
+      # MinVer needs full history and tags to stamp the build correctly.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: |
+            **/*.csproj
+            Directory.Build.props
+            Tests/ClientTests.props
+
+      # WasmBuildNative needs Emscripten to link Skia/HarfBuzz; omitting the
+      # workload either prevents the build or leaves rendering unavailable.
+      - name: Install wasm-tools workload
+        run: dotnet workload install wasm-tools
+
+      - name: Build Flower.Web
+        run: dotnet build Flower.Web/Flower.Web.csproj --configuration Release
 
   # The tag's GitHub release, with the three installers attached, and the
   # Windows and Linux update feeds that installed copies read from the latest
   # stable release (Flower.Desktop's VelopackUpdater; the Mac reads the
   # release itself, GitHubReleaseUpdater). Only once the suite is green and
-  # all three were built, for the reason the image job below gives: a tag is
+  # all three installers were built, for the reason the image job below gives: a tag is
   # a claim about the whole commit.
   release:
     name: Publish the desktop installers
     needs:
-      - test
-      - installers
+      - linux
+      - windows
+      - macos
+      - ios-tests
+      - ios-nativeaot
+      - android
+      - web
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
 
@@ -368,8 +420,13 @@ jobs:
   image:
     name: Build and publish Docker image
     needs:
-      - test
-      - installers
+      - linux
+      - windows
+      - macos
+      - ios-tests
+      - ios-nativeaot
+      - android
+      - web
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
 
