@@ -756,6 +756,23 @@ public class AdminEndpointTests(FlowerServerFixture server) : IClassFixture<Flow
         Assert.StartsWith("http://192.168.1.40:4533/#pair=", pairing.BrowserUrl);
     }
 
+    // The invite a Flower app is given: the address the admin reached us on
+    // comes first, and it is not the only one - a link carrying nothing but
+    // the admin's LAN address did nothing for anybody away from home.
+    [Fact]
+    public async Task A_pairing_invite_names_the_address_the_admin_reached_us_on_first()
+    {
+        var admin = await NewAdminAsync("Invite Hosts");
+
+        var context = await SignedAsync(
+            admin, "POST", "/api/admin/pairing-codes",
+            remoteIp: "10.0.0.77", host: "192.168.1.40:4533");
+
+        var invite = PairingInvite.TryParse((await ReadAsync<PairingCodeResponse>(context)).Invite);
+        Assert.NotNull(invite);
+        Assert.Equal("http://192.168.1.40:4533", invite.Hosts[0]);
+    }
+
 }
 
 // The other half of the not-deployed page: a bundle that *is* there gets served,

@@ -1018,18 +1018,26 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
     // docs/REMOTE-ACCESS.md.
     public IEnumerable<string> ManualServerAddresses => _appSettings.ManualServerAddresses;
 
-    // Returns the server if the address answered, null otherwise. A caller shows
-    // the failure rather than leaving a row that will never resolve - the
-    // overwhelmingly likely cause is a typo, and finding that out at pairing
-    // time is far better than at the coffee shop. The device itself, not just a
-    // bool, because the settings screen pairs with it in the same gesture that
-    // added it (see ServerPickerView's Pair button) and would otherwise have to
-    // go looking for what it just created.
-    public async Task<DiscoveredDevice?> AddManualServerAsync(string address)
+    // Returns the server if the address answered, and otherwise why it did
+    // not. A caller shows the failure rather than leaving a row that will never
+    // resolve - the overwhelmingly likely cause is a typo, and finding that out
+    // at pairing time is far better than at the coffee shop. The device itself,
+    // not just a bool, because the settings screen pairs with it in the same
+    // gesture that added it (see ServerPickerView's Pair button) and would
+    // otherwise have to go looking for what it just created.
+    //
+    // The text may also be a whole flower:// pairing link, pasted where an
+    // address goes because that is where a person with a link and no address
+    // will put it. That used to be dialled as an address, failed to parse, and
+    // said "nothing answered at flower://pair?...". See AddServerFromInviteAsync.
+    public async Task<ManualServerResult> AddManualServerAsync(string address)
     {
         var trimmed = address.Trim();
         if (trimmed.Length == 0 || _networkDiscovery == null)
-            return null;
+            return new ManualServerResult(null, null);
+
+        if (PairingInvite.TryParse(trimmed) is { } invite)
+            return await AddServerFromInviteAsync(invite);
 
         if (!_appSettings.ManualServerAddresses.Contains(trimmed, StringComparer.OrdinalIgnoreCase))
         {
@@ -1040,7 +1048,84 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         var device = await _networkDiscovery.AddRememberedAsync(trimmed);
         _reachability?.Recompute();
         NotifyPairingChanged();
-        return device is { IsResponding: true } ? device : null;
+        return device switch
+        {
+            { IsResponding: true } => new ManualServerResult(device, null),
+            null => new ManualServerResult(null, NetworkDiscoveryService.ExplainUnresolvable(trimmed)),
+            _ => new ManualServerResult(null, device.LastFailure),
+        };
+    }
+
+    // Every address the invite names, tried at once, keeping the one that
+    // answers as the server the invite came from - the fingerprint decides,
+    // not the address. The invite lists the address the admin's browser used
+    // first and the server's public one after it, so at home the LAN wins and
+    // away from home the public one does, with the user choosing neither.
+    //
+    // The invite's key is accepted for TLS before anything is dialled: a
+    // device that has never paired has no pin for a self-signed certificate,
+    // so without this the public https address - the only one that works away
+    // from home - is refused on its certificate. See
+    // PeerHttpClient.AcceptInvitedServerKey.
+    //
+    // Only the address that worked is kept. The rest are forgotten, since a
+    // remembered address is never pruned and an invite can name addresses
+    // that answer nowhere (a container's own, a LAN this device is not on);
+    // once paired, the server reports its addresses itself.
+    private async Task<ManualServerResult> AddServerFromInviteAsync(PairingInvite invite)
+    {
+        PeerHttpClient.AcceptInvitedServerKey(invite.Fingerprint);
+
+        var attempts = invite.Hosts
+            .Select(host => (Host: host, Device: _networkDiscovery!.AddRememberedAsync(host)))
+            .ToList();
+        await Task.WhenAll(attempts.Select(attempt => attempt.Device));
+
+        var answered = attempts.FirstOrDefault(attempt =>
+            attempt.Device.Result is { IsResponding: true } device
+            && string.Equals(device.Fingerprint, invite.Fingerprint, StringComparison.OrdinalIgnoreCase));
+
+        foreach (var attempt in attempts)
+        {
+            if (attempt.Host != answered.Host && !_appSettings.ManualServerAddresses.Contains(attempt.Host, StringComparer.OrdinalIgnoreCase))
+                _networkDiscovery!.RemoveRemembered(attempt.Host);
+        }
+
+        if (answered.Host is { } kept && !_appSettings.ManualServerAddresses.Contains(kept, StringComparer.OrdinalIgnoreCase))
+        {
+            _appSettings.ManualServerAddresses.Add(kept);
+            _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
+        }
+
+        _reachability?.Recompute();
+        NotifyPairingChanged();
+
+        if (answered.Host != null)
+            return new ManualServerResult(answered.Device.Result, null, invite);
+
+        // Something answered, just not as this server: the link is for another
+        // one, or the address now belongs to something else.
+        if (attempts.Any(attempt => attempt.Device.Result is { IsResponding: true }))
+            return new ManualServerResult(null,
+                "A server answered at that link's address, but it is not the one the link came from. Ask for a new link.",
+                invite);
+
+        var reasons = attempts
+            .Select(attempt => attempt.Device.Result?.LastFailure is { } failure
+                ? failure
+                : $"{attempt.Host}: {NetworkDiscoveryService.ExplainUnresolvable(attempt.Host)}")
+            .Distinct();
+        _logger.LogInformation("No address in a pairing link answered as {Fingerprint}: {Reasons}",
+            invite.Fingerprint, string.Join(" | ", reasons));
+
+        // The address that matters most is named: the last one is the public
+        // origin when there is one, i.e. the one that should have worked from
+        // wherever this device is, and the LAN address before it failing is
+        // no news away from home.
+        var last = attempts[^1];
+        return new ManualServerResult(null,
+            last.Device.Result?.LastFailure ?? NetworkDiscoveryService.ExplainUnresolvable(last.Host),
+            invite);
     }
 
     public void RemoveManualServer(string address)
@@ -1364,3 +1449,9 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         _subscriptions.Dispose();
     }
 }
+
+// What adding a server by address or by pairing link came to: the server when
+// one answered, why not when none did, and the invite when the text was one -
+// which carries the code too, so the caller can pair in the same gesture
+// without asking for it again.
+public sealed record ManualServerResult(DiscoveredDevice? Server, string? Failure, PairingInvite? Invite = null);

@@ -406,7 +406,7 @@ app.Logger.LogInformation("Logging to: {LogFile}", logFile);
             ? "  Issuing an admin pairing code (--pairing-code)."
             : "  No device can administer this server yet.");
         Console.WriteLine($"  Pair one with this code (valid until {expiresAt.ToLocalTime():HH:mm:ss}): {code}");
-        Console.WriteLine($"  Or open: {new PairingInvite(host, code, signingKey.Fingerprint)}");
+        Console.WriteLine($"  Or open: {new PairingInvite([host], code, signingKey.Fingerprint)}");
 
         // The same code again, addressed at a browser. A tab pairs itself with
         // its own WebCrypto keypair (see BrowserPeerCredentials), so the web UI

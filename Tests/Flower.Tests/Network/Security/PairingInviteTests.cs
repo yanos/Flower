@@ -10,7 +10,7 @@ public class PairingInviteTests
     [Fact]
     public void Round_trips_through_its_uri_form()
     {
-        var invite = new PairingInvite("100.64.1.2:4533", "K7M2P9QX", "ab12cd34");
+        var invite = new PairingInvite(["100.64.1.2:4533"], "K7M2P9QX", "ab12cd34");
 
         var parsed = PairingInvite.TryParse(invite.ToString());
 
@@ -23,7 +23,7 @@ public class PairingInviteTests
         // The field that makes the QR a mutual bootstrap rather than a
         // one-directional one: without it the new device has no way to know
         // which server it just handed its public key to.
-        var text = new PairingInvite("host:4533", "CODE1234", "server-fingerprint").ToString();
+        var text = new PairingInvite(["host:4533"], "CODE1234", "server-fingerprint").ToString();
 
         Assert.Contains("fp=server-fingerprint", text);
     }
@@ -31,9 +31,23 @@ public class PairingInviteTests
     [Fact]
     public void Escapes_values_that_would_otherwise_break_the_query()
     {
-        var invite = new PairingInvite("host name:4533", "CODE&MORE", "fp=weird");
+        var invite = new PairingInvite(["host name:4533"], "CODE&MORE", "fp=weird");
 
         Assert.Equal(invite, PairingInvite.TryParse(invite.ToString()));
+    }
+
+    [Fact]
+    public void Carries_every_address_in_the_order_the_server_listed_them()
+    {
+        // The LAN address the admin's browser used, then the public one: a
+        // link that names only the first does nothing for anybody away from
+        // home, which is who a link is usually for.
+        var invite = new PairingInvite(
+            ["http://192.168.50.52:4533", "https://38.133.38.247:4534"], "YRR5M", "2ba46d92");
+
+        var parsed = PairingInvite.TryParse(invite.ToString());
+
+        Assert.Equal(["http://192.168.50.52:4533", "https://38.133.38.247:4534"], parsed!.Hosts);
     }
 
     [Theory]
@@ -64,7 +78,7 @@ public class PairingInviteTests
     [Fact]
     public void Tolerates_surrounding_whitespace_from_a_paste()
     {
-        var invite = new PairingInvite("host:4533", "CODE1234", "fp");
+        var invite = new PairingInvite(["host:4533"], "CODE1234", "fp");
 
         Assert.Equal(invite, PairingInvite.TryParse($"  {invite}\n"));
     }
@@ -107,7 +121,7 @@ public class PairingEntryTests
     [Fact]
     public void An_invite_carries_the_code_and_the_fingerprint_it_named()
     {
-        var entry = PairingEntry.Parse(new PairingInvite("host:4533", "K7M2P", "abc123").ToString());
+        var entry = PairingEntry.Parse(new PairingInvite(["host:4533"], "K7M2P", "abc123").ToString());
 
         Assert.Equal("K7M2P", entry.Code);
         Assert.Equal("abc123", entry.ExpectedFingerprint);
@@ -126,7 +140,7 @@ public class PairingEntryTests
     public void An_invite_accepts_the_server_whose_key_matches()
     {
         var key = KeyOf(2);
-        var entry = PairingEntry.Parse(new PairingInvite("h", "C", FingerprintOf(key)).ToString());
+        var entry = PairingEntry.Parse(new PairingInvite(["h"], "C", FingerprintOf(key)).ToString());
 
         Assert.Null(entry.RejectionFor(key));
     }
@@ -138,7 +152,7 @@ public class PairingEntryTests
         // the wire: the impostor serves its own key over the same plain-HTTP
         // connection the real key would have arrived on, so the only thing
         // that can tell them apart is the fingerprint that travelled by QR.
-        var entry = PairingEntry.Parse(new PairingInvite("h", "C", FingerprintOf(KeyOf(3))).ToString());
+        var entry = PairingEntry.Parse(new PairingInvite(["h"], "C", FingerprintOf(KeyOf(3))).ToString());
 
         var rejection = entry.RejectionFor(KeyOf(4));
 

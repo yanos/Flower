@@ -153,6 +153,36 @@ public class PinnedCertificateAcceptanceTests : IDisposable
     }
 
     [Fact]
+    public void A_self_signed_certificate_is_accepted_before_pairing_when_an_invite_named_its_key()
+    {
+        // The bootstrap away from home: a server reached at its public https
+        // address before any pin exists, which the invite's fingerprint is the
+        // only thing able to vouch for.
+        using var serverKey = NewKey();
+        using var certificate = SelfSignedFor(serverKey);
+        PeerHttpClient.IsPinnedServerKey = null;
+
+        PeerHttpClient.AcceptInvitedServerKey(
+            SignedRequestCanonicalizer.ComputeFingerprint(DeviceCertificate.PublicKeyRaw(serverKey)));
+
+        Assert.True(PeerHttpClient.IsAcceptable(certificate, SslPolicyErrors.RemoteCertificateChainErrors));
+    }
+
+    [Fact]
+    public void An_invite_vouches_for_the_key_it_names_and_no_other()
+    {
+        using var invitedKey = NewKey();
+        using var attackerKey = NewKey();
+        using var certificate = SelfSignedFor(attackerKey);
+        PeerHttpClient.IsPinnedServerKey = null;
+
+        PeerHttpClient.AcceptInvitedServerKey(
+            SignedRequestCanonicalizer.ComputeFingerprint(DeviceCertificate.PublicKeyRaw(invitedKey)));
+
+        Assert.False(PeerHttpClient.IsAcceptable(certificate, SslPolicyErrors.RemoteCertificateChainErrors));
+    }
+
+    [Fact]
     public void A_handshake_that_presented_no_certificate_at_all_is_refused()
     {
         PeerHttpClient.IsPinnedServerKey = _ => true;

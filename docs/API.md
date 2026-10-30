@@ -296,9 +296,13 @@ on the way in. The first code is printed to the console at startup
 A code reaches a device in one of three renderings:
 
 - the bare code, typed by hand;
-- an invite, `flower://pair?host=<host>&code=<code>&fp=<server fingerprint>`,
-  scanned or pasted. `fp` is what lets the device check which server it is
-  about to trust — a bare code cannot;
+- an invite, `flower://pair?host=<origin>&host=<origin>…&code=<code>&fp=<server fingerprint>`,
+  scanned or pasted. One `host` per address the server can be reached at, in
+  the order to try them; the device keeps whichever answers as `fp`. `fp` is
+  what lets the device check which server it is about to trust — a bare code
+  cannot — and, before pairing, it is also the only thing that can vouch for the
+  server's self-signed https certificate, so it is what makes pairing from
+  outside the server's network possible at all;
 - a browser link, `<origin>/#pair=<code>&page=settings`.
 
 ### `POST /api/flower/v1/pair-redeem`
@@ -558,8 +562,9 @@ the server's own sentence in `detail`. A paired device that is not an admin gets
 | GET | `/devices/{fingerprint}/logs?limit=500` | `{fingerprint, alias, receivedAt, entries}`, or `404` if the device has pushed nothing |
 | GET | `/logs?limit=500&after=` | `{lastSequence, entries}` — the server's own log; pass the previous `lastSequence` as `after` for a delta |
 
-The invite's host is the one the request arrived on, unless `AdvertisedHost` is
-set. A revoked device learns of it from `trustsCaller: false` on its next
+The invite's hosts are the origin the request arrived on (left out when
+`AdvertisedHost` is set, or when it is loopback), then every origin `/info`
+reports to a paired device — the public one among them when public access is on. A revoked device learns of it from `trustsCaller: false` on its next
 `/info` poll, or a `401 device-unknown` on its next sync.
 
 ### Settings

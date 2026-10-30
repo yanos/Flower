@@ -48,6 +48,14 @@ public class NetworkDiscoveryServiceTests : IDisposable
         // of remembering more than one address for a server.
         public void StopResponding(int port) => _responsesByPort.Remove(port);
 
+        // Something answering in the server's place: a status and a page that
+        // is not a problem document, the way a proxy refuses.
+        private readonly Dictionary<int, HttpStatusCode> _refusalsByPort = [];
+
+        public void RefuseWith(int port, HttpStatusCode status) => _refusalsByPort[port] = status;
+
+        public Uri? LastRequestUri { get; private set; }
+
         // The headers of the most recent /info poll, so a test can check what
         // the client proved about itself rather than only what it was told.
         public HttpRequestHeaders? LastHeaders { get; private set; }
@@ -58,6 +66,10 @@ public class NetworkDiscoveryServiceTests : IDisposable
             LastHeaders = request.Headers;
             var port = request.RequestUri!.Port;
             RequestedPorts.Add(port);
+            LastRequestUri = request.RequestUri;
+
+            if (_refusalsByPort.TryGetValue(port, out var status))
+                return Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent("<html>denied</html>") });
 
             if (!_responsesByPort.TryGetValue(port, out var json))
                 throw new HttpRequestException("simulated unreachable peer");
@@ -593,6 +605,47 @@ public class NetworkDiscoveryServiceTests : IDisposable
     public async Task AddRememberedAsync_refuses_a_typed_cleartext_address_off_the_local_network()
     {
         Assert.Null(await _service.AddRememberedAsync("http://93.184.216.34:4533", TestContext.Current.CancellationToken));
+    }
+
+    // The server's https port, written bare, the way the address box invites:
+    // plain http is never dialled outside this network, so https is what was
+    // meant. This used to be refused with nothing said at all.
+    [Fact]
+    public async Task AddRememberedAsync_dials_a_bare_address_off_the_local_network_over_https()
+    {
+        _handler.RespondWith(4534, """{"alias":"Basement","fingerprint":"server-fp","isServer":true,"deviceType":"server"}""");
+
+        var device = await _service.AddRememberedAsync("93.184.216.34:4534", TestContext.Current.CancellationToken);
+
+        Assert.NotNull(device);
+        Assert.Equal(new Uri("https://93.184.216.34:4534/"), device.BaseUri);
+    }
+
+    [Fact]
+    public async Task AddRememberedAsync_dials_a_bare_off_network_address_on_the_servers_https_port_when_none_is_written()
+    {
+        _handler.RespondWith(4534, """{"alias":"Basement","fingerprint":"server-fp","isServer":true,"deviceType":"server"}""");
+
+        var device = await _service.AddRememberedAsync("93.184.216.34", TestContext.Current.CancellationToken);
+
+        Assert.Equal(new Uri("https://93.184.216.34:4534/"), device?.BaseUri);
+    }
+
+    // A Flower server never refuses /info, so a refusal that is not a problem
+    // document came from something else on the path - met in practice as a
+    // proxy answering "403 CONNECT not allowed" to anything but port 443, and
+    // reported then as nothing more than "could not resolve".
+    [Fact]
+    public async Task A_refusal_from_something_other_than_the_server_is_explained_as_a_proxy()
+    {
+        _handler.RefuseWith(4534, HttpStatusCode.Forbidden);
+
+        var device = await _service.AddRememberedAsync("https://93.184.216.34:4534", TestContext.Current.CancellationToken);
+
+        Assert.NotNull(device);
+        Assert.False(device.IsResponding);
+        Assert.Contains("proxy", device.LastFailure);
+        Assert.Contains("4534", device.LastFailure);
     }
 
     [Fact]

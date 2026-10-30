@@ -62,17 +62,33 @@ public sealed class MobileServerPairingViewModel : ViewModelBase
                 return;
 
             ManualServerStatus = "Looking for a server...";
-            var found = await _main.AddManualServerAsync(address) != null;
+            var result = await _main.AddManualServerAsync(address);
 
-            // A typo is by far the likeliest reason this fails, and finding
-            // that out here beats finding it out from a coffee shop. The entry
-            // is kept either way - a server that is merely switched off right
-            // now is still the server the user meant.
-            ManualServerStatus = found
-                ? ""
-                : $"Nothing answered at {address}. It is saved anyway - check the address, and that Tailscale is on at both ends.";
-            if (found)
-                ManualServerAddress = "";
+            // Why it failed, not just that it did: a typo is the likeliest
+            // reason, but away from home a proxy or a router forwarding nothing
+            // is as likely, and each wants a different fix. A typed address is
+            // kept either way - a server that is merely switched off right now
+            // is still the server the user meant.
+            if (result.Server is not { } found)
+            {
+                ManualServerStatus = result.Invite != null
+                    ? $"Could not reach the server in that link. {result.Failure}"
+                    : $"Nothing answered at {address}. It is saved anyway. {result.Failure}";
+                return;
+            }
+
+            ManualServerStatus = "";
+            ManualServerAddress = "";
+
+            // A pairing link carries its own code, so it goes straight to the
+            // pairing sheet with the code already in it - the same sheet a row
+            // in the list opens, so pairing still asks before replacing this
+            // phone's library view.
+            if (result.Invite is { } invite)
+            {
+                PairWithServerCommand.Execute(found);
+                PendingPairingCode = invite.ToString();
+            }
         });
         RemoveManualServerCommand = new RelayCommand<string>(address =>
         {
@@ -122,6 +138,7 @@ public sealed class MobileServerPairingViewModel : ViewModelBase
     // at home reports its own addresses and needs none of this - see
     // docs/REMOTE-ACCESS.md.
     public ICommand AddManualServerCommand { get; }
+
     public ICommand RemoveManualServerCommand { get; }
     public ICommand ConfirmPairServerCommand { get; }
     public ICommand CancelPairServerCommand { get; }

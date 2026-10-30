@@ -95,7 +95,7 @@
          with nothing typed - see docs/REMOTE-ACCESS.md. -->
     <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" Margin="0,14,0,0">
       <TextBox Grid.Column="0" x:Name="ManualAddressBox"
-               PlaceholderText="my-server.tail1234.ts.net:4533"
+               PlaceholderText="Server address, or its flower:// pairing link"
                Margin="0,0,8,0"/>
       <TextBox Grid.Column="1" x:Name="ManualPairingCodeBox"
                PlaceholderText="Pairing code"

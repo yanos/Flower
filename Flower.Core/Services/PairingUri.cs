@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Flower.Services;
 
@@ -20,7 +21,16 @@ namespace Flower.Services;
 // machine-in-the-middle on a plain-HTTP LAN cannot pose as the server without
 // also producing that key. A client that ignores this field is back to
 // trust-on-first-use, which is exactly what the field exists to avoid.
-public sealed record PairingInvite(string Host, string Code, string Fingerprint)
+//
+// Hosts is every address the server knows itself by, in the order a client
+// should try them - not one. The invite used to carry only the address the
+// admin's own browser reached the server on, which is a LAN address whenever
+// the admin is at home, i.e. nearly always: the link then worked for exactly
+// the people who did not need it, and a phone handed one away from home dialled
+// 192.168.x.x and found nothing. Each host is an origin a client can dial as
+// written (scheme, host, port); one with no scheme means plain http, as a typed
+// address does.
+public sealed record PairingInvite(IReadOnlyList<string> Hosts, string Code, string Fingerprint)
 {
     public const string Scheme = "flower";
     public const string PairHost = "pair";
@@ -30,11 +40,21 @@ public sealed record PairingInvite(string Host, string Code, string Fingerprint)
     // Assembled by hand rather than with UriBuilder, which insists on a path
     // and renders this as flower://pair/?... - harmless to parse, but it is
     // the string a user sees under a QR code and reads back over the phone,
-    // so the stray slash is worth not having.
+    // so the stray slash is worth not having. One host= per address, in order.
     public override string ToString() =>
-        $"{Scheme}://{PairHost}?host={Uri.EscapeDataString(Host)}"
-        + $"&code={Uri.EscapeDataString(Code)}"
+        $"{Scheme}://{PairHost}?"
+        + string.Concat(Hosts.Select(host => $"host={Uri.EscapeDataString(host)}&"))
+        + $"code={Uri.EscapeDataString(Code)}"
         + $"&fp={Uri.EscapeDataString(Fingerprint)}";
+
+    // By value, hosts included: a record compares a list by reference.
+    public bool Equals(PairingInvite? other) =>
+        other is not null
+        && Hosts.SequenceEqual(other.Hosts, StringComparer.Ordinal)
+        && Code == other.Code
+        && Fingerprint == other.Fingerprint;
+
+    public override int GetHashCode() => HashCode.Combine(Hosts.Count, Code, Fingerprint);
 
     // Null rather than throwing on anything malformed: this parses text a user
     // pasted or a camera decoded, where "that isn't a pairing link" is an
@@ -52,29 +72,38 @@ public sealed record PairingInvite(string Host, string Code, string Fingerprint)
             return null;
 
         var query = ParseQuery(uri.Query);
-        if (!query.TryGetValue("host", out var host) || string.IsNullOrEmpty(host))
+        var hosts = query.TryGetValue("host", out var written)
+            ? written.Where(host => host.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList()
+            : [];
+        if (hosts.Count == 0)
             return null;
-        if (!query.TryGetValue("code", out var code) || string.IsNullOrEmpty(code))
+        if (Single(query, "code") is not { Length: > 0 } code)
             return null;
         // Deliberately required, not optional-with-a-fallback: an invite
         // without a server fingerprint can only be completed by trusting
         // whatever answers at that address, and silently degrading to that is
         // the failure this field was added to prevent.
-        if (!query.TryGetValue("fp", out var fingerprint) || string.IsNullOrEmpty(fingerprint))
+        if (Single(query, "fp") is not { Length: > 0 } fingerprint)
             return null;
 
-        return new PairingInvite(host, code, fingerprint);
+        return new PairingInvite(hosts, code, fingerprint);
     }
 
-    private static Dictionary<string, string> ParseQuery(string query)
+    private static string? Single(Dictionary<string, List<string>> query, string name) =>
+        query.TryGetValue(name, out var values) ? values[^1] : null;
+
+    private static Dictionary<string, List<string>> ParseQuery(string query)
     {
-        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        var result = new Dictionary<string, List<string>>(StringComparer.Ordinal);
         foreach (var pair in query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
         {
             var separator = pair.IndexOf('=');
             if (separator <= 0)
                 continue;
-            result[Uri.UnescapeDataString(pair[..separator])] = Uri.UnescapeDataString(pair[(separator + 1)..]);
+            var name = Uri.UnescapeDataString(pair[..separator]);
+            if (!result.TryGetValue(name, out var values))
+                result[name] = values = [];
+            values.Add(Uri.UnescapeDataString(pair[(separator + 1)..]));
         }
         return result;
     }

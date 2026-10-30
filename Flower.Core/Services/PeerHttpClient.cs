@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Net.Http;
 using System.Net.Security;
 using System.Security.Cryptography.X509Certificates;
@@ -40,6 +41,20 @@ public static class PeerHttpClient
     // refusal rather than a pass: a null predicate cannot vouch for a
     // certificate, so only ordinary chain validation can let one through.
     public static Func<byte[], bool>? IsPinnedServerKey { get; set; }
+
+    // Server keys a pairing invite named, accepted alongside the paired ones
+    // for the rest of this run. This is what lets a device that has never been
+    // paired reach a server over https at all: the certificate is self-signed
+    // from the server's own key, and before pairing there is no pin for it -
+    // so a link handed to somebody away from home named a public https
+    // address this side then refused on its certificate, every time. The
+    // invite's fingerprint arrived out of band (a QR, a pasted link), which is
+    // the same standing a pin has, so it vouches for exactly the one key it
+    // names and nothing else. Memory only: once the pairing goes through, the
+    // key is pinned the ordinary way and this set no longer matters.
+    private static readonly ConcurrentDictionary<string, byte> InvitedServerFingerprints = new(StringComparer.OrdinalIgnoreCase);
+
+    public static void AcceptInvitedServerKey(string fingerprint) => InvitedServerFingerprints[fingerprint] = 0;
 
     // How a client built by CreateSigned proves who it is, consulted per
     // request. A settable static for exactly the reason IsPinnedServerKey
@@ -132,6 +147,11 @@ public static class PeerHttpClient
             return false;
 
         var publicKey = DeviceCertificate.PublicKeyRawOf(certificate);
-        return publicKey != null && IsPinnedServerKey?.Invoke(publicKey) == true;
+        if (publicKey == null)
+            return false;
+
+        return IsPinnedServerKey?.Invoke(publicKey) == true
+               || (!InvitedServerFingerprints.IsEmpty
+                   && InvitedServerFingerprints.ContainsKey(SignedRequestCanonicalizer.ComputeFingerprint(publicKey)));
     }
 }

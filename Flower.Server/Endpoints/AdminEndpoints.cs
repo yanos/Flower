@@ -175,12 +175,21 @@ public static class AdminEndpoints
         // grantsAdmin is set by the issuer, never claimed by the redeemer -
         // see PairingCodeService. This is the "add another admin device" path
         // as well as the ordinary "add a device" one.
-        authenticated.MapPost("/pairing-codes", (
+        authenticated.MapPost("/pairing-codes", async (
             HttpContext context, PairingCodeService pairing, DeviceSigningKey signingKey,
-            IOptionsMonitor<FlowerServerOptions> options, bool grantsAdmin = false) =>
+            IOptionsMonitor<FlowerServerOptions> options, IServer boundServer, PublicAddressProbe publicAddress,
+            PublicReachability publicReachability, bool grantsAdmin = false) =>
         {
             var (code, expiresAt) = pairing.GenerateCode(grantsAdmin);
-            var invite = BuildInvite(context, signingKey, options.CurrentValue, code);
+            // Looked up before the invite is built, because the public origin
+            // is made from it and it is what lets a link handed to somebody
+            // away from home work there. Cached, so this dials out at most
+            // once per CacheFor however many codes are issued - and only when
+            // public access is on, since otherwise there is no public origin
+            // to put in the link (PublicReachability.OriginFor).
+            if (options.CurrentValue.AllowPublicAccess)
+                await publicAddress.GetAsync(context.RequestAborted);
+            var invite = BuildInvite(context, signingKey, options.CurrentValue, boundServer, publicReachability, code);
             // Two renderings of one code, because the two things that redeem it
             // cannot read the same thing. A Flower app scans or types the
             // flower:// invite; a browser tab needs a link it can be opened at,
@@ -1013,18 +1022,44 @@ public static class AdminEndpoints
             LookUpOnline: options.LookUpOnline);
     }
 
-    // The host in the invite is the address the admin's own browser reached
-    // this server on, not a configured one: on a box with a LAN address, a
-    // tailnet address and a container-internal address, that is the only one
-    // known to actually work from outside. AdvertisedHost overrides it for the
-    // reverse-proxy case, where the request's host is the proxy's idea of it.
+    // Every address this server is known by, the one the admin's own browser
+    // reached it on first: on a box with a LAN address, a tailnet address and
+    // a container-internal address, that is the one known to actually work
+    // from somewhere. After it come the addresses /info reports to a paired
+    // device - the public origin among them when public access is on - so a
+    // link handed to somebody who is not on this network has something to dial
+    // there too. That was the failure: the request's host alone is a LAN
+    // address whenever the admin is at home, and the link did nothing anywhere
+    // else. The client tries them all and keeps the one that answers as this
+    // server (the fingerprint decides, not the address).
+    //
+    // AdvertisedHost replaces the request's host rather than joining it, for
+    // the reverse-proxy case, where the request's host is the proxy's idea of
+    // it; ReachableOrigins carries it. A loopback host is left out for the
+    // same reason - nobody else can dial this machine's localhost.
     private static PairingInvite BuildInvite(
-        HttpContext context, DeviceSigningKey signingKey, FlowerServerOptions options, string code)
+        HttpContext context, DeviceSigningKey signingKey, FlowerServerOptions options,
+        IServer boundServer, PublicReachability publicReachability, string code)
     {
-        var host = string.IsNullOrWhiteSpace(options.AdvertisedHost)
-            ? context.Request.Host.Value ?? "localhost"
-            : options.AdvertisedHost;
+        var hosts = new List<string>();
+        if (string.IsNullOrWhiteSpace(options.AdvertisedHost) && !IsLoopbackHost(context.Request.Host.Host))
+            hosts.Add($"{context.Request.Scheme}://{context.Request.Host.Value}");
 
-        return new PairingInvite(host, code, signingKey.Fingerprint);
+        foreach (var origin in DiscoveryEndpoints.ReachableOrigins(boundServer, options, publicReachability.OriginFor(options)))
+        {
+            if (!hosts.Contains(origin, StringComparer.OrdinalIgnoreCase))
+                hosts.Add(origin);
+        }
+
+        // Nothing to say beyond the request's own host is still an invite: it
+        // is the address the admin is looking at the server through.
+        if (hosts.Count == 0)
+            hosts.Add($"{context.Request.Scheme}://{context.Request.Host.Value ?? "localhost"}");
+
+        return new PairingInvite(hosts, code, signingKey.Fingerprint);
     }
+
+    private static bool IsLoopbackHost(string host) =>
+        string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase)
+        || (System.Net.IPAddress.TryParse(host.Trim('[', ']'), out var address) && System.Net.IPAddress.IsLoopback(address));
 }

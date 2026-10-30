@@ -160,8 +160,13 @@ the client's probes at hosts of its choosing.
    `Flower/Views/Mobile/SettingsView.axaml` above the `AvailableServers` list and
    in `Flower/Views/ServerPickerView.axaml`. Port defaults to **4533**,
    `Flower.Server`'s port — not `SyncProtocol.DefaultPort` (53317), which is the
-   app-to-app one. Once added, the server pairs through the existing per-row Pair
-   button.
+   app-to-app one — for an address on this network; an address outside it with no
+   scheme written is dialled over https, on 4534 unless a port is written, since
+   plain http is never dialled there (`CleartextOrigins`). Once added, the server
+   pairs through the existing per-row Pair button. A failure says why
+   (`DiscoveredDevice.LastFailure`, `NetworkDiscoveryService.ExplainUnreachable`):
+   a proxy refusing a port other than 443, a certificate this device cannot check
+   without the pairing link, a door that answers nothing in time.
 6. Surfacing *how* the server is currently reached (LAN / tailnet / unreachable).
    Without it, a silent fallback to a relayed path is indistinguishable from a
    fast direct one, and "why is this suddenly slow" has no answer.
@@ -174,12 +179,18 @@ the client's probes at hosts of its choosing.
   `SELF-HOSTING.md` presents it as a complete option, because WireGuard already
   encrypts it. The scheme rework — nine call sites, and `IPEndPoint` widened to
   hold a name — is its own change with its own reason to happen.
-- **`flower://` invites, QR scanning, fingerprint pinning.** `PairingInvite`
-  (`Flower.Core/Services/PairingUri.cs`) is produced by the server and parsed only
-  in `Flower.Tests`. No client calls `TryParse`, no URL scheme is registered on
-  either mobile platform, and the fingerprint pin its own remarks call
-  load-bearing is never actually checked by anything. Real gaps, recorded here so
-  they stop being invisible.
+- **`flower://` as a URL scheme, and QR scanning.** No head registers the
+  scheme, so opening a pairing link — tapping it in a message, clicking it in a
+  browser — does nothing anywhere; the link only works pasted. It is accepted in
+  both of the boxes it could go into: the pairing-code box, and the box that
+  takes a server's address (`PeerSyncCoordinator.AddManualServerAsync`), which
+  tries every `host` the invite names, keeps the one that answers with the
+  invite's fingerprint, and pairs in the same gesture. That second box is the
+  bootstrap away from home, and two things make it work there: the server puts
+  its public origin into the invite (`AdminEndpoints.BuildInvite`), and the
+  invite's fingerprint vouches for the server's self-signed certificate before
+  any pin exists (`PeerHttpClient.AcceptInvitedServerKey`) — without it, the
+  only address that works away from home was refused on its certificate.
 - **Transcoding.** There is none anywhere in the codebase, so streaming ships
   original files — a FLAC is around 1000 kbps against a home upload link. Fine
   for one listener on a decent connection, heavy on cellular. Relevant to how a

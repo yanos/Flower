@@ -382,29 +382,36 @@ public partial class ServerPickerView : UserControl
         AddManualServerButton.IsEnabled = false;
         ManualAddressStatus.IsVisible = true;
         ManualAddressStatus.Text = "Looking for a server...";
-        DiscoveredDevice? found;
+        ManualServerResult result;
         try
         {
-            found = await _mainViewModel.AddManualServerAsync(address);
+            result = await _mainViewModel.AddManualServerAsync(address);
         }
         finally
         {
             AddManualServerButton.IsEnabled = true;
         }
 
-        // The address is kept either way: a server that merely happens to be
-        // switched off right now is still the server the user meant. Saying
-        // which happened is the useful part, since a typo is by far the likelier
-        // of the two and is worth catching here rather than from a coffee shop.
-        if (found == null)
+        // A typed address is kept either way: a server that merely happens to
+        // be switched off right now is still the server the user meant. Saying
+        // why it did not answer is the useful part - a typo, a proxy, a router
+        // forwarding nothing - and it is worth catching here rather than from
+        // a coffee shop.
+        if (result.Server is not { } found)
         {
-            ManualAddressStatus.Text =
-                $"Nothing answered at {address}. It is saved anyway - check the address, and that both ends are on the tailnet.";
+            ManualAddressStatus.Text = result.Invite != null
+                ? $"Could not reach the server in that link. {result.Failure}"
+                : $"Nothing answered at {address}. It is saved anyway. {result.Failure}";
             Refresh();
             return;
         }
 
         ManualAddressBox.Text = "";
+
+        // A pairing link carries its own code, so it pairs in the one gesture -
+        // the code box is ignored rather than asked for again.
+        if (result.Invite is { } invite)
+            code = invite.ToString();
 
         // No code typed: the server is now in the list above, where its own row
         // has a code box of its own. Nothing was lost, so say what to do next

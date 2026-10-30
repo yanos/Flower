@@ -600,7 +600,7 @@
                without anything being typed - see docs/REMOTE-ACCESS.md. -->
           <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
             <controls:TextInput Grid.Column="0" Text="{Binding Pairing.ManualServerAddress}"
-                                PlaceholderText="my-server.tail1234.ts.net:4533"
+                                PlaceholderText="Address, or a flower:// pairing link"
                                 controls:SoftKeyboard.ReopenOnTap="True"
                                 FontSize="14" />
             <Button Grid.Column="1" Classes="soft" Content="Add"

@@ -163,6 +163,15 @@ public class DiscoveredDevice
     // not, and where "we know an address for this server" and "that address
     // works from where we are standing" are genuinely different facts.
     public bool IsResponding { get; set; } = true;
+
+    // Why the last /info attempt failed, in words a person can act on, or
+    // null after an answer. Shown where an address was typed or a pairing
+    // link pasted (ServerPickerView, MobileServerPairingViewModel), which used
+    // to say only "nothing answered" whatever had actually happened - a proxy
+    // refusing the port, a certificate this device cannot check yet, a router
+    // forwarding nothing - and left the reason in a Debug line of the log.
+    // See NetworkDiscoveryService.ExplainUnreachable.
+    public string? LastFailure { get; set; }
 }
 
 // See SYNC-PLAN.md: mDNS discovery (proven working macOS <-> iOS Simulator, and -
@@ -648,7 +657,12 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
                 request.Headers.Add("X-Flower-Alias", IdentityHeaderEncoding.Encode(_deviceIdentity.Alias));
             }
             using var response = await _http.SendAsync(request);
-            response.EnsureSuccessStatusCode();
+            // Not EnsureSuccessStatusCode: /info is open to anyone and a Flower
+            // server never refuses it, so a refusal here that is not a problem
+            // document is something else answering in the server's place - a
+            // proxy, a captive portal - and ExplainUnreachable needs to know
+            // which of the two it was.
+            await response.EnsureSuccessAsync();
             var bytes = await response.Content.ReadAsByteArrayAsync();
             json = Encoding.UTF8.GetString(bytes);
             signedAnswer = SignedByOwnKey(response, bytes, json);
@@ -668,6 +682,7 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
         {
             _consecutiveResolveFailures.TryRemove(device.InstanceName, out _);
             _retries.RecordSuccess(device.InstanceName);
+            device.LastFailure = null;
             using var doc = JsonDocument.Parse(json);
             var changed = false;
             if (doc.RootElement.TryGetProperty("alias", out var aliasProp) &&
@@ -894,6 +909,52 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
         return ReferenceEquals(innermost, ex) ? ex.Message : $"{ex.Message} -> {innermost.Message}";
     }
 
+    // Describe's sentence for a person rather than a log: what the failure
+    // most likely means from where they are standing, and what to change.
+    // Every branch is a cause actually met while pairing away from home, and
+    // each one used to arrive as the same "nothing answered".
+    internal static string ExplainUnreachable(Exception ex, Uri baseUri)
+    {
+        var at = baseUri.Authority;
+        return ex switch
+        {
+            // /info is ungated and a Flower server answers it for anyone, so a
+            // refusal with no problem document did not come from the server.
+            // The one met in practice is a proxy that only tunnels to port 443
+            // - "403 CONNECT not allowed" - which no amount of checking the
+            // server's own settings will explain.
+            PeerRefusedException { Problem: null } refused =>
+                $"Something on this network answered in the server's place and refused the connection "
+                + $"({(int)refused.StatusCode}). That is usually a proxy{ProxyPortHint(baseUri)}",
+            HttpRequestException { HttpRequestError: HttpRequestError.ProxyTunnelError } =>
+                $"A proxy on this network refused to connect to {at}{ProxyPortHint(baseUri)}",
+            PeerRefusedException { Problem: { } problem } =>
+                $"The server at {at} refused: {problem.Title}",
+            HttpRequestException { HttpRequestError: HttpRequestError.SecureConnectionError } or AuthenticationException =>
+                $"The server at {at} presented a certificate this device cannot check yet. A server you have not "
+                + "paired with can only be reached over https through its pairing link, which names the certificate "
+                + "to expect - paste the whole flower:// link here instead of the address.",
+            HttpRequestException { HttpRequestError: HttpRequestError.NameResolutionError } =>
+                $"No address could be found for {baseUri.Host}.",
+            // LanGuard drops a caller it will not serve rather than refusing it,
+            // so from outside the server's network a closed door and a missing
+            // port forward look the same as a server that is switched off.
+            OperationCanceledException or TimeoutException =>
+                $"Nothing answered at {at} in time. From outside the server's network, check that it allows "
+                + "connections from the internet and that the router forwards this port to it.",
+            SocketException or HttpRequestException { HttpRequestError: HttpRequestError.ConnectionError }
+                or HttpRequestException { InnerException: SocketException } =>
+                $"Nothing is accepting connections at {at}. Check the address and port, and that the server is running.",
+            _ => Describe(ex),
+        };
+    }
+
+    private static string ProxyPortHint(Uri baseUri) =>
+        baseUri.Port == 443
+            ? "."
+            : $", and most only let through port 443 - this address is on port {baseUri.Port}. "
+              + "Try from another network, or have the router forward port 443 to the server as well.";
+
     private void HandleUnreachable(DiscoveredDevice device, Exception ex)
     {
         // Peer unreachable or not running the /info endpoint yet - keep the
@@ -926,6 +987,7 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
         // - the exact flood the Trace branch below exists to prevent.
         var failures = _consecutiveResolveFailures.AddOrUpdate(device.InstanceName, 1, (_, count) => count + 1);
         _retries.RecordFailure(device.InstanceName);
+        device.LastFailure = ExplainUnreachable(ex, device.BaseUri);
         if (failures == 1 && !IsRoutineUnreachable(ex))
             _logger.LogDebug(ex, "Could not resolve /info for {InstanceName} at {EndPoint}", device.InstanceName, device.BaseUri);
         else if (failures == 1)
@@ -1243,25 +1305,65 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
             : uri;
 
         var host = uri.Host.Trim('[', ']');
+        IPAddress ip;
+        if (IPAddress.TryParse(host, out var literal))
+        {
+            ip = literal;
+        }
+        else
+        {
+            try
+            {
+                var resolved = await Dns.GetHostAddressesAsync(host, token);
+                if (resolved.Length == 0)
+                    return null;
+                ip = resolved[0];
+            }
+            catch (Exception ex) when (ex is SocketException or ArgumentException)
+            {
+                return null;
+            }
+        }
+
+        // No scheme written, at an address outside this network: plain http is
+        // the one thing that will not be dialled there (below), so the server's
+        // https listener is what was meant. A public address typed bare used to
+        // be refused outright with nothing said, which is how
+        // "38.133.38.247:4534" - the server's https port, written the way the
+        // placeholder suggests - came to do nothing at all.
+        if (!HasScheme(trimmed) && !CleartextOrigins.IsAllowed(baseUri, ip))
+        {
+            baseUri = new UriBuilder(baseUri)
+            {
+                Scheme = Uri.UriSchemeHttps,
+                Port = uri.IsDefaultPort ? FlowerServerHttpsPort : uri.Port,
+            }.Uri;
+        }
+
         // An address that resolves fine and is still refused: see
         // CleartextOrigins. A typed "http://music.example.com" is a routable
         // host over an unencrypted hop, and there is no version of that this
         // app should dial - the same address over https is accepted here and
         // then judged on its certificate by PeerHttpClient.
-        if (IPAddress.TryParse(host, out var literal))
-            return CleartextOrigins.IsAllowed(baseUri, literal) ? (baseUri, literal) : null;
+        return CleartextOrigins.IsAllowed(baseUri, ip) ? (baseUri, ip) : null;
+    }
 
-        try
-        {
-            var resolved = await Dns.GetHostAddressesAsync(host, token);
-            if (resolved.Length == 0)
-                return null;
-            return CleartextOrigins.IsAllowed(baseUri, resolved[0]) ? (baseUri, resolved[0]) : null;
-        }
-        catch (Exception ex) when (ex is SocketException or ArgumentException)
-        {
-            return null;
-        }
+    // Why AddRememberedAsync came back with nothing for this address, for the
+    // box it was typed into. It cannot be told by the call itself without
+    // widening every caller's result for the one that shows it, and every
+    // reason but a failed lookup is a property of the text alone.
+    public static string ExplainUnresolvable(string address)
+    {
+        var trimmed = address.Trim();
+        if (PairingInvite.TryParse(trimmed) == null && trimmed.StartsWith(PairingInvite.Scheme + ":", StringComparison.OrdinalIgnoreCase))
+            return "That pairing link is incomplete. Copy the whole link again, from flower:// to the end.";
+        if (!Uri.TryCreate(HasScheme(trimmed) ? trimmed : $"http://{trimmed}", UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            return $"\"{trimmed}\" is not an address. Write it as host:port, or paste the server's pairing link.";
+        if (trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+            return $"Either no address could be found for {uri.Host}, or it is outside your own network, where plain "
+                   + $"http is never used. Try https://{uri.Host}:{FlowerServerHttpsPort}, or the server's pairing link.";
+        return $"No address could be found for {uri.Host}.";
     }
 
     private static bool HasScheme(string address) =>
@@ -1278,6 +1380,10 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
     // SyncProtocol.DefaultPort (53317), which is what the app-to-app listener
     // used to bind before it was removed.
     private const int FlowerServerPort = 4533;
+
+    // Its https listener, FlowerServerOptions.HttpsPort's default: what an
+    // address outside this network is dialled on when none is written.
+    private const int FlowerServerHttpsPort = 4534;
 
     private static bool IsOurServiceType(string instanceName) =>
         instanceName.EndsWith($"{ServiceType}.local", StringComparison.OrdinalIgnoreCase);
