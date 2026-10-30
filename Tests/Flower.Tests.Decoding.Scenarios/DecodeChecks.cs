@@ -497,7 +497,7 @@ public static class DecodeChecks
         // Settled first: the fault and the last write into the ring are on
         // the same thread, so a snapshot taken the instant Faulted fires can
         // legitimately race the drain thread and see nothing at all.
-        drain.Settle(decoder.BytesProduced);
+        drain.Settle(decoder.BytesProduced, decoderFaulted: true);
 
         var partial = InFixtureUnits(subject, drain.Snapshot());
         if (partial.Length == 0)
@@ -761,7 +761,7 @@ public static class DecodeChecks
         // Drained fires when the decoder stops producing, which can be a beat
         // before the last write lands in the ring.
         var produced = decoder.BytesProduced;
-        drain.Settle(produced);
+        drain.Settle(produced, faulted);
         var collected = drain.Snapshot();
 
         if (faulted)
@@ -862,7 +862,15 @@ public static class DecodeChecks
         // last counted bytes never made it into the ring. Reaching that
         // fallback is itself a finding, and DecodeFully reports the shortfall
         // rather than passing it on as a length.
-        public void Settle(long produced)
+        //
+        // Only for that case, which is what decoderFaulted says. A decode that
+        // ended cleanly has written every byte it counted, so its finish line
+        // is reachable and is waited for, up to SettlePatience. Applying the
+        // fallback to it too is how a clean Vorbis decode on a three-core CI
+        // runner came back 35KB short: the drain thread went unscheduled for
+        // longer than the fallback's 50ms, and the audio still in the ring was
+        // reported as audio the drain never collected.
+        public void Settle(long produced, bool decoderFaulted)
         {
             var deadline = Stopwatch.StartNew();
             var last = -1L;
@@ -876,7 +884,7 @@ public static class DecodeChecks
 
                 if (now == last)
                 {
-                    if (++unchangedTicks >= 5)
+                    if (decoderFaulted && ++unchangedTicks >= 5)
                         return;
                 }
                 else
