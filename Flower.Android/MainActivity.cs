@@ -121,12 +121,23 @@ public class FlowerApplication(nint javaReference, JniHandleOwnership transfer)
     }
 }
 
+// SingleTask, and the intent filter: a flower:// pairing link (PairingInvite)
+// opened in another app comes to this activity, the one already running when
+// there is one, rather than starting a second copy of it inside the sender's
+// task. Avalonia raises the link through IActivatableLifetime, from the launch
+// intent and from OnNewIntent alike, and App.axaml.cs passes it to
+// PairingLinkInbox.
 [Activity(
     Label = "Flower.Android",
     Theme = "@style/MyTheme.NoActionBar",
     Icon = "@drawable/icon",
     MainLauncher = true,
+    LaunchMode = LaunchMode.SingleTask,
     ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.UiMode)]
+[IntentFilter(
+    [Intent.ActionView],
+    Categories = [Intent.CategoryDefault, Intent.CategoryBrowsable],
+    DataScheme = PairingInvite.Scheme)]
 public class MainActivity : AvaloniaMainActivity
 {
     // AvaloniaActivity.OnCreate (our base) calls InitializeAvaloniaView - which

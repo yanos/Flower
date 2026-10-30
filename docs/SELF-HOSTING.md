@@ -142,9 +142,12 @@ difference is not a nicety:
   to it and nothing objects.
 
 So the link is the way to add a device, and the code is the fallback for when
-the only channel you have is your own voice. Either box ("Pairing code or
-link") takes both, so there is no setting to get wrong — only a habit worth
-having. Copy the link into whatever you would have typed the code into.
+the only channel you have is your own voice. Send the link in a message:
+opening it on the device — tapping it — opens Flower and asks to pair, and it
+carries every address the server can be reached at, so it works away from home
+too when public access is on. Either box ("Pairing code or link") takes both,
+so there is no setting to get wrong — only a habit worth having. Copy the link
+into whatever you would have typed the code into.
 
 A refusal says *"This is not the server that invite came from"* and names both
 fingerprints. The dull explanation is that the link was for a different server,

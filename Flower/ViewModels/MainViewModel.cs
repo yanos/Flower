@@ -432,6 +432,36 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     public Task<ManualServerResult> AddManualServerAsync(string address) => Sync.AddManualServerAsync(address);
 
+    // Why a pairing link opened from outside the app (PairingLinkInbox) cannot
+    // be acted on as it stands, or null when it can. Switching servers is an
+    // explicit unpair first, never a link's side effect - the same rule the
+    // Pair button keeps (PairActionHint) - and a link for the server already
+    // paired with has nothing left to do.
+    public string? PairingLinkRefusal(PairingInvite invite)
+    {
+        if (string.IsNullOrEmpty(PairedServerFingerprint))
+            return null;
+
+        var alias = PairedServerAlias ?? "a server";
+        return string.Equals(PairedServerFingerprint, invite.Fingerprint, StringComparison.OrdinalIgnoreCase)
+            ? $"This device is already paired with {alias}."
+            : $"This device is paired with {alias}. To use this link, unpair from {alias} first, then open the link again.";
+    }
+
+    // The server's own page in the sidebar, with the link in its code box:
+    // where a pairing started from a link reports how it went, since a
+    // refused code is said next to that box (PairingCodeError). False when the
+    // row is not listed yet; the pairing itself does not depend on it.
+    public bool ShowServerPage(string fingerprint, string pairingCode)
+    {
+        if (_sidebarItems.FirstOrDefault(i => string.Equals(i.Device?.Fingerprint, fingerprint, StringComparison.OrdinalIgnoreCase)) is not { } row)
+            return false;
+
+        SelectedSidebarItem = row;
+        PairingCode = pairingCode;
+        return true;
+    }
+
     public void RemoveManualServer(string address) => Sync.RemoveManualServer(address);
 
     public bool CanForceSync => Sync.CanForceSync;

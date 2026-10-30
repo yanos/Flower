@@ -139,6 +139,23 @@ public sealed class MobileServerPairingViewModel : ViewModelBase
     // docs/REMOTE-ACCESS.md.
     public ICommand AddManualServerCommand { get; }
 
+    // A flower:// link opened from outside the app (PairingLinkInbox): the
+    // same as pasting it into the address box, on the Settings sheet so that
+    // what happened is said where the box is - and a link that finds its
+    // server goes on to the pairing sheet with the code already in it.
+    public void OpenPairingLink(PairingInvite invite)
+    {
+        _setSheet(MobileSheet.Settings);
+
+        if (_main.PairingLinkRefusal(invite) is { } refusal)
+        {
+            ManualServerStatus = refusal;
+            return;
+        }
+
+        ManualServerAddress = invite.ToString();
+        AddManualServerCommand.Execute(null);
+    }
     public ICommand RemoveManualServerCommand { get; }
     public ICommand ConfirmPairServerCommand { get; }
     public ICommand CancelPairServerCommand { get; }

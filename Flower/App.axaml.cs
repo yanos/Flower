@@ -143,6 +143,23 @@ public partial class App : Application
         // evidence once it says which build wrote it.
         logger.LogInformation("Flower starting: {Build}. Log file: {LogPath}", AppVersion.StartupDescription, logPath);
 
+        // A flower:// pairing link opened from outside the app, where the
+        // platform delivers one to the running process: macOS, iOS and Android
+        // (each head's Info.plist / intent filter registers the scheme).
+        // Windows and Linux start a process with it on the command line instead
+        // - see Flower.Desktop's Program. Subscribed this early, before any
+        // window exists, because the link that launched the app is delivered
+        // as soon as the run loop starts; PairingLinkInbox holds it until the
+        // UI below is ready to ask about it.
+        if (this.TryGetFeature<IActivatableLifetime>() is { } activatable)
+        {
+            activatable.Activated += (_, e) =>
+            {
+                if (e is ProtocolActivatedEventArgs { Kind: ActivationKind.OpenUri } opened)
+                    PairingLinkInbox.Current.Deliver(opened.Uri.OriginalString);
+            };
+        }
+
         if (ApplicationLifetime is IActivityApplicationLifetime activityLifetime)
         {
             // Avalonia 12's Android host builds the AppBuilder (and calls this
@@ -753,6 +770,15 @@ public partial class App : Application
             desktop.MainWindow = window;
             mainView = window;
 
+            // Once the window is on screen, since what a link does first is
+            // ask - see MainWindow.OpenPairingLink.
+            void TakePairingLinks(object? sender, EventArgs e)
+            {
+                window.Opened -= TakePairingLinks;
+                PairingLinkInbox.Current.Attach(window.OpenPairingLink);
+            }
+            window.Opened += TakePairingLinks;
+
             // A first run that found a Music.app library asks before using it
             // (see ITunesLibraryOffer). Asked once the window is up, because a
             // dialog needs a visible owner - and the rescan below is held
@@ -868,10 +894,9 @@ public partial class App : Application
             }
             else
             {
-                singleView = new MobileMainView
-                {
-                    DataContext = Ioc.Default.GetRequiredService<MobileMainViewModel>()
-                };
+                var mobileViewModel = Ioc.Default.GetRequiredService<MobileMainViewModel>();
+                singleView = new MobileMainView { DataContext = mobileViewModel };
+                PairingLinkInbox.Current.Attach(mobileViewModel.Pairing.OpenPairingLink);
             }
 
             singleViewPlatform.MainView = singleView;

@@ -12,6 +12,8 @@ using CommunityToolkit.Mvvm.DependencyInjection;
 
 using Material.Icons;
 
+using Microsoft.Extensions.Logging;
+
 using Flower.Controls;
 using Flower.Logging;
 using Flower.Models;
@@ -365,6 +367,59 @@ public partial class MainWindow : Window
         using (context.PushTransform(Matrix.CreateScale(16.0 / 24.0, 16.0 / 24.0)))
             context.DrawGeometry(ink, null, geometry);
         return bitmap;
+    }
+
+    // A flower:// link opened from outside the app (PairingLinkInbox), handled
+    // the way the address box handles one pasted into it: find the server at
+    // whichever of the link's addresses answers as it, ask, pair. Brought to
+    // the front first - on Windows and Linux the link reached this instance
+    // from a launch the user just made, which has already exited.
+    //
+    // The server's own page is shown before asking, with the link in its code
+    // box, because that is where a refused code is reported (PairingCodeError)
+    // and where the pairing's progress shows afterwards.
+    public async void OpenPairingLink(PairingInvite invite)
+    {
+        try
+        {
+            if (DataContext is not ViewModels.MainViewModel vm)
+                return;
+
+            if (WindowState == WindowState.Minimized)
+                WindowState = WindowState.Normal;
+            Activate();
+
+            if (vm.PairingLinkRefusal(invite) is { } refusal)
+            {
+                await ConfirmDialogWindow.ShowMessageAsync(this, "Pairing Link Not Used", refusal);
+                return;
+            }
+
+            var result = await vm.AddManualServerAsync(invite.ToString());
+            if (result.Server is not { } server)
+            {
+                await ConfirmDialogWindow.ShowMessageAsync(
+                    this, "Could Not Reach the Server",
+                    result.Failure ?? "None of the addresses in that link answered.");
+                return;
+            }
+
+            vm.ShowServerPage(server.Fingerprint, invite.ToString());
+
+            var alias = string.IsNullOrWhiteSpace(server.Alias) ? "this server" : server.Alias;
+            var confirmed = await ConfirmDialogWindow.ShowAsync(
+                this,
+                $"Pair With \"{alias}\"?",
+                $"This device's library view will be replaced by \"{alias}\"'s - your Songs/Albums list will show its library instead of managing its own. Your existing music files on this device will not be deleted. "
+                + $"The link you opened authorizes this device on \"{alias}\" immediately.",
+                "Pair");
+            if (confirmed)
+                vm.PairWithServer(server, invite.ToString());
+        }
+        catch (System.Exception ex)
+        {
+            AppLogging.CreateLogger<MainWindow>().LogError(ex, "Opening a pairing link failed");
+        }
     }
 
     private void RestoreWindowGeometry()

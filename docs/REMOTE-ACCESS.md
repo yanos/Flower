@@ -167,7 +167,26 @@ the client's probes at hosts of its choosing.
    (`DiscoveredDevice.LastFailure`, `NetworkDiscoveryService.ExplainUnreachable`):
    a proxy refusing a port other than 443, a certificate this device cannot check
    without the pairing link, a door that answers nothing in time.
-6. Surfacing *how* the server is currently reached (LAN / tailnet / unreachable).
+6. **Opening a pairing link** (`flower://pair?...`) from anywhere - a message,
+   a browser. The scheme is registered by each head: `CFBundleURLTypes` in
+   `Flower.MacOS` and `Flower.iOS`, an intent filter on `Flower.Android`'s
+   `MainActivity` (single-task, so a link reuses the running activity), and at
+   runtime on Windows (`HKCU\Software\Classes\flower`) and
+   Linux (a `x-scheme-handler/flower` desktop entry plus `xdg-mime`), from
+   `Flower.Desktop/UrlSchemeRegistration.cs`, rewritten whenever the executable's
+   path moves. macOS and the phones deliver the URL through Avalonia's
+   `IActivatableLifetime`; Windows and Linux start a process with it as an
+   argument, which hands it to a running instance over a per-user named pipe
+   (`PairingLinkForwarder`) and exits. Every route ends in `PairingLinkInbox`,
+   which holds a link until the UI attaches and then runs the same flow as a
+   pasted one: find the server at whichever address answers as the link's
+   fingerprint, ask, pair (`MainWindow.OpenPairingLink`,
+   `MobileServerPairingViewModel.OpenPairingLink`). A device already paired with
+   another server is told to unpair first - a link never switches servers.
+   Verified on macOS (October 2026) by `open`ing a link, both as the launch and
+   into the running app. iOS, Android, Windows and Linux are known from the build
+   only: each registers the scheme, but no real link has been opened on them yet.
+7. Surfacing *how* the server is currently reached (LAN / tailnet / unreachable).
    Without it, a silent fallback to a relayed path is indistinguishable from a
    fast direct one, and "why is this suddenly slow" has no answer.
 
@@ -179,18 +198,8 @@ the client's probes at hosts of its choosing.
   `SELF-HOSTING.md` presents it as a complete option, because WireGuard already
   encrypts it. The scheme rework — nine call sites, and `IPEndPoint` widened to
   hold a name — is its own change with its own reason to happen.
-- **`flower://` as a URL scheme, and QR scanning.** No head registers the
-  scheme, so opening a pairing link — tapping it in a message, clicking it in a
-  browser — does nothing anywhere; the link only works pasted. It is accepted in
-  both of the boxes it could go into: the pairing-code box, and the box that
-  takes a server's address (`PeerSyncCoordinator.AddManualServerAsync`), which
-  tries every `host` the invite names, keeps the one that answers with the
-  invite's fingerprint, and pairs in the same gesture. That second box is the
-  bootstrap away from home, and two things make it work there: the server puts
-  its public origin into the invite (`AdminEndpoints.BuildInvite`), and the
-  invite's fingerprint vouches for the server's self-signed certificate before
-  any pin exists (`PeerHttpClient.AcceptInvitedServerKey`) — without it, the
-  only address that works away from home was refused on its certificate.
+- **A QR code.** Nothing draws one yet. Since the scheme is registered, one
+  would need no scanner in the app: a phone's own camera opens the link inside it.
 - **Transcoding.** There is none anywhere in the codebase, so streaming ships
   original files — a FLAC is around 1000 kbps against a home upload link. Fine
   for one listener on a decent connection, heavy on cellular. Relevant to how a

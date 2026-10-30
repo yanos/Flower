@@ -57,5 +57,19 @@
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Flower uses your local network to find other Flower devices for syncing.</string>
+	<!-- flower:// - the pairing link a server's admin sends (PairingInvite).
+	     Opening one hands it to the app, which raises it through Avalonia's
+	     IActivatableLifetime; App.axaml.cs passes it to PairingLinkInbox. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.yanos.flower.pairing</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>flower</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>
