@@ -224,6 +224,11 @@ public partial class ServerPickerView : UserControl
             {
                 Dispatcher.UIThread.Post(Refresh);
             }
+            if (args.PropertyName == nameof(MainViewModel.IsPairedServerTrustConfirmed)
+                || args.PropertyName == nameof(MainViewModel.PairingCodeError))
+            {
+                Dispatcher.UIThread.Post(OnPairingSettled);
+            }
         },
             h => _mainViewModel.PropertyChanged += h, h => _mainViewModel.PropertyChanged -= h);
 
@@ -363,7 +368,7 @@ public partial class ServerPickerView : UserControl
     }
 
     // The bootstrap path: a server this device has never shared a network with
-    // cannot appear in the list above, so it cannot be paired with there. This
+    // cannot appear in the list below, so it cannot be paired with there. This
     // one button does both halves - resolve the typed address, then redeem the
     // typed code against what answered - because splitting them left the user
     // pressing "Add" and then hunting for the row that had just appeared.
@@ -374,10 +379,18 @@ public partial class ServerPickerView : UserControl
     private async void AddManualServerButton_Click(object? sender, RoutedEventArgs e)
     {
         var address = ManualAddressBox.Text?.Trim() ?? "";
-        if (address.Length == 0)
-            return;
-
         var code = ManualPairingCodeBox.Text?.Trim() ?? "";
+
+        // A pairing link in either box is the whole of it - it names the
+        // server's addresses and carries the code - so a link pasted into the
+        // code box works with whatever, or nothing, in the address box. It
+        // used to need the address box, which meant typing over the address
+        // to try the link instead.
+        var target = PairingInvite.TryParse(address) != null ? address
+            : PairingInvite.TryParse(code) != null ? code
+            : address;
+        if (target.Length == 0)
+            return;
 
         AddManualServerButton.IsEnabled = false;
         ManualAddressStatus.IsVisible = true;
@@ -385,50 +398,78 @@ public partial class ServerPickerView : UserControl
         ManualServerResult result;
         try
         {
-            result = await _mainViewModel.AddManualServerAsync(address);
+            result = await _mainViewModel.AddManualServerAsync(target);
         }
         finally
         {
             AddManualServerButton.IsEnabled = true;
         }
 
-        // A typed address is kept either way: a server that merely happens to
-        // be switched off right now is still the server the user meant. Saying
-        // why it did not answer is the useful part - a typo, a proxy, a router
-        // forwarding nothing - and it is worth catching here rather than from
-        // a coffee shop.
+        // What was typed stays in the boxes whatever happens next, until the
+        // server has actually accepted the pairing (OnPairingSettled): a wrong
+        // code, a cancelled confirmation or a server that did not answer is
+        // corrected in place, not typed again. Saying why it did not answer
+        // is the useful part - a typo, a proxy, a router forwarding nothing.
         if (result.Server is not { } found)
         {
             ManualAddressStatus.Text = result.Invite != null
                 ? $"Could not reach the server in that link. {result.Failure}"
-                : $"Nothing answered at {address}. It is saved anyway. {result.Failure}";
+                : $"Nothing answered at {target}. It is saved anyway. {result.Failure}";
             Refresh();
             return;
         }
 
-        ManualAddressBox.Text = "";
-
-        // A pairing link carries its own code, so it pairs in the one gesture -
-        // the code box is ignored rather than asked for again.
+        // A pairing link carries its own code, so it pairs in the one gesture.
         if (result.Invite is { } invite)
             code = invite.ToString();
 
-        // No code typed: the server is now in the list above, where its own row
-        // has a code box of its own. Nothing was lost, so say what to do next
-        // rather than reporting a failure.
+        // No code typed: the server is now in the list below, where its own
+        // row has a code box of its own - or this one can be filled in and
+        // Pair pressed again, with the address still where it was.
         if (code.Length == 0)
         {
-            ManualAddressStatus.Text = $"Found {found.Alias}. Enter its pairing code on its row above.";
+            ManualAddressStatus.Text = $"Found {found.Alias}. Enter its pairing code, then press Pair.";
             Refresh();
             return;
         }
 
-        ManualAddressStatus.Text = "";
-        ManualAddressStatus.IsVisible = false;
-        ManualPairingCodeBox.Text = "";
         Refresh();
+        if (!await PairWithAsync(found, found.Alias, code))
+        {
+            ManualAddressStatus.IsVisible = false;
+            return;
+        }
 
-        await PairWithAsync(found, found.Alias, code);
+        _manualPairingPending = true;
+        ManualAddressStatus.Text = $"Pairing with {found.Alias}...";
+    }
+
+    // Set from Pair on the boxes above until the server answers, so that only
+    // that answer - not one for a row's own code box - empties them or is
+    // reported beneath them.
+    private bool _manualPairingPending;
+
+    private void OnPairingSettled()
+    {
+        if (!_manualPairingPending)
+            return;
+
+        if (_mainViewModel.PairingCodeError is { } refusal)
+        {
+            _manualPairingPending = false;
+            ManualAddressStatus.IsVisible = true;
+            ManualAddressStatus.Text = $"Not paired: {refusal}";
+            return;
+        }
+
+        if (_mainViewModel.IsPairedServerTrustConfirmed)
+        {
+            _manualPairingPending = false;
+            ManualAddressBox.Text = "";
+            ManualPairingCodeBox.Text = "";
+            ManualAddressStatus.Text = "";
+            ManualAddressStatus.IsVisible = false;
+        }
     }
 
     // The pair confirmation, shared by the list's own Pair button and the
@@ -438,10 +479,10 @@ public partial class ServerPickerView : UserControl
     // Nothing is being asked of the server here: the admin-issued code the user
     // just typed *is* the authorization, so the copy says so rather than
     // promising an approval that will never be prompted for.
-    private async Task PairWithAsync(DiscoveredDevice device, string alias, string pairingCode)
+    private async Task<bool> PairWithAsync(DiscoveredDevice device, string alias, string pairingCode)
     {
         if (TopLevel.GetTopLevel(this) is not Window owner)
-            return;
+            return false;
 
         var confirmed = await ConfirmDialogWindow.ShowAsync(
             owner,
@@ -450,9 +491,10 @@ public partial class ServerPickerView : UserControl
             + "The code you typed lets this device in straight away - there is nothing to approve.",
             "Pair");
         if (!confirmed)
-            return;
+            return false;
 
         _mainViewModel.PairWithServer(device, pairingCode);
         Refresh();
+        return true;
     }
 }

@@ -4,8 +4,40 @@
              xmlns:avc="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
              xmlns:controls="clr-namespace:Flower.Controls"
              x:Class="Flower.Views.ServerPickerView">
-  <Grid RowDefinitions="*,Auto,Auto,Auto" Margin="0,12,0,0">
-    <Grid Grid.Row="0">
+  <Grid RowDefinitions="Auto,Auto,*" Margin="0,12,0,0">
+    <!-- Bootstrap only: a server this device has never shared a network with,
+         and so could never discover, so it cannot appear in the list below and
+         be paired with there. First on the page, above the list: it is what
+         somebody holding a pairing link has come here to use, and under a
+         long list of servers it was the last thing they found. Typing its
+         address and its code here does both steps at once - see
+         AddManualServerButton_Click. A server paired with on the LAN reports
+         its own addresses and keeps working away from home with nothing typed
+         - see docs/REMOTE-ACCESS.md. -->
+    <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto">
+      <TextBox Grid.Column="0" x:Name="ManualAddressBox"
+               PlaceholderText="Server address, or its flower:// pairing link"
+               Margin="0,0,8,0"/>
+      <!-- Takes a whole flower:// link as well as a code, like every other
+           pairing box: a link here pairs on its own addresses, whatever is in
+           the address box - see AddManualServerButton_Click. -->
+      <TextBox Grid.Column="1" x:Name="ManualPairingCodeBox"
+               PlaceholderText="Pairing code or link"
+               Width="170" MaxLength="400"
+               Margin="0,0,8,0"/>
+      <!-- No padding override: this one stands on its own next to two text
+           boxes, so it should read as an ordinary button like Add Folder or
+           Generate Pairing Code. The compact 10,4 the list rows use is theirs
+           because a row is tight, not because Pair is a smaller action. -->
+      <Button Grid.Column="2" x:Name="AddManualServerButton" Classes="standard secondary" Content="Pair"
+              Click="AddManualServerButton_Click"/>
+    </Grid>
+    <TextBlock Grid.Row="1" x:Name="ManualAddressStatus"
+               IsVisible="False"
+               TextWrapping="Wrap" FontSize="11" Opacity="0.65"
+               Margin="0,6,0,0"/>
+
+    <Grid Grid.Row="2" Margin="0,14,0,0">
       <TextBlock x:Name="EmptyStateText"
                  Text="No servers found on this Wi-Fi."
                  Opacity="0.6"
@@ -86,32 +118,5 @@
         </ListBox>
       </Border>
     </Grid>
-
-    <!-- Bootstrap only: a server this device has never shared a network with,
-         and so could never discover, so it cannot appear in the list above and
-         be paired with there. Typing its address and its code here does both
-         steps at once - see AddManualServerButton_Click. A server paired with
-         on the LAN reports its own addresses and keeps working away from home
-         with nothing typed - see docs/REMOTE-ACCESS.md. -->
-    <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" Margin="0,14,0,0">
-      <TextBox Grid.Column="0" x:Name="ManualAddressBox"
-               PlaceholderText="Server address, or its flower:// pairing link"
-               Margin="0,0,8,0"/>
-      <TextBox Grid.Column="1" x:Name="ManualPairingCodeBox"
-               PlaceholderText="Pairing code"
-               Width="130" MaxLength="20"
-               Margin="0,0,8,0"/>
-      <!-- No padding override: this one stands on its own next to two text
-           boxes, so it should read as an ordinary button like Add Folder or
-           Generate Pairing Code. The compact 10,4 the list rows use is theirs
-           because a row is tight, not because Pair is a smaller action. -->
-      <Button Grid.Column="2" x:Name="AddManualServerButton" Classes="standard secondary" Content="Pair"
-              Click="AddManualServerButton_Click"/>
-    </Grid>
-    <TextBlock Grid.Row="3" x:Name="ManualAddressStatus"
-               IsVisible="False"
-               TextWrapping="Wrap" FontSize="11" Opacity="0.65"
-               Margin="0,6,0,0"/>
-
   </Grid>
 </UserControl>
