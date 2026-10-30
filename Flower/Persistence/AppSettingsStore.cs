@@ -110,8 +110,9 @@ namespace Flower.Persistence
         public AppThemePreference ThemePreference { get; set; } = AppThemePreference.System;
 
         // Where the desktop's transport and what is playing sit - see
-        // PlaybackControlsPlacement above.
-        public PlaybackControlsPlacement PlaybackControlsPlacement { get; set; } = PlaybackControlsPlacement.Top;
+        // PlaybackControlsPlacement above. Under the page by default, where a
+        // player's controls usually are.
+        public PlaybackControlsPlacement PlaybackControlsPlacement { get; set; } = PlaybackControlsPlacement.Bottom;
 
         // What Home's shelves hold, on every head - set in Settings (the
         // desktop's General tab, the phone's Home card) and read by
