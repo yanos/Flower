@@ -51,7 +51,7 @@ public class PlaylistManagementViewModelTests
     }
 
     [Fact]
-    public async Task Creating_a_playlist_adds_a_header_a_row_and_schedules_a_sync()
+    public async Task Creating_a_playlist_adds_a_header_and_a_row_waiting_for_its_name()
     {
         var (vm, library, items, host) = Make();
 
@@ -63,10 +63,29 @@ public class PlaylistManagementViewModelTests
         var header = items.Single(i => i.Kind == SidebarItemKind.Header && i.Name == "Playlists");
         var row = items.Single(i => i.Kind == SidebarItemKind.Playlist);
         Assert.True(items.IndexOf(header) < items.IndexOf(row));
-        // A fresh playlist opens straight into its inline rename box.
+        // A fresh playlist opens straight into its inline rename box, empty,
+        // and nothing is synced until it has a name.
         Assert.True(row.IsEditing);
+        Assert.True(row.IsNewPlaylist);
+        Assert.Equal("", row.Name);
         Assert.Same(row, host.SelectedSidebarItem);
-        Assert.Equal(1, host.ScheduledSyncs);
+        Assert.Equal(0, host.ScheduledSyncs);
+    }
+
+    // Committed with no name: gone from the library and the sidebar, and the
+    // selection back where it would be with no playlist there.
+    [Fact]
+    public async Task A_new_playlist_discarded_unnamed_leaves_nothing_behind()
+    {
+        var (vm, library, items, host) = Make();
+        await vm.CreateWithTracks(new[] { Song("a") });
+        var row = items.Single(i => i.Kind == SidebarItemKind.Playlist);
+
+        vm.DiscardNew(row);
+
+        Assert.Empty(library.Playlists);
+        Assert.DoesNotContain(items, i => i.Kind == SidebarItemKind.Playlist);
+        Assert.Same(host.DefaultSelection, host.SelectedSidebarItem);
     }
 
     // A song dropped on the sidebar's Playlists space with a server paired:
@@ -80,6 +99,7 @@ public class PlaylistManagementViewModelTests
 
         await vm.CreateWithTracks(new[] { Song("a") });
         await vm.CreateWithTracks(new[] { Song("b") });
+        Named(items);
 
         Assert.Equal(
             new[] { "Library", "Songs", "Playlists", "New Playlist", "New Playlist", "Servers", "lambda" },
@@ -245,10 +265,16 @@ public class PlaylistManagementViewModelTests
     // A new row opens in its rename box, and a refresh leaves a row that is
     // still being renamed where it is - so each is named, as a user would,
     // before the next thing happens.
+    // The user typing a name into each new row's box and committing it - the
+    // name the playlist already has, which is what these tests read back.
     private static void Named(ObservableCollection<SidebarItem> items)
     {
-        foreach (var item in items)
+        foreach (var item in items.Where(i => i.IsEditing))
+        {
+            item.Name = item.Playlist?.Name ?? item.Name;
+            item.IsNewPlaylist = false;
             item.IsEditing = false;
+        }
     }
 
     [Fact]

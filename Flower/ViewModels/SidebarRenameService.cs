@@ -20,6 +20,12 @@ public interface ISidebarRenameHost
     void RefreshDeviceDisplayNames();
 
     void ScheduleContentSync();
+
+    /// <summary>
+    /// Takes back out a playlist created a moment ago and committed with no
+    /// name - the user changing their mind.
+    /// </summary>
+    void DiscardNewPlaylist(SidebarItem row);
 }
 
 /// <summary>
@@ -67,8 +73,20 @@ public sealed class SidebarRenameService
             return name ?? "";
         }
 
-        item.Name = string.IsNullOrEmpty(name) ? "New Playlist" : name;
+        // A new playlist committed with no name is one the user said no to,
+        // and goes - the phone does the same with its draft row. An existing
+        // one keeps the name it had: clearing the box is not a rename.
+        if (string.IsNullOrEmpty(name) && item.IsNewPlaylist && host != null)
+        {
+            item.IsEditing = false;
+            item.IsNewPlaylist = false;
+            host.DiscardNewPlaylist(item);
+            return null;
+        }
+
+        item.Name = string.IsNullOrEmpty(name) ? item.Playlist?.Name ?? "New Playlist" : name;
         item.IsEditing = false;
+        item.IsNewPlaylist = false;
 
         if (item.Playlist == null || host == null)
             return item.Name;

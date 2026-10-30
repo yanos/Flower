@@ -126,7 +126,7 @@ public sealed class PlaylistManagementViewModel
             if (editingIds.Contains(row.Playlist!.Id))
                 continue;
             if (row.Playlist == renaming)
-                row.IsEditing = true;
+                StartNaming(row);
             _items.Insert(insertAt++, row);
         }
 
@@ -299,9 +299,9 @@ public sealed class PlaylistManagementViewModel
         {
             var sidebarItem = new SidebarItem(SidebarItemKind.Playlist, playlist.Name, SidebarItem.IconFor(playlist), playlist)
             {
-                IsEditing = true,
                 IsExpanded = true,
             };
+            StartNaming(sidebarItem);
             _items.Insert(EndOfPlaylists(), sidebarItem);
         }
         else
@@ -310,9 +310,35 @@ public sealed class PlaylistManagementViewModel
             RefreshSidebarItems(renaming: playlist);
         }
 
+        // No content sync yet: until it has a name it may still be taken back
+        // out (DiscardNew), and the server is told once it is named - by the
+        // rename's own commit, SidebarRenameService.CommitAsync.
         _host.SelectedSidebarItem = _items.FirstOrDefault(i => i.Playlist == playlist);
+    }
 
-        _host.ScheduleContentSync();
+    // The new row's box opens empty rather than holding the placeholder name
+    // to type over, so there is no name to accept by pressing Enter. The
+    // playlist itself keeps "New Playlist" until then, which is only ever
+    // seen if the app goes away mid-naming.
+    private static void StartNaming(SidebarItem row)
+    {
+        row.Name = "";
+        row.IsNewPlaylist = true;
+        row.IsEditing = true;
+    }
+
+    // A playlist created and then committed with no name: out of the library
+    // and the sidebar again, as if it had never been made.
+    public void DiscardNew(SidebarItem row)
+    {
+        if (row.Playlist is not { } playlist)
+            return;
+
+        var wasSelected = _host.SelectedSidebarItem == row;
+        _items.Remove(row);
+        _library.RemovePlaylist(playlist);
+        if (wasSelected)
+            _host.SelectedSidebarItem = _host.DefaultSelection;
     }
 
     // Named before it exists, rather than created as "New Playlist" and renamed

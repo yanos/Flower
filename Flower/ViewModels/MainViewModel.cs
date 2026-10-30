@@ -177,6 +177,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     public void ScheduleContentSync() => Sync.ScheduleContentSync();
 
+    public void DiscardNewPlaylist(SidebarItem row) => Playlists.DiscardNew(row);
+
     public ICommand? OpenAppDataLocationCommand  { get; private set; }
     public ICommand? RebuildDatabaseCommand      { get; private set; }
     public ICommand? SortByColumnCommand         { get; private set; }

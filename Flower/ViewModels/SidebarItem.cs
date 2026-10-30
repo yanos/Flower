@@ -183,6 +183,13 @@ public class SidebarItem : ViewModelBase
         set { _isEditing = value; OnPropertyChanged(); }
     }
 
+    // A playlist or folder created a moment ago whose name box has not been
+    // committed yet. Its box opens empty, and committing it empty takes the
+    // playlist back out rather than leaving one called "New Playlist" behind -
+    // a name is what creating one asks for, on desktop as on the phone. See
+    // SidebarRenameService.CommitAsync.
+    public bool IsNewPlaylist { get; set; }
+
     // Highlighted while a dragged track is hovering this row during a
     // drag-onto-playlist gesture - see MainView.axaml.cs's ContentGrid_DragOver.
     private bool _isDropTarget;

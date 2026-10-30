@@ -26,8 +26,11 @@ public class SidebarRenameServiceTests : PinnedDataDirectory
         public int DeviceNameRefreshes;
         public int ContentSyncs;
 
+        public List<SidebarItem> Discarded { get; } = [];
+
         public void RefreshDeviceDisplayNames() => DeviceNameRefreshes++;
         public void ScheduleContentSync() => ContentSyncs++;
+        public void DiscardNewPlaylist(SidebarItem row) => Discarded.Add(row);
     }
 
     private readonly DeviceNicknameStore _nicknames = new(NullLogger<DeviceNicknameStore>.Instance);
@@ -71,16 +74,48 @@ public class SidebarRenameServiceTests : PinnedDataDirectory
         Assert.Equal(1, _host.ContentSyncs);
     }
 
+    // Clearing the box of a playlist that already has a name is not a rename.
     [Fact]
-    public async Task An_empty_playlist_name_falls_back_to_New_Playlist()
+    public async Task An_empty_name_leaves_an_existing_playlist_with_the_name_it_had()
     {
         var item = PlaylistItem("Old", out var playlist);
         item.Name = "   ";
 
         await _service.CommitAsync(item, _host);
 
-        Assert.Equal("New Playlist", item.Name);
-        Assert.Equal("New Playlist", playlist.Name);
+        Assert.Equal("Old", item.Name);
+        Assert.Equal("Old", playlist.Name);
+        Assert.Empty(_host.Discarded);
+    }
+
+    // Creating a playlist asks for its name; committing none is saying no, and
+    // there is no "New Playlist" left behind.
+    [Fact]
+    public async Task A_new_playlist_committed_with_no_name_is_taken_back_out()
+    {
+        var item = PlaylistItem("New Playlist", out _);
+        item.IsNewPlaylist = true;
+        item.Name = "";
+
+        Assert.Null(await _service.CommitAsync(item, _host));
+
+        Assert.Same(item, Assert.Single(_host.Discarded));
+        Assert.False(item.IsEditing);
+        Assert.Equal(0, _host.ContentSyncs);
+    }
+
+    [Fact]
+    public async Task A_new_playlist_given_a_name_is_kept_and_synced()
+    {
+        var item = PlaylistItem("New Playlist", out var playlist);
+        item.IsNewPlaylist = true;
+        item.Name = "Road Trip";
+
+        await _service.CommitAsync(item, _host);
+
+        Assert.Equal("Road Trip", playlist.Name);
+        Assert.Empty(_host.Discarded);
+        Assert.Equal(1, _host.ContentSyncs);
     }
 
     [Fact]

@@ -348,6 +348,7 @@
                            the primary outline, which is a theme brush rather
                            than anything that control owns. -->
                       <TextBox Text="{Binding Name, Mode=TwoWay}"
+                               PlaceholderText="Name"
                                IsVisible="{Binding IsEditing}"
                                VerticalContentAlignment="Center"
                                Height="22"
