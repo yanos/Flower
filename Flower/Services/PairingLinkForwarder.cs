@@ -47,7 +47,13 @@ public static class PairingLinkForwarder
             writer.Flush();
             return true;
         }
-        catch (Exception ex) when (ex is TimeoutException or IOException or UnauthorizedAccessException)
+        // ArgumentException is a socket path too long to make: off Windows the
+        // pipe is a Unix-domain socket in the temp folder, and a socket path is
+        // capped at 104 bytes on Apple platforms and 108 on Linux, so a deep
+        // enough TMPDIR has no pipe to offer. Not being able to forward is the
+        // same answer as there being no one to forward to - this process runs
+        // as the instance - not a reason for the launch to fail.
+        catch (Exception ex) when (ex is TimeoutException or IOException or UnauthorizedAccessException or ArgumentException)
         {
             return false;
         }
@@ -69,8 +75,11 @@ public static class PairingLinkForwarder
                         pipeName ?? PipeName, PipeDirection.In, 1, PipeTransmissionMode.Byte,
                         PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
                 }
-                catch (IOException ex)
+                catch (Exception ex) when (ex is IOException or ArgumentException)
                 {
+                    // Taken by another instance, or a temp folder too deep for
+                    // a socket path (see TryForward). Links still reach this
+                    // instance from its own command line.
                     logger?.LogInformation("Not taking pairing links from other launches: {Reason}", ex.Message);
                     return;
                 }

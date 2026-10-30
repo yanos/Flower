@@ -23,6 +23,11 @@ public class PairingLinkForwarderTests
     [Fact]
     public async Task A_link_offered_to_a_running_instance_arrives_in_its_inbox()
     {
+        // A phone's sandboxed temp folder is deeper than a socket path may be,
+        // so there is no pipe to listen on there - and nothing on a phone
+        // forwards links anyway: its platform hands them to the running app.
+        Assert.SkipWhen(OperatingSystem.IsIOS() || OperatingSystem.IsAndroid(),
+            "Links are forwarded between launches on Windows and Linux only.");
         var pipe = UniquePipe();
         var received = new TaskCompletionSource<PairingInvite>(TaskCreationOptions.RunContinuationsAsynchronously);
         var inbox = new PairingLinkInbox(post: action => action());
