@@ -37,6 +37,22 @@ public class PublicReachabilityTests
         Assert.Equal($"https://{PublicIp}:4534", harness.Reachability.OriginFor(Open()));
     }
 
+    // The router's 443 forwarded to the listener's 4534, for a network whose
+    // proxy tunnels to 443 and nothing else: the address advertised, and the
+    // one checked, are the router's.
+    [Fact]
+    public async Task Advertises_and_checks_the_routers_port_when_it_differs_from_the_listeners()
+    {
+        using var harness = new Harness(_ => Harness.InfoFrom(Harness.Key.Fingerprint));
+        var forwarded = new FlowerServerOptions { AllowPublicAccess = true, PublicHttpsPort = 443 };
+
+        var result = await harness.Reachability.CheckAsync(forwarded, TestContext.Current.CancellationToken);
+
+        Assert.Equal($"https://{PublicIp}:443", harness.Reachability.OriginFor(forwarded));
+        Assert.Equal(PublicReachabilityStatus.Reachable, result!.Status);
+        Assert.Equal(new Uri($"https://{PublicIp}:443{SyncProtocol.InfoPath}"), harness.Dials.Requested.Single());
+    }
+
     [Fact]
     public async Task Advertises_nothing_while_the_door_is_shut()
     {

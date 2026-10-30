@@ -643,8 +643,26 @@ address — a check mark, or a warning naming what went wrong. A warning can be 
 false alarm on a router that does not loop connections back to itself, so the
 address is advertised either way; a phone with Wi-Fi off is the real test.
 
-Set `AdvertisedHost` only to use a name instead (dynamic DNS), or when the
-outside port is not 4534. It then replaces the looked-up address entirely:
+**When the router exposes another port than 4534** — the usual reason being a
+listener on a work, school or hotel network whose proxy only lets port 443
+through, which the app reports as a proxy refusing the port — forward the
+router's **443** to the server's **4534** and tell the server which port the
+outside sees:
+
+```json
+{ "Flower": { "PublicHttpsPort": 443 } }
+```
+
+The server keeps listening on 4534; only the address it advertises changes, to
+`https://<public IP>:443`, still looked up and still checked. Keep the 4534 forward
+too if you like: devices that already know it go on using it. Check first that
+the router has nothing of its own on 443 — some offer remote administration or a
+file-sharing service there. This gets past a proxy that filters by port. One that
+also inspects TLS replaces the certificate, which a paired app refuses on any
+port; that network needs the Cloudflare Tunnel below.
+
+Set `AdvertisedHost` only to use a name instead (dynamic DNS). It then replaces
+the looked-up address entirely:
 
 ```json
 { "Flower": { "AdvertisedHost": "https://music.example.com:4534" } }

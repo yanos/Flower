@@ -125,6 +125,22 @@ public sealed class FlowerServerOptions : MusicLibrarySettings
     // DeviceCertificate.
     public int HttpsPort { get; set; } = 4534;
 
+    // The port the router exposes the https listener on, when it is not
+    // HttpsPort itself. 0, the default, means the same port. Only the public
+    // origin is affected (PublicReachability.OriginFor) - what /info and the
+    // pairing link advertise and what the settings page checks; the listener
+    // stays on HttpsPort, because the router is what changes the number on the
+    // way in.
+    //
+    // For a network whose proxy tunnels to port 443 and nothing else, which is
+    // how a work or school network refuses 4534 ("403 CONNECT not allowed"):
+    // forward the router's 443 to this server's 4534 and set this to 443. An
+    // AdvertisedHost of https://<ip> would say the same, but it has to be
+    // edited every time a home connection's address changes, and it turns the
+    // public address lookup off; this keeps both. Read per request, like
+    // AllowPublicAccess.
+    public int PublicHttpsPort { get; set; } = 0;
+
     // A real certificate to serve instead of the self-signed one, as a PEM
     // pair. Empty means self-signed, which is right for every client that
     // paired with this server; set these for the one that cannot pin - a
