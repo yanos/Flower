@@ -6,6 +6,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Avalonia.Media.Immutable;
 
 using CommunityToolkit.Mvvm.DependencyInjection;
 
@@ -143,17 +144,15 @@ public partial class MainWindow : Window
             var windowMenu = NativeMenu.GetMenu(this);
             if (windowMenu != null)
             {
-                var aboutItem = new NativeMenuItem("About Flower")
-                {
-                    Icon = CreateMenuIcon(MaterialIconKind.InformationOutline),
-                };
+                var aboutItem = new NativeMenuItem("About Flower");
+                _menuIcons.Add((aboutItem, MaterialIconKind.InformationOutline));
                 aboutItem.Click += (_, _) => new AboutWindow().Show();
 
                 var settingsMenuItem = new NativeMenuItem("Settings…")
                 {
                     Gesture = new KeyGesture(Key.OemComma, PlatformShortcuts.Primary),
-                    Icon = CreateMenuIcon(MaterialIconKind.CogOutline),
                 };
+                _menuIcons.Add((settingsMenuItem, MaterialIconKind.CogOutline));
                 // The window's own DataContext is the MainViewModel (set by
                 // App.Bootstrap), so the menu reaches it the same way every
                 // binding in the XAML does.
@@ -174,7 +173,7 @@ public partial class MainWindow : Window
                 {
                     var item = topLevelItems.FirstOrDefault(i => i.Header == header);
                     if (item != null)
-                        item.Icon = CreateMenuIcon(kind);
+                        _menuIcons.Add((item, kind));
                 }
 
                 SetIcon("Play/Pause",      MaterialIconKind.PlayPause);
@@ -207,8 +206,25 @@ public partial class MainWindow : Window
                 SetIcon("Albums",          MaterialIconKind.Album);
                 SetIcon("Artists",         MaterialIconKind.AccountOutline);
                 SetIcon("Filter",          MaterialIconKind.Magnify);
+
+                PaintMenuIcons();
+                ActualThemeVariantChanged += (_, _) => PaintMenuIcons();
             }
         }
+    }
+
+    // The menu bar's icons, kept so they can be drawn again in the other
+    // theme's ink. A menu icon is a bitmap, not a control, so it inherits no
+    // colour and repaints itself on nothing.
+    private readonly List<(NativeMenuItem Item, MaterialIconKind Kind)> _menuIcons = [];
+
+    private void PaintMenuIcons()
+    {
+        IBrush ink = this.TryFindResource("PaletteTextPrimary", ActualThemeVariant, out var value) && value is Color color
+            ? new ImmutableSolidColorBrush(color)
+            : Brushes.Black;
+        foreach (var (item, kind) in _menuIcons)
+            item.Icon = CreateMenuIcon(kind, ink);
     }
 
     // The menu bar's entries that act on the view - what is on screen and
@@ -339,13 +355,15 @@ public partial class MainWindow : Window
     // NativeMenuItem.Icon wants a Bitmap rather than a control, so rasterize
     // the Material icon's 24x24 path geometry into a 16x16 bitmap (the
     // context draws in raw pixels, hence the plain 96-DPI 1:1 setup).
-    private static RenderTargetBitmap CreateMenuIcon(MaterialIconKind kind)
+    // Drawn in the menu's own text colour - it used to be black whatever the
+    // theme, which in the dark one is black on the menu's near-black.
+    private static RenderTargetBitmap CreateMenuIcon(MaterialIconKind kind, IBrush ink)
     {
         var geometry = Geometry.Parse(MaterialIconDataProvider.GetData(kind));
         var bitmap = new RenderTargetBitmap(new PixelSize(16, 16), new Vector(96, 96));
         using var context = bitmap.CreateDrawingContext();
         using (context.PushTransform(Matrix.CreateScale(16.0 / 24.0, 16.0 / 24.0)))
-            context.DrawGeometry(Brushes.Black, null, geometry);
+            context.DrawGeometry(ink, null, geometry);
         return bitmap;
     }
 

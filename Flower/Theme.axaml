@@ -426,6 +426,14 @@
   <SolidColorBrush x:Key="TextControlPlaceholderForeground" Color="{DynamicResource PaletteTextMuted}" />
   <SolidColorBrush x:Key="TextControlPlaceholderForegroundPointerOver" Color="{DynamicResource PaletteTextMuted}" />
   <SolidColorBrush x:Key="TextControlPlaceholderForegroundFocused" Color="{DynamicResource PaletteTextMuted}" />
+  <!-- Selected text, in every text box and in the log: the ink at a quarter,
+       under the ink itself. Fluent fills a selection with its accent, which
+       here is the ink at full strength (AppTheme.ApplyPalette), so in the
+       dark variant a selection was near-white behind white text. Named outright
+       for Fluent's boxes and for AvaloniaEdit's TextArea, which reads one key
+       of its own; App.axaml keeps the selected text in the ink. -->
+  <SolidColorBrush x:Key="TextControlSelectionHighlightColor" Color="{DynamicResource PaletteTextPrimary}" Opacity="0.25" />
+  <SolidColorBrush x:Key="TextAreaSelectionBrush" Color="{DynamicResource PaletteTextPrimary}" Opacity="0.25" />
   <!-- The line under the selected tab (Track Info's, Settings'), which
        Fluent otherwise draws in its own blue whatever the palette says. -->
   <SolidColorBrush x:Key="TabItemHeaderSelectedPipeFill" Color="{DynamicResource PaletteTextPrimary}" />

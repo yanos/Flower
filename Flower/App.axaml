@@ -4,7 +4,8 @@
              Name="Flower"
              RequestedThemeVariant="Default"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
-             xmlns:controls="clr-namespace:Flower.Controls">
+             xmlns:controls="clr-namespace:Flower.Controls"
+             xmlns:ae="using:AvaloniaEdit.Editing">
 
     <!-- Defines just the native macOS app menu (the bold "Flower" title's own
          dropdown - About/Settings/Hide/Quit), replacing Avalonia's default
@@ -63,6 +64,19 @@
              text, no caret) even though its Text property is set correctly
              underneath. -->
         <StyleInclude Source="avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml"/>
+        <!-- Selected text stays in the ink, over the faint ink of
+             TextControlSelectionHighlightColor (Theme.axaml), in a text box
+             and in the log alike, whichever theme is showing. -->
+        <Style Selector="TextBox">
+            <Setter Property="SelectionForegroundBrush" Value="{DynamicResource AppTextPrimaryBrush}"/>
+        </Style>
+        <Style Selector="SelectableTextBlock">
+            <Setter Property="SelectionForegroundBrush" Value="{DynamicResource AppTextPrimaryBrush}"/>
+        </Style>
+        <Style Selector="ae|TextArea">
+            <Setter Property="SelectionBrush" Value="{DynamicResource TextAreaSelectionBrush}"/>
+            <Setter Property="SelectionForeground" Value="{DynamicResource AppTextPrimaryBrush}"/>
+        </Style>
         <!-- Subtle rounded corners on every list selection highlight app-wide
              (sidebar, sub-list, Settings' library paths list, etc). The track
              list's own selection box is a hand-rolled control, not a
