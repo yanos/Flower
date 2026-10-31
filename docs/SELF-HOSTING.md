@@ -830,6 +830,23 @@ see `FfmpegTrackDecoder.AudioHttpClient`. The gap that existed while the media
 stack did its own TLS closed when FFmpeg became the only decoder; a browser tab
 remains the one caller streaming without a pin.
 
+**At a bare IP address, the app accepts only the server's own key** — even a
+certificate a public authority signed is refused there. What answers at an
+address with its own TLS is a Flower server, whose certificate is the
+self-signed one above, so an authority-signed one at that address belongs to
+whoever holds the address instead: a relay in front of the server, the company
+renting you that relay, or anyone who has taken it over — and Let's Encrypt
+issues certificates for IP addresses now. A proxy that terminates TLS (Caddy,
+Cloudflare, `tailscale serve`) is reached by a name and keeps the ordinary rule.
+The one setup this rules out is a Flower app pointed at a bare IP behind such a
+proxy, like the `tls internal` example under "Reaching it from a browser": give
+the app the server's own port instead, or a name. A relay that forwards TCP
+without decrypting it (rathole, frp, an `nginx stream` block) is unaffected,
+since what arrives through it is the server's own certificate. With a real
+certificate of your own (below), the app reaches the server by that
+certificate's name, as it already had to: a certificate for a name never
+matched a bare IP.
+
 ### Using a real certificate instead
 
 Point the server at a PEM pair and it serves that instead of the self-signed

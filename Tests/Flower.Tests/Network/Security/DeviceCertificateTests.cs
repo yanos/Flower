@@ -93,7 +93,44 @@ public class PinnedCertificateAcceptanceTests : IDisposable
         // must not depend on this device having paired with anything.
         PeerHttpClient.IsPinnedServerKey = null;
 
-        Assert.True(PeerHttpClient.IsAcceptable(certificate: null, SslPolicyErrors.None));
+        Assert.True(PeerHttpClient.IsAcceptable(ProxyName, certificate: null, SslPolicyErrors.None));
+    }
+
+    [Theory]
+    [InlineData("https://203.0.113.7:4534/api/localsend/v2/info")]
+    [InlineData("https://[2001:db8::7]:4534/api/localsend/v2/info")]
+    public void A_certificate_that_validates_normally_is_refused_at_an_address_without_the_pin(string address)
+    {
+        // What a relay, the host renting it, or anybody who has taken an
+        // address over can present: an authority-signed certificate for the
+        // IP itself. A Flower server answering there with its own TLS never
+        // does, so it is not the server.
+        using var strangerKey = NewKey();
+        using var certificate = SelfSignedFor(strangerKey);
+        using var serverKey = NewKey();
+        var paired = DeviceCertificate.PublicKeyRaw(serverKey);
+        PeerHttpClient.IsPinnedServerKey = key => key.SequenceEqual(paired);
+
+        Assert.False(PeerHttpClient.IsAcceptable(new Uri(address), certificate, SslPolicyErrors.None));
+    }
+
+    [Fact]
+    public void A_certificate_that_validates_normally_is_accepted_at_an_address_when_its_key_is_pinned()
+    {
+        using var serverKey = NewKey();
+        using var certificate = SelfSignedFor(serverKey);
+        var paired = DeviceCertificate.PublicKeyRaw(serverKey);
+        PeerHttpClient.IsPinnedServerKey = key => key.SequenceEqual(paired);
+
+        Assert.True(PeerHttpClient.IsAcceptable(ServerAddress, certificate, SslPolicyErrors.None));
+    }
+
+    [Fact]
+    public void A_request_whose_host_is_unknown_takes_the_pin_like_an_address()
+    {
+        PeerHttpClient.IsPinnedServerKey = null;
+
+        Assert.False(PeerHttpClient.IsAcceptable(requestUri: null, certificate: null, SslPolicyErrors.None));
     }
 
     [Fact]
@@ -105,7 +142,7 @@ public class PinnedCertificateAcceptanceTests : IDisposable
 
         PeerHttpClient.IsPinnedServerKey = key => key.SequenceEqual(paired);
 
-        Assert.True(PeerHttpClient.IsAcceptable(certificate, SslPolicyErrors.RemoteCertificateChainErrors));
+        Assert.True(PeerHttpClient.IsAcceptable(ServerAddress, certificate, SslPolicyErrors.RemoteCertificateChainErrors));
     }
 
     [Fact]
@@ -120,7 +157,7 @@ public class PinnedCertificateAcceptanceTests : IDisposable
         PeerHttpClient.IsPinnedServerKey = key => key.SequenceEqual(paired);
 
         Assert.True(PeerHttpClient.IsAcceptable(
-            certificate, SslPolicyErrors.RemoteCertificateNameMismatch | SslPolicyErrors.RemoteCertificateChainErrors));
+            ServerAddress, certificate, SslPolicyErrors.RemoteCertificateNameMismatch | SslPolicyErrors.RemoteCertificateChainErrors));
     }
 
     [Fact]
@@ -136,7 +173,7 @@ public class PinnedCertificateAcceptanceTests : IDisposable
         // The point of the whole exercise: this is not "trust anything
         // self-signed". Without the pin there is no argument for skipping the
         // warning a browser would show.
-        Assert.False(PeerHttpClient.IsAcceptable(certificate, SslPolicyErrors.RemoteCertificateChainErrors));
+        Assert.False(PeerHttpClient.IsAcceptable(ServerAddress, certificate, SslPolicyErrors.RemoteCertificateChainErrors));
     }
 
     [Fact]
@@ -149,7 +186,7 @@ public class PinnedCertificateAcceptanceTests : IDisposable
 
         // A null predicate cannot vouch for anything, and the fail-closed
         // direction is the only safe reading of "we do not know yet".
-        Assert.False(PeerHttpClient.IsAcceptable(certificate, SslPolicyErrors.RemoteCertificateChainErrors));
+        Assert.False(PeerHttpClient.IsAcceptable(ServerAddress, certificate, SslPolicyErrors.RemoteCertificateChainErrors));
     }
 
     [Fact]
@@ -165,7 +202,7 @@ public class PinnedCertificateAcceptanceTests : IDisposable
         PeerHttpClient.AcceptInvitedServerKey(
             SignedRequestCanonicalizer.ComputeFingerprint(DeviceCertificate.PublicKeyRaw(serverKey)));
 
-        Assert.True(PeerHttpClient.IsAcceptable(certificate, SslPolicyErrors.RemoteCertificateChainErrors));
+        Assert.True(PeerHttpClient.IsAcceptable(ServerAddress, certificate, SslPolicyErrors.RemoteCertificateChainErrors));
     }
 
     [Fact]
@@ -179,7 +216,7 @@ public class PinnedCertificateAcceptanceTests : IDisposable
         PeerHttpClient.AcceptInvitedServerKey(
             SignedRequestCanonicalizer.ComputeFingerprint(DeviceCertificate.PublicKeyRaw(invitedKey)));
 
-        Assert.False(PeerHttpClient.IsAcceptable(certificate, SslPolicyErrors.RemoteCertificateChainErrors));
+        Assert.False(PeerHttpClient.IsAcceptable(ServerAddress, certificate, SslPolicyErrors.RemoteCertificateChainErrors));
     }
 
     [Fact]
@@ -187,8 +224,12 @@ public class PinnedCertificateAcceptanceTests : IDisposable
     {
         PeerHttpClient.IsPinnedServerKey = _ => true;
 
-        Assert.False(PeerHttpClient.IsAcceptable(certificate: null, SslPolicyErrors.RemoteCertificateNotAvailable));
+        Assert.False(PeerHttpClient.IsAcceptable(ServerAddress, certificate: null, SslPolicyErrors.RemoteCertificateNotAvailable));
     }
 
     private static ECDsa NewKey() => ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
+    // A server dialled directly, and a proxy in front of one reached by name.
+    private static readonly Uri ServerAddress = new("https://192.168.1.40:4534/api/flower/v1/library");
+    private static readonly Uri ProxyName = new("https://music.example.com/api/flower/v1/library");
 }

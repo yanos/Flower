@@ -10,8 +10,9 @@ namespace Flower.Services;
 // they all agree about which certificates are acceptable.
 //
 // What it adds over `new HttpClient()` is a single rule: a certificate that
-// validates the ordinary way is fine, and so is one whose public key is a key
-// this device has already paired with. Nothing else is. That second clause is
+// validates the ordinary way is fine for a server reached by name, and one
+// whose public key is a key this device has already paired with is fine
+// anywhere. Nothing else is. That second clause is
 // what lets a self-hosted server serve https with no certificate authority,
 // no domain and no configuration - see DeviceCertificate for why the key is
 // already on disk, and docs/REMOTE-TRANSPORT-PLAN.md's certificate section for
@@ -22,6 +23,18 @@ namespace Flower.Services;
 // client, because the whole argument for skipping the warning a browser would
 // show is that a paired client is not in a browser's position: it knows which
 // server it means. Take the pin away and that argument goes with it.
+//
+// A bare IP address takes the pin and nothing else, chain or no chain. What
+// answers there with its own TLS is a Flower server, and a Flower server's
+// certificate is self-signed from its key - so a valid authority-signed one at
+// that address is not the server. It is whoever holds the address: a relay
+// in front of it, the host renting it out, anybody who has taken it over -
+// any of whom can now get a publicly trusted certificate for an IP, which
+// Let's Encrypt began issuing in 2025. Accepting it would let them read every
+// request and answer most of them, since few responses carry the server's
+// own signature (ServerResponseSignature). A proxy that terminates TLS is
+// reached by a name (Caddy, Cloudflare, tailscale serve), and keeps the
+// ordinary rule.
 public static class PeerHttpClient
 {
     // Answers "is this the public key of a server this device has paired
@@ -85,8 +98,8 @@ public static class PeerHttpClient
 
         var handler = new HttpClientHandler
         {
-            ServerCertificateCustomValidationCallback = (_, certificate, _, errors) =>
-                IsAcceptable(certificate, errors),
+            ServerCertificateCustomValidationCallback = (request, certificate, _, errors) =>
+                IsAcceptable(request.RequestUri, certificate, errors),
         };
 
         // Every client this builds reads a clock-skew refusal and corrects the
@@ -121,28 +134,31 @@ public static class PeerHttpClient
             () => SigningCredentials?.Invoke(),
             new HttpClientHandler
             {
-                ServerCertificateCustomValidationCallback = (_, certificate, _, errors) =>
-                    IsAcceptable(certificate, errors),
+                ServerCertificateCustomValidationCallback = (request, certificate, _, errors) =>
+                    IsAcceptable(request.RequestUri, certificate, errors),
             });
 
         return timeout is { } value ? new HttpClient(handler) { Timeout = value } : new HttpClient(handler);
     }
 
     // Split out from the callback so it can be tested without a TLS handshake.
-    public static bool IsAcceptable(X509Certificate2? certificate, SslPolicyErrors errors)
+    public static bool IsAcceptable(Uri? requestUri, X509Certificate2? certificate, SslPolicyErrors errors)
     {
         // The ordinary case, and the one that has to keep working unchanged: a
         // real certificate from a real authority, for a server reached by name
         // through a tunnel or a reverse proxy. Also every non-Flower host any
-        // of these clients ever talks to.
-        if (errors == SslPolicyErrors.None)
+        // of these clients ever talks to. Not for an address - see the class
+        // comment - and not for a request this cannot see the host of either,
+        // which fails closed into the pin like an address does.
+        if (errors == SslPolicyErrors.None && IsReachedByName(requestUri))
             return true;
 
         // Not "the chain is untrusted, therefore pin instead" - any failure at
         // all lands here, including a name mismatch, which is expected: a
         // certificate minted for a machine name is dialled at a bare IP as
         // often as not. The pin subsumes both, because a matching key is a
-        // stronger statement than either check it replaces.
+        // stronger statement than either check it replaces. At an address it
+        // is the only statement there is, whatever the chain said.
         if (certificate == null)
             return false;
 
@@ -154,4 +170,7 @@ public static class PeerHttpClient
                || (!InvitedServerFingerprints.IsEmpty
                    && InvitedServerFingerprints.ContainsKey(SignedRequestCanonicalizer.ComputeFingerprint(publicKey)));
     }
+
+    private static bool IsReachedByName(Uri? requestUri) =>
+        requestUri is { HostNameType: not (UriHostNameType.IPv4 or UriHostNameType.IPv6) };
 }
