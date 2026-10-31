@@ -96,8 +96,9 @@ namespace Flower.ViewModels
             }
         }
 
-        // Picks a random track (instead of the next one in order) whenever the
-        // queue advances, whether that's auto-advance on end-of-track or a manual Next().
+        // Plays the queue in a shuffled order whenever it advances, whether
+        // that's auto-advance on end-of-track or a manual Next(); Previous()
+        // walks back along the songs that order has played.
         public bool IsShuffleEnabled
         {
             get => _isShuffleEnabled;
@@ -1260,6 +1261,50 @@ namespace Flower.ViewModels
             }
         }
 
+        // Previous under shuffle: the song that played before this one, not the
+        // one before it in the queue - which under shuffle is nothing that was
+        // heard. The song left goes back to the top of the order, with the
+        // songs lined up behind it, so Next returns to it rather than dealing
+        // another; a press with nothing played before starts the song again.
+        private (Track? Track, int Index) StepBackInShuffledOrder(Track current, int currentIndex)
+        {
+            var tracks = _currentPlaylist.Tracks;
+            var at = _shufflePlayedOrder.LastIndexOf(current.Id);
+            for (var before = (at >= 0 ? at : _shufflePlayedOrder.Count) - 1; before >= 0; before--)
+            {
+                var slot = SlotOf(tracks, _shufflePlayedOrder[before], except: currentIndex);
+                if (slot < 0)
+                    continue;
+
+                if (at >= 0)
+                {
+                    _shufflePlayedOrder.RemoveAt(at);
+                    if (!_shufflePlayedOrder.Contains(current.Id))
+                        _shufflePlayed.Remove(current.Id);
+                }
+                if (currentIndex >= 0)
+                {
+                    DealIfChanged(tracks, currentIndex);
+                    var returning = Enumerable.Range(currentIndex, 1 + Math.Min(_linedUpCount, tracks.Count - 1 - currentIndex)).ToList();
+                    _shuffleOrder.RemoveAll(returning.Contains);
+                    _shuffleOrder.InsertRange(0, returning);
+                }
+                return (tracks[slot], slot);
+            }
+
+            return (current, currentIndex);
+        }
+
+        private static int SlotOf(IReadOnlyList<Track> tracks, Guid id, int except)
+        {
+            for (var i = 0; i < tracks.Count; i++)
+            {
+                if (i != except && tracks[i].Id == id)
+                    return i;
+            }
+            return -1;
+        }
+
         private void ForgetShuffleOrder()
         {
             _shuffleOrder = [];
@@ -1286,13 +1331,7 @@ namespace Flower.ViewModels
         // ReplaceQueueKeepingPlace), so a different list is a changed queue.
         private List<int> ShuffleOrderFor(IReadOnlyList<Track> tracks, int currentIndex)
         {
-            if (!ReferenceEquals(_shuffledFor, tracks))
-            {
-                _shuffleOrder = Deal(tracks, currentIndex, keepOrderOf: _shuffledFor is { } dealtFor
-                    ? _shuffleOrder.Where(slot => slot < dealtFor.Count).Select(slot => dealtFor[slot]).ToList()
-                    : []);
-                _shuffledFor = tracks;
-            }
+            DealIfChanged(tracks, currentIndex);
 
             // Everything has played: the next pass, with all of it again -
             // whether the order ran out as it played or was dealt empty.
@@ -1309,6 +1348,17 @@ namespace Flower.ViewModels
             }
 
             return _shuffleOrder;
+        }
+
+        private void DealIfChanged(IReadOnlyList<Track> tracks, int currentIndex)
+        {
+            if (ReferenceEquals(_shuffledFor, tracks))
+                return;
+
+            _shuffleOrder = Deal(tracks, currentIndex, keepOrderOf: _shuffledFor is { } dealtFor
+                ? _shuffleOrder.Where(slot => slot < dealtFor.Count).Select(slot => dealtFor[slot]).ToList()
+                : []);
+            _shuffledFor = tracks;
         }
 
         // The slots left to deal, shuffled - except that songs still to come
@@ -1588,7 +1638,10 @@ namespace Flower.ViewModels
                     return;
                 }
 
-                var previous = GetPreviousEntry(ResolveQueueIndex(CurrentlyPlayingTrack));
+                var currentIndex = ResolveQueueIndex(CurrentlyPlayingTrack);
+                var previous = IsShuffleEnabled
+                    ? StepBackInShuffledOrder(CurrentlyPlayingTrack, currentIndex)
+                    : GetPreviousEntry(currentIndex);
                 if (previous.Track != null)
                 {
                     Play(previous.Track, previous.Index);

@@ -463,6 +463,63 @@ public class PlaylistControlViewModelTests : IDisposable
         Assert.Same(c, audio.LastUpcoming);
     }
 
+    // Under shuffle the song before this one in the queue is nothing that was
+    // heard: Previous goes back along what the shuffled order played.
+    [Fact]
+    public void Previous_under_shuffle_goes_back_to_the_songs_that_played_before()
+    {
+        var tracks = Enumerable.Range(0, 10).Select(i => T($"S{i}")).ToList();
+        var vm = MakeViewModel(tracks, out _);
+        vm.IsShuffleEnabled = true;
+        vm.Play(tracks[0], 0);
+        vm.Next();
+        var second = vm.CurrentlyPlayingTrack;
+        vm.Next();
+
+        vm.Previous();
+        Assert.Same(second, vm.CurrentlyPlayingTrack);
+
+        vm.Previous();
+        Assert.Same(tracks[0], vm.CurrentlyPlayingTrack);
+    }
+
+    [Fact]
+    public void Next_after_Previous_under_shuffle_returns_to_the_songs_that_were_left()
+    {
+        var tracks = Enumerable.Range(0, 10).Select(i => T($"S{i}")).ToList();
+        var vm = MakeViewModel(tracks, out var audio);
+        vm.IsShuffleEnabled = true;
+        vm.Play(tracks[0], 0);
+        vm.Next();
+        var second = vm.CurrentlyPlayingTrack;
+        vm.Next();
+        var third = vm.CurrentlyPlayingTrack;
+        var upcoming = vm.ShuffleUpcomingSlots.ToList();
+
+        vm.Previous();
+        vm.Previous();
+        Assert.Same(second, audio.LastUpcoming);
+
+        vm.Next();
+        Assert.Same(second, vm.CurrentlyPlayingTrack);
+        vm.Next();
+        Assert.Same(third, vm.CurrentlyPlayingTrack);
+        Assert.Equal(upcoming, vm.ShuffleUpcomingSlots);
+    }
+
+    [Fact]
+    public void Previous_under_shuffle_with_nothing_played_before_starts_the_song_again()
+    {
+        var tracks = Enumerable.Range(0, 5).Select(i => T($"S{i}")).ToList();
+        var vm = MakeViewModel(tracks, out _);
+        vm.IsShuffleEnabled = true;
+        vm.Play(tracks[3], 3);
+
+        vm.Previous();
+
+        Assert.Same(tracks[3], vm.CurrentlyPlayingTrack);
+    }
+
     [Fact]
     public void Previous_before_anything_has_played_does_nothing()
     {
