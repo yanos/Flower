@@ -251,12 +251,8 @@
                   </Button>
                 </Border>
               </Panel>
+              <!-- Its pixels and its bytes, on one line: "1200 × 1200 · 245 KB". -->
               <TextBlock x:Name="ArtResolution"
-                         FontSize="12"
-                         Foreground="{DynamicResource AppTextMutedBrush}"
-                         HorizontalAlignment="Center"
-                         IsVisible="False" />
-              <TextBlock x:Name="ArtFileSize"
                          FontSize="12"
                          Foreground="{DynamicResource AppTextMutedBrush}"
                          HorizontalAlignment="Center"
