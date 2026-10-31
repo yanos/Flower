@@ -55,10 +55,12 @@ public abstract class AlbumTracksViewModel : ViewModelBase
             // re-wrap of the same rows - a set here always means the expanded
             // album (or its track list) changed, so any previous selection is
             // stale anyway (see SelectTrack).
+            var discs = ShowsDiscHeaders ? DiscHeaders.Starts(value) : new int[value.Count];
             _trackRows = value
-                .Select(t => new ExpandedTrackRowViewModel
+                .Select((t, i) => new ExpandedTrackRowViewModel
                 {
                     Track = t,
+                    DiscHeader = discs[i] > 0 ? DiscHeaders.Title(discs[i]) : null,
                     IsCurrentlyPlaying = _currentlyPlayingTrackId is { } id && t.Id == id,
                     IsUnavailable = !_availability.IsPlayable(t),
                     IsDownloadable = _availability.IsDownloadable(t),
@@ -70,6 +72,10 @@ public abstract class AlbumTracksViewModel : ViewModelBase
             OnPropertyChanged(nameof(TrackRows));
         }
     }
+
+    // A header over each disc of an album that has several - false for a list
+    // that is not one album (the Search page's songs).
+    protected virtual bool ShowsDiscHeaders => true;
 
     // Whichever track is currently playing, if any - see
     // AlbumGridView.CurrentlyPlayingTrackId. Pushed in independently of
@@ -116,8 +122,9 @@ public abstract class AlbumTracksViewModel : ViewModelBase
         for (var i = 0; i < _trackRows.Count; i++)
         {
             var row = _trackRows[i];
-            row.JoinsAbove = row.IsLit && i > 0 && _trackRows[i - 1].IsLit;
-            row.JoinsBelow = row.IsLit && i + 1 < _trackRows.Count && _trackRows[i + 1].IsLit;
+            // A disc header between two lit rows parts them.
+            row.JoinsAbove = row.IsLit && i > 0 && _trackRows[i - 1].IsLit && row.DiscHeader == null;
+            row.JoinsBelow = row.IsLit && i + 1 < _trackRows.Count && _trackRows[i + 1].IsLit && _trackRows[i + 1].DiscHeader == null;
         }
     }
 

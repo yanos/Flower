@@ -32,68 +32,76 @@
            its own so the entire row - including that margin gap - still
            hit-tests for clicks (an unpainted Border doesn't register pointer
            events in Avalonia), and carries the click/hover/context handlers. -->
-      <Border Classes="expandedTrack" Background="Transparent"
-              PointerEntered="TrackRow_PointerEntered"
-              PointerExited="TrackRow_PointerExited"
-              PointerPressed="TrackRow_PointerPressed"
-              DoubleTapped="TrackRow_DoubleTapped"
-              ContextRequested="TrackRow_ContextRequested">
-        <Panel>
-          <Border Classes="highlight"
-                  Classes.joinAbove="{Binding JoinsAbove}"
-                  Classes.joinBelow="{Binding JoinsBelow}"
-                  IsVisible="{Binding IsHovered}"
-                  IsHitTestVisible="False"
-                  Background="{DynamicResource AppHoverBrush}"/>
-          <Border Classes="highlight"
-                  Classes.joinAbove="{Binding JoinsAbove}"
-                  Classes.joinBelow="{Binding JoinsBelow}"
-                  IsVisible="{Binding IsSelected}"
-                  IsHitTestVisible="False"
-                  Background="{DynamicResource AppSelectedBrush}"/>
-          <!-- The currently-playing song is bold, the way the main track
-               list marks it (TrackRowControl's own .playing style). The
-               download button trails the title, as there: the title's star
-               column keeps every icon at the same x, and a row with nothing
-               to fetch gives the title that room back. -->
-          <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" Margin="8,14,4,14"
-                Classes.dimmedTrack="{Binding IsUnavailable}"
-                Classes.playingTrack="{Binding IsCurrentlyPlaying}">
-            <TextBlock Grid.Column="0"
-                       Text="{Binding Track.TrackNumber}"
-                       IsVisible="{Binding #Root.ShowsNumbers}"
-                       MinWidth="26"
-                       FontSize="13"
-                       VerticalAlignment="Center"
-                       Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-            <!-- Under the title, whose it is - the Search page's songs, which
-                 are from every album rather than one. -->
-            <StackPanel Grid.Column="1" VerticalAlignment="Center">
-              <TextBlock Classes="trackTitle" Text="{Binding Track.Title}" TextTrimming="CharacterEllipsis" FontSize="14"/>
-              <TextBlock Text="{Binding ArtistAndAlbumText}"
-                         IsVisible="{Binding #Root.ShowsArtist}"
-                         TextTrimming="CharacterEllipsis"
-                         FontSize="12"
-                         Margin="0,1,0,0"
+      <!-- Over the first song of each disc, in an album of several
+           (ExpandedTrackRowViewModel.DiscHeader) - outside the row's Border,
+           so it neither lights up nor takes a click. -->
+      <StackPanel>
+        <TextBlock Classes="discHeader"
+                   Text="{Binding DiscHeader}"
+                   IsVisible="{Binding DiscHeader, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+        <Border Classes="expandedTrack" Background="Transparent"
+                PointerEntered="TrackRow_PointerEntered"
+                PointerExited="TrackRow_PointerExited"
+                PointerPressed="TrackRow_PointerPressed"
+                DoubleTapped="TrackRow_DoubleTapped"
+                ContextRequested="TrackRow_ContextRequested">
+          <Panel>
+            <Border Classes="highlight"
+                    Classes.joinAbove="{Binding JoinsAbove}"
+                    Classes.joinBelow="{Binding JoinsBelow}"
+                    IsVisible="{Binding IsHovered}"
+                    IsHitTestVisible="False"
+                    Background="{DynamicResource AppHoverBrush}"/>
+            <Border Classes="highlight"
+                    Classes.joinAbove="{Binding JoinsAbove}"
+                    Classes.joinBelow="{Binding JoinsBelow}"
+                    IsVisible="{Binding IsSelected}"
+                    IsHitTestVisible="False"
+                    Background="{DynamicResource AppSelectedBrush}"/>
+            <!-- The currently-playing song is bold, the way the main track
+                 list marks it (TrackRowControl's own .playing style). The
+                 download button trails the title, as there: the title's star
+                 column keeps every icon at the same x, and a row with nothing
+                 to fetch gives the title that room back. -->
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" Margin="8,14,4,14"
+                  Classes.dimmedTrack="{Binding IsUnavailable}"
+                  Classes.playingTrack="{Binding IsCurrentlyPlaying}">
+              <TextBlock Grid.Column="0"
+                         Text="{Binding Track.TrackNumber}"
+                         IsVisible="{Binding #Root.ShowsNumbers}"
+                         MinWidth="26"
+                         FontSize="13"
+                         VerticalAlignment="Center"
                          Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-            </StackPanel>
-            <controls:TrackDownloadButton Grid.Column="2" Margin="8,0,0,0"
-                                          DownloadRequested="TrackRow_DownloadRequested"/>
-            <TextBlock Grid.Column="3" Text="{Binding Track.Duration, Converter={StaticResource DurationConverter}}"
-                       Classes="trackTime"
-                       FontSize="14" Margin="8,0,0,0"
-                       VerticalAlignment="Center"/>
-            <!-- The song menu, for anyone who does not know to right-click -
-                 the phone's rows end in the same "..." (TrackRowTemplate). -->
-            <Button Grid.Column="4" Classes="pill" Padding="4" Margin="6,-6,0,-6"
-                    ToolTip.Tip="More"
-                    Click="TrackRow_MenuClick">
-              <materialIcons:MaterialIcon Kind="DotsVertical" Width="18" Height="18"
-                                          Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-            </Button>
-          </Grid>
-        </Panel>
-      </Border>
+              <!-- Under the title, whose it is - the Search page's songs, which
+                   are from every album rather than one. -->
+              <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <TextBlock Classes="trackTitle" Text="{Binding Track.Title}" TextTrimming="CharacterEllipsis" FontSize="14"/>
+                <TextBlock Text="{Binding ArtistAndAlbumText}"
+                           IsVisible="{Binding #Root.ShowsArtist}"
+                           TextTrimming="CharacterEllipsis"
+                           FontSize="12"
+                           Margin="0,1,0,0"
+                           Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+              </StackPanel>
+              <controls:TrackDownloadButton Grid.Column="2" Margin="8,0,0,0"
+                                            DownloadRequested="TrackRow_DownloadRequested"/>
+              <TextBlock Grid.Column="3" Text="{Binding Track.Duration, Converter={StaticResource DurationConverter}}"
+                         Classes="trackTime"
+                         FontSize="14" Margin="8,0,0,0"
+                         VerticalAlignment="Center"/>
+              <!-- The song menu, for anyone who does not know to right-click -
+                   the phone's rows end in the same "..." (TrackRowTemplate). -->
+              <Button Grid.Column="4" Classes="pill" Padding="4" Margin="6,-6,0,-6"
+                      ToolTip.Tip="More"
+                      Click="TrackRow_MenuClick">
+                <materialIcons:MaterialIcon Kind="DotsVertical" Width="18" Height="18"
+                                            Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+              </Button>
+            </Grid>
+          </Panel>
+        </Border>
+      </StackPanel>
     </DataTemplate>
   </UserControl.Resources>
 
@@ -134,6 +142,14 @@
          - a style too - can outrank them. -->
     <Style Selector="TextBlock.trackTitle">
       <Setter Property="FontWeight" Value="Medium"/>
+    </Style>
+    <!-- Above the rows rather than between two of them, and further from
+         the disc before than from the songs under it. -->
+    <Style Selector="TextBlock.discHeader">
+      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}"/>
+      <Setter Property="Margin" Value="8,16,0,4"/>
     </Style>
     <Style Selector="TextBlock.trackTime">
       <Setter Property="Foreground" Value="{DynamicResource AppTextValueBrush}"/>

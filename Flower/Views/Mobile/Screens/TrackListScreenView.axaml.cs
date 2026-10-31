@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Linq;
 
 using Avalonia;
 using Avalonia.Controls;
@@ -130,6 +131,22 @@ public partial class TrackListScreenView : UserControl, ITrackRowHost
         private set => SetValue(DisplayHeaderProperty, value);
     }
 
+    public static readonly StyledProperty<IReadOnlyList<object>> AlbumItemsProperty =
+        AvaloniaProperty.Register<TrackListScreenView, IReadOnlyList<object>>(
+            nameof(AlbumItems), defaultValue: Array.Empty<object>());
+
+    /// <summary>
+    /// An album's songs as the album page lists them: DisplayRows, with a
+    /// DiscHeaderRow ahead of each disc where there are several. Empty
+    /// outside IsAlbumMode, for the reason DisplayRows' comment gives - the
+    /// album list stays in the tree while Songs shows the whole library.
+    /// </summary>
+    public IReadOnlyList<object> AlbumItems
+    {
+        get => GetValue(AlbumItemsProperty);
+        private set => SetValue(AlbumItemsProperty, value);
+    }
+
     public bool IsAlbumMode
     {
         get => GetValue(IsAlbumModeProperty);
@@ -185,11 +202,33 @@ public partial class TrackListScreenView : UserControl, ITrackRowHost
         else if (change.Property == DisplayRowsProperty)
         {
             ShowsRowArtist = TrackRowViewModel.ArtistIsWorthShowing(DisplayRows);
+            AlbumItems = BuildAlbumItems();
+        }
+        else if (change.Property == IsAlbumModeProperty)
+        {
+            AlbumItems = BuildAlbumItems();
         }
         else if (change.Property == DisplayHeaderProperty)
         {
             WatchCover(DisplayHeader);
         }
+    }
+
+    private IReadOnlyList<object> BuildAlbumItems()
+    {
+        if (!IsAlbumMode)
+            return Array.Empty<object>();
+
+        var rows = DisplayRows;
+        var discs = DiscHeaders.Starts(rows.Select(r => r.Track).ToList());
+        var items = new List<object>(rows.Count + 4);
+        for (var i = 0; i < rows.Count; i++)
+        {
+            if (discs[i] > 0)
+                items.Add(new DiscHeaderRow(DiscHeaders.Title(discs[i])));
+            items.Add(rows[i]);
+        }
+        return items;
     }
 
     // An album's page is washed in its cover's colour by the same rule as Now

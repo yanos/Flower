@@ -15,6 +15,10 @@ public sealed class ExpandedTrackRowViewModel : DownloadIndicatorViewModel
 {
     public required Track Track { get; init; }
 
+    // "Disc 2" over the first song of each disc, in an album of more than one
+    // (DiscHeaders); null on every other row.
+    public string? DiscHeader { get; init; }
+
     // "Artist — Album", under the title where a list holds songs from more
     // than one album (AlbumTrackList.ShowsArtist).
     public string ArtistAndAlbumText =>

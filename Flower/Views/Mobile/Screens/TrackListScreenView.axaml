@@ -2,6 +2,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:Flower.Controls"
              xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
+             xmlns:rowvm="clr-namespace:Flower.ViewModels"
+             xmlns:views="clr-namespace:Flower.Views.Mobile.Screens"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="Flower.Views.Mobile.Screens.TrackListScreenView"
              x:DataType="vm:MobileMainViewModel"
@@ -81,6 +83,14 @@
          MobileMainView.axaml. -->
     <Style Selector="Grid.albumTracks Button.trackRow">
       <Setter Property="Padding" Value="24,0,16,0" />
+    </Style>
+    <!-- In line with the song titles under it (the 24 of the rows' Padding
+         above), and further from the disc before than from its own songs. -->
+    <Style Selector="TextBlock.discHeader">
+      <Setter Property="FontSize" Value="15" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Opacity" Value="0.65" />
+      <Setter Property="Margin" Value="24,20,16,6" />
     </Style>
 
     <!-- An album's page is washed in its cover's colour, the way Now Playing
@@ -241,8 +251,18 @@
                           ContentTemplate="{StaticResource AlbumTextTemplate}" />
           <!-- Not virtualized - an album is short - but each row is still
                built once and handed the next album's songs
-               (RecyclingItemsControl). -->
-          <controls:RecyclingItemsControl ItemsSource="{Binding #Root.DisplayRows}" ItemTemplate="{StaticResource TrackRowTemplate}" />
+               (RecyclingItemsControl). An album of several discs has a
+               header ahead of each (AlbumItems, DiscHeaderRow). -->
+          <controls:RecyclingItemsControl ItemsSource="{Binding #Root.AlbumItems}">
+            <ItemsControl.DataTemplates>
+              <DataTemplate DataType="vm:DiscHeaderRow">
+                <TextBlock Classes="discHeader" Text="{Binding Title}" />
+              </DataTemplate>
+              <DataTemplate DataType="rowvm:TrackRowViewModel">
+                <views:TrackRowView />
+              </DataTemplate>
+            </ItemsControl.DataTemplates>
+          </controls:RecyclingItemsControl>
         </StackPanel>
       </ScrollViewer>
     </Grid>
