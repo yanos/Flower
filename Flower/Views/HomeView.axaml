@@ -119,13 +119,13 @@
                   <Button Classes="homeTile"
                           Command="{Binding Home.ResumeCommand}"
                           CommandParameter="{Binding}"
-                          ToolTip.Tip="Continue where you left off">
+                          ToolTip.Tip="{Binding ResumeTip}">
                     <Button.ContextMenu>
                       <ContextMenu>
-                        <MenuItem Header="Continue Playing"
+                        <MenuItem Header="{Binding ResumeLabel}"
                                   Command="{Binding Home.ResumeCommand}"
                                   CommandParameter="{Binding}">
-                          <MenuItem.Icon><materialIcons:MaterialIcon Kind="Play" Width="16" Height="16" /></MenuItem.Icon>
+                          <MenuItem.Icon><materialIcons:MaterialIcon Kind="{Binding ResumeIcon}" Width="16" Height="16" /></MenuItem.Icon>
                         </MenuItem>
                         <MenuItem Header="Show Album"
                                   Command="{Binding Home.OpenAlbumCommand}"
@@ -144,6 +144,7 @@
                                         Tile="{Binding Tile}"
                                         ShowsProgress="True"
                                         Progress="{Binding Progress}"
+                                        IsPlaying="{Binding IsPlaying}"
                                         Detail="{Binding Detail}"
                                         DismissCommand="{Binding Home.ForgetCommand}"
                                         DismissParameter="{Binding}"

@@ -77,7 +77,8 @@
               HorizontalAlignment="Stretch">
     <Panel>
       <controls:SquareAlbumArtView x:Name="Art" ArtCornerRadius="10" />
-      <!-- Continue Playing's: this cover picks the album up where it was. -->
+      <!-- Continue Playing's: this cover picks the album up where it was,
+           or pauses it while it is the album playing (IsPlaying). -->
       <Border x:Name="Badge"
               IsVisible="False"
               Width="40" Height="40" CornerRadius="20"
@@ -85,7 +86,7 @@
               HorizontalAlignment="Right" VerticalAlignment="Bottom"
               BoxShadow="{DynamicResource AppButtonShadow}"
               Background="{DynamicResource AppAccentBrush}">
-        <materialIcons:MaterialIcon Kind="Play" Width="24" Height="24" Foreground="{DynamicResource AppOnPrimaryBrush}" />
+        <materialIcons:MaterialIcon x:Name="BadgeIcon" Kind="Play" Width="24" Height="24" Foreground="{DynamicResource AppOnPrimaryBrush}" />
       </Border>
       <!-- Continue Playing's: takes the album off the shelf without playing
            it (DismissCommand). Dark glass and a white cross, so it

@@ -55,7 +55,9 @@ public sealed class FakeAudioManager : IAudioManager
     public int ResumeCount { get; private set; }
 
     public void Resume() => ResumeCount++;
-    public void Pause() { }
+    public int PauseCount { get; private set; }
+
+    public void Pause() => PauseCount++;
     public void Stop() { }
     // Built the way GaplessAudioManager builds it, so a test can tell one
     // apply from the next.

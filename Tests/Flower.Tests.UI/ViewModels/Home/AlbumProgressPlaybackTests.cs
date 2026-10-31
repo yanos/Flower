@@ -134,6 +134,31 @@ public class AlbumProgressPlaybackTests : PinnedDataDirectory
         Assert.Equal(1, audio.ResumeCount);
         Assert.Equal(album[1].Id, audio.LastPlayed?.Id);
     }
+
+    // The album playing shows a pause on its cover, and pressing it pauses.
+    [AvaloniaFact]
+    public void Continue_playing_the_album_that_is_playing_pauses_it()
+    {
+        var album = Album("Blue", 4);
+        var vm = Playback(album, out var audio, out var library);
+        using var home = new HomeViewModel(library, vm.AlbumProgress, vm);
+        vm.SetCurrentPlaylist(new Playlist("Now Playing Queue", album));
+        vm.Play(album[0], 0);
+        vm.Play(album[1], 1);
+        audio.IsPlaying = true;
+        audio.RaisePlaying();
+
+        home.Rebuild();
+        var item = Assert.Single(home.ContinuePlaying);
+        Assert.True(item.IsPlaying);
+
+        home.ResumeCommand.Execute(item);
+        Assert.Equal(1, audio.PauseCount);
+
+        audio.IsPlaying = false;
+        audio.RaisePaused();
+        Assert.False(item.IsPlaying);
+    }
     // A clock whose one-shot timers go off when the test says so.
     private sealed class ManualTimers : TimeProvider
     {

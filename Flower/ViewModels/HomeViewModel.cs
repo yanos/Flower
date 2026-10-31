@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Linq;
 using System.Threading;
 using System.Windows.Input;
@@ -8,6 +9,8 @@ using System.Windows.Input;
 using Avalonia.Threading;
 
 using CommunityToolkit.Mvvm.Input;
+
+using Material.Icons;
 
 using Flower.Models;
 using Flower.Services;
@@ -40,6 +43,26 @@ public sealed class ContinuePlayingItemViewModel : ViewModelBase
         Item.Total > TimeSpan.Zero ? Math.Clamp(Item.Elapsed / Item.Total, 0, 1) : 0;
 
     public string Detail => $"Song {Item.TrackIndex + 1} of {Item.Tracks.Count} · {Remaining(Item.Total - Item.Elapsed)}";
+
+    // The album is the one playing, at this place: its badge is a pause, and
+    // pressing it pauses (HomeViewModel.ResumeCommand).
+    private bool _isPlaying;
+    public bool IsPlaying
+    {
+        get => _isPlaying;
+        internal set
+        {
+            if (!SetProperty(ref _isPlaying, value))
+                return;
+            OnPropertyChanged(nameof(ResumeLabel));
+            OnPropertyChanged(nameof(ResumeTip));
+            OnPropertyChanged(nameof(ResumeIcon));
+        }
+    }
+
+    public string ResumeLabel => IsPlaying ? "Pause" : "Continue Playing";
+    public string ResumeTip => IsPlaying ? "Pause" : "Continue where you left off";
+    public MaterialIconKind ResumeIcon => IsPlaying ? MaterialIconKind.Pause : MaterialIconKind.Play;
 
     internal void Update(ContinuePlayingShelfItem item)
     {
@@ -242,6 +265,17 @@ public sealed class HomeViewModel : ViewModelBase, IDisposable
             h => library.TrackChanged += h, h => library.TrackChanged -= h);
         _subscriptions.Add<EventHandler>((_, _) => Invalidate(),
             h => progress.Changed += h, h => progress.Changed -= h);
+        // A pause or a play turns the playing album's badge over at once,
+        // without waiting for a rebuild.
+        if (playback != null)
+        {
+            _subscriptions.Add<PropertyChangedEventHandler>((_, e) =>
+            {
+                if (e.PropertyName is nameof(PlaylistControlViewModel.IsPlaying) or nameof(PlaylistControlViewModel.CurrentlyPlayingTrack))
+                    MarkPlayingAlbum();
+            },
+                h => playback.PropertyChanged += h, h => playback.PropertyChanged -= h);
+        }
     }
 
     public void Dispose()
@@ -463,12 +497,11 @@ public sealed class HomeViewModel : ViewModelBase, IDisposable
         HoldInPlace(item);
 
         // The album already playing, or paused where it is: the tape is in the
-        // deck, so this carries on rather than rewinding to the last place it
-        // was written down.
+        // deck, so this pauses it, or carries on rather than rewinding to the
+        // last place it was written down.
         if (_playback.CurrentlyPlayingTrack?.Id == shelf.Entry.TrackId)
         {
-            if (!_playback.IsPlaying)
-                _playback.PlayOrPause();
+            _playback.PlayOrPause();
             return;
         }
 
@@ -501,6 +534,14 @@ public sealed class HomeViewModel : ViewModelBase, IDisposable
         Replace(ContinuePlaying, built);
         foreach (var tile in retired)
             tile.Dispose();
+        MarkPlayingAlbum();
+    }
+
+    private void MarkPlayingAlbum()
+    {
+        var playingId = _playback is { IsPlaying: true } ? _playback.CurrentlyPlayingTrack?.Id : null;
+        foreach (var item in ContinuePlaying)
+            item.IsPlaying = playingId != null && item.Item.Entry.TrackId == playingId;
     }
 
     // A song still on the shelf keeps its row, and with it the cover it has

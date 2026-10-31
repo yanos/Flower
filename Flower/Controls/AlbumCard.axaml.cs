@@ -4,6 +4,8 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 
+using Material.Icons;
+
 using Flower.ViewModels;
 using Flower.ViewModels.Mobile;
 
@@ -21,6 +23,9 @@ public partial class AlbumCard : UserControl
 
     public static readonly StyledProperty<double> ProgressProperty =
         AvaloniaProperty.Register<AlbumCard, double>(nameof(Progress));
+
+    public static readonly StyledProperty<bool> IsPlayingProperty =
+        AvaloniaProperty.Register<AlbumCard, bool>(nameof(IsPlaying));
 
     public static readonly StyledProperty<string?> DetailProperty =
         AvaloniaProperty.Register<AlbumCard, string?>(nameof(Detail));
@@ -59,6 +64,14 @@ public partial class AlbumCard : UserControl
     {
         get => GetValue(ProgressProperty);
         set => SetValue(ProgressProperty, value);
+    }
+
+    // Continue Playing's: the album is the one playing, so the badge is a
+    // pause rather than a play.
+    public bool IsPlaying
+    {
+        get => GetValue(IsPlayingProperty);
+        set => SetValue(IsPlayingProperty, value);
     }
 
     // A third line under the artist, where there is one (Continue Playing's
@@ -120,7 +133,8 @@ public partial class AlbumCard : UserControl
         base.OnPropertyChanged(change);
         if (change.Property == TileProperty)
             _tile.Watch(Tile);
-        else if (change.Property == ShowsProgressProperty || change.Property == ProgressProperty || change.Property == DetailProperty)
+        else if (change.Property == ShowsProgressProperty || change.Property == ProgressProperty || change.Property == DetailProperty
+                 || change.Property == IsPlayingProperty)
             ShowProgress();
         else if (change.Property == DismissCommandProperty)
             DismissButton.IsVisible = DismissCommand != null;
@@ -140,6 +154,7 @@ public partial class AlbumCard : UserControl
     private void ShowProgress()
     {
         Badge.IsVisible = ShowsProgress;
+        BadgeIcon.Kind = IsPlaying ? MaterialIconKind.Pause : MaterialIconKind.Play;
         ProgressLine.IsVisible = ShowsProgress;
         ProgressLine.Value = Progress;
         DetailLine.Text = Detail;

@@ -48,11 +48,13 @@ public partial class AlbumTileView : Button
                 Command = item.Home.ResumeCommand;
                 CommandParameter = item;
                 Show(item.Tile, item.Progress, item.Detail);
+                Card.IsPlaying = item.IsPlaying;
                 break;
             case AlbumTileViewModel tile:
                 Command = Host?.OpenAlbumCommand;
                 CommandParameter = tile;
                 Show(tile, null, null);
+                Card.IsPlaying = false;
                 break;
         }
     }
