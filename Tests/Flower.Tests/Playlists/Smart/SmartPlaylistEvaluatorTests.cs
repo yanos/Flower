@@ -206,7 +206,7 @@ public class SmartPlaylistEvaluatorTests
         var matched = Evaluate(SmartPlaylistRules.MatchAll(new SmartCondition(
             SmartField.LastPlayedAt, SmartOperator.NotInTheLast, new SmartValue.Relative(6, RelativeUnit.Months))), tracks);
 
-        Assert.Equal(["Never", "Ages ago"], matched.Select(t => t.Title));
+        Assert.Equivalent(new[] { "Never", "Ages ago" }, matched.Select(t => t.Title));
     }
 
     // Calendar arithmetic, not a 30-day approximation.
@@ -330,7 +330,7 @@ public class SmartPlaylistEvaluatorTests
         var bare = new SmartCondition(SmartField.HasArtwork, SmartOperator.Is, new SmartValue.Flag(false));
 
         Assert.Equal("Small", Assert.Single(Evaluate(SmartPlaylistRules.MatchAll(small), tracks)).Title);
-        Assert.Equal(["Small", "Bare"], Evaluate(SmartPlaylistRules.MatchAny(small, bare), tracks).Select(t => t.Title));
+        Assert.Equivalent(new[] { "Small", "Bare" }, Evaluate(SmartPlaylistRules.MatchAny(small, bare), tracks).Select(t => t.Title));
     }
 
     // A song with no picture of its own is drawn with its album's - the first
@@ -374,7 +374,7 @@ public class SmartPlaylistEvaluatorTests
             new SmartCondition(SmartField.HasArtwork, SmartOperator.Is, new SmartValue.Flag(false))),
             [covered, otherArtist, noAlbum, coveredLoose]);
 
-        Assert.Equal(["Theirs", "Loose"], bare.Select(t => t.Title));
+        Assert.Equivalent(new[] { "Theirs", "Loose" }, bare.Select(t => t.Title));
     }
 
     // --- Match modes ------------------------------------------------------
@@ -401,12 +401,33 @@ public class SmartPlaylistEvaluatorTests
         Assert.Equal(2, Evaluate(SmartPlaylistRules.MatchAny(), tracks).Count);
     }
 
-    [Fact]
-    public void An_unlimited_playlist_keeps_the_library_order_it_was_given()
-    {
-        var tracks = new List<Track> { T(title: "C"), T(title: "A"), T(title: "B") };
+    // --- Order ------------------------------------------------------------
 
-        Assert.Equal(["C", "A", "B"], Evaluate(SmartPlaylistRules.MatchAll(), tracks).Select(t => t.Title));
+    // A paired device's library lists its downloaded songs first and the
+    // server's catalog after them, so following it split an album whose one
+    // downloaded song sat thousands of rows above the rest.
+    [Fact]
+    public void Matches_come_out_album_by_album_in_track_order_whatever_order_the_library_is_in()
+    {
+        Track Song(string title, string album, uint number)
+        {
+            var track = T(title: title, artist: "John Coltrane", album: album);
+            track.TrackNumber = number;
+            return track;
+        }
+
+        var tracks = new List<Track>
+        {
+            Song("Chasin' Another Trane", "Newport '63", 4),
+            Song("Olé", "Olé", 1),
+            Song("I Want To Talk About You", "Newport '63", 1),
+            Song("My Favorite Things", "Newport '63", 2),
+            Song("Impressions", "Newport '63", 3),
+        };
+
+        Assert.Equal(
+            ["I Want To Talk About You", "My Favorite Things", "Impressions", "Chasin' Another Trane", "Olé"],
+            Evaluate(SmartPlaylistRules.MatchAll(), tracks).Select(t => t.Title));
     }
 
     // --- Limits -----------------------------------------------------------

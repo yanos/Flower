@@ -37,9 +37,24 @@ public static class SmartPlaylistEvaluator
         ArgumentNullException.ThrowIfNull(rules);
         ArgumentNullException.ThrowIfNull(context);
 
-        var matched = tracks.Where(track => Matches(track, rules, context, albumArt)).ToList();
+        var matched = InAlbumOrder(tracks.Where(track => Matches(track, rules, context, albumArt)));
         return rules.Limit is { } limit ? Apply(limit, matched, context) : matched;
     }
+
+    // A smart playlist's own order, which is what it plays in and what a list
+    // left in playlist order shows: album by album, each in disc and track
+    // order. Never the library's: on a paired device that puts every song with
+    // a file first and the server's catalog after it, so one downloaded song of
+    // an album sat at the top of the playlist and the rest of the album 7000
+    // rows down. A limit's selector reorders this, stably, so its ties fall
+    // here too rather than to whichever song happens to be downloaded.
+    private static List<Track> InAlbumOrder(IEnumerable<Track> tracks) => tracks
+        .OrderBy(t => t.EffectiveAlbumArtist, StringComparer.CurrentCultureIgnoreCase)
+        .ThenBy(t => t.AlbumSortValue, StringComparer.CurrentCultureIgnoreCase)
+        .ThenBy(t => t.DiscNumber)
+        .ThenBy(t => t.TrackNumber)
+        .ThenBy(t => t.TitleSortValue, StringComparer.CurrentCultureIgnoreCase)
+        .ToList();
 
     // Every smart playlist on the device, in one pass.
     //
