@@ -643,26 +643,36 @@ address — a check mark, or a warning naming what went wrong. A warning can be 
 false alarm on a router that does not loop connections back to itself, so the
 address is advertised either way; a phone with Wi-Fi off is the real test.
 
-**When the router exposes another port than 4534** — the usual reason being a
-listener on a work, school or hotel network whose proxy only lets port 443
-through, which the app reports as a proxy refusing the port — forward the
-router's **443** to the server's **4534** and tell the server which port the
-outside sees:
+**For listeners behind a proxy that only lets port 443 through** — a work,
+school or hotel network, which the app reports as a proxy refusing the port —
+serve TLS on 443 itself, and forward the router's 443 to the server's 443:
 
 ```json
-{ "Flower": { "PublicHttpsPort": 443 } }
+{ "Flower": { "HttpsPort": 443 } }
 ```
 
-The server keeps listening on 4534; only the address it advertises changes, to
-`https://<public IP>:443`, still looked up and still checked. Keep the 4534 forward
-too if you like: devices that already know it go on using it. Check first that
-the router has nothing of its own on 443 — some offer remote administration or a
-file-sharing service there. This gets past a proxy that filters by port. One that
-also inspects TLS replaces the certificate, which a paired app refuses on any
-port; that network needs the Cloudflare Tunnel below.
+The server then advertises `https://<public IP>:443`, still looked up and still
+checked. It has to be able to bind 443, which on Linux a process that is not
+root cannot do by default — and the container runs as a user of its own, on the
+host's network, so neither `cap_add` nor a compose `sysctls:` reaches it. Lower
+the host's privileged-port floor instead, once:
 
-Set `AdvertisedHost` only to use a name instead (dynamic DNS). It then replaces
-the looked-up address entirely:
+```bash
+echo 'net.ipv4.ip_unprivileged_port_start=443' | sudo tee /etc/sysctl.d/99-flower-443.conf && sudo sysctl --system
+```
+
+`HttpsPort` is read at startup, so restart the container after changing it.
+Devices away from home that last saw the server at `:4534` know no other public
+address; forwarding the router's 4534 to the server's 443 as well keeps them
+connected until their next `/info` tells them the new one. Check first that the
+router has nothing of its own on 443 — some offer remote administration or a
+file-sharing service there. This gets past a proxy that filters by port. One
+that also inspects TLS replaces the certificate, which a paired app refuses on
+any port; that network needs the Cloudflare Tunnel below.
+
+Set `AdvertisedHost` only to use a name instead (dynamic DNS), or when the
+outside port is not the one the server listens on. It then replaces the
+looked-up address entirely:
 
 ```json
 { "Flower": { "AdvertisedHost": "https://music.example.com:4534" } }

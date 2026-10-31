@@ -22,8 +22,7 @@ namespace Flower.Server.Services;
 // operator got wrong at least once. This closes that gap for the common case:
 // with the door open and no AdvertisedHost, the public address PublicAddressProbe
 // finds is advertised as https://<it>:<https port>, on the assumption that the
-// router forwards the same port it is forwarded to - or the one PublicHttpsPort
-// names, for a router that exposes it on another (443, past a proxy).
+// router forwards the same port it is forwarded to.
 //
 // That assumption is exactly what cannot be known from in here, so this also
 // checks it: dial that origin's /info and see whether the fingerprint that
@@ -100,7 +99,7 @@ public sealed class PublicReachability : BackgroundService
         if (!options.AllowPublicAccess || !string.IsNullOrWhiteSpace(options.AdvertisedHost))
             return null;
 
-        if (PublicPort(options) is not { } port || _probe.LastKnown is not { } address)
+        if (HttpsPort() is not { } port || _probe.LastKnown is not { } address)
             return null;
 
         return Format(address, port);
@@ -115,7 +114,7 @@ public sealed class PublicReachability : BackgroundService
         if (!options.AllowPublicAccess || !string.IsNullOrWhiteSpace(options.AdvertisedHost))
             return null;
 
-        if (PublicPort(options) is not { } port)
+        if (HttpsPort() is not { } port)
             return null;
 
         if (await _probe.GetAsync(ct) is not { } address)
@@ -243,15 +242,6 @@ public sealed class PublicReachability : BackgroundService
     private int? HttpsPort() =>
         MdnsAdvertiser.AdvertisablePort(
             _server.Features.Get<IServerAddressesFeature>()?.Addresses ?? [], Uri.UriSchemeHttps);
-
-    // The port the internet reaches the https listener on: the listener's own,
-    // unless the router forwards a different one to it (PublicHttpsPort). Null
-    // with TLS off whatever is configured - a forward to a listener that does
-    // not exist leads nowhere.
-    private int? PublicPort(FlowerServerOptions options) =>
-        HttpsPort() is not { } listening
-            ? null
-            : options.PublicHttpsPort is > 0 and <= 65535 ? options.PublicHttpsPort : listening;
 
     private static string Format(string address, int port) =>
         IPAddress.TryParse(address, out var parsed) && parsed.AddressFamily == AddressFamily.InterNetworkV6
