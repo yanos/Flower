@@ -124,9 +124,8 @@ namespace Flower.Persistence
         public int HomeRecentlyAddedMonths  { get; set; } = 3;
 
         // Where Track Info puts a cover it changes: into the songs' files, or
-        // into their album's folder (ArtworkPlacement). Picked on the Artwork
-        // tab itself, on both heads, and remembered from one change to the
-        // next.
+        // into their album's folder (ArtworkPlacement). Set in Settings on
+        // both heads (MainViewModel.SavesArtInAlbumFolder).
         [JsonConverter(typeof(JsonStringEnumConverter<ArtworkPlacement>))]
         public ArtworkPlacement ArtworkPlacement { get; set; } = ArtworkPlacement.Files;
 

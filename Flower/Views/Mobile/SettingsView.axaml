@@ -280,6 +280,27 @@
         </StackPanel>
       </Border>
 
+      <!-- Where Track Info puts a cover it changes (MainViewModel.
+           SavesArtInAlbumFolder): this phone's own setting. -->
+      <Border Classes="card">
+        <StackPanel Spacing="12">
+          <TextBlock Classes="section-header" Text="ALBUM ART" />
+          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14" Classes="badgeRow">
+            <Border Grid.Column="0" Classes="badge" VerticalAlignment="Center">
+              <materialIcons:MaterialIcon Kind="FolderImage" />
+            </Border>
+            <TextBlock Grid.Column="1" Classes="rowTitle" FontWeight="Normal"
+                       Text="Save covers in the album's folder"
+                       TextWrapping="Wrap"
+                       VerticalAlignment="Center" />
+            <ToggleSwitch Grid.Column="2" IsChecked="{Binding Main.SavesArtInAlbumFolder}" />
+          </Grid>
+          <TextBlock Classes="note"
+                     Text="Off: a cover you change is saved inside each song's file."
+                     TextWrapping="Wrap" />
+        </StackPanel>
+      </Border>
+
       <!-- Looking things up online (MusicLibrarySettings.LookUpOnline): this
            device's own switch while it is on its own. A paired phone has
            none - its server's owner decides, for this phone's own songs too

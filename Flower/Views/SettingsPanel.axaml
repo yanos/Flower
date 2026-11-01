@@ -308,7 +308,7 @@
                the machine reading them. Sampled only while this panel is on
                screen (SettingsPanel.Initialize). -->
           <StackPanel Margin="0,20,0,0"
-                      IsVisible="{Binding Device, Converter={x:Static ObjectConverters.IsNotNull}}">
+                      IsVisible="{Binding Device, Converter={x:Static avc:ObjectConverters.IsNotNull}}">
             <TextBlock Text="Technical details" FontWeight="SemiBold" Margin="0,0,0,6"/>
             <Grid ColumnDefinitions="80,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="3">
               <Grid.Styles>
@@ -566,6 +566,19 @@
                          IsVisible="{Binding LookUpOnlineNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
               <TextBlock Text="{Binding LookUpOnlineLock.Message}" IsVisible="{Binding LookUpOnlineLock.IsLocked}"
                          Margin="20,4,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
+            </StackPanel>
+
+            <!-- Where Track Info puts a cover it changes - this device's own
+                 setting (MainViewModel.SavesArtInAlbumFolder), bound to Device
+                 and applied as it is touched. Hidden on a server's page,
+                 where Device is null. -->
+            <StackPanel Margin="0,24,0,0"
+                        IsVisible="{Binding Device, Converter={x:Static avc:ObjectConverters.IsNotNull}}">
+              <TextBlock Text="Album Art" FontWeight="SemiBold" Margin="0,0,0,8"/>
+              <CheckBox Content="Save covers in the album's folder"
+                        IsChecked="{Binding Device.SavesArtInAlbumFolder, Mode=TwoWay, FallbackValue=False}"/>
+              <TextBlock Text="A cover changed in Info is saved as an image file beside the songs, and taken out of their files so it is the one shown. Off: it is saved inside each song's file."
+                         Margin="20,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
             </StackPanel>
 
             <!-- Songs removed from the library with their files kept, which every

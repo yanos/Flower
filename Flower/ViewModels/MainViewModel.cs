@@ -97,17 +97,19 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public AlbumArtEditor ArtEditorFor(IReadOnlyList<Track> tracks, ILogger logger) =>
         new(tracks, Library, _appSettings, _peerTrackResolver, _peerCredentials, logger);
 
-    // Where Track Info puts a cover it changes, picked on its Artwork tab on
-    // either head and kept for the next change (AppSettings.
-    // ArtworkPlacement).
-    public ArtworkPlacement ArtworkPlacement
+    // Where Track Info puts a cover it changes: the album's folder, or the
+    // songs' files (AppSettings.ArtworkPlacement). This device's own setting,
+    // switched in Settings on either head - desktop's Library tab, the phone's
+    // Album Art card.
+    public bool SavesArtInAlbumFolder
     {
-        get => _appSettings.ArtworkPlacement;
+        get => _appSettings.ArtworkPlacement == ArtworkPlacement.Folder;
         set
         {
-            if (_appSettings.ArtworkPlacement == value)
+            var placement = value ? ArtworkPlacement.Folder : ArtworkPlacement.Files;
+            if (_appSettings.ArtworkPlacement == placement)
                 return;
-            _appSettings.ArtworkPlacement = value;
+            _appSettings.ArtworkPlacement = placement;
             SaveSettings();
             OnPropertyChanged();
         }
