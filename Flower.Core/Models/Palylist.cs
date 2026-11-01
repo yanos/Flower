@@ -130,6 +130,31 @@ namespace Flower.Models
             }
         }
 
+        private double? _sortKey;
+
+        // Where this playlist stands among the others in its folder (or at
+        // the top level), lowest first - set by dragging it in the sidebar
+        // (PlaylistOrder.Place) and read by PlaylistTree.Flatten. A number of
+        // its own rather than a place in a list, so that moving one playlist
+        // is an edit of that playlist alone and travels the way a move into a
+        // folder does; nothing stores a list of playlists in order. Null, for
+        // a playlist nobody has placed, comes after every placed one, in the
+        // order the library holds them.
+        //
+        // A Touch()ing property, like ParentId.
+        public double? SortKey
+        {
+            get => _sortKey;
+            set
+            {
+                if (_sortKey == value)
+                    return;
+
+                _sortKey = value;
+                Touch();
+            }
+        }
+
         // Whose playlist this is on a server shared by several listeners - see
         // Listeners. Always Listeners.Owner on a client, whose playlists are
         // its own user's; on a server, the fingerprint of the non-admin device
@@ -212,12 +237,14 @@ namespace Flower.Models
             SmartPlaylistRules? rules = null,
             string listener = Listeners.Owner,
             bool isFolder = false,
-            Guid? parentId = null)
+            Guid? parentId = null,
+            double? sortKey = null)
         {
             Id = id;
             Listener = listener;
             IsFolder = isFolder;
             _parentId = parentId;
+            _sortKey = sortKey;
             _name = name;
             _comment = comment;
             _isPublic = isPublic;

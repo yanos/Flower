@@ -70,7 +70,7 @@ public class PlaylistStoreTests : IsolatedHome
     {
         var track = new Track { Title = "A", Path = "/music/a.mp3" };
         var folder = Playlist.NewFolder("Rock");
-        var inside = new Playlist("Live", [track]) { ParentId = folder.Id };
+        var inside = new Playlist("Live", [track]) { ParentId = folder.Id, SortKey = 1.5 };
         var leaving = new Playlist("Studio", [track]) { ParentId = folder.Id };
 
         PlaylistRepo().Save([folder, inside, leaving]);
@@ -81,7 +81,9 @@ public class PlaylistStoreTests : IsolatedHome
         Assert.True(loaded["Rock"].IsFolder);
         Assert.False(loaded["Live"].IsFolder);
         Assert.Equal(folder.Id, loaded["Live"].ParentId);
+        Assert.Equal(1.5, loaded["Live"].SortKey);
         Assert.Null(loaded["Studio"].ParentId);
+        Assert.Null(loaded["Studio"].SortKey);
     }
 
     [Fact]

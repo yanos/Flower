@@ -223,6 +223,9 @@ public sealed class PlaylistManagementViewModel
             if (playlist.ParentId == folder?.Id)
                 continue;
 
+            // At the end of the folder it goes into: the place it had was
+            // among the playlists it left.
+            playlist.SortKey = null;
             playlist.ParentId = folder?.Id;
             moved = true;
         }
@@ -234,6 +237,18 @@ public sealed class PlaylistManagementViewModel
         RefreshSidebarItems();
         _host.ScheduleContentSync();
         return Task.CompletedTask;
+    }
+
+    // Dragged in the sidebar: these playlists into the folder (or the top
+    // level, for null) at index among what is there - see PlaylistTree.Place.
+    public void Place(IReadOnlyList<Playlist> playlists, Playlist? folder, int index)
+    {
+        if (!PlaylistTree.Place(playlists, folder, index, _library.Playlists))
+            return;
+
+        Reveal(folder);
+        RefreshSidebarItems();
+        _host.ScheduleContentSync();
     }
 
     // Whether the list on screen is made of this playlist's songs: it is

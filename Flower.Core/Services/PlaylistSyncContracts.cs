@@ -35,8 +35,11 @@ public sealed record PlaylistSyncPlaylistDto(
     // A folder (Playlist.IsFolder), which carries no tracks, and the folder
     // this playlist sits in. Moving a playlist is an edit of the playlist, so
     // it travels the way a rename does: a newer UpdatedAt with a new ParentId.
+    // Its place among its folder's playlists (Playlist.SortKey) travels the
+    // same way.
     bool IsFolder = false,
-    Guid? ParentId = null);
+    Guid? ParentId = null,
+    double? SortKey = null);
 
 // GET /api/flower/v1/playlists returns one of these describing the responding
 // device's current playlists. POST /api/flower/v1/playlists/apply sends one back:

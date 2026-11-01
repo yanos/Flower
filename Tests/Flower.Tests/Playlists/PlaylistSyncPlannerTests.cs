@@ -72,6 +72,21 @@ public class PlaylistSyncPlannerTests
         Assert.Equal(PlaylistSyncDecisionKind.AdoptRemote, Assert.Single(decisions).Kind);
     }
 
+    // And so is dragging it to a new place among the playlists beside it.
+    [Fact]
+    public void A_playlist_moved_to_a_new_place_is_a_change_to_carry()
+    {
+        var id = Guid.NewGuid();
+        var baseline = DateTimeOffset.UtcNow.AddMinutes(-10);
+        var local = new Playlist(id, "Favorites", new List<Track> { T("A") }, baseline);
+        var remote = new PlaylistSyncPlaylistDto(id, "Favorites", baseline.AddMinutes(5), new List<PlaylistSyncTrackDto> { Dto("A") }, SortKey: 2.5);
+
+        var decisions = PlaylistSyncPlanner.Plan(new List<Playlist> { local }, new List<PlaylistSyncPlaylistDto> { remote }, _ => baseline);
+
+        Assert.Equal(PlaylistSyncDecisionKind.AdoptRemote, Assert.Single(decisions).Kind);
+        Assert.Equal(2.5, PlaylistSyncMapper.ToPlaylist(remote, new List<Track>()).SortKey);
+    }
+
     // The same for a smart playlist, which is compared by name and rules
     // rather than by songs.
     [Fact]

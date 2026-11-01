@@ -18,7 +18,7 @@ public static class PlaylistSyncMapper
 {
     public static PlaylistSyncPlaylistDto ToDto(Playlist playlist) =>
         new(playlist.Id, playlist.Name, playlist.UpdatedAt, playlist.Tracks.Select(ToDto).ToList(), playlist.Rules,
-            playlist.IsFolder, playlist.ParentId);
+            playlist.IsFolder, playlist.ParentId, playlist.SortKey);
 
     // Track.RoundedSeconds, not a separate inline Math.Round - must agree with
     // Track.SyncKey's own rounding (see its doc comment) or a duration near a
@@ -72,7 +72,7 @@ public static class PlaylistSyncMapper
         }
 
         return new(dto.Id, dto.Name, tracks, dto.UpdatedAt, rules: dto.Rules, listener: listener,
-            isFolder: dto.IsFolder, parentId: dto.ParentId);
+            isFolder: dto.IsFolder, parentId: dto.ParentId, sortKey: dto.SortKey);
     }
 
     // What a server does with a manifest a device pushed to /playlists/apply,

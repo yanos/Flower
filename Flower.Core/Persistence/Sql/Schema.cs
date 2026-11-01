@@ -191,7 +191,11 @@ namespace Flower.Persistence.Sql
                 -- this database no longer has means the top level
                 -- (PlaylistTree), not a row to cascade or refuse.
                 is_folder  INTEGER NOT NULL DEFAULT 0,
-                parent_id  TEXT
+                parent_id  TEXT,
+
+                -- Where it stands among its folder's playlists - see
+                -- Playlist.SortKey. NULL is a playlist never placed.
+                sort_key   REAL
             );
 
             -- track_id is deliberately NOT a foreign key into tracks: a rescan

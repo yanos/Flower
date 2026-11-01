@@ -255,6 +255,19 @@
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="vm:SidebarItem">
                 <Panel>
+                  <!-- Where a dragged playlist would land (SidebarItem.DropEdge). -->
+                  <Border IsVisible="{Binding ShowsDropLineAbove}"
+                          Height="2" CornerRadius="1"
+                          VerticalAlignment="Top"
+                          Margin="{Binding DropLineMargin}"
+                          Background="{DynamicResource AppAccentBrush}"
+                          IsHitTestVisible="False"/>
+                  <Border IsVisible="{Binding ShowsDropLineBelow}"
+                          Height="2" CornerRadius="1"
+                          VerticalAlignment="Bottom"
+                          Margin="{Binding DropLineMargin}"
+                          Background="{DynamicResource AppAccentBrush}"
+                          IsHitTestVisible="False"/>
                   <!-- Highlighted while a dragged track hovers this playlist row -->
                   <Border Classes="serverCard"
                           IsVisible="{Binding IsServerCard}"

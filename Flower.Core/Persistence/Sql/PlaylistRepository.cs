@@ -25,7 +25,7 @@ namespace Flower.Persistence.Sql
             var playlists = new List<PlaylistRow>();
             using (var command = connection.CreateCommand())
             {
-                command.CommandText = "SELECT id, name, updated_at, comment, is_public, created_at, rules, listener, is_folder, parent_id FROM playlists;";
+                command.CommandText = "SELECT id, name, updated_at, comment, is_public, created_at, rules, listener, is_folder, parent_id, sort_key FROM playlists;";
                 using var reader = command.ExecuteReader();
                 while (reader.Read())
                 {
@@ -42,7 +42,8 @@ namespace Flower.Persistence.Sql
                         SmartPlaylistRulesJson.Read(reader.IsDBNull(6) ? null : reader.GetString(6)),
                         reader.GetString(7),
                         reader.GetInt64(8) != 0,
-                        reader.IsDBNull(9) ? null : EntityId.FromKey(reader.GetString(9))));
+                        reader.IsDBNull(9) ? null : EntityId.FromKey(reader.GetString(9)),
+                        reader.IsDBNull(10) ? null : reader.GetDouble(10)));
                 }
             }
 
@@ -87,7 +88,8 @@ namespace Flower.Persistence.Sql
                     row.Rules,
                     row.Listener,
                     row.IsFolder,
-                    row.ParentId));
+                    row.ParentId,
+                    row.SortKey));
             }
 
             return result;
@@ -103,7 +105,8 @@ namespace Flower.Persistence.Sql
             SmartPlaylistRules? Rules,
             string Listener,
             bool IsFolder,
-            Guid? ParentId);
+            Guid? ParentId,
+            double? SortKey);
 
         // Replaces the stored playlist set with the one given, in a single
         // transaction. Membership is rewritten wholesale per playlist rather
@@ -123,15 +126,16 @@ namespace Flower.Persistence.Sql
             {
                 upsert.Transaction = transaction;
                 upsert.CommandText = """
-                    INSERT INTO playlists (id, name, updated_at, comment, is_public, created_at, rules, listener, is_folder, parent_id)
-                    VALUES ($id, $name, $updated_at, $comment, $is_public, $created_at, $rules, $listener, $is_folder, $parent_id)
+                    INSERT INTO playlists (id, name, updated_at, comment, is_public, created_at, rules, listener, is_folder, parent_id, sort_key)
+                    VALUES ($id, $name, $updated_at, $comment, $is_public, $created_at, $rules, $listener, $is_folder, $parent_id, $sort_key)
                     ON CONFLICT (id) DO UPDATE SET
                         name = excluded.name,
                         updated_at = excluded.updated_at,
                         comment = excluded.comment,
                         is_public = excluded.is_public,
                         rules = excluded.rules,
-                        parent_id = excluded.parent_id;
+                        parent_id = excluded.parent_id,
+                        sort_key = excluded.sort_key;
                     -- created_at, listener and is_folder are not in the DO
                     -- UPDATE: each is set once, when the row is first
                     -- written, and Playlist has no way to change any of them
@@ -153,6 +157,7 @@ namespace Flower.Persistence.Sql
                 var upsertListener = upsert.Parameters.Add("$listener", SqliteType.Text);
                 var upsertIsFolder = upsert.Parameters.Add("$is_folder", SqliteType.Integer);
                 var upsertParentId = upsert.Parameters.Add("$parent_id", SqliteType.Text);
+                var upsertSortKey = upsert.Parameters.Add("$sort_key", SqliteType.Real);
 
                 clear.Transaction = transaction;
                 clear.CommandText = "DELETE FROM playlist_tracks WHERE playlist_id = $playlist_id;";
@@ -189,6 +194,7 @@ namespace Flower.Persistence.Sql
                     upsertListener.Value = playlist.Listener;
                     upsertIsFolder.Value = playlist.IsFolder ? 1 : 0;
                     upsertParentId.Value = playlist.ParentId is { } parentId ? parentId.ToKey() : DBNull.Value;
+                    upsertSortKey.Value = playlist.SortKey is { } sortKey ? sortKey : DBNull.Value;
                     upsert.ExecuteNonQuery();
 
                     clearId.Value = id;

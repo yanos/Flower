@@ -121,7 +121,7 @@ public static class PlaylistSyncPlanner
             if (l.IsSmart || r.Rules != null)
             {
                 var smartKind =
-                    l.Name == r.Name && l.ParentId == r.ParentId && SmartPlaylistRules.Equivalent(l.Rules, r.Rules)
+                    l.Name == r.Name && l.ParentId == r.ParentId && l.SortKey == r.SortKey && SmartPlaylistRules.Equivalent(l.Rules, r.Rules)
                         ? PlaylistSyncDecisionKind.NoChange
                     : l.UpdatedAt != r.UpdatedAt
                         ? l.UpdatedAt > r.UpdatedAt
@@ -181,7 +181,7 @@ public static class PlaylistSyncPlanner
     // hold, and is not a difference it can do anything about.
     private static bool ContentEquals(Playlist local, PlaylistSyncPlaylistDto remote, PlaylistTrackIndex? index)
     {
-        if (local.Name != remote.Name || local.ParentId != remote.ParentId)
+        if (local.Name != remote.Name || local.ParentId != remote.ParentId || local.SortKey != remote.SortKey)
             return false;
 
         if (index != null)

@@ -124,6 +124,12 @@ public partial class MainView : UserControl
         // Tunnel, as SubList's below: a press on a heading is stopped before
         // ListBoxItem's own handling selects it.
         SidebarList.AddHandler(PointerPressedEvent, SidebarList_PointerPressed, RoutingStrategies.Tunnel);
+        // A playlist dragged to a new place or into a folder. Handled events
+        // too: ListBoxItem marks the press handled as it selects the row.
+        SidebarList.AddHandler(PointerPressedEvent, PlaylistDrag_PointerPressed, RoutingStrategies.Tunnel, handledEventsToo: true);
+        SidebarList.AddHandler(PointerMovedEvent, PlaylistDrag_PointerMoved, RoutingStrategies.Tunnel, handledEventsToo: true);
+        SidebarList.AddHandler(PointerReleasedEvent, PlaylistDrag_PointerReleased, RoutingStrategies.Tunnel, handledEventsToo: true);
+        SidebarList.AddHandler(PointerCaptureLostEvent, PlaylistDrag_PointerCaptureLost, RoutingStrategies.Tunnel, handledEventsToo: true);
         SubList.ContextRequested += SubList_ContextRequested;
         NowPlayingInfo.ContextRequested += NowPlaying_ContextRequested;
 
@@ -1616,6 +1622,135 @@ public partial class MainView : UserControl
         DragGhost.IsVisible = false;
         NewPlaylistDropZone.IsVisible = false;
         SetDropTargetHighlight(null);
+        SetPlaylistDropLine(null);
+    }
+
+    // ── Drag a playlist to a new place in the sidebar ──────────────────────────
+    //
+    // On plain pointer capture, like the track drag above and for its reason.
+    // The press selects the row as it always does; past a few pixels it is a
+    // drag instead, and the row goes where it is let go (PlaylistDropPlacement,
+    // then MainViewModel.PlacePlaylists). Escape-free: letting go anywhere off
+    // the playlists does nothing.
+
+    private const double PlaylistDragThreshold = 4.0;
+    private Playlist? _pressedPlaylist;
+    private Point _playlistPressPoint;
+    private bool _isDraggingPlaylist;
+    private PlaylistDrop? _playlistDrop;
+    private SidebarItem? _playlistDropLineRow;
+
+    private void PlaylistDrag_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        _pressedPlaylist = null;
+        if (!e.GetCurrentPoint(SidebarList).Properties.IsLeftButtonPressed || e.KeyModifiers != KeyModifiers.None)
+            return;
+        if (e.Source is not Visual source || source.FindAncestorOfType<Button>(includeSelf: true) is not null)
+            return;
+        if (source.FindAncestorOfType<ListBoxItem>(includeSelf: true)?.DataContext is not SidebarItem
+            { Kind: SidebarItemKind.Playlist, IsEditing: false, Playlist: { } playlist })
+            return;
+
+        _pressedPlaylist = playlist;
+        _playlistPressPoint = e.GetPosition(SidebarList);
+    }
+
+    private void PlaylistDrag_PointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (_pressedPlaylist is not { } moving || _viewModel is not { } vm)
+            return;
+
+        var at = e.GetPosition(SidebarList);
+        if (!_isDraggingPlaylist)
+        {
+            if (!e.GetCurrentPoint(SidebarList).Properties.IsLeftButtonPressed)
+            {
+                _pressedPlaylist = null;
+                return;
+            }
+            if (Math.Abs(at.X - _playlistPressPoint.X) < PlaylistDragThreshold
+                && Math.Abs(at.Y - _playlistPressPoint.Y) < PlaylistDragThreshold)
+                return;
+
+            _isDraggingPlaylist = true;
+            e.Pointer.Capture(SidebarList);
+        }
+
+        _playlistDrop = HitTestPlaylistDrop(moving, at, vm);
+        ShowDragGhost(SidebarList, at, moving.Name);
+        SetPlaylistDropLine(_playlistDrop);
+        e.Handled = true;
+    }
+
+    private void PlaylistDrag_PointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (!_isDraggingPlaylist)
+        {
+            _pressedPlaylist = null;
+            return;
+        }
+
+        var moving = _pressedPlaylist;
+        var drop = _playlistDrop;
+        EndPlaylistDrag();
+        e.Pointer.Capture(null);
+        e.Handled = true;
+
+        if (moving != null && drop is { } d)
+            _viewModel?.PlacePlaylists([moving], d.Folder, d.Index);
+    }
+
+    private void PlaylistDrag_PointerCaptureLost(object? sender, PointerCaptureLostEventArgs e)
+    {
+        if (_isDraggingPlaylist)
+            EndPlaylistDrag();
+    }
+
+    private void EndPlaylistDrag()
+    {
+        _pressedPlaylist = null;
+        _isDraggingPlaylist = false;
+        _playlistDrop = null;
+        ResetDragVisuals();
+    }
+
+    private PlaylistDrop? HitTestPlaylistDrop(Playlist moving, Point at, MainViewModel vm)
+    {
+        if (!new Rect(SidebarList.Bounds.Size).Contains(at))
+            return null;
+
+        var all = vm.Library.Playlists;
+        var container = (SidebarList.InputHitTest(at) as Visual)?.FindAncestorOfType<ListBoxItem>(includeSelf: true);
+        if (container?.DataContext is SidebarItem { Kind: SidebarItemKind.Playlist, Playlist: { } over } row
+            && SidebarList.TranslatePoint(at, container) is { } inRow
+            && container.Bounds.Height > 0)
+            return PlaylistDropPlacement.For(moving, over, row.IsExpanded, inRow.Y / container.Bounds.Height, all);
+
+        // Below the last playlist, in the room above the server's section.
+        var lastRow = vm.SidebarItems.LastOrDefault(i => i.Kind == SidebarItemKind.Playlist);
+        if (lastRow != null
+            && SidebarList.ContainerFromItem(lastRow) is Control last
+            && at.Y >= last.Bounds.Bottom
+            && GetPlaylistsDropBand() is { } band && at.Y < band.Bottom)
+            return PlaylistDropPlacement.AtEnd(moving, all);
+
+        return null;
+    }
+
+    // The line at the row the drop would land beside, or for into a folder
+    // the folder's row lit up the way a track dragged over it lights it.
+    private void SetPlaylistDropLine(PlaylistDrop? drop)
+    {
+        var row = drop is { } d ? _viewModel?.SidebarItems.FirstOrDefault(i => i.Playlist == d.Row) : null;
+        var edge = drop?.Edge ?? PlaylistDropEdge.None;
+
+        if (_playlistDropLineRow != null && _playlistDropLineRow != row)
+            _playlistDropLineRow.DropEdge = PlaylistDropEdge.None;
+        _playlistDropLineRow = row;
+        if (row != null)
+            row.DropEdge = edge == PlaylistDropEdge.Into ? PlaylistDropEdge.None : edge;
+
+        SetDropTargetHighlight(edge == PlaylistDropEdge.Into ? row : null);
     }
 
     // ── Context menus ─────────────────────────────────────────────────────────

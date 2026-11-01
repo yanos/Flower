@@ -2700,6 +2700,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     public Task MovePlaylists(IReadOnlyList<Playlist> playlists, Playlist? folder) => Playlists.Move(playlists, folder);
 
+    public void PlacePlaylists(IReadOnlyList<Playlist> playlists, Playlist? folder, int index) => Playlists.Place(playlists, folder, index);
+
     // The mobile flow: the name is typed before anything is created - see
     // PlaylistManagementViewModel.CreateNamed.
     public Task CreatePlaylistNamed(string name, IEnumerable<Track> tracks) => Playlists.CreateNamed(name, tracks);

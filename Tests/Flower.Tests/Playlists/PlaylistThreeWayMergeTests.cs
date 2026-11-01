@@ -71,6 +71,18 @@ public class PlaylistThreeWayMergeTests
     }
 
     [Fact]
+    public void A_new_place_on_one_side_and_an_addition_on_the_other_are_both_kept()
+    {
+        var ours = Version("ABC", minutesLater: 1);
+        ours.SortKey = 3;
+
+        var merged = PlaylistThreeWayMerge.Merge(PlannedPlaylist.Of(Version("ABC")), ours, Version("ABCD", minutesLater: 2));
+
+        Assert.Equal(3, merged?.SortKey);
+        Assert.Equal("ABCD", string.Concat(merged!.Tracks.Select(t => t.Title)));
+    }
+
+    [Fact]
     public void Both_sides_moving_it_to_different_folders_cannot_be_combined()
     {
         var ours = Version("ABC", minutesLater: 1);

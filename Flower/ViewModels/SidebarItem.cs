@@ -190,6 +190,34 @@ public class SidebarItem : ViewModelBase
     // SidebarRenameService.CommitAsync.
     public bool IsNewPlaylist { get; set; }
 
+    // The line a playlist dragged over the sidebar would land at: along the
+    // top or the bottom of this row, indented as deep as the place it marks
+    // (PlaylistDropPlacement). Into a folder lights the whole row instead,
+    // with IsDropTarget.
+    private PlaylistDropEdge _dropEdge;
+    public PlaylistDropEdge DropEdge
+    {
+        get => _dropEdge;
+        set
+        {
+            if (_dropEdge == value)
+                return;
+            _dropEdge = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(ShowsDropLineAbove));
+            OnPropertyChanged(nameof(ShowsDropLineBelow));
+            OnPropertyChanged(nameof(DropLineMargin));
+        }
+    }
+
+    public bool ShowsDropLineAbove => DropEdge == PlaylistDropEdge.Above;
+    public bool ShowsDropLineBelow => DropEdge == PlaylistDropEdge.Below;
+
+    // Under an open folder the line marks its first place inside, so it is
+    // indented one step further.
+    public Thickness DropLineMargin =>
+        new(12 + (Depth + (DropEdge == PlaylistDropEdge.Below && IsFolder && IsExpanded ? 1 : 0)) * 16, 0, 8, 0);
+
     // Highlighted while a dragged track is hovering this row during a
     // drag-onto-playlist gesture - see MainView.axaml.cs's ContentGrid_DragOver.
     private bool _isDropTarget;
