@@ -150,7 +150,7 @@ public static class MediaEndpoints
     // has it, which is the catalog's Track.Artists.
     //
     // Only for an artist this library has songs by, and checked against
-    // their albums here: the device says who, and the server decides which
+    // their albums and songs here: the device says who, and the server decides which
     // of Deezer's artists of that name it is - and a paired device cannot use
     // the server to look up whatever name it likes.
     //
@@ -167,13 +167,8 @@ public static class MediaEndpoints
         if (tracks.Count == 0)
             return Problems.NotFound();
 
-        var albums = tracks
-            .Select(t => t.Album)
-            .OfType<string>()
-            .Where(album => album.Length > 0)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        var picture = await online.ArtistPictureAsync(artist, albums, context.RequestAborted);
+        var picture = await online.ArtistPictureAsync(
+            artist, DistinctNames(tracks.Select(t => t.Album)), DistinctNames(tracks.Select(t => t.Title)), context.RequestAborted);
         if (picture == null)
             return Problems.Of(StatusCodes.Status503ServiceUnavailable, ProblemCodes.Unavailable);
 
@@ -181,6 +176,13 @@ public static class MediaEndpoints
             ? Results.Bytes(picture, mimeType)
             : Problems.NotFound();
     }
+
+    private static List<string> DistinctNames(IEnumerable<string?> names) =>
+        names
+            .OfType<string>()
+            .Where(name => name.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
     // Which files an art request for this id is about: every track on an album
     // for an album id, or the one track for a song id. Shared with the batch

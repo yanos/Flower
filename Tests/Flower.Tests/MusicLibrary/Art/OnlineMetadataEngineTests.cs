@@ -38,6 +38,8 @@ public sealed class OnlineMetadataEngineTests : IDisposable
             {"data":[{"id":399,"name":"Radiohead","picture_xl":"https://cdn.test/radiohead.jpg"}]}
             """;
         public string Albums = """{"data":[{"title":"OK Computer"},{"title":"Kid A"}]}""";
+        public string Songs = """{"data":[]}""";
+        public int SongSearches;
         public bool Refuse;
         public int Requests;
 
@@ -52,6 +54,11 @@ public sealed class OnlineMetadataEngineTests : IDisposable
                 return Task.FromResult(Json(Search));
             if (path.EndsWith("/albums", StringComparison.Ordinal))
                 return Task.FromResult(Json(Albums));
+            if (path == "/search/track")
+            {
+                Interlocked.Increment(ref SongSearches);
+                return Task.FromResult(Json(Songs));
+            }
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(Picture) });
         }
 
@@ -69,17 +76,18 @@ public sealed class OnlineMetadataEngineTests : IDisposable
         new(new HttpClient(deezer), _cache, enabled ?? (() => true), NullLogger<OnlineMetadataEngine>.Instance, clock);
 
     private static readonly IReadOnlyCollection<string> TheirAlbums = ["OK Computer"];
+    private static readonly IReadOnlyCollection<string> TheirSongs = ["Karma Police", "Airbag"];
 
     [Fact]
     public async Task A_picture_found_is_kept_and_not_looked_up_again()
     {
         var deezer = new FakeDeezer();
 
-        Assert.Equal(Picture, await Engine(deezer).ArtistPictureAsync("Radiohead", TheirAlbums));
+        Assert.Equal(Picture, await Engine(deezer).ArtistPictureAsync("Radiohead", TheirAlbums, TheirSongs));
         var asked = deezer.Requests;
 
         // A new engine, as after a restart: the picture is on disk.
-        Assert.Equal(Picture, await Engine(deezer).ArtistPictureAsync("radiohead", TheirAlbums));
+        Assert.Equal(Picture, await Engine(deezer).ArtistPictureAsync("radiohead", TheirAlbums, TheirSongs));
         Assert.Equal(asked, deezer.Requests);
     }
 
@@ -90,25 +98,46 @@ public sealed class OnlineMetadataEngineTests : IDisposable
         var clock = new Clock();
         var engine = Engine(deezer, clock: clock);
 
-        Assert.Empty((await engine.ArtistPictureAsync("Nobody Knows Them", []))!);
-        Assert.Empty((await engine.ArtistPictureAsync("Nobody Knows Them", []))!);
+        Assert.Empty((await engine.ArtistPictureAsync("Nobody Knows Them", [], []))!);
+        Assert.Empty((await engine.ArtistPictureAsync("Nobody Knows Them", [], []))!);
         Assert.Equal(1, deezer.Requests);
 
         clock.Now += OnlineMetadataEngine.MissLifetime + TimeSpan.FromDays(1);
-        await engine.ArtistPictureAsync("Nobody Knows Them", []);
+        await engine.ArtistPictureAsync("Nobody Knows Them", [], []);
         Assert.Equal(2, deezer.Requests);
     }
 
     [Fact]
-    public async Task A_namesake_whose_albums_the_library_lacks_is_remembered_as_no_picture()
+    public async Task A_namesake_whose_albums_and_songs_the_library_lacks_is_remembered_as_no_picture()
     {
-        var deezer = new FakeDeezer { Albums = """{"data":[{"title":"Somebody Else's Record"}]}""" };
+        // Nor are any of the library's songs filed under them.
+        var deezer = new FakeDeezer
+        {
+            Albums = """{"data":[{"title":"Somebody Else's Record"}]}""",
+            Songs = """{"data":[{"title":"Karma Police","artist":{"id":7,"name":"A Tribute Band"}}]}""",
+        };
         var engine = Engine(deezer);
 
-        Assert.Empty((await engine.ArtistPictureAsync("Radiohead", TheirAlbums))!);
+        Assert.Empty((await engine.ArtistPictureAsync("Radiohead", TheirAlbums, TheirSongs))!);
         var asked = deezer.Requests;
-        Assert.Empty((await engine.ArtistPictureAsync("Radiohead", TheirAlbums))!);
+        Assert.Empty((await engine.ArtistPictureAsync("Radiohead", TheirAlbums, TheirSongs))!);
         Assert.Equal(asked, deezer.Requests);
+    }
+
+    // Albums that say nothing - a soundtrack, a label Deezer lacks - and a
+    // song of theirs filed under them: that is enough.
+    [Fact]
+    public async Task An_artist_known_only_from_albums_Deezer_files_elsewhere_is_found_by_a_song()
+    {
+        var deezer = new FakeDeezer
+        {
+            Albums = """{"data":[{"title":"Pablo Honey"}]}""",
+            Songs = """{"data":[{"title":"Karma Police","artist":{"id":399,"name":"Radiohead"}}]}""",
+        };
+
+        Assert.Equal(Picture, await Engine(deezer).ArtistPictureAsync("Radiohead", ["Kill Bill Volume 1"], TheirSongs));
+        // The first song settled it; the second was never searched for.
+        Assert.Equal(1, deezer.SongSearches);
     }
 
     [Fact]
@@ -117,10 +146,10 @@ public sealed class OnlineMetadataEngineTests : IDisposable
         var deezer = new FakeDeezer { Refuse = true };
         var engine = Engine(deezer);
 
-        Assert.Null(await engine.ArtistPictureAsync("Radiohead", TheirAlbums));
+        Assert.Null(await engine.ArtistPictureAsync("Radiohead", TheirAlbums, TheirSongs));
 
         deezer.Refuse = false;
-        Assert.Equal(Picture, await engine.ArtistPictureAsync("Radiohead", TheirAlbums));
+        Assert.Equal(Picture, await engine.ArtistPictureAsync("Radiohead", TheirAlbums, TheirSongs));
     }
 
     [Fact]
@@ -129,12 +158,12 @@ public sealed class OnlineMetadataEngineTests : IDisposable
         var deezer = new FakeDeezer();
         var on = true;
         var engine = Engine(deezer, () => on);
-        await engine.ArtistPictureAsync("Radiohead", TheirAlbums);
+        await engine.ArtistPictureAsync("Radiohead", TheirAlbums, TheirSongs);
 
         on = false;
         var asked = deezer.Requests;
-        Assert.Equal(Picture, await engine.ArtistPictureAsync("Radiohead", TheirAlbums));
-        Assert.Empty((await engine.ArtistPictureAsync("Somebody New", []))!);
+        Assert.Equal(Picture, await engine.ArtistPictureAsync("Radiohead", TheirAlbums, TheirSongs));
+        Assert.Empty((await engine.ArtistPictureAsync("Somebody New", [], []))!);
         Assert.Equal(asked, deezer.Requests);
     }
 
@@ -145,8 +174,8 @@ public sealed class OnlineMetadataEngineTests : IDisposable
         var engine = Engine(deezer);
 
         var both = await Task.WhenAll(
-            engine.ArtistPictureAsync("Radiohead", TheirAlbums),
-            engine.ArtistPictureAsync("Radiohead", TheirAlbums));
+            engine.ArtistPictureAsync("Radiohead", TheirAlbums, TheirSongs),
+            engine.ArtistPictureAsync("Radiohead", TheirAlbums, TheirSongs));
 
         Assert.All(both, picture => Assert.Equal(Picture, picture));
         // One search, one artist's albums, one picture.

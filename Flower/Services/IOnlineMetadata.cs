@@ -31,13 +31,18 @@ public interface IOnlineMetadata
 public sealed class LocalOnlineMetadata(OnlineMetadataEngine engine) : IOnlineMetadata
 {
     public Task<byte[]?> ArtistPictureAsync(string artist, IReadOnlyList<Track> tracks, CancellationToken ct = default) =>
-        engine.ArtistPictureAsync(artist, AlbumsOf(tracks), ct);
+        engine.ArtistPictureAsync(artist, AlbumsOf(tracks), SongsOf(tracks), ct);
 
-    public static IReadOnlyList<string> AlbumsOf(IReadOnlyList<Track> tracks) =>
-        tracks
-            .Select(t => t.Album)
+    // What the engine compares a namesake's records with - the same two the
+    // server's artist-image route hands it (MediaEndpoints.GetArtistImage).
+    public static IReadOnlyList<string> AlbumsOf(IReadOnlyList<Track> tracks) => DistinctNames(tracks.Select(t => t.Album));
+
+    public static IReadOnlyList<string> SongsOf(IReadOnlyList<Track> tracks) => DistinctNames(tracks.Select(t => t.Title));
+
+    private static List<string> DistinctNames(IEnumerable<string?> names) =>
+        names
             .OfType<string>()
-            .Where(album => album.Length > 0)
+            .Where(name => name.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 }

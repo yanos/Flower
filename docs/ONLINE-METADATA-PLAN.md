@@ -151,7 +151,14 @@ gets the tests:
 - **Artists** with a shared name are told apart by asking the search
   for one whose albums overlap the library's albums by that artist. An artist
   picture of the wrong person is the most visible mistake this feature can
-  make.
+  make. When no album overlaps, up to three of the library's song titles are
+  searched for (`/search/track`, plain query — the `artist:"" track:""`
+  syntax answered nothing for songs Deezer has, October 2026), and a song
+  filed under the candidate is the same evidence. Without that, an artist the
+  library has only on a compilation (Al Hirt on *Kill Bill*, everyone on an
+  *Éthiopiques* set) or on an album Deezer lacks (Arvo Pärt's *Tabula Rasa*)
+  never got a picture: on the first server's library that was most of the
+  misses.
 
 Nothing found by name is written into a file automatically, for the reason
 `OnlineCoverArt` gives: a name match is sometimes wrong, and a file is the

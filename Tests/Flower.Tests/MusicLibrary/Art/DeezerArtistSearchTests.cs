@@ -117,4 +117,49 @@ public sealed class DeezerArtistSearchTests
         Assert.Equal(1, DeezerArtistSearch.Choose([only], [], [])?.Id);
         Assert.Null(DeezerArtistSearch.Choose([only, other], [], []));
     }
+
+    // /search/track, trimmed: a song and whose it is.
+    [Fact]
+    public void A_track_search_is_read_as_each_song_and_whose_it_is()
+    {
+        var found = DeezerArtistSearch.ParseSongs("""
+            {"data":[
+              {"id":1,"title":"Green Hornet Theme (From the TV Series \"The Green Hornet\")","artist":{"id":4623,"name":"Al Hirt"}},
+              {"id":2,"title":"No Artist"}
+            ],"total":2}
+            """);
+
+        Assert.Equal([new DeezerArtistSearch.Song(4623, "Green Hornet Theme (From the TV Series \"The Green Hornet\")")], found);
+    }
+
+    [Fact]
+    public void Of_two_artists_with_one_name_the_one_a_library_song_is_filed_under_is_chosen()
+    {
+        DeezerArtistSearch.Artist namesake = new(1, "Al Hirt", "https://example.test/a.jpg");
+        DeezerArtistSearch.Artist trumpeter = new(4623, "Al Hirt", "https://example.test/b.jpg");
+        IReadOnlyList<DeezerArtistSearch.Song> found =
+        [
+            new(383411, "Green Hornet"),
+            new(4623, "Green Hornet Theme (From the TV Series)"),
+        ];
+
+        Assert.Equal(4623, DeezerArtistSearch.ChooseBySongs([namesake, trumpeter], found, ["Green Hornet"])?.Id);
+    }
+
+    [Fact]
+    public void A_song_of_the_name_under_somebody_else_is_no_evidence()
+    {
+        DeezerArtistSearch.Artist only = new(4623, "Al Hirt", "https://example.test/b.jpg");
+
+        // Al Hirt & Ace Cannon, a different Deezer artist, has it too.
+        Assert.Null(DeezerArtistSearch.ChooseBySongs([only], [new(383411, "Green Hornet")], ["Green Hornet"]));
+    }
+
+    [Fact]
+    public void Songs_are_searched_for_once_each_and_only_so_many()
+    {
+        var songs = DeezerArtistSearch.SongsToSearch(["Intro", "intro", "Intro (Live)", "", "Fratres", "Cantus", "Tabula Rasa"]);
+
+        Assert.Equal(["Intro", "Fratres", "Cantus"], songs);
+    }
 }

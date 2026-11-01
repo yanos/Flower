@@ -66,14 +66,15 @@ public sealed class OnlineMetadataEngine
     // so is not remembered. The same three answers AlbumArtLoader gives for
     // a cover.
     //
-    // albums are the names of the library's albums by this artist, which is
-    // how the right one of several same-named artists is picked
-    // (DeezerArtistSearch.Choose).
+    // albums and songs are the names of the library's albums and songs by
+    // this artist, which is how the right one of several same-named artists
+    // is picked (DeezerArtistSearch.Choose, then ChooseBySongs).
     //
     // ct lets a caller stop waiting, not the lookup stop: another caller may
     // be waiting on the same one, and a picture found is worth keeping for
     // the next time the row is drawn.
-    public async Task<byte[]?> ArtistPictureAsync(string artist, IReadOnlyCollection<string> albums, CancellationToken ct = default)
+    public async Task<byte[]?> ArtistPictureAsync(
+        string artist, IReadOnlyCollection<string> albums, IReadOnlyCollection<string> songs, CancellationToken ct = default)
     {
         var key = MetadataNames.Normalize(artist);
         if (key.Length == 0)
@@ -85,15 +86,16 @@ public sealed class OnlineMetadataEngine
         if (state == ArtistPictureCache.State.None || !_enabled())
             return [];
 
-        var lookup = _looking.GetOrAdd(key, _ => new Lazy<Task<byte[]?>>(() => LookUpArtistPictureAsync(artist, key, albums)));
+        var lookup = _looking.GetOrAdd(key, _ => new Lazy<Task<byte[]?>>(() => LookUpArtistPictureAsync(artist, key, albums, songs)));
         return await lookup.Value.WaitAsync(ct);
     }
 
-    private async Task<byte[]?> LookUpArtistPictureAsync(string artist, string key, IReadOnlyCollection<string> albums)
+    private async Task<byte[]?> LookUpArtistPictureAsync(
+        string artist, string key, IReadOnlyCollection<string> albums, IReadOnlyCollection<string> songs)
     {
         try
         {
-            return await TryLookUpArtistPictureAsync(artist, key, albums);
+            return await TryLookUpArtistPictureAsync(artist, key, albums, songs);
         }
         finally
         {
@@ -103,11 +105,12 @@ public sealed class OnlineMetadataEngine
         }
     }
 
-    private async Task<byte[]?> TryLookUpArtistPictureAsync(string artist, string key, IReadOnlyCollection<string> albums)
+    private async Task<byte[]?> TryLookUpArtistPictureAsync(
+        string artist, string key, IReadOnlyCollection<string> albums, IReadOnlyCollection<string> songs)
     {
         try
         {
-            var url = await FindArtistPictureAsync(artist, albums);
+            var url = await FindArtistPictureAsync(artist, albums, songs);
             if (url == null)
             {
                 _logger.LogInformation("Deezer has no picture of {Artist} that could be told apart from a namesake", artist);
@@ -133,7 +136,8 @@ public sealed class OnlineMetadataEngine
     // The picture's address, or null for none. Searched by the whole name,
     // so a collaboration ("Hangedup & Tony Conrad") finds nobody of that
     // exact name and keeps its collage.
-    private async Task<string?> FindArtistPictureAsync(string artist, IReadOnlyCollection<string> albums)
+    private async Task<string?> FindArtistPictureAsync(
+        string artist, IReadOnlyCollection<string> albums, IReadOnlyCollection<string> songs)
     {
         var found = DeezerArtistSearch.ParseArtists(
             await GetDeezerAsync($"/search/artist?q={Uri.EscapeDataString(artist)}&limit=10"));
@@ -151,7 +155,23 @@ public sealed class OnlineMetadataEngine
                     await GetDeezerAsync($"/artist/{candidate.Id}/albums?limit=100")));
         }
 
-        return DeezerArtistSearch.Choose(candidates, candidateAlbums, albums)?.PictureUrl;
+        if (DeezerArtistSearch.Choose(candidates, candidateAlbums, albums) is { } byAlbum)
+            return byAlbum.PictureUrl;
+
+        // The albums decided nothing - every one of them a compilation, or
+        // one Deezer does not carry - so the songs are asked about instead,
+        // one search each, until one is found under a candidate. A plain
+        // search rather than artist:"" track:"": Deezer's advanced syntax
+        // answered nothing at all for songs it has (October 2026).
+        var songsFound = new List<DeezerArtistSearch.Song>();
+        foreach (var song in DeezerArtistSearch.SongsToSearch(songs))
+        {
+            songsFound.AddRange(DeezerArtistSearch.ParseSongs(
+                await GetDeezerAsync($"/search/track?q={Uri.EscapeDataString($"{artist} {song}")}&limit=25")));
+            if (DeezerArtistSearch.ChooseBySongs(candidates, songsFound, songs) is { } bySong)
+                return bySong.PictureUrl;
+        }
+        return null;
     }
 
     private async Task<string> GetDeezerAsync(string pathAndQuery)

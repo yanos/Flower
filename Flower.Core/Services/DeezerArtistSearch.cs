@@ -15,7 +15,10 @@ namespace Flower.Services;
 // "Nirvana", Deezer answers with Nirvana and with Nirvana (UK), whose names
 // normalise alike, and for "Ohmme" with two different acts both called Ohmme.
 // What tells them apart is the records: the artist kept is the one whose
-// albums on Deezer include albums the library has by them (Choose).
+// albums on Deezer include albums the library has by them (Choose) - or,
+// failing that, whose songs on Deezer include songs the library has by them
+// (ChooseBySongs), for an artist the library has only on compilations, or on
+// an album Deezer does not carry.
 //
 // Read by hand rather than deserialized, so the trimmed NativeAOT build needs
 // no contract for it - the same as OnlineCoverArt's parsers.
@@ -63,6 +66,29 @@ public static class DeezerArtistSearch
             .ToList();
     }
 
+    // The songs a track search answered with, each with whose it is - from
+    // /search/track, for ChooseBySongs.
+    public sealed record Song(long ArtistId, string Title);
+
+    public static IReadOnlyList<Song> ParseSongs(string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        ThrowIfRefused(doc.RootElement);
+        if (!doc.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
+            return [];
+
+        var found = new List<Song>();
+        foreach (var track in data.EnumerateArray())
+        {
+            if (StringOf(track, "title") is not { } title
+                || !track.TryGetProperty("artist", out var artist)
+                || !artist.TryGetProperty("id", out var idProp) || !idProp.TryGetInt64(out var id))
+                continue;
+            found.Add(new Song(id, title));
+        }
+        return found;
+    }
+
     // The ones worth looking into: named as the library names them, once
     // normalised (MetadataNames.Normalize - case, accents, "The" kept, a
     // bracketed "(UK)" dropped), and with a picture to show. In Deezer's
@@ -102,7 +128,7 @@ public static class DeezerArtistSearch
             .Select((candidate, order) => (
                 candidate,
                 order,
-                shared: order < candidateAlbums.Count ? candidateAlbums[order].Count(title => SameAlbum(title, wanted)) : 0))
+                shared: order < candidateAlbums.Count ? candidateAlbums[order].Count(title => SameName(title, wanted)) : 0))
             .Where(c => c.shared > 0)
             .OrderByDescending(c => c.shared)
             .ThenBy(c => c.order)
@@ -110,13 +136,57 @@ public static class DeezerArtistSearch
             .FirstOrDefault();
     }
 
-    // One of the library's albums, by its normalised name, or one whose name
-    // holds the other's - "OK Computer OKNOTOK 1997 2017" is OK Computer. Not
-    // for a name too short to mean anything inside another one: "Up" is in a
-    // great many titles.
+    // How many of the library's song titles are searched for when the albums
+    // decided nothing, each costing a request. One found is enough, so this
+    // is only how long to keep trying.
+    public const int MaxSongSearches = 3;
+
+    // The candidate the most of whose songs, as track searches found them
+    // (found), the library has by this artist - or null when none has any.
+    // The same evidence as Choose's, a song at a time: what decides is that
+    // the song is filed under that very artist on Deezer, not only that a
+    // song of the name exists. It is what finds Al Hirt from his one song on
+    // the Kill Bill soundtrack, and Arvo Pärt from Fratres when the
+    // library's album of it is one Deezer lacks.
+    public static Artist? ChooseBySongs(
+        IReadOnlyList<Artist> candidates, IReadOnlyList<Song> found, IReadOnlyCollection<string> librarySongs)
+    {
+        var wanted = librarySongs
+            .Select(MetadataNames.Normalize)
+            .Where(name => name.Length > 0)
+            .ToHashSet(StringComparer.Ordinal);
+        if (wanted.Count == 0)
+            return null;
+
+        return candidates
+            .Select((candidate, order) => (
+                candidate,
+                order,
+                shared: found.Count(song => song.ArtistId == candidate.Id && SameName(song.Title, wanted))))
+            .Where(c => c.shared > 0)
+            .OrderByDescending(c => c.shared)
+            .ThenBy(c => c.order)
+            .Select(c => c.candidate)
+            .FirstOrDefault();
+    }
+
+    // The songs worth searching for, in the library's order: distinct once
+    // normalised, so "Intro" and "Intro (Live)" cost one search.
+    public static IReadOnlyList<string> SongsToSearch(IReadOnlyCollection<string> librarySongs) =>
+        librarySongs
+            .Where(title => MetadataNames.Normalize(title).Length > 0)
+            .DistinctBy(MetadataNames.Normalize, StringComparer.Ordinal)
+            .Take(MaxSongSearches)
+            .ToList();
+
+    // One of the library's albums or songs, by its normalised name, or one
+    // whose name holds the other's - "OK Computer OKNOTOK 1997 2017" is OK
+    // Computer, and "Green Hornet Theme (From ...)" is Green Hornet. Not for a
+    // name too short to mean anything inside another one: "Up" is in a great
+    // many titles.
     private const int ShortestContainedName = 4;
 
-    private static bool SameAlbum(string title, HashSet<string> wanted)
+    private static bool SameName(string title, HashSet<string> wanted)
     {
         var name = MetadataNames.Normalize(title);
         if (name.Length == 0)
