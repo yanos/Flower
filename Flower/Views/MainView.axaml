@@ -274,12 +274,13 @@
                              Margin="12,20,8,6"
                              LetterSpacing="0.9"
                              VerticalAlignment="Bottom"/>
-                  <!-- The Playlists heading's own way to start one, File >
-                       New Playlist's command. -->
+                  <!-- The Playlists heading's own way to start one: the
+                       same menu as the sidebar's empty space, New Playlist,
+                       New Smart Playlist and New Folder (NewPlaylistButton_Click). -->
                   <Button Classes="pill"
                           IsVisible="{Binding IsPlaylistsHeader}"
-                          Command="{Binding $parent[UserControl].((vm:MainViewModel)DataContext).NewPlaylistCommand}"
-                          ToolTip.Tip="New Playlist"
+                          Click="NewPlaylistButton_Click"
+                          ToolTip.Tip="New Playlist or Folder"
                           HorizontalAlignment="Right"
                           VerticalAlignment="Bottom"
                           Margin="0,0,0,0"

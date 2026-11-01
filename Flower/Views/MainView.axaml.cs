@@ -1238,24 +1238,44 @@ public partial class MainView : UserControl
         // Linux this is the only way to reach it.
         else
         {
-            var newPlaylistItem = new MenuItem { Header = "New Playlist" }.WithIcon(MaterialIconKind.PlaylistPlus);
-            newPlaylistItem.Click += async (_, _) => await vm.CreatePlaylistWithTrack(null);
-            _sidebarItemMenu.Items.Add(newPlaylistItem);
-
-            var newFolderItem = new MenuItem { Header = "New Folder" }.WithIcon(MaterialIconKind.FolderPlusOutline);
-            newFolderItem.Click += async (_, _) => await vm.CreatePlaylistFolder(null);
-            _sidebarItemMenu.Items.Add(newFolderItem);
-
-            if (vm.SmartPlaylists != null)
-            {
-                var newSmartItem = new MenuItem { Header = "New Smart Playlist…" }.WithIcon(MaterialIconKind.PlaylistStar);
-                newSmartItem.Click += (_, _) => vm.NewSmartPlaylist();
-                _sidebarItemMenu.Items.Add(newSmartItem);
-            }
+            AddNewPlaylistEntries(_sidebarItemMenu, vm);
         }
 
         PlatformContextMenu.Open(_sidebarItemMenu, SidebarList);
         e.Handled = true;
+    }
+
+    // The Playlists heading's "+": the menu the sidebar's empty space opens,
+    // under the button rather than at the pointer.
+    private void NewPlaylistButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel is not MainViewModel vm || sender is not Button button)
+            return;
+
+        _sidebarItemMenu.Items.Clear();
+        AddNewPlaylistEntries(_sidebarItemMenu, vm);
+        _sidebarItemMenu.Placement = PlacementMode.BottomEdgeAlignedRight;
+        PlatformContextMenu.Open(_sidebarItemMenu, button);
+        _sidebarItemMenu.Placement = PlacementMode.Pointer;
+        e.Handled = true;
+    }
+
+    private static void AddNewPlaylistEntries(ContextMenu menu, MainViewModel vm)
+    {
+        var newPlaylistItem = new MenuItem { Header = "New Playlist" }.WithIcon(MaterialIconKind.PlaylistPlus);
+        newPlaylistItem.Click += async (_, _) => await vm.CreatePlaylistWithTrack(null);
+        menu.Items.Add(newPlaylistItem);
+
+        if (vm.SmartPlaylists != null)
+        {
+            var newSmartItem = new MenuItem { Header = "New Smart Playlist…" }.WithIcon(MaterialIconKind.PlaylistStar);
+            newSmartItem.Click += (_, _) => vm.NewSmartPlaylist();
+            menu.Items.Add(newSmartItem);
+        }
+
+        var newFolderItem = new MenuItem { Header = "New Folder" }.WithIcon(MaterialIconKind.FolderPlusOutline);
+        newFolderItem.Click += async (_, _) => await vm.CreatePlaylistFolder(null);
+        menu.Items.Add(newFolderItem);
     }
 
     // ── A menu over a pile of songs ─────────────────────────────────────────────
