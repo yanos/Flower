@@ -1727,9 +1727,11 @@ public partial class MainView : UserControl
             _ = _viewModel?.GoToCurrentlyPlayingTrackAsync();
             e.Handled = true;
         }
+        // Only where there are columns to choose, as the View menu greys it.
         else if (e.Key == Key.J && e.KeyModifiers == PlatformShortcuts.Primary)
         {
-            _viewModel?.OpenColumnSelectorCommand?.Execute(null);
+            if (_viewModel is { IsShowingTrackList: true } vm)
+                vm.OpenColumnSelectorCommand?.Execute(null);
             e.Handled = true;
         }
         // Space play/pause, reachable from anywhere in MainView - MusicList's
@@ -1864,11 +1866,18 @@ public partial class MainView : UserControl
     }
 
     // Cmd/Ctrl+K: the page header's filter box, where the page has one.
-    public void FocusFilter()
-    {
-        var filter = this.GetVisualDescendants().OfType<UserControls.FilterControl>().FirstOrDefault(f => f.IsEffectivelyVisible);
-        filter?.FocusBox();
-    }
+    public void FocusFilter() => ShownFilter()?.FocusBox();
+
+    // Whether the page on screen has a filter box for FocusFilter to go to.
+    public bool CanFocusFilter => ShownFilter() != null;
+
+    private UserControls.FilterControl? ShownFilter() =>
+        this.GetVisualDescendants().OfType<UserControls.FilterControl>().FirstOrDefault(f => f.IsEffectivelyVisible);
+
+    // Whether ChangeVolume(by) would move the volume, rather than push it
+    // against 0 or 100.
+    public bool CanChangeVolume(int by) =>
+        _viewModel?.Volume is { } volume && Math.Clamp(volume.Volume + by, 0, 100) != volume.Volume;
 
     private const int VolumeStep = 10;
 
@@ -2111,7 +2120,7 @@ public partial class MainView : UserControl
         DesktopActionMenu.FillAddToPlaylist(addToPlaylist, [track], vm);
         menu.Items.Add(addToPlaylist);
 
-        var queue = new MenuItem { Header = "Show Queue" }.WithIcon(MaterialIconKind.PlaylistMusicOutline);
+        var queue = new MenuItem { Header = "Show Queue", IsEnabled = !vm.IsShowingQueue }.WithIcon(MaterialIconKind.PlaylistMusicOutline);
         queue.Click += (_, _) => ShowSection(SidebarItemKind.Queue);
         menu.Items.Add(queue);
 

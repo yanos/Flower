@@ -160,7 +160,8 @@
                    FontSize="{Binding FontSize}">
       <ae:TextEditor.ContextMenu>
         <ContextMenu>
-          <MenuItem Header="Copy" Click="CopyMenuItem_Click">
+          <!-- Copies the selection, or every line shown - nothing, in a log with no lines yet. -->
+          <MenuItem Header="Copy" Click="CopyMenuItem_Click" IsEnabled="{Binding HasEntries}">
             <MenuItem.Icon><materialIcons:MaterialIcon Kind="ContentCopy" Width="16" Height="16"/></MenuItem.Icon>
           </MenuItem>
         </ContextMenu>

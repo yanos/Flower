@@ -14,7 +14,7 @@ namespace Flower.Tests.ViewModels;
 // not.
 public class ActionMenusTests
 {
-    private static readonly MenuFacts Nothing = new(Downloadable: 0, IsBulkDownloading: false, LocalFiles: 0, Removable: 0);
+    private static readonly MenuFacts Nothing = new(Songs: 1, Downloadable: 0, IsBulkDownloading: false, LocalFiles: 0, Removable: 0);
 
     private static MenuAction[] Actions(IReadOnlyList<IReadOnlyList<ActionMenuEntry>> groups) =>
         ActionMenus.Flat(groups).Select(e => e.Action).Order().ToArray();
@@ -25,7 +25,7 @@ public class ActionMenusTests
         Assert.Equal(new[] { MenuAction.PlayNext, MenuAction.AddToQueue, MenuAction.AddToPlaylist, MenuAction.GetInfo }.Order(),
             Actions(ActionMenus.ForSongs(Nothing, canRemoveFromQueue: false, canLocateFiles: false)));
 
-        var everything = new MenuFacts(Downloadable: 1, IsBulkDownloading: false, LocalFiles: 1, Removable: 1);
+        var everything = new MenuFacts(Songs: 1, Downloadable: 1, IsBulkDownloading: false, LocalFiles: 1, Removable: 1);
         Assert.Equal(
             new[] { MenuAction.PlayNext, MenuAction.AddToQueue, MenuAction.AddToPlaylist, MenuAction.RemoveFromQueue,
                 MenuAction.GetInfo, MenuAction.LocateFile, MenuAction.Download,
@@ -38,7 +38,7 @@ public class ActionMenusTests
     [Fact]
     public void Locate_File_is_offered_only_over_a_song_with_a_file_here()
     {
-        var streamed = new MenuFacts(Downloadable: 1, IsBulkDownloading: false, LocalFiles: 0, Removable: 0);
+        var streamed = new MenuFacts(Songs: 1, Downloadable: 1, IsBulkDownloading: false, LocalFiles: 0, Removable: 0);
 
         var entries = ActionMenus.Flat(ActionMenus.ForSongs(streamed, canRemoveFromQueue: false, canLocateFiles: true));
 
@@ -48,7 +48,7 @@ public class ActionMenusTests
     [Fact]
     public void Download_greys_while_a_batch_is_already_running()
     {
-        var busy = new MenuFacts(Downloadable: 1, IsBulkDownloading: true, LocalFiles: 0, Removable: 0);
+        var busy = new MenuFacts(Songs: 1, Downloadable: 1, IsBulkDownloading: true, LocalFiles: 0, Removable: 0);
 
         var download = ActionMenus.Flat(ActionMenus.ForAlbum(busy)).Single(e => e.Action == MenuAction.Download);
 
@@ -70,7 +70,7 @@ public class ActionMenusTests
     [Fact]
     public void Over_a_playlist_the_album_menu_trades_its_album_entries_for_the_playlist_s_own()
     {
-        var facts = new MenuFacts(Downloadable: 0, IsBulkDownloading: false, LocalFiles: 2, Removable: 2);
+        var facts = new MenuFacts(Songs: 1, Downloadable: 0, IsBulkDownloading: false, LocalFiles: 2, Removable: 2);
 
         var entries = ActionMenus.Flat(ActionMenus.ForAlbum(facts, isPlaylist: true));
 
@@ -91,6 +91,24 @@ public class ActionMenusTests
         Assert.DoesNotContain(MenuAction.ConvertToOrdinary, ordinary);
         Assert.Contains(MenuAction.EditRules, smart);
         Assert.Contains(MenuAction.ConvertToOrdinary, smart);
+    }
+
+    // An empty playlist's menu is still worth opening, for Rename, Move to
+    // Folder and Delete - but its songs' entries would do nothing at all.
+    [Fact]
+    public void An_empty_playlist_greys_what_it_would_do_with_songs_and_nothing_else()
+    {
+        var empty = Nothing with { Songs = 0 };
+
+        var entries = ActionMenus.Flat(ActionMenus.ForAlbum(empty, isPlaylist: true, canMoveToFolder: true));
+
+        Assert.All(
+            entries.Where(e => e.Action is MenuAction.Play or MenuAction.Shuffle or MenuAction.PlayNext
+                or MenuAction.AddToQueue or MenuAction.AddToPlaylist),
+            e => Assert.False(e.IsEnabled));
+        Assert.All(
+            entries.Where(e => e.Action is MenuAction.RenamePlaylist or MenuAction.MoveToFolder or MenuAction.DeletePlaylist),
+            e => Assert.True(e.IsEnabled));
     }
 
     [Fact]

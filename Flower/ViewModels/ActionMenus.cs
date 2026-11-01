@@ -49,8 +49,10 @@ public sealed record ActionMenuEntry(
 // What about a set of songs decides which entries appear, worked out once by
 // whoever opens the menu (MainViewModel.MenuFactsFor) - the rules each one is
 // (Availability.IsDownloadable, LocalFileDeletion.LocalFiles,
-// LibraryRemovalService.Removable) are shared already.
-public sealed record MenuFacts(int Downloadable, bool IsBulkDownloading, int LocalFiles, int Removable);
+// LibraryRemovalService.Removable) are shared already. Songs is how many
+// the menu is over: an empty playlist or folder still opens its menu, for
+// its name and its place, and greys what it would do with songs it lacks.
+public sealed record MenuFacts(int Songs, int Downloadable, bool IsBulkDownloading, int LocalFiles, int Removable);
 
 // The song and album menus, once, for the desktop's context menus and the
 // phone's action sheets alike. Each head used to list its own entries, in its
@@ -83,16 +85,17 @@ public static class ActionMenus
         if (canGoToArtist)
             from.Add(new(MenuAction.GoToArtist, "Go to Artist", MaterialIconKind.AccountMusicOutline));
 
+        var hasSongs = facts.Songs > 0;
         var where = new List<ActionMenuEntry>
         {
-            new(MenuAction.PlayNext, "Play Next", MaterialIconKind.PlaylistPlay),
-            new(MenuAction.AddToQueue, "Add to Queue", MaterialIconKind.PlaylistMusicOutline),
-            new(MenuAction.AddToPlaylist, "Add to Playlist", MaterialIconKind.PlaylistPlus),
+            new(MenuAction.PlayNext, "Play Next", MaterialIconKind.PlaylistPlay, IsEnabled: hasSongs),
+            new(MenuAction.AddToQueue, "Add to Queue", MaterialIconKind.PlaylistMusicOutline, IsEnabled: hasSongs),
+            new(MenuAction.AddToPlaylist, "Add to Playlist", MaterialIconKind.PlaylistPlus, IsEnabled: hasSongs),
         };
         if (canRemoveFromQueue)
             where.Add(new(MenuAction.RemoveFromQueue, "Remove from Queue", MaterialIconKind.PlaylistRemove));
 
-        var what = new List<ActionMenuEntry> { new(MenuAction.GetInfo, "Info", MaterialIconKind.InformationOutline) };
+        var what = new List<ActionMenuEntry> { new(MenuAction.GetInfo, "Info", MaterialIconKind.InformationOutline, IsEnabled: hasSongs) };
         if (canLocateFiles && facts.LocalFiles > 0)
             what.Add(new(MenuAction.LocateFile, "Locate File", MaterialIconKind.FolderOpenOutline));
         if (Download(facts, "Download") is { } download)
@@ -127,20 +130,22 @@ public static class ActionMenus
         if (canGoToArtist)
             from.Add(new(MenuAction.GoToArtist, "Go to Artist", MaterialIconKind.AccountMusicOutline));
 
+        // An empty playlist or folder has nothing to play or put anywhere.
+        var hasSongs = facts.Songs > 0;
         var where = new List<ActionMenuEntry>
         {
-            new(MenuAction.Play, "Play", MaterialIconKind.Play),
-            new(MenuAction.Shuffle, "Shuffle", MaterialIconKind.Shuffle),
-            new(MenuAction.PlayNext, "Play Next", MaterialIconKind.PlaylistPlay),
-            new(MenuAction.AddToQueue, "Add to Queue", MaterialIconKind.PlaylistMusicOutline),
-            new(MenuAction.AddToPlaylist, "Add to Playlist", MaterialIconKind.PlaylistPlus),
+            new(MenuAction.Play, "Play", MaterialIconKind.Play, IsEnabled: hasSongs),
+            new(MenuAction.Shuffle, "Shuffle", MaterialIconKind.Shuffle, IsEnabled: hasSongs),
+            new(MenuAction.PlayNext, "Play Next", MaterialIconKind.PlaylistPlay, IsEnabled: hasSongs),
+            new(MenuAction.AddToQueue, "Add to Queue", MaterialIconKind.PlaylistMusicOutline, IsEnabled: hasSongs),
+            new(MenuAction.AddToPlaylist, "Add to Playlist", MaterialIconKind.PlaylistPlus, IsEnabled: hasSongs),
         };
 
         var what = new List<ActionMenuEntry>();
         // Every song of the album at once. Not over a playlist, whose songs
         // share nothing a tag says.
         if (!isPlaylist)
-            what.Add(new(MenuAction.GetInfo, "Info", MaterialIconKind.InformationOutline));
+            what.Add(new(MenuAction.GetInfo, "Info", MaterialIconKind.InformationOutline, IsEnabled: hasSongs));
         // "Album" only where it is one - an artist's songs or a playlist's
         // are not.
         if (Download(facts, isPlaylist || isArtist ? "Download" : "Download Album") is { } download)

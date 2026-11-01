@@ -123,7 +123,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // ActionMenus. removal is null on a head with no LibraryRemovalService,
     // which then offers no Remove from Library.
     public MenuFacts MenuFactsFor(IReadOnlyList<Track> tracks, LibraryRemovalService? removal) =>
-        new(tracks.Count(Availability.IsDownloadable),
+        new(tracks.Count,
+            tracks.Count(Availability.IsDownloadable),
             Downloads.IsBulkDownloading,
             LocalFileDeletion.LocalFiles(tracks).Count,
             removal?.Removable(tracks).Count ?? 0);
@@ -2409,6 +2410,15 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
         _playlistControlViewModel.PlayOrPause();
     }
+
+    // Whether PlayOrPauseFromCurrentView has anything to act on: a song
+    // playing or paused, or one it would start - the one selected, or this
+    // view's first. The Controls menu greys Play/Pause on it.
+    public bool CanPlayOrPause =>
+        _playlistControlViewModel.IsPlaying
+        || _playlistControlViewModel.CanResume
+        || _playlistControlViewModel.SelectedTrack != null
+        || DisplayedTracks.Count > 0;
 
     private void SyncPlayQueueToCurrentView() => SetPlayQueue(DisplayedTracks);
 

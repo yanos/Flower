@@ -328,10 +328,17 @@ public partial class MainWindow : Window
         WhenOpened("Go to Current Song", () =>
         {
             var playing = Vm()?.NowPlaying.CurrentlyPlayingTrack;
+            Enable("Play/Pause", Vm()?.CanPlayOrPause == true);
+            // Both step along the queue from the song playing, so need one;
+            // Previous at the top of the queue still restarts it.
+            Enable("Next Track", playing != null);
+            Enable("Previous Track", playing != null);
             Enable("Go to Current Song", playing != null);
             Enable("Go to Current Album", !string.IsNullOrEmpty(playing?.Album));
             Enable("Go to Current Artist", !string.IsNullOrEmpty(playing?.Artists));
             Enable("Clear Queue", Vm()?.Queue.CanClear == true);
+            Enable("Increase Volume", MainContent.CanChangeVolume(10));
+            Enable("Decrease Volume", MainContent.CanChangeVolume(-10));
         });
         WhenOpened("Info", () =>
         {
@@ -349,8 +356,15 @@ public partial class MainWindow : Window
             var hasSongs = SelectedSongs().Count > 0;
             Enable("Play Playlist Next", hasSongs);
             Enable("Add Playlist to Queue", hasSongs);
+            Enable("New Smart Playlist…", Vm()?.SmartPlaylists != null);
             Enable("Edit Rules…", playlist is { IsSmart: true } && Vm()?.SmartPlaylists != null);
             Enable("Convert to Ordinary Playlist", playlist is { IsSmart: true });
+        });
+        WhenOpened("Filter", () =>
+        {
+            Enable("Filter", MainContent.CanFocusFilter);
+            // The columns are the track list's; no other page shows any.
+            Enable("Select Columns…", Vm()?.IsShowingTrackList == true);
         });
     }
 
