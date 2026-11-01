@@ -2217,7 +2217,7 @@ public partial class MainView : UserControl
             return;
 
         var editor = new SmartPlaylistEditorWindow(
-            new SmartPlaylistEditorViewModel(e.Playlist, vm.Library, refresher, e.IsNew));
+            new SmartPlaylistEditorViewModel(e.Playlist, vm.Library, refresher, e.IsNew), vm);
 
         if (TopLevel.GetTopLevel(this) is Window owner)
             await editor.ShowDialog(owner);

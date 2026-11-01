@@ -2373,6 +2373,17 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // every selected album - playback would run off the end of the displayed
     // album straight into a different one. Queuing the list the song was
     // played from keeps the queue matching what's actually on screen.
+    // A smart playlist editor's preview (SmartPlaylistEditorViewModel.
+    // PreviewTracks) as track rows, on either head: the phone's sheet and the
+    // desktop editor window. In the rules' own order unless a column is
+    // given - a limit's "most played" picks in that order, and it is the
+    // order the saved playlist will have.
+    public List<TrackRowViewModel> SmartPlaylistPreviewRows(
+        IReadOnlyList<Track> tracks, string sortColumn = "PlaylistOrder", bool sortAscending = true) =>
+        TrackListBuilder.Build(tracks, null, sortColumn, sortAscending, CurrentlyPlayingTrack,
+            pairedServerFingerprint: PairedServerFingerprint,
+            pairedServerReachable: IsPairedServerReachable);
+
     public void PlayTrackInAlbum(IReadOnlyList<Track> albumTracks, Track track)
     {
         if (albumTracks.Count == 0)

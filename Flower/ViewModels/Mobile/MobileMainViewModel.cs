@@ -1083,14 +1083,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
 
     private void RebuildSmartPlaylistPreviewRows()
     {
-        var tracks = _smartPlaylistEditor?.PreviewTracks ?? [];
-
-        // In the rules' own order - a limit's "most played" picks in that
-        // order, and it is the order the saved playlist will have.
-        SmartPlaylistPreviewRows = TrackListBuilder.Build(tracks, null, "PlaylistOrder", true,
-            PlaylistControl.CurrentlyPlayingTrack,
-            pairedServerFingerprint: Main.PairedServerFingerprint,
-            pairedServerReachable: Main.IsPairedServerReachable);
+        SmartPlaylistPreviewRows = Main.SmartPlaylistPreviewRows(_smartPlaylistEditor?.PreviewTracks ?? []);
     }
 
     // Whether the editor on screen has yet to be saved or cancelled - see

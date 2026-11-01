@@ -7,15 +7,10 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
 
-using Flower.Logging;
 using Flower.Models;
 using Flower.Services;
 using Flower.ViewModels;
 using Flower.Views;
-
-using Material.Icons;
-
-using Microsoft.Extensions.Logging;
 
 namespace Flower.Controls;
 
@@ -25,7 +20,6 @@ namespace Flower.Controls;
 public partial class AlbumTrackList : UserControl
 {
     // Built by XAML, so there is no constructor to inject one through.
-    private static readonly ILogger Logger = AppLogging.CreateLogger(typeof(AlbumTrackList).FullName!);
 
     public static readonly StyledProperty<bool> ShowsNumbersProperty =
         AvaloniaProperty.Register<AlbumTrackList, bool>(nameof(ShowsNumbers));
@@ -152,81 +146,12 @@ public partial class AlbumTrackList : UserControl
     }
 
     // Built fresh per right-click: it acts on this album's own selection,
-    // which is unrelated to the main track list's. The same song menu as the
-    // track list's (ActionMenus.ForSongs), with Locate File for the row
-    // clicked, since revealing several files at once is not one action - or,
-    // when that row is streamed and has no file here, the first of the
-    // selection that has one, which is what offered the entry. No Go to Album
-    // in the Albums grid's open album, which is that album already, and no
-    // Go to Artist on the Artists page, which is that artist's.
-    private ContextMenu BuildTrackContextMenu(Track clickedTrack, IReadOnlyList<Track> selectedTracks, MainViewModel vm)
-    {
-        var groups = ActionMenus.ForSongs(
-            vm.MenuFactsFor(selectedTracks, LibraryRemovalDialog.Service),
-            canRemoveFromQueue: false,
-            canLocateFiles: PlatformShell.IsAvailable,
-            canGoToAlbum: !vm.IsShowingAlbumGrid && MainViewModel.ShareAlbum(selectedTracks),
-            canGoToArtist: !vm.IsShowingArtistPage && MainViewModel.ShareArtist(selectedTracks));
-
-        return DesktopActionMenu.Build(groups, async action =>
-        {
-            switch (action)
-            {
-                case MenuAction.GoToAlbum:
-                    vm.GoToAlbumAsync(clickedTrack).Forget(Logger, "Going to a song's album");
-                    break;
-                case MenuAction.GoToArtist:
-                    vm.GoToArtistAsync(clickedTrack).Forget(Logger, "Going to a song's artist");
-                    break;
-                case MenuAction.PlayNext:
-                    vm.PlayNext(selectedTracks);
-                    break;
-                case MenuAction.AddToQueue:
-                    vm.AddToQueue(selectedTracks);
-                    break;
-                case MenuAction.GetInfo:
-                    OpenTrackInfo(selectedTracks, vm);
-                    break;
-                case MenuAction.LocateFile:
-                    PlatformShell.Reveal(clickedTrack.Path ?? LocalFileDeletion.LocalFiles(selectedTracks).FirstOrDefault()?.Path);
-                    break;
-                case MenuAction.Download:
-                    _ = vm.Downloads.DownloadAllAsync(selectedTracks.Where(vm.Availability.IsDownloadable).ToList());
-                    break;
-                case MenuAction.DeleteLocalFiles:
-                    await LocalFileDeletionDialog.DeleteAsync(TopLevel.GetTopLevel(this), vm, selectedTracks);
-                    break;
-                case MenuAction.RemoveFromLibrary:
-                    await LibraryRemovalDialog.RemoveAsync(TopLevel.GetTopLevel(this), selectedTracks);
-                    break;
-            }
-        }, selectedTracks, vm);
-    }
-
-    // Several songs selected open together for a batch edit; one opens with
-    // the rest of the album to step through with Prev/Next.
-    private void OpenTrackInfo(IReadOnlyList<Track> selectedTracks, MainViewModel vm)
-    {
-        TrackInfoWindow infoWindow;
-        if (selectedTracks.Count > 1)
-        {
-            infoWindow = new TrackInfoWindow(selectedTracks, vm) { ShowInTaskbar = false };
-        }
-        else
-        {
-            if (selectedTracks.Count == 0)
-                return;
-            var track = selectedTracks[0];
-            var tracks = Album?.ExpandedTracks.ToList() ?? new List<Track>();
-            var index = tracks.IndexOf(track);
-            if (index < 0)
-                index = 0;
-            infoWindow = new TrackInfoWindow(tracks, index, vm) { ShowInTaskbar = false };
-        }
-
-        if (TopLevel.GetTopLevel(this) is Window owner)
-            infoWindow.Show(owner);
-        else
-            infoWindow.Show();
-    }
+    // which is unrelated to the main track list's (DesktopSongMenu). No Go to
+    // Album in the Albums grid's open album, which is that album already, and
+    // no Go to Artist on the Artists page, which is that artist's.
+    private ContextMenu BuildTrackContextMenu(Track clickedTrack, IReadOnlyList<Track> selectedTracks, MainViewModel vm) =>
+        DesktopSongMenu.Build(this, vm, clickedTrack, selectedTracks,
+            browse: Album?.ExpandedTracks.ToList() ?? [],
+            canGoToAlbum: !vm.IsShowingAlbumGrid,
+            canGoToArtist: !vm.IsShowingArtistPage);
 }
