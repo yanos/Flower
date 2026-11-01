@@ -54,6 +54,21 @@
       <Setter Property="Opacity" Value="1" />
       <Setter Property="Foreground" Value="{DynamicResource AppTextSecondaryBrush}" />
     </Style>
+    <!-- On the desktop the dismiss cross only shows while the pointer is over
+         the tile, the way a Finder tab's close button does - a shelf of
+         covers each wearing an X reads as a list of things to get rid of. A
+         phone has no hover, so there it stays. -->
+    <Style Selector="controls|AlbumCard.desktop Button#DismissButton">
+      <Setter Property="Opacity" Value="0" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.12" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="controls|AlbumCard.desktop:pointerover Button#DismissButton">
+      <Setter Property="Opacity" Value="1" />
+    </Style>
     <!-- Nothing in it can be played right now (AlbumTileViewModel
          .IsUnavailable): faded, with its icons and missing-cover note grey
          rather than the faded red dimming alone would leave them. -->
