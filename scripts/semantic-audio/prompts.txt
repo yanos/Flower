@@ -1,0 +1,31 @@
+# Prompts phase 0 ranks the sample against (docs/VIBE-PLAYLIST-PLAN.md).
+# One per line. The last few are expected to fail, and are here to show how.
+music for a rainy day
+music to go jogging
+relaxing SNES-style music for studying
+energetic rock with female vocals
+sad piano music without singing
+peaceful orchestral music that slowly builds up
+chill lo-fi beats
+upbeat dance music for a party
+angry heavy metal
+acoustic guitar songs around a campfire
+jazz for a late night
+hip hop for a workout
+80s synth pop
+ambient music for falling asleep
+epic movie soundtrack
+romantic slow songs
+music for a sunny summer road trip
+melancholic indie folk
+funky groovy bass
+calm music for focusing at work
+music for cooking dinner
+classical string quartet
+electronic music with a heavy beat
+happy songs to sing along to
+dark and mysterious
+# Expected weak: facts rather than sound, and French.
+christmas music
+90s hip hop
+musique pour un jour de pluie

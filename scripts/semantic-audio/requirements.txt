@@ -1,0 +1,28 @@
+# Phase 0 of docs/VIBE-PLAYLIST-PLAN.md, and the model export. Not used by the
+# build. Install into a venv outside the repo (Rider indexes anything inside it):
+#   uv venv ~/.cache/flower-semantic-audio/venv4 --python 3.12
+#   VIRTUAL_ENV=~/.cache/flower-semantic-audio/venv4 uv pip install -r scripts/semantic-audio/requirements.txt
+# Decoding goes through the ffmpeg command line, which must be on PATH.
+#
+# laion_clap is LAION's own code for their own checkpoint - Hugging Face's
+# conversion of larger_clap_music is broken (see export-clap-onnx.py). It
+# needs transformers 4 and imports the rest below without declaring them.
+laion_clap
+transformers<5
+torch
+torchvision
+torchlibrosa
+librosa
+ftfy
+braceexpand
+webdataset
+wget
+h5py
+progressbar
+scikit-learn
+pandas
+numpy
+onnx
+onnxscript
+onnxruntime
+mutagen
