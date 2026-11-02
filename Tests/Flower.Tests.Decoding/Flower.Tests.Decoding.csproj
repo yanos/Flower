@@ -3,4 +3,13 @@
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
   <Import Project="..\ClientTests.props" />
+  <!-- See Flower.Tests.csproj. -->
+  <ItemGroup>
+    <EmbeddedResource Include="SemanticAudio\References\*" LogicalName="SemanticAudio.References.%(Filename)%(Extension)" />
+  </ItemGroup>
+  <!-- The ONNX encoders, for ClapEmbeddingReferenceTests - which the iOS
+       suite leaves out, since no phone references this yet. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\Flower.SemanticAudio.Onnx\Flower.SemanticAudio.Onnx.csproj" />
+  </ItemGroup>
 </Project>

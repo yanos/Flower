@@ -44,8 +44,24 @@ MIT
 - Material.Icons.Avalonia
 - Makaretu.Dns.Multicast.New
 - plist-cil
+- ONNX Runtime (Microsoft.ML.OnnxRuntime, github.com/microsoft/onnxruntime),
+  in the heads that run Vibe Playlists' engine
+- RoBERTa's tokenizer files, vocab.json and merges.txt (fairseq,
+  github.com/facebookresearch/fairseq), downloaded with the model below
 
 Full license text: https://opensource.org/license/mit/
+
+--------------------------------------------------------------------------
+Apache-2.0, downloaded at runtime rather than packaged
+--------------------------------------------------------------------------
+- LAION's CLAP music checkpoint, music_audioset_epoch_15_esc_90.14.pt
+  (github.com/LAION-AI/CLAP), exported to ONNX and quantized by
+  scripts/semantic-audio/export-clap-onnx.py and published as the
+  music_audioset_epoch_15_esc_90.14 release of this repository. Flower
+  downloads it only when Vibe Playlists are switched on, and deletes it when
+  they are switched off.
+
+Full license text: https://www.apache.org/licenses/LICENSE-2.0
 
 --------------------------------------------------------------------------
 

@@ -3,4 +3,10 @@
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
   <Import Project="..\ClientTests.props" />
+  <!-- Written by scripts/semantic-audio/make-references.py; embedded rather
+       than copied so the iOS suite, which compiles these sources too, reads
+       them the same way. -->
+  <ItemGroup>
+    <EmbeddedResource Include="SemanticAudio\References\*" LogicalName="SemanticAudio.References.%(Filename)%(Extension)" />
+  </ItemGroup>
 </Project>

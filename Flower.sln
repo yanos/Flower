@@ -43,6 +43,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Flower.Tests.Windows", "Tes
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Flower.Tests.iOS.Suite", "Tests\Flower.Tests.iOS.Suite\Flower.Tests.iOS.Suite.csproj", "{1C4912EA-6A8F-490F-ACC5-C98B7975B64A}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Flower.SemanticAudio.Onnx", "Flower.SemanticAudio.Onnx\Flower.SemanticAudio.Onnx.csproj", "{B9D7953E-6037-4609-A37F-515C1800DC11}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -281,6 +283,18 @@ Global
 		{1C4912EA-6A8F-490F-ACC5-C98B7975B64A}.Release|x64.Build.0 = Release|Any CPU
 		{1C4912EA-6A8F-490F-ACC5-C98B7975B64A}.Release|x86.ActiveCfg = Release|Any CPU
 		{1C4912EA-6A8F-490F-ACC5-C98B7975B64A}.Release|x86.Build.0 = Release|Any CPU
+		{B9D7953E-6037-4609-A37F-515C1800DC11}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B9D7953E-6037-4609-A37F-515C1800DC11}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B9D7953E-6037-4609-A37F-515C1800DC11}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{B9D7953E-6037-4609-A37F-515C1800DC11}.Debug|x64.Build.0 = Debug|Any CPU
+		{B9D7953E-6037-4609-A37F-515C1800DC11}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{B9D7953E-6037-4609-A37F-515C1800DC11}.Debug|x86.Build.0 = Debug|Any CPU
+		{B9D7953E-6037-4609-A37F-515C1800DC11}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B9D7953E-6037-4609-A37F-515C1800DC11}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B9D7953E-6037-4609-A37F-515C1800DC11}.Release|x64.ActiveCfg = Release|Any CPU
+		{B9D7953E-6037-4609-A37F-515C1800DC11}.Release|x64.Build.0 = Release|Any CPU
+		{B9D7953E-6037-4609-A37F-515C1800DC11}.Release|x86.ActiveCfg = Release|Any CPU
+		{B9D7953E-6037-4609-A37F-515C1800DC11}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

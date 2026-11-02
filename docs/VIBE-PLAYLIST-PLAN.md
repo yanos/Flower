@@ -5,7 +5,14 @@ jogging", "sad piano without singing". It never runs out. Pressing play starts
 an endless queue of the library's songs that *sound* like the sentence, and
 the queue keeps topping itself up.
 
-**Status (November 2026): planned, nothing built.** This plan replaces
+**Status (November 2026): the engine is built (phase 1), nothing hosts it
+yet.** `Flower.Core/SemanticAudio/` has the tokenizer, the clip grid, the
+waveform preparation, the model download, the analyzer, the index, the search
+and its filters, and `Flower.SemanticAudio.Onnx` runs the two encoders. The
+C# pipeline matches Python's: waveforms to the sample, embeddings at cosine
+0.9999998 or better. The model is published as the
+`music_audioset_epoch_15_esc_90.14` release, and no head runs the engine.
+This plan replaces
 `PROMPT-PLAYLIST-PLAN.md`, which had a language model read the sentence
 against the names of the library's albums. The playlist's shape carries over
 from it: a pool, an endless queue, skips remembered. What changes is how songs
@@ -85,6 +92,14 @@ The same rule as `docs/ONLINE-METADATA-PLAN.md`:
   tables say `SemanticAudio`. "Vibe" is the feature's name, and stays on what
   a listener or a client sees: the playlist and its fields, the settings, the
   routes and their refusals.
+- **ONNX Runtime is a project of its own, `Flower.SemanticAudio.Onnx`**, with
+  the two encoders behind `IClapAudioEncoder` and `IClapTextEncoder`, which
+  stay in `Flower.Core`. Every head references `Flower.Core`, and ONNX
+  Runtime's iOS build of its managed library binds `__Internal` symbols that
+  only its native package provides. Through `Flower.Core` it would reach the
+  phones' AOT links long before phase 6 decides whether a phone runs the
+  engine. So a head that hosts the engine references the project and hands
+  the engine its encoders.
 - **A paired device asks its server for everything.** It sends the sentence
   and gets songs back. It downloads no model and keeps no embeddings, and its
   settings show the server's switch rather than one of its own. Paired is how
@@ -175,7 +190,8 @@ the two encoders, plus the tokenizer files, into `<data dir>/semantic-audio/mode
 each SHA-256 before the file counts as present, and reports bytes downloaded
 for the status line. A file that fails its hash is deleted and fetched again,
 and two failures leave the status at "Couldn't download the model" with
-Retry. On a server in a container, `<data dir>` is the volume, so the model
+Retry. A connection that drops, or sends nothing for a minute, is retried
+five times, resuming each time, before the status shows it. On a server in a container, `<data dir>` is the volume, so the model
 survives an image update.
 
 ## Analysing songs
@@ -184,11 +200,12 @@ survives an image update.
 
 - **What it works on.** Songs missing a clip the current setting selects
   (see "Clips"), and songs whose clips are stale. Stale means the clips were
-  analysed by a different export of the model (`semantic_audio_songs.model`), or before
-  the file last changed
-  (`Track.OriginFileStamp` / `Track.FileReplacedAt`). A stale song loses all
-  its clips, because they describe audio or a model that is gone. A tag edit
-  doesn't make a song stale, because the audio is the same.
+  analysed by a different export of the model (`semantic_audio_songs.model`),
+  or from audio that has changed since (`semantic_audio_songs.file_stamp`; see
+  "Storage"): a re-encode, or a file the server replaced
+  (`Track.FileReplacedAt`). A stale song loses all its clips, because they
+  describe audio or a model that is gone. A tag edit doesn't make a song
+  stale, because the audio is the same, even though the file is rewritten.
 - **When it runs.** When the switch is on and the model is present, from the
   host's start, and again on `Library.LibraryChanged` and on `TrackChanged`
   for a replaced file. On the server it runs after the startup rescan and never
@@ -202,8 +219,17 @@ survives an image update.
   desktop on its own, playback must never stutter for it. On a NAS, it must
   not starve the streams it serves.
 - **Decoding.** `FFAudio.Decoder.OpenPath(path, F32, 48000, 1)`: CLAP's
-  48 kHz, mono, float. The decoder `Seek`s to each clip rather than decoding
-  the whole song, except in whole-song mode.
+  48 kHz, mono, float. Straight through from the start, discarding what lies
+  between the clips, **never by seeking**. The first draft seeked to each
+  clip. Measured on 60 songs of the library in phase 1, a seek landed up to
+  48 ms early in AAC and MP3 alike: the encoder's delay (2,112 samples for
+  AAC), which FFAudio's reported landing doesn't account for. That took
+  embeddings down to cosine 0.925 against Python's, where decoding straight
+  through gave 0.9987 or better on every clip. A whole song decodes in
+  0.30 s on an M1 Max (900× real time), against 1.2 s of inference for six
+  clips, so being exact costs about a quarter more time per song. The early
+  landing is FFAudio.NET's to fix, and it would also move a playback seek by
+  as much (inaudibly).
 - **Failures** (cannot decode, too short to hold any audio) are recorded with
   a reason, so a broken file is not retried on every pass. They are counted in
   the status and retried only when the file changes.
@@ -232,20 +258,29 @@ indices:
 - **A song shorter than 10 s:** window 0, repeat-padded.
 
 Because the grid never moves, changing the setting reuses everything already
-analysed:
+analysed. One more rule makes that true of every lowering, not just one from
+the whole song. Evenly spread points don't nest: the 3 clips aren't among the
+6, since 3's points fall halfway between 6's. So **a point whose own window
+isn't stored takes the nearest stored window instead**, when that window is
+within 0.3 of the spacing between the setting's points
+(`ClipGrid.StandInShare`). A lower setting's points always sit within a
+quarter of its spacing of a higher one's, so lowering always finds them. A
+higher setting's points sit half its spacing from a lower one's, so raising
+mostly gets new windows. With nothing stored, the choice is phase 0's
+exactly.
 
-- **Lowering it** (whole song → 3) analyses nothing and deletes nothing. The
-  extra clips stay in `semantic_audio_clips` and are ignored, and each song's mean is
-  recomputed from the clips now selected. That is arithmetic on stored
-  vectors, done in one pass in seconds.
+- **Lowering it** (whole song → 3, 12 → 6, 6 → 3) analyses nothing and
+  deletes nothing. The extra clips stay in `semantic_audio_clips` and are
+  ignored, and each song's mean is recomputed from the clips now selected.
+  That is arithmetic on stored vectors, done in one pass in seconds.
 - **Raising it** (3 → whole song) analyses only the windows that have no clip
   yet. Going 3 → 12 → whole song → 6 never analyses a window twice.
-- **Clips are deleted only** when their song goes stale (new file or new
+- **Clips are deleted only** when their song goes stale (new audio or new
   model), when the song leaves the library, or by the master switch.
 
 The cost of the grid: a selected clip may sit up to 10 s from the ideal
-evenly spaced point. Across a whole song, that makes no difference to what
-the clips sample.
+evenly spaced point, and a stand-in clip somewhat further. Across a whole
+song, that makes no difference to what the clips sample.
 
 | Setting | Clips (16k songs, ~4 min average) | Storage (fp16, 1 KB a clip) | Analysis on lambda, 1 thread | On all 8 cores |
 |---|---|---|---|---|
@@ -256,9 +291,9 @@ the clips sample.
 
 Measured in phase 0 with `scripts/semantic-audio/bench.py`: the int8 audio encoder takes
 0.31 s a clip on one thread of lambda's 8-core CPU (0.11 s on all of them),
-against 0.20 s on an M1 Max. The times are inference only. Decoding adds
-little, since each clip is a seek and 10 s of decode, but the analyzer
-measures its own rate anyway (see "The settings page").
+against 0.20 s on an M1 Max. The times are inference only. Decoding the whole
+song adds about a quarter (see "Decoding" above), and the analyzer measures
+its own rate anyway (see "The settings page").
 
 The storage column is what the clips stored for each setting take. Since
 clips are kept, storage is set by the highest setting ever used, until the
@@ -293,10 +328,12 @@ removed both, and with them the test this plan most depended on.
 
 The text side is RoBERTa's byte-level BPE (`vocab.json` + `merges.txt`). It
 adds `<s>` and `</s>`, truncates to 77 tokens and pads to 77 with
-`<pad>` = 1, as LAION's tokenizer call does. `Microsoft.ML.Tokenizers` (`CodeGenTokenizer`, which reads exactly
-those two files) is the first choice if it survives the NativeAOT trimming
-check in phase 1. Otherwise a small BPE of our own, about 200 lines, does the
-job. Either way, the reference test is the judge.
+`<pad>` = 1, as LAION's tokenizer call does. It is a small BPE of our own
+(`RobertaTokenizer`, about 200 lines), not `Microsoft.ML.Tokenizers`: it has
+no reflection for NativeAOT to trip on, and one job. It gives Hugging Face's
+ids exactly for 30 awkward prompts (see "Testing"). The one thing left out:
+Hugging Face splits the special tokens' own spellings (`<mask>`) out of the
+text, and here they are plain text.
 
 **Prompt template: `A song that sounds like {0}.`**, a constant, not a
 setting. CLAP's captions were sentences, so phase 0 tried the prompt as typed
@@ -316,25 +353,36 @@ is the weakest kind of prompt (see "Open questions").
 
 ## Storage
 
-Three new tables in `flower.db`, on whichever host analyses:
+Two new tables in `flower.db` (`SqliteMigrations` step 14), on whichever host
+analyses, and a third with the playlist in phase 3:
 
 ```
-semantic_audio_songs(track_id PK, model TEXT, file_stamp TEXT, window_count INT,
-           analysed_at TEXT, mean BLOB, failure TEXT NULL)
-semantic_audio_clips(track_id, window INT, embedding BLOB,
-           PRIMARY KEY (track_id, window))
-vibe_playlist_skips(playlist_id, track_id, skipped_at TEXT)
+semantic_audio_songs(track_id PK, model TEXT, file_stamp TEXT, duration_ticks INT,
+           window_count INT, analysed_at INT, failure TEXT NULL)
+semantic_audio_clips(track_id, window_index INT, embedding BLOB,
+           PRIMARY KEY (track_id, window_index))     -- cascades from the song
+vibe_playlist_skips(playlist_id, track_id, skipped_at INT)  -- phase 3
 ```
 
 - **Embeddings** are 512 × fp16 = 1 KB each, L2-normalised before storing.
-- **`window`** is the clip's index on the song's 10 s grid (see "Clips"), so
-  its start is `window × 10 s` and no position is stored.
-- **`mean`** is the normalised average of the clips the *current* setting
-  selects. It is what search compares against first, and it is recomputed
-  from `semantic_audio_clips` when the setting changes.
+- **`window_index`** is the clip's index on the song's 10 s grid (see
+  "Clips"), so its start is `window_index × 10 s` and no position is stored.
+  (`WINDOW` is an SQL keyword.)
+- **No mean is stored.** It depends on the setting, and the index computes it
+  from the clips when it loads, along with the vocal and speech scores, which
+  need the clips anyway.
 - **`model`** names the export that analysed the song
   (`music_audioset_epoch_15_esc_90.14/int8`), so a row from another export never mixes into
   a search.
+- **`file_stamp`** is the song's audio identity: duration, codec, sample rate,
+  channels, bit depth and bitrate as the last scan read them, plus
+  `Track.FileReplacedAt` (`SemanticAudioAnalyzer.AudioStamp`). It is not the
+  file's own size and modification time, because tags and artwork live in the
+  file, so a tag edit would have the song heard again, and an artwork job
+  across the library would have all of it heard again.
+- **`track_id` is not a foreign key into `tracks`**, for the reason
+  `playlist_tracks`' isn't. The analyzer deletes what has left the library
+  itself, at the start of each pass.
 - **None of it touches `Track`.** `Track` is an immutable record that syncs,
   and these are host-local derived data.
 
@@ -384,7 +432,7 @@ prompt:
   Humour: a sketch with music under it scores as music. So a song is left out
   when its speech score is above 0 **or** its genre tag says Comedy, Humour or
   Spoken Word. Scoring each clip rather than the mean should catch more of
-  the rest, and is worth measuring in phase 1.
+  the rest, and is still to be measured (phase 1 didn't).
 - **No vocals, when asked.** A Vibe Playlist has a switch, *No vocals*
   (`Playlist.VibeInstrumental`, beside `VibePrompt`), that keeps only songs
   CLAP hears no voice in. It also turns on by itself when the prompt says so
@@ -542,31 +590,50 @@ The settings live in `MusicLibrarySettings` (`VibeEnabled`,
 
 ## Testing
 
-Golden files come from the export script (`scripts/semantic-audio/make-references.py`)
-and are committed under `Tests/Flower.Tests/SemanticAudio/References/`. They are small:
-prepared waveforms and embeddings for a handful of clips, not models.
+Golden files come from `scripts/semantic-audio/make-references.py` and are
+committed as embedded resources: the tokenizer's under
+`Tests/Flower.Tests/SemanticAudio/References/` (17 KB), the decoding ones
+under `Tests/Flower.Tests.Decoding/SemanticAudio/References/` (130 KB). They
+are small: prepared waveforms and embeddings for a handful of clips, not
+models.
 
-- **Tokenizer.** About 30 prompts (punctuation, emoji, accents, long input
-  truncated) give exactly the HF `RobertaTokenizer` ids.
-- **Waveforms.** The committed 440 Hz fixture at 44.1 kHz and a few seconds
-  of noise and a chord, decoded, resampled, cut, int16 round-tripped and
-  repeat-padded in C#, must equal the Python preparation within 1e-4 per
-  sample, a short clip included.
-- **Embeddings** (category `RequiresClapModel`; the model is downloaded into a
-  test cache and never committed): the C# pipeline's embedding of each
-  reference clip and prompt must have cosine ≥ 0.999 with Python ORT's at the
-  same precision. This runs in one CI leg, Linux, the server's platform, with
-  the cache keyed on the manifest hash.
+- **Tokenizer** (`RobertaTokenizerReferenceTests`). 30 prompts (punctuation,
+  emoji, accents, Cyrillic and Japanese, odd whitespace, contractions, long
+  input truncated) give exactly the HF `RobertaTokenizer` ids. The test runs
+  against only the part of the vocabulary and merges those prompts use. BPE
+  always applies the lowest-ranked pair present, so with exactly the merges
+  applied it takes the same steps it takes with all 50k, and the 1.4 MB of
+  real files stay out of the repo.
+- **Waveforms** (`ClipWaveformReferenceTests`, `RequiresFfmpeg`). The 440 Hz
+  fixture at 44.1 kHz and 14 s of two chords (a gzipped WAV, since its tones
+  repeat exactly), decoded, resampled, cut and int16 round-tripped in C#,
+  must equal Python's within 3 LSB per sample. The chord's second window is a
+  4 s tail. **Measured: 0 LSB, every sample of every window.** The
+  references store the int16 values themselves, since that is exactly what
+  the round trip leaves.
+- **Embeddings** (`ClapEmbeddingReferenceTests`, `RequiresClapModel`; the
+  model is never committed). The C# pipeline's embedding of each reference
+  clip and prompt must have cosine ≥ 0.999 with Python ORT's at the same
+  precision, and Python's own waveforms must embed at 0.9999. **Measured:
+  0.9999998 or better for all of them.** It reads the model from
+  `FLOWER_CLAP_MODEL_DIR`, or `~/.cache/flower-semantic-audio/export`, and
+  skips when neither has it. It is meant to run in one CI leg, Linux, the
+  server's platform, with the cache keyed on the manifest hash, once the
+  release exists. The iOS suite leaves it out, since no phone references the
+  ONNX project.
 - **Logic, with fake embeddings:**
   - grid selection for short, long and odd durations;
   - each setting's windows on that grid;
   - lowering the setting analyses nothing, and raising it analyses only
     missing windows (3 → whole → 6 never encodes a window twice);
-  - stale detection (model and file stamp, but not tags or the clip
+  - stale detection (model and audio stamp, but not tags or the clip
     setting);
-  ranking and rerank order; pool cut-off; extension excluding the pool;
-  queue-source rules (repeat window, album and artist spacing, skips
-  down-weighted); purge leaving no `semantic_audio_*` row and no file.
+  ranking and rerank order; the three filters; pool cut-off; extension
+  excluding the pool; queue-source rules (repeat window, album and artist
+  spacing, skips down-weighted); the model download (resume, a server
+  ignoring the range, a hash failing twice); purge leaving no
+  `semantic_audio_*` row and no file. All but the pool and the queue source
+  are written (phase 1); those two come with the playlist in phase 3.
 - **Settings view model:** what each screen shows, the confirmation before
   off, and status text from a status object. Behaviour only, per `CLAUDE.md`.
 
@@ -594,15 +661,29 @@ prepared waveforms and embeddings for a handful of clips, not models.
    searches the sample, plays each match from its best clip, and serves the
    report and the vocals labelling.
 1. **Export and engine.** Publish the `music_audioset_epoch_15_esc_90.14` release. In `Flower.Core/SemanticAudio/`:
-   tokenizer, waveform preparation, ONNX sessions (`Microsoft.ML.OnnxRuntime`), model store,
-   analyzer, index, search, filters. This also means referencing FFAudio.NET from
-   `Flower.Core` and the Linux payload from `Flower.Server`, because the server
-   has no decoder today. All the tests above.
-2. **Server.** The job hosted in `Flower.Server`, the settings in the admin
-   DTO, `/info`, the status route, purge. The settings tab in the browser and
-   on an admin device's server screen. Check the Docker image on both
-   architectures (ONNX Runtime's native library and ffaudio's in
-   `mcr.microsoft.com/dotnet/aspnet:10.0`).
+   tokenizer, clip grid, waveform preparation, clip reader, model store,
+   analyzer, index, search, filters, and `SemanticAudioEngine`, which runs them
+   on a thread of its own behind the two settings. The ONNX sessions are in
+   `Flower.SemanticAudio.Onnx` (see "Where it runs"). All the tests above but
+   the playlist's.
+
+   **Built, November 2026.** The release is published, and CI's Linux leg
+   downloads it (cached on the manifest) and runs the reference tests with
+   `FLOWER_REQUIRE_CLAP_MODEL`, so a missing model fails rather than skips.
+   Besides what is noted in place above, it changed four things in this plan:
+   decoding never seeks; a lower clip setting reuses nearby stored windows,
+   so every lowering is free; the stale stamp is the audio's identity, not
+   the file's; and no mean is stored. Left over: measuring the speech score
+   per clip rather than on the mean (see "Filters").
+2. **Server.** The engine hosted in `Flower.Server`: a reference to
+   `Flower.SemanticAudio.Onnx` and FFAudio's native payload for the host (the
+   server has no decoder today), the encoders handed to the engine, and a gate
+   so a pass never runs alongside a rescan (`LibraryRescanCoordinator`). Then
+   the settings in the admin DTO, `/info`, the status route, purge, and the
+   settings tab in the browser and on an admin device's server screen. Check
+   the Docker image on both architectures (ONNX Runtime's native library and
+   ffaudio's in `mcr.microsoft.com/dotnet/aspnet:10.0`). FFAudio.NET.Linux
+   ships x64 only, so an arm64 image has no decoder until it gets one.
 3. **The playlist, on a paired desktop and in the browser.** The new kind, New
    Vibe Playlist… with a preview, the queue source, skips, and sync of
    `VibePrompt`.

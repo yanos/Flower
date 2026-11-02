@@ -9,6 +9,9 @@
   <ItemGroup>
     <Compile Include="..\Flower.Tests\**\*.cs" Exclude="..\Flower.Tests\bin\**;..\Flower.Tests\obj\**" Link="Shared\%(RecursiveDir)%(Filename)%(Extension)" />
     <Compile Include="..\Flower.Tests.UI\**\*.cs" Exclude="..\Flower.Tests.UI\bin\**;..\Flower.Tests.UI\obj\**" Link="UI\%(RecursiveDir)%(Filename)%(Extension)" />
-    <Compile Include="..\Flower.Tests.Decoding\**\*.cs" Exclude="..\Flower.Tests.Decoding\bin\**;..\Flower.Tests.Decoding\obj\**" Link="Decoding\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="..\Flower.Tests.Decoding\**\*.cs" Exclude="..\Flower.Tests.Decoding\bin\**;..\Flower.Tests.Decoding\obj\**;..\Flower.Tests.Decoding\SemanticAudio\ClapEmbeddingReferenceTests.cs" Link="Decoding\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="..\Flower.Tests\SemanticAudio\References\*;..\Flower.Tests.Decoding\SemanticAudio\References\*" LogicalName="SemanticAudio.References.%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

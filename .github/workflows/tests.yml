@@ -46,7 +46,35 @@ jobs:
       - name: Run headless UI behavior tests
         run: dotnet test Tests/Flower.Tests.UI/Flower.Tests.UI.csproj --configuration Release --no-build
 
+      # Vibe Playlists' model, for the reference tests that hold the C#
+      # pipeline to Python's (ClapEmbeddingReferenceTests). Here only: Linux is
+      # the server's platform, and the other legs skip those tests. Cached on
+      # the manifest, which names the release and pins every file, so it is
+      # fetched again exactly when a build would download a different model.
+      - name: Cache the Vibe Playlists model
+        id: clap-model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/flower-semantic-audio/export
+          key: clap-model-${{ hashFiles('Flower.Core/SemanticAudio/SemanticAudioModelManifest.cs') }}
+
+      - name: Download the Vibe Playlists model
+        if: steps.clap-model.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          release=https://github.com/yanos/Flower/releases/download/music_audioset_epoch_15_esc_90.14
+          mkdir -p ~/.cache/flower-semantic-audio/export
+          cd ~/.cache/flower-semantic-audio/export
+          for file in music_audioset_epoch_15_esc_90.14-audio-int8.onnx music_audioset_epoch_15_esc_90.14-text-fp16.onnx vocab.json merges.txt; do
+            curl --fail --location --retry 3 --silent --show-error --output "$file" "$release/$file"
+          done
+
       - name: Run decoding tests
+        env:
+          # A model that is not there fails the leg rather than skipping the
+          # tests that need it.
+          FLOWER_REQUIRE_CLAP_MODEL: "1"
         run: dotnet test Tests/Flower.Tests.Decoding/Flower.Tests.Decoding.csproj --configuration Release --no-build
 
       # The server is supported on every desktop, including case-insensitive

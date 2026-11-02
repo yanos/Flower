@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- CLAP's two encoders run with ONNX Runtime (docs/VIBE-PLAYLIST-PLAN.md).
+       A project of its own rather than part of Flower.Core, which every head
+       references: ONNX Runtime's iOS build of its managed library binds
+       "__Internal" symbols that only its native package provides, so through
+       Flower.Core it would reach the phones - and their AOT links - long
+       before phase 6 decides whether a phone runs the engine at all. The
+       engine itself, and the IClapAudioEncoder/IClapTextEncoder seams, stay
+       in Flower.Core; only a head that hosts the engine references this. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Flower.Core\Flower.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The managed API and the native library for each desktop and server
+         platform (runtimes/<rid>/native), copied beside every binary
+         downstream. -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.31.0" />
+  </ItemGroup>
+</Project>

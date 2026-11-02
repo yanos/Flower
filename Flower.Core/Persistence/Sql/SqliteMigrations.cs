@@ -63,6 +63,42 @@ namespace Flower.Persistence.Sql
             """
             ALTER TABLE tracks DROP COLUMN starred_at;
             """,
+
+            // 14: what CLAP heard in each song, for Vibe Playlists - see
+            // SemanticAudioRepository and docs/VIBE-PLAYLIST-PLAN.md, "Storage".
+            // Host-local derived data, never synced and never part of a Track.
+            // track_id is not a foreign key into tracks, for the reason
+            // playlist_tracks' isn't: the analyzer prunes what has left the
+            // library itself, and a song that comes back under its old id
+            // keeps what was heard of it while the file is the same. IF NOT
+            // EXISTS because nothing about the tables depends on what ran
+            // before, so a database whose version was set back runs this
+            // again harmlessly (the migration tests do exactly that).
+            """
+            CREATE TABLE IF NOT EXISTS semantic_audio_songs (
+                track_id       TEXT    NOT NULL PRIMARY KEY,
+                -- Which export of the model heard it (SemanticAudioModelManifest.AnalysisModel).
+                model          TEXT    NOT NULL,
+                -- The file's length and modification time when it was heard.
+                file_stamp     TEXT    NOT NULL,
+                duration_ticks INTEGER NOT NULL,
+                window_count   INTEGER NOT NULL,
+                analysed_at    INTEGER NOT NULL,
+                -- Why it could not be heard, for a file that cannot; NULL otherwise.
+                failure        TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS semantic_audio_clips (
+                track_id     TEXT    NOT NULL,
+                -- The clip's index on the song's 10 s grid (ClipGrid).
+                window_index INTEGER NOT NULL,
+                -- 512 x fp16, little-endian, unit length (Embedding.ToStored).
+                embedding    BLOB    NOT NULL,
+
+                PRIMARY KEY (track_id, window_index),
+                FOREIGN KEY (track_id) REFERENCES semantic_audio_songs (track_id) ON DELETE CASCADE
+            );
+            """,
         ];
 
         public static int LatestVersion => BaselineVersion + Steps.Count;
