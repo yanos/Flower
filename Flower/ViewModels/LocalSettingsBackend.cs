@@ -64,6 +64,7 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
         PairedServerLooksUpOnline = ViewModel.PairedServerLooksUpOnline,
         PairedServerName = ViewModel.PairedServerAlias,
         PairedServerVibePlaylists = ViewModel.VibePlaylistsState(),
+        PairedServerEndlessPlay = ViewModel.EndlessPlayOffered(),
     });
 
     // The Library tab's *content* only stops making sense once this device is

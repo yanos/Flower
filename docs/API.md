@@ -69,7 +69,7 @@ so devices behind one proxy, tunnel or CGNAT do not share a budget:
 | Admin | device | `/api/admin/*` not listed below | 120 / 60s |
 | Mirror | device | `/api/admin/library/uploads*`, `/move`, `/tags`, `/artwork` | 3000 / 60s |
 | Info | device | `/info`, signed | 240 / 60s |
-| Vibe | device | `/vibe/preview`, `/vibe-playlists/{id}/extend` | 60 / 60s |
+| Vibe | device | `/vibe/preview`, `/vibe/endless`, `/vibe-playlists/{id}/extend` | 60 / 60s |
 | Strangers | address | Any gated route, no fingerprint or none on file | 30 / 60s |
 | Failures | address + device | Any route, a signature that failed | 10 / 60s |
 | Anonymous info | address | `/info`, unsigned | 120 / 60s |
@@ -216,6 +216,7 @@ not allowed".
 | `409` | `conflict` | A different file is already at that path | Final for this file |
 | `409` | `vibe-off` | Vibe Playlists are off on this server | Say so; offer nothing |
 | `409` | `vibe-not-ready` | Nothing is analysed yet | Try again later |
+| `409` | `endless-play-off` | Endless Play is off on this server | Let the queue end |
 | `411` | `length-required` | A body with no `Content-Length` | Send it with one |
 | `413` | `too-large` | Over the route's body cap | Drop the request |
 | `422` | `corrupt` | Upload bytes do not match the promised hash | Send again |
@@ -281,6 +282,7 @@ device it answers more, on that device's budget, and the answer is signed back.
 | `iconToken` | Names the server's icon picture, `null` for none. **Verified callers only**, `null` otherwise — only they can fetch it, from `GET /server-icon`. A server has an emoji or a picture, never both |
 | `looksUpOnline` | **Verified callers only**, `null` otherwise. The owner's switch for looking things up online (`lookUpOnline` in the settings). It governs every device paired here: a paired device looks up its *own* songs only while this is `true`, and never before it has heard it |
 | `vibePlaylists`, `vibePercent` | **Verified callers only**, `null` otherwise. Whether this server makes Vibe Playlists: `off`, `analysing` with `vibePercent` of the library heard so far, or `ready`. A paired device offers New Vibe Playlist… only when it is not `off` |
+| `endlessPlay` | **Verified callers only**, `null` otherwise. Whether this server offers Endless Play; a device's own switch is greyed while it is `false` |
 
 A verified call also carries the device's current `X-Flower-Alias`, and this is
 where a rename lands in the server's device list. A signed call's answer is
@@ -348,6 +350,7 @@ PascalCase JSON.
 | GET | `/download?id=` | The same bytes, as a named file |
 | POST | `/vibe/preview` | The songs a Vibe Playlist's sentence would make |
 | POST | `/vibe-playlists/{id}/extend` | More songs for a Vibe Playlist's endless queue |
+| POST | `/vibe/endless` | Songs like the last few, for a queue that ran out (Endless Play) |
 
 ### `GET /library`
 
@@ -523,6 +526,18 @@ and installs it as the playlist's songs without moving `UpdatedAt`, and
 `playlistsToken` counts those songs so a device comes back for them. The
 sentence is never logged above Debug.
 
+### `POST /vibe/endless`
+
+Endless Play (`VibeEndpoints.Endless`, `docs/VIBE-PLAYLIST-PLAN.md`, "Endless
+Play"): a queue that has run out asks for songs like its last few. Takes
+`{"Seeds": [ids], "Exclude": [ids]}`, by the server's ids, at most 20 seeds
+(none is `400`), and answers `{"Tracks": [...]}`: up to 50 songs nearest the
+seeds taken together, best first, none of them a seed or excluded. Seeds the
+server never analysed count for nothing, and with none analysed the answer is
+empty. Any paired device may ask, on the Vibe budget. `409`
+`endless-play-off` while the owner has Endless Play off, `409`
+`vibe-not-ready` before any song is analysed.
+
 ### `GET /artist-image?artist=`
 
 A picture of an artist, from Deezer, looked up by the server on the caller's
@@ -607,7 +622,7 @@ reports to a paired device — the public one among them when public access is o
 Editable: `alias`, `iconEmoji`, `advertisedHost`, `advertiseOnLan`,
 `trustTailscaleRange`, `allowedCidrs`, `libraryPaths`, `integrateWithITunes`,
 `syncPlayCountFromITunes`, `syncDateAddedFromITunes`, `allowPublicAccess`,
-`lookUpOnline`, `aiFeaturesEnabled`, `vibeEnabled`, `vibeClipsPerSong`. Every field is optional and an absent one is left alone. Read-only alongside
+`lookUpOnline`, `aiFeaturesEnabled`, `vibeEnabled`, `endlessPlayEnabled`, `vibeClipsPerSong`. Every field is optional and an absent one is left alone. Read-only alongside
 them: `dataDirectory`, `version`, `addresses`, `publicAddress`, `publicOrigin`,
 `publicReachability`, `fingerprint`, `advertisedAs`, `appleMusicFolder`,
 `iTunesLibraryDescription`, `iconToken`, and `overridden` — settings pinned by
@@ -632,30 +647,40 @@ Changes are written to `flower-server.json` in the data directory.
 Changing an iTunes switch starts a rescan; changing `libraryPaths` does not —
 call `/library/rescan`.
 
-### Vibe Playlists
+### AI features: Vibe Playlists and Endless Play
 
 `aiFeaturesEnabled` is the master switch over every AI feature (off by
-default), and `vibeEnabled` Vibe Playlists' own under it (on by default); they
-run while both are on. Both, and `vibeClipsPerSong`, take effect in the same
-request (`SemanticAudioService`): running starts the model download, then the
-analysis; either switch off stops the job and deletes the model and every analysis; a new clip setting
-rebuilds the index. `vibeClipsPerSong` is one of `3`, `6`, `12` or `0` (the
+default), and under it each feature's own: `vibeEnabled` (on by default) and
+`endlessPlayEnabled` (off by default). A feature runs while its switch and the
+master are on, and the songs are listened to while either feature runs. The
+switches and `vibeClipsPerSong` take effect in the same request
+(`SemanticAudioService`): listening starts with the model download, then the
+analysis; the last feature off stops the job and deletes the model and every
+analysis; a new clip setting rebuilds the index. `vibeClipsPerSong` is one of `3`, `6`, `12` or `0` (the
 whole song), and anything else is `400`. See `docs/VIBE-PLAYLIST-PLAN.md`.
 
 | Method | Path | Answers |
 |---|---|---|
 | GET | `/vibe/status` | `VibeStatusDto` |
 | POST | `/vibe/retry` | `VibeStatusDto`, after starting again from an error |
+| POST | `/vibe/pause` | `VibeStatusDto`, after pausing the listening |
+| POST | `/vibe/resume` | `VibeStatusDto`, after resuming it |
+
+A pause stops the analysis, and a model download still under way, at once;
+searches go on with what was heard. It is written to `flower-server.json` as
+`SemanticAudioPaused`, so the server stays paused across a restart, and is
+`409` `conflict` when the environment or command line sets that.
 
 `VibeStatusDto` (`ServerAdminContracts.cs`): `state` (`Off`, `Downloading`,
-`Preparing`, `Analysing`, `UpToDate`, `Paused`, `Failed`), `download`
+`Preparing`, `Analysing`, `UpToDate`, `WaitingForScan`, `Paused`, `Failed`), `download`
 (`{bytesDone, bytesTotal}` while downloading), `songsDone`, `songsEligible`,
 `songsSearchable`, `currentTitle` and `currentArtist` while analysing,
 `secondsLeft`, `error`, `modelBytes`, `analysisBytes`, `costs` (each clip
 setting's `{clipsPerSong, clips, bytes, seconds}` for this library, `seconds`
 null until the server has measured itself), `failedCount`, and `failures`, the
 first 200 songs that couldn't be analysed as `{title, artist, reason}`.
-`Paused` means a library scan is running; the analysis waits it out.
+`WaitingForScan` means a library scan is running and the analysis waits it
+out; `Paused` means the owner paused it.
 
 ### The library
 

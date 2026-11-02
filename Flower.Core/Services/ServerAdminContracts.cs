@@ -94,12 +94,14 @@ public sealed record ServerSettingsDto(
     // Whether the server looks things up online for its library, and so for
     // every device paired to it - see MusicLibrarySettings.LookUpOnline.
     bool LookUpOnline = true,
-    // The AI features' master switch and Vibe Playlists' two settings - see
-    // MusicLibrarySettings.AiFeaturesEnabled. Where Vibe Playlists stand is
-    // GET /api/admin/vibe/status (VibeStatusDto).
+    // The AI features' master switch, each feature's own, and the clips per
+    // song they share - see MusicLibrarySettings.AiFeaturesEnabled. Where the
+    // listening stands, paused or not, is GET /api/admin/vibe/status
+    // (VibeStatusDto).
     bool AiFeaturesEnabled = false,
     bool VibeEnabled = true,
-    int VibeClipsPerSong = ClipGrid.DefaultClipsPerSong);
+    int VibeClipsPerSong = ClipGrid.DefaultClipsPerSong,
+    bool EndlessPlayEnabled = false);
 
 public sealed record ServerSettingsUpdateDto(
     string? Alias,
@@ -117,7 +119,8 @@ public sealed record ServerSettingsUpdateDto(
     bool? LookUpOnline = null,
     bool? AiFeaturesEnabled = null,
     bool? VibeEnabled = null,
-    int? VibeClipsPerSong = null);
+    int? VibeClipsPerSong = null,
+    bool? EndlessPlayEnabled = null);
 
 // GET /api/admin/vibe/status - where Vibe Playlists stand on the server, for
 // the settings page to poll while it shows them (docs/VIBE-PLAYLIST-PLAN.md,

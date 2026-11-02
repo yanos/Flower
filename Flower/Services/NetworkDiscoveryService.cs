@@ -122,6 +122,11 @@ public class DiscoveredDevice
 
     public int? ServerVibePercent { get; set; }
 
+    // Whether this server offers Endless Play (endlessPlay, told to paired
+    // devices only) - see AppSettings.PairedServerEndlessPlay. Null until the
+    // server says.
+    public bool? ServerEndlessPlay { get; set; }
+
     // This peer's Library.ChangeToken as of its last /info answer - the same
     // opaque token GET /api/flower/v1/library serves as its ETag. Empty until
     // resolved. Changing means the peer's catalog changed, which is how a
@@ -795,6 +800,16 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
                     changed = true;
                 }
             }
+            if (doc.RootElement.TryGetProperty("endlessPlay", out var endlessProp) &&
+                endlessProp.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            {
+                var endlessPlay = endlessProp.ValueKind == JsonValueKind.True;
+                if (endlessPlay != device.ServerEndlessPlay)
+                {
+                    device.ServerEndlessPlay = endlessPlay;
+                    changed = true;
+                }
+            }
             if (doc.RootElement.TryGetProperty("libraryToken", out var tokenProp) &&
                 tokenProp.GetString() is { } libraryToken && libraryToken != device.LibraryToken)
             {
@@ -1238,6 +1253,7 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
                     ServerLooksUpOnline = existing.ServerLooksUpOnline,
                     ServerVibePlaylists = existing.ServerVibePlaylists,
                     ServerVibePercent = existing.ServerVibePercent,
+                    ServerEndlessPlay = existing.ServerEndlessPlay,
                     LibraryToken = existing.LibraryToken,
                     PlaylistsToken = existing.PlaylistsToken,
                     IconEmoji = existing.IconEmoji,

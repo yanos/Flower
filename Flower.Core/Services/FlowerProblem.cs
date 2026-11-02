@@ -61,6 +61,8 @@ public static class ProblemCodes
     // yet (the model still downloading, or the first songs not heard).
     public const string VibeOff = "vibe-off";
     public const string VibeNotReady = "vibe-not-ready";
+    // 409 - Endless Play: the owner has it off.
+    public const string EndlessPlayOff = "endless-play-off";
     public const string LengthRequired = "length-required";
     public const string TooLarge = "too-large";
     public const string Corrupt = "corrupt";

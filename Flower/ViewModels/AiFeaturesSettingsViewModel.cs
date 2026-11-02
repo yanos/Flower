@@ -16,16 +16,18 @@ using Flower.Services;
 namespace Flower.ViewModels;
 
 // The AI Features tab: the master switch over every feature that runs a
-// model on the host's own songs, and under it each feature's own - for now
-// only Vibe Playlist (docs/VIBE-PLAYLIST-PLAN.md, "The settings page"), with
-// its clips per song and where its job stands. The switches are drafted with
-// the rest of the page and saved by its Save; the status is live, polled
-// every two seconds while the tab shows, as the Logs tab follows its log.
+// model on the host's own songs, and under it each feature's own - Vibe
+// Playlist and Endless Play (docs/VIBE-PLAYLIST-PLAN.md, "The settings
+// page") - then the listening both are made from: its clips per song, where
+// it stands, and a pause. The switches are drafted with the rest of the page
+// and saved by its Save; the status is live, polled every two seconds while
+// the tab shows, as the Logs tab follows its log; Pause and Resume apply at
+// once, like Retry.
 //
-// A feature runs while both its switch and the master are on, so either one
-// turned off deletes hours of work. A switch turned off says, under itself,
-// what saving will delete - the page's Save is the confirmation, and Cancel
-// or the switch turned back on is the "no".
+// The songs are listened to while the master and at least one feature are
+// on, so the last of them turned off deletes hours of work. Saving that says
+// so first - the page's Save is the confirmation, and Cancel or the switch
+// turned back on is the "no".
 public sealed partial class AiFeaturesSettingsViewModel : ViewModelBase
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(2);
@@ -35,6 +37,7 @@ public sealed partial class AiFeaturesSettingsViewModel : ViewModelBase
     private bool _pollInFlight;
     private bool _savedEnabled;
     private bool _savedVibeEnabled = true;
+    private bool _savedEndlessPlayEnabled;
     private int _savedClipsPerSong = ClipGrid.DefaultClipsPerSong;
     private VibeStatusDto? _status;
 
@@ -58,6 +61,7 @@ public sealed partial class AiFeaturesSettingsViewModel : ViewModelBase
                 return;
 
             OnPropertyChanged(nameof(CanEditVibe));
+            OnPropertyChanged(nameof(CanEditEndlessPlay));
             OnDraftChanged();
         }
     }
@@ -69,6 +73,17 @@ public sealed partial class AiFeaturesSettingsViewModel : ViewModelBase
         set
         {
             if (SetProperty(ref _vibeEnabled, value))
+                OnDraftChanged();
+        }
+    }
+
+    private bool _endlessPlayEnabled;
+    public bool EndlessPlayEnabled
+    {
+        get => _endlessPlayEnabled;
+        set
+        {
+            if (SetProperty(ref _endlessPlayEnabled, value))
                 OnDraftChanged();
         }
     }
@@ -90,6 +105,7 @@ public sealed partial class AiFeaturesSettingsViewModel : ViewModelBase
 
     public SettingLock EnabledLock { get; private set; } = SettingLock.None;
     public SettingLock VibeEnabledLock { get; private set; } = SettingLock.None;
+    public SettingLock EndlessPlayEnabledLock { get; private set; } = SettingLock.None;
     public SettingLock ClipsPerSongLock { get; private set; } = SettingLock.None;
 
     // A host older than these settings answers their status with a 404:
@@ -105,6 +121,7 @@ public sealed partial class AiFeaturesSettingsViewModel : ViewModelBase
 
             OnPropertyChanged(nameof(CanEdit));
             OnPropertyChanged(nameof(CanEditVibe));
+            OnPropertyChanged(nameof(CanEditEndlessPlay));
         }
     }
 
@@ -113,36 +130,46 @@ public sealed partial class AiFeaturesSettingsViewModel : ViewModelBase
     // A feature's own switch and settings mean something only under the
     // master switch.
     public bool CanEditVibe => !IsUnsupported && Enabled && VibeEnabledLock.IsEditable;
-    public bool CanEditClips => CanEditVibe && ClipsPerSongLock.IsEditable;
+    public bool CanEditEndlessPlay => !IsUnsupported && Enabled && EndlessPlayEnabledLock.IsEditable;
+    public bool CanEditClips => !IsUnsupported && RunsAnalysis && ClipsPerSongLock.IsEditable;
 
     public string Description =>
         "Features that run a model on this server, on its own songs. Nothing leaves the server. "
         + "Turning this off deletes every model and everything they worked out.";
 
     public string VibeDescription =>
-        "Make a playlist from a sentence, like “music for a rainy day”: the server listens to every song once and "
-        + $"plays the ones that sound like it. Turning this on downloads a {Size(SemanticAudioModelManifest.Current.TotalBytes)} model first.";
+        "Make a playlist from a sentence, like “music for a rainy day”, that plays the songs that sound like it.";
+
+    public string EndlessPlayDescription =>
+        "When a queue runs out, keep playing songs that sound like the last few. Each device turns it on for itself too.";
+
+    // What both features are made from.
+    public string ListeningDescription =>
+        "The server listens to every song once, to know what it sounds like. Turning a feature on downloads a "
+        + $"{Size(SemanticAudioModelManifest.Current.TotalBytes)} model first.";
 
     public string ClipsDescription =>
         "How much of each song is listened to: a few 10-second clips spread over it, or all of it. "
         + "More clips take longer and found no better songs in testing. Lowering it is instant; raising it listens only to the clips not heard before.";
 
-    private bool SavedRunsVibe => _savedEnabled && _savedVibeEnabled;
-    private bool RunsVibe => Enabled && VibeEnabled;
+    // Whether the songs are listened to: the master and any feature
+    // (MusicLibrarySettings.RunsSemanticAudio).
+    private bool SavedRunsAnalysis => _savedEnabled && (_savedVibeEnabled || _savedEndlessPlayEnabled);
+    private bool RunsAnalysis => Enabled && (VibeEnabled || EndlessPlayEnabled);
 
     // What saving will do that can't be undone, or will take a long time.
     public string? OffWarning
     {
         get
         {
-            if (!SavedRunsVibe || RunsVibe)
+            if (!SavedRunsAnalysis || RunsAnalysis)
                 return null;
 
             var model = _status?.ModelBytes ?? 0;
             var songs = _status?.SongsSearchable ?? 0;
             var again = SavedCost?.Seconds is { } seconds ? $" (about {Duration(seconds)} on this server)" : "";
-            return $"Saving turns Vibe Playlist off and deletes its model ({Size(model)}) and the analysis of {songs:N0} songs. "
-                + $"Turning it back on means analysing every song again{again}.";
+            return $"Saving stops listening to songs and deletes the model ({Size(model)}) and the analysis of {songs:N0} songs. "
+                + $"Turning a feature back on means analysing every song again{again}.";
         }
     }
 
@@ -150,23 +177,23 @@ public sealed partial class AiFeaturesSettingsViewModel : ViewModelBase
     {
         get
         {
-            if (SavedRunsVibe || !RunsVibe)
+            if (SavedRunsAnalysis || !RunsAnalysis)
                 return null;
 
             var cost = Choices.FirstOrDefault(c => c.ClipsPerSong == ClipsPerSong)?.Cost;
             var time = cost?.Seconds is { } seconds ? $", about {Duration(seconds)}" : "";
-            return $"Saving downloads Vibe Playlist's model ({Size(SemanticAudioModelManifest.Current.TotalBytes)}) and then listens to every song once{time}. "
+            return $"Saving downloads the model ({Size(SemanticAudioModelManifest.Current.TotalBytes)}) and then listens to every song once{time}. "
                 + "Songs can be found as soon as they have been heard.";
         }
     }
 
     public string? RaiseNote =>
-        SavedRunsVibe && RunsVibe && ClipsPerSong != _savedClipsPerSong && Rank(ClipsPerSong) > Rank(_savedClipsPerSong)
+        SavedRunsAnalysis && RunsAnalysis && ClipsPerSong != _savedClipsPerSong && Rank(ClipsPerSong) > Rank(_savedClipsPerSong)
             ? "Saving listens to the clips not already heard, in the background. Searches go on meanwhile."
             : null;
 
-    // Live, from the host: shown whenever Vibe Playlist runs as saved.
-    public bool ShowsStatus => SavedRunsVibe && _status != null && State != SemanticAudioState.Off;
+    // Live, from the host: shown whenever the songs are listened to as saved.
+    public bool ShowsStatus => SavedRunsAnalysis && _status != null && State != SemanticAudioState.Off;
 
     public string StatusText
     {
@@ -185,7 +212,8 @@ public sealed partial class AiFeaturesSettingsViewModel : ViewModelBase
                 SemanticAudioState.Analysing =>
                     $"Analysing: {songs}" + (status.SecondsLeft is { } left ? $", about {Duration(left)} left" : ""),
                 SemanticAudioState.UpToDate => $"Up to date: {status.SongsSearchable:N0} songs analysed",
-                SemanticAudioState.Paused => $"Paused while the library is scanned: {songs}",
+                SemanticAudioState.WaitingForScan => $"Waiting for the library scan to finish: {songs}",
+                SemanticAudioState.Paused => status.SongsEligible > 0 ? $"Paused: {songs}" : "Paused",
                 SemanticAudioState.Failed => status.Error ?? "Stopped on an error.",
                 _ => "",
             };
@@ -197,7 +225,15 @@ public sealed partial class AiFeaturesSettingsViewModel : ViewModelBase
         : null;
 
     public bool ShowsProgress => ShowsStatus && State is SemanticAudioState.Downloading or SemanticAudioState.Analysing
-        or SemanticAudioState.Paused or SemanticAudioState.Preparing;
+        or SemanticAudioState.WaitingForScan or SemanticAudioState.Paused or SemanticAudioState.Preparing;
+
+    // Pause while there is work going on or waiting to; Resume once paused.
+    public bool CanPause => ShowsStatus && !_pauseInFlight && State is SemanticAudioState.Downloading or SemanticAudioState.Preparing
+        or SemanticAudioState.Analysing or SemanticAudioState.WaitingForScan;
+
+    public bool CanResume => ShowsStatus && !_pauseInFlight && State == SemanticAudioState.Paused;
+
+    private bool _pauseInFlight;
 
     public bool IsProgressIndeterminate => State == SemanticAudioState.Preparing
         || State == SemanticAudioState.Downloading && _status?.Download is null;
@@ -244,22 +280,28 @@ public sealed partial class AiFeaturesSettingsViewModel : ViewModelBase
     {
         _savedEnabled = snapshot.AiFeaturesEnabled;
         _savedVibeEnabled = snapshot.VibeEnabled;
+        _savedEndlessPlayEnabled = snapshot.EndlessPlayEnabled;
         _savedClipsPerSong = snapshot.VibeClipsPerSong;
         EnabledLock = LockFor(snapshot, nameof(SettingsSnapshot.AiFeaturesEnabled));
         VibeEnabledLock = LockFor(snapshot, nameof(SettingsSnapshot.VibeEnabled));
+        EndlessPlayEnabledLock = LockFor(snapshot, nameof(SettingsSnapshot.EndlessPlayEnabled));
         ClipsPerSongLock = LockFor(snapshot, nameof(SettingsSnapshot.VibeClipsPerSong));
         OnPropertyChanged(nameof(EnabledLock));
         OnPropertyChanged(nameof(VibeEnabledLock));
+        OnPropertyChanged(nameof(EndlessPlayEnabledLock));
         OnPropertyChanged(nameof(ClipsPerSongLock));
 
         _enabled = snapshot.AiFeaturesEnabled;
         _vibeEnabled = snapshot.VibeEnabled;
+        _endlessPlayEnabled = snapshot.EndlessPlayEnabled;
         _clipsPerSong = snapshot.VibeClipsPerSong;
         OnPropertyChanged(nameof(Enabled));
         OnPropertyChanged(nameof(VibeEnabled));
+        OnPropertyChanged(nameof(EndlessPlayEnabled));
         OnPropertyChanged(nameof(ClipsPerSong));
         OnPropertyChanged(nameof(CanEdit));
         OnPropertyChanged(nameof(CanEditVibe));
+        OnPropertyChanged(nameof(CanEditEndlessPlay));
         OnPropertyChanged(nameof(CanEditClips));
         foreach (var choice in Choices)
             choice.Refresh();
@@ -272,6 +314,7 @@ public sealed partial class AiFeaturesSettingsViewModel : ViewModelBase
     {
         _savedEnabled = Enabled;
         _savedVibeEnabled = VibeEnabled;
+        _savedEndlessPlayEnabled = EndlessPlayEnabled;
         _savedClipsPerSong = ClipsPerSong;
         OnDraftChanged();
         OnStatusChanged();
@@ -350,6 +393,31 @@ public sealed partial class AiFeaturesSettingsViewModel : ViewModelBase
         }
     }
 
+    [RelayCommand]
+    private Task PauseAsync() => SetPausedAsync(true);
+
+    [RelayCommand]
+    private Task ResumeAsync() => SetPausedAsync(false);
+
+    private async Task SetPausedAsync(bool paused)
+    {
+        _pauseInFlight = true;
+        OnStatusChanged();
+        try
+        {
+            Show(await _backend.SetVibePausedAsync(paused));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            StatusError = paused ? $"Couldn't pause: {ex.Message}" : $"Couldn't resume: {ex.Message}";
+        }
+        finally
+        {
+            _pauseInFlight = false;
+            OnStatusChanged();
+        }
+    }
+
     private void Show(VibeStatusDto status)
     {
         _status = status;
@@ -376,6 +444,8 @@ public sealed partial class AiFeaturesSettingsViewModel : ViewModelBase
         OnPropertyChanged(nameof(NowText));
         OnPropertyChanged(nameof(ShowsProgress));
         OnPropertyChanged(nameof(IsProgressIndeterminate));
+        OnPropertyChanged(nameof(CanPause));
+        OnPropertyChanged(nameof(CanResume));
         OnPropertyChanged(nameof(Progress));
         OnPropertyChanged(nameof(IsFailed));
         OnPropertyChanged(nameof(StorageText));

@@ -81,11 +81,13 @@ public static class SyncProtocol
 // (docs/VIBE-PLAYLIST-PLAN.md, "The wire"): "off", "analysing" with
 // VibePercent of the library heard so far, or "ready". A paired device offers
 // New Vibe Playlist… only when it is not "off", and its own settings say which.
-// Verified callers only.
+// EndlessPlay is whether it carries a queue on once it runs out
+// (MusicLibrarySettings.EndlessPlayEnabled), which a device's own switch
+// needs. Verified callers only.
 public sealed record SyncInfoResponseDto(
     string Alias, string Version, string? DeviceModel, string DeviceType,
     string Fingerprint, string PublicKey, bool Download, bool? TrustsCaller,
     string LibraryToken, List<string>? Addresses = null, bool? CallerIsAdmin = null,
     string? PlaylistsToken = null, bool? ImportsMusicAppPlays = null,
     string? IconEmoji = null, string? IconToken = null, bool? LooksUpOnline = null,
-    string? VibePlaylists = null, int? VibePercent = null);
+    string? VibePlaylists = null, int? VibePercent = null, bool? EndlessPlay = null);

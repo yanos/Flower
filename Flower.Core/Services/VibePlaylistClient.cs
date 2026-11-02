@@ -40,6 +40,11 @@ public interface IVibePlaylists
     // More songs for an endless queue that has played most of its pool, never
     // one it already has. Empty when there are none or the server can't say.
     Task<IReadOnlyList<Track>> ExtendAsync(Playlist playlist, IEnumerable<Track> extensions, CancellationToken ct = default);
+
+    // Endless Play: songs like `seeds` (the last few played, oldest first),
+    // none of `exclude`, best first. Empty when there are none, the server has
+    // it off, or it can't say.
+    Task<IReadOnlyList<Track>> EndlessAsync(IReadOnlyList<Track> seeds, IEnumerable<Track> exclude, CancellationToken ct = default);
 }
 
 // The server's answers (VibeEndpoints), resolved against this device's library
@@ -59,12 +64,26 @@ public sealed class VibePlaylistClient(
 
     public async Task<IReadOnlyList<Track>> ExtendAsync(Playlist playlist, IEnumerable<Track> extensions, CancellationToken ct = default)
     {
-        var exclude = extensions.Select(t => t.OriginTrackId ?? t.Id.ToKey()).ToList();
+        var exclude = extensions.Select(ServerId).ToList();
         var body = JsonSerializer.SerializeToUtf8Bytes(
             new VibeExtendRequestDto(exclude), VibePlaylistJsonContext.Default.VibeExtendRequestDto);
         var (songs, _) = await PostAsync(VibeRoutes.Extend(playlist.Id), body, ct);
         return songs;
     }
+
+    public async Task<IReadOnlyList<Track>> EndlessAsync(IReadOnlyList<Track> seeds, IEnumerable<Track> exclude, CancellationToken ct = default)
+    {
+        var body = JsonSerializer.SerializeToUtf8Bytes(
+            new EndlessPlayRequestDto(seeds.Select(ServerId).ToList(), exclude.Select(ServerId).Distinct().ToList()),
+            VibePlaylistJsonContext.Default.EndlessPlayRequestDto);
+        var (songs, _) = await PostAsync(VibeRoutes.Endless, body, ct);
+        return songs;
+    }
+
+    // A song as the server knows it: its own id for one of the server's, and
+    // this device's for one of its own, which the server has never heard and
+    // so leaves out.
+    private static string ServerId(Track track) => track.OriginTrackId ?? track.Id.ToKey();
 
     private async Task<(IReadOnlyList<Track> Songs, VibeRefusal Refusal)> PostAsync(string path, byte[] body, CancellationToken ct)
     {

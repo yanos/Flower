@@ -65,6 +65,9 @@ public sealed class OriginLibraryImporter(
     // Playlist…. Null from a server too old to say.
     public string? OriginVibePlaylists { get; private set; }
 
+    // And whether it offers Endless Play, which this tab's own switch needs.
+    public bool? OriginEndlessPlay { get; private set; }
+
     // Who the origin server said it is, on the same handshake. Every track
     // this imports carries it as its origin, which is what makes it the
     // server a browser tab's tracks are streamed from - see
@@ -128,6 +131,7 @@ public sealed class OriginLibraryImporter(
         OriginTrustsThisClient = info?.TrustsCaller;
         OriginCallerIsAdmin = info?.CallerIsAdmin;
         OriginVibePlaylists = info?.VibePlaylists;
+        OriginEndlessPlay = info?.EndlessPlay;
         OriginFingerprint = string.IsNullOrEmpty(info?.Fingerprint) ? null : info.Fingerprint;
         HandshakeAnswered?.Invoke();
 

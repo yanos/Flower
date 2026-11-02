@@ -41,6 +41,9 @@ public class VibeQueuePlaybackTests : PinnedDataDirectory
             Asked++;
             return Task.FromResult(more);
         }
+
+        public Task<IReadOnlyList<Track>> EndlessAsync(IReadOnlyList<Track> seeds, IEnumerable<Track> exclude, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<Track>>([]);
     }
 
     private static List<Track> Songs(int count, int from = 0) =>

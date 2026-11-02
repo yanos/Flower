@@ -53,10 +53,11 @@ public sealed class SemanticAudioReport(SemanticAudioEngine engine, Library libr
     }
 
     // What /info tells a paired device: whether there is anything to make a
-    // Vibe Playlist from.
-    public (string State, int? Percent) DescribeForInfo()
+    // Vibe Playlist from. `offered` is the feature's own switches: the engine
+    // also runs for Endless Play alone.
+    public (string State, int? Percent) DescribeForInfo(bool offered)
     {
-        if (!engine.Enabled)
+        if (!offered || !engine.Enabled)
             return ("off", null);
 
         var status = engine.Status;

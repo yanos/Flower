@@ -143,7 +143,7 @@ public static class DiscoveryEndpoints
                     previousAlias, caller.Fingerprint, claimedAlias);
             }
 
-            var (vibeState, vibePercent) = callerIsTrusted ? vibe.Report.DescribeForInfo() : (null, null);
+            var (vibeState, vibePercent) = callerIsTrusted ? vibe.Report.DescribeForInfo(vibe.RunsVibePlaylists) : (null, null);
 
             // The name this server actually announced, not the configured
             // one: they differ when another server already had it, and a
@@ -233,7 +233,10 @@ public static class DiscoveryEndpoints
                 // Whether this server makes Vibe Playlists, for a paired
                 // device to offer them or not - see SyncInfoResponseDto.
                 vibeState,
-                vibePercent);
+                vibePercent,
+                // And whether it carries a queue on once it runs out, for a
+                // paired device's own Endless Play switch to say so.
+                callerIsTrusted ? vibe.RunsEndlessPlay : null);
 
             // Signed, over the bytes sent, whenever the caller signed its
             // request: trustsCaller: false is how a revoked device finds out,

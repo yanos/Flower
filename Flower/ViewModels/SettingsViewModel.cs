@@ -377,6 +377,17 @@ public sealed partial class SettingsViewModel : ViewModelBase
             ? $"Vibe Playlists are made by {ServerName}, which has them off."
             : $"Vibe Playlists are made by {ServerName}, which has them on.";
 
+    // Endless Play is this device's own switch, shown wherever there is a
+    // server to ask for the songs - a paired device, or a browser tab, whose
+    // server is its origin - and greyed while that server doesn't offer it.
+    public bool ShowsEndlessPlay => Device != null && _snapshot.PairedServerEndlessPlay != null;
+
+    public bool CanEditEndlessPlay => _snapshot.PairedServerEndlessPlay == true;
+
+    public string? EndlessPlayNote => _snapshot.PairedServerEndlessPlay == false
+        ? $"Endless Play is off on {ServerName}. Its owner can turn it on in its AI Features settings."
+        : null;
+
     private string ServerName => string.IsNullOrEmpty(_snapshot.PairedServerName) ? "the server" : _snapshot.PairedServerName;
 
     private string _advertisedHost = "";
@@ -603,6 +614,9 @@ public sealed partial class SettingsViewModel : ViewModelBase
             OnPropertyChanged(nameof(ShowsLookUpOnline));
             OnPropertyChanged(nameof(LookUpOnlineNote));
             OnPropertyChanged(nameof(VibePlaylistsNote));
+            OnPropertyChanged(nameof(ShowsEndlessPlay));
+            OnPropertyChanged(nameof(CanEditEndlessPlay));
+            OnPropertyChanged(nameof(EndlessPlayNote));
             OnPropertyChanged(nameof(HasAdvertisedAs));
             OnPropertyChanged(nameof(AdvertisedAsMessage));
             OnPropertyChanged(nameof(HasPublicReachability));
@@ -677,6 +691,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
                 LookUpOnline = LookUpOnline,
                 AiFeaturesEnabled = AiFeatures.Enabled,
                 VibeEnabled = AiFeatures.VibeEnabled,
+                EndlessPlayEnabled = AiFeatures.EndlessPlayEnabled,
                 VibeClipsPerSong = AiFeatures.ClipsPerSong,
                 AllowedCidrs = ParseCidrs(),
             }, ct);

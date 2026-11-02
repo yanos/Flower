@@ -172,6 +172,10 @@ public class DiscoveryEndpointTests(FlowerServerFixture server) : IClassFixture<
             Assert.True(!anonymous.TryGetProperty("vibePlaylists", out var hidden)
                         || hidden.ValueKind == JsonValueKind.Null);
             Assert.Equal("off", trusted.GetProperty("vibePlaylists").GetString());
+            // And Endless Play, which a device's own switch needs.
+            Assert.False(anonymous.TryGetProperty("endlessPlay", out var endlessHidden)
+                         && endlessHidden.ValueKind != JsonValueKind.Null);
+            Assert.False(trusted.GetProperty("endlessPlay").GetBoolean());
         }
         finally
         {

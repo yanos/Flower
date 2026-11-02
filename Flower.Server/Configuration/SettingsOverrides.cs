@@ -33,7 +33,9 @@ public static class SettingsOverrides
         nameof(FlowerServerOptions.LookUpOnline),
         nameof(FlowerServerOptions.AiFeaturesEnabled),
         nameof(FlowerServerOptions.VibeEnabled),
+        nameof(FlowerServerOptions.EndlessPlayEnabled),
         nameof(FlowerServerOptions.VibeClipsPerSong),
+        nameof(FlowerServerOptions.SemanticAudioPaused),
     ];
 
     // Each of PageSettings that something above flower-server.json sets, with

@@ -95,6 +95,14 @@ public sealed class VibeQueueSource
 
     public void RecordSkip(Track track) => _skipped.Add(track.Id);
 
+    // A song queued by other means - the one picked to start the playlist
+    // from - counts as queued, so it isn't drawn again straight away.
+    public void Queued(Track track)
+    {
+        if (_rank.ContainsKey(track.Id) && _used.Add(track.Id))
+            _queued.Add(track);
+    }
+
     public bool WasSkipped(Track track) => _skipped.Contains(track.Id);
 
     // The next song, or null for an empty pool. `recent` is what was queued

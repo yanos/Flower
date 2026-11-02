@@ -135,6 +135,9 @@ public sealed class ServerAdminClient(
     public Task<VibeStatusDto> RetryVibeAsync(CancellationToken ct = default) =>
         SendAsync<VibeStatusDto>(HttpMethod.Post, "/api/admin/vibe/retry", null, ct);
 
+    public Task<VibeStatusDto> SetVibePausedAsync(bool paused, CancellationToken ct = default) =>
+        SendAsync<VibeStatusDto>(HttpMethod.Post, paused ? "/api/admin/vibe/pause" : "/api/admin/vibe/resume", null, ct);
+
     public Task<AdminLibraryStatusDto> GetLibraryStatusAsync(CancellationToken ct = default) =>
         SendAsync<AdminLibraryStatusDto>(HttpMethod.Get, "/api/admin/library", null, ct);
 

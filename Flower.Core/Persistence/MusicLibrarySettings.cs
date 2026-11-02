@@ -74,10 +74,30 @@ public class MusicLibrarySettings
     // on; turning one off deletes what only it used, as the master does.
     public bool VibeEnabled { get; set; } = true;
 
-    // Whether Vibe Playlists run here: both switches. Not a setting, so not
-    // in settings.json either.
+    // Endless Play: a queue that runs out is carried on with songs that sound
+    // like the last few played (docs/VIBE-PLAYLIST-PLAN.md, "Endless Play").
+    // The host's switch, which offers it; each device has its own switch for
+    // whether it wants it (AppSettings.EndlessPlay). Off by default, unlike
+    // VibeEnabled: it changes what plays without anyone asking.
+    public bool EndlessPlayEnabled { get; set; }
+
+    // The owner's pause on the listening (SemanticAudioEngine.SetPaused):
+    // kept here so it outlasts a restart, and set by the settings page's
+    // Pause button rather than its Save.
+    public bool SemanticAudioPaused { get; set; }
+
+    // Whether each feature runs here: its switch and the master. Not
+    // settings, so not in settings.json either.
     [JsonIgnore]
     public bool RunsVibePlaylists => AiFeaturesEnabled && VibeEnabled;
+
+    [JsonIgnore]
+    public bool RunsEndlessPlay => AiFeaturesEnabled && EndlessPlayEnabled;
+
+    // Whether the songs are listened to at all: while any feature needs them.
+    // Off, the model and every analysis are deleted.
+    [JsonIgnore]
+    public bool RunsSemanticAudio => RunsVibePlaylists || RunsEndlessPlay;
 
     // How many 10 s clips of each song are listened to: a count spread evenly
     // over the song, or 0 for all of it (ClipGrid.WholeSong). See

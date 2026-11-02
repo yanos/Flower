@@ -183,6 +183,22 @@
                      Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"
                      IsVisible="{Binding ShowsShareLogs}"/>
 
+          <!-- Endless Play, this device's own switch (AppSettings.EndlessPlay),
+               off by default. Shown wherever a server could hand it the songs,
+               and greyed with a note while that server doesn't offer it
+               (SettingsViewModel.EndlessPlayNote). -->
+          <CheckBox Content="Endless Play"
+                    Margin="0,16,0,0"
+                    IsChecked="{Binding Device.EndlessPlay, Mode=TwoWay, FallbackValue=False}"
+                    IsEnabled="{Binding CanEditEndlessPlay}"
+                    IsVisible="{Binding ShowsEndlessPlay}"/>
+          <TextBlock Text="When the queue runs out, keep playing songs that sound like the last few."
+                     Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"
+                     IsVisible="{Binding ShowsEndlessPlay}"/>
+          <TextBlock Text="{Binding EndlessPlayNote}"
+                     Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"
+                     IsVisible="{Binding EndlessPlayNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+
           <!-- A newer release: whether to look on its own, and looking now -
                see AppUpdatesViewModel. Only on a desktop installed from a
                release, which is the only place Device.Updates is set. -->
@@ -866,14 +882,15 @@
       </TabItem>
 
       <!-- AI Features: the master switch over every feature that runs a model
-           on the server's own songs, and under it each feature's own - for
-           now Vibe Playlist (docs/VIBE-PLAYLIST-PLAN.md, "The settings page").
-           A server's for now. The switches are drafted with the rest of the
-           page, and the status under Vibe Playlist is live, polled while this
-           tab shows (AiFeaturesSettingsViewModel.SetActive). Turning a feature
-           off deletes its analysis, so a switch turned off says what Save will
-           delete rather than asking in a dialog this panel - shown in a window
-           and a browser tab alike - has nowhere to put. -->
+           on the server's own songs, and under it each feature's own - Vibe
+           Playlist and Endless Play (docs/VIBE-PLAYLIST-PLAN.md, "The settings
+           page") - then the listening both are made from. A server's for now.
+           The switches are drafted with the rest of the page; the status is
+           live, polled while this tab shows
+           (AiFeaturesSettingsViewModel.SetActive), and Pause applies at once.
+           Turning the last feature off deletes the analysis, so the page says
+           what Save will delete rather than asking in a dialog this panel -
+           shown in a window and a browser tab alike - has nowhere to put. -->
       <TabItem Header="AI Features" x:Name="AiFeaturesTab" IsVisible="{Binding Capabilities.AiFeatures}">
         <ScrollViewer>
           <StackPanel Margin="0,12,0,0" DataContext="{Binding AiFeatures}" x:DataType="vm:AiFeaturesSettingsViewModel">
@@ -898,6 +915,15 @@
                          Margin="0,4,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
               <TextBlock Text="{Binding VibeDescription}"
                          Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
+
+              <CheckBox Content="Endless Play" Margin="0,16,0,0"
+                        IsChecked="{Binding EndlessPlayEnabled, Mode=TwoWay}"
+                        IsEnabled="{Binding CanEditEndlessPlay}"/>
+              <TextBlock Text="{Binding EndlessPlayEnabledLock.Message}" IsVisible="{Binding EndlessPlayEnabledLock.IsLocked}"
+                         Margin="0,4,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
+              <TextBlock Text="{Binding EndlessPlayDescription}"
+                         Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
+
               <TextBlock Text="{Binding OnNote}"
                          IsVisible="{Binding OnNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                          Margin="0,8,0,0" FontSize="12" TextWrapping="Wrap"/>
@@ -906,8 +932,13 @@
                          Foreground="{DynamicResource AppWarningBrush}"
                          Margin="0,8,0,0" FontSize="12" TextWrapping="Wrap"/>
 
-              <!-- Where the job stands, while it runs as saved. -->
-              <StackPanel Margin="0,16,0,0" Spacing="4" IsVisible="{Binding ShowsStatus}">
+              <!-- What both features are made from: where the listening
+                   stands while it runs as saved, its pause, and how much of
+                   each song it hears. -->
+              <TextBlock Text="Listening" FontWeight="SemiBold" Margin="0,24,0,0"/>
+              <TextBlock Text="{Binding ListeningDescription}"
+                         Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
+              <StackPanel Margin="0,12,0,0" Spacing="4" IsVisible="{Binding ShowsStatus}">
                 <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap"/>
                 <ProgressBar Minimum="0" Maximum="100" Value="{Binding Progress}"
                              IsIndeterminate="{Binding IsProgressIndeterminate}"
@@ -916,6 +947,10 @@
                            IsVisible="{Binding NowText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                 <Button Classes="standard secondary small" Content="Retry" HorizontalAlignment="Left"
                         Command="{Binding RetryCommand}" IsVisible="{Binding IsFailed}"/>
+                <Button Classes="standard secondary small" Content="Pause" HorizontalAlignment="Left"
+                        Command="{Binding PauseCommand}" IsVisible="{Binding CanPause}"/>
+                <Button Classes="standard secondary small" Content="Resume" HorizontalAlignment="Left"
+                        Command="{Binding ResumeCommand}" IsVisible="{Binding CanResume}"/>
                 <TextBlock Text="{Binding StorageText}" FontSize="11" Opacity="0.6"
                            IsVisible="{Binding StorageText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                 <Expander Header="{Binding FailedText}" Margin="0,4,0,0"
@@ -930,7 +965,7 @@
                 </Expander>
               </StackPanel>
 
-              <TextBlock Text="Clips per song" FontWeight="SemiBold" Margin="0,24,0,8"/>
+              <TextBlock Text="Clips per song" Margin="0,16,0,8"/>
               <ItemsControl ItemsSource="{Binding Choices}" IsEnabled="{Binding CanEditClips}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="vm:VibeClipChoice">

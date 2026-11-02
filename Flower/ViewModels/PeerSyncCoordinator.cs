@@ -923,6 +923,7 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         _appSettings.PairedServerLooksUpOnline = false;
         _appSettings.PairedServerVibePlaylists = null;
         _appSettings.PairedServerVibePercent = null;
+        _appSettings.PairedServerEndlessPlay = null;
         _appSettings.PairedServerLastSyncedAt = null;
         _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
         NotifyPairingChanged();
@@ -964,7 +965,8 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
             || _appSettings.PairedServerLooksUpOnline != device.ServerLooksUpOnline
             || (device.ServerVibePlaylists != null
                 && (_appSettings.PairedServerVibePlaylists != device.ServerVibePlaylists
-                    || _appSettings.PairedServerVibePercent != device.ServerVibePercent)))
+                    || _appSettings.PairedServerVibePercent != device.ServerVibePercent))
+            || (device.ServerEndlessPlay != null && _appSettings.PairedServerEndlessPlay != device.ServerEndlessPlay))
         {
             var adminChanged = _appSettings.PairedServerGrantsAdmin != device.WeAreAdmin;
             _appSettings.PairedServerGrantsAdmin = device.WeAreAdmin;
@@ -977,6 +979,8 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
                 _appSettings.PairedServerVibePlaylists = device.ServerVibePlaylists;
                 _appSettings.PairedServerVibePercent = device.ServerVibePercent;
             }
+            if (device.ServerEndlessPlay != null)
+                _appSettings.PairedServerEndlessPlay = device.ServerEndlessPlay;
             _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
 
             // Being made an administrator, or no longer being one, changes

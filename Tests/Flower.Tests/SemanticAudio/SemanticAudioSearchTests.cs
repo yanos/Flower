@@ -137,6 +137,70 @@ public class SemanticAudioSearchTests : IDisposable
         Assert.DoesNotContain(ranked, m => m.TrackId == gone.Id);
     }
 
+    // Endless Play: songs like the songs given, by their means alone.
+    private List<string?> Similar(IEnumerable<Track> seeds, params Track[] exclude) =>
+        Search().Similar(seeds.Select(t => t.Id).ToList(), exclude.Select(t => t.Id).ToHashSet(), id => _library.GetValueOrDefault(id))
+            .Select(m => _library[m.TrackId].Title)
+            .ToList();
+
+    [Fact]
+    public void Finds_the_songs_nearest_the_seeds_together_leaving_out_the_seeds()
+    {
+        // Two seeds, one on axis 0 and one on axis 1: what they share is the
+        // middle, which "between" sits on and either edge only half does.
+        var left = Add("left", [Axis(0)]);
+        var right = Add("right", [Axis(1)]);
+        Add("between", [Mix((0, 1), (1, 1))]);
+        Add("near left", [Mix((0, 1), (1, 0.2f))]);
+        Add("elsewhere", [Axis(2)]);
+
+        Assert.Equal(["between", "near left", "elsewhere"], Similar([left, right]));
+    }
+
+    [Fact]
+    public void Leaves_out_the_songs_it_is_told_to()
+    {
+        var seed = Add("seed", [Axis(0)]);
+        var heard = Add("heard", [Axis(0)]);
+        Add("fresh", [Mix((0, 1), (1, 0.5f))]);
+
+        Assert.Equal(["fresh"], Similar([seed], heard));
+    }
+
+    [Fact]
+    public void Seeds_never_heard_find_nothing()
+    {
+        Add("song", [Axis(0)]);
+
+        Assert.Empty(Similar([new Track { Title = "unheard" }]));
+    }
+
+    [Fact]
+    public void After_instrumentals_only_instrumentals_and_after_singing_anything()
+    {
+        var quiet = Add("quiet", [Mix((0, 1), (InstrumentalAxis, 0.4f))]);
+        var sung = Add("sung", [Mix((0, 1), (VocalAxis, 0.5f))]);
+        Add("instrumental", [Mix((0, 1), (InstrumentalAxis, 0.4f))]);
+        Add("song", [Mix((0, 1), (VocalAxis, 0.4f))]);
+
+        Assert.Equal(["instrumental"], Similar([quiet]));
+        Assert.Equal(["instrumental", "quiet", "song"], Similar([sung]).Order().ToList());
+    }
+
+    [Fact]
+    public void Christmas_songs_follow_only_a_christmas_song_and_spoken_word_never()
+    {
+        var song = Add("song", [Axis(0)]);
+        var carol = Add("Silent Night", [Axis(0)], genre: "Christmas");
+        Add("White Christmas", [Mix((0, 1), (1, 0.2f))]);
+        Add("sketch", [Mix((0, 1), (SpeechAxis, 0.5f))]);
+
+        Assert.DoesNotContain("White Christmas", Similar([song]));
+        Assert.Contains("White Christmas", Similar([carol]));
+        Assert.DoesNotContain("sketch", Similar([song]));
+        Assert.DoesNotContain("sketch", Similar([carol]));
+    }
+
     [Fact]
     public void Encodes_a_prompt_once()
     {

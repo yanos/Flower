@@ -9,7 +9,8 @@ namespace Flower.Server.Endpoints;
 
 // Vibe Playlists for a paired device (docs/VIBE-PLAYLIST-PLAN.md, "The wire"):
 // a preview while the editor is typed in, and more songs when an endless
-// queue has played most of its pool. Mapped in SyncEndpoints' group, so every
+// queue has played most of its pool - and Endless Play's songs for a queue
+// that has run out. Mapped in SyncEndpoints' group, so every
 // request here is signed and charged to its device's Vibe budget - the one
 // thing a listener can spend is the server's CPU, a text encode per prompt it
 // hasn't seen, and every paired device may do it, admin or not.
@@ -24,6 +25,10 @@ public static class VibeEndpoints
 
     // Far more than a session adds: one extension is ExtendSize songs.
     private const int MaxExcluded = 5000;
+
+    // "The last few songs": a device sends five (PlaylistControlViewModel's
+    // EndlessSeeds), and more would only blur them.
+    private const int MaxSeeds = 20;
 
     public static IResult Preview(HttpContext context, SemanticAudioService vibe, JsonSerializerOptions json)
     {
@@ -103,8 +108,46 @@ public static class VibeEndpoints
         }
     }
 
+    // Not a listener's playlist, so anyone paired may ask; the songs are the
+    // library's, which every paired device already has.
+    public static IResult Endless(HttpContext context, Library library, SemanticAudioService vibe, JsonSerializerOptions json)
+    {
+        EndlessPlayRequestDto? request;
+        try
+        {
+            request = JsonSerializer.Deserialize<EndlessPlayRequestDto>(RequestGate.BodyOf(context), json);
+        }
+        catch (JsonException)
+        {
+            return Problems.BadRequest();
+        }
+
+        if (request?.Seeds is not { Count: > 0 and <= MaxSeeds } || request.Exclude is { Count: > MaxExcluded })
+            return Problems.BadRequest($"Endless Play needs 1 to {MaxSeeds} songs to go on from.");
+
+        if (!vibe.RunsEndlessPlay || !vibe.Engine.Enabled)
+            return Problems.Of(StatusCodes.Status409Conflict, ProblemCodes.EndlessPlayOff, "Endless Play is off on this server.");
+
+        var seeds = request.Seeds.Select(EntityId.FromWire).OfType<Guid>().ToList();
+        var exclude = (request.Exclude ?? []).Select(EntityId.FromWire).OfType<Guid>().ToHashSet();
+        try
+        {
+            var byId = library.Snapshot.ById;
+            var songs = vibe.Engine.Similar(seeds, exclude)
+                .Select(match => byId.GetValueOrDefault(match.TrackId))
+                .OfType<Track>()
+                .Select(PlaylistSyncMapper.ToDto)
+                .ToList();
+            return Results.Json(new VibeSongsDto(songs), json);
+        }
+        catch (SemanticAudioNotReadyException)
+        {
+            return NotReady();
+        }
+    }
+
     private static IResult? Refusal(SemanticAudioService vibe) =>
-        vibe.Engine.Enabled
+        vibe.RunsVibePlaylists && vibe.Engine.Enabled
             ? null
             : Problems.Of(StatusCodes.Status409Conflict, ProblemCodes.VibeOff, "Vibe Playlists are off on this server.");
 

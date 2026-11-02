@@ -77,6 +77,7 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
             LookUpOnline = settings.LookUpOnline,
             AiFeaturesEnabled = settings.AiFeaturesEnabled,
             VibeEnabled = settings.VibeEnabled,
+            EndlessPlayEnabled = settings.EndlessPlayEnabled,
             VibeClipsPerSong = settings.VibeClipsPerSong,
         };
     }
@@ -103,7 +104,8 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
                 draft.LookUpOnline,
                 draft.AiFeaturesEnabled,
                 draft.VibeEnabled,
-                draft.VibeClipsPerSong),
+                draft.VibeClipsPerSong,
+                draft.EndlessPlayEnabled),
             ct);
         _lastLoaded = result;
 
@@ -118,6 +120,7 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
 
     public Task<VibeStatusDto> LoadVibeStatusAsync(CancellationToken ct = default) => client.GetVibeStatusAsync(ct);
     public Task<VibeStatusDto> RetryVibeAsync(CancellationToken ct = default) => client.RetryVibeAsync(ct);
+    public Task<VibeStatusDto> SetVibePausedAsync(bool paused, CancellationToken ct = default) => client.SetVibePausedAsync(paused, ct);
 
     public Task<byte[]?> LoadServerIconAsync(CancellationToken ct = default) => client.GetServerIconAsync(ct);
     public Task SetServerIconAsync(byte[] png, CancellationToken ct = default) => client.SetServerIconAsync(png, ct);

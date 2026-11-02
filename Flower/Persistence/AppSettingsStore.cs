@@ -224,6 +224,17 @@ namespace Flower.Persistence
 
         public int? PairedServerVibePercent { get; set; }
 
+        // Whether the paired server offers Endless Play
+        // (DiscoveredDevice.ServerEndlessPlay), which this device's own
+        // switch needs. Null until it has said.
+        public bool? PairedServerEndlessPlay { get; set; }
+
+        // Endless Play on this device: when the queue runs out, carry on with
+        // songs that sound like the last few (docs/VIBE-PLAYLIST-PLAN.md,
+        // "Endless Play"). Off by default, since it changes what plays
+        // without anyone asking; and only where a server offers it.
+        public bool EndlessPlay { get; set; }
+
         // When a bulk sync with PairedServerFingerprint last actually succeeded.
         // Persisted rather than kept in memory because the question it answers -
         // "is what I'm looking at current?" - is asked right after a relaunch as

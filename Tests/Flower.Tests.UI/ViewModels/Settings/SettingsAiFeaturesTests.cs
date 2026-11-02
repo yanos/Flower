@@ -17,9 +17,9 @@ namespace Flower.Tests.ViewModels.Settings;
 
 // The AI Features tab on a server's settings page
 // (docs/VIBE-PLAYLIST-PLAN.md, "The settings page"): a master switch with
-// Vibe Playlist's own under it, drafted like the rest of the page, a switch
-// turned off that says what saving it deletes, and the server's live status
-// in words.
+// Vibe Playlist's and Endless Play's under it, drafted like the rest of the
+// page, the last of them turned off saying what saving deletes, the server's
+// live status in words, and a pause that applies at once.
 public class SettingsAiFeaturesTests
 {
     private const long Megabyte = 1_000_000;
@@ -31,6 +31,7 @@ public class SettingsAiFeaturesTests
         public VibeStatusDto Status { get; set; } = Report("UpToDate");
         public List<SettingsDraft> Saved { get; } = [];
         public int Retries { get; private set; }
+        public List<bool> Pauses { get; } = [];
 
         public SettingsCapabilities Capabilities { get; } = new() { AiFeatures = true };
 
@@ -49,6 +50,13 @@ public class SettingsAiFeaturesTests
         {
             Retries++;
             Status = Report("Analysing");
+            return Task.FromResult(Status);
+        }
+
+        public Task<VibeStatusDto> SetVibePausedAsync(bool paused, CancellationToken ct = default)
+        {
+            Pauses.Add(paused);
+            Status = Report(paused ? "Paused" : "Analysing");
             return Task.FromResult(Status);
         }
 
@@ -84,14 +92,14 @@ public class SettingsAiFeaturesTests
     }
 
     [AvaloniaFact]
-    public async Task Turning_vibe_playlist_off_says_what_saving_deletes_until_it_is_turned_back_on()
+    public async Task Turning_the_last_feature_off_says_what_saving_deletes_until_it_is_turned_back_on()
     {
         var (_, settings) = await OpenAsync();
         Assert.Null(settings.AiFeatures.OffWarning);
 
         settings.AiFeatures.VibeEnabled = false;
 
-        Assert.Contains("deletes its model (330 MB) and the analysis of 16,000 songs", settings.AiFeatures.OffWarning);
+        Assert.Contains("deletes the model (330 MB) and the analysis of 16,000 songs", settings.AiFeatures.OffWarning);
         Assert.Contains("about 7 h", settings.AiFeatures.OffWarning);
 
         settings.AiFeatures.VibeEnabled = true;
@@ -108,7 +116,37 @@ public class SettingsAiFeaturesTests
 
         Assert.NotNull(settings.AiFeatures.OffWarning);
         Assert.False(settings.AiFeatures.CanEditVibe);
+        Assert.False(settings.AiFeatures.CanEditEndlessPlay);
         Assert.False(settings.AiFeatures.CanEditClips);
+    }
+
+    [AvaloniaFact]
+    public async Task Either_feature_keeps_the_listening_so_only_the_last_one_off_deletes_it()
+    {
+        var (_, settings) = await OpenAsync(b => b.Snapshot = b.Snapshot with { EndlessPlayEnabled = true });
+
+        settings.AiFeatures.VibeEnabled = false;
+        Assert.Null(settings.AiFeatures.OffWarning);
+        Assert.True(settings.AiFeatures.CanEditClips);
+
+        settings.AiFeatures.EndlessPlayEnabled = false;
+        Assert.NotNull(settings.AiFeatures.OffWarning);
+        Assert.False(settings.AiFeatures.CanEditClips);
+    }
+
+    [AvaloniaFact]
+    public async Task Endless_play_alone_starts_the_listening()
+    {
+        var (_, settings) = await OpenAsync(b =>
+        {
+            b.Snapshot = new() { AiFeaturesEnabled = true, VibeEnabled = false };
+            b.Status = Report("Off");
+        });
+        Assert.Null(settings.AiFeatures.OnNote);
+
+        settings.AiFeatures.EndlessPlayEnabled = true;
+
+        Assert.Contains("downloads the model", settings.AiFeatures.OnNote);
     }
 
     [AvaloniaFact]
@@ -129,12 +167,14 @@ public class SettingsAiFeaturesTests
         var (backend, settings) = await OpenAsync();
         settings.AiFeatures.Choices.Single(c => c.ClipsPerSong == ClipGrid.WholeSong).IsSelected = true;
         settings.AiFeatures.VibeEnabled = false;
+        settings.AiFeatures.EndlessPlayEnabled = true;
 
         await settings.SaveAsync(TestContext.Current.CancellationToken);
 
         var draft = Assert.Single(backend.Saved);
         Assert.True(draft.AiFeaturesEnabled);
         Assert.False(draft.VibeEnabled);
+        Assert.True(draft.EndlessPlayEnabled);
         Assert.Equal(ClipGrid.WholeSong, draft.VibeClipsPerSong);
         Assert.Null(settings.AiFeatures.OffWarning);
     }
@@ -151,7 +191,7 @@ public class SettingsAiFeaturesTests
 
         settings.AiFeatures.Enabled = true;
 
-        Assert.Contains("downloads Vibe Playlist's model", settings.AiFeatures.OnNote);
+        Assert.Contains("downloads the model", settings.AiFeatures.OnNote);
         Assert.False(settings.AiFeatures.ShowsStatus);
     }
 
@@ -209,6 +249,63 @@ public class SettingsAiFeaturesTests
 
         Assert.Equal(1, backend.Retries);
         Assert.False(settings.AiFeatures.IsFailed);
+    }
+
+    [AvaloniaFact]
+    public async Task Pause_stops_the_listening_at_once_and_resume_starts_it_again()
+    {
+        var (backend, settings) = await OpenAsync(b => b.Status = Report("Analysing"));
+        Assert.True(settings.AiFeatures.CanPause);
+        Assert.False(settings.AiFeatures.CanResume);
+
+        await settings.AiFeatures.PauseCommand.ExecuteAsync(null);
+
+        Assert.Equal([true], backend.Pauses);
+        Assert.Equal("Paused: 25% (4,000 of 16,000 songs)", settings.AiFeatures.StatusText);
+        Assert.False(settings.AiFeatures.CanPause);
+        Assert.True(settings.AiFeatures.CanResume);
+        Assert.Empty(backend.Saved);
+
+        await settings.AiFeatures.ResumeCommand.ExecuteAsync(null);
+
+        Assert.Equal([true, false], backend.Pauses);
+        Assert.True(settings.AiFeatures.CanPause);
+    }
+
+    [AvaloniaFact]
+    public async Task There_is_nothing_to_pause_once_every_song_is_heard()
+    {
+        var (_, settings) = await OpenAsync();
+
+        Assert.False(settings.AiFeatures.CanPause);
+        Assert.False(settings.AiFeatures.CanResume);
+    }
+
+    [AvaloniaFact]
+    public async Task Waiting_for_a_scan_is_not_the_owner_pausing()
+    {
+        var (_, settings) = await OpenAsync(b => b.Status = Report("WaitingForScan"));
+
+        Assert.Equal("Waiting for the library scan to finish: 25% (4,000 of 16,000 songs)", settings.AiFeatures.StatusText);
+        Assert.True(settings.AiFeatures.CanPause);
+        Assert.False(settings.AiFeatures.CanResume);
+    }
+
+    // A paired device's own Endless Play switch: usable while its server
+    // offers it, and greyed with a line saying why while it doesn't.
+    [AvaloniaTheory]
+    [InlineData(true, true, null)]
+    [InlineData(false, false, "Endless Play is off on Lambda. Its owner can turn it on in its AI Features settings.")]
+    [InlineData(null, false, null)]
+    public async Task A_device_offers_endless_play_where_its_server_does(bool? offered, bool editable, string? note)
+    {
+        var (_, settings) = await OpenAsync(b => b.Snapshot = b.Snapshot with
+        {
+            IsPairedToServer = true, PairedServerName = "Lambda", PairedServerEndlessPlay = offered,
+        });
+
+        Assert.Equal(editable, settings.CanEditEndlessPlay);
+        Assert.Equal(note, settings.EndlessPlayNote);
     }
 
     // A paired device's own settings: one line about its server, which is

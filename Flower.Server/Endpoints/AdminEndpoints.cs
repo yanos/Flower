@@ -313,6 +313,8 @@ public static class AdminEndpoints
                 AiFeaturesEnabled = before.AiFeaturesEnabled,
                 VibeEnabled = before.VibeEnabled,
                 VibeClipsPerSong = before.VibeClipsPerSong,
+                EndlessPlayEnabled = before.EndlessPlayEnabled,
+                SemanticAudioPaused = before.SemanticAudioPaused,
             };
 
             // Compared against the *resolved* name, not the configured one: an
@@ -394,10 +396,10 @@ public static class AdminEndpoints
                 values[nameof(FlowerServerOptions.LookUpOnline)] = JsonValue.Create(lookUpOnline);
             }
 
-            // Applied to the engine below, at once: Vibe Playlists turned on
-            // (both switches) starts the download, off (either) stops the job
-            // and deletes the model and every analysis, and a new clip setting
-            // rebuilds the index.
+            // Applied to the engine below, at once: a feature turned on (its
+            // switch and the master) starts the download, the last one off
+            // stops the job and deletes the model and every analysis, and a
+            // new clip setting rebuilds the index.
             if (update.AiFeaturesEnabled is { } aiFeatures && aiFeatures != before.AiFeaturesEnabled && Editable(nameof(FlowerServerOptions.AiFeaturesEnabled)))
             {
                 after.AiFeaturesEnabled = aiFeatures;
@@ -407,6 +409,11 @@ public static class AdminEndpoints
             {
                 after.VibeEnabled = vibeEnabled;
                 values[nameof(FlowerServerOptions.VibeEnabled)] = JsonValue.Create(vibeEnabled);
+            }
+            if (update.EndlessPlayEnabled is { } endless && endless != before.EndlessPlayEnabled && Editable(nameof(FlowerServerOptions.EndlessPlayEnabled)))
+            {
+                after.EndlessPlayEnabled = endless;
+                values[nameof(FlowerServerOptions.EndlessPlayEnabled)] = JsonValue.Create(endless);
             }
             if (update.VibeClipsPerSong is { } vibeClips && vibeClips != before.VibeClipsPerSong && Editable(nameof(FlowerServerOptions.VibeClipsPerSong)))
             {
@@ -505,6 +512,43 @@ public static class AdminEndpoints
             logger.LogInformation("{Fingerprint} retried Vibe Playlists' analysis.", context.Items[AdminFingerprintKey]);
             return Results.Json(vibe.Report.Describe(), jsonOptions);
         });
+
+        // The owner's pause on the listening, and lifting it: applied at once
+        // like Retry rather than drafted for Save, and written to
+        // flower-server.json so a paused server stays paused across a restart
+        // (MusicLibrarySettings.SemanticAudioPaused). Answers with the status.
+        // Refused when something above that file sets it, which the engine
+        // would be told again on the next reload.
+        async Task<IResult> SetPausedAsync(
+            HttpContext context, IOptionsMonitor<FlowerServerOptions> options, IConfiguration configuration,
+            SemanticAudioService vibe, bool paused)
+        {
+            if (SettingsOverrides.Describe(configuration).TryGetValue(nameof(FlowerServerOptions.SemanticAudioPaused), out var source))
+                return Problems.Of(StatusCodes.Status409Conflict, ProblemCodes.Conflict, $"{source} sets whether the analysis is paused.");
+
+            var before = options.CurrentValue;
+            if (before.SemanticAudioPaused != paused)
+            {
+                await ServerSettingsWriter.WriteAsync(before.DataDirectory,
+                    new Dictionary<string, JsonNode?> { [nameof(FlowerServerOptions.SemanticAudioPaused)] = JsonValue.Create(paused) },
+                    context.RequestAborted);
+                (configuration as IConfigurationRoot)?.Reload();
+            }
+
+            // Told directly too, for the same debounce the settings PUT
+            // works around.
+            vibe.Engine.SetPaused(paused);
+            logger.LogInformation("{Fingerprint} {Action} the AI features' analysis.",
+                context.Items[AdminFingerprintKey], paused ? "paused" : "resumed");
+            return Results.Json(vibe.Report.Describe(), jsonOptions);
+        }
+
+        authenticated.MapPost("/vibe/pause",
+            (HttpContext context, IOptionsMonitor<FlowerServerOptions> options, IConfiguration configuration, SemanticAudioService vibe) =>
+                SetPausedAsync(context, options, configuration, vibe, paused: true));
+        authenticated.MapPost("/vibe/resume",
+            (HttpContext context, IOptionsMonitor<FlowerServerOptions> options, IConfiguration configuration, SemanticAudioService vibe) =>
+                SetPausedAsync(context, options, configuration, vibe, paused: false));
 
         authenticated.MapGet("/library", (LibraryRescanCoordinator rescans, LibraryWriteAccess writeAccess) =>
             Results.Json(DescribeLibrary(rescans, writeAccess), jsonOptions));
@@ -1063,7 +1107,8 @@ public static class AdminEndpoints
             LookUpOnline: options.LookUpOnline,
             AiFeaturesEnabled: options.AiFeaturesEnabled,
             VibeEnabled: options.VibeEnabled,
-            VibeClipsPerSong: options.VibeClipsPerSong);
+            VibeClipsPerSong: options.VibeClipsPerSong,
+            EndlessPlayEnabled: options.EndlessPlayEnabled);
     }
 
     // Every address this server is known by, the one the admin's own browser

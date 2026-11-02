@@ -182,11 +182,17 @@ public sealed record SettingsSnapshot
     public string? PairedServerName { get; init; }
     public string? PairedServerVibePlaylists { get; init; }
 
-    // The AI features' master switch and Vibe Playlist's two settings
-    // (MusicLibrarySettings.AiFeaturesEnabled).
+    // The AI features' master switch, each feature's own, and the clips per
+    // song they share (MusicLibrarySettings.AiFeaturesEnabled).
     public bool AiFeaturesEnabled { get; init; }
     public bool VibeEnabled { get; init; } = true;
+    public bool EndlessPlayEnabled { get; init; }
     public int VibeClipsPerSong { get; init; } = ClipGrid.DefaultClipsPerSong;
+
+    // On a paired device: whether its server carries a queue on once it runs
+    // out, which this device's own Endless Play switch needs
+    // (SettingsViewModel.EndlessPlayNote). Null before it has said.
+    public bool? PairedServerEndlessPlay { get; init; }
 }
 
 // The subset the OK button writes back. Only what the user can actually edit -
@@ -210,6 +216,7 @@ public sealed record SettingsDraft
     public required bool LookUpOnline { get; init; }
     public required bool AiFeaturesEnabled { get; init; }
     public required bool VibeEnabled { get; init; }
+    public required bool EndlessPlayEnabled { get; init; }
     public required int VibeClipsPerSong { get; init; }
 }
 
@@ -258,6 +265,11 @@ public interface ISettingsBackend
     Task<VibeStatusDto> LoadVibeStatusAsync(CancellationToken ct = default) =>
         throw new NotSupportedException("Vibe Playlists aren't made here.");
     Task<VibeStatusDto> RetryVibeAsync(CancellationToken ct = default) =>
+        throw new NotSupportedException("Vibe Playlists aren't made here.");
+
+    // The owner's pause on the listening, applied at once and kept across a
+    // restart (MusicLibrarySettings.SemanticAudioPaused).
+    Task<VibeStatusDto> SetVibePausedAsync(bool paused, CancellationToken ct = default) =>
         throw new NotSupportedException("Vibe Playlists aren't made here.");
 
     // How many of the library's tracks live under this folder, or -1 for "cannot

@@ -28,6 +28,9 @@ public class VibePlaylistEditorTests
 
         public Task<IReadOnlyList<Track>> ExtendAsync(Playlist playlist, IEnumerable<Track> extensions, CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<Track>>([]);
+
+        public Task<IReadOnlyList<Track>> EndlessAsync(IReadOnlyList<Track> seeds, IEnumerable<Track> exclude, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<Track>>([]);
     }
 
     static VibePlaylistEditorTests() => VibePlaylistEditorViewModel.TypingPause = TimeSpan.Zero;

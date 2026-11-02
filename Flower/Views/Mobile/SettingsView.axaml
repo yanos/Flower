@@ -498,6 +498,22 @@
                          VerticalAlignment="Center" />
               <ToggleSwitch Grid.Column="2" IsChecked="{Binding Main.UploadWhenAwayFromHome}" />
             </Grid>
+
+            <!-- Off by default: when the queue runs out, the server finds songs
+                 like the last few - and only while the server offers it. See
+                 AppSettings.EndlessPlay. -->
+            <Border Classes="divider" Margin="58,0,0,0" />
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14" Classes="badgeRow">
+              <Border Grid.Column="0" Classes="badge" VerticalAlignment="Center">
+                <materialIcons:MaterialIcon Kind="AllInclusive" />
+              </Border>
+              <TextBlock Grid.Column="1" Classes="rowTitle" FontWeight="Normal"
+                         Text="Endless Play: when the queue runs out, keep playing songs like the last few"
+                         TextWrapping="Wrap"
+                         VerticalAlignment="Center" />
+              <ToggleSwitch Grid.Column="2" IsChecked="{Binding Main.EndlessPlay}"
+                            IsEnabled="{Binding Main.IsEndlessPlayOffered}" />
+            </Grid>
           </StackPanel>
         </StackPanel>
       </Border>

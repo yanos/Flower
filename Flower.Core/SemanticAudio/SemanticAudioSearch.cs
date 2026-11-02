@@ -26,6 +26,11 @@ public sealed class SemanticAudioSearch(SemanticAudioIndex index, SemanticAudioR
     // 0.5 and 1, and took the middle.
     public const float Alpha = 0.5f;
 
+    // How many songs Similar answers with: a device draws its next few from
+    // them (VibeQueueSource), so they have to be enough to keep albums and
+    // artists apart, and few enough to stay close to the songs asked about.
+    public const int SimilarCandidates = 50;
+
     private const int CacheSize = 256;
 
     // A preview runs on every pause in typing, and the encode is the only part
@@ -73,6 +78,50 @@ public sealed class SemanticAudioSearch(SemanticAudioIndex index, SemanticAudioR
 
         ranked.Sort((a, b) => b.Score.CompareTo(a.Score));
         return ranked;
+    }
+
+    // Endless Play (docs/VIBE-PLAYLIST-PLAN.md, "Endless Play"): the songs
+    // nearest the seeds' songs taken together - the normalised average of
+    // their means, so a run of songs pulls toward what they share rather
+    // than toward any one of them. Song against song, with no sentence to
+    // encode, so no rerank by clips either: two whole songs' means compare
+    // like for like. The filters follow the seeds: Christmas songs only
+    // after a Christmas song, and instrumentals only after a run of nothing
+    // else. Spoken word never, as in Rank.
+    public IReadOnlyList<SemanticAudioMatch> Similar(
+        IReadOnlyList<Guid> seeds, IReadOnlySet<Guid> exclude, Func<Guid, Track?> track, int limit = SimilarCandidates)
+    {
+        var vectors = seeds.Distinct().Select(index.MeanOf).OfType<float[]>().ToArray();
+        if (vectors.Length == 0)
+            return [];
+
+        var centre = Embedding.Mean(vectors);
+        var seedIds = seeds.ToHashSet();
+        var rows = index.Score(centre);
+
+        var heard = rows.Where(r => seedIds.Contains(r.TrackId)).ToList();
+        var instrumental = heard.Count > 0 && heard.All(r => r.VocalScore < SemanticAudioFilters.InstrumentalBelow);
+        var christmas = seedIds.Any(id => track(id) is { } seed && SemanticAudioFilters.IsTaggedChristmas(seed));
+
+        var kept = new List<SemanticAudioMatch>();
+        foreach (var row in rows)
+        {
+            if (seedIds.Contains(row.TrackId) || exclude.Contains(row.TrackId))
+                continue;
+            if (track(row.TrackId) is not { } song)
+                continue;
+            if (row.SpeechScore > SemanticAudioFilters.SpeechAbove || SemanticAudioFilters.IsTaggedSpeech(song))
+                continue;
+            if (!christmas && SemanticAudioFilters.IsTaggedChristmas(song))
+                continue;
+            if (instrumental && row.VocalScore >= SemanticAudioFilters.InstrumentalBelow)
+                continue;
+
+            kept.Add(new SemanticAudioMatch(row.TrackId, row.Similarity));
+        }
+
+        kept.Sort((a, b) => b.Score.CompareTo(a.Score));
+        return kept.Count > limit ? kept.GetRange(0, limit) : kept;
     }
 
     // The mean of a song's two best clip similarities; its one clip twice

@@ -152,6 +152,23 @@ public sealed class SemanticAudioIndex
         }
     }
 
+    // A song's mean, copied out, or null when it hasn't been heard.
+    public float[]? MeanOf(Guid trackId)
+    {
+        _lock.EnterReadLock();
+        try
+        {
+            if (!_rows.TryGetValue(trackId, out var row))
+                return null;
+
+            return _means.AsSpan(row * Clap.Dimensions, Clap.Dimensions).ToArray();
+        }
+        finally
+        {
+            _lock.ExitReadLock();
+        }
+    }
+
     // One row of a search: the song's mean similarity to the prompt, its two
     // filter scores, and the clips its rerank reads.
     public readonly record struct Row(Guid TrackId, float Similarity, float VocalScore, float SpeechScore, int[] Selected);

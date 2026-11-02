@@ -518,6 +518,52 @@ playlist (`vibe_playlist_skips`). It is not removed, but its weight is quartered
 for that playlist. Using a skipped song's embedding to push *similar* songs
 down as well is the negative-prompt idea, and waits with it.
 
+**The song picked to start from** counts as queued (`VibeQueueSource.Queued`),
+so it isn't drawn again in the next ten. It used to be, about one start in
+three, which a flaky test was the first to notice.
+
+## Endless Play
+
+Asked for by the owner in November 2026, after phase 3: when a queue runs out,
+keep playing songs that more or less match the last few. A second AI feature
+beside Vibe Playlist, made from the same listening, with no sentence: the
+seeds are songs.
+
+- **Two switches, both off by default.** The server's, under AI Features
+  beside Vibe Playlist, decides whether it is offered
+  (`MusicLibrarySettings.EndlessPlayEnabled`). Each device has its own, so a
+  listener chooses for themselves (`AppSettings.EndlessPlay`): Settings >
+  General on the desktop and in the browser, the server section of the
+  phone's Settings. A device's switch is greyed, with a line saying why,
+  while its server doesn't offer it; it learns that from `/info`'s
+  `endlessPlay` (a browser tab from its handshake). Off by default, unlike
+  Vibe Playlist, because it changes what plays without anyone asking.
+- **Either feature keeps the listening going.** The engine runs while the
+  master switch and at least one feature are on
+  (`MusicLibrarySettings.RunsSemanticAudio`), and only the last one turned
+  off deletes the model and the analysis. Each feature's routes refuse on its
+  own switch (`vibe-off`, `endless-play-off`).
+- **When.** As the last song of the queue starts, with nothing after it, no
+  repeat, no shuffle (which never runs out) and no Vibe Playlist (which keeps
+  its own queue going), the device asks while that song plays, so the answer
+  is armed behind it and follows gaplessly. If the queue plays out before the
+  answer comes, the answer starts playing when it does. Anything lined up or
+  played meanwhile wins, and the answer is dropped.
+- **What.** The seeds are the last five songs of the queue; the songs ranked
+  are those nearest the normalised average of their means
+  (`SemanticAudioSearch.Similar`), so a run pulls toward what the songs
+  share. Song against song, so no rerank by clips. The filters follow the
+  seeds: Christmas songs only after a Christmas song, instrumentals only
+  after nothing but instrumentals, spoken word never. The server answers
+  with 50; the device leaves out the last 500 songs of its queue and draws
+  ten the way a Vibe Playlist's queue draws (`VibeQueueSource`: weighted to
+  the best, albums and artists apart), and adds them to the end. They are
+  the queue's own from then on, so the next run-out asks again from them and
+  a long session drifts the way listening does.
+- **Where it runs.** `PlaylistControlViewModel` on every head that has a
+  server to ask, so a paired phone has it too, with no phone UI beyond its
+  switch. A device on its own waits for phases 5 and 6 like Vibe Playlists.
+
 ## Model of a playlist
 
 - **`Playlist.VibePrompt`** is a string, and null for the other kinds. It is a
@@ -557,17 +603,23 @@ Signed like every route (`PeerSignatureAuth`):
   is no change, and the device then takes the server's songs as they stand; a
   newer sentence on either side wins outright. `/info`'s `playlistsToken`
   counts a Vibe Playlist's songs, so a device comes back for a rebuilt pool.
+- **`POST /api/flower/v1/vibe/endless`** takes `{seeds: [...], exclude:
+  [...]}`, by the server's ids, and returns up to 50 songs like the seeds,
+  best first (see "Endless Play"). Not a listener's playlist, so any paired
+  device may ask, on the same Vibe budget.
 - **`/info`** carries `vibePlaylists`: off, analysing (with percent), or ready.
   A paired device shows New Vibe Playlist… only when the server says ready or
-  analysing.
+  analysing. And `endlessPlay`, whether the server offers Endless Play.
 - **`GET /api/admin/vibe/status`** returns the status in "The settings page",
-  for an admin's settings screen to poll.
+  for an admin's settings screen to poll; `POST /api/admin/vibe/pause` and
+  `/resume` pause and resume the listening and answer with it.
 
 The settings themselves travel in the existing admin settings DTO, as
 `LookUpOnline` does.
 
 Refusals use `FlowerProblem`:
 - `vibe-off` (409): the switch is off;
+- `endless-play-off` (409): Endless Play's switch is off;
 - `vibe-not-ready` (409): no song is analysed yet, or the model is not
   downloaded;
 - over the rate limit below, the gate's ordinary `429` `rate-limited`, on a
@@ -593,18 +645,19 @@ Where each appears follows `LookUpOnline`:
 |---|---|
 | Server settings (browser, or an admin device's server screen) | The full page, for the server |
 | A device on its own (desktop or phone) | The full page, for itself |
-| A paired device's own settings | One line: "Vibe Playlists are made by *Server*, which has them on / off." No switch. |
+| A paired device's own settings | One line: "Vibe Playlists are made by *Server*, which has them on / off." No switch for that; Endless Play's own switch (see "Endless Play"). |
 | A server older than these settings | "This server's version has no AI features. Update it to turn them on.", with every switch disabled: its status route answers 404. |
 
 The full page:
 
 - **AI Features**, the master switch, off by default, and indented under it
-  **Vibe Playlist**, on by default and disabled while the master is off.
-  Vibe Playlist running (both on) starts the model download, then analysis.
-  Either one turned off asks first, inline: the switches are drafted with
-  the rest of the page, and turned off they say "Saving turns Vibe Playlist
-  off and deletes its model (*n* MB) and the analysis of *n* songs. Turning
-  it back on means analysing every song again (about *t*)." Save is the yes;
+  **Vibe Playlist**, on by default, and **Endless Play**, off by default,
+  both disabled while the master is off. The master and either feature on
+  starts the model download, then analysis. Turning off the last one that
+  needs it asks first, inline: the switches are drafted with the rest of
+  the page, and then say "Saving stops listening to songs and deletes the
+  model (*n* MB) and the analysis of *n* songs. Turning a feature back on
+  means analysing every song again (about *t*)." Save is the yes;
   Cancel, or the switch turned back on, the no. A dialog has nowhere
   to go in a panel shown in a window and a browser tab alike. Then it stops the job
   and deletes `<data dir>/semantic-audio/` and every `semantic_audio_*` row. Vibe Playlists
@@ -621,17 +674,31 @@ The full page:
     *Artist*"
   - "Up to date: 16,131 songs analysed" with, when there are any, "12 songs
     couldn't be analysed" (expandable to the list and reasons)
-  - "Paused while the library is scanned", or an error with Retry.
+  - "Waiting for the library scan to finish", "Paused", or an error with
+    Retry.
   - "Using *n* MB (model *n* MB, analysis *n* MB)".
 
   The percent is songs done over songs eligible. "Time left" is the job's own
   measured rate over its last few hundred songs. The settings view model polls
   status every 2 s while the tab is showing: an event in-process, and
   `GET /api/admin/vibe/status` for a server.
+- **Pause** and **Resume**, under the status: applied at once rather than on
+  Save, like Retry, and kept in the server's settings file
+  (`MusicLibrarySettings.SemanticAudioPaused`) so a paused server stays
+  paused across a restart. A pause stops the listening and a download still
+  under way, and leaves searches working on what was heard. It is not the
+  wait for a library scan (`SemanticAudioState.WaitingForScan`), which ends
+  on its own; Pause is offered during that wait too, and Resume only after a
+  pause.
 - **Storage**: "Using *n* MB (model *n* MB, analysis *n* MB)".
 
+Under the two features, a **Listening** section holds what both are made
+from: the status, Pause, and clips per song.
+
 The settings live in `MusicLibrarySettings` (`AiFeaturesEnabled`,
-`VibeEnabled`, `VibeClipsPerSong`; `RunsVibePlaylists` is both switches), so the server's `FlowerServerOptions` and a device's
+`VibeEnabled`, `EndlessPlayEnabled`, `VibeClipsPerSong`, `SemanticAudioPaused`;
+`RunsVibePlaylists` and `RunsEndlessPlay` are a feature's switch with the
+master, `RunsSemanticAudio` either of them), so the server's `FlowerServerOptions` and a device's
 `AppSettings` both inherit them. They are drafted and saved like
 `LookUpOnline`, and can be locked from the server's config file
 (`SettingsOverrides`) like every other server setting.
@@ -819,8 +886,8 @@ models.
   same pass from the same decoded audio, would fill `Track.BeatsPerMinute`
   (shown as a column today and empty everywhere). "Jogging" would then mean
   150-180 BPM as well as sounding energetic.
-- **"More like this song"** comes nearly free: rank by a song's own mean
-  embedding instead of a prompt's.
+- **"More like this song"** comes nearly free: Endless Play's
+  `SemanticAudioSearch.Similar` with one seed.
 - **A smaller text encoder**, if the 251 MB matters on a phone on its own:
   an int8 export that holds the rankings (dynamic quantization, per tensor or
   per channel, with or without the embedding table, all lost about a quarter

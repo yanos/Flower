@@ -440,6 +440,54 @@ public class AdminEndpointTests(FlowerServerFixture server) : IClassFixture<Flow
         Assert.Empty(repository.LoadSongs());
     }
 
+    // Endless Play on its own still has the songs listened to, which is all
+    // either feature needs, while Vibe Playlists stay refused.
+    [Fact]
+    public async Task Endless_play_alone_keeps_the_listening_and_leaves_vibe_playlists_off()
+    {
+        await using var isolated = new FlowerServerFixture();
+        await isolated.InitializeAsync();
+        using var admin = await NewAdminOnAsync(isolated);
+
+        var context = await SignedOnAsync(isolated, admin, "PUT", "/api/admin/settings",
+            body: """{"aiFeaturesEnabled":true,"vibeEnabled":false,"endlessPlayEnabled":true}""");
+
+        var settings = await ReadAsync<ServerSettingsDto>(context);
+        Assert.True(settings.EndlessPlayEnabled);
+        var vibe = isolated.Services.GetRequiredService<SemanticAudioService>();
+        Assert.True(vibe.Engine.Enabled);
+        Assert.True(vibe.RunsEndlessPlay);
+        Assert.False(vibe.RunsVibePlaylists);
+    }
+
+    // The owner's pause applies at once, outside Save, and is written to
+    // flower-server.json so a restart keeps it.
+    [Fact]
+    public async Task A_pause_applies_at_once_and_is_kept_for_the_next_start()
+    {
+        await using var isolated = new FlowerServerFixture();
+        await isolated.InitializeAsync();
+        using var admin = await NewAdminOnAsync(isolated);
+        var settingsFile = Path.Combine(
+            (await ReadAsync<ServerSettingsDto>(await SignedOnAsync(isolated, admin, "GET", "/api/admin/settings"))).DataDirectory,
+            ServerDataDirectory.SettingsFileName);
+
+        var paused = await SignedOnAsync(isolated, admin, "POST", "/api/admin/vibe/pause");
+        await SignedOnAsync(isolated, admin, "PUT", "/api/admin/settings", body: """{"aiFeaturesEnabled":true}""");
+
+        Assert.Equal(StatusCodes.Status200OK, paused.Response.StatusCode);
+        // Paused before the model was fetched, so nothing was.
+        var status = await WaitForVibeAsync(isolated, admin, s => s.State == nameof(SemanticAudioState.Paused));
+        Assert.Equal(0, status.ModelBytes);
+        Assert.Contains("\"SemanticAudioPaused\": true", await File.ReadAllTextAsync(settingsFile, TestContext.Current.CancellationToken));
+
+        await SignedOnAsync(isolated, admin, "POST", "/api/admin/vibe/resume");
+
+        // Offline here, so going on is the download failing.
+        await WaitForVibeAsync(isolated, admin, s => s.State == nameof(SemanticAudioState.Failed));
+        Assert.Contains("\"SemanticAudioPaused\": false", await File.ReadAllTextAsync(settingsFile, TestContext.Current.CancellationToken));
+    }
+
     private static async Task<VibeStatusDto> WaitForVibeAsync(
         FlowerServerFixture target, DeviceSigningKey admin, Func<VibeStatusDto, bool> reached)
     {

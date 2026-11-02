@@ -79,15 +79,15 @@ public sealed class SemanticAudioService : IHostedService, IDisposable
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        _rescans.Started += Engine.Pause;
-        _rescans.Completed += Engine.Resume;
+        _rescans.Started += Engine.WaitForScan;
+        _rescans.Completed += Engine.ScanDone;
 
         // The startup scan is usually running by now. Checked twice around
-        // the pause, so a scan ending in between still resumes.
+        // the wait, so a scan ending in between still lets it go on.
         if (_rescans.IsRunning)
-            Engine.Pause();
+            Engine.WaitForScan();
         if (!_rescans.IsRunning)
-            Engine.Resume();
+            Engine.ScanDone();
 
         Apply(_options.CurrentValue);
         _optionsChanged = _options.OnChange(Apply);
@@ -97,8 +97,8 @@ public sealed class SemanticAudioService : IHostedService, IDisposable
 
     public Task StopAsync(CancellationToken cancellationToken)
     {
-        _rescans.Started -= Engine.Pause;
-        _rescans.Completed -= Engine.Resume;
+        _rescans.Started -= Engine.WaitForScan;
+        _rescans.Completed -= Engine.ScanDone;
         _optionsChanged?.Dispose();
         return Task.CompletedTask;
     }
@@ -109,10 +109,24 @@ public sealed class SemanticAudioService : IHostedService, IDisposable
         Engine.Dispose();
     }
 
-    // The settings page's PUT applies what it saved at once, not when the
-    // configuration watcher gets round to it; the engine ignores a repeat.
-    public void Apply(FlowerServerOptions options) =>
+    // The settings page's PUT, and its Pause and Resume, apply what they
+    // saved at once, not when the configuration watcher gets round to it;
+    // the engine ignores a repeat. The songs are listened to while either
+    // feature needs them, and Vibe Playlists and Endless Play each refuse on
+    // their own switch (VibeEndpoints).
+    public void Apply(FlowerServerOptions options)
+    {
+        Engine.SetPaused(options.SemanticAudioPaused);
         Engine.Configure(
-            options.RunsVibePlaylists,
+            options.RunsSemanticAudio,
             ClipGrid.IsValidSetting(options.VibeClipsPerSong) ? options.VibeClipsPerSong : ClipGrid.DefaultClipsPerSong);
+        RunsVibePlaylists = options.RunsVibePlaylists;
+        RunsEndlessPlay = options.RunsEndlessPlay;
+    }
+
+    // Each feature's switches as last applied, which is what the routes ask:
+    // the engine runs for either.
+    public bool RunsVibePlaylists { get; private set; }
+
+    public bool RunsEndlessPlay { get; private set; }
 }

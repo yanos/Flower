@@ -338,6 +338,30 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         }
     }
 
+    // Endless Play on this device (AppSettings.EndlessPlay): a queue that runs
+    // out goes on with songs like the last few, asked of the server - which
+    // has to offer it too (EndlessPlayOffered). Persist-immediately, same as
+    // above; PlaylistControlViewModel reads it as each queue nears its end.
+    public bool EndlessPlay
+    {
+        get => _appSettings.EndlessPlay;
+        set
+        {
+            if (_appSettings.EndlessPlay == value)
+                return;
+            _appSettings.EndlessPlay = value;
+            OnPropertyChanged();
+            SaveSettings();
+        }
+    }
+
+    // Whether this head's server offers Endless Play, null where there is no
+    // server or it hasn't said. Set by the app, beside VibePlaylistsState.
+    public Func<bool?> EndlessPlayOffered { get; set; } = () => null;
+
+    // For the phone's switch, which greys while the server doesn't offer it.
+    public bool IsEndlessPlayOffered => EndlessPlayOffered() == true;
+
     // Whether this device uploads its own songs to its paired server over a
     // connection that is not the server's local network - off by default. See
     // AppSettings.UploadWhenAwayFromHome. Persist-immediately, same as above.

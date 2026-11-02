@@ -129,19 +129,49 @@ public class SemanticAudioEngineTests : IDisposable
     }
 
     [Fact]
-    public void Paused_for_a_library_scan_fetches_the_model_but_listens_to_nothing_until_resumed()
+    public void Waiting_for_a_library_scan_fetches_the_model_but_listens_to_nothing_until_it_is_done()
     {
-        _engine.Pause();
+        _engine.WaitForScan();
         _engine.Configure(enabled: true, ClipGrid.DefaultClipsPerSong);
-        WaitFor(SemanticAudioState.Paused);
+        WaitFor(SemanticAudioState.WaitingForScan);
 
         Assert.True(_store.IsPresent);
         Assert.Empty(_clips.Opens);
 
-        _engine.Resume();
+        _engine.ScanDone();
         WaitFor(SemanticAudioState.UpToDate);
 
         Assert.Equal(3, _engine.Status.SongsSearchable);
+    }
+
+    [Fact]
+    public void Paused_by_the_owner_fetches_nothing_and_listens_to_nothing_until_resumed()
+    {
+        _engine.SetPaused(true);
+        _engine.Configure(enabled: true, ClipGrid.DefaultClipsPerSong);
+        WaitFor(SemanticAudioState.Paused);
+
+        Assert.False(_store.IsPresent);
+        Assert.Empty(_clips.Opens);
+
+        _engine.SetPaused(false);
+        WaitFor(SemanticAudioState.UpToDate);
+
+        Assert.Equal(3, _engine.Status.SongsSearchable);
+    }
+
+    [Fact]
+    public void A_pause_outranks_a_scan_ending_and_still_searches_what_was_heard()
+    {
+        _engine.Configure(enabled: true, ClipGrid.DefaultClipsPerSong);
+        WaitFor(SemanticAudioState.UpToDate);
+
+        _engine.SetPaused(true);
+        _engine.WaitForScan();
+        _engine.ScanDone();
+        WaitFor(SemanticAudioState.Paused);
+
+        Assert.Equal(3, _engine.Rank(new SemanticAudioQuery("anything")).Count);
     }
 
     [Fact]

@@ -1604,6 +1604,29 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
         }
     }
 
+    // Endless Play's route: refused with its own code while the owner has it
+    // off, which the fixture does, and only with songs to go on from.
+    [Fact]
+    public async Task Endless_play_while_the_owner_has_it_off_says_so()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        using var device = await TrustedDeviceAsync(trustedPeers);
+        try
+        {
+            var (status, body, _) = await SendAsync(device, "POST", VibeRoutes.Endless, "10.0.2.45",
+                body: $$"""{"Seeds":["{{Guid.NewGuid()}}"]}""");
+            var (empty, _, _) = await SendAsync(device, "POST", VibeRoutes.Endless, "10.0.2.45", body: """{"Seeds":[]}""");
+
+            Assert.Equal(HttpStatusCode.Conflict, status);
+            Assert.Equal(ProblemCodes.EndlessPlayOff, FlowerProblem.TryRead(body)?.Code);
+            Assert.Equal(HttpStatusCode.BadRequest, empty);
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
     // A listener's playlists are its own (Listeners): a guest naming the
     // owner's Vibe Playlist is told there is no such playlist.
     [Fact]

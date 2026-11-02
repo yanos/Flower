@@ -17,8 +17,10 @@ public enum SemanticAudioState
     Preparing,
     Analysing,
     UpToDate,
-    // Waiting for a library scan to finish (Pause): a scan rewrites the
-    // catalog the analyzer's plan is made from, and both want the disk.
+    // Waiting for a library scan to finish (WaitForScan): a scan rewrites
+    // the catalog the analyzer's plan is made from, and both want the disk.
+    WaitingForScan,
+    // The owner paused it (SetPaused), until they resume it.
     Paused,
     // Stopped on an error; Retry starts again.
     Failed,
@@ -72,6 +74,7 @@ public sealed class SemanticAudioEngine : IDisposable
 
     private bool _enabled;
     private int _clipsPerSong = ClipGrid.DefaultClipsPerSong;
+    private bool _scanning;
     private bool _paused;
     private bool _purge;
     private bool _disposed;
@@ -176,27 +179,26 @@ public sealed class SemanticAudioEngine : IDisposable
 
     // While the host's library is being scanned: the pass in progress stops
     // (the song it was on is heard again later), and no pass starts until
-    // Resume. The model still downloads and searches go on meanwhile.
-    public void Pause()
+    // ScanDone. The model still downloads and searches go on meanwhile.
+    public void WaitForScan() => SetFlag(ref _scanning, true);
+
+    public void ScanDone() => SetFlag(ref _scanning, false);
+
+    // The owner's pause, from the settings page: the listening stops where it
+    // is, and so does a download still under way - a server is paused to
+    // give its CPU and its connection back. What has been heard still
+    // searches. Kept by the host across a restart
+    // (MusicLibrarySettings.SemanticAudioPaused); the engine only obeys.
+    public void SetPaused(bool paused) => SetFlag(ref _paused, paused);
+
+    private void SetFlag(ref bool flag, bool value)
     {
         lock (_gate)
         {
-            if (_paused)
+            if (flag == value)
                 return;
 
-            _paused = true;
-            RestartPass();
-        }
-    }
-
-    public void Resume()
-    {
-        lock (_gate)
-        {
-            if (!_paused)
-                return;
-
-            _paused = false;
+            flag = value;
             RestartPass();
         }
     }
@@ -228,6 +230,20 @@ public sealed class SemanticAudioEngine : IDisposable
 
         var byId = _library.Snapshot.ById;
         return search.Rank(query, id => byId.GetValueOrDefault(id), limit);
+    }
+
+    // The songs that sound most like `seeds` together, best first, leaving
+    // out the seeds and `exclude` - Endless Play's next songs. Empty when
+    // none of the seeds has been heard.
+    public IReadOnlyList<SemanticAudioMatch> Similar(
+        IReadOnlyList<Guid> seeds, IReadOnlySet<Guid> exclude, int limit = SemanticAudioSearch.SimilarCandidates)
+    {
+        var search = _search;
+        if (!Enabled || search is null || search.Index.Count == 0)
+            throw new SemanticAudioNotReadyException(Status.State);
+
+        var byId = _library.Snapshot.ById;
+        return search.Similar(seeds, exclude, id => byId.GetValueOrDefault(id), limit);
     }
 
     public void Dispose()
@@ -271,7 +287,7 @@ public sealed class SemanticAudioEngine : IDisposable
         {
             _wake.WaitOne();
 
-            bool enabled, purge, paused;
+            bool enabled, purge, scanning, paused;
             int clipsPerSong;
             CancellationToken cancellation;
             lock (_gate)
@@ -282,6 +298,7 @@ public sealed class SemanticAudioEngine : IDisposable
                 enabled = _enabled;
                 purge = _purge;
                 _purge = false;
+                scanning = _scanning;
                 paused = _paused;
                 clipsPerSong = _clipsPerSong;
                 cancellation = _pass.Token;
@@ -300,7 +317,7 @@ public sealed class SemanticAudioEngine : IDisposable
 
             try
             {
-                Run(clipsPerSong, paused, cancellation);
+                Run(clipsPerSong, scanning, paused, cancellation);
             }
             catch (OperationCanceledException)
             {
@@ -322,10 +339,16 @@ public sealed class SemanticAudioEngine : IDisposable
         }
     }
 
-    private void Run(int clipsPerSong, bool paused, CancellationToken cancellation)
+    private void Run(int clipsPerSong, bool scanning, bool paused, CancellationToken cancellation)
     {
         if (!_store.IsPresent)
         {
+            if (paused)
+            {
+                SetState(SemanticAudioState.Paused);
+                return;
+            }
+
             SetState(SemanticAudioState.Downloading);
             var progress = new SynchronousProgress<ModelDownloadProgress>(p =>
             {
@@ -353,12 +376,13 @@ public sealed class SemanticAudioEngine : IDisposable
             _search = new SemanticAudioSearch(index, _repository, _text);
         }
 
-        // Paused only stops the listening: the download and the index don't
-        // touch the catalog, and searches shouldn't wait out a long scan.
+        // Either pause stops the listening, and only that once the model is
+        // here: the index doesn't touch the catalog, and searches shouldn't
+        // wait out a long scan or a pause.
         cancellation.ThrowIfCancellationRequested();
-        if (paused)
+        if (paused || scanning)
         {
-            SetState(SemanticAudioState.Paused);
+            SetState(paused ? SemanticAudioState.Paused : SemanticAudioState.WaitingForScan);
             return;
         }
 

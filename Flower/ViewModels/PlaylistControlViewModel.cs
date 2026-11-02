@@ -484,8 +484,10 @@ namespace Flower.ViewModels
             _currentPlaylist = playlist;
 
             // Playing anything else ends a Vibe Playlist's endless queue; the
-            // songs it queued stay where they are (see PlayVibe).
+            // songs it queued stay where they are (see PlayVibe). And any
+            // Endless Play answer still on its way is for a queue gone.
             EndVibe();
+            StopEndless();
 
             // A position into the old queue means nothing in the new one. Every
             // caller re-anchors the queue immediately before starting a track,
@@ -564,7 +566,10 @@ namespace Flower.ViewModels
             var source = new VibeQueueSource(playlist, VibeSkips?.Load(playlist.Id));
             var queue = new List<Track>();
             if (first != null)
+            {
                 queue.Add(first);
+                source.Queued(first);
+            }
             else if (source.Next(queue) is { } drawn)
                 queue.Add(drawn);
             else
@@ -650,6 +655,143 @@ namespace Flower.ViewModels
         public bool Shuffles => IsShuffleEnabled && _vibe == null;
 
         private bool Repeats => IsRepeatEnabled && _vibe == null;
+
+        // ── Endless Play ──────────────────────────────────────────────────
+        //
+        // docs/VIBE-PLAYLIST-PLAN.md, "Endless Play": a queue about to run out
+        // - its last song has started with nothing after it, under no repeat,
+        // no shuffle (which never runs out) and no Vibe Playlist (which keeps
+        // its own queue going) - asks the server for songs like the last few
+        // while that song plays, so the first of them follows it gaplessly.
+        // A few are drawn from the answer the way a Vibe Playlist's queue
+        // draws (VibeQueueSource: weighted to the best, albums and artists
+        // kept apart) and added to the end, where they are the queue's own:
+        // the next time it runs out it asks again from them, so a long
+        // session drifts the way listening does. Anything else lined up, or
+        // played, before the answer comes wins over it.
+
+        // How many of the last songs the next ones should sound like.
+        public const int EndlessSeeds = 5;
+
+        // How many songs one run-out adds.
+        public const int EndlessBatch = 10;
+
+        // How far back the queue is left out of the answer, so the songs just
+        // heard don't come straight back.
+        private const int EndlessExcludeWindow = 500;
+
+        // This device's switch and the server offering it. Set by the app;
+        // false leaves a queue to end as it always has.
+        public Func<bool> EndlessPlays { get; set; } = () => false;
+
+        private CancellationTokenSource? _endless;
+        private int _endlessAskedFor = -1;
+        // The queue played out while the answer was on its way: when it comes,
+        // it starts playing rather than waiting behind a parked song.
+        private bool _ranOut;
+
+        // The request in flight, for a test to wait on.
+        public Task EndlessPass { get; private set; } = Task.CompletedTask;
+
+        private void ContinueEndlesslyAfter(Track playing)
+        {
+            if (_endless != null || _endlessAskedFor == _playGeneration || _vibe != null || Repeats || Shuffles)
+                return;
+            if (VibePlaylists is not { } vibes || !EndlessPlays())
+                return;
+
+            var tracks = _currentPlaylist.Tracks;
+            var index = _queueIndex;
+            if (index < 0 || index != tracks.Count - 1 || tracks[index] != playing)
+                return;
+
+            var seeds = tracks.Skip(Math.Max(0, index + 1 - EndlessSeeds)).ToList();
+            var exclude = tracks.Skip(Math.Max(0, tracks.Count - EndlessExcludeWindow)).ToList();
+            _endlessAskedFor = _playGeneration;
+            var cancel = _endless = new CancellationTokenSource();
+            _logger.LogInformation("Endless Play: asking for songs like the last {Count}, ending with {Title}", seeds.Count, playing.Title);
+            EndlessPass = AskEndlesslyAsync(vibes, seeds, exclude, playing, index, _playGeneration, cancel);
+        }
+
+        private async Task AskEndlesslyAsync(
+            IVibePlaylists vibes, List<Track> seeds, List<Track> exclude, Track last, int index, int generation, CancellationTokenSource cancel)
+        {
+            IReadOnlyList<Track> found = [];
+            try
+            {
+                found = await vibes.EndlessAsync(seeds, exclude, cancel.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                // Another queue took over.
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Endless Play: couldn't ask the server for more songs");
+            }
+
+            // Always back on the UI thread, so the next run-out can ask again
+            // whatever happened to this one.
+            var done = new TaskCompletionSource();
+            OnUiThread(() =>
+            {
+                try
+                {
+                    if (ReferenceEquals(_endless, cancel))
+                        _endless = null;
+                    if (!cancel.IsCancellationRequested && found.Count > 0)
+                        AppendEndless(found, last, index, generation);
+                    else if (found.Count == 0)
+                        _logger.LogInformation("Endless Play: no songs like {Title}", last.Title);
+                }
+                finally
+                {
+                    done.SetResult();
+                }
+            });
+            await done.Task;
+            cancel.Dispose();
+        }
+
+        private void AppendEndless(IReadOnlyList<Track> found, Track last, int index, int generation)
+        {
+            // Something else started meanwhile, or was lined up after the song
+            // this was asked for: that is what plays, not this.
+            var tracks = _currentPlaylist.Tracks;
+            if (generation != _playGeneration || index != tracks.Count - 1 || tracks[index] != last)
+                return;
+
+            var recent = tracks.Skip(Math.Max(0, tracks.Count - EndlessExcludeWindow)).Select(t => t.Id).ToHashSet();
+            var pool = found.Where(t => !recent.Contains(t.Id)).DistinctBy(t => t.Id).ToList();
+            if (pool.Count == 0)
+            {
+                _logger.LogInformation("Endless Play: every song like {Title} is in the queue already", last.Title);
+                return;
+            }
+
+            var source = new VibeQueueSource(new Playlist("Endless Play", pool));
+            var queue = new List<Track>(tracks);
+            for (var i = 0; i < Math.Min(EndlessBatch, pool.Count) && source.Next(queue) is { } next; i++)
+                queue.Add(next);
+
+            _logger.LogInformation("Endless Play: adding {Count} songs like the last few", queue.Count - tracks.Count);
+            if (_ranOut && _parked)
+            {
+                // Ran out while asking: carry on from the first of them.
+                _currentPlaylist = new Playlist("Now Playing Queue", queue);
+                OnPropertyChanged(nameof(CurrentPlaylist));
+                Play(queue[index + 1], index + 1);
+                return;
+            }
+
+            ReplaceQueueKeepingPlace(queue, _parked ? _queueIndex : index);
+        }
+
+        private void StopEndless()
+        {
+            _endless?.Cancel();
+            _endless = null;
+        }
 
         // ── Lining songs up ───────────────────────────────────────────────
         //
@@ -823,7 +965,12 @@ namespace Flower.ViewModels
             OnPropertyChanged(nameof(CurrentPlaylist));
 
             if (CurrentlyPlayingTrack is { } current && !_parked)
+            {
                 ArmUpcoming(GetUpcomingEntry(current, _queueIndex).Track);
+                // An edit can leave the song playing last - the songs after
+                // it removed, or the queue cleared.
+                ContinueEndlesslyAfter(current);
+            }
             SaveQueue();
         }
 
@@ -1116,6 +1263,11 @@ namespace Flower.ViewModels
             // so the gapless pipeline can splice it in with no gap.
             ArmUpcoming(GetUpcomingEntry(track, _queueIndex).Track);
 
+            // The last song of the queue: Endless Play asks for what follows
+            // it now, while it plays, so the answer can be armed behind it.
+            _ranOut = false;
+            ContinueEndlesslyAfter(track);
+
             // Nothing about the play is written down yet: LastPlayedAt and
             // the count move together once the track has been heard (see
             // ListenMeter and Library.IncrementPlayCount).
@@ -1272,6 +1424,8 @@ namespace Flower.ViewModels
             var first = _currentPlaylist.Tracks.FirstOrDefault();
             _logger.LogInformation(
                 "Queue played out; parking at {Title}", first?.Title ?? "nothing - the queue is empty");
+            // Endless Play's answer, if one is still coming, starts playing.
+            _ranOut = _endless != null;
 
             if (first != null)
                 ParkAt(first, 0, null);

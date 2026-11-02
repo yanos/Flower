@@ -17,7 +17,14 @@ public sealed record VibePreviewRequestDto(string Prompt, bool Instrumental = fa
 // server knows.
 public sealed record VibeExtendRequestDto(List<string>? Exclude = null);
 
-// The answer to both: songs, best first.
+// POST /api/flower/v1/vibe/endless: Endless Play, a queue that has run out.
+// Seeds are the last few songs it played, oldest first; Exclude the songs the
+// device would rather not hear again so soon (the rest of the queue). Both by
+// the server's id. Answered with up to SemanticAudioSearch.SimilarCandidates
+// songs, best first, for the device to draw from.
+public sealed record EndlessPlayRequestDto(List<string> Seeds, List<string>? Exclude = null);
+
+// The answer to all three: songs, best first.
 public sealed record VibeSongsDto(List<PlaylistSyncTrackDto> Tracks);
 
 public static class VibeRoutes
@@ -25,6 +32,8 @@ public static class VibeRoutes
     public const string Preview = "/api/flower/v1/vibe/preview";
 
     public static string Extend(System.Guid playlistId) => $"/api/flower/v1/vibe-playlists/{playlistId:D}/extend";
+
+    public const string Endless = "/api/flower/v1/vibe/endless";
 }
 
 [JsonSourceGenerationOptions(
@@ -33,6 +42,7 @@ public static class VibeRoutes
     PropertyNameCaseInsensitive = true)]
 [JsonSerializable(typeof(VibePreviewRequestDto))]
 [JsonSerializable(typeof(VibeExtendRequestDto))]
+[JsonSerializable(typeof(EndlessPlayRequestDto))]
 [JsonSerializable(typeof(VibeSongsDto))]
 public partial class VibePlaylistJsonContext : JsonSerializerContext
 {

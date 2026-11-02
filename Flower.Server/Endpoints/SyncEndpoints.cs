@@ -265,6 +265,9 @@ public static class SyncEndpoints
         sync.MapPost("/vibe-playlists/{id}/extend",
             (HttpContext context, string id, Library library, SemanticAudioService vibe, TrustedPeerStore trustedPeers) =>
                 VibeEndpoints.Extend(context, id, library, vibe, ListenerOf(context, trustedPeers), JsonOptions));
+        // Endless Play's next songs, on the same budget: the same CPU spent.
+        sync.MapPost("/vibe/endless",
+            (HttpContext context, Library library, SemanticAudioService vibe) => VibeEndpoints.Endless(context, library, vibe, JsonOptions));
     }
 
     // Both cover-art routes, artists' pictures and the server's own icon are
