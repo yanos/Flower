@@ -286,6 +286,7 @@ public class SidebarItem : ViewModelBase
     public static MaterialIconKind IconFor(Playlist playlist) =>
         playlist.IsFolder ? MaterialIconKind.FolderOutline
         : playlist.IsSmart ? MaterialIconKind.PlaylistStar
+        : playlist.IsVibe ? MaterialIconKind.CreationOutline
         : MaterialIconKind.PlaylistPlay;
 
     public SidebarItem(SidebarItemKind kind, string name, MaterialIconKind icon = MaterialIconKind.MusicNote,

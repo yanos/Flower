@@ -331,4 +331,70 @@ public class PlaylistSyncPlannerTests
 
         Assert.Equal(PlaylistSyncDecisionKind.Delete, Assert.Single(decisions).Kind);
     }
+
+    // A Vibe Playlist is decided on its sentence: the songs are the server's
+    // ranking, which the device takes as they stand (PlaylistSyncService).
+    [Fact]
+    public void The_same_sentence_on_both_sides_is_no_change_whatever_the_songs()
+    {
+        var id = Guid.NewGuid();
+        var at = DateTimeOffset.UtcNow;
+        var local = new Playlist(id, "Rainy", [T("A")], at, vibePrompt: "music for a rainy day");
+        var remote = new PlaylistSyncPlaylistDto(id, "Rainy", at, [Dto("B"), Dto("C")], VibePrompt: "music for a rainy day");
+
+        var decision = Assert.Single(PlaylistSyncPlanner.Plan([local], [remote], _ => at));
+
+        Assert.Equal(PlaylistSyncDecisionKind.NoChange, decision.Kind);
+    }
+
+    [Fact]
+    public void A_newer_sentence_wins_on_either_side()
+    {
+        var id = Guid.NewGuid();
+        var at = DateTimeOffset.UtcNow;
+        var local = new Playlist(id, "Rainy", [], at, vibePrompt: "music for a rainy day");
+        var newerThere = new PlaylistSyncPlaylistDto(id, "Rainy", at.AddMinutes(1), [], VibePrompt: "rain on a tin roof");
+        var olderThere = newerThere with { UpdatedAt = at.AddMinutes(-1) };
+
+        Assert.Equal(PlaylistSyncDecisionKind.AdoptRemote, Assert.Single(PlaylistSyncPlanner.Plan([local], [newerThere], _ => at)).Kind);
+        Assert.Equal(PlaylistSyncDecisionKind.KeepLocal, Assert.Single(PlaylistSyncPlanner.Plan([local], [olderThere], _ => at)).Kind);
+    }
+
+    // A playlist made ordinary, pushed, then turned into a Vibe Playlist by
+    // the editor's save: the sentence goes up.
+    [Fact]
+    public void A_playlist_given_a_sentence_here_goes_up_over_the_ordinary_copy_there()
+    {
+        var id = Guid.NewGuid();
+        var at = DateTimeOffset.UtcNow;
+        var local = new Playlist(id, "New Vibe Playlist", [], at);
+        var remote = PlaylistSyncMapper.ToDto(new Playlist(id, "New Vibe Playlist", [], at));
+        local.VibePrompt = "music for a rainy day";
+
+        Assert.Equal(PlaylistSyncDecisionKind.KeepLocal, Assert.Single(PlaylistSyncPlanner.Plan([local], [remote], _ => at)).Kind);
+    }
+
+    [Fact]
+    public void The_sentence_and_switch_survive_the_wire()
+    {
+        var playlist = new Playlist("Rainy", [T("A")]) { VibePrompt = "sad piano", VibeInstrumental = true };
+
+        var back = PlaylistSyncMapper.ToPlaylist(PlaylistSyncMapper.ToDto(playlist), [T("A")]);
+
+        Assert.Equal("sad piano", back.VibePrompt);
+        Assert.True(back.VibeInstrumental);
+    }
+
+    // The server rebuilds a pool without moving UpdatedAt, so /info's token
+    // has to move with the songs or a device never comes back for them.
+    [Fact]
+    public void The_playlists_token_moves_when_a_vibe_playlists_pool_does()
+    {
+        var playlist = new Playlist("Rainy", [T("A")]) { VibePrompt = "music for a rainy day" };
+        var before = PlaylistSyncMapper.TokenOf([playlist]);
+
+        playlist.Materialize([T("B")]);
+
+        Assert.NotEqual(before, PlaylistSyncMapper.TokenOf([playlist]));
+    }
 }

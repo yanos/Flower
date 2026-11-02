@@ -1,0 +1,53 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:Flower.Controls"
+             xmlns:vm="using:Flower.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="760" d:DesignHeight="560"
+             x:Class="Flower.Views.VibePlaylistEditorView"
+             x:DataType="vm:VibePlaylistEditorViewModel">
+
+  <!-- New Vibe Playlist… and Edit Vibe Playlist…: the sentence, the No
+       vocals switch, a name, and the songs the sentence would make right now
+       (VibePlaylistEditorViewModel.PreviewTracks), with the two buttons that
+       end the edit. One view, hosted by VibePlaylistEditorWindow on the
+       desktop and laid over the page in the browser, which has no windows. -->
+  <Grid Margin="16" RowDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto">
+    <TextBlock Grid.Row="0" Text="{Binding Title}" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,12"/>
+
+    <TextBlock Grid.Row="1" Text="Describe how the songs should sound" Opacity="0.75" Margin="0,0,0,6"/>
+    <controls:TextInput Grid.Row="2" x:Name="PromptBox"
+                        Text="{Binding Prompt, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                        PlaceholderText="{x:Static vm:VibePlaylistEditorViewModel.PromptPlaceholder}"
+                        TextInputOptions.AutoCapitalization="False"
+                        controls:SoftKeyboard.ReopenOnTap="True"/>
+
+    <Grid Grid.Row="3" ColumnDefinitions="Auto,*,Auto" Margin="0,10,0,0">
+      <TextBlock Grid.Column="0" Text="Name" VerticalAlignment="Center" Margin="0,0,10,0" Opacity="0.75"/>
+      <controls:TextInput Grid.Column="1" Text="{Binding Name, Mode=TwoWay}"
+                          PlaceholderText="{Binding NamePlaceholder}"
+                          TextInputOptions.AutoCapitalization="True"
+                          controls:SoftKeyboard.ReopenOnTap="True"/>
+      <!-- Songs CLAP hears no voice in. Turned on by a sentence that says
+           "instrumental" or "without lyrics", which is then left out of
+           what is asked. -->
+      <CheckBox Grid.Column="2" Content="No vocals" IsChecked="{Binding Instrumental}" Margin="16,0,0,0"/>
+    </Grid>
+
+    <TextBlock Grid.Row="4"
+               Text="{Binding PreviewSummary}"
+               TextWrapping="Wrap"
+               FontWeight="SemiBold" Opacity="0.6"
+               Margin="0,16,0,6"/>
+
+    <controls:MusicListView Grid.Row="5" x:Name="PreviewList" MinHeight="120"/>
+
+    <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right"
+                Spacing="8" Margin="0,12,0,0">
+      <Button Classes="standard secondary" Content="Cancel" Click="Cancel_Click"/>
+      <Button Classes="standard primary" Content="OK" Click="Ok_Click" IsDefault="True"
+              IsEnabled="{Binding CanSave}"/>
+    </StackPanel>
+  </Grid>
+</UserControl>

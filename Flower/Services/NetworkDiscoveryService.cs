@@ -114,6 +114,14 @@ public class DiscoveredDevice
     // Absent leaves it as it was, starting false.
     public bool ServerLooksUpOnline { get; set; }
 
+    // Whether this server makes Vibe Playlists (vibePlaylists, told to paired
+    // devices only): "off", "analysing" or "ready", with the percent heard so
+    // far while analysing - see AppSettings.PairedServerVibePlaylists. Null
+    // until the server says, which an older server never does.
+    public string? ServerVibePlaylists { get; set; }
+
+    public int? ServerVibePercent { get; set; }
+
     // This peer's Library.ChangeToken as of its last /info answer - the same
     // opaque token GET /api/flower/v1/library serves as its ETag. Empty until
     // resolved. Changing means the peer's catalog changed, which is how a
@@ -772,6 +780,21 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
                     changed = true;
                 }
             }
+            if (doc.RootElement.TryGetProperty("vibePlaylists", out var vibeProp) &&
+                vibeProp.ValueKind == JsonValueKind.String &&
+                vibeProp.GetString() is { } vibePlaylists)
+            {
+                int? vibePercent = doc.RootElement.TryGetProperty("vibePercent", out var percentProp) &&
+                    percentProp.ValueKind == JsonValueKind.Number && percentProp.TryGetInt32(out var percent)
+                        ? percent
+                        : null;
+                if (vibePlaylists != device.ServerVibePlaylists || vibePercent != device.ServerVibePercent)
+                {
+                    device.ServerVibePlaylists = vibePlaylists;
+                    device.ServerVibePercent = vibePercent;
+                    changed = true;
+                }
+            }
             if (doc.RootElement.TryGetProperty("libraryToken", out var tokenProp) &&
                 tokenProp.GetString() is { } libraryToken && libraryToken != device.LibraryToken)
             {
@@ -1213,6 +1236,8 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
                     WeAreAdmin = existing.WeAreAdmin,
                     ServerImportsMusicAppPlays = existing.ServerImportsMusicAppPlays,
                     ServerLooksUpOnline = existing.ServerLooksUpOnline,
+                    ServerVibePlaylists = existing.ServerVibePlaylists,
+                    ServerVibePercent = existing.ServerVibePercent,
                     LibraryToken = existing.LibraryToken,
                     PlaylistsToken = existing.PlaylistsToken,
                     IconEmoji = existing.IconEmoji,

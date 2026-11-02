@@ -28,6 +28,7 @@ public enum MenuAction
     HideFromRecentlyPlayed,
     RenamePlaylist,
     EditRules,
+    EditVibe,
     ConvertToOrdinary,
     NewPlaylistInFolder,
     NewFolderInFolder,
@@ -121,10 +122,12 @@ public static class ActionMenus
     // (MainViewModel.SmartPlaylists) - its rules to edit, after its name.
     // canGoToArtist: the album's songs are all one artist's, and the menu is
     // not opened on that artist's page - ForSongs' Go to Artist, for an album.
+    // isVibe: a Vibe Playlist, on a head that can ask for one's songs - its
+    // sentence to edit, and no Shuffle, since its endless queue is one.
     public static IReadOnlyList<IReadOnlyList<ActionMenuEntry>> ForAlbum(
         MenuFacts facts, bool isContinuing = false, bool isPlaylist = false,
         bool isArtist = false, bool isFolder = false, bool canMoveToFolder = false, bool isSmart = false,
-        bool canGoToArtist = false)
+        bool canGoToArtist = false, bool isVibe = false)
     {
         var from = new List<ActionMenuEntry>();
         if (canGoToArtist)
@@ -135,11 +138,12 @@ public static class ActionMenus
         var where = new List<ActionMenuEntry>
         {
             new(MenuAction.Play, "Play", MaterialIconKind.Play, IsEnabled: hasSongs),
-            new(MenuAction.Shuffle, "Shuffle", MaterialIconKind.Shuffle, IsEnabled: hasSongs),
             new(MenuAction.PlayNext, "Play Next", MaterialIconKind.PlaylistPlay, IsEnabled: hasSongs),
             new(MenuAction.AddToQueue, "Add to Queue", MaterialIconKind.PlaylistMusicOutline, IsEnabled: hasSongs),
             new(MenuAction.AddToPlaylist, "Add to Playlist", MaterialIconKind.PlaylistPlus, IsEnabled: hasSongs),
         };
+        if (!isVibe)
+            where.Insert(1, new(MenuAction.Shuffle, "Shuffle", MaterialIconKind.Shuffle, IsEnabled: hasSongs));
 
         var what = new List<ActionMenuEntry>();
         // Every song of the album at once. Not over a playlist, whose songs
@@ -165,6 +169,8 @@ public static class ActionMenus
             what.Add(new(MenuAction.EditRules, "Edit Rules…", MaterialIconKind.Tune));
             what.Add(new(MenuAction.ConvertToOrdinary, "Convert to Ordinary Playlist", MaterialIconKind.PlaylistEdit));
         }
+        if (isPlaylist && isVibe)
+            what.Add(new(MenuAction.EditVibe, "Edit Vibe Playlist…", MaterialIconKind.CreationOutline));
         if (isPlaylist && canMoveToFolder)
             what.Add(new(MenuAction.MoveToFolder, "Move to Folder", MaterialIconKind.FolderMoveOutline));
 

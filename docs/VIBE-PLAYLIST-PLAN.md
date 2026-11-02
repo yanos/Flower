@@ -6,7 +6,8 @@ an endless queue of the library's songs that *sound* like the sentence, and
 the queue keeps topping itself up.
 
 **Status (November 2026): the server runs the engine (phases 1 and 2), and
-there is no playlist yet.** `Flower.Core/SemanticAudio/` has the tokenizer,
+phase 3, the playlist on a paired desktop and in the browser, is built and
+waiting to be tried on the real library.** `Flower.Core/SemanticAudio/` has the tokenizer,
 the clip grid, the waveform preparation, the model download, the analyzer,
 the index, the search and its filters, and `Flower.SemanticAudio.Onnx` runs
 the two encoders. The C# pipeline matches Python's: waveforms to the sample,
@@ -14,7 +15,8 @@ embeddings at cosine 0.9999998 or better. The model is published as the
 `music_audioset_epoch_15_esc_90.14` release. `Flower.Server` hosts the engine
 behind its settings, with an AI Features tab on its settings page (the
 browser's, and an admin desktop's server pane) and `vibePlaylists` in `/info`.
-Nothing makes a playlist from it yet: that is phase 3. This plan replaces
+A paired desktop and a browser tab make Vibe Playlists from a sentence, with a
+preview, and play them as an endless queue (phase 3). This plan replaces
 `PROMPT-PLAYLIST-PLAN.md`, which had a language model read the sentence
 against the names of the library's albums. The playlist's shape carries over
 from it: a pool, an endless queue, skips remembered. What changes is how songs
@@ -371,8 +373,14 @@ semantic_audio_songs(track_id PK, model TEXT, file_stamp TEXT, duration_ticks IN
            window_count INT, analysed_at INT, failure TEXT NULL)
 semantic_audio_clips(track_id, window_index INT, embedding BLOB,
            PRIMARY KEY (track_id, window_index))     -- cascades from the song
-vibe_playlist_skips(playlist_id, track_id, skipped_at INT)  -- phase 3
+vibe_playlist_skips(playlist_id, track_id, skipped_at INT)  -- phase 3, step 15
 ```
+
+The skips are kept by the device that played the songs (`VibeSkipRepository`),
+not by the host that ranks them: a skip is about who was listening, and the
+queue that weighs it runs on the device. A browser tab, which has no database,
+keeps them for the session. The playlist's two fields are columns of
+`playlists` (`vibe_prompt`, `vibe_instrumental`).
 
 - **Embeddings** are 512 × fp16 = 1 KB each, L2-normalised before storing.
 - **`window_index`** is the clip's index on the song's 10 s grid (see
@@ -495,6 +503,16 @@ relaxes the repeat window rather than stopping. Shuffle and repeat do not apply
 to it. Playing anything else ends the source and leaves the songs it queued
 where they are.
 
+**As built (phase 3)**, in `VibeQueueSource` and `PlaylistControlViewModel`:
+the repeat window is every song queued in the session, so nothing comes back
+until the whole pool has played; once fewer than a quarter are left the source
+asks for more, and when the pool is spent it forgets all but the latest
+quarter. The weight is by place in the pool, the best song four times as
+likely as the last. Two songs are one album when the title and the album
+artist match, so a compilation's songs, each with an artist of its own, count
+as one album. The queue is topped up as each song starts, before the next is
+armed, and Play Next, a drag or a removal don't end it.
+
 **Skips.** A song skipped in its first 30 seconds is recorded against the
 playlist (`vibe_playlist_skips`). It is not removed, but its weight is quartered
 for that playlist. Using a skipped song's embedding to push *similar* songs
@@ -527,8 +545,18 @@ Signed like every route (`PeerSignatureAuth`):
   50 songs of the pool. The editor shows this while typing pauses. It saves
   nothing.
 - **`POST /api/flower/v1/vibe-playlists/{id}/extend`** takes
-  `{skipped: [...]}` and returns the songs added. The pool itself reaches every
-  device through the next playlist sync.
+  `{exclude: [...]}`, the songs the device already added beyond the pool, and
+  returns the next ones down the same ranking. It stores nothing: the plan
+  first had the extension join the server's pool, but the next rebuild cuts
+  the pool where it always does, so the device keeps them for its session
+  instead, and skips stay on the device (see "Storage").
+- **The pool** reaches every device with its playlists. The server ranks it
+  (`VibePlaylistPools`) and installs it as the playlist's songs without moving
+  `UpdatedAt`, as a smart playlist's recomputation does. Sync decides a Vibe
+  Playlist on its sentence alone (`PlaylistSyncPlanner`): the same sentence
+  is no change, and the device then takes the server's songs as they stand; a
+  newer sentence on either side wins outright. `/info`'s `playlistsToken`
+  counts a Vibe Playlist's songs, so a device comes back for a rebuilt pool.
 - **`/info`** carries `vibePlaylists`: off, analysing (with percent), or ready.
   A paired device shows New Vibe Playlist… only when the server says ready or
   analysing.
@@ -542,7 +570,10 @@ Refusals use `FlowerProblem`:
 - `vibe-off` (409): the switch is off;
 - `vibe-not-ready` (409): no song is analysed yet, or the model is not
   downloaded;
-- `vibe-budget-spent` (429): the rate limit below.
+- over the rate limit below, the gate's ordinary `429` `rate-limited`, on a
+  plane of its own (`RequestGate.Plane.Vibe`, 60 a minute). The plan first
+  named a `vibe-budget-spent` code; a client handles a 429 the same whatever
+  the budget, so it wasn't added.
 
 **Trust boundary.** With no money involved, the only thing a listener can
 spend is server CPU: one text encode per uncached preview. So every paired
@@ -734,6 +765,34 @@ models.
 3. **The playlist, on a paired desktop and in the browser.** The new kind, New
    Vibe Playlist… with a preview, the queue source, skips, and sync of
    `VibePrompt`.
+
+   **Built, November 2026, not yet tried on the real library.**
+   `Playlist.VibePrompt` and `VibeInstrumental` (`IsVibe`; a Vibe Playlist is
+   not `IsOrdinary`, so nothing can be dropped on it), stored in `playlists`
+   and carried by `PlaylistSyncPlaylistDto`. The server keeps every pool with
+   `VibePlaylistPools`, started by `SemanticAudioService`, and answers
+   `VibeEndpoints`' two routes. A device asks through `VibePlaylistClient`
+   (`IVibePlaylists`), on the desktop and in the browser alike, and offers
+   New Vibe Playlist… (the sidebar's + and its empty space, and the macOS
+   menu bar) while its server says `analysing` or `ready`; the desktop learns
+   that from `/info` (`AppSettings.PairedServerVibePlaylists`), the browser
+   from its handshake. The editor (`VibePlaylistEditorViewModel`,
+   `VibePlaylistEditorView`) is a dialog on the desktop and a panel over the
+   page in the browser: a sentence, a name that defaults to the sentence, No
+   vocals, and the preview after each pause in typing. Saving keeps the
+   preview's songs as the pool until the server's arrives. Play, a song
+   double-clicked in it, or the menu's Play starts the endless queue; the
+   menu has Edit Vibe Playlist… and no Shuffle, and the Queue screen says
+   where its songs come from. A paired device's own settings say in one line
+   whether its server makes them.
+
+   Still to do in this phase:
+   - **Set the pool margin by listening.** It is 0.15 below the best song for
+     now (`VibePlaylistPools.PoolMargin`), from phase 0's 1,000-song sample,
+     where a prompt's 25th song sat 0.07 to 0.24 below its first.
+   - **A browser tab doesn't come back for a rebuilt pool** until it is
+     reloaded: it reads playlists once, at load (`OriginPlaylistImporter`),
+     and nothing there watches `playlistsToken` yet.
 4. **A paired phone.** The same editor and queue source on
    `MobileMainViewModel`. Nothing runs on the phone, so no ONNX either.
 5. **A desktop on its own.** The engine in-process, and the full settings tab

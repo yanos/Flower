@@ -117,13 +117,13 @@ public static class PlaylistSessionOverlay
 // the reordered list, each added song landing at the end if that is where it
 // was added, and otherwise after the song it followed on its own side. What
 // does not: both sides reordering differently, and both
-// renaming to different names. Smart playlists never combine - their songs
-// are what their rules say, and the rules are one query, not a list.
+// renaming to different names. Smart and Vibe Playlists never combine - their
+// songs are what their rules or sentence say, which is one query, not a list.
 public static class PlaylistThreeWayMerge
 {
     public static Playlist? Merge(PlannedPlaylist before, Playlist ours, Playlist theirs)
     {
-        if (ours.IsSmart || theirs.IsSmart)
+        if (ours.IsSmart || theirs.IsSmart || ours.IsVibe || theirs.IsVibe)
             return null;
 
         var name = ours.Name == before.Name ? theirs.Name

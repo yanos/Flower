@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 using Avalonia.Threading;
@@ -482,6 +483,10 @@ namespace Flower.ViewModels
         {
             _currentPlaylist = playlist;
 
+            // Playing anything else ends a Vibe Playlist's endless queue; the
+            // songs it queued stay where they are (see PlayVibe).
+            EndVibe();
+
             // A position into the old queue means nothing in the new one. Every
             // caller re-anchors the queue immediately before starting a track,
             // so this is normally overwritten by the Play that follows; when it
@@ -526,6 +531,125 @@ namespace Flower.ViewModels
 
             return -1;
         }
+
+        // ── A Vibe Playlist's endless queue ───────────────────────────────
+        //
+        // docs/VIBE-PLAYLIST-PLAN.md, "The endless queue": while a Vibe
+        // Playlist is what is playing, VibeQueueSource keeps VibeQueueSource.Ahead
+        // songs queued after the one playing, drawn from its pool, and asks
+        // the server for more once most of the pool has played. Shuffle and
+        // repeat don't apply to it. Playing anything else (SetCurrentPlaylist)
+        // ends it and leaves what it queued where it is; the queue's own
+        // edits - Play Next, a drag, a removal - don't.
+
+        private VibeQueueSource? _vibe;
+        private CancellationTokenSource? _vibeExtend;
+
+        // The source playing, or null. For a test, and for the Queue screen to
+        // say where its songs come from.
+        public VibeQueueSource? VibeSource => _vibe;
+
+        // Where an extension is asked for, and where a skip is written down.
+        // Set by the app once it has them; null leaves the pool as it is and
+        // skips for the session.
+        public IVibePlaylists? VibePlaylists { get; set; }
+
+        public IVibeSkipStore? VibeSkips { get; set; }
+
+        /// <summary>Starts <paramref name="playlist"/>'s endless queue, from
+        /// <paramref name="first"/> when one was picked and from a song drawn
+        /// from the pool otherwise.</summary>
+        public void PlayVibe(Playlist playlist, Track? first = null)
+        {
+            var source = new VibeQueueSource(playlist, VibeSkips?.Load(playlist.Id));
+            var queue = new List<Track>();
+            if (first != null)
+                queue.Add(first);
+            else if (source.Next(queue) is { } drawn)
+                queue.Add(drawn);
+            else
+                return;
+
+            Fill(source, queue, 0);
+            SetCurrentPlaylist(new Playlist("Now Playing Queue", queue));
+            _vibe = source;
+            OnPropertyChanged(nameof(VibeSource));
+            OnPropertyChanged(nameof(Shuffles));
+            Play(queue[0], 0);
+        }
+
+        private static void Fill(VibeQueueSource source, List<Track> queue, int playing)
+        {
+            while (queue.Count - 1 - playing < VibeQueueSource.Ahead && source.Next(queue) is { } next)
+                queue.Add(next);
+        }
+
+        // Keeps the songs ahead topped up as the queue moves on. Called by
+        // Play once the slot is known, before the song starts, so what it
+        // arms behind it is already the topped-up queue.
+        private void TopUpVibe()
+        {
+            if (_vibe is not { } source || _queueIndex < 0)
+                return;
+
+            if (_currentPlaylist.Tracks.Count - 1 - _queueIndex < VibeQueueSource.Ahead)
+            {
+                var queue = new List<Track>(_currentPlaylist.Tracks);
+                Fill(source, queue, _queueIndex);
+                _currentPlaylist = new Playlist("Now Playing Queue", queue);
+                OnPropertyChanged(nameof(CurrentPlaylist));
+            }
+
+            if (source.WantsMore && _vibeExtend is null && VibePlaylists is { } vibes)
+                ExtendVibeAsync(source, vibes).Forget(_logger, "Extending a Vibe Playlist");
+        }
+
+        private async Task ExtendVibeAsync(VibeQueueSource source, IVibePlaylists vibes)
+        {
+            using var cancel = _vibeExtend = new CancellationTokenSource();
+            try
+            {
+                var more = await vibes.ExtendAsync(source.Playlist, source.Extensions, cancel.Token);
+                OnUiThread(() => source.Add(more));
+            }
+            finally
+            {
+                if (ReferenceEquals(_vibeExtend, cancel))
+                    _vibeExtend = null;
+            }
+        }
+
+        private void EndVibe()
+        {
+            if (_vibe is null)
+                return;
+
+            _vibe = null;
+            _vibeExtend?.Cancel();
+            _vibeExtend = null;
+            OnPropertyChanged(nameof(VibeSource));
+            OnPropertyChanged(nameof(Shuffles));
+        }
+
+        // A song skipped soon after it started, while its playlist's queue
+        // plays, is drawn less often from then on.
+        private void NoteVibeSkip()
+        {
+            if (_vibe is not { } source || CurrentlyPlayingTrack is not { } track)
+                return;
+            if (_audioManager.Time >= VibeQueueSource.SkipWithin.TotalMilliseconds || source.WasSkipped(track))
+                return;
+
+            source.RecordSkip(track);
+            VibeSkips?.Record(source.Playlist.Id, track.Id);
+        }
+
+        // Shuffle and repeat, as they apply to the queue playing: not at all
+        // to a Vibe Playlist's. Public for the Queue screen, which shows the
+        // order the queue plays in.
+        public bool Shuffles => IsShuffleEnabled && _vibe == null;
+
+        private bool Repeats => IsRepeatEnabled && _vibe == null;
 
         // ── Lining songs up ───────────────────────────────────────────────
         //
@@ -589,7 +713,7 @@ namespace Flower.ViewModels
             int at;
             if (next)
                 at = index + 1;
-            else if (IsShuffleEnabled)
+            else if (Shuffles)
                 at = index + 1 + _linedUpCount;
             else
                 at = queue.Count;
@@ -674,7 +798,7 @@ namespace Flower.ViewModels
 
             _linedUpCount = 0;
             ForgetShuffleOrder();
-            if (IsShuffleEnabled)
+            if (Shuffles)
             {
                 _shufflePlayed.Add(current.Id);
                 _shufflePlayedOrder.Add(current.Id);
@@ -750,7 +874,7 @@ namespace Flower.ViewModels
         // track, which is what eventually lets the audio manager notice it has
         // played out - see IAudioManager.PlayedOut and ParkAtTopOfQueue below.
         private (Track? Track, int Index) GetUpcomingEntry(Track currentTrack, int currentIndex) =>
-            IsRepeatEnabled ? (currentTrack, currentIndex) : GetNextEntry(currentTrack, currentIndex, wrap: false);
+            Repeats ? (currentTrack, currentIndex) : GetNextEntry(currentTrack, currentIndex, wrap: false);
 
         private (Track? Track, int Index) GetNextEntry(Track currentTrack, int currentIndex, bool wrap = true)
         {
@@ -760,10 +884,10 @@ namespace Flower.ViewModels
 
             // What was lined up by hand plays in the order it was lined up,
             // shuffle or not - see _linedUpCount.
-            if (IsShuffleEnabled && _linedUpCount > 0 && currentIndex >= 0 && currentIndex + 1 < tracks.Count)
+            if (Shuffles && _linedUpCount > 0 && currentIndex >= 0 && currentIndex + 1 < tracks.Count)
                 return (tracks[currentIndex + 1], currentIndex + 1);
 
-            if (IsShuffleEnabled && tracks.Count > 1)
+            if (Shuffles && tracks.Count > 1)
             {
                 // Re-rolls on the current *slot*, not the current track: with
                 // duplicates in the queue, excluding by value would refuse to
@@ -860,6 +984,7 @@ namespace Flower.ViewModels
                 : IndexOfInQueue(track);
 
             NoteShufflePlayed(track);
+            TopUpVibe();
 
             // Moving on into the songs lined up by hand uses up the ones passed;
             // a jump anywhere else - back, or past the end of them - leaves
@@ -1225,7 +1350,7 @@ namespace Flower.ViewModels
         /// lists after the song playing and the ones lined up by hand. Empty
         /// with shuffle off.</summary>
         public IReadOnlyList<int> ShuffleUpcomingSlots =>
-            IsShuffleEnabled ? ShuffleOrderFor(_currentPlaylist.Tracks, QueueIndex).ToList() : [];
+            Shuffles ? ShuffleOrderFor(_currentPlaylist.Tracks, QueueIndex).ToList() : [];
 
         /// <summary>The slots of <see cref="CurrentPlaylist"/> this shuffle pass
         /// has played, in the order it played them, not counting the song
@@ -1235,7 +1360,7 @@ namespace Flower.ViewModels
         {
             get
             {
-                if (!IsShuffleEnabled || _shufflePlayedOrder.Count == 0)
+                if (!Shuffles || _shufflePlayedOrder.Count == 0)
                     return [];
 
                 // Copies of one song take their slots in turn, as in Deal.
@@ -1317,7 +1442,7 @@ namespace Flower.ViewModels
         // order - the next one dealt, or a row tapped further down.
         private void NoteShufflePlayed(Track track)
         {
-            if (!IsShuffleEnabled)
+            if (!Shuffles)
                 return;
 
             if (_shufflePlayed.Add(track.Id))
@@ -1614,6 +1739,8 @@ namespace Flower.ViewModels
         {
             if (CurrentlyPlayingTrack != null)
             {
+                NoteVibeSkip();
+
                 var next = GetNextEntry(CurrentlyPlayingTrack, ResolveQueueIndex(CurrentlyPlayingTrack));
                 if (next.Track != null)
                 {
@@ -1639,7 +1766,7 @@ namespace Flower.ViewModels
                 }
 
                 var currentIndex = ResolveQueueIndex(CurrentlyPlayingTrack);
-                var previous = IsShuffleEnabled
+                var previous = Shuffles
                     ? StepBackInShuffledOrder(CurrentlyPlayingTrack, currentIndex)
                     : GetPreviousEntry(currentIndex);
                 if (previous.Track != null)

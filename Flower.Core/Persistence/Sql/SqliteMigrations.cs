@@ -99,6 +99,22 @@ namespace Flower.Persistence.Sql
                 FOREIGN KEY (track_id) REFERENCES semantic_audio_songs (track_id) ON DELETE CASCADE
             );
             """,
+
+            // 15: songs skipped early in a Vibe Playlist's endless queue, which
+            // it then draws a quarter as often - see VibeSkipRepository and
+            // docs/VIBE-PLAYLIST-PLAN.md, "The endless queue". Kept by the
+            // device that played them, since a skip is about who was
+            // listening. Neither id is a foreign key, for playlist_tracks'
+            // reason; a playlist's rows go with it (VibeSkipRepository.Prune).
+            """
+            CREATE TABLE IF NOT EXISTS vibe_playlist_skips (
+                playlist_id TEXT    NOT NULL,
+                track_id    TEXT    NOT NULL,
+                skipped_at  INTEGER NOT NULL,
+
+                PRIMARY KEY (playlist_id, track_id)
+            );
+            """,
         ];
 
         public static int LatestVersion => BaselineVersion + Steps.Count;

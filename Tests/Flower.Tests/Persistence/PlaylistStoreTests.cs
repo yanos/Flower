@@ -63,6 +63,45 @@ public class PlaylistStoreTests : IsolatedHome
         Assert.Equal(Flower.Services.Listeners.Owner, loaded["The owner's"].Listener);
     }
 
+    // A Vibe Playlist's sentence and No vocals switch, with its pool as the
+    // playlist's songs - and a database written before them reads as no
+    // Vibe Playlist at all.
+    [Fact]
+    public void A_vibe_playlists_sentence_and_switch_round_trip_through_the_repository()
+    {
+        var track = new Track { Title = "A", Path = "/music/a.mp3" };
+        var vibe = new Playlist("Rainy", [track]) { VibePrompt = "music for a rainy day", VibeInstrumental = true };
+        var plain = new Playlist("Mine", [track]);
+
+        PlaylistRepo().Save([vibe, plain]);
+
+        var loaded = new PlaylistStore().Load([track]).ToDictionary(p => p.Name);
+        Assert.Equal("music for a rainy day", loaded["Rainy"].VibePrompt);
+        Assert.True(loaded["Rainy"].VibeInstrumental);
+        Assert.Equal([track], loaded["Rainy"].Tracks);
+        Assert.False(loaded["Mine"].IsVibe);
+        Assert.False(loaded["Mine"].VibeInstrumental);
+    }
+
+    // Skips are kept per playlist, and go with a playlist this device no
+    // longer has.
+    [Fact]
+    public void Skips_are_kept_per_vibe_playlist_and_pruned_with_it()
+    {
+        var skips = new VibeSkipRepository(FlowerDb.OpenDefault());
+        var kept = Guid.NewGuid();
+        var gone = Guid.NewGuid();
+        var song = Guid.NewGuid();
+
+        skips.Record(kept, song);
+        skips.Record(kept, song);
+        skips.Record(gone, song);
+        skips.Prune([kept]);
+
+        Assert.Equal([song], skips.Load(kept));
+        Assert.Empty(skips.Load(gone));
+    }
+
     // A folder, and which folder a playlist is in: written with the row, and
     // a playlist moved back out of its folder saves as at the top level.
     [Fact]

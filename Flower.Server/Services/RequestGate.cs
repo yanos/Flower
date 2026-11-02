@@ -63,6 +63,12 @@ public sealed class RequestGate(TrustedPeerStore trustedPeers, NonceReplayGuard 
         // client reads a refusal here as "unreachable", which is worse than
         // the traffic.
         Info,
+        // Vibe Playlists' previews and extensions. The one thing a listener
+        // can spend here is the server's CPU - a text encode for each prompt
+        // not already cached - and every paired device may make Vibe
+        // Playlists, admin or not, so they get a budget of their own: about
+        // one preview a second (docs/VIBE-PLAYLIST-PLAN.md, "The wire").
+        Vibe,
     }
 
     public enum Outcome
@@ -99,6 +105,7 @@ public sealed class RequestGate(TrustedPeerStore trustedPeers, NonceReplayGuard 
         [Plane.Admin] = new(max: 120, Window),
         [Plane.Upload] = new(max: 3000, Window),
         [Plane.Info] = new(max: 240, Window),
+        [Plane.Vibe] = new(max: 60, Window),
     };
 
     private readonly RefusalLogThrottle _logThrottle = new();

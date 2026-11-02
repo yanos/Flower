@@ -1564,4 +1564,67 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
 
         Assert.Equal(StatusCodes.Status401Unauthorized, context.Response.StatusCode);
     }
+
+    // Vibe Playlists' two routes (docs/VIBE-PLAYLIST-PLAN.md, "The wire"):
+    // open to every paired device, admin or not, and refused with a code the
+    // editor can say something about. The fixture has them off.
+    [Fact]
+    public async Task A_vibe_preview_while_the_owner_has_them_off_says_so()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        using var device = await TrustedDeviceAsync(trustedPeers);
+        try
+        {
+            var (status, body, _) = await SendAsync(device, "POST", VibeRoutes.Preview, "10.0.2.42",
+                body: """{"Prompt":"music for a rainy day"}""");
+
+            Assert.Equal(HttpStatusCode.Conflict, status);
+            Assert.Equal(ProblemCodes.VibeOff, FlowerProblem.TryRead(body)?.Code);
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    [Fact]
+    public async Task A_vibe_preview_needs_a_sentence()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        using var device = await TrustedDeviceAsync(trustedPeers);
+        try
+        {
+            var (status, _, _) = await SendAsync(device, "POST", VibeRoutes.Preview, "10.0.2.43", body: """{"Prompt":"  "}""");
+
+            Assert.Equal(HttpStatusCode.BadRequest, status);
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    // A listener's playlists are its own (Listeners): a guest naming the
+    // owner's Vibe Playlist is told there is no such playlist.
+    [Fact]
+    public async Task Only_a_vibe_playlists_own_listener_can_extend_it()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var library = server.Services.GetRequiredService<Library>();
+        using var guest = await TrustedDeviceAsync(trustedPeers);
+        var owners = new Playlist("Rainy", []) { VibePrompt = "music for a rainy day" };
+        library.AddPlaylist(owners);
+        try
+        {
+            var (status, body, _) = await SendAsync(guest, "POST", VibeRoutes.Extend(owners.Id), "10.0.2.44", body: "{}");
+
+            Assert.Equal(HttpStatusCode.NotFound, status);
+            Assert.Equal(ProblemCodes.NotFound, FlowerProblem.TryRead(body)?.Code);
+        }
+        finally
+        {
+            library.RemovePlaylist(owners);
+            await trustedPeers.RevokeAsync(guest.Fingerprint);
+        }
+    }
 }

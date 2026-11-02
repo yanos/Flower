@@ -78,6 +78,7 @@
           <NativeMenu>
             <NativeMenuItem Header="New Playlist" Command="{Binding NewPlaylistCommand}"/>
             <NativeMenuItem Header="New Smart Playlist…" Command="{Binding NewSmartPlaylistCommand}"/>
+            <NativeMenuItem Header="New Vibe Playlist…"/>
             <NativeMenuItem Header="New Folder"/>
             <NativeMenuItemSeparator/>
             <NativeMenuItem Header="Play Playlist Next"/>
@@ -88,6 +89,7 @@
             <NativeMenuItemSeparator/>
             <NativeMenuItem Header="Edit Rules…"/>
             <NativeMenuItem Header="Convert to Ordinary Playlist"/>
+            <NativeMenuItem Header="Edit Vibe Playlist…"/>
           </NativeMenu>
         </NativeMenuItem.Menu>
       </NativeMenuItem>

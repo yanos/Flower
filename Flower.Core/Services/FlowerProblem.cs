@@ -57,6 +57,10 @@ public static class ProblemCodes
 
     public const string NotFound = "not-found";
     public const string Conflict = "conflict";
+    // 409 - Vibe Playlists: the owner has them off, or nothing is analysed
+    // yet (the model still downloading, or the first songs not heard).
+    public const string VibeOff = "vibe-off";
+    public const string VibeNotReady = "vibe-not-ready";
     public const string LengthRequired = "length-required";
     public const string TooLarge = "too-large";
     public const string Corrupt = "corrupt";

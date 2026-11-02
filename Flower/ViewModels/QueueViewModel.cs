@@ -40,6 +40,8 @@ public sealed class QueueViewModel : ViewModelBase, IDisposable
             if (e.PropertyName is nameof(PlaylistControlViewModel.CurrentlyPlayingTrack)
                 or nameof(PlaylistControlViewModel.CurrentPlaylist)
                 or nameof(PlaylistControlViewModel.IsShuffleEnabled)
+                or nameof(PlaylistControlViewModel.Shuffles)
+                or nameof(PlaylistControlViewModel.VibeSource)
                 or nameof(PlaylistControlViewModel.IsRepeatEnabled))
                 Changed();
         },
@@ -101,10 +103,11 @@ public sealed class QueueViewModel : ViewModelBase, IDisposable
     // A line over the rows when what follows is not simply the next row
     // down - null otherwise.
     public string? Caption =>
-        _playback.IsRepeatEnabled ? "Repeat is on, so this song plays again."
-        : _playback.IsShuffleEnabled && _playback.LinedUpCount > 0
+        _playback.VibeSource is { } vibe ? $"Playing from {vibe.Playlist.Name}: more songs like it keep coming."
+        : _playback.IsRepeatEnabled ? "Repeat is on, so this song plays again."
+        : _playback.Shuffles && _playback.LinedUpCount > 0
             ? "Shuffle is on: the songs you queued play next, then the rest in this shuffled order."
-        : _playback.IsShuffleEnabled ? "Shuffle is on: the rest play in this shuffled order."
+        : _playback.Shuffles ? "Shuffle is on: the rest play in this shuffled order."
         : null;
 
     /// <summary>
@@ -113,7 +116,7 @@ public sealed class QueueViewModel : ViewModelBase, IDisposable
     /// .ShuffleUpcomingSlots), and a drag moves a song's place in the queue,
     /// which that order does not follow.
     /// </summary>
-    public bool IsReorderable => !_playback.IsShuffleEnabled;
+    public bool IsReorderable => !_playback.Shuffles;
 
     /// <summary><paramref name="row"/>'s slot in the queue, or -1 for a row that is not one of these.</summary>
     public int SlotOf(TrackRowViewModel row)
@@ -178,7 +181,7 @@ public sealed class QueueViewModel : ViewModelBase, IDisposable
             return false;
 
         var slot = _slots[index];
-        if (_playback.IsShuffleEnabled)
+        if (_playback.Shuffles)
             _playback.JumpInShuffledOrder(slot, _slots.GetRange(0, index), _slots.GetRange(index + 1, _slots.Count - index - 1));
         else
             _playback.Play(row.Track, slot);
@@ -226,7 +229,7 @@ public sealed class QueueViewModel : ViewModelBase, IDisposable
         var played = 0;
         if (playing != null && current >= 0)
         {
-            if (_playback.IsShuffleEnabled)
+            if (_playback.Shuffles)
                 slots.AddRange(_playback.ShufflePlayedSlots);
             else
             {
@@ -238,7 +241,7 @@ public sealed class QueueViewModel : ViewModelBase, IDisposable
             // Under shuffle, the songs lined up by hand, then the rest in the
             // order shuffle will play them - not the queue as it stands, which
             // is the library's own order and read as no shuffle at all.
-            if (_playback.IsShuffleEnabled)
+            if (_playback.Shuffles)
             {
                 var linedUpEnd = Math.Min(queue.Count, current + 1 + _playback.LinedUpCount);
                 for (var i = current + 1; i < linedUpEnd; i++)

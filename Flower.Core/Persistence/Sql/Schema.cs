@@ -195,7 +195,13 @@ namespace Flower.Persistence.Sql
 
                 -- Where it stands among its folder's playlists - see
                 -- Playlist.SortKey. NULL is a playlist never placed.
-                sort_key   REAL
+                sort_key   REAL,
+
+                -- A Vibe Playlist's sentence and its No vocals switch - see
+                -- Playlist.VibePrompt. NULL is every other kind; like a smart
+                -- one, playlist_tracks holds its pool.
+                vibe_prompt       TEXT,
+                vibe_instrumental INTEGER NOT NULL DEFAULT 0
             );
 
             -- track_id is deliberately NOT a foreign key into tracks: a rescan

@@ -368,6 +368,17 @@ public sealed partial class SettingsViewModel : ViewModelBase
             ? "Artist pictures are looked up online by the server, which has this switched on."
             : "The server has looking things up online switched off, so this device does not either.";
 
+    // A paired device makes no Vibe Playlists of its own: its server does, for
+    // everything paired to it (docs/VIBE-PLAYLIST-PLAN.md, "The settings
+    // page"). Null where that isn't so, or the server is too old to say.
+    public string? VibePlaylistsNote =>
+        !_snapshot.IsPairedToServer || _snapshot.PairedServerVibePlaylists is not { } state ? null
+        : state == "off"
+            ? $"Vibe Playlists are made by {ServerName}, which has them off."
+            : $"Vibe Playlists are made by {ServerName}, which has them on.";
+
+    private string ServerName => string.IsNullOrEmpty(_snapshot.PairedServerName) ? "the server" : _snapshot.PairedServerName;
+
     private string _advertisedHost = "";
     public string AdvertisedHost
     {
@@ -591,6 +602,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
             OnPropertyChanged(nameof(LookUpOnlineLock));
             OnPropertyChanged(nameof(ShowsLookUpOnline));
             OnPropertyChanged(nameof(LookUpOnlineNote));
+            OnPropertyChanged(nameof(VibePlaylistsNote));
             OnPropertyChanged(nameof(HasAdvertisedAs));
             OnPropertyChanged(nameof(AdvertisedAsMessage));
             OnPropertyChanged(nameof(HasPublicReachability));

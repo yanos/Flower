@@ -210,4 +210,29 @@ public class SettingsAiFeaturesTests
         Assert.Equal(1, backend.Retries);
         Assert.False(settings.AiFeatures.IsFailed);
     }
+
+    // A paired device's own settings: one line about its server, which is
+    // the one that makes Vibe Playlists for it.
+    [AvaloniaTheory]
+    [InlineData("ready", "Vibe Playlists are made by Lambda, which has them on.")]
+    [InlineData("analysing", "Vibe Playlists are made by Lambda, which has them on.")]
+    [InlineData("off", "Vibe Playlists are made by Lambda, which has them off.")]
+    [InlineData(null, null)]
+    public async Task A_paired_device_says_whether_its_server_makes_vibe_playlists(string? state, string? says)
+    {
+        var (_, settings) = await OpenAsync(b => b.Snapshot = b.Snapshot with
+        {
+            IsPairedToServer = true, PairedServerName = "Lambda", PairedServerVibePlaylists = state,
+        });
+
+        Assert.Equal(says, settings.VibePlaylistsNote);
+    }
+
+    [AvaloniaFact]
+    public async Task A_device_on_its_own_has_no_such_line()
+    {
+        var (_, settings) = await OpenAsync(b => b.Snapshot = b.Snapshot with { PairedServerVibePlaylists = "ready" });
+
+        Assert.Null(settings.VibePlaylistsNote);
+    }
 }

@@ -290,6 +290,12 @@ public partial class MainWindow : Window
             if (Selected() is { IsSmart: true } playlist)
                 _ = Vm()?.ConvertPlaylistToOrdinary(playlist);
         });
+        On("New Vibe Playlist…", () => Vm()?.NewVibePlaylist());
+        On("Edit Vibe Playlist…", () =>
+        {
+            if (Selected() is { IsVibe: true } playlist)
+                Vm()?.EditVibePlaylist(playlist);
+        });
 
         // View - the sidebar's Library rows, Cmd/Ctrl+1 to 6 in its order,
         // and Search, Cmd/Ctrl+F.
@@ -359,6 +365,8 @@ public partial class MainWindow : Window
             Enable("New Smart Playlist…", Vm()?.SmartPlaylists != null);
             Enable("Edit Rules…", playlist is { IsSmart: true } && Vm()?.SmartPlaylists != null);
             Enable("Convert to Ordinary Playlist", playlist is { IsSmart: true });
+            Enable("New Vibe Playlist…", Vm()?.CanMakeVibePlaylists == true);
+            Enable("Edit Vibe Playlist…", playlist is { IsVibe: true } && Vm()?.VibePlaylists != null);
         });
         WhenOpened("Filter", () =>
         {

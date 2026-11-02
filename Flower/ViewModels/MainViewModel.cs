@@ -2307,6 +2307,14 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // entry rather than re-anchoring onto the first (ARCHITECTURE-REVIEW 0.2).
     public void PlayTrack(Track track, int queueIndex)
     {
+        // A Vibe Playlist's songs play as its endless queue, from the one
+        // picked.
+        if (_selectedSidebarItem?.Playlist is { IsVibe: true } vibe && !IsShowingSearch)
+        {
+            PlayVibePlaylist(vibe, track);
+            return;
+        }
+
         SyncPlayQueueToCurrentView();
         _playlistControlViewModel.Play(track, queueIndex);
     }
@@ -2440,10 +2448,18 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // album-header ones (MobileMainViewModel.PlayAlbum). On Artists that is
     // the cards' songs in the cards' order, album after album, not the row
     // order the hidden track list keeps.
-    public void PlayView(bool shuffle) =>
+    public void PlayView(bool shuffle)
+    {
+        if (_selectedSidebarItem?.Playlist is { IsVibe: true } vibe && !IsShowingArtistPage && !IsShowingSearch)
+        {
+            PlayVibePlaylist(vibe);
+            return;
+        }
+
         PlayTracks(IsShowingArtistPage
             ? ArtistPage.AllTracks
             : DisplayedTracks, shuffle);
+    }
 
     // These songs as the queue, from the top or shuffled from a random one -
     // the Artists header's circles over everything on the page, the Albums
@@ -2762,6 +2778,50 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     }
 
     public Task ConvertPlaylistToOrdinary(Playlist playlist) => Playlists.ConvertToOrdinary(playlist);
+
+    // ── Vibe Playlists ────────────────────────────────────────────────────
+
+    // Where this head asks for a Vibe Playlist's songs - its server, for a
+    // paired device or a browser tab - and whether that server makes them
+    // ("off", "analysing", "ready", or null when it hasn't said). Set by the
+    // app once both exist; left null, nothing about Vibe Playlists is offered.
+    public IVibePlaylists? VibePlaylists { get; set; }
+
+    public Func<string?> VibePlaylistsState { get; set; } = () => null;
+
+    // New Vibe Playlist… is offered while the server can make one: once it
+    // has started listening, since a pool made of the songs heard so far
+    // grows as it goes on.
+    public bool CanMakeVibePlaylists =>
+        VibePlaylists != null && VibePlaylistsState() is "analysing" or "ready";
+
+    public event EventHandler<VibePlaylistEditorEventArgs>? VibePlaylistEditorRequested;
+
+    public void NewVibePlaylist()
+    {
+        if (!CanMakeVibePlaylists)
+            return;
+
+        var playlist = Playlists.CreateVibe();
+        VibePlaylistEditorRequested?.Invoke(this, new VibePlaylistEditorEventArgs(playlist, IsNew: true));
+    }
+
+    public void EditVibePlaylist(Playlist playlist)
+    {
+        if (VibePlaylists is null || !playlist.IsVibe)
+            return;
+
+        VibePlaylistEditorRequested?.Invoke(this, new VibePlaylistEditorEventArgs(playlist, IsNew: false));
+    }
+
+    // Its endless queue, from `first` when one was picked.
+    public void PlayVibePlaylist(Playlist playlist, Track? first = null)
+    {
+        if (!playlist.IsVibe)
+            return;
+
+        _playlistControlViewModel.PlayVibe(playlist, first);
+    }
 
     // ── IPlaylistManagementHost ───────────────────────────────────────────
 

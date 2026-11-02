@@ -77,6 +77,7 @@ public static class SyncEndpoints
     private const string StreamPath = GroupPrefix + StreamRoute;
     private const string DownloadRoute = "/download";
     private const string DownloadPath = GroupPrefix + DownloadRoute;
+    private const string VibePrefix = GroupPrefix + "/vibe";
 
     // What each route may be sent, so a rejection is a 413 before the body is
     // buffered rather than a read that runs to the process-wide ceiling first.
@@ -253,6 +254,17 @@ public static class SyncEndpoints
         // uses, and the only one a stream ticket opens.
         sync.MapGet(StreamRoute, MediaEndpoints.Stream);
         sync.MapGet(DownloadRoute, MediaEndpoints.Download);
+
+        // Vibe Playlists, for every paired device, admin or not - see
+        // VibeEndpoints. The playlists themselves travel with the others.
+        sync.MapPost("/vibe/preview",
+            (HttpContext context, SemanticAudioService vibe) => VibeEndpoints.Preview(context, vibe, JsonOptions));
+        // No route constraint on the id: an id that isn't one is refused
+        // after the signature is checked, like every other route's, not by
+        // the single-page fallback before it.
+        sync.MapPost("/vibe-playlists/{id}/extend",
+            (HttpContext context, string id, Library library, SemanticAudioService vibe, TrustedPeerStore trustedPeers) =>
+                VibeEndpoints.Extend(context, id, library, vibe, ListenerOf(context, trustedPeers), JsonOptions));
     }
 
     // Both cover-art routes, artists' pictures and the server's own icon are
@@ -267,6 +279,13 @@ public static class SyncEndpoints
             path.Equals(ServerIconPath, StringComparison.OrdinalIgnoreCase))
         {
             return RequestGate.Plane.Art;
+        }
+
+        // Both /vibe/preview and /vibe-playlists/{id}/extend.
+        if (path.StartsWithSegments(VibePrefix, StringComparison.OrdinalIgnoreCase)
+            || path.StartsWithSegments(VibePrefix + "-playlists", StringComparison.OrdinalIgnoreCase))
+        {
+            return RequestGate.Plane.Vibe;
         }
 
         return IsMedia(path) ? RequestGate.Plane.Media : RequestGate.Plane.Bulk;

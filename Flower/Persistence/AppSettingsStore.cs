@@ -215,6 +215,15 @@ namespace Flower.Persistence
         // internet nothing before its owner's answer arrives.
         public bool PairedServerLooksUpOnline { get; set; }
 
+        // Whether the paired server makes Vibe Playlists
+        // (DiscoveredDevice.ServerVibePlaylists): "off", "analysing" or
+        // "ready", and the percent heard while analysing. Remembered so New
+        // Vibe Playlist… is offered while the server is out of reach too; null
+        // until it has said, which offers nothing.
+        public string? PairedServerVibePlaylists { get; set; }
+
+        public int? PairedServerVibePercent { get; set; }
+
         // When a bulk sync with PairedServerFingerprint last actually succeeded.
         // Persisted rather than kept in memory because the question it answers -
         // "is what I'm looking at current?" - is asked right after a relaunch as

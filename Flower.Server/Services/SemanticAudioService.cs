@@ -67,11 +67,15 @@ public sealed class SemanticAudioService : IHostedService, IDisposable
             path => new OnnxClapAudioEncoder(path, EncoderThreads),
             (path, tokenizer) => new OnnxClapTextEncoder(path, tokenizer, EncoderThreads));
         Report = new SemanticAudioReport(Engine, library);
+        Pools = new VibePlaylistPools(Engine, library, loggers.CreateLogger<VibePlaylistPools>());
     }
 
     public SemanticAudioEngine Engine { get; }
 
     public SemanticAudioReport Report { get; }
+
+    // Every Vibe Playlist's songs, ranked here for every device paired.
+    public VibePlaylistPools Pools { get; }
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
@@ -87,6 +91,7 @@ public sealed class SemanticAudioService : IHostedService, IDisposable
 
         Apply(_options.CurrentValue);
         _optionsChanged = _options.OnChange(Apply);
+        Pools.Start();
         return Task.CompletedTask;
     }
 
@@ -98,7 +103,11 @@ public sealed class SemanticAudioService : IHostedService, IDisposable
         return Task.CompletedTask;
     }
 
-    public void Dispose() => Engine.Dispose();
+    public void Dispose()
+    {
+        Pools.Dispose();
+        Engine.Dispose();
+    }
 
     // The settings page's PUT applies what it saved at once, not when the
     // configuration watcher gets round to it; the engine ignores a repeat.

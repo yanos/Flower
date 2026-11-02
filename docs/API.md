@@ -69,6 +69,7 @@ so devices behind one proxy, tunnel or CGNAT do not share a budget:
 | Admin | device | `/api/admin/*` not listed below | 120 / 60s |
 | Mirror | device | `/api/admin/library/uploads*`, `/move`, `/tags`, `/artwork` | 3000 / 60s |
 | Info | device | `/info`, signed | 240 / 60s |
+| Vibe | device | `/vibe/preview`, `/vibe-playlists/{id}/extend` | 60 / 60s |
 | Strangers | address | Any gated route, no fingerprint or none on file | 30 / 60s |
 | Failures | address + device | Any route, a signature that failed | 10 / 60s |
 | Anonymous info | address | `/info`, unsigned | 120 / 60s |
@@ -213,6 +214,8 @@ not allowed".
 | `403` | `not-admin` | Paired, and the route is an administrator's | Hide the control |
 | `404` | `not-found` | No such track, upload, device or route | Per route |
 | `409` | `conflict` | A different file is already at that path | Final for this file |
+| `409` | `vibe-off` | Vibe Playlists are off on this server | Say so; offer nothing |
+| `409` | `vibe-not-ready` | Nothing is analysed yet | Try again later |
 | `411` | `length-required` | A body with no `Content-Length` | Send it with one |
 | `413` | `too-large` | Over the route's body cap | Drop the request |
 | `422` | `corrupt` | Upload bytes do not match the promised hash | Send again |
@@ -343,6 +346,8 @@ PascalCase JSON.
 | GET | `/server-icon` | The server's icon picture, or `404` when it has none |
 | GET | `/stream?id=` | A track's bytes, ranged |
 | GET | `/download?id=` | The same bytes, as a named file |
+| POST | `/vibe/preview` | The songs a Vibe Playlist's sentence would make |
+| POST | `/vibe-playlists/{id}/extend` | More songs for a Vibe Playlist's endless queue |
 
 ### `GET /library`
 
@@ -383,8 +388,9 @@ music folder that failed to mount lists nothing at all.
 ### `GET /playlists` and `POST /playlists/apply`
 
 Both carry `PlaylistSyncManifestDto`: `DeviceFingerprint`, `Playlists`
-(`Id`, `Name`, `UpdatedAt`, `Tracks`, optional `Rules` for a smart playlist),
-and optional `Deleted` ids. A track entry is `Title`/`Artists`/`Album`/
+(`Id`, `Name`, `UpdatedAt`, `Tracks`, optional `Rules` for a smart playlist,
+optional `VibePrompt` and `VibeInstrumental` for a Vibe Playlist), and
+optional `Deleted` ids. A track entry is `Title`/`Artists`/`Album`/
 `DurationSeconds` plus the catalog `Id` when the sender has one.
 
 Playlists belong to a **listener** (`Listeners`): every admin device shares
@@ -492,6 +498,30 @@ A zero-length blob means the server has no picture for that id. The response
 stops at 8 MB: ids that did not fit are simply absent, and the caller asks
 again for those. The two cases are distinguishable only because a found-nothing
 id is still present.
+
+### `POST /vibe/preview` and `POST /vibe-playlists/{id}/extend`
+
+Vibe Playlists (`VibeEndpoints`, `docs/VIBE-PLAYLIST-PLAN.md`), for every
+paired device, admin or not, on a budget of their own: the one thing a
+listener can spend here is the server's CPU, a text encode per sentence it
+has not seen.
+
+- `/vibe/preview` takes `{"Prompt": "...", "Instrumental": false}` (a
+  sentence of at most 500 characters, else `400`) and answers
+  `{"Tracks": [...]}`: the first 50 songs of the pool that sentence would make,
+  as playlist entries. It saves nothing.
+- `/vibe-playlists/{id}/extend` takes `{"Exclude": [ids]}`, the songs the
+  device already added to its queue beyond the pool, and answers the same
+  shape: up to 50 more songs, the next ones down the same ranking. The server
+  stores nothing; the next pool rebuild cuts the pool where it always does.
+  The playlist must be the caller's listener's, else `404`.
+
+Both answer `409` `vibe-off` while the owner has Vibe Playlists off, and `409`
+`vibe-not-ready` before any song is analysed. A Vibe Playlist's pool itself
+reaches a device with its playlists: the server ranks it from the sentence
+and installs it as the playlist's songs without moving `UpdatedAt`, and
+`playlistsToken` counts those songs so a device comes back for them. The
+sentence is never logged above Debug.
 
 ### `GET /artist-image?artist=`
 
@@ -731,7 +761,8 @@ Three opaque strings drive when a client talks to the server at all:
 
 - `libraryToken` — on `/info`, as `ETag` on `GET /library`, and echoed by every
   write that moves it.
-- `playlistsToken` — on `/info`.
+- `playlistsToken` — on `/info`. It moves with a Vibe Playlist's songs as
+  well as with every edit, since the server rebuilds a pool without one.
 - A log watermark — per device, from the two `/log` routes.
 
 A paired client polls `/info`, compares tokens, and opens a sync session only

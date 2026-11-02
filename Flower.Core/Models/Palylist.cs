@@ -88,6 +88,47 @@ namespace Flower.Models
 
         public bool IsSmart => _rules != null;
 
+        private string? _vibePrompt;
+
+        // The sentence a Vibe Playlist is made from ("music for a rainy day"),
+        // or null for every other kind - see docs/VIBE-PLAYLIST-PLAN.md,
+        // "Model of a playlist". Like Rules, it is what syncs about the
+        // playlist, and Tracks is the pool its host ranked from it. Unlike a
+        // smart playlist's, that pool is the server's answer for a paired
+        // device: a device that cannot listen to songs never ranks anything.
+        //
+        // A Touch()ing property: editing the sentence is the user editing the
+        // playlist.
+        public string? VibePrompt
+        {
+            get => _vibePrompt;
+            set
+            {
+                _vibePrompt = value;
+                Touch();
+            }
+        }
+
+        private bool _vibeInstrumental;
+
+        // The No vocals switch (SemanticAudioFilters). Kept apart from the
+        // prompt, so a prompt that turned it on by saying "instrumental" can
+        // be edited without losing it, and a playlist can turn it off again.
+        public bool VibeInstrumental
+        {
+            get => _vibeInstrumental;
+            set
+            {
+                if (_vibeInstrumental == value)
+                    return;
+
+                _vibeInstrumental = value;
+                Touch();
+            }
+        }
+
+        public bool IsVibe => _vibePrompt != null;
+
         // A folder: a row that holds other playlists rather than songs, the
         // way Music.app's are. A playlist rather than a type of its own so
         // that everything a playlist already has - an id stable across
@@ -100,8 +141,9 @@ namespace Flower.Models
 
         // A list of songs somebody picked: what a song can be added to, dropped
         // on, or dragged into a new order in. A smart playlist's songs are its
-        // rules' and a folder has none, so neither is.
-        public bool IsOrdinary => !IsSmart && !IsFolder;
+        // rules', a Vibe Playlist's its sentence's, and a folder has none, so
+        // none of them is.
+        public bool IsOrdinary => !IsSmart && !IsVibe && !IsFolder;
 
         private Guid? _parentId;
 
@@ -238,7 +280,9 @@ namespace Flower.Models
             string listener = Listeners.Owner,
             bool isFolder = false,
             Guid? parentId = null,
-            double? sortKey = null)
+            double? sortKey = null,
+            string? vibePrompt = null,
+            bool vibeInstrumental = false)
         {
             Id = id;
             Listener = listener;
@@ -249,6 +293,8 @@ namespace Flower.Models
             _comment = comment;
             _isPublic = isPublic;
             _rules = rules;
+            _vibePrompt = vibePrompt;
+            _vibeInstrumental = vibeInstrumental;
             CreatedAt = createdAt ?? updatedAt;
             // Defensive copy, matching Library's own constructor - callers can pass a
             // list they keep their own reference to (App.axaml.cs constructs
@@ -377,7 +423,9 @@ namespace Flower.Models
         // of its own to conflict over.
         //
         // Public, unlike RebindTracks, because the recomputation pass that
-        // drives it is not Library - see SMART-PLAYLIST-PLAN.md phase 3.
+        // drives it is not Library - see SMART-PLAYLIST-PLAN.md phase 3. A
+        // Vibe Playlist's pool is installed the same way and for the same
+        // reason (VibePlaylistPools, and a paired device taking its server's).
         public bool Materialize(IReadOnlyList<Track> tracks)
         {
             if (_tracks.Count == tracks.Count)

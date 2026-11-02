@@ -25,7 +25,7 @@ namespace Flower.Persistence.Sql
             var playlists = new List<PlaylistRow>();
             using (var command = connection.CreateCommand())
             {
-                command.CommandText = "SELECT id, name, updated_at, comment, is_public, created_at, rules, listener, is_folder, parent_id, sort_key FROM playlists;";
+                command.CommandText = "SELECT id, name, updated_at, comment, is_public, created_at, rules, listener, is_folder, parent_id, sort_key, vibe_prompt, vibe_instrumental FROM playlists;";
                 using var reader = command.ExecuteReader();
                 while (reader.Read())
                 {
@@ -43,7 +43,9 @@ namespace Flower.Persistence.Sql
                         reader.GetString(7),
                         reader.GetInt64(8) != 0,
                         reader.IsDBNull(9) ? null : EntityId.FromKey(reader.GetString(9)),
-                        reader.IsDBNull(10) ? null : reader.GetDouble(10)));
+                        reader.IsDBNull(10) ? null : reader.GetDouble(10),
+                        reader.IsDBNull(11) ? null : reader.GetString(11),
+                        reader.GetInt64(12) != 0));
                 }
             }
 
@@ -89,7 +91,9 @@ namespace Flower.Persistence.Sql
                     row.Listener,
                     row.IsFolder,
                     row.ParentId,
-                    row.SortKey));
+                    row.SortKey,
+                    row.VibePrompt,
+                    row.VibeInstrumental));
             }
 
             return result;
@@ -106,7 +110,9 @@ namespace Flower.Persistence.Sql
             string Listener,
             bool IsFolder,
             Guid? ParentId,
-            double? SortKey);
+            double? SortKey,
+            string? VibePrompt,
+            bool VibeInstrumental);
 
         // Replaces the stored playlist set with the one given, in a single
         // transaction. Membership is rewritten wholesale per playlist rather
@@ -126,8 +132,8 @@ namespace Flower.Persistence.Sql
             {
                 upsert.Transaction = transaction;
                 upsert.CommandText = """
-                    INSERT INTO playlists (id, name, updated_at, comment, is_public, created_at, rules, listener, is_folder, parent_id, sort_key)
-                    VALUES ($id, $name, $updated_at, $comment, $is_public, $created_at, $rules, $listener, $is_folder, $parent_id, $sort_key)
+                    INSERT INTO playlists (id, name, updated_at, comment, is_public, created_at, rules, listener, is_folder, parent_id, sort_key, vibe_prompt, vibe_instrumental)
+                    VALUES ($id, $name, $updated_at, $comment, $is_public, $created_at, $rules, $listener, $is_folder, $parent_id, $sort_key, $vibe_prompt, $vibe_instrumental)
                     ON CONFLICT (id) DO UPDATE SET
                         name = excluded.name,
                         updated_at = excluded.updated_at,
@@ -135,7 +141,9 @@ namespace Flower.Persistence.Sql
                         is_public = excluded.is_public,
                         rules = excluded.rules,
                         parent_id = excluded.parent_id,
-                        sort_key = excluded.sort_key;
+                        sort_key = excluded.sort_key,
+                        vibe_prompt = excluded.vibe_prompt,
+                        vibe_instrumental = excluded.vibe_instrumental;
                     -- created_at, listener and is_folder are not in the DO
                     -- UPDATE: each is set once, when the row is first
                     -- written, and Playlist has no way to change any of them
@@ -158,6 +166,8 @@ namespace Flower.Persistence.Sql
                 var upsertIsFolder = upsert.Parameters.Add("$is_folder", SqliteType.Integer);
                 var upsertParentId = upsert.Parameters.Add("$parent_id", SqliteType.Text);
                 var upsertSortKey = upsert.Parameters.Add("$sort_key", SqliteType.Real);
+                var upsertVibePrompt = upsert.Parameters.Add("$vibe_prompt", SqliteType.Text);
+                var upsertVibeInstrumental = upsert.Parameters.Add("$vibe_instrumental", SqliteType.Integer);
 
                 clear.Transaction = transaction;
                 clear.CommandText = "DELETE FROM playlist_tracks WHERE playlist_id = $playlist_id;";
@@ -195,6 +205,8 @@ namespace Flower.Persistence.Sql
                     upsertIsFolder.Value = playlist.IsFolder ? 1 : 0;
                     upsertParentId.Value = playlist.ParentId is { } parentId ? parentId.ToKey() : DBNull.Value;
                     upsertSortKey.Value = playlist.SortKey is { } sortKey ? sortKey : DBNull.Value;
+                    upsertVibePrompt.Value = (object?)playlist.VibePrompt ?? DBNull.Value;
+                    upsertVibeInstrumental.Value = playlist.VibeInstrumental ? 1 : 0;
                     upsert.ExecuteNonQuery();
 
                     clearId.Value = id;

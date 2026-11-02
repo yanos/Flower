@@ -449,6 +449,21 @@ public partial class App : Application
                         sp.GetRequiredService<ILogger<ServerOnlineMetadata>>()),
                     () => appSettings.PairedServerFingerprint);
             })
+            // Vibe Playlists' songs, which the paired server ranks for every
+            // device paired to it (docs/VIBE-PLAYLIST-PLAN.md, "Where it
+            // runs"), and the songs skipped in their endless queues, kept here.
+            .AddSingleton<IVibePlaylists>(sp =>
+            {
+                var reachability = sp.GetRequiredService<PairedServerReachability>();
+                return new VibePlaylistClient(
+                    PeerHttpClient.Create(TimeSpan.FromSeconds(30)),
+                    sp.GetRequiredService<IPeerCredentials>(),
+                    () => reachability.IsReachable && reachability.PairedServerDevice is { } server ? server.Url("/") : null,
+                    sp.GetRequiredService<Library>(),
+                    closesConnection: true,
+                    sp.GetRequiredService<ILogger<VibePlaylistClient>>());
+            })
+            .AddSingleton<IVibeSkipStore>(sp => new VibeSkipRepository(sp.GetRequiredService<FlowerDb>()))
             // Continue Playing, kept in step with the listener's other devices
             // through the paired server, while there is one to reach.
             .AddSingleton(sp =>
@@ -563,6 +578,15 @@ public partial class App : Application
                 origin.ToString(),
                 sp.GetRequiredService<IPeerCredentials>(),
                 sp.GetRequiredService<ILogger<Importer.OriginPlaylistWriter>>()))
+
+            // Vibe Playlists, made by the origin like everything else here.
+            .AddSingleton<IVibePlaylists>(sp => new VibePlaylistClient(
+                sp.GetRequiredService<HttpClient>(),
+                sp.GetRequiredService<IPeerCredentials>(),
+                () => origin,
+                sp.GetRequiredService<Library>(),
+                closesConnection: false,
+                sp.GetRequiredService<ILogger<VibePlaylistClient>>()))
 
             // And what the tab *plays*, which until now changed here and
             // stayed here - lost at the next refresh, since a tab's filesystem
@@ -921,6 +945,36 @@ public partial class App : Application
         // And the queue itself, which a phone otherwise lost every time it put
         // the app away - see PlayQueueStore.
         playbackControls.RestoreQueue();
+
+        // Vibe Playlists, where this head has a server to make them: what it
+        // offers follows what that server says (/info's vibePlaylists).
+        if (provider.GetService<IVibePlaylists>() is { } vibes)
+        {
+            mainViewModel.VibePlaylists = vibes;
+            playbackControls.VibePlaylists = vibes;
+            playbackControls.VibeSkips = provider.GetService<IVibeSkipStore>();
+            // The skips of Vibe Playlists deleted since, off the UI thread.
+            if (playbackControls.VibeSkips is VibeSkipRepository skips)
+            {
+                var playlists = provider.GetRequiredService<Library>().Playlists.Select(p => p.Id).ToList();
+                _ = Task.Run(() =>
+                {
+                    try
+                    {
+                        skips.Prune(playlists);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "Could not prune the skips of deleted Vibe Playlists");
+                    }
+                });
+            }
+            var settingsForVibes = provider.GetRequiredService<AppSettings>();
+            var originImporter = provider.GetService<Importer.IMusicImporter>() as Importer.OriginLibraryImporter;
+            mainViewModel.VibePlaylistsState = originImporter != null
+                ? () => originImporter.OriginVibePlaylists
+                : () => string.IsNullOrEmpty(settingsForVibes.PairedServerFingerprint) ? null : settingsForVibes.PairedServerVibePlaylists;
+        }
 
         // Constructed eagerly, for the same reason as NowPlayingIntegrationService
         // below: nothing else asks for it, and its exchanges have to start.

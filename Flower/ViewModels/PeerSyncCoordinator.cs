@@ -921,6 +921,8 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         _appSettings.PairedServerGrantsAdmin = false;
         _appSettings.PairedServerImportsMusicAppPlays = false;
         _appSettings.PairedServerLooksUpOnline = false;
+        _appSettings.PairedServerVibePlaylists = null;
+        _appSettings.PairedServerVibePercent = null;
         _appSettings.PairedServerLastSyncedAt = null;
         _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
         NotifyPairingChanged();
@@ -959,12 +961,22 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         // (AppSettings.PairedServerLooksUpOnline).
         if (_appSettings.PairedServerGrantsAdmin != device.WeAreAdmin
             || _appSettings.PairedServerImportsMusicAppPlays != device.ServerImportsMusicAppPlays
-            || _appSettings.PairedServerLooksUpOnline != device.ServerLooksUpOnline)
+            || _appSettings.PairedServerLooksUpOnline != device.ServerLooksUpOnline
+            || (device.ServerVibePlaylists != null
+                && (_appSettings.PairedServerVibePlaylists != device.ServerVibePlaylists
+                    || _appSettings.PairedServerVibePercent != device.ServerVibePercent)))
         {
             var adminChanged = _appSettings.PairedServerGrantsAdmin != device.WeAreAdmin;
             _appSettings.PairedServerGrantsAdmin = device.WeAreAdmin;
             _appSettings.PairedServerImportsMusicAppPlays = device.ServerImportsMusicAppPlays;
             _appSettings.PairedServerLooksUpOnline = device.ServerLooksUpOnline;
+            // And whether it makes Vibe Playlists, which only a server that
+            // has heard of them says (AppSettings.PairedServerVibePlaylists).
+            if (device.ServerVibePlaylists != null)
+            {
+                _appSettings.PairedServerVibePlaylists = device.ServerVibePlaylists;
+                _appSettings.PairedServerVibePercent = device.ServerVibePercent;
+            }
             _ = (_appSettingsStore?.SaveAsync(_appSettings) ?? Task.CompletedTask);
 
             // Being made an administrator, or no longer being one, changes

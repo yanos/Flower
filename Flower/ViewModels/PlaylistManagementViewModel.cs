@@ -512,6 +512,19 @@ public sealed class PlaylistManagementViewModel
         return playlist;
     }
 
+    // The same for a Vibe Playlist: it becomes one when the editor saves a
+    // sentence onto it, and a cancel removes it again
+    // (VibePlaylistEditorViewModel).
+    public Playlist CreateVibe()
+    {
+        var playlist = new Playlist("New Vibe Playlist", new List<Track>());
+        _library.AddPlaylist(playlist);
+        RefreshSidebarItems();
+
+        _host.SelectedSidebarItem = _items.FirstOrDefault(i => i.Playlist == playlist);
+        return playlist;
+    }
+
     // Freeze what the rules currently produced and forget them - the playlist
     // keeps exactly the songs it is showing and becomes hand-editable. A real
     // user edit, so unlike a recompute it bumps UpdatedAt and syncs. The

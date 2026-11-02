@@ -18,7 +18,7 @@ public static class PlaylistSyncMapper
 {
     public static PlaylistSyncPlaylistDto ToDto(Playlist playlist) =>
         new(playlist.Id, playlist.Name, playlist.UpdatedAt, playlist.Tracks.Select(ToDto).ToList(), playlist.Rules,
-            playlist.IsFolder, playlist.ParentId, playlist.SortKey);
+            playlist.IsFolder, playlist.ParentId, playlist.SortKey, playlist.VibePrompt, playlist.VibeInstrumental);
 
     // Track.RoundedSeconds, not a separate inline Math.Round - must agree with
     // Track.SyncKey's own rounding (see its doc comment) or a duration near a
@@ -72,7 +72,8 @@ public static class PlaylistSyncMapper
         }
 
         return new(dto.Id, dto.Name, tracks, dto.UpdatedAt, rules: dto.Rules, listener: listener,
-            isFolder: dto.IsFolder, parentId: dto.ParentId, sortKey: dto.SortKey);
+            isFolder: dto.IsFolder, parentId: dto.ParentId, sortKey: dto.SortKey,
+            vibePrompt: dto.VibePrompt, vibeInstrumental: dto.VibeInstrumental);
     }
 
     // What a server does with a manifest a device pushed to /playlists/apply,
@@ -176,10 +177,17 @@ public static class PlaylistSyncMapper
     // edits, and a guest renaming its own playlist must not send the owner's
     // devices off to re-sync theirs. UpdatedAt moves on every edit a sync
     // carries (see Playlist.Touch), and the id list covers a delete.
+    //
+    // A Vibe Playlist's pool counts too. The server ranks it (VibePlaylistPools)
+    // without moving UpdatedAt, the way a smart playlist is recomputed, so
+    // without its songs in the token a device that saved a new sentence would
+    // never come back for the songs the server found for it.
     public static string TokenOf(IEnumerable<Playlist> playlists)
     {
         var text = string.Join("\n", playlists
-            .Select(p => $"{p.Id:N}:{p.UpdatedAt.UtcTicks}")
+            .Select(p => p.IsVibe
+                ? $"{p.Id:N}:{p.UpdatedAt.UtcTicks}:{string.Join(",", p.Tracks.Select(t => t.Id.ToKey()))}"
+                : $"{p.Id:N}:{p.UpdatedAt.UtcTicks}")
             .Order(StringComparer.Ordinal));
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text)))[..16];
     }

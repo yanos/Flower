@@ -1279,6 +1279,18 @@
       </ScrollViewer>
     </Border>
 
+    <!-- The Vibe Playlist editor where there is no window to put it in: the
+         browser (Avalonia.Browser is a single view). Filled and emptied by
+         OnVibePlaylistEditorRequested; a desktop shows the same view in
+         VibePlaylistEditorWindow instead. -->
+    <Border x:Name="EditorOverlay" IsVisible="False"
+            Background="#80000000">
+      <Border x:Name="EditorOverlayHost"
+              MaxWidth="900" MaxHeight="720" Margin="24"
+              CornerRadius="8"
+              Background="{DynamicResource SystemControlBackgroundAltHighBrush}"/>
+    </Border>
+
   </Grid>
 
 </UserControl>

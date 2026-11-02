@@ -235,6 +235,12 @@ public class PlaylistSyncService
                 continue;
             }
 
+            // The same sentence on both sides: the server's songs are the
+            // answer to it, installed without moving UpdatedAt, as a smart
+            // playlist's own re-evaluation is (see PlaylistSyncPlanner).
+            if (decision.Kind == PlaylistSyncDecisionKind.NoChange && decision.Local!.IsVibe)
+                decision.Local.Materialize(index.Resolve(decision.Remote!.Tracks, out _));
+
             var resolved = decision.Kind switch
             {
                 PlaylistSyncDecisionKind.NoChange  => decision.Local!,

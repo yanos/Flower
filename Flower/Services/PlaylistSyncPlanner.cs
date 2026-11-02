@@ -118,6 +118,26 @@ public static class PlaylistSyncPlanner
             // wherever it happens to be the local one, and then be pushed back
             // over the good one at the end of the session: the query dies on
             // every device rather than healing on the next sync.
+            // A Vibe Playlist is decided on its sentence the same way, and
+            // for a stronger version of the same reason: its songs are the
+            // server's ranking, which no device can reproduce. So the same
+            // sentence is no change at all, whatever the songs - and the
+            // session then takes the server's songs as they stand
+            // (PlaylistSyncService), the way a smart playlist re-evaluates its
+            // own. A newer sentence on either side wins outright.
+            if (l.IsVibe || r.VibePrompt != null)
+            {
+                var vibeKind =
+                    l.Name == r.Name && l.ParentId == r.ParentId && l.SortKey == r.SortKey
+                    && l.VibePrompt == r.VibePrompt && l.VibeInstrumental == r.VibeInstrumental
+                        ? PlaylistSyncDecisionKind.NoChange
+                    : l.UpdatedAt >= r.UpdatedAt
+                        ? PlaylistSyncDecisionKind.KeepLocal
+                        : PlaylistSyncDecisionKind.AdoptRemote;
+                decisions.Add(new PlaylistSyncDecision(id, vibeKind, l, r));
+                continue;
+            }
+
             if (l.IsSmart || r.Rules != null)
             {
                 var smartKind =

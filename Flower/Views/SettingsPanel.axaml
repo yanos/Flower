@@ -564,6 +564,11 @@
               <TextBlock Text="{Binding LookUpOnlineNote}"
                          FontSize="11" Opacity="0.6" TextWrapping="Wrap"
                          IsVisible="{Binding LookUpOnlineNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+              <!-- And whether its server makes Vibe Playlists, which it asks
+                   the server for (SettingsViewModel.VibePlaylistsNote). -->
+              <TextBlock Text="{Binding VibePlaylistsNote}"
+                         Margin="0,6,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"
+                         IsVisible="{Binding VibePlaylistsNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
               <TextBlock Text="{Binding LookUpOnlineLock.Message}" IsVisible="{Binding LookUpOnlineLock.IsLocked}"
                          Margin="20,4,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
             </StackPanel>

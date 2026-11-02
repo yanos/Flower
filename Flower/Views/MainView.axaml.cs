@@ -225,6 +225,7 @@ public partial class MainView : UserControl
             _viewModel.RenamePlaylistRequested -= OnRenamePlaylistRequested;
             _viewModel.DeletePlaylistConfirmationRequested -= OnDeletePlaylistConfirmationRequested;
             _viewModel.SmartPlaylistEditorRequested -= OnSmartPlaylistEditorRequested;
+            _viewModel.VibePlaylistEditorRequested -= OnVibePlaylistEditorRequested;
             HideStatusBar();
         }
 
@@ -249,6 +250,7 @@ public partial class MainView : UserControl
             _viewModel.RenamePlaylistRequested += OnRenamePlaylistRequested;
             _viewModel.DeletePlaylistConfirmationRequested += OnDeletePlaylistConfirmationRequested;
             _viewModel.SmartPlaylistEditorRequested += OnSmartPlaylistEditorRequested;
+            _viewModel.VibePlaylistEditorRequested += OnVibePlaylistEditorRequested;
             BuildColumnMenu();
             ShowStatusMessage(_viewModel.BusyMessage);
 
@@ -1194,7 +1196,8 @@ public partial class MainView : UserControl
                 isPlaylist: true,
                 isFolder: playlist.IsFolder,
                 canMoveToFolder: DesktopActionMenu.CanMoveToFolder([playlist], vm),
-                isSmart: playlist.IsSmart && vm.SmartPlaylists != null);
+                isSmart: playlist.IsSmart && vm.SmartPlaylists != null,
+                isVibe: playlist.IsVibe && vm.VibePlaylists != null);
             var menu = DesktopActionMenu.Build(groups, async action =>
             {
                 switch (action)
@@ -1204,6 +1207,13 @@ public partial class MainView : UserControl
                         break;
                     case MenuAction.EditRules:
                         vm.EditSmartPlaylist(playlist);
+                        break;
+                    case MenuAction.EditVibe:
+                        vm.EditVibePlaylist(playlist);
+                        break;
+                    // Its endless queue, rather than its pool as a list.
+                    case MenuAction.Play or MenuAction.Shuffle when playlist.IsVibe:
+                        vm.PlayVibePlaylist(playlist);
                         break;
                     case MenuAction.ConvertToOrdinary:
                         await vm.ConvertPlaylistToOrdinary(playlist);
@@ -1277,6 +1287,13 @@ public partial class MainView : UserControl
             var newSmartItem = new MenuItem { Header = "New Smart Playlist…" }.WithIcon(MaterialIconKind.PlaylistStar);
             newSmartItem.Click += (_, _) => vm.NewSmartPlaylist();
             menu.Items.Add(newSmartItem);
+        }
+
+        if (vm.CanMakeVibePlaylists)
+        {
+            var newVibeItem = new MenuItem { Header = "New Vibe Playlist…" }.WithIcon(MaterialIconKind.CreationOutline);
+            newVibeItem.Click += (_, _) => vm.NewVibePlaylist();
+            menu.Items.Add(newVibeItem);
         }
 
         var newFolderItem = new MenuItem { Header = "New Folder" }.WithIcon(MaterialIconKind.FolderPlusOutline);
@@ -2227,6 +2244,32 @@ public partial class MainView : UserControl
         // Both outcomes move the sidebar: a save can rename the playlist and
         // change its icon, and a cancel on a new one deletes the row outright.
         vm.Playlists.RefreshSidebarItems();
+    }
+
+    // A dialog on the desktop, and laid over the page in the browser, which
+    // has no windows.
+    private async void OnVibePlaylistEditorRequested(object? sender, VibePlaylistEditorEventArgs e)
+    {
+        if (_viewModel is not MainViewModel vm || vm.VibePlaylists is not { } vibes)
+            return;
+
+        var editor = new VibePlaylistEditorViewModel(e.Playlist, vm.Library, vibes, e.IsNew);
+        if (TopLevel.GetTopLevel(this) is Window owner)
+        {
+            await new VibePlaylistEditorWindow(editor, vm).ShowDialog(owner);
+            vm.Playlists.RefreshSidebarItems();
+            return;
+        }
+
+        var view = new VibePlaylistEditorView(editor, vm);
+        view.Closed += (_, _) =>
+        {
+            EditorOverlayHost.Child = null;
+            EditorOverlay.IsVisible = false;
+            vm.Playlists.RefreshSidebarItems();
+        };
+        EditorOverlayHost.Child = view;
+        EditorOverlay.IsVisible = true;
     }
 
     // Non-modal, same reasoning as OpenLogWindow - the EQ should stay open

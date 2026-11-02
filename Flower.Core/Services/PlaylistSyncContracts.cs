@@ -39,7 +39,14 @@ public sealed record PlaylistSyncPlaylistDto(
     // same way.
     bool IsFolder = false,
     Guid? ParentId = null,
-    double? SortKey = null);
+    double? SortKey = null,
+    // A Vibe Playlist's sentence and No vocals switch (Playlist.VibePrompt),
+    // null and false for every other kind. Like Rules, this is what a
+    // device's edit carries; unlike Rules, Tracks is the answer to it when it
+    // comes from the server, which ranked the pool - a paired device never
+    // ranks anything (docs/VIBE-PLAYLIST-PLAN.md, "Model of a playlist").
+    string? VibePrompt = null,
+    bool VibeInstrumental = false);
 
 // GET /api/flower/v1/playlists returns one of these describing the responding
 // device's current playlists. POST /api/flower/v1/playlists/apply sends one back:
