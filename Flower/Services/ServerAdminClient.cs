@@ -129,6 +129,12 @@ public sealed class ServerAdminClient(
         SendAsync<AdminPairingCodeDto>(
             HttpMethod.Post, $"/api/admin/pairing-codes?grantsAdmin={(grantsAdmin ? "true" : "false")}", null, ct);
 
+    public Task<VibeStatusDto> GetVibeStatusAsync(CancellationToken ct = default) =>
+        SendAsync<VibeStatusDto>(HttpMethod.Get, "/api/admin/vibe/status", null, ct);
+
+    public Task<VibeStatusDto> RetryVibeAsync(CancellationToken ct = default) =>
+        SendAsync<VibeStatusDto>(HttpMethod.Post, "/api/admin/vibe/retry", null, ct);
+
     public Task<AdminLibraryStatusDto> GetLibraryStatusAsync(CancellationToken ct = default) =>
         SendAsync<AdminLibraryStatusDto>(HttpMethod.Get, "/api/admin/library", null, ct);
 

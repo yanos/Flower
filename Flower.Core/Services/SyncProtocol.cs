@@ -76,9 +76,16 @@ public static class SyncProtocol
 // device's own song is looked up by the device only when this is true - so
 // nothing paired here asks the internet behind the owner's back. Verified
 // callers only; nobody else has anything to look up.
+//
+// VibePlaylists is whether this server makes Vibe Playlists
+// (docs/VIBE-PLAYLIST-PLAN.md, "The wire"): "off", "analysing" with
+// VibePercent of the library heard so far, or "ready". A paired device offers
+// New Vibe Playlist… only when it is not "off", and its own settings say which.
+// Verified callers only.
 public sealed record SyncInfoResponseDto(
     string Alias, string Version, string? DeviceModel, string DeviceType,
     string Fingerprint, string PublicKey, bool Download, bool? TrustsCaller,
     string LibraryToken, List<string>? Addresses = null, bool? CallerIsAdmin = null,
     string? PlaylistsToken = null, bool? ImportsMusicAppPlays = null,
-    string? IconEmoji = null, string? IconToken = null, bool? LooksUpOnline = null);
+    string? IconEmoji = null, string? IconToken = null, bool? LooksUpOnline = null,
+    string? VibePlaylists = null, int? VibePercent = null);

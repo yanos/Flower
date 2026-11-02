@@ -42,6 +42,11 @@ public sealed class LibraryRescanCoordinator(
         }
     }
 
+    // As a scan starts, and Completed as it ends: Vibe Playlists' analysis
+    // waits out every scan (SemanticAudioEngine.Pause), since a scan rewrites
+    // the catalog its plan is made from and both want the disk.
+    public event Action? Started;
+
     // After every scan, startup's included, whether or not it succeeded - the
     // folder watcher re-reads the folder list here, since a scan is what every
     // change to that list ends in (the settings endpoint starts one, and the
@@ -67,6 +72,19 @@ public sealed class LibraryRescanCoordinator(
         {
             if (_running is { IsCompleted: false })
                 return false;
+
+            // Raised before the scan exists, so a listener never hears its
+            // Completed first. The previous scan's Completed has already been
+            // raised: it runs before that scan's task ends, and until then
+            // this method refuses to start another.
+            try
+            {
+                Started?.Invoke();
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Pre-rescan step failed");
+            }
 
             _running = Task.Run(() => RunAsync(onCompleted));
             return true;

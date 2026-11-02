@@ -58,7 +58,11 @@ public sealed partial class SettingsViewModel : ViewModelBase
         _appSettings = appSettings ?? new AppSettings();
         _appSettingsStore = appSettingsStore;
         LogViewer = new LogViewerViewModel(_appSettings, appSettingsStore);
+        AiFeatures = new AiFeaturesSettingsViewModel(backend);
     }
+
+    // The AI Features tab (Capabilities.AiFeatures).
+    public AiFeaturesSettingsViewModel AiFeatures { get; }
 
     private readonly AppSettings _appSettings;
 
@@ -560,6 +564,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
             TrustTailscaleRange = _snapshot.TrustTailscaleRange;
             AllowPublicAccess = _snapshot.AllowPublicAccess;
             LookUpOnline = _snapshot.LookUpOnline;
+            AiFeatures.Load(_snapshot);
             AllowedCidrsText = string.Join(Environment.NewLine, _snapshot.AllowedCidrs);
 
             _paths.Clear();
@@ -617,6 +622,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
                 await RefreshDevicesAsync(ct);
 
             await RefreshRemovedFilesAsync(ct);
+            await AiFeatures.RefreshAsync(ct);
 
             IsLoaded = true;
             DeviceListChanged?.Invoke(this, EventArgs.Empty);
@@ -657,10 +663,15 @@ public sealed partial class SettingsViewModel : ViewModelBase
                 TrustTailscaleRange = TrustTailscaleRange,
                 AllowPublicAccess = AllowPublicAccess,
                 LookUpOnline = LookUpOnline,
+                AiFeaturesEnabled = AiFeatures.Enabled,
+                VibeEnabled = AiFeatures.VibeEnabled,
+                VibeClipsPerSong = AiFeatures.ClipsPerSong,
                 AllowedCidrs = ParseCidrs(),
             }, ct);
 
             _originalPaths = _paths.ToList();
+            AiFeatures.Saved();
+            await AiFeatures.RefreshAsync(ct);
             return true;
         }
         catch (Exception ex)

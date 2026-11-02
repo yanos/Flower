@@ -298,6 +298,11 @@ builder.Services.AddSingleton(services =>
         services.GetRequiredService<ILogger<OnlineMetadataEngine>>());
 });
 builder.Services.AddSingleton<PlayReportService>();
+// Vibe Playlists' engine (docs/VIBE-PLAYLIST-PLAN.md), for every device paired
+// here. Hosted, so it is started after the startup scan below and waits for it.
+builder.Services.AddSingleton(new SemanticAudioModelSource());
+builder.Services.AddSingleton<SemanticAudioService>();
+builder.Services.AddHostedService(services => services.GetRequiredService<SemanticAudioService>());
 // Where a paired device's pushed log snapshot lands (SyncEndpoints'
 // /log/report) and is read back from (AdminEndpoints' /devices/{fp}/logs).
 // Kept as timestamped JSON Lines under <DataDirectory>/logs/devices, one

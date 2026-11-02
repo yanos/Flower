@@ -268,9 +268,10 @@ public class SettingsDevicesViewTests : PinnedDataDirectory
             Dispatcher.UIThread.RunJobs();
         }
 
-        // Five declared - General, Library, Devices, Network, Logs - of which the
-        // last two are collapsed for a local backend (see SettingsCapabilities).
-        Assert.Equal(5, tabs.ItemCount);
+        // Six declared - General, Library, Devices, Network, AI Features,
+        // Logs - of which the last three are collapsed for a local backend
+        // (see SettingsCapabilities).
+        Assert.Equal(6, tabs.ItemCount);
         await settings.LoadAsync();
 
         window.Close();

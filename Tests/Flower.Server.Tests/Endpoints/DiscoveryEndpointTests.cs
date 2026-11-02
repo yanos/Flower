@@ -155,6 +155,30 @@ public class DiscoveryEndpointTests(FlowerServerFixture server) : IClassFixture<
         }
     }
 
+    // Whether there is anything to make a Vibe Playlist from, which decides
+    // whether a paired device offers New Vibe Playlist… at all. Its own
+    // business, so told only to a device the server trusts.
+    [Fact]
+    public async Task Tells_only_a_device_it_trusts_whether_it_makes_vibe_playlists()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var device = NewDevice();
+        await trustedPeers.ApproveAsync(device.Fingerprint, "Test peer", device.PublicKeyBase64);
+        try
+        {
+            var (_, anonymous) = await GetInfoAsync();
+            var (_, trusted) = await GetInfoAsync(signer: device);
+
+            Assert.True(!anonymous.TryGetProperty("vibePlaylists", out var hidden)
+                        || hidden.ValueKind == JsonValueKind.Null);
+            Assert.Equal("off", trusted.GetProperty("vibePlaylists").GetString());
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
     // A revoked device still holds the key it paired with, and signs with it;
     // that is what earns it a "no" rather than the null a bare claim gets.
     [Fact]

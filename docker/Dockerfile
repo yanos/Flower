@@ -33,6 +33,7 @@ RUN if [ "$INCLUDE_WEB_UI" = "true" ]; then \
 COPY Directory.Build.props Directory.Build.targets ./
 COPY Flower.Core/Flower.Core.csproj Flower.Core/
 COPY Flower.Server/Flower.Server.csproj Flower.Server/
+COPY Flower.SemanticAudio.Onnx/Flower.SemanticAudio.Onnx.csproj Flower.SemanticAudio.Onnx/
 COPY Flower/Flower.csproj Flower/
 COPY Flower.Web/Flower.Web.csproj Flower.Web/
 RUN dotnet restore Flower.Server/Flower.Server.csproj \

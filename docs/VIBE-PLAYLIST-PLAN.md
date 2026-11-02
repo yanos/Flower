@@ -5,14 +5,16 @@ jogging", "sad piano without singing". It never runs out. Pressing play starts
 an endless queue of the library's songs that *sound* like the sentence, and
 the queue keeps topping itself up.
 
-**Status (November 2026): the engine is built (phase 1), nothing hosts it
-yet.** `Flower.Core/SemanticAudio/` has the tokenizer, the clip grid, the
-waveform preparation, the model download, the analyzer, the index, the search
-and its filters, and `Flower.SemanticAudio.Onnx` runs the two encoders. The
-C# pipeline matches Python's: waveforms to the sample, embeddings at cosine
-0.9999998 or better. The model is published as the
-`music_audioset_epoch_15_esc_90.14` release, and no head runs the engine.
-This plan replaces
+**Status (November 2026): the server runs the engine (phases 1 and 2), and
+there is no playlist yet.** `Flower.Core/SemanticAudio/` has the tokenizer,
+the clip grid, the waveform preparation, the model download, the analyzer,
+the index, the search and its filters, and `Flower.SemanticAudio.Onnx` runs
+the two encoders. The C# pipeline matches Python's: waveforms to the sample,
+embeddings at cosine 0.9999998 or better. The model is published as the
+`music_audioset_epoch_15_esc_90.14` release. `Flower.Server` hosts the engine
+behind its settings, with an AI Features tab on its settings page (the
+browser's, and an admin desktop's server pane) and `vibePlaylists` in `/info`.
+Nothing makes a playlist from it yet: that is phase 3. This plan replaces
 `PROMPT-PLAYLIST-PLAN.md`, which had a language model read the sentence
 against the names of the library's albums. The playlist's shape carries over
 from it: a pool, an endless queue, skips remembered. What changes is how songs
@@ -46,8 +48,13 @@ cost, and nothing leaves the house.
    everything in-process. A split with text on the phone and audio on the
    server was considered and dropped (see "Where it runs").
 5. **It plays as an endless queue**, as the prompt-playlist plan designed it.
-6. **One global off switch, off by default.** Turning it off deletes the model
-   files and every embedding.
+6. **Two switches: AI Features, off by default, and Vibe Playlist under it.**
+   AI Features is the master switch over every feature that runs a model on
+   the host's own songs, and each feature has its own switch under it, on by
+   default, so turning AI Features on turns every feature on. A feature runs
+   only while both are on, and either one turned off deletes its model files
+   and every embedding. (First a single switch; the owner asked for the
+   master and per-feature split in November 2026.)
 7. **Negative prompts: not now.** See "Later".
 8. **The name is Vibe Playlist.**
 
@@ -209,7 +216,10 @@ survives an image update.
 - **When it runs.** When the switch is on and the model is present, from the
   host's start, and again on `Library.LibraryChanged` and on `TrackChanged`
   for a replaced file. On the server it runs after the startup rescan and never
-  alongside one (`LibraryRescanCoordinator`).
+  alongside one: `LibraryRescanCoordinator.Started` pauses the engine, which
+  stops the pass (the song it was on is heard again later), and `Completed`
+  resumes it. Only the listening waits: the model downloads and the index
+  loads meanwhile, so searches don't wait out a long startup scan.
 - **Order.** Recently added songs first, so a new album becomes findable
   first, then the rest of the library from the most played down.
 - **Resumable.** Each song is committed when it is done, so a restart loses at
@@ -544,8 +554,8 @@ listen to is their own business, even on a shared server.
 
 ## The settings page
 
-A **Vibe Playlists** tab in `SettingsPanel` (desktop window, and the browser
-for a server), and a **VIBE PLAYLISTS** section in the phone's `SettingsView`.
+An **AI Features** tab in `SettingsPanel` (desktop window, and the browser
+for a server), and an **AI FEATURES** section in the phone's `SettingsView`.
 Where each appears follows `LookUpOnline`:
 
 | Screen | Shows |
@@ -553,13 +563,19 @@ Where each appears follows `LookUpOnline`:
 | Server settings (browser, or an admin device's server screen) | The full page, for the server |
 | A device on its own (desktop or phone) | The full page, for itself |
 | A paired device's own settings | One line: "Vibe Playlists are made by *Server*, which has them on / off." No switch. |
+| A server older than these settings | "This server's version has no AI features. Update it to turn them on.", with every switch disabled: its status route answers 404. |
 
 The full page:
 
-- **Vibe Playlists**, the master switch, off by default. Turning it on starts
-  the model download, then analysis. Turning it off asks first, inline the way
-  Forget does: "This deletes the model (*n* MB) and the analysis of *n* songs.
-  Turning it back on means analysing again (about *t*)." Then it stops the job
+- **AI Features**, the master switch, off by default, and indented under it
+  **Vibe Playlist**, on by default and disabled while the master is off.
+  Vibe Playlist running (both on) starts the model download, then analysis.
+  Either one turned off asks first, inline: the switches are drafted with
+  the rest of the page, and turned off they say "Saving turns Vibe Playlist
+  off and deletes its model (*n* MB) and the analysis of *n* songs. Turning
+  it back on means analysing every song again (about *t*)." Save is the yes;
+  Cancel, or the switch turned back on, the no. A dialog has nowhere
+  to go in a panel shown in a window and a browser tab alike. Then it stops the job
   and deletes `<data dir>/semantic-audio/` and every `semantic_audio_*` row. Vibe Playlists
   themselves stay, since they are the user's, but they cannot play new songs
   and say so until the switch is back on. The new playlists' rows are the
@@ -574,7 +590,8 @@ The full page:
     *Artist*"
   - "Up to date: 16,131 songs analysed" with, when there are any, "12 songs
     couldn't be analysed" (expandable to the list and reasons)
-  - "Paused while a library scan runs", or an error with Retry.
+  - "Paused while the library is scanned", or an error with Retry.
+  - "Using *n* MB (model *n* MB, analysis *n* MB)".
 
   The percent is songs done over songs eligible. "Time left" is the job's own
   measured rate over its last few hundred songs. The settings view model polls
@@ -582,8 +599,8 @@ The full page:
   `GET /api/admin/vibe/status` for a server.
 - **Storage**: "Using *n* MB (model *n* MB, analysis *n* MB)".
 
-The settings live in `MusicLibrarySettings` (`VibeEnabled`,
-`VibeClipsPerSong`), so the server's `FlowerServerOptions` and a device's
+The settings live in `MusicLibrarySettings` (`AiFeaturesEnabled`,
+`VibeEnabled`, `VibeClipsPerSong`; `RunsVibePlaylists` is both switches), so the server's `FlowerServerOptions` and a device's
 `AppSettings` both inherit them. They are drafted and saved like
 `LookUpOnline`, and can be locked from the server's config file
 (`SettingsOverrides`) like every other server setting.
@@ -684,6 +701,36 @@ models.
    the Docker image on both architectures (ONNX Runtime's native library and
    ffaudio's in `mcr.microsoft.com/dotnet/aspnet:10.0`). FFAudio.NET.Linux
    ships x64 only, so an arm64 image has no decoder until it gets one.
+
+   **Built, November 2026.** `SemanticAudioService` hosts the engine: it
+   hands it ONNX Runtime's encoders (one thread each) and FFAudio's decoder,
+   applies the two settings from `FlowerServerOptions` (the PUT applies them
+   at once rather than waiting for the configuration watcher), and pauses it
+   for every scan (`LibraryRescanCoordinator.Started`/`Completed`). The model
+   comes through `SemanticAudioModelSource`, so the server tests turn the
+   switch on against a handler that refuses. `SemanticAudioReport`, in
+   `Flower.Core` so a device on its own can say the same things, turns the
+   engine's state into `VibeStatusDto` and `/info`'s `vibePlaylists`, with
+   each clip setting's cost for this library (`SemanticAudioCosts`: storage
+   from the songs' lengths, time from the clip rate the analyzer measures).
+   The tab is `AiFeaturesSettingsViewModel` (first a Vibe Playlists tab with
+   one switch, then AI Features with a master and per-feature switch, at the
+   owner's request), held by `SettingsViewModel`; a paired
+   device's one-line note waits for phase 3, which is the first thing to
+   read `vibePlaylists`. The server's output drops ONNX Runtime's iOS and
+   Android builds (110 MB). Measured on a throwaway server with three real
+   songs: the release downloaded and checked in 25 s, and every song was
+   heard at 6 clips.
+
+   The image, on Colima: arm64 loads ONNX Runtime, finds no decoder and
+   says so once ("This host has no audio decoder for its platform"). amd64,
+   run under Rosetta, analyses the same three songs as the Mac, but only with
+   workstation GC: with Server GC, ASP.NET's default, the engine thread hung
+   on its first song, waiting on a futex. On lambda, a real x64 Linux host,
+   the same image with Server GC analysed all three at about 0.35 s a clip
+   on one thread, so it was Rosetta: .NET suspends threads for a collection
+   with signals, which Rosetta does not handle as Linux does. Colima's amd64
+   is no test of this image.
 3. **The playlist, on a paired desktop and in the browser.** The new kind, New
    Vibe Playlist… with a preview, the queue source, skips, and sync of
    `VibePrompt`.

@@ -23,6 +23,33 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Flower.Core\Flower.Core.csproj" />
+    <!-- Vibe Playlists' encoders (docs/VIBE-PLAYLIST-PLAN.md): the server runs
+         the engine for every device paired to it. -->
+    <ProjectReference Include="..\Flower.SemanticAudio.Onnx\Flower.SemanticAudio.Onnx.csproj" />
+  </ItemGroup>
+
+  <!-- ONNX Runtime's package carries its phone builds too (an iOS
+       xcframework and an Android aar, 110 MB between them), which a
+       framework-dependent publish would copy into runtimes/ and so into
+       every Docker image. No server runs on a phone. -->
+  <Target Name="DropPhoneOnnxRuntime" AfterTargets="ResolvePackageAssets">
+    <ItemGroup>
+      <RuntimeTargetsCopyLocalItems Remove="@(RuntimeTargetsCopyLocalItems)"
+                                    Condition="'%(RuntimeTargetsCopyLocalItems.NuGetPackageId)' == 'Microsoft.ML.OnnxRuntime' And ('%(RuntimeTargetsCopyLocalItems.RuntimeIdentifier)' == 'ios' Or '%(RuntimeTargetsCopyLocalItems.RuntimeIdentifier)' == 'android')" />
+    </ItemGroup>
+  </Target>
+
+  <!-- FFAudio's native library, which the server never needed before Vibe
+       Playlists: it streams files as they are and decodes nothing, but
+       analysing a song means hearing it. Chosen by build host as in
+       Flower.csproj, and the publish is framework-dependent, so a Docker
+       image carries whatever the build stage's OS ships: FFAudio.NET.Linux is
+       linux-x64 only for now, and an arm64 image has no decoder (the engine
+       says so on the settings page rather than failing every song). -->
+  <ItemGroup>
+    <PackageReference Include="FFAudio.NET.macOS" Version="$(FFAudioPackageVersion)" Condition="$([MSBuild]::IsOSPlatform('OSX'))" />
+    <PackageReference Include="FFAudio.NET.Linux" Version="$(FFAudioPackageVersion)" Condition="$([MSBuild]::IsOSPlatform('Linux'))" />
+    <PackageReference Include="FFAudio.NET.Windows" Version="$(FFAudioPackageVersion)" Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
   </ItemGroup>
 
   <!-- ── The browser UI ──────────────────────────────────────────────────────

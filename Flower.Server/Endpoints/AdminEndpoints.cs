@@ -11,6 +11,7 @@ using Flower.Models;
 using Flower.Logging;
 using Flower.Persistence;
 using Flower.Server.Configuration;
+using Flower.SemanticAudio;
 using Flower.Server.Services;
 using Flower.Services;
 
@@ -261,7 +262,7 @@ public static class AdminEndpoints
             HttpContext context, IOptionsMonitor<FlowerServerOptions> options, IConfiguration configuration,
             LibraryRescanCoordinator rescans, IServer boundServer, PublicAddressProbe publicAddress,
             PublicReachability publicReachability, DeviceSigningKey signingKey, MdnsAdvertiser advertiser,
-            ServerIconStore icons) =>
+            ServerIconStore icons, SemanticAudioService vibe) =>
         {
             ServerSettingsUpdateDto? update;
             try
@@ -276,6 +277,8 @@ public static class AdminEndpoints
 
             if (update == null)
                 return Problems.BadRequest("A settings body is required.");
+            if (update.VibeClipsPerSong is { } requestedClips && !ClipGrid.Settings.Contains(requestedClips))
+                return Problems.BadRequest($"Clips per song is one of {string.Join(", ", ClipGrid.Settings)} (0 for the whole song).");
 
             var before = options.CurrentValue;
             var values = new Dictionary<string, JsonNode?>(StringComparer.Ordinal);
@@ -307,6 +310,9 @@ public static class AdminEndpoints
                 SyncPlayCountFromITunes = before.SyncPlayCountFromITunes,
                 SyncDateAddedFromITunes = before.SyncDateAddedFromITunes,
                 LookUpOnline = before.LookUpOnline,
+                AiFeaturesEnabled = before.AiFeaturesEnabled,
+                VibeEnabled = before.VibeEnabled,
+                VibeClipsPerSong = before.VibeClipsPerSong,
             };
 
             // Compared against the *resolved* name, not the configured one: an
@@ -388,6 +394,26 @@ public static class AdminEndpoints
                 values[nameof(FlowerServerOptions.LookUpOnline)] = JsonValue.Create(lookUpOnline);
             }
 
+            // Applied to the engine below, at once: Vibe Playlists turned on
+            // (both switches) starts the download, off (either) stops the job
+            // and deletes the model and every analysis, and a new clip setting
+            // rebuilds the index.
+            if (update.AiFeaturesEnabled is { } aiFeatures && aiFeatures != before.AiFeaturesEnabled && Editable(nameof(FlowerServerOptions.AiFeaturesEnabled)))
+            {
+                after.AiFeaturesEnabled = aiFeatures;
+                values[nameof(FlowerServerOptions.AiFeaturesEnabled)] = JsonValue.Create(aiFeatures);
+            }
+            if (update.VibeEnabled is { } vibeEnabled && vibeEnabled != before.VibeEnabled && Editable(nameof(FlowerServerOptions.VibeEnabled)))
+            {
+                after.VibeEnabled = vibeEnabled;
+                values[nameof(FlowerServerOptions.VibeEnabled)] = JsonValue.Create(vibeEnabled);
+            }
+            if (update.VibeClipsPerSong is { } vibeClips && vibeClips != before.VibeClipsPerSong && Editable(nameof(FlowerServerOptions.VibeClipsPerSong)))
+            {
+                after.VibeClipsPerSong = vibeClips;
+                values[nameof(FlowerServerOptions.VibeClipsPerSong)] = JsonValue.Create(vibeClips);
+            }
+
             if (values.Count > 0)
             {
                 await ServerSettingsWriter.WriteAsync(before.DataDirectory, values, context.RequestAborted);
@@ -401,6 +427,7 @@ public static class AdminEndpoints
                 (configuration as IConfigurationRoot)?.Reload();
                 if (removePicture)
                     icons.Remove();
+                vibe.Apply(after);
 
                 logger.LogInformation(
                     "{Fingerprint} updated server settings: {Keys}",
@@ -463,6 +490,20 @@ public static class AdminEndpoints
             icons.Remove();
             logger.LogInformation("{Fingerprint} removed the server's icon picture.", context.Items[AdminFingerprintKey]);
             return Results.NoContent();
+        });
+
+        // Where Vibe Playlists stand, for the settings page to poll while it
+        // shows them (docs/VIBE-PLAYLIST-PLAN.md, "The settings page").
+        authenticated.MapGet("/vibe/status", (SemanticAudioService vibe) =>
+            Results.Json(vibe.Report.Describe(), jsonOptions));
+
+        // After an error, start again from where it stopped. Answers with the
+        // status, so the page shows the retry taking without another poll.
+        authenticated.MapPost("/vibe/retry", (HttpContext context, SemanticAudioService vibe) =>
+        {
+            vibe.Engine.Retry();
+            logger.LogInformation("{Fingerprint} retried Vibe Playlists' analysis.", context.Items[AdminFingerprintKey]);
+            return Results.Json(vibe.Report.Describe(), jsonOptions);
         });
 
         authenticated.MapGet("/library", (LibraryRescanCoordinator rescans, LibraryWriteAccess writeAccess) =>
@@ -1019,7 +1060,10 @@ public static class AdminEndpoints
             PublicReachability: reachability?.Status.ToString(),
             IconEmoji: options.IconEmoji,
             IconToken: icons.Current?.Token,
-            LookUpOnline: options.LookUpOnline);
+            LookUpOnline: options.LookUpOnline,
+            AiFeaturesEnabled: options.AiFeaturesEnabled,
+            VibeEnabled: options.VibeEnabled,
+            VibeClipsPerSong: options.VibeClipsPerSong);
     }
 
     // Every address this server is known by, the one the admin's own browser

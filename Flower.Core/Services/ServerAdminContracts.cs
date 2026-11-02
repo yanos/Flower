@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 
+using Flower.SemanticAudio;
+
 namespace Flower.Services;
 
 // The settings half of Flower.Server's /api/admin wire shape, declared once for
@@ -91,7 +93,13 @@ public sealed record ServerSettingsDto(
     string? IconToken = null,
     // Whether the server looks things up online for its library, and so for
     // every device paired to it - see MusicLibrarySettings.LookUpOnline.
-    bool LookUpOnline = true);
+    bool LookUpOnline = true,
+    // The AI features' master switch and Vibe Playlists' two settings - see
+    // MusicLibrarySettings.AiFeaturesEnabled. Where Vibe Playlists stand is
+    // GET /api/admin/vibe/status (VibeStatusDto).
+    bool AiFeaturesEnabled = false,
+    bool VibeEnabled = true,
+    int VibeClipsPerSong = ClipGrid.DefaultClipsPerSong);
 
 public sealed record ServerSettingsUpdateDto(
     string? Alias,
@@ -106,7 +114,44 @@ public sealed record ServerSettingsUpdateDto(
     bool? AllowPublicAccess,
     // Empty to have none; a non-empty one replaces the server's picture.
     string? IconEmoji = null,
-    bool? LookUpOnline = null);
+    bool? LookUpOnline = null,
+    bool? AiFeaturesEnabled = null,
+    bool? VibeEnabled = null,
+    int? VibeClipsPerSong = null);
+
+// GET /api/admin/vibe/status - where Vibe Playlists stand on the server, for
+// the settings page to poll while it shows them (docs/VIBE-PLAYLIST-PLAN.md,
+// "The settings page"). State is SemanticAudioState's name, a string for the
+// reason ServerSettingsDto.PublicReachability is one.
+//
+// Download is set while the model downloads. SecondsLeft is the pass's own
+// measured rate over what is left, null until it has one. Costs are each clip
+// setting's, for this library (SemanticAudioCosts). Failures are the songs
+// that couldn't be analysed, the first FailureListLimit of FailedCount.
+public sealed record VibeStatusDto(
+    string State,
+    VibeDownloadDto? Download,
+    int SongsDone,
+    int SongsEligible,
+    int SongsSearchable,
+    string? CurrentTitle,
+    string? CurrentArtist,
+    double? SecondsLeft,
+    string? Error,
+    long ModelBytes,
+    long AnalysisBytes,
+    List<VibeClipCostDto> Costs,
+    int FailedCount,
+    List<VibeFailureDto> Failures)
+{
+    public const int FailureListLimit = 200;
+}
+
+public sealed record VibeDownloadDto(long BytesDone, long BytesTotal);
+
+public sealed record VibeClipCostDto(int ClipsPerSong, long Clips, long Bytes, double? Seconds);
+
+public sealed record VibeFailureDto(string Title, string Artist, string Reason);
 
 // POST /api/admin/library/remove - "Remove from Library" from an admin device,
 // carried out on the server's own library (see LibraryRemoval). TrackIds are

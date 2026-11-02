@@ -10,6 +10,8 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 
 using Flower.Persistence;
+using Flower.Persistence.Sql;
+using Flower.SemanticAudio;
 using Flower.Server.Configuration;
 using Flower.Server.Endpoints;
 using Flower.Server.Services;
@@ -351,6 +353,105 @@ public class AdminEndpointTests(FlowerServerFixture server) : IClassFixture<Flow
         // The seeded file is mostly underscore-prefixed documentation an
         // operator may have added to - a settings write must not flatten it.
         Assert.Contains("_LibraryPaths", written);
+    }
+
+    // AI features and Vibe Playlists (docs/VIBE-PLAYLIST-PLAN.md, "The settings
+    // page"): off until the owner turns AI features on, and then on in the same
+    // request, with nothing fetched from anywhere in these tests (see
+    // FlowerServerFixture).
+    [Fact]
+    public async Task Vibe_playlists_are_off_until_the_owner_turns_them_on()
+    {
+        using var admin = await NewAdminAsync();
+        try
+        {
+            var settings = await ReadAsync<ServerSettingsDto>(await SignedAsync(admin, "GET", "/api/admin/settings"));
+            var status = await ReadAsync<VibeStatusDto>(await SignedAsync(admin, "GET", "/api/admin/vibe/status"));
+
+            Assert.False(settings.AiFeaturesEnabled);
+            Assert.True(settings.VibeEnabled);
+            Assert.Equal(ClipGrid.DefaultClipsPerSong, settings.VibeClipsPerSong);
+            Assert.Equal(nameof(SemanticAudioState.Off), status.State);
+            // What each choice would cost is there before anything is turned on.
+            Assert.Equal(ClipGrid.Settings, status.Costs.Select(c => c.ClipsPerSong));
+        }
+        finally
+        {
+            await server.Services.GetRequiredService<TrustedPeerStore>().RevokeAsync(admin.Fingerprint);
+        }
+    }
+
+    [Fact]
+    public async Task Turning_ai_features_on_starts_vibe_playlists_at_once()
+    {
+        await using var isolated = new FlowerServerFixture();
+        await isolated.InitializeAsync();
+        using var admin = await NewAdminOnAsync(isolated);
+
+        var context = await SignedOnAsync(isolated, admin, "PUT", "/api/admin/settings",
+            body: """{"aiFeaturesEnabled":true,"vibeClipsPerSong":12}""");
+
+        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+        var settings = await ReadAsync<ServerSettingsDto>(context);
+        Assert.True(settings.AiFeaturesEnabled);
+        Assert.Equal(12, settings.VibeClipsPerSong);
+        var engine = isolated.Services.GetRequiredService<SemanticAudioService>().Engine;
+        Assert.True(engine.Enabled);
+        Assert.Equal(12, engine.ClipsPerSong);
+
+        // Offline here, so the download is what fails, and the page is told.
+        var status = await WaitForVibeAsync(isolated, admin, s => s.State == nameof(SemanticAudioState.Failed));
+        Assert.StartsWith("Couldn't download the model", status.Error);
+    }
+
+    [Fact]
+    public async Task A_clip_setting_the_page_does_not_offer_is_refused()
+    {
+        using var admin = await NewAdminAsync();
+        try
+        {
+            var context = await SignedAsync(admin, "PUT", "/api/admin/settings", body: """{"vibeClipsPerSong":5}""");
+
+            Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        }
+        finally
+        {
+            await server.Services.GetRequiredService<TrustedPeerStore>().RevokeAsync(admin.Fingerprint);
+        }
+    }
+
+    [Fact]
+    public async Task Turning_vibe_playlists_off_deletes_every_analysis()
+    {
+        await using var isolated = new FlowerServerFixture();
+        await isolated.InitializeAsync();
+        using var admin = await NewAdminOnAsync(isolated);
+        var repository = new SemanticAudioRepository(isolated.Services.GetRequiredService<FlowerDb>());
+        await SignedOnAsync(isolated, admin, "PUT", "/api/admin/settings", body: """{"aiFeaturesEnabled":true}""");
+        var song = new AnalysedSong(Guid.NewGuid(), "test/int8", "stamp", TimeSpan.FromMinutes(3), 18,
+            DateTimeOffset.UtcNow, null, new HashSet<int> { 0 });
+        repository.SaveSong(song, new Dictionary<int, float[]> { [0] = new float[Clap.Dimensions] }, replace: false);
+
+        var context = await SignedOnAsync(isolated, admin, "PUT", "/api/admin/settings", body: """{"vibeEnabled":false}""");
+
+        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+        var status = await WaitForVibeAsync(isolated, admin, s => s.State == nameof(SemanticAudioState.Off) && s.AnalysisBytes == 0);
+        Assert.Equal(0, status.ModelBytes);
+        Assert.Empty(repository.LoadSongs());
+    }
+
+    private static async Task<VibeStatusDto> WaitForVibeAsync(
+        FlowerServerFixture target, DeviceSigningKey admin, Func<VibeStatusDto, bool> reached)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (true)
+        {
+            var status = await ReadAsync<VibeStatusDto>(await SignedOnAsync(target, admin, "GET", "/api/admin/vibe/status"));
+            if (reached(status))
+                return status;
+            Assert.True(DateTime.UtcNow < deadline, $"Vibe Playlists stayed {status.State}: {status.Error}");
+            await Task.Delay(20, TestContext.Current.CancellationToken);
+        }
     }
 
     // Enough of a PNG for the sniffing that decides what an upload is.

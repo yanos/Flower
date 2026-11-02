@@ -277,6 +277,7 @@ device it answers more, on that device's budget, and the answer is signed back.
 | `iconEmoji` | The emoji the server shows as beside `alias`, `null` for none. Told to anyone, as `alias` is |
 | `iconToken` | Names the server's icon picture, `null` for none. **Verified callers only**, `null` otherwise — only they can fetch it, from `GET /server-icon`. A server has an emoji or a picture, never both |
 | `looksUpOnline` | **Verified callers only**, `null` otherwise. The owner's switch for looking things up online (`lookUpOnline` in the settings). It governs every device paired here: a paired device looks up its *own* songs only while this is `true`, and never before it has heard it |
+| `vibePlaylists`, `vibePercent` | **Verified callers only**, `null` otherwise. Whether this server makes Vibe Playlists: `off`, `analysing` with `vibePercent` of the library heard so far, or `ready`. A paired device offers New Vibe Playlist… only when it is not `off` |
 
 A verified call also carries the device's current `X-Flower-Alias`, and this is
 where a rename lands in the server's device list. A signed call's answer is
@@ -576,7 +577,7 @@ reports to a paired device — the public one among them when public access is o
 Editable: `alias`, `iconEmoji`, `advertisedHost`, `advertiseOnLan`,
 `trustTailscaleRange`, `allowedCidrs`, `libraryPaths`, `integrateWithITunes`,
 `syncPlayCountFromITunes`, `syncDateAddedFromITunes`, `allowPublicAccess`,
-`lookUpOnline`. Every field is optional and an absent one is left alone. Read-only alongside
+`lookUpOnline`, `aiFeaturesEnabled`, `vibeEnabled`, `vibeClipsPerSong`. Every field is optional and an absent one is left alone. Read-only alongside
 them: `dataDirectory`, `version`, `addresses`, `publicAddress`, `publicOrigin`,
 `publicReachability`, `fingerprint`, `advertisedAs`, `appleMusicFolder`,
 `iTunesLibraryDescription`, `iconToken`, and `overridden` — settings pinned by
@@ -600,6 +601,31 @@ Changes are written to `flower-server.json` in the data directory.
 `allowPublicAccess` and `allowedCidrs` take effect on the next request.
 Changing an iTunes switch starts a rescan; changing `libraryPaths` does not —
 call `/library/rescan`.
+
+### Vibe Playlists
+
+`aiFeaturesEnabled` is the master switch over every AI feature (off by
+default), and `vibeEnabled` Vibe Playlists' own under it (on by default); they
+run while both are on. Both, and `vibeClipsPerSong`, take effect in the same
+request (`SemanticAudioService`): running starts the model download, then the
+analysis; either switch off stops the job and deletes the model and every analysis; a new clip setting
+rebuilds the index. `vibeClipsPerSong` is one of `3`, `6`, `12` or `0` (the
+whole song), and anything else is `400`. See `docs/VIBE-PLAYLIST-PLAN.md`.
+
+| Method | Path | Answers |
+|---|---|---|
+| GET | `/vibe/status` | `VibeStatusDto` |
+| POST | `/vibe/retry` | `VibeStatusDto`, after starting again from an error |
+
+`VibeStatusDto` (`ServerAdminContracts.cs`): `state` (`Off`, `Downloading`,
+`Preparing`, `Analysing`, `UpToDate`, `Paused`, `Failed`), `download`
+(`{bytesDone, bytesTotal}` while downloading), `songsDone`, `songsEligible`,
+`songsSearchable`, `currentTitle` and `currentArtist` while analysing,
+`secondsLeft`, `error`, `modelBytes`, `analysisBytes`, `costs` (each clip
+setting's `{clipsPerSong, clips, bytes, seconds}` for this library, `seconds`
+null until the server has measured itself), `failedCount`, and `failures`, the
+first 200 songs that couldn't be analysed as `{title, artist, reason}`.
+`Paused` means a library scan is running; the analysis waits it out.
 
 ### The library
 

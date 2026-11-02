@@ -17,8 +17,8 @@
 # The Dockerfile's VERSION arg covers the shallow-clone case where it can't.
 
 # Heads the server image has no use for. The publish only ever walks
-# Flower.Server -> Flower.Core, plus Flower.Web -> Flower -> Flower.Core when
-# the browser UI is included.
+# Flower.Server -> Flower.Core and Flower.SemanticAudio.Onnx, plus
+# Flower.Web -> Flower -> Flower.Core when the browser UI is included.
 Flower.Desktop/
 Flower.Android/
 Flower.iOS/

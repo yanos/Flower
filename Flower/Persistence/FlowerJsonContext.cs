@@ -66,6 +66,7 @@ namespace Flower.Persistence
     // nothing.
     [JsonSerializable(typeof(ServerSettingsDto))]
     [JsonSerializable(typeof(ServerSettingsUpdateDto))]
+    [JsonSerializable(typeof(VibeStatusDto))]
     [JsonSerializable(typeof(List<AdminDeviceDto>), TypeInfoPropertyName = "AdminDeviceList")]
     [JsonSerializable(typeof(AdminPairingCodeDto))]
     [JsonSerializable(typeof(AdminLibraryStatusDto))]

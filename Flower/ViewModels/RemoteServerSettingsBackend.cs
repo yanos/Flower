@@ -41,6 +41,7 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
         TrustedDevices = true,
         RevealInFileManager = false,
         RebuildDatabase = false,
+        AiFeatures = true,
     };
 
     public async Task<SettingsSnapshot> LoadAsync(CancellationToken ct = default)
@@ -74,6 +75,9 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
             Version = settings.Version,
             Fingerprint = settings.Fingerprint,
             LookUpOnline = settings.LookUpOnline,
+            AiFeaturesEnabled = settings.AiFeaturesEnabled,
+            VibeEnabled = settings.VibeEnabled,
+            VibeClipsPerSong = settings.VibeClipsPerSong,
         };
     }
 
@@ -96,7 +100,10 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
                 draft.SyncDateAddedFromITunes,
                 draft.AllowPublicAccess,
                 draft.IconEmoji,
-                draft.LookUpOnline),
+                draft.LookUpOnline,
+                draft.AiFeaturesEnabled,
+                draft.VibeEnabled,
+                draft.VibeClipsPerSong),
             ct);
         _lastLoaded = result;
 
@@ -108,6 +115,9 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
 
         return draft.LibraryPathsChanged ? "Saved. Scanning the library folders now." : null;
     }
+
+    public Task<VibeStatusDto> LoadVibeStatusAsync(CancellationToken ct = default) => client.GetVibeStatusAsync(ct);
+    public Task<VibeStatusDto> RetryVibeAsync(CancellationToken ct = default) => client.RetryVibeAsync(ct);
 
     public Task<byte[]?> LoadServerIconAsync(CancellationToken ct = default) => client.GetServerIconAsync(ct);
     public Task SetServerIconAsync(byte[] png, CancellationToken ct = default) => client.SetServerIconAsync(png, ct);

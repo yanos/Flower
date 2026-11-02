@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging;
 using Flower.Models;
 using Flower.Persistence;
 using Flower.Persistence.Sql;
+using Flower.SemanticAudio;
 using Flower.Server.Services;
 
 namespace Flower.Server.Tests.TestSupport;
@@ -76,9 +77,16 @@ public sealed class FlowerServerFixture : WebApplicationFactory<Program>, IAsync
         // result depends on the developer's internet link is not a test. The
         // settings DTO then reports no public address, which is also what a
         // server with no route out reports.
+        //
+        // The same for Vibe Playlists' model: a test that turns them on gets a
+        // download that fails at once, rather than 330 MB from GitHub.
         builder.ConfigureServices(services =>
+        {
             services.AddSingleton(sp => new PublicAddressProbe(
-                sp.GetRequiredService<ILogger<PublicAddressProbe>>(), new OfflineHandler())));
+                sp.GetRequiredService<ILogger<PublicAddressProbe>>(), new OfflineHandler()));
+            services.AddSingleton(new SemanticAudioModelSource(new OfflineHandler()));
+        });
+        SemanticAudioModelStore.ReconnectDelay = TimeSpan.Zero;
     }
 
     private sealed class OfflineHandler : HttpMessageHandler

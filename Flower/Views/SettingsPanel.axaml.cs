@@ -71,6 +71,7 @@ public partial class SettingsPanel : UserControl
         // when it comes back.
         Loaded += OnPanelLoaded;
         Unloaded += (_, _) => _viewModel.SetLogTabActive(false);
+        Unloaded += (_, _) => _viewModel.AiFeatures.SetActive(false);
 
         // The Technical details figures, sampled only while they can be read.
         Loaded += (_, _) => viewModel.Device?.Resources.Start();
@@ -140,8 +141,13 @@ public partial class SettingsPanel : UserControl
             Tabs.SelectedItem = remembered;
     }
 
-    private void SyncLogTabActive() =>
+    // The AI Features tab polls Vibe Playlist's status the same way, for the
+    // same reason.
+    private void SyncLogTabActive()
+    {
         _viewModel?.SetLogTabActive(ReferenceEquals(Tabs.SelectedItem, LogsTab));
+        _viewModel?.AiFeatures.SetActive(ReferenceEquals(Tabs.SelectedItem, AiFeaturesTab));
+    }
 
     // Which half of the Devices tab this backend gets: a device configuring
     // itself picks the one server it syncs with, and a server being configured

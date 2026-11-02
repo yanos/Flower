@@ -5,6 +5,8 @@ using System.Threading.Tasks;
 
 using Flower.Logging;
 using Flower.Persistence;
+using Flower.SemanticAudio;
+using Flower.Services;
 
 namespace Flower.ViewModels;
 
@@ -70,6 +72,14 @@ public sealed record SettingsCapabilities
     // The icon a server shows as beside its name (ServerIcon): an emoji, or a
     // picture. Server-only - a device's own name is never shown with one.
     public bool ServerIconPicker { get; init; }
+
+    // The AI Features tab: the master switch over every feature that runs a
+    // model, and each feature's own - for now Vibe Playlist, with its clips
+    // per song and where its job stands (docs/VIBE-PLAYLIST-PLAN.md, "The
+    // settings page"). A server's for now; a device on its own gets it with
+    // the engine in-process (phase 5), and a paired device only ever shows
+    // the server's answer.
+    public bool AiFeatures { get; init; }
 
     // "Rebuild Database" versus a plain rescan. The app rebuilds; the server
     // rescans (its schema is migrated by FlowerDb on construction, so there is
@@ -164,6 +174,12 @@ public sealed record SettingsSnapshot
     // switch is not shown (see SettingsViewModel.LookUpOnlineNote).
     public bool LookUpOnline { get; init; } = true;
     public bool PairedServerLooksUpOnline { get; init; }
+
+    // The AI features' master switch and Vibe Playlist's two settings
+    // (MusicLibrarySettings.AiFeaturesEnabled).
+    public bool AiFeaturesEnabled { get; init; }
+    public bool VibeEnabled { get; init; } = true;
+    public int VibeClipsPerSong { get; init; } = ClipGrid.DefaultClipsPerSong;
 }
 
 // The subset the OK button writes back. Only what the user can actually edit -
@@ -185,6 +201,9 @@ public sealed record SettingsDraft
     public required IReadOnlyList<string> AllowedCidrs { get; init; }
     public required bool AllowPublicAccess { get; init; }
     public required bool LookUpOnline { get; init; }
+    public required bool AiFeaturesEnabled { get; init; }
+    public required bool VibeEnabled { get; init; }
+    public required int VibeClipsPerSong { get; init; }
 }
 
 // What a settings screen can do, independent of whether "settings" means this
@@ -226,6 +245,13 @@ public interface ISettingsBackend
     // immediately (a server alias needs a restart to be re-announced over mDNS),
     // or null when there is nothing to say.
     Task<string?> SaveAsync(SettingsDraft draft, CancellationToken ct = default);
+
+    // Where Vibe Playlist stands (Capabilities.AiFeatures), polled while its
+    // tab shows, and starting again after an error.
+    Task<VibeStatusDto> LoadVibeStatusAsync(CancellationToken ct = default) =>
+        throw new NotSupportedException("Vibe Playlists aren't made here.");
+    Task<VibeStatusDto> RetryVibeAsync(CancellationToken ct = default) =>
+        throw new NotSupportedException("Vibe Playlists aren't made here.");
 
     // How many of the library's tracks live under this folder, or -1 for "cannot
     // say cheaply" (see LibraryPathRow.SongCount).

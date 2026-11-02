@@ -1,4 +1,7 @@
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
+
+using Flower.SemanticAudio;
 
 namespace Flower.Persistence;
 
@@ -56,4 +59,28 @@ public class MusicLibrarySettings
     // which ask the server rather than the internet, and a paired device's own
     // value is never consulted (AppSettings.PairedServerLooksUpOnline is).
     public bool LookUpOnline { get; set; } = true;
+
+    // The master switch over every AI feature - a model this host runs on
+    // its own songs, for now only Vibe Playlists (SemanticAudioEngine,
+    // docs/VIBE-PLAYLIST-PLAN.md). Off by default: turning it on downloads a
+    // 330 MB model and has this host listen to every song it owns, which is
+    // hours of a CPU, so it is the owner's to ask for. Turning it off deletes
+    // every model and everything they worked out. On a server it covers every
+    // device paired to it, and a paired device's own value is never consulted.
+    public bool AiFeaturesEnabled { get; set; }
+
+    // Each AI feature's own switch, which counts only while AiFeaturesEnabled
+    // is on. On by default, so the master switch turned on is every feature
+    // on; turning one off deletes what only it used, as the master does.
+    public bool VibeEnabled { get; set; } = true;
+
+    // Whether Vibe Playlists run here: both switches. Not a setting, so not
+    // in settings.json either.
+    [JsonIgnore]
+    public bool RunsVibePlaylists => AiFeaturesEnabled && VibeEnabled;
+
+    // How many 10 s clips of each song are listened to: a count spread evenly
+    // over the song, or 0 for all of it (ClipGrid.WholeSong). See
+    // ClipGrid.Settings for the choices offered.
+    public int VibeClipsPerSong { get; set; } = ClipGrid.DefaultClipsPerSong;
 }

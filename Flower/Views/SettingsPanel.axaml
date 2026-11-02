@@ -860,6 +860,96 @@
         </ScrollViewer>
       </TabItem>
 
+      <!-- AI Features: the master switch over every feature that runs a model
+           on the server's own songs, and under it each feature's own - for
+           now Vibe Playlist (docs/VIBE-PLAYLIST-PLAN.md, "The settings page").
+           A server's for now. The switches are drafted with the rest of the
+           page, and the status under Vibe Playlist is live, polled while this
+           tab shows (AiFeaturesSettingsViewModel.SetActive). Turning a feature
+           off deletes its analysis, so a switch turned off says what Save will
+           delete rather than asking in a dialog this panel - shown in a window
+           and a browser tab alike - has nowhere to put. -->
+      <TabItem Header="AI Features" x:Name="AiFeaturesTab" IsVisible="{Binding Capabilities.AiFeatures}">
+        <ScrollViewer>
+          <StackPanel Margin="0,12,0,0" DataContext="{Binding AiFeatures}" x:DataType="vm:AiFeaturesSettingsViewModel">
+            <CheckBox Content="AI Features"
+                      IsChecked="{Binding Enabled, Mode=TwoWay}"
+                      IsEnabled="{Binding CanEdit}"/>
+            <TextBlock Text="{Binding EnabledLock.Message}" IsVisible="{Binding EnabledLock.IsLocked}"
+                       Margin="0,4,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
+            <TextBlock Text="{Binding Description}"
+                       Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
+            <TextBlock Text="{Binding StatusError}"
+                       IsVisible="{Binding StatusError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                       Foreground="{DynamicResource AppErrorBrush}"
+                       Margin="0,8,0,0" FontSize="12" TextWrapping="Wrap"/>
+
+            <!-- Each feature, indented under the master switch it needs. -->
+            <StackPanel Margin="20,20,0,0">
+              <CheckBox Content="Vibe Playlist"
+                        IsChecked="{Binding VibeEnabled, Mode=TwoWay}"
+                        IsEnabled="{Binding CanEditVibe}"/>
+              <TextBlock Text="{Binding VibeEnabledLock.Message}" IsVisible="{Binding VibeEnabledLock.IsLocked}"
+                         Margin="0,4,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
+              <TextBlock Text="{Binding VibeDescription}"
+                         Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
+              <TextBlock Text="{Binding OnNote}"
+                         IsVisible="{Binding OnNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                         Margin="0,8,0,0" FontSize="12" TextWrapping="Wrap"/>
+              <TextBlock Text="{Binding OffWarning}"
+                         IsVisible="{Binding OffWarning, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                         Foreground="{DynamicResource AppWarningBrush}"
+                         Margin="0,8,0,0" FontSize="12" TextWrapping="Wrap"/>
+
+              <!-- Where the job stands, while it runs as saved. -->
+              <StackPanel Margin="0,16,0,0" Spacing="4" IsVisible="{Binding ShowsStatus}">
+                <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap"/>
+                <ProgressBar Minimum="0" Maximum="100" Value="{Binding Progress}"
+                             IsIndeterminate="{Binding IsProgressIndeterminate}"
+                             IsVisible="{Binding ShowsProgress}"/>
+                <TextBlock Text="{Binding NowText}" FontSize="11" Opacity="0.6" TextWrapping="Wrap"
+                           IsVisible="{Binding NowText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                <Button Classes="standard secondary small" Content="Retry" HorizontalAlignment="Left"
+                        Command="{Binding RetryCommand}" IsVisible="{Binding IsFailed}"/>
+                <TextBlock Text="{Binding StorageText}" FontSize="11" Opacity="0.6"
+                           IsVisible="{Binding StorageText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                <Expander Header="{Binding FailedText}" Margin="0,4,0,0"
+                          IsVisible="{Binding FailedText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                  <ItemsControl ItemsSource="{Binding Failures}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="x:String">
+                        <TextBlock Text="{Binding}" FontSize="11" TextWrapping="Wrap"/>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </Expander>
+              </StackPanel>
+
+              <TextBlock Text="Clips per song" FontWeight="SemiBold" Margin="0,24,0,8"/>
+              <ItemsControl ItemsSource="{Binding Choices}" IsEnabled="{Binding CanEditClips}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="vm:VibeClipChoice">
+                    <RadioButton GroupName="VibeClipsPerSong" IsChecked="{Binding IsSelected, Mode=TwoWay}">
+                      <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Text="{Binding Label}"/>
+                        <TextBlock Text="{Binding CostText}" Opacity="0.6"/>
+                      </StackPanel>
+                    </RadioButton>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+              <TextBlock Text="{Binding ClipsPerSongLock.Message}" IsVisible="{Binding ClipsPerSongLock.IsLocked}"
+                         Margin="0,4,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
+              <TextBlock Text="{Binding ClipsDescription}"
+                         Margin="0,4,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
+              <TextBlock Text="{Binding RaiseNote}"
+                         IsVisible="{Binding RaiseNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                         Margin="0,8,0,0" FontSize="12" TextWrapping="Wrap"/>
+            </StackPanel>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
       <TabItem Header="Logs" x:Name="LogsTab" IsVisible="{Binding Capabilities.Log}">
         <!-- Whose log: this server's own, or the last snapshot one of its
              paired devices pushed (see AppSettings.ShareLogsWithPairedServer,
