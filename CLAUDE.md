@@ -1,561 +1,213 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
-## What This Is
-
-Flower is a cross-platform music player built with Avalonia UI (.NET 10, C#), running on Windows, macOS, Linux, iOS, and Android. Every feature must work across all platforms. Decodes with a small FFmpeg façade (`ffaudio`), renders with miniaudio, and reads metadata with TagLib#. Shared `Flower` library project + platform-specific entry points.
+Flower is a cross-platform music player built with Avalonia UI (.NET 10, C#)
+for Windows, macOS, Linux, iOS and Android; every feature must work on all of
+them. It decodes with a small FFmpeg façade (`ffaudio`, the FFAudio.NET NuGet),
+renders with miniaudio and reads tags with TagLib#. All meaningful code lives in
+the shared `Flower/` library; the heads are thin entry points.
 
 ## How It Gets Used
 
-**Plex, but only for music, and smaller.** One person runs one server for
-themselves, with maybe a handful of friends or family also listening. That is
-the whole deployment model, and it settles arguments in both directions:
+**Plex, but only for music, and smaller.** One owner runs one server, with a
+handful of friends or family also listening.
 
-- **No multi-tenancy, no scale work.** Single-digit concurrent listeners, one
-  library, one owner. Don't reach for sharding, job queues, horizontal scaling,
-  or per-tenant isolation — the load is a few streams at once, on hardware the
-  owner already has.
-- **But it is not single-user either.** Other people do get accounts and do
-  listen, sometimes from outside the house. So auth, per-device pairing, rate
-  limiting and the trust boundary are load-bearing, not ceremony — the thing
-  standing between a shared library and the open internet is
-  `PeerSignatureAuth` plus `LanGuard`, and it is the one area where "it's just
-  for me" reasoning does not apply.
-- **The owner is technical; their listeners are not.** Setup on the server can
-  reasonably ask for a config file or a terminal command. Setup on a listener's
-  phone cannot ask for anything beyond opening a link or a pairing screen. When
-  a design trades server-side complexity for client-side simplicity, take the
-  trade — see `REMOTE-TRANSPORT-PLAN.md`, which is that argument in full.
-- **`Flower.Server` is the only server.** A client never serves: it browses
-  mDNS without advertising itself, pairs by redeeming an admin-issued code, and
-  accepts no incoming connections. The app used to be able to host the protocol
-  itself, and the cost of keeping both was a Client/Server role concept running
-  through the settings screens, the sidebar and two pairing flows — for a
-  topology that is a star. See `SYNC-PLAN.md`, "Peer-to-peer, built and
-  removed", which also records what that gave up and should come back.
+- **No scale work.** Single-digit concurrent listeners, one library: no
+  sharding, job queues, horizontal scaling or per-tenant isolation.
+- **Not single-user either.** Listeners have accounts and connect from outside
+  the house, so auth, per-device pairing, rate limiting and the trust boundary
+  (`PeerSignatureAuth` plus `LanGuard`) are load-bearing. "It's just for me"
+  reasoning never applies there.
+- **The owner is technical; listeners are not.** Server setup may ask for a
+  config file or a terminal command; a listener's phone asks for nothing beyond
+  a link or a pairing screen. Trade server-side complexity for client-side
+  simplicity (`docs/REMOTE-TRANSPORT-PLAN.md`).
+- **`Flower.Server` is the only server.** A client browses mDNS without
+  advertising, pairs by redeeming an admin-issued code, and accepts no incoming
+  connections (`docs/SYNC-PLAN.md`, "Peer-to-peer, built and removed").
 
 ## No Users Yet
 
-The app is a WIP with no released users and no data anyone else depends on. **Backward compatibility is not a constraint** — the sync/pairing protocol, on-disk JSON shapes, the server's DB schema, config keys and defaults can all be changed outright rather than versioned, sentinel-detected, or migrated. Prefer the clean design over the compatible one, and delete the old path instead of keeping a fallback. The one surface this used to except was OpenSubsonic, a published protocol other clients implement — and rather than maintain it for a client nobody has yet, it was removed outright in September 2026 (`docs/SYNC-PLAN.md`, "OpenSubsonic, built and removed"). Flower speaks only its own protocol now, so there is no compatibility constraint left anywhere.
+No released users and no data anyone depends on. **Backward compatibility is
+not a constraint**: change the sync protocol, on-disk JSON, the server DB
+schema, config keys and defaults outright, and delete the old path rather than
+keeping a fallback. Flower speaks only its own protocol (OpenSubsonic was
+removed; `docs/SYNC-PLAN.md`, "OpenSubsonic, built and removed").
 
-## Planning Docs
+## Docs
 
-`docs/` holds long-lived design/investigation notes, one file per initiative. Check the relevant file before touching that area — each records its own current status and what's left; this index is intentionally just a pointer, not a summary.
+`docs/` holds one file per initiative, each recording its own status and what
+is left. Read the relevant one before touching that area.
 
-- `SELF-HOSTING.md` — the one user-facing document here: running your own server and reaching it remotely. `SYNC-PLAN.md` holds the reasoning behind it.
-- `API.md` — the HTTP reference for `Flower.Server`: every route, the request signature, the rate-limit planes, and what each refusal means. Written from `Flower.Server/Endpoints/`, which stays the authority; update it when a route changes.
-- `SECURITY.md` — the server trust-boundary documentation: playlists per listener (the album-progress model), budgets per device rather than per address, the shared problem+json refusal contract (`FlowerProblem`), and revocation that only the server's pinned key can sign (`ServerResponseSignature`).
-- `REMOTE-ACCESS.md` — the client-side half of remote access: how a paired server stays reachable off the LAN (candidate addresses, LAN↔tailnet handover).
-- `REMOTE-TRANSPORT-PLAN.md` — who carries the traffic when neither end has a public address: Tailscale vs Cloudflare Tunnel vs embedding `tsnet`.
-- `CITED-DECISIONS.md` — the index for three retired documents: the August 2026 structural review (`ARCHITECTURE-REVIEW.md`), the trust-boundary read-through that gated remote transport (`OPEN-INTERNET-REVIEW.md`), and `SMART-PLAYLIST-PLAN.md`. All three were finished, and deleted once they were; ~140 source comments still cite their tier and finding numbers, and this is what those citations resolve against. One line per item, with the full text recoverable from git. `CODE-REVIEW-2026-09.md` is the live backlog now.
-- `CODE-REVIEW-2026-09.md` — the standing backlog. September 2026 review pass: audio-quality and deadlock defects, security/trust-boundary gaps, allocation hot spots, dead code. Each finding carries the evidence that produced it, and the ones that have been fixed say so in place (the October pass's section G is the current tally) — including what the fix turned out to be when it differed from what the finding proposed, which is most of the value in re-reading them.
-- `CODE-REVIEW-2026-10.md` — the October 2026 pass, written alongside the September backlog rather than replacing it. Covers pairing-code brute force from an IPv6 prefix, the end-of-track queue decision running off the UI thread, two definitions of path equality, no-op syncs that rewrite the whole library, Track Info and the context menus each written once per head, a list of stale LibVLC/Subsonic comments, and a table of which September findings are still open.
-- `SYNC-PLAN.md` — desktop↔phone sync + self-hosted server. Also holds the two decisions that shaped what the server is: the OpenSubsonic adapter's removal, and that a device never serves — music reaches another device *through* the server, never around it. "Ingest" is the half of that which moves files *to* the server: an admin device uploads songs the server lacks, re-sends the ones it has edited, moves the ones it has moved and removes the ones deleted from its own disk — and both hosts keep a record of every removed song so one that returns is the song it was.
-- `AIRPLAY-BLUETOOTH-PLAN.md` — Bluetooth device picker + AirPlay output routing.
-- `AUDIOPHILE-PLAN.md` — EQ, gapless playback, DSD/APE, hi-res passthrough.
-- `AUDIO-QUALITY-PLAN.md` — render-path defect audit (clicks, looped fragments, truncated tails) and the PCM-level test suite that should prove them fixed.
-- `MEDIA-KEYS-PLAN.md` — hardware media keys + OS now-playing integration.
-- `AUTO-UPDATE-PLAN.md` — desktop auto-update via Velopack (Windows, Linux) and a GitHub-release check (the macOS dmg), and the versioning (MinVer, git tags) it consumes. Built; the first tag cut after it is its first real run.
-- `CRASH-REPORTING-PLAN.md` — crash reporting options.
-- `STORE-DEPLOYMENT-PLAN.md` — submitting iOS/Android to app stores, and the real-device verification still owed before that.
-- `PERFORMANCE-TRACKING-PLAN.md` — CI benchmark regression tracking + runtime timing.
-- `STREAMING-SERVICES-PLAN.md` — feasibility of streaming Spotify/Apple Music/YouTube Music.
-- `VIBE-PLAYLIST-PLAN.md` — Vibe Playlists: a playlist made from a sentence ("music for a rainy day") that plays an endless queue of the library's songs that sound like it. LAION's CLAP music checkpoint (`music_audioset_epoch_15_esc_90.14`), run with ONNX Runtime, listens to each song once (int8 for the songs, fp16 for the prompt; the clip count is a setting) and ranks songs against the sentence's text embedding: an engine in `Flower.Core` that runs on the server for a paired device and in-process on a device on its own, with an AI Features settings tab that shows progress, under a master switch (and a switch of the feature's own) that deletes the model and every embedding when off. Phase 0, a Python prototype on the real library (`scripts/semantic-audio/`), set the template, the clip count and the filters; phase 1 built the engine (`Flower.Core/SemanticAudio/`, with ONNX Runtime kept out of `Flower.Core` in `Flower.SemanticAudio.Onnx` so it never reaches a phone), held to Python's output by reference tests, and published the model as a GitHub pre-release; phase 2 hosts it in `Flower.Server` (`SemanticAudioService`), with an AI Features settings tab and `vibePlaylists` in `/info`; phase 3 makes the playlist on a paired desktop and in the browser (`VibePlaylistPools` ranks each pool on the server, `VibeQueueSource` plays it as an endless queue on the device); phase 4 does the same on a paired phone (`MobileMainViewModel.Vibe.cs`, `VibePlaylistEditorSheetView`). Also Endless Play, a second AI feature off by default on the server and on each device: a queue that runs out goes on with songs like its last five (`SemanticAudioSearch.Similar`, `POST /vibe/endless`); and the owner's Pause on the listening, which outlasts a restart. Replaces `PROMPT-PLAYLIST-PLAN.md` (a language model reading album names).
-- `ONLINE-METADATA-PLAN.md` — lyrics (LRCLIB), artist pictures (Deezer) and popular songs (ListenBrainz, then Deezer), keyless. One engine in `Flower.Core` (`OnlineMetadataEngine`) that runs wherever the song's library lives: in-process on a device on its own, on the server for a paired one. Artist pictures are built; lyrics and popularity are not.
+- `SELF-HOSTING.md` — user-facing: running a server and reaching it remotely.
+- `API.md` — HTTP reference for `Flower.Server`; update it when a route in `Flower.Server/Endpoints/` changes.
+- `SECURITY.md` — the server trust boundary: per-listener playlists, per-device budgets, `FlowerProblem` refusals, `ServerResponseSignature`.
+- `REMOTE-ACCESS.md` — client side of remote access: candidate addresses, LAN↔tailnet handover, `CleartextOrigins`.
+- `REMOTE-TRANSPORT-PLAN.md` — Tailscale vs Cloudflare Tunnel vs `tsnet`.
+- `CITED-DECISIONS.md` — resolves source comments citing retired reviews' tier/finding numbers.
+- `CODE-REVIEW-2026-09.md`, `CODE-REVIEW-2026-10.md` — the standing backlog; section G of October is the current tally.
+- `SYNC-PLAN.md` — device↔server sync, ingest (admin devices mirroring files, edits, moves and removals to the server), Music.app history, Flower's own folder.
+- `AUDIOPHILE-PLAN.md`, `AUDIO-QUALITY-PLAN.md` — EQ, gapless, hi-res, the S24 pipeline; render-path defects and PCM-level tests.
+- `VIBE-PLAYLIST-PLAN.md` — Vibe Playlists and Endless Play (CLAP via ONNX Runtime in `Flower.SemanticAudio.Onnx`, engine in `Flower.Core/SemanticAudio/`).
+- `ONLINE-METADATA-PLAN.md` — lyrics, artist pictures, popularity (`OnlineMetadataEngine`).
+- `AUTO-UPDATE-PLAN.md` — Velopack updates and MinVer versioning from git tags.
+- `AIRPLAY-BLUETOOTH-PLAN.md`, `MEDIA-KEYS-PLAN.md`, `CRASH-REPORTING-PLAN.md`, `STORE-DEPLOYMENT-PLAN.md`, `PERFORMANCE-TRACKING-PLAN.md`, `STREAMING-SERVICES-PLAN.md`.
 
-## Agent skills
-
-### Issue tracker
-
-GitHub Issues on `yanos/Flower`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
-
-### Domain docs
-
-Single-context: `CONTEXT.md` at the root, ADRs in `docs/adr/`. Neither exists
-yet, and their absence is not a problem to fix. See `docs/agents/domain.md`.
+Issues: GitHub Issues on `yanos/Flower` via `gh`. Domain docs: `CONTEXT.md` and
+`docs/adr/` don't exist yet, which is fine.
 
 ## Build & Run
 
 ```bash
 dotnet build Flower.Desktop/Flower.Desktop.csproj                               # Windows/Linux head
-dotnet build Flower.MacOS/Flower.MacOS.csproj                                   # macOS head, needs `sudo dotnet workload install macos`
-dotnet run --project Flower.MacOS/Flower.MacOS.csproj                           # launches it — or just hit Run in the IDE, see below
+dotnet run --project Flower.MacOS/Flower.MacOS.csproj                           # macOS head (needs the macos workload)
+dotnet run --project Flower.Server                                              # server + browser UI
 dotnet test Tests/Flower.Tests/Flower.Tests.csproj --filter 'Category!=RequiresFfmpeg'  # fast, day-to-day
 dotnet test Tests/Flower.Desktop.Tests.slnf -m:1 -p:IncludeWebUi=false             # all desktop suites
-scripts/ios-tests.sh                                                                  # the suite again, on an iOS Simulator
-dotnet run --project Flower.Server                                              # server + its browser UI
+scripts/ios-tests.sh                                                                  # the suite on an iOS Simulator
+scripts/deploy-ios-device.sh                                                          # physical iPhone, whichever is plugged in
 ```
 
-**Every head runs from a clean clone with no setup — `dotnet run`, or the Run
-button in Rider or Visual Studio.** That is a property worth keeping, and the
-one thing that has broken it is bundle naming on the macOS head, which pins
-`_AppBundleName` to `$(AssemblyName)` to hold the line: .NET 10 started naming a
-desktop bundle after `ApplicationTitle`, while both IDEs still expect the older
-`$(AssemblyName).app`, so the head built fine and then failed to launch with
-`Flower.MacOS.app/Contents/MacOS/Flower.MacOS doesn't exist`. Pinned, the SDK
-and the IDEs agree on `Flower.MacOS.app`; `Info.plist` keeps the visible name
-`Flower`. The comment on that property in `Flower.MacOS.csproj` has the detail.
-No IDE run configuration is checked in, and none should need to be — if one
-does, the project file is the thing to fix, since `.idea/` and `.vscode/` are
-both gitignored and a config in them does not survive a clone.
+- **Every head runs from a clean clone with no setup** (`dotnet run` or the IDE
+  Run button). Keep it that way: fix the project file, never add an IDE run
+  config (`.idea/`, `.vscode/` are gitignored). `Flower.MacOS.csproj` pins
+  `_AppBundleName` for this; its comment says why.
+- **Browser UI** (`Flower.Web`) is published by building `Flower.Server`
+  (needs the `wasm-tools` workload); `-p:IncludeWebUi=false` skips it.
+- **iOS device deploy** takes no device id and runs
+  `scripts/register-ios-device.sh` first; it publishes NativeAOT (`--mono` for
+  Mono). The script headers explain the signing and runtime details.
+- **Throwaway servers:** pass `--Flower:DataDirectory=<scratch>`, and kill every
+  `Flower.Server` you start before finishing — a leftover one advertises over
+  mDNS and collides with the real server in every client's sidebar:
 
-Decoding comes with the restore too: the FFmpeg façade is the FFAudio.NET
-NuGet, native payload included, so a fresh clone plays music on every head
-with nothing built first.
+  ```bash
+  pkill -f 'Flower\.Server'; sleep 3; pkill -9 -f 'Flower\.Server'
+  lsof -nP -iTCP -sTCP:LISTEN | grep -i flower   # expect no output
+  ```
 
-**Deploying to a physical iPhone is `scripts/deploy-ios-device.sh`, and it takes
-no device id.** Both identifiers a deploy needs belong to one specific phone and
-go stale silently when that phone is replaced, and neither failure names the
-phone: a pinned CoreDevice id resolves to a paired-but-absent device, which
-devicectl reports as a usage-assertion failure (CoreDeviceError 4016), and a
-provisioning profile issued before the phone existed fails install verification
-with 0xe8008012 — after the whole four-minute build has already run. So the
-device is whichever one is plugged in, and `scripts/register-ios-device.sh` runs
-first, as a no-op unless the phone is new. Registration is `xcodebuild
--allowProvisioningUpdates -allowProvisioningDeviceRegistration` against a
-throwaway Xcode project generated on the spot, for two reasons: the signing
-account is a free Personal Team, so the portal/App Store Connect API route needs
-a paid membership it does not have, and `ProvisioningType=automatic` in
-`Flower.iOS.csproj` is a hint to Rider and Visual Studio rather than something
-MSBuild acts on — the .NET-for-iOS build signs with the best profile already
-installed and will never create one. Xcode's UI is not involved, but its
-Accounts settings are: the account it signs as is the one added there.
+## Tests
 
-The script publishes with NativeAOT (`FlowerNativeAot` in `Flower.iOS.csproj`):
-.NET's own runtime and garbage collector rather than Mono's, which is what made
-the phone's scrolling smooth. `--mono` builds for Mono instead, the runtime a
-plain `dotnet build` of `Flower.iOS` and the iOS test runners still use; the
-script's header has the build-time trade-offs.
+Layout, commands, CI, and why the iOS/Android/decoding runners are built as they
+are: [Tests/README.md](Tests/README.md).
 
-The browser UI (`Flower.Web`) has no run configuration of its own — building
-`Flower.Server` publishes it and drops it in beside the binary, so running the
-server is all it takes to have it served. That needs the `wasm-tools` workload;
-without it the step is skipped and the server serves a page explaining how to get
-it. `-p:IncludeWebUi=false` skips it deliberately. See `Flower.Server.csproj`'s
-"The browser UI" targets and `Flower.Server/Configuration/WebUiHosting.cs`.
-
-**Kill every `Flower.Server` you start before you finish.** A server left running
-keeps advertising itself over mDNS, so it shows up in the sidebar of any Flower
-client on the network — under the machine name, colliding with the row of the
-server that is actually wanted, and answering (or refusing) requests meant for it.
-Several forgotten instances at once is worse: they fight over one name and the row
-flaps. Sweep them at the end of any session that ran one:
-
-```bash
-pkill -f 'Flower\.Server'; sleep 3; pkill -9 -f 'Flower\.Server'
-lsof -nP -iTCP -sTCP:LISTEN | grep -i flower   # expect no output
-```
-
-Also pass `--Flower:DataDirectory=<scratch>` to anything throwaway, so a test
-instance never writes to `~/Library/Application Support/Flower/Server`.
-
-Client tests are split by subject: `Tests/Flower.Tests/` covers shared behavior;
-`Tests/Flower.Tests.UI/` covers headless controls, views and view models;
-`Tests/Flower.Tests.Decoding/` covers real decoding and streaming. Audio pipeline
-coverage still has the same layers: fake-decoder logic tests, real-decode tests
-using the shipped FFAudio.NET payload (`RequiresFfmpeg`), and dispatcher-driven
-playlist integration tests. `Tests/TestSupport/` holds shared fakes and safety
-guards; `SyntheticWav` and committed audio fixtures live in
-`Flower.Tests.Decoding.Scenarios`. Native macOS/Windows integrations have their
-own projects. See [Tests/README.md](Tests/README.md) for the complete layout and
-commands.
-
-**Never write a test for UI placement, spacing or colour.** Nothing asserts
-how the UI looks - colours, brushes, pixels, fonts, sizes, margins, padding,
-bounds, or where one element sits relative to another - and that includes a
-custom panel's layout arithmetic. Test UI behaviour on the view model; reach for
-a headless window only for what lives in the view and nowhere else. Don't test
-trivial things either: pass-throughs, list wrappers, getters, "forwards the
-call". A test that breaks these rules gets deleted, not fixed.
-
-**What gets a test, and where it goes.** The suite is folders by area, namespace
-following folder: `Audio/`, `Decoding/`, `Playback/`,
-`MusicLibrary/` (`Import/`, `Art/`), `Playlists/` (`Smart/`), `Persistence/`,
-`Sync/` (`Scenarios/`), `Network/` (`Security/`), `Browser/`, `Logging/`,
-`ViewModels/` (`Mobile/`, `Home/`, `Settings/`), `Controls/`, `Views/`, `AppShell/`.
-`MusicLibrary` and `AppShell` rather than `Library` and `App`, because a folder's
-namespace named after a type shadows that type in every test file. One class per
-file. With nothing pinned to how the UI looks, moving things around never means
-editing tests. Navigation and UI behaviour are tested on view models; a headless
-window (`Views/`) is only for what lives in the view and nowhere else (pointer
-capture, focus, a binding's echo), and a custom control's own logic belongs in a
-class it delegates to (`TrackRowSelection`, `NameSelectionDragGesture`) where a
-plain test can reach it.
-
-`GaplessCoordinator` used to give the armed (decode-ahead) role its own independent LibVLC core, because two `MediaPlayer`s sharing one core silently dropped `OnDrain`/`EndReached` under real decode load. That went out with LibVLC — two `FfmpegTrackDecoder`s share nothing to contend over. The bug that fix exposed did not: a fast handover racing `ArmAsync`'s own `PrepareAsync`, fixed in `ArmAsync`, and still what `GaplessCoordinatorRealDecodeTests`' class comment is about.
-
-Playback position (`GaplessAudioManager.Time`/`Position`, the seek bar) is driven off `GaplessCoordinator.CurrentTrackBytesProduced`, which is computed from the shared ring's actual bytes-*read* (real playback consumption), not a decoder's own `BytesProduced` (decode progress) — a decoder that finished decoding ahead before its track was promoted stops producing any new bytes at all, so a decode-side counter reads as permanently frozen at zero for that whole track. See `_currentTrackReadSplit`'s remarks on `GaplessCoordinator`.
-
-### The suite on iOS
-
-`scripts/ios-tests.sh` runs the shared, headless UI and decoding sources on an
-iOS Simulator. `Flower.Tests.iOS.Suite` compiles those sources into one assembly,
-which `Flower.Tests.iOS` executes in-process with xUnit. This preserves the
-existing Mono runner and its single headless session. The build settings and
-native dependencies remain the same: Mono with no JIT, a sandboxed filesystem,
-and the iOS builds of ffaudio, miniaudio and Skia. NativeAOT decoding is checked
-separately by `scripts/ios-decoding-tests.sh`. See [Tests/README.md](Tests/README.md)
-for the project layout and commands.
-
-Two settings keep the build there. With `MtouchLink=None` the whole BCL was
-compiled too - 28 minutes locally, 2h07m on a CI runner, for three minutes of
-tests. `SdkOnly` trims only the framework and leaves the suite, xunit, Flower
-and Avalonia whole, so reflection still finds every test. And the compiling is
-Mono's own code generator rather than LLVM (`MtouchUseLlvm=false`): LLVM was
-nine tenths of what was left, six and a half minutes locally and 23 to 57 on a
-CI runner's three cores. Every method is still compiled ahead of time with no
-JIT; only LLVM's optimizer is given up, and this app is not what ships - the
-app ships on NativeAOT. Interpreting everything (`MtouchInterpreter=all`) was
-tried too, and is off so the leg runs compiled code, as a phone does.
-
-Three things in that project are load-bearing and none is obvious. xunit's
-`buildTransitive` targets are excluded, because they demand an app host and
-generate a `Main` of their own. The VSTest packages `dotnet test` uses are
-excluded, because `Microsoft.VisualStudio.TestPlatform.Common` does not
-AOT-compile. And it drives xunit's public runner pieces itself rather than
-`ConsoleRunner.EntryPoint`, which subscribes to `Console.CancelKeyPress` and
-throws `PlatformNotSupportedException` on iOS before running anything.
-
-`MusicListViewGestureTests` used to be excluded in that app, having taken 1116s
-of a 1312s run. That was blamed on headless layout and render under the
-simulator, and was a leak: every track list ever built stayed subscribed to the
-app-wide `ColumnManager` and rebuilt itself on every column change, so each test
-paid for all the lists before it. With the leak fixed the whole suite, those
-tests included, runs there in about 90s.
-`FLOWER_TEST_ARGS` passes
-extra xunit arguments through (`-class`, `-method`). The app always reports
-verbosely, so a run that hangs names the tests that started and never finished -
-the script prints those instead of the per-test lines, because the one hang so
-far left a three-line transcript that named nothing.
-
-The first run found a real race the desktop never lost:
-`GaplessCoordinatorTests` asserted on a promotion that happens on the promotion
-drain thread, not the one that raised `Drained`.
-
-Both iOS runners adopt the scene lifecycle (`Tests/iOSRunner`, linked into
-each), because iOS 27 kills an app that does not at launch - an
-`EXC_BREAKPOINT` in `UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption`
-before a line of output, which reads exactly like a hung run.
-
-## Decoding tests
-
-`Tests/Flower.Tests.Decoding.Scenarios/` answers one question — *does this platform actually turn
-a track into the right audio?* — on the platform in question rather than on a
-developer's Mac. `DecodeChecks.RunAll()` decodes a synthetic WAV from disk and
-over a loopback HTTP server, and compares the result to the fixture's own
-samples byte for byte; a decoder producing the right number of bytes and none
-of the right ones fails here and passes every byte-count assertion ever
-written.
-
-It exists because both streaming bugs so far were invisible to a green desktop
-suite: VLC's mp4 demuxer refusing an unseekable stream, then .NET's mobile
-`HttpClientHandler` having no synchronous path at all. Both were found by a
-person listening to a phone.
-
-The fixture set is the point. `Fixtures/` holds the same two seconds of 440Hz
-sine as WAV, FLAC, ALAC, MP3 and AAC, at both 48kHz and 44.1kHz, plus AIFF,
-Monkey's Audio, Ogg Vorbis and Opus at 48kHz, committed
-rather than generated (`Fixtures/regenerate.sh`) because a phone has no
-encoder. 44.1kHz is not thoroughness: it is what a music library is actually
-made of, and it is the one rate the pipeline resamples, so a 48kHz-only
-fixture never touched the resampler. Each is decoded from disk, over the
-loopback server, from a server that refuses ranges, and from one that refuses
-HEAD - `Flower.Server` maps its stream routes with `MapGet`, so a HEAD is refused
-(a 404 from the single-page fallback, not routing's 405) and every real stream reaches its length through the ranged-GET probe
-instead. `LoopbackMediaServer` honours the end of a range for the same reason:
-serving a whole file to a `bytes=0-0` probe is something no real server does,
-and a loopback that did it decoded a track the probe had already delivered.
-
-Which oracle applies is a property of the fixture, not a choice: lossless at
-the pipeline's own rate must come back byte for byte, and everything else is
-held to `PcmOracle.ToneMismatch` - audible, in tune, right length. That is a
-real bar rather than a lowered one, and `PcmOracleTests` is what says so: it
-rejects silence, noise, and a wrong tone at the same loudness.
-
-So the checks carry no test framework, no `HttpListener`, and no assertion that
-is not about the samples. `LoopbackMediaServer` sits on a raw `TcpListener`
-because iOS was believed to have no `HttpListener` - which the whole suite
-running on an iOS 26.5 simulator in September 2026 disproved, every
-`HttpListener`-backed streaming test passing there. Unchecked on a physical
-device and on Android, so the raw listener stays:
-
-```bash
-dotnet test Tests/Flower.Tests.Decoding/Flower.Tests.Decoding.csproj --filter FullyQualifiedName~DecodeScenariosTests  # here
-scripts/ios-decoding-tests.sh                                                                # iOS Simulator
-scripts/ios-tests.sh                                                                        # iOS Simulator, as part of the whole suite
-scripts/android-decoding-tests.sh                                                            # Android emulator — local only, see below
-```
-
-Two checks are not about decoding at all. The first is authentication:
-`LoopbackMediaServer.RequiresFreshNonce` enforces the same single-use-nonce rule
-`NonceReplayGuard` does on the real server, and answers a repeat the way the
-server does: `401` with a `nonce-reused` problem document (`FlowerProblem`). It
-exists because a stream URL was signed once, at resolve time, and then fetched
-several times (probe, body, reopen), so the probe spent the nonce and the body
-GET was refused as a replay. Back then the refusal was the OpenSubsonic
-adapter's error envelope on an HTTP 200, so the track got a correct length and
-~130 bytes of JSON for audio. Nothing here could catch it while the loopback
-authenticated nothing, which is the general lesson: a check that cannot refuse a
-request cannot find a bug about being refused. See `PeerCredentialsHandler` and
-docs/CITED-DECISIONS.md #2c. A 200 that is not audio is still worth refusing - a
-captive portal or a proxy's sign-in page answers that way - so
-`SeekableHttpStream.ProtocolErrorFor` stays, and
-`LoopbackMediaServer.ServesAPortalPage` is the check that holds it to that.
-
-The second is a server answering 429. Being throttled
-is not a track failing, and the difference between waiting it out and treating
-it as an I/O error is the difference between playback stalling and an album
-disappearing - which is what happened, because one request budget was charged
-across browsing, cover art and audio, and a cover-art burst spent it.
-`LoopbackMediaServer.RefuseBodiesWith429` reproduces it (bodies only - the
-cheap `bytes=0-0` probe got through in the real failure, which is why the
-symptom was "the track has a length and plays nothing"). See
-docs/CITED-DECISIONS.md #2b for the whole chain and the three places it is
-fixed.
-
-The whole suite runs **once per decoder this platform has** (`DecoderUnderTest`,
-`AvailableDecoders`), and there is one of those now. The shape survives LibVLC
-because of what it is for: the suite was once written against `TrackDecoder` by
-name, so electing `FfmpegTrackDecoder` moved the entire streaming path out from
-under every check while all of them stayed green - and the first thing that
-happened was an album playing nothing on a phone. An unloadable façade yields an
-empty decoder list, which `FLOWER_REQUIRE_DECODERS` turns into a failure rather
-than a suite that silently checks nothing. Each decoder is handed its own sample
-format rather than the run moving `GaplessFormat`'s process-wide one, so a
-decoder's format never reaches the rest of the test process.
-
-Another is that a decoder must play when started the way pressing play starts
-one. `GaplessCoordinator.PrepareAsync` is called only on the decode-ahead path;
-`Play()` constructs a decoder and calls `StartDecoding()` on it directly. Every check here prepared
-first, so `FfmpegTrackDecoder` requiring a prepare faulted on every press of
-play - only tracks that happened to be armed ahead of time opened at all - and
-not one check noticed. `... plays the way pressing play plays it` is that shape,
-per fixture per decoder, and `FfmpegTrackDecoder.StartDecoding` now opens on its
-decode thread when no prepare has happened.
-
-One of those checks is that the catalogued extension is not a fact about the
-bytes. `OriginFileExtension` is `Child.Suffix` - it describes a file on the
-server's disk, and what arrives is whatever that server chose to send. The decoder
-takes it as a demuxer hint, and forcing a demuxer discards the probe
-entirely, so a suffix that disagrees with the bytes is not a slow open, it is a
-track that will not play at all. `FfmpegTrackDecoder.DemuxerHintFor` therefore
-names only the MP4 family (where a hint buys something a probe cannot: a moov
-atom at the end of an unseekable stream), and `FfmpegDecoder.OpenStream` rewinds
-and probes when even that hint will not open the stream.
-
-CI runs these per-OS in the three desktop test legs - they need
-nothing the fast suite does not already build - and on an iOS Simulator inside
-`iOS tests (Mono)`, which runs the whole suite there on Mono (see "The suite on iOS" above),
-and again on NativeAOT - the runtime the app ships on - in
-`iOS build and decoding (NativeAOT)`, through
-`Flower.Tests.Decoding.iOS`, which is also the runner to put on a physical phone.
-The suite itself cannot run on NativeAOT yet: xunit finds tests by reflection
-over the assembly's file, which a NativeAOT app does not have, and
-Avalonia.Headless.XUnit (`[AvaloniaFact]`) is not built against xunit's
-NativeAOT edition. `scripts/ios-decoding-tests.sh` builds NativeAOT by default
-and takes `--mono`. The mobile two are a head apiece
-(`Flower.Tests.Decoding.iOS`, `Flower.Tests.Decoding.Android`) driven by a script
-apiece, written to be twins: a runner with no Avalonia, no audio output and no
-UI beyond a text view, reporting the same `FLOWER-CHECK`/`FLOWER-DECODING` lines
-to a transcript in its own container, which the script reads back and turns
-into an exit code. The runs are meant to be comparable line for line: when they
-disagree, the difference is the platform - and iOS is the platform where the
-answer has actually been no twice.
-
-**Only iOS runs in CI; Android is local-only** (September 2026).
-`android-device-checks` was a job here and was removed rather than left red.
-It was failing for a real bug it found honestly: `Flower.csproj` picks a
-desktop ffaudio payload by host, that flows transitively to the Android heads,
-and `android-x64` falls back to `linux-x64` in the RID graph - so on a Linux
-runner the glibc `libffaudio.so` wins `lib/x86_64/` and the real one from
-`FFAudio.NET.Android` is dropped with `XA4301: APK already contains the item
-lib/x86_64/libffaudio.so; ignoring`. `dlopen` then fails on the emulator and
-`AvailableDecoders` comes back empty, which `FLOWER_REQUIRE_DECODERS` turns
-into `0 passed, 1 failed`. The fix is an `ExcludeAssets="native"` on that host
-package in both Android heads, the same way `Miniaudio-CS` already carries one
-and for the same RID-fallback reason.
-
-Two consequences worth knowing. The checks still run on a developer's Mac via
-`scripts/android-decoding-tests.sh`, where the host payload is
-`FFAudio.NET.macOS` and no Android RID falls back to `osx-*`, so the collision
-cannot happen and the suite passes - which is exactly why it went unnoticed
-until a Linux runner built it. CI now also compiles
-`Tests/Flower.Tests.Decoding.Android` in the existing Android build job, so runner
-source changes are checked. Emulator execution remains local-only; the native
-payload collision described above still needs resolving before restoring it.
-
-
-The transcript is a file rather than the obvious console, on both, for the same
-reason arrived at separately: `Console.WriteLine` from a .NET iOS app does not
-reliably reach `simctl launch --console-pty`, and logcat is a ring buffer
-shared with the whole system, so a chatty emulator drops lines out of the
-middle of a long one. A run that decoded everything and reported two thirds of
-its tally is indistinguishable from a failing one.
-
-Which ABI an Android run exercises is a property of the host - arm64-v8a on a
-developer's Mac, x86_64 on a CI runner - and FFAudio.NET.Android carries a
-façade for both. Three Android-specific things are load-bearing and none
-is obvious: `EmbedAssembliesIntoApk`, because Fast Deployment keeps the managed
-assemblies out of a Debug APK and pushes them over adb separately, so an APK
-installed by the script aborts at startup; the `INTERNET` permission, which
-the loopback server needs even though both ends of the connection are the same
-process; and a network security config permitting cleartext, because API 28+
-blocks plain HTTP by default and the loopback server is plain HTTP - the first
-honest run was 14 passed / 57 failed, every local-file decode green and every
-streamed one reporting the track would not open. The runner's config names
-`127.0.0.1` and nothing else, since it knows the one host it dials.
-
-**Cleartext is a policy, not a flag** (`CleartextOrigins`,
-`Flower.Android/Resources/xml/network_security_config.xml`): the app cannot
-scope its config the way the checks runner can, because the addresses it needs
-are IP literals mDNS handed over a second ago and a network security config
-matches hostnames and suffixes with no CIDR form. So the manifest permits
-cleartext outright and the rule that manifest cannot state lives in managed
-code, on every platform rather than only this one: an `http://` origin is
-dialled only when its host is loopback, link-local, RFC1918 or a tailnet
-address. `NetworkDiscoveryService` applies it to both doors - a typed or
-remembered address, and an mDNS announcement, which is worth checking because
-multicast DNS authenticates nothing and anything on the segment can announce a
-server at a public address. `LanGuard` is the same predicate from the server's
-side.
+- **Test behaviour, never looks.** Nothing asserts colours, brushes, pixels,
+  fonts, sizes, margins, padding, bounds, relative placement, or a custom
+  panel's layout arithmetic. Skip trivial tests too (pass-throughs, getters,
+  "forwards the call"). A test breaking these rules gets deleted, not fixed.
+- **Where.** UI behaviour and navigation go on the view model; a headless
+  window (`Views/`) only for what lives in the view alone (pointer capture,
+  focus, a binding's echo). A custom control's logic goes in a class it
+  delegates to (`TrackRowSelection`, `NameSelectionDragGesture`).
+- **Folders by area, namespace following folder**, one class per file:
+  `Audio/`, `Decoding/`, `Playback/`, `MusicLibrary/`, `Playlists/`,
+  `Persistence/`, `Sync/`, `Network/`, `Browser/`, `Logging/`, `ViewModels/`,
+  `Controls/`, `Views/`, `AppShell/`. (`MusicLibrary`/`AppShell`, because a
+  namespace named after a type shadows it.)
+- Decoding fixtures and `SyntheticWav` live in `Flower.Tests.Decoding.Scenarios`;
+  `FLOWER_REQUIRE_DECODERS=FFmpeg` makes a missing decoder fail rather than skip.
 
 ## Releasing
 
-One workflow, `.github/workflows/tests.yml`, on every push. Tagging `v*`
-additionally runs `image`, which builds the server image and pushes it to GHCR for
-both architectures — and it is a job in that file rather than a workflow of its
-own **because that is the only way it can wait**. A tag push fires every
-`on: push` workflow at once, and `needs` reaches only jobs in the same
-workflow, so `publish-server-image.yml` had no relationship to the suite: v0.2.0
-pushed `latest` in five minutes off a tree whose macOS, Windows and
-Android-emulator jobs all went on to fail. Keep the publish here, and keep
-every job in its `needs` — a tag is a claim about the whole commit, not about
-the server image.
+Everything is `.github/workflows/tests.yml`. A `v*` tag also publishes the
+server image to GHCR and the desktop installers to a GitHub release, gated on
+every other job; keep the publish jobs in that file with every job in their
+`needs`. A tag is what every installed desktop is offered as an update.
+Details: Tests/README.md, "CI".
 
-Two things that follow. The image is built on tags only - there used to be a
-build-without-push on every push, dropped as not worth a job each time - so a
-change that breaks the Dockerfile surfaces at the release, and
-`docker compose build` from `docker/` is the way to check one before tagging.
-And the desktop auto-update
-(`docs/AUTO-UPDATE-PLAN.md`) consumes the same tags through MinVer, so a tag is
-not a private act.
+## Git & Style
 
-A tag also builds the desktop installers inside the Linux, Windows and macOS jobs and
-attaches them to the tag's GitHub release (`release`, gated on the suite like
-the image): a dmg of `Flower.MacOS`, Apple Silicon only because that is all
-FFAudio.NET.macOS ships, and `Flower.Desktop` packed by Velopack as a Windows
-`Setup.exe` and a Linux AppImage. All three come from
-`scripts/package-desktop.sh dmg|appimage|setup`, which runs only on its own OS
-(the FFmpeg payload follows the host) and is how to try one before tagging.
-None is signed yet; the release notes say how to open them anyway. The
-release also carries the Windows and Linux update feeds, which installed
-copies read once a day (`AppUpdatesViewModel`, a banner offering the new
-version) - so a tag is what every installed desktop will be told to update
-to, and the dmg is offered its replacement the same way, by download.
-
-## Git Workflow
-
-- Prefer `rebase` over `merge`.
-- Never commit before the user has ask for it — building and passing tests isn't enough.
-- Don't use git worktrees in this repo — they conflict with Rider. Edit `master` directly.
-
-## Code Style
-
-`if` bodies always go on their own line, never on the same line as the `if`.
+- Commit only when the user asks; passing tests is not enough.
+- Prefer `rebase` over `merge`. Work on the checked-out branch; no git
+  worktrees (they conflict with Rider).
+- `if` bodies always go on their own line.
 
 ## Project Layout
 
 | Project | Purpose |
 |---|---|
-| `Flower/` | Shared library: all UI, ViewModels, Models, business logic |
-| `Flower.Desktop/` | Windows/Linux entry point (still runs on macOS, without Apple frameworks) |
-| `Flower.MacOS/` | macOS entry point — `net10.0-macos`, so AVKit/AppKit are reachable (needs the `macos` workload) |
-| `Flower.Android/` | Android entry point |
-| `Flower.iOS/` | iOS entry point |
-| `Flower.SemanticAudio.Onnx/` | Vibe Playlists' two CLAP encoders on ONNX Runtime, referenced only by a head that hosts the engine (see its project file) |
-| `Tests/Flower.Tests/` | Shared behavior tests |
-| `Tests/Flower.Tests.UI/` | Headless UI and view-model behavior tests |
-| `Tests/Flower.Tests.Decoding/` | Decoder and real-audio integration tests |
-| `Tests/Flower.Tests.macOS/`, `Tests/Flower.Tests.Windows/` | Native platform integrations |
-| `Tests/TestSupport/` | Infrastructure compiled into each client test suite |
-| `Tests/Flower.Tests.iOS/` | Existing Mono runner for the shared/UI/decoding execution bundle |
-| `Tests/iOSRunner/` | Shell shared by the two iOS runners: transcript contract and scene delegate |
-| `Tests/Flower.Tests.Decoding.Scenarios/` | Functional decode checks that run on any platform, phone included |
-| `Tests/Flower.Tests.Decoding.iOS/` | iOS head that runs them on a simulator or a device |
-| `Tests/Flower.Tests.Decoding.Android/` | Android head that runs them on an emulator or a device |
-
-All meaningful code lives in `Flower/`.
+| `Flower/` | Shared library: UI, view models, models, logic |
+| `Flower.Core/` | Code shared with the server |
+| `Flower.Desktop/` | Windows/Linux head (runs on macOS without Apple frameworks) |
+| `Flower.MacOS/` | macOS head, `net10.0-macos` for AppKit/AVKit |
+| `Flower.Android/`, `Flower.iOS/` | Phone heads |
+| `Flower.Server/`, `Flower.Web/` | The server and its browser UI |
+| `Flower.SemanticAudio.Onnx/` | CLAP encoders on ONNX Runtime, referenced only by heads that host the engine |
+| `Tests/` | See Tests/README.md |
 
 ## Architecture
 
-MVVM via Avalonia compiled bindings + `CommunityToolkit.Mvvm` source generators. DI via `Microsoft.Extensions.DependencyInjection`, service-located through `Ioc.Default`.
+MVVM with Avalonia compiled bindings and `CommunityToolkit.Mvvm` source
+generators; DI via `Microsoft.Extensions.DependencyInjection`, service-located
+through `Ioc.Default`.
 
-**Startup** (`App.axaml.cs`): load the cached library from `flower.db` synchronously so the UI has data immediately → register services in `Ioc.Default` → show `MainWindow`/`MainView` → background rescan updates and persists the library.
+**Startup** (`App.axaml.cs`): load the cached library from `flower.db`
+synchronously → register services → show the window → background rescan.
+A first desktop launch that finds a Music.app library asks before importing it
+(`ITunesLibraryOffer`).
 
-**A first desktop launch that finds a Music.app library asks before using it** (`ITunesLibraryOffer`, `ITunesLibraryOfferWindow`): add the folder or not, and in the same window whether to import play counts and Date Added on each startup. `AppSettingsStore.Load` arms the question (`AppSettings.ITunesLibraryOfferPending`) and turns both imports off until it is answered, and skips the first-run `~/Music` seed when that folder contains the library on offer — which on a default Mac it does, and a seed that scans the songs anyway makes the question decorative. The startup rescan waits for the answer, so one pass applies it; a no leaves the library empty and both imports off. On a device of its own, that question is the only way the folder gets in by itself, so the app has no "Use iTunes/Music.app library" switch: Settings > Library shows the two imports alone, usable whenever a Music.app library exists whatever was answered, and Add Folder is how a declined folder comes in later. A paired device picks no folders, and has "Add songs from Music.app to Flower" instead — an administrator's only (`SyncRolePolicy.MayAddSongsFromMusicApp`), off by default. It scans `<media folder>/Music` and sends the server what it lacks, and it only adds: a file Music.app deletes leaves this device and nothing else (`DeviceLibraryFolders`). On a device paired to a server, both run only where that server made it an administrator (`SyncRolePolicy.MayImportFromMusicApp`): the plays go up as the device's own tally and the older Date Added as owner state, so a server in a container that has no Music.app still gets the owner's history — play counts skipped while the server reads Music.app itself (`/info`'s `importsMusicAppPlays`), so nothing is counted twice. See `docs/SYNC-PLAN.md`, "Music.app history from an admin device". The server is the other way round — it adopts the folder on its own, and keeps the master switch that stops it (`FlowerServerOptions.IntegrateWithITunes`, `SettingsCapabilities.ITunesMasterSwitch`).
+**Persistence** (macOS: `~/Library/Application Support/Flower/`): `flower.db`
+(SQLite via `FlowerDb`: library and playlists), `settings.json` (`AppSettings`,
+column state included), `queue.json` (`PlayQueueStore`).
 
 **Key classes:**
-- `Track` — immutable metadata record, plus `DateAdded` (first-seen date, carried forward across rescans by `Library.UpdateTracks` matching on `Path`).
-- `Library` — canonical track list; fires `LibraryChanged` after each background rescan or sync merge, and `TrackChanged` for any in-place change to known tracks (a play, a star, a tag edit, a download, a playback option).
-- `MainPlaylist : Playlist` — the play queue.
-- `IAudioManager` / `GaplessAudioManager` — playback abstraction and implementation; raises playback events ViewModels subscribe to.
-- `MainViewModel` — track list, sidebar navigation, search, columns, status bar, and the Cmd/Ctrl+L "scroll to now playing" flow. History has its own independent sort state from Songs/Albums/Artists.
-- `HomeViewModel` — the Home screen on every head (desktop sidebar row, phone tab): Continue Playing, Recently Played, Recently Added (`HomeShelves`), as one virtualizing list of rows (`HomeShelfRows`, `HomeShelfRowsHost`) - the album shelves laid out like the album grids, Recently Played as songs (two side by side on desktop, one on a phone; a song picked plays the shelf from it down, and comes off it from its menu until it is next played) - and narrowed by the page filter (desktop's header box, the phone's pull-down oval). How much each holds is a setting on both heads (`AppSettings.HomeContinuePlayingLimit` — albums, default 6 — `HomeRecentlyPlayedLimit` — songs, default 8 — and `HomeRecentlyAddedMonths`, default 3; 0 hides a shelf). Continue Playing is `AlbumProgressTracker`, fed by `PlaylistControlViewModel`: two songs in a row from one album (not under shuffle) put it on the shelf, the place is written down on pause/stop/song change/app exit (`album-progress.json`), and the last song playing to its end takes it off. `AlbumProgressSyncService` exchanges the shelf with the server (`POST /api/flower/v1/album-progress`, last write wins per album, removals kept as dated markers): the owner's admin devices share one shelf, every other device gets its own, so a listener's playing never moves the owner's place.
-- `PlaylistControlViewModel` — play/pause/next/previous, repeat/shuffle (persisted in `settings.json`). Repeat only affects auto-advance; shuffle affects auto-advance and `Next()`, and under it `Previous()` steps back through the songs the shuffled order has played, putting the one it leaves back on top so `Next()` returns to it.
-- `QueueViewModel` — the queue as a page, on both heads (desktop's Queue sidebar row in `MusicListView`, the phone's Queue tab): the song playing, then what plays after it, as rows that know their slot in `PlaylistControlViewModel.CurrentPlaylist` (the queue can hold one song twice). Playing a row jumps along the queue rather than re-anchoring it; rows drag into a new order except under shuffle; Remove from Queue never takes the song playing. Built only while showing, like `HomeViewModel`.
-- `CurrentlyPlayingControlViewModel` — seek bar + elapsed/total time.
-- `Importer.Importer` — recursive scan of `AppSettings.LibraryPaths` (mp3/m4a/wav/flac/alac/ogg/opus/aiff/aif/ape) via TagLib#. No folders means an empty library: a first run seeds `~/Music` into the list instead of the scan guessing it.
-- `LibraryFolderWatcher` (`Flower.Core`) — on the desktop and the server, started once the startup rescan is done: a song that appears in a library folder is read in on its own (`Library.AddScannedTrack`), and a song that disappears or moves falls back to the full rescan, which is where moves and unplugged drives are handled — asked when the pass runs, so the server's own moves (`LibraryIngest`) never cost one. The folders are also listed every few minutes (`FlowerServerOptions.LibraryListingMinutes` on the server), because a network share sends no notifications for another machine's changes. On the server its rescans go through `LibraryRescanCoordinator`. Songs dropped on the window (`LibraryDrop`) are copied into the first library folder under `<album artist>/<album>/` unless they already sit in one — on a paired device, into Flower's own folder instead.
-- `DeviceLibraryFolders` / `FlowerFolder` — what a device scans, which is not simply `AppSettings.LibraryPaths`: a paired device also scans Flower's own folder (`~/Music/Flower` on a desktop, marked with a `.flower` file, and asked about before Flower takes over one somebody else made), where its downloads and dropped songs live, and on an admin's Mac, Music.app's music. A song in Flower's folder becomes a download (`IsLocallyDownloaded`) once the server holds it (`LibraryMirrorService.LendImports`), and a file gone from either folder is never reported to the server as a removal. Everything that scans, watches or names a file asks `DeviceLibraryFolders.ScanPaths`. See `docs/SYNC-PLAN.md`, "A paired device has two sources of files, and no folders".
-- `PlatformShortcuts.Primary` — Meta on macOS, Control elsewhere; all shortcuts should reference this, not a hardcoded modifier.
+- `Track` — immutable metadata record; `DateAdded` is carried across rescans by `Library.UpdateTracks` matching on `Path`.
+- `Library` — canonical track list; `LibraryChanged` after a rescan or sync merge, `TrackChanged` for in-place changes. Keeps departed songs as `RemovedTrack`s so a returning file gets its identity back.
+- `MainPlaylist : Playlist` — the play queue. `QueueViewModel` shows it as a page on both heads.
+- `IAudioManager` / `GaplessAudioManager` — playback; `GaplessCoordinator` runs decode-ahead.
+- `MainViewModel` — track list, sidebar, search, columns, status bar, Cmd/Ctrl+L.
+- `HomeViewModel` — Home shelves (Continue Playing via `AlbumProgressTracker`/`AlbumProgressSyncService`, Recently Played, Recently Added).
+- `PlaylistControlViewModel` — transport, repeat/shuffle; `CurrentlyPlayingControlViewModel` — seek bar.
+- `Importer.Importer` — recursive TagLib# scan of the library folders.
+- `LibraryFolderWatcher` (`Flower.Core`) — live folder watching plus periodic listing; anything else falls back to a full rescan.
+- `DeviceLibraryFolders.ScanPaths` — what a device scans. Everything that scans, watches or names a file asks it, never `AppSettings.LibraryPaths` directly.
+- `PlatformShortcuts.Primary` — Meta on macOS, Control elsewhere; every shortcut uses it.
 
-**Persistence** (macOS: `~/Library/Application Support/Flower/`): `flower.db` (SQLite, `FlowerDb`: the library, and playlists as track references resolved against it), `settings.json` (`AppSettings`, column state included), `queue.json` (the play queue and where in it playback was, restored parked at launch - `PlayQueueStore`).
+**Server protocol:** one surface, `/api/flower/v1/*` (`MediaEndpoints`,
+`SyncEndpoints`). Every route takes a device signature, or a stream ticket for
+the two media routes. Bulk, art and media are budgeted separately, and art is
+fetched in batches (`CoverArtBatch`) — both because a cover-art burst once
+starved playback (`docs/CITED-DECISIONS.md` #2b). Admin-device ingest and
+deletion semantics (a deletion is a removal, never a delete) are in
+`docs/SYNC-PLAN.md`, "Ingest".
 
-**Miniaudio native libraries** (`native/miniaudio/`): the `Miniaudio-CS` NuGet only ships desktop binaries, so Android (`android/build.sh`, NDK/CMake → `Flower.Android/libs/<abi>/libminiaudio.so`) and iOS (`ios/build.sh`, Xcode → `Flower.iOS/Frameworks/ios-{device,simulator}/miniaudio.framework`) are compiled and vendored directly in-repo instead — no NuGet package, see `native/miniaudio/README.md` to rebuild. Pinned to the exact miniaudio commit `Miniaudio-CS`'s own bindings were generated against (0.11.22), not the latest upstream release, to avoid an ABI mismatch. iOS additionally needs a `DllImportResolver` in `MiniaudioSink`'s static constructor — unlike Android, where naming the output `libminiaudio.so` alone is enough, .NET-for-iOS's default P/Invoke probing doesn't know to look inside an embedded framework's nested bundle path. `App.axaml.cs` routes every platform, including Android/iOS, to `MiniaudioSink`.
+**Audio pipeline:**
+- `FfmpegTrackDecoder` is the only decoder. FFAudio.NET's version is pinned by
+  `FFAudioPackageVersion` in `Directory.Build.props`; the library lives in
+  `../FFAudio.NET`, and `scripts/use-latest-main-ffaudio-package.sh` builds
+  against an unpublished change.
+- The pipeline carries packed S24, negotiated once at startup and frozen;
+  `MiniaudioSink` can veto it down. `OutputStage`'s dither and clamp follow the
+  destination format, and changing `flower_audio_bridge_create`'s signature
+  means rebuilding the vendored miniaudio binaries.
+- **Miniaudio native libraries** (`native/miniaudio/`): the NuGet ships only
+  desktop binaries, so Android and iOS builds are vendored in-repo, pinned to
+  the miniaudio commit `Miniaudio-CS`'s bindings were generated against
+  (0.11.22). iOS also needs the `DllImportResolver` in `MiniaudioSink`'s static
+  constructor. See `native/miniaudio/README.md`.
+- Playback position comes from `GaplessCoordinator.CurrentTrackBytesProduced`
+  (ring bytes *read*), never a decoder's own counter, which freezes for a track
+  decoded ahead (`_currentTrackReadSplit`'s remarks).
 
-**Flower speaks one protocol, its own** (`MediaEndpoints`, `SyncEndpoints`): the catalog is `GET /api/flower/v1/library`, playback is `/api/flower/v1/stream`, downloads `/download`, art `/cover-art` and `/cover-art/batch`. There used to be a second surface, `/rest/*`, mapping the same handlers for third-party OpenSubsonic clients; it was removed in September 2026 along with the password that was the only guessable credential in the system — see `docs/SYNC-PLAN.md`, "OpenSubsonic, built and removed", for what that bought and what it gave up. Every route now takes a device signature, or a stream ticket scoped to the two media routes (what the browser's `<audio>` element presents). The surface budgets bulk, art and media separately, because a cover-art burst sharing one budget with audio is how an album once stopped playing — see `docs/CITED-DECISIONS.md` #2b.
+## UI
 
-**An admin device mirrors its own files to the server** (`LibraryMirrorService`, `LibraryIngest`, `/api/admin/library/uploads`, `/move`, `/tags`, `/artwork`, `/removed/delete`): a file the server lacks is uploaded in signed 4 MB pieces to the same relative path under the server's first library folder; a file changed since (`Track.OriginFileStamp`) is sent again and replaces the server's copy, which dates it (`Track.FileReplacedAt`) so every other device with a copy downloads the new file; a tag or cover edited in Track Info (`Track.TagsEditedAt`/`ArtEditedAt`, `TrackTags`, `TrackArtwork`, `/tags`, `/artwork`) is sent from any device over any connection — including for a song the device only streams — written into the server's file, and then into every other device's library and its copy of the file, newest edit winning; `MergeSyncedTracks` hands the file work back as a `SyncedFileWork` for `LibrarySyncService` to carry out, since `Library` never touches files. Editing a server's song is an admin's act on every device (`SyncRolePolicy.MayEditSong`) — a guest edits only songs purely its own, and receives everything an admin does; a file moved (`Track.MovedFromPath`, a recorded change, never a comparison of layouts) is moved there, and then on every other device whose copy sat at the same relative path. Files only travel on the server's own network unless `AppSettings.UploadWhenAwayFromHome` is on. **A deletion is a removal, never a delete:** a file gone from the device's disk takes the song out of the server's library and leaves the server's file on disk, excluded; the catalog names it in `Removed`, and every other admin device sets its own copy aside the same way. Only Settings' *Removed Songs → Delete Files…* deletes anything, by hand. Two guards are load-bearing: a vanished file is reported only when its library folder is still there and not empty (an unplugged drive must never read as a deletion), and a device drops a copy only for a song *named* as removed, never for one merely missing from a catalog. `Library` keeps every song that leaves it as a `RemovedTrack` (`removed_tracks`), on both hosts, and a file that comes back by path or by tags gets its id, Date Added, plays and star back. Date Added itself is a low-water mark across the owner's devices: admin devices report theirs and the server only moves backwards. See `docs/SYNC-PLAN.md`, "Ingest".
+- **Phones:** use `TextInput`, never a bare `TextBox`, for anything a phone can
+  reach — it swaps in the platform's native field while focused.
+- **Context menus:** open with `PlatformContextMenu.Open(menu, target)`, never
+  `menu.Open(...)` (macOS draws them as `NSMenu`s). XAML `Control.ContextMenu`
+  needs nothing.
+- **Shortcuts:** `Space` play/pause, `Enter` play selected, Cmd/Ctrl+`I` track
+  info, `,` settings, `L` scroll to now playing. Track-list shortcuts are
+  tunnel-routed in `MainView.axaml.cs` so `MusicListView` doesn't swallow them.
+- `PlaybackControlsPlacement`'s row is set by a style on `ContentGrid`, because
+  a local value outranks a style.
+- Columns persist through `ColumnManager` → `AppSettings.ColumnStates`.
+- Compiled bindings are on by default; `MusicListView.axaml` opts out,
+  `TrackRowControl.axaml` opts back in. `Duration` binds `Mode=OneWay`.
+- Decode callbacks arrive on background threads; marshal UI updates with
+  `Dispatcher.UIThread.Post(...)`.
 
-**A server that cannot write to its music folders says so ahead of time** (`LibraryWriteAccess`, `LibraryFolders.CanWriteIn`, `LibraryWriteWarning`): each rescan — startup, and every change to the folder list — probes the library folders by creating a file in each, and logs one warning naming those that refuse, once per change rather than once per scan. `GET /api/admin/library` carries the list, and an administrator's browser tab asks for it at load and shows a dismissible banner across `MainView`. It is a statement, not an error: a read-only mount is a legitimate deployment where everything a listener does works, and what it warns of is the owner's device being refused an upload or a tag edit with nothing on the server to say why.
-
-**Album art is fetched in batches** (`CoverArtBatch`, `POST /api/flower/v1/cover-art/batch`): a grid asks for one cover per tile, and a library of 1400 albums is 1400 requests during one cold scroll - more than any per-source budget worth having, and when that budget ran out what got refused was playback. `AlbumArtLoader` coalesces a viewport's worth of misses over a 40ms debounce into one request of up to 32 ids; a peer that cannot answer one degrades to the old request-per-album path. It went on Flower's own surface rather than the OpenSubsonic adapter, because a batch is not an OpenSubsonic idea and that was a published protocol — an argument that outlived the adapter itself. See `docs/CITED-DECISIONS.md` #2b.
-
-**FFmpeg façade** (FFAudio.NET): `ffaudio`, a small C façade over `avformat`/`avcodec`/`avutil`/`swresample`, consumed as the `FFAudio.NET` NuGet (managed `FFAudio.Decoder`) plus one native payload package per platform — `.macOS`/`.Linux`/`.Windows` chosen by host in `Flower.csproj`, `.iOS`/`.Android` referenced by the phone heads. The version is pinned once, `FFAudioPackageVersion` in `Directory.Build.props`. Flower's own code is `Flower/Audio/Ffmpeg/FfmpegTrackDecoder : ITrackDecoder`. It began as the answer to LibVLC's `amem` seam truncating every track to 16 bits whatever format was requested (see `docs/AUDIOPHILE-PLAN.md`), and is now the only decoder. It used to live in-tree under `native/ffmpeg/`, and was extracted into its own repo (`../FFAudio.NET`); the build scripts, the static LGPL-only FFmpeg builds and the licence constraints all live there now. To try an unpublished library change against Flower, `scripts/use-latest-main-ffaudio-package.sh` (`--help`) points the build at a CI build or a local pack. CI requires the decoder via `FLOWER_REQUIRE_DECODERS`, so a payload that stops loading shows up as a failing check rather than a shorter suite.
-
-**One decoder, and it sets the bit depth** (`FfmpegTrackDecoder`, `GaplessFormat`, `PcmSampleFormat`): there used to be an election between LibVLC and FFmpeg, with `AppSettings.AudioDecoder`, a `FLOWER_DECODER` override and a fallback for a head with no built artifact. All five heads have an artifact, LibVLC was permanently 16-bit, and a fallback whose whole job is to play something at a ceiling nobody chose is not worth the second code path — so it is gone, along with ~1,500 lines and the coordinator's dual-core machinery. A façade that will not load now logs one critical line at startup instead of a per-track fault; the app still browses, edits and syncs, it just cannot decode.
-
-The pipeline carries packed S24 because that is what the decoder delivers — and `MiniaudioSink` gets a veto: a device that refuses `ma_format_s24` narrows it back and reopens. Negotiated once at startup and frozen, like the sample rate, because a decoder already open cannot change format. `PcmSampleFormat` stops at S24 deliberately: `OutputStage` works in float, whose mantissa is exactly 24 bits, so S32 would be a widening that quietly narrows again.
-
-Two consequences worth knowing before touching the render path. `OutputStage`'s dither and clamp are the destination format's, not S16 constants. And `flower_audio_bridge`'s transport fade reads samples rather than bytes, so `flower_audio_bridge_create` is told the width (`bytesPerSample`, 2 or 3) and refuses any other - a format it cannot fade is one it must not render. It used to walk `int16_t*` unconditionally, which cost `MiniaudioSink` the whole native bridge at S24, i.e. cost electing FFmpeg on a phone the GC-pause resilience the bridge exists for. Changing that signature means rebuilding the vendored `libminiaudio.so`/`miniaudio.framework` binaries.
-
-## UI Structure
-
-**On the phones, a box is typed in through the platform's own field** (`TextInput`, `NativeTextSession`, `PlatformNativeTextField`; `AppleNativeTextField`, `AndroidNativeTextField`): at rest every box is Avalonia's, so it scrolls, slides and sits under the floating ovals like everything else; while it has the focus a `UITextField`/`UITextView` or `EditText` is laid exactly over its text, placed every frame and clipped to whatever clips the box, and the box turns Avalonia's input method off. The box keeps the focus as far as the app can tell, so nothing listening to it changes: typing is its `Text`, Return is its Enter, the platform dismissing the keyboard is its `LostFocus`. Use `TextInput`, never a bare `TextBox`, for anything a phone can reach. Desktop and the browser have no factory and type in Avalonia's box as before.
-
-`MainView.axaml`: content (sidebar + optional drill-down sub-list + `MusicListView` track list, page search in the page header) → status bar, a tab at the bottom right of the page as wide as its message, saying what the app is busy with: it slides up when a message arrives, stays while the work goes on, and slides back down a second after it ends (`ShowStatusMessage` in `MainView.axaml.cs`) → player bar across the whole window (what is playing with its seek bar, transport, volume and output), unless it is placed above the content (below).
-
-`AppSettings.PlaybackControlsPlacement` (Settings > General, View > Playback Controls at Bottom) puts the player bar - what is playing, the transport, the volume and output, across the whole window - under the sidebar and page (the default) or above them, unchanged. Its row is set by a style on `ContentGrid`, not on the element, because a local value outranks a style.
-
-Keyboard shortcuts (all via `PlatformShortcuts.Primary`): `Space` play/pause, `Enter` play selected, `Cmd/Ctrl+I` track info, `Cmd/Ctrl+,` settings, `Cmd/Ctrl+L` scroll to now playing. Track-list shortcuts are tunnel-routed in `MainView.axaml.cs` so `MusicListView`'s own key handling doesn't swallow them.
-
-Column visibility/width/order persist via `ColumnManager` → `settings.json` (`AppSettings.ColumnStates`).
-
-Context menus are built as Avalonia `ContextMenu`s and opened with `PlatformContextMenu.Open(menu, target)`, never `menu.Open(...)`: on macOS (`Flower.MacOS/AppleContextMenu`) they are drawn as `NSMenu`s from a platform-free description (`ContextMenuEntry`), and picking an entry raises the original `MenuItem`'s `Click`. Menus declared in XAML (`Control.ContextMenu`) are caught at their `Opening` and need nothing.
-
-## Binding Notes
-
-- Compiled bindings are on by default; `MusicListView.axaml` opts out (code-behind assembled), `TrackRowControl.axaml` opts back in.
-- `Duration` column binds `Mode=OneWay` to avoid a `ConvertBack` error.
-- Decode callbacks arrive on background threads — marshal UI updates via `Dispatcher.UIThread.Post(...)`.
-
-## Track List (`MusicListView`)
-
-Hand-rolled control (`Flower/Controls/MusicListView.axaml(.cs)`, `MusicListPanel.cs`, `TrackRowControl.axaml(.cs)`) — replaced `ListBox` (no built-in resize), `TreeDataGrid` (needs a paid license), and `DataGrid` (couldn't do album-art spanning/virtualization the way this needs).
-
-- Flat, uniform-height row list (`TrackRowViewModel.RowHeight`); album grouping is a computed property (`IsFirstInAlbumGroup`/`AlbumGroupSize`) from `TrackListBuilder`, not a structural header row.
-- Album art spans down over grouped rows via `ClipToBounds="False"` on the group's first row.
-- `MusicListPanel` virtualizes with simple uniform-height math and a grow-only `TrackRowControl` pool.
-- `ColumnManager` owns column definitions and persists them to `settings.json`; `TrackListBuilder.Sort` treats `DateAdded` like any other sortable column.
-- `MusicListView.ScrollToTrack(track)` selects and centers a row — used by Cmd/Ctrl+L.
+**Track list** (`MusicListView`, `MusicListPanel`, `TrackRowControl`) is
+hand-rolled: `ListBox`, `TreeDataGrid` (paid) and `DataGrid` could not do
+column resize, art spanning grouped rows and virtualization together. Rows are
+flat and uniform-height; album grouping is computed (`TrackListBuilder`), and
+art spans down via `ClipToBounds="False"` on the group's first row.

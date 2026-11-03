@@ -67,10 +67,9 @@ scripts/android-decoding-tests.sh    # focused decoding, local emulator/device
 
 The iOS scripts accept a simulator name and `IOS_SIMULATOR_RUNTIME`. The decoding
 script retains its `--mono` option for diagnosis. The full iOS runner accepts
-`FLOWER_TEST_ARGS` for xUnit method/class filters. CI compiles the Android decoding runner alongside the app. Emulator checks remain
-local-only because of the existing hosted-emulator limitations documented in
-`CLAUDE.md`; this reorganization does not remove their coverage or add a new CI
-requirement.
+`FLOWER_TEST_ARGS` for xUnit method/class filters. CI compiles the Android
+decoding runner alongside the app; emulator checks remain local-only (see
+"Android" below).
 
 ## CI
 
@@ -97,3 +96,99 @@ Cache inputs cover every project and the shared test configuration. Superseded
 branch runs are canceled; tag runs finish. Android decoding runner compilation
 is checked in CI, while emulator execution retains its existing local-only
 status.
+
+Release publication lives in `tests.yml` rather than a workflow of its own
+because that is the only way it can wait: a tag push fires every `on: push`
+workflow at once and `needs` reaches only jobs in the same file, so a separate
+`publish-server-image.yml` once pushed `latest` for v0.2.0 off a tree whose
+macOS, Windows and Android jobs then failed. Keep every job in the publish
+step's `needs`. The image is built on tags only, so check a Dockerfile change
+with `docker compose build` from `docker/` before tagging; installers can be
+tried with `scripts/package-desktop.sh dmg|appimage|setup` on their own OS.
+A tag is not a private act: MinVer reads it, and every installed desktop is
+offered it as an update (`docs/AUTO-UPDATE-PLAN.md`).
+
+## Why the runners are built this way
+
+### The Mono iOS suite (`Flower.Tests.iOS`)
+
+- **Build time.** `MtouchLink=None` compiled the whole BCL (28 minutes locally,
+  2h07m in CI, for three minutes of tests); `SdkOnly` trims only the framework
+  and leaves the suite, xunit, Flower and Avalonia whole so reflection still
+  finds every test. `MtouchUseLlvm=false` uses Mono's own code generator: LLVM
+  was nine tenths of what remained. Everything is still compiled ahead of time
+  with no JIT. `MtouchInterpreter=all` was tried and is off so the leg runs
+  compiled code, as a phone does. The app ships on NativeAOT, not this.
+- **Load-bearing exclusions.** xunit's `buildTransitive` targets (they demand an
+  app host and generate their own `Main`); the VSTest packages
+  (`Microsoft.VisualStudio.TestPlatform.Common` does not AOT-compile). The runner
+  drives xunit's public runner pieces rather than `ConsoleRunner.EntryPoint`,
+  which subscribes to `Console.CancelKeyPress` and throws
+  `PlatformNotSupportedException` on iOS before running anything.
+- **Scene lifecycle.** Both iOS runners adopt it (`Tests/iOSRunner`) because
+  iOS 27 kills an app that does not, with an `EXC_BREAKPOINT` in
+  `UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption` before any
+  output, which reads exactly like a hung run.
+- **Hangs.** The app reports verbosely, so the script prints the tests that
+  started and never finished instead of per-test lines.
+- **NativeAOT.** The full suite cannot run there yet: xunit discovers tests by
+  reflection over the assembly file, which NativeAOT lacks, and
+  Avalonia.Headless.XUnit is not built against xunit's NativeAOT edition.
+
+### Decoding checks (`Flower.Tests.Decoding.Scenarios`)
+
+`DecodeChecks.RunAll()` answers *does this platform turn a track into the right
+audio?* on the platform itself. Both streaming bugs so far (VLC's mp4 demuxer
+refusing an unseekable stream; .NET's mobile `HttpClientHandler` having no
+synchronous path) were invisible to a green desktop suite and found by a person
+listening to a phone.
+
+- **Fixtures** are committed (`Fixtures/regenerate.sh`) because a phone has no
+  encoder: the same 440Hz sine as WAV/FLAC/ALAC/MP3/AAC at 48kHz and 44.1kHz
+  (44.1kHz is the one rate the pipeline resamples), plus AIFF, APE, Vorbis and
+  Opus at 48kHz. Each is decoded from disk, over loopback, from a server
+  refusing ranges, and from one refusing HEAD (`Flower.Server` maps streams with
+  `MapGet`, so real streams find their length via the ranged-GET probe).
+  `LoopbackMediaServer` honours the end of a range for the same reason.
+- **Oracle** is a property of the fixture: lossless at the pipeline rate must
+  match byte for byte; everything else is held to `PcmOracle.ToneMismatch`
+  (`PcmOracleTests` shows it rejects silence, noise and a wrong tone).
+- **Refusals.** `RequiresFreshNonce` answers a reused nonce as the server does
+  (`401`, `nonce-reused`), because a once-signed stream URL fetched several times
+  used to play ~130 bytes of JSON. A check that cannot refuse a request cannot
+  find a bug about being refused. `ServesAPortalPage` holds
+  `SeekableHttpStream.ProtocolErrorFor` to refusing a 200 that is not audio;
+  `RefuseBodiesWith429` reproduces throttled bodies behind a successful probe
+  (docs/CITED-DECISIONS.md #2b).
+- **Per decoder.** The suite runs once per available decoder (`DecoderUnderTest`)
+  so a decoder change cannot move the streaming path out from under it;
+  `FLOWER_REQUIRE_DECODERS` turns an empty decoder list into a failure. Each
+  decoder gets its own sample format rather than moving `GaplessFormat`'s
+  process-wide one.
+- **Pressing play.** `Play()` calls `StartDecoding()` with no prepare; a check
+  covers that path because every other check prepared first and missed that it
+  faulted.
+- **Extensions are hints.** `OriginFileExtension` describes the server's file,
+  not the bytes sent; forcing a demuxer discards the probe, so
+  `FfmpegTrackDecoder.DemuxerHintFor` names only the MP4 family and
+  `FfmpegDecoder.OpenStream` re-probes when the hint fails.
+- **Raw `TcpListener`.** Kept because `HttpListener` is unverified on a physical
+  iOS device and on Android (it works on the simulator).
+- **Transcripts are files** on both phones: `Console.WriteLine` does not
+  reliably reach `simctl launch --console-pty`, and logcat drops lines.
+
+### Android
+
+Emulator runs are local-only. In CI the job failed honestly: `Flower.csproj`
+picks a desktop ffaudio payload by host, which flows to the Android heads, and
+`android-x64` falls back to `linux-x64` in the RID graph, so the glibc
+`libffaudio.so` wins `lib/x86_64/` (`XA4301`) and `dlopen` fails. The fix is
+`ExcludeAssets="native"` on that host package in both Android heads, as
+`Miniaudio-CS` already has. On a Mac the host payload is macOS and nothing
+collides, which is why it passed locally.
+
+The runner's ABI follows the host (arm64-v8a on a Mac, x86_64 in CI). Three
+settings are load-bearing: `EmbedAssembliesIntoApk` (Fast Deployment keeps
+assemblies out of the APK, so a script-installed APK aborts); the `INTERNET`
+permission, even for loopback; and a network security config permitting
+cleartext to `127.0.0.1`, since API 28+ blocks plain HTTP.
