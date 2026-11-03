@@ -784,6 +784,7 @@ public partial class App : Application
         var watchesLibraryFolders = ApplicationLifetime is IClassicDesktopStyleApplicationLifetime;
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
+            ModalTooltips.Install();
             var window = new MainWindow(
                 appSettings,
                 provider.GetRequiredService<ColumnManager>(),
