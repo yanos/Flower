@@ -136,15 +136,29 @@ public class SmartPlaylistManagementTests
         Assert.Single(playlist.Tracks);
     }
 
+    // An editor changes its playlist in place, which starts no sync of its
+    // own: a Vibe Playlist saved on a phone sat there until something else
+    // happened to sync, and never reached the Mac.
     [Fact]
-    public void A_new_smart_playlist_starts_ordinary_and_selected()
+    public void A_saved_edit_is_sent_and_a_new_playlist_saved_is_shown()
     {
-        var (playlists, library, host) = NewSubject();
+        var (playlists, library, host) = NewSubject(T("A"));
+        var playlist = Smart(library, "Smart");
 
-        var playlist = playlists.CreateSmart();
+        playlists.EditEnded(playlist, isNew: true, saved: true);
 
-        Assert.Contains(playlist, library.Playlists);
-        Assert.False(playlist.IsSmart);
         Assert.Same(playlist, host.SelectedSidebarItem?.Playlist);
+        Assert.Equal(1, host.SyncsScheduled);
+    }
+
+    [Fact]
+    public void A_cancelled_edit_sends_nothing()
+    {
+        var (playlists, library, host) = NewSubject(T("A"));
+        var playlist = Smart(library, "Smart");
+
+        playlists.EditEnded(playlist, isNew: false, saved: false);
+
+        Assert.Equal(0, host.SyncsScheduled);
     }
 }

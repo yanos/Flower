@@ -83,7 +83,9 @@ public class MobileSmartPlaylistEditorTests : PinnedDataDirectory
 
         Assert.True(scope.Mobile.IsShowingSmartPlaylistEditor);
         Assert.NotNull(scope.Mobile.SmartPlaylistEditor);
-        Assert.Contains(scope.Mobile.SmartPlaylistEditor!.Playlist, scope.Library.Playlists);
+        // Not in the library until saved, so no sync meanwhile sends it
+        // anywhere as an empty ordinary playlist.
+        Assert.DoesNotContain(scope.Mobile.SmartPlaylistEditor!.Playlist, scope.Library.Playlists);
     }
 
     [AvaloniaFact]

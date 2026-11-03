@@ -234,7 +234,10 @@ public partial class MobileMainViewModel
         if (frame.IsPlaylistTrackList && CanEditCurrentPlaylist)
             actions.Add(new ScreenMenuEntry("Edit", MaterialIconKind.PencilOutline,
                 () => EditCurrentPlaylistCommand.Execute(null)));
-        if (TracksOnScreen(frame).Count > 0)
+        // No Shuffle over a Vibe Playlist, as in its menu: its endless queue
+        // is drawn at random from its songs already.
+        var isVibe = frame.IsPlaylistTrackList && PlaysAsVibe(CurrentPlaylist);
+        if (TracksOnScreen(frame).Count > 0 && !isVibe)
             actions.Add(new ScreenMenuEntry("Shuffle", MaterialIconKind.Shuffle,
                 () => Main.PlayTracks(TracksOnScreen(frame), shuffle: true)));
         if (frame.IsTrackList && Main.Rows.Count > 0)

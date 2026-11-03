@@ -333,15 +333,25 @@ public class SmartPlaylistEditorViewModelTests
 
     // ── Cancel ────────────────────────────────────────────────────────────────
 
+    // A new playlist is in the library only once saved, with its rules:
+    // added when the editor opened, it was synced to every device as an
+    // empty ordinary playlist for as long as the editor was up.
     [Fact]
-    public void Cancelling_a_playlist_created_for_this_edit_removes_it_again()
+    public void A_new_playlist_joins_the_library_only_when_saved()
     {
         var library = NewLibrary(T("A"));
-        var playlist = AddPlaylist(library, "New Smart Playlist");
+        var cancelled = new Playlist("New Smart Playlist", []);
+        NewEditor(library, cancelled, isNew: true).Cancel();
+        Assert.DoesNotContain(cancelled, library.Playlists);
 
-        NewEditor(library, playlist, isNew: true).Cancel();
-
+        var playlist = new Playlist("New Smart Playlist", []);
+        var editor = NewEditor(library, playlist, isNew: true);
         Assert.DoesNotContain(playlist, library.Playlists);
+
+        Assert.True(editor.Save());
+
+        Assert.Contains(playlist, library.Playlists);
+        Assert.True(playlist.IsSmart);
     }
 
     [Fact]

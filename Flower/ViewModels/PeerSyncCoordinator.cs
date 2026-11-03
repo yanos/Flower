@@ -969,6 +969,7 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
             || (device.ServerEndlessPlay != null && _appSettings.PairedServerEndlessPlay != device.ServerEndlessPlay))
         {
             var adminChanged = _appSettings.PairedServerGrantsAdmin != device.WeAreAdmin;
+            var vibesChanged = device.ServerVibePlaylists != null && _appSettings.PairedServerVibePlaylists != device.ServerVibePlaylists;
             _appSettings.PairedServerGrantsAdmin = device.WeAreAdmin;
             _appSettings.PairedServerImportsMusicAppPlays = device.ServerImportsMusicAppPlays;
             _appSettings.PairedServerLooksUpOnline = device.ServerLooksUpOnline;
@@ -985,7 +986,9 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
 
             // Being made an administrator, or no longer being one, changes
             // what this device takes in from Music.app (DeviceLibraryFolders).
-            if (adminChanged)
+            // The server starting or stopping Vibe Playlists changes whether
+            // a phone's Playlists tab offers to make one (CanMakeVibePlaylists).
+            if (adminChanged || vibesChanged)
                 Dispatcher.UIThread.Post(NotifyPairingChanged);
         }
     }

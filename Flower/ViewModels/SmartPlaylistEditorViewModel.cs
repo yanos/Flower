@@ -471,6 +471,13 @@ public sealed class SmartPlaylistEditorViewModel : ViewModelBase
         // Library.PlaylistsChanged, which persists it.
         _playlist.Rules = rules;
 
+        // A new one joins the library only now, with its rules. Added when the
+        // editor opened, it was an empty ordinary playlist for as long as the
+        // editor was up, and any sync in that time pushed it to every device
+        // as one - the stray "New Smart Playlist" other devices then showed.
+        if (_isNew && !_library.Playlists.Contains(_playlist))
+            _library.AddPlaylist(_playlist);
+
         // Fill the contents in now rather than waiting for the debounced pass,
         // and regardless of LiveUpdating - a frozen playlist has to be
         // evaluated exactly once, at the moment it is defined.
@@ -481,18 +488,11 @@ public sealed class SmartPlaylistEditorViewModel : ViewModelBase
         return true;
     }
 
-    // A playlist created solely to be edited should not survive the user
-    // changing their mind - otherwise Cancel leaves an empty "New Smart
-    // Playlist" in the sidebar, which is the one outcome nobody wanted.
-    public void Cancel()
-    {
-        StopPreview();
-        if (_isNew)
-            _library.RemovePlaylist(_playlist);
-    }
+    // A new one was never added (see Save), so there is nothing to undo.
+    public void Cancel() => StopPreview();
 }
 
 // What MainViewModel hands the view when the rule editor should open. IsNew
-// means the playlist was created for this edit and should be removed again if
-// the user cancels.
+// means the playlist was made for this edit and is not in the library until
+// it is saved.
 public sealed record SmartPlaylistEditorEventArgs(Playlist Playlist, bool IsNew);

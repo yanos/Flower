@@ -2236,14 +2236,19 @@ public partial class MainView : UserControl
         var editor = new SmartPlaylistEditorWindow(
             new SmartPlaylistEditorViewModel(e.Playlist, vm.Library, refresher, e.IsNew), vm);
 
+        // A save can rename the playlist and change its icon, and a new one
+        // appears; either way it goes to the server now (EditEnded).
         if (TopLevel.GetTopLevel(this) is Window owner)
-            await editor.ShowDialog(owner);
+            vm.Playlists.EditEnded(e.Playlist, e.IsNew, saved: await editor.ShowDialog<bool>(owner));
         else
+        {
+            // No dialog result without an owner: a new one was saved if it
+            // reached the library, and an edit is sent either way, which
+            // costs a sync of nothing when it was cancelled.
+            editor.Closed += (_, _) => vm.Playlists.EditEnded(e.Playlist, e.IsNew,
+                saved: !e.IsNew || vm.Library.Playlists.Contains(e.Playlist));
             editor.Show();
-
-        // Both outcomes move the sidebar: a save can rename the playlist and
-        // change its icon, and a cancel on a new one deletes the row outright.
-        vm.Playlists.RefreshSidebarItems();
+        }
     }
 
     // A dialog on the desktop, and laid over the page in the browser, which
@@ -2256,17 +2261,17 @@ public partial class MainView : UserControl
         var editor = new VibePlaylistEditorViewModel(e.Playlist, vm.Library, vibes, e.IsNew);
         if (TopLevel.GetTopLevel(this) is Window owner)
         {
-            await new VibePlaylistEditorWindow(editor, vm).ShowDialog(owner);
-            vm.Playlists.RefreshSidebarItems();
+            var saved = await new VibePlaylistEditorWindow(editor, vm).ShowDialog<bool>(owner);
+            vm.Playlists.EditEnded(e.Playlist, e.IsNew, saved);
             return;
         }
 
         var view = new VibePlaylistEditorView(editor, vm);
-        view.Closed += (_, _) =>
+        view.Closed += (_, saved) =>
         {
             EditorOverlayHost.Child = null;
             EditorOverlay.IsVisible = false;
-            vm.Playlists.RefreshSidebarItems();
+            vm.Playlists.EditEnded(e.Playlist, e.IsNew, saved);
         };
         EditorOverlayHost.Child = view;
         EditorOverlay.IsVisible = true;

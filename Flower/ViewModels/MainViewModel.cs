@@ -2080,6 +2080,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             _deviceSidebar.SyncPairedServerRow();
             PairedIcon?.FollowPairing();
             _deviceSidebar.RefreshIcons();
+            OnPropertyChanged(nameof(CanMakeVibePlaylists));
             // Pairing, unpairing and being made an administrator each change
             // which folders this device scans - see DeviceLibraryFolders.
             FollowScanFolders();
@@ -2781,15 +2782,15 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // rule editor that cannot recompute what it saves.
     public SmartPlaylistRefresher? SmartPlaylists { get; }
 
-    // Creates an ordinary, empty playlist and opens the editor on it. It only
-    // becomes smart when the editor saves rules onto it, and cancelling removes
-    // it again - see PlaylistManagementViewModel.CreateSmart.
+    // Opens the editor on a new, empty playlist that is not in the library
+    // yet: it joins it, smart, when the editor saves rules onto it, and a
+    // cancel leaves nothing behind - see PlaylistManagementViewModel.EditEnded.
     public void NewSmartPlaylist()
     {
         if (SmartPlaylists is null)
             return;
 
-        var playlist = Playlists.CreateSmart();
+        var playlist = new Playlist("New Smart Playlist", new List<Track>());
         SmartPlaylistEditorRequested?.Invoke(this, new SmartPlaylistEditorEventArgs(playlist, IsNew: true));
     }
 
@@ -2826,7 +2827,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         if (!CanMakeVibePlaylists)
             return;
 
-        var playlist = Playlists.CreateVibe();
+        var playlist = new Playlist("New Vibe Playlist", new List<Track>());
         VibePlaylistEditorRequested?.Invoke(this, new VibePlaylistEditorEventArgs(playlist, IsNew: true));
     }
 

@@ -823,6 +823,13 @@
                             DismissCommand="{Binding CloseSheetCommand}">
       <views:SmartPlaylistEditorSheetView />
     </controls:SlidingSheet>
+    <!-- The Vibe Playlist editor, pushed the same way, from the Playlists
+         tab's New Vibe Playlist row or a Vibe Playlist's Edit. -->
+    <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"
+                            IsOpen="{Binding IsShowingVibePlaylistEditor}"
+                            DismissCommand="{Binding CloseSheetCommand}">
+      <views:VibePlaylistEditorSheetView />
+    </controls:SlidingSheet>
     <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"
                             Margin="{DynamicResource ScreenStackBleed}"
                             Entrance="FromBottom"

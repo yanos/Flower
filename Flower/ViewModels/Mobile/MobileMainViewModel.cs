@@ -41,7 +41,7 @@ public enum MobileNavigationTransition { None, FromRight, FromLeft }
 
 // Full-screen overlays shown on top of the tab content, e.g. the expanded
 // now-playing view opened by tapping the mini-player.
-public enum MobileSheet { None, NowPlaying, TrackActions, AlbumActions, TrackInfo, AddToPlaylist, Settings, SmartPlaylistEditor, ConfirmPairServer, ConfirmDeleteFile, ConfirmDeletePlaylist, ConfirmUnpairServer, ConfirmRemoveFromLibrary, MoveToFolder }
+public enum MobileSheet { None, NowPlaying, TrackActions, AlbumActions, TrackInfo, AddToPlaylist, Settings, SmartPlaylistEditor, VibePlaylistEditor, ConfirmPairServer, ConfirmDeleteFile, ConfirmDeletePlaylist, ConfirmUnpairServer, ConfirmRemoveFromLibrary, MoveToFolder }
 
 // Translates the desktop MainViewModel's sidebar+sublist (side-by-side master-detail)
 // navigation model into tab+drill-down navigation for a phone screen, without changing
@@ -830,7 +830,11 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
 
     // Hidden rather than inert, like New Smart Playlist: rules with nothing to
     // recompute them are rules the pencil cannot open.
-    public bool CanEditCurrentPlaylist => CurrentPlaylist is { } playlist && (!playlist.IsSmart || CanCreateSmartPlaylist);
+    // A Vibe Playlist's pencil opens its sentence, which needs a server to
+    // rank it.
+    public bool CanEditCurrentPlaylist => CurrentPlaylist is { } playlist
+        && (!playlist.IsSmart || CanCreateSmartPlaylist)
+        && (!playlist.IsVibe || PlaysAsVibe(playlist));
 
     // Whichever of the two the screen is showing - one of them at most, since
     // a track list is one album's or one playlist's or the whole library's.
@@ -920,8 +924,12 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
 
     // The screen's header Play and Shuffle: the songs it lists, which on an
     // album, artist or playlist screen are Main.Rows.
-    private void PlayAlbum(bool shuffle) =>
+    private void PlayAlbum(bool shuffle)
+    {
+        if (PlayVibeOnScreen())
+            return;
         Main.PlayTracks(Main.Rows.Select(r => r.Track).ToList(), shuffle);
+    }
 
     // Re-anchors Next/Previous/auto-advance to whatever's actually on screen
     // right now, mirroring desktop's MainViewModel.SyncPlayQueueToCurrentView -
@@ -939,6 +947,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     // Search, and Main.Rows on everything else.
     private IList<TrackRowViewModel> CurrentTrackRows =>
         IsShowingSmartPlaylistEditor ? SmartPlaylistPreviewRows
+        : IsShowingVibePlaylistEditor ? VibePlaylistPreviewRows
         : IsShowingSearchResults ? Search.SongResults
         : Main.Rows;
 
@@ -962,6 +971,8 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             // removes a playlist that was only created to be edited.
             if (_activeSheet == MobileSheet.SmartPlaylistEditor)
                 FinishSmartPlaylistEdit(saved: false);
+            if (_activeSheet == MobileSheet.VibePlaylistEditor)
+                FinishVibePlaylistEdit(saved: false);
             _activeSheet = value;
             // The Navigation Bar page is pushed over Settings, so it cannot
             // outlast it.
@@ -992,6 +1003,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             OnPropertyChanged(nameof(IsShowingAddToPlaylist));
             OnPropertyChanged(nameof(IsShowingSettings));
             OnPropertyChanged(nameof(IsShowingSmartPlaylistEditor));
+            OnPropertyChanged(nameof(IsShowingVibePlaylistEditor));
             OnPropertyChanged(nameof(IsShowingConfirmPairServer));
             OnPropertyChanged(nameof(IsShowingConfirmDeleteFile));
             OnPropertyChanged(nameof(IsShowingConfirmDeletePlaylist));
@@ -1119,10 +1131,10 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         if (!saved)
             SmartPlaylistEditor?.Cancel();
 
-        // Both outcomes move the list: a save can rename the playlist, and a
-        // cancel on a new one deletes its row outright. Desktop's window does
-        // the same once it closes.
-        Main.Playlists.RefreshSidebarItems();
+        // The list follows a rename, and a save goes to the server now - the
+        // same as desktop's window once it closes.
+        if (SmartPlaylistEditor is { } editor)
+            Main.Playlists.EditEnded(editor.Playlist, editor.IsNew, saved);
     }
     public bool IsShowingConfirmPairServer => ActiveSheet == MobileSheet.ConfirmPairServer;
     public bool IsShowingConfirmDeleteFile => ActiveSheet == MobileSheet.ConfirmDeleteFile;
@@ -1233,7 +1245,14 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     private void PlayAlbumActionTarget(bool shuffle)
     {
         var tracks = AlbumActionTargetTracks();
+        var playlist = PlaylistActionTarget?.Playlist;
         ActiveSheet = MobileSheet.None;
+        // A Vibe Playlist's row plays its endless queue, as its screen does.
+        if (PlaysAsVibe(playlist))
+        {
+            Main.PlayVibePlaylist(playlist!);
+            return;
+        }
         Main.PlayTracks(tracks, shuffle);
     }
 
@@ -1667,6 +1686,8 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         // waits forever; see AskToDeletePlaylist.
         _subscriptions.Add<EventHandler<SmartPlaylistEditorEventArgs>>((_, e) => OpenSmartPlaylistEditor(e),
             h => Main.SmartPlaylistEditorRequested += h, h => Main.SmartPlaylistEditorRequested -= h);
+        _subscriptions.Add<EventHandler<VibePlaylistEditorEventArgs>>((_, e) => OpenVibePlaylistEditor(e),
+            h => Main.VibePlaylistEditorRequested += h, h => Main.VibePlaylistEditorRequested -= h);
         _subscriptions.Add<EventHandler<DeletePlaylistConfirmationEventArgs>>((_, e) => AskToDeletePlaylist(e),
             h => Main.DeletePlaylistConfirmationRequested += h, h => Main.DeletePlaylistConfirmationRequested -= h);
         _subscriptions.Add<EventHandler>((_, _) => Dispatcher.UIThread.Post(RebuildLibraryDerivedState),
@@ -1698,6 +1719,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
                 Pairing.Settle();
             if (e.PropertyName == nameof(MainViewModel.RecentSearches))
                 Search.RefreshSuggestions();
+            OnMainChangedForVibes(e.PropertyName);
         },
             h => Main.PropertyChanged += h, h => Main.PropertyChanged -= h);
         // Search's results are a separate row list from Main.Rows, so they
@@ -1815,6 +1837,10 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             // list (Songs/album/playlist/search) the tapped track actually
             // came from - confirmed on a real device as Next/Previous
             // advancing through what looked like an arbitrary/random order.
+            // A Vibe Playlist's songs play as its endless queue, from the
+            // one tapped.
+            if (PlayVibeOnScreen(track))
+                return;
             var queueIndex = CurrentTrackRows.IndexOf(row!);
 
             SyncPlayQueueToCurrentView();
@@ -1931,6 +1957,11 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             if (playlist.IsSmart)
             {
                 Main.EditSmartPlaylist(playlist);
+                return;
+            }
+            if (playlist.IsVibe)
+            {
+                Main.EditVibePlaylist(playlist);
                 return;
             }
             if (CurrentPlaylistItem is not { } item)

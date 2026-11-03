@@ -44,6 +44,19 @@
         </Border>
       </Button>
 
+      <!-- And one made from a sentence, while the paired server makes them
+           (MainViewModel.CanMakeVibePlaylists). -->
+      <Button Classes="pickerRow"
+              IsVisible="{Binding CanCreateVibePlaylist}"
+              Command="{Binding NewVibePlaylistCommand}">
+        <Border Classes="floating" Height="40" CornerRadius="20" Padding="12,0,18,0" HorizontalAlignment="Left">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <materialIcons:MaterialIcon Kind="Plus" Width="20" Height="20" VerticalAlignment="Center" />
+            <TextBlock Text="New Vibe Playlist" FontSize="17" VerticalAlignment="Center" />
+          </StackPanel>
+        </Border>
+      </Button>
+
       <!-- And a folder to keep them in, drawn the same way. Named in the
            draft row above (NewPlaylistEntry), which says "Folder Name" for
            it. -->

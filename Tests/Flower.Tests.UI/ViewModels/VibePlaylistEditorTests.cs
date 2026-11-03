@@ -41,10 +41,10 @@ public class VibePlaylistEditorTests
 
     public VibePlaylistEditorTests() => _library = new Library(_songs);
 
+    // As MainViewModel.NewVibePlaylist makes one: not in the library yet.
     private (VibePlaylistEditorViewModel Editor, Playlist Playlist) New()
     {
         var playlist = new Playlist("New Vibe Playlist", []);
-        _library.AddPlaylist(playlist);
         return (new VibePlaylistEditorViewModel(playlist, _library, _server, isNew: true), playlist);
     }
 
@@ -117,8 +117,28 @@ public class VibePlaylistEditorTests
         Assert.False(playlist.IsVibe);
     }
 
+    // A new one is in the library only once saved, whole: added when the
+    // editor opened, it was synced to every device as an empty ordinary
+    // playlist for as long as the editor was up.
     [Fact]
-    public void Cancelling_a_new_one_removes_it_and_cancelling_an_edit_does_not()
+    public async Task A_new_one_joins_the_library_only_when_saved()
+    {
+        var (editor, playlist) = New();
+        _server.Answer = new VibePreview(_songs.Take(2).ToList());
+        editor.Prompt = "music for a rainy day";
+        await editor.PreviewPass;
+        Assert.DoesNotContain(playlist, _library.Playlists);
+
+        Assert.True(editor.Save());
+
+        var saved = Assert.Single(_library.Playlists);
+        Assert.Same(playlist, saved);
+        Assert.Equal("music for a rainy day", saved.VibePrompt);
+        Assert.Equal(_songs.Take(2), saved.Tracks);
+    }
+
+    [Fact]
+    public void Cancelling_a_new_one_leaves_nothing_and_cancelling_an_edit_keeps_it()
     {
         var (editor, playlist) = New();
         editor.Cancel();

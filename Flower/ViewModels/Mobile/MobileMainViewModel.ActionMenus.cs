@@ -40,7 +40,8 @@ public partial class MobileMainViewModel
             isFolder: PlaylistActionTarget?.Playlist is { IsFolder: true },
             canMoveToFolder: CanMoveActionTargetToFolder,
             isSmart: PlaylistActionTarget?.Playlist is { IsSmart: true } && CanCreateSmartPlaylist,
-            canGoToArtist: AlbumActionTargetArtist() is { } artist && !IsAtArtist(artist)))
+            canGoToArtist: AlbumActionTargetArtist() is { } artist && !IsAtArtist(artist),
+            isVibe: PlaysAsVibe(PlaylistActionTarget?.Playlist)))
         : [];
 
     // The one artist an album's menu can go to: an album's, not a playlist's
@@ -91,6 +92,7 @@ public partial class MobileMainViewModel
             MenuAction.ForgetProgress => ForgetAlbumActionTargetProgressCommand,
             MenuAction.RenamePlaylist => RenamePlaylistActionTargetCommand,
             MenuAction.EditRules => EditRulesActionTargetCommand,
+            MenuAction.EditVibe => EditVibeActionTargetCommand,
             MenuAction.ConvertToOrdinary => ConvertActionTargetToOrdinaryCommand,
             MenuAction.NewPlaylistInFolder => NewPlaylistInFolderCommand,
             MenuAction.NewFolderInFolder => NewFolderInFolderCommand,

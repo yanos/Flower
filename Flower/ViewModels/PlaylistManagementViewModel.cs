@@ -496,33 +496,21 @@ public sealed class PlaylistManagementViewModel
         return Task.CompletedTask;
     }
 
-    // A smart playlist starts life ordinary, empty and unnamed-by-the-user, and
-    // becomes smart the moment the editor saves rules onto it. That ordering is
-    // what lets the editor be an ordinary editor over an existing playlist
-    // rather than a two-mode thing that sometimes creates and sometimes edits -
-    // and SmartPlaylistEditorViewModel.Cancel is what removes it again if the
-    // user changes their mind.
-    public Playlist CreateSmart()
+    // A smart or Vibe Playlist editor that has closed, on any head: the list
+    // follows a rename, a new playlist saved is shown, and a save goes to the
+    // server now rather than whenever something else next syncs - an editor
+    // changes a playlist in place, which on its own starts no sync. A new
+    // playlist is only in the library once saved (the editors' Save), so a
+    // cancel has nothing to show or send.
+    public void EditEnded(Playlist playlist, bool isNew, bool saved)
     {
-        var playlist = new Playlist("New Smart Playlist", new List<Track>());
-        _library.AddPlaylist(playlist);
         RefreshSidebarItems();
+        if (!saved)
+            return;
 
-        _host.SelectedSidebarItem = _items.FirstOrDefault(i => i.Playlist == playlist);
-        return playlist;
-    }
-
-    // The same for a Vibe Playlist: it becomes one when the editor saves a
-    // sentence onto it, and a cancel removes it again
-    // (VibePlaylistEditorViewModel).
-    public Playlist CreateVibe()
-    {
-        var playlist = new Playlist("New Vibe Playlist", new List<Track>());
-        _library.AddPlaylist(playlist);
-        RefreshSidebarItems();
-
-        _host.SelectedSidebarItem = _items.FirstOrDefault(i => i.Playlist == playlist);
-        return playlist;
+        if (isNew)
+            _host.SelectedSidebarItem = _items.FirstOrDefault(i => i.Playlist == playlist);
+        _host.ScheduleContentSync();
     }
 
     // Freeze what the rules currently produced and forget them - the playlist

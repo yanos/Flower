@@ -226,23 +226,22 @@ public sealed class VibePlaylistEditorViewModel : ViewModelBase
         // Until the server's pool arrives, the songs the preview showed: the
         // same head of the same ranking. Not an edit, like the server's own.
         if (changed && _previewTracks.Count > 0)
-        {
             _playlist.Materialize(_previewTracks);
+
+        // A new one joins the library only now, whole. Added when the editor
+        // opened, it was an empty ordinary playlist for as long as the editor
+        // was up, and any sync in that time pushed it to every device as one.
+        if (_isNew && !_library.Playlists.Contains(_playlist))
+            _library.AddPlaylist(_playlist);
+        else
             _library.SavePlaylists();
-        }
 
         StopPreview();
         return true;
     }
 
-    // A playlist made only to be edited goes again when the editor is
-    // cancelled, as a new smart playlist does.
-    public void Cancel()
-    {
-        StopPreview();
-        if (_isNew)
-            _library.RemovePlaylist(_playlist);
-    }
+    // A new one was never added (see Save), so there is nothing to undo.
+    public void Cancel() => StopPreview();
 
     private static string Capitalized(string text) =>
         text.Length == 0 ? text : char.ToUpperInvariant(text[0]) + text[1..];

@@ -862,6 +862,24 @@ models.
      and nothing there watches `playlistsToken` yet.
 4. **A paired phone.** The same editor and queue source on
    `MobileMainViewModel`. Nothing runs on the phone, so no ONNX either.
+
+   **Built, November 2026, not yet tried on a phone.** The phone's half is
+   `MobileMainViewModel.Vibe.cs`. The Playlists tab has a New Vibe Playlist
+   row under New Smart Playlist while the server says `analysing` or
+   `ready`. The row follows the server as it changes:
+   `PeerSyncCoordinator` raises `PairingChanged` when `/info`'s
+   `vibePlaylists` moves, and `MainViewModel` re-raises
+   `CanMakeVibePlaylists`. The editor is `VibePlaylistEditorSheetView`, a
+   pushed screen like the smart playlist editor's, over the same
+   `VibePlaylistEditorViewModel`; the check saves it, and every other way
+   off it cancels. A new one joins the library only when it is saved, and
+   a save syncs at once (`PlaylistManagementViewModel.EditEnded`, on every
+   head and for smart playlists too): the first phone-made one sat on the
+   phone after its save, while the empty draft the editor had opened on
+   had already synced to the Mac as an ordinary playlist. A song tapped on its screen,
+   the header's Play (and Shuffle, as on the desktop), and the row menu's
+   Play all start the endless queue. The row menu and the screen menu have
+   no Shuffle, and their Edit opens the sentence.
 5. **A desktop on its own.** The engine in-process, and the full settings tab
    on its own settings.
 6. **A phone on its own.** This is the phase with the real risk, and it is
