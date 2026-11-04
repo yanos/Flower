@@ -228,6 +228,14 @@ namespace Flower.Audio.Ffmpeg
                     (int)GaplessFormat.Channels,
                     DemuxerHintFor(Track),
                     logger: _logger));
+
+                // What "keeping up" means for this file, so the stream can
+                // tell a link too slow to play it from one merely busy
+                // filling the decode-ahead (see SeekableHttpStream's slow
+                // delivery line).
+                var duration = _decoder?.Format.Duration ?? Track.Duration;
+                if (duration > TimeSpan.Zero && stream.Length > 0)
+                    stream.RealTimeBytesPerSecond = stream.Length / duration.TotalSeconds;
             }
             else
             {

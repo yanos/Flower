@@ -25,6 +25,13 @@ namespace Flower.Audio
         // at all on a gapless handover (the ring is already full).
         public int PrebufferMs { get; set; } = 200;
 
+        // How much PCM must be buffered again after the output runs dry
+        // mid-track - a stream arriving slower than it plays - before it is
+        // allowed to resume. Without it a slow link plays as a blip every
+        // second or two instead of as a pause; see PrimeLatch. Capped by what
+        // the ring can hold. Zero turns rebuffering off.
+        public int RebufferMs { get; set; } = 1500;
+
         // Fade to silence before pause/stop/a manual skip's flush. Without it
         // the waveform is cut at whatever amplitude it happened to be at,
         // which is a click.
@@ -69,6 +76,7 @@ namespace Flower.Audio
         public AudioTimingSettings Clamped() => new()
         {
             PrebufferMs = Math.Clamp(PrebufferMs, 0, 2000),
+            RebufferMs = Math.Clamp(RebufferMs, 0, 2000),
             TransportFadeMs = Math.Clamp(TransportFadeMs, 0, 200),
             DeclickFadeMs = Math.Clamp(DeclickFadeMs, 0, 200),
             GainRampMs = Math.Clamp(GainRampMs, 0, 500),

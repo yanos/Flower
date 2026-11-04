@@ -374,6 +374,20 @@ namespace Flower.Audio
                 var bufferedTail = _sharedRing.AvailableBytes;
                 var preserveTail = !immediate && _current == null && bufferedTail > 0;
 
+                // Next onto the track that is already decoding ahead. It has
+                // up to a minute staged and, for a streamed track, a
+                // connection already open; retiring it and opening the same
+                // track again threw both away. From a real phone log: a skip
+                // onto a track with 60s staged went back to the network, on
+                // the very link that had just failed the track before it, and
+                // played nothing - while the minute of audio it needed was
+                // discarded three milliseconds earlier.
+                if (_armed != null && _stagingRing != null && _armedTrack?.Id == track.Id)
+                {
+                    PromoteArmedNow(preserveTail);
+                    return;
+                }
+
                 if (preserveTail)
                 {
                     _logger?.LogInformation(
@@ -411,6 +425,52 @@ namespace Flower.Audio
 
                 decoder.StartDecoding();
             }
+        }
+
+        // Play()'s promotion of the armed decoder, for a skip rather than a
+        // drain. The same moves as HandleDrainedOrFaulted's promotion, minus
+        // what belongs to a track ending on its own: no EndReached for the
+        // track being left (a skip has never raised one), and no seam verdict,
+        // because a flush is a cut by design. Must be called under _gate.
+        //
+        // _generation is deliberately left alone. It exists to make ArmAsync
+        // give up on a decoder Play has discarded, and this one is being kept:
+        // if its prepare is still in flight, ArmAsync's promoted-while-
+        // preparing branch is what starts it.
+        private void PromoteArmedNow(bool preserveTail)
+        {
+            var promoted = _armed!;
+            var alreadyDrained = _armedAlreadyDrained;
+
+            _logger?.LogInformation(
+                "Play({Path}): already decoding ahead with {StagedMs}ms staged - promoting it rather than opening it again, {Mode} {PreviousPath}",
+                LogPath.Short(promoted.Track.Path), BytesToMilliseconds(_stagingRing!.AvailableBytes),
+                preserveTail ? "appended after" : "hard-flush from", LogPath.Short(_currentPath));
+
+            _current?.Retire();
+            if (!preserveTail)
+                _sharedRing.Reset();
+
+            _current = promoted;
+            _currentPath = promoted.Track.Path;
+            _currentTrackReadSplit = preserveTail ? _sharedRing.TotalBytesWritten : 0;
+            var ringGeneration = _sharedRing.Generation;
+
+            promoted.Drained += () => HandleDrainedOrFaulted(promoted, faulted: false);
+            promoted.Faulted += () => HandleDrainedOrFaulted(promoted, faulted: true);
+            promoted.SeekSettled += landedBytes => HandleSeekSettled(promoted, landedBytes);
+
+            ClearArmedSlot(retireDecoder: false);
+            PublishCurrent();
+
+            // On its own thread for the reason the natural handover's drain
+            // is: moving the staged audio is paced by playback.
+            var drain = new Thread(() => DrainPromoted(null, promoted, null, 0, 0, alreadyDrained, ringGeneration))
+            {
+                IsBackground = true,
+                Name = "Flower promotion drain",
+            };
+            drain.Start();
         }
 
         public void Stop()
@@ -904,25 +964,30 @@ namespace Flower.Audio
             }
         }
 
-        private void DrainPromoted(Track finishedTrack, ITrackDecoder promoted, PromotionSplice? primeSplice,
+        // finishedTrack is null for a skip (PromoteArmedNow): there is no
+        // seam to judge.
+        private void DrainPromoted(Track? finishedTrack, ITrackDecoder promoted, PromotionSplice? primeSplice,
                                    long underrunsAtCompletion, long bufferedAtPromotion, bool promotedAlreadyDrained,
                                    int ringGenerationAtPromotion)
         {
             var splice = promoted.PromoteTarget(_sharedRing);
 
-            // One handover, measured across both halves: the staged total
-            // and elapsed time add up, and the first byte belongs to
-            // whichever half actually moved it - the prime when it had
-            // room, the drain otherwise.
-            var prime = primeSplice ?? default;
-            var seam = new PromotionSplice(
-                prime.MovedAnything ? prime.StagedBytes : splice.StagedBytes,
-                prime.BytesMoved + splice.BytesMoved,
-                prime.MovedAnything ? prime.MillisecondsToFirstByte : splice.MillisecondsToFirstByte,
-                prime.MovedAnything ? prime.DestinationUnderrunsAtFirstByte : splice.DestinationUnderrunsAtFirstByte,
-                prime.TotalMilliseconds + splice.TotalMilliseconds);
+            if (finishedTrack != null)
+            {
+                // One handover, measured across both halves: the staged total
+                // and elapsed time add up, and the first byte belongs to
+                // whichever half actually moved it - the prime when it had
+                // room, the drain otherwise.
+                var prime = primeSplice ?? default;
+                var seam = new PromotionSplice(
+                    prime.MovedAnything ? prime.StagedBytes : splice.StagedBytes,
+                    prime.BytesMoved + splice.BytesMoved,
+                    prime.MovedAnything ? prime.MillisecondsToFirstByte : splice.MillisecondsToFirstByte,
+                    prime.MovedAnything ? prime.DestinationUnderrunsAtFirstByte : splice.DestinationUnderrunsAtFirstByte,
+                    prime.TotalMilliseconds + splice.TotalMilliseconds);
 
-            ReportHandoverSeam(finishedTrack, promoted.Track, seam, underrunsAtCompletion, bufferedAtPromotion);
+                ReportHandoverSeam(finishedTrack, promoted.Track, seam, underrunsAtCompletion, bufferedAtPromotion);
+            }
 
             // The just-promoted decoder already reached Drained while
             // it was still armed (see _armedAlreadyDrained's remarks) -

@@ -38,8 +38,12 @@ public sealed class FakeTrackDecoder : ITrackDecoder
 
     public FakeTrackDecoder(Track track) => Track = track;
 
+    // Set to hold PrepareAsync open until the test completes it - a track
+    // still opening when something happens to it.
+    public TaskCompletionSource<DecodePrepareResult>? PrepareGate { get; set; }
+
     public Task<DecodePrepareResult> PrepareAsync(CancellationToken cancellationToken = default) =>
-        Task.FromResult(PrepareResult ? DecodePrepareResult.Ready : DecodePrepareResult.Failed);
+        PrepareGate?.Task ?? Task.FromResult(PrepareResult ? DecodePrepareResult.Ready : DecodePrepareResult.Failed);
     public void StartDecoding() => StartDecodingCalled = true;
     public void Seek(float position) => LastSeekPosition = position;
     // Moves nothing by default: the real one only moves anything when the

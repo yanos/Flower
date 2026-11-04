@@ -584,6 +584,54 @@ finishes with nobody reading a byte — the same shape as decode-ahead having
 filled the ring long before the track is over. Against the old code it fails
 with a timeout.
 
+### N. Next onto the decode-ahead track threw it away — fixed
+
+From a phone streaming over the public address on 2026-11-04. "To Forget" slowed
+to a trickle, the listener pressed Next, and "Junior" — armed, with a full 60 s
+staged while the link was still healthy — did not play. `GaplessCoordinator.Play`
+treated every Play that was not a no-op as a fresh start: it retired the armed
+decoder and opened the same track again over the link that had just failed.
+
+`Play` now promotes the armed decoder when it is the track asked for
+(`PromoteArmedNow`): flush, splice its staged audio in, keep its connection.
+`_generation` is left alone so a prepare still in flight starts it, and an armed
+decoder that already drained has its end reported, as on a natural handover.
+`GaplessCoordinatorTests` covers all three.
+
+### O. A stream slower than real time played as blips — fixed
+
+The other half of the same incident. The prime latch closed only after a flush,
+so a stream delivering about a third of real time played each scrap the moment
+it landed: a blip every second or two. `PrimeLatch` (shared by `MiniaudioSink`'s
+managed callback and `AudioFeeder` on the phones) now closes again when the
+output runs dry mid-track. It waits for `AudioTimingSettings.RebufferMs` (1500,
+0 turns it off), and plays whatever it has after `RebufferDeadlineMs`. A
+rebuffer that gets nothing stays closed, so the end of the queue does not loop.
+The resume fades in. The watchdog logs each rebuffer.
+
+**Not settled: why the link stalled.** The phone was on Videotron, not on Wi-Fi.
+The `/info` check timed out twice in the same minute, and the server saw nothing
+but quiet connections, so it looks like the link. But "To Forget" had sat on one
+connection for 6.5 minutes with nobody reading it (decode-ahead with full
+staging) and was below real time from the moment it resumed. The restart did not
+prove anything either way: the relaunched app also got nothing for 7 s before
+playing. Logging added to settle it next time:
+
+- `SeekableHttpStream`: "Reading … again after Ns without a read" when a parked
+  connection is picked up, and "arriving slower than it plays … Nx real time"
+  per 10 s window while the reader is starved. Real time comes from
+  `RealTimeBytesPerSecond`, which `FfmpegTrackDecoder` sets.
+- `NetworkDiscoveryService`: `/info` answers slower than 1 s, which measures the
+  link apart from the audio's own connections.
+- `AppleNetworkChange`: the NWPath on every real change, with unchanged repeats
+  summed up once a minute. That day's log shows "Network changed" every 3 s for
+  hours, and each one re-polls every server address.
+
+If the slow line fires on a long-parked connection while `/info` stays fast,
+the fix is to drop a decode-ahead's connection once its staging is full and
+reopen at the offset when promoted. If the 3 s loop turns out to be unchanged
+repeats, it should be de-duplicated in `AppleNetworkChange`.
+
 ## Phase 6 — put the output stage where the controls are (not started)
 
 Phase 5 left a fork: pure-C render callback on Android and iOS, managed callback

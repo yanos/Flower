@@ -22,12 +22,13 @@ namespace Flower.Tests.Audio
     // flush - is a silent dropout with nothing left to diagnose it by.
     public class AudioFeederTests
     {
-        // Transparent settings: no fades, no ramp, no prebuffer, so what
-        // arrives at the bridge is exactly what was in the ring and any
-        // difference is the feeder's doing rather than the output stage's.
+        // Transparent settings: no fades, no ramp, no prebuffer or rebuffer,
+        // so what arrives at the bridge is exactly what was in the ring and
+        // any difference is the feeder's doing rather than the output stage's.
         private static AudioTimingSettings Transparent() => new()
         {
             PrebufferMs = 0,
+            RebufferMs = 0,
             TransportFadeMs = 0,
             DeclickFadeMs = 0,
             GainRampMs = 0,
@@ -256,6 +257,39 @@ namespace Flower.Tests.Audio
             feeder.Tick();
 
             Assert.False(bridge.Primed);
+        }
+
+        // The phone's half of rebuffering. A stream arriving slower than it
+        // plays empties the bridge; un-primed, the native callback renders
+        // silence until there is a stretch of music to play rather than each
+        // scrap as it lands.
+        [Fact]
+        public void Running_dry_mid_track_unprimes_the_bridge_until_the_rebuffer_is_met()
+        {
+            var timing = Transparent();
+            timing.RebufferMs = 100;
+            var required = (int)(100 * (long)PcmFormat.Default.SampleRate * PcmFormat.Default.BytesPerFrame / 1000);
+
+            var ring = new GaplessRingBuffer(1024 * 1024);
+            var bridge = new FakeAudioBridge(1024 * 1024);
+            using var feeder = Feeder(ring, bridge, timing);
+
+            ring.TryWrite(new byte[4096]);
+            feeder.Tick();
+            Assert.True(bridge.Primed);
+
+            bridge.Drain(bridge.Available);
+            feeder.Tick();
+            Assert.False(bridge.Primed);
+            Assert.Equal(1, feeder.RebufferCount);
+
+            ring.TryWrite(new byte[required / 2]);
+            feeder.Tick();
+            Assert.False(bridge.Primed);
+
+            ring.TryWrite(new byte[required]);
+            feeder.Tick();
+            Assert.True(bridge.Primed);
         }
 
         [Fact]

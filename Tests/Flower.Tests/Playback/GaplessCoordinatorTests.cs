@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using System.Threading.Tasks;
 using Flower.Audio;
 using Flower.Models;
 using Flower.Tests.TestSupport;
@@ -21,6 +22,7 @@ public class GaplessCoordinatorTests
 
         private readonly Dictionary<Track, List<FakeTrackDecoder>> _decoders = [];
         private readonly HashSet<Track> _failToPrepare = [];
+        private readonly Dictionary<Track, TaskCompletionSource<DecodePrepareResult>> _prepareGates = [];
 
         public Harness(bool captureLogs = false, int sharedRingCapacity = 1024)
         {
@@ -28,7 +30,11 @@ public class GaplessCoordinatorTests
             Logger = captureLogs ? new RecordingLogger<GaplessCoordinator>() : null;
             Coordinator = new GaplessCoordinator(SharedRing, (track, ring) =>
             {
-                var fake = new FakeTrackDecoder(track) { PrepareResult = !_failToPrepare.Contains(track) };
+                var fake = new FakeTrackDecoder(track)
+                {
+                    PrepareResult = !_failToPrepare.Contains(track),
+                    PrepareGate = _prepareGates.GetValueOrDefault(track),
+                };
                 if (!_decoders.TryGetValue(track, out var list))
                     _decoders[track] = list = [];
                 list.Add(fake);
@@ -37,6 +43,11 @@ public class GaplessCoordinatorTests
         }
 
         public void FailToPrepare(Track track) => _failToPrepare.Add(track);
+
+        // The next decoder built for this track waits in PrepareAsync until
+        // the returned source is completed.
+        public TaskCompletionSource<DecodePrepareResult> HoldPrepare(Track track) =>
+            _prepareGates[track] = new TaskCompletionSource<DecodePrepareResult>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         // Every decoder ever created for this track, in creation order - a
         // track goes through more than one when it's replayed/re-armed
@@ -191,6 +202,105 @@ public class GaplessCoordinatorTests
 
         Assert.Single(h.DecodersFor(b));
         Assert.False(promotedB.RetireCalled);
+    }
+
+    // Next onto the track already decoding ahead. It has up to a minute staged
+    // and, streamed, a connection open; retiring it to open the same track
+    // again threw both away. On 2026-11-04 that sent a skip back to a network
+    // that had just failed the track before it, and nothing played - with the
+    // minute it needed discarded three milliseconds earlier.
+    [Fact]
+    public void Play_onto_the_armed_track_promotes_it_rather_than_opening_it_again()
+    {
+        var h = new Harness();
+        var a = T("A");
+        var b = Streamed("B", "nonce-armed");
+        Track? ended = null;
+        h.Coordinator.EndReached += t => ended = t;
+        h.Coordinator.Play(a);
+        WaitUntil(() => h.LatestDecoderFor(a).StartDecodingCalled, "A should start");
+        h.Coordinator.SetUpcoming(b);
+        WaitUntil(() => h.LatestDecoderFor(b).StartDecodingCalled, "B should be armed and decoding ahead");
+        var armedB = h.LatestDecoderFor(b);
+
+        // A skip resolves the track again, so it arrives freshly signed.
+        var skippedTo = b.Clone();
+        skippedTo.Path = StreamUrl("B", "nonce-skip");
+        h.Coordinator.Play(skippedTo, immediate: true);
+
+        Assert.Single(h.DecodersFor(b));
+        Assert.False(armedB.RetireCalled);
+        Assert.True(h.LatestDecoderFor(a).RetireCalled);
+        Assert.Equal(b.Id, h.Coordinator.CurrentTrack?.Id);
+        WaitUntil(() => armedB.PromotedTo == h.SharedRing, "B's staged audio should move into the shared ring");
+        Assert.Null(ended);
+    }
+
+    // The promoted decoder has to keep driving the queue on its own.
+    [Fact]
+    public void A_track_promoted_by_a_skip_reports_its_own_end()
+    {
+        var h = new Harness();
+        var a = T("A");
+        var b = T("B");
+        Track? ended = null;
+        h.Coordinator.EndReached += t => ended = t;
+        h.Coordinator.Play(a);
+        WaitUntil(() => h.LatestDecoderFor(a).StartDecodingCalled, "A should start");
+        h.Coordinator.SetUpcoming(b);
+        WaitUntil(() => h.LatestDecoderFor(b).StartDecodingCalled, "B should be armed");
+
+        h.Coordinator.Play(b, immediate: true);
+        h.LatestDecoderFor(b).BytesProduced = 4096;
+        h.LatestDecoderFor(b).RaiseDrained();
+
+        Assert.Same(b, ended);
+        Assert.Null(h.Coordinator.CurrentTrack);
+    }
+
+    // A short next track can finish decoding while still armed, and a decoder
+    // drains only once - so the skip has to report that end itself.
+    [Fact]
+    public void Skipping_onto_an_armed_track_that_already_finished_decoding_reports_its_end()
+    {
+        var h = new Harness();
+        var a = T("A");
+        var b = T("B");
+        Track? ended = null;
+        h.Coordinator.EndReached += t => ended = t;
+        h.Coordinator.Play(a);
+        WaitUntil(() => h.LatestDecoderFor(a).StartDecodingCalled, "A should start");
+        h.Coordinator.SetUpcoming(b);
+        WaitUntil(() => h.LatestDecoderFor(b).StartDecodingCalled, "B should be armed");
+        h.LatestDecoderFor(b).BytesProduced = 4096;
+        h.LatestDecoderFor(b).RaiseDrained();
+
+        h.Coordinator.Play(b, immediate: true);
+
+        WaitUntil(() => ReferenceEquals(ended, b), "B's end should be reported once it is promoted");
+    }
+
+    // Skipped to while still opening its stream: nothing else will ever start
+    // it, so the prepare finishing has to.
+    [Fact]
+    public void Skipping_onto_an_armed_track_still_opening_starts_it_once_it_opens()
+    {
+        var h = new Harness();
+        var a = T("A");
+        var b = T("B");
+        var gate = h.HoldPrepare(b);
+        h.Coordinator.Play(a);
+        WaitUntil(() => h.LatestDecoderFor(a).StartDecodingCalled, "A should start");
+        h.Coordinator.SetUpcoming(b);
+        var armedB = h.LatestDecoderFor(b);
+
+        h.Coordinator.Play(b, immediate: true);
+        Assert.False(armedB.StartDecodingCalled);
+
+        gate.SetResult(DecodePrepareResult.Ready);
+
+        WaitUntil(() => armedB.StartDecodingCalled, "B should start decoding once its prepare finishes");
+        Assert.Single(h.DecodersFor(b));
     }
 
     // Re-arming the same track must not restart its decode-ahead either, and

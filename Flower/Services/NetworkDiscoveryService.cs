@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -669,7 +670,9 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
                 request.Headers.Add("X-Flower-Fingerprint", IdentityHeaderEncoding.Encode(_deviceIdentity.Fingerprint));
                 request.Headers.Add("X-Flower-Alias", IdentityHeaderEncoding.Encode(_deviceIdentity.Alias));
             }
+            var startedAt = Stopwatch.GetTimestamp();
             using var response = await _http.SendAsync(request);
+            NoteSlowAnswer(device, Stopwatch.GetElapsedTime(startedAt));
             // Not EnsureSuccessStatusCode: /info is open to anyone and a Flower
             // server never refuses it, so a refusal here that is not a problem
             // document is something else answering in the server's place - a
@@ -992,6 +995,24 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
             ? "."
             : $", and most only let through port 443 - this address is on port {baseUri.Port}. "
               + "Try from another network, or have the router forward port 443 to the server as well.";
+
+    // An answer that took this long is the link struggling, not the server:
+    // /info is a few hundred bytes the server answers from memory.
+    private static readonly TimeSpan SlowAnswer = TimeSpan.FromSeconds(1);
+
+    // This check runs every few seconds on a fresh request, which makes it the
+    // one steady measure of the link that does not depend on the audio's own
+    // connections. Only a timeout used to be logged, so a phone whose stream
+    // slowed to a trickle had nothing to say whether everything else was slow
+    // too - the question that tells a bad link from one bad connection.
+    private void NoteSlowAnswer(DiscoveredDevice device, TimeSpan elapsed)
+    {
+        if (elapsed < SlowAnswer)
+            return;
+
+        _logger.LogInformation("{InstanceName} took {ElapsedMs:F0}ms to answer /info at {EndPoint}",
+            device.InstanceName, elapsed.TotalMilliseconds, device.BaseUri);
+    }
 
     private void HandleUnreachable(DiscoveredDevice device, Exception ex)
     {

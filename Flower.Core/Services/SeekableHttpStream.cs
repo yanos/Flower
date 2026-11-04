@@ -1,5 +1,6 @@
 using System;
 using System.Buffers;
+using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -150,6 +151,35 @@ public sealed class SeekableHttpStream : Stream
 
     private Stream? _body;
     private long _bodyPosition;
+
+    // How the open body is doing, for the two lines ReadBodyWithin can log.
+    // A phone log could not say whether a stream that slowed to a trickle was
+    // one bad connection or the whole link going bad, so these measure the
+    // connection itself: how long it has been open, how long it sat with
+    // nobody reading (a decode-ahead parks its connection for minutes once its
+    // staging ring is full), and how fast it delivers while the reader is
+    // actually waiting on it. Touched only by the reading thread.
+    private long _bodyOpenedAt;
+    private long _lastReadEndedAt;
+    private long _windowStartedAt;
+    private long _windowBytes;
+    private long _windowWaitTicks;
+
+    // A connection left unread this long, then read again, is worth a line:
+    // it is the shape that preceded the 2026-11-04 trickle.
+    private static readonly TimeSpan IdleWorthNoting = TimeSpan.FromSeconds(30);
+
+    // The window a slow-delivery verdict covers, and the share of it the
+    // reader must have spent blocked on the network for the verdict to be
+    // "slow" rather than "nobody was asking".
+    private static readonly TimeSpan SlowWindow = TimeSpan.FromSeconds(10);
+    private const double SlowWaitShare = 0.5;
+
+    // How many bytes a second this file plays at, set by the decoder once it
+    // knows the duration; 0 until then. Delivery is only called slow below
+    // this, because a reader waiting on the network most of the time is also
+    // what a healthy link looks like while it fills a minute of decode-ahead.
+    public double RealTimeBytesPerSecond { get; set; }
     private long _position;
     private bool _disposed;
 
@@ -761,6 +791,7 @@ public sealed class SeekableHttpStream : Stream
             _body = response.Content.ReadAsStreamAsync().GetAwaiter().GetResult();
             _bodyPosition = 0;
             Volatile.Write(ref _bodyOrigin, uri.GetLeftPart(UriPartial.Authority));
+            BodyOpened();
             if (!SkipForward(position))
                 throw new IOException($"Could not reach offset {position} in a response that ignored the range request");
             return;
@@ -769,6 +800,67 @@ public sealed class SeekableHttpStream : Stream
         _body = response.Content.ReadAsStreamAsync().GetAwaiter().GetResult();
         _bodyPosition = position;
         Volatile.Write(ref _bodyOrigin, uri.GetLeftPart(UriPartial.Authority));
+        BodyOpened();
+    }
+
+    private void BodyOpened()
+    {
+        var now = Stopwatch.GetTimestamp();
+        _bodyOpenedAt = now;
+        _lastReadEndedAt = now;
+        _windowStartedAt = now;
+        _windowBytes = 0;
+        _windowWaitTicks = 0;
+    }
+
+    // Before a read: says so if the connection is being picked up again after
+    // sitting unread for a long time.
+    private void NoteReadStarting(long now)
+    {
+        var idle = Stopwatch.GetElapsedTime(_lastReadEndedAt, now);
+        if (idle < IdleWorthNoting)
+            return;
+
+        _logger?.LogInformation(
+            "Reading {Uri} again at offset {Position} after {IdleSeconds:F0}s without a read, on a connection open {AgeSeconds:F0}s",
+            LogPath.Short(_uri.ToString()), _position, idle.TotalSeconds,
+            Stopwatch.GetElapsedTime(_bodyOpenedAt, now).TotalSeconds);
+
+        // The idle stretch is not part of any delivery window.
+        _windowStartedAt = now;
+        _windowBytes = 0;
+        _windowWaitTicks = 0;
+    }
+
+    // After a read: once a window has passed, says so if the reader spent
+    // most of it waiting on the network, and how fast the bytes came.
+    private void NoteReadFinished(int read, long startedAt)
+    {
+        var now = Stopwatch.GetTimestamp();
+        _lastReadEndedAt = now;
+        _windowBytes += Math.Max(0, read);
+        _windowWaitTicks += now - startedAt;
+
+        var window = Stopwatch.GetElapsedTime(_windowStartedAt, now);
+        if (window < SlowWindow)
+            return;
+
+        var waited = TimeSpan.FromTicks((long)(_windowWaitTicks * (TimeSpan.TicksPerSecond / (double)Stopwatch.Frequency)));
+        var share = waited / window;
+        var bytesPerSecond = _windowBytes / window.TotalSeconds;
+        var realTime = RealTimeBytesPerSecond;
+        if (share >= SlowWaitShare && realTime > 0 && bytesPerSecond < realTime)
+        {
+            _logger?.LogWarning(
+                "{Uri} is arriving slower than it plays: {Bytes} bytes in {WindowSeconds:F0}s ({Kbps:F0} kbit/s, {Speed:F2}x real time), the reader waiting on the network {WaitPercent:F0}% of that; offset {Position}, connection open {AgeSeconds:F0}s",
+                LogPath.Short(_uri.ToString()), _windowBytes, window.TotalSeconds,
+                bytesPerSecond * 8 / 1000.0, bytesPerSecond / realTime, share * 100, _position,
+                Stopwatch.GetElapsedTime(_bodyOpenedAt, now).TotalSeconds);
+        }
+
+        _windowStartedAt = now;
+        _windowBytes = 0;
+        _windowWaitTicks = 0;
     }
 
     // The response body is read through ReadAsync for the same reason the
@@ -845,9 +937,13 @@ public sealed class SeekableHttpStream : Stream
             token = _stall.Token;
         }
 
+        var startedAt = Stopwatch.GetTimestamp();
+        NoteReadStarting(startedAt);
         try
         {
-            return _body!.ReadAsync(scratch.AsMemory(0, count), token).AsTask().GetAwaiter().GetResult();
+            var read = _body!.ReadAsync(scratch.AsMemory(0, count), token).AsTask().GetAwaiter().GetResult();
+            NoteReadFinished(read, startedAt);
+            return read;
         }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
         {

@@ -31,10 +31,6 @@ namespace Flower.Audio
         // running at all - a device that stopped between the request and now.
         private const int FlushAckTimeoutMs = 120;
 
-        // Same safety net as MiniaudioSink's own prime latch: a decoder that
-        // is never going to deliver must not leave playback silent forever.
-        private const int PrimeDeadlineMs = 1500;
-
         private readonly GaplessRingBuffer _ring;
         private readonly IAudioBridge _bridge;
         private readonly OutputStage _outputStage;
@@ -66,8 +62,12 @@ namespace Flower.Audio
         private int _generation = int.MinValue;
         private long _pendingFlush;
         private long _flushDeadlineTimestamp;
-        private long _primeDeadlineTimestamp;
-        private bool _primed;
+
+        // Shared with MiniaudioSink's managed callback - see PrimeLatch. Its
+        // "buffered" here is the bridge plus the ring behind it: while the
+        // latch is closed this thread keeps filling the bridge, so the bridge
+        // alone tops out at NativeBufferMs, short of what a rebuffer waits for.
+        private readonly PrimeLatch _latch = new();
 
         public AudioFeeder(GaplessRingBuffer ring, IAudioBridge bridge, OutputStage outputStage)
         {
@@ -91,6 +91,10 @@ namespace Flower.Audio
         // which this thread advances ahead of what is audible, so the caller
         // subtracts this to keep the seek bar honest.
         public int BufferedBytes => _bridge.Available;
+
+        public long RebufferCount => _latch.RebufferCount;
+
+        public long TakeLongestRebufferMs() => _latch.TakeLongestRebufferMs();
 
         // Starts the thread parked. The device is open but stopped at this
         // point (see MiniaudioSink.OpenDevice), and there is nothing to fill
@@ -169,7 +173,8 @@ namespace Flower.Audio
                 return false;
 
             var moved = Pump(generation);
-            UpdatePrimeLatch();
+            _latch.Rendered(moved);
+            UpdatePrimeLatch(moved);
             return moved > 0;
         }
 
@@ -181,12 +186,7 @@ namespace Flower.Audio
             ArmPrimeLatch();
         }
 
-        private void ArmPrimeLatch()
-        {
-            _primed = false;
-            _primeDeadlineTimestamp = Stopwatch.GetTimestamp()
-                + (long)(Stopwatch.Frequency * (PrimeDeadlineMs / 1000.0));
-        }
+        private void ArmPrimeLatch() => _latch.ArmAfterFlush(Stopwatch.GetTimestamp());
 
         private bool TryCompleteFlush()
         {
@@ -227,18 +227,30 @@ namespace Flower.Audio
             return moved;
         }
 
-        private void UpdatePrimeLatch()
+        private void UpdatePrimeLatch(int moved)
         {
-            if (_primed)
-                return;
+            var now = Stopwatch.GetTimestamp();
 
-            var required = _outputStage.Timing.PrebufferMs * (long)_format.SampleRate
-                * _format.BytesPerFrame / 1000;
-            if (_bridge.Available < required && Stopwatch.GetTimestamp() < _primeDeadlineTimestamp)
-                return;
+            // The bridge has played out everything it was given and there is
+            // nothing behind it: the callback is rendering silence from here
+            // on. Three hundred milliseconds of bridge only empties like this
+            // when the decoder has fallen behind, so close the latch and let
+            // the ring fill rather than playing each scrap as it lands. The
+            // bridge is already empty, so un-priming it drops nothing.
+            if (_latch.IsPrimed && moved == 0 && _bridge.Available == 0 && _ring.AvailableBytes == 0
+                && _latch.RanDry(_outputStage.Timing, now))
+            {
+                _bridge.SetPrimed(false);
 
-            _primed = true;
-            _bridge.SetPrimed(true);
+                // Whatever this thread processes next comes after the gap.
+                _outputStage.FadeInNextAudio();
+                return;
+            }
+
+            var buffered = (long)_bridge.Available + _ring.AvailableBytes;
+            var capacity = (long)_bridge.Capacity + _ring.Capacity;
+            if (_latch.TryRelease(buffered, capacity, _outputStage.Timing, _format, now))
+                _bridge.SetPrimed(true);
         }
 
         public void Dispose()

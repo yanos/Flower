@@ -34,13 +34,6 @@ namespace Flower.Audio
     // PCM, on its own real-time thread.
     public sealed unsafe class MiniaudioSink : IAudioSink
     {
-        // How long the prime latch will wait for PrebufferMs of audio before
-        // giving up and rendering whatever there is. Not a setting: it is not
-        // a quality knob but a safety net for a decoder that is never going to
-        // deliver (an unreachable stream, a file that failed to open), where
-        // the right answer is to stop holding the output hostage.
-        private const int PrimeDeadlineMs = 1500;
-
         private readonly ILogger<MiniaudioSink> _logger;
         private readonly object _gate = new();
         private GaplessRingBuffer? _ringBuffer;
@@ -67,16 +60,12 @@ namespace Flower.Audio
 
         public PcmFormat Format => _format;
 
-        // Prime latch: after a flush the ring is empty and the decoder is
-        // still opening the file, so the callback would render a trickle of
-        // starved fragments interleaved with silence for the whole media-open
-        // latency. While unprimed it renders silence instead - not counted as
-        // an underrun, because nothing is wrong - until either the ring holds
-        // PrebufferMs of audio or the deadline passes. Callback-owned except
-        // _primeDeadline, which is only read there.
-        private bool _primed;
+        // Prime latch, for the managed callback - see PrimeLatch. While it is
+        // closed the callback renders silence, not counted as an underrun,
+        // because nothing is wrong. Callback-owned; in bridge mode AudioFeeder
+        // keeps its own, and the watchdog reads whichever is rendering.
+        private readonly PrimeLatch _latch = new();
         private int _primeGeneration = -1;
-        private long _primeDeadlineTimestamp;
         private ma_context* _context;
         private ma_device* _device;
         private volatile bool _started;
@@ -305,6 +294,7 @@ namespace Flower.Audio
         }
 
         private int _watchdogTicking;
+        private long _watchdogLastRebufferCount;
 
         private void LogWatchdogTick()
         {
@@ -338,6 +328,27 @@ namespace Flower.Audio
                 _watchdogNoProgressTicks = 0;
 
             var underruns = _underruns.Observe(underrunCount);
+
+            // Its own line, outside the chain below: a rebuffer comes with
+            // underruns by definition, and the reader needs both to tell "the
+            // stream fell behind and playback paused for it" from a glitch.
+            var feeder = _feeder;
+            var rebufferCount = feeder?.RebufferCount ?? _latch.RebufferCount;
+            var longestRebufferMs = feeder?.TakeLongestRebufferMs() ?? _latch.TakeLongestRebufferMs();
+
+            // A device reopen builds a new feeder, whose count starts again.
+            if (rebufferCount < _watchdogLastRebufferCount)
+                _watchdogLastRebufferCount = 0;
+
+            var newRebuffers = rebufferCount - _watchdogLastRebufferCount;
+            _watchdogLastRebufferCount = rebufferCount;
+            if (newRebuffers > 0 || longestRebufferMs > 0)
+            {
+                _logger.LogWarning(
+                    "Render watchdog: output ran dry mid-track and is rebuffering - Rebuffers={Rebuffers} (+{NewRebuffers}) LongestResumedAfterMs={LongestMs} RebufferMs={RebufferMs} RingAvailable={Available}/{Capacity} BridgeBuffered={BridgeBuffered}",
+                    rebufferCount, newRebuffers, longestRebufferMs,
+                    _outputStage.Timing.RebufferMs, ring.AvailableBytes, ring.Capacity, feeder?.BufferedBytes ?? 0);
+            }
 
             if (underruns.Cleared is { } run)
             {
@@ -1156,35 +1167,48 @@ namespace Flower.Audio
 
                 var generation = ring.Generation;
 
-                // Prime latch - see _primed. A flush (a fresh start, a seek, a
-                // manual skip) empties the ring while the decoder is still opening
-                // the file, and rendering during that window produces a starved
-                // trickle rather than audio. Silence instead, until there is
-                // enough buffered to play through it.
+                // Prime latch - see PrimeLatch. A flush (a fresh start, a seek,
+                // a manual skip) empties the ring while the decoder is still
+                // opening the file, and rendering during that window produces a
+                // starved trickle rather than audio. Silence instead, until
+                // there is enough buffered to play through it - and the same
+                // again after running dry mid-track.
+                var latch = sink._latch;
+                var now = Stopwatch.GetTimestamp();
                 if (generation != sink._primeGeneration)
                 {
                     sink._primeGeneration = generation;
-                    sink._primed = false;
-                    sink._primeDeadlineTimestamp = Stopwatch.GetTimestamp()
-                        + (long)(Stopwatch.Frequency * (PrimeDeadlineMs / 1000.0));
+                    latch.ArmAfterFlush(now);
                 }
 
-                if (!sink._primed)
+                var rebuffering = latch.IsRebuffering;
+                if (latch.TryRelease(ring.AvailableBytes, ring.Capacity, sink._outputStage.Timing, sink._format, now)
+                    && rebuffering)
                 {
-                    var required = sink._outputStage.Timing.PrebufferMs * (long)sink._format.SampleRate
-                        * sink._format.BytesPerFrame / 1000;
-                    sink._primed = ring.AvailableBytes >= required
-                        || Stopwatch.GetTimestamp() >= sink._primeDeadlineTimestamp;
+                    // Not a flush, so no generation change to fade in on.
+                    sink._outputStage.FadeInNextAudio();
                 }
+
+                var primed = latch.IsPrimed;
 
                 // Read() never blocks - a short/zero read just means the ring is
                 // temporarily empty (decode running behind), not end-of-stream.
                 // This callback runs on miniaudio's real-time thread, so the
                 // remainder of the requested frames is silence-padded rather
                 // than waited for.
-                var read = sink._primed ? ring.Read(dest) : 0;
+                var read = primed ? ring.Read(dest) : 0;
                 if (read < byteCount)
                     dest[read..].Clear();
+
+                if (primed)
+                {
+                    latch.Rendered(read);
+
+                    // Closed for the next callback, not this one: what it
+                    // read still plays, and Process below still runs over it.
+                    if (read < byteCount && ring.AvailableBytes == 0)
+                        latch.RanDry(sink._outputStage.Timing, now);
+                }
 
                 Interlocked.Increment(ref sink._callbackCount);
                 Interlocked.Add(ref sink._requestedBytes, byteCount);
@@ -1192,7 +1216,7 @@ namespace Flower.Audio
                 if (read < byteCount)
                 {
                     Interlocked.Add(ref sink._silenceBytesRendered, byteCount - read);
-                    if (sink._primed)
+                    if (primed)
                         Interlocked.Increment(ref sink._shortReadCount);
                 }
 
@@ -1222,7 +1246,7 @@ namespace Flower.Audio
                 // fade exists to remove. Not calling Process leaves the stage's
                 // last-seen generation untouched, so the first primed callback is
                 // the one that arms the fade-in, which is where it belongs.
-                if (!sink._primed)
+                if (!primed)
                     return;
 
                 // The whole buffer, silence padding included - the EQ's delay

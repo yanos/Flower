@@ -179,6 +179,20 @@ namespace Flower.Audio
             _fadeOutComplete.Set();
         }
 
+        // Fades in whatever is processed next, for audio that resumes after a
+        // gap no flush marked - a rebuffer (see PrimeLatch). A flush gets this
+        // from its generation change; a rebuffer keeps the same generation.
+        // Unlike BeginFadeIn this leaves a pending fade-out alone, and it is
+        // called only from the thread that runs Process.
+        public void FadeInNextAudio()
+        {
+            if (_fadeOutRequested || _fadeOutLength > 0)
+                return;
+
+            _fadeInLength = Math.Max(1, MillisecondsToFrames(_timing.DeclickFadeMs));
+            _fadeInRemaining = _fadeInLength;
+        }
+
         // Processes one device buffer in place. buffer is the full interleaved
         // S16 stereo span miniaudio asked for, already silence-padded past
         // realBytes by the caller; generation is the ring's generation at the
