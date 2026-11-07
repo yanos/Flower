@@ -182,10 +182,11 @@ fp16, 98% (90%); audio fp32 with text int8, 74% (40%); audio fp16 with text
 fp32, 80% (50%).
 
 The files go up as assets of a release of this repo tagged with the name of
-the checkpoint they were exported from and the export's number,
-`music_audioset_epoch_15_esc_90.14-2`, and they carry the checkpoint's name
-too (`music_audioset_epoch_15_esc_90.14-audio-int8-reduce-range.onnx`, and
-so on). Not `larger_clap_music`, though that is the name the model usually
+the export: the checkpoint's own name, and for this second export what
+changed, `music_audioset_epoch_15_esc_90.14_reduce_range`. The audio encoder
+carries that name too (`music_audioset_epoch_15_esc_90.14_reduce_range-audio-int8.onnx`);
+the text encoder and tokenizer are the first export's files under their own
+names (`music_audioset_epoch_15_esc_90.14-text-fp16.onnx`, and so on). Not `larger_clap_music`, though that is the name the model usually
 goes by: that is Hugging Face's conversion, the broken one, and naming the
 release after it would point at the wrong file. The release is a pre-release,
 because the dmg's update check asks GitHub for `releases/latest`
@@ -417,7 +418,7 @@ keeps them for the session. The playlist's two fields are columns of
   from the clips when it loads, along with the vocal and speech scores, which
   need the clips anyway.
 - **`model`** names the export that analysed the song
-  (`music_audioset_epoch_15_esc_90.14/int8-reduce-range`), so a row from another export never mixes into
+  (`music_audioset_epoch_15_esc_90.14_reduce_range/int8`), so a row from another export never mixes into
   a search.
 - **`file_stamp`** is the song's audio identity: duration, codec, sample rate,
   channels, bit depth and bitrate as the last scan read them, plus

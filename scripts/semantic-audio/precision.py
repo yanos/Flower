@@ -23,7 +23,14 @@ import onnxruntime as ort
 sys.path.insert(0, str(Path(__file__).parent))
 import prototype as P  # noqa: E402
 
-PRECISIONS = ["fp32", "fp16", "int8-reduce-range"]
+PRECISIONS = ["fp32", "fp16", "int8"]
+
+
+def model_file(encoder: str, precision: str) -> str:
+    """export-clap-onnx.py's name for one encoder at one precision: the int8
+    files are the reduce_range export's."""
+    name = "music_audioset_epoch_15_esc_90.14" + ("_reduce_range" if precision == "int8" else "")
+    return f"{name}-{encoder}-{precision}.onnx"
 
 
 def session(path: Path, threads: int):
@@ -70,7 +77,7 @@ def main():
 
     texts = {}
     for precision in PRECISIONS:
-        s = session(export / f"music_audioset_epoch_15_esc_90.14-text-{precision}.onnx", 1)
+        s = session(export / model_file("text", precision), 1)
         texts[precision] = normalise(s.run(None, feeds)[0])
         report["seconds_per_prompt_1_thread"][precision] = timed(lambda: s.run(None, one_prompt))
 
@@ -88,7 +95,7 @@ def main():
     reference_audio = np.concatenate([store[p]["windows"][k].astype(np.float32) for p, k in zip(usable, picks)])
     audio = {"fp32": None}
     for precision in PRECISIONS:
-        path = export / f"music_audioset_epoch_15_esc_90.14-audio-{precision}.onnx"
+        path = export / model_file("audio", precision)
         s1 = session(path, 1)
         report["seconds_per_clip_1_thread"][precision] = timed(lambda: s1.run(None, {"waveform": waveforms[0][None]}))
         s = session(path, 0)

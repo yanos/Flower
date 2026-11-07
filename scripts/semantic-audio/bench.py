@@ -19,6 +19,13 @@ import numpy as np
 import onnxruntime as ort
 
 
+def model_file(encoder: str, precision: str) -> str:
+    """export-clap-onnx.py's name for one encoder at one precision: the int8
+    files are the reduce_range export's."""
+    name = "music_audioset_epoch_15_esc_90.14" + ("_reduce_range" if precision == "int8" else "")
+    return f"{name}-{encoder}-{precision}.onnx"
+
+
 def per_clip(path: Path, threads: int, runs: int) -> float:
     o = ort.SessionOptions()
     o.intra_op_num_threads = threads
@@ -43,8 +50,8 @@ def main():
 
     windows = max(1, round(args.minutes * 6))
     print(f"{os.cpu_count()} cores, onnxruntime {ort.__version__}")
-    for precision in ("int8-reduce-range", "fp16", "fp32"):
-        path = args.export / f"music_audioset_epoch_15_esc_90.14-audio-{precision}.onnx"
+    for precision in ("int8", "fp16", "fp32"):
+        path = args.export / model_file("audio", precision)
         if not path.exists():
             continue
         one = per_clip(path, 1, args.runs)

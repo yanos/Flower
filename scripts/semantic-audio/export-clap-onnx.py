@@ -4,12 +4,15 @@
 docs/VIBE-PLAYLIST-PLAN.md, "The model files". Run by hand, never by the
 build. Writes to --out (default ~/.cache/flower-semantic-audio/export):
 
-  music_audioset_epoch_15_esc_90.14-audio-{fp32,fp16,int8-reduce-range}.onnx   waveform [1,480000] 48 kHz mono -> [1,512]
-  music_audioset_epoch_15_esc_90.14-text-{fp32,fp16,int8-reduce-range}.onnx    input_ids, attention_mask [B,77] -> [B,512]
+  music_audioset_epoch_15_esc_90.14-audio-{fp32,fp16}.onnx               waveform [1,480000] 48 kHz mono -> [1,512]
+  music_audioset_epoch_15_esc_90.14_reduce_range-audio-int8.onnx
+  music_audioset_epoch_15_esc_90.14-text-{fp32,fp16}.onnx                input_ids, attention_mask [B,77] -> [B,512]
+  music_audioset_epoch_15_esc_90.14_reduce_range-text-int8.onnx
 
-The int8 files are named for reduce_range (to_int8) as well as the precision:
-a device knows its model by file name and size, and the plain int8 export
-before it was the same size to the byte.
+The int8 files carry the name of the export that made them with reduce_range
+(to_int8), music_audioset_epoch_15_esc_90.14_reduce_range, which is also the
+release they go up as: a device knows its model by file name and size, and
+the plain int8 export before it was the same size to the byte.
   vocab.json, merges.txt                          RoBERTa's tokenizer
   manifest.json                                   name, size and SHA-256 of every file
 
@@ -36,6 +39,7 @@ import numpy as np
 import torch
 
 NAME = "music_audioset_epoch_15_esc_90.14"
+INT8_NAME = f"{NAME}_reduce_range"
 CHECKPOINT = "music_audioset_epoch_15_esc_90.14.pt"
 CHECKPOINT_URL = f"https://huggingface.co/lukewys/laion_clap/resolve/main/{CHECKPOINT}"
 SAMPLES = 480_000
@@ -158,7 +162,7 @@ def main():
 
     for encoder in (audio, text):
         to_fp16(encoder, encoder.with_name(encoder.name.replace("fp32", "fp16")))
-        to_int8(encoder, encoder.with_name(encoder.name.replace("fp32", "int8-reduce-range")))
+        to_int8(encoder, encoder.with_name(encoder.name.replace(NAME, INT8_NAME).replace("fp32", "int8")))
 
     # The tokenizer laion_clap uses is roberta-base's.
     tokenizer = module.tokenize
