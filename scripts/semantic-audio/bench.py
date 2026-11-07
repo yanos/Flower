@@ -43,7 +43,7 @@ def main():
 
     windows = max(1, round(args.minutes * 6))
     print(f"{os.cpu_count()} cores, onnxruntime {ort.__version__}")
-    for precision in ("int8", "fp16", "fp32"):
+    for precision in ("int8-reduce-range", "fp16", "fp32"):
         path = args.export / f"music_audioset_epoch_15_esc_90.14-audio-{precision}.onnx"
         if not path.exists():
             continue

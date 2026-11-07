@@ -23,7 +23,7 @@ phase 0 environment (requirements.txt). Writes:
                            the int16 round trip - so exactly int16 values,
                            stored as such - before repeat-padding
     embeddings.json        what Python's onnxruntime makes of those windows
-                           (audio int8) and of a few prompts (text fp16)
+                           (audio int8, reduce_range) and of a few prompts (text fp16)
 
 The waveforms come from the ffmpeg command line, as phase 0 decoded every song;
 Flower decodes with FFAudio, FFmpeg's own resampler again.
@@ -190,7 +190,7 @@ def main():
 
     options = ort.SessionOptions()
     options.intra_op_num_threads = 1
-    audio_session = ort.InferenceSession(str(args.export / "music_audioset_epoch_15_esc_90.14-audio-int8.onnx"), options)
+    audio_session = ort.InferenceSession(str(args.export / "music_audioset_epoch_15_esc_90.14-audio-int8-reduce-range.onnx"), options)
     text_session = ort.InferenceSession(str(args.export / "music_audioset_epoch_15_esc_90.14-text-fp16.onnx"), options)
 
     clips = []
@@ -211,7 +211,7 @@ def main():
     prompts = [{"prompt": p, "embedding": e.tolist()} for p, e in zip(EMBEDDING_PROMPTS, text)]
 
     (DECODING_OUT / "embeddings.json").write_text(json.dumps(
-        {"template": TEMPLATE, "audio": "music_audioset_epoch_15_esc_90.14-audio-int8.onnx",
+        {"template": TEMPLATE, "audio": "music_audioset_epoch_15_esc_90.14-audio-int8-reduce-range.onnx",
          "text": "music_audioset_epoch_15_esc_90.14-text-fp16.onnx", "clips": clips, "prompts": prompts}))
     for p in sorted(TOKENS_OUT.iterdir()) + sorted(DECODING_OUT.iterdir()):
         print(f"{p.stat().st_size / 1e3:8.1f} KB  {p.relative_to(REPO)}")

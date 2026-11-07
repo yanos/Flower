@@ -32,41 +32,24 @@ public class ClapEmbeddingReferenceTests : IClassFixture<SemanticAudioFixtures>
 
     public ClapEmbeddingReferenceTests(SemanticAudioFixtures fixtures) => _fixtures = fixtures;
 
-    // What the audio encoder's embeddings can be held to on this CPU. The
-    // model's weights are int8 with uint8 activations (export-clap-onnx.py's
-    // quantize_dynamic, reduce_range off), and on an x64 CPU without VNNI -
-    // CI's Linux runners are a mix, and an AMD EPYC 7763 is one - ONNX Runtime
-    // multiplies those with a kernel that can saturate. There the same input
-    // came out at cosine 0.979 (the sine) and 0.962 (the chord) with
-    // Python's on an EPYC 7763, against 0.99988 on another runner and
-    // 0.9999998 on a Mac (runs 42406142836, 42409229532, 42419068951). A
-    // real difference in what a server on such a CPU hears, not just in the
-    // test: docs/VIBE-PLAYLIST-PLAN.md, "Testing".
-    private static readonly bool SaturatingInt8Kernel =
-        RuntimeInformation.ProcessArchitecture == Architecture.X64 && !HasVnni();
-
-    private static readonly float DecodedClipBar = SaturatingInt8Kernel ? 0.95f : MinimumCosine;
-    private static readonly float OwnWaveformBar = SaturatingInt8Kernel ? 0.95f : 0.9995f;
+    // Python's own waveforms are held tighter than MinimumCosine, though not
+    // to the 0.9999998 a Mac measures against its own references: another
+    // CPU takes another ONNX Runtime kernel. With the reduce_range model an
+    // i5-8259U without VNNI gave 0.99987 and up for these windows, where the
+    // plain int8 model before it - whose kernel saturated on such a CPU -
+    // gave 0.962 on CI's AMD EPYC 7763 (export-clap-onnx.py's to_int8).
+    private const float OwnWaveformCosine = 0.9995f;
 
     // Named in every message, so a failure says which kind of CPU it ran on.
     private static readonly string Cpu = CpuDescription();
 
-    private static string[] CpuInfo() =>
-        File.Exists("/proc/cpuinfo") ? File.ReadAllLines("/proc/cpuinfo") : [];
-
-    private static bool HasVnni()
-    {
-        var flags = CpuInfo().FirstOrDefault(l => l.StartsWith("flags", StringComparison.Ordinal));
-        if (flags == null)
-            return System.Runtime.Intrinsics.X86.AvxVnni.IsSupported;
-        var set = flags.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        return set.Contains("avx512_vnni") || set.Contains("avx_vnni");
-    }
-
     private static string CpuDescription()
     {
-        var model = CpuInfo().FirstOrDefault(l => l.StartsWith("model name", StringComparison.Ordinal))?.Split(':', 2)[1].Trim();
-        return $"{model ?? RuntimeInformation.ProcessArchitecture.ToString()}, {(SaturatingInt8Kernel ? "no VNNI" : "VNNI or not x64")}";
+        var lines = File.Exists("/proc/cpuinfo") ? File.ReadAllLines("/proc/cpuinfo") : [];
+        var model = lines.FirstOrDefault(l => l.StartsWith("model name", StringComparison.Ordinal))?.Split(':', 2)[1].Trim();
+        var flags = lines.FirstOrDefault(l => l.StartsWith("flags", StringComparison.Ordinal))?.Split(' ', StringSplitOptions.RemoveEmptyEntries) ?? [];
+        var vnni = flags.Contains("avx512_vnni") || flags.Contains("avx_vnni") ? ", VNNI" : flags.Length > 0 ? ", no VNNI" : "";
+        return $"{model ?? RuntimeInformation.ProcessArchitecture.ToString()}{vnni}";
     }
 
     private static string ModelDirectory()
@@ -75,7 +58,7 @@ public class ClapEmbeddingReferenceTests : IClassFixture<SemanticAudioFixtures>
             ? configured
             : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".cache", "flower-semantic-audio", "export");
         var present = Manifest.Files.All(f => File.Exists(Path.Combine(directory, f.Name)));
-        var message = $"The model isn't in {directory}; set FLOWER_CLAP_MODEL_DIR to a folder holding the music_audioset_epoch_15_esc_90.14 release.";
+        var message = $"The model isn't in {directory}; set FLOWER_CLAP_MODEL_DIR to a folder holding the files of {Manifest.BaseUrl}.";
         // CI's Linux leg downloads the model, and says so with this: there a
         // missing model is a broken step, not a reason to check nothing.
         if (Environment.GetEnvironmentVariable("FLOWER_REQUIRE_CLAP_MODEL") is { Length: > 0 })
@@ -107,7 +90,7 @@ public class ClapEmbeddingReferenceTests : IClassFixture<SemanticAudioFixtures>
             var embedding = encoder.Encode(ClipWaveform.Prepare(reader.ReadWindow(window)));
 
             var cosine = Embedding.Dot(embedding, Vector(clip.GetProperty("embedding")));
-            Assert.True(cosine >= DecodedClipBar, $"{fixture} window {window}: cosine {cosine} ({Cpu})");
+            Assert.True(cosine >= MinimumCosine, $"{fixture} window {window}: cosine {cosine} ({Cpu})");
         }
     }
 
@@ -115,9 +98,7 @@ public class ClapEmbeddingReferenceTests : IClassFixture<SemanticAudioFixtures>
     public void Pythons_own_waveforms_embed_the_same_here()
     {
         // The encoder alone, with decoding taken out of it: what Python fed
-        // its session, fed to this one. Stricter than MinimumCosine where the
-        // kernel does not saturate, but not the 0.9999998 a Mac measures: a
-        // VNNI runner's kernel still gave 0.99988 for the same input.
+        // its session, fed to this one.
         var directory = ModelDirectory();
         using var encoder = new OnnxClapAudioEncoder(Path.Combine(directory, Manifest.AudioEncoder.Name));
 
@@ -131,7 +112,7 @@ public class ClapEmbeddingReferenceTests : IClassFixture<SemanticAudioFixtures>
             var embedding = encoder.Encode(ClipWaveform.Prepare(window));
 
             var cosine = Embedding.Dot(embedding, Vector(clip.GetProperty("embedding")));
-            Assert.True(cosine >= OwnWaveformBar, $"{clip.GetProperty("prepared").GetString()}: cosine {cosine} ({Cpu})");
+            Assert.True(cosine >= OwnWaveformCosine, $"{clip.GetProperty("prepared").GetString()}: cosine {cosine} ({Cpu})");
         }
     }
 

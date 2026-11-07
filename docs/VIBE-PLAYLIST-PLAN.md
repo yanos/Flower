@@ -156,9 +156,11 @@ build) does the following:
 3. Writes the two graphs Flower ships, plus fp32 of both as the reference the
    other two are measured against:
    - **Audio, int8**: `onnxruntime.quantization.quantize_dynamic`, weights
-     only, `QInt8`, per channel, MatMul and Gemm. The spectrogram and log-mel
-     nodes at the front of the graph are excluded: quantizing them drops the
-     cosine with fp32 to 0.19.
+     only, `QInt8`, per channel, `reduce_range`, MatMul and Gemm. The
+     spectrogram and log-mel nodes at the front of the graph are excluded:
+     quantizing them drops the cosine with fp32 to 0.19. `reduce_range`
+     because without it an x64 CPU without VNNI saturates (see "The second
+     export" below).
    - **Text, fp16**: `onnxruntime.transformers.float16`, with inputs and
      outputs kept as fp32. (`onnxconverter-common` writes Cast nodes that ONNX
      Runtime refuses to load.)
@@ -180,9 +182,10 @@ fp16, 98% (90%); audio fp32 with text int8, 74% (40%); audio fp16 with text
 fp32, 80% (50%).
 
 The files go up as assets of a release of this repo tagged with the name of
-the checkpoint they were exported from, `music_audioset_epoch_15_esc_90.14`,
-and they carry that name too (`music_audioset_epoch_15_esc_90.14-audio-int8.onnx`,
-and so on). Not `larger_clap_music`, though that is the name the model usually
+the checkpoint they were exported from and the export's number,
+`music_audioset_epoch_15_esc_90.14-2`, and they carry the checkpoint's name
+too (`music_audioset_epoch_15_esc_90.14-audio-int8-reduce-range.onnx`, and
+so on). Not `larger_clap_music`, though that is the name the model usually
 goes by: that is Hugging Face's conversion, the broken one, and naming the
 release after it would point at the wrong file. The release is a pre-release,
 because the dmg's update check asks GitHub for `releases/latest`
@@ -193,6 +196,30 @@ but nothing is built or published. `SemanticAudioModelManifest` in
 binary pins exactly what it will load. A new export is a new release and a
 code change, never a silent swap. LAION's Apache-2.0 licence and attribution
 go into `NOTICE` and into the release's notes.
+
+**The second export** (November 2026). The first,
+`music_audioset_epoch_15_esc_90.14`, quantized the audio encoder without
+`reduce_range`. On an x64 CPU without VNNI (Intel before Cascade Lake and
+Ice Lake, AMD before Zen 4) ONNX Runtime multiplies uint8 activations by
+int8 weights with `VPMADDUBSW`, which adds pairs of products into 16 bits
+and saturates there; 7-bit weights cannot overflow it. Measured against
+PyTorch's fp32 embeddings:
+
+| | Mac (5921 clips): cosine mean / worst | top 10 / 25 / 50 kept | i5-8259U (128 clips): cosine mean / worst | s/clip on the i5, 1 thread |
+|---|---|---|---|---|
+| int8, the first export | 0.99955 / 0.99761 | 98.2 / 98.0 / 98.4% | **0.939 / 0.807** | 0.340 |
+| **int8, `reduce_range`** | 0.99929 / 0.99679 | 96.8 / 97.9 / 98.1% | 0.99927 / 0.99781 | 0.355 |
+| uint8 weights | 0.99958 / 0.99793 | 96.4 / 98.0 / 98.8% | 0.99956 / 0.99896 | 0.421 |
+| fp32 | | | 1.0000 | 0.418 |
+
+On the Mac all three run at 0.20 s/clip, and their rankings differ by a
+song or two across the 28 prompts, which those prompts cannot tell from
+noise. `reduce_range` fixes the i5 for 4% more time per clip; uint8 fixed it
+too but ran no faster than fp32 there. The new file has its own name
+because a device knows the model by name and size and the two are the same
+size to the byte, and its own `model` string, so every server hears its
+library again. A download deletes whatever files the manifest no longer
+names, so the first export's 80 MB do not stay behind.
 
 **Downloading** (`SemanticAudioModelStore`): when the switch goes on, the store fetches
 the two encoders, plus the tokenizer files, into `<data dir>/semantic-audio/models/`. It resumes with ranged GETs, checks
@@ -390,7 +417,7 @@ keeps them for the session. The playlist's two fields are columns of
   from the clips when it loads, along with the vocal and speech scores, which
   need the clips anyway.
 - **`model`** names the export that analysed the song
-  (`music_audioset_epoch_15_esc_90.14/int8`), so a row from another export never mixes into
+  (`music_audioset_epoch_15_esc_90.14/int8-reduce-range`), so a row from another export never mixes into
   a search.
 - **`file_stamp`** is the song's audio identity: duration, codec, sample rate,
   channels, bit depth and bitrate as the last scan read them, plus
@@ -730,15 +757,11 @@ models.
   model is never committed). The C# pipeline's embedding of each reference
   clip and prompt must have cosine ≥ 0.999 with Python ORT's at the same
   precision, and Python's own waveforms must embed at 0.9995. **Measured:
-  0.9999998 or better for all of them on a Mac; one CI Linux x64 runner
-  gives 0.99988 for Python's own waveforms, and an AMD EPYC 7763 0.979 for
-  the sine and 0.962 for the chord, in both audio tests.** The model's weights are int8 with uint8 activations and
-  `reduce_range` off, and on an x64 CPU without VNNI (an AMD EPYC 7763,
-  Intel before Cascade Lake) ONNX Runtime's kernel for that can saturate;
-  the test holds such a CPU to 0.95 and names the CPU in its message. **Open:
-  that is what a server on such a CPU hears too.** Re-exporting with
-  `reduce_range=True` (or uint8 weights) and publishing a new release is the
-  fix; until then the audio bars are the CPU's. It reads the model from
+  0.9999998 or better for all of them on a Mac, and 0.99987 or better for
+  Python's own waveforms on an i5-8259U without VNNI.** The first export,
+  without `reduce_range`, gave 0.962 on CI's AMD EPYC 7763 ("The second
+  export" above); every message names the CPU, since CI's Linux runners are
+  a mix. It reads the model from
   `FLOWER_CLAP_MODEL_DIR`, or `~/.cache/flower-semantic-audio/export`, and
   skips when neither has it. It is meant to run in one CI leg, Linux, the
   server's platform, with the cache keyed on the manifest hash, once the

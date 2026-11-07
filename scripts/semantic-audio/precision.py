@@ -23,7 +23,7 @@ import onnxruntime as ort
 sys.path.insert(0, str(Path(__file__).parent))
 import prototype as P  # noqa: E402
 
-PRECISIONS = ["fp32", "fp16", "int8"]
+PRECISIONS = ["fp32", "fp16", "int8-reduce-range"]
 
 
 def session(path: Path, threads: int):

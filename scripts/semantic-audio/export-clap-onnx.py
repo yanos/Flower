@@ -4,8 +4,12 @@
 docs/VIBE-PLAYLIST-PLAN.md, "The model files". Run by hand, never by the
 build. Writes to --out (default ~/.cache/flower-semantic-audio/export):
 
-  music_audioset_epoch_15_esc_90.14-audio-{fp32,fp16,int8}.onnx   waveform [1,480000] 48 kHz mono -> [1,512]
-  music_audioset_epoch_15_esc_90.14-text-{fp32,fp16,int8}.onnx    input_ids, attention_mask [B,77] -> [B,512]
+  music_audioset_epoch_15_esc_90.14-audio-{fp32,fp16,int8-reduce-range}.onnx   waveform [1,480000] 48 kHz mono -> [1,512]
+  music_audioset_epoch_15_esc_90.14-text-{fp32,fp16,int8-reduce-range}.onnx    input_ids, attention_mask [B,77] -> [B,512]
+
+The int8 files are named for reduce_range (to_int8) as well as the precision:
+a device knows its model by file name and size, and the plain int8 export
+before it was the same size to the byte.
   vocab.json, merges.txt                          RoBERTa's tokenizer
   manifest.json                                   name, size and SHA-256 of every file
 
@@ -100,11 +104,23 @@ def to_int8(src: Path, dst: Path):
     # a range of many orders of magnitude, which the log right after it then
     # blows up. With it, int8 audio embeddings came out at cosine 0.19
     # against fp32; without it, 0.9995.
+    #
+    # reduce_range: weights in 7 bits rather than 8. On an x64 CPU without
+    # VNNI ONNX Runtime multiplies uint8 activations by int8 weights with
+    # VPMADDUBSW, which adds each pair of products into 16 bits and saturates
+    # there - 2 x 255 x 127 overflows, 2 x 255 x 63 does not. Measured
+    # (November 2026) on 128 clips of the library on an i5-8259U: plain int8
+    # came out at cosine 0.939 mean and 0.807 worst against fp32, reduce_range
+    # at 0.99927 and 0.99781. On a Mac, where nothing saturates, it costs
+    # 0.99955 -> 0.99929 and no measurable ranking (top 10/25/50 of 5921
+    # clips against 28 prompts within a song or two of plain int8's), and the
+    # same speed; on the i5 4% more time per clip. uint8 weights fixed it
+    # too, at 0.99956, but ran no faster than fp32 there.
     front_end = [n.name for n in onnx.load(str(src), load_external_data=False).graph.node
                  if "spectrogram_extractor" in n.name or "logmel_extractor" in n.name]
     quantize_dynamic(str(src), str(dst), weight_type=QuantType.QInt8,
                      op_types_to_quantize=["MatMul", "Gemm", "Gather"], per_channel=True,
-                     nodes_to_exclude=front_end)
+                     reduce_range=True, nodes_to_exclude=front_end)
 
 
 def main():
@@ -142,7 +158,7 @@ def main():
 
     for encoder in (audio, text):
         to_fp16(encoder, encoder.with_name(encoder.name.replace("fp32", "fp16")))
-        to_int8(encoder, encoder.with_name(encoder.name.replace("fp32", "int8")))
+        to_int8(encoder, encoder.with_name(encoder.name.replace("fp32", "int8-reduce-range")))
 
     # The tokenizer laion_clap uses is roberta-base's.
     tokenizer = module.tokenize

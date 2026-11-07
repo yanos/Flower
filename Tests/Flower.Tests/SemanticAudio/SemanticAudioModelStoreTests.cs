@@ -69,6 +69,22 @@ public class SemanticAudioModelStoreTests : IDisposable
         Assert.Equal(new ModelDownloadProgress(Manifest.TotalBytes, Manifest.TotalBytes), reports[^1]);
     }
 
+    // A build with a new model leaves the old one's files behind otherwise:
+    // the first export's audio encoder was 80 MB nothing would read again.
+    [Fact]
+    public async Task A_download_deletes_what_another_model_left_and_keeps_a_part_file()
+    {
+        Directory.CreateDirectory(_directory);
+        File.WriteAllBytes(Path.Combine(_directory, "old-audio-int8.onnx"), First);
+        File.WriteAllBytes(Path.Combine(_directory, "audio.onnx.part"), First[..1000]);
+
+        await Store().DownloadAsync(null, CancellationToken.None);
+
+        Assert.False(File.Exists(Path.Combine(_directory, "old-audio-int8.onnx")));
+        Assert.Equal("bytes=1000-", _release.Ranges["audio.onnx"]);
+        Assert.True(Store().IsPresent);
+    }
+
     [Fact]
     public async Task Resumes_a_file_it_was_cut_off_in()
     {

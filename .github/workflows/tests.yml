@@ -63,10 +63,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          release=https://github.com/yanos/Flower/releases/download/music_audioset_epoch_15_esc_90.14
+          release=https://github.com/yanos/Flower/releases/download/music_audioset_epoch_15_esc_90.14-2
           mkdir -p ~/.cache/flower-semantic-audio/export
           cd ~/.cache/flower-semantic-audio/export
-          for file in music_audioset_epoch_15_esc_90.14-audio-int8.onnx music_audioset_epoch_15_esc_90.14-text-fp16.onnx vocab.json merges.txt; do
+          for file in music_audioset_epoch_15_esc_90.14-audio-int8-reduce-range.onnx music_audioset_epoch_15_esc_90.14-text-fp16.onnx vocab.json merges.txt; do
             curl --fail --location --retry 3 --silent --show-error --output "$file" "$release/$file"
           done
 

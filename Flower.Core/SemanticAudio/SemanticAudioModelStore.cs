@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -82,6 +83,7 @@ public sealed class SemanticAudioModelStore(string directory, HttpClient http, I
     public async Task DownloadAsync(IProgress<ModelDownloadProgress>? progress, CancellationToken cancellationToken)
     {
         System.IO.Directory.CreateDirectory(directory);
+        DeleteWhatTheManifestDoesNotName();
         long done = 0;
         var total = Manifest.TotalBytes;
 
@@ -115,6 +117,23 @@ public sealed class SemanticAudioModelStore(string directory, HttpClient http, I
 
             done += file.Size;
             progress?.Report(new ModelDownloadProgress(done, total));
+        }
+    }
+
+    // A build that downloads a new model leaves the old one's files behind
+    // otherwise - the first export's audio encoder is 80 MB that nothing
+    // would ever read again. Only a manifest file, or one being downloaded,
+    // stays.
+    private void DeleteWhatTheManifestDoesNotName()
+    {
+        var wanted = Manifest.Files.SelectMany(f => new[] { f.Name, f.Name + ".part" }).ToHashSet(StringComparer.Ordinal);
+        foreach (var file in new DirectoryInfo(directory).EnumerateFiles())
+        {
+            if (wanted.Contains(file.Name))
+                continue;
+
+            logger.LogInformation("Deleting {File}, which this model does not use", file.Name);
+            file.Delete();
         }
     }
 
