@@ -12,7 +12,7 @@ namespace Flower.ViewModels;
 // the server hands out through its own settings screen (see
 // SettingsViewModel's IssuePairingCodeCommand and PairingCodeService), and
 // what came of asking for one. Its own class rather than a region of
-// MainViewModel (docs/CODE-REVIEW-2026-09.md E3), which decides whether there
+// MainViewModel (docs/CODE-REVIEW.md, September E3), which decides whether there
 // is a server to ask (CanInviteDeviceToPairedServer) and how to reach it.
 //
 // Desktop no longer has a second one of these. It used to sit in the

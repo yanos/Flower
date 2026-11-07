@@ -43,8 +43,8 @@ is left. Read the relevant one before touching that area.
 - `SECURITY.md` — the server trust boundary: per-listener playlists, per-device budgets, `FlowerProblem` refusals, `ServerResponseSignature`.
 - `REMOTE-ACCESS.md` — client side of remote access: candidate addresses, LAN↔tailnet handover, `CleartextOrigins`.
 - `REMOTE-TRANSPORT-PLAN.md` — Tailscale vs Cloudflare Tunnel vs `tsnet`.
-- `CITED-DECISIONS.md` — resolves source comments citing retired reviews' tier/finding numbers.
-- `CODE-REVIEW-2026-09.md`, `CODE-REVIEW-2026-10.md` — the standing backlog; section G of October is the current tally.
+- `CITED-DECISIONS.md` — resolves source comments citing a retired review's tier or finding number, or a fixed finding of the two code reviews.
+- `CODE-REVIEW.md` — the standing backlog: the September and October 2026 reviews' open findings, under their review and number, in a suggested order (fixed ones are indexed in `CITED-DECISIONS.md`).
 - `SYNC-PLAN.md` — device↔server sync, ingest (admin devices mirroring files, edits, moves and removals to the server), Music.app history, Flower's own folder.
 - `AUDIOPHILE-PLAN.md`, `AUDIO-QUALITY-PLAN.md` — EQ, gapless, hi-res, the S24 pipeline; render-path defects and PCM-level tests.
 - `VIBE-PLAYLIST-PLAN.md` — Vibe Playlists and Endless Play (CLAP via ONNX Runtime in `Flower.SemanticAudio.Onnx`, engine in `Flower.Core/SemanticAudio/`).

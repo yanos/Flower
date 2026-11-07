@@ -25,7 +25,7 @@ when the third was deleted, and went in October 2026. `070c2ca` is the last
 commit that has them.)
 
 Everything listed here is **done**. Nothing in this file is a backlog;
-`CODE-REVIEW-2026-09.md` is where open work lives.
+`CODE-REVIEW.md` is where open work lives.
 
 ---
 
@@ -159,3 +159,78 @@ with its track list kept as a materialized cache.
 **Out of scope, deliberately:** seed-based "radio"/auto-DJ. It shares nothing
 with this but the `Track` model, and entangling them would give both a worse
 design. If it happens it gets its own document.
+
+---
+
+## `CODE-REVIEW-2026-09.md` and `CODE-REVIEW-2026-10.md` — their fixed findings
+
+In November 2026 every finding the two reviews had closed was taken out of
+them, and what was left of both was merged into one backlog, `CODE-REVIEW.md`.
+Source comments cite the closed findings as *"docs/CODE-REVIEW-2026-09.md
+B6"*, and this is what those citations resolve against. The findings still
+open (September E3, E8, G1; October A1, B4, C1, C2, F.8) are in
+`CODE-REVIEW.md` under the same review and number. The full text of both,
+measurements and rejected alternatives included:
+
+```bash
+git show 2e55685:docs/CODE-REVIEW-2026-09.md
+git show 2e55685:docs/CODE-REVIEW-2026-10.md
+```
+
+### September 2026
+
+| | |
+|---|---|
+| **A1** | The equalizer went unstable at output rates below 32 kHz. `Equalizer.BuildFrom` builds only the bands below 0.45 × the rate, and `EqualizerTests` drives every band from 48k down to 8k. |
+| **A2** | `Retire()` during a track promotion deadlocked the UI thread, because `PromoteTarget` held its gate across a blocking ring write. The ring is reset before the retire, and the promotion's drain no longer holds the gate for its whole run (`GaplessHandoverResponsivenessTests`). |
+| **B1** | Sync request bodies were materialised three times, before authentication. The gate reads the body once into one array, and the handlers deserialize those bytes (`RequestGate.BodyOf`). |
+| **B2** | `NonceReplayGuard` pruned its whole dictionary on every insert. The sweep runs every 15 s. A ceiling on its size was rejected, because a full guard locks out every honest device too. |
+| **B3** | `Library.Snapshot` could publish a stale index that never expired. Each index is tagged with the generation it was read under, and an older one is never accepted (`LibrarySnapshotRaceTests`). |
+| **B4** | `SeekableHttpStream` could not be cancelled, and parked a decode thread for up to two minutes. `Cancel()` is safe from any thread, and the decoder calls it before its join. |
+| **B5** | Refusals (401/403/404/410) were retried as though they were transient. They throw `HttpProtocolErrorException`, which is not retried. Server errors still are. |
+| **B6** | A late arm was dropped, and with it the gapless handover. It turned out to be wasted work, not lost audio. `SetUpcoming` declines when nothing is playing but the ring still holds audio, because the `Play` that carries that case is already on its way. |
+| **C1** | The Subsonic surface had authentication but no authorisation. That surface was deleted. The gap behind it was closed by listeners: each server playlist belongs to one (`SECURITY.md`, "Playlists belong to a listener"). |
+| **C2** | Client log ingestion had no size bound. Fixed with `MaxEntriesPerReport` and `MaxBytesPerDevice`. |
+| **C3** | `getAlbumList2` did not clamp `size`. Moot: the route went with the Subsonic adapter. The rule still holds: no bulk route takes a caller-supplied size without a clamp. |
+| **C4** | Identity strings an attacker chooses became dictionary keys with no bound. A nonce or fingerprint over 64 characters is refused as malformed before it becomes a key. |
+| **D1** | Every oversized album cover was decoded twice. The size is read from the file's header (`ImageHeader`: PNG, JPEG, WebP), here and in Track Info. |
+| **D2** | `Retain` swept the whole weak cache on every hit and miss. Fixed by a sweep at most every 30 s, and an O(1) LRU. |
+| **D3** | Every scroll event allocated a `SortedSet` and a `List` in `MusicListPanel`'s render-index pass. Neither is allocated on the scroll path any more. |
+| **D4** | `MiniaudioSink`'s watchdog timer ran for the life of the process. It is armed when playback starts and re-armed only while playing. |
+| **D5** | `ResourceMonitor.ThreadCount` could see only pool threads. `LiveDecoders` counts the decoders themselves. |
+| **D6** | The discovery poll dialled unreachable remembered addresses forever. `PeerRetrySchedule` backs off to one dial a minute, never to never, and any sign the cause may be gone resets it. |
+| **E1** | `LibVlcRawStreamSink` and `GaplessRingBufferStream` were unreachable. Deleted with LibVLC. The lesson that generalises: a fallback nothing can reach is not a fallback. |
+| **E2** | `GaplessFormat` was mutable process-wide static state. The negotiated format is a `PcmFormat`, settled by the sink and handed to every piece. |
+| **E4** | `GaplessAudioManager`'s constructor defaulted to the wrong decoder. Resolved when `TrackDecoderKind` went. The lesson that generalises: a parameter default that contradicts the documented one is a trap. |
+| **E5** | `MiniaudioSink.Start` leaked a `GCHandle` when called twice. |
+| **E6** | Promoted decoders kept the event handlers they were given while armed. `ClearArmedSlot` unsubscribes them. |
+| **E7** | `Process.Start` was called directly, and two platforms cannot run it. Every site goes through the static `PlatformShell` (`Reveal`, `OpenFolder`, `OpenUrl`, `IsAvailable`), and the controls hide where `IsAvailable` is false. |
+| **F** | The test gaps behind A1, A2, B3, B4, C1 and B2 have all been written. |
+| **G1, socket half** | `FakePeerHttpServer` raced its own port. It binds before it publishes `Port`, and rotates where it starts in its range, so a released port is not reused at once. |
+| **G2** | `IAudioManager` was silently partial on WASM. `IAudioManager.Features` says what a player has, and the equalizer is not offered without it. |
+
+### October 2026
+
+| | |
+|---|---|
+| **A1** | Pairing codes could be brute-forced from an IPv6 prefix. The 20th wrong code from any source in ten minutes cancels every outstanding code (`PairingCodeGuessingTests`). |
+| **A2** | Every paired device received every other device's listening history. A guest's manifest carries its own plays only. |
+| **A3** | `/info` told an anonymous caller whether a fingerprint was paired. `trustsCaller: false` goes only to a caller that self-signs with that key (`SECURITY.md`, "After the October review"). |
+| **A4** | The web UI could be framed. Every web UI response sends `frame-ancestors 'none'`, `X-Frame-Options: DENY` and `nosniff` (`WebUiFramingTests`). |
+| **A5** | Device aliases had no bound and could hold control characters. `DeviceAlias.Clean` strips them and cuts at 64 characters. The stream-ticket logging note is in `SECURITY.md`. |
+| **B1** | The end-of-track queue decision ran off the UI thread, against state nothing synchronised. It runs on the UI thread, and does nothing if that track is no longer the one playing. |
+| **B2** | There were two definitions of path equality, and Linux got both. One `PathComparer`, from the folder's own rule (`PathCaseTests`). |
+| **B3** | A failed track told the user nothing. `PlaybackFailed` carries `PlaybackFailedEventArgs`, which `MainViewModel.PlaybackNotice` shows on both heads. |
+| **B5** | `SeekableHttpStream` leaked the response on a refusal. It is disposed before the throw. |
+| **C1, client half** | A sync that changed nothing rewrote the whole library. `MergeSyncedTracks` skips a merge that moved nothing, and writes only the rows that moved (`LibrarySyncNoOpPullTests`). |
+| **C2** | The server read cover art from the audio file on every request. `CoverArtCache` keeps each answer, a miss included. It is checked against the files and folders it came from, and emptied by a library change but not by a play. |
+| **C3** | Every art cache hit walked two lists. Fixed by an O(1) LRU. |
+| **C4** | Track Info decoded the whole picture to read its size. It reads `ImageHeader`. |
+| **D1** | Track Info was implemented twice, in code-behind. It is now `TrackInfoViewModel`. |
+| **D2** | Context menus were defined twice, once per head. The song and album menus are now `ActionMenus` built from `MenuFacts`. The menus left are on one head only, so there is nothing to drift. |
+| **D3** | "Play these songs as the queue" was written three times. `MainViewModel.PlayTracks` is the one copy, and every queue goes through `SetPlayQueue`. |
+| **D4** | Each setting was wired in about seven places. A setting only a device has now binds straight to its `MainViewModel` property. A server setting stays drafted, because a save there is one request. |
+| **D5** | The retired review documents still existed. They are deleted, and indexed above. |
+| **E** | Comments still described LibVLC, OpenSubsonic and client/server roles, and `CLAUDE.md` still named `library.json`. All corrected. |
+| **F.1–F.7** | The test gaps behind B1, B2, A1, A2, C1 and D1 have been written. |
+| **Denied peers** | Dead since peer-to-peer went. Removed, `denied-peers.json` included. |

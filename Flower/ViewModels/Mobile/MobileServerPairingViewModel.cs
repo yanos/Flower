@@ -10,7 +10,7 @@ namespace Flower.ViewModels.Mobile;
 // Pairing with a server and unpairing from it, from the phone's Settings: the
 // two confirmation sheets, the code box, and the server added by address. Its
 // own class rather than a region of MobileMainViewModel
-// (docs/CODE-REVIEW-2026-09.md E3). What it needs of the shell is one thing:
+// (docs/CODE-REVIEW.md, September E3). What it needs of the shell is one thing:
 // which sheet is up, since each confirmation takes Settings' place and puts it
 // back whichever way it is answered.
 public sealed class MobileServerPairingViewModel : ViewModelBase
