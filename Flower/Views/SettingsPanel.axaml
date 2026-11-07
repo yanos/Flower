@@ -40,8 +40,13 @@
       <TabItem Header="General" x:Name="GeneralTab">
         <!-- Scrolls like every other tab here: a server's General tab carries the
              address list as well, which is as tall as the server has origins. -->
+        <!-- Every tab that scrolls keeps its content 20 clear of the right
+             edge, where Fluent draws the scroll bar over the content rather
+             than beside it - it sat on the fields' and buttons' right borders -
+             and 24 under its last row, so the buttons there scroll fully into
+             view rather than stopping cut off at the window's edge. -->
         <ScrollViewer>
-        <StackPanel Margin="0,12,0,0" Spacing="0">
+        <StackPanel Margin="0,12,20,24" Spacing="0">
           <!-- Label above its control, like Appearance below and every other field on
                this screen - the one place that put them side by side needed a
                caption underneath to say what the field was for. -->
@@ -146,9 +151,13 @@
                                                     IsHitTestVisible="False"/>
                       </Border>
                       <TextBlock Grid.Column="1" Text="{Binding Title}" VerticalAlignment="Center"/>
-                      <NumericUpDown Grid.Column="2" Width="120"
-                                     Value="{Binding Value, Mode=TwoWay}"
-                                     Minimum="0" Maximum="{Binding Maximum}" Increment="1" FormatString="0"/>
+                      <!-- The phone's minus, count and plus (Stepper), as
+                           its Settings sets the same three shelves - not
+                           Fluent's NumericUpDown, whose spin buttons were
+                           drawn over its outline and cut its right edge off. -->
+                      <controls:Stepper Grid.Column="2"
+                                        Value="{Binding Value}"
+                                        Maximum="{Binding Maximum}"/>
                       <TextBlock Grid.Column="3" Text="{Binding Unit}" Width="50" Opacity="0.6" VerticalAlignment="Center"/>
                     </Grid>
                   </Border>
@@ -184,6 +193,19 @@
           <TextBlock Text="Off: song files are sent to the server, and replaced versions fetched from it, only on its own network. On: also over cellular or a remote connection. Edits to tags and covers always go."
                      Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"
                      IsVisible="{Binding ShowsShareLogs}"/>
+
+          <!-- Vibe Playlists, this device's own switch (AppSettings.
+               UseVibePlaylists), on by default: off, New Vibe Playlist… is
+               not offered here and the vibe playlists it has are hidden. Shown where Endless Play is - wherever a
+               server could make them; how it does is the server's AI
+               Features tab. -->
+          <CheckBox Content="Vibe playlists"
+                    Margin="0,16,0,0"
+                    IsChecked="{Binding Device.UseVibePlaylists, Mode=TwoWay, FallbackValue=True}"
+                    IsVisible="{Binding ShowsEndlessPlay}"/>
+          <TextBlock Text="Make a playlist from a sentence, with songs the server picks by how they sound. Off, the vibe playlists on this device are hidden."
+                     Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"
+                     IsVisible="{Binding ShowsEndlessPlay}"/>
 
           <!-- Endless Play, this device's own switch (AppSettings.EndlessPlay),
                off by default. Shown wherever a server could hand it the songs,
@@ -368,8 +390,9 @@
            rebuilding its own database doesn't make sense here. The Music.app
            imports are the exception, on an administrator's device. -->
       <TabItem Header="Library" x:Name="LibraryTab">
+        <!-- Clear of the scroll bar and room under the last row, as General. -->
         <ScrollViewer>
-          <StackPanel>
+          <StackPanel Margin="0,0,20,24">
             <!-- The folder rows are disabled on a paired device
                  (CanManageLibrary) each on its own rather than the grid as a
                  whole, because the two Music.app imports above them stay live
@@ -794,8 +817,9 @@
       <!-- Server-only: how this server is reached and who is allowed to reach it.
            See FlowerServerOptions for what each of these actually does. -->
       <TabItem Header="Network" x:Name="NetworkTab" IsVisible="{Binding Capabilities.ServerNetwork}">
+        <!-- Clear of the scroll bar and room under the last row, as General. -->
         <ScrollViewer>
-          <StackPanel Margin="0,12,0,0" Spacing="0">
+          <StackPanel Margin="0,12,20,24" Spacing="0">
             <CheckBox Content="Show on local network"
                       IsChecked="{Binding AdvertiseOnLan, Mode=TwoWay}"
                       IsEnabled="{Binding AdvertiseOnLanLock.IsEditable}"/>
@@ -895,7 +919,7 @@
            shown in a window and a browser tab alike - has nowhere to put. -->
       <TabItem Header="AI Features" x:Name="AiFeaturesTab" IsVisible="{Binding Capabilities.AiFeatures}">
         <ScrollViewer>
-          <StackPanel Margin="0,12,0,0" DataContext="{Binding AiFeatures}" x:DataType="vm:AiFeaturesSettingsViewModel">
+          <StackPanel Margin="0,12,20,24" DataContext="{Binding AiFeatures}" x:DataType="vm:AiFeaturesSettingsViewModel">
             <CheckBox Content="AI Features"
                       IsChecked="{Binding Enabled, Mode=TwoWay}"
                       IsEnabled="{Binding CanEdit}"/>

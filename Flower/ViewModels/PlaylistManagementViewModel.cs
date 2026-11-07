@@ -48,6 +48,13 @@ public interface IPlaylistManagementHost
     // constructor as collapsedFolders changed and wants saving. Which folders
     // are closed is this device's own view of the sidebar and never syncs.
     void PlaylistFoldersCollapsedChanged() { }
+
+    // Vibe Playlists are turned off on this device (AppSettings.
+    // UseVibePlaylists): their rows are left out of the section, which is
+    // every list of playlists a head shows - the phone's Playlists tab is
+    // built from these same rows. The playlists themselves stay, and come
+    // back with the switch.
+    bool HidesVibePlaylists => false;
 }
 
 // Playlist creation, deletion, membership and ordering, plus the sidebar's
@@ -108,7 +115,8 @@ public sealed class PlaylistManagementViewModel
             _items.Remove(stale);
 
         var header = _items.FirstOrDefault(i => i.Kind == SidebarItemKind.Header && i.Name == "Playlists");
-        if (_library.Playlists.Count == 0)
+        var rows = CreateSidebarRows();
+        if (rows.Count == 0)
         {
             if (header != null && editingIds.Count == 0)
                 _items.Remove(header);
@@ -121,7 +129,7 @@ public sealed class PlaylistManagementViewModel
         if (header == null)
             _items.Insert(insertAt++, new SidebarItem(SidebarItemKind.Header, "Playlists"));
 
-        foreach (var row in CreateSidebarRows())
+        foreach (var row in rows)
         {
             if (editingIds.Contains(row.Playlist!.Id))
                 continue;
@@ -138,7 +146,12 @@ public sealed class PlaylistManagementViewModel
     // the refresh above and for MainViewModel's first build of the sidebar.
     public List<SidebarItem> CreateSidebarRows()
     {
-        var all = _library.Playlists;
+        // Without the vibe ones while this device has them off - left out
+        // before the folders are counted, so a folder's count is what it
+        // shows.
+        IReadOnlyList<Playlist> all = _host.HidesVibePlaylists
+            ? _library.Playlists.Where(p => !p.IsVibe).ToList()
+            : _library.Playlists;
         var sizes = all
             .Select(p => PlaylistTree.ParentOf(p, all))
             .OfType<Playlist>()

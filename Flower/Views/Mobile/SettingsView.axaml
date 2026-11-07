@@ -500,6 +500,23 @@
             <TextBlock Classes="note" Margin="0,-8,0,0"
                        Text="Off: song files are sent to the server, and replaced versions fetched from it, only on its own network. On: also over cellular or a remote connection. Edits to tags and covers always go." />
 
+            <!-- On by default: whether this phone offers to make a Vibe
+                 Playlist at all (AppSettings.UseVibePlaylists). The server's
+                 own settings say how it makes them. -->
+            <Border Classes="divider" Margin="58,0,0,0" />
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14" Classes="badgeRow">
+              <Border Grid.Column="0" Classes="badge" VerticalAlignment="Center">
+                <materialIcons:MaterialIcon Kind="CreationOutline" />
+              </Border>
+              <TextBlock Grid.Column="1" Classes="rowTitle" FontWeight="Normal"
+                         Text="Vibe playlists"
+                         TextWrapping="Wrap"
+                         VerticalAlignment="Center" />
+              <ToggleSwitch Grid.Column="2" IsChecked="{Binding Main.UseVibePlaylists}" />
+            </Grid>
+            <TextBlock Classes="note" Margin="0,-8,0,0"
+                       Text="Make a playlist from a sentence, with songs the server picks by how they sound. Off, the vibe playlists on this phone are hidden." />
+
             <!-- Off by default: when the queue runs out, the server finds songs
                  like the last few - and only while the server offers it. See
                  AppSettings.EndlessPlay. -->

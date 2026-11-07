@@ -235,6 +235,12 @@ namespace Flower.Persistence
         // without anyone asking; and only where a server offers it.
         public bool EndlessPlay { get; set; }
 
+        // Vibe Playlists on this device: whether it offers to make one at all
+        // while its server can (MainViewModel.CanMakeVibePlaylists), and
+        // whether the ones there are show in its lists. On by default. The listener's own switch, beside Endless Play's; how the
+        // server listens, and whether it does, stay in the server's settings.
+        public bool UseVibePlaylists { get; set; } = true;
+
         // When a bulk sync with PairedServerFingerprint last actually succeeded.
         // Persisted rather than kept in memory because the question it answers -
         // "is what I'm looking at current?" - is asked right after a relaunch as

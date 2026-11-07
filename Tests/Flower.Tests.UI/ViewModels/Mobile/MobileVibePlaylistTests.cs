@@ -76,6 +76,40 @@ public class MobileVibePlaylistTests : PinnedDataDirectory
         Assert.False(Build(null).Mobile.CanCreateVibePlaylist);
     }
 
+    // A listener can turn them off on their own device, whatever the server
+    // makes; on again, the row is back.
+    [AvaloniaFact]
+    public void The_row_is_not_offered_while_this_device_has_them_off()
+    {
+        var parts = Build("ready");
+
+        parts.Parts.Main.UseVibePlaylists = false;
+        Assert.False(parts.Mobile.CanCreateVibePlaylist);
+
+        parts.Parts.Main.UseVibePlaylists = true;
+        Assert.True(parts.Mobile.CanCreateVibePlaylist);
+    }
+
+    // Off, the ones there are leave the Playlists tab too - kept, and back
+    // with the switch.
+    [AvaloniaFact]
+    public void Turned_off_the_vibe_playlists_are_hidden_and_kept()
+    {
+        var parts = Build("ready");
+        var vm = parts.Mobile;
+        vm.SelectTabCommand.Execute(nameof(MobileTab.Playlists));
+        UiWait.Settle(() => vm.PlaylistPickerItems.Any(i => i.Name == Rainy), "the playlist never reached the picker");
+
+        parts.Parts.Main.UseVibePlaylists = false;
+        Dispatcher.UIThread.RunJobs();
+        Assert.DoesNotContain(vm.PlaylistPickerItems, i => i.Name == Rainy);
+        Assert.Contains(parts.Parts.Library.Playlists, p => p.Name == Rainy);
+
+        parts.Parts.Main.UseVibePlaylists = true;
+        Dispatcher.UIThread.RunJobs();
+        Assert.Contains(vm.PlaylistPickerItems, i => i.Name == Rainy);
+    }
+
     [AvaloniaFact]
     public void Backing_out_of_a_new_one_removes_it()
     {

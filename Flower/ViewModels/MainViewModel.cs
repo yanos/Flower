@@ -355,6 +355,26 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         }
     }
 
+    // Vibe Playlists on this device (AppSettings.UseVibePlaylists): off, it no
+    // longer offers to make one, whatever its server can do, and the ones it
+    // has are hidden from its lists (IPlaylistManagementHost.
+    // HidesVibePlaylists) - kept, and shown again when it is turned back on.
+    // Persist-immediately, same as above.
+    public bool UseVibePlaylists
+    {
+        get => _appSettings.UseVibePlaylists;
+        set
+        {
+            if (_appSettings.UseVibePlaylists == value)
+                return;
+            _appSettings.UseVibePlaylists = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(CanMakeVibePlaylists));
+            Playlists.RefreshSidebarItems();
+            SaveSettings();
+        }
+    }
+
     // Whether this head's server offers Endless Play, null where there is no
     // server or it hasn't said. Set by the app, beside VibePlaylistsState.
     public Func<bool?> EndlessPlayOffered { get; set; } = () => null;
@@ -2531,10 +2551,11 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.Albums,  "Albums",  MaterialIconKind.Album));
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.Artists, "Artists", MaterialIconKind.AccountOutline));
 
-        if (Library.Playlists.Count > 0)
+        var playlistRows = Playlists.CreateSidebarRows();
+        if (playlistRows.Count > 0)
         {
             _sidebarItems.Add(new SidebarItem(SidebarItemKind.Header, "Playlists"));
-            foreach (var row in Playlists.CreateSidebarRows())
+            foreach (var row in playlistRows)
                 _sidebarItems.Add(row);
         }
 
@@ -2814,11 +2835,12 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     public Func<string?> VibePlaylistsState { get; set; } = () => null;
 
-    // New Vibe Playlist… is offered while the server can make one: once it
+    // New Vibe Playlist… is offered while the server can make one - once it
     // has started listening, since a pool made of the songs heard so far
-    // grows as it goes on.
+    // grows as it goes on - and this device has not turned them off
+    // (UseVibePlaylists).
     public bool CanMakeVibePlaylists =>
-        VibePlaylists != null && VibePlaylistsState() is "analysing" or "ready";
+        UseVibePlaylists && VibePlaylists != null && VibePlaylistsState() is "analysing" or "ready";
 
     public event EventHandler<VibePlaylistEditorEventArgs>? VibePlaylistEditorRequested;
 
@@ -2859,6 +2881,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         RebuildRowsImmediatelyAsync().Forget(_logger, "Playlist content rebuild");
 
     void IPlaylistManagementHost.PlaylistFoldersCollapsedChanged() => SaveSettings();
+
+    bool IPlaylistManagementHost.HidesVibePlaylists => !UseVibePlaylists;
 
     private void OnSidebarSelectionChanged()
     {
