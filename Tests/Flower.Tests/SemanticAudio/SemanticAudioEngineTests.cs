@@ -89,7 +89,9 @@ public class SemanticAudioEngineTests : IDisposable
         var clock = Stopwatch.StartNew();
         while (_engine.Status.State != state)
         {
-            Assert.True(clock.Elapsed < TimeSpan.FromSeconds(10), $"still {_engine.Status.State}, waiting for {state}: {_engine.Status.Error}");
+            // UiWait's budget: the iOS simulator's Mono took longer than 10 s
+            // to analyse these three songs alongside the rest of the suite.
+            Assert.True(clock.Elapsed < TimeSpan.FromSeconds(30),$"still {_engine.Status.State}, waiting for {state}: {_engine.Status.Error}");
             Thread.Sleep(10);
         }
     }

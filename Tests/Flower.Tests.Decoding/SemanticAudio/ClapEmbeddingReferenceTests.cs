@@ -78,7 +78,10 @@ public class ClapEmbeddingReferenceTests : IClassFixture<SemanticAudioFixtures>
     public void Pythons_own_waveforms_embed_the_same_here()
     {
         // The encoder alone, with decoding taken out of it: what Python fed
-        // its session, fed to this one.
+        // its session, fed to this one. Stricter than MinimumCosine, but not
+        // the 0.9999998 a Mac measures: the int8 model runs on a different
+        // ONNX Runtime kernel on another CPU, and CI's Linux x64 runner gave
+        // 0.99988 for the same input (run 42406142836).
         var directory = ModelDirectory();
         using var encoder = new OnnxClapAudioEncoder(Path.Combine(directory, Manifest.AudioEncoder.Name));
 
@@ -92,7 +95,7 @@ public class ClapEmbeddingReferenceTests : IClassFixture<SemanticAudioFixtures>
             var embedding = encoder.Encode(ClipWaveform.Prepare(window));
 
             var cosine = Embedding.Dot(embedding, Vector(clip.GetProperty("embedding")));
-            Assert.True(cosine >= 0.9999f, $"{clip.GetProperty("prepared").GetString()}: cosine {cosine}");
+            Assert.True(cosine >= 0.9995f,$"{clip.GetProperty("prepared").GetString()}: cosine {cosine}");
         }
     }
 

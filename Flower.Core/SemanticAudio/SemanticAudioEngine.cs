@@ -412,13 +412,17 @@ public sealed class SemanticAudioEngine : IDisposable
             _directions = null;
             _download = null;
             _error = null;
-            _state = SemanticAudioState.Off;
         }
 
         _text?.Dispose();
         _text = null;
         _repository.DeleteAll();
         _store.Delete();
+
+        // Off only once the model and the analyses are gone, so whoever sees
+        // Off can count on there being nothing left on disk - a Windows runner
+        // read the model folder as still there right after Off was reported.
+        SetState(SemanticAudioState.Off);
     }
 
     private void SetState(SemanticAudioState state)

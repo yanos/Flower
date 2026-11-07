@@ -729,8 +729,10 @@ models.
 - **Embeddings** (`ClapEmbeddingReferenceTests`, `RequiresClapModel`; the
   model is never committed). The C# pipeline's embedding of each reference
   clip and prompt must have cosine ≥ 0.999 with Python ORT's at the same
-  precision, and Python's own waveforms must embed at 0.9999. **Measured:
-  0.9999998 or better for all of them.** It reads the model from
+  precision, and Python's own waveforms must embed at 0.9995. **Measured:
+  0.9999998 or better for all of them on a Mac; CI's Linux x64 runner gives
+  0.99988 for Python's own waveforms**, since the int8 model runs on another
+  ONNX Runtime kernel there, which is why that bar is not 0.9999. It reads the model from
   `FLOWER_CLAP_MODEL_DIR`, or `~/.cache/flower-semantic-audio/export`, and
   skips when neither has it. It is meant to run in one CI leg, Linux, the
   server's platform, with the cache keyed on the manifest hash, once the
