@@ -53,12 +53,17 @@ public class SemanticAudioEngineTests : IDisposable
             new HttpClient(new Release(files)), NullLogger.Instance, manifest);
 
         var tracks = new List<Track>();
+        // These tests exercise the engine's lifecycle, not clip selection.
+        // Short, single-window songs still go through waveform preparation
+        // and persistence without millions of sample conversions competing
+        // with the rest of the suite on the iOS simulator's Mono runtime.
+        var duration = TimeSpan.FromSeconds(1);
         for (var i = 0; i < 3; i++)
         {
             var path = Path.Combine(_directory, $"song{i}.flac");
             File.WriteAllBytes(path, [0]);
-            _clips.Add(path, TimeSpan.FromSeconds(60));
-            tracks.Add(new Track { Title = $"song {i}", Path = path, Duration = TimeSpan.FromSeconds(60) });
+            _clips.Add(path, duration);
+            tracks.Add(new Track { Title = $"song {i}", Path = path, Duration = duration });
         }
 
         _library = new Library(tracks);
