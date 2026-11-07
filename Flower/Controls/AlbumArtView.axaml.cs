@@ -16,11 +16,17 @@ public partial class AlbumArtView : UserControl
     public static readonly StyledProperty<Stretch> StretchProperty =
         AvaloniaProperty.Register<AlbumArtView, Stretch>(nameof(Stretch), Stretch.UniformToFill);
 
-    // The outline's corner radius. 4 everywhere a cover is one thing among
-    // many on a row; the phone's album grid, where the covers are the page,
-    // rounds them further.
+    // Every cover's corner radius, and the one place it is written: large or
+    // small, phone or desktop, a cover rounds this much. The Borders that
+    // cast a cover's shadow or take its tap round with it through
+    // CoverCornerRadius. Only a picture meant to be round - an artist, the
+    // mini player's cover - sets ArtCornerRadius, to half its width.
+    public const double CoverRadius = 6;
+
+    public static readonly CornerRadius CoverCornerRadius = new(CoverRadius);
+
     public static readonly StyledProperty<double> ArtCornerRadiusProperty =
-        AvaloniaProperty.Register<AlbumArtView, double>(nameof(ArtCornerRadius), 4);
+        AvaloniaProperty.Register<AlbumArtView, double>(nameof(ArtCornerRadius), CoverRadius);
 
     public double ArtCornerRadius
     {

@@ -54,9 +54,9 @@ public static class HomeShelfOrder
 
     public static string Title(HomeShelf shelf) => shelf switch
     {
-        HomeShelf.ContinuePlaying => "Continue Playing",
-        HomeShelf.RecentlyPlayed => "Recently Played",
-        _ => "Recently Added",
+        HomeShelf.ContinuePlaying => "Continue playing",
+        HomeShelf.RecentlyPlayed => "Recently played",
+        _ => "Recently added",
     };
 
     public static MaterialIconKind Icon(HomeShelf shelf) => shelf switch

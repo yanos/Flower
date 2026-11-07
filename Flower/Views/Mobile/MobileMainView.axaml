@@ -304,6 +304,20 @@
     <Style Selector="Grid#MiniPlayerHost.onArt Button.pill:pressed materialIcons|MaterialIcon">
       <Setter Property="Foreground" Value="{DynamicResource AppOnArtRingBrush}" />
     </Style>
+    <!-- Play, on the cover's colour, is white like every other control
+         here rather than the accent's red, which fought the colour under it:
+         a white fill, the glyph near black, dimming as the other whites do
+         while pressed. After the white-glyph styles above, so it wins over
+         them. -->
+    <Style Selector="Grid#MiniPlayerHost.onArt Button.play /template/ ContentPresenter#PART_ContentPresenter, Grid#MiniPlayerHost.onArt Button.play:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppOnArtBrush}" />
+    </Style>
+    <Style Selector="Grid#MiniPlayerHost.onArt Button.play:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppOnArtRingBrush}" />
+    </Style>
+    <Style Selector="Grid#MiniPlayerHost.onArt Button.play materialIcons|MaterialIcon, Grid#MiniPlayerHost.onArt Button.play:pressed materialIcons|MaterialIcon">
+      <Setter Property="Foreground" Value="{DynamicResource AppOnArtInkBrush}" />
+    </Style>
     <!-- The mini player and the tab oval float over the bottom of the screens
          (BottomChrome below), so every screen's scroller keeps that much room
          past its last item - enough to bring it up clear of them, while the
@@ -415,7 +429,7 @@
       <Setter Property="Padding" Value="16,0,8,0" />
     </Style>
     <!-- The currently playing song, said the one way it is said on every
-         list on every platform: weight, and nothing else. Desktop marks its
+         list on every platform: weight, and a grey wash (below). Desktop marks its
          own rows the same (TrackRowControl's .playing style, and
          AlbumGridRowControl's .playingTrack for an expanded album), which it
          did not before - it drew a small "▶" in a column of its own while
@@ -427,6 +441,16 @@
     <Style Selector="Button.trackRow.playing TextBlock, Button.trackRow.playing controls|RowText">
       <!-- TextElement's, which both of them take theirs from. -->
       <Setter Property="TextElement.FontWeight" Value="Bold" />
+    </Style>
+    <!-- ...and, as the desktop's row does (TrackRowControl's PlayingBorder),
+         a wash under the row from its words on (TrackRowView's PlayingWash), so the playing song is found at a glance
+         down a long list and not only by reading its weight. The text's own
+         ink at 14%: faint, and the same strength on a light or a dark
+         page - a flat grey was a block across the list. -->
+    <Style Selector="Button.trackRow.playing Border#PlayingWash">
+      <Setter Property="Background">
+        <SolidColorBrush Color="{DynamicResource PaletteTextPrimary}" Opacity="0.14" />
+      </Setter>
     </Style>
     <!-- Not-yet-downloaded track that can't currently be streamed/downloaded
          (see TrackRowViewModel.IsUnavailable/IsAvailable) - dimmed like
@@ -632,20 +656,23 @@
             </StackPanel>
           </Grid>
         </Button>
+        <!-- Play in the accent's fill (Button.play), as on Now Playing and an
+             album's actions: the one red thing in the bar. -->
         <Button Grid.Column="1"
-                Classes="pill"
+                Classes="play"
                 Command="{Binding ToggleMiniPlayerCommand}"
-                Padding="8"
+                Width="44" Height="44" CornerRadius="22" Padding="0"
+                HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
                 VerticalAlignment="Center">
           <materialIcons:MaterialIcon Kind="{Binding PlaylistControl.IsPlaying, Converter={StaticResource PlayOrPauseConverter}}"
-                                       Width="28" Height="28" />
+                                       Width="24" Height="24" />
         </Button>
         <Button Grid.Column="2"
                 Classes="pill"
                 Command="{Binding NextTrackCommand}"
                 Padding="8"
                 VerticalAlignment="Center">
-          <materialIcons:MaterialIcon Kind="FastForward" Width="28" Height="28" />
+          <materialIcons:MaterialIcon Kind="SkipNext" Width="28" Height="28" />
         </Button>
       </Grid>
     </Border>
@@ -735,6 +762,17 @@
         <StackPanel HorizontalAlignment="Center" Spacing="2">
           <materialIcons:MaterialIcon Classes="tabIcon" Kind="PlaylistMusicOutline" Width="29" Height="29" Margin="-2.5" HorizontalAlignment="Center" />
           <TextBlock Text="Queue" HorizontalAlignment="Center" />
+        </StackPanel>
+      </Button>
+      <!-- The songs played, newest first - the desktop's History page. Not
+           in the bar out of the box (MobileTabs.Default); the Navigation Bar
+           page puts it in. -->
+      <Button x:Name="HistoryTab" Classes="pill tab"
+              Classes.current="{Binding SelectedTab, Converter={StaticResource EqualsConverter}, ConverterParameter=History}"
+              Command="{Binding SelectTabCommand}" CommandParameter="History">
+        <StackPanel HorizontalAlignment="Center" Spacing="2">
+          <materialIcons:MaterialIcon Classes="tabIcon" Kind="ClockTimeEightOutline" Width="29" Height="29" Margin="-2.5" HorizontalAlignment="Center" />
+          <TextBlock Text="History" HorizontalAlignment="Center" />
         </StackPanel>
       </Button>
       <!-- Keeps SearchTab_Click: tapping the tab while already on Search

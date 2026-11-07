@@ -59,21 +59,20 @@
     <Style Selector="layout|NowPlayingBodyPanel :is(Button):pressed materialIcons|MaterialIcon">
       <Setter Property="Foreground" Value="{DynamicResource AppOnArtRingBrush}" />
     </Style>
-    <!-- The ring round play is white like the rims of the round buttons at
-         the top, not the dimmer white a pressed icon turns. -->
-    <Style Selector="Button.pill.circle Border.ring">
-      <Setter Property="BorderBrush" Value="{DynamicResource AppOnArtBrush}" />
+    <!-- Play, on the cover's colour, is white like every other control
+         here rather than the accent's red, which fought the colour under it:
+         a white fill, the glyph near black, dimming as the other whites do
+         while pressed. After the white-glyph styles above, so it wins over
+         them. -->
+    <Style Selector="layout|NowPlayingBodyPanel Button.play /template/ ContentPresenter#PART_ContentPresenter, layout|NowPlayingBodyPanel Button.play:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppOnArtBrush}" />
     </Style>
-    <!-- And so is the glyph in it, named as the app-wide ring glyph is
-         (App.axaml: the frame's colour), which the any-icon style above
-         loses to. -->
-    <Style Selector="layout|NowPlayingBodyPanel Border.ring > materialIcons|MaterialIcon">
-      <Setter Property="Foreground" Value="{DynamicResource AppOnArtBrush}" />
+    <Style Selector="layout|NowPlayingBodyPanel Button.play:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppOnArtRingBrush}" />
     </Style>
-    <Style Selector="layout|NowPlayingBodyPanel :is(Button):pressed Border.ring > materialIcons|MaterialIcon">
-      <Setter Property="Foreground" Value="{DynamicResource AppOnArtRingBrush}" />
+    <Style Selector="layout|NowPlayingBodyPanel Button.play materialIcons|MaterialIcon, layout|NowPlayingBodyPanel Button.play:pressed materialIcons|MaterialIcon">
+      <Setter Property="Foreground" Value="{DynamicResource AppOnArtInkBrush}" />
     </Style>
-
     <!-- The back and menu circles at the top: no fill, so the sheet's colour
          shows through them, and ringed and drawn in white like everything
          else here. The icon by child selectors rather than as any icon under
@@ -201,7 +200,7 @@
            track with no art yet has nothing to give the button a size of its
            own - left to its default it would collapse to nothing and the slot
            would sit empty. -->
-      <Border CornerRadius="16"
+      <Border CornerRadius="{x:Static layout:AlbumArtView.CoverCornerRadius}"
               BoxShadow="{DynamicResource AppCoverShadow}">
         <Button Command="{Binding GoToCurrentlyPlayingAlbumCommand}"
                 HorizontalAlignment="Stretch"
@@ -210,12 +209,11 @@
                 VerticalContentAlignment="Stretch"
                 Background="Transparent"
                 BorderThickness="0"
-                CornerRadius="16"
+                CornerRadius="{x:Static layout:AlbumArtView.CoverCornerRadius}"
                 Padding="0">
           <!-- The one cover control, as every cover in the app is - the note
                when there is no art included. -->
-          <layout:AlbumArtView AlbumArt="{Binding CurrentlyPlaying.AlbumArt}"
-                               ArtCornerRadius="16" />
+          <layout:AlbumArtView AlbumArt="{Binding CurrentlyPlaying.AlbumArt}" />
         </Button>
       </Border>
 
@@ -292,23 +290,27 @@
                       Orientation="Horizontal"
                       Spacing="28"
                       HorizontalAlignment="Center">
+            <!-- Previous and next as the desktop's player bar draws them
+                 (PlaylistControls), since that is what they do. -->
             <Button Command="{Binding PreviousTrackCommand}"
                     Background="Transparent" BorderThickness="0"
                     VerticalAlignment="Center">
-              <materialIcons:MaterialIcon Kind="Rewind" Width="28" Height="28" />
+              <materialIcons:MaterialIcon Kind="SkipPrevious" Width="30" Height="30" />
             </Button>
-            <Button Classes="pill circle"
+            <!-- Play filled in the accent, as it is everywhere it starts the
+                 music (Button.play): the album's own Play, the mini player's,
+                 the desktop's. -->
+            <Button Classes="play"
                     Command="{Binding ToggleMiniPlayerCommand}"
-                    Width="60" Height="60">
-              <Border Classes="ring">
-                <materialIcons:MaterialIcon Kind="{Binding PlaylistControl.IsPlaying, Converter={StaticResource PlayOrPauseConverter}}"
-                                             Width="28" Height="28" />
-              </Border>
+                    Width="64" Height="64" CornerRadius="32" Padding="0"
+                    HorizontalContentAlignment="Center" VerticalContentAlignment="Center">
+              <materialIcons:MaterialIcon Kind="{Binding PlaylistControl.IsPlaying, Converter={StaticResource PlayOrPauseConverter}}"
+                                           Width="30" Height="30" />
             </Button>
             <Button Command="{Binding NextTrackCommand}"
                     Background="Transparent" BorderThickness="0"
                     VerticalAlignment="Center">
-              <materialIcons:MaterialIcon Kind="FastForward" Width="28" Height="28" />
+              <materialIcons:MaterialIcon Kind="SkipNext" Width="30" Height="30" />
             </Button>
           </StackPanel>
           <Button Grid.Column="2"

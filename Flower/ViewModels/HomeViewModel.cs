@@ -60,7 +60,7 @@ public sealed class ContinuePlayingItemViewModel : ViewModelBase
         }
     }
 
-    public string ResumeLabel => IsPlaying ? "Pause" : "Continue Playing";
+    public string ResumeLabel => IsPlaying ? "Pause" : "Continue playing";
     public string ResumeTip => IsPlaying ? "Pause" : "Continue where you left off";
     public MaterialIconKind ResumeIcon => IsPlaying ? MaterialIconKind.Pause : MaterialIconKind.Play;
 

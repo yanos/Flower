@@ -5,7 +5,7 @@
         xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
         x:Class="Flower.Views.ColumnSelectorWindow"
         x:DataType="vm:ColumnSelectorViewModel"
-        Title="Select Columns"
+        Title="Select columns"
         Width="820" Height="640"
         WindowStartupLocation="CenterOwner"
         CanResize="False"

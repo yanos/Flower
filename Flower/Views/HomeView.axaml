@@ -186,7 +186,6 @@
                     <Grid x:Name="SongCells" ColumnDefinitions="40,*,Auto,Auto,Auto" ColumnSpacing="12">
                       <controls:AlbumArtView Grid.Column="0"
                                              Width="40" Height="40"
-                                             ArtCornerRadius="8"
                                              AlbumArt="{Binding AlbumArt}" />
                       <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Center">
                         <TextBlock Classes="songTitle"

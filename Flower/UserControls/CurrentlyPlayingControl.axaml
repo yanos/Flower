@@ -19,7 +19,6 @@
 
     <controls:AlbumArtView Grid.Column="0"
                            Width="92" Height="92"
-                           ArtCornerRadius="8"
                            VerticalAlignment="Center"
                            AlbumArt="{Binding AlbumArt}"/>
 

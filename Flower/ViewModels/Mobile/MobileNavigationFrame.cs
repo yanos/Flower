@@ -1,10 +1,6 @@
 using System;
 using System.Collections.Generic;
 
-using Avalonia;
-
-using Material.Icons;
-
 using Flower.Models;
 
 namespace Flower.ViewModels.Mobile;
@@ -85,21 +81,6 @@ public sealed record MobileNavigationFrame(
                     ? (SidebarItem?.Name ?? Tab.ToString())
                     : Tab.ToString();
 
-    // A tab's own top screen, whose title is the tab's name - and so is
-    // drawn with the tab's icon before it (ScreenTitle), as the tab bar
-    // draws it. Not a screen drilled into from one, whose title is an artist
-    // or a playlist rather than the tab.
-    public bool IsTabRoot => !HasDrilledIn && !IsSearchScreen && !(Tab == MobileTab.Artists && SelectedArtistName != null);
-
-    // The tab's icon, at the title's size: Songs is the bar's own note
-    // (TitleUsesSongNote), every other tab a Material glyph enlarged as the
-    // bar enlarges it (MobileTabs.IconScale).
-    public const double TitleIconBox = 30;
-    public MaterialIconKind TitleIcon => MobileTabs.Icon(Tab);
-    public bool TitleUsesSongNote => MobileTabs.UsesSongNote(Tab);
-    public double TitleIconSize => TitleIconBox * MobileTabs.IconScale(Tab);
-    public Thickness TitleIconMargin => new(-(TitleIconSize - TitleIconBox) / 2);
-
     // The Search tab's own always-visible box replaces the title there - see
     // MobileMainViewModel.IsShowingSearchTabBox's own former doc comment.
     public bool IsSearchScreen => ScreenKind == MobileScreenKind.SearchResults;
@@ -130,8 +111,13 @@ public sealed record MobileNavigationFrame(
 
     // The flat Songs list, the whole library - the one track list that is
     // nobody's one thing, and so has a title of its own (with its Shuffle
-    // pill beside it - see ScreenTitle) rather than an album's header.
+    // button beside it - see ScreenTitle) rather than an album's header.
     public bool IsSongsList => ScreenKind == MobileScreenKind.TrackList && Tab == MobileTab.Songs && !HasDrilledIn;
+
+    // The Playlists tab's list, whose title line ends in the New button (see
+    // ScreenTitle). A folder opens in place on this same screen, so there is
+    // no deeper playlist picker for it to mean as well.
+    public bool IsPlaylistsList => ScreenKind == MobileScreenKind.PlaylistPicker;
 
     // Identifies which materialized control a frame should reuse - two
     // frames with the same ScopeKey are "the same screen" as far as

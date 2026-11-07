@@ -669,7 +669,7 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
     // fails). Rows in between still belong to whatever scope came before, so
     // an empty Rows then says nothing about the scope now selected - mobile
     // switching from the Albums grid (whose own Rows are empty) to Songs showed
-    // "Nothing Here" for the length of the debounce and the build. A rebuild
+    // "Nothing here" for the length of the debounce and the build. A rebuild
     // superseded by a newer one leaves the flag to that newer one.
     public bool IsRowsRebuildPending { get; private set; }
 

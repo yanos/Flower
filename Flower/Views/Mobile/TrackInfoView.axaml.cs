@@ -149,7 +149,7 @@ public partial class TrackInfoView : UserControl
         ArtMessage.IsVisible = false;
         var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title = "Choose a Photo",
+            Title = "Choose a photo",
             AllowMultiple = false,
             FileTypeFilter = [FilePickerFileTypes.ImageAll],
         });

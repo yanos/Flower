@@ -142,6 +142,24 @@
     <Setter Property="Foreground" Value="{DynamicResource AppTextPrimaryBrush}" />
   </Style>
 
+  <!-- A sheet's action row (Button.action: the song, album and playlist
+     menus, Add to Playlist, Move to Folder) that does not apply right now:
+     dimmed like its words and icon, on the sheet's own background - not the
+     block of grey Fluent paints behind a disabled button, which made a run
+     of them read as a panel of its own. -->
+  <Style Selector="Button.action:disabled /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
+
+  <!-- A secondary button that takes something away (Unpair): the same
+     outline, its word in the danger colour, at rest and pressed alike. -->
+  <Style Selector="Button.secondary.danger">
+    <Setter Property="Foreground" Value="{DynamicResource AppDangerBrush}" />
+  </Style>
+  <Style Selector="Button.secondary.danger /template/ ContentPresenter#PART_ContentPresenter, Button.secondary.danger:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.secondary.danger:pressed /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Foreground" Value="{DynamicResource AppDangerBrush}" />
+  </Style>
+
   <!-- The desktop's one shape for a button with words in it - a dialog's
      Cancel and Save, Settings' Add Folder, a page's Clear Queue - so they
      all look alike wherever they are: with Button.primary for the action the

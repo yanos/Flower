@@ -163,7 +163,7 @@ public class HomeShelfSettingsTests : PinnedDataDirectory
         home.ShelfOrder = [HomeShelf.RecentlyAdded, HomeShelf.ContinuePlaying, HomeShelf.RecentlyPlayed];
         var titles = HomeShelfRows.Build(home, columns: 4).OfType<HomeShelfHeaderRow>().Select(h => h.Title);
 
-        Assert.Equal(new[] { "Recently Added", "Recently Played" }, titles);
+        Assert.Equal(new[] { "Recently added", "Recently played" }, titles);
     }
 
     // A shelf dragged to a new place is there at once, and still there at the

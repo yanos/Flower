@@ -40,7 +40,7 @@ public sealed record SettingsCapabilities
     // its first run instead, so there the two imports stand alone.
     public bool ITunesMasterSwitch { get; init; }
 
-    // "Send logs to server", and the Devices tab's server picker: the
+    // "Send diagnostic logs to server", and the Devices tab's server picker: the
     // things that only mean something for a device that pairs *to* a server.
     // A Flower.Server does none of them - it is the thing being paired with.
     public bool PairedServerPicker { get; init; }
@@ -50,7 +50,7 @@ public sealed record SettingsCapabilities
     // reason: a client accepts no incoming connections, so it has no roster.
     public bool TrustedDevices { get; init; }
 
-    // "Open App Data Location", and the reveal button beside each library
+    // "Open app data location", and the reveal button beside each library
     // folder: only meaningful when those paths are on the machine the UI is
     // running on, and that machine has a file manager to show them in
     // (PlatformShell.IsAvailable).

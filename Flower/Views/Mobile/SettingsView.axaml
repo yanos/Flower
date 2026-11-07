@@ -11,14 +11,16 @@
              mc:Ignorable="d"
              x:Class="Flower.Views.Mobile.SettingsView"
              x:DataType="vm:MobileMainViewModel"
-             Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}">
+             Background="{DynamicResource AppBackgroundBrush}">
 
   <UserControl.Styles>
     <!-- Each section is a card lighter than the page, as on the Navigation
          Bar page: a heading in small capitals at its top, then rows that each
-         lead with an icon in a disc of the accent. -->
+         lead with an icon in a disc of the accent. The page is the app's own
+         background, as every screen behind this one is, and a card the
+         surface above it. -->
     <Style Selector="Border.card">
-      <Setter Property="Background" Value="{DynamicResource AppBackgroundBrush}" />
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}" />
       <Setter Property="CornerRadius" Value="18" />
       <Setter Property="BoxShadow" Value="{DynamicResource AppButtonShadow}" />
       <Setter Property="Padding" Value="16" />
@@ -87,20 +89,17 @@
       <Setter Property="TextWrapping" Value="Wrap" />
     </Style>
 
-    <!-- A secondary action: a grey fill rather than Fluent's outlined box.
-         .danger is the same shape washed in the danger colour, for Unpair. -->
+    <!-- A secondary action: the desktop's own outlined button
+         (Button.secondary, Styles/IconButtons.axaml), at the phone's size.
+         It used to be a borderless surface fill, which on a card of the same
+         surface was a word with nothing round it. .danger, for Unpair, is
+         the same button with its word in the danger colour. -->
     <Style Selector="Button.soft">
-      <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}" />
-      <Setter Property="BorderThickness" Value="0" />
       <Setter Property="CornerRadius" Value="10" />
       <Setter Property="Padding" Value="14,9" />
       <Setter Property="FontWeight" Value="Medium" />
       <Setter Property="VerticalAlignment" Value="Center" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
-    </Style>
-    <Style Selector="Button.soft.danger">
-      <Setter Property="Background" Value="{DynamicResource AppDangerTintBrush}" />
-      <Setter Property="Foreground" Value="{DynamicResource AppDangerBrush}" />
     </Style>
     <Style Selector="Button.soft materialIcons|MaterialIcon">
       <Setter Property="Width" Value="18" />
@@ -226,6 +225,27 @@
             </StackPanel>
           </Grid>
 
+          <!-- Looking up artist pictures online (MusicLibrarySettings.
+               LookUpOnline): this device's own switch while it is on its own.
+               A paired phone has none - its server's owner decides, for this
+               phone's own songs too (AppSettings.PairedServerLooksUpOnline) -
+               so the row is simply not there. It had a card of its own, which
+               while paired said only that. -->
+          <StackPanel Spacing="12"
+                      IsVisible="{Binding Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNullOrEmpty}}">
+            <Border Classes="divider" Margin="58,4,0,4" />
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14" Classes="badgeRow">
+              <Border Grid.Column="0" Classes="badge" VerticalAlignment="Center">
+                <materialIcons:MaterialIcon Kind="AccountMusicOutline" />
+              </Border>
+              <TextBlock Grid.Column="1" Classes="rowTitle" FontWeight="Normal"
+                         Text="Look up artist pictures online"
+                         TextWrapping="Wrap"
+                         VerticalAlignment="Center" />
+              <ToggleSwitch Grid.Column="2" IsChecked="{Binding Main.LookUpOnline}" />
+            </Grid>
+          </StackPanel>
+
           <StackPanel IsVisible="{Binding HasMediaPermissionPrompt}" Spacing="12">
             <Border Classes="divider" Margin="58,4,0,4" />
             <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14" Classes="badgeRow">
@@ -236,7 +256,7 @@
                 <StackPanel IsVisible="{Binding !HasMediaPermission}" Spacing="8">
                   <TextBlock Classes="note"
                              Text="Flower can't see your music. Allow access in Settings." />
-                  <Button Classes="soft" Content="Open Settings"
+                  <Button Classes="secondary soft" Content="Open Settings"
                           Command="{Binding OpenAppSettingsCommand}" />
                 </StackPanel>
                 <TextBlock IsVisible="{Binding HasMediaPermission}"
@@ -260,7 +280,7 @@
             <TextBlock Grid.Column="1" Classes="rowTitle" Text="Customize navigation bar"
                        VerticalAlignment="Center" />
             <materialIcons:MaterialIcon Grid.Column="2" Kind="ChevronRight" Width="22" Height="22"
-                                        Foreground="{DynamicResource AppAccentBrush}" />
+                                        Foreground="{DynamicResource AppTextValueBrush}" />
           </Grid>
         </Button>
       </Border>
@@ -301,37 +321,6 @@
         </StackPanel>
       </Border>
 
-      <!-- Looking things up online (MusicLibrarySettings.LookUpOnline): this
-           device's own switch while it is on its own. A paired phone has
-           none - its server's owner decides, for this phone's own songs too
-           (AppSettings.PairedServerLooksUpOnline) - so it says so instead. -->
-      <Border Classes="card">
-        <StackPanel Spacing="12">
-          <TextBlock Classes="section-header" Text="ONLINE" />
-          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14" Classes="badgeRow"
-                IsVisible="{Binding Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNullOrEmpty}}">
-            <Border Grid.Column="0" Classes="badge" VerticalAlignment="Center">
-              <materialIcons:MaterialIcon Kind="AccountMusicOutline" />
-            </Border>
-            <TextBlock Grid.Column="1" Classes="rowTitle" FontWeight="Normal"
-                       Text="Look up artist pictures online"
-                       TextWrapping="Wrap"
-                       VerticalAlignment="Center" />
-            <ToggleSwitch Grid.Column="2" IsChecked="{Binding Main.LookUpOnline}" />
-          </Grid>
-          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14" Classes="badgeRow"
-                IsVisible="{Binding Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}">
-            <Border Grid.Column="0" Classes="badge" VerticalAlignment="Center">
-              <materialIcons:MaterialIcon Kind="AccountMusicOutline" />
-            </Border>
-            <TextBlock Grid.Column="1" Classes="note" FontSize="15"
-                       Text="Artist pictures come from the server, when its owner has looking them up switched on."
-                       TextWrapping="Wrap"
-                       VerticalAlignment="Center" />
-          </Grid>
-        </StackPanel>
-      </Border>
-
       <!-- How much Home's shelves hold - see AppSettings.
            HomeContinuePlayingLimit; desktop sets the same three on Settings'
            General tab - and the order they come in on the page, dragged by
@@ -350,7 +339,7 @@
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="fvm:HomeShelfSettingRow">
                 <Border Classes="shelfRow">
-                  <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6">
+                  <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="6">
                     <Border Grid.Column="0"
                             Classes="dragHandle"
                             Width="36" Height="44"
@@ -366,11 +355,19 @@
                     <controls:Stepper Grid.Column="2"
                                       Value="{Binding Value}"
                                       Maximum="{Binding Maximum}" />
+                    <!-- What the count counts (albums, songs, months), as on
+                         the desktop's Settings. -->
+                    <TextBlock Grid.Column="3" Classes="note"
+                               Text="{Binding Unit}"
+                               Width="52" Margin="4,0,0,0"
+                               VerticalAlignment="Center" />
                   </Grid>
                 </Border>
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>
+          <TextBlock Classes="note"
+                     Text="0 hides that shelf. Drag a row by its handle to move that shelf on the page." />
         </StackPanel>
       </Border>
 
@@ -435,7 +432,7 @@
                          Text="Can't reach server" />
             </StackPanel>
             <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-              <Button Classes="soft danger" Content="Unpair"
+              <Button Classes="secondary soft danger" Content="Unpair"
                       Command="{Binding Pairing.UnpairServerCommand}" />
             </StackPanel>
           </Grid>
@@ -483,6 +480,8 @@
                          VerticalAlignment="Center" />
               <ToggleSwitch Grid.Column="2" IsChecked="{Binding Main.ShareLogsWithPairedServer}" />
             </Grid>
+            <TextBlock Classes="note" Margin="0,-8,0,0"
+                       Text="Helps the server owner fix problems. Includes file names." />
 
             <!-- Off by default: songs added on this phone go up to the server
                  on its own network and wait otherwise, rather than spending a
@@ -493,11 +492,13 @@
                 <materialIcons:MaterialIcon Kind="CloudUploadOutline" />
               </Border>
               <TextBlock Grid.Column="1" Classes="rowTitle" FontWeight="Normal"
-                         Text="Upload imported songs to the server over cellular"
+                         Text="Transfer songs when away from home"
                          TextWrapping="Wrap"
                          VerticalAlignment="Center" />
               <ToggleSwitch Grid.Column="2" IsChecked="{Binding Main.UploadWhenAwayFromHome}" />
             </Grid>
+            <TextBlock Classes="note" Margin="0,-8,0,0"
+                       Text="Off: song files are sent to the server, and replaced versions fetched from it, only on its own network. On: also over cellular or a remote connection. Edits to tags and covers always go." />
 
             <!-- Off by default: when the queue runs out, the server finds songs
                  like the last few - and only while the server offers it. See
@@ -508,12 +509,14 @@
                 <materialIcons:MaterialIcon Kind="AllInclusive" />
               </Border>
               <TextBlock Grid.Column="1" Classes="rowTitle" FontWeight="Normal"
-                         Text="Endless Play: when the queue runs out, keep playing songs like the last few"
+                         Text="Endless Play"
                          TextWrapping="Wrap"
                          VerticalAlignment="Center" />
               <ToggleSwitch Grid.Column="2" IsChecked="{Binding Main.EndlessPlay}"
                             IsEnabled="{Binding Main.IsEndlessPlayOffered}" />
             </Grid>
+            <TextBlock Classes="note" Margin="0,-8,0,0"
+                       Text="When the queue runs out, keep playing songs that sound like the last few." />
           </StackPanel>
         </StackPanel>
       </Border>
@@ -572,7 +575,7 @@
                                      FontSize="24" FontWeight="Bold" LetterSpacing="2"
                                      VerticalAlignment="Center" />
               </Border>
-              <Button Grid.Column="1" Classes="soft"
+              <Button Grid.Column="1" Classes="secondary soft"
                       Click="CopyPairingCodeButton_Click"
                       VerticalAlignment="Stretch">
                 <StackPanel Orientation="Horizontal" Spacing="8">
@@ -604,7 +607,7 @@
                                      TextTrimming="CharacterEllipsis"
                                      VerticalAlignment="Center" />
               </Border>
-              <Button Grid.Column="1" Classes="soft"
+              <Button Grid.Column="1" Classes="secondary soft"
                       Click="CopyPairingInviteButton_Click"
                       VerticalAlignment="Stretch">
                 <StackPanel Orientation="Horizontal" Spacing="8">
@@ -640,7 +643,7 @@
                                 PlaceholderText="Address, or a flower:// pairing link"
                                 controls:SoftKeyboard.ReopenOnTap="True"
                                 FontSize="14" />
-            <Button Grid.Column="1" Classes="soft" Content="Add"
+            <Button Grid.Column="1" Classes="secondary soft" Content="Add"
                     Command="{Binding Pairing.AddManualServerCommand}"
                     VerticalAlignment="Stretch" MinWidth="64"
                     HorizontalContentAlignment="Center" />
@@ -656,7 +659,7 @@
                   <TextBlock Grid.Column="0" Text="{Binding}" Classes="note"
                              TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
                              VerticalAlignment="Center" />
-                  <Button Grid.Column="1" Classes="soft" Content="Remove"
+                  <Button Grid.Column="1" Classes="secondary soft" Content="Remove"
                           Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).Pairing.RemoveManualServerCommand}"
                           CommandParameter="{Binding}" />
                 </Grid>
@@ -685,7 +688,7 @@
                   <Grid ColumnDefinitions="*,Auto" Margin="0,4">
                     <TextBlock Grid.Column="0" Text="{Binding Alias}" FontSize="15"
                                TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                    <Button Grid.Column="1" Classes="soft" Content="Pair"
+                    <Button Grid.Column="1" Classes="secondary soft" Content="Pair"
                             Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).Pairing.PairWithServerCommand}"
                             CommandParameter="{Binding}" />
                   </Grid>

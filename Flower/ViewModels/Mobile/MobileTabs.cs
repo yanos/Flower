@@ -15,19 +15,29 @@ namespace Flower.ViewModels.Mobile;
 // declaration any more.
 public static class MobileTabs
 {
-    // Every tab there is, in the order Settings lists the ones not shown.
+    // Every tab there is, in the order Settings lists the ones not shown -
+    // History beside the Queue, as the desktop sidebar has them. One more
+    // than the bar holds (MaxShown), so at least one is always left to the
+    // Navigation Bar page; out of the box that is History.
     public static readonly IReadOnlyList<MobileTab> All =
     [
-        MobileTab.Home, MobileTab.Albums, MobileTab.Artists, MobileTab.Songs,
-        MobileTab.Playlists, MobileTab.Queue, MobileTab.Search,
+        MobileTab.Home, MobileTab.Songs, MobileTab.Albums, MobileTab.Artists,
+        MobileTab.Playlists, MobileTab.Queue, MobileTab.History, MobileTab.Search,
     ];
 
+    // The most the bar shows at once. Past seven a tab is narrower than a
+    // thumb (Button.tab.compact is already the squeeze for seven), so an
+    // eighth is turned on only by turning another off.
+    public const int MaxShown = 7;
+
     // Home first, so it is where the app opens - the first tab in the bar is.
+    // Songs, Albums, Artists in the desktop sidebar's order, so the library
+    // reads the same way round on both.
     // Seven is one past what is drawn at full size, so the bar starts compact;
     // any tab can be taken out of it in Settings.
     public static readonly IReadOnlyList<MobileTab> Default =
     [
-        MobileTab.Home, MobileTab.Albums, MobileTab.Artists, MobileTab.Songs,
+        MobileTab.Home, MobileTab.Songs, MobileTab.Albums, MobileTab.Artists,
         MobileTab.Playlists, MobileTab.Queue, MobileTab.Search,
     ];
 
@@ -37,8 +47,8 @@ public static class MobileTabs
     public const int RoomyShown = 6;
 
     // A saved choice, cleaned: names that are no longer tabs and repeats are
-    // dropped, and nothing left at all is the default rather than a bar with
-    // no tabs.
+    // dropped, anything past MaxShown too, and nothing left at all is the
+    // default rather than a bar with no tabs.
     public static IReadOnlyList<MobileTab> Parse(IEnumerable<string>? saved)
     {
         if (saved == null)
@@ -47,6 +57,8 @@ public static class MobileTabs
         var tabs = new List<MobileTab>();
         foreach (var name in saved)
         {
+            if (tabs.Count == MaxShown)
+                break;
             if (Enum.TryParse<MobileTab>(name, out var tab) && All.Contains(tab) && !tabs.Contains(tab))
                 tabs.Add(tab);
         }
@@ -68,6 +80,8 @@ public static class MobileTabs
         MobileTab.Playlists => MaterialIconKind.PlaylistPlay,
         MobileTab.Queue => MaterialIconKind.PlaylistMusicOutline,
         MobileTab.Search => MaterialIconKind.Magnify,
+        // The desktop sidebar's History glyph.
+        MobileTab.History => MaterialIconKind.ClockTimeEightOutline,
         _ => MaterialIconKind.MusicNote,
     };
 
@@ -86,6 +100,8 @@ public static class MobileTabs
         MobileTab.Playlists => 30.0 / 24,
         MobileTab.Queue => 29.0 / 24,
         MobileTab.Search => 33.0 / 24,
+        // A circle about 20 of its 24 units across, like the Queue's glyph.
+        MobileTab.History => 29.0 / 24,
         _ => 1,
     };
 }

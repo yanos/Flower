@@ -116,6 +116,14 @@
     <Style Selector="Grid#AlbumPage Button.trackRow /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Foreground" Value="{DynamicResource AppOnArtBrush}" />
     </Style>
+    <!-- The playing song's wash, in the white the page's words and icons
+         take here rather than the text's ink (Button.trackRow.playing,
+         MobileMainView): the same strength, on the cover's colour. -->
+    <Style Selector="Grid#AlbumPage Button.trackRow.playing Border#PlayingWash">
+      <Setter Property="Background">
+        <SolidColorBrush Color="{DynamicResource PaletteOnArt}" Opacity="0.14" />
+      </Setter>
+    </Style>
     <Style Selector="Grid#AlbumPage TextBlock.albumName">
       <Setter Property="Foreground" Value="{DynamicResource AppOnArtBrush}" />
     </Style>
@@ -134,6 +142,20 @@
     </Style>
     <Style Selector="Grid#AlbumPage StackPanel.albumActions :is(Button):pressed materialIcons|MaterialIcon">
       <Setter Property="Foreground" Value="{DynamicResource AppOnArtRingBrush}" />
+    </Style>
+    <!-- Play, on the cover's colour, is white like every other control
+         here rather than the accent's red, which fought the colour under it:
+         a white fill, the glyph near black, dimming as the other whites do
+         while pressed. After the white-glyph styles above, so it wins over
+         them. -->
+    <Style Selector="Grid#AlbumPage StackPanel.albumActions Button.play /template/ ContentPresenter#PART_ContentPresenter, Grid#AlbumPage StackPanel.albumActions Button.play:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppOnArtBrush}" />
+    </Style>
+    <Style Selector="Grid#AlbumPage StackPanel.albumActions Button.play:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppOnArtRingBrush}" />
+    </Style>
+    <Style Selector="Grid#AlbumPage StackPanel.albumActions Button.play materialIcons|MaterialIcon, Grid#AlbumPage StackPanel.albumActions Button.play:pressed materialIcons|MaterialIcon">
+      <Setter Property="Foreground" Value="{DynamicResource AppOnArtInkBrush}" />
     </Style>
   </UserControl.Styles>
 

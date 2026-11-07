@@ -22,46 +22,114 @@
        desktop page header's too - and a little larger than it was (34), so
        a tab's screen reads as the top of its tab.
 
-       On the flat Songs list, a Shuffle pill at the far end of the line -
-       the same oval as the Playlists tab's New Playlist (NewPlaylistEntry) -
-       which shuffles the songs on screen, as an album's own shuffle circle
-       does its songs. -->
+       On the flat Songs list, Shuffle at the far end of the line, which
+       shuffles the songs on screen, as an album's own shuffle circle does its
+       songs. On the Playlists list, New in the same place, and its menu picks
+       what to make. Both are the desktop's outlined button (Button.secondary)
+       rather than an oval, since each is an action with words - a
+       playlist or a folder is then named in the row at the top of the list
+       (NewPlaylistEntry). -->
+  <UserControl.Styles>
+    <!-- New's card and rows: the screen menu's (ScreenMenuButton), so the
+         two things that drop from the band and the title are one kind of
+         thing. -->
+    <Style Selector="FlyoutPresenter.newMenu">
+      <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundChromeMediumBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource AppChromeBorderBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="Padding" Value="0,4" />
+      <Setter Property="MinWidth" Value="0" />
+    </Style>
+    <Style Selector="Button.newMenuRow">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="0" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Padding" Value="16,11" />
+    </Style>
+  </UserControl.Styles>
+
   <Grid ColumnDefinitions="*,Auto"
         Margin="16,0,16,8"
         IsVisible="{Binding $parent[controls:ScreenSlot].Frame.Title, Converter={x:Static avc:StringConverters.IsNotNullOrEmpty}}">
-    <!-- A tab's own screen has the tab's icon before its name, in the
-         name's colour (MobileNavigationFrame.IsTabRoot). -->
+    <!-- The name alone: the tab bar already says which tab this is, and
+         the same icon again before the title only repeated it. -->
     <StackPanel Orientation="Horizontal" Spacing="10">
-      <Panel VerticalAlignment="Center"
-             IsVisible="{Binding $parent[controls:ScreenSlot].Frame.IsTabRoot, FallbackValue=False}">
-        <materialIcons:MaterialIcon Kind="{Binding $parent[controls:ScreenSlot].Frame.TitleIcon, FallbackValue=MusicNote}"
-                                    Width="{Binding $parent[controls:ScreenSlot].Frame.TitleIconSize, FallbackValue=30}"
-                                    Height="{Binding $parent[controls:ScreenSlot].Frame.TitleIconSize, FallbackValue=30}"
-                                    Margin="{Binding $parent[controls:ScreenSlot].Frame.TitleIconMargin, FallbackValue=0}"
-                                    Foreground="{DynamicResource AppChromeBrush}"
-                                    IsVisible="{Binding !$parent[controls:ScreenSlot].Frame.TitleUsesSongNote, FallbackValue=True}" />
-        <Path Data="{StaticResource SongNoteGeometry}"
-              Stretch="Uniform" Width="27" Height="27"
-              Fill="{DynamicResource AppChromeBrush}"
-              IsVisible="{Binding $parent[controls:ScreenSlot].Frame.TitleUsesSongNote, FallbackValue=False}" />
-      </Panel>
       <TextBlock Classes="screenTitle"
                  Text="{Binding $parent[controls:ScreenSlot].Frame.Title}"
                  VerticalAlignment="Center"
                  FontSize="38" />
     </StackPanel>
     <Button Grid.Column="1"
-            Classes="pill"
-            Padding="0"
+            Classes="secondary"
+            Height="40" CornerRadius="10" Padding="12,0,16,0"
             VerticalAlignment="Center"
+            VerticalContentAlignment="Center"
             IsVisible="{Binding $parent[controls:ScreenSlot].Frame.IsSongsList, FallbackValue=False}"
             Command="{Binding $parent[controls:ScreenSlot].((vm:MobileMainViewModel)DataContext).ShuffleAlbumCommand}">
-      <Border Classes="floating" Height="40" CornerRadius="20" Padding="12,0,18,0">
-        <StackPanel Orientation="Horizontal" Spacing="8">
-          <materialIcons:MaterialIcon Kind="Shuffle" Width="20" Height="20" VerticalAlignment="Center" />
-          <TextBlock Text="Shuffle" FontSize="17" VerticalAlignment="Center" />
-        </StackPanel>
-      </Border>
+      <StackPanel Orientation="Horizontal" Spacing="6">
+        <materialIcons:MaterialIcon Classes="chrome" Kind="Shuffle" Width="20" Height="20" VerticalAlignment="Center" />
+        <TextBlock Text="Shuffle" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
+      </StackPanel>
+    </Button>
+    <!-- The card it drops is a popup, outside the slot, so it is handed the
+         screen's view model as it opens (NewMenu_Opening) for the rows'
+         IsVisible, and each row runs its command from the code-behind, the
+         way the screen's own menu does (ScreenMenuButton): closed first,
+         then the command - a binding on a button whose popup has just shut
+         is left with nothing to run. -->
+    <Button x:Name="NewMenuButton"
+            Grid.Column="1"
+            Classes="secondary"
+            Height="40" CornerRadius="10" Padding="12,0,16,0"
+            VerticalAlignment="Center"
+            VerticalContentAlignment="Center"
+            IsVisible="{Binding $parent[controls:ScreenSlot].Frame.IsPlaylistsList, FallbackValue=False}">
+      <Button.Flyout>
+        <Flyout Placement="BottomEdgeAlignedRight"
+                VerticalOffset="6"
+                FlyoutPresenterClasses="newMenu"
+                Opening="NewMenu_Opening">
+          <!-- .chromeIcons: the icons in the frame's colour (App.axaml). -->
+          <StackPanel x:Name="NewMenuItems" x:DataType="vm:MobileMainViewModel" Classes="chromeIcons" MinWidth="220">
+            <Button Classes="newMenuRow" Tag="playlist" Click="NewMenuRow_Click">
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <materialIcons:MaterialIcon Kind="PlaylistPlus" Width="20" Height="20" VerticalAlignment="Center" />
+                <TextBlock Text="Playlist" FontSize="16" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <!-- A smart playlist holds what its rules say, so it is offered
+                 here and not in the add-to-playlist sheet. -->
+            <Button Classes="newMenuRow" IsVisible="{Binding CanCreateSmartPlaylist}" Tag="smart" Click="NewMenuRow_Click">
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <materialIcons:MaterialIcon Kind="PlaylistStar" Width="20" Height="20" VerticalAlignment="Center" />
+                <TextBlock Text="Smart playlist" FontSize="16" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <!-- While the paired server makes them
+                 (MainViewModel.CanMakeVibePlaylists). -->
+            <Button Classes="newMenuRow" IsVisible="{Binding CanCreateVibePlaylist}" Tag="vibe" Click="NewMenuRow_Click">
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <materialIcons:MaterialIcon Kind="CreationOutline" Width="20" Height="20" VerticalAlignment="Center" />
+                <TextBlock Text="Vibe playlist" FontSize="16" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+            <!-- Named in the draft row, which says "Folder name". -->
+            <Button Classes="newMenuRow" Tag="folder" Click="NewMenuRow_Click">
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <materialIcons:MaterialIcon Kind="FolderPlusOutline" Width="20" Height="20" VerticalAlignment="Center" />
+                <TextBlock Text="Folder" FontSize="16" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+          </StackPanel>
+        </Flyout>
+      </Button.Flyout>
+      <StackPanel Orientation="Horizontal" Spacing="6">
+        <materialIcons:MaterialIcon Classes="chrome" Kind="Plus" Width="20" Height="20" VerticalAlignment="Center" />
+        <TextBlock Text="New" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
+      </StackPanel>
     </Button>
   </Grid>
 </UserControl>

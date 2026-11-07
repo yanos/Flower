@@ -124,7 +124,7 @@ public class PlaylistScreenTests : PinnedDataDirectory
     private static TrackListScreenView Screen(Window window) =>
         window.GetVisualDescendants().OfType<TrackListScreenView>().Last(v => v.IsEffectivelyVisible);
 
-    // An empty playlist used to get the "Nothing Here" overlay, centred over
+    // An empty playlist used to get the "Nothing here" overlay, centred over
     // the whole screen - which landed on top of the header saying whose empty
     // space this is. The header is the answer to the question the overlay was
     // asking.

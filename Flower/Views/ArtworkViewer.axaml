@@ -98,7 +98,7 @@
           <materialIcons:MaterialIcon Kind="ChevronLeft" Width="26" Height="26" Foreground="White" />
         </Button>
         <Button Grid.Column="1" x:Name="UseButton" Classes="choice primary" Click="Use_Click"
-                Content="Use This Cover" />
+                Content="Use this cover" />
         <Button Grid.Column="2" x:Name="NextButton" Classes="arrow glass" Click="Next_Click"
                 ToolTip.Tip="Next cover">
           <materialIcons:MaterialIcon Kind="ChevronRight" Width="26" Height="26" Foreground="White" />

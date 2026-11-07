@@ -34,8 +34,10 @@ using Track = Flower.Models.Track;
 namespace Flower.Tests.ViewModels.Mobile;
 
 // Making a playlist on the phone. The plus that used to sit in the header band
-// was an icon with no subject, so it is a "New Playlist" row under the title
-// now, and tapping it opens an empty, focused name box where the playlist's
+// was an icon with no subject, so it is a "New" button with words now - on
+// the Playlists tab at the end of the title line, its menu picking what to
+// make; in the add-to-playlist sheet a row that makes a playlist outright -
+// and a playlist opens an empty, focused name box where the playlist's
 // own row will be - nothing is created until a name is committed, and an empty
 // one creates nothing at all. One control does this (NewPlaylistEntry) and the
 // add-to-playlist sheet shows the same one, which is what these assert: the
@@ -118,8 +120,10 @@ public class NewPlaylistEntryTests : PinnedDataDirectory
 
         var window = Show(new PlaylistPickerScreenView(), parts.Mobile);
 
-        var entry = Assert.Single(window.GetVisualDescendants().OfType<NewPlaylistEntry>());
-        Assert.True(entry.FindControl<Button>("StartButton")!.IsEffectivelyVisible);
+        // New itself is in the title line (ScreenTitle), which shows it on
+        // the frame that says it is this list.
+        Assert.True(parts.Mobile.CurrentFrame.IsPlaylistsList);
+        Assert.Single(window.GetVisualDescendants().OfType<NewPlaylistEntry>());
 
         Assert.Single(window.GetVisualDescendants().OfType<TextBlock>(), t => t.Text == "Mixtape");
 
@@ -139,9 +143,6 @@ public class NewPlaylistEntryTests : PinnedDataDirectory
         Assert.True(box.IsEffectivelyVisible);
         Assert.True(string.IsNullOrEmpty(box.Text));
         Assert.True(box.IsFocused);
-        // The row it replaced is gone while it is up, rather than both showing.
-        var entry = window.GetVisualDescendants().OfType<NewPlaylistEntry>().Single();
-        Assert.False(entry.FindControl<Button>("StartButton")!.IsEffectivelyVisible);
 
         window.Close();
     }

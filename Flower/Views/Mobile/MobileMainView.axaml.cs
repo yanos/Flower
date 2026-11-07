@@ -446,6 +446,7 @@ public partial class MobileMainView : UserControl
         MobileTab.Playlists => PlaylistsTab,
         MobileTab.Queue => QueueTab,
         MobileTab.Search => SearchTab,
+        MobileTab.History => HistoryTab,
         _ => throw new ArgumentOutOfRangeException(nameof(tab)),
     };
 

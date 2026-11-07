@@ -20,12 +20,23 @@
   <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto">
     <!-- The rule between one song and the next, along this row's bottom
          edge (the row has no vertical padding - see Button.trackRow in
-         MobileMainView.axaml). From the words on, not under the art, so
-         the covers read as a column; drawn first, so everything else is
-         on top of it. -->
-    <Border Grid.Column="2" Grid.ColumnSpan="4"
+         MobileMainView.axaml). From the cover on, so it parts one song's
+         cover from the next as well as their words - past the drag handle
+         only, which is the list's rather than the song's; drawn first, so
+         everything else is on top of it. -->
+    <Border Grid.Column="1" Grid.ColumnSpan="5"
             BorderBrush="{DynamicResource AppDividerBrush}"
             BorderThickness="0,0,0,1"
+            IsHitTestVisible="False" />
+    <!-- The playing song's wash (Button.trackRow.playing): over what the
+         rule runs under, cover and all, a little past it at each end so
+         nothing sits flush with its edge, and rounded as a picked row on the desktop is
+         (TrackRowControl) - rather than reaching to the screen's edges. Its
+         colour is the styles' to give; none otherwise. -->
+    <Border x:Name="PlayingWash"
+            Grid.Column="1" Grid.ColumnSpan="5"
+            Margin="-8,0,-6,0"
+            CornerRadius="8"
             IsHitTestVisible="False" />
     <!-- Pointer wiring for drag-to-reorder is not here: the hosting screen
          (TrackListScreenView) wires it via AddHandler on its ListBox using
@@ -68,7 +79,6 @@
     <controls:AlbumArtView x:Name="Art"
                             Grid.Column="1"
                             IsVisible="{Binding !$parent[views:ITrackRowHost].IsAlbumMode}"
-                            ArtCornerRadius="6"
                             Width="52" Height="52"
                             Margin="0,8,14,8" />
     <StackPanel Grid.Column="2" Spacing="2" Margin="0,8" VerticalAlignment="Center">

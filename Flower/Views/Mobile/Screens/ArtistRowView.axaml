@@ -17,7 +17,8 @@
        the rule under each row is the row's own bottom edge and sits exactly
        halfway between two names; 16 on the left so the covers line up with
        the screen's title. -->
-  <!-- The artist's cover (see AlbumCollage), their name above, how much of
+  <!-- The artist's cover (see AlbumCollage), round as an artist is
+       everywhere else (the desktop's artist page and search), their name above, how much of
        theirs there is below, and a chevron: the row opens a screen rather
        than playing anything. The rule runs under the words and the chevron
        only, the way a list inset behind its pictures does, so the covers
@@ -25,7 +26,7 @@
   <Grid ColumnDefinitions="Auto,*" Height="60">
     <controls:AlbumArtView x:Name="Cover"
                            Grid.Column="0"
-                           ArtCornerRadius="6"
+                           ArtCornerRadius="24"
                            Width="48" Height="48"
                            Margin="0,0,14,0" />
     <Border Grid.Column="1"

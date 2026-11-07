@@ -25,7 +25,7 @@ public partial class MobileMainViewModel
     private bool _newPlaylistIsFolder;
     private Playlist? _newPlaylistFolder;
 
-    public string NewPlaylistPlaceholder => _newPlaylistIsFolder ? "Folder Name" : "Playlist Name";
+    public string NewPlaylistPlaceholder => _newPlaylistIsFolder ? "Folder name" : "Playlist name";
     public MaterialIconKind NewPlaylistIcon => _newPlaylistIsFolder ? MaterialIconKind.FolderOutline : MaterialIconKind.PlaylistPlay;
 
     private void BeginNaming(bool folder, Playlist? parent, IReadOnlyList<Track> tracks)

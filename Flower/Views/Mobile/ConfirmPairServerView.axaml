@@ -11,11 +11,18 @@
              x:DataType="vm:MobileMainViewModel">
 
   <UserControl.Styles>
+    <!-- The desktop dialog's two buttons (ConfirmDialogWindow): the ink fill
+         for what is being asked (Button.primary) - even when it takes
+         something away, since red is playback's and danger is said in words -
+         and the outline for Cancel (Button.secondary), with the corners every
+         button with words has. -->
     <Style Selector="Button.peerAction">
       <Setter Property="HorizontalAlignment" Value="Stretch" />
       <Setter Property="HorizontalContentAlignment" Value="Center" />
       <Setter Property="Padding" Value="16,12" />
       <Setter Property="FontSize" Value="16" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="CornerRadius" Value="10" />
     </Style>
   </UserControl.Styles>
 
@@ -70,8 +77,7 @@
         <Button Classes="peerAction primary" Content="{Binding Pairing.ConfirmPairServerActionLabel}"
                 Command="{Binding Pairing.ConfirmPairServerCommand}"
                 IsEnabled="{Binding Pairing.IsConfirmPairServerEnabled}" />
-        <Button Classes="peerAction" Content="Cancel" Command="{Binding Pairing.CancelPairServerCommand}"
-                Background="Transparent" />
+        <Button Classes="peerAction secondary" Content="Cancel" Command="{Binding Pairing.CancelPairServerCommand}" />
       </StackPanel>
     </Border>
   </Grid>

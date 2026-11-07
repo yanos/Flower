@@ -66,7 +66,7 @@ public sealed class VibePlaylistEditorViewModel : ViewModelBase
 
     // What the name becomes when none was typed: the sentence itself, which is
     // the best description of the playlist there is.
-    public string NamePlaceholder => _prompt.Trim() is { Length: > 0 } prompt ? Capitalized(prompt) : "Playlist Name";
+    public string NamePlaceholder => _prompt.Trim() is { Length: > 0 } prompt ? Capitalized(prompt) : "Playlist name";
 
     private string _prompt;
     public string Prompt

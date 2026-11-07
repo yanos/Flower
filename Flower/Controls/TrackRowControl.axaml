@@ -80,13 +80,18 @@
     <!-- No rule between one song and the next: each row is its own
          rounded shape when it has one - playing, pointed at or picked - and
          the page otherwise. All three from the cells on, not under the art,
-         so the covers read as a column. Playing is the hover grey, so a
-         picked row still stands out from it. -->
+         so the covers read as a column. Playing is the text's own ink at
+         14% - faint, as on the phone's rows (Button.trackRow.playing),
+         and the same strength on a light or a dark page - so it is lighter
+         than a pointed-at row and a picked row still stands out from it. -->
     <Border Grid.Column="1"
             x:Name="PlayingBorder"
-            Background="{DynamicResource AppHoverBrush}"
             CornerRadius="8"
-            IsHitTestVisible="False"/>
+            IsHitTestVisible="False">
+      <Border.Background>
+        <SolidColorBrush Color="{DynamicResource PaletteTextPrimary}" Opacity="0.14"/>
+      </Border.Background>
+    </Border>
     <!-- Hover background (column 1 only — stops before the art) -->
     <Border Grid.Column="1"
             x:Name="HoverBorder"

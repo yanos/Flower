@@ -70,7 +70,6 @@
                 <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14"
                       Classes.dimmed="{Binding IsUnavailable}">
                   <controls:AlbumArtView Grid.Column="0" AlbumArt="{Binding AlbumArt}"
-                                         ArtCornerRadius="8"
                                          Width="64" Height="64" />
                   <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
                     <TextBlock Text="{Binding Name}" FontSize="16" TextTrimming="CharacterEllipsis" />

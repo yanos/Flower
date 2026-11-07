@@ -61,8 +61,7 @@
         <Grid ColumnDefinitions="300,*" ColumnSpacing="40">
           <StackPanel Grid.Column="0" Spacing="16">
             <controls:AlbumArtView AlbumArt="{Binding ExpandedTile.AlbumArt}"
-                                   Width="300" Height="300"
-                                   ArtCornerRadius="12"/>
+                                   Width="300" Height="300"/>
             <StackPanel Spacing="6">
               <TextBlock Classes="pageTitle"
                          Text="{Binding ExpandedTile.Name}"

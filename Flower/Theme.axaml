@@ -249,6 +249,10 @@
   <SolidColorBrush x:Key="AppOnArtBrush" Color="{DynamicResource PaletteOnArt}" />
   <SolidColorBrush x:Key="AppOnArtMutedBrush" Color="{DynamicResource PaletteOnArt}" Opacity="0.5" />
   <SolidColorBrush x:Key="AppOnArtRingBrush" Color="{DynamicResource PaletteOnArt}" Opacity="0.6" />
+  <!-- The glyph on Play where Play is white, on the cover's colour (Now
+       Playing, an album's page, the mini player over either): near black in
+       both themes, since the white under it is the same in both. -->
+  <SolidColorBrush x:Key="AppOnArtInkBrush" Color="{DynamicResource PaletteScrim}" Opacity="0.85" />
 
   <!-- ── Shadows ─────────────────────────────────────────────────────── -->
 

@@ -42,10 +42,12 @@
              address list as well, which is as tall as the server has origins. -->
         <ScrollViewer>
         <StackPanel Margin="0,12,0,0" Spacing="0">
-          <!-- Label above its control, like Theme below and every other field on
+          <!-- Label above its control, like Appearance below and every other field on
                this screen - the one place that put them side by side needed a
                caption underneath to say what the field was for. -->
-          <TextBlock Text="Name" FontWeight="SemiBold" Margin="0,0,0,8"/>
+          <!-- The phone's words for the same two settings (SettingsView): "Device
+               name", "Appearance", "Use system setting". -->
+          <TextBlock Text="Device name" FontWeight="SemiBold" Margin="0,0,0,8"/>
           <controls:TextInput Text="{Binding Alias, Mode=TwoWay}" IsEnabled="{Binding AliasLock.IsEditable}"
                               ShowsClearButton="{Binding AliasLock.IsEditable}"/>
           <!-- Why the box above is greyed out: the name comes from somewhere
@@ -85,8 +87,8 @@
                                   PlaceholderText="Emoji"
                                   IsEnabled="{Binding IconEmojiLock.IsEditable}"
                                   VerticalAlignment="Center"/>
-              <Button Classes="standard secondary" Content="Choose Picture…" Click="ChooseIconPictureButton_Click" VerticalAlignment="Center"/>
-              <Button Classes="standard secondary" Content="Remove Picture" Command="{Binding RemoveIconPictureCommand}"
+              <Button Classes="standard secondary" Content="Choose picture…" Click="ChooseIconPictureButton_Click" VerticalAlignment="Center"/>
+              <Button Classes="standard secondary" Content="Remove picture" Command="{Binding RemoveIconPictureCommand}"
                       IsVisible="{Binding HasIconPicture}" VerticalAlignment="Center"/>
             </StackPanel>
             <TextBlock Text="{Binding IconEmojiLock.Message}"
@@ -98,21 +100,21 @@
                bound to Device and applied as they are touched, not on Save -
                see ISettingsBackend.Device. Hidden on a server's page, where
                Device is null. -->
-          <TextBlock Text="Theme"
+          <TextBlock Text="Appearance"
                      FontWeight="SemiBold"
                      Margin="0,20,0,8"
                      IsVisible="{Binding Capabilities.ThemePicker}"/>
           <ComboBox HorizontalAlignment="Stretch"
                     SelectedIndex="{Binding Device.ThemePreference, Mode=TwoWay, Converter={StaticResource EnumIndexConverter}}"
                     IsVisible="{Binding Capabilities.ThemePicker}">
-            <ComboBoxItem Content="Follow System"/>
+            <ComboBoxItem Content="Use system setting"/>
             <ComboBoxItem Content="Light"/>
             <ComboBoxItem Content="Dark"/>
           </ComboBox>
 
           <!-- Which edge of the window the player bar runs along - see
                AppSettings.PlaybackControlsPlacement. -->
-          <TextBlock Text="Playback Controls"
+          <TextBlock Text="Playback controls"
                      FontWeight="SemiBold"
                      Margin="0,20,0,8"
                      IsVisible="{Binding Capabilities.PlaybackControlsPicker}"/>
@@ -163,7 +165,7 @@
                exception text and absolute file paths (see
                AppSettings.ShareLogsWithPairedServer). Hidden when not
                paired, since there is nowhere for the logs to go. -->
-          <CheckBox Content="Send logs to server"
+          <CheckBox Content="Send diagnostic logs to server"
                     Margin="0,20,0,0"
                     IsChecked="{Binding Device.ShareLogsWithPairedServer, Mode=TwoWay}"
                     IsVisible="{Binding ShowsShareLogs}"/>
@@ -209,7 +211,7 @@
             <CheckBox Content="Check for updates automatically"
                       IsChecked="{Binding CheckAutomatically, Mode=TwoWay}"/>
             <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,8,0,0">
-              <Button Classes="standard secondary" Content="Check Now"
+              <Button Classes="standard secondary" Content="Check now"
                       Command="{Binding CheckNowCommand}"
                       VerticalAlignment="Center"/>
               <Button Classes="standard primary" Content="{Binding Available.InstallLabel, FallbackValue=''}"
@@ -225,7 +227,7 @@
                question. Shown as a button on the machine you are sitting at, and
                as plain text for a server you are not - a file manager on this
                machine cannot open a path on that one. -->
-          <Button Classes="standard secondary" Content="Open App Data Location"
+          <Button Classes="standard secondary" Content="Open app data location"
                   Margin="0,20,0,0"
                   HorizontalAlignment="Left"
                   Click="OpenAppDataLocationButton_Click"
@@ -501,7 +503,7 @@
                            Margin="20,4,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
               </StackPanel>
 
-              <TextBlock Grid.Row="5" Text="Library Folders" FontWeight="SemiBold" Margin="0,16,0,8"
+              <TextBlock Grid.Row="5" Text="Library folders" FontWeight="SemiBold" Margin="0,16,0,8"
                          IsEnabled="{Binding CanManageLibrary}"/>
 
               <Border Grid.Row="6" MinHeight="140" Classes="listFrame"
@@ -524,7 +526,7 @@
                                 Width="26" Height="26" Padding="4"
                                 Click="RevealFolderButton_Click"
                                 IsVisible="{Binding #PathsList.((vm:SettingsViewModel)DataContext).Capabilities.RevealInFileManager}"
-                                ToolTip.Tip="Reveal in File Manager">
+                                ToolTip.Tip="Reveal in file manager">
                           <materialIcons:MaterialIcon Kind="FolderOpenOutline" Width="16" Height="16"/>
                         </Button>
                       </Grid>
@@ -539,12 +541,12 @@
               <Grid Grid.Row="7" Margin="0,12,0,0" IsEnabled="{Binding CanManageLibrary}">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" Spacing="8"
                             IsEnabled="{Binding LibraryPathsLock.IsEditable}">
-                  <Button Classes="standard secondary" Content="Add Folder…" Click="AddFolderButton_Click"/>
-                  <Button Classes="standard secondary" Content="Remove Selected"
+                  <Button Classes="standard secondary" Content="Add folder…" Click="AddFolderButton_Click"/>
+                  <Button Classes="standard secondary" Content="Remove selected"
                           Command="{Binding RemoveLibraryPathCommand}"
                           CommandParameter="{Binding #PathsList.SelectedItem}"/>
                 </StackPanel>
-                <Button Classes="standard secondary" Content="Rescan Files"
+                <Button Classes="standard secondary" Content="Rescan files"
                         HorizontalAlignment="Right"
                         Command="{Binding RescanCommand}"
                         IsVisible="{Binding !Capabilities.RebuildDatabase}"/>
@@ -558,7 +560,7 @@
                           HorizontalAlignment="Left" Spacing="8"
                           IsEnabled="{Binding CanManageLibrary}"
                           IsVisible="{Binding Capabilities.RebuildDatabase}">
-                <Button Classes="standard secondary" Content="Rebuild Database"
+                <Button Classes="standard secondary" Content="Rebuild database"
                         Command="{Binding RebuildDatabaseCommand}"/>
               </StackPanel>
             </Grid>
@@ -595,7 +597,7 @@
                  where Device is null. -->
             <StackPanel Margin="0,24,0,0"
                         IsVisible="{Binding Device, Converter={x:Static avc:ObjectConverters.IsNotNull}}">
-              <TextBlock Text="Album Art" FontWeight="SemiBold" Margin="0,0,0,8"/>
+              <TextBlock Text="Album art" FontWeight="SemiBold" Margin="0,0,0,8"/>
               <CheckBox Content="Save covers in the album's folder"
                         IsChecked="{Binding Device.SavesArtInAlbumFolder, Mode=TwoWay, FallbackValue=False}"/>
               <TextBlock Text="A cover changed in Info is saved as an image file beside the songs, and taken out of their files so it is the one shown. Off: it is saved inside each song's file."
@@ -611,11 +613,11 @@
             <StackPanel Margin="0,24,0,0" Spacing="8" IsVisible="{Binding HasRemovedFiles}">
               <Grid ColumnDefinitions="*,Auto,Auto">
                 <StackPanel Spacing="2">
-                  <TextBlock Text="Removed Songs" FontWeight="SemiBold"/>
+                  <TextBlock Text="Removed songs" FontWeight="SemiBold"/>
                   <TextBlock Text="Hidden from the library. The files are still on disk until you delete them here."
                              FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
                 </StackPanel>
-                <Button Grid.Column="1" Classes="standard secondary" Content="Restore All" VerticalAlignment="Top" Margin="12,0,0,0"
+                <Button Grid.Column="1" Classes="standard secondary" Content="Restore all" VerticalAlignment="Top" Margin="12,0,0,0"
                         Command="{Binding RestoreAllRemovedFilesCommand}"/>
                 <!-- The library's clean-up: nothing else deletes a removed
                      song's file. Two presses - the first rewrites the label to
@@ -671,7 +673,7 @@
               <StackPanel Spacing="6" Margin="0,0,0,12"
                           IsVisible="{Binding Capabilities.PairingCodes}">
                 <StackPanel Orientation="Horizontal" Spacing="10">
-                  <Button Classes="standard secondary" Content="Generate Pairing Code" Command="{Binding IssuePairingCodeCommand}"/>
+                  <Button Classes="standard secondary" Content="Generate pairing code" Command="{Binding IssuePairingCodeCommand}"/>
                   <CheckBox Content="Administrator"
                             IsChecked="{Binding PairingCodeGrantsAdmin}"
                             VerticalAlignment="Center"/>

@@ -24,11 +24,9 @@
       <Setter Property="Opacity" Value="0.4" />
     </Style>
 
-    <!-- A secondary action, as on Settings: a grey fill rather than Fluent's
-         outlined box. -->
+    <!-- A secondary action, as on Settings: the desktop's outlined button
+         (Button.secondary) at the phone's size. -->
     <Style Selector="Button.soft">
-      <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}" />
-      <Setter Property="BorderThickness" Value="0" />
       <Setter Property="CornerRadius" Value="10" />
       <Setter Property="Padding" Value="14,9" />
       <Setter Property="FontWeight" Value="Medium" />
@@ -214,10 +212,9 @@
                    on songs this phone may change. -->
               <Panel Width="128" Height="128">
                 <controls:AlbumArtView x:Name="ArtView"
-                                       ArtCornerRadius="12"
                                        Tapped="Art_Tapped" />
                 <TextBlock x:Name="MultipleArtLabel"
-                           Text="Multiple Album Art"
+                           Text="Multiple album art"
                            FontSize="13"
                            Opacity="0.6"
                            TextAlignment="Center"
@@ -262,16 +259,16 @@
                  the bin over the cover (App.axaml). -->
             <StackPanel Grid.Column="1" x:Name="ArtButtons" Classes="chromeIcons" Spacing="8" VerticalAlignment="Top">
               <Button x:Name="ChoosePhotoButton"
-                      Classes="soft"
+                      Classes="secondary soft"
                       HorizontalAlignment="Stretch"
                       Click="ChoosePhoto_Click">
                 <StackPanel Orientation="Horizontal" Spacing="8">
                   <materialIcons:MaterialIcon Kind="ImageMultipleOutline" />
-                  <TextBlock Text="Choose Photo" VerticalAlignment="Center" />
+                  <TextBlock Text="Choose photo" VerticalAlignment="Center" />
                 </StackPanel>
               </Button>
               <Button x:Name="PasteArtButton"
-                      Classes="soft"
+                      Classes="secondary soft"
                       HorizontalAlignment="Stretch"
                       Click="PasteArt_Click">
                 <StackPanel Orientation="Horizontal" Spacing="8">
@@ -280,12 +277,12 @@
                 </StackPanel>
               </Button>
               <Button x:Name="FindArtButton"
-                      Classes="soft"
+                      Classes="secondary soft"
                       HorizontalAlignment="Stretch"
                       Click="FindArt_Click">
                 <StackPanel Orientation="Horizontal" Spacing="8">
                   <materialIcons:MaterialIcon Kind="ImageSearchOutline" />
-                  <TextBlock x:Name="FindArtLabel" Text="Find Online" VerticalAlignment="Center" />
+                  <TextBlock x:Name="FindArtLabel" Text="Find online" VerticalAlignment="Center" />
                 </StackPanel>
               </Button>
             </StackPanel>

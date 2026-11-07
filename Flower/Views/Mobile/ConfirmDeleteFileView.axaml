@@ -10,11 +10,18 @@
              x:DataType="vm:MobileMainViewModel">
 
   <UserControl.Styles>
+    <!-- The desktop dialog's two buttons (ConfirmDialogWindow): the ink fill
+         for what is being asked (Button.primary) - even when it takes
+         something away, since red is playback's and danger is said in words -
+         and the outline for Cancel (Button.secondary), with the corners every
+         button with words has. -->
     <Style Selector="Button.deleteAction">
       <Setter Property="HorizontalAlignment" Value="Stretch" />
       <Setter Property="HorizontalContentAlignment" Value="Center" />
       <Setter Property="Padding" Value="16,12" />
       <Setter Property="FontSize" Value="16" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="CornerRadius" Value="10" />
     </Style>
   </UserControl.Styles>
 
@@ -41,10 +48,8 @@
         <TextBlock Text="{Binding ConfirmDeleteFileMessage}"
                    FontSize="14" Opacity="0.75" TextWrapping="Wrap" />
 
-        <Button Classes="deleteAction" Content="Delete" Command="{Binding ConfirmDeleteFileCommand}"
-                Background="{DynamicResource AppDangerBrush}" Foreground="{DynamicResource AppOnPrimaryBrush}" />
-        <Button Classes="deleteAction" Content="Cancel" Command="{Binding CancelDeleteFileCommand}"
-                Background="Transparent" />
+        <Button Classes="deleteAction primary" Content="Delete" Command="{Binding ConfirmDeleteFileCommand}" />
+        <Button Classes="deleteAction secondary" Content="Cancel" Command="{Binding CancelDeleteFileCommand}" />
       </StackPanel>
     </Border>
   </Grid>

@@ -140,8 +140,9 @@ public partial class MobileMainViewModel
     }
 
     // Shown tabs go to the end of the bar; a hidden one leaves it. The bar
-    // keeps at least one tab - the last row says so by greying its switch out
-    // (CanToggle), and this refuses the same.
+    // keeps at least one tab and at most MobileTabs.MaxShown - the rows say
+    // so by greying the switches that would break either (CanToggle), and
+    // this refuses the same.
     private void ToggleTabShown(MobileTabSettingRow? row)
     {
         if (row == null)
@@ -153,7 +154,7 @@ public partial class MobileMainViewModel
             if (tabs.Count > 1)
                 tabs.Remove(row.Tab);
         }
-        else
+        else if (tabs.Count < MobileTabs.MaxShown)
         {
             tabs.Add(row.Tab);
         }
@@ -215,7 +216,7 @@ public partial class MobileMainViewModel
 
         HiddenTabRows.Clear();
         foreach (var tab in MobileTabs.All.Where(t => !_visibleTabs.Contains(t)))
-            HiddenTabRows.Add(new MobileTabSettingRow(tab, IsShown: false, CanToggle: true));
+            HiddenTabRows.Add(new MobileTabSettingRow(tab, IsShown: false, CanToggle: _visibleTabs.Count < MobileTabs.MaxShown));
 
         OnPropertyChanged(nameof(HasHiddenTabs));
     }

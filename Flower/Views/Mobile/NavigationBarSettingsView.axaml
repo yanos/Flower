@@ -7,7 +7,7 @@
              mc:Ignorable="d"
              x:Class="Flower.Views.Mobile.NavigationBarSettingsView"
              x:DataType="vm:MobileMainViewModel"
-             Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
+             Background="{DynamicResource AppBackgroundBrush}"
              Padding="{DynamicResource SheetBottomInset}">
 
   <!-- Which tabs the bar at the bottom shows, and in what order: the ones in
@@ -28,7 +28,7 @@
     <!-- Each list is a card lighter than the page, the rows on it split by a
          hairline that starts past the handle. -->
     <Style Selector="Border.card">
-      <Setter Property="Background" Value="{DynamicResource AppBackgroundBrush}" />
+      <Setter Property="Background" Value="{DynamicResource AppSurfaceBrush}" />
       <Setter Property="CornerRadius" Value="14" />
       <Setter Property="BoxShadow" Value="{DynamicResource AppButtonShadow}" />
     </Style>
@@ -156,7 +156,7 @@
     <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
       <StackPanel Margin="16,4,16,16">
         <!-- A heading, so the serif and the frame's colour - see ScreenTitle. -->
-        <TextBlock Text="Navigation Bar"
+        <TextBlock Text="Navigation bar"
                    FontFamily="{DynamicResource AppDisplayFontFamily}"
                    FontSize="34"
                    FontWeight="SemiBold"
@@ -195,7 +195,7 @@
             <ToggleSwitch Grid.Column="1" IsChecked="{Binding ShowTabLabels}" />
           </Grid>
         </Border>
-        <TextBlock Text="With all seven sections, the bar draws them a little smaller."
+        <TextBlock Text="The bar holds up to seven sections, and with all seven draws them a little smaller."
                    FontSize="13"
                    Foreground="{DynamicResource AppTextMutedBrush}"
                    TextWrapping="Wrap"

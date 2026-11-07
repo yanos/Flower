@@ -87,7 +87,7 @@
       <Setter Property="IsVisible" Value="False"/>
     </Style>
     <Style Selector="TextBlock.multipleArt">
-      <Setter Property="Text" Value="Multiple Album Art"/>
+      <Setter Property="Text" Value="Multiple album art"/>
       <Setter Property="Opacity" Value="0.6"/>
       <Setter Property="TextAlignment" Value="Center"/>
       <Setter Property="TextWrapping" Value="Wrap"/>
@@ -190,7 +190,6 @@
       <Panel Grid.Column="0" Margin="0,0,18,0" VerticalAlignment="Top">
         <controls:AlbumArtView x:Name="AlbumArtView"
                 Height="88" MinWidth="88"
-                ArtCornerRadius="10"
                 Stretch="Uniform"
                 DoubleTapped="Artwork_DoubleTapped"/>
         <TextBlock x:Name="MultipleArtLabel" Classes="multipleArt" FontSize="12" Margin="8,0" IsVisible="False"/>
@@ -473,14 +472,14 @@
                   Background="Transparent"
                   BorderBrush="{DynamicResource AppControlBorderBrush}"
                   BorderThickness="1"
-                  CornerRadius="12"
+                  CornerRadius="{x:Static controls:AlbumArtView.CoverCornerRadius}"
                   ClipToBounds="True"
                   DoubleTapped="Artwork_DoubleTapped"
                   PointerPressed="ArtDropTarget_PointerPressed"
                   PointerMoved="ArtDropTarget_PointerMoved"
                   PointerReleased="ArtDropTarget_PointerReleased">
             <Panel>
-              <controls:AlbumArtView x:Name="ArtworkLargeView" Stretch="Uniform" ArtCornerRadius="11"/>
+              <controls:AlbumArtView x:Name="ArtworkLargeView" Stretch="Uniform"/>
               <TextBlock x:Name="MultipleArtLargeLabel" Classes="multipleArt" FontSize="16" IsVisible="False"/>
               <TextBlock x:Name="ArtDropHint"
                          Text="Drop an image here"
@@ -500,12 +499,12 @@
                      TextWrapping="Wrap"/>
 
           <StackPanel x:Name="ArtButtons" Orientation="Horizontal" Spacing="8" Margin="0,4,0,0" HorizontalAlignment="Center">
-            <Button x:Name="ChangeArtButton" Classes="standard secondary"  Content="Choose File…"   Click="ChangeArtButton_Click"/>
-            <Button x:Name="FindArtButton" Classes="standard secondary"    Content="Find Online…"   Click="FindArtButton_Click"
+            <Button x:Name="ChangeArtButton" Classes="standard secondary"  Content="Choose file…"   Click="ChangeArtButton_Click"/>
+            <Button x:Name="FindArtButton" Classes="standard secondary"    Content="Find online…"   Click="FindArtButton_Click"
                     ToolTip.Tip="Search online for the cover of the album named on the Details tab."/>
             <Button x:Name="PasteArtButton" Classes="standard secondary"   Content="Paste"          Click="PasteArtButton_Click"
                     ToolTip.Tip="Use the image on the clipboard as the cover."/>
-            <Button x:Name="OpenArtButton" Classes="standard secondary"    Content="Open Full Size" Click="OpenArtButton_Click"/>
+            <Button x:Name="OpenArtButton" Classes="standard secondary"    Content="Open full size" Click="OpenArtButton_Click"/>
             <Button x:Name="RemoveArtButton" Classes="standard secondary"  Content="Remove"         Click="RemoveArtButton_Click"/>
           </StackPanel>
         </StackPanel>

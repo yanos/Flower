@@ -91,7 +91,7 @@
               Spacing="2"
               HorizontalAlignment="Stretch">
     <Panel>
-      <controls:SquareAlbumArtView x:Name="Art" ArtCornerRadius="10" />
+      <controls:SquareAlbumArtView x:Name="Art" />
       <!-- Continue Playing's: this cover picks the album up where it was,
            or pauses it while it is the album playing (IsPlaying). -->
       <Border x:Name="Badge"

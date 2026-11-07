@@ -293,7 +293,7 @@
                   <Button Classes="pill"
                           IsVisible="{Binding IsPlaylistsHeader}"
                           Click="NewPlaylistButton_Click"
-                          ToolTip.Tip="New Playlist or Folder"
+                          ToolTip.Tip="New playlist or folder"
                           HorizontalAlignment="Right"
                           VerticalAlignment="Bottom"
                           Margin="0,0,0,0"
@@ -423,7 +423,7 @@
                   CornerRadius="10"
                   VerticalAlignment="Top"
                   Margin="16,1">
-            <TextBlock Text="New Playlist"
+            <TextBlock Text="New playlist"
                        FontSize="11"
                        Opacity="0.7"
                        HorizontalAlignment="Center"
@@ -589,7 +589,7 @@
         </Panel>
         <!-- Everything queued but the song playing, as the phone's Queue
              menu offers it. -->
-        <Button Content="Clear Queue"
+        <Button Content="Clear queue"
                 Classes="standard secondary"
                 IsVisible="{Binding IsShowingQueue}"
                 IsEnabled="{Binding Queue.CanClear}"
@@ -838,8 +838,7 @@
                     <Grid ColumnDefinitions="220,*" ColumnSpacing="32">
                       <StackPanel Grid.Column="0" Spacing="14" VerticalAlignment="Top">
                         <controls:AlbumArtView AlbumArt="{Binding Tile.AlbumArt}"
-                                               Width="220" Height="220"
-                                               ArtCornerRadius="12"/>
+                                               Width="220" Height="220"/>
                         <StackPanel Spacing="4">
                           <TextBlock Classes="sectionTitle"
                                      Text="{Binding Tile.Name}"
@@ -1113,7 +1112,7 @@
                  admin pairing code and opens the server's own page in the OS
                  browser, where the tab spends that code on a keypair of its
                  own. -->
-            <Button Content="Open in Browser…"
+            <Button Content="Open in browser…"
                     Classes="standard secondary"
                     ToolTip.Tip="Pairs a browser tab with this server as an administrator and opens its settings page there."
                     IsVisible="{Binding CanOpenSelectedServerSettings}"

@@ -29,10 +29,10 @@
        showed at the inner radius inside a light ring, while the placeholder -
        filled in the ring's own colour - merged with the ring and showed at the
        outer one, so the two looked like different controls. Both radii come
-       from ArtCornerRadius in the code-behind; 4 is its default. -->
+       from ArtCornerRadius in the code-behind; CoverRadius is its default. -->
   <Border x:Name="ClipBorder"
           Background="Transparent"
-          CornerRadius="4"
+          CornerRadius="{x:Static controls:AlbumArtView.CoverCornerRadius}"
           ClipToBounds="True">
       <Panel>
         <!-- Which of the three shows - the note, one cover, or several - is
@@ -70,7 +70,7 @@
         <Border x:Name="Outline"
                 BorderBrush="{DynamicResource AppArtOutlineBrush}"
                 BorderThickness="1"
-                CornerRadius="4"
+                CornerRadius="{x:Static controls:AlbumArtView.CoverCornerRadius}"
                 IsHitTestVisible="False"/>
       </Panel>
   </Border>

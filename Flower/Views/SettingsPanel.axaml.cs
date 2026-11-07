@@ -171,7 +171,7 @@ public partial class SettingsPanel : UserControl
 
         var folders = await storageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
         {
-            Title = "Choose a Music Folder",
+            Title = "Choose a music folder",
             AllowMultiple = false,
         });
 
@@ -188,7 +188,7 @@ public partial class SettingsPanel : UserControl
 
         var files = await storageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title = "Choose a Picture for This Server",
+            Title = "Choose a picture for this server",
             AllowMultiple = false,
             FileTypeFilter =
             [

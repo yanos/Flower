@@ -26,18 +26,17 @@
        sets a Width and the art follows. -->
   <!-- Lifted off the page by a shadow, which is drawn by a Border round the
        art rather than by the art itself: AlbumArtView clips its content to
-       its corners, and a shadow is outside them. The same 16px radius as the
-       art's own (ArtCornerRadius), and as Now Playing's cover, so the shadow
+       its corners, and a shadow is outside them. The same radius as the
+       art's own (AlbumArtView.CoverCornerRadius), so the shadow
        follows the rounded corners instead of squaring them off. Every ContentControl that hosts
        this template turns ClipToBounds off: a ContentControl clips by
        default, at exactly the art's square, which left the shadow showing
        only in the four rounded corners. -->
   <DataTemplate x:Key="AlbumArtTemplate" x:DataType="vm:AlbumTileViewModel">
-    <Border CornerRadius="16"
+    <Border CornerRadius="{x:Static controls:AlbumArtView.CoverCornerRadius}"
             BoxShadow="{DynamicResource AppCoverShadow}">
       <controls:SquareAlbumArtView AlbumArt="{Binding AlbumArt}"
                                    Covers="{Binding Collage.CoverArt, FallbackValue={x:Null}}"
-                                   ArtCornerRadius="16"
                                    Classes.dimmed="{Binding IsUnavailable}" />
     </Border>
   </DataTemplate>
@@ -103,12 +102,13 @@
            also in the screen's header menu. -->
       <StackPanel Classes="albumActions" Orientation="Horizontal" Spacing="10" Margin="0,12,0,0"
                   IsVisible="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).ShowAlbumButtons, FallbackValue=True}">
-        <Border Classes="floating" Width="48" Height="48" CornerRadius="24">
-          <Button Classes="pill" Padding="10" HorizontalAlignment="Center" VerticalAlignment="Center"
-                  Command="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).PlayAlbumCommand}">
-            <materialIcons:MaterialIcon Kind="Play" Width="24" Height="24" />
-          </Button>
-        </Border>
+        <!-- Play filled in the accent (Button.play), the rest in the floating
+             oval: Play is the one of these that starts the music. -->
+        <Button Classes="play" Width="48" Height="48" CornerRadius="24" Padding="0"
+                HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                Command="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).PlayAlbumCommand}">
+          <materialIcons:MaterialIcon Kind="Play" Width="24" Height="24" />
+        </Button>
         <Border Classes="floating" Width="48" Height="48" CornerRadius="24">
           <Button Classes="pill" Padding="10" HorizontalAlignment="Center" VerticalAlignment="Center"
                   Command="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).ShuffleAlbumCommand}">

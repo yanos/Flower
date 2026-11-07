@@ -46,7 +46,7 @@ public class MobileTabsTests : PinnedDataDirectory
         using var scope = Build();
 
         Assert.Equal(
-            new[] { MobileTab.Home, MobileTab.Albums, MobileTab.Artists, MobileTab.Songs, MobileTab.Playlists, MobileTab.Queue, MobileTab.Search },
+            new[] { MobileTab.Home, MobileTab.Songs, MobileTab.Albums, MobileTab.Artists, MobileTab.Playlists, MobileTab.Queue, MobileTab.Search },
             scope.Mobile.VisibleTabs);
         Assert.Equal(MobileTab.Home, scope.Mobile.SelectedTab);
         Assert.True(scope.Mobile.IsShowingHome);
@@ -68,7 +68,7 @@ public class MobileTabsTests : PinnedDataDirectory
         Assert.Equal(MobileTabs.Default, MobileTabs.Parse(["NotATab"]));
         Assert.Equal(new[] { MobileTab.Songs, MobileTab.Queue },
             MobileTabs.Parse(["Songs", "Bogus", "Songs", "Queue"]));
-        Assert.Equal(MobileTabs.All, MobileTabs.Parse(MobileTabs.All.Select(t => t.ToString())));
+        Assert.Equal(MobileTabs.Default, MobileTabs.Parse(MobileTabs.Default.Select(t => t.ToString())));
     }
 
     // The Navigation Bar page lists the bar in its order, then what is not in
@@ -81,7 +81,7 @@ public class MobileTabsTests : PinnedDataDirectory
         Assert.Equal(new[] { MobileTab.Search, MobileTab.Albums, MobileTab.Songs },
             scope.Mobile.VisibleTabRows.Select(r => r.Tab));
         Assert.All(scope.Mobile.VisibleTabRows, r => Assert.True(r.IsShown));
-        Assert.Equal(new[] { MobileTab.Home, MobileTab.Artists, MobileTab.Playlists, MobileTab.Queue },
+        Assert.Equal(new[] { MobileTab.Home, MobileTab.Artists, MobileTab.Playlists, MobileTab.Queue, MobileTab.History },
             scope.Mobile.HiddenTabRows.Select(r => r.Tab));
         Assert.All(scope.Mobile.HiddenTabRows, r => Assert.False(r.IsShown));
         Assert.True(scope.Mobile.HasHiddenTabs);
@@ -97,9 +97,41 @@ public class MobileTabsTests : PinnedDataDirectory
         mobile.ToggleTabShownCommand.Execute(Row(mobile, MobileTab.Home));
         mobile.ToggleTabShownCommand.Execute(Row(mobile, MobileTab.Home));
 
-        var expected = new[] { MobileTab.Albums, MobileTab.Artists, MobileTab.Songs, MobileTab.Queue, MobileTab.Search, MobileTab.Home };
+        var expected = new[] { MobileTab.Songs, MobileTab.Albums, MobileTab.Artists, MobileTab.Queue, MobileTab.Search, MobileTab.Home };
         Assert.Equal(expected, mobile.VisibleTabs);
         Assert.Equal(expected.Select(t => t.ToString()), scope.Parts.AppSettings.MobileTabs);
+    }
+
+    // Eight tabs, a bar of seven: out of the box History is the one left on
+    // the page, and it cannot be turned on until another is turned off.
+    [AvaloniaFact]
+    public void The_bar_holds_seven_and_the_page_lists_all_eight()
+    {
+        using var scope = Build();
+        var mobile = scope.Mobile;
+
+        Assert.Equal(MobileTabs.MaxShown, mobile.VisibleTabs.Count);
+        var history = Assert.Single(mobile.HiddenTabRows);
+        Assert.Equal(MobileTab.History, history.Tab);
+        Assert.False(history.CanToggle);
+
+        mobile.ToggleTabShownCommand.Execute(history);
+        Assert.DoesNotContain(MobileTab.History, mobile.VisibleTabs);
+
+        mobile.ToggleTabShownCommand.Execute(Row(mobile, MobileTab.Search));
+        Assert.True(Row(mobile, MobileTab.History).CanToggle);
+        mobile.ToggleTabShownCommand.Execute(Row(mobile, MobileTab.History));
+
+        Assert.Equal(MobileTab.History, mobile.VisibleTabs[^1]);
+        Assert.Equal(MobileTabs.MaxShown, mobile.VisibleTabs.Count);
+    }
+
+    [Fact]
+    public void A_saved_bar_longer_than_seven_is_cut_to_seven()
+    {
+        var saved = MobileTabs.All.Select(t => t.ToString()).ToList();
+
+        Assert.Equal(MobileTabs.All.Take(MobileTabs.MaxShown), MobileTabs.Parse(saved));
     }
 
     [AvaloniaFact]
@@ -124,7 +156,7 @@ public class MobileTabsTests : PinnedDataDirectory
         mobile.MoveTab(MobileTab.Playlists, 1);
         mobile.MoveTab(MobileTab.Home, 2);
 
-        var expected = new[] { MobileTab.Playlists, MobileTab.Albums, MobileTab.Home, MobileTab.Artists, MobileTab.Songs, MobileTab.Queue, MobileTab.Search };
+        var expected = new[] { MobileTab.Playlists, MobileTab.Songs, MobileTab.Home, MobileTab.Albums, MobileTab.Artists, MobileTab.Queue, MobileTab.Search };
         Assert.Equal(expected, mobile.VisibleTabs);
         Assert.Equal(expected, mobile.VisibleTabRows.Select(r => r.Tab));
         Assert.Equal(expected.Select(t => t.ToString()), scope.Parts.AppSettings.MobileTabs);
@@ -162,27 +194,6 @@ public class MobileTabsTests : PinnedDataDirectory
         mobile.OpenNavigationBarSettingsCommand.Execute(null);
         mobile.CloseSheetCommand.Execute(null);
         Assert.False(mobile.IsShowingNavigationBarSettings);
-    }
-
-    // All seven fit, drawn smaller; a bar of none
-    // is no way to get anywhere.
-    [AvaloniaFact]
-    public void The_bar_holds_every_tab_at_most_and_one_at_least()
-    {
-        using var scope = Build();
-        var mobile = scope.Mobile;
-
-        Assert.Equal(7, mobile.VisibleTabs.Count);
-        mobile.ToggleTabShownCommand.Execute(Row(mobile, MobileTab.Home));
-        Assert.DoesNotContain(MobileTab.Home, mobile.VisibleTabs);
-
-        foreach (var tab in mobile.VisibleTabs.Skip(1).ToList())
-            mobile.ToggleTabShownCommand.Execute(Row(mobile, tab));
-        Assert.Equal(new[] { MobileTab.Albums }, mobile.VisibleTabs);
-        Assert.False(Row(mobile, MobileTab.Albums).CanToggle);
-
-        mobile.ToggleTabShownCommand.Execute(Row(mobile, MobileTab.Albums));
-        Assert.Equal(new[] { MobileTab.Albums }, mobile.VisibleTabs);
     }
 
     // Left and right are the bar's, not the order the tabs were declared in.

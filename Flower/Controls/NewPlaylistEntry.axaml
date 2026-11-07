@@ -13,8 +13,12 @@
        sheet only differs by the padding its own rows use (RowPadding).
 
        Two states in the same place. At rest, a pill holding a plus and the
-       words "New Playlist". Tapped, that row is replaced in place by a playlist row
-       whose name is an empty box, focused, reading "Playlist Name" until
+       words "New playlist" - except on the Playlists tab (IsLarge), where
+       making things starts from the New button at the end of the screen's
+       title line (ScreenTitle) and only the named row below is this
+       control's. One button there rather than four pills stacked here, which
+       pushed the playlists themselves most of a screen down. Tapped, that row is replaced in place by a playlist row
+       whose name is an empty box, focused, reading "Playlist name" until
        something is typed - so the new entry appears at the top of the list
        before it exists. Nothing is created until a name is committed, and an
        empty one creates nothing at all: see MobileMainViewModel's
@@ -78,6 +82,9 @@
   </UserControl.Styles>
 
   <Panel Classes.large="{Binding #Root.IsLarge}">
+    <!-- The add-to-playlist sheet's: tapped, it is a playlist being named.
+         Not on the Playlists tab, whose New is in the title line. -->
+    <Panel IsVisible="{Binding !#Root.IsLarge}">
     <Button x:Name="StartButton"
             Classes="pickerRow"
             Padding="{Binding #Root.RowPadding}"
@@ -90,10 +97,12 @@
       <Border Classes="floating plusPill" HorizontalAlignment="Left">
         <StackPanel Classes="startRow" Orientation="Horizontal">
           <materialIcons:MaterialIcon Classes="plusGlyph" Kind="Plus" VerticalAlignment="Center" />
-          <TextBlock Classes="startLabel" Text="New Playlist" VerticalAlignment="Center" />
+          <TextBlock Classes="startLabel" Text="New playlist" VerticalAlignment="Center" />
         </StackPanel>
       </Border>
     </Button>
+    </Panel>
+
 
     <!-- Lined up with the rows under it: the same glyph in the same place, so
          the box sits exactly where the name it is about to have will. -->

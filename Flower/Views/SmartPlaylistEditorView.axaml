@@ -288,7 +288,7 @@
         <!-- AutoCapitalization so a phone's keyboard starts on a capital,
              as every other box that names something does. -->
         <controls:TextInput Grid.Column="1" Text="{Binding Name, Mode=TwoWay}"
-                            PlaceholderText="Playlist Name"
+                            PlaceholderText="Playlist name"
                             TextInputOptions.AutoCapitalization="True"
                             controls:SoftKeyboard.ReopenOnTap="True"/>
       </Grid>

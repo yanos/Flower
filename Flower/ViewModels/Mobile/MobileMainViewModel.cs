@@ -29,7 +29,7 @@ namespace Flower.ViewModels.Mobile;
 // is mobile-only (desktop has no equivalent standalone tab - its search box
 // works over whichever sidebar section is already selected) - see
 // IsShowingSearchPrompt.
-public enum MobileTab { Home, Songs, Albums, Artists, Playlists, Queue, Search }
+public enum MobileTab { Home, Songs, Albums, Artists, Playlists, Queue, Search, History }
 
 // Which way a newly-navigated-to screen should arrive on screen. Read (and
 // cleared) by ScreenStackPanel on every navigation - see
@@ -1281,7 +1281,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             _isNamingNewPlaylist = value;
             OnPropertyChanged();
             // The draft row is something on an otherwise empty Playlists tab,
-            // so "Nothing Here" must not be over it.
+            // so "Nothing here" must not be over it.
             RaiseEmptyStateChanged();
         }
     }
@@ -1537,7 +1537,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     // Without this, an empty library or an empty search just renders a blank screen.
     // IsShowingSearchPrompt counts as "empty" too - the Search tab before anything is
     // typed has an empty Main.Rows (see ApplyTabSelection/IsShowingSearchPrompt), but
-    // wants its own prompt rather than falling through to "No Results".
+    // wants its own prompt rather than falling through to "No results".
     public bool IsContentEmpty =>
         (IsShowingAlbumGrid && AlbumGridRows.Count == 0) ||
         (IsShowingArtistPicker && ArtistPickerItems.Count == 0) ||
@@ -1586,16 +1586,16 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         get
         {
             if (IsShowingSearchPrompt)
-                return "Search Your Library";
+                return "Search your library";
             if (IsShowingSearchResults)
-                return "No Results";
+                return "No results";
             if (IsShowingQueue)
                 return QueueViewModel.EmptyTitle;
             if (ActiveScreenFilter != null)
-                return "No Matches";
+                return "No matches";
             if (Main.Library.Tracks.Count == 0)
-                return "No Music Yet";
-            return "Nothing Here";
+                return "No music yet";
+            return "Nothing here";
         }
     }
 
@@ -2316,6 +2316,10 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             MobileTab.Songs => SidebarItemKind.Songs,
             MobileTab.Albums => SidebarItemKind.Albums,
             MobileTab.Artists => SidebarItemKind.Artists,
+            // The songs played, newest first - the desktop's History page, in
+            // its own order (LibraryBrowserViewModel keeps History's sort
+            // apart from the library's).
+            MobileTab.History => SidebarItemKind.History,
             _ => (SidebarItemKind?)null
         };
         UseTheSortThisScreenWants(flatSongs: SelectedTab == MobileTab.Songs);

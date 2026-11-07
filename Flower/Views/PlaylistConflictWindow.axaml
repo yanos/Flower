@@ -1,7 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="Flower.Views.PlaylistConflictWindow"
-        Title="Playlist Sync Conflict"
+        Title="Playlist sync conflict"
         Width="440"
         SizeToContent="Height"
         WindowStartupLocation="CenterOwner"
@@ -31,7 +31,7 @@
     </Border>
 
     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
-      <Button x:Name="KeepLocalButton" Classes="standard secondary" Content="Keep This Device" Click="KeepLocalButton_Click"/>
+      <Button x:Name="KeepLocalButton" Classes="standard secondary" Content="Keep this device" Click="KeepLocalButton_Click"/>
       <Button x:Name="KeepRemoteButton" Classes="standard primary" Click="KeepRemoteButton_Click" IsDefault="True"/>
     </StackPanel>
   </StackPanel>

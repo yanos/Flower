@@ -13,7 +13,7 @@
        stands in for under the art. -->
   <controls:TextInput x:Name="Box"
                       Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                      PlaceholderText="Playlist Name"
+                      PlaceholderText="Playlist name"
                       TextInputOptions.AutoCapitalization="True"
                       FontSize="20" FontWeight="Bold"
                       TextAlignment="Center"
