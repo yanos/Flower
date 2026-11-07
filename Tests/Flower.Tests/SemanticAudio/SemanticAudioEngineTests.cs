@@ -96,7 +96,9 @@ public class SemanticAudioEngineTests : IDisposable
         {
             // UiWait's budget: the iOS simulator's Mono took longer than 10 s
             // to analyse these three songs alongside the rest of the suite.
-            Assert.True(clock.Elapsed < TimeSpan.FromSeconds(30),$"still {_engine.Status.State}, waiting for {state}: {_engine.Status.Error}");
+            // The download runs on the pool, so a timeout names its state.
+            Assert.True(clock.Elapsed < TimeSpan.FromSeconds(30),
+                $"still {_engine.Status.State}, waiting for {state}: {_engine.Status.Error} ({ThreadPoolSnapshot.Describe()})");
             Thread.Sleep(10);
         }
     }

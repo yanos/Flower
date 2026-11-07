@@ -665,14 +665,14 @@ namespace Flower.Audio.Ffmpeg
             _wakeForSeek.Set();
         }
 
-        public PromotionSplice PrimeTarget(GaplessRingBuffer newTarget) => _writer.PrimeTarget(newTarget);
+        public PromotionSplice PrimeTarget(GaplessRingBuffer newTarget, int generation) => _writer.PrimeTarget(newTarget, generation);
 
-        public PromotionSplice PromoteTarget(GaplessRingBuffer newTarget)
+        public PromotionSplice PromoteTarget(GaplessRingBuffer newTarget, int generation)
         {
             var oldTarget = _writer.Target;
             var stagedBytes = oldTarget.AvailableBytes;
 
-            var splice = _writer.PromoteTarget(newTarget);
+            var splice = _writer.PromoteTarget(newTarget, generation);
 
             _logger?.LogInformation(
                 "Decoder output promotion completed for {Path}: MovedBytes={MovedBytes} SnapshotStagedBytes={SnapshotStagedBytes} MsToFirstByte={MsToFirstByte} TotalMs={TotalMs}",

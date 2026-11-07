@@ -129,9 +129,9 @@ public class RenderStarvationTests
             SeekSettled?.Invoke(0);
         }
 
-        public PromotionSplice PrimeTarget(GaplessRingBuffer newTarget) => _writer.PrimeTarget(newTarget);
+        public PromotionSplice PrimeTarget(GaplessRingBuffer newTarget, int generation) => _writer.PrimeTarget(newTarget, generation);
 
-        public PromotionSplice PromoteTarget(GaplessRingBuffer newTarget) => _writer.PromoteTarget(newTarget);
+        public PromotionSplice PromoteTarget(GaplessRingBuffer newTarget, int generation) => _writer.PromoteTarget(newTarget, generation);
 
         public void Retire()
         {

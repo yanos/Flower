@@ -49,13 +49,13 @@ public sealed class FakeTrackDecoder : ITrackDecoder
     // Moves nothing by default: the real one only moves anything when the
     // destination has room, and every coordinator test drives the seam
     // through PromotionSplice below instead.
-    public PromotionSplice PrimeTarget(GaplessRingBuffer newTarget)
+    public PromotionSplice PrimeTarget(GaplessRingBuffer newTarget, int generation)
     {
         PrimedTo = newTarget;
         return PrimeSplice;
     }
 
-    public PromotionSplice PromoteTarget(GaplessRingBuffer newTarget)
+    public PromotionSplice PromoteTarget(GaplessRingBuffer newTarget, int generation)
     {
         PromotedTo = newTarget;
         return PromotionSplice;

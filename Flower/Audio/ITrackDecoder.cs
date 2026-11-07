@@ -45,11 +45,13 @@ namespace Flower.Audio
         // blocking, leaving the write target alone - the first half of a
         // handover, run before EndReached's subscribers get the decode
         // thread. See RetargetableRingWriter.PrimeTarget.
-        PromotionSplice PrimeTarget(GaplessRingBuffer newTarget);
+        PromotionSplice PrimeTarget(GaplessRingBuffer newTarget, int generation);
         // Returns a measurement of the handover seam - see
         // PromotionSplice, and GaplessCoordinator.HandleDrainedOrFaulted
-        // for what is done with it.
-        PromotionSplice PromoteTarget(GaplessRingBuffer newTarget);
+        // for what is done with it. generation is newTarget's when it was
+        // promoted: a Reset() since then means the backlog is no longer
+        // wanted (RetargetableRingWriter.PromoteTarget).
+        PromotionSplice PromoteTarget(GaplessRingBuffer newTarget, int generation);
         void Retire();
     }
 }

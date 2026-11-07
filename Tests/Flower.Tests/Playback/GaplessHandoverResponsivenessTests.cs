@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 
 using Flower.Audio;
 using Flower.Models;
+using Flower.Tests.TestSupport;
 
 using Xunit;
 
@@ -74,9 +75,9 @@ public class GaplessHandoverResponsivenessTests
         {
         }
 
-        public PromotionSplice PrimeTarget(GaplessRingBuffer newTarget) => _writer.PrimeTarget(newTarget);
+        public PromotionSplice PrimeTarget(GaplessRingBuffer newTarget, int generation) => _writer.PrimeTarget(newTarget, generation);
 
-        public PromotionSplice PromoteTarget(GaplessRingBuffer newTarget) => _writer.PromoteTarget(newTarget);
+        public PromotionSplice PromoteTarget(GaplessRingBuffer newTarget, int generation) => _writer.PromoteTarget(newTarget, generation);
 
         public void Retire()
         {
@@ -127,7 +128,11 @@ public class GaplessHandoverResponsivenessTests
 
         Assert.True(first!.Joined.Task.Result, "the finished decoder's thread was still busy with the handover when its retire joined it");
 
-        var play = Task.Run(() => coordinator.Play(T("picked")), TestContext.Current.CancellationToken);
+        // On a thread of its own rather than Task.Run: what is under test is
+        // whether Play waits for the drain, not whether the pool has a thread
+        // to start it on - and on the iOS leg it once had none for 10 s.
+        var play = new Thread(() => coordinator.Play(T("picked"))) { IsBackground = true };
+        play.Start();
         // Ten seconds for something that takes microseconds, because the number
         // is not measuring the drain - a Play that waited for it would not
         // finish at all here, since nothing drains the 64-byte shared ring while
@@ -136,7 +141,7 @@ public class GaplessHandoverResponsivenessTests
         // tightest in this file (WaitFor above gives 5) and the one that failed
         // a full parallel run on a busy machine. A larger number does not make
         // the assertion weaker; it makes it about what it says it is about.
-        Assert.True(play.Wait(TimeSpan.FromSeconds(10)), "Play waited for the handover's drain");
+        Assert.True(play.Join(TimeSpan.FromSeconds(10)), $"Play waited for the handover's drain ({ThreadPoolSnapshot.Describe()})");
 
         // What the picked song hears is the picked song, not the rest of the
         // promoted one's backlog arriving behind it.

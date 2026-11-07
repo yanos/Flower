@@ -315,4 +315,27 @@ public class RetargetableRingWriterTests
         writer.Write(Ramp(8, start: 100));
         Assert.Equal(Ramp(8, start: 100), DrainAll(shared));
     }
+
+    // The drain runs on a thread of its own, started after the coordinator
+    // promoted under its lock. A skip that Reset() the shared ring before that
+    // thread got going used to be adopted by it - it read the generation when
+    // it started - and the old track's backlog went in behind the flush, so
+    // the song picked played the one it replaced.
+    [Fact]
+    public void A_reset_between_promotion_and_the_drain_starting_moves_nothing()
+    {
+        var staging = new GaplessRingBuffer(64);
+        var shared = new GaplessRingBuffer(64);
+        var writer = new RetargetableRingWriter(staging);
+        writer.Write(Ramp(32));
+        var generationAtPromotion = shared.Generation;
+
+        shared.Reset();
+        var prime = writer.PrimeTarget(shared, generationAtPromotion);
+        var splice = writer.PromoteTarget(shared, generationAtPromotion);
+
+        Assert.Equal(0, prime.BytesMoved);
+        Assert.Equal(0, splice.BytesMoved);
+        Assert.Equal(0, shared.AvailableBytes);
+    }
 }

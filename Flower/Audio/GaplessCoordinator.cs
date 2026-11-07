@@ -914,7 +914,7 @@ namespace Flower.Audio
             // Cheap and non-blocking either way - see
             // RetargetableRingWriter.PrimeTarget for why the full drain can't
             // simply move up here instead.
-            var primeSplice = promoted?.PrimeTarget(_sharedRing);
+            var primeSplice = promoted?.PrimeTarget(_sharedRing, ringGenerationAtPromotion);
 
             // Caught: a subscriber that throws would otherwise unwind past the
             // Retire and the promotion drain below, so the promoted track's
@@ -970,7 +970,7 @@ namespace Flower.Audio
                                    long underrunsAtCompletion, long bufferedAtPromotion, bool promotedAlreadyDrained,
                                    int ringGenerationAtPromotion)
         {
-            var splice = promoted.PromoteTarget(_sharedRing);
+            var splice = promoted.PromoteTarget(_sharedRing, ringGenerationAtPromotion);
 
             if (finishedTrack != null)
             {

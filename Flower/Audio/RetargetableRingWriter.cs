@@ -125,13 +125,16 @@ namespace Flower.Audio
         // free space can only grow underneath us (the reader only ever
         // consumes), so a free-space snapshot is a safe lower bound and the
         // TryWrite below never comes up short and drops bytes.
-        public PromotionSplice PrimeTarget(GaplessRingBuffer newTarget)
+        //
+        // generation is newTarget's at promotion, as for PromoteTarget below.
+        public PromotionSplice PrimeTarget(GaplessRingBuffer newTarget) => PrimeTarget(newTarget, newTarget.Generation);
+
+        public PromotionSplice PrimeTarget(GaplessRingBuffer newTarget, int generation)
         {
             lock (_gate)
             {
                 var startedAt = Stopwatch.GetTimestamp();
                 var stagedBytes = _target.AvailableBytes;
-                var generation = newTarget.Generation;
 
                 long movedBytes = 0;
                 var millisecondsToFirstByte = -1.0;
@@ -195,13 +198,22 @@ namespace Flower.Audio
         // wait on _gate, because a skip during that minute is exactly when
         // they are called: Wake used to lock, and a tap on another song froze
         // the UI thread for the rest of the drain, 32s in one phone log.
-        public PromotionSplice PromoteTarget(GaplessRingBuffer newTarget)
+        //
+        // generation is newTarget's at the moment of promotion, which the
+        // coordinator reads under its own lock - not whatever it is when this
+        // starts. The drain runs on a thread of its own, and a skip that
+        // Reset() the ring before that thread got going would otherwise be
+        // adopted here, and the old track's backlog poured in behind the new
+        // one: a Windows CI run heard nothing but the promoted track after a
+        // Play onto another song (GaplessHandoverResponsivenessTests).
+        public PromotionSplice PromoteTarget(GaplessRingBuffer newTarget) => PromoteTarget(newTarget, newTarget.Generation);
+
+        public PromotionSplice PromoteTarget(GaplessRingBuffer newTarget, int generation)
         {
             lock (_gate)
             {
                 var startedAt = Stopwatch.GetTimestamp();
                 var stagedBytes = _target.AvailableBytes;
-                var generation = newTarget.Generation;
 
                 long movedBytes = 0;
                 var millisecondsToFirstByte = -1.0;
