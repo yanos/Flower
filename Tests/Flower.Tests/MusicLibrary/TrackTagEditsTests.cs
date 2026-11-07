@@ -51,6 +51,36 @@ public class TrackTagEditsTests : IDisposable
         Assert.Equal("Old", song.Title);
     }
 
+    // A cover being read from the song as OK is pressed - the Track Info
+    // window's own, or a row scrolling by - holds the file for a moment, and
+    // the save waits for it rather than dropping the edit.
+    [Fact]
+    public void An_edit_waits_for_a_reader_to_let_go_of_the_file()
+    {
+        var path = SyntheticWav.CreateFile(_root, "song.wav", TimeSpan.FromSeconds(1), SyntheticWav.Marker(1));
+        var song = new Track { Title = "Old", Path = path };
+        var reader = File.OpenRead(path);
+        using var release = new System.Threading.Timer(_ => reader.Dispose(), null, 100, System.Threading.Timeout.Infinite);
+
+        var edited = TrackTagEdits.Apply([song], [(TrackTagFields.Title, "New")], _ => true, NullLogger.Instance);
+
+        Assert.Equal([song], edited);
+        Assert.Equal("New", song.Title);
+    }
+
+    [Fact]
+    public void A_file_held_open_throughout_refuses_the_edit()
+    {
+        var path = SyntheticWav.CreateFile(_root, "song.wav", TimeSpan.FromSeconds(1), SyntheticWav.Marker(1));
+        var song = new Track { Title = "Old", Path = path };
+        using var reader = File.OpenRead(path);
+
+        var edited = TrackTagEdits.Apply([song], [(TrackTagFields.Title, "New")], _ => true, NullLogger.Instance);
+
+        Assert.Empty(edited);
+        Assert.Equal("Old", song.Title);
+    }
+
     [Fact]
     public void A_song_this_device_may_not_edit_is_left_alone()
     {

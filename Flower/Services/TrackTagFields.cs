@@ -149,14 +149,18 @@ public static class TrackTagEdits
             {
                 try
                 {
-                    using var file = TagLib.File.Create(path);
-                    // The fields apply to a song and a tag together; here the
-                    // song is a stand-in nobody reads, so only the tag moves.
-                    var standIn = new Track();
-                    foreach (var (field, text) in edits)
-                        field.Apply(standIn, file.Tag, text);
-                    var extraTook = perFile?.Invoke(file, track) ?? true;
-                    file.Save();
+                    var extraTook = WhileNotHeld(() =>
+                    {
+                        using var file = TagLib.File.Create(path);
+                        // The fields apply to a song and a tag together; here the
+                        // song is a stand-in nobody reads, so only the tag moves.
+                        var standIn = new Track();
+                        foreach (var (field, text) in edits)
+                            field.Apply(standIn, file.Tag, text);
+                        var took = perFile?.Invoke(file, track) ?? true;
+                        file.Save();
+                        return took;
+                    });
                     if (extraTook)
                         afterFile?.Invoke(track);
                 }
@@ -179,4 +183,38 @@ public static class TrackTagEdits
 
         return edited;
     }
+
+    // How long a save waits for a reader to let go of the file.
+    private static readonly TimeSpan HeldFileBudget = TimeSpan.FromMilliseconds(500);
+
+    // TagLib opens a file to write it with FileShare.None, which .NET turns
+    // into an exclusive lock even on macOS, Linux and the phones, so a cover
+    // being read from the same song at that moment (AlbumArtLoader, for the
+    // Track Info window itself or a row scrolling by) failed the save, and the
+    // edit was dropped with only a warning in the log. Those reads take
+    // milliseconds, so the write waits them out; a file held for longer than
+    // the budget still fails as it did. Nothing has been written when the
+    // lock is refused, so trying again from the start is safe.
+    private static T WhileNotHeld<T>(Func<T> write)
+    {
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        while (true)
+        {
+            try
+            {
+                return write();
+            }
+            catch (System.IO.IOException ex) when (IsHeldElsewhere(ex) && clock.Elapsed < HeldFileBudget)
+            {
+                System.Threading.Thread.Sleep(20);
+            }
+        }
+    }
+
+    // A sharing or lock violation on Windows; on everything else, the
+    // EWOULDBLOCK of the flock .NET takes to honour FileShare (35 on Apple's
+    // platforms, 11 on Linux and Android).
+    private static bool IsHeldElsewhere(System.IO.IOException ex) =>
+        ex.HResult is unchecked((int)0x80070020) or unchecked((int)0x80070021)
+        || (OperatingSystem.IsMacOS() || OperatingSystem.IsIOS() || OperatingSystem.IsMacCatalyst() ? ex.HResult == 35 : ex.HResult == 11);
 }

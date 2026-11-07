@@ -151,11 +151,11 @@ public class PlaylistScreenTests : PinnedDataDirectory
         using var harness = new Harness(3);
         var window = harness.Window;
 
-        Tap(window, HeaderButton(window, MaterialIconKind.Shuffle));
-        Assert.True(harness.Vm.PlaylistControl.IsShuffleEnabled, "shuffle did not answer the tap");
+        Tap(window, HeaderButton(window, MaterialIconKind.Shuffle),
+            () => harness.Vm.PlaylistControl.IsShuffleEnabled, "shuffle did not answer the tap");
 
-        Tap(window, HeaderButton(window, MaterialIconKind.PencilOutline));
-        Assert.True(harness.Vm.CurrentPlaylistItem?.IsEditing, "the pencil did not answer the tap");
+        Tap(window, HeaderButton(window, MaterialIconKind.PencilOutline),
+            () => harness.Vm.CurrentPlaylistItem?.IsEditing == true, "the pencil did not answer the tap");
     }
 
     private static Button HeaderButton(Window window, MaterialIconKind kind) =>
@@ -164,12 +164,34 @@ public class PlaylistScreenTests : PinnedDataDirectory
             .Select(i => i.FindAncestorOfType<Button>()!)
             .First(b => b.Classes.Contains("pill"));
 
-    private static void Tap(Window window, Button button)
+    // Pressed where the button has come to rest, and given until the deadline
+    // to answer. The fixed pumps this replaced read the button's place while a
+    // slow iOS simulator was still easing the screen in, so the release landed
+    // off the button and nothing was clicked.
+    private static void Tap(Window window, Button button, Func<bool> answered, string because)
     {
-        var middle = button.TranslatePoint(new Point(button.Bounds.Width / 2, button.Bounds.Height / 2), window) ?? default;
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        Point Middle() => button.TranslatePoint(new Point(button.Bounds.Width / 2, button.Bounds.Height / 2), window) ?? default;
+
+        var middle = Middle();
+        while (true)
+        {
+            Harness.Pump(50);
+            var now = Middle();
+            if (now == middle)
+                break;
+            Assert.True(DateTime.UtcNow < deadline, "the header never came to rest");
+            middle = now;
+        }
+
         window.MouseDown(middle, MouseButton.Left);
-        Harness.Pump(60);
+        Dispatcher.UIThread.RunJobs();
         window.MouseUp(middle, MouseButton.Left);
-        Harness.Pump(120);
+
+        while (!answered())
+        {
+            Assert.True(DateTime.UtcNow < deadline, because);
+            Harness.Pump(20);
+        }
     }
 }
