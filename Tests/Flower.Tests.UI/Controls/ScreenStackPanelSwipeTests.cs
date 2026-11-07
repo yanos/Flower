@@ -218,9 +218,12 @@ public class ScreenStackPanelSwipeTests : PinnedDataDirectory
         Assert.NotNull(h.CurrentTrackList());
 
         // Drilling into the album already being shown - the shape of the
-        // duplicate, without depending on which caller produced it.
+        // duplicate, without depending on which caller produced it. Waited
+        // out rather than pumped for a fixed 60ms, which a CI iOS simulator
+        // under the interpreter can spend still mid-transition, with the
+        // destination not yet in the top slot.
         h.Vm.SelectAlbumOrArtistCommand.Execute("Album 0");
-        Harness.Pump();
+        h.LetEasingFinish();
 
         var trackList = h.CurrentTrackList();
         Assert.NotNull(trackList);
@@ -235,10 +238,10 @@ public class ScreenStackPanelSwipeTests : PinnedDataDirectory
         using var h = new Harness();
         h.DrillIn();
         h.Vm.SelectAlbumOrArtistCommand.Execute("Album 0");
-        Harness.Pump();
+        h.LetEasingFinish();
 
         h.Vm.BackCommand.Execute(null);
-        Harness.Pump();
+        h.LetEasingFinish();
 
         var trackList = h.CurrentTrackList();
         Assert.NotNull(trackList);
