@@ -168,7 +168,7 @@ In November 2026 every finding the two reviews had closed was taken out of
 them, and what was left of both was merged into one backlog, `CODE-REVIEW.md`.
 Source comments cite the closed findings as *"docs/CODE-REVIEW-2026-09.md
 B6"*, and this is what those citations resolve against. The findings still
-open (September E3, E8, G1; October A1, B4, C1, C2, F.8) are in
+open (September E3, E8, G1; October A1, B4, C1, C2) are in
 `CODE-REVIEW.md` under the same review and number. The full text of both,
 measurements and rejected alternatives included:
 
@@ -234,4 +234,5 @@ git show 2e55685:docs/CODE-REVIEW-2026-10.md
 | **D5** | The retired review documents still existed. They are deleted, and indexed above. |
 | **E** | Comments still described LibVLC, OpenSubsonic and client/server roles, and `CLAUDE.md` still named `library.json`. All corrected. |
 | **F.1–F.7** | The test gaps behind B1, B2, A1, A2, C1 and D1 have been written. |
+| **F.8** | `PlaylistSessionOverlay.Apply` and `CrashReportScanner` had no tests. `PlaylistSessionOverlayTests` and `CrashReportScannerTests` (Linux and macOS; the Windows event log cannot be filled from a test). |
 | **Denied peers** | Dead since peer-to-peer went. Removed, `denied-peers.json` included. |

@@ -35,7 +35,7 @@ happens to a listener or the library, not about how hard the fix is.
    anything. A few lines, and two full rewrites saved on every desktop launch.
 3. **October C1.1**: a separate token for plays. This is the biggest network
    win for phones, and the largest change on this list.
-4. **October F.8**, **September E8**, **September G1**: when
+4. **September E8**, **September G1**: when
    convenient.
 5. **October A1**, **October C2**, **September E3**: wait until something
    wants them.
@@ -175,14 +175,6 @@ low-risk, none a blocker:
 ---
 
 ## Testing
-
-### October F.8. Two logic files have no tests
-
-No test names them and none drives them indirectly: `PlaylistSessionOverlay.Apply`
-(`Flower.Core/Services/`), the conflict overlay every playlist sync goes
-through, with `PlaylistThreeWayMerge` beside it well tested, and
-`CrashReportScanner` (`Flower.Core/Logging/`). (`AlbumTracksViewModel`, the
-third in this item, has tests now.)
 
 ### September G1. The headless teardown flake
 
