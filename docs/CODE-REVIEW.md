@@ -35,9 +35,7 @@ happens to a listener or the library, not about how hard the fix is.
    anything. A few lines, and two full rewrites saved on every desktop launch.
 3. **October C1.1**: a separate token for plays. This is the biggest network
    win for phones, and the largest change on this list.
-4. **September G1**: when
-   convenient.
-5. **October A1**, **October C2**, **September E3**: wait until something
+4. **October A1**, **October C2**, **September E3**: wait until something
    wants them.
 
 ---
@@ -156,33 +154,6 @@ The views bind through the new property (`Search.Query`, `Pairing.…`,
 grown again, from 2606 and 2654 lines. Most of what is left is what a shell
 is: navigation, sheet state, and forwarding to the shared services. The next
 candidate is whatever has grown into a feature of its own since.
-
----
-
-## Testing
-
-### September G1. The headless teardown flake
-
-Inherited from the August architecture review.
-
-A full `Flower.Tests` run has failed 0-2 tests, a *different* one each time.
-The failure is not an assertion: it is `[Test Case Cleanup Failure] ... The
-calling thread cannot access this object because a different thread owns it`,
-out of `Avalonia.Threading.Dispatcher.VerifyAccess` during teardown. The
-victims observed have included `MusicListPanelTests`,
-`CurrentlyPlayingControlViewModelTests`, `PlaylistPlaybackIntegrationTests`,
-`MainViewModelDeviceSidebarTests`, `AlbumGridViewRebuildTests`,
-`MusicListViewGestureTests` and `AlbumArtLoaderTests`, and each passes when
-its class runs alone. The bug is in how the headless session's UI thread is
-shared across test classes, which is why chasing the named victim has never
-led anywhere.
-
-Not re-checked since September. It is worth fixing at the harness level before
-it trains anyone to ignore a red run. That is the real cost of a flake, and why
-this is more than cosmetic.
-
-(The other flake in this finding, `FakePeerHttpServer` racing its own port, is
-fixed.)
 
 ---
 
