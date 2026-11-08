@@ -90,7 +90,7 @@
          (RecyclingItemsControl), as on the phone. Its own ScrollViewer, as
          AlbumGridView has: an ItemsControl's template has none. -->
     <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-      <controls:RecyclingItemsControl x:Name="Rows" Margin="32,0,32,40">
+      <controls:RecyclingItemsControl x:Name="Rows" Margin="16,0,32,40">
         <ItemsControl.ItemsPanel>
           <ItemsPanelTemplate>
             <VirtualizingStackPanel Orientation="Vertical" />

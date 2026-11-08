@@ -73,7 +73,7 @@
   </UserControl.Styles>
 
   <Grid RowDefinitions="Auto,*">
-    <Grid Grid.Row="0" Margin="40,40,40,10" ColumnDefinitions="*,Auto" ColumnSpacing="20">
+    <Grid Grid.Row="0" Margin="24,40,40,10" ColumnDefinitions="*,Auto" ColumnSpacing="20">
       <TextBlock Grid.Column="0" Classes="pageTitle" Text="Search" />
       <Panel Grid.Column="1" VerticalAlignment="Top">
       <!-- The suggestions are SearchViewModel's (SearchSuggestion.For), not
@@ -115,7 +115,7 @@
     </Grid>
 
     <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
-      <StackPanel Margin="32,0,32,40">
+      <StackPanel Margin="16,0,32,40">
 
         <!-- Nothing typed: what was looked for before, to look for again. -->
         <StackPanel IsVisible="{Binding !Search.HasQuery}">

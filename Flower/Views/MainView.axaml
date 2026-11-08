@@ -538,7 +538,7 @@
           IsVisible="{Binding ShowsPageHeader}"
           ColumnDefinitions="*,Auto"
           ColumnSpacing="20"
-          Margin="40,40,40,24">
+          Margin="24,40,40,24">
       <StackPanel Grid.Column="0" Spacing="8">
         <TextBlock Classes="pageTitle" Text="{Binding PageTitle}"/>
         <TextBlock Text="{Binding PageSubtitle}"
@@ -984,7 +984,7 @@
              leaving that header row visible peeking above it otherwise. -->
         <controls:MusicListView Grid.Column="1" Grid.Row="1"
                                 x:Name="MusicList"
-                                Margin="38,0,16,0"
+                                Margin="22,0,16,0"
                                 IsVisible="{Binding IsShowingTrackList}"
                                 SelectedTrack="{Binding SelectedTrack, Mode=TwoWay}"/>
 
