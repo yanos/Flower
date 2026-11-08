@@ -11,7 +11,7 @@ phone runtime.
 | `Flower.Tests.Decoding` | Decoder, HTTP streaming, PCM validation, and playback integration with real decoding |
 | `Flower.Server.Tests` | In-process server/API, security, and configuration tests |
 | `Flower.Tests.macOS` | Native macOS Trash and Music/iTunes export discovery |
-| `Flower.Tests.Windows` | Native Windows Recycle Bin |
+| `Flower.Tests.Windows` | Native Windows Recycle Bin, and junctions in a library folder |
 | `Flower.Tests.Decoding.Scenarios` | Portable decoding scenarios, fixtures, and sample comparisons, without a test framework; shared by desktop and phone runners |
 | `Flower.Tests.Decoding.iOS` | Focused decoding runner; NativeAOT by default through the script, matching the shipped iOS runtime |
 | `Flower.Tests.Decoding.Android` | Focused decoding runner for an emulator or device |
