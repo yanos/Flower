@@ -975,11 +975,11 @@ public partial class App : Application
             mainViewModel.VibePlaylistsState = originImporter != null
                 ? () => originImporter.OriginVibePlaylists
                 : () => string.IsNullOrEmpty(settingsForVibes.PairedServerFingerprint) ? null : settingsForVibes.PairedServerVibePlaylists;
-            // And Endless Play: this device's switch, and the server offering it.
+            // And Endless Play: this device's switches, and the server offering it.
             mainViewModel.EndlessPlayOffered = originImporter != null
                 ? () => originImporter.OriginEndlessPlay
                 : () => string.IsNullOrEmpty(settingsForVibes.PairedServerFingerprint) ? null : settingsForVibes.PairedServerEndlessPlay;
-            playbackControls.EndlessPlays = () => settingsForVibes.EndlessPlay && mainViewModel.EndlessPlayOffered() == true;
+            playbackControls.EndlessPlays = () => mainViewModel.UsesEndlessPlay && mainViewModel.EndlessPlayOffered() == true;
         }
 
         // Constructed eagerly, for the same reason as NowPlayingIntegrationService

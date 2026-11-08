@@ -379,19 +379,11 @@ public sealed partial class SettingsViewModel : ViewModelBase
             ? "Artist pictures are looked up online by the server, which has this switched on."
             : "The server has looking things up online switched off, so this device does not either.";
 
-    // A paired device makes no Vibe Playlists of its own: its server does, for
-    // everything paired to it (docs/VIBE-PLAYLIST-PLAN.md, "The settings
-    // page"). Null where that isn't so, or the server is too old to say.
-    public string? VibePlaylistsNote =>
-        !_snapshot.IsPairedToServer || _snapshot.PairedServerVibePlaylists is not { } state ? null
-        : state == "off"
-            ? $"Vibe Playlists are made by {ServerName}, which has them off."
-            : $"Vibe Playlists are made by {ServerName}, which has them on.";
-
-    // Endless Play is this device's own switch, shown wherever there is a
-    // server to ask for the songs - a paired device, or a browser tab, whose
-    // server is its origin - and greyed while that server doesn't offer it.
-    public bool ShowsEndlessPlay => Device != null && _snapshot.PairedServerEndlessPlay != null;
+    // This device's AI Features tab - its master switch, and Vibe Playlists'
+    // and Endless Play's under it - shown wherever there is a server to make
+    // them: a paired device, or a browser tab, whose server is its origin.
+    // Endless Play is greyed while that server doesn't offer it.
+    public bool ShowsAiFeatures => Device != null && _snapshot.PairedServerEndlessPlay != null;
 
     public bool CanEditEndlessPlay => _snapshot.PairedServerEndlessPlay == true;
 
@@ -624,8 +616,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
             OnPropertyChanged(nameof(LookUpOnlineLock));
             OnPropertyChanged(nameof(ShowsLookUpOnline));
             OnPropertyChanged(nameof(LookUpOnlineNote));
-            OnPropertyChanged(nameof(VibePlaylistsNote));
-            OnPropertyChanged(nameof(ShowsEndlessPlay));
+            OnPropertyChanged(nameof(ShowsAiFeatures));
             OnPropertyChanged(nameof(CanEditEndlessPlay));
             OnPropertyChanged(nameof(EndlessPlayNote));
             OnPropertyChanged(nameof(HasAdvertisedAs));

@@ -271,10 +271,11 @@ public class SettingsDevicesViewTests : PinnedDataDirectory
             Dispatcher.UIThread.RunJobs();
         }
 
-        // Seven declared - General, Presentation, Library, Devices, Network,
-        // AI Features, Logs - of which the last three are collapsed for a
-        // local backend (see SettingsCapabilities).
-        Assert.Equal(7, tabs.ItemCount);
+        // Eight declared - General, Presentation, Library, Devices, Network,
+        // this device's AI Features, the server's, Logs - of which the last
+        // three are collapsed for a local backend (see SettingsCapabilities),
+        // and this device's while it is not paired (ShowsAiFeatures).
+        Assert.Equal(8, tabs.ItemCount);
         await settings.LoadAsync();
 
         window.Close();

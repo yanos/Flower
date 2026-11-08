@@ -184,12 +184,9 @@ public sealed record SettingsSnapshot
     public bool LookUpOnline { get; init; } = true;
     public bool PairedServerLooksUpOnline { get; init; }
 
-    // On a paired device: which server it is, and whether that server makes
-    // Vibe Playlists ("off", "analysing", "ready", or null before it has
-    // said) - one line in its own settings, since the server's switch is the
-    // one that counts (SettingsViewModel.VibePlaylistsNote).
+    // On a paired device: which server it is, named in
+    // SettingsViewModel.EndlessPlayNote.
     public string? PairedServerName { get; init; }
-    public string? PairedServerVibePlaylists { get; init; }
 
     // The AI features' master switch, each feature's own, and the clips per
     // song they share (MusicLibrarySettings.AiFeaturesEnabled).

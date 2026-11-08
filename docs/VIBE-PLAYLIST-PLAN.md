@@ -560,9 +560,11 @@ seeds are songs.
 - **Two switches, both off by default.** The server's, under AI Features
   beside Vibe Playlist, decides whether it is offered
   (`MusicLibrarySettings.EndlessPlayEnabled`). Each device has its own, so a
-  listener chooses for themselves (`AppSettings.EndlessPlay`): Settings >
-  General on the desktop and in the browser, the server section of the
-  phone's Settings. A device's switch is greyed, with a line saying why,
+  listener chooses for themselves (`AppSettings.EndlessPlay`): the device's
+  own AI Features tab on the desktop and in the browser, the server section
+  of the phone's Settings, under the device's master switch
+  (`AppSettings.UseAiFeatures`, on by default; off, neither Vibe Playlists
+  nor Endless Play, each keeping its own setting). A device's switch is greyed, with a line saying why,
   while its server doesn't offer it; it learns that from `/info`'s
   `endlessPlay` (a browser tab from its handshake). Off by default, unlike
   Vibe Playlist, because it changes what plays without anyone asking.
@@ -673,7 +675,7 @@ Where each appears follows `LookUpOnline`:
 |---|---|
 | Server settings (browser, or an admin device's server screen) | The full page, for the server |
 | A device on its own (desktop or phone) | The full page, for itself |
-| A paired device's own settings | One line: "Vibe Playlists are made by *Server*, which has them on / off." No switch for that; Endless Play's own switch (see "Endless Play"). |
+| A paired device's own settings | Its own AI Features tab (`DeviceAiFeaturesTab`; on the phone, the server section): **Enable AI Features**, and under it the device's own Vibe Playlist and Endless Play switches (see "Endless Play"). |
 | A server older than these settings | "This server's version has no AI features. Update it to turn them on.", with every switch disabled: its status route answers 404. |
 
 The full page:

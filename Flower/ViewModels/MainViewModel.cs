@@ -338,6 +338,31 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         }
     }
 
+    // This device's AI features as a whole (AppSettings.UseAiFeatures): off,
+    // neither Vibe Playlists nor Endless Play, each feature's own switch
+    // keeping its setting. Persist-immediately, same as above.
+    public bool UseAiFeatures
+    {
+        get => _appSettings.UseAiFeatures;
+        set
+        {
+            if (_appSettings.UseAiFeatures == value)
+                return;
+            _appSettings.UseAiFeatures = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(CanMakeVibePlaylists));
+            OnPropertyChanged(nameof(CanEditEndlessPlay));
+            Playlists.RefreshSidebarItems();
+            SaveSettings();
+        }
+    }
+
+    // Whether this device uses Vibe Playlists and Endless Play: its master
+    // switch and the feature's own.
+    public bool UsesVibePlaylists => UseAiFeatures && UseVibePlaylists;
+
+    public bool UsesEndlessPlay => UseAiFeatures && EndlessPlay;
+
     // Endless Play on this device (AppSettings.EndlessPlay): a queue that runs
     // out goes on with songs like the last few, asked of the server - which
     // has to offer it too (EndlessPlayOffered). Persist-immediately, same as
@@ -379,8 +404,9 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // server or it hasn't said. Set by the app, beside VibePlaylistsState.
     public Func<bool?> EndlessPlayOffered { get; set; } = () => null;
 
-    // For the phone's switch, which greys while the server doesn't offer it.
-    public bool IsEndlessPlayOffered => EndlessPlayOffered() == true;
+    // For the phone's switch, which greys while the server doesn't offer it
+    // or this device's AI features are off.
+    public bool CanEditEndlessPlay => UseAiFeatures && EndlessPlayOffered() == true;
 
     // Whether this device uploads its own songs to its paired server over a
     // connection that is not the server's local network - off by default. See
@@ -1963,6 +1989,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             PairedIcon?.FollowPairing();
             _deviceSidebar.RefreshIcons();
             OnPropertyChanged(nameof(CanMakeVibePlaylists));
+            OnPropertyChanged(nameof(CanEditEndlessPlay));
             // Pairing, unpairing and being made an administrator each change
             // which folders this device scans - see DeviceLibraryFolders.
             FollowScanFolders();
@@ -2700,9 +2727,9 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // New Vibe Playlist… is offered while the server can make one - once it
     // has started listening, since a pool made of the songs heard so far
     // grows as it goes on - and this device has not turned them off
-    // (UseVibePlaylists).
+    // (UsesVibePlaylists).
     public bool CanMakeVibePlaylists =>
-        UseVibePlaylists && VibePlaylists != null && VibePlaylistsState() is "analysing" or "ready";
+        UsesVibePlaylists && VibePlaylists != null && VibePlaylistsState() is "analysing" or "ready";
 
     public event EventHandler<VibePlaylistEditorEventArgs>? VibePlaylistEditorRequested;
 
@@ -2744,7 +2771,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     void IPlaylistManagementHost.PlaylistFoldersCollapsedChanged() => SaveSettings();
 
-    bool IPlaylistManagementHost.HidesVibePlaylists => !UseVibePlaylists;
+    bool IPlaylistManagementHost.HidesVibePlaylists => !UsesVibePlaylists;
 
     private void OnSidebarSelectionChanged()
     {

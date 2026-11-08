@@ -167,35 +167,6 @@
                      Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"
                      IsVisible="{Binding ShowsShareLogs}"/>
 
-          <!-- Vibe Playlists, this device's own switch (AppSettings.
-               UseVibePlaylists), on by default: off, New Vibe Playlist… is
-               not offered here and the vibe playlists it has are hidden. Shown where Endless Play is - wherever a
-               server could make them; how it does is the server's AI
-               Features tab. -->
-          <CheckBox Content="Vibe playlists"
-                    Margin="0,16,0,0"
-                    IsChecked="{Binding Device.UseVibePlaylists, Mode=TwoWay, FallbackValue=True}"
-                    IsVisible="{Binding ShowsEndlessPlay}"/>
-          <TextBlock Text="Make a playlist from a sentence, with songs the server picks by how they sound. Off, the vibe playlists on this device are hidden."
-                     Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"
-                     IsVisible="{Binding ShowsEndlessPlay}"/>
-
-          <!-- Endless Play, this device's own switch (AppSettings.EndlessPlay),
-               off by default. Shown wherever a server could hand it the songs,
-               and greyed with a note while that server doesn't offer it
-               (SettingsViewModel.EndlessPlayNote). -->
-          <CheckBox Content="Endless Play"
-                    Margin="0,16,0,0"
-                    IsChecked="{Binding Device.EndlessPlay, Mode=TwoWay, FallbackValue=False}"
-                    IsEnabled="{Binding CanEditEndlessPlay}"
-                    IsVisible="{Binding ShowsEndlessPlay}"/>
-          <TextBlock Text="When the queue runs out, keep playing songs that sound like the last few."
-                     Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"
-                     IsVisible="{Binding ShowsEndlessPlay}"/>
-          <TextBlock Text="{Binding EndlessPlayNote}"
-                     Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"
-                     IsVisible="{Binding EndlessPlayNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-
           <!-- A newer release: whether to look on its own, and looking now -
                see AppUpdatesViewModel. Only on a desktop installed from a
                release, which is the only place Device.Updates is set. -->
@@ -644,11 +615,6 @@
               <TextBlock Text="{Binding LookUpOnlineNote}"
                          FontSize="11" Opacity="0.6" TextWrapping="Wrap"
                          IsVisible="{Binding LookUpOnlineNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-              <!-- And whether its server makes Vibe Playlists, which it asks
-                   the server for (SettingsViewModel.VibePlaylistsNote). -->
-              <TextBlock Text="{Binding VibePlaylistsNote}"
-                         Margin="0,6,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"
-                         IsVisible="{Binding VibePlaylistsNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
               <TextBlock Text="{Binding LookUpOnlineLock.Message}" IsVisible="{Binding LookUpOnlineLock.IsLocked}"
                          Margin="20,4,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
             </StackPanel>
@@ -942,6 +908,41 @@
                        Margin="0,4,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
             <TextBlock Text="Your local network is always allowed. Add a range for a tunnel or proxy."
                        Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- This device's AI Features: its own master switch
+           (AppSettings.UseAiFeatures) and, indented under it and greyed with
+           it, its own Vibe Playlists (AppSettings.UseVibePlaylists, on by
+           default: off, New Vibe Playlist… is not offered here and the vibe
+           playlists it has are hidden) and Endless Play (AppSettings.
+           EndlessPlay, off by default, greyed with a note while the server
+           doesn't offer it - SettingsViewModel.EndlessPlayNote). Bound to
+           Device and applied as touched. Shown wherever a server could make
+           them (SettingsViewModel.ShowsAiFeatures); how it does is the
+           server's own AI Features tab below, which never shows beside this
+           one - a server's page has no Device. -->
+      <TabItem Header="AI Features" x:Name="DeviceAiFeaturesTab" IsVisible="{Binding ShowsAiFeatures}">
+        <ScrollViewer>
+          <StackPanel Margin="0,12,20,24">
+            <CheckBox Content="Enable AI Features"
+                      IsChecked="{Binding Device.UseAiFeatures, Mode=TwoWay, FallbackValue=True}"/>
+            <StackPanel Margin="20,20,0,0" IsEnabled="{Binding Device.UseAiFeatures, FallbackValue=True}">
+              <CheckBox Content="Vibe Playlist"
+                        IsChecked="{Binding Device.UseVibePlaylists, Mode=TwoWay, FallbackValue=True}"/>
+              <TextBlock Text="Make a playlist from a sentence, with songs the server picks by how they sound."
+                         Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
+
+              <CheckBox Content="Endless Play" Margin="0,16,0,0"
+                        IsChecked="{Binding Device.EndlessPlay, Mode=TwoWay, FallbackValue=False}"
+                        IsEnabled="{Binding CanEditEndlessPlay}"/>
+              <TextBlock Text="When the queue runs out, keep playing songs that sound like the last few."
+                         Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
+              <TextBlock Text="{Binding EndlessPlayNote}"
+                         Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"
+                         IsVisible="{Binding EndlessPlayNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+            </StackPanel>
           </StackPanel>
         </ScrollViewer>
       </TabItem>

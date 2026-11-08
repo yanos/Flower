@@ -68,7 +68,6 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel, Flower.Control
         LookUpOnline = ViewModel.LookUpOnline,
         PairedServerLooksUpOnline = ViewModel.PairedServerLooksUpOnline,
         PairedServerName = ViewModel.PairedServerAlias,
-        PairedServerVibePlaylists = ViewModel.VibePlaylistsState(),
         PairedServerEndlessPlay = ViewModel.EndlessPlayOffered(),
     });
 

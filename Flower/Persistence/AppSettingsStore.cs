@@ -233,6 +233,13 @@ namespace Flower.Persistence
         // switch needs. Null until it has said.
         public bool? PairedServerEndlessPlay { get; set; }
 
+        // This device's master switch over its AI features (Settings > AI
+        // Features): off, it uses neither Vibe Playlists nor Endless Play,
+        // whatever their own switches below and its server say - each keeps
+        // its own setting for when this comes back on. On by default, so the
+        // features' own defaults decide.
+        public bool UseAiFeatures { get; set; } = true;
+
         // Endless Play on this device: when the queue runs out, carry on with
         // songs that sound like the last few (docs/VIBE-PLAYLIST-PLAN.md,
         // "Endless Play"). Off by default, since it changes what plays

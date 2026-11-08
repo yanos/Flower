@@ -110,6 +110,45 @@ public class MobileVibePlaylistTests : PinnedDataDirectory
         Assert.Contains(vm.PlaylistPickerItems, i => i.Name == Rainy);
     }
 
+    // The device's master switch over its AI features does the same as Vibe
+    // Playlists' own, without touching it: on again, they are back.
+    [AvaloniaFact]
+    public void Turning_AI_features_off_hides_vibe_playlists_and_keeps_their_switch()
+    {
+        var parts = Build("ready");
+        var vm = parts.Mobile;
+        vm.SelectTabCommand.Execute(nameof(MobileTab.Playlists));
+        UiWait.Settle(() => vm.PlaylistPickerItems.Any(i => i.Name == Rainy), "the playlist never reached the picker");
+
+        parts.Parts.Main.UseAiFeatures = false;
+        Dispatcher.UIThread.RunJobs();
+        Assert.False(vm.CanCreateVibePlaylist);
+        Assert.DoesNotContain(vm.PlaylistPickerItems, i => i.Name == Rainy);
+        Assert.True(parts.Parts.Main.UseVibePlaylists);
+
+        parts.Parts.Main.UseAiFeatures = true;
+        Dispatcher.UIThread.RunJobs();
+        Assert.True(vm.CanCreateVibePlaylist);
+        Assert.Contains(vm.PlaylistPickerItems, i => i.Name == Rainy);
+    }
+
+    // And Endless Play: greyed while the master is off, even where the server
+    // offers it.
+    [AvaloniaFact]
+    public void Endless_play_is_editable_only_while_AI_features_are_on_and_the_server_offers_it()
+    {
+        var main = Build("ready").Parts.Main;
+        main.EndlessPlayOffered = () => true;
+        Assert.True(main.CanEditEndlessPlay);
+
+        main.UseAiFeatures = false;
+        Assert.False(main.CanEditEndlessPlay);
+
+        main.UseAiFeatures = true;
+        main.EndlessPlayOffered = () => false;
+        Assert.False(main.CanEditEndlessPlay);
+    }
+
     [AvaloniaFact]
     public void Backing_out_of_a_new_one_removes_it()
     {
