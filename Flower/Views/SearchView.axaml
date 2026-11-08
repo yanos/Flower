@@ -123,9 +123,12 @@
             <Border Grid.ColumnSpan="2" Classes="resultsHeading">
               <TextBlock Text="RECENT SEARCHES" />
             </Border>
+            <!-- Bottom margin: the heading's 8 below its hairline, the hairline,
+                 then a gap, so the button sits over the line and level with the
+                 heading's text rather than on the line. -->
             <Button Grid.Column="1" Content="Clear"
                     Classes="standard secondary small"
-                    VerticalAlignment="Bottom" Margin="0,0,8,6"
+                    VerticalAlignment="Bottom" Margin="0,0,8,13"
                     Command="{Binding Search.ClearRecentSearchesCommand}" />
           </Grid>
           <ItemsControl ItemsSource="{Binding Search.RecentSearches}" MaxWidth="560" HorizontalAlignment="Left">
