@@ -606,6 +606,91 @@ public class LibraryMirrorScenarioTests : PinnedDataDirectory
         Assert.True(File.Exists(ServerPath(server, "song.wav")));
     }
 
+    // The music folder is there and full, but a drive linked into it is
+    // unplugged: the link is left pointing at nothing.
+    [Fact]
+    public async Task A_drive_linked_into_the_music_folder_and_unplugged_deletes_nothing_from_the_server()
+    {
+        var server = NewServer();
+        var desktop = NewDevice();
+        var drive = Directory.CreateTempSubdirectory("flower-mirror-drive").FullName;
+        TaggedAudioFile.Create(drive, "album/song.wav", "Song");
+        Directory.CreateSymbolicLink(desktop.PathOf("External"), drive);
+        desktop.AddFile("keep.wav", "Keep");
+        desktop.Scan();
+        await desktop.SyncAsync(server);
+        Assert.Equal(2, server.Library.Tracks.Count);
+
+        Directory.Delete(drive, recursive: true);
+        desktop.Scan();
+        await desktop.SyncAsync(server);
+
+        Assert.Equal(2, server.Library.Tracks.Count);
+        Assert.True(File.Exists(ServerPath(server, "External/album/song.wav")));
+        Assert.Null(desktop.Single("Song").Path);
+    }
+
+    // A share mounted inside the music folder that did not mount: its mount
+    // point is there and empty, and the folders that were on it are not.
+    [Fact]
+    public async Task A_share_inside_the_music_folder_that_did_not_mount_deletes_nothing_from_the_server()
+    {
+        var server = NewServer();
+        var desktop = NewDevice();
+        desktop.AddFile("NAS/album/song.wav", "Song");
+        desktop.AddFile("keep.wav", "Keep");
+        desktop.Scan();
+        await desktop.SyncAsync(server);
+
+        Directory.Delete(desktop.PathOf("NAS/album"), recursive: true);
+        desktop.Scan();
+        await desktop.SyncAsync(server);
+
+        Assert.Equal(2, server.Library.Tracks.Count);
+        Assert.True(File.Exists(ServerPath(server, "NAS/album/song.wav")));
+    }
+
+    // "rm *" in an album's folder: the folder is left there, empty, and
+    // every song that was in it is gone.
+    [Fact]
+    public async Task Every_song_deleted_from_its_folder_leaves_the_servers_library()
+    {
+        var server = NewServer();
+        var desktop = NewDevice();
+        desktop.AddFile("keep.wav", "Keep");
+        desktop.AddFile("album/a.wav", "A");
+        desktop.AddFile("album/b.wav", "B", seed: 2);
+        desktop.Scan();
+        await desktop.SyncAsync(server);
+
+        foreach (var file in Directory.GetFiles(desktop.PathOf("album")))
+            File.Delete(file);
+        desktop.Scan();
+        await desktop.SyncAsync(server);
+
+        Assert.Equal(["Keep"], server.Library.Tracks.Select(t => t.Title));
+    }
+
+    // An album thrown away whole, folder and all: the artist's folder above
+    // it is what says so.
+    [Fact]
+    public async Task An_album_folder_thrown_away_whole_leaves_the_servers_library()
+    {
+        var server = NewServer();
+        var desktop = NewDevice();
+        desktop.AddFile("artist/one/a.wav", "A");
+        desktop.AddFile("artist/two/b.wav", "B");
+        desktop.Scan();
+        await desktop.SyncAsync(server);
+
+        Directory.Delete(desktop.PathOf("artist/two"), recursive: true);
+        desktop.Scan();
+        await desktop.SyncAsync(server);
+
+        Assert.Equal(["A"], server.Library.Tracks.Select(t => t.Title));
+        Assert.True(File.Exists(ServerPath(server, "artist/two/b.wav")));
+    }
+
     // The files are where they were; the device has only been told to stop
     // looking at them.
     [Fact]

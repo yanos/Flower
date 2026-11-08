@@ -168,7 +168,7 @@ In November 2026 every finding the two reviews had closed was taken out of
 them, and what was left of both was merged into one backlog, `CODE-REVIEW.md`.
 Source comments cite the closed findings as *"docs/CODE-REVIEW-2026-09.md
 B6"*, and this is what those citations resolve against. The findings still
-open (September E3; October B4) are in
+open (September E3) are in
 `CODE-REVIEW.md` under the same review and number. The full text of both,
 measurements and rejected alternatives included:
 
@@ -223,6 +223,7 @@ git show 2e55685:docs/CODE-REVIEW-2026-10.md
 | **B1** | The end-of-track queue decision ran off the UI thread, against state nothing synchronised. It runs on the UI thread, and does nothing if that track is no longer the one playing. |
 | **B2** | There were two definitions of path equality, and Linux got both. One `PathComparer`, from the folder's own rule (`PathCaseTests`). |
 | **B3** | A failed track told the user nothing. `PlaybackFailed` carries `PlaybackFailedEventArgs`, which `MainViewModel.PlaybackNotice` shows on both heads. |
+| **B4** | The vanished-file guard checked the library folder, not the folder the file was in, so a drive linked or mounted inside a full music folder read as every song on it deleted. `LibraryFolders.WasDeleted` asks the nearest folder above the file that is still there. It must not be reached through a link left pointing at nothing, and must hold something unless it is the file's own folder ("rm *" in an album). An empty folder further up is an unmounted share. The one case it cannot tell apart is a share with only loose songs at its top that did not mount. (`LibraryMirrorScenarioTests`). |
 | **B5** | `SeekableHttpStream` leaked the response on a refusal. It is disposed before the throw. |
 | **C1, client half** | A sync that changed nothing rewrote the whole library. `MergeSyncedTracks` skips a merge that moved nothing, and writes only the rows that moved (`LibrarySyncNoOpPullTests`). |
 | **C1.1** | Every play moved the server's change token, so every other device's next `GET /library` was the whole 6-8 MB catalog. Listening has its own token (`Library.ListeningToken`), served on `/info` and in the catalog to admin devices only. Each song remembers when its listening last moved, so `GET /listening?since=` answers with only the songs that moved (`Library.ListeningSince`). A device applies those by the full pull's own rules (`Library.MergeSyncedListening`), and the coordinator pulls the catalog only when the catalog token moves (`LibraryListeningTokenTests`, the `/listening` endpoint tests, `SyncScenarioTests`, `MainViewModelSyncTriggerTests`). |

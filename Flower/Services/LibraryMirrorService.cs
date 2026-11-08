@@ -223,10 +223,11 @@ public class LibraryMirrorService
     // that did not mount, a folder taken out of the settings. Acting on any of
     // those would empty the server's library, and every other device's with
     // it, because a cable came loose. So a missing file is reported only when
-    // the folder it lived
-    // in is still there and still has something in it, which is what a
-    // deletion looks like and an unmounted volume does not. Anything short of
-    // that stays owed, and is asked about again next time.
+    // the folder it lived in is still there and still has something in it,
+    // which is what a deletion looks like and an unmounted volume does not
+    // (LibraryFolders.WasDeleted, which also covers a folder thrown away
+    // whole). Anything short of that stays owed, and is asked about again
+    // next time.
     public virtual async Task<int> ReportVanishedAsync(DiscoveredDevice device, CancellationToken ct = default)
     {
         var owed = _library.RemovedTracks
@@ -247,7 +248,6 @@ public class LibraryMirrorService
 
         var roots = PathRules.For(Importer.Importer.ScanRoots(DeviceLibraryFolders.ScanPaths(_appSettings)));
         var addOnly = DeviceLibraryFolders.AddOnlyRoots(_appSettings);
-        var rootIsThere = new Dictionary<string, bool>(StringComparer.Ordinal);
         var stillHere = _library.Tracks
             .Where(t => t.Path != null && IsOnServer(t, device))
             .Select(t => t.OriginTrackId!)
@@ -272,10 +272,7 @@ public class LibraryMirrorService
                 continue;
             }
 
-            if (!rootIsThere.TryGetValue(root, out var there))
-                rootIsThere[root] = there = LibraryFolders.IsPresent(root);
-
-            if (there)
+            if (LibraryFolders.WasDeleted(path, root))
                 gone.Add(removed);
         }
 

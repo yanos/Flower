@@ -11,7 +11,7 @@ November 2026:
   how well controls are shared across the heads, and security.
 
 **Only what is still open is here.** Each finding keeps its review and its
-original number (*September E3*, *October B4*), which is what a source comment
+original number (*September E3*), which is what a source comment
 cites. Every fixed or moot finding is one line in `CITED-DECISIONS.md`, which is
 also what an older citation of `CODE-REVIEW-2026-09.md` or
 `CODE-REVIEW-2026-10.md` resolves against. Several findings here are what
@@ -29,33 +29,7 @@ happens to a listener or the library, not about how hard the fix is.
 
 ## Suggested order
 
-1. **October B4**: check the file's own folder. This is the one finding left
-   that can take songs off every device.
-2. **September E3**: wait until something wants it.
-
----
-
-## Bugs
-
-### October B4. The vanished-file guard checks the library root, not the folder the file was in
-
-`Flower/Services/LibraryMirrorService.cs:221-229` (comment), `:276` (code)
-
-The comment says a missing file is reported to the server as deleted only when
-"the folder it lived in is still there and still has something in it". The
-code checks `LibraryFolders.IsPresent(root)`, which is the *library root*. Take
-a library root `~/Music` that has a mount point or symlink in it
-(`~/Music/External` pointing at a USB drive). Unplug the drive, and every song
-under it reads as deleted, because the root exists and is not empty. An admin
-device then removes all of those songs from the server, and every other device
-follows.
-
-The server keeps the files and Restore brings them back, so nothing is lost.
-But this is the failure the guard was written to prevent.
-
-**Fix.** Check the file's own parent folder, or walk up to the root and require
-every folder on the way to exist and be non-empty. That is what the comment
-promises, so the comment stays and the code changes to match it.
+1. **September E3**: wait until something wants it.
 
 ---
 
