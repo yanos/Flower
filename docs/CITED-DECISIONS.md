@@ -168,7 +168,7 @@ In November 2026 every finding the two reviews had closed was taken out of
 them, and what was left of both was merged into one backlog, `CODE-REVIEW.md`.
 Source comments cite the closed findings as *"docs/CODE-REVIEW-2026-09.md
 B6"*, and this is what those citations resolve against. The findings still
-open (September E3; October A1, B4, C1, C2) are in
+open (September E3; October B4, C1, C2) are in
 `CODE-REVIEW.md` under the same review and number. The full text of both,
 measurements and rejected alternatives included:
 
@@ -215,7 +215,7 @@ git show 2e55685:docs/CODE-REVIEW-2026-10.md
 
 | | |
 |---|---|
-| **A1** | Pairing codes could be brute-forced from an IPv6 prefix. The 20th wrong code from any source in ten minutes cancels every outstanding code (`PairingCodeGuessingTests`). |
+| **A1** | Pairing codes could be brute-forced from an IPv6 prefix. The 20th wrong code from any source in ten minutes cancels every outstanding code (`PairingCodeGuessingTests`). The other half, a longer code in links and QR codes, was dropped in November 2026: with guessing bounded, it bought little. |
 | **A2** | Every paired device received every other device's listening history. A guest's manifest carries its own plays only. |
 | **A3** | `/info` told an anonymous caller whether a fingerprint was paired. `trustsCaller: false` goes only to a caller that self-signs with that key (`SECURITY.md`, "After the October review"). |
 | **A4** | The web UI could be framed. Every web UI response sends `frame-ancestors 'none'`, `X-Frame-Options: DENY` and `nosniff` (`WebUiFramingTests`). |

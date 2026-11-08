@@ -35,23 +35,7 @@ happens to a listener or the library, not about how hard the fix is.
    anything. A few lines, and two full rewrites saved on every desktop launch.
 3. **October C1.1**: a separate token for plays. This is the biggest network
    win for phones, and the largest change on this list.
-4. **October A1**, **October C2**, **September E3**: wait until something
-   wants them.
-
----
-
-## Security and the trust boundary
-
-### October A1. Pairing codes in links could be much longer
-
-`Flower.Server/Services/PairingCodeService.cs`
-
-Guessing is fixed: the 20th wrong code from any source in ten minutes cancels
-every outstanding code (`PairingCodeGuessingTests`). What is left is the other
-half of the proposal. The 5-character length only matters for a code read
-aloud. The invite link, the QR code and the browser URL all carry the code
-without anyone typing it, so they could carry a much longer one, and a guess
-against those would be hopeless rather than merely bounded.
+4. **October C2**, **September E3**: wait until something wants them.
 
 ---
 
