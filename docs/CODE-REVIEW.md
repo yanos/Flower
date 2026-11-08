@@ -35,7 +35,7 @@ happens to a listener or the library, not about how hard the fix is.
    anything. A few lines, and two full rewrites saved on every desktop launch.
 3. **October C1.1**: a separate token for plays. This is the biggest network
    win for phones, and the largest change on this list.
-4. **October F.8**, **October C1.2**, **September E8**, **September G1**: when
+4. **October F.8**, **September E8**, **September G1**: when
    convenient.
 5. **October A1**, **October C2**, **September E3**: wait until something
    wants them.
@@ -91,24 +91,23 @@ promises, so the comment stays and the code changes to match it.
 
 The client half is fixed: a merge that moved nothing writes nothing and raises
 nothing, and one that moved only plays or stars writes only those rows
-(`LibrarySyncNoOpPullTests`). Three things are left.
+(`LibrarySyncNoOpPullTests`). So is a rescan that found nothing new, which no
+longer moves the token (C1.2, in `CITED-DECISIONS.md`). Two things are left,
+numbered as they were.
 
-1. **The server's change token moves on every play.** Every play a listener
-   reports moves it, so every other device's next `GET /library` is a full
-   fetch, 6-8 MB on the library measured. The merge is now cheap, but the
-   download is not. Plays are by far the most frequent change, and the one a
-   device could apply without re-reading the catalog, so they could have their
-   own token.
-2. **A server rescan that found nothing new still moves the token.**
-   `UpdateTracks` always runs `InvalidateIndexes`, so every device does a full
-   fetch after it.
-3. **The desktop's two iTunes imports rewrite everything on every launch.**
-   `ITunesImportCoordinator.ApplyAsync` calls `NotifyLibraryChanged` whether
-   or not a single count moved, which is two whole-table rewrites and two full
-   UI rebuilds per launch. `ITunesPlayCountImporter.Apply` and
-   `ITunesDateAddedImporter.Apply` return `void`. They should return whether
-   they changed anything, as the server's `ITunesIntegration.ApplyImports`
-   already does.
+- **C1.1. The server's change token moves on every play.** Every play a
+  listener reports moves it, so every other device's next `GET /library` is a
+  full fetch, 6-8 MB on the library measured. The merge is now cheap, but the
+  download is not. Plays are by far the most frequent change, and the one a
+  device could apply without re-reading the catalog, so they could have their
+  own token.
+- **C1.3. The desktop's two iTunes imports rewrite everything on every launch.**
+  `ITunesImportCoordinator.ApplyAsync` calls `NotifyLibraryChanged` whether
+  or not a single count moved, which is two whole-table rewrites and two full
+  UI rebuilds per launch. `ITunesPlayCountImporter.Apply` and
+  `ITunesDateAddedImporter.Apply` return `void`. They should return whether
+  they changed anything, as the server's `ITunesIntegration.ApplyImports`
+  already does.
 
 `ONLINE-METADATA-PLAN.md` cites this shape: a popularity refresh that returns
 the same ranking must not count as a change.

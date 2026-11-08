@@ -564,5 +564,74 @@ namespace Flower.Models
             copy.RemotePlayCounts = new Dictionary<string, int>(RemotePlayCounts);
             return copy;
         }
+
+        // Every stored field the same, where Equals asks only whether they are
+        // the same song. What lets a rescan that found nothing new leave the
+        // change token alone (Library.UpdateTracks). A field added to Track
+        // goes here too; TrackTests fails until it does.
+        public bool HasSameStateAs(Track other) =>
+            Id == other.Id
+            && Title == other.Title
+            && Subtitle == other.Subtitle
+            && Artists == other.Artists
+            && AlbumArtists == other.AlbumArtists
+            && TitleSort == other.TitleSort
+            && ArtistsSort == other.ArtistsSort
+            && ComposersSort == other.ComposersSort
+            && IsCompilation == other.IsCompilation
+            && Album == other.Album
+            && AlbumSort == other.AlbumSort
+            && Year == other.Year
+            && TrackNumber == other.TrackNumber
+            && TrackCount == other.TrackCount
+            && DiscNumber == other.DiscNumber
+            && DiscCount == other.DiscCount
+            && Composers == other.Composers
+            && Conductor == other.Conductor
+            && RemixedBy == other.RemixedBy
+            && Genre == other.Genre
+            && BeatsPerMinute == other.BeatsPerMinute
+            && InitialKey == other.InitialKey
+            && Grouping == other.Grouping
+            && Publisher == other.Publisher
+            && ISRC == other.ISRC
+            && Comment == other.Comment
+            && Description == other.Description
+            && Copyright == other.Copyright
+            && Lyrics == other.Lyrics
+            && Duration == other.Duration
+            && Bitrate == other.Bitrate
+            && SampleRate == other.SampleRate
+            && Channels == other.Channels
+            && BitsPerSample == other.BitsPerSample
+            && Codec == other.Codec
+            && EncoderProfile == other.EncoderProfile
+            && ArtWidth == other.ArtWidth
+            && ArtHeight == other.ArtHeight
+            && ArtHash == other.ArtHash
+            && Path == other.Path
+            && OriginDeviceFingerprint == other.OriginDeviceFingerprint
+            && OriginTrackId == other.OriginTrackId
+            && OriginFileExtension == other.OriginFileExtension
+            && OriginRelativePath == other.OriginRelativePath
+            && OriginAlbumArtId == other.OriginAlbumArtId
+            && IsLocallyDownloaded == other.IsLocallyDownloaded
+            && WithdrawnByOrigin == other.WithdrawnByOrigin
+            && MovedFromPath == other.MovedFromPath
+            && OriginFileStamp == other.OriginFileStamp
+            && TagsEditedAt == other.TagsEditedAt
+            && ArtEditedAt == other.ArtEditedAt
+            && FileReplacedAt == other.FileReplacedAt
+            && RememberPlaybackPosition == other.RememberPlaybackPosition
+            && ResumePosition == other.ResumePosition
+            && IgnoreWhenShuffling == other.IgnoreWhenShuffling
+            && VolumeAdjustment == other.VolumeAdjustment
+            && PlayCount == other.PlayCount
+            && ImportedPlayCount == other.ImportedPlayCount
+            && LastPlayedAt == other.LastPlayedAt
+            && Starred == other.Starred
+            && DateAdded == other.DateAdded
+            && RemotePlayCounts.Count == other.RemotePlayCounts.Count
+            && RemotePlayCounts.All(kv => other.RemotePlayCounts.TryGetValue(kv.Key, out var n) && n == kv.Value);
     }
 }

@@ -434,6 +434,7 @@ namespace Flower.Models
         public void UpdateTracks(List<Track> tracks)
         {
             int beforeCount, afterCount, carriedForwardCount, vanishedCount, revivedCount, deletedDownloadCount;
+            bool unchanged;
             lock (_lock)
             {
                 // Before anything else: a file removed on purpose is not a file
@@ -607,7 +608,22 @@ namespace Flower.Models
 
                 var previousTracks = Tracks;
                 Tracks = tracks.Concat(carriedForwardSyncTracks).ToList();
-                InvalidateIndexes();
+
+                // A rescan that found every song as it was - the usual case -
+                // is not a change. Moving the token for it sent every paired
+                // device a full catalog fetch, megabytes of it, for nothing
+                // (CODE-REVIEW October C1.2), and rewrote every row with what
+                // they already held. The fresh instances still go in, so the
+                // play queue and the track lists, which were handed them, are
+                // holding the library's own; only the index is rebuilt over
+                // them, as UsePathRules does. A deleted download is checked
+                // apart: it changed an instance both lists share.
+                unchanged = deletedDownloads.Count == 0 && revived.Count == 0
+                    && HaveSameState(previousTracks, Tracks);
+                if (unchanged)
+                    Interlocked.Increment(ref _indexGeneration);
+                else
+                    InvalidateIndexes();
                 afterCount = Tracks.Count;
                 carriedForwardCount = carriedForwardSyncTracks.Count;
 
@@ -638,7 +654,8 @@ namespace Flower.Models
                 // to provide, back when remembering to call it was each
                 // caller's job. Readers are unaffected - Tracks is
                 // copy-on-write and read without the lock.
-                Persist(() => _store!.ReplaceAll(Tracks));
+                if (!unchanged)
+                    Persist(() => _store!.ReplaceAll(Tracks));
             }
 
             _logger.LogInformation("Library updated: {FreshCount} track(s) from scan, {CarriedForwardCount} placeholder/downloaded track(s) carried forward, {TotalBefore} -> {TotalAfter}",
@@ -655,6 +672,27 @@ namespace Flower.Models
             }
 
             LibraryChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        // The same songs, each with every field as it was, in whatever order.
+        private static bool HaveSameState(IReadOnlyList<Track> before, IReadOnlyList<Track> after)
+        {
+            if (before.Count != after.Count)
+                return false;
+
+            var byId = new Dictionary<Guid, Track>(before.Count);
+            foreach (var track in before)
+            {
+                if (!byId.TryAdd(track.Id, track))
+                    return false;
+            }
+
+            foreach (var track in after)
+            {
+                if (!byId.Remove(track.Id, out var was) || !was.HasSameStateAs(track))
+                    return false;
+            }
+            return true;
         }
 
         // Whether a download's file was deleted: gone from a folder this

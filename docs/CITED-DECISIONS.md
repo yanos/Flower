@@ -223,6 +223,7 @@ git show 2e55685:docs/CODE-REVIEW-2026-10.md
 | **B3** | A failed track told the user nothing. `PlaybackFailed` carries `PlaybackFailedEventArgs`, which `MainViewModel.PlaybackNotice` shows on both heads. |
 | **B5** | `SeekableHttpStream` leaked the response on a refusal. It is disposed before the throw. |
 | **C1, client half** | A sync that changed nothing rewrote the whole library. `MergeSyncedTracks` skips a merge that moved nothing, and writes only the rows that moved (`LibrarySyncNoOpPullTests`). |
+| **C1.2** | A server rescan that found nothing new moved the change token, so every device fetched the whole catalog after it. `UpdateTracks` compares what it found with what it had (`Track.HasSameStateAs`, which `TrackTests` checks covers every field), and an unchanged result moves neither the token nor a row, though the fresh instances still go in (`LibraryNoOpRescanTests`). |
 | **C2** | The server read cover art from the audio file on every request. `CoverArtCache` keeps each answer, a miss included. It is checked against the files and folders it came from, and emptied by a library change but not by a play. |
 | **C3** | Every art cache hit walked two lists. Fixed by an O(1) LRU. |
 | **C4** | Track Info decoded the whole picture to read its size. It reads `ImageHeader`. |
