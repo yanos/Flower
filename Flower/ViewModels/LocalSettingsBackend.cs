@@ -91,6 +91,14 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
         if (!string.IsNullOrWhiteSpace(draft.Alias))
             ViewModel.DeviceAlias = draft.Alias.Trim();
 
+        // An import runs now only for a box this OK just turned on. One that
+        // was already on has its import run at every launch (App.axaml.cs's
+        // startup rescan); running it again on every OK re-ran Music.app's
+        // AppleScript export - and its automation prompt - for a dialog
+        // dismissed over something else entirely.
+        var playCountTurnedOn = draft.SyncPlayCountFromITunes && !ViewModel.SyncPlayCountFromITunes;
+        var dateAddedTurnedOn = draft.SyncDateAddedFromITunes && !ViewModel.SyncDateAddedFromITunes;
+
         ViewModel.SyncPlayCountFromITunes = draft.SyncPlayCountFromITunes;
         ViewModel.SyncDateAddedFromITunes = draft.SyncDateAddedFromITunes;
         ViewModel.LookUpOnline = draft.LookUpOnline;
@@ -102,8 +110,8 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
         // CheckBox still reports whatever it was set to before it went
         // disabled, so trusting IsChecked alone would let a guest device kick
         // off an iTunes import it is not supposed to run.
-        var syncPlayCount = draft.SyncPlayCountFromITunes && ViewModel.MayImportPlayCountsFromMusicApp;
-        var syncDateAdded = draft.SyncDateAddedFromITunes && ViewModel.MayImportFromMusicApp;
+        var syncPlayCount = playCountTurnedOn && ViewModel.MayImportPlayCountsFromMusicApp;
+        var syncDateAdded = dateAddedTurnedOn && ViewModel.MayImportFromMusicApp;
 
         // All three run unawaited, on purpose: the screen closes as soon as the
         // (fast) settings write lands, and the (potentially long) rescan/import

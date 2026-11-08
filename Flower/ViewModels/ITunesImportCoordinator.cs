@@ -18,12 +18,11 @@ namespace Flower.ViewModels;
 public sealed class ITunesImportCoordinator
 {
     // Both entry points below can be triggered from more than one place in
-    // close succession - the startup rescan (App.axaml.cs) and Settings' OK
-    // button both fire unconditionally based on "is the checkbox currently
-    // checked," not "did it just run" - so opening Settings and clicking OK
-    // shortly after launch would otherwise re-run the same ~1-2s AppleScript
-    // export twice back to back. A call landing within a minute of the
-    // previous one finishing is skipped.
+    // close succession - the startup rescan (App.axaml.cs) fires whenever the
+    // checkbox is checked, and Settings' OK button whenever it has just been
+    // turned on - so a box ticked shortly after launch would otherwise re-run
+    // the same ~1-2s AppleScript export twice back to back. A call landing
+    // within a minute of the previous one finishing is skipped.
     internal static TimeSpan Cooldown = TimeSpan.FromMinutes(1);
 
     private readonly Library _library;
