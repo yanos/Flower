@@ -52,6 +52,35 @@
     <PackageReference Include="FFAudio.NET.Windows" Version="$(FFAudioPackageVersion)" Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
   </ItemGroup>
 
+  <!-- Skia, to shrink cover art for a song list's rows (CoverArtThumbnail) -
+       the same version Avalonia gives every client. Its own package carries
+       the macOS and Windows natives; Linux's comes separately, and as the
+       NoDependencies build, because the regular one links fontconfig, which
+       the aspnet runtime image does not have and a server drawing no text
+       does not need. -->
+  <ItemGroup>
+    <PackageReference Include="SkiaSharp" Version="3.119.4" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="3.119.4" />
+  </ItemGroup>
+
+  <!-- Those packages carry a libSkiaSharp for every flavour of Linux there is
+       (musl, bionic, riscv, loongarch...) plus Windows and macOS, about 200 MB,
+       which a framework-dependent publish copies into every Docker image. Only
+       the build host's OS is kept, as FFAudio is chosen above: the image is
+       built on Linux, and keeps linux-x64 and linux-arm64 for its two
+       architectures. -->
+  <PropertyGroup>
+    <KeptSkiaRuntimes Condition="$([MSBuild]::IsOSPlatform('OSX'))">;osx;</KeptSkiaRuntimes>
+    <KeptSkiaRuntimes Condition="$([MSBuild]::IsOSPlatform('Linux'))">;linux-x64;linux-arm64;</KeptSkiaRuntimes>
+    <KeptSkiaRuntimes Condition="$([MSBuild]::IsOSPlatform('Windows'))">;win-x64;win-arm64;</KeptSkiaRuntimes>
+  </PropertyGroup>
+  <Target Name="KeepHostSkiaRuntimes" AfterTargets="ResolvePackageAssets">
+    <ItemGroup>
+      <RuntimeTargetsCopyLocalItems Remove="@(RuntimeTargetsCopyLocalItems)"
+                                    Condition="$([System.String]::Copy('%(RuntimeTargetsCopyLocalItems.NuGetPackageId)').StartsWith('SkiaSharp.NativeAssets')) And !$(KeptSkiaRuntimes.Contains(';%(RuntimeTargetsCopyLocalItems.RuntimeIdentifier);'))" />
+    </ItemGroup>
+  </Target>
+
   <!-- ── The browser UI ──────────────────────────────────────────────────────
 
        Flower.Web (an Avalonia WebAssembly build of the same Views and

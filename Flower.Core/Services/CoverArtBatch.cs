@@ -48,6 +48,25 @@ public static class CoverArtBatch
 
     public const string ContentType = "application/x-flower-cover-art-batch";
 
+    // The one smaller size the server will shrink art to, asked for as
+    // size=thumbnail on GET /cover-art and "Size": "thumbnail" in a batch.
+    // A named size rather than a pixel count the caller picks, because each
+    // size the server keeps is a second copy of every cover held in memory
+    // (CoverArtCache), and a caller choosing the number would choose how many
+    // copies there are.
+    //
+    // Pixels is the width it comes back at, and the width a client decodes a
+    // track row's art at (AlbumArtLoader.ThumbnailPixels): the widest any row
+    // paints it is the desktop list's 76pt art column on a 2x screen, 152px,
+    // and a phone row's 52pt on a 3x one is 156px - so 192 is sharp at both
+    // with a little to spare. Art already no wider than this is sent as it is.
+    //
+    // What it is for: a cold scroll of a song list on a phone fetched every
+    // album's full cover - 1400px and up, a few hundred KB each - to draw it
+    // at 52pt. A 192px JPEG is a few KB.
+    public const string ThumbnailSize = "thumbnail";
+    public const int ThumbnailPixels = 192;
+
     public static byte[] Write(IReadOnlyList<(string Id, byte[] Bytes)> entries)
     {
         using var buffer = new MemoryStream();

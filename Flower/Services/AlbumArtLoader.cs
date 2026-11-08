@@ -93,6 +93,11 @@ public class AlbumArtLoader
     // straight off the file is already cheap and always current.
     private static string CacheDirectory => Path.Combine(AppDataDirectory.Path, "AlbumArtCache");
 
+    // A thumbnail the server shrank is kept apart from the full cover, so
+    // neither ever stands in for the other on disk.
+    private static string CacheFile(string artId, ArtSize size) =>
+        Path.Combine(CacheDirectory, size == ArtSize.Thumbnail ? $"{artId}.thumb.art" : $"{artId}.art");
+
     // Key: directory path for a local track, or "remote:{albumId}" for a synced one.
     // WeakReference so GC can reclaim bitmaps under memory pressure.
     private static readonly ConcurrentDictionary<string, WeakReference<Bitmap>> Cache = new();
@@ -247,13 +252,12 @@ public class AlbumArtLoader
     // that cannot read is decoded twice, as all of them used to be: once at
     // full size to learn it, then again at the size wanted - a ~7.8 MB decode
     // thrown away per 1400px cover, and the dearest thing a cold scroll did.
-    // The width a track row's thumbnail is decoded at: the largest any row
-    // paints it is the desktop list's 76pt art column (TrackRowViewModel.
-    // ArtMaxSize) on a 2x screen, 152px, and a phone row's 52pt on a 3x one is
-    // 156px - so 192 is sharp at both with a little to spare. A sixteenth of the
-    // pixels of MaxArtPixels, and a texture the GPU takes as one small upload
-    // rather than 2.4 MB each time a row scrolls in.
-    private const int ThumbnailPixels = 192;
+    // The width a track row's thumbnail is decoded at, and the width a server
+    // shrinks one to before sending it - see CoverArtBatch.ThumbnailPixels for
+    // why 192. A sixteenth of the pixels of MaxArtPixels, and a texture the
+    // GPU takes as one small upload rather than 2.4 MB each time a row
+    // scrolls in.
+    private const int ThumbnailPixels = CoverArtBatch.ThumbnailPixels;
 
     private static Bitmap Decode(Stream stream, ArtSize size) =>
         size == ArtSize.Thumbnail ? DecodeThumbnail(stream) : DecodeScaled(stream);
@@ -407,7 +411,7 @@ public class AlbumArtLoader
         if (track.OriginAlbumArtId is not { Length: > 0 } artId)
             return null;
 
-        var cachePath = Path.Combine(CacheDirectory, $"{artId}.art");
+        var cachePath = CacheFile(artId, ArtSize.Full);
         try
         {
             if (!File.Exists(cachePath))
@@ -552,18 +556,20 @@ public class AlbumArtLoader
             KnownBare.TryRemove(artId, out _);
             Forget($"remote:{artId}");
             Forget(Keyed($"remote:{artId}", ArtSize.Thumbnail));
-            var cachePath = Path.Combine(CacheDirectory, $"{artId}.art");
-            try
+            foreach (var cachePath in new[] { CacheFile(artId, ArtSize.Full), CacheFile(artId, ArtSize.Thumbnail) })
             {
-                File.Delete(cachePath);
-            }
-            catch (Exception ex)
-            {
-                // The picture is already changed at the origin; a stale cache
-                // file only means this device keeps painting the old one until
-                // something else clears it, which is not worth failing a write
-                // that has already happened.
-                StaticLogger.LogDebug(ex, "Could not remove the cached remote art at {Path} after replacing it", cachePath);
+                try
+                {
+                    File.Delete(cachePath);
+                }
+                catch (Exception ex)
+                {
+                    // The picture is already changed at the origin; a stale cache
+                    // file only means this device keeps painting the old one until
+                    // something else clears it, which is not worth failing a write
+                    // that has already happened.
+                    StaticLogger.LogDebug(ex, "Could not remove the cached remote art at {Path} after replacing it", cachePath);
+                }
             }
         }
     }
@@ -580,6 +586,13 @@ public class AlbumArtLoader
     // offline) does not mean re-fetching. The key names the album and not the
     // bytes - see Track.OriginAlbumArtId - so art replaced on the origin is not
     // noticed here on its own; Invalidate above is what drops a stale entry.
+    //
+    // A thumbnail is asked for at the server's thumbnail size and kept in a
+    // file of its own (CacheFile), so a song list's cold scroll downloads a
+    // few KB per album rather than every full cover. The full cover, when
+    // this device already has it, is shrunk here instead of asking at all.
+    // The other way round never happens: a thumbnail is not full-size art,
+    // so the full-size file is the only one Track Info reads (TryGetArt).
     private async Task<Bitmap?> LoadRemoteAsync(Track track, ArtSize size)
     {
         var artId = track.OriginAlbumArtId;
@@ -590,10 +603,15 @@ public class AlbumArtLoader
         if (TryGetCached(cacheKey, out var cached))
             return cached;
 
-        var cachePath = Path.Combine(CacheDirectory, $"{artId}.art");
-        if (File.Exists(cachePath))
+        var onDisk = size == ArtSize.Thumbnail
+            ? new[] { CacheFile(artId, ArtSize.Full), CacheFile(artId, ArtSize.Thumbnail) }
+            : [CacheFile(artId, ArtSize.Full)];
+        foreach (var file in onDisk)
         {
-            var bmp = await Task.Run(() => TryDecodeFile(cachePath, size));
+            if (!File.Exists(file))
+                continue;
+
+            var bmp = await Task.Run(() => TryDecodeFile(file, size));
             if (bmp != null)
             {
                 Retain(cacheKey, bmp);
@@ -605,8 +623,10 @@ public class AlbumArtLoader
             // below and is actually a Subsonic error envelope. Drop it so the
             // fetch beneath re-fills it, instead of warning about the same
             // unreadable file on every load for the life of the cache.
-            DiscardCacheFile(cachePath);
+            DiscardCacheFile(file);
         }
+
+        var cachePath = CacheFile(artId, size);
 
         if (KnownBare.ContainsKey(artId))
             return null;
@@ -622,12 +642,15 @@ public class AlbumArtLoader
         var url = _artUrls.Resolve(track);
         if (url == null)
             return null;
+        if (size == ArtSize.Thumbnail)
+            url += $"&size={CoverArtBatch.ThumbnailSize}";
 
         try
         {
             // Null is a fetch that failed, and empty is the origin saying it
-            // has no picture - only the second is worth remembering.
-            var bytes = await FetchArtBytesAsync(track, url);
+            // has no picture - only the second is worth remembering. Either
+            // size's "none" is the album's.
+            var bytes = await FetchArtBytesAsync(track, url, size);
             if (bytes == null)
                 return null;
             if (bytes.Length == 0)
@@ -687,35 +710,40 @@ public class AlbumArtLoader
     // this only bounds a header that says something stranger.
     private static readonly TimeSpan MaxThrottle = TimeSpan.FromMinutes(2);
 
-    // One album's art, and everything needed to ask for it either way: the
-    // batch id, the single-request URL that is the fallback, and the callers
-    // waiting on the answer. Several tracks from the same album collapse onto
-    // one of these, which is most of what the batching buys on a track list.
-    private sealed record PendingArt(string Endpoint, string Id, string Url, TaskCompletionSource<byte[]?> Completion);
+    // One album's art at one size, and everything needed to ask for it either
+    // way: the batch id, the single-request URL that is the fallback, and the
+    // callers waiting on the answer. Several tracks from the same album
+    // collapse onto one of these, which is most of what the batching buys on a
+    // track list. Waiting under Key, which is the id and the size, since a
+    // row's thumbnail and a tile's cover are two different answers.
+    private sealed record PendingArt(string Endpoint, string Id, ArtSize Size, string Url, TaskCompletionSource<byte[]?> Completion)
+    {
+        public string Key => Keyed(Id, Size);
+    }
 
     // The bytes for one track's art, asked for in company where that is
     // possible. Empty for "no art", which is a real answer and not an error -
     // plenty of albums have no picture - and null for a fetch that failed.
-    private async Task<byte[]?> FetchArtBytesAsync(Track track, string url)
+    private async Task<byte[]?> FetchArtBytesAsync(Track track, string url, ArtSize size)
     {
         if (_artUrls!.ResolveBatch(track) is { } batch)
-            return await JoinBatchAsync(batch.Endpoint, batch.Id, url);
+            return await JoinBatchAsync(batch.Endpoint, batch.Id, size, url);
 
         return await FetchOneAsync(url);
     }
 
-    private Task<byte[]?> JoinBatchAsync(string endpoint, string id, string url)
+    private Task<byte[]?> JoinBatchAsync(string endpoint, string id, ArtSize size, string url)
     {
         PendingArt pending;
         var start = false;
 
         lock (_batchLock)
         {
-            if (!_waiting.TryGetValue(id, out pending!))
+            if (!_waiting.TryGetValue(Keyed(id, size), out pending!))
             {
-                pending = new PendingArt(endpoint, id, url,
+                pending = new PendingArt(endpoint, id, size, url,
                     new TaskCompletionSource<byte[]?>(TaskCreationOptions.RunContinuationsAsynchronously));
-                _waiting[id] = pending;
+                _waiting[pending.Key] = pending;
             }
 
             if (!_batchRunning)
@@ -760,16 +788,17 @@ public class AlbumArtLoader
 
                 // Grouped by endpoint, because the paired server can change
                 // between one tile and the next and a batch is addressed to
-                // one server. Taking only the first endpoint's entries leaves
-                // the others for the next pass rather than mixing them.
-                var endpoint = _waiting.Values.First().Endpoint;
+                // one server - and by size, because a batch asks for one.
+                // Taking only the first group's entries leaves the others for
+                // the next pass rather than mixing them.
+                var first = _waiting.Values.First();
                 batch = _waiting.Values
-                    .Where(entry => entry.Endpoint == endpoint)
+                    .Where(entry => entry.Endpoint == first.Endpoint && entry.Size == first.Size)
                     .Take(CoverArtBatch.MaxIds)
                     .ToList();
 
                 foreach (var entry in batch)
-                    _waiting.Remove(entry.Id);
+                    _waiting.Remove(entry.Key);
             }
 
             await SendBatchAsync(batch);
@@ -785,7 +814,11 @@ public class AlbumArtLoader
             // and the shape it writes is the context's own PascalCase, which is
             // what SyncEndpoints has always been reading.
             var payload = JsonSerializer.SerializeToUtf8Bytes(
-                new CoverArtBatchRequest { Ids = batch.Select(entry => entry.Id).ToList() },
+                new CoverArtBatchRequest
+                {
+                    Ids = batch.Select(entry => entry.Id).ToList(),
+                    Size = batch[0].Size == ArtSize.Thumbnail ? CoverArtBatch.ThumbnailSize : null,
+                },
                 FlowerJsonContext.Default.CoverArtBatchRequest);
 
             using var request = new HttpRequestMessage(HttpMethod.Post, batch[0].Endpoint)
@@ -861,10 +894,10 @@ public class AlbumArtLoader
             {
                 // Asked for again while this batch was out: the later caller's
                 // answer is this one's too.
-                if (_waiting.TryGetValue(entry.Id, out var later))
+                if (_waiting.TryGetValue(entry.Key, out var later))
                     later.Completion.Task.ContinueWith(t => entry.Completion.TrySetResult(t.Result), TaskScheduler.Default);
                 else
-                    _waiting[entry.Id] = entry;
+                    _waiting[entry.Key] = entry;
             }
         }
 
@@ -933,6 +966,9 @@ public class AlbumArtLoader
     internal sealed class CoverArtBatchRequest
     {
         public List<string> Ids { get; set; } = [];
+
+        // Absent for full-size art, CoverArtBatch.ThumbnailSize for a row's.
+        public string? Size { get; set; }
     }
 
     // A row's thumbnail and a tile's full-size cover can fetch the same album

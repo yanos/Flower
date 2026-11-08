@@ -3,6 +3,8 @@ using Flower.Persistence;
 using Flower.Server.Services;
 using Flower.Services;
 
+using Microsoft.Net.Http.Headers;
+
 namespace Flower.Server.Endpoints;
 
 // Serving the bytes of a track, once something has decided the caller may have
@@ -131,17 +133,35 @@ public static class MediaEndpoints
         return track?.Path is not null && File.Exists(track.Path) ? track : null;
     }
 
-    // Album art, at GET /api/flower/v1/cover-art. Out here with the routes
-    // above rather than inline, for the same reason they are.
-    // Found through CoverArtCache, which remembers where each id's art is.
-    internal static IResult GetCoverArt(string? id, CoverArtCache covers)
+    // Album art, at GET /api/flower/v1/cover-art?id=<id>[&size=thumbnail].
+    // Out here with the routes above rather than inline, for the same reason
+    // they are. Found through CoverArtCache, which remembers where each id's
+    // art is.
+    //
+    // With an ETag and "private, no-cache", so a browser keeps the picture
+    // and asks each time whether it is still the one - a 304 and no body when
+    // it is (Results.Bytes answers If-None-Match itself). Not a max-age: the
+    // same id's art can be replaced at any moment, and a tab painting the old
+    // cover for an hour after an edit is wrong. Private, because the route is
+    // behind a device's signature and nothing between should keep a copy.
+    //
+    // Only a browser has a cache to use this with - HttpClient on the other
+    // heads keeps none, and AlbumArtLoader's disk cache never asks twice -
+    // and the tab mostly fetches through the batch route, which as a POST no
+    // browser caches. So this is for the single-request fallback; the
+    // thumbnail size is what helps everyone.
+    internal static IResult GetCoverArt(string? id, string? size, CoverArtCache covers, HttpContext context)
     {
         if (string.IsNullOrEmpty(id))
             return Problems.NotFound();
+        if (size is not (null or CoverArtBatch.ThumbnailSize))
+            return Problems.BadRequest();
 
-        return covers.Find(id) is { } art
-            ? Results.Bytes(art.Bytes, art.MimeType)
-            : Problems.NotFound();
+        if (covers.Find(id, thumbnail: size != null) is not { } art)
+            return Problems.NotFound();
+
+        context.Response.Headers.CacheControl = "private, no-cache";
+        return Results.Bytes(art.Bytes, art.MimeType, entityTag: new EntityTagHeaderValue(art.ETag));
     }
 
     // A picture of an artist, at GET /api/flower/v1/artist-image?artist=<name>,

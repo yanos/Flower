@@ -308,8 +308,7 @@ public static class SyncEndpoints
     // endpoint it is meant to replace.
     private static IResult GetCoverArtBatch(HttpContext context, CoverArtCache covers)
     {
-        var ids = ReadBatchRequest(context);
-        if (ids == null)
+        if (ReadBatchRequest(context) is not var (ids, thumbnail))
             return Problems.BadRequest();
 
         var entries = new List<(string Id, byte[] Bytes)>(ids.Count);
@@ -317,7 +316,7 @@ public static class SyncEndpoints
 
         foreach (var id in ids)
         {
-            var bytes = covers.Find(id)?.Bytes ?? [];
+            var bytes = covers.Find(id, thumbnail)?.Bytes ?? [];
 
             // Truncation, not failure: the covers already gathered are worth
             // sending, and the caller asks again for the ids that are missing
@@ -334,16 +333,19 @@ public static class SyncEndpoints
     }
 
     // Null for anything malformed or over the cap. The list is a list of file
-    // reads, so its length is not the caller's to choose without a bound.
-    private static List<string>? ReadBatchRequest(HttpContext context)
+    // reads, so its length is not the caller's to choose without a bound. A
+    // size is absent for full-size art, or CoverArtBatch.ThumbnailSize.
+    private static (List<string> Ids, bool Thumbnail)? ReadBatchRequest(HttpContext context)
     {
         try
         {
             var request = JsonSerializer.Deserialize<CoverArtBatchRequest>(RequestGate.BodyOf(context), JsonOptions);
             if (request?.Ids is not { Count: > 0 } ids || ids.Count > CoverArtBatch.MaxIds)
                 return null;
+            if (request.Size is not (null or CoverArtBatch.ThumbnailSize))
+                return null;
 
-            return ids.Where(id => !string.IsNullOrEmpty(id)).ToList()!;
+            return (ids.Where(id => !string.IsNullOrEmpty(id)).ToList()!, request.Size != null);
         }
         catch (JsonException)
         {
@@ -354,6 +356,7 @@ public static class SyncEndpoints
     public sealed class CoverArtBatchRequest
     {
         public List<string>? Ids { get; set; }
+        public string? Size { get; set; }
     }
 
     internal const string AuthenticatedFingerprintKey = "flower.auth.fingerprint";

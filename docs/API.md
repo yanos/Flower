@@ -342,8 +342,8 @@ PascalCase JSON.
 | POST | `/album-progress` | Exchange the Continue Playing shelf |
 | POST | `/log/report` | Push this device's recent log lines |
 | GET | `/log/watermark` | What the server already holds of them |
-| GET | `/cover-art?id=` | One picture |
-| POST | `/cover-art/batch` | Up to 32 pictures |
+| GET | `/cover-art?id=[&size=thumbnail]` | One picture |
+| POST | `/cover-art/batch` | Up to 32 pictures, at one size |
 | GET | `/artist-image?artist=` | A picture of an artist, looked up online |
 | GET | `/server-icon` | The server's icon picture, or `404` when it has none |
 | GET | `/stream?id=` | A track's bytes, ranged |
@@ -470,11 +470,22 @@ Both routes answer `{"LastEntryTimestamp", "LastEventId"}`: the newest line the
 server retains for the caller, so the next push starts there. Both null means
 send everything.
 
-### `GET /cover-art?id=`
+### `GET /cover-art?id=[&size=thumbnail]`
 
 `id` is an album id (`al-…`) or a track id. For an album, the first track's
 file that carries art supplies it, in disc and track order. Answers the image
 bytes with their own MIME type, or `404`.
+
+`size=thumbnail` answers the same picture shrunk to 192 px wide, keeping its
+aspect (`CoverArtBatch.ThumbnailPixels`): a JPEG, or a PNG if the cover has
+transparency. Art no wider than that, or that the server cannot decode, comes
+back as it is. Any other `size` is a `400`. The server makes each thumbnail
+once and keeps it beside the cover in `CoverArtCache`.
+
+Every picture carries an `ETag` (a hash of its bytes) and
+`Cache-Control: private, no-cache`; a request with a matching `If-None-Match`
+gets a `304` and no body. Only a browser has a cache to use this with: the
+native clients keep their own disk cache instead.
 
 A song's `CoverArt` in the catalog is the id to ask for: its album's, unless
 the song carries a picture that is not its album's, and then its own track id
@@ -488,8 +499,9 @@ added or deleted on disk is noticed at the next request.
 
 ### `POST /cover-art/batch`
 
-`{"Ids": ["al-…", …]}`, at most 32. `400` for a malformed body, an empty list or
-too many ids. The response is `application/x-flower-cover-art-batch`, a
+`{"Ids": ["al-…", …], "Size": "thumbnail"}`, at most 32 ids. `Size` is optional
+and works as `size` does on `GET /cover-art`: leave it out for full-size art.
+`400` for a malformed body, an empty list, too many ids or an unknown size. The response is `application/x-flower-cover-art-batch`, a
 length-prefixed frame, little-endian (`CoverArtBatch.cs`):
 
 ```

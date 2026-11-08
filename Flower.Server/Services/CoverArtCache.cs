@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+
 using Flower.Models;
 using Flower.Server.Endpoints;
 using Flower.Services;
@@ -32,6 +34,10 @@ namespace Flower.Server.Services;
 // The pictures are held up to MaxBytes, least recently asked for going first;
 // the reference library's covers would not fit in memory, and a few devices'
 // cold scrolls do not need them to.
+//
+// Each picture also keeps its thumbnail (CoverArtThumbnail), made the first
+// time one is asked for and counted against the same budget, and an ETag for
+// each, so GET /cover-art can answer a browser's If-None-Match with a 304.
 public sealed class CoverArtCache : IDisposable
 {
     public const long MaxBytes = 64L * 1024 * 1024;
@@ -44,11 +50,15 @@ public sealed class CoverArtCache : IDisposable
     private readonly LinkedList<Entry> _recency = new();
     private long _bytes;
 
-    // Art is null for an id with no art. Consulted is what the search went
-    // through, each as it was just after the search.
-    private sealed record Entry(string Id, LocalAlbumArt? Art, Stamp[] Consulted)
+    // Art is null for an id with no art, and Thumbnail null until one is
+    // asked for - the same object as Art when the cover is already small, or
+    // could not be shrunk. Consulted is what the search went through, each as
+    // it was just after the search.
+    private sealed record Entry(string Id, Cover? Art, Cover? Thumbnail, Stamp[] Consulted)
     {
-        public long Bytes => Art?.Bytes.LongLength ?? 0;
+        public long Bytes =>
+            (Art?.Bytes.LongLength ?? 0)
+            + (Thumbnail is { } thumbnail && !ReferenceEquals(thumbnail, Art) ? thumbnail.Bytes.LongLength : 0);
     }
 
     // A file's age and size, or a folder's age (Length -1), or that the path
@@ -109,8 +119,25 @@ public sealed class CoverArtCache : IDisposable
         }
     }
 
-    // This id's art, or null when none of its songs has any.
-    public LocalAlbumArt? Find(string id)
+    // This id's art, or null when none of its songs has any. A thumbnail is
+    // the same cover at CoverArtBatch.ThumbnailPixels wide.
+    public Cover? Find(string id, bool thumbnail = false)
+    {
+        var entry = Current(id);
+        if (!thumbnail || entry.Art == null)
+            return entry.Art;
+        if (entry.Thumbnail != null)
+            return entry.Thumbnail;
+
+        // Shrunk outside the lock, like the search. Two requests racing to
+        // make the same thumbnail both make it, and one copy is kept.
+        var shrunk = CoverArtThumbnail.Of(entry.Art.Art, CoverArtBatch.ThumbnailPixels, _logger);
+        var made = ReferenceEquals(shrunk, entry.Art.Art) ? entry.Art : Cover.Of(shrunk);
+        Replace(entry, entry with { Thumbnail = made });
+        return made;
+    }
+
+    private Entry Current(string id)
     {
         Entry? known = null;
         lock (_lock)
@@ -125,11 +152,11 @@ public sealed class CoverArtCache : IDisposable
 
         // The check is a stat of a file, outside the lock.
         if (known != null && StillGood(known))
-            return known.Art;
+            return known;
 
         var found = Look(id);
         Remember(found);
-        return found.Art;
+        return found;
     }
 
     private static bool StillGood(Entry entry)
@@ -151,7 +178,7 @@ public sealed class CoverArtCache : IDisposable
 
         // Stamped after the search, so a file written while it was being read
         // is found changed next time rather than believed.
-        return new Entry(id, found?.Art, consulted.Select(Stamp.Of).ToArray());
+        return new Entry(id, found?.Art is { } art ? Cover.Of(art) : null, null, consulted.Select(Stamp.Of).ToArray());
     }
 
     private void Remember(Entry entry)
@@ -161,22 +188,40 @@ public sealed class CoverArtCache : IDisposable
             return;
 
         lock (_lock)
+            Store(entry);
+    }
+
+    // The same entry with its thumbnail added - but only if it is still the
+    // one held. Anything that replaced or forgot it in the meantime knew
+    // something newer than the cover this thumbnail was made from.
+    private void Replace(Entry was, Entry now)
+    {
+        if (now.Bytes > MaxBytes)
+            return;
+
+        lock (_lock)
         {
-            if (_entries.Remove(entry.Id, out var stale))
-            {
-                _recency.Remove(stale);
-                _bytes -= stale.Value.Bytes;
-            }
+            if (_entries.TryGetValue(was.Id, out var node) && ReferenceEquals(node.Value, was))
+                Store(now);
+        }
+    }
 
-            _entries[entry.Id] = _recency.AddFirst(entry);
-            _bytes += entry.Bytes;
+    private void Store(Entry entry)
+    {
+        if (_entries.Remove(entry.Id, out var stale))
+        {
+            _recency.Remove(stale);
+            _bytes -= stale.Value.Bytes;
+        }
 
-            while (_bytes > MaxBytes && _recency.Last is { } oldest)
-            {
-                _recency.RemoveLast();
-                _entries.Remove(oldest.Value.Id);
-                _bytes -= oldest.Value.Bytes;
-            }
+        _entries[entry.Id] = _recency.AddFirst(entry);
+        _bytes += entry.Bytes;
+
+        while (_bytes > MaxBytes && _recency.Last is { } oldest)
+        {
+            _recency.RemoveLast();
+            _entries.Remove(oldest.Value.Id);
+            _bytes -= oldest.Value.Bytes;
         }
     }
 
@@ -197,4 +242,16 @@ public sealed class CoverArtCache : IDisposable
         if (e.Reshapes)
             Forget();
     }
+}
+
+// A cover as served: the picture, and the ETag GET /cover-art sends with it -
+// a hash of the bytes, so the same picture has the same tag across restarts
+// and a replaced one never shares the old one's.
+public sealed record Cover(LocalAlbumArt Art, string ETag)
+{
+    public byte[] Bytes => Art.Bytes;
+    public string MimeType => Art.MimeType;
+
+    public static Cover Of(LocalAlbumArt art) =>
+        new(art, $"\"{Convert.ToHexStringLower(SHA256.HashData(art.Bytes).AsSpan(0, 12))}\"");
 }

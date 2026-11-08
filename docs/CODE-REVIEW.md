@@ -35,7 +35,7 @@ happens to a listener or the library, not about how hard the fix is.
    anything. A few lines, and two full rewrites saved on every desktop launch.
 3. **October C1.1**: a separate token for plays. This is the biggest network
    win for phones, and the largest change on this list.
-4. **October C2**, **September E3**: wait until something wants them.
+4. **September E3**: wait until something wants it.
 
 ---
 
@@ -93,17 +93,6 @@ numbered as they were.
 
 `ONLINE-METADATA-PLAN.md` cites this shape: a popularity refresh that returns
 the same ranking must not count as a change.
-
-### October C2. Cover art has no `ETag` and no thumbnail size
-
-`Flower.Server/Endpoints/MediaEndpoints.cs`
-
-The server no longer re-reads art from the audio file on every request
-(`CoverArtCache`). It still sends no `ETag` or `Cache-Control`, and art goes out
-at full size (1400 px and up) to phones that draw it at 100 px. The native
-clients keep their own disk cache, and `HttpClient` has no HTTP cache to
-revalidate with, so an `ETag` would help the browser tab only. A thumbnail size
-parameter on the batch route would help everyone's first cold scroll.
 
 ---
 

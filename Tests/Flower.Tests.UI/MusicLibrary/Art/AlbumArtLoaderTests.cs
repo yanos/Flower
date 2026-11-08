@@ -869,6 +869,104 @@ public class AlbumArtLoaderTests : IDisposable
         Assert.True(singles > 0, "the ids the batch dropped should have been asked for individually");
     }
 
+    // --- thumbnails from the server ---
+
+    // A song list's cold scroll on a phone used to fetch every album's full
+    // cover to draw it at 52pt (docs/CITED-DECISIONS.md, October C2). A row now
+    // asks for the server's thumbnail size, and a tile still for the cover.
+    [AvaloniaFact]
+    public async Task A_row_asks_the_server_for_a_thumbnail_and_a_tile_for_the_full_cover()
+    {
+        var sizes = new List<string?>();
+
+        using var peer = new FakePeerHttpServer(async context =>
+        {
+            var (ids, size) = await ReadBatchAsync(context);
+            lock (sizes)
+            {
+                sizes.Add(size);
+            }
+
+            var frame = CoverArtBatch.Write(ids.Select(id => (id, SyntheticPng.Build(32, 32))).ToList());
+            context.Response.ContentType = CoverArtBatch.ContentType;
+            await context.Response.OutputStream.WriteAsync(frame);
+            context.Response.Close();
+        });
+
+        var loader = new AlbumArtLoader(
+            new PeerCoverArtUrlResolver(new FixedPeerResolver(peer.Port)),
+            Credentials(), NullLogger<AlbumArtLoader>.Instance);
+
+        var track = RemoteTrack(Unique("hash"));
+        Assert.NotNull(await loader.LoadThumbnailAsync(track));
+        Assert.NotNull(await loader.LoadAsync(track));
+
+        lock (sizes)
+        {
+            Assert.Equal([CoverArtBatch.ThumbnailSize, null], sizes);
+        }
+    }
+
+    // A thumbnail is not the cover. Track Info reports the cover's real size
+    // and opens it full screen from what is on disk, so a thumbnail written
+    // where the cover goes would show a 192px picture as if it were the art.
+    [AvaloniaFact]
+    public async Task A_thumbnail_on_disk_never_stands_in_for_the_full_cover()
+    {
+        var requests = 0;
+
+        using var peer = new FakePeerHttpServer(async context =>
+        {
+            Interlocked.Increment(ref requests);
+            var (ids, size) = await ReadBatchAsync(context);
+            var width = size == null ? 400 : CoverArtBatch.ThumbnailPixels;
+            var frame = CoverArtBatch.Write(ids.Select(id => (id, SyntheticPng.Build(width, width))).ToList());
+            context.Response.ContentType = CoverArtBatch.ContentType;
+            await context.Response.OutputStream.WriteAsync(frame);
+            context.Response.Close();
+        });
+
+        var loader = new AlbumArtLoader(
+            new PeerCoverArtUrlResolver(new FixedPeerResolver(peer.Port)),
+            Credentials(), NullLogger<AlbumArtLoader>.Instance);
+
+        var track = RemoteTrack(Unique("hash"));
+        await loader.LoadThumbnailAsync(track);
+
+        Assert.Null(AlbumArtLoader.TryGetArt(track));
+
+        var cover = await loader.LoadAsync(track);
+
+        Assert.Equal(400, cover!.PixelSize.Width);
+        Assert.Equal(2, requests);
+        Assert.Equal(400, AlbumArtLoader.MeasureArt(AlbumArtLoader.TryGetArt(track)!.Bytes)!.Value.Width);
+    }
+
+    // The other way round costs nothing: a cover already on this device is
+    // shrunk here rather than asked for again.
+    [AvaloniaFact]
+    public async Task A_full_cover_on_disk_answers_a_row_without_asking_the_server()
+    {
+        var hash = Unique("hash");
+        WriteArtCache(hash, SyntheticPng.Build(300, 300));
+        var requests = 0;
+
+        using var peer = new FakePeerHttpServer(context =>
+        {
+            Interlocked.Increment(ref requests);
+            context.Response.StatusCode = 500;
+            context.Response.Close();
+            return Task.CompletedTask;
+        });
+
+        var loader = new AlbumArtLoader(
+            new PeerCoverArtUrlResolver(new FixedPeerResolver(peer.Port)),
+            Credentials(), NullLogger<AlbumArtLoader>.Instance);
+
+        Assert.NotNull(await loader.LoadThumbnailAsync(RemoteTrack(hash)));
+        Assert.Equal(0, requests);
+    }
+
     // The batch is signed over its body, so the id list cannot be rewritten in
     // flight into a request for something else - and, more immediately, an
     // unsigned art request is one Flower.Server refuses.
@@ -898,14 +996,21 @@ public class AlbumArtLoaderTests : IDisposable
         Assert.False(string.IsNullOrEmpty(signature));
     }
 
-    private static async Task<List<string>> ReadBatchIdsAsync(HttpListenerContext context)
+    private static async Task<List<string>> ReadBatchIdsAsync(HttpListenerContext context) =>
+        (await ReadBatchAsync(context)).Ids;
+
+    private static async Task<(List<string> Ids, string? Size)> ReadBatchAsync(HttpListenerContext context)
     {
         using var buffer = new MemoryStream();
         await context.Request.InputStream.CopyToAsync(buffer);
         using var document = JsonDocument.Parse(buffer.ToArray());
-        return document.RootElement.GetProperty("Ids").EnumerateArray()
+        var ids = document.RootElement.GetProperty("Ids").EnumerateArray()
             .Select(id => id.GetString()!)
             .ToList();
+        var size = document.RootElement.TryGetProperty("Size", out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
+        return (ids, size);
     }
 
 }

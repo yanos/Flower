@@ -2,6 +2,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 using Flower.Models;
 using Flower.Server.Services;
+using Flower.Server.Tests.TestSupport;
+using Flower.Services;
 
 namespace Flower.Server.Tests.MusicLibrary;
 
@@ -85,6 +87,73 @@ public sealed class CoverArtCacheTests : IDisposable
         File.Delete(Path.Combine(_folder, "cover.jpg"));
 
         Assert.Null(covers.Find(song.Id.ToKey()));
+    }
+
+    // A song list's row draws a cover at 52pt, so a phone asking for one gets
+    // it at the thumbnail width rather than the 1400px the file holds
+    // (docs/CITED-DECISIONS.md, October C2).
+    [Fact]
+    public void A_thumbnail_is_the_cover_shrunk_to_the_thumbnail_width()
+    {
+        var library = new Library([Song("01 Debaser.mp3")]);
+        var albumId = library.Snapshot.AlbumsById.Keys.Single();
+        using var covers = CacheOver(library);
+        WriteCover(TestCovers.Jpeg(1400, 700), DateTime.UtcNow);
+
+        var thumbnail = covers.Find(albumId, thumbnail: true)!;
+
+        Assert.Equal(new SkiaSharp.SKSizeI(CoverArtBatch.ThumbnailPixels, CoverArtBatch.ThumbnailPixels / 2), TestCovers.SizeOf(thumbnail.Bytes));
+        Assert.Equal("image/jpeg", thumbnail.MimeType);
+        Assert.NotEqual(covers.Find(albumId)!.ETag, thumbnail.ETag);
+        Assert.Equal(1400, TestCovers.SizeOf(covers.Find(albumId)!.Bytes).Width);
+    }
+
+    [Fact]
+    public void A_cover_no_wider_than_a_thumbnail_is_sent_as_it_is()
+    {
+        var library = new Library([Song("01 Debaser.mp3")]);
+        var albumId = library.Snapshot.AlbumsById.Keys.Single();
+        using var covers = CacheOver(library);
+        var small = TestCovers.Png(120, 120);
+        WriteCover(small, DateTime.UtcNow);
+
+        Assert.Equal(small, covers.Find(albumId, thumbnail: true)!.Bytes);
+    }
+
+    // Nothing to shrink is still an answer: the bytes go out as they are,
+    // and the client's own decoder is the judge of them.
+    [Fact]
+    public void A_cover_the_server_cannot_read_is_its_own_thumbnail()
+    {
+        var library = new Library([Song("01 Debaser.mp3")]);
+        var albumId = library.Snapshot.AlbumsById.Keys.Single();
+        using var covers = CacheOver(library);
+        WriteCover([0xFF, 0xD8, 1], DateTime.UtcNow);
+
+        Assert.Equal([0xFF, 0xD8, 1], covers.Find(albumId, thumbnail: true)!.Bytes);
+    }
+
+    // What lets a browser's If-None-Match be answered with a 304: the same
+    // picture has the same tag, and a replaced one - and its thumbnail -
+    // never keeps the old one's.
+    [Fact]
+    public void A_replaced_cover_gets_a_new_etag_and_a_new_thumbnail()
+    {
+        var library = new Library([Song("01 Debaser.mp3")]);
+        var albumId = library.Snapshot.AlbumsById.Keys.Single();
+        using var covers = CacheOver(library);
+        WriteCover(TestCovers.Jpeg(800, 800), new DateTime(2026, 10, 1, 0, 0, 0, DateTimeKind.Utc));
+        var before = covers.Find(albumId)!.ETag;
+        var thumbnailBefore = covers.Find(albumId, thumbnail: true)!.ETag;
+
+        Assert.Equal(before, covers.Find(albumId)!.ETag);
+
+        WriteCover(TestCovers.Jpeg(900, 450), new DateTime(2026, 10, 2, 0, 0, 0, DateTimeKind.Utc));
+
+        Assert.NotEqual(before, covers.Find(albumId)!.ETag);
+        var thumbnail = covers.Find(albumId, thumbnail: true)!;
+        Assert.NotEqual(thumbnailBefore, thumbnail.ETag);
+        Assert.Equal(CoverArtBatch.ThumbnailPixels / 2, TestCovers.SizeOf(thumbnail.Bytes).Height);
     }
 
     // The library's change token moves on every play, which is why the cache

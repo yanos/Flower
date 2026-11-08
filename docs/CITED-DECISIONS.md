@@ -168,7 +168,7 @@ In November 2026 every finding the two reviews had closed was taken out of
 them, and what was left of both was merged into one backlog, `CODE-REVIEW.md`.
 Source comments cite the closed findings as *"docs/CODE-REVIEW-2026-09.md
 B6"*, and this is what those citations resolve against. The findings still
-open (September E3; October B4, C1, C2) are in
+open (September E3; October B4, C1) are in
 `CODE-REVIEW.md` under the same review and number. The full text of both,
 measurements and rejected alternatives included:
 
@@ -226,7 +226,7 @@ git show 2e55685:docs/CODE-REVIEW-2026-10.md
 | **B5** | `SeekableHttpStream` leaked the response on a refusal. It is disposed before the throw. |
 | **C1, client half** | A sync that changed nothing rewrote the whole library. `MergeSyncedTracks` skips a merge that moved nothing, and writes only the rows that moved (`LibrarySyncNoOpPullTests`). |
 | **C1.2** | A server rescan that found nothing new moved the change token, so every device fetched the whole catalog after it. `UpdateTracks` compares what it found with what it had (`Track.HasSameStateAs`, which `TrackTests` checks covers every field), and an unchanged result moves neither the token nor a row, though the fresh instances still go in (`LibraryNoOpRescanTests`). |
-| **C2** | The server read cover art from the audio file on every request. `CoverArtCache` keeps each answer, a miss included. It is checked against the files and folders it came from, and emptied by a library change but not by a play. |
+| **C2** | The server read cover art from the audio file on every request. `CoverArtCache` keeps each answer, a miss included. It is checked against the files and folders it came from, and emptied by a library change but not by a play. Then the rest, in November 2026: both art routes take `size=thumbnail`, which the server shrinks to 192 px once and keeps beside the cover (`CoverArtThumbnail`, on SkiaSharp), and a song row asks for that rather than the full cover. `GET /cover-art` sends an `ETag` and `private, no-cache`, and answers a matching `If-None-Match` with a 304. Only a browser can use that, and only on the single-request fallback, since a tab mostly fetches through the batch POST. |
 | **C3** | Every art cache hit walked two lists. Fixed by an O(1) LRU. |
 | **C4** | Track Info decoded the whole picture to read its size. It reads `ImageHeader`. |
 | **D1** | Track Info was implemented twice, in code-behind. It is now `TrackInfoViewModel`. |
