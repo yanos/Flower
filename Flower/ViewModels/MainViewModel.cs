@@ -1217,29 +1217,21 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public bool IsShowingServerSettings => _selectedSidebarItem?.Kind == SidebarItemKind.ServerSettings;
     public DiscoveredDevice? SelectedDevice => _selectedSidebarItem?.Device;
 
-    // The selected server's own settings, administered in place: the same
-    // SettingsPanel its browser UI serves, over a RemoteServerSettingsBackend
-    // signed as this device (see RefreshSelectedServerSettings). Null while
-    // there is nothing to administer - no server row selected, or one that has
-    // not approved this device yet.
-    //
-    // This is what the device-detail pane shows instead of what used to be
-    // there, a browse view of that server's catalog. That view was the same
-    // music twice: a paired server's tracks are merged into Library by
-    // LibrarySyncService and stream from the ordinary track list through
-    // IStreamUrlResolver, so the one thing about a server that had nowhere
-    // else to live was its settings.
-    private SettingsViewModel? _selectedServerSettings;
-    public SettingsViewModel? SelectedServerSettings
+    // Administering the selected server: its settings in the device-detail
+    // pane, and Open in Browser - see ServerAdministrationViewModel. Made on
+    // first use, so the designer's constructor has one too.
+    private ServerAdministrationViewModel? _serverAdmin;
+    public ServerAdministrationViewModel ServerAdmin => _serverAdmin ??= CreateServerAdmin();
+
+    private ServerAdministrationViewModel CreateServerAdmin()
     {
-        get => _selectedServerSettings;
-        private set
+        var admin = new ServerAdministrationViewModel(CreateServerAdminClient, _appSettings, _appSettingsStore, _logger);
+        admin.PropertyChanged += (_, e) =>
         {
-            if (ReferenceEquals(_selectedServerSettings, value))
-                return;
-            _selectedServerSettings = value;
-            OnPropertyChanged();
-        }
+            if (e.PropertyName == nameof(ServerAdministrationViewModel.IsOpening))
+                OnPropertyChanged(nameof(IsOpenSelectedServerSettingsEnabled));
+        };
+        return admin;
     }
 
     // Whether the device-detail header's Pair/Unpair button should show at
@@ -1315,7 +1307,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // Deliberately not also gated on this device being an *admin* of that server:
     // nothing here can know that without asking, TrustedPeer.IsAdmin lives on the
     // server, and a hidden button is a worse answer than a button that says why it
-    // did not work (see ServerSettingsError).
+    // did not work (see ServerAdministrationViewModel.OpenError).
     public bool CanOpenSelectedServerSettings =>
         IsSelectedDeviceTrustConfirmed && _signingKey != null && _deviceIdentity != null;
 
@@ -1444,37 +1436,6 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         _sidebarItems.Add(new SidebarItem(SidebarItemKind.ServerSettings, "Server Settings", MaterialIconKind.CogOutline));
     }
 
-    // Set when minting a browser session against the selected server failed -
-    // most usefully when this device is paired but not an administrator, which is
-    // an ordinary outcome and so is said inline next to the button rather than
-    // raised as a dialog. Same treatment as PairingCodeError.
-    private string? _serverSettingsError;
-    public string? ServerSettingsError
-    {
-        get => _serverSettingsError;
-        private set
-        {
-            if (_serverSettingsError == value)
-                return;
-            _serverSettingsError = value;
-            OnPropertyChanged();
-        }
-    }
-
-    private bool _isOpeningServerSettings;
-    public bool IsOpeningServerSettings
-    {
-        get => _isOpeningServerSettings;
-        private set
-        {
-            if (_isOpeningServerSettings == value)
-                return;
-            _isOpeningServerSettings = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(IsOpenSelectedServerSettingsEnabled));
-        }
-    }
-
     // Whether the selected server can be talked to right now. Read off the
     // sidebar row's own glyph (SidebarItem.ShowUnreachableIcon) rather than
     // worked out again here, so the device-detail header and the row beside it
@@ -1489,48 +1450,14 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // Open in Browser stays visible for a paired server that has dropped off
     // the network, so it is clear the action exists, but greyed out: it has to
     // sign a request against that server, and there is nothing to send it to.
-    public bool IsOpenSelectedServerSettingsEnabled => IsSelectedServerReachable && !IsOpeningServerSettings;
+    public bool IsOpenSelectedServerSettingsEnabled => IsSelectedServerReachable && !ServerAdmin.IsOpening;
 
-    // Opens the selected server's own settings page in the OS browser.
-    //
-    // A browser tab holds its own WebCrypto keypair and pairs like any other
-    // device (see BrowserPeerCredentials), so what this hands over is not a
-    // credential for the tab to *use* but a one-time, admin-granting pairing
-    // code for it to spend on becoming a device. In the URL fragment rather than
-    // the query string because a fragment is never sent to the server as part of
-    // the request, so the code cannot end up in an access log on the way in.
-    //
-    // Opening this a second time for a tab that already paired issues a code
-    // nothing needs, which the tab's redeem attempt spends harmlessly. That is
-    // cheap enough not to be worth a round-trip to find out first, and it is
-    // also the way back in after site data is cleared.
-    public async Task OpenSelectedServerSettingsAsync()
-    {
-        if (SelectedDevice is not { } device || _signingKey == null || _deviceIdentity == null)
-            return;
-
-        ServerSettingsError = null;
-        IsOpeningServerSettings = true;
-        try
-        {
-            using var http = PeerHttpClient.Create(TimeSpan.FromSeconds(15));
-            var client = CreateServerAdminClient(http, device);
-
-            var pairing = await client.IssuePairingCodeAsync(grantsAdmin: true);
-            if (!PlatformShell.OpenUrl(pairing.BrowserUrl))
-                ServerSettingsError = "Could not open a browser.";
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Could not open the settings page for {Device}", device.BaseUri);
-            ServerSettingsError = ex is ServerAdminException ? ex.Message : "Could not reach that server.";
-        }
-        finally
-        {
-            IsOpeningServerSettings = false;
-        }
-    }
-
+    // Opens the selected server's own settings page in the OS browser - see
+    // ServerAdministrationViewModel.OpenInBrowserAsync.
+    public Task OpenSelectedServerSettingsAsync() =>
+        SelectedDevice is { } device && _signingKey != null && _deviceIdentity != null
+            ? ServerAdmin.OpenInBrowserAsync(device)
+            : Task.CompletedTask;
 
     // ── Handing out pairing codes ─────────────────────────────────────────────
 
@@ -1562,81 +1489,14 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         return PairingCodes.IssueAsync(http => CreateServerAdminClient(http, device), device.BaseUri, _logger);
     }
 
-    // Both admin calls this ViewModel makes sign as this device with the same
-    // identity; only the route differs.
+    // Every admin call this ViewModel and ServerAdmin make signs as this
+    // device with the same identity; only the route differs.
     private ServerAdminClient CreateServerAdminClient(HttpClient http, DiscoveredDevice device) =>
         new(http, device.BaseUri,
             ServerAdminClient.SignWith(new SignedDeviceCredentials(_deviceIdentity!, _signingKey!)));
 
-    // One client for every settings panel this window ever shows, rather than
-    // one per selection: a SettingsViewModel outlives the call that created it
-    // (it saves, reloads and tails a log on demand), so the disposable-per-call
-    // shape the two one-shot admin calls above use does not work here.
-    private HttpClient? _adminHttp;
-
-    // Which server the panel currently on screen was built against - both
-    // halves matter: a different server obviously needs a new panel, and so
-    // does the same server reached at a new address (a LAN-to-tailnet handover
-    // moves BaseUri under a fingerprint that never changes).
-    private (string Fingerprint, Uri BaseUri)? _selectedServerSettingsFor;
-
-    // Every server settings screen built this session, kept rather than
-    // rebuilt. Selecting a playlist and coming back used to throw the whole
-    // thing away and reassemble it from nothing - a fresh load, a fresh roster,
-    // the Logs tab back on the server's own log at the top - when the only
-    // thing that had actually happened was the reader looking at something else
-    // for a moment. Keeping it means the tab, the log being read, its scroll
-    // position and any half-finished edit are simply still there, because they
-    // were never taken apart.
-    //
-    // Keyed by fingerprint, with the address it was built against alongside: a
-    // server reached at a new one (a LAN-to-tailnet handover) does need a new
-    // screen, since that address is baked into the admin client behind it.
-    // Bounded by how many servers the sidebar has ever shown, which under this
-    // app's deployment model is one and change.
-    private readonly Dictionary<string, (Uri BaseUri, SettingsViewModel Settings)> _serverSettings = new();
-
-    // Rebuilds SelectedServerSettings for whatever server row is selected now.
-    // Called both when the selection moves and whenever the pair-button state
-    // changes, since pairing with the selected server - or its approval landing
-    // a moment later - is what turns an unadministerable row into one whose
-    // settings can be read at all.
-    private void RefreshSelectedServerSettings()
-    {
-        var device = CanOpenSelectedServerSettings ? SelectedDevice : null;
-        var target = device == null ? ((string, Uri)?)null : (device.Fingerprint, device.BaseUri);
-        if (target == _selectedServerSettingsFor)
-            return;
-
-        _selectedServerSettingsFor = target;
-        if (device == null)
-        {
-            SelectedServerSettings = null;
-            return;
-        }
-
-        SelectedServerSettings = ServerSettingsFor(device);
-    }
-
-    private SettingsViewModel ServerSettingsFor(DiscoveredDevice device)
-    {
-        if (_serverSettings.TryGetValue(device.Fingerprint, out var kept))
-        {
-            if (kept.BaseUri == device.BaseUri)
-                return kept.Settings;
-
-            // Reached somewhere else now, so the screen that was talking to the
-            // old address is no longer talking to anything.
-            _serverSettings.Remove(device.Fingerprint);
-        }
-
-        _adminHttp ??= PeerHttpClient.Create(TimeSpan.FromSeconds(15));
-        var settings = new SettingsViewModel(
-            new RemoteServerSettingsBackend(CreateServerAdminClient(_adminHttp, device)),
-            _appSettings, _appSettingsStore);
-        _serverSettings[device.Fingerprint] = (device.BaseUri, settings);
-        return settings;
-    }
+    private void RefreshSelectedServerSettings() =>
+        ServerAdmin.Show(CanOpenSelectedServerSettings ? SelectedDevice : null);
 
     // What the user typed into that box. Cleared on a successful pair and
     // whenever the sidebar selection moves, so a code left over from one
@@ -2929,7 +2789,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         // which also runs on the 5s peer poll - a code that vanished every few
         // seconds could not be read out loud.
         PairingCodes.Clear();
-        ServerSettingsError = null;
+        ServerAdmin.ForgetOpenError();
         NotifyPairButtonPropertiesChanged();
         RefreshSelectedServerSettings();
         // History carries its own independent sort state (see SortColumn), so

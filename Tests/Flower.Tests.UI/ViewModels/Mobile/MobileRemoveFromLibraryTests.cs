@@ -54,11 +54,11 @@ public class MobileRemoveFromLibraryTests : PinnedDataDirectory
         scope.Mobile.RemoveFromLibraryCommand.Execute(null);
 
         Assert.True(scope.Mobile.IsShowingConfirmRemoveFromLibrary);
-        Assert.True(scope.Mobile.OffersRemoveFromLibraryDeleteFiles);
-        Assert.False(scope.Mobile.RemoveFromLibraryDeleteFiles);
+        Assert.True(scope.Mobile.Removal.OffersDeleteFiles);
+        Assert.False(scope.Mobile.Removal.DeleteFiles);
         Assert.Single(library.Tracks);
 
-        scope.Mobile.ConfirmRemoveFromLibraryCommand.Execute(null);
+        scope.Mobile.Removal.ConfirmCommand.Execute(null);
         UiWait.Settle(() => library.Tracks.Count == 0 && !scope.Mobile.IsShowingConfirmRemoveFromLibrary, "the song was never removed");
 
         Assert.Empty(library.Tracks);
@@ -73,7 +73,7 @@ public class MobileRemoveFromLibraryTests : PinnedDataDirectory
         scope.Mobile.OpenTrackActionsCommand.Execute(scope.Mobile.Main.Rows.Single());
         scope.Mobile.RemoveFromLibraryCommand.Execute(null);
 
-        scope.Mobile.CancelRemoveFromLibraryCommand.Execute(null);
+        scope.Mobile.Removal.CancelCommand.Execute(null);
 
         Assert.Single(library.Tracks);
         Assert.False(scope.Mobile.IsShowingConfirmRemoveFromLibrary);
@@ -106,7 +106,7 @@ public class MobileRemoveFromLibraryTests : PinnedDataDirectory
         Assert.True(mobile.IsShowingConfirmRemoveFromLibrary);
         Assert.Equal(2, library.Tracks.Count);
 
-        mobile.ConfirmRemoveFromLibraryCommand.Execute(null);
+        mobile.Removal.ConfirmCommand.Execute(null);
         UiWait.Settle(() => library.Tracks.Count == 0, "the songs were never removed");
     }
 

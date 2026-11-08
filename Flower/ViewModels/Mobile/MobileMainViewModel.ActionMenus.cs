@@ -21,7 +21,7 @@ public partial class MobileMainViewModel
     // everywhere but the page they would go to.
     public IReadOnlyList<ActionMenuEntry> SongActions => ActionTarget is { } track
         ? ActionMenus.Flat(ActionMenus.ForSongs(
-            Main.MenuFactsFor([track], _libraryRemoval),
+            Main.MenuFactsFor([track], Removal.Service),
             canRemoveFromQueue: CanRemoveActionTargetFromQueue,
             canLocateFiles: false,
             isRecentlyPlayed: IsShowingHome,
@@ -33,7 +33,7 @@ public partial class MobileMainViewModel
     // raised the same sheet.
     public IReadOnlyList<ActionMenuEntry> AlbumActions => AlbumActionTarget is { } tile
         ? ActionMenus.Flat(ActionMenus.ForAlbum(
-            Main.MenuFactsFor(AlbumActionTargetTracks(), _libraryRemoval),
+            Main.MenuFactsFor(AlbumActionTargetTracks(), Removal.Service),
             isContinuing: CanForgetAlbumActionTargetProgress,
             isPlaylist: IsActingOnAPlaylist,
             isArtist: _isActingOnAnArtist,

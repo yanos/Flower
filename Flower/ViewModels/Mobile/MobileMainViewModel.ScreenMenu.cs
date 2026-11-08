@@ -183,9 +183,9 @@ public partial class MobileMainViewModel
             }, IsDestructive: true));
 
         var onAPlaylist = frame.IsPlaylistTrackList || frame.ScreenKind == MobileScreenKind.PlaylistPicker;
-        if (!onAPlaylist && _libraryRemoval?.Removable(tracks).Count > 0)
+        if (!onAPlaylist && Removal.Service?.Removable(tracks).Count > 0)
             entries.Add(new ScreenMenuEntry("Remove from Library", MaterialIconKind.MusicNoteOff,
-                () => ConfirmRemovingFromLibrary(TracksOnScreen(frame)), IsDestructive: true));
+                () => Removal.Ask(TracksOnScreen(frame)), IsDestructive: true));
 
         return entries;
     }

@@ -100,8 +100,8 @@ the same ranking must not count as a change.
 
 ### September E3. The shell view models are still large — reduced
 
-`Flower/ViewModels/MainViewModel.cs` (3251 lines),
-`Flower/ViewModels/Mobile/MobileMainViewModel.cs` (2738 lines), as of
+`Flower/ViewModels/MainViewModel.cs` (3135 lines),
+`Flower/ViewModels/Mobile/MobileMainViewModel.cs` (2647 lines), as of
 November 2026
 
 `ARCHITECTURE-REVIEW.md` Tier 4.2 decomposed `MainViewModel` and marked itself
@@ -123,10 +123,27 @@ needed nothing of the shell but a notification, moved out:
   `PairingCodeIssuerViewModel`.
 
 The views bind through the new property (`Search.Query`, `Pairing.…`,
-`BrowserPairing.…`, `ArtistPage.…`, `PairingCodes.…`). Since then both have
-grown again, from 2606 and 2654 lines. Most of what is left is what a shell
-is: navigation, sheet state, and forwarding to the shared services. The next
-candidate is whatever has grown into a feature of its own since.
+`BrowserPairing.…`, `ArtistPage.…`, `PairingCodes.…`). Both then grew again,
+from 2606 and 2654 lines to 3251 and 2738. In November 2026 two more moved
+out the same way:
+
+- From `MobileMainViewModel`: `MobileLibraryRemovalViewModel`, the Remove
+  from Library sheet (`Removal.…`). The two menu entries that ask it stay,
+  since what they ask about is the shell's action target.
+- From `MainViewModel`: `ServerAdministrationViewModel`, the selected
+  server's settings panels and Open in Browser (`ServerAdmin.…`).
+
+Most of what is left is what a shell is: navigation, sheet state, and
+forwarding to the shared services. Each constructor is about 550 lines of
+that wiring. Looked at and left alone:
+
+- Mobile's smart playlist sheet. `ScreenTitle`, the rows-on-screen choice and
+  the Vibe sheet beside it all reach into it, so moving it would leave as
+  much forwarding behind as it took away.
+- Desktop's Back and Forward. The history itself is already
+  `NavigationHistory`; what stays is the glue to the sidebar.
+
+The next candidate is still whatever grows into a feature of its own.
 
 ---
 

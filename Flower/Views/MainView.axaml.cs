@@ -213,6 +213,7 @@ public partial class MainView : UserControl
         {
             _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
             _viewModel.BrowserPairing.PropertyChanged -= OnBrowserPairingPropertyChanged;
+            _viewModel.ServerAdmin.PropertyChanged -= OnServerAdminPropertyChanged;
             _viewModel.SettingsRequested -= OnSettingsRequested;
             _viewModel.ColumnSelectorRequested -= OnColumnSelectorRequested;
             _viewModel.LogWindowRequested -= OnLogWindowRequested;
@@ -238,6 +239,7 @@ public partial class MainView : UserControl
         {
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
             _viewModel.BrowserPairing.PropertyChanged += OnBrowserPairingPropertyChanged;
+            _viewModel.ServerAdmin.PropertyChanged += OnServerAdminPropertyChanged;
             _viewModel.Queue.PropertyChanged += OnQueuePropertyChanged;
             _viewModel.SettingsRequested += OnSettingsRequested;
             _viewModel.ColumnSelectorRequested += OnColumnSelectorRequested;
@@ -362,7 +364,6 @@ public partial class MainView : UserControl
                 KeepAListedArtistPicked();
                 Dispatcher.UIThread.Post(SyncSubListSelectionFromViewModel);
                 break;
-            case nameof(MainViewModel.SelectedServerSettings):
             case nameof(MainViewModel.IsSelectedDevicePaired):
             case nameof(MainViewModel.IsSelectedServerReachable):
             case nameof(MainViewModel.IsPairAwaitingApproval):
@@ -372,6 +373,12 @@ public partial class MainView : UserControl
                 UpdateServerSettingsPage();
                 break;
         }
+    }
+
+    private void OnServerAdminPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ServerAdministrationViewModel.Settings))
+            UpdateServerSettingsPane();
     }
 
     private void OnBrowserPairingPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -2790,7 +2797,7 @@ public partial class MainView : UserControl
 
     private void UpdateServerSettingsPane()
     {
-        var settings = _viewModel?.SelectedServerSettings;
+        var settings = _viewModel?.ServerAdmin.Settings;
         if (ReferenceEquals(settings, _hostedServerSettings))
         {
             UpdateServerSettingsMessage();

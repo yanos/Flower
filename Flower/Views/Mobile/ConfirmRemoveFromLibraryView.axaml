@@ -39,30 +39,30 @@
       <StackPanel Spacing="14" Margin="{DynamicResource SheetBottomInset}">
         <StackPanel Orientation="Horizontal" Spacing="10">
           <materialIcons:MaterialIcon Kind="MusicNoteOff" Width="24" Height="24" />
-          <TextBlock Text="{Binding RemoveFromLibraryTitle}"
+          <TextBlock Text="{Binding Removal.Title}"
                      FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"
                      TextWrapping="Wrap" />
         </StackPanel>
 
-        <TextBlock Text="{Binding RemoveFromLibraryMessage}"
+        <TextBlock Text="{Binding Removal.Message}"
                    FontSize="14" Opacity="0.75" TextWrapping="Wrap" />
 
         <!-- Off every time the sheet opens - see
-             MobileMainViewModel.RemoveFromLibraryDeleteFiles. -->
-        <CheckBox IsVisible="{Binding OffersRemoveFromLibraryDeleteFiles}"
-                  IsChecked="{Binding RemoveFromLibraryDeleteFiles}"
+             MobileLibraryRemovalViewModel.DeleteFiles. -->
+        <CheckBox IsVisible="{Binding Removal.OffersDeleteFiles}"
+                  IsChecked="{Binding Removal.DeleteFiles}"
                   FontSize="14">
-          <TextBlock Text="{Binding RemoveFromLibraryDeleteFilesLabel}" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding Removal.DeleteFilesLabel}" TextWrapping="Wrap" />
         </CheckBox>
 
-        <TextBlock Text="{Binding RemoveFromLibraryError}"
-                   IsVisible="{Binding HasRemoveFromLibraryError}"
+        <TextBlock Text="{Binding Removal.Error}"
+                   IsVisible="{Binding Removal.HasError}"
                    FontSize="14" TextWrapping="Wrap"
                    Foreground="{DynamicResource AppErrorBrush}" />
 
-        <Button Classes="removeAction primary" Content="Remove" Command="{Binding ConfirmRemoveFromLibraryCommand}"
-                IsEnabled="{Binding !IsRemovingFromLibrary}" />
-        <Button Classes="removeAction secondary" Content="Cancel" Command="{Binding CancelRemoveFromLibraryCommand}" />
+        <Button Classes="removeAction primary" Content="Remove" Command="{Binding Removal.ConfirmCommand}"
+                IsEnabled="{Binding !Removal.IsRemoving}" />
+        <Button Classes="removeAction secondary" Content="Cancel" Command="{Binding Removal.CancelCommand}" />
       </StackPanel>
     </Border>
   </Grid>

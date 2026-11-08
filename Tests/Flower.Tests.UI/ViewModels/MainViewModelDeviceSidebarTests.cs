@@ -334,7 +334,7 @@ public class MainViewModelDeviceSidebarTests : PinnedDataDirectory
         vm.AddOrUpdateDeviceSidebarItem(HeadlessServer("desk", "fp-desk", "Desktop"));
         vm.SelectedSidebarItem = SingleDeviceRow(vm);
 
-        Assert.NotNull(vm.SelectedServerSettings);
+        Assert.NotNull(vm.ServerAdmin.Settings);
         Assert.True(vm.CanOpenSelectedServerSettings);
     }
 
@@ -372,7 +372,7 @@ public class MainViewModelDeviceSidebarTests : PinnedDataDirectory
 
     // Selecting an approved server builds the settings screen the device-detail
     // pane shows in place of what used to be a browse view of its catalog (see
-    // MainViewModel.SelectedServerSettings). Nothing is fetched here - the
+    // ServerAdministrationViewModel.Settings). Nothing is fetched here - the
     // ViewModel exists first and loads when the panel hosting it says so.
     [AvaloniaFact]
     public void An_approved_server_gets_a_settings_screen_of_its_own()
@@ -381,11 +381,11 @@ public class MainViewModelDeviceSidebarTests : PinnedDataDirectory
         vm.AddOrUpdateDeviceSidebarItem(HeadlessServer("desk", "fp-desk", "Desktop", weAreAdmin: true));
         vm.SelectedSidebarItem = SingleDeviceRow(vm);
 
-        Assert.NotNull(vm.SelectedServerSettings);
+        Assert.NotNull(vm.ServerAdmin.Settings);
         // A server's settings, not this device's: no theme, no server picker,
         // and a device roster (see RemoteServerSettingsBackend's capabilities).
-        Assert.False(vm.SelectedServerSettings!.Capabilities.ThemePicker);
-        Assert.True(vm.SelectedServerSettings.Capabilities.TrustedDevices);
+        Assert.False(vm.ServerAdmin.Settings!.Capabilities.ThemePicker);
+        Assert.True(vm.ServerAdmin.Settings.Capabilities.TrustedDevices);
     }
 
     // Paired but still waiting for approval: every admin call would come back
@@ -397,7 +397,7 @@ public class MainViewModelDeviceSidebarTests : PinnedDataDirectory
         vm.AddOrUpdateDeviceSidebarItem(HeadlessServer("desk", "fp-desk", "Desktop"));
         vm.SelectedSidebarItem = SingleDeviceRow(vm);
 
-        Assert.Null(vm.SelectedServerSettings);
+        Assert.Null(vm.ServerAdmin.Settings);
     }
 
     // Moving off the server row drops it again, so the next server selected is
@@ -408,11 +408,11 @@ public class MainViewModelDeviceSidebarTests : PinnedDataDirectory
         var vm = Make(PairedWith("fp-desk", trustConfirmed: true));
         vm.AddOrUpdateDeviceSidebarItem(HeadlessServer("desk", "fp-desk", "Desktop", weAreAdmin: true));
         vm.SelectedSidebarItem = SingleDeviceRow(vm);
-        Assert.NotNull(vm.SelectedServerSettings);
+        Assert.NotNull(vm.ServerAdmin.Settings);
 
         vm.SelectedSidebarItem = vm.SidebarItems.First(i => i.Kind == SidebarItemKind.Songs);
 
-        Assert.Null(vm.SelectedServerSettings);
+        Assert.Null(vm.ServerAdmin.Settings);
     }
 
     // ...but only from the pane. The screen itself is kept and handed back on
@@ -426,13 +426,13 @@ public class MainViewModelDeviceSidebarTests : PinnedDataDirectory
         var vm = Make(PairedWith("fp-desk", trustConfirmed: true));
         vm.AddOrUpdateDeviceSidebarItem(HeadlessServer("desk", "fp-desk", "Desktop", weAreAdmin: true));
         vm.SelectedSidebarItem = SingleDeviceRow(vm);
-        var first = vm.SelectedServerSettings;
+        var first = vm.ServerAdmin.Settings;
         Assert.NotNull(first);
 
         vm.SelectedSidebarItem = vm.SidebarItems.First(i => i.Kind == SidebarItemKind.Songs);
         vm.SelectedSidebarItem = SingleDeviceRow(vm);
 
-        Assert.Same(first, vm.SelectedServerSettings);
+        Assert.Same(first, vm.ServerAdmin.Settings);
     }
 
     // The one thing that is not the same screen: the same server reached
@@ -445,7 +445,7 @@ public class MainViewModelDeviceSidebarTests : PinnedDataDirectory
         var vm = Make(PairedWith("fp-desk", trustConfirmed: true));
         vm.AddOrUpdateDeviceSidebarItem(HeadlessServer("desk", "fp-desk", "Desktop", weAreAdmin: true));
         vm.SelectedSidebarItem = SingleDeviceRow(vm);
-        var first = vm.SelectedServerSettings;
+        var first = vm.ServerAdmin.Settings;
 
         var moved = DeviceAt("desk", "100.64.0.7", "fp-desk", "Desktop");
         moved.DeviceType = "server";
@@ -453,8 +453,8 @@ public class MainViewModelDeviceSidebarTests : PinnedDataDirectory
         vm.AddOrUpdateDeviceSidebarItem(moved);
         vm.SelectedSidebarItem = SingleDeviceRow(vm);
 
-        Assert.NotNull(vm.SelectedServerSettings);
-        Assert.NotSame(first, vm.SelectedServerSettings);
+        Assert.NotNull(vm.ServerAdmin.Settings);
+        Assert.NotSame(first, vm.ServerAdmin.Settings);
     }
 
     private static AppSettings PairedWith(string fingerprint, bool trustConfirmed) => new()

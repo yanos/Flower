@@ -1262,7 +1262,7 @@ public partial class App : Application
     // opens this page at #pair=<code>&page=settings. The page= half is what
     // decides whether the overlay opens: the code alone does not imply it, since
     // an ordinary listener pairs a tab to get a jukebox and nothing more. (See
-    // MainViewModel.OpenSelectedServerSettingsAsync and
+    // ServerAdministrationViewModel.OpenInBrowserAsync and
     // WebUiHosting.BuildBrowserPairingUrl.)
     //
     // The tab administers with its own key, signed through the same

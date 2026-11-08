@@ -1010,7 +1010,7 @@
         <!-- Device detail: shown instead of the track list when a Devices/Server
              sidebar row is selected. The server itself - who it is, pairing, the
              codes it hands out - and then its own settings, administered in
-             place (see MainViewModel.SelectedServerSettings). Its music is
+             place (see ServerAdministrationViewModel.Settings). Its music is
              deliberately not here: a paired server's tracks are merged into the
              library by LibrarySyncService and play from the ordinary track list,
              so browsing them again under the sidebar row was the same catalog
@@ -1122,8 +1122,8 @@
             <!-- "Paired, but not an administrator of that server" is the common
                  case here, and it is an ordinary outcome rather than a fault -
                  said plainly next to the button, same as PairingCodeError. -->
-            <SelectableTextBlock Text="{Binding ServerSettingsError}"
-                       IsVisible="{Binding ServerSettingsError, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
+            <SelectableTextBlock Text="{Binding ServerAdmin.OpenError}"
+                       IsVisible="{Binding ServerAdmin.OpenError, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
                        Foreground="{DynamicResource AppErrorBrush}" FontSize="12" TextWrapping="Wrap"
                        MaxWidth="260"
                        VerticalAlignment="Center" Margin="8,0,0,0"/>

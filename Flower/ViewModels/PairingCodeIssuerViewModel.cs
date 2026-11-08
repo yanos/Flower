@@ -17,7 +17,7 @@ namespace Flower.ViewModels;
 //
 // Desktop no longer has a second one of these. It used to sit in the
 // device-detail header, next to a pane that browsed the server's catalog;
-// that pane now *is* the server's settings screen (SelectedServerSettings),
+// that pane now *is* the server's settings screen (ServerAdministrationViewModel.Settings),
 // whose Devices tab already offers this - and two identical buttons on one
 // page is worse than the trip the header one was saving. A phone has no such
 // pane, which is why this state stays.

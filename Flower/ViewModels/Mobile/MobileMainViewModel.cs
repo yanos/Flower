@@ -987,8 +987,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
                 _moving = null;
                 _playlistTargets = null;
                 _albumDeleteTargets = null;
-                _removalPrompt = null;
-                RemoveFromLibraryError = null;
+                Removal.Settle();
                 // A confirmation still waiting for an answer when its sheet
                 // goes away has been answered: no. Nothing else resolves it,
                 // and PlaylistManagementViewModel.DeleteAsync is sitting on
@@ -1370,117 +1369,14 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
 
     // ── Remove from Library ───────────────────────────────────────────────
     //
-    // A song's or an album's, confirmed through one sheet with an "also delete
-    // the files" choice - the wording is LibraryRemovalPrompt's, shared with
-    // the desktop dialog. Null service means a head with no peer stack, which
-    // offers no entry at all.
+    // The confirmation sheet itself - see MobileLibraryRemovalViewModel. What
+    // stays here is the two menu entries that ask it, since what they ask
+    // about is this shell's action target.
 
-    private readonly LibraryRemovalService? _libraryRemoval;
-    private LibraryRemovalPrompt? _removalPrompt;
+    public MobileLibraryRemovalViewModel Removal { get; }
 
-    public string RemoveFromLibraryTitle => _removalPrompt?.Title ?? "";
-    public string RemoveFromLibraryMessage => _removalPrompt?.Message ?? "";
-    public string RemoveFromLibraryDeleteFilesLabel => _removalPrompt?.DeleteFilesLabel ?? "";
-    public bool OffersRemoveFromLibraryDeleteFiles => _removalPrompt?.DeleteFilesLabel != null;
-
-    // Off every time the sheet opens: deleting files is the choice to make on
-    // purpose, never one left ticked from last time.
-    private bool _removeFromLibraryDeleteFiles;
-    public bool RemoveFromLibraryDeleteFiles
-    {
-        get => _removeFromLibraryDeleteFiles;
-        set
-        {
-            _removeFromLibraryDeleteFiles = value;
-            OnPropertyChanged();
-        }
-    }
-
-    // What went wrong with the last attempt, shown in the sheet rather than
-    // closing it - "your server isn't reachable" is worth reading before the
-    // sheet goes away.
-    private string? _removeFromLibraryError;
-    public string? RemoveFromLibraryError
-    {
-        get => _removeFromLibraryError;
-        private set
-        {
-            _removeFromLibraryError = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(HasRemoveFromLibraryError));
-        }
-    }
-
-    public bool HasRemoveFromLibraryError => _removeFromLibraryError != null;
-
-    private bool _isRemovingFromLibrary;
-    public bool IsRemovingFromLibrary
-    {
-        get => _isRemovingFromLibrary;
-        private set
-        {
-            _isRemovingFromLibrary = value;
-            OnPropertyChanged();
-        }
-    }
-
-    public ICommand RemoveFromLibraryCommand { get; private set; } = null!;
-    public ICommand RemoveAlbumFromLibraryCommand { get; private set; } = null!;
-    public ICommand ConfirmRemoveFromLibraryCommand { get; private set; } = null!;
-    public ICommand CancelRemoveFromLibraryCommand { get; private set; } = null!;
-
-    private void ConfirmRemovingFromLibrary(IReadOnlyList<Track> tracks)
-    {
-        if (_libraryRemoval == null || LibraryRemovalPrompt.For(_libraryRemoval, tracks) is not { } prompt)
-            return;
-
-        _removalPrompt = prompt;
-        RemoveFromLibraryDeleteFiles = false;
-        RemoveFromLibraryError = null;
-        OnPropertyChanged(nameof(RemoveFromLibraryTitle));
-        OnPropertyChanged(nameof(RemoveFromLibraryMessage));
-        OnPropertyChanged(nameof(RemoveFromLibraryDeleteFilesLabel));
-        OnPropertyChanged(nameof(OffersRemoveFromLibraryDeleteFiles));
-        ActiveSheet = MobileSheet.ConfirmRemoveFromLibrary;
-    }
-
-    private void InitializeLibraryRemovalCommands()
-    {
-        RemoveFromLibraryCommand = new RelayCommand(() =>
-        {
-            if (ActionTarget is { } track)
-                ConfirmRemovingFromLibrary([track]);
-        });
-        RemoveAlbumFromLibraryCommand = new RelayCommand(() =>
-        {
-            if (AlbumActionTarget is { } tile)
-                ConfirmRemovingFromLibrary(tile.Tracks.ToList());
-        });
-        ConfirmRemoveFromLibraryCommand = new RelayCommand(async () =>
-        {
-            if (_libraryRemoval == null || _removalPrompt is not { } prompt || IsRemovingFromLibrary)
-                return;
-
-            IsRemovingFromLibrary = true;
-            try
-            {
-                var outcome = await _libraryRemoval.RemoveAsync(prompt.Tracks, RemoveFromLibraryDeleteFiles);
-                if (outcome.Error is { } error && outcome.Removed == 0)
-                {
-                    RemoveFromLibraryError = error;
-                    return;
-                }
-                if (outcome.Error is { } partial)
-                    _logger.LogWarning("Remove from Library: {Problem}", partial);
-                ActiveSheet = MobileSheet.None;
-            }
-            finally
-            {
-                IsRemovingFromLibrary = false;
-            }
-        });
-        CancelRemoveFromLibraryCommand = new RelayCommand(() => ActiveSheet = MobileSheet.None);
-    }
+    public ICommand RemoveFromLibraryCommand { get; }
+    public ICommand RemoveAlbumFromLibraryCommand { get; }
 
     private void ConfirmDeleting(IReadOnlyList<Track>? albumFiles, string? of = null)
     {
@@ -1516,9 +1412,6 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         ActiveSheet = MobileSheet.ConfirmDeletePlaylist;
     }
 
-    // Answers at most once: the sheet's own two buttons both close it, and
-    // closing it comes back through here (see ActiveSheet) with the answer
-    // already given.
     private void ClearScreenFilter()
     {
         _screenFilterCts?.Cancel();
@@ -1526,6 +1419,9 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         SyncMainFilterText(landingOnTrackList: false);
     }
 
+    // Answers at most once: the sheet's own two buttons both close it, and
+    // closing it comes back through here (see ActiveSheet) with the answer
+    // already given.
     private void ResolvePendingPlaylistDeletion(bool confirmed)
     {
         var pending = _pendingPlaylistDelete;
@@ -1653,7 +1549,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         PlaylistControl = playlistControl;
         CurrentlyPlaying = currentlyPlaying;
         _logger = logger;
-        _libraryRemoval = libraryRemoval;
+        Removal = new MobileLibraryRemovalViewModel(libraryRemoval, sheet => ActiveSheet = sheet, logger);
 
         Search = new SearchViewModel(main);
         Search.QueryChanged += (_, _) =>
@@ -2018,7 +1914,16 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         // Confirmed first, like a song's Delete. The confirm sheet replaces the
         // menu without passing through None, so AlbumActionTarget is still set
         // for its title.
-        InitializeLibraryRemovalCommands();
+        RemoveFromLibraryCommand = new RelayCommand(() =>
+        {
+            if (ActionTarget is { } track)
+                Removal.Ask([track]);
+        });
+        RemoveAlbumFromLibraryCommand = new RelayCommand(() =>
+        {
+            if (AlbumActionTarget is { } tile)
+                Removal.Ask(tile.Tracks.ToList());
+        });
         InitializeQueueCommands();
         ForgetAlbumActionTargetProgressCommand = new RelayCommand(() =>
         {
