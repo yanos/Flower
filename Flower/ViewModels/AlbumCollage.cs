@@ -31,7 +31,8 @@ public sealed class AlbumCollage : ObservableObject, AlbumArtLoader.IShowsAlbumA
     // who to ask and which albums tell them from a namesake. thumbnail for a
     // row rather than a page's header: a phone's Artists tab draws hundreds of
     // these, and each holds a picture of its own, where covers are shared
-    // with the album grids.
+    // with the album grids. Made only by ArtistIcons, which everything that
+    // draws an artist asks, so one artist is drawn alike everywhere.
     public static AlbumCollage ForArtist(string artist, IReadOnlyList<Track> tracks, bool thumbnail) =>
         new(AlbumsByPlays(tracks, t => t.Album!), (artist, tracks, thumbnail));
 
@@ -128,8 +129,18 @@ public sealed class AlbumCollage : ObservableObject, AlbumArtLoader.IShowsAlbumA
                 _ = LoadArtAsync();
             return _coverArt;
         }
-        private set => SetProperty(ref _coverArt, value);
+        private set
+        {
+            if (SetProperty(ref _coverArt, value))
+                OnPropertyChanged(nameof(HasCoverArt));
+        }
     }
+
+    // Whether anything has loaded to draw - a picture or a cover - for a
+    // place with something of its own to show until then (the desktop
+    // Artists column's initials). Reading it does not start the load;
+    // binding CoverArt does.
+    public bool HasCoverArt => _coverArt is { Count: > 0 };
 
     private async Task LoadArtAsync()
     {

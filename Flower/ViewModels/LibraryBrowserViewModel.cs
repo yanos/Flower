@@ -463,6 +463,10 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
             : InArtistOrder(_subListItems, sort).FirstOrDefault();
     }
 
+    // Every artist's picture or covers, wherever they are drawn - see
+    // ArtistIcons. Here because Repopulate is where the library changes.
+    public ArtistIcons ArtistIcons { get; } = new();
+
     // The desktop Artists column: SubListItems narrowed by ArtistFilterText,
     // whose box sits at that column's head - the artists whose name it finds, the
     // way the phone's artist list filters (MobileMainViewModel
@@ -643,6 +647,7 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
     public void Repopulate()
     {
         _allTracks = new List<Track>(_library.Tracks);
+        ArtistIcons.LibraryChanged(_allTracks);
         _logger.LogInformation("Library view repopulated: {Count} track(s)", _allTracks.Count);
         RebuildSubListItems(followRenamedArtists: true);
         _pickedArtistSongs = PickedArtistSongs();

@@ -714,6 +714,27 @@
                                    HorizontalAlignment="Center"
                                    VerticalAlignment="Center"/>
                       </Border>
+                      <!-- Over the initials, once it has something to show:
+                           the artist's picture, or their covers when none is
+                           found, the same icon as the artist's page header,
+                           Search and the phone's Artists tab (ArtistIcons). Handed down
+                           through Tag rather than set as DataContext: a
+                           binding on DataContext reads its own <Binding/> from
+                           the DataContext it is setting, so never saw the name. -->
+                      <Panel Grid.Column="0">
+                        <Panel.Tag>
+                          <MultiBinding Converter="{x:Static conv:ArtistCoverConverter.Instance}">
+                            <Binding/>
+                            <Binding Path="$parent[UserControl].((vm:MainViewModel)DataContext).Browser.ArtistIcons"/>
+                          </MultiBinding>
+                        </Panel.Tag>
+                        <controls:AlbumArtView x:DataType="vm:AlbumCollage"
+                                               DataContext="{Binding $parent[Panel].Tag}"
+                                               Width="26" Height="26"
+                                               ArtCornerRadius="13"
+                                               Covers="{Binding CoverArt}"
+                                               IsVisible="{Binding HasCoverArt, FallbackValue=False}"/>
+                      </Panel>
                       <controls:RowText Grid.Column="1"
                                         Text="{Binding}"
                                         LineHeight="24"

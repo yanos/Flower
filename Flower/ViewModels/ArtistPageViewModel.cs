@@ -41,7 +41,7 @@ public sealed class ArtistPageViewModel : ViewModelBase
     // artist. force: the library changed under the page, so everything is
     // rebuilt.
     public void Show(string? name, IReadOnlyList<Track> library, string? filter, TrackAvailabilityContext availability,
-        Guid? playing, (BrowseSortOrder Order, bool Ascending) sort, bool force = false)
+        Guid? playing, (BrowseSortOrder Order, bool Ascending) sort, ArtistIcons icons, bool force = false)
     {
         filter = string.IsNullOrWhiteSpace(filter) ? null : filter;
         var samePerson = !force && name == Header?.Name;
@@ -69,7 +69,7 @@ public sealed class ArtistPageViewModel : ViewModelBase
                 var albums = tracks.Where(t => !string.IsNullOrEmpty(t.Album)).Select(t => t.Album).Distinct().Count();
                 var total = TimeSpan.FromTicks(tracks.Sum(t => t.Duration.Ticks));
                 var length = total.TotalHours >= 1 ? $"{(int)total.TotalHours}h {total.Minutes}m" : $"{total.Minutes}m";
-                Header = new ArtistHeaderInfo(name, AlbumCollage.ForArtist(name, tracks, thumbnail: false),
+                Header = new ArtistHeaderInfo(name, icons.For(name, thumbnail: false),
                     $"{ArtistPickerRow.Summary(albums, tracks.Count)} · {length}");
             }
             if (filter != null)

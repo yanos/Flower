@@ -217,7 +217,7 @@ public sealed class SearchViewModel : ViewModelBase
                     ? new ArtistPickerRow(name,
                         mine.Where(t => !string.IsNullOrEmpty(t.Album)).Select(t => t.Album).Distinct().Count(),
                         mine.Count,
-                        AlbumCollage.ForArtist(name, mine, thumbnail: true))
+                        _main.Browser.ArtistIcons.For(name, thumbnail: true))
                     : new ArtistPickerRow(name, 0, 0, AlbumCollage.Empty))
                 .ToList();
 

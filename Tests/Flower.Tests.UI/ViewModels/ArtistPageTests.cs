@@ -49,6 +49,16 @@ public class ArtistPageTests : PinnedDataDirectory
     private static string[] Songs(MainViewModel vm, string album) =>
         vm.ArtistPage.Albums.Single(a => a.Tile.Name == album).ExpandedTracks.Select(t => t.Title!).ToArray();
 
+    // The header's picture is the artist's one icon (ArtistIcons), the
+    // same one the Artists column, Search and the phone draw.
+    [AvaloniaFact]
+    public void The_header_draws_the_artists_one_icon()
+    {
+        var vm = OnArtist("SAINT PEPSI");
+
+        Assert.Same(vm.Browser.ArtistIcons.For("SAINT PEPSI", thumbnail: false), vm.ArtistPage.Header?.Cover);
+    }
+
     [AvaloniaFact]
     public void Each_album_is_a_card_oldest_first_with_its_songs_in_track_order()
     {

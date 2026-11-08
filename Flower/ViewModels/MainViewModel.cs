@@ -878,7 +878,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             _selectedSidebarItem?.Kind == SidebarItemKind.Artists && SelectedSubItems.Count == 1
                 ? SelectedSubItems.First()
                 : null,
-            Library.Tracks, FilterText, Availability, CurrentlyPlayingTrack?.Id, SortOf(BrowseSortScreen.ArtistAlbums), force);
+            Library.Tracks, FilterText, Availability, CurrentlyPlayingTrack?.Id, SortOf(BrowseSortScreen.ArtistAlbums),
+            Browser.ArtistIcons, force);
 
     // The band above a list on desktop: the page's name in the display serif,
     // how much is in it, and the filter box. Over every list and over Home -

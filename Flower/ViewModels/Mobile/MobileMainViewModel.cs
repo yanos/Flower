@@ -694,7 +694,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
                 ? new ArtistPickerRow(name,
                     tracks.Where(t => !string.IsNullOrEmpty(t.Album)).Select(t => t.Album).Distinct().Count(),
                     tracks.Count,
-                    AlbumCollage.ForArtist(name, tracks, thumbnail: true))
+                    Main.Browser.ArtistIcons.For(name, thumbnail: true))
                 : new ArtistPickerRow(name, 0, 0, AlbumCollage.Empty))
             .ToList(), byArtist);
         RefreshArtistPickerItems();

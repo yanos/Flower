@@ -2,7 +2,7 @@ namespace Flower.ViewModels.Mobile;
 
 // One row of mobile's Artists tab: the artist, how much of theirs there is,
 // and their picture, or a cover made of their most played albums' art (see
-// AlbumCollage.ForArtist, and MobileMainViewModel.RebuildArtistPickerRows).
+// ArtistIcons, and MobileMainViewModel.RebuildArtistPickerRows).
 public sealed class ArtistPickerRow
 {
     public ArtistPickerRow(string name, int albumCount, int songCount, AlbumCollage cover)
