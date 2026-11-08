@@ -78,13 +78,37 @@ public class RenderStarvationTests
             var buffer = new byte[_framesPerWrite * PcmFormat.Default.BytesPerFrame];
             var samples = MemoryMarshal.Cast<byte, short>(buffer.AsSpan());
 
+            GaplessRingBuffer? watched = null;
+            var watchedGeneration = 0;
+
             for (var frame = 0; frame < _totalFrames && !_retired; frame += _framesPerWrite)
             {
+                // GaplessCoordinator.Seek flushes the ring and then tells the
+                // decoder, in one call. A real decoder's Seek flushes again,
+                // which throws away whatever it wrote in between; this one
+                // does not, so it must not write in between either. A flush
+                // of its own ring while it is still decoding is the seek on
+                // its way (every other flush retires the decoder first), so it
+                // waits for the request rather than refilling the ring with
+                // pre-seek audio that would then be heard.
+                var target = _writer.Target;
+                if (target != watched)
+                {
+                    watched = target;
+                    watchedGeneration = target.Generation;
+                }
+                else if (target.Generation != watchedGeneration)
+                {
+                    SpinWait.SpinUntil(() => _seekRequested || _retired, TimeSpan.FromSeconds(1));
+                    watchedGeneration = target.Generation;
+                }
+
                 // A seek in progress: nothing more from before it.
                 if (_seekRequested)
                 {
                     SpinWait.SpinUntil(() => _seekLanded || _retired);
                     _seekRequested = false;
+                    watchedGeneration = target.Generation;
                 }
 
                 var value = _postSeekValue ?? _value;
@@ -320,17 +344,22 @@ public class RenderStarvationTests
 
         WaitUntil(() => NonSilentValues(harness.Sink.Captured).Count > 2400, "pre-seek audio never played");
 
-        var capturedAtSeek = harness.Sink.CapturedCount;
+        var generationBeforeSeek = harness.Ring.Generation;
         harness.Coordinator.Seek(0.5f);
         harness.DecoderFor(a).SeekTo(_ => 2000);
 
         WaitUntil(() => Array.IndexOf(Pcm.AsSamples(harness.Sink.Captured).ToArray(), (short)2000) >= 0, "post-seek audio never played");
         harness.Sink.Pause();
 
-        // One render period may already have been in flight when Seek
-        // returned, and one decoder write may have been mid-copy when the ring
+        // Counted from the first period the render side read after the
+        // flush, not from before Seek was called: whatever it played before
+        // the flush was pre-seek audio heard before the seek, which is fine,
+        // and a runner slow to get the test thread into Seek used to count
+        // all of it. One decoder write may have been mid-copy when the ring
         // was flushed; beyond that, nothing from before the seek may appear.
-        var after = harness.Sink.Captured.AsSpan((int)capturedAtSeek);
+        var flushedAt = harness.Sink.CapturedFromGenerationAfter(generationBeforeSeek);
+        Assert.True(flushedAt >= 0, "the seek never flushed the ring");
+        var after = harness.Sink.Captured.AsSpan((int)flushedAt);
         var preSeekFrames = 0;
         var samples = Pcm.AsSamples(after);
         for (var frame = 0; frame < samples.Length / 2; frame++)
@@ -339,6 +368,6 @@ public class RenderStarvationTests
                 preSeekFrames++;
         }
 
-        Assert.True(preSeekFrames <= 480 + 240, $"{preSeekFrames} frames of pre-seek audio played after the seek");
+        Assert.True(preSeekFrames <= 240, $"{preSeekFrames} frames of pre-seek audio played after the seek");
     }
 }

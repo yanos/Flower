@@ -78,6 +78,25 @@ public sealed class RenderPumpSink : IAudioSink
         }
     }
 
+    // Where in Captured each ring generation's periods begin, in the order
+    // the pump first read under it: a flush is a new generation, so this is
+    // where in the capture a flush reached the render side.
+    private readonly List<(int Generation, long Offset)> _generationStarts = [];
+
+    // The offset in Captured of the first period read under a generation
+    // after this one - the moment its flush was heard - or -1 if there has
+    // been none. A period is labelled with the generation read before its
+    // Read, so one labelled with the newer generation was read wholly after
+    // the flush.
+    public long CapturedFromGenerationAfter(int generation)
+    {
+        lock (_gate)
+        {
+            var last = _generationStarts.FindLastIndex(g => g.Generation == generation);
+            return last >= 0 && last + 1 < _generationStarts.Count ? _generationStarts[last + 1].Offset : -1;
+        }
+    }
+
     public long CapturedCount
     {
         get
@@ -161,7 +180,11 @@ public sealed class RenderPumpSink : IAudioSink
                 _outputStage.Process(period, generation);
 
             lock (_gate)
+            {
+                if (_generationStarts.Count == 0 || _generationStarts[^1].Generation != generation)
+                    _generationStarts.Add((generation, _captured.Length));
                 _captured.Write(period);
+            }
 
             // Paced to real playback speed, so decode-ahead runs ahead of the
             // reader the way it does in production rather than being drained
