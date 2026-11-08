@@ -57,9 +57,9 @@ public static class CoverArtBatch
     //
     // Pixels is the width it comes back at, and the width a client decodes a
     // track row's art at (AlbumArtLoader.ThumbnailPixels): the widest any row
-    // paints it is the desktop list's 76pt art column on a 2x screen, 152px,
-    // and a phone row's 52pt on a 3x one is 156px - so 192 is sharp at both
-    // with a little to spare. Art already no wider than this is sent as it is.
+    // paints it is the desktop list's art column at its largest on a 2x
+    // screen (ColumnManager.MaxAlbumArtSize, 96pt, is set from this), and a
+    // phone row's 52pt on a 3x one is 156px - so 192 is sharp at both. Art already no wider than this is sent as it is.
     //
     // What it is for: a cold scroll of a song list on a phone fetched every
     // album's full cover - 1400px and up, a few hundred KB each - to draw it

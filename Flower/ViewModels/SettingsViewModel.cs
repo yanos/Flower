@@ -246,6 +246,16 @@ public sealed partial class SettingsViewModel : ViewModelBase
     // Device. Null for a server's.
     public MainViewModel? Device => _backend.Device;
 
+    // The track list's album art, for the Presentation tab - see
+    // ISettingsBackend.TrackListColumns. Null hides that part of it.
+    public Flower.Controls.ColumnManager? TrackListColumns => _backend.TrackListColumns;
+
+    // How the app looks: its theme, where the playback controls sit and the
+    // track list's covers. Only for the app's own settings - a server has
+    // none of them.
+    public bool ShowsPresentation =>
+        Capabilities.ThemePicker || Capabilities.PlaybackControlsPicker || TrackListColumns != null;
+
     // Home's shelves - see AppSettings.HomeContinuePlayingLimit. The panel's
     // boxes are held to these ceilings, and HomeViewModel clamps again.
     public int MaxHomeShelfAlbums => HomeViewModel.MaxAlbumsPerShelf;

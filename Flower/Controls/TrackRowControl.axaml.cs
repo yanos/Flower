@@ -53,9 +53,6 @@ public partial class TrackRowControl : UserControl
     // Each data cell's text and what it shows, rebuilt with the cells.
     private readonly List<(RowText Text, Func<TrackRowViewModel, string?> Value)> _cells = new();
 
-    // Whether the art well is there at all (ColumnManager.ShowAlbumArt).
-    private bool _showsArt;
-
     // Everything the row shows, read off the song whatever changed - see
     // ModelWatch. Called again for every song the panel hands this row.
     private void Show()
@@ -71,8 +68,10 @@ public partial class TrackRowControl : UserControl
         ArtCell.Classes.Set("dimmed", row.IsAlbumGroupUnavailable);
 
         // Only the first row of an album run draws the art, which spans down
-        // over the rest; asking a hidden well for its art would load it.
-        ArtCell.IsVisible = _showsArt && row.IsFirstInAlbumGroup;
+        // over the rest - and not even that where the run is too short for it
+        // and nothing pads it out (ColumnManager.AlwaysShowAlbumArt). Asking a
+        // hidden well for its art would load it.
+        ArtCell.IsVisible = row.IsFirstInAlbumGroup && _columnManager.ShowsAlbumArtFor(row.AlbumGroupSize);
         ArtImage.AlbumArt = ArtCell.IsVisible ? row.AlbumArt : null;
 
         foreach (var (text, value) in _cells)
@@ -242,7 +241,8 @@ public partial class TrackRowControl : UserControl
     private void ApplyArtWell()
     {
         RowGrid.ColumnDefinitions[0].Width = new GridLength(_columnManager.ArtColumnWidth);
-        _showsArt = _columnManager.ShowAlbumArt;
+        ArtImage.Width = _columnManager.AlbumArtSize;
+        ArtImage.Height = _columnManager.AlbumArtSize;
     }
 
     // Cell content is built per-column from ColumnManager's runtime-configurable

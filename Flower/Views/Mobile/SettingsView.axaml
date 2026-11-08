@@ -218,7 +218,7 @@
               <materialIcons:MaterialIcon Kind="WeatherSunny" />
             </Border>
             <StackPanel Grid.Column="1">
-              <TextBlock Classes="rowTitle" Text="Appearance" Margin="0,10,0,6" />
+              <TextBlock Classes="rowTitle" Text="Theme" Margin="0,10,0,6" />
               <RadioButton GroupName="Theme" IsChecked="{Binding ThemeFollowsSystem}" Content="Use system setting" />
               <RadioButton GroupName="Theme" IsChecked="{Binding ThemeIsLight}" Content="Light" />
               <RadioButton GroupName="Theme" IsChecked="{Binding ThemeIsDark}" Content="Dark" />

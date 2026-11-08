@@ -14,8 +14,6 @@ public class TrackRowViewModel : DownloadIndicatorViewModel, AlbumArtLoader.ISho
     // The same 34 an album's songs are, opened in the Albums grid
     // (AlbumGridRowControl.TrackRowHeight).
     public const double RowHeight      = 34.0;
-    public const double ArtColumnWidth = 80.0;
-    public const double ArtMaxSize     = 76.0; // ArtColumnWidth - 2px margin each side
 
     /// <summary>
     /// Whether a list of rows should print each track's artist under its

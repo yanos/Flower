@@ -251,6 +251,11 @@ public interface ISettingsBackend
     // what a server shares, where a save is one request.
     MainViewModel? Device => null;
 
+    // The track list's album art (ColumnManager.ShowAlbumArt and friends) -
+    // the Presentation tab - applied as touched, like Device. Null for a
+    // server's, which has no track list.
+    Flower.Controls.ColumnManager? TrackListColumns => null;
+
     Task<SettingsSnapshot> LoadAsync(CancellationToken ct = default);
 
     // The server's picture (Capabilities.ServerIconPicker). Setting and

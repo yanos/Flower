@@ -232,7 +232,7 @@ public class AlbumArtLoader
     // Widest this app ever actually paints album art: mobile NowPlayingView's
     // 280pt square, allowing for a ~2.7x-DPI phone screen. Everything else is
     // smaller by a wide margin (TrackInfoWindow 200pt, AlbumTileControl 180pt,
-    // a track row's art column 76pt at most - see TrackRowViewModel.ArtMaxSize).
+    // a track row's art column 96pt at most - see ColumnManager.MaxAlbumArtSize).
     //
     // Embedded art in a modern library is routinely 1400x1400 or larger, which
     // is ~7.8 MB of decoded RGBA held per album; an album grid showing 40 tiles

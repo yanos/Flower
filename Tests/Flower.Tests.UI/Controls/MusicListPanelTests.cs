@@ -35,7 +35,7 @@ public class MusicListPanelTests : PinnedDataDirectory
     public MusicListPanelTests() => TestIoc.EnsureConfigured();
 
     // The art column is hidden unless asked for: with it shown, a run shorter
-    // than MinAlbumGroupRows is padded with phantom rows, and the tests that
+    // than its cover (ColumnManager.AlbumArtRows) is padded with phantom rows, and the tests that
     // are about virtualization want row index and row position to coincide.
     private MusicListPanel NewPanel(bool art = false)
     {
@@ -244,6 +244,10 @@ public class MusicListPanelTests : PinnedDataDirectory
         return rows;
     }
 
+    // How far down a one-song album's padding reaches: where the next album
+    // starts.
+    private double AlbumHeight => _columns.AlbumArtHeight;
+
     [AvaloniaFact]
     public void A_phantom_slot_hit_tests_as_no_row()
     {
@@ -252,8 +256,8 @@ public class MusicListPanelTests : PinnedDataDirectory
 
         Assert.Equal(0, panel.RowIndexAt(0.5 * RowHeight));
         Assert.Equal(-1, panel.RowIndexAt(1.5 * RowHeight));
-        Assert.Equal(-1, panel.RowIndexAt(2.5 * RowHeight));
-        Assert.Equal(1, panel.RowIndexAt(3.5 * RowHeight));
+        Assert.Equal(-1, panel.RowIndexAt(AlbumHeight - 1));
+        Assert.Equal(1, panel.RowIndexAt(AlbumHeight + 0.5 * RowHeight));
         Assert.Equal(-1, panel.RowIndexAt(20 * RowHeight));
     }
 
@@ -265,25 +269,45 @@ public class MusicListPanelTests : PinnedDataDirectory
 
         Assert.Equal(0, panel.InsertionIndexAt(0.2 * RowHeight));
         Assert.Equal(1, panel.InsertionIndexAt(1.2 * RowHeight));
-        Assert.Equal(1, panel.InsertionIndexAt(2.8 * RowHeight));
-        Assert.Equal(1, panel.InsertionIndexAt(3 * RowHeight));
-        Assert.Equal(2, panel.InsertionIndexAt(4 * RowHeight));
+        Assert.Equal(1, panel.InsertionIndexAt(AlbumHeight - 1));
+        Assert.Equal(1, panel.InsertionIndexAt(AlbumHeight));
+        Assert.Equal(2, panel.InsertionIndexAt(AlbumHeight + RowHeight));
         Assert.Equal(3, panel.InsertionIndexAt(40 * RowHeight));
         // The end of the list is the bottom of its last row, above the padding.
-        Assert.Equal(5 * RowHeight, panel.RowTop(3));
+        Assert.Equal(AlbumHeight + 2 * RowHeight, panel.RowTop(3));
     }
 
     [AvaloniaFact]
-    public void A_viewport_opening_on_phantom_slots_keeps_the_album_whose_art_hangs_into_them()
+    public void A_viewport_opening_on_phantom_space_keeps_the_album_whose_art_hangs_into_them()
     {
         var items = Runs(1, 1, 1, 1);
         var panel = NewPanel(art: true);
         panel.SetItems(items);
 
-        // Slot 4 is album 1's first phantom; album 1 itself is at slot 3.
-        panel.SetViewport(scrollOffset: 4 * RowHeight, viewportHeight: 2 * RowHeight, viewportWidth: 800);
+        // Just under album 1's only row, in its padding.
+        panel.SetViewport(scrollOffset: AlbumHeight + RowHeight + 1, viewportHeight: 2 * RowHeight, viewportWidth: 800);
 
         Assert.Equal(1, RenderedIndices(panel, items)[0]);
+    }
+
+    // The padding is what the cover needs, not whole rows: a slightly bigger
+    // cover moves the next album down by just as much, so the gap under a
+    // cover is the same at every size.
+    [AvaloniaFact]
+    public void A_bigger_cover_moves_the_next_album_down_by_only_its_growth()
+    {
+        var panel = NewPanel(art: true);
+        var window = new Window { Content = panel };
+        window.Show();
+        panel.SetItems(Runs(1, 1));
+
+        _columns.AlbumArtSize = 64;
+        var at64 = panel.RowTop(1);
+        _columns.AlbumArtSize = 68;
+        var at68 = panel.RowTop(1);
+
+        Assert.Equal(4, at68 - at64);
+        window.Close();
     }
 
     [AvaloniaFact]
@@ -301,6 +325,19 @@ public class MusicListPanelTests : PinnedDataDirectory
 
         Assert.Equal(2, panel.RowIndexAt(2.5 * RowHeight));
         window.Close();
+    }
+
+    // Not always showing the covers, a short album shows none instead of
+    // being padded: the songs follow one another with no gap.
+    [AvaloniaFact]
+    public void Not_always_showing_the_art_leaves_no_phantom_rows()
+    {
+        var panel = NewPanel(art: true);
+        _columns.AlwaysShowAlbumArt = false;
+        panel.SetItems(Runs(1, 1, 1));
+        Layout(panel);
+
+        Assert.Equal(2, panel.RowIndexAt(2.5 * RowHeight));
     }
 
 }

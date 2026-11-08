@@ -120,7 +120,7 @@ public class ColumnSelectorViewModelTests : PinnedDataDirectory
     }
 
     [Fact]
-    public void Reset_restores_the_default_columns_and_the_album_art()
+    public void Reset_restores_the_default_columns()
     {
         var manager = NewManager();
         var defaults = manager.VisibleColumns.Select(c => c.Id).ToArray();
@@ -128,12 +128,10 @@ public class ColumnSelectorViewModelTests : PinnedDataDirectory
         Shown(vm, "Genre").HideCommand.Execute(null);
         Shown(vm, "Year").MoveUpCommand.Execute(null);
         manager.Columns.Single(c => c.Id == "Composer").IsVisible = true;
-        vm.ShowAlbumArt = false;
 
         vm.ResetCommand.Execute(null);
 
         Assert.Equal(defaults, ShownIds(vm));
-        Assert.True(vm.ShowAlbumArt);
     }
 
     [Fact]

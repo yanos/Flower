@@ -141,7 +141,7 @@ public class ColumnManagerTests : PinnedDataDirectory
         manager.ColumnsChanged += (_, _) => raised++;
 
         Assert.True(manager.ShowAlbumArt);
-        Assert.Equal(TrackRowViewModel.ArtColumnWidth, manager.ArtColumnWidth);
+        Assert.True(manager.ArtColumnWidth > 0);
 
         manager.ShowAlbumArt = false;
 
@@ -152,6 +152,41 @@ public class ColumnManagerTests : PinnedDataDirectory
         // Setting it to what it already is changes nothing and tells nobody.
         manager.ShowAlbumArt = false;
         Assert.Equal(1, raised);
+    }
+
+    // Off, an album too short for its cover shows none rather than being
+    // padded out.
+    [Fact]
+    public void Without_always_showing_only_an_album_long_enough_for_its_cover_shows_it()
+    {
+        var settings = new AppSettings();
+        var manager = new ColumnManager(settings, new AppSettingsStore());
+        manager.AlbumArtSize = ColumnManager.DefaultAlbumArtSize;
+
+        Assert.True(manager.ShowsAlbumArtFor(1));
+        Assert.True(manager.PadsShortAlbums);
+
+        manager.AlwaysShowAlbumArt = false;
+
+        Assert.False(manager.PadsShortAlbums);
+        Assert.False(manager.ShowsAlbumArtFor(manager.AlbumArtRows - 1));
+        Assert.True(manager.ShowsAlbumArtFor(manager.AlbumArtRows));
+        Assert.False(settings.AlwaysShowAlbumArt);
+    }
+
+    // The slider's ends hold, and a size is saved as it is set.
+    [Fact]
+    public void The_cover_size_stays_within_its_range()
+    {
+        var settings = new AppSettings();
+        var manager = new ColumnManager(settings, new AppSettingsStore());
+
+        manager.AlbumArtSize = 1000;
+        Assert.Equal(ColumnManager.MaxAlbumArtSize, manager.AlbumArtSize);
+
+        manager.AlbumArtSize = 0;
+        Assert.Equal(ColumnManager.MinAlbumArtSize, manager.AlbumArtSize);
+        Assert.Equal(ColumnManager.MinAlbumArtSize, settings.AlbumArtSize);
     }
 
     // Reset rewrites every column's visibility and order; the track list

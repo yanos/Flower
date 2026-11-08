@@ -1,14 +1,17 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Flower.Persistence;
+using Flower.Services;
 using Flower.ViewModels;
 
 namespace Flower.Controls;
 
-public class ColumnManager
+public class ColumnManager : INotifyPropertyChanged
 {
     // The one column that cannot be hidden: a row with no title is a row of
     // metadata about nothing. The Columns window shows it locked, and the
@@ -38,24 +41,77 @@ public class ColumnManager
     // than in MainViewModel because every consumer of a column change - the
     // header bar, the row cells, the panel's content width - is exactly the
     // set that has to react to this too, and they already listen to
-    // ColumnsChanged.
+    // ColumnsChanged. Set from Settings' Presentation tab, with the cover's
+    // size and AlwaysShowAlbumArt.
     public bool ShowAlbumArt
     {
         get => _appSettings.ShowAlbumArtColumn;
-        set
-        {
-            if (_appSettings.ShowAlbumArtColumn == value)
-                return;
-            _appSettings.ShowAlbumArtColumn = value;
-            ColumnsChanged?.Invoke(this, EventArgs.Empty);
-            ScheduleSave();
-        }
+        set => SetArtSetting(_appSettings.ShowAlbumArtColumn, value, v => _appSettings.ShowAlbumArtColumn = v);
     }
+
+    // The cover's side, in the range Settings' slider offers. The top is half
+    // the width a row's thumbnail is decoded at (CoverArtBatch.ThumbnailPixels),
+    // so it stays sharp on a 2x screen.
+    public const double MinAlbumArtSize = 32;
+    public const double MaxAlbumArtSize = CoverArtBatch.ThumbnailPixels / 2;
+    public const double DefaultAlbumArtSize = 76;
+
+    public double AlbumArtSize
+    {
+        get => Math.Clamp(_appSettings.AlbumArtSize, MinAlbumArtSize, MaxAlbumArtSize);
+        set => SetArtSetting(AlbumArtSize, Math.Clamp(Math.Round(value), MinAlbumArtSize, MaxAlbumArtSize),
+            v => _appSettings.AlbumArtSize = v);
+    }
+
+    // On, an album too short to hold its cover is followed by empty rows so
+    // the cover still shows; off, that album shows no cover, and songs never
+    // have a gap between them.
+    public bool AlwaysShowAlbumArt
+    {
+        get => _appSettings.AlwaysShowAlbumArt;
+        set => SetArtSetting(_appSettings.AlwaysShowAlbumArt, value, v => _appSettings.AlwaysShowAlbumArt = v);
+    }
+
+    // The art cell's margin (TrackRowControl.axaml's ArtCell): 2 either side
+    // and 2 above the cover.
+    private const double ArtInset = 2;
 
     // What the art well costs in width right now - the one number the header
     // spacer, the row grid and the panel's content width all offset by, so
     // hiding the art closes the gap instead of leaving an empty margin.
-    public double ArtColumnWidth => ShowAlbumArt ? TrackRowViewModel.ArtColumnWidth : 0;
+    public double ArtColumnWidth => ShowAlbumArt ? AlbumArtSize + 2 * ArtInset : 0;
+
+    // The space kept under a cover before the next album starts, at every
+    // cover size - so the gap between one album's cover and the next stays
+    // the same however big the covers are, rather than jumping by a row's
+    // height as the cover crosses a row boundary.
+    public const double AlbumArtGap = 12;
+
+    // The height an album's rows take up at least, so its cover - with the
+    // margin above it and the gap under it - fits beside them.
+    public double AlbumArtHeight => ArtInset + AlbumArtSize + AlbumArtGap;
+
+    // How many rows an album needs to hold its cover without padding.
+    public int AlbumArtRows => (int)Math.Ceiling(AlbumArtHeight / TrackRowViewModel.RowHeight);
+
+    // Whether an album of `rows` songs shows its cover beside them.
+    public bool ShowsAlbumArtFor(int rows) => ShowAlbumArt && (AlwaysShowAlbumArt || rows >= AlbumArtRows);
+
+    // Whether an album too short for its cover is padded out to
+    // AlbumArtHeight (MusicListPanel's phantom space) so the cover fits.
+    public bool PadsShortAlbums => ShowAlbumArt && AlwaysShowAlbumArt;
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    private void SetArtSetting<T>(T current, T value, Action<T> store, [CallerMemberName] string? name = null)
+    {
+        if (EqualityComparer<T>.Default.Equals(current, value))
+            return;
+        store(value);
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+        ColumnsChanged?.Invoke(this, EventArgs.Empty);
+        ScheduleSave();
+    }
 
     public ColumnManager(AppSettings appSettings, AppSettingsStore appSettingsStore)
     {
@@ -95,7 +151,7 @@ public class ColumnManager
     public static bool IsAlwaysShown(MusicColumnDefinition column) => column.Id == AlwaysShownId;
 
     // Back to first launch for everything the Columns window sets: which
-    // columns show, their order, and the art well. Widths are left alone -
+    // columns show and their order. Widths are left alone -
     // they are set by dragging in the list, not here, and a reset in this
     // window throwing away a careful resize would be a surprise.
     public void ResetToDefaults()
@@ -118,7 +174,6 @@ public class ColumnManager
 
         if (_changedWhileBatching)
             ColumnsChanged?.Invoke(this, EventArgs.Empty);
-        ShowAlbumArt = true;
     }
 
     // Moves `column` so it becomes the `newVisibleIndex`-th visible column

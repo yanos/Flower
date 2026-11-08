@@ -9,7 +9,7 @@ using Flower.Persistence;
 
 namespace Flower.Services;
 
-// Translates the user's Settings > Appearance choice into Avalonia's own
+// Translates the user's Settings > Presentation > Theme choice into Avalonia's own
 // ThemeVariant and applies it. Application.RequestedThemeVariant is a
 // reactive property - every DynamicResource-driven color in the app (see
 // Theme.axaml) repaints immediately when it changes, no restart needed.

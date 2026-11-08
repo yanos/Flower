@@ -206,7 +206,7 @@ public class MusicListViewGestureTests : PinnedDataDirectory
     // x-coordinate of the center of the `index`-th visible column's header cell.
     private static double HeaderCenterX(int index)
     {
-        double cursor = TrackRowViewModel.ArtColumnWidth;
+        double cursor = Columns.ArtColumnWidth;
         var cols = Columns.VisibleColumns.ToList();
         for (int i = 0; i < index; i++)
             cursor += cols[i].Width;

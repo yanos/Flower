@@ -2197,7 +2197,7 @@ public partial class MainView : UserControl
         if (TopLevel.GetTopLevel(this) is Window owner)
         {
             if (_viewModel != null)
-                new SettingsWindow(_viewModel).ShowDialog(owner);
+                new SettingsWindow(_viewModel, MusicList.ColumnManager).ShowDialog(owner);
             return;
         }
 

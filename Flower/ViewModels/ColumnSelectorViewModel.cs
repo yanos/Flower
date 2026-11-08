@@ -86,12 +86,6 @@ public sealed class ColumnSelectorViewModel : ViewModelBase, IDisposable
 
     public string ShownCount => Shown.Count == 1 ? "1 column" : $"{Shown.Count} columns";
 
-    public bool ShowAlbumArt
-    {
-        get => _columns.ShowAlbumArt;
-        set => _columns.ShowAlbumArt = value;
-    }
-
     public bool SortArtistAlbumsByYear
     {
         get => _getSortByYear();
@@ -111,7 +105,6 @@ public sealed class ColumnSelectorViewModel : ViewModelBase, IDisposable
     private void OnColumnsChanged(object? sender, EventArgs e)
     {
         RebuildShown();
-        OnPropertyChanged(nameof(ShowAlbumArt));
     }
 
     private void RebuildShown()

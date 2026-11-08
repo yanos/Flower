@@ -15,7 +15,7 @@
     <NativeMenu>
       <!-- No top-level "Library" menu anymore - Settings… (App.axaml, the
            bold "Flower" title dropdown, matching macOS convention) is where
-           all of Device Name/Appearance/Sync Play Count/Library Folders/
+           all of Device Name/Theme/Sync Play Count/Library Folders/
            Rebuild Database/Open App Data Location/Trusted Devices live now,
            organized into General/Library/Devices tabs (see
            SettingsWindow.axaml) rather than split across a menu and a dialog. -->

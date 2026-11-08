@@ -11,6 +11,7 @@ using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 
+using Flower.Controls;
 using Flower.Models;
 using Flower.Persistence;
 using Flower.Tests.TestSupport;
@@ -256,7 +257,9 @@ public class SettingsDevicesViewTests : PinnedDataDirectory
     {
         using var parts = BuildClient();
 
-        var settings = new SettingsViewModel(new LocalSettingsBackend(parts.Main));
+        // With the track list's settings, so Presentation renders as well.
+        var columns = new ColumnManager(new AppSettings(), new AppSettingsStore());
+        var settings = new SettingsViewModel(new LocalSettingsBackend(parts.Main, columns));
         var panel = new SettingsPanel(settings, parts.Main);
         var window = Show(panel);
         Dispatcher.UIThread.RunJobs();
@@ -268,10 +271,10 @@ public class SettingsDevicesViewTests : PinnedDataDirectory
             Dispatcher.UIThread.RunJobs();
         }
 
-        // Six declared - General, Library, Devices, Network, AI Features,
-        // Logs - of which the last three are collapsed for a local backend
-        // (see SettingsCapabilities).
-        Assert.Equal(6, tabs.ItemCount);
+        // Seven declared - General, Presentation, Library, Devices, Network,
+        // AI Features, Logs - of which the last three are collapsed for a
+        // local backend (see SettingsCapabilities).
+        Assert.Equal(7, tabs.ItemCount);
         await settings.LoadAsync();
 
         window.Close();

@@ -17,11 +17,13 @@ namespace Flower.ViewModels;
 // it is the same property sets, the same stores and the same unawaited rescan,
 // moved behind ISettingsBackend so the identical XAML can also be pointed at a
 // remote server (see RemoteServerSettingsBackend).
-public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBackend
+public sealed class LocalSettingsBackend(MainViewModel viewModel, Flower.Controls.ColumnManager? trackListColumns = null) : ISettingsBackend
 {
     public MainViewModel ViewModel { get; } = viewModel;
 
     public MainViewModel Device => ViewModel;
+
+    public Flower.Controls.ColumnManager? TrackListColumns => trackListColumns;
 
     public SettingsCapabilities Capabilities { get; } = new()
     {

@@ -15,7 +15,7 @@
        the display serif with a filter beside it; the shown columns down the
        left on the sidebar colour, in the order the list draws them, each with
        move and hide; every column on the right, grouped, as checkboxes; the
-       display switches under them; Reset and Done along the bottom. -->
+       display switch under them; Reset and Done along the bottom. -->
   <Window.Styles>
     <Style Selector="TextBlock.label">
       <Setter Property="FontSize" Value="11"/>
@@ -59,15 +59,11 @@
 
   <DockPanel>
 
-    <!-- The name, what it is for, and the filter, which narrows the
-         checkboxes on the right and leaves the shown list alone. -->
+    <!-- The name, and the filter, which narrows the checkboxes on the right
+         and leaves the shown list alone. -->
     <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" ColumnSpacing="16" Margin="24,22,24,16">
-      <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Bottom">
-        <TextBlock Classes="sectionTitle" Text="Columns" FontSize="24"/>
-        <TextBlock Text="Choose what song lists show, and set the order they show in."
-                   FontSize="13"
-                   Foreground="{DynamicResource AppTextSecondaryBrush}"/>
-      </StackPanel>
+      <TextBlock Grid.Column="0" Classes="sectionTitle" Text="Columns" FontSize="24"
+                 VerticalAlignment="Center"/>
       <Border Grid.Column="1" Classes="outlined"
               Width="240" Height="36" CornerRadius="10" Padding="12,0,4,0"
               VerticalAlignment="Bottom">
@@ -108,13 +104,10 @@
       </Grid>
     </Border>
 
-    <!-- The two switches that are track-list layout without being columns. -->
+    <!-- The switch that is track-list layout without being a column. The
+         album art is Settings' (the Presentation tab). -->
     <WrapPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="24,10,24,10">
       <TextBlock Classes="label" Text="DISPLAY" VerticalAlignment="Center" Margin="0,0,28,0"/>
-      <ToggleSwitch IsChecked="{Binding ShowAlbumArt, Mode=TwoWay}"
-                    OnContent="Show album art" OffContent="Show album art"
-                    FontSize="13" MinWidth="0" Margin="0,0,28,0"
-                    VerticalAlignment="Center"/>
       <ToggleSwitch IsChecked="{Binding SortArtistAlbumsByYear, Mode=TwoWay}"
                     OnContent="Sort an artist’s albums by year" OffContent="Sort an artist’s albums by year"
                     FontSize="13" MinWidth="0"

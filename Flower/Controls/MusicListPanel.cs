@@ -13,9 +13,11 @@ namespace Flower.Controls;
 /// the visible range are always kept in the rendered set.
 /// </summary>
 /// <remarks>
-/// Album art is always drawn at its full size, which needs <see cref="MinAlbumGroupRows"/>
-/// rows of height. An album run shorter than that is followed by empty "phantom" row slots
-/// so the next song starts below its art. Phantoms exist only in this panel's layout - the
+/// Album art is always drawn at its full size, which needs <see cref="ColumnManager.AlbumArtHeight"/>
+/// of height. With <see cref="ColumnManager.AlwaysShowAlbumArt"/> on, an album run shorter
+/// than that is followed by empty "phantom" space, exactly as much as its art needs, so the
+/// next song starts below its art; off, that run shows no art instead (TrackRowControl) and
+/// nothing is padded. So rows sit at any height, not only at whole multiples of a row's. Phantoms exist only in this panel's layout - the
 /// item list, selection and play order never see them - so every index/Y conversion goes
 /// through <see cref="RowTop"/>, <see cref="RowIndexAt"/> and <see cref="InsertionIndexAt"/>.
 /// </remarks>
@@ -25,10 +27,12 @@ public class MusicListPanel : Panel
 
     private IReadOnlyList<TrackRowViewModel> _items = Array.Empty<TrackRowViewModel>();
     private int[] _groupLeader = [];
-    // Row-height slot each row sits in; a row's slot exceeds its index by the
-    // phantom slots padding the album runs above it.
-    private int[] _rowSlot = [];
-    private int _slotCount;
+    // Where each row's top sits; below a padded album it is lower than its
+    // index's multiple of the row height by the phantom space above it.
+    private double[] _rowTop = [];
+    private double _extentHeight;
+
+    private const double RowHeight = TrackRowViewModel.RowHeight;
     private double _scrollOffset;
     private double _viewportHeight = 600; // reasonable default before first layout
     private double _viewportWidth  = 800; // reasonable default before first layout
@@ -79,8 +83,8 @@ public class MusicListPanel : Panel
     // a horizontal scrollbar on/off, so both must re-measure.
     private void OnColumnsChanged(object? sender, EventArgs e)
     {
-        // Hiding the art column removes the reason for phantom rows, and
-        // showing it brings them back.
+        // Hiding the art column, or no longer always showing it, removes the
+        // reason for phantom rows, and a new art size changes how many.
         BuildSlots();
         RefreshActiveSet();
         InvalidateMeasure();
@@ -93,46 +97,38 @@ public class MusicListPanel : Panel
             InvalidateMeasure();
     }
 
-    // Full-size art is ArtMaxSize plus the art cell's 2px top margin: 78px,
-    // which three 28px rows hold and two do not.
-    public const int MinAlbumGroupRows = 3;
-
-    public double ExtentHeight => _slotCount * TrackRowViewModel.RowHeight;
+    public double ExtentHeight => _extentHeight;
 
     // Top of row `index`; `index == Count` is the bottom of the last row, where
     // a drop at the end of the list goes.
     public double RowTop(int index)
     {
-        if (_rowSlot.Length == 0)
+        if (_rowTop.Length == 0)
             return 0;
-        int slot = index < _rowSlot.Length ? _rowSlot[index] : _rowSlot[^1] + 1;
-        return slot * TrackRowViewModel.RowHeight;
+        return index < _rowTop.Length ? _rowTop[index] : _rowTop[^1] + RowHeight;
     }
 
-    // The row under `y`, or -1 for a phantom slot or outside the list.
+    // The row under `y`, or -1 for phantom space or outside the list.
     public int RowIndexAt(double y)
     {
-        int slot = (int)Math.Floor(y / TrackRowViewModel.RowHeight);
-        int i = FirstRowAtOrAfterSlot(slot);
-        return i < _rowSlot.Length && _rowSlot[i] == slot ? i : -1;
+        int i = FirstRowAtOrBelow(y, inclusive: false) - 1;
+        return i >= 0 && y >= _rowTop[i] && y < _rowTop[i] + RowHeight ? i : -1;
     }
 
-    // Where a row dropped at `y` would be inserted: before the first row whose
-    // top is at or below the nearest row boundary. A boundary inside an album's
-    // phantom padding therefore inserts after that album, not into it.
-    public int InsertionIndexAt(double y)
-    {
-        int boundary = (int)Math.Round(y / TrackRowViewModel.RowHeight);
-        return FirstRowAtOrAfterSlot(boundary);
-    }
+    // Where a row dropped at `y` would be inserted: before the row `y` is in
+    // the top half of, or after the one it is in the bottom half of. A drop
+    // inside an album's phantom padding therefore inserts after that album,
+    // not into it.
+    public int InsertionIndexAt(double y) => FirstRowAtOrBelow(y - RowHeight / 2, inclusive: true);
 
-    private int FirstRowAtOrAfterSlot(int slot)
+    // The first row whose top is below `y` - or at it, when `inclusive`.
+    private int FirstRowAtOrBelow(double y, bool inclusive)
     {
-        int lo = 0, hi = _rowSlot.Length;
+        int lo = 0, hi = _rowTop.Length;
         while (lo < hi)
         {
             int mid = (lo + hi) >>> 1;
-            if (_rowSlot[mid] < slot)
+            if (inclusive ? _rowTop[mid] < y : _rowTop[mid] <= y)
                 lo = mid + 1;
             else
                 hi = mid;
@@ -297,7 +293,7 @@ public class MusicListPanel : Panel
     private bool LitAndTouching(int index, int hovered) =>
         index >= 0 && index + 1 < _items.Count
         && IsLit(index, hovered) && IsLit(index + 1, hovered)
-        && _rowSlot[index + 1] == _rowSlot[index] + 1;
+        && _rowTop[index + 1] == _rowTop[index] + RowHeight;
 
     private bool IsLit(int index, int hovered) =>
         index == hovered || _items[index].IsSelected || _items[index].IsCurrentlyPlaying;
@@ -320,47 +316,47 @@ public class MusicListPanel : Panel
         if (_items.Count == 0)
             return (-1, 0, -1);
 
-        int firstSlot = Math.Max(0, (int)Math.Floor(_scrollOffset / TrackRowViewModel.RowHeight));
-        int lastSlot  = firstSlot + (int)Math.Ceiling(_viewportHeight / TrackRowViewModel.RowHeight) + 3;
-        // Starting one row early when the viewport opens on a phantom slot:
-        // that row is off screen, but its group's art hangs down into the gap.
-        int first = FirstRowAtOrAfterSlot(firstSlot);
-        if (first > 0 && (first == _items.Count || _rowSlot[first] > firstSlot))
-            first--;
+        double top    = Math.Max(0, _scrollOffset);
+        double bottom = top + _viewportHeight + 3 * RowHeight;
+        // The row the viewport opens on - or, where it opens on phantom
+        // space, the row above it: that row is off screen, but its group's
+        // art hangs down into the gap.
+        int first = Math.Max(0, FirstRowAtOrBelow(top, inclusive: false) - 1);
 
         int last = first - 1;
-        while (last + 1 < _items.Count && _rowSlot[last + 1] < lastSlot)
+        while (last + 1 < _items.Count && _rowTop[last + 1] < bottom)
             last++;
 
         var leader = first <= last ? _groupLeader[first] : -1;
         return (leader, first, last);
     }
 
-    // Lays the rows out in slots, padding every album run shorter than
-    // MinAlbumGroupRows with phantom slots after its last row. Runs are read
+    // Lays the rows out, padding every album run shorter than its art
+    // (ColumnManager.AlbumArtHeight) with phantom space after its last row
+    // where the art always shows - exactly the art's height, not whole rows,
+    // so the gap under a cover is the same at every cover size. Runs are read
     // off IsFirstInAlbumGroup, like _groupLeader, rather than AlbumGroupSize.
     private void BuildSlots()
     {
-        bool pad = _columnManager.ShowAlbumArt;
-        var slots = new int[_items.Count];
-        int slot = 0;
-        int runLength = 0;
+        double minHeight = _columnManager.PadsShortAlbums ? _columnManager.AlbumArtHeight : 0;
+        var tops = new double[_items.Count];
+        double y = 0;
+        double runTop = 0;
         for (int i = 0; i < _items.Count; i++)
         {
             if (_items[i].IsFirstInAlbumGroup && i > 0)
             {
-                if (pad && runLength < MinAlbumGroupRows)
-                    slot += MinAlbumGroupRows - runLength;
-                runLength = 0;
+                y = Math.Max(y, runTop + minHeight);
+                runTop = y;
             }
-            slots[i] = slot++;
-            runLength++;
+            tops[i] = y;
+            y += RowHeight;
         }
-        if (pad && _items.Count > 0 && runLength < MinAlbumGroupRows)
-            slot += MinAlbumGroupRows - runLength;
+        if (_items.Count > 0)
+            y = Math.Max(y, runTop + minHeight);
 
-        _rowSlot = slots;
-        _slotCount = slot;
+        _rowTop = tops;
+        _extentHeight = y;
     }
 
     // Index of the album-group leader for each row, or -1 for a row that is

@@ -115,15 +115,14 @@
            Margin="2,2,2,0"
            ClipToBounds="False">
 
-      <!-- Album art (or placeholder), always ArtMaxSize - spans multiple rows visually. A run too
-           short to hold it is padded with phantom rows by MusicListPanel (MinAlbumGroupRows).
+      <!-- Album art (or placeholder), ColumnManager.AlbumArtSize square (set in ApplyArtWell) -
+           spans multiple rows visually. A run too short to hold it is padded with phantom rows by
+           MusicListPanel, or shows no art, as ColumnManager.AlwaysShowAlbumArt says.
            Handed its art by the code-behind (Show), and only where the well shows: reading
            TrackRowViewModel.AlbumArt is what starts the load, which for a synced library is a
            network fetch, and a hidden well should not be fetching covers nobody can see. -->
       <controls:AlbumArtView x:Name="ArtImage"
               IsHitTestVisible="False"
-              Width="{x:Static vm:TrackRowViewModel.ArtMaxSize}"
-              Height="{x:Static vm:TrackRowViewModel.ArtMaxSize}"
               VerticalAlignment="Top"
               HorizontalAlignment="Center"/>
     </Panel>

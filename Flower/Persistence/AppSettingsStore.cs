@@ -17,7 +17,7 @@ using Flower.Services;
 
 namespace Flower.Persistence
 {
-    // Settings > Appearance - see Flower.Services.AppTheme for how this
+    // Settings > Presentation > Theme - see Flower.Services.AppTheme for how this
     // translates into Avalonia's own ThemeVariant.
     [JsonConverter(typeof(JsonStringEnumConverter<AppThemePreference>))]
     public enum AppThemePreference
@@ -98,14 +98,18 @@ namespace Flower.Persistence
         // Music.app before somebody has said yes.
         public bool ITunesLibraryOfferPending { get; set; }
 
-        // Whether the track list keeps its album-art well - see
-        // ColumnManager.ShowAlbumArt, which is what reads and writes this, and
-        // ColumnSelectorWindow, where it sits alongside the columns proper.
-        // On by default: the art is most of what the list looks like.
+        // Whether the track list keeps its album-art well, how big the covers
+        // in it are, and whether an album too short for its cover is padded
+        // out to show it anyway - see ColumnManager.ShowAlbumArt, AlbumArtSize
+        // and AlwaysShowAlbumArt, which read and write these, and Settings'
+        // Presentation tab, which sets them. On by default: the art is most of
+        // what the list looks like.
         public bool ShowAlbumArtColumn { get; set; } = true;
+        public double AlbumArtSize { get; set; } = Flower.Controls.ColumnManager.DefaultAlbumArtSize;
+        public bool AlwaysShowAlbumArt { get; set; } = true;
 
         // Follows the OS light/dark setting by default; Light/Dark force that
-        // variant regardless of the OS - see Settings' Appearance picker and
+        // variant regardless of the OS - see Settings' Theme picker and
         // Flower.Services.AppTheme.
         public AppThemePreference ThemePreference { get; set; } = AppThemePreference.System;
 

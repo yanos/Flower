@@ -47,11 +47,9 @@
              view rather than stopping cut off at the window's edge. -->
         <ScrollViewer>
         <StackPanel Margin="0,12,20,24" Spacing="0">
-          <!-- Label above its control, like Appearance below and every other field on
-               this screen - the one place that put them side by side needed a
-               caption underneath to say what the field was for. -->
-          <!-- The phone's words for the same two settings (SettingsView): "Device
-               name", "Appearance", "Use system setting". -->
+          <!-- Label above its control, like every other field on this screen -
+               the one place that put them side by side needed a caption
+               underneath to say what the field was for. -->
           <TextBlock Text="Device name" FontWeight="SemiBold" Margin="0,0,0,8"/>
           <controls:TextInput Text="{Binding Alias, Mode=TwoWay}" IsEnabled="{Binding AliasLock.IsEditable}"
                               ShowsClearButton="{Binding AliasLock.IsEditable}"/>
@@ -105,31 +103,6 @@
                bound to Device and applied as they are touched, not on Save -
                see ISettingsBackend.Device. Hidden on a server's page, where
                Device is null. -->
-          <TextBlock Text="Appearance"
-                     FontWeight="SemiBold"
-                     Margin="0,20,0,8"
-                     IsVisible="{Binding Capabilities.ThemePicker}"/>
-          <ComboBox HorizontalAlignment="Stretch"
-                    SelectedIndex="{Binding Device.ThemePreference, Mode=TwoWay, Converter={StaticResource EnumIndexConverter}}"
-                    IsVisible="{Binding Capabilities.ThemePicker}">
-            <ComboBoxItem Content="Use system setting"/>
-            <ComboBoxItem Content="Light"/>
-            <ComboBoxItem Content="Dark"/>
-          </ComboBox>
-
-          <!-- Which edge of the window the player bar runs along - see
-               AppSettings.PlaybackControlsPlacement. -->
-          <TextBlock Text="Playback controls"
-                     FontWeight="SemiBold"
-                     Margin="0,20,0,8"
-                     IsVisible="{Binding Capabilities.PlaybackControlsPicker}"/>
-          <ComboBox HorizontalAlignment="Stretch"
-                    SelectedIndex="{Binding Device.PlaybackControlsPlacement, Mode=TwoWay, Converter={StaticResource EnumIndexConverter}}"
-                    IsVisible="{Binding Capabilities.PlaybackControlsPicker}">
-            <ComboBoxItem Content="Top"/>
-            <ComboBoxItem Content="Bottom"/>
-          </ComboBox>
-
           <!-- How much Home's shelves hold - see AppSettings.
                HomeContinuePlayingLimit - and the order they come in, dragged
                by the handle at the start of each row (HandleDragReorder,
@@ -380,6 +353,72 @@
           <TextBlock Text="{Binding VersionDisplay}"
                      Margin="0,16,0,0" FontSize="11" Opacity="0.5"/>
         </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- How the app looks: its theme, which edge of the window the player
+           bar runs along, and the track list's covers - those down its left
+           (ColumnManager.ShowAlbumArt), their size, and whether an album too
+           short for its cover is padded out to show it. Applied as touched,
+           like the device's own settings on General. Only for this device's
+           own settings - a server has no window. -->
+      <TabItem Header="Presentation" x:Name="PresentationTab"
+               IsVisible="{Binding ShowsPresentation}">
+        <ScrollViewer>
+          <StackPanel Margin="0,12,20,24">
+            <!-- The phone's words for the same setting (SettingsView): "Theme",
+                 "Use system setting". -->
+            <StackPanel IsVisible="{Binding Capabilities.ThemePicker}" Margin="0,0,0,20">
+              <TextBlock Text="Theme" FontWeight="SemiBold" Margin="0,0,0,8"/>
+              <ComboBox HorizontalAlignment="Stretch"
+                        SelectedIndex="{Binding Device.ThemePreference, Mode=TwoWay, Converter={StaticResource EnumIndexConverter}}">
+                <ComboBoxItem Content="Use system setting"/>
+                <ComboBoxItem Content="Light"/>
+                <ComboBoxItem Content="Dark"/>
+              </ComboBox>
+            </StackPanel>
+
+            <!-- Which edge of the window the player bar runs along - see
+                 AppSettings.PlaybackControlsPlacement. -->
+            <StackPanel IsVisible="{Binding Capabilities.PlaybackControlsPicker}" Margin="0,0,0,20">
+              <TextBlock Text="Playback controls" FontWeight="SemiBold" Margin="0,0,0,8"/>
+              <ComboBox HorizontalAlignment="Stretch"
+                        SelectedIndex="{Binding Device.PlaybackControlsPlacement, Mode=TwoWay, Converter={StaticResource EnumIndexConverter}}">
+                <ComboBoxItem Content="Top"/>
+                <ComboBoxItem Content="Bottom"/>
+              </ComboBox>
+            </StackPanel>
+
+            <StackPanel DataContext="{Binding TrackListColumns}"
+                        x:DataType="controls:ColumnManager"
+                        IsVisible="{Binding $parent[UserControl].((vm:SettingsViewModel)DataContext).TrackListColumns, Converter={x:Static avc:ObjectConverters.IsNotNull}}">
+              <CheckBox Content="Show cover art beside each song"
+                        IsChecked="{Binding ShowAlbumArt, Mode=TwoWay}"/>
+
+              <!-- Indented under the switch they need, and greyed out with it. -->
+              <StackPanel Margin="28,16,0,0" Spacing="4" IsEnabled="{Binding ShowAlbumArt}">
+                <TextBlock Text="Cover size" FontWeight="SemiBold"/>
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" MaxWidth="360" HorizontalAlignment="Left">
+                  <Slider Grid.Column="0" Width="300"
+                          Minimum="{x:Static controls:ColumnManager.MinAlbumArtSize}"
+                          Maximum="{x:Static controls:ColumnManager.MaxAlbumArtSize}"
+                          TickFrequency="4"
+                          IsSnapToTickEnabled="True"
+                          Value="{Binding AlbumArtSize, Mode=TwoWay}"/>
+                  <TextBlock Grid.Column="1"
+                             Text="{Binding AlbumArtSize, StringFormat={}{0:0} pt}"
+                             MinWidth="44"
+                             VerticalAlignment="Center"
+                             Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+                </Grid>
+
+                <!-- Off, an album with too few songs to fit its cover shows
+                     none, so there is never a gap between songs. -->
+                <CheckBox Content="Always show" Margin="0,12,0,0"
+                          IsChecked="{Binding AlwaysShowAlbumArt, Mode=TwoWay}"/>
+              </StackPanel>
+            </StackPanel>
+          </StackPanel>
         </ScrollViewer>
       </TabItem>
 

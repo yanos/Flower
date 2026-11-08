@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 
+using Flower.Controls;
 using Flower.Services;
 using Flower.ViewModels;
 
@@ -16,9 +17,9 @@ public partial class SettingsWindow : Window
     // called directly; the real constructor below is what's actually used.
     public SettingsWindow() => InitializeComponent();
 
-    public SettingsWindow(MainViewModel viewModel) : this()
+    public SettingsWindow(MainViewModel viewModel, ColumnManager trackListColumns) : this()
     {
-        var backend = new LocalSettingsBackend(viewModel);
+        var backend = new LocalSettingsBackend(viewModel, trackListColumns);
         Panel.Initialize(new SettingsViewModel(backend), viewModel);
         Panel.CloseRequested += (_, _) => Close();
         NativeMenuHelper.InheritFromMainWindow(this);
