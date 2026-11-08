@@ -13,9 +13,16 @@ public class LibraryFolderJunctionTests : IDisposable
 {
     private readonly string _root = Directory.CreateTempSubdirectory("flower-junction-library").FullName;
     private readonly string _drive = Directory.CreateTempSubdirectory("flower-junction-drive").FullName;
+    private string? _link;
 
+    // The junction goes first, on its own: a recursive delete of the folder
+    // holding it fails on it ("The parameter is incorrect"), and rmdir
+    // removes a junction without touching what it points to.
     public void Dispose()
     {
+        if (_link != null)
+            Cmd($"rmdir \"{_link}\"");
+
         foreach (var folder in new[] { _root, _drive })
         {
             if (Directory.Exists(folder))
@@ -32,16 +39,21 @@ public class LibraryFolderJunctionTests : IDisposable
     // External in the library folder, joined to the drive.
     private string Junction()
     {
-        var link = Path.Combine(_root, "External");
-        using var mklink = Process.Start(new ProcessStartInfo("cmd.exe", $"/c mklink /J \"{link}\" \"{_drive}\"")
+        _link = Path.Combine(_root, "External");
+        Cmd($"mklink /J \"{_link}\" \"{_drive}\"");
+        return _link;
+    }
+
+    private static void Cmd(string command)
+    {
+        using var cmd = Process.Start(new ProcessStartInfo("cmd.exe", "/c " + command)
         {
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
         })!;
-        mklink.WaitForExit();
-        Assert.True(mklink.ExitCode == 0, mklink.StandardError.ReadToEnd());
-        return link;
+        cmd.WaitForExit();
+        Assert.True(cmd.ExitCode == 0, cmd.StandardError.ReadToEnd());
     }
 
     [Fact]
