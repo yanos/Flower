@@ -73,6 +73,14 @@
                          FontSize="13"
                          VerticalAlignment="Center"
                          Foreground="{DynamicResource AppTextSecondaryBrush}"/>
+              <!-- The song's cover, where the songs are from every album (the
+                   Search page's) - Home's Recently Played rows' size. -->
+              <controls:AlbumArtView Grid.Column="0"
+                                     IsVisible="{Binding ShowsArt}"
+                                     Width="40" Height="40"
+                                     Margin="0,0,12,0"
+                                     VerticalAlignment="Center"
+                                     AlbumArt="{Binding AlbumArt}"/>
               <!-- Under the title, whose it is - the Search page's songs, which
                    are from every album rather than one. -->
               <StackPanel Grid.Column="1" VerticalAlignment="Center">

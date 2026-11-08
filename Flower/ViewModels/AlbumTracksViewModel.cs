@@ -61,6 +61,7 @@ public abstract class AlbumTracksViewModel : ViewModelBase
                 {
                     Track = t,
                     DiscHeader = discs[i] > 0 ? DiscHeaders.Title(discs[i]) : null,
+                    ShowsArt = ShowsArt,
                     IsCurrentlyPlaying = _currentlyPlayingTrackId is { } id && t.Id == id,
                     IsUnavailable = !_availability.IsPlayable(t),
                     IsDownloadable = _availability.IsDownloadable(t),
@@ -76,6 +77,11 @@ public abstract class AlbumTracksViewModel : ViewModelBase
     // A header over each disc of an album that has several - false for a list
     // that is not one album (the Search page's songs).
     protected virtual bool ShowsDiscHeaders => true;
+
+    // Each song's cover at the left of its row - true for a list that is not
+    // one album (the Search page's songs), whose rows have no cover beside
+    // them otherwise.
+    protected virtual bool ShowsArt => false;
 
     // Whichever track is currently playing, if any - see
     // AlbumGridView.CurrentlyPlayingTrackId. Pushed in independently of
