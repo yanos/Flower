@@ -97,6 +97,17 @@ public partial class TrackRowControl : UserControl
         SelectionBorder.CornerRadius = corners;
     }
 
+    // Pulls the three backgrounds in from either end by what the panel has
+    // scrolled out of view, so a row wider than the viewport is still a
+    // rounded shape on screen - see MusicListPanel.MeasureOverride.
+    public void HideHighlightOutside(double left, double right)
+    {
+        var margin = new Thickness(left, 0, right, 0);
+        PlayingBorder.Margin = margin;
+        HoverBorder.Margin = margin;
+        SelectionBorder.Margin = margin;
+    }
+
     // The row went lit or dark - picked, playing or pointed at, or not - so
     // its neighbours' shapes may need to change with it.
     public event EventHandler? HighlightChanged;

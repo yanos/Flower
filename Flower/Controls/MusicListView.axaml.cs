@@ -275,7 +275,7 @@ public partial class MusicListView : UserControl
 
     private void SyncScroll()
     {
-        _panel.SetViewport(Scroller.Offset.Y, Scroller.Viewport.Height, Scroller.Viewport.Width);
+        _panel.SetViewport(Scroller.Offset.Y, Scroller.Viewport.Height, Scroller.Viewport.Width, Scroller.Offset.X);
         _headerScrollTransform.X = -Scroller.Offset.X;
     }
 

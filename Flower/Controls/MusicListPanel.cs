@@ -32,6 +32,7 @@ public class MusicListPanel : Panel
     private double _scrollOffset;
     private double _viewportHeight = 600; // reasonable default before first layout
     private double _viewportWidth  = 800; // reasonable default before first layout
+    private double _scrollOffsetX;
 
     // Index of each active child's source row; parallel to Children.
     private readonly List<int> _activeIndex = new();
@@ -145,7 +146,10 @@ public class MusicListPanel : Panel
         {
             // Over Columns rather than VisibleColumns, which sorts: the sum
             // does not care about order, and this runs on every measure.
-            var width = _columnManager.ArtColumnWidth;
+            // The "..." cell after the last column counts too, or the
+            // scroller stops short of it and the rows' backgrounds end
+            // before it does.
+            var width = _columnManager.ArtColumnWidth + TrackRowControl.MenuCellWidth;
             foreach (var column in _columnManager.Columns)
             {
                 if (column.IsVisible)
@@ -172,14 +176,16 @@ public class MusicListPanel : Panel
         InvalidateMeasure();
     }
 
-    public void SetViewport(double scrollOffset, double viewportHeight, double viewportWidth)
+    public void SetViewport(double scrollOffset, double viewportHeight, double viewportWidth, double scrollOffsetX = 0)
     {
         bool changed = Math.Abs(_scrollOffset - scrollOffset) > 0.5
                     || Math.Abs(_viewportHeight - viewportHeight) > 0.5
-                    || Math.Abs(_viewportWidth - viewportWidth) > 0.5;
+                    || Math.Abs(_viewportWidth - viewportWidth) > 0.5
+                    || Math.Abs(_scrollOffsetX - scrollOffsetX) > 0.5;
         _scrollOffset   = scrollOffset;
         _viewportHeight = viewportHeight;
         _viewportWidth  = viewportWidth;
+        _scrollOffsetX  = scrollOffsetX;
         if (changed)
         {
             RefreshActiveSet();
@@ -397,10 +403,27 @@ public class MusicListPanel : Panel
         // when there are few enough columns to fit.
         double w = Math.Max(ContentWidth, _viewportWidth);
 
+        // Columns wider than the viewport scroll sideways, but a row's
+        // highlight stays inside what is on screen, so its ends are rounded
+        // wherever the columns are scrolled to rather than cut off square by
+        // the viewport's edge. Here, ahead of measuring the rows, since every
+        // input (width, sideways offset, art well) re-measures the panel.
+        double artWidth = _columnManager.ArtColumnWidth;
+        double hiddenLeft = Math.Max(0, _scrollOffsetX - artWidth);
+        double hiddenRight = Math.Max(0, w - (_scrollOffsetX + _viewportWidth));
+        if (artWidth + hiddenLeft + hiddenRight > w)
+        {
+            hiddenLeft = 0;
+            hiddenRight = 0;
+        }
+
         foreach (Control child in Children)
         {
-            if (child.IsVisible)
-                child.Measure(new Size(w, TrackRowViewModel.RowHeight));
+            if (!child.IsVisible)
+                continue;
+            if (child is TrackRowControl row)
+                row.HideHighlightOutside(hiddenLeft, hiddenRight);
+            child.Measure(new Size(w, TrackRowViewModel.RowHeight));
         }
 
         return new Size(w, ExtentHeight);
