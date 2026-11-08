@@ -6,7 +6,6 @@ using Material.Icons;
 
 using Flower.Models;
 using Flower.Services;
-using Flower.ViewModels.Mobile;
 
 namespace Flower.ViewModels;
 

@@ -347,6 +347,37 @@ public class LibraryBrowserViewModelTests
         Assert.Equal("Two", vm.ExpandedAlbumName);
     }
 
+    // The arrow keys in the grid: the open album, if there is one, goes where
+    // the selection goes, so the open album is still the selected one.
+    [AvaloniaFact]
+    public void Moving_to_an_album_selects_it_alone_and_takes_an_open_album_along()
+    {
+        var (vm, _) = Make(Song("a", "One", "X"), Song("b", "Two", "Y"), Song("c", "Three", "Z"));
+        vm.Repopulate();
+        var one = vm.AlbumGridTiles.Single(t => t.Name == "One");
+        var two = vm.AlbumGridTiles.Single(t => t.Name == "Two");
+        vm.SetSelectedSubItems(["One", "Three"]);
+        vm.ToggleAlbumExpanded(one);
+
+        vm.MoveToAlbum(two);
+
+        Assert.Equal(["Two"], vm.SelectedSubItems);
+        Assert.Equal("Two", vm.ExpandedAlbumName);
+        Assert.Equal(["b"], vm.ExpandedAlbumTracks.Select(t => t.Title));
+    }
+
+    [AvaloniaFact]
+    public void Moving_to_an_album_with_none_open_opens_nothing()
+    {
+        var (vm, _) = Make(Song("a", "One", "X"), Song("b", "Two", "Y"));
+        vm.Repopulate();
+
+        vm.MoveToAlbum(vm.AlbumGridTiles.Single(t => t.Name == "Two"));
+
+        Assert.Equal(["Two"], vm.SelectedSubItems);
+        Assert.Null(vm.ExpandedAlbumName);
+    }
+
     [AvaloniaFact]
     public void Dragging_off_the_album_grid_resolves_tracks_by_album()
     {

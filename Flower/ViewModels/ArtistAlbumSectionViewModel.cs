@@ -1,8 +1,6 @@
 using System;
 using System.Linq;
 
-using Flower.ViewModels.Mobile;
-
 namespace Flower.ViewModels;
 
 // One album on the desktop Artists page (ArtistPageViewModel.Albums): its

@@ -3,6 +3,7 @@
              xmlns:controls="clr-namespace:Flower.Controls"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
+             xmlns:shared="clr-namespace:Flower.ViewModels"
              xmlns:views="clr-namespace:Flower.Views.Mobile.Screens"
              xmlns:system="clr-namespace:System;assembly=System.Runtime"
              x:Class="Flower.Views.Mobile.Screens.SearchResultsScreenView"
@@ -63,7 +64,7 @@
         <TextBlock Classes="sectionHeader" Text="Albums" />
         <controls:RecyclingItemsControl ItemsSource="{Binding Search.AlbumResults}">
           <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="vm:AlbumTileViewModel">
+            <DataTemplate x:DataType="shared:AlbumTileViewModel">
               <Button Classes="pickerRow"
                       Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).SelectSearchAlbumCommand}"
                       CommandParameter="{Binding Name}">

@@ -10,7 +10,6 @@ using Flower.Models;
 using Microsoft.Extensions.Logging;
 
 using Flower.Services;
-using Flower.ViewModels.Mobile;
 
 namespace Flower.ViewModels;
 
@@ -275,6 +274,16 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
 
         ExpandedAlbumKey = tile.Key;
         ExpandedAlbumTracks = ExpandedTracksFor(tile);
+    }
+
+    // An arrow key in the Albums grid (AlbumGridKeyboard): the album moved to
+    // is selected alone, as a click selects it, and an open album moves with
+    // it - so the open album is still the selected one, as after a click.
+    public void MoveToAlbum(AlbumTileViewModel tile)
+    {
+        SetSelectedSubItems([tile.Name]);
+        if (_expandedAlbumKey != null && _expandedAlbumKey != tile.Key)
+            ToggleAlbumExpanded(tile);
     }
 
     // Every fresh visit to Albums starts with nothing expanded,

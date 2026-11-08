@@ -7,7 +7,6 @@ using Avalonia.Interactivity;
 using Material.Icons;
 
 using Flower.ViewModels;
-using Flower.ViewModels.Mobile;
 
 namespace Flower.Controls;
 

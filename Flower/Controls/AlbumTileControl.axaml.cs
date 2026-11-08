@@ -3,7 +3,6 @@ using System;
 using Avalonia.Controls;
 
 using Flower.ViewModels;
-using Flower.ViewModels.Mobile;
 
 namespace Flower.Controls;
 

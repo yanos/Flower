@@ -24,7 +24,6 @@ using Flower.Models;
 using Flower.Persistence;
 using Flower.Services;
 using Flower.ViewModels;
-using Flower.ViewModels.Mobile;
 
 using Material.Icons;
 using Material.Icons.Avalonia;
@@ -160,6 +159,9 @@ public partial class MainView : UserControl
         // up from whichever tile the pointer landed on the same way the
         // four handlers above do, resolved the same way via HitTestTile.
         AlbumGrid.ContextRequested += AlbumGrid_ContextRequested;
+        // The arrows and Enter, once a press has given the grid the focus.
+        AlbumGrid.TileMovedTo += (_, tile) => _viewModel?.MoveToAlbum(tile);
+        AlbumGrid.TileActivated += (_, tile) => ActivateAlbumTile(tile);
 
         // The "..." on every album tile - the grid's and Home's (AlbumCard).
         AddHandler(AlbumCard.MenuRequestedEvent, AlbumCard_MenuRequested);
@@ -507,6 +509,7 @@ public partial class MainView : UserControl
         var tile = grid.HitTestTile(e.Source);
         if (tile == null)
             return;
+        grid.Focus();
 
         bool shift  = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
         bool toggle = e.KeyModifiers.HasFlag(PlatformShortcuts.Primary);
@@ -562,12 +565,19 @@ public partial class MainView : UserControl
             // No drag happened - a genuine plain click, now safe to select
             // the tile alone and expand/collapse it (see
             // _albumGridPendingActivate's doc comment).
-            _viewModel?.SetSelectedSubItems(new[] { tile.Name });
-            _viewModel?.ToggleAlbumExpandedCommand?.Execute(tile);
+            ActivateAlbumTile(tile);
         }
 
         e.Pointer.Capture(null);
         EndAlbumGridDrag(gesture);
+    }
+
+    // A plain click on a tile, or Enter on it: selected alone, and opened or
+    // closed.
+    private void ActivateAlbumTile(AlbumTileViewModel tile)
+    {
+        _viewModel?.SetSelectedSubItems(new[] { tile.Name });
+        _viewModel?.ToggleAlbumExpandedCommand?.Execute(tile);
     }
 
     private void AlbumGrid_PointerCaptureLost(object? sender, PointerCaptureLostEventArgs e)

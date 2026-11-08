@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using Flower.Models;
 using Flower.Services;
 using Flower.ViewModels;
-using Flower.ViewModels.Mobile;
 
 using Xunit;
 

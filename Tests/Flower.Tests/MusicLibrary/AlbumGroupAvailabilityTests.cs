@@ -4,7 +4,6 @@ using System.Linq;
 using Flower.Models;
 using Flower.Services;
 using Flower.ViewModels;
-using Flower.ViewModels.Mobile;
 
 namespace Flower.Tests.MusicLibrary;
 

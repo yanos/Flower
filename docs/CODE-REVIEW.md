@@ -35,7 +35,7 @@ happens to a listener or the library, not about how hard the fix is.
    anything. A few lines, and two full rewrites saved on every desktop launch.
 3. **October C1.1**: a separate token for plays. This is the biggest network
    win for phones, and the largest change on this list.
-4. **September E8**, **September G1**: when
+4. **September G1**: when
    convenient.
 5. **October A1**, **October C2**, **September E3**: wait until something
    wants them.
@@ -156,21 +156,6 @@ The views bind through the new property (`Search.Query`, `Pairing.…`,
 grown again, from 2606 and 2654 lines. Most of what is left is what a shell
 is: navigation, sheet state, and forwarding to the shared services. The next
 candidate is whatever has grown into a feature of its own since.
-
-### September E8. Three loose ends in the album grid
-
-`Flower/Controls/AlbumGridView.axaml.cs`, `Flower/Controls/AlbumGridRowControl.axaml.cs`,
-`Flower/ViewModels/Mobile/AlbumTileViewModel.cs`
-
-The expansion height is measured now. Three things are left, independent,
-low-risk, none a blocker:
-
-- `RebuildRows` re-chunks on every `SizeChanged` wider than a pixel, so a
-  resize snaps between column counts instead of reflowing. Needs a debounce.
-- No keyboard navigation between the grid's tiles. An expanded album's track
-  list has it (`AlbumTrackList`), but the grid does not.
-- `AlbumTileViewModel` and friends still live under `Flower.ViewModels.Mobile`,
-  although desktop depends on them directly.
 
 ---
 

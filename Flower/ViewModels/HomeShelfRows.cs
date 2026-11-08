@@ -1,8 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
 
-using Flower.ViewModels.Mobile;
-
 namespace Flower.ViewModels;
 
 // Home's three shelves as one list of rows - a shelf's heading, then its

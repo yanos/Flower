@@ -157,7 +157,7 @@
             </ItemsPanelTemplate>
           </ItemsControl.ItemsPanel>
           <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="mvm:AlbumTileViewModel">
+            <DataTemplate x:DataType="vm:AlbumTileViewModel">
               <Button Classes="homeTile" Click="Album_Click">
                 <controls:AlbumCard Classes="desktop" Tile="{Binding}" />
               </Button>

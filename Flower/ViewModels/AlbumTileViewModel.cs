@@ -8,9 +8,8 @@ using Avalonia.Media.Imaging;
 
 using Flower.Models;
 using Flower.Services;
-using Flower.ViewModels;
 
-namespace Flower.ViewModels.Mobile;
+namespace Flower.ViewModels;
 
 // Which tile a grid is talking about, for the one thing that has to name a
 // single tile rather than a single album: the inline expansion (see

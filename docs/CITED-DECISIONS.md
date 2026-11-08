@@ -168,7 +168,7 @@ In November 2026 every finding the two reviews had closed was taken out of
 them, and what was left of both was merged into one backlog, `CODE-REVIEW.md`.
 Source comments cite the closed findings as *"docs/CODE-REVIEW-2026-09.md
 B6"*, and this is what those citations resolve against. The findings still
-open (September E3, E8, G1; October A1, B4, C1, C2) are in
+open (September E3, G1; October A1, B4, C1, C2) are in
 `CODE-REVIEW.md` under the same review and number. The full text of both,
 measurements and rejected alternatives included:
 
@@ -205,6 +205,7 @@ git show 2e55685:docs/CODE-REVIEW-2026-10.md
 | **E5** | `MiniaudioSink.Start` leaked a `GCHandle` when called twice. |
 | **E6** | Promoted decoders kept the event handlers they were given while armed. `ClearArmedSlot` unsubscribes them. |
 | **E7** | `Process.Start` was called directly, and two platforms cannot run it. Every site goes through the static `PlatformShell` (`Reveal`, `OpenFolder`, `OpenUrl`, `IsAvailable`), and the controls hide where `IsAvailable` is false. |
+| **E8** | Loose ends in the album grid. The expansion height is measured. Keyboard navigation came in November 2026: a press gives the grid the focus, the arrows move along and between rows (`AlbumGridKeyboard`), an open album moves with the selection (`LibraryBrowserViewModel.MoveToAlbum`), and Enter does what a click does. `AlbumTileViewModel` and `AlbumTileKey` moved to `Flower.ViewModels`; the phone's own grid types stayed in `Mobile`. The resize debounce was not needed: since October `RebuildRows` re-chunks only when the column count changes, and a debounce would leave the rows a column off for the length of a drag. |
 | **F** | The test gaps behind A1, A2, B3, B4, C1 and B2 have all been written. |
 | **G1, socket half** | `FakePeerHttpServer` raced its own port. It binds before it publishes `Port`, and rotates where it starts in its range, so a released port is not reused at once. |
 | **G2** | `IAudioManager` was silently partial on WASM. `IAudioManager.Features` says what a player has, and the equalizer is not offered without it. |

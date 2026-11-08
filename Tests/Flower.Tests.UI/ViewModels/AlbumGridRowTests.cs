@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 
 using Flower.Models;
+using Flower.ViewModels;
 using Flower.ViewModels.Mobile;
 
 namespace Flower.Tests.ViewModels;

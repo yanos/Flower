@@ -3,7 +3,6 @@
              xmlns:controls="clr-namespace:Flower.Controls"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:vm="clr-namespace:Flower.ViewModels"
-             xmlns:mvm="clr-namespace:Flower.ViewModels.Mobile"
              x:Class="Flower.Views.HomeView"
              x:DataType="vm:HomeViewModel">
 
@@ -158,7 +157,7 @@
           <DataTemplate DataType="vm:HomeAlbumRow">
             <controls:TileRowPanel Columns="{Binding Columns}" Items="{Binding Tiles}" Margin="0,0,0,8">
               <controls:TileRowPanel.ItemTemplate>
-                <DataTemplate x:DataType="mvm:AlbumTileViewModel">
+                <DataTemplate x:DataType="vm:AlbumTileViewModel">
                   <Button Classes="homeTile"
                           Command="{Binding $parent[UserControl].((vm:HomeViewModel)DataContext).OpenAlbumCommand}"
                           CommandParameter="{Binding}">

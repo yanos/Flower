@@ -7,7 +7,6 @@ using Avalonia.VisualTree;
 
 using Flower.Controls;
 using Flower.ViewModels;
-using Flower.ViewModels.Mobile;
 
 namespace Flower.Views.Mobile.Screens;
 

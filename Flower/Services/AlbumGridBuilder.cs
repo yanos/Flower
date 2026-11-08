@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 
 using Flower.Models;
-using Flower.ViewModels.Mobile;
+using Flower.ViewModels;
 
 namespace Flower.Services;
 

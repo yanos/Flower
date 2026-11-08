@@ -10,6 +10,7 @@ using Avalonia.Threading;
 
 using Flower.Models;
 using Flower.Tests.TestSupport;
+using Flower.ViewModels;
 using Flower.ViewModels.Mobile;
 using Flower.Views.Mobile;
 
@@ -114,7 +115,7 @@ public class MobileTrackInfoTests : PinnedDataDirectory
         window.Show();
         Pump(300);
 
-        vm.OpenAlbumActionsCommand.Execute(new Flower.ViewModels.Mobile.AlbumTileViewModel
+        vm.OpenAlbumActionsCommand.Execute(new Flower.ViewModels.AlbumTileViewModel
         {
             Name = "Avant Hard", Artist = "Add N To (X)", Tracks = tracks, RepresentativeTrack = tracks[0],
         });
@@ -187,7 +188,7 @@ public class MobileTrackInfoTests : PinnedDataDirectory
         Assert.Equal("Renamed", titleBox.Text);
 
         vm.CloseSheetCommand.Execute(null);
-        vm.OpenAlbumActionsCommand.Execute(new Flower.ViewModels.Mobile.AlbumTileViewModel
+        vm.OpenAlbumActionsCommand.Execute(new Flower.ViewModels.AlbumTileViewModel
         {
             Name = "A", Artist = "X", Tracks = tracks, RepresentativeTrack = tracks[0],
         });

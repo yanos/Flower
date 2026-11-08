@@ -14,7 +14,6 @@ using Avalonia.VisualTree;
 using Flower.Models;
 using Flower.Services;
 using Flower.ViewModels;
-using Flower.ViewModels.Mobile;
 
 namespace Flower.Controls;
 
@@ -159,6 +158,54 @@ public partial class AlbumGridView : UserControl
         // Scrolling by hand mid-reveal takes over from it rather than being
         // pulled back to where the reveal was going.
         Scroller.AddHandler(PointerWheelChangedEvent, (_, _) => StopReveal(), RoutingStrategies.Tunnel);
+
+        // The grid takes the focus when a tile is pressed (MainView), so the
+        // arrows and Enter reach it. Tunnelled, because the ScrollViewer would
+        // otherwise spend the arrows on scrolling a line.
+        Focusable = true;
+        AddHandler(KeyDownEvent, OnKeyDown, RoutingStrategies.Tunnel);
+    }
+
+    // An arrow key moved to this tile - see AlbumGridKeyboard. Selecting it,
+    // and moving an open album along with it, is the view model's
+    // (MainViewModel.MoveToAlbum).
+    public event EventHandler<AlbumTileViewModel>? TileMovedTo;
+
+    // Enter on the current tile: what a click on it does.
+    public event EventHandler<AlbumTileViewModel>? TileActivated;
+
+    // Which tile the arrows last moved to - see AlbumGridKeyboard.CurrentIndex.
+    private AlbumTileViewModel? _keyboardTile;
+
+    private void OnKeyDown(object? sender, KeyEventArgs e)
+    {
+        // An open album's songs have keys of their own (AlbumTrackList), and
+        // a modified arrow is a shortcut (MainView_PreviewKeyDown).
+        if (e.KeyModifiers != KeyModifiers.None
+            || (e.Source as Visual)?.FindAncestorOfType<AlbumTrackList>(includeSelf: true) != null)
+            return;
+
+        var current = AlbumGridKeyboard.CurrentIndex(_tiles, _keyboardTile);
+        if (e.Key == Key.Enter)
+        {
+            if (current >= 0)
+                TileActivated?.Invoke(this, _tiles[current]);
+            e.Handled = current >= 0;
+            return;
+        }
+
+        if (AlbumGridKeyboard.Target(e.Key, current, _tiles.Count, _columns) is not { } target)
+        {
+            // An arrow at the edge stays put, rather than scrolling the page.
+            e.Handled = e.Key is Key.Left or Key.Right or Key.Up or Key.Down;
+            return;
+        }
+
+        var tile = _tiles[target];
+        _keyboardTile = tile;
+        TileMovedTo?.Invoke(this, tile);
+        RowsList.ScrollIntoView(target / _columns);
+        e.Handled = true;
     }
 
     private INotifyCollectionChanged? _observedItemsSource;

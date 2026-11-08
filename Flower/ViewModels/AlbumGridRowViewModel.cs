@@ -1,7 +1,5 @@
 using System.Collections.Generic;
 
-using Flower.ViewModels.Mobile;
-
 namespace Flower.ViewModels;
 
 // One row of tiles in AlbumGridView's row-chunked grid (desktop's own N-per-row

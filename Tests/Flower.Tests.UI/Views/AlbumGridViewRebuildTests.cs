@@ -9,7 +9,7 @@ using Avalonia.Threading;
 using Flower.Controls;
 using Flower.Models;
 using Flower.Tests.TestSupport;
-using Flower.ViewModels.Mobile;
+using Flower.ViewModels;
 
 using Xunit;
 

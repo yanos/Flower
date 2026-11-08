@@ -7,7 +7,7 @@ using Avalonia.Media.Imaging;
 
 using Flower.Models;
 using Flower.Services;
-using Flower.ViewModels.Mobile;
+using Flower.ViewModels;
 
 using Microsoft.Extensions.Logging.Abstractions;
 

@@ -3,6 +3,7 @@
                     xmlns:controls="clr-namespace:Flower.Controls"
                     xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
                     xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
+                    xmlns:shared="clr-namespace:Flower.ViewModels"
                     xmlns:screens="clr-namespace:Flower.Views.Mobile.Screens">
 
   <!-- What a track list of one thing's songs says about that thing, above the
@@ -32,7 +33,7 @@
        this template turns ClipToBounds off: a ContentControl clips by
        default, at exactly the art's square, which left the shadow showing
        only in the four rounded corners. -->
-  <DataTemplate x:Key="AlbumArtTemplate" x:DataType="vm:AlbumTileViewModel">
+  <DataTemplate x:Key="AlbumArtTemplate" x:DataType="shared:AlbumTileViewModel">
     <Border CornerRadius="{x:Static controls:AlbumArtView.CoverCornerRadius}"
             BoxShadow="{DynamicResource AppCoverShadow}">
       <controls:SquareAlbumArtView AlbumArt="{Binding AlbumArt}"
@@ -63,7 +64,7 @@
        it (.albumText styles, in TrackListScreenView). Drawn a fifth larger
        than the floating pill's own 40px: 24px glyphs in 44px buttons, in
        circles 48 across. -->
-  <DataTemplate x:Key="AlbumTextTemplate" x:DataType="vm:AlbumTileViewModel">
+  <DataTemplate x:Key="AlbumTextTemplate" x:DataType="shared:AlbumTileViewModel">
     <StackPanel Spacing="2" Classes.dimmed="{Binding IsUnavailable}">
       <!-- A playlist's name turns into a box in place when its pencil is
            pressed (see controls:PlaylistNameEditor); an album's never does,
@@ -157,7 +158,7 @@
        to pin its cover in). 300 is the art's width on a phone: most of
        the screen's width, the page's subject, with a few songs still showing
        under it on all but the smallest phones. -->
-  <DataTemplate x:Key="AlbumHeaderTemplate" x:DataType="vm:AlbumTileViewModel">
+  <DataTemplate x:Key="AlbumHeaderTemplate" x:DataType="shared:AlbumTileViewModel">
     <!-- The blurred cover behind it is the album page's, not the header's
          (TrackListScreenView's Backdrop): it stays put while this scrolls
          over it. -->

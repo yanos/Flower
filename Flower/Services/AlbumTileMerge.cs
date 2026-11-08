@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-using Flower.ViewModels.Mobile;
+using Flower.ViewModels;
 
 namespace Flower.Services;
 

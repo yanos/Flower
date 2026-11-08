@@ -3,7 +3,6 @@ using System.Collections.Generic;
 
 using Flower.Models;
 using Flower.ViewModels;
-using Flower.ViewModels.Mobile;
 
 namespace Flower.Services;
 

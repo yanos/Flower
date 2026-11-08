@@ -837,6 +837,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     }
 
     public void SetSelectedSubItems(IReadOnlyList<string> items) => Browser.SetSelectedSubItems(items);
+    public void MoveToAlbum(AlbumTileViewModel tile) => Browser.MoveToAlbum(tile);
 
     public string CurrentViewKey => Browser.CurrentViewKey;
 

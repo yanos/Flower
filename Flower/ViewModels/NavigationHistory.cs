@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
 
-using Flower.ViewModels.Mobile;
-
 namespace Flower.ViewModels;
 
 // A page the desktop window has shown: the sidebar row, and on Artists the

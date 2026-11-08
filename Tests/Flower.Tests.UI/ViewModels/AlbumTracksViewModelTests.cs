@@ -14,7 +14,7 @@ public class AlbumTracksViewModelTests
 {
     private static AlbumGridRowViewModel Album(int songs) => new()
     {
-        Tiles = Array.Empty<Flower.ViewModels.Mobile.AlbumTileViewModel>(),
+        Tiles = Array.Empty<Flower.ViewModels.AlbumTileViewModel>(),
         Columns = 1,
         ExpandedTracks = Enumerable.Range(1, songs).Select(i => new Track { Title = $"Song {i}" }).ToList(),
     };
