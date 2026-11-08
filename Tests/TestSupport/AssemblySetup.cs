@@ -60,6 +60,12 @@ internal static class AssemblySetup
     // Pinning a temp directory here makes the *floor* safe rather than relying
     // on every future test remembering. Restoring Current to this value, not to
     // null, is the other half - see the Dispose of the classes that pin.
+    //
+    // A floor is all this is. While a pinned class is running, a late save
+    // that resolves its path when it runs lands in *that* class's directory,
+    // and TestIoc's once overwrote AppSettingsStoreTests mid-test that way.
+    // So AppSettingsStore keeps the directory it was made in instead
+    // (AppSettingsStore._path).
     public static string DefaultDataDirectory { get; } =
         Directory.CreateTempSubdirectory("flower-test-appdata-default").FullName;
 

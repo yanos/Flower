@@ -29,7 +29,11 @@ namespace Flower.Tests.TestSupport;
 // singleton, that is long after the test that moved the column, in some other
 // class entirely. It overwrote the developer's own settings.json with a default
 // AppSettings; see AssemblySetup.DefaultDataDirectory, which is what now makes
-// that land somewhere disposable instead of somewhere real.
+// that land somewhere disposable instead of somewhere real. Disposable was not
+// yet harmless: it was whichever test had the directory pinned by then, and on
+// the iOS simulator that was once AppSettingsStoreTests. The store now keeps
+// the directory it was made in, so this one writes into the temp directory
+// current when it was first configured, and nowhere a later test reads.
 internal static class TestIoc
 {
     private static readonly object Gate = new();

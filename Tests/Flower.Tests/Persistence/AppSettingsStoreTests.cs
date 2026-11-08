@@ -204,6 +204,31 @@ public class AppSettingsStoreTests : IsolatedHome
         Assert.False(reloaded.SortAscending);
     }
 
+    // A save that comes late - a debounced one, or a fire-and-forget one a
+    // finished test left behind - goes where its store was made, not into the
+    // directory another test has pinned since. That once overwrote the test
+    // above, on the iOS simulator, with a default AppSettings.
+    [Fact]
+    public async Task A_late_save_lands_where_its_store_was_made()
+    {
+        var store = new AppSettingsStore(NullLogger<AppSettingsStore>.Instance);
+        var later = Directory.CreateTempSubdirectory("flower-test-later").FullName;
+        PlatformDataDirectory.Current = later;
+        try
+        {
+            await store.SaveAsync(new AppSettings { SortColumn = "Album" });
+
+            Assert.False(File.Exists(AppSettingsStore.StorePath));
+        }
+        finally
+        {
+            PlatformDataDirectory.Current = DataDirectory;
+            Directory.Delete(later, recursive: true);
+        }
+
+        Assert.Equal("Album", new AppSettingsStore(NullLogger<AppSettingsStore>.Instance).Load().SortColumn);
+    }
+
     [Fact]
     public void ColumnManager_Flush_synchronously_persists_widths_for_the_next_launch()
     {

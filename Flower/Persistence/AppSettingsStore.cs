@@ -408,6 +408,18 @@ namespace Flower.Persistence
 
         public static string StorePath => Path.Combine(AppDataDirectory.Path, "settings.json");
 
+        // Where this store reads and writes: StorePath as it stood when the
+        // store was made. An app sets its data directory once, before any
+        // store exists, so this is the same file either way there. A test
+        // run is where it differs. Each test class pins a directory of its
+        // own, and a save that comes late - ColumnManager's debounced one,
+        // 500ms after a column moved, or any fire-and-forget SaveAsync of a
+        // test long finished - used to resolve the path when it ran, and so
+        // wrote into whichever test had the directory by then. On the iOS
+        // simulator, where every suite shares one process, that put TestIoc's
+        // default AppSettings over AppSettingsStoreTests' own file mid-test.
+        private readonly string _path = StorePath;
+
         public AppSettings Load()
         {
             var stored = LoadFromDisk();
@@ -475,7 +487,7 @@ namespace Flower.Persistence
         }
 
         private AppSettings? LoadFromDisk() =>
-            AtomicJsonFile.Read(StorePath, FlowerJsonContext.Default.AppSettings, _logger);
+            AtomicJsonFile.Read(_path, FlowerJsonContext.Default.AppSettings, _logger);
 
         // Reads LogFileMinimumLevel alone, before anything else has run. This
         // exists because of an ordering knot: AppLogging.Initialize has to be
@@ -534,7 +546,7 @@ namespace Flower.Persistence
             await _writeLock.WaitAsync();
             try
             {
-                await AtomicJsonFile.WriteAsync(StorePath, settings, FlowerJsonContext.Default.AppSettings);
+                await AtomicJsonFile.WriteAsync(_path, settings, FlowerJsonContext.Default.AppSettings);
                 _pairingBackup?.Mirror(settings);
             }
             finally
@@ -550,7 +562,7 @@ namespace Flower.Persistence
             _writeLock.Wait();
             try
             {
-                AtomicJsonFile.Write(StorePath, settings, FlowerJsonContext.Default.AppSettings);
+                AtomicJsonFile.Write(_path, settings, FlowerJsonContext.Default.AppSettings);
                 _pairingBackup?.Mirror(settings);
             }
             finally
