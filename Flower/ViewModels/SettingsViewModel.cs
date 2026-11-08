@@ -267,12 +267,13 @@ public sealed partial class SettingsViewModel : ViewModelBase
     }
 
     // Whether the machine being configured - this device, or the server this page
-    // administers - actually has an iTunes/Music.app library folder to integrate
-    // with. Every switch here is gated on it: they are real, remembered settings,
-    // but with no folder found there is nothing for them to turn on, and a switch
+    // administers - actually has a Music.app library to integrate with
+    // (SettingsSnapshot.HasMusicAppLibrary says how each one knows). Every switch
+    // here is gated on it: they are real, remembered settings, but with no
+    // library found there is nothing for them to turn on, and a switch
     // that silently does nothing is worse than one that explains itself (see
     // ITunesUnavailableMessage, shown in its place).
-    public bool HasAppleMusicFolder => _snapshot.AppleMusicFolder is { Length: > 0 };
+    public bool HasAppleMusicFolder => _snapshot.HasMusicAppLibrary;
 
     public bool CanIntegrateWithITunes => HasAppleMusicFolder && CanManageLibrary;
 

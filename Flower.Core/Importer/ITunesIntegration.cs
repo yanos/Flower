@@ -81,11 +81,23 @@ public static class ITunesIntegration
         if (!OperatingSystem.IsMacOS())
             return "iTunes/Music.app is only available on macOS";
 
-        if (Directory.Exists("/System/Applications/Music.app") || Directory.Exists("/Applications/Music.app"))
+        if (IsMusicAppInstalled())
             return "Exports a fresh copy from Music.app each launch";
 
         return ITunesPlayCountImporter.ResolveLibraryXmlPath() is string fallbackPath
             ? $"Music.app not found - using {fallbackPath}"
             : "No iTunes/Music library data available";
     }
+
+    // Whether this Mac has Music.app at all - what the two imports actually
+    // talk to (ITunesPlayCountImporter's AppleScript export), and so what a
+    // settings screen gates them on. Looks only at the app bundle, never at
+    // Music.app's own files: its preferences plist (which names the media
+    // folder - Importer.TryResolveAppleMusicFolder) is guarded by macOS as
+    // "Media & Apple Music", so reading it brings up the permission prompt,
+    // and an ad-hoc signed dev build is a new app to that prompt after every
+    // rebuild.
+    public static bool IsMusicAppInstalled() =>
+        OperatingSystem.IsMacOS() &&
+        (Directory.Exists("/System/Applications/Music.app") || Directory.Exists("/Applications/Music.app"));
 }

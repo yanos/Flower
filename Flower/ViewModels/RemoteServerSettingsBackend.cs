@@ -59,6 +59,7 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
             SyncPlayCountFromITunes = settings.SyncPlayCountFromITunes,
             SyncDateAddedFromITunes = settings.SyncDateAddedFromITunes,
             AppleMusicFolder = settings.AppleMusicFolder,
+            HasMusicAppLibrary = settings.AppleMusicFolder is { Length: > 0 },
             ITunesLibraryDescription = settings.ITunesLibraryDescription,
             AdvertisedHost = settings.AdvertisedHost,
             AdvertiseOnLan = settings.AdvertiseOnLan,

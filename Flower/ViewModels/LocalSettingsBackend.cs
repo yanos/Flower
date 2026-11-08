@@ -54,7 +54,10 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel) : ISettingsBac
         SyncPlayCountFromITunes = ViewModel.SyncPlayCountFromITunes,
         SyncDateAddedFromITunes = ViewModel.SyncDateAddedFromITunes,
         ITunesLibraryDescription = ITunesIntegration.DescribeSource(),
-        AppleMusicFolder = Flower.Importer.Importer.TryResolveAppleMusicFolder(),
+        // Not the media folder: this device has no master switch to adopt it
+        // with, and finding it would read Music.app's preferences, which brings
+        // up macOS's Media & Apple Music prompt every time Settings opens.
+        HasMusicAppLibrary = ITunesIntegration.IsMusicAppInstalled(),
         DataDirectory = AppDataDirectory.Path,
         Version = AppVersion.Display,
         IsPairedToServer = !string.IsNullOrEmpty(ViewModel.PairedServerFingerprint),

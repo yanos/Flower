@@ -12,7 +12,7 @@ namespace Flower.Tests.ViewModels.Settings;
 
 // The rule the settings screen enforces for the three iTunes/Music.app switches,
 // on either backend: they are only usable when the machine being configured
-// actually has a Music.app media folder to integrate with. With no folder found
+// actually has a Music.app library to integrate with. With none found
 // the switches are disabled and the screen says why instead - see
 // SettingsViewModel.HasAppleMusicFolder and SettingsPanel.axaml's Library tab.
 //
@@ -87,6 +87,7 @@ public class SettingsITunesGatingTests
         var viewModel = await LoadAsync(ServerCapabilities, new SettingsSnapshot
         {
             AppleMusicFolder = "/Users/x/Music/Music/Media.localized",
+            HasMusicAppLibrary = true,
             IntegrateWithITunes = true,
             SyncPlayCountFromITunes = true,
             SyncDateAddedFromITunes = true,
@@ -141,6 +142,7 @@ public class SettingsITunesGatingTests
         var viewModel = await LoadAsync(ServerCapabilities, new SettingsSnapshot
         {
             AppleMusicFolder = "/Users/x/Music/Music/Media.localized",
+            HasMusicAppLibrary = true,
             IntegrateWithITunes = true,
             SyncPlayCountFromITunes = true,
             SyncDateAddedFromITunes = true,
@@ -164,6 +166,7 @@ public class SettingsITunesGatingTests
         var viewModel = await LoadAsync(ServerCapabilities, new SettingsSnapshot
         {
             AppleMusicFolder = folder,
+            HasMusicAppLibrary = true,
             LibraryPaths = ["/music"],
             IntegrateWithITunes = false,
         });
@@ -186,6 +189,7 @@ public class SettingsITunesGatingTests
         var viewModel = await LoadAsync(ServerCapabilities, new SettingsSnapshot
         {
             AppleMusicFolder = folder,
+            HasMusicAppLibrary = true,
             LibraryPaths = ["/music", folder],
             IntegrateWithITunes = true,
         });
@@ -216,6 +220,7 @@ public class SettingsITunesGatingTests
         var viewModel = await LoadAsync(AppCapabilities, new SettingsSnapshot
         {
             AppleMusicFolder = "/Users/x/Music/Music/Media.localized",
+            HasMusicAppLibrary = true,
             LibraryPaths = [],
             SyncPlayCountFromITunes = false,
             SyncDateAddedFromITunes = false,
@@ -247,6 +252,7 @@ public class SettingsITunesGatingTests
     private static SettingsSnapshot Paired(bool admin, bool serverImports = false) => new()
     {
         AppleMusicFolder = "/Users/x/Music/Music/Media.localized",
+        HasMusicAppLibrary = true,
         SyncPlayCountFromITunes = true,
         SyncDateAddedFromITunes = true,
         IsPairedToServer = true,
@@ -295,6 +301,7 @@ public class SettingsITunesGatingTests
         var viewModel = await LoadAsync(AppCapabilities, new SettingsSnapshot
         {
             AppleMusicFolder = "/Users/x/Music/Music/Media.localized",
+            HasMusicAppLibrary = true,
         });
 
         Assert.Null(viewModel.ITunesImportNote);

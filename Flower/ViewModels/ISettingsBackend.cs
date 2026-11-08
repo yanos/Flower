@@ -153,8 +153,17 @@ public sealed record SettingsSnapshot
     public string ITunesLibraryDescription { get; init; } = "";
 
     // Music.app's configured media folder, when there is one. The iTunes master
-    // switch adds/removes it from the pending library-paths list.
+    // switch adds/removes it from the pending library-paths list. Only a
+    // backend with that switch (a server) fills it in.
     public string? AppleMusicFolder { get; init; }
+
+    // Whether the machine being configured has a Music.app library to bring
+    // in, which every Music.app switch is gated on. A server knows its media
+    // folder; this device asks only whether Music.app is installed, because
+    // finding the folder means reading Music.app's preferences, which macOS
+    // guards behind its "Media & Apple Music" prompt - see
+    // ITunesIntegration.IsMusicAppInstalled.
+    public bool HasMusicAppLibrary { get; init; }
 
     // Whether this device is currently paired to a server. Its library is then
     // synced in rather than locally curated, so the library-folder controls are
