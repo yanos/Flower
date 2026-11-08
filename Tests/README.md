@@ -134,6 +134,13 @@ offered it as an update (`docs/AUTO-UPDATE-PLAN.md`).
 - **NativeAOT.** The full suite cannot run there yet: xunit discovers tests by
   reflection over the assembly file, which NativeAOT lacks, and
   Avalonia.Headless.XUnit is not built against xunit's NativeAOT edition.
+  As of November 2026, xUnit 4 ships that edition (`xunit.v3.aot.*`, source
+  generated discovery, its own `ISelfExecutingCodeGenTestCase` extension
+  point), but Avalonia.Headless.XUnit 12.1.5 still targets xUnit 3.2.2, and
+  the one xUnit 4 adapter (`ProTest.Avalonia.Headless.XUnit.v4`) is
+  reflection-only. xUnit 4 also drops Mono, so this suite stays on xUnit 3
+  until an Avalonia adapter for the AOT edition exists. That is the change to
+  watch for.
 
 ### Decoding checks (`Flower.Tests.Decoding.Scenarios`)
 

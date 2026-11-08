@@ -15,19 +15,23 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Avalonia.Headless" Version="12.1.0" />
+    <PackageReference Include="Avalonia.Headless" Version="12.1.5" />
     <!-- Real Skia image decoding under the headless platform: without it,
          headless stubs every Bitmap to 1x1 regardless of the bytes fed to it,
          which makes AlbumArtLoaderTests (decode-scaling, corrupt-image
          fallback) meaningless. See TestAppBuilder. -->
-    <PackageReference Include="Avalonia.Skia" Version="12.1.0" />
-    <PackageReference Include="Avalonia.Headless.XUnit" Version="12.1.0" />
-    <PackageReference Include="coverlet.collector" Version="10.0.1" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
+    <PackageReference Include="Avalonia.Skia" Version="12.1.5" />
+    <PackageReference Include="Avalonia.Headless.XUnit" Version="12.1.5" />
+    <PackageReference Include="coverlet.collector" Version="10.1.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
     <!-- xunit.v3.mtp-off, not plain xunit.v3: this project runs through the
          classic VSTest `dotnet test` flow (xunit.runner.visualstudio below),
          not Microsoft.Testing.Platform, matching the shape `dotnet new
-         xunit3 (test-runner vstest)` generates. -->
+         xunit3 (test-runner vstest)` generates.
+
+         Held at 3.x, not xUnit 4: Avalonia.Headless.XUnit (12.1.5) is built
+         against 3.2.2's extensibility API, which 4.0 broke, and 4.0 drops
+         Mono, which the iOS suite runs on (Tests/README.md, "NativeAOT"). -->
     <PackageReference Include="xunit.v3.mtp-off" Version="3.2.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
   </ItemGroup>

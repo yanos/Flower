@@ -24,7 +24,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="MinVer" Version="7.*">
+    <PackageReference Include="MinVer" Version="8.*">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
     </PackageReference>

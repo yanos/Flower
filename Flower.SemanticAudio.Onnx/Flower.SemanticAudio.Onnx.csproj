@@ -21,6 +21,6 @@
     <!-- The managed API and the native library for each desktop and server
          platform (runtimes/<rid>/native), copied beside every binary
          downstream. -->
-    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.31.0" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.31.1" />
   </ItemGroup>
 </Project>

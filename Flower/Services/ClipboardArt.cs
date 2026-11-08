@@ -3,6 +3,7 @@ using System.IO;
 using System.Threading.Tasks;
 
 using Avalonia.Input.Platform;
+using Avalonia.Media.Imaging;
 
 namespace Flower.Services;
 
@@ -26,7 +27,7 @@ public static class ClipboardArt
             if (bitmap is null)
                 return null;
             using var png = new MemoryStream();
-            bitmap.Save(png);
+            bitmap.Save(png, PngBitmapEncoderOptions.Default);
             return png.ToArray();
         }
         catch (Exception)

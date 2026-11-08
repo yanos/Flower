@@ -72,12 +72,12 @@
          This app runs xunit in-process and never loads them, and
          Microsoft.VisualStudio.TestPlatform.Common does not AOT-compile - it
          references a DoesNotReturnAttribute in an assembly that has none. -->
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" ExcludeAssets="all" />
-    <PackageReference Include="Microsoft.TestPlatform.TestHost" Version="18.8.1" ExcludeAssets="all" />
-    <PackageReference Include="Microsoft.TestPlatform.ObjectModel" Version="18.8.1" ExcludeAssets="all" />
-    <PackageReference Include="Microsoft.CodeCoverage" Version="18.8.1" ExcludeAssets="all" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.11.0" ExcludeAssets="all" />
+    <PackageReference Include="Microsoft.TestPlatform.TestHost" Version="18.11.0" ExcludeAssets="all" />
+    <PackageReference Include="Microsoft.TestPlatform.ObjectModel" Version="18.11.0" ExcludeAssets="all" />
+    <PackageReference Include="Microsoft.CodeCoverage" Version="18.11.0" ExcludeAssets="all" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" ExcludeAssets="all" />
-    <PackageReference Include="coverlet.collector" Version="10.0.1" ExcludeAssets="all" />
+    <PackageReference Include="coverlet.collector" Version="10.1.0" ExcludeAssets="all" />
 
     <!-- The iOS builds of the native libraries Flower.iOS ships, which the
          desktop suite reaches through host packages: the ffaudio façade, and

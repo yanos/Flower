@@ -16,8 +16,7 @@
 
   <ItemGroup>
     <!-- No EF Core, and no SQLite package reference of its own: Microsoft.Data.Sqlite
-         (and the SQLitePCLRaw vulnerability pin that goes with it) comes through
-         Flower.Core, which owns the schema and the connection. See
+         comes through Flower.Core, which owns the schema and the connection. See
          Flower.Core/Persistence/Sql/FlowerDb.cs for why EF Core was dropped. -->
   </ItemGroup>
 

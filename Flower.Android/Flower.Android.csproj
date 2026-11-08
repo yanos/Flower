@@ -28,7 +28,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Avalonia.Android" Version="12.1.0" />
+    <PackageReference Include="Avalonia.Android" Version="12.1.5" />
     <PackageReference Include="Xamarin.AndroidX.Core.SplashScreen" Version="1.2.0.3" />
 
     <!-- Xamarin.AndroidX.Core.SplashScreen and Avalonia.Android pull skewed
@@ -38,8 +38,8 @@
          AnimatorKt$addListener$2) defined in both AARs and fails dexing.
          These two bindings track the same underlying androidx-core release
          in lockstep, so pin both to the same version explicitly. -->
-    <PackageReference Include="Xamarin.AndroidX.Core" Version="1.19.0.1" />
-    <PackageReference Include="Xamarin.AndroidX.Core.Core.Ktx" Version="1.19.0.1" />
+    <PackageReference Include="Xamarin.AndroidX.Core" Version="1.19.1" />
+    <PackageReference Include="Xamarin.AndroidX.Core.Core.Ktx" Version="1.19.1" />
   </ItemGroup>
 
   <ItemGroup>

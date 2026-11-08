@@ -378,7 +378,7 @@ public partial class TrackInfoView : UserControl
             using var stream = new MemoryStream(bytes);
             using var bitmap = new Bitmap(stream);
             using var png = new MemoryStream();
-            bitmap.Save(png);
+            bitmap.Save(png, PngBitmapEncoderOptions.Default);
             return png.ToArray();
         }
         catch

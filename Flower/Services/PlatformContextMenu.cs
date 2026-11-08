@@ -136,7 +136,7 @@ public static class MenuItemIcons
             context.DrawGeometry(Brushes.Black, null, StreamGeometry.Parse(MaterialIconDataProvider.GetData(kind)));
 
         using var png = new MemoryStream();
-        bitmap.Save(png);
+        bitmap.Save(png, PngBitmapEncoderOptions.Default);
         return png.ToArray();
     }
 }

@@ -28,7 +28,7 @@ public static class ServerIconPicture
             context.DrawImage(source, crop, new Rect(0, 0, pixels, pixels));
 
         using var png = new MemoryStream();
-        target.Save(png);
+        target.Save(png, PngBitmapEncoderOptions.Default);
         return png.ToArray();
     }
 

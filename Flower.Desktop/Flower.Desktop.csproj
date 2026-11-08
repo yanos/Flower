@@ -15,7 +15,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Avalonia.Desktop" Version="12.1.0" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.5" />
     <PackageReference Include="Miniaudio-CS" Version="1.0.4" />
     <!-- What the Windows installer and the Linux AppImage are built with
          (scripts/package-desktop.sh), and the updater docs/AUTO-UPDATE-PLAN.md
