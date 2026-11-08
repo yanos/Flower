@@ -522,7 +522,6 @@ namespace Flower.Models
                 var freshPaths = new HashSet<string>(
                     tracks.Where(t => t.Path != null).Select(t => t.Path!),
                     PathRules);
-                var rootIsThere = new Dictionary<string, bool>(StringComparer.Ordinal);
 
                 // Fallback for a track whose exact Path string no longer
                 // matches anything in this fresh scan - keyed by SyncKey
@@ -657,7 +656,7 @@ namespace Flower.Models
                     t is { IsLocallyDownloaded: true, Path: { } path }
                     && !freshPaths.Contains(path)
                     && !freshSyncKeys.Contains(t.SyncKey)
-                    && DeletedDownload(path, rootIsThere))
+                    && DeletedDownload(path))
                     .ToList();
                 foreach (var track in deletedDownloads)
                 {
@@ -762,21 +761,13 @@ namespace Flower.Models
             return true;
         }
 
-        // Whether a download's file was deleted: gone from a folder this
-        // device scans that is still there and holds something. Not gone from
-        // a drive that is unplugged, or a share that did not mount - its
-        // downloads stay downloads until it is back (LibraryFolders.IsPresent).
-        // Nor from anywhere outside the scanned folders, where there is no
-        // folder to ask about. Each folder is asked once a scan.
-        private bool DeletedDownload(string path, Dictionary<string, bool> rootIsThere)
-        {
-            if (PathRules.RootOf(path) is not { } root || File.Exists(path))
-                return false;
-
-            if (!rootIsThere.TryGetValue(root, out var there))
-                rootIsThere[root] = there = LibraryFolders.IsPresent(root);
-            return there;
-        }
+        // Whether a download's file was deleted, from under a folder this
+        // device scans. Not gone from a drive that is unplugged, or a share
+        // that did not mount - its downloads stay downloads until it is back
+        // (LibraryFolders.WasDeleted). Nor from anywhere outside the scanned
+        // folders, where there is no folder to ask about.
+        private bool DeletedDownload(string path) =>
+            PathRules.RootOf(path) is { } root && !File.Exists(path) && LibraryFolders.WasDeleted(path, root);
 
         // A scan's result minus the files removed from the library on purpose -
         // for a caller that hands the same list to something other than

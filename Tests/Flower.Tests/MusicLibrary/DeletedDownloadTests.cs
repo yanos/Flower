@@ -71,6 +71,25 @@ public class DeletedDownloadTests : IDisposable
         Assert.True(song.IsLocallyDownloaded);
     }
 
+    // The folder is there and full, but the drive linked into it is
+    // unplugged, leaving the link pointing at nothing.
+    [Fact]
+    public void A_download_on_a_drive_linked_into_the_folder_and_unplugged_stays_a_download()
+    {
+        File.WriteAllText(Path.Combine(_root, "other.mp3"), "");
+        var drive = Directory.CreateTempSubdirectory("flower-deleted-download-drive").FullName;
+        Directory.CreateSymbolicLink(Path.Combine(_root, "External"), drive);
+        var download = Download("External/Pavement/01 Summer Babe.mp3");
+        var library = LibraryWith(download);
+        Directory.Delete(drive);
+
+        library.UpdateTracks([]);
+
+        var song = Assert.Single(library.Tracks);
+        Assert.Equal(download.Path, song.Path);
+        Assert.True(song.IsLocallyDownloaded);
+    }
+
     // Android's downloads sit in a folder the MediaStore scan never reads:
     // the scan finding nothing there is not the files going.
     [Fact]
