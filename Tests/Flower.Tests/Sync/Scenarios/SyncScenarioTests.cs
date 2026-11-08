@@ -172,6 +172,80 @@ public class SyncScenarioTests : PinnedDataDirectory
         Assert.Equal(ids, client.Library.Tracks.Select(t => t.Id).OrderBy(i => i));
     }
 
+    // ── Library: somebody else's plays ───────────────────────────────────
+    //
+    // A play anywhere moves the server's listening token and leaves its
+    // catalog token alone, so an owner's device follows it with GET
+    // /listening for the songs that moved - one listener's play no longer
+    // costs every other device the whole catalog (October C1.1).
+
+    [Fact]
+    public async Task Another_devices_play_arrives_without_the_catalog_being_pulled_again()
+    {
+        using var server = new SimulatedFlowerServer([ServerTrack("One"), ServerTrack("Two")]);
+        var client = NewClient();
+        await client.PullLibraryAsync(server);
+        var playedAt = DateTimeOffset.UtcNow.AddMinutes(-1);
+        var one = server.Library.Tracks.Single(t => t.Title == "One");
+
+        server.Library.MergeReportedTrackState(
+            "desktop-fp", [new TrackStateDto(one.Id.ToKey(), 3, LastPlayedAt: playedAt)], callerIsAdmin: true);
+        lock (server.Requests)
+            server.Requests.Clear();
+        var result = await client.LibrarySync.SyncListeningAsync(server.Device);
+
+        Assert.True(result.Success);
+        Assert.Equal(3, client.Single("One").RemotePlayCounts["desktop-fp"]);
+        Assert.Equal(playedAt, client.Single("One").LastPlayedAt);
+        Assert.Null(client.Single("Two").LastPlayedAt);
+        Assert.Equal([$"GET {SimulatedFlowerServer.ListeningPath}"], server.Requests);
+    }
+
+    // A pull that finds the catalog unchanged still brings the plays the
+    // server says it has, since the catalog's token no longer moves for them.
+    [Fact]
+    public async Task An_unchanged_catalog_still_brings_new_plays()
+    {
+        using var server = new SimulatedFlowerServer([ServerTrack("One")]);
+        var client = NewClient();
+        await client.PullLibraryAsync(server);
+        var one = server.Library.Tracks.Single();
+
+        server.Library.MergeReportedTrackState("desktop-fp", [new TrackStateDto(one.Id.ToKey(), 2)], callerIsAdmin: true);
+        var result = await client.LibrarySync.SyncWithAsync(server.Device);
+
+        Assert.True(result.Unchanged);
+        Assert.Equal(2, client.Single("One").RemotePlayCounts["desktop-fp"]);
+    }
+
+    // What a device reports is not news to it when it comes back: the poll
+    // that sees the server's listening token move recognises its own echo.
+    [Fact]
+    public async Task This_devices_own_play_is_recognised_when_it_comes_back()
+    {
+        using var server = new SimulatedFlowerServer([ServerTrack("One")]);
+        var client = NewClient();
+        await client.PullLibraryAsync(server);
+
+        client.Library.IncrementPlayCount(client.Single("One"));
+        Assert.True(await client.PushTrackStateAsync(server));
+
+        Assert.True(client.LibrarySync.CausedPeerListeningToken(server.Fingerprint, server.Library.ListeningToken));
+    }
+
+    // Nothing pulled yet, so nothing for plays to land on: the catalog first.
+    [Fact]
+    public async Task Plays_before_any_catalog_ask_for_the_catalog()
+    {
+        using var server = new SimulatedFlowerServer([ServerTrack("One")]);
+        var client = NewClient();
+
+        var result = await client.LibrarySync.SyncListeningAsync(server.Device);
+
+        Assert.True(result.CatalogNeeded);
+        Assert.Empty(server.Requests);
+    }
+
     // The server keeps a retagged file's identity (its rescan matches by path),
     // so its id does not move. Neither should anything the client has hung off
     // the placeholder: its own Id, the playlist holding it, its star.

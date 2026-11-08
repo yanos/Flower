@@ -415,6 +415,34 @@ public class DiscoveryEndpointTests(FlowerServerFixture server) : IClassFixture<
         }
     }
 
+    // The token plays move, for an owner's device to follow through GET
+    // /listening. Nobody else may read that route, so nobody else is told.
+    [Fact]
+    public async Task Tells_only_an_administrator_where_the_librarys_listening_stands()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var library = server.Services.GetRequiredService<Library>();
+        var admin = NewDevice();
+        var listener = NewDevice();
+        await trustedPeers.ApproveAsync(admin.Fingerprint, "Owner's Mac", admin.PublicKeyBase64, isAdmin: true);
+        await trustedPeers.ApproveAsync(listener.Fingerprint, "Listener", listener.PublicKeyBase64);
+
+        try
+        {
+            var (_, adminBody) = await GetInfoAsync(signer: admin);
+            Assert.Equal(library.ListeningToken, adminBody.GetProperty("listeningToken").GetString());
+
+            var (_, listenerBody) = await GetInfoAsync(signer: listener);
+            Assert.True(!listenerBody.TryGetProperty("listeningToken", out var told)
+                        || told.ValueKind == JsonValueKind.Null);
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(admin.Fingerprint);
+            await trustedPeers.RevokeAsync(listener.Fingerprint);
+        }
+    }
+
     // Either switch off and the server reads no plays, Music.app or not.
     [Theory]
     [InlineData(false, true)]

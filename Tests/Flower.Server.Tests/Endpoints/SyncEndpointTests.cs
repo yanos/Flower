@@ -32,13 +32,13 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
     }
 
     // Signed exactly the way LibrarySyncService/PlaylistSyncService sign:
-    // identity in headers, empty query, the body hashed into the signature.
+    // identity in headers, the query and the body hashed into the signature.
     private async Task<(HttpStatusCode Status, string Body, string? ETag)> SendAsync(
         DeviceSigningKey device, string method, string path, string remoteIp,
-        string? body = null, string? ifNoneMatch = null)
+        string? body = null, string? ifNoneMatch = null, IReadOnlyList<(string Key, string Value)>? query = null)
     {
         var (status, responseBody, headers) = await SendWithHeadersAsync(
-            device, method, path, remoteIp, body, ifNoneMatch);
+            device, method, path, remoteIp, body, ifNoneMatch, query);
         return (status, responseBody, headers.ETag.ToString() is { Length: > 0 } etag ? etag : null);
     }
 
@@ -46,15 +46,17 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
     // ETag - for the routes that answer with a header of their own.
     private async Task<(HttpStatusCode Status, string Body, IHeaderDictionary Headers)> SendWithHeadersAsync(
         DeviceSigningKey device, string method, string path, string remoteIp,
-        string? body = null, string? ifNoneMatch = null)
+        string? body = null, string? ifNoneMatch = null, IReadOnlyList<(string Key, string Value)>? query = null)
     {
         var bodyBytes = body == null ? [] : Encoding.UTF8.GetBytes(body);
-        var (signature, timestamp, nonce) = device.Sign(method, path, [], bodyBytes);
+        var (signature, timestamp, nonce) = device.Sign(method, path, query ?? [], bodyBytes);
 
         var context = await server.Server.SendAsync(c =>
         {
             c.Request.Method = method;
             c.Request.Path = path;
+            if (query is { Count: > 0 })
+                c.Request.QueryString = QueryString.Create(query.Select(p => new KeyValuePair<string, string?>(p.Key, p.Value)));
             c.Connection.RemoteIpAddress = IPAddress.Parse(remoteIp);
             c.Request.Headers["X-Flower-Fingerprint"] = device.Fingerprint;
             c.Request.Headers["X-Flower-Alias"] = "Kitchen iPad";
@@ -485,7 +487,7 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
         {
             track.LastPlayedAt = DateTimeOffset.UtcNow;
             track.ResumePosition = TimeSpan.FromSeconds(42);
-            // Through the library, so the catalog token moves and neither
+            // Through the library, so the listening token moves and neither
             // fetch is served a body cached before these plays.
             library.RecordPlayFor(track.Id.ToKey(), guest.Fingerprint);
             library.RecordPlayFor(track.Id.ToKey(), "someone-elses-phone");
@@ -698,14 +700,18 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
     // The reporter has to be able to recognise the token its own report
     // produced, or the /info poll reads it as a catalog change and pulls all of
     // it back to learn what it just said. See TrackStateReportHeaders.
+    //
+    // A play moves the listening token alone (Library.ListeningToken), so that
+    // is the one that moves here, and the catalog's comes back as it was.
     [Fact]
-    public async Task Reporting_track_state_answers_with_the_resulting_library_token()
+    public async Task Reporting_track_state_answers_with_the_resulting_tokens()
     {
         var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
         var library = server.Services.GetRequiredService<Library>();
         using var device = await TrustedDeviceAsync(trustedPeers);
         var track = library.Tracks.First(t => t.Title == "Second Song");
-        var tokenBefore = library.ChangeToken;
+        var catalogBefore = library.ChangeToken;
+        var listeningBefore = library.ListeningToken;
 
         try
         {
@@ -715,17 +721,111 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
                     new TrackStateReportDto([new TrackStateDto(track.Id.ToKey(), 11)])));
 
             Assert.Equal(HttpStatusCode.NoContent, status);
-            var echoed = headers[TrackStateReportHeaders.LibraryToken].ToString();
+            var echoedListening = headers[TrackStateReportHeaders.ListeningToken].ToString();
 
             // Read after the merge, so it is the token the report itself
             // produced rather than the one that was current on arrival.
-            Assert.NotEqual(tokenBefore, echoed);
-            Assert.Equal(library.ChangeToken, echoed);
+            Assert.NotEqual(listeningBefore, echoedListening);
+            Assert.Equal(library.ListeningToken, echoedListening);
+            Assert.Equal(catalogBefore, headers[TrackStateReportHeaders.LibraryToken].ToString());
         }
         finally
         {
             track.RemotePlayCounts.Remove(device.Fingerprint);
             await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    // ── GET /listening ────────────────────────────────────────────────────
+    //
+    // One listener's play used to move the catalog's token, so every other
+    // device pulled the whole catalog to learn one count (October C1.1). Now
+    // the catalog stays a 304 and an owner's device asks for the plays alone.
+
+    private static IReadOnlyList<(string Key, string Value)> Since(string token) => [("since", token)];
+
+    [Fact]
+    public async Task A_play_leaves_the_catalog_unchanged_and_GET_listening_names_the_song()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var library = server.Services.GetRequiredService<Library>();
+        using var owner = await AdminDeviceAsync(trustedPeers);
+        using var phone = await TrustedDeviceAsync(trustedPeers);
+        var track = library.Tracks.First(t => t.Title == "Second Song");
+
+        try
+        {
+            var (_, catalogBody, etag) = await SendAsync(owner, "GET", "/api/flower/v1/library", "10.0.4.1");
+            var since = JsonSerializer.Deserialize<LibrarySyncManifestDto>(catalogBody)!.ListeningToken!;
+
+            await SendAsync(phone, "POST", "/api/flower/v1/track-state", "10.0.4.2",
+                body: JsonSerializer.Serialize(new TrackStateReportDto([new TrackStateDto(track.Id.ToKey(), 4)])));
+
+            var (catalogStatus, _, _) = await SendAsync(owner, "GET", "/api/flower/v1/library", "10.0.4.1", ifNoneMatch: etag);
+            Assert.Equal(HttpStatusCode.NotModified, catalogStatus);
+
+            var (status, body, _) = await SendAsync(owner, "GET", "/api/flower/v1/listening", "10.0.4.1", query: Since(since));
+            Assert.Equal(HttpStatusCode.OK, status);
+            var changes = JsonSerializer.Deserialize<ListeningChangesDto>(body)!;
+            var song = Assert.Single(changes.Songs);
+            Assert.Equal(track.Id.ToKey(), song.Id);
+            Assert.Equal(4, song.PlayCounts![phone.Fingerprint]);
+            Assert.Equal(library.ListeningToken, changes.Token);
+
+            // And from where that answer left it, nothing more.
+            var (_, again, _) = await SendAsync(owner, "GET", "/api/flower/v1/listening", "10.0.4.1", query: Since(changes.Token));
+            Assert.Empty(JsonSerializer.Deserialize<ListeningChangesDto>(again)!.Songs);
+        }
+        finally
+        {
+            track.RemotePlayCounts.Remove(phone.Fingerprint);
+            await trustedPeers.RevokeAsync(owner.Fingerprint);
+            await trustedPeers.RevokeAsync(phone.Fingerprint);
+        }
+    }
+
+    // A guest's catalog carries nobody's listening but its own; which songs
+    // somebody else just played is not its to follow.
+    [Fact]
+    public async Task A_guest_device_may_not_follow_the_libraries_listening()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var library = server.Services.GetRequiredService<Library>();
+        using var guest = await TrustedDeviceAsync(trustedPeers);
+
+        try
+        {
+            var (status, body, _) = await SendAsync(
+                guest, "GET", "/api/flower/v1/listening", "10.0.4.3", query: Since(library.ListeningToken));
+            Assert.Equal(HttpStatusCode.Forbidden, status);
+            Assert.Contains(ProblemCodes.NotAdmin, body);
+
+            var (_, catalogBody, _) = await SendAsync(guest, "GET", "/api/flower/v1/library", "10.0.4.3");
+            Assert.Null(JsonSerializer.Deserialize<LibrarySyncManifestDto>(catalogBody)!.ListeningToken);
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(guest.Fingerprint);
+        }
+    }
+
+    // A token from before a restart, or anything else this server cannot
+    // count from: the device reads the catalog instead.
+    [Fact]
+    public async Task A_listening_token_the_server_cannot_count_from_is_a_conflict()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        using var owner = await AdminDeviceAsync(trustedPeers);
+
+        try
+        {
+            var (status, _, _) = await SendAsync(
+                owner, "GET", "/api/flower/v1/listening", "10.0.4.4", query: Since("0badc0de-1"));
+            Assert.Equal(HttpStatusCode.Conflict, status);
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(owner.Fingerprint);
         }
     }
 

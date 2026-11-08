@@ -168,7 +168,7 @@ In November 2026 every finding the two reviews had closed was taken out of
 them, and what was left of both was merged into one backlog, `CODE-REVIEW.md`.
 Source comments cite the closed findings as *"docs/CODE-REVIEW-2026-09.md
 B6"*, and this is what those citations resolve against. The findings still
-open (September E3; October B4, C1.1) are in
+open (September E3; October B4) are in
 `CODE-REVIEW.md` under the same review and number. The full text of both,
 measurements and rejected alternatives included:
 
@@ -225,6 +225,7 @@ git show 2e55685:docs/CODE-REVIEW-2026-10.md
 | **B3** | A failed track told the user nothing. `PlaybackFailed` carries `PlaybackFailedEventArgs`, which `MainViewModel.PlaybackNotice` shows on both heads. |
 | **B5** | `SeekableHttpStream` leaked the response on a refusal. It is disposed before the throw. |
 | **C1, client half** | A sync that changed nothing rewrote the whole library. `MergeSyncedTracks` skips a merge that moved nothing, and writes only the rows that moved (`LibrarySyncNoOpPullTests`). |
+| **C1.1** | Every play moved the server's change token, so every other device's next `GET /library` was the whole 6-8 MB catalog. Listening has its own token (`Library.ListeningToken`), served on `/info` and in the catalog to admin devices only. Each song remembers when its listening last moved, so `GET /listening?since=` answers with only the songs that moved (`Library.ListeningSince`). A device applies those by the full pull's own rules (`Library.MergeSyncedListening`), and the coordinator pulls the catalog only when the catalog token moves (`LibraryListeningTokenTests`, the `/listening` endpoint tests, `SyncScenarioTests`, `MainViewModelSyncTriggerTests`). |
 | **C1.3** | The desktop's two iTunes imports rewrote the whole library and rebuilt every list on every launch, changed or not. Both importers return whether a count or date moved, and `ITunesImportCoordinator` and `ITunesIntegration.ApplyImports` publish only then (`ITunesPlayCountImporterTests`, `ITunesDateAddedImporterTests`). |
 | **C1.2** | A server rescan that found nothing new moved the change token, so every device fetched the whole catalog after it. `UpdateTracks` compares what it found with what it had (`Track.HasSameStateAs`, which `TrackTests` checks covers every field), and an unchanged result moves neither the token nor a row, though the fresh instances still go in (`LibraryNoOpRescanTests`). |
 | **C2** | The server read cover art from the audio file on every request. `CoverArtCache` keeps each answer, a miss included. It is checked against the files and folders it came from, and emptied by a library change but not by a play. Then the rest, in November 2026: both art routes take `size=thumbnail`, which the server shrinks to 192 px once and keeps beside the cover (`CoverArtThumbnail`, on SkiaSharp), and a song row asks for that rather than the full cover. `GET /cover-art` sends an `ETag` and `private, no-cache`, and answers a matching `If-None-Match` with a 304. Only a browser can use that, and only on the single-request fallback, since a tab mostly fetches through the batch POST. |

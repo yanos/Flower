@@ -175,6 +175,14 @@ libraries agree. A guest's device gets the songs and its own entry in
 served: they are the owner's curation of the library, not a record of
 listening.
 
+The listening has a change token of its own (`Library.ListeningToken`), and
+`GET /listening` answers with the songs whose listening moved since a token.
+Both are for the owner's devices only. A guest is not told the token, its
+catalog does not carry it, and the route refuses it with `not-admin`. Which
+songs somebody just played is exactly what `ForGuest` withholds. The catalog
+token no longer moves on a play, so a guest can no longer read from it that
+somebody is listening.
+
 ### Bounded tables
 
 - **Stream tickets:** at most 32 outstanding per fingerprint. Minting a 33rd

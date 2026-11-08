@@ -236,7 +236,13 @@ public static class DiscoveryEndpoints
                 vibePercent,
                 // And whether it carries a queue on once it runs out, for a
                 // paired device's own Endless Play switch to say so.
-                callerIsTrusted ? vibe.RunsEndlessPlay : null);
+                callerIsTrusted ? vibe.RunsEndlessPlay : null,
+                // What moves on a play, for an owner's device to follow
+                // through GET /listening - see SyncInfoResponseDto.
+                // Administrators only: nobody else may read that route.
+                callerIsTrusted && trustedPeers.IsAdmin(caller.Fingerprint!)
+                    ? library.ListeningToken
+                    : null);
 
             // Signed, over the bytes sent, whenever the caller signed its
             // request: trustsCaller: false is how a revoked device finds out,

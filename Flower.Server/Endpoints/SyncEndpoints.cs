@@ -24,6 +24,8 @@ namespace Flower.Server.Endpoints;
 // Deliberately only the three routes a Client drives against its Server:
 //
 //   GET  /library         - the whole track catalog in one response
+//   GET  /listening       - the plays that moved since a token, for an
+//                           owner's device that already has the catalog
 //   GET  /playlists       - this server's playlists, for the merge
 //   POST /playlists/apply - the merged result the client resolved
 //   POST /plays           - what a browser tab played, to count here
@@ -190,6 +192,7 @@ public static class SyncEndpoints
         });
 
         sync.MapGet("/library", GetLibrary);
+        sync.MapGet("/listening", GetListening);
         sync.MapGet("/playlists", GetPlaylists);
         // Lambdas rather than method-group references purely so the logger
         // captured above reaches these three: a bare, non-generic ILogger is
@@ -363,11 +366,19 @@ public static class SyncEndpoints
     internal const string TicketMinterKey = "flower.auth.ticket-minter";
 
     // Conditional on Library.ChangeToken, served as the ETag: a client that
-    // sends back the token it already holds gets a 304 and no body. Worth as much here as there - this is
+    // sends back the token it already holds gets a 304 and no body. This is
     // megabytes of JSON at a real library size, rebuilt for every peer that
-    // asks otherwise - so the serialized body is cached alongside the token it
-    // was built from, and several peers missing the cache at once still only
-    // build it once.
+    // asks otherwise - so the serialized body is cached alongside the tokens
+    // it was built from, and several peers missing the cache at once still
+    // only build it once.
+    //
+    // The ETag names the catalog, not the listening in it. A play moves only
+    // Library.ListeningToken, so a 304 can stand in front of a catalog whose
+    // play counts have moved since: an owner's device hears of those through
+    // GET /listening, from the ListeningToken this manifest carries, and a
+    // guest's catalog has nobody's listening in it but its own, which it
+    // reported itself. That is what stops one listener's play costing every
+    // other device the whole catalog (October C1.1).
     //
     // Two catalogs, by who is asking. The owner's devices get everything, and
     // need it: they merge every device's play count and the owner's own
@@ -391,7 +402,12 @@ public static class SyncEndpoints
             return Problems.Of(StatusCodes.Status401Unauthorized, ProblemCodes.SignatureInvalid);
         var isOwner = trustedPeers.IsAdmin(caller);
 
-        var json = cache.Get(token, isOwner ? LibraryManifestCache.OwnerAudience : caller, () =>
+        // Before the body is built, not after: a play landing mid-build is then
+        // in the body and reported again by the next GET /listening, which
+        // merges as a no-op, rather than missing from both.
+        var listening = library.ListeningToken;
+
+        var json = cache.Get($"{token}/{listening}", isOwner ? LibraryManifestCache.OwnerAudience : caller, () =>
         {
             // Only tracks this server actually has a file for: a placeholder
             // learned from somewhere else is not this device's to advertise.
@@ -411,10 +427,43 @@ public static class SyncEndpoints
                 .Where(r => r.Deliberate)
                 .Select(r => r.Track.Id.ToKey())
                 .ToList();
-            return JsonSerializer.Serialize(new LibrarySyncManifestDto(signingKey.Fingerprint, songs, removed), JsonOptions);
+            return JsonSerializer.Serialize(
+                new LibrarySyncManifestDto(signingKey.Fingerprint, songs, removed, isOwner ? listening : null),
+                JsonOptions);
         });
 
         return Results.Text(json, "application/json");
+    }
+
+    // The listening that moved since `since`, a token an earlier answer gave
+    // (a catalog's ListeningToken, or this route's own Token). A few songs
+    // where GET /library is all of them, so an owner's device keeps up with
+    // everybody's plays without re-reading the catalog - see
+    // Library.ListeningToken.
+    //
+    // Owner's devices only, and refused rather than emptied for anyone else:
+    // see ListeningChangesDto. A 409 says the token is not one this server can
+    // count from - it restarted since, most likely - and the device reads the
+    // whole catalog instead, which carries a fresh one.
+    private static IResult GetListening(
+        HttpContext context, Library library, DeviceSigningKey signingKey, TrustedPeerStore trustedPeers)
+    {
+        if (context.Items[AuthenticatedFingerprintKey] is not string { Length: > 0 } caller)
+            return Problems.Of(StatusCodes.Status401Unauthorized, ProblemCodes.SignatureInvalid);
+        if (!trustedPeers.IsAdmin(caller))
+            return Problems.NotAdmin();
+
+        if (library.ListeningSince(context.Request.Query["since"].ToString()) is not { } since)
+            return Problems.Of(StatusCodes.Status409Conflict, ProblemCodes.Conflict);
+        var (token, moved) = since;
+
+        // Only tracks this server has a file for, as the catalog lists.
+        var songs = moved
+            .Where(track => track.Path != null)
+            .Select(track => LibraryDtoMapper.ToListeningDto(track, signingKey.Fingerprint))
+            .ToList();
+
+        return Results.Json(new ListeningChangesDto(token, songs), JsonOptions);
     }
 
     // A song as a guest's device sees it - see GetLibrary.
@@ -617,9 +666,10 @@ public static class SyncEndpoints
             "Applied {AppliedCount} of {ReportedCount} track state report(s) from {Fingerprint} (admin: {IsAdmin})",
             applied, report.Tracks.Count, fingerprint, callerIsAdmin);
 
-        // Read after the merge, so it is the token the caller's own report
+        // Read after the merge, so they are the tokens the caller's own report
         // produced - see TrackStateReportHeaders for the loop this closes.
         context.Response.Headers[TrackStateReportHeaders.LibraryToken] = library.ChangeToken;
+        context.Response.Headers[TrackStateReportHeaders.ListeningToken] = library.ListeningToken;
 
         return Results.NoContent();
     }

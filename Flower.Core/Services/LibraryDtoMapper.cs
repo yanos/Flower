@@ -54,6 +54,32 @@ public static class LibraryDtoMapper
     // albumCoverHash is the picture the track's album is drawn with
     // (AlbumCover.TrackOf's ArtHash), which decides whether CoverArt names
     // the album's cover or the song's own; without it, the album's.
+    // One song's listening as GET /listening serves it, in the same terms the
+    // catalog serves it in (ToTrackDto) - the two must not disagree, or a
+    // device would read every delta as a change against its last pull.
+    public static TrackListeningDto ToListeningDto(Track track, string selfFingerprint) => new(
+        Id: track.Id.ToKey(),
+        PlayCounts: PlayCountsOf(track, selfFingerprint),
+        ImportedPlayCount: track.ImportedPlayCount > 0 ? track.ImportedPlayCount : null,
+        LastPlayed: track.LastPlayedAt,
+        ResumePositionSeconds: ResumeSecondsOf(track),
+        RememberPlaybackPosition: track.RememberPlaybackPosition,
+        IgnoreWhenShuffling: track.IgnoreWhenShuffling,
+        VolumeAdjustment: track.VolumeAdjustment);
+
+    // This server's own tally under its own name, plus every other device's
+    // count it has learned - see ToTrackDto's PlayCounts.
+    private static Dictionary<string, int>? PlayCountsOf(Track track, string? selfFingerprint) =>
+        selfFingerprint == null
+            ? null
+            : new Dictionary<string, int>(track.RemotePlayCounts)
+            {
+                [selfFingerprint] = track.PlayCount,
+            };
+
+    private static int? ResumeSecondsOf(Track track) =>
+        track.ResumePosition is { } resume ? (int)resume.TotalSeconds : null;
+
     public static TrackDto ToTrackDto(
         Track track, string? selfFingerprint = null, PathRules? paths = null, string? albumCoverHash = null)
     {
@@ -101,12 +127,7 @@ public static class LibraryDtoMapper
             // (ImportedPlayCount below): folded in here it would come back to
             // the admin device that reported it as this server's plays, on top
             // of the same count that device holds itself.
-            PlayCounts: selfFingerprint == null
-                ? null
-                : new Dictionary<string, int>(track.RemotePlayCounts)
-                {
-                    [selfFingerprint] = track.PlayCount,
-                },
+            PlayCounts: PlayCountsOf(track, selfFingerprint),
             ImportedPlayCount: track.ImportedPlayCount > 0 ? track.ImportedPlayCount : null,
             LastPlayed: track.LastPlayedAt,
             // The same albumArtist already used for AlbumId/ArtistId/CoverArt
@@ -131,7 +152,7 @@ public static class LibraryDtoMapper
             SortAlbum: track.AlbumSort,
             SortComposer: track.ComposersSort,
             RememberPlaybackPosition: track.RememberPlaybackPosition,
-            ResumePositionSeconds: track.ResumePosition is { } resume ? (int)resume.TotalSeconds : null,
+            ResumePositionSeconds: ResumeSecondsOf(track),
             IgnoreWhenShuffling: track.IgnoreWhenShuffling,
             VolumeAdjustment: track.VolumeAdjustment,
             EncoderProfile: track.EncoderProfile,

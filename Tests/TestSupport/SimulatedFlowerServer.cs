@@ -27,6 +27,7 @@ namespace Flower.Tests.TestSupport;
 public sealed class SimulatedFlowerServer : IDisposable
 {
     public const string LibraryPath = "/api/flower/v1/library";
+    public const string ListeningPath = "/api/flower/v1/listening";
     public const string PlaylistsPath = "/api/flower/v1/playlists";
     public const string ApplyPath = "/api/flower/v1/playlists/apply";
     public const string TrackStatePath = "/api/flower/v1/track-state";
@@ -154,6 +155,10 @@ public sealed class SimulatedFlowerServer : IDisposable
         Fingerprint = Fingerprint,
         WeAreAdmin = CallerIsAdmin,
         Alias = "Server",
+        // What /info would say right now: DiscoveryEndpoints tells it to an
+        // owner's device only.
+        LibraryToken = Library.ChangeToken,
+        ListeningToken = CallerIsAdmin ? Library.ListeningToken : "",
     };
 
     private async Task HandleAsync(HttpListenerContext context)
@@ -169,6 +174,9 @@ public sealed class SimulatedFlowerServer : IDisposable
             {
                 case ("GET", LibraryPath):
                     await ServeLibraryAsync(context);
+                    return;
+                case ("GET", ListeningPath):
+                    await ServeListeningAsync(context);
                     return;
                 case ("GET", PlaylistsPath):
                     await WriteJsonAsync(context, PlaylistSyncMapper.ToManifest(
@@ -196,6 +204,7 @@ public sealed class SimulatedFlowerServer : IDisposable
                     var fingerprint = context.Request.Headers["X-Flower-Fingerprint"] ?? "";
                     Library.MergeReportedTrackState(fingerprint, report!.Tracks, CallerIsAdmin);
                     context.Response.Headers[TrackStateReportHeaders.LibraryToken] = Library.ChangeToken;
+                    context.Response.Headers[TrackStateReportHeaders.ListeningToken] = Library.ListeningToken;
                     context.Response.StatusCode = 204;
                     return;
                 }
@@ -346,6 +355,8 @@ public sealed class SimulatedFlowerServer : IDisposable
             return;
         }
 
+        var listening = Library.ListeningToken;
+
         var paths = MusicFolder == null ? null : PathRules.For([MusicFolder]);
         var songs = Library.Snapshot.Albums
             .SelectMany(album => album.Tracks.Select(track => (Track: track, Cover: album.CoverHash)))
@@ -353,7 +364,28 @@ public sealed class SimulatedFlowerServer : IDisposable
             .Select(song => LibraryDtoMapper.ToTrackDto(song.Track, Fingerprint, paths, song.Cover))
             .ToList();
         var removed = Library.RemovedTracks.Where(r => r.Deliberate).Select(r => r.Track.Id.ToKey()).ToList();
-        await WriteJsonAsync(context, new LibrarySyncManifestDto(Fingerprint, songs, removed));
+        await WriteJsonAsync(context, new LibrarySyncManifestDto(Fingerprint, songs, removed, CallerIsAdmin ? listening : null));
+    }
+
+    // SyncEndpoints.GetListening: owners only, 409 for a token it cannot count from.
+    private async Task ServeListeningAsync(HttpListenerContext context)
+    {
+        if (!CallerIsAdmin)
+        {
+            context.Response.StatusCode = 403;
+            return;
+        }
+        if (Library.ListeningSince(context.Request.QueryString["since"]) is not { } since)
+        {
+            context.Response.StatusCode = 409;
+            return;
+        }
+
+        var songs = since.Moved
+            .Where(track => track.Path != null)
+            .Select(track => LibraryDtoMapper.ToListeningDto(track, Fingerprint))
+            .ToList();
+        await WriteJsonAsync(context, new ListeningChangesDto(since.Token, songs));
     }
 
     private static async Task WriteJsonAsync<T>(HttpListenerContext context, T value)

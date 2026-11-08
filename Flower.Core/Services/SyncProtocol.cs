@@ -84,10 +84,15 @@ public static class SyncProtocol
 // EndlessPlay is whether it carries a queue on once it runs out
 // (MusicLibrarySettings.EndlessPlayEnabled), which a device's own switch
 // needs. Verified callers only.
+//
+// ListeningToken is the server's Library.ListeningToken, which moves on plays
+// where LibraryToken does not, for an owner's device to follow through GET
+// /listening. Administrators only, like the route: see ListeningChangesDto.
 public sealed record SyncInfoResponseDto(
     string Alias, string Version, string? DeviceModel, string DeviceType,
     string Fingerprint, string PublicKey, bool Download, bool? TrustsCaller,
     string LibraryToken, List<string>? Addresses = null, bool? CallerIsAdmin = null,
     string? PlaylistsToken = null, bool? ImportsMusicAppPlays = null,
     string? IconEmoji = null, string? IconToken = null, bool? LooksUpOnline = null,
-    string? VibePlaylists = null, int? VibePercent = null, bool? EndlessPlay = null);
+    string? VibePlaylists = null, int? VibePercent = null, bool? EndlessPlay = null,
+    string? ListeningToken = null);

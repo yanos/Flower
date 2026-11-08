@@ -259,6 +259,7 @@ device it answers more, on that device's budget, and the answer is signed back.
   "download": false,
   "trustsCaller": true,
   "libraryToken": "…",
+  "listeningToken": "…",
   "addresses": ["https://192.168.1.40:4534", "http://192.168.1.40:4533"],
   "callerIsAdmin": false,
   "playlistsToken": "…",
@@ -273,7 +274,8 @@ device it answers more, on that device's budget, and the answer is signed back.
 | `alias` | The name actually announced, which differs from the configured one when another server already had it |
 | `fingerprint`, `publicKey` | What a client pins, and checks against a pairing invite's `fp` |
 | `trustsCaller` | `true` verified; `false` no key on file for the claimed fingerprint, told only to a caller whose request is self-signed by that fingerprint's key (a revoked device still holds it), and believed by a client only when the answer is signed; `null` otherwise: no identity claimed, a fingerprint claimed without its key, or a signature that merely failed |
-| `libraryToken` | Change token for the catalog. Paired clients poll this route about every 5s and sync when it moves |
+| `libraryToken` | Change token for the catalog. Paired clients poll this route about every 5s and sync when it moves. A play does not move it |
+| `listeningToken` | Change token for the catalog's listening: plays, when last played, resume positions. Moves on every play, where `libraryToken` does not. **Verified administrators only**, `null` otherwise. An owner's device that sees only this one move asks `GET /listening` for the songs that moved |
 | `playlistsToken` | Change token for the caller's listener's playlists, so a guest's edit does not move the owner's. **Verified callers only**, `null` otherwise |
 | `addresses` | Every origin the server believes it is reachable on, https first, the public one last. **Verified callers only**, `null` otherwise |
 | `callerIsAdmin` | **Verified callers only**, `null` otherwise. A hint for showing admin controls; it grants nothing |
@@ -337,6 +339,7 @@ PascalCase JSON.
 | GET | `/library` | The whole catalog |
 | GET | `/playlists` | The caller's listener's playlists |
 | POST | `/playlists/apply` | A merged playlist set, pushed back |
+| GET | `/listening?since=` | The plays that moved since a listening token (admin devices) |
 | POST | `/plays` | Play events from a head with no storage (a browser tab) |
 | POST | `/track-state` | Plays, stars and options from a head with storage |
 | POST | `/album-progress` | Exchange the Continue Playing shelf |
@@ -357,7 +360,7 @@ PascalCase JSON.
 Returns `LibrarySyncManifestDto`:
 
 ```json
-{ "DeviceFingerprint": "3f9a…", "Songs": [ { "Id": "…", "Title": "…" } ], "Removed": ["…"] }
+{ "DeviceFingerprint": "3f9a…", "Songs": [ { "Id": "…", "Title": "…" } ], "Removed": ["…"], "ListeningToken": "…" }
 ```
 
 Each song's `PlayCounts` holds plays counted in Flower, one entry per device
@@ -373,7 +376,13 @@ anyone else's listening. See `SECURITY.md`.
 The response's `ETag` is the library change token — the same value `/info`
 reports as `libraryToken`. Send it back as `If-None-Match` for a `304` with no
 body. At a real library size this is megabytes; the serialized body is cached
-per token and audience (the owner's, or one guest's).
+per token pair and audience (the owner's, or one guest's).
+
+The `ETag` names the catalog, not the listening in it: a play does not move
+it, so a `304` can stand in front of play counts that have moved since. An
+owner's device follows those through `GET /listening`, starting from the
+body's `ListeningToken` (the listening as of this body). A guest's body has no
+`ListeningToken`, and needs none: the only listening in it is its own.
 
 `Songs` holds only tracks the server has a file for. Each is a `TrackDto`
 (`LibraryContracts.cs`), whose comments are the field-by-field reference:
@@ -408,6 +417,30 @@ another listener is not applied. The answer is `200` with
 `{"Refused": [ids]}` naming those ids; it is empty for an honest push. The
 client only logs it: its next sync drops those playlists the ordinary way.
 
+### `GET /listening?since=`
+
+Admin devices only (`403 not-admin` for anyone else, since which songs somebody
+just played is what a guest's catalog withholds). Returns
+`ListeningChangesDto`:
+
+```json
+{ "Token": "…", "Songs": [ { "Id": "…", "PlayCounts": { "3f9a…": 12 }, "LastPlayed": "…", "ResumePositionSeconds": 754 } ] }
+```
+
+`since` is a listening token: a catalog's `ListeningToken`, `/info`'s
+`listeningToken`, or an earlier answer's `Token`. `Songs` is every song whose
+listening moved after it, and only those, with the catalog's spelling of the
+same fields (`PlayCounts`, `ImportedPlayCount`, `LastPlayed`,
+`ResumePositionSeconds`) plus the three playback options, which a device
+applies together with the resume position. `Token` is where the answer leaves
+the device. Ask from it next time.
+
+A `since` this server cannot count from, one from before a restart or one it
+never issued, is a `409 conflict`, and the device pulls `GET /library`
+instead. Every play used to move the catalog token, so every other device
+pulled the whole catalog to learn one count. This route exists so a play costs
+a few songs instead.
+
 ### `POST /plays`
 
 `{"Plays": [{"EventId", "TrackId", "At"}]}` → `204`.
@@ -426,8 +459,10 @@ limit it is a `400`.
 
 ### `POST /track-state`
 
-`{"Tracks": [TrackStateDto]}` → `204`, with the resulting library token in the
-`X-Flower-Library-Token` response header.
+`{"Tracks": [TrackStateDto]}` → `204`, with the resulting tokens in the
+`X-Flower-Library-Token` and `X-Flower-Listening-Token` response headers. A
+report of plays alone moves only the listening token. A star, an option or a
+`DateAdded` moves the library token.
 
 Totals, not events: `Count` is this device's own play count for the track —
 plays counted in Flower — filed under the fingerprint the signature proved and
@@ -441,9 +476,9 @@ the reporting device; the library keeps one such count per song and only ever
 raises it, to the highest any admin device reports, so two Macs sharing one
 Music.app history count it once.
 
-The response header exists to break a loop: reporting a play moves the library
-token, and a client that did not recognise its own echo would refetch the whole
-catalog for every play.
+The response headers exist to break a loop: reporting a play moves a token,
+and a client that did not recognise its own echo would fetch back what it had
+just said, once for every play.
 
 ### `POST /album-progress`
 

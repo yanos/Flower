@@ -142,12 +142,26 @@ public static class MainViewModelHarness
             return Task.FromResult(Result);
         }
 
+        // Kept apart from SyncedWith: what several tests check is that a play
+        // somewhere else costs this, and not a catalog pull.
+        public LibrarySyncResult ListeningResult { get; set; } = new(Success: true, FetchedCount: 0, AddedCount: 0);
+        public List<DiscoveredDevice> ListeningSyncedWith { get; } = new();
+
+        public override Task<LibrarySyncResult> SyncListeningAsync(DiscoveredDevice device)
+        {
+            ListeningSyncedWith.Add(device);
+            return Task.FromResult(ListeningResult);
+        }
+
         // Tokens this device is to claim its own track-state reporting caused,
         // so a test can drive the echo-suppression path in
         // TriggerSyncIfPeerCatalogChanged without a server to report to.
         public HashSet<string> TokensThisDeviceCaused { get; } = new();
 
         public override bool CausedPeerLibraryToken(string fingerprint, string token) =>
+            TokensThisDeviceCaused.Contains(token);
+
+        public override bool CausedPeerListeningToken(string fingerprint, string token) =>
             TokensThisDeviceCaused.Contains(token);
 
         // Recorded rather than sent, so a test can see a push being asked for.

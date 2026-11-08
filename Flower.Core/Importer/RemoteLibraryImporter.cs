@@ -20,7 +20,16 @@ namespace Flower.Importer;
 // the peer has nothing. A caller that cannot tell those apart will happily prune
 // a library it never re-read (see Library.MergeSyncedTracks), so the two are
 // kept distinct here rather than collapsed into an empty list.
-public readonly record struct RemoteLibraryFetch(bool NotModified, string? ETag, List<Track> Tracks, IReadOnlySet<string> RemovedIds);
+//
+// ListeningToken is where the catalog's listening stands, for an owner's
+// device to follow GET /listening from (LibrarySyncManifestDto.ListeningToken).
+public readonly record struct RemoteLibraryFetch(
+    bool NotModified, string? ETag, List<Track> Tracks, IReadOnlySet<string> RemovedIds, string? ListeningToken = null);
+
+// What one GET /listening answer produced: the songs whose listening moved, as
+// LibrarySyncMapper.ToListeningTrack makes them, and the token to ask from
+// next time.
+public readonly record struct RemoteListeningFetch(string Token, List<Track> Tracks);
 
 // The other IMusicImporter: a catalog pulled from a Flower host over the bulk
 // manifest endpoint, where Importer walks folders on disk. Every track it
@@ -46,6 +55,7 @@ public sealed class RemoteLibraryImporter : IMusicImporter
     // in SyncProtocol because it is Flower's own bulk-sync route, not part of
     // the LocalSend-derived handshake that class describes.
     public const string LibraryPath = "/api/flower/v1/library";
+    public const string ListeningPath = "/api/flower/v1/listening";
 
     private readonly HttpClient _http;
     private readonly string _baseUrl;
@@ -168,6 +178,35 @@ public sealed class RemoteLibraryImporter : IMusicImporter
             .ToList();
 
         _logger.LogInformation("Remote library at {BaseUrl}: fetched {SongCount} song(s)", _baseUrl, tracks.Count);
-        return new RemoteLibraryFetch(NotModified: false, servedToken, tracks, (manifest?.Removed ?? []).ToHashSet());
+        return new RemoteLibraryFetch(
+            NotModified: false, servedToken, tracks, (manifest?.Removed ?? []).ToHashSet(), manifest?.ListeningToken);
+    }
+
+    // The listening that moved on the origin since `since` - see
+    // ListeningChangesDto. Throws as FetchAsync does; a 409 among those says
+    // `since` is not a token the origin can count from, and the caller reads
+    // the whole catalog instead.
+    public async Task<RemoteListeningFetch> FetchListeningAsync(string since)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get, $"{_baseUrl}{ListeningPath}?since={Uri.EscapeDataString(since)}");
+        await request.AddPeerCredentialsAsync(_credentials);
+        if (_closeConnection)
+            request.Headers.ConnectionClose = true;
+
+        using var response = await _http.SendAsync(request);
+        await response.EnsureSuccessAsync(_originPublicKey, _originFingerprint);
+
+        await using var body = await response.Content.ReadAsStreamAsync();
+        var changes = await JsonSerializer.DeserializeAsync(body, LibrarySyncJsonContext.Default.ListeningChangesDto)
+                      ?? throw new JsonException("GET /listening answered with no body");
+
+        var tracks = changes.Songs
+            .Select(song => LibrarySyncMapper.ToListeningTrack(song, _originFingerprint, _ownFingerprint))
+            .ToList();
+
+        _logger.LogDebug("Remote library at {BaseUrl}: listening moved on {SongCount} song(s) since {Since}",
+            _baseUrl, tracks.Count, since);
+        return new RemoteListeningFetch(changes.Token, tracks);
     }
 }

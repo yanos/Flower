@@ -135,7 +135,11 @@ public sealed record TrackStateReportDto(List<TrackStateDto> Tracks);
 // echo and not chase it. Every other reason a token moves - the owner editing
 // something, a rescan, another device's report - still reads as a change and
 // still syncs.
+//
+// Both tokens, since a report moves either or both: a play moves the
+// listening one (Library.ListeningToken), a star or an option the catalog's.
 public static class TrackStateReportHeaders
 {
     public const string LibraryToken = "X-Flower-Library-Token";
+    public const string ListeningToken = "X-Flower-Listening-Token";
 }

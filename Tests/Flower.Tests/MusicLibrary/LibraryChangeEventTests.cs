@@ -181,13 +181,13 @@ public class LibraryChangeEventTests
         var library = new Library(new List<Track> { track });
         var events = new List<TrackChangedEventArgs>();
         library.TrackChanged += (_, e) => events.Add(e);
-        var token = library.ChangeToken;
+        var token = library.ListeningToken;
 
         library.RecordResumePosition(track, TimeSpan.FromMinutes(12));
         library.RecordResumePosition(track, TimeSpan.FromMinutes(12));
 
         Assert.Equal(TrackChange.ResumePosition, Assert.Single(events).Change);
-        Assert.NotEqual(token, library.ChangeToken);
+        Assert.NotEqual(token, library.ListeningToken);
     }
 
     // A later report from the sitting the server already has moves the
@@ -261,8 +261,9 @@ public class LibraryChangeEventTests
         Assert.Equal(token, library.ChangeToken);
     }
 
+    // Listening has a token of its own - see LibraryListeningTokenTests.
     [Fact]
-    public void ChangeToken_moves_for_every_mutation_that_the_sync_manifest_can_see()
+    public void ChangeToken_moves_for_every_mutation_that_the_sync_manifest_can_see_bar_listening()
     {
         var track = new Track { Title = "A", Path = "/music/a.mp3" };
         var library = new Library([track]);
@@ -270,9 +271,6 @@ public class LibraryChangeEventTests
 
         library.UpdateTracks([track, new Track { Title = "B", Path = "/music/b.mp3" }]);
         Assert.True(seen.Add(library.ChangeToken), "UpdateTracks must move the token");
-
-        library.IncrementPlayCount(track);
-        Assert.True(seen.Add(library.ChangeToken), "A play rides along in the manifest");
 
         library.MergeSyncedTracks("peer", [new Track { Title = "C", OriginDeviceFingerprint = "peer" }]);
         Assert.True(seen.Add(library.ChangeToken), "MergeSyncedTracks must move the token");

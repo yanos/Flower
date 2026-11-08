@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -55,6 +56,10 @@ namespace Flower.Models
         Origin = 512,
 
         Plays = LastPlayed | PlayFinished,
+
+        // What Library.ListeningToken follows rather than ChangeToken: who
+        // played a song, how often, when last, and where a listen was left.
+        Listening = Plays | ResumePosition,
 
         // What a paired device tells its server about a track - see
         // LibrarySyncService.PushTrackStateAsync.
@@ -282,9 +287,71 @@ namespace Flower.Models
         public string ChangeToken => $"{_sessionId}-{Interlocked.Read(ref _changeCount)}";
 
         // Every mutation that can change what BuildAllSongs would produce -
-        // the list itself, a Path, or a play count / LastPlayedAt, all of
-        // which ride along in the manifest.
+        // the list itself, a Path, a star, an option - except listening, which
+        // has a token of its own (ListeningToken).
         private void BumpChangeToken() => Interlocked.Increment(ref _changeCount);
+
+        // The listening half of the catalog on a token of its own: who played
+        // each song and how often (PlayCount, RemotePlayCounts,
+        // ImportedPlayCount), when it was last played, and where a listen was
+        // left (TrackChange.Listening). Apart from ChangeToken because plays
+        // are by far the most frequent change, and the one a device can take
+        // without re-reading the catalog. Every play used to move ChangeToken,
+        // so every other device's next GET /library was a full 6-8 MB fetch
+        // to learn one count (October C1.1). A device now follows this token
+        // through GET /listening, which answers with the songs that moved.
+        //
+        // Each song remembers what this counter stood at when its listening
+        // last moved, so "what moved since N" is a filter, not a log. In
+        // memory only, like the counter: a restart is a new session, and a
+        // device holding an older session's token is told to pull the whole
+        // catalog instead (ListeningSince).
+        private long _listeningChangeCount;
+        private readonly object _listeningLock = new();
+        private readonly Dictionary<Guid, long> _listeningRevisions = new();
+
+        public string ListeningToken => $"{_sessionId}-{Interlocked.Read(ref _listeningChangeCount)}";
+
+        // After the tracks' fields are written, never before: a reader that
+        // sees the new count must also see what it counts.
+        private void BumpListening(IEnumerable<Track> tracks)
+        {
+            lock (_listeningLock)
+            {
+                var revision = Interlocked.Increment(ref _listeningChangeCount);
+                foreach (var track in tracks)
+                    _listeningRevisions[track.Id] = revision;
+            }
+        }
+
+        private void BumpListening(Track track) => BumpListening([track]);
+
+        // The listening token as it stands, and the songs whose listening moved
+        // after `since`, read in one step so a move landing between the two is
+        // never reported as covered. Null when `since` is not a token of this
+        // session or is ahead of it - a restart, or a value made up - and the
+        // caller has to read the whole catalog to know where it stands.
+        public (string Token, IReadOnlyList<Track> Moved)? ListeningSince(string? since)
+        {
+            var prefix = _sessionId + "-";
+            if (since is null || !since.StartsWith(prefix, StringComparison.Ordinal)
+                || !long.TryParse(since.AsSpan(prefix.Length), NumberStyles.None, CultureInfo.InvariantCulture, out var from))
+                return null;
+
+            long now;
+            List<Guid> ids;
+            lock (_listeningLock)
+            {
+                now = Interlocked.Read(ref _listeningChangeCount);
+                if (from > now)
+                    return null;
+                ids = _listeningRevisions.Where(kv => kv.Value > from).Select(kv => kv.Key).ToList();
+            }
+
+            var byId = Snapshot.ById;
+            return (prefix + now.ToString(CultureInfo.InvariantCulture),
+                ids.Select(id => byId.GetValueOrDefault(id)).OfType<Track>().ToList());
+        }
 
         // The playlists' own token, on the same session-id-plus-counter terms.
         // Separate from ChangeToken on purpose: a client pulls the whole track
@@ -1676,10 +1743,9 @@ namespace Flower.Models
 
                 // What the pull actually moved on the tracks this device
                 // already had, by kind - see MergedTrackState. Most pulls move
-                // a play count or two, or nothing at all: the server's token
-                // moves on any listener's play, so every device pulls the
-                // whole catalog for it. Those must not cost a rewrite of every
-                // row and a rebuild of every list, which is what they did.
+                // a play count or two, or nothing at all. Those must not cost
+                // a rewrite of every row and a rebuild of every list, which is
+                // what they did.
                 changed = new Dictionary<Track, TrackChange>(ReferenceEqualityComparer.Instance);
 
                 var merged = new List<Track>(Tracks);
@@ -1709,12 +1775,6 @@ namespace Flower.Models
                         existing.WithdrawnByOrigin = false;
                         if (!ownersDevice || remote.DateAdded < existing.DateAdded)
                             existing.DateAdded = remote.DateAdded;
-                        MergeRemotePlayCounts(existing, remote.RemotePlayCounts);
-                        // The higher of this device's and the library's
-                        // Music.app count, so every device settles on the
-                        // highest any admin device read - see
-                        // TrackDto.ImportedPlayCount.
-                        existing.ImportedPlayCount = Math.Max(existing.ImportedPlayCount, remote.ImportedPlayCount);
                         // A whole new file settles the other two: it has the
                         // tags and the picture in it. A placeholder has no
                         // file to replace and goes on to be refreshed.
@@ -1729,11 +1789,7 @@ namespace Flower.Models
                             MergeArt(existing, remote, ownersDevice, fileWork);
                             MergeTags(existing, remote, ownersDevice, fileWork);
                         }
-                        // Before MergeLastPlayed: which side played last is
-                        // what decides the options, and that has to be read
-                        // before the server's date is taken.
-                        MergePlaybackOptions(existing, remote, resumeBaseline);
-                        MergeLastPlayed(existing, remote);
+                        MergeListening(existing, remote, resumeBaseline);
                         MergeStar(existing, remote, starBaseline);
 
                         if (before.ChangesTo(MergedTrackState.Of(existing)) is not 0 and var change)
@@ -1826,10 +1882,7 @@ namespace Flower.Models
                     // Tracks is untouched, so nothing is rebound; only what
                     // moved is written, and the snapshot is thrown away only
                     // when a placeholder's tags moved.
-                    if ((inPlace & TrackChange.Reshaping) != 0)
-                        InvalidateIndexes();
-                    else
-                        BumpChangeToken();
+                    BumpTokensFor(changed);
                     Persist(() => _store!.UpsertMany(changed.Keys));
                 }
             }
@@ -1842,6 +1895,78 @@ namespace Flower.Models
             else if (changed.Count > 0)
                 RaiseTrackChanged(changed.Keys.ToList(), inPlace, ChangeSource.Remote);
             return removedCount;
+        }
+
+        // The listening half of a pull, on a song this device already has
+        // from that source: what MergeSyncedTracks applies of it, and all that
+        // MergeSyncedListening applies.
+        private static void MergeListening(
+            Track existing, Track remote, IReadOnlyDictionary<string, TimeSpan?>? resumeBaseline)
+        {
+            MergeRemotePlayCounts(existing, remote.RemotePlayCounts);
+            // The higher of this device's and the library's Music.app count, so
+            // every device settles on the highest any admin device read - see
+            // TrackDto.ImportedPlayCount.
+            existing.ImportedPlayCount = Math.Max(existing.ImportedPlayCount, remote.ImportedPlayCount);
+            // Before MergeLastPlayed: which side played last is what decides
+            // the options, and that has to be read before the server's date is
+            // taken.
+            MergePlaybackOptions(existing, remote, resumeBaseline);
+            MergeLastPlayed(existing, remote);
+        }
+
+        // A GET /listening answer (ListeningChangesDto), applied to the songs
+        // this device already has from that source by the rules a whole pull
+        // applies to them (MergeListening) - so a device that follows a
+        // server's plays this way ends up where re-reading its catalog would
+        // have put it, at the cost of a few songs instead of all of them. See
+        // ListeningToken.
+        //
+        // incoming is what LibrarySyncMapper.ToListeningTrack makes of each
+        // song: the listening fields and the source's id, nothing else. A song
+        // this device has nothing for from that source is skipped: a song
+        // arriving moves the catalog token, and the whole pull that follows
+        // brings it.
+        //
+        // Returns how many tracks moved.
+        public int MergeSyncedListening(
+            string sourceDeviceFingerprint, IReadOnlyList<Track> incoming,
+            IReadOnlyDictionary<string, TimeSpan?>? resumeBaseline = null)
+        {
+            var changed = new Dictionary<Track, TrackChange>(ReferenceEqualityComparer.Instance);
+            TrackChange inPlace;
+            lock (_lock)
+            {
+                var bySourceId = new Dictionary<string, Track>(StringComparer.Ordinal);
+                foreach (var track in Tracks)
+                {
+                    if (track.OriginDeviceFingerprint == sourceDeviceFingerprint && track.OriginTrackId is { } id)
+                        bySourceId.TryAdd(id, track);
+                }
+
+                foreach (var remote in incoming)
+                {
+                    if (remote.OriginTrackId is not { } id || !bySourceId.TryGetValue(id, out var existing))
+                        continue;
+
+                    var before = MergedTrackState.Of(existing);
+                    MergeListening(existing, remote, resumeBaseline);
+                    if (before.ChangesTo(MergedTrackState.Of(existing)) is not 0 and var change)
+                        changed[existing] = changed.GetValueOrDefault(existing) | change;
+                }
+
+                if (changed.Count == 0)
+                    return 0;
+
+                inPlace = changed.Values.Aggregate((TrackChange)0, (all, change) => all | change);
+                BumpTokensFor(changed);
+                Persist(() => _store!.UpsertMany(changed.Keys));
+            }
+
+            // Remote, like the rest of a pull: nothing in it is this device's
+            // to report back.
+            RaiseTrackChanged(changed.Keys.ToList(), inPlace, ChangeSource.Remote);
+            return changed.Count;
         }
 
         private static void ClearOrigin(Track track)
@@ -2188,7 +2313,7 @@ namespace Flower.Models
                 current = ResolveCurrent(playedTrack);
                 current.PlayCount++;
                 newCount = current.PlayCount;
-                BumpChangeToken();
+                BumpListening(current);
             }
 
             // Outside the lock deliberately: formatting a message and handing it
@@ -2266,6 +2391,23 @@ namespace Flower.Models
             BumpChangeToken();
         }
 
+        // For in-place changes to tracks already in Tracks: the indexes go only
+        // for a change that can move what they key on, the catalog token moves
+        // for anything but listening, and the listening token for the tracks
+        // whose listening moved - see ListeningToken.
+        private void BumpTokensFor(IReadOnlyDictionary<Track, TrackChange> changes)
+        {
+            var all = changes.Values.Aggregate((TrackChange)0, (sum, change) => sum | change);
+            if ((all & TrackChange.Reshaping) != 0)
+                InvalidateIndexes();
+            else if ((all & ~TrackChange.Listening) != 0)
+                BumpChangeToken();
+
+            var listened = changes.Where(kv => (kv.Value & TrackChange.Listening) != 0).Select(kv => kv.Key).ToList();
+            if (listened.Count > 0)
+                BumpListening(listened);
+        }
+
         // Resolves whichever Track object currently represents playedTrack and
         // stamps LastPlayedAt to now, under the lock for the same reason
         // BumpPlayCount takes it (a concurrent rescan replacing Tracks
@@ -2276,7 +2418,7 @@ namespace Flower.Models
             {
                 var current = ResolveCurrent(playedTrack);
                 current.LastPlayedAt = DateTimeOffset.UtcNow;
-                BumpChangeToken();
+                BumpListening(current);
                 return current;
             }
         }
@@ -2290,7 +2432,7 @@ namespace Flower.Models
         // server should hear where a podcast was put down without waiting for
         // anything else to happen. It fires on every pause and every track
         // change, which is why no subscriber rebuilds anything for it. Not
-        // indexed, so no snapshot is thrown away - only the change token
+        // indexed, so no snapshot is thrown away - only the listening token
         // moves, since the manifest carries the position.
         public Track RecordResumePosition(Track track, TimeSpan? position)
         {
@@ -2302,7 +2444,7 @@ namespace Flower.Models
                     return current;
 
                 current.ResumePosition = position;
-                BumpChangeToken();
+                BumpListening(current);
             }
 
             Persist(() => _store!.Upsert(current));
@@ -2361,9 +2503,9 @@ namespace Flower.Models
                     return false;
 
                 track.RemotePlayCounts[deviceFingerprint] = track.RemotePlayCounts.GetValueOrDefault(deviceFingerprint) + 1;
-                // So the next GET /library is not a 304 over a catalog whose
-                // counts have moved - see MergeReportedTrackState.
-                BumpChangeToken();
+                // So an owner's device following GET /listening hears of it -
+                // see MergeReportedTrackState.
+                BumpListening(track);
                 played = track;
             }
 
@@ -2438,6 +2580,7 @@ namespace Flower.Models
                 return 0;
 
             var changed = new List<Track>();
+            var listened = new List<Track>();
             var change = default(TrackChange);
             lock (_lock)
             {
@@ -2466,16 +2609,21 @@ namespace Flower.Models
                         changed.Add(track);
                         change |= moved;
                     }
+                    if ((moved & TrackChange.Listening) != 0)
+                        listened.Add(track);
                 }
 
-                if (changed.Count > 0)
-                {
-                    // So the next GET /library is not answered 304 with a
-                    // catalog that no longer matches what is stored here - all
-                    // of this is part of what that manifest serves (see
-                    // LibraryDtoMapper.ToTrackDto).
+                // So the next GET /library is not answered 304 with a catalog
+                // that no longer matches what is stored here, and an owner's
+                // device following GET /listening hears of a play - all of
+                // this is part of what that manifest serves (see
+                // LibraryDtoMapper.ToTrackDto). Each half moves only its own
+                // token: a report of plays alone, which is nearly every
+                // report, is not a reason for anybody to re-read the catalog.
+                if ((change & ~TrackChange.Listening) != 0)
                     BumpChangeToken();
-                }
+                if (listened.Count > 0)
+                    BumpListening(listened);
             }
 
             // Upsert rather than UpdateStats: the remote counts live in their
@@ -2676,7 +2824,7 @@ namespace Flower.Models
         //
         // The indexes are only thrown away for a change that can move what
         // they key on - a Path, an album or an artist. Anything else keeps them
-        // and only moves the change token, since all of it rides in the
+        // and only moves a token (BumpTokensFor), since all of it rides in the
         // manifest. Neither takes _lock: nulling a field under it would buy
         // nothing, since a concurrent reader either sees the stale index and is
         // about to be told to re-read anyway, or rebuilds it fresh. What
@@ -2705,10 +2853,10 @@ namespace Flower.Models
                     track.ArtEditedAt = now;
             }
 
-            if ((change & TrackChange.Reshaping) != 0)
-                InvalidateIndexes();
-            else
-                BumpChangeToken();
+            var changes = new Dictionary<Track, TrackChange>(ReferenceEqualityComparer.Instance);
+            foreach (var track in changed)
+                changes[track] = change;
+            BumpTokensFor(changes);
 
             Persist(() =>
             {

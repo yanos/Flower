@@ -73,13 +73,14 @@ public class MainViewModelSyncTriggerTests : PinnedDataDirectory
     private const int ClosedPort = 9;
 
     private static DiscoveredDevice Peer(
-        string fingerprint, string alias = "Peer", string libraryToken = "") => new()
+        string fingerprint, string alias = "Peer", string libraryToken = "", string listeningToken = "") => new()
     {
         InstanceName = alias.ToLowerInvariant(),
         BaseUri     = NetworkDiscoveryService.HttpOrigin(new IPEndPoint(IPAddress.Loopback, ClosedPort)),
         Alias        = alias,
         Fingerprint  = fingerprint,
         LibraryToken = libraryToken,
+        ListeningToken = listeningToken,
     };
 
     // Owned by the fixture (not static any more) so the log-push timer inside
@@ -581,6 +582,75 @@ public class MainViewModelSyncTriggerTests : PinnedDataDirectory
         Wait(300);
 
         Assert.Equal(0, edges());
+    }
+
+    // ── Listening-change trigger ──────────────────────────────────────────────
+    //
+    // Plays move a token of their own (Library.ListeningToken), and on its own
+    // that is a GET /listening for the songs that moved - not the whole
+    // catalog, which is what every play anywhere used to cost (October C1.1).
+
+    private MainViewModelHarness.Parts ObservedPairedClient(string libraryToken, string listeningToken)
+    {
+        var parts = StubbedPairedClient(out _);
+        parts.Main.TriggerSyncIfPeerCatalogChanged(Peer("fp-server", "Server", libraryToken, listeningToken));
+        return parts;
+    }
+
+    [AvaloniaFact]
+    public void New_plays_alone_fetch_the_plays_and_not_the_catalog()
+    {
+        var parts = ObservedPairedClient("tok-1", "plays-1");
+        var stub = parts.StubLibrarySync!;
+
+        parts.Main.TriggerSyncIfPeerCatalogChanged(Peer("fp-server", "Server", "tok-1", "plays-2"));
+
+        PumpUntil(() => stub.ListeningSyncedWith.Count == 1, 5000);
+        Wait(100);
+        Assert.Empty(stub.SyncedWith);
+    }
+
+    // The catalog pull brings the listening with it, so it is all there is to do.
+    [AvaloniaFact]
+    public void A_catalog_change_with_new_plays_is_one_catalog_pull()
+    {
+        var parts = ObservedPairedClient("tok-1", "plays-1");
+        var stub = parts.StubLibrarySync!;
+
+        parts.Main.TriggerSyncIfPeerCatalogChanged(Peer("fp-server", "Server", "tok-2", "plays-2"));
+
+        PumpUntil(() => stub.SyncedWith.Count == 1, 5000);
+        Wait(100);
+        Assert.Empty(stub.ListeningSyncedWith);
+    }
+
+    // No catalog to apply them to yet, or a server that cannot count from the
+    // token this device holds: the catalog it is, then.
+    [AvaloniaFact]
+    public void Plays_that_need_the_catalog_pull_it()
+    {
+        var parts = ObservedPairedClient("tok-1", "plays-1");
+        var stub = parts.StubLibrarySync!;
+        stub.ListeningResult = new LibrarySyncResult(false, 0, 0, CatalogNeeded: true);
+
+        parts.Main.TriggerSyncIfPeerCatalogChanged(Peer("fp-server", "Server", "tok-1", "plays-2"));
+
+        PumpUntil(() => stub.SyncedWith.Count == 1, 5000);
+    }
+
+    // This device's own report of a play, coming back on the next poll.
+    [AvaloniaFact]
+    public void Plays_this_device_reported_are_not_fetched_back()
+    {
+        var parts = ObservedPairedClient("tok-1", "plays-1");
+        var stub = parts.StubLibrarySync!;
+        stub.TokensThisDeviceCaused.Add("plays-2");
+
+        parts.Main.TriggerSyncIfPeerCatalogChanged(Peer("fp-server", "Server", "tok-1", "plays-2"));
+        Wait(300);
+
+        Assert.Empty(stub.ListeningSyncedWith);
+        Assert.Empty(stub.SyncedWith);
     }
 
     // ── Periodic log push ─────────────────────────────────────────────────────

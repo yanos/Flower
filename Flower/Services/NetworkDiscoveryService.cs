@@ -142,6 +142,12 @@ public class DiscoveredDevice
     // track catalog. Empty until resolved.
     public string PlaylistsToken { get; set; } = "";
 
+    // And for who has played what (Library.ListeningToken), which moves on
+    // every play where LibraryToken does not - followed through GET
+    // /listening rather than a catalog pull. Told only to an owner's device;
+    // empty for anyone else, and until resolved.
+    public string ListeningToken { get; set; } = "";
+
     // The server's icon (ServerIcon): the emoji it shows as, and the token
     // naming its picture - told only to a device it trusts, which is the only
     // kind that can fetch it. Empty for none; unlike the fields above, an
@@ -819,6 +825,13 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
                 device.LibraryToken = libraryToken;
                 changed = true;
             }
+            if (doc.RootElement.TryGetProperty("listeningToken", out var listeningTokenProp) &&
+                listeningTokenProp.ValueKind == JsonValueKind.String &&
+                listeningTokenProp.GetString() is { } listeningToken && listeningToken != device.ListeningToken)
+            {
+                device.ListeningToken = listeningToken;
+                changed = true;
+            }
             if (doc.RootElement.TryGetProperty("playlistsToken", out var playlistsTokenProp) &&
                 playlistsTokenProp.ValueKind == JsonValueKind.String &&
                 playlistsTokenProp.GetString() is { } playlistsToken && playlistsToken != device.PlaylistsToken)
@@ -1277,6 +1290,7 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
                     ServerEndlessPlay = existing.ServerEndlessPlay,
                     LibraryToken = existing.LibraryToken,
                     PlaylistsToken = existing.PlaylistsToken,
+                    ListeningToken = existing.ListeningToken,
                     IconEmoji = existing.IconEmoji,
                     IconToken = existing.IconToken,
                     Addresses = existing.Addresses,

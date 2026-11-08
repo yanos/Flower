@@ -31,9 +31,7 @@ happens to a listener or the library, not about how hard the fix is.
 
 1. **October B4**: check the file's own folder. This is the one finding left
    that can take songs off every device.
-2. **October C1.1**: a separate token for plays. This is the biggest network
-   win for phones, and the largest change on this list.
-3. **September E3**: wait until something wants it.
+2. **September E3**: wait until something wants it.
 
 ---
 
@@ -58,32 +56,6 @@ But this is the failure the guard was written to prevent.
 **Fix.** Check the file's own parent folder, or walk up to the root and require
 every folder on the way to exist and be non-empty. That is what the comment
 promises, so the comment stays and the code changes to match it.
-
----
-
-## Performance
-
-### October C1. Every play still makes every device download the whole catalog
-
-`Flower.Core/Models/Library.cs` (`RecordPlayFor`, `MergeReportedTrackState`,
-`UpdateTracks`), `Flower/Services/LibrarySyncService.cs`
-
-The client half is fixed: a merge that moved nothing writes nothing and raises
-nothing, and one that moved only plays or stars writes only those rows
-(`LibrarySyncNoOpPullTests`). So are a rescan that found nothing new, which no
-longer moves the token, and the desktop's iTunes imports, which no longer
-rewrite everything on every launch (C1.2 and C1.3, in `CITED-DECISIONS.md`).
-One thing is left, numbered as it was.
-
-- **C1.1. The server's change token moves on every play.** Every play a
-  listener reports moves it, so every other device's next `GET /library` is a
-  full fetch, 6-8 MB on the library measured. The merge is now cheap, but the
-  download is not. Plays are by far the most frequent change, and the one a
-  device could apply without re-reading the catalog, so they could have their
-  own token.
-
-`ONLINE-METADATA-PLAN.md` cites this shape: a popularity refresh that returns
-the same ranking must not count as a change.
 
 ---
 

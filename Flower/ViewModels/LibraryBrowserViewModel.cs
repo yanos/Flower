@@ -719,7 +719,9 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         var allTracks  = _allTracks;
         // Read with the snapshot above, not after the plan: a change landing
         // mid-build must leave the cached rows looking stale, not current.
-        var libraryChangeToken = _library.ChangeToken;
+        // Both tokens: a play moves only the listening one, and a list sorted
+        // by plays has to hear of it.
+        var libraryChangeToken = $"{_library.ChangeToken}/{_library.ListeningToken}";
         var pairedServerFingerprint = _host.PairedServerFingerprint;
         var pairedServerReachable   = _host.IsPairedServerReachable;
         // Songs finds a song by its title alone (TrackListBuilder
@@ -867,9 +869,10 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
     // Everything a scope's rows are built from, bar the scope itself and the
     // playing track (patched on reuse instead). Both halves of the library are
     // needed. The track list, by reference, is what Repopulate replaces on a
-    // library change - but only once its posted handler runs. ChangeToken moves
-    // at once, and also for what changes a track in place without replacing the
-    // list: a play count, a last-played stamp, a star, a reported play.
+    // library change - but only once its posted handler runs. The library's
+    // two tokens move at once, and also for what changes a track in place
+    // without replacing the list: a star (ChangeToken), or a play count, a
+    // last-played stamp, a reported play (ListeningToken).
     private readonly record struct RowsSignature(
         List<Track> AllTracks,
         string LibraryChangeToken,

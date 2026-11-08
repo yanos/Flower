@@ -180,7 +180,7 @@ already has lyrics is never looked up: the file is the authority.
 
 **Popularity in the catalog** means a refresh changes catalog rows. That is
 acceptable because it happens at most monthly per album, but it is exactly the
-"sync rewrites the library" shape `CODE-REVIEW.md` (October C1) warns about, so a
+"sync rewrites the library" shape October C1 was about (`CITED-DECISIONS.md`), so a
 refresh that returns the same ranking must not count as a change.
 
 **A miss is cached too** (for 30 days), so an artist Deezer does not know is

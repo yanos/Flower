@@ -74,9 +74,7 @@ public static class LibrarySyncMapper
             // download did before this existed.
             OriginRelativePath = song.RelativePath,
             OriginAlbumArtId = song.CoverArt,
-            RemotePlayCounts = (song.PlayCounts ?? new Dictionary<string, int>())
-                .Where(kv => kv.Key != ownFingerprint)
-                .ToDictionary(kv => kv.Key, kv => kv.Value),
+            RemotePlayCounts = OthersPlayCounts(song.PlayCounts, ownFingerprint),
             // Music.app's count, the library's one number for it - see
             // TrackDto.ImportedPlayCount.
             ImportedPlayCount = song.ImportedPlayCount ?? 0,
@@ -144,4 +142,29 @@ public static class LibrarySyncMapper
         track.FileReplacedAt = song.FileReplacedAt;
         return track;
     }
+
+    // One song of a GET /listening answer, as Library.MergeSyncedListening
+    // takes it: the source's id and the listening fields, read exactly as
+    // ToPlaceholderTrack reads the same fields out of a catalog. Not a
+    // placeholder - nothing else on it is filled in, and nothing adds it to a
+    // library.
+    public static Track ToListeningTrack(TrackListeningDto song, string originDeviceFingerprint, string ownFingerprint) => new()
+    {
+        OriginDeviceFingerprint = originDeviceFingerprint,
+        OriginTrackId = song.Id,
+        RemotePlayCounts = OthersPlayCounts(song.PlayCounts, ownFingerprint),
+        ImportedPlayCount = song.ImportedPlayCount ?? 0,
+        LastPlayedAt = song.LastPlayed,
+        RememberPlaybackPosition = song.RememberPlaybackPosition,
+        ResumePosition = song.ResumePositionSeconds is { } seconds ? TimeSpan.FromSeconds(seconds) : null,
+        IgnoreWhenShuffling = song.IgnoreWhenShuffling,
+        VolumeAdjustment = song.VolumeAdjustment,
+    };
+
+    // Every device's count but this one's - see ToPlaceholderTrack's
+    // ownFingerprint note.
+    private static Dictionary<string, int> OthersPlayCounts(Dictionary<string, int>? counts, string ownFingerprint) =>
+        (counts ?? new Dictionary<string, int>())
+            .Where(kv => kv.Key != ownFingerprint)
+            .ToDictionary(kv => kv.Key, kv => kv.Value);
 }

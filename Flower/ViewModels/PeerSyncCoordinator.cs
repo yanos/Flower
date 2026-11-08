@@ -1316,33 +1316,33 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
     // reason a token moves still is - the owner editing something, a rescan,
     // another listener's plays - and still syncs. See TrackStateReportHeaders
     // for the server half.
+    //
+    // Two tokens are watched, and they ask for different things. The catalog's
+    // moving is a catalog pull. The listening token (Library.ListeningToken)
+    // moves on every play anybody makes, which used to move the catalog's and
+    // cost every other device the whole catalog for it - so on its own it is
+    // only a GET /listening for the songs that moved (October C1.1). A catalog
+    // pull brings the listening too, so when both move the pull is all.
     public void TriggerSyncIfPeerCatalogChanged(DiscoveredDevice device)
     {
-        if (string.IsNullOrEmpty(device.Fingerprint) || string.IsNullOrEmpty(device.LibraryToken))
+        if (string.IsNullOrEmpty(device.Fingerprint))
             return;
         if (!SyncRolePolicy.MayRequestFrom(_appSettings.PairedServerFingerprint, device.Fingerprint))
             return;
 
-        var isFirstObservation = !_observedPeerLibraryTokens.TryGetValue(device.Fingerprint, out var previousToken);
-        _observedPeerLibraryTokens[device.Fingerprint] = device.LibraryToken;
-        if (isFirstObservation || previousToken == device.LibraryToken)
+        var catalogMoved = IsNewsFromPeer(
+            _observedPeerLibraryTokens, device, device.LibraryToken, "library",
+            (fingerprint, token) => _librarySyncService?.CausedPeerLibraryToken(fingerprint, token) == true);
+        var listeningMoved = IsNewsFromPeer(
+            _observedPeerListeningTokens, device, device.ListeningToken, "listening",
+            (fingerprint, token) => _librarySyncService?.CausedPeerListeningToken(fingerprint, token) == true);
+        if (!catalogMoved && !listeningMoved)
             return;
-
-        // Recorded above before this returns, deliberately: the echo is now the
-        // token to compare the *next* one against, so a real change that lands
-        // after it still reads as a change.
-        if (_librarySyncService?.CausedPeerLibraryToken(device.Fingerprint, device.LibraryToken) == true)
-        {
-            _logger.LogDebug(
-                "{Alias} ({Fingerprint}) reports a changed library ({Previous} -> {Current}), but it is this device's own track-state report coming back; not syncing",
-                device.Alias, device.Fingerprint, previousToken, device.LibraryToken);
-            return;
-        }
 
         // A changed token is still news after a 429; it is just news this
-        // device is not allowed to act on yet. The token is already recorded
-        // above, so nothing is lost by skipping - the next poll after the
-        // cool-off compares against it and syncs then.
+        // device is not allowed to act on yet. The token is already recorded,
+        // so nothing is lost by skipping - the next poll after the cool-off
+        // compares against it and syncs then.
         if (IsCoolingOff(device.Fingerprint))
         {
             _logger.LogDebug(
@@ -1351,9 +1351,65 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
             return;
         }
 
-        _logger.LogInformation("{Alias} ({Fingerprint}) reports a changed library ({Previous} -> {Current}), syncing",
-            device.Alias, device.Fingerprint, previousToken, device.LibraryToken);
-        RunTrackedSync(() => SyncLibraryAndConfirmTrust(device));
+        if (catalogMoved)
+        {
+            _logger.LogInformation("{Alias} ({Fingerprint}) reports a changed library ({Token}), syncing",
+                device.Alias, device.Fingerprint, device.LibraryToken);
+            RunTrackedSync(() => SyncLibraryAndConfirmTrust(device));
+        }
+        else
+        {
+            _logger.LogDebug("{Alias} ({Fingerprint}) reports new plays ({Token}), fetching them",
+                device.Alias, device.Fingerprint, device.ListeningToken);
+            RunTrackedSync(() => SyncListening(device));
+        }
+    }
+
+    // The last Library.ListeningToken observed on each peer's /info answer.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _observedPeerListeningTokens = new();
+
+    // Whether this /info answer's value of one token is a change worth acting
+    // on: not the first sighting (that is TriggerSyncIfReady's initial sync to
+    // make), not the same value again, and not this device's own echo.
+    //
+    // Recorded before any of those return, deliberately: the echo is then the
+    // token to compare the *next* one against, so a real change that lands
+    // after it still reads as a change.
+    private bool IsNewsFromPeer(
+        System.Collections.Concurrent.ConcurrentDictionary<string, string> observed, DiscoveredDevice device,
+        string token, string what, Func<string, string, bool> causedHere)
+    {
+        if (string.IsNullOrEmpty(token))
+            return false;
+
+        var isFirstObservation = !observed.TryGetValue(device.Fingerprint, out var previousToken);
+        observed[device.Fingerprint] = token;
+        if (isFirstObservation || previousToken == token)
+            return false;
+
+        if (causedHere(device.Fingerprint, token))
+        {
+            _logger.LogDebug(
+                "{Alias} ({Fingerprint}) reports a changed {What} token ({Previous} -> {Current}), but it is this device's own report coming back; not syncing",
+                device.Alias, device.Fingerprint, what, previousToken, token);
+            return false;
+        }
+
+        return true;
+    }
+
+    // Following the server's plays, and the catalog pull instead when that
+    // will not do (LibrarySyncResult.CatalogNeeded).
+    private async Task SyncListening(DiscoveredDevice device)
+    {
+        var result = await (_librarySyncService?.SyncListeningAsync(device) ?? Task.FromResult(new LibrarySyncResult(false, 0, 0)));
+        if (result.CatalogNeeded)
+        {
+            await SyncLibraryAndConfirmTrust(device);
+            return;
+        }
+
+        NoteThrottling(device, result);
     }
 
     // The last Library.PlaylistsToken observed on each peer's /info answer.

@@ -36,12 +36,18 @@ namespace Flower.Services;
 // server that was reached, answered promptly, and said 429 was reported as a
 // server that was not there, next to a connection icon correctly showing it
 // was - and the advice was to go and check the network, which was fine.
+//
+// CatalogNeeded is SyncListeningAsync's answer when following the server's
+// plays is not enough: this device has no current catalog from it, or the
+// server cannot count from the token this device holds. The caller pulls the
+// catalog instead, which brings the listening with it.
 public readonly record struct LibrarySyncResult(
     bool Success,
     int FetchedCount,
     int AddedCount,
     bool Unchanged = false,
-    SyncFailure Failure = SyncFailure.None);
+    SyncFailure Failure = SyncFailure.None,
+    bool CatalogNeeded = false);
 
 // Why a sync did not happen, in the terms the user's next action depends on:
 // wait, re-pair, or go and look at the network.
@@ -119,11 +125,23 @@ public class LibrarySyncService
     // catalog is already merged here".
     private readonly ConcurrentDictionary<string, string> _tokensThisDeviceCaused = new();
 
+    // Per peer, its Library.ListeningToken as of the listening this device
+    // last took from it - out of a catalog, or out of GET /listening. What
+    // SyncListeningAsync asks from. Not persisted, like _lastSeenTokens.
+    private readonly ConcurrentDictionary<string, string> _lastSeenListeningTokens = new();
+
+    // _tokensThisDeviceCaused's twin for the listening token, which is the
+    // one a report of plays moves.
+    private readonly ConcurrentDictionary<string, string> _listeningTokensThisDeviceCaused = new();
+
     // Whether a token a peer is now advertising is one this device's own
     // reporting produced a moment ago. Virtual for the same reason the sync
     // entry points are: a coordinator test drives this seam without a server.
     public virtual bool CausedPeerLibraryToken(string fingerprint, string token) =>
         !string.IsNullOrEmpty(token) && _tokensThisDeviceCaused.GetValueOrDefault(fingerprint) == token;
+
+    public virtual bool CausedPeerListeningToken(string fingerprint, string token) =>
+        !string.IsNullOrEmpty(token) && _listeningTokensThisDeviceCaused.GetValueOrDefault(fingerprint) == token;
 
     // The other thing this device does that moves a peer's token: handing it a
     // file (see LibraryMirrorService). Recorded for the reason a track-state
@@ -228,20 +246,11 @@ public class LibrarySyncService
         List<Track> placeholders;
         IReadOnlySet<string> removedAtServer;
         string? servedToken;
+        string? servedListeningToken;
         int fetchedCount;
         try
         {
-            // The request itself is RemoteLibraryImporter's - the same class the
-            // browser head uses as its whole library - so there is one HTTP path
-            // to this endpoint instead of two that have to be kept in step. What
-            // stays here is what is genuinely this service's own: the per-peer
-            // token cache below, the trust-rejection signal, and the additive
-            // merge into Library.
-            var importer = new RemoteLibraryImporter(
-                Http, device.Origin, _credentials,
-                originFingerprint: device.Fingerprint, ownFingerprint: _deviceIdentity.Fingerprint,
-                _importerLogger, closeConnection: true, originPublicKey: device.PublicKey);
-
+            var importer = ImporterFor(device);
             var fetch = await importer.FetchAsync(_lastSeenTokens.GetValueOrDefault(device.Fingerprint));
             if (fetch.NotModified)
             {
@@ -251,12 +260,30 @@ public class LibrarySyncService
                 // held back for home last time is still owed, and this may be
                 // home.
                 await ApplyNewerFilesAsync(device, []);
+                // Nor plays, maybe: the catalog's token does not move for
+                // them (Library.ListeningToken). Asked only when the server
+                // says there are some, which /info told this device already.
+                if (_lastSeenListeningTokens.TryGetValue(device.Fingerprint, out var since)
+                    && !string.IsNullOrEmpty(device.ListeningToken) && device.ListeningToken != since)
+                {
+                    try
+                    {
+                        await PullListeningAsync(device, importer, since);
+                    }
+                    catch (Exception ex)
+                    {
+                        // The catalog half succeeded, and that is what this
+                        // reports. The plays are still there next time.
+                        _logger.LogDebug(ex, "Library sync with {Alias}: catalog unchanged, but GET /listening failed", device.Alias);
+                    }
+                }
                 return new LibrarySyncResult(true, 0, 0, Unchanged: true);
             }
 
             placeholders = fetch.Tracks;
             removedAtServer = fetch.RemovedIds;
             servedToken = fetch.ETag;
+            servedListeningToken = fetch.ListeningToken;
             fetchedCount = placeholders.Count;
         }
         catch (Exception ex)
@@ -358,6 +385,10 @@ public class LibrarySyncService
         // next sync would be answered 304.
         if (servedToken != null)
             _lastSeenTokens[device.Fingerprint] = servedToken;
+        if (servedListeningToken != null)
+            _lastSeenListeningTokens[device.Fingerprint] = servedListeningToken;
+        else
+            _lastSeenListeningTokens.TryRemove(device.Fingerprint, out _);
 
         // Piggybacks log sharing on this exact sync session, so it fires "at
         // the same time as the library" with no extra caller-side wiring - the
@@ -391,6 +422,99 @@ public class LibrarySyncService
             await PushLogSnapshotAsync(device);
 
         return new LibrarySyncResult(true, fetchedCount, addedCount);
+    }
+
+    // The request itself is RemoteLibraryImporter's - the same class the
+    // browser head uses as its whole library - so there is one HTTP path to
+    // these endpoints instead of two that have to be kept in step. What stays
+    // here is what is genuinely this service's own: the per-peer token caches,
+    // the trust-rejection signal, and the additive merge into Library.
+    private RemoteLibraryImporter ImporterFor(DiscoveredDevice device) => new(
+        Http, device.Origin, _credentials,
+        originFingerprint: device.Fingerprint, ownFingerprint: _deviceIdentity.Fingerprint,
+        _importerLogger, closeConnection: true, originPublicKey: device.PublicKey);
+
+    // Somebody else's plays, without the catalog they are in: what an owner's
+    // device does when the server's listening token moves and its catalog
+    // token does not, which is nearly every time anybody plays anything. One
+    // small request for the songs that moved, where it used to be the whole
+    // 6-8 MB catalog (October C1.1, Library.ListeningToken).
+    //
+    // CatalogNeeded when this is not enough: no current catalog from that
+    // server to apply plays to (none pulled yet this session, or the library
+    // changed under it - see HasCurrentCatalogFrom), or a token the server
+    // cannot count from. The caller pulls the catalog then.
+    //
+    // Virtual for the reason SyncWithAsync is.
+    public virtual async Task<LibrarySyncResult> SyncListeningAsync(DiscoveredDevice device)
+    {
+        if (string.IsNullOrEmpty(device.Fingerprint))
+            return new LibrarySyncResult(false, 0, 0);
+        if (!HasCurrentCatalogFrom(device.Fingerprint)
+            || !_lastSeenListeningTokens.TryGetValue(device.Fingerprint, out var since))
+            return new LibrarySyncResult(false, 0, 0, CatalogNeeded: true);
+
+        try
+        {
+            var moved = await PullListeningAsync(device, ImporterFor(device), since);
+            return new LibrarySyncResult(true, moved, 0);
+        }
+        catch (PeerRefusedException ex) when (ex.StatusCode == HttpStatusCode.Conflict)
+        {
+            _logger.LogInformation("Listening sync with {Alias}: it cannot count from {Token}; pulling the catalog instead",
+                device.Alias, since);
+            _lastSeenListeningTokens.TryRemove(device.Fingerprint, out _);
+            return new LibrarySyncResult(false, 0, 0, CatalogNeeded: true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Listening sync with {Alias} ({Fingerprint}): GET /listening failed",
+                device.Alias, device.Fingerprint);
+            if (PeerResponses.IsDeviceUnknown(ex))
+                PeerTrustRejected?.Invoke(this, new PeerTrustRejectedEventArgs { Fingerprint = device.Fingerprint, Alias = device.Alias });
+            return new LibrarySyncResult(false, 0, 0, Failure: Classify(ex));
+        }
+    }
+
+    // One GET /listening, merged. What the server said about each song's
+    // listening becomes the baseline the next push compares against, as a
+    // pulled catalog's does (SeedKnownServerState), so a play merged here is
+    // not reported straight back. Returns how many songs the answer named.
+    private async Task<int> PullListeningAsync(DiscoveredDevice device, RemoteLibraryImporter importer, string since)
+    {
+        var fetch = await importer.FetchListeningAsync(since);
+
+        var known = _knownServerState.GetOrAdd(device.Fingerprint, _ => new ConcurrentDictionary<string, TrackStateSnapshot>());
+        // Read before the merge, for the reason SyncWithAsync reads it: it is
+        // what tells a position this device moved from one the server moved.
+        var resumeBaseline = new Dictionary<string, TimeSpan?>();
+        foreach (var served in fetch.Tracks)
+        {
+            if (served.OriginTrackId is { } id && known.TryGetValue(id, out var was))
+                resumeBaseline[id] = was.ResumePosition;
+        }
+        var changed = _library.MergeSyncedListening(device.Fingerprint, fetch.Tracks, resumeBaseline);
+
+        foreach (var served in fetch.Tracks)
+        {
+            if (served.OriginTrackId is { } id && known.TryGetValue(id, out var was))
+            {
+                known[id] = was with
+                {
+                    LastPlayedAt = served.LastPlayedAt,
+                    RememberPlaybackPosition = served.RememberPlaybackPosition,
+                    ResumePosition = served.ResumePosition,
+                    IgnoreWhenShuffling = served.IgnoreWhenShuffling,
+                    VolumeAdjustment = served.VolumeAdjustment,
+                    ImportedPlayCount = served.ImportedPlayCount,
+                };
+            }
+        }
+
+        _lastSeenListeningTokens[device.Fingerprint] = fetch.Token;
+        _logger.LogInformation("Listening sync with {Alias}: {Count} song(s) moved there, {Changed} here",
+            device.Alias, fetch.Tracks.Count, changed);
+        return fetch.Tracks.Count;
     }
 
     // A file the server moved, moved here too - when this device's copy sat at
@@ -764,14 +888,8 @@ public class LibrarySyncService
             // See TrackStateReportHeaders: this is the token our own report
             // produced, remembered so the /info poll can tell that change apart
             // from one worth pulling a whole catalog for.
-            if (response.Headers.TryGetValues(TrackStateReportHeaders.LibraryToken, out var echoedTokens))
-            {
-                foreach (var echoed in echoedTokens)
-                {
-                    if (!string.IsNullOrEmpty(echoed))
-                        _tokensThisDeviceCaused[device.Fingerprint] = echoed;
-                }
-            }
+            NoteEcho(response, TrackStateReportHeaders.LibraryToken, _tokensThisDeviceCaused, device.Fingerprint);
+            NoteEcho(response, TrackStateReportHeaders.ListeningToken, _listeningTokensThisDeviceCaused, device.Fingerprint);
 
             // Only on a 2xx. A failed push leaves the marks where they were, so
             // the same values go out again with the next tick rather than being
@@ -804,6 +922,19 @@ public class LibrarySyncService
             _logger.LogDebug(ex, "Could not report track state to {Alias} ({Fingerprint})", device.Alias, device.Fingerprint);
             ReturnTrackStateCandidates(candidates);
             return false;
+        }
+    }
+
+    private static void NoteEcho(
+        HttpResponseMessage response, string header, ConcurrentDictionary<string, string> into, string fingerprint)
+    {
+        if (!response.Headers.TryGetValues(header, out var echoedTokens))
+            return;
+
+        foreach (var echoed in echoedTokens)
+        {
+            if (!string.IsNullOrEmpty(echoed))
+                into[fingerprint] = echoed;
         }
     }
 

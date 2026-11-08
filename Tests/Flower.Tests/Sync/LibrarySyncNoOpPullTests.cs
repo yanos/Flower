@@ -11,9 +11,11 @@ using Xunit;
 namespace Flower.Tests.Sync;
 
 // What a pull costs when it changes little or nothing. The server's catalog
-// token moves on any listener's play, so every paired device pulls the whole
-// catalog for one play count - and every one of those pulls used to rewrite
-// every row of this device's library and rebuild every list over it.
+// token used to move on any listener's play, so every paired device pulled the
+// whole catalog for one play count - and every one of those pulls rewrote
+// every row of this device's library and rebuilt every list over it. Plays now
+// travel on their own (LibraryListeningTokenTests), but a pull that moves a
+// count or two, or nothing, still has to cost that little.
 public class LibrarySyncNoOpPullTests
 {
     // Counts the writes rather than making them: which kind of write a merge
