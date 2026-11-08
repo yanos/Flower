@@ -57,7 +57,7 @@ public sealed class ITunesImportCoordinator
         RunAsync(ref _lastDateAddedSyncAt, "date added", "Syncing date added from Music.app…",
             tracks => ITunesDateAddedImporter.Apply(tracks, _logger));
 
-    private Task RunAsync(ref DateTimeOffset? lastRunAt, string what, string busyMessage, Action<System.Collections.Generic.IEnumerable<Track>> apply)
+    private Task RunAsync(ref DateTimeOffset? lastRunAt, string what, string busyMessage, Func<System.Collections.Generic.IEnumerable<Track>, bool> apply)
     {
         if (lastRunAt is { } last && DateTimeOffset.UtcNow - last < Cooldown)
         {
@@ -69,10 +69,15 @@ public sealed class ITunesImportCoordinator
         return ApplyAsync(busyMessage, apply);
     }
 
-    private async Task ApplyAsync(string busyMessage, Action<System.Collections.Generic.IEnumerable<Track>> apply)
+    private async Task ApplyAsync(string busyMessage, Func<System.Collections.Generic.IEnumerable<Track>, bool> apply)
     {
         using var _ = _busy.BeginScope(busyMessage);
-        await Task.Run(() => apply(_library.Tracks));
+        // Most launches find exactly the numbers the last one left, and
+        // announcing that anyway cost a whole-table rewrite and a rebuild of
+        // every list, twice per launch (October C1.3).
+        if (!await Task.Run(() => apply(_library.Tracks)))
+            return;
+
         // Same list, same Track instances mutated in place, all of them - so the
         // library-wide announcement rather than a TrackChanged naming every
         // track. NotifyLibraryChanged, not UpdateTracks(Library.Tracks):

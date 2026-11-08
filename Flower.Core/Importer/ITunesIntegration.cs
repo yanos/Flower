@@ -51,8 +51,9 @@ public static class ITunesIntegration
     // anything - the caller decides how to publish that (the server: one
     // Library.NotifyLibraryChanged after both).
     //
-    // Returns whether anything ran, so a caller can skip that publish entirely
-    // rather than issuing a whole-table rewrite for two no-ops.
+    // Returns whether either moved anything, so a caller can skip that publish
+    // entirely rather than issuing a whole-table rewrite for two imports that
+    // found the numbers the last one left - which is most of them.
     //
     // The app does not come through here: each of its imports is a
     // cooldown-guarded, busy-scoped job with its own status message
@@ -60,20 +61,14 @@ public static class ITunesIntegration
     public static bool ApplyImports(
         MusicLibrarySettings settings, IEnumerable<Track> tracks, ILogger? logger = null)
     {
-        var ran = false;
+        var changed = false;
 
         if (settings.SyncPlayCountFromITunes)
-        {
-            ITunesPlayCountImporter.Apply(tracks, logger);
-            ran = true;
-        }
+            changed |= ITunesPlayCountImporter.Apply(tracks, logger);
         if (settings.SyncDateAddedFromITunes)
-        {
-            ITunesDateAddedImporter.Apply(tracks, logger);
-            ran = true;
-        }
+            changed |= ITunesDateAddedImporter.Apply(tracks, logger);
 
-        return ran;
+        return changed;
     }
 
     // Where the two imports above would actually read from, in one line a

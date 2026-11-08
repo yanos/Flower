@@ -37,28 +37,29 @@ public static class ITunesDateAddedImporter
     // (~5s) on the rare launch where both happen to be enabled.
     private static string LiveExportPath => Path.Combine(AppDataDirectory.Path, "itunes-library-export.xml");
 
-    public static void Apply(IEnumerable<Track> tracks, ILogger? logger = null)
+    // Returns whether any track's date moved - see ITunesPlayCountImporter.Apply.
+    public static bool Apply(IEnumerable<Track> tracks, ILogger? logger = null)
     {
         logger ??= NullLogger.Instance;
 
         if (!OperatingSystem.IsMacOS())
-            return;
+            return false;
 
         var usedLiveExport = TryExportFreshLibraryXml(logger);
         var xmlPath = usedLiveExport ? LiveExportPath : ITunesPlayCountImporter.ResolveLibraryXmlPath();
         if (xmlPath == null)
         {
             logger.LogInformation("iTunes date added sync skipped: no library export available (Music.app not installed, automation denied, or no static export found)");
-            return;
+            return false;
         }
 
         logger.LogInformation("Syncing date added from {Source}: {XmlPath}", usedLiveExport ? "live Music.app export" : "static library export", xmlPath);
-        ApplyFromXmlFile(tracks, xmlPath, logger);
+        return ApplyFromXmlFile(tracks, xmlPath, logger);
     }
 
     // Split out from Apply() so tests can exercise it against a specific
     // synthetic XML file - see ITunesPlayCountImporter.ApplyFromXmlFile for why.
-    public static void ApplyFromXmlFile(IEnumerable<Track> tracks, string xmlPath, ILogger? logger = null)
+    public static bool ApplyFromXmlFile(IEnumerable<Track> tracks, string xmlPath, ILogger? logger = null)
     {
         logger ??= NullLogger.Instance;
 
@@ -69,7 +70,7 @@ public static class ITunesDateAddedImporter
                 tracksNode is not NSDictionary iTunesTracks)
             {
                 logger.LogWarning("iTunes library export at {XmlPath} did not have the expected shape (missing/malformed Tracks dictionary)", xmlPath);
-                return;
+                return false;
             }
 
             var dateAddedBySyncKey = new Dictionary<string, DateTimeOffset>();
@@ -150,12 +151,14 @@ public static class ITunesDateAddedImporter
             }
 
             logger.LogInformation("iTunes date added sync updated {MatchedCount} of {ExportedCount} exported tracks to an older date", matchedCount, dateAddedBySyncKey.Count);
+            return matchedCount > 0;
         }
         catch (Exception ex)
         {
             // Corrupt/unreadable/unexpected-shape XML - leave DateAdded as-is
             // rather than blocking startup over an optional enrichment step.
             logger.LogWarning(ex, "Failed to parse iTunes library export at {XmlPath}; date added left unchanged", xmlPath);
+            return false;
         }
     }
 

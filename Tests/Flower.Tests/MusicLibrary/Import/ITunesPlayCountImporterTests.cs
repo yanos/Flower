@@ -104,6 +104,21 @@ public class ITunesPlayCountImporterTests : IsolatedHome
         Assert.Equal(12, track.ImportedPlayCount);
     }
 
+    // What lets a launch that finds the numbers the last one left skip the
+    // whole-table rewrite (ITunesImportCoordinator, October C1.3).
+    [Fact]
+    public void ApplyFromXmlFile_reports_a_change_only_when_a_count_or_date_moves()
+    {
+        var xmlPath = WriteLibraryXml(TrackEntry(1, "Song", "Artist", null, 75023, 7, playDateUtc: "2024-05-01T12:00:00Z"));
+        var track = new Track { Title = "Song", Artists = "Artist", Duration = TimeSpan.FromSeconds(75.031) };
+
+        Assert.True(ITunesPlayCountImporter.ApplyFromXmlFile(new List<Track> { track }, xmlPath));
+        Assert.False(ITunesPlayCountImporter.ApplyFromXmlFile(new List<Track> { track }, xmlPath));
+
+        var unmatched = new Track { Title = "Other", Artists = "Artist", Duration = TimeSpan.FromSeconds(75.031) };
+        Assert.False(ITunesPlayCountImporter.ApplyFromXmlFile(new List<Track> { unmatched }, xmlPath));
+    }
+
     [Fact]
     public void ApplyFromXmlFile_sets_ImportedPlayCount_from_a_matching_entry()
     {

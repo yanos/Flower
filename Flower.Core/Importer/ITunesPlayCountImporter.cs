@@ -54,31 +54,36 @@ public static class ITunesPlayCountImporter
     // instead of a static field resolved from a global. Optional/defaulting to
     // a no-op logger purely so the many test call sites that don't care about
     // log output don't all need updating.
-    public static void Apply(IEnumerable<Track> tracks, ILogger? logger = null)
+    //
+    // Returns whether any track's count or date actually moved, so a caller
+    // publishes a change only when there is one (ITunesImportCoordinator,
+    // ITunesIntegration.ApplyImports): the import runs on every launch, and
+    // most launches find exactly the numbers the last one left.
+    public static bool Apply(IEnumerable<Track> tracks, ILogger? logger = null)
     {
         logger ??= NullLogger.Instance;
 
         if (!OperatingSystem.IsMacOS())
-            return;
+            return false;
 
         var usedLiveExport = TryExportFreshLibraryXml(logger);
         var xmlPath = usedLiveExport ? LiveExportPath : ResolveLibraryXmlPath();
         if (xmlPath == null)
         {
             logger.LogInformation("iTunes play count sync skipped: no library export available (Music.app not installed, automation denied, or no static export found)");
-            return;
+            return false;
         }
 
         logger.LogInformation("Syncing play counts from {Source}: {XmlPath}", usedLiveExport ? "live Music.app export" : "static library export", xmlPath);
-        ApplyFromXmlFile(tracks, xmlPath, logger);
+        return ApplyFromXmlFile(tracks, xmlPath, logger);
     }
 
     // The actual parse-and-match logic, split out from Apply() so tests can
     // exercise it against a specific synthetic XML file without the live
     // export (which runs first in Apply() and wins on any machine that
     // actually has Music.app installed, including the one this was developed
-    // on) getting in the way.
-    public static void ApplyFromXmlFile(IEnumerable<Track> tracks, string xmlPath, ILogger? logger = null)
+    // on) getting in the way. Returns what Apply does.
+    public static bool ApplyFromXmlFile(IEnumerable<Track> tracks, string xmlPath, ILogger? logger = null)
     {
         logger ??= NullLogger.Instance;
 
@@ -89,7 +94,7 @@ public static class ITunesPlayCountImporter
                 tracksNode is not NSDictionary iTunesTracks)
             {
                 logger.LogWarning("iTunes library export at {XmlPath} did not have the expected shape (missing/malformed Tracks dictionary)", xmlPath);
-                return;
+                return false;
             }
 
             var playsBySyncKey = new Dictionary<string, MusicAppPlays>();
@@ -152,6 +157,7 @@ public static class ITunesPlayCountImporter
             }
 
             var matchedCount = 0;
+            var changedCount = 0;
             foreach (var track in tracks)
             {
                 MusicAppPlays? plays = null;
@@ -165,6 +171,7 @@ public static class ITunesPlayCountImporter
                 if (plays is not { } value)
                     continue;
 
+                var changed = track.ImportedPlayCount != value.Count;
                 track.ImportedPlayCount = value.Count;
                 // Later only: LastPlayedAt is a high-water mark everywhere it
                 // is kept (Library.ApplyReportedOwnerState), so Music.app's
@@ -173,11 +180,17 @@ public static class ITunesPlayCountImporter
                 // Flower recorded. Moved here, it goes to the server as owner
                 // state the way the count does.
                 if (value.LastPlayedAt is { } musicAppPlayed && (track.LastPlayedAt is not { } flowerPlayed || musicAppPlayed > flowerPlayed))
+                {
                     track.LastPlayedAt = musicAppPlayed;
+                    changed = true;
+                }
                 matchedCount++;
+                if (changed)
+                    changedCount++;
             }
 
-            logger.LogInformation("iTunes play count sync matched {MatchedCount} of {ExportedCount} exported tracks", matchedCount, playsBySyncKey.Count);
+            logger.LogInformation("iTunes play count sync matched {MatchedCount} of {ExportedCount} exported tracks, {ChangedCount} changed", matchedCount, playsBySyncKey.Count, changedCount);
+            return changedCount > 0;
         }
         catch (Exception ex)
         {
@@ -185,6 +198,7 @@ public static class ITunesPlayCountImporter
             // and LastPlayedAt as they are rather than blocking startup over an
             // optional enrichment step.
             logger.LogWarning(ex, "Failed to parse iTunes library export at {XmlPath}; play counts left unchanged", xmlPath);
+            return false;
         }
     }
 

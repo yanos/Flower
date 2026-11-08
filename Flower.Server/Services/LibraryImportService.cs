@@ -144,8 +144,8 @@ public class LibraryImportService(
     // and how the result gets published - both
     // importers mutate Track objects in place, so the one NotifyLibraryChanged
     // here is what persists them and invalidates the snapshot every client
-    // reads through. Skipped entirely when neither ran, rather than issuing a
-    // whole-table rewrite for two no-ops.
+    // reads through. Skipped entirely when neither moved anything, rather than
+    // issuing a whole-table rewrite for two no-ops.
     private void ApplyITunesImports(FlowerServerOptions settings)
     {
         if (!settings.IntegrateWithITunes)

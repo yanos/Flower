@@ -61,6 +61,21 @@ public class ITunesDateAddedImporterTests
         Assert.Equal(new DateTimeOffset(2010, 1, 1, 0, 0, 0, TimeSpan.Zero), track.DateAdded);
     }
 
+    // See ITunesPlayCountImporterTests' twin.
+    [Fact]
+    public void ApplyFromXmlFile_reports_a_change_only_when_a_date_moves()
+    {
+        var xmlPath = WriteLibraryXml(TrackEntry(1, "Song", "Artist", null, 75023, "2010-01-01T00:00:00Z"));
+        var track = new Track
+        {
+            Title = "Song", Artists = "Artist", Duration = TimeSpan.FromSeconds(75.031),
+            DateAdded = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero),
+        };
+
+        Assert.True(ITunesDateAddedImporter.ApplyFromXmlFile(new List<Track> { track }, xmlPath));
+        Assert.False(ITunesDateAddedImporter.ApplyFromXmlFile(new List<Track> { track }, xmlPath));
+    }
+
     [Fact]
     public void ApplyFromXmlFile_keeps_the_tracks_own_DateAdded_when_it_is_already_older()
     {

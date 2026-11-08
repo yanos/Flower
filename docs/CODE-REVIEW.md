@@ -31,11 +31,9 @@ happens to a listener or the library, not about how hard the fix is.
 
 1. **October B4**: check the file's own folder. This is the one finding left
    that can take songs off every device.
-2. **October C1.3**: have the iTunes importers report whether they changed
-   anything. A few lines, and two full rewrites saved on every desktop launch.
-3. **October C1.1**: a separate token for plays. This is the biggest network
+2. **October C1.1**: a separate token for plays. This is the biggest network
    win for phones, and the largest change on this list.
-4. **September E3**: wait until something wants it.
+3. **September E3**: wait until something wants it.
 
 ---
 
@@ -68,14 +66,14 @@ promises, so the comment stays and the code changes to match it.
 ### October C1. Every play still makes every device download the whole catalog
 
 `Flower.Core/Models/Library.cs` (`RecordPlayFor`, `MergeReportedTrackState`,
-`UpdateTracks`), `Flower/Services/LibrarySyncService.cs`,
-`Flower/ViewModels/ITunesImportCoordinator.cs:72-84`
+`UpdateTracks`), `Flower/Services/LibrarySyncService.cs`
 
 The client half is fixed: a merge that moved nothing writes nothing and raises
 nothing, and one that moved only plays or stars writes only those rows
-(`LibrarySyncNoOpPullTests`). So is a rescan that found nothing new, which no
-longer moves the token (C1.2, in `CITED-DECISIONS.md`). Two things are left,
-numbered as they were.
+(`LibrarySyncNoOpPullTests`). So are a rescan that found nothing new, which no
+longer moves the token, and the desktop's iTunes imports, which no longer
+rewrite everything on every launch (C1.2 and C1.3, in `CITED-DECISIONS.md`).
+One thing is left, numbered as it was.
 
 - **C1.1. The server's change token moves on every play.** Every play a
   listener reports moves it, so every other device's next `GET /library` is a
@@ -83,13 +81,6 @@ numbered as they were.
   download is not. Plays are by far the most frequent change, and the one a
   device could apply without re-reading the catalog, so they could have their
   own token.
-- **C1.3. The desktop's two iTunes imports rewrite everything on every launch.**
-  `ITunesImportCoordinator.ApplyAsync` calls `NotifyLibraryChanged` whether
-  or not a single count moved, which is two whole-table rewrites and two full
-  UI rebuilds per launch. `ITunesPlayCountImporter.Apply` and
-  `ITunesDateAddedImporter.Apply` return `void`. They should return whether
-  they changed anything, as the server's `ITunesIntegration.ApplyImports`
-  already does.
 
 `ONLINE-METADATA-PLAN.md` cites this shape: a popularity refresh that returns
 the same ranking must not count as a change.
