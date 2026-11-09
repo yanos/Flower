@@ -119,6 +119,22 @@ public sealed class ArtistPageViewModel : ViewModelBase
         }
     }
 
+    // The songs picked in a card - only ever one card's, see
+    // Section_SelectionStarted - or none.
+    public IReadOnlyList<Track> PickedSongs =>
+        Albums.Select(a => a.SelectedTracks).FirstOrDefault(s => s.Count > 0) ?? [];
+
+    // What Get Info opens on when songs are picked in a card: one song alone,
+    // with Prev/Next through its album, or several together - the Albums
+    // grid's open album's rule (AlbumTrackInfoSelection). None with nothing
+    // picked, when it is the artist's songs instead.
+    public TrackInfoTarget PickedSongsInfo()
+    {
+        if (Albums.FirstOrDefault(a => a.SelectedTracks.Count > 0) is not { } card)
+            return TrackInfoTarget.None;
+        return AlbumTrackInfoSelection.Resolve(card.SelectedTracks, card.ExpandedTracks, [], null, _ => []);
+    }
+
     // One selection across the page, as one list would have.
     private void Section_SelectionStarted(object? sender, EventArgs e)
     {

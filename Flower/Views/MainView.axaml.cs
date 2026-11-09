@@ -1978,9 +1978,10 @@ public partial class MainView : UserControl
     // is on screen and selected in it, which the view model does not hold.
 
     // Get Info, from anywhere: the songs selected in the list, the albums
-    // selected in the grid, or everything by the artists picked in the
-    // Artists column - the songs their right-click menu's Info shows - or,
-    // with nothing selected where focus is, Home included, the song playing.
+    // selected in the grid, the songs picked in an Artists page card, or
+    // with none picked everything by the artists picked in the Artists
+    // column - the songs their right-click menu's Info shows - or, with
+    // nothing selected where focus is, Home included, the song playing.
     public void GetInfo()
     {
         if (_viewModel is not { } vm)
@@ -1988,6 +1989,11 @@ public partial class MainView : UserControl
 
         if (vm.IsShowingAlbumGrid && OpenTrackInfoForSelectedAlbums())
             return;
+        if (vm.IsShowingArtistPage && vm.ArtistPage.PickedSongsInfo() is { IsEmpty: false } picked)
+        {
+            ShowTrackInfo(picked);
+            return;
+        }
         if (vm.IsShowingArtistPage && SelectedArtistsSongs(vm) is { Count: > 0 } songs)
         {
             OpenTrackInfo(songs);
@@ -2003,8 +2009,8 @@ public partial class MainView : UserControl
     }
 
     // The songs the Song menu acts on: those selected in the list on screen,
-    // under the albums selected in the grid, or by the artists picked in the
-    // Artists column.
+    // under the albums selected in the grid, picked in an Artists page card,
+    // or with none picked by the artists picked in the Artists column.
     public IReadOnlyList<Track> SelectedSongs()
     {
         if (_viewModel is not { } vm)
@@ -2016,7 +2022,7 @@ public partial class MainView : UserControl
             return songs.Count > 0 ? songs : vm.GetTracksForSubListItems(vm.SelectedSubItems).ToList();
         }
         if (vm.IsShowingArtistPage)
-            return SelectedArtistsSongs(vm);
+            return vm.ArtistPage.PickedSongs is { Count: > 0 } picked ? picked : SelectedArtistsSongs(vm);
         return ShowsTrackList(vm) ? SelectedTracksInListOrder() : [];
     }
 
@@ -2473,6 +2479,16 @@ public partial class MainView : UserControl
         if (target.IsEmpty)
             return false;
 
+        ShowTrackInfo(target);
+        return true;
+    }
+
+    // One song with Prev/Next through the target's list, or batch mode over it.
+    private void ShowTrackInfo(TrackInfoTarget target)
+    {
+        if (_viewModel is not MainViewModel vm || target.IsEmpty)
+            return;
+
         var infoWindow = target.FocusIndex is { } index
             ? new TrackInfoWindow(target.Tracks, index, vm) { ShowInTaskbar = false }
             : new TrackInfoWindow(target.Tracks, vm) { ShowInTaskbar = false };
@@ -2481,7 +2497,6 @@ public partial class MainView : UserControl
             infoWindow.Show(owner);
         else
             infoWindow.Show();
-        return true;
     }
 
     // Get Info over a given set of songs - a Home tile's album.

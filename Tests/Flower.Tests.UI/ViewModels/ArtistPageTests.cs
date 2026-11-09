@@ -146,4 +146,65 @@ public class ArtistPageTests : PinnedDataDirectory
         Assert.Empty(vm.SelectedSubItems);
         Assert.Empty(vm.ArtistPage.Albums);
     }
+    private static ArtistAlbumSectionViewModel Card(MainViewModel vm, string album) =>
+        vm.ArtistPage.Albums.Single(a => a.Tile.Name == album);
+
+    private static void Pick(MainViewModel vm, string album, string title, bool toggle = false)
+    {
+        var card = Card(vm, album);
+        card.SelectTrack(card.TrackRows.Single(r => r.Track.Title == title), toggle, rangeSelect: false);
+    }
+
+    // Get Info on one song picked in a card opens on that song, with Prev/Next
+    // through its album - not on the whole album, or everything by the artist.
+    [AvaloniaFact]
+    public void Get_info_on_one_picked_song_opens_on_it_with_its_album_to_step_through()
+    {
+        var vm = OnArtist("SAINT PEPSI");
+
+        Pick(vm, "Winner's Circle", "Carpark");
+
+        var target = vm.ArtistPage.PickedSongsInfo();
+        Assert.Equal(new[] { "Private Caller", "Carpark" }, target.Tracks.Select(t => t.Title));
+        Assert.Equal(1, target.FocusIndex);
+    }
+
+    [AvaloniaFact]
+    public void Get_info_on_several_picked_songs_edits_just_those_together()
+    {
+        var vm = OnArtist("SAINT PEPSI");
+
+        Pick(vm, "Winner's Circle", "Carpark");
+        Pick(vm, "Winner's Circle", "Private Caller", toggle: true);
+
+        var target = vm.ArtistPage.PickedSongsInfo();
+        Assert.Equal(new[] { "Private Caller", "Carpark" }, target.Tracks.Select(t => t.Title));
+        Assert.Null(target.FocusIndex);
+        Assert.Equal(new[] { "Private Caller", "Carpark" }, vm.ArtistPage.PickedSongs.Select(t => t.Title));
+    }
+
+    // Picking in another card leaves only that one picked, so it is what
+    // Get Info and the Song menu act on.
+    [AvaloniaFact]
+    public void Picking_in_another_card_moves_what_get_info_acts_on_there()
+    {
+        var vm = OnArtist("SAINT PEPSI");
+
+        Pick(vm, "Winner's Circle", "Carpark");
+        Pick(vm, "Hit Vibes", "Have Faith");
+
+        Assert.Equal(new[] { "Have Faith" }, vm.ArtistPage.PickedSongs.Select(t => t.Title));
+        var target = vm.ArtistPage.PickedSongsInfo();
+        Assert.Equal("Have Faith", target.Tracks[target.FocusIndex!.Value].Title);
+    }
+
+    // With nothing picked, the page leaves Get Info to the artist's songs.
+    [AvaloniaFact]
+    public void With_no_song_picked_get_info_has_no_card_of_its_own()
+    {
+        var vm = OnArtist("SAINT PEPSI");
+
+        Assert.True(vm.ArtistPage.PickedSongsInfo().IsEmpty);
+        Assert.Empty(vm.ArtistPage.PickedSongs);
+    }
 }
