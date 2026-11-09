@@ -68,6 +68,16 @@ public static class AlbumArtWriter
                 var folderWritten = art != null
                     ? TryWriteCoverFile(songs.Key, art, logger)
                     : TryRemoveCoverFiles(songs.Key, logger);
+                if (folderWritten && art != null)
+                {
+                    logger?.LogInformation("Album art written to {File} for {Count} song(s)",
+                        Path.Combine(songs.Key, "cover" + LocalAlbumArtReader.ExtensionForMimeType(art.MimeType)), songs.Count());
+                }
+                else if (folderWritten)
+                {
+                    logger?.LogInformation("Album art removed from {Folder} for {Count} song(s)", songs.Key, songs.Count());
+                }
+
                 foreach (var song in songs)
                 {
                     results.Add((song, folderWritten && TryRemove(song.Path!, logger)));

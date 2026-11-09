@@ -987,7 +987,9 @@ public static class AdminEndpoints
             return Problems.Of(StatusCodes.Status500InternalServerError, ProblemCodes.ServerError,
                 "The artwork could not be written to any of those files.");
 
-        logger.LogInformation("Album art for {Id} rewritten on {Written} of {Total} files.",
+        // Songs, not files: with ArtworkPlacement.Folder one cover file is every
+        // song's, and AlbumArtWriter.Apply has already logged that write.
+        logger.LogInformation("Album art for {Id} changed on {Written} of {Total} song(s).",
             id, written, candidates.Count);
         return Results.Json(new CoverArtWriteResponse(written, candidates.Count), jsonOptions);
     }
