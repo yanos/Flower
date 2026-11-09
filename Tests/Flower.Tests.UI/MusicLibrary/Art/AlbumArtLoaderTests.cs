@@ -446,14 +446,55 @@ public class AlbumArtLoaderTests : IDisposable
         var bitmap = await loader.LoadAsync(track);
 
         Assert.Equal(150, bitmap!.PixelSize.Width);
-        // Identified to the peer as us, and asking for this track's album by
-        // the same id the server side maps albums under.
+        // Identified to the peer as us, and asking for this track's art by the
+        // id the server named it with.
         Assert.Equal(SigningKey.Fingerprint, requestedFingerprint);
-        Assert.Contains(Uri.EscapeDataString(CatalogIdentity.AlbumIdFor(track)), requestedPath);
+        Assert.Contains(Uri.EscapeDataString(hash), requestedPath);
         // Content-addressed on disk, so the next run (or a restart) needs no
         // peer at all - see the cached-file test above.
         Assert.Equal(art, await File.ReadAllBytesAsync(
             Path.Combine(AppDataDirectory.Path, "AlbumArtCache", $"{hash}.art")));
+    }
+
+    [AvaloniaFact]
+    public async Task A_song_whose_cover_is_not_its_albums_is_fetched_by_its_own_id()
+    {
+        // The server names a song's art by the song's own id when its picture
+        // differs from the album's (AlbumCover.CoverArtId), and the loader
+        // caches it under that id. Asking for the album id instead got the
+        // album's first cover, filed under the song's name: a song whose cover
+        // had been replaced showed, measured and kept the old one.
+        var albumArt = SyntheticPng.Build(20, 20);
+        var songArt = SyntheticPng.Build(40, 40);
+        var songId = Unique("song");
+        var requested = new List<string>();
+
+        using var peer = new FakePeerHttpServer(async context =>
+        {
+            var query = context.Request.Url?.Query ?? "";
+            if (context.Request.HttpMethod != "GET")
+            {
+                context.Response.StatusCode = 404;
+                context.Response.Close();
+                return;
+            }
+
+            requested.Add(Uri.UnescapeDataString(query));
+            context.Response.ContentType = "image/png";
+            await context.Response.OutputStream.WriteAsync(query.Contains(songId) ? songArt : albumArt);
+            context.Response.Close();
+        });
+
+        var loader = new AlbumArtLoader(
+            new PeerCoverArtUrlResolver(new FixedPeerResolver(peer.Port)),
+            Credentials(), NullLogger<AlbumArtLoader>.Instance);
+
+        var bitmap = await loader.LoadAsync(RemoteTrack(songId));
+
+        Assert.Equal(40, bitmap!.PixelSize.Width);
+        Assert.Equal($"?id={songId}", Assert.Single(requested));
+        Assert.Equal(songArt, await File.ReadAllBytesAsync(
+            Path.Combine(AppDataDirectory.Path, "AlbumArtCache", $"{songId}.art")));
     }
 
     [AvaloniaFact]
@@ -585,7 +626,7 @@ public class AlbumArtLoaderTests : IDisposable
         Assert.NotNull(await loader.LoadAsync(track));
 
         Assert.StartsWith("/api/flower/v1/cover-art", requestedPath);
-        Assert.Contains(Uri.EscapeDataString(CatalogIdentity.AlbumIdFor(track)), requestedPath);
+        Assert.Contains(Uri.EscapeDataString(track.OriginAlbumArtId!), requestedPath);
         Assert.Equal("browser-credential", sessionHeader);
         // Connection reuse is the fetch stack's to manage in a browser, unlike
         // against a peer's HttpListener - see ICoverArtUrlResolver.ClosesConnection.

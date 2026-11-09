@@ -44,6 +44,24 @@ public interface ICoverArtUrlResolver
     // faulted, and the queue skipped the album track by track. AlbumArtLoader
     // coalesces the asking side; this says where to send it.
     (string Endpoint, string Id)? ResolveBatch(Track track) => null;
+
+    // The id to ask the server for: the one it named this track's art by
+    // (Track.OriginAlbumArtId), which is the song's own id when its picture is
+    // not its album's (AlbumCover.CoverArtId). AlbumArtLoader caches under that
+    // same id, so asking for anything else files one picture under another's
+    // name - asking for the album id did exactly that, and a song with a
+    // replaced cover showed, measured and kept its album's old one. A track
+    // the server named nothing for falls back to the album id both sides
+    // compute (CatalogIdentity.AlbumIdFor); null when there is not even that.
+    static string? ArtIdFor(Track track)
+    {
+        if (!string.IsNullOrEmpty(track.OriginAlbumArtId))
+            return track.OriginAlbumArtId;
+        if (string.IsNullOrEmpty(track.Album) && string.IsNullOrEmpty(track.EffectiveAlbumArtist))
+            return null;
+
+        return CatalogIdentity.AlbumIdFor(track);
+    }
 }
 
 // The app's implementation: whichever peer currently holds the track, asked
@@ -60,11 +78,10 @@ public sealed class PeerCoverArtUrlResolver(PeerTrackResolver peerTrackResolver)
         // user-visible and worth a line, whereas this is called once per row of
         // a scrolling list and a peer being absent is routine.
         var peer = peerTrackResolver.Resolve(track);
-        if (peer == null)
+        if (peer == null || ICoverArtUrlResolver.ArtIdFor(track) is not { } artId)
             return null;
 
-        var albumId = CatalogIdentity.AlbumIdFor(track);
-        return peer.Url($"/api/flower/v1/cover-art?id={Uri.EscapeDataString(albumId)}").ToString();
+        return peer.Url($"/api/flower/v1/cover-art?id={Uri.EscapeDataString(artId)}").ToString();
     }
 
     // The batch form of the call above, and on the same surface. It went on
@@ -77,10 +94,10 @@ public sealed class PeerCoverArtUrlResolver(PeerTrackResolver peerTrackResolver)
     public (string Endpoint, string Id)? ResolveBatch(Track track)
     {
         var peer = peerTrackResolver.Resolve(track);
-        if (peer == null)
+        if (peer == null || ICoverArtUrlResolver.ArtIdFor(track) is not { } artId)
             return null;
 
-        return (peer.Url("/api/flower/v1/cover-art/batch").ToString(), CatalogIdentity.AlbumIdFor(track));
+        return (peer.Url("/api/flower/v1/cover-art/batch").ToString(), artId);
     }
 }
 
@@ -93,27 +110,17 @@ public sealed class PeerCoverArtUrlResolver(PeerTrackResolver peerTrackResolver)
 // wrong door for the same reason it was for the catalog: it authenticated with a
 // password scheme, and a tab has no password.)
 //
-// Addressed by the album id recomputed from this track's own tags rather than
-// by the CoverArt value the manifest carried. The two agree today (see
-// CatalogIdentity.AlbumIdFor, which is what both sides compute), and deriving
-// it keeps this resolver symmetric with the peer one above instead of quietly
-// depending on what a particular server chose to put in that field.
+// Addressed by the id the manifest's CoverArt carried, like the peer one above
+// (ICoverArtUrlResolver.ArtIdFor says why).
 public sealed class OriginCoverArtUrlResolver(Uri baseAddress) : ICoverArtUrlResolver
 {
-    public string? Resolve(Track track)
-    {
-        if (string.IsNullOrEmpty(track.Album) && string.IsNullOrEmpty(track.EffectiveAlbumArtist))
-            return null;
+    public string? Resolve(Track track) =>
+        ICoverArtUrlResolver.ArtIdFor(track) is { } artId
+            ? new Uri(baseAddress, $"/api/flower/v1/cover-art?id={Uri.EscapeDataString(artId)}").ToString()
+            : null;
 
-        var albumId = CatalogIdentity.AlbumIdFor(track);
-        return new Uri(baseAddress, $"/api/flower/v1/cover-art?id={Uri.EscapeDataString(albumId)}").ToString();
-    }
-
-    public (string Endpoint, string Id)? ResolveBatch(Track track)
-    {
-        if (string.IsNullOrEmpty(track.Album) && string.IsNullOrEmpty(track.EffectiveAlbumArtist))
-            return null;
-
-        return (new Uri(baseAddress, "/api/flower/v1/cover-art/batch").ToString(), CatalogIdentity.AlbumIdFor(track));
-    }
+    public (string Endpoint, string Id)? ResolveBatch(Track track) =>
+        ICoverArtUrlResolver.ArtIdFor(track) is { } artId
+            ? (new Uri(baseAddress, "/api/flower/v1/cover-art/batch").ToString(), artId)
+            : null;
 }
