@@ -295,7 +295,6 @@ public class SettingsDevicesViewTests : PinnedDataDirectory
         Assert.True(settings.Capabilities.ThemePicker);
         Assert.True(settings.Capabilities.ITunesIntegration);
         Assert.True(settings.Capabilities.PairedServerPicker);
-        Assert.True(settings.Capabilities.RebuildDatabase);
 
         Assert.False(settings.Capabilities.ServerNetwork);
         Assert.False(settings.Capabilities.TrustedDevices);

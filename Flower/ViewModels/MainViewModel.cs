@@ -154,7 +154,6 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // this device may run (SyncRolePolicy.MayImportFromMusicApp).
     public bool AdministersPairedServer => _appSettings.PairedServerGrantsAdmin;
     public bool PairedServerImportsMusicAppPlays => _appSettings.PairedServerImportsMusicAppPlays;
-    public bool PairedServerLooksUpOnline => _appSettings.PairedServerLooksUpOnline;
     public bool MayImportFromMusicApp => SyncRolePolicy.MayImportFromMusicApp(_appSettings);
     public bool MayImportPlayCountsFromMusicApp => SyncRolePolicy.MayImportPlayCountsFromMusicApp(_appSettings);
     public bool MayAddSongsFromMusicApp => SyncRolePolicy.MayAddSongsFromMusicApp(_appSettings);
@@ -183,7 +182,6 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public void DiscardNewPlaylist(SidebarItem row) => Playlists.DiscardNew(row);
 
     public ICommand? OpenAppDataLocationCommand  { get; private set; }
-    public ICommand? RebuildDatabaseCommand      { get; private set; }
     public ICommand? SortByColumnCommand         { get; private set; }
     public ICommand? OpenSettingsCommand         { get; private set; }
     public ICommand? OpenColumnSelectorCommand   { get; private set; }
@@ -323,7 +321,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     // Whether this device looks things up online for its own songs, while it
     // is on its own (MusicLibrarySettings.LookUpOnline) - a paired device goes
-    // by its server's answer instead (PairedServerLooksUpOnline).
+    // by its server's answer instead (AppSettings.PairedServerLooksUpOnline).
     // Persist-immediately, same as above.
     public bool LookUpOnline
     {
@@ -1892,7 +1890,6 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         }
 
         OpenAppDataLocationCommand  = new RelayCommand(OpenAppDataLocation);
-        RebuildDatabaseCommand      = new AsyncRelayCommand(RebuildDatabaseAsync);
         SortByColumnCommand         = new RelayCommand<string>(Browser.SortByColumn);
         OpenSettingsCommand         = new RelayCommand(() => SettingsRequested?.Invoke(this, EventArgs.Empty));
         OpenColumnSelectorCommand   = new RelayCommand(() => ColumnSelectorRequested?.Invoke(this, EventArgs.Empty));
@@ -2840,7 +2837,10 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         PlatformShell.OpenFolder(dir);
     }
 
-    private async Task RebuildDatabaseAsync()
+    // Mobile has no library-paths UI to rescan as a side effect of (desktop's
+    // SettingsWindow OK button) — it needs to trigger a rescan directly,
+    // e.g. after granting a previously-denied Android media permission.
+    public async Task RescanLibraryAsync()
     {
         if (_importer == null || _mainPlaylist == null)
             return;
@@ -2956,11 +2956,6 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         // without them.
         FollowScanFolders();
     }
-
-    // Mobile has no library-paths UI to rescan as a side effect of (desktop's
-    // SettingsWindow OK button) — it needs to trigger a rescan directly,
-    // e.g. after granting a previously-denied Android media permission.
-    public Task RescanLibraryAsync() => RebuildDatabaseAsync();
 
     // ── Go to currently playing track (Cmd/Ctrl+L) ───────────────────────────
 

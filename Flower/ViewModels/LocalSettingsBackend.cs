@@ -38,7 +38,6 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel, Flower.Control
         PairedServerPicker = true,
         TrustedDevices = false,
         RevealInFileManager = PlatformShell.IsAvailable,
-        RebuildDatabase = true,
         // The app has its own Log window (View > Log...), showing this device's
         // live log through the very same viewer this tab would - a second copy
         // of it here, fetched rather than live, would be strictly worse.
@@ -65,8 +64,6 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel, Flower.Control
         IsPairedToServer = !string.IsNullOrEmpty(ViewModel.PairedServerFingerprint),
         AdministersPairedServer = ViewModel.AdministersPairedServer,
         PairedServerImportsMusicAppPlays = ViewModel.PairedServerImportsMusicAppPlays,
-        LookUpOnline = ViewModel.LookUpOnline,
-        PairedServerLooksUpOnline = ViewModel.PairedServerLooksUpOnline,
         PairedServerName = ViewModel.PairedServerAlias,
         PairedServerEndlessPlay = ViewModel.EndlessPlayOffered(),
     });
@@ -102,7 +99,6 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel, Flower.Control
 
         ViewModel.SyncPlayCountFromITunes = draft.SyncPlayCountFromITunes;
         ViewModel.SyncDateAddedFromITunes = draft.SyncDateAddedFromITunes;
-        ViewModel.LookUpOnline = draft.LookUpOnline;
 
         if (draft.LibraryPathsChanged)
             await ViewModel.SaveLibraryPathsAsync(draft.LibraryPaths.ToList());
@@ -153,12 +149,6 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel, Flower.Control
     public Task ForgetDeviceAsync(TrustedPeerRow device, CancellationToken ct = default) => throw NoRoster();
 
     public Task RescanAsync(CancellationToken ct = default) => ViewModel.RescanLibraryAsync();
-
-    public Task RebuildDatabaseAsync(CancellationToken ct = default)
-    {
-        ViewModel.RebuildDatabaseCommand?.Execute(null);
-        return Task.CompletedTask;
-    }
 
     public Task<IReadOnlyList<RemovedFileRow>> LoadRemovedFilesAsync(CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<RemovedFileRow>>(ViewModel.Library.ExcludedPaths

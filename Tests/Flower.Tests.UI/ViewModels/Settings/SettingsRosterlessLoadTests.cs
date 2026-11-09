@@ -29,7 +29,6 @@ public class SettingsRosterlessLoadTests
             ITunesIntegration = true,
             PairedServerPicker = true,
             RevealInFileManager = true,
-            RebuildDatabase = true,
             TrustedDevices = false,
             PairingCodes = false,
             ServerNetwork = false,
@@ -51,7 +50,6 @@ public class SettingsRosterlessLoadTests
         public Task ForgetDeviceAsync(TrustedPeerRow device, CancellationToken ct = default) => throw NoRoster();
 
         public Task RescanAsync(CancellationToken ct = default) => Task.CompletedTask;
-        public Task RebuildDatabaseAsync(CancellationToken ct = default) => Task.CompletedTask;
 
         public Task<(string Code, string Invite)> IssuePairingCodeAsync(bool grantsAdmin, CancellationToken ct = default) =>
             throw new NotSupportedException();

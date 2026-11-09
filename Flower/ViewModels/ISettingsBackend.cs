@@ -81,10 +81,9 @@ public sealed record SettingsCapabilities
     // the server's answer.
     public bool AiFeatures { get; init; }
 
-    // "Rebuild Database" versus a plain rescan. The app rebuilds; the server
-    // rescans (its schema is migrated by FlowerDb on construction, so there is
-    // nothing to rebuild).
-    public bool RebuildDatabase { get; init; }
+    // A Rescan files button: a server's, scanned from afar. The app has
+    // none - its folder watcher keeps the library in step on its own.
+    public bool RescanButton { get; init; }
 }
 
 // Everything the settings screen reads once, when it opens. A record rather than
@@ -177,13 +176,6 @@ public sealed record SettingsSnapshot
     public bool AdministersPairedServer { get; init; }
     public bool PairedServerImportsMusicAppPlays { get; init; }
 
-    // Whether the thing being configured looks things up online
-    // (MusicLibrarySettings.LookUpOnline), and on a paired device, whether its
-    // server does - which is the answer that governs it there, so its own
-    // switch is not shown (see SettingsViewModel.LookUpOnlineNote).
-    public bool LookUpOnline { get; init; } = true;
-    public bool PairedServerLooksUpOnline { get; init; }
-
     // On a paired device: which server it is, named in
     // SettingsViewModel.EndlessPlayNote.
     public string? PairedServerName { get; init; }
@@ -219,7 +211,6 @@ public sealed record SettingsDraft
     public required bool TrustTailscaleRange { get; init; }
     public required IReadOnlyList<string> AllowedCidrs { get; init; }
     public required bool AllowPublicAccess { get; init; }
-    public required bool LookUpOnline { get; init; }
     public required bool AiFeaturesEnabled { get; init; }
     public required bool VibeEnabled { get; init; }
     public required bool EndlessPlayEnabled { get; init; }
@@ -302,7 +293,6 @@ public interface ISettingsBackend
     // has finished - a full scan outlasts any sensible request timeout, and on the
     // local backend it deliberately runs unawaited behind the app's busy spinner.
     Task RescanAsync(CancellationToken ct = default);
-    Task RebuildDatabaseAsync(CancellationToken ct = default);
 
     // This server's own log. Structured entries rather than rendered lines:
     // the Logs tab is a real log viewer now (see LogViewerViewModel), and its

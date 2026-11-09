@@ -44,7 +44,6 @@ public class SettingsITunesGatingTests
             throw new NotSupportedException();
 
         public Task RescanAsync(CancellationToken ct = default) => Task.CompletedTask;
-        public Task RebuildDatabaseAsync(CancellationToken ct = default) => Task.CompletedTask;
 
         public Task<IReadOnlyList<RemovedFileRow>> LoadRemovedFilesAsync(CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<RemovedFileRow>>([]);

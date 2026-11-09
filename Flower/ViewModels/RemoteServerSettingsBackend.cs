@@ -16,8 +16,7 @@ namespace Flower.ViewModels;
 // Everything here is one call to ServerAdminClient; the interesting part is what
 // is *absent*. There is no theme (a browser tab administering a headless box has
 // no app theme to set), no Client/Server role choice (a server is one,
-// unconditionally) and no "Rebuild Database" - FlowerDb migrates itself on
-// construction, so a server has a rescan and nothing to rebuild.
+// unconditionally).
 //
 // Music.app integration is *not* absent, though the browser has none of its own:
 // the switches administer the machine the server runs on, which is very often a
@@ -40,7 +39,7 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
         PairedServerPicker = false,
         TrustedDevices = true,
         RevealInFileManager = false,
-        RebuildDatabase = false,
+        RescanButton = true,
         AiFeatures = true,
     };
 
@@ -75,7 +74,6 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
             DataDirectory = settings.DataDirectory,
             Version = settings.Version,
             Fingerprint = settings.Fingerprint,
-            LookUpOnline = settings.LookUpOnline,
             AiFeaturesEnabled = settings.AiFeaturesEnabled,
             VibeEnabled = settings.VibeEnabled,
             EndlessPlayEnabled = settings.EndlessPlayEnabled,
@@ -102,7 +100,9 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
                 draft.SyncDateAddedFromITunes,
                 draft.AllowPublicAccess,
                 draft.IconEmoji,
-                draft.LookUpOnline,
+                // LookUpOnline: left as the server has it - no switch here
+                // sets it, only the server's config file.
+                null,
                 draft.AiFeaturesEnabled,
                 draft.VibeEnabled,
                 draft.VibeClipsPerSong,
@@ -172,9 +172,6 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
     public async Task<string> RestoreRemovedFilesAsync(IReadOnlyList<string> paths, CancellationToken ct = default) =>
         LocalSettingsBackend.RestoredMessage(
             (await client.RestoreRemovedFilesAsync(new RestoreRemovedFilesRequestDto(paths.ToList()), ct)).Restored);
-
-    public Task RebuildDatabaseAsync(CancellationToken ct = default) =>
-        throw new NotSupportedException("A server migrates its own schema on startup.");
 
     // A device on the roster that has never pushed answers 404, which is an
     // ordinary state rather than a failure - it has not synced since the server

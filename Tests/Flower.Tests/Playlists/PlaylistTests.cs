@@ -13,7 +13,7 @@ public class PlaylistTests
     // Library.Tracks (new MainPlaylist(library.Tracks)) and, on every rescan,
     // calls mainPlaylist.ReplaceAll(freshTracks) immediately before
     // library.UpdateTracks(freshTracks) - see App.axaml.cs and
-    // MainViewModel.RebuildDatabaseAsync. If the Playlist constructor aliased
+    // MainViewModel.RescanLibraryAsync. If the Playlist constructor aliased
     // the passed-in list instead of copying it, ReplaceAll's Clear()+AddRange()
     // would mutate Library.Tracks itself (the same underlying list object) in
     // place *before* UpdateTracks got a chance to read it as "previous" state -

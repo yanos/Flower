@@ -65,7 +65,6 @@ public class SettingsAiFeaturesTests
         public Task ForgetDeviceAsync(TrustedPeerRow device, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<(string Code, string Invite)> IssuePairingCodeAsync(bool grantsAdmin, CancellationToken ct = default) => throw new NotSupportedException();
         public Task RescanAsync(CancellationToken ct = default) => Task.CompletedTask;
-        public Task RebuildDatabaseAsync(CancellationToken ct = default) => Task.CompletedTask;
         public Task<LogSlice> LoadLogAsync(int limit, long afterSequence, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<InMemoryLogEntry>?> LoadDeviceLogAsync(string fingerprint, int limit, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<RemovedFileRow>> LoadRemovedFilesAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<RemovedFileRow>>([]);

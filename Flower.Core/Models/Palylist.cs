@@ -301,7 +301,7 @@ namespace Flower.Models
             // MainPlaylist directly from library.Tracks). Without this, ReplaceAll's
             // Clear()+AddRange() mutates that same underlying list in place, and
             // since ReplaceAll always runs immediately before Library.UpdateTracks
-            // (both here and in RebuildDatabaseAsync), UpdateTracks would read its
+            // (both here and in RescanLibraryAsync), UpdateTracks would read its
             // own "previous" snapshot from a list that had *already* been overwritten
             // with the fresh (PlayCount/DateAdded/ImportedPlayCount-defaulted) data -
             // silently discarding whatever was actually there, every single rescan.
