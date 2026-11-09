@@ -297,8 +297,7 @@ public partial class TrackInfoView : UserControl
     }
 
     // "Updating 12 files…": how many songs will have the picture rewritten
-    // into them, which for a song of the server's is its whole album
-    // (AlbumArtEditor.FileCount).
+    // into them (AlbumArtEditor.FileCount).
     private string UpdatingFilesText(AlbumArtEditor? editor = null)
     {
         var count = (editor ?? ArtEditor())?.FileCount ?? _tracks.Count;

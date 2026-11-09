@@ -18,10 +18,15 @@ namespace Flower.Services;
 // A change writes the picture straight into the tag rather than waiting for a
 // Save - see TrackInfoWindow's Artwork tab comment for why - and, when the
 // tracks have no file on this device because they live on the paired server,
-// asks that server to do the write instead (ServerAlbumIds).
+// asks that server to do the write instead (ServerArtIds).
 //
 // The credentials are whichever this head has, as the container picked them
 // for MainViewModel: a native head's device key, or the browser's pairing.
+//
+// A change is for the songs picked and no others. Where the setting keeps
+// covers in the album's folder (ArtworkPlacement.Folder), that is only where
+// every song of the album was picked, since a cover file there is every
+// song's in that folder; the rest get theirs in their own files.
 public sealed class AlbumArtEditor(
     IReadOnlyList<Track> tracks,
     Library library,
@@ -32,9 +37,20 @@ public sealed class AlbumArtEditor(
 {
     // The tracks a write can land on directly: a file on this disk to embed a
     // picture into. A placeholder that only exists on the paired server has
-    // none, and is handled by ServerAlbumIds below instead.
+    // none, and is handled by ServerArtIds below instead.
     public List<Track> LocalTargets() =>
         [.. tracks.Where(AlbumArtLoader.IsLocalFile)];
+
+    // Whether a cover may go into an album's folder for these songs: the
+    // setting says so, and every song of the album is among them. A song with
+    // no album name has no album to be the whole of.
+    private bool ToFolder(HashSet<Track> picked, Track song)
+    {
+        if (settings.ArtworkPlacement != ArtworkPlacement.Folder || string.IsNullOrEmpty(song.Album))
+            return false;
+
+        return library.Snapshot.AlbumTracks(CatalogIdentity.AlbumIdFor(song)).All(picked.Contains);
+    }
 
     // ── Artwork on the paired server ───────────────────────────────────────
     //
@@ -45,12 +61,13 @@ public sealed class AlbumArtEditor(
     // AdminEndpoints' /cover-art routes for why that is an admin route rather
     // than one a listener could reach.
     //
-    // Addressed by album id, not by track: art is served per album on the way
-    // out (LibraryDtoMapper's CoverArt field, and PeerCoverArtUrlResolver asks
-    // for exactly this id), so writing into one track's file would leave the
-    // album still serving whichever other file the read path reached first.
-    // Distinct, because a batch selection can span albums.
-    public List<string> ServerAlbumIds()
+    // Addressed by each song's id on the server (Track.OriginTrackId), which
+    // the route writes into that song's file alone - the server then names
+    // that song's cover by its own id (AlbumCover), so it is drawn with it
+    // rather than with the album's. An album picked whole goes as its album
+    // id instead: one call rather than one per song, and the only way to have
+    // the server keep it in the album's folder.
+    public List<(string Id, ArtworkPlacement Placement)> ServerArtIds()
     {
         if (tracks.Count == 0 || LocalTargets().Count > 0 || PairedServerSourceName(tracks, settings) == null)
             return [];
@@ -62,31 +79,38 @@ public sealed class AlbumArtEditor(
         if (peerTrackResolver?.Resolve(tracks[0]) == null || peerCredentials == null)
             return [];
 
-        return [.. tracks.Select(CatalogIdentity.AlbumIdFor).Distinct(StringComparer.Ordinal)];
-    }
-
-    // How many files a change rewrites, for the phone to say while it does:
-    // the songs' own files here, or - the server writing by album - every
-    // song of each album the change covers, which is more than were picked
-    // when one song of an album was.
-    public int FileCount
-    {
-        get
+        var ids = new List<(string Id, ArtworkPlacement Placement)>();
+        foreach (var album in tracks.GroupBy(CatalogIdentity.AlbumIdFor, StringComparer.Ordinal))
         {
-            if (LocalTargets() is { Count: > 0 } local)
-                return local.Count;
+            if (!string.IsNullOrEmpty(album.First().Album)
+                && library.Snapshot.AlbumTracks(album.Key).All(tracks.Contains))
+            {
+                ids.Add((album.Key, settings.ArtworkPlacement));
+                continue;
+            }
 
-            var albums = ServerAlbumIds().ToHashSet(StringComparer.Ordinal);
-            return albums.Count == 0 ? 0 : library.Tracks.Count(t => albums.Contains(CatalogIdentity.AlbumIdFor(t)));
+            ids.AddRange(album
+                .Select(t => t.OriginTrackId)
+                .OfType<string>()
+                .Where(id => id.Length > 0)
+                .Distinct(StringComparer.Ordinal)
+                .Select(id => (id, ArtworkPlacement.Files)));
         }
+
+        return ids;
     }
+
+    // How many files a change rewrites, for Track Info to say while it does:
+    // one per song picked, here or on the server.
+    public int FileCount =>
+        LocalTargets().Count is > 0 and var local ? local : ServerArtIds().Count == 0 ? 0 : tracks.Count;
 
     // Somewhere to write - and, for a song of the paired server's, the right
     // to (SyncRolePolicy.MayEditSong): a cover is changed for everybody, so on
     // a guest's device the server's songs are not this to change, downloaded
     // copy or not.
     public bool CanWrite =>
-        tracks.All(MayEdit) && (LocalTargets().Count > 0 || ServerAlbumIds().Count > 0);
+        tracks.All(MayEdit) && (LocalTargets().Count > 0 || ServerArtIds().Count > 0);
 
     private bool MayEdit(Track track) =>
         SyncRolePolicy.MayEditSong(
@@ -101,7 +125,7 @@ public sealed class AlbumArtEditor(
     public Task<string?> WriteAsync(byte[] bytes, string mimeType) =>
         ApplyAsync(
             new LocalAlbumArt(bytes, mimeType),
-            (client, albumId) => client.SetCoverArtAsync(albumId, bytes, mimeType, settings.ArtworkPlacement),
+            (client, artId, placement) => client.SetCoverArtAsync(artId, bytes, mimeType, placement),
             ArtworkDimensions.Of(bytes),
             "The artwork couldn't be written to");
 
@@ -109,7 +133,7 @@ public sealed class AlbumArtEditor(
     public Task<string?> RemoveAsync() =>
         ApplyAsync(
             art: null,
-            (client, albumId) => client.RemoveCoverArtAsync(albumId, settings.ArtworkPlacement),
+            (client, artId, placement) => client.RemoveCoverArtAsync(artId, placement),
             ArtworkDimensions.None,
             "The artwork couldn't be removed from");
 
@@ -120,25 +144,29 @@ public sealed class AlbumArtEditor(
     // catalog says so (TrackDto.ArtWidth).
     private async Task<string?> ApplyAsync(
         LocalAlbumArt? art,
-        Func<ServerAdminClient, string, Task<CoverArtWriteDto>> writeServer,
+        Func<ServerAdminClient, string, ArtworkPlacement, Task<CoverArtWriteDto>> writeServer,
         ArtworkDimensions serverArtwork,
         string failureVerb)
     {
         var targets = LocalTargets();
-        var albumIds = ServerAlbumIds();
-        if (targets.Count == 0 && albumIds.Count == 0)
+        var artIds = ServerArtIds();
+        if (targets.Count == 0 && artIds.Count == 0)
             return null;
 
-        // Into the files, or the folder - which can change the cover of more
-        // songs than were picked, every one in that folder (AlbumArtWriter.
-        // Apply), and they are dated and redrawn like the picked ones.
+        // Into the files, or the folder of an album picked whole (ToFolder) -
+        // which AlbumArtWriter.Apply still declines for a folder holding
+        // songs of other albums, putting those in their files instead.
         string? message = null;
         IReadOnlyList<Track> changed = tracks;
         if (targets.Count > 0)
         {
             var results = await Task.Run(() =>
             {
-                var applied = AlbumArtWriter.Apply(library, targets, art, settings.ArtworkPlacement, logger);
+                var picked = targets.ToHashSet();
+                var toFolder = targets.ToLookup(t => ToFolder(picked, t));
+                var applied = AlbumArtWriter.Apply(library, [.. toFolder[true]], art, ArtworkPlacement.Folder, logger)
+                    .Concat(AlbumArtWriter.Apply(library, [.. toFolder[false]], art, ArtworkPlacement.Files, logger))
+                    .ToList();
                 foreach (var (track, _) in applied)
                     ArtworkDimensions.OfFile(track.Path!).ApplyTo(track);
                 return applied;
@@ -152,7 +180,7 @@ public sealed class AlbumArtEditor(
         }
         else
         {
-            var (written, error) = await ApplyServerArtAsync(albumIds, writeServer);
+            var (written, error) = await ApplyServerArtAsync(artIds, writeServer);
             message = error ?? (written == 0 ? "The server didn't change any files." : null);
             if (written > 0)
             {
@@ -171,12 +199,12 @@ public sealed class AlbumArtEditor(
         return message;
     }
 
-    // Runs one admin call per album the selection covers, and reports how many
+    // Runs one admin call per album (or song) the change covers, and reports how many
     // files the server said it rewrote. A ServerAdminException carries the
     // server's own words ("This device is paired, but is not an administrator
     // of that server.") which is exactly what to show.
     private async Task<(int Written, string? Error)> ApplyServerArtAsync(
-        IReadOnlyList<string> albumIds, Func<ServerAdminClient, string, Task<CoverArtWriteDto>> apply)
+        IReadOnlyList<(string Id, ArtworkPlacement Placement)> artIds, Func<ServerAdminClient, string, ArtworkPlacement, Task<CoverArtWriteDto>> apply)
     {
         var device = peerTrackResolver?.Resolve(tracks[0]);
         var credentials = peerCredentials;
@@ -191,15 +219,15 @@ public sealed class AlbumArtEditor(
         var client = new ServerAdminClient(http, device.BaseUri, ServerAdminClient.SignWith(credentials), logger: logger);
 
         var written = 0;
-        foreach (var albumId in albumIds)
+        foreach (var (artId, placement) in artIds)
         {
             try
             {
-                written += (await apply(client, albumId)).Written;
+                written += (await apply(client, artId, placement)).Written;
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "Could not change the album art for {AlbumId} on {Server}", albumId, device.BaseUri);
+                logger.LogWarning(ex, "Could not change the album art for {ArtId} on {Server}", artId, device.BaseUri);
                 return (written, ex is ServerAdminException ? ex.Message : "Could not reach that server.");
             }
         }

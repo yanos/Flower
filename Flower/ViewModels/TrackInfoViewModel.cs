@@ -434,16 +434,16 @@ public sealed class TrackInfoViewModel : ViewModelBase
 
     // The line under the desktop's Artwork tab: what the cover is, and how it
     // can be changed - or why it cannot. writable is how many songs have a
-    // file here to write into, serverAlbums how many of the paired server's
-    // albums its administrator could have the server write instead, and
+    // file here to write into, serverTargets how many of the paired server's
+    // albums or songs its administrator could have the server write instead, and
     // multiple that the songs do not share one cover (AlbumArtLoader.ShareOneCover).
-    public string DescribeArtwork(LocalAlbumArt? art, PixelSize? size, int writable, int serverAlbums, bool multiple)
+    public string DescribeArtwork(LocalAlbumArt? art, PixelSize? size, int writable, int serverTargets, bool multiple)
     {
         if (Tracks.Count == 0)
             return "";
 
         var hasArt = art?.Bytes is { Length: > 0 };
-        if (writable == 0 && serverAlbums == 0)
+        if (writable == 0 && serverTargets == 0)
             return hasArt
                 // Art there is - it came from the server's own copy - but no
                 // way to change it: either this device is not an admin of that

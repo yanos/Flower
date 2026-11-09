@@ -241,15 +241,12 @@ public partial class TrackInfoWindow : Window
     //
     // "The file" is not always one of this device's: a track that only exists on
     // the paired server is written by asking that server to do it - see
-    // AlbumArtEditor.ServerAlbumIds.
+    // AlbumArtEditor.ServerArtIds. Either way only the songs being edited
+    // get the new cover, never the rest of their album.
 
     // Rebuilt per call because _editTracks is replaced on every Navigate();
     // it holds nothing but the list it is given.
     private AlbumArtEditor ArtEditor() => _main.ArtEditorFor(_editTracks, _logger);
-
-    private List<Track> ArtWriteTargets() => ArtEditor().LocalTargets();
-
-    private List<string> ServerArtAlbumIds() => ArtEditor().ServerAlbumIds();
 
     private void SetUpArtworkDropTarget()
     {
@@ -272,7 +269,7 @@ public partial class TrackInfoWindow : Window
 
     private void ArtDropTarget_DragOver(object? sender, DragEventArgs e)
     {
-        var accepted = ArtWriteTargets().Count > 0 && DroppedImagePath(e.DataTransfer) != null;
+        var accepted = ArtEditor().LocalTargets().Count > 0 && DroppedImagePath(e.DataTransfer) != null;
         e.DragEffects = accepted ? DragDropEffects.Copy : DragDropEffects.None;
         e.Handled = true;
     }
@@ -443,8 +440,7 @@ public partial class TrackInfoWindow : Window
     }
 
     // "Updating 12 files…": how many songs will have the picture rewritten
-    // into them, which for a song of the server's is its whole album
-    // (AlbumArtEditor.FileCount).
+    // into them (AlbumArtEditor.FileCount).
     private string UpdatingFilesText()
     {
         var count = ArtEditor().FileCount;
@@ -610,9 +606,10 @@ public partial class TrackInfoWindow : Window
 
     private void UpdateArtworkTab()
     {
-        var writable = ArtWriteTargets().Count;
-        var serverAlbums = writable == 0 ? ServerArtAlbumIds().Count : 0;
-        var canWrite = writable > 0 || serverAlbums > 0;
+        var editor = ArtEditor();
+        var writable = editor.LocalTargets().Count;
+        var serverTargets = writable == 0 ? editor.ServerArtIds().Count : 0;
+        var canWrite = writable > 0 || serverTargets > 0;
         var hasArt = _art?.Bytes is { Length: > 0 };
 
         ArtDropHint.IsVisible = !hasArt && canWrite && !_multipleArt;
@@ -625,6 +622,6 @@ public partial class TrackInfoWindow : Window
         RemoveArtButton.IsEnabled = canWrite && (hasArt || _multipleArt);
         OpenArtButton.IsEnabled = hasArt;
 
-        ArtworkInfoText.Text = _info.DescribeArtwork(_art, _artPixelSize, writable, serverAlbums, _multipleArt);
+        ArtworkInfoText.Text = _info.DescribeArtwork(_art, _artPixelSize, writable, serverTargets, _multipleArt);
     }
 }

@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 
 using Microsoft.Extensions.Logging.Abstractions;
@@ -71,5 +73,93 @@ public class AlbumArtEditorTests
         var error = await editor.WriteAsync(Png, "image/png");
 
         Assert.Equal("The artwork couldn't be written to the file.", error);
+    }
+
+    // --- Only the songs picked -------------------------------------------
+
+    // Songs of one album, each a file in a folder of its own, so a cover file
+    // in one folder could never stand in for a picture in the tag.
+    private static (Library Library, List<Track> Songs) Album(int count)
+    {
+        var songs = Enumerable.Range(0, count)
+            .Select(i => new Track { Title = $"{i}", Album = "Moon Pix", AlbumArtists = "Cat Power", Path = NewTrackFile() })
+            .ToList();
+        return (new Library(songs), songs);
+    }
+
+    // Songs of one album sharing one folder, as an album usually is.
+    private static (Library Library, List<Track> Songs, string Folder) AlbumInOneFolder(int count)
+    {
+        var folder = Path.Combine(Path.GetTempPath(), $"flower-art-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(folder);
+        var songs = Enumerable.Range(0, count)
+            .Select(i => new Track
+            {
+                Title = $"{i}", Album = "Moon Pix", AlbumArtists = "Cat Power",
+                Path = SyntheticWav.CreateFile(folder, $"{i}.wav", TimeSpan.FromMilliseconds(200), SyntheticWav.Ramp()),
+            })
+            .ToList();
+        return (new Library(songs), songs, folder);
+    }
+
+    [Fact]
+    public async Task A_cover_goes_on_the_picked_songs_and_the_rest_of_the_album_keeps_its_own()
+    {
+        var (library, songs) = Album(3);
+        TrackChangedEventArgs? changed = null;
+        library.TrackChanged += (_, e) => changed = e;
+        var editor = new AlbumArtEditor([songs[0], songs[1]], library, new AppSettings(), null, null, NullLogger.Instance);
+
+        Assert.Equal(2, editor.FileCount);
+        Assert.Null(await editor.WriteAsync(Png, "image/png"));
+
+        Assert.Equal(Png, LocalAlbumArtReader.EmbeddedIn(songs[0].Path!)!.Bytes);
+        Assert.Equal(Png, LocalAlbumArtReader.EmbeddedIn(songs[1].Path!)!.Bytes);
+        Assert.Null(LocalAlbumArtReader.EmbeddedIn(songs[2].Path!));
+        Assert.Equal(songs.Take(2), changed!.Tracks.OrderBy(t => t.Title));
+    }
+
+    [Fact]
+    public async Task Removing_a_cover_takes_it_off_the_picked_songs_alone()
+    {
+        var (library, songs) = Album(2);
+        foreach (var song in songs)
+            AlbumArtWriter.TryWrite(song.Path!, Png, "image/png");
+        var editor = new AlbumArtEditor([songs[1]], library, new AppSettings(), null, null, NullLogger.Instance);
+
+        Assert.Null(await editor.RemoveAsync());
+
+        Assert.NotNull(LocalAlbumArtReader.EmbeddedIn(songs[0].Path!));
+        Assert.Null(LocalAlbumArtReader.EmbeddedIn(songs[1].Path!));
+    }
+
+    // A cover file in the album's folder is every song's there, so with
+    // covers kept in the folder, some of an album's songs get theirs in their
+    // files instead.
+    [Fact]
+    public async Task With_covers_kept_in_the_folder_part_of_an_album_gets_its_cover_in_its_files()
+    {
+        var (library, songs, folder) = AlbumInOneFolder(2);
+        var settings = new AppSettings { ArtworkPlacement = ArtworkPlacement.Folder };
+        var editor = new AlbumArtEditor([songs[0]], library, settings, null, null, NullLogger.Instance);
+
+        Assert.Null(await editor.WriteAsync(Png, "image/png"));
+
+        Assert.Empty(Directory.EnumerateFiles(folder).Where(LocalAlbumArtReader.IsCoverFile));
+        Assert.Equal(Png, LocalAlbumArtReader.EmbeddedIn(songs[0].Path!)!.Bytes);
+        Assert.Null(LocalAlbumArtReader.ForFile(songs[1].Path));
+    }
+
+    [Fact]
+    public async Task With_covers_kept_in_the_folder_a_whole_album_picked_gets_its_cover_there()
+    {
+        var (library, songs, folder) = AlbumInOneFolder(2);
+        var settings = new AppSettings { ArtworkPlacement = ArtworkPlacement.Folder };
+        var editor = new AlbumArtEditor(songs, library, settings, null, null, NullLogger.Instance);
+
+        Assert.Null(await editor.WriteAsync(Png, "image/png"));
+
+        Assert.True(File.Exists(Path.Combine(folder, "cover.png")));
+        Assert.All(songs, song => Assert.Null(LocalAlbumArtReader.EmbeddedIn(song.Path!)));
     }
 }
