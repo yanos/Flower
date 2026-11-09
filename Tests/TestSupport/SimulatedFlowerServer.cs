@@ -359,9 +359,9 @@ public sealed class SimulatedFlowerServer : IDisposable
 
         var paths = MusicFolder == null ? null : PathRules.For([MusicFolder]);
         var songs = Library.Snapshot.Albums
-            .SelectMany(album => album.Tracks.Select(track => (Track: track, Cover: album.CoverHash)))
+            .SelectMany(album => album.Tracks.Select(track => (Track: track, Album: album)))
             .Where(song => song.Track.Path != null)
-            .Select(song => LibraryDtoMapper.ToTrackDto(song.Track, Fingerprint, paths, song.Cover))
+            .Select(song => LibraryDtoMapper.ToTrackDto(song.Track, Fingerprint, paths, song.Album))
             .ToList();
         var removed = Library.RemovedTracks.Where(r => r.Deliberate).Select(r => r.Track.Id.ToKey()).ToList();
         await WriteJsonAsync(context, new LibrarySyncManifestDto(Fingerprint, songs, removed, CallerIsAdmin ? listening : null));

@@ -523,9 +523,11 @@ gets a `304` and no body. Only a browser has a cache to use this with: the
 native clients keep their own disk cache instead.
 
 A song's `CoverArt` in the catalog is the id to ask for: its album's, unless
-the song carries a picture that is not its album's, and then its own track id
-(`AlbumCover.CoverArtId`). So songs of one album with different covers each
-show theirs, and an album whose songs share one is still one picture to fetch.
+the song carries a picture that is not its album's, and then the track id of
+the album's first song carrying that same picture (`AlbumCover.CoverArtId`).
+So songs of one album with different covers each show theirs, and one picture
+is one id to fetch: an album whose songs share one, and the songs given another
+together.
 
 The server remembers where each id's art was found (`CoverArtCache`, shared
 with the batch route), along with every file and folder it looked in to find

@@ -81,13 +81,43 @@ public class LibraryDtoMapperTests
     [Fact]
     public void A_song_whose_picture_is_not_its_albums_names_its_own_cover()
     {
-        var album = CatalogIdentity.AlbumId("Artist", "Album");
-        Track Song(string? hash) => new() { Title = "Song", Album = "Album", AlbumArtists = "Artist", ArtHash = hash, Path = "/music/song.mp3" };
+        var albumId = CatalogIdentity.AlbumId("Artist", "Album");
+        Track Song(uint number, string? hash) => new()
+        {
+            Title = $"{number}", Album = "Album", AlbumArtists = "Artist", TrackNumber = number,
+            ArtHash = hash, ArtWidth = hash == null ? 0 : 600, ArtHeight = hash == null ? 0 : 600,
+            Path = $"/music/{number}.mp3",
+        };
+        var first = Song(1, "aaaa");
+        var own = Song(2, "bbbb");
+        var bare = Song(3, null);
+        var album = LibrarySnapshot.Build([first, own, bare]).Album(albumId);
 
-        var own = Song("bbbb");
-        Assert.Equal(own.Id.ToKey(), LibraryDtoMapper.ToTrackDto(own, albumCoverHash: "aaaa").CoverArt);
-        Assert.Equal(album, LibraryDtoMapper.ToTrackDto(Song("aaaa"), albumCoverHash: "aaaa").CoverArt);
-        Assert.Equal(album, LibraryDtoMapper.ToTrackDto(Song(null), albumCoverHash: "aaaa").CoverArt);
+        Assert.Equal(own.Id.ToKey(), LibraryDtoMapper.ToTrackDto(own, album: album).CoverArt);
+        Assert.Equal(albumId, LibraryDtoMapper.ToTrackDto(first, album: album).CoverArt);
+        Assert.Equal(albumId, LibraryDtoMapper.ToTrackDto(bare, album: album).CoverArt);
+    }
+
+    // Songs given a cover together that is not their album's - some of an
+    // album's songs, rather than all of them - carry one picture, so it goes
+    // by one name: the first of them. Each by its own would have Track Info
+    // call them "Multiple album art", and fetch the one picture once a song.
+    [Fact]
+    public void Songs_sharing_a_picture_that_is_not_their_albums_share_one_name_for_it()
+    {
+        var albumId = CatalogIdentity.AlbumId("Artist", "Album");
+        var songs = Enumerable.Range(1, 4)
+            .Select(n => new Track
+            {
+                Title = $"{n}", Album = "Album", AlbumArtists = "Artist", TrackNumber = (uint)n,
+                ArtHash = n == 1 ? "aaaa" : "bbbb", ArtWidth = 600, ArtHeight = 600, Path = $"/music/{n}.mp3",
+            })
+            .ToList();
+        var album = LibrarySnapshot.Build(songs).Album(albumId);
+
+        var names = songs.Skip(1).Select(s => LibraryDtoMapper.ToTrackDto(s, album: album).CoverArt).Distinct();
+
+        Assert.Equal(songs[1].Id.ToKey(), Assert.Single(names));
     }
 
     // The downloading side names its saved file with this, so a leading dot or

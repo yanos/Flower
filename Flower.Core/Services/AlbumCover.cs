@@ -30,11 +30,22 @@ public static class AlbumCover
 
     // What the server names a song's cover in its catalog (TrackDto.CoverArt):
     // its album's id, unless the song carries a picture that is not its
-    // album's, and then its own id - which the cover-art routes answer with
-    // that song's picture (MediaEndpoints.CoverArtCandidates). An album whose
-    // songs all carry its cover is still one picture, under one name.
-    public static string CoverArtId(Track track, string? albumCoverHash) =>
-        track.ArtHash is { } own && albumCoverHash != null && !string.Equals(own, albumCoverHash, StringComparison.Ordinal)
-            ? track.Id.ToKey()
-            : CatalogIdentity.AlbumId(track.EffectiveAlbumArtist, track.Album);
+    // album's, and then the id of the album's first song carrying that same
+    // picture (AlbumEntry.OtherCoverNames) - which the cover-art routes answer
+    // with that song's picture (MediaEndpoints.CoverArtCandidates). One
+    // picture, one name: an album whose songs all carry its cover is fetched
+    // once, and so are the dozen songs of one given another cover together,
+    // which Track Info then sees as sharing it (AlbumArtLoader.ShareOneCover)
+    // rather than as a dozen different covers.
+    public static string CoverArtId(Track track, AlbumEntry? album)
+    {
+        if (track.ArtHash is { } own
+            && album?.CoverHash is { } albumHash
+            && !string.Equals(own, albumHash, StringComparison.Ordinal))
+        {
+            return album.OtherCoverNames.GetValueOrDefault(own) ?? track.Id.ToKey();
+        }
+
+        return CatalogIdentity.AlbumId(track.EffectiveAlbumArtist, track.Album);
+    }
 }

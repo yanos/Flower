@@ -96,6 +96,12 @@ public sealed class AlbumEntry
     // catalog names its cover. Null for an album with none.
     public string? CoverHash { get; init; }
 
+    // Each other picture the album's songs carry, by its Track.ArtHash, named
+    // by the first song (in disc and track order) that carries it - so songs
+    // sharing a cover that is not the album's still share one name for it
+    // (AlbumCover.CoverArtId) rather than each going by its own.
+    public ImmutableDictionary<string, string> OtherCoverNames { get; init; } = ImmutableDictionary<string, string>.Empty;
+
     // getAlbumList2's "newest" orders on this. Precomputed because it is a
     // per-album aggregate over every track, and recomputing it per request is
     // exactly the full scan the SQL version was written to avoid.
@@ -108,12 +114,17 @@ public sealed class AlbumEntry
         var tracks = group.OrderBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber).ToImmutableArray();
         var first = tracks[0];
         var albumArtist = first.EffectiveAlbumArtist;
+        var coverHash = AlbumCover.TrackOf(tracks)?.ArtHash;
 
         return new AlbumEntry
         {
             Id = group.Key,
             Tracks = tracks,
-            CoverHash = AlbumCover.TrackOf(tracks)?.ArtHash,
+            CoverHash = coverHash,
+            OtherCoverNames = tracks
+                .Where(t => t.ArtHash is { } hash && hash != coverHash)
+                .GroupBy(t => t.ArtHash!, StringComparer.Ordinal)
+                .ToImmutableDictionary(g => g.Key, g => g.First().Id.ToKey(), StringComparer.Ordinal),
             NewestDateAdded = tracks.Max(t => t.DateAdded),
             Summary = new AlbumSummary(
                 AlbumId: group.Key,
