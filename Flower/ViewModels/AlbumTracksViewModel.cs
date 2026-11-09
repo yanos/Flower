@@ -42,6 +42,17 @@ public abstract class AlbumTracksViewModel : ViewModelBase
         set
         {
             _expandedTracks = value;
+
+            // The selection, by song, to carry onto the new rows: a set here
+            // is as often the same album rebuilt after a library change - a
+            // cover or a tag changed from Get Info, a download finishing - as
+            // a different album opened, and dropping it then left Get Info
+            // with nothing picked and so the whole album. A different album
+            // shares none of these songs, which clears it as before.
+            var selected = _trackRows.Where(r => r.IsSelected).Select(r => r.Track.Id).ToHashSet();
+            var anchorId = _selectionAnchor?.Track.Id;
+            var currentId = _currentRow?.Track.Id;
+
             // The outgoing rows are dropped here, so anything still animating
             // on one of them (a download spinner) has to be unsubscribed from
             // the shared AnimationClock - same reason TrackRowMerge disposes
@@ -51,10 +62,10 @@ public abstract class AlbumTracksViewModel : ViewModelBase
                 row.PropertyChanged -= Row_PropertyChanged;
                 row.Dispose();
             }
-            // Fresh ExpandedTrackRowViewModel instances each time, not just a
-            // re-wrap of the same rows - a set here always means the expanded
-            // album (or its track list) changed, so any previous selection is
-            // stale anyway (see SelectTrack).
+            // Fresh ExpandedTrackRowViewModel instances each time, not a
+            // re-wrap of the same rows: the Track objects themselves may have
+            // been replaced (a tag edit does), so the selection above is
+            // matched by Id.
             var discs = ShowsDiscHeaders ? DiscHeaders.Starts(value) : new int[value.Count];
             _trackRows = value
                 .Select((t, i) => new ExpandedTrackRowViewModel
@@ -65,10 +76,14 @@ public abstract class AlbumTracksViewModel : ViewModelBase
                     IsCurrentlyPlaying = _currentlyPlayingTrackId is { } id && t.Id == id,
                     IsUnavailable = !_availability.IsPlayable(t),
                     IsDownloadable = _availability.IsDownloadable(t),
+                    IsSelected = selected.Contains(t.Id),
                 })
                 .ToList();
+            _selectionAnchor = _trackRows.FirstOrDefault(r => r.Track.Id == anchorId);
+            _currentRow = _trackRows.FirstOrDefault(r => r.Track.Id == currentId);
             foreach (var row in _trackRows)
                 row.PropertyChanged += Row_PropertyChanged;
+            RefreshJoins();
             OnPropertyChanged();
             OnPropertyChanged(nameof(TrackRows));
         }
