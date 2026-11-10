@@ -18,7 +18,7 @@ namespace Flower.Audio
     // crossfades from the outgoing filter's output to the incoming one's
     // across a single callback, rather than dropping in new coefficients on a
     // zeroed delay line. That was previously an accepted click (see
-    // AUDIOPHILE-PLAN.md).
+    // AUDIO-QUALITY-PLAN.md, audiophile feature §1).
     public sealed class Equalizer
     {
         public const int BandCount = 10;

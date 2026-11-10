@@ -113,7 +113,7 @@ namespace Flower.Audio
         // one the user had listened all the way through - it silently skipped
         // and picked up a play count on the way past. Subscribers should
         // advance the queue but must not count a play. See
-        // docs/AUDIOPHILE-PLAN.md's DSD/APE section, which needs this same seam
+        // docs/AUDIO-QUALITY-PLAN.md's DSD/APE section (§3), which needs this same seam
         // for its "unsupported format" messaging.
         public event EventHandler<TrackFailedEventArgs>? TrackFailed;
 

@@ -38,7 +38,7 @@ namespace Flower.Audio.Ffmpeg
     // integer sources the conversion is exact. Choosing the *source's* own rate
     // and channel layout as well - no resample at all - is direct mode's job
     // and needs the output device to have agreed to it first; see
-    // docs/AUDIOPHILE-PLAN.md.
+    // docs/AUDIO-QUALITY-PLAN.md, audiophile feature §5.
     public sealed class FfmpegTrackDecoder : ITrackDecoder
     {
         // One decode read, and so also the granularity at which a retire or a

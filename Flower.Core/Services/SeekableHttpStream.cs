@@ -54,7 +54,7 @@ namespace Flower.Services;
 // It is deliberately built on plain range requests and nothing else, because
 // the thing that reads it next is FFmpeg's AVIOContext, whose read/seek
 // callbacks are this class's Read and Seek with different signatures. See
-// docs/AUDIOPHILE-PLAN.md #5.
+// docs/AUDIO-QUALITY-PLAN.md, audiophile feature §5.
 public sealed class SeekableHttpStream : Stream
 {
     // Seeking backwards, or far forwards, costs a new request. Seeking a

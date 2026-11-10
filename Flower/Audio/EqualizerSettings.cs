@@ -3,7 +3,7 @@ namespace Flower.Audio
     // Persisted EQ configuration - see Equalizer for the DSP that consumes
     // this. BandGainsDb is fixed at Equalizer.BandCount (10) entries, one per
     // Equalizer.CenterFrequenciesHz - not a per-instance-configurable band
-    // count (no parametric/preset support, per AUDIOPHILE-PLAN.md).
+    // count (no parametric/preset support, per AUDIO-QUALITY-PLAN.md §1).
     public sealed class EqualizerSettings
     {
         public bool Enabled { get; set; }

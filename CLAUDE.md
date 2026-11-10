@@ -47,7 +47,7 @@ is left. Read the relevant one before touching that area.
 - `CITED-DECISIONS.md` — resolves source comments citing a retired review's tier or finding number, or a fixed finding of the two code reviews.
 - `CODE-REVIEW.md` — the standing backlog: the September and October 2026 reviews' open findings, under their review and number, in a suggested order (fixed ones are indexed in `CITED-DECISIONS.md`).
 - `SYNC-PLAN.md` — device↔server sync, ingest (admin devices mirroring files, edits, moves and removals to the server), Music.app history, Flower's own folder.
-- `AUDIOPHILE-PLAN.md`, `AUDIO-QUALITY-PLAN.md` — EQ, gapless, hi-res, the float pipeline; render-path defects and PCM-level tests.
+- `AUDIO-QUALITY-PLAN.md` — render-path defects and PCM-level tests, the float pipeline and output stage, and the audiophile features (EQ, gapless, hi-res, DSD, low latency); what is left is at the top.
 - `VIBE-PLAYLIST-PLAN.md` — Vibe Playlists and Endless Play (CLAP via ONNX Runtime in `Flower.SemanticAudio.Onnx`, engine in `Flower.Core/SemanticAudio/`).
 - `ONLINE-METADATA-PLAN.md` — lyrics, artist pictures, popularity (`OnlineMetadataEngine`).
 - `AUTO-UPDATE-PLAN.md` — Velopack updates and MinVer versioning from git tags.
