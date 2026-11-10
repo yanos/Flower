@@ -5,15 +5,18 @@ no clicks on the desktop, and sustained everyday listening on a real iPhone with
 no blips. Findings A–H and J are fixed; I is deferred to `AUDIOPHILE-PLAN.md`
 §5, which now owns it. Phase 5 (below) is the mobile-only one, added after
 device logs showed a defect none of A–J covers, and the phone listening is what
-confirms its native render callback — the one part of this plan no automated
-test can reach.
+confirms its native render callback survives a GC pause, which no automated test
+can reach. (Its arithmetic is now checked automatically, on the phone runners:
+Phase 6 step 4.)
 
-Phase 6's first three steps and its fifth are built (November 2026): the
-`armeabi-v7a` atomics question is settled, the pipeline carries float from the
-decoder to `OutputStage`, on the phones the output stage now runs in the C
-render callback, which is the fix for M, and the bridge is its own translation
-unit with no dependency on miniaudio. Step 4's oracle, holding that callback to
-`OutputStage` sample for sample, is next. The phase was rescoped
+Phase 6's first five steps are built (November 2026): the `armeabi-v7a` atomics
+question is settled, the pipeline carries float from the decoder to
+`OutputStage`, on the phones the output stage now runs in the C render
+callback (the fix for M), that callback has been heard on an iPhone and is held
+to `OutputStage` byte for byte by `NativeOutputStageChecks` on both phone
+runners, and the bridge is its own translation unit with no dependency on
+miniaudio. What is left is steps 6–8, the desktop half, and it waits on CI
+build infrastructure rather than on anything audio. The phase was rescoped
 while writing an earlier status down. It used to read as "collapse Phase 5's desktop/mobile fork"; working out what
 that fork costs turned up **finding M — every interactive control on mobile
 lags by the render buffer's depth, today, because Phase 5 put that buffer on
@@ -517,6 +520,13 @@ every byte-conservation and flush-ordering rule against `FakeAudioBridge`, which
 keeps the same refuse-writes-until-acknowledged contract, but no test on a
 desktop can exercise a callback that only exists in an iOS/Android binary.
 
+**Since then, partly tested after all**, on the phones rather than a desktop:
+Phase 6 step 4's `NativeOutputStageChecks` calls the compiled callback directly
+and compares every byte it renders against `OutputStage`'s, through flushes and
+rebuffers as well as the controls. It runs single-threaded, so the bridge's
+flush and prime protocol under a real concurrent feeder is still covered only by
+`FakeAudioBridge`'s copy of its contract, and by listening.
+
 What stands in for that test is use. The bridge has since had sustained everyday
 listening on a real iPhone with no blips — which is the right shape of evidence
 for the defect it fixes, since a GC stop-the-world pause is intermittent and
@@ -844,9 +854,9 @@ later, if ever.
 matching them sample for sample — the same arrangement `PcmOracle` already uses
 to hold a decoder to its fixture. It is stronger than either alone, it keeps
 `OutputStageTests`, `EqualizerTests` and `Pcm.cs`'s Goertzel/step-discontinuity
-harness earning their keep, and it belongs in `Flower.DeviceChecks`, which runs
-on the phone where the C actually executes and today has no render-path coverage
-at all.
+harness earning their keep, and it belongs on the phone, where the C actually
+executes. Built as step 4: `NativeOutputStageChecks`, run by the phone runners
+that took over from `Flower.DeviceChecks`.
 
 ### Steps
 
@@ -959,8 +969,7 @@ day.
      otherwise fuse multiply-adds on arm64; none survive in any shipped ABI,
      checked in the disassembly), and rounding is `rintf`, which rounds
      half to even like `MathF.Round` - which is why Android now links `libm`.
-     The harness is not in the tree: it becomes an ordinary desktop test once
-     step 6 builds the bridge for desktop, and until then belongs in step 4.
+     That harness was throwaway; step 4 put a permanent one in the tree.
    - **Controls reach the native side under `_stageGate`**, a lock held only
      around the store and never across a device open, so a control cannot
      land on a bridge `CloseDevice` is freeing. The watchdog's snapshot takes
@@ -969,10 +978,45 @@ day.
      probes `flower_audio_bridge_set_target_gain` as well, so a stale build
      with the old `create` signature falls back to the managed callback.
 4. **Verify by ear on the phone**: drag the volume slider, sweep an EQ band.
-   Plus the sample-for-sample oracle above, in `Flower.DeviceChecks`.
+   Plus the sample-for-sample oracle above, on the phone.
 
-   **First pass done on an iPhone** after step 3: nothing wrong heard. The
-   oracle is still to do.
+   **Done.** By ear, on an iPhone after step 3: nothing wrong heard. The
+   oracle is `NativeOutputStageChecks` (`Tests/Flower.Tests.Decoding.Scenarios`):
+
+   - **Where it runs.** Both phone runners, which replaced
+     `Flower.DeviceChecks`: `scripts/ios-decoding-tests.sh` (NativeAOT, as
+     Flower.iOS ships) and `scripts/android-decoding-tests.sh`. Each now
+     carries the miniaudio binary its head ships. Also in the Mono iOS
+     suite (`scripts/ios-tests.sh`), as `NativeOutputStageTests`. On desktop
+     that fact skips, since the NuGet's miniaudio has no bridge; on a phone
+     a missing bridge fails instead of skipping, because there it is a
+     packaging fault.
+   - **How, with no device.** The bridge uses the `ma_device*` only as a
+     key, so the check attaches it to a dummy pointer and calls the real
+     compiled callback directly, from the shipped binary, on the phone's
+     own CPU. The C# side gets the same input in the same pieces: a
+     callback over the native 4096-frame chunk is split for `OutputStage`
+     too, since the ramp step and an EQ crossfade are per piece.
+   - **What it covers**, at S16 and S24: a 16-bit source at unity, a float
+     source's dither, a volume ramp across callbacks, EQ from the first
+     buffer, EQ swaps (one of them on a split callback), swaps to and from
+     bypass, a boost past full scale, a flush and a rebuffer (the declick),
+     and the ramp and declick turned off. Callback sizes run from 1 frame to
+     5000. Compared bit for bit; a failure names the callback, frame,
+     channel and both values.
+   - **It catches what it exists for.** With one subtraction in the biquad
+     reassociated (`a - b + c` as `a + (c - b)`), all 12 EQ scenarios failed
+     by one LSB and the 6 without EQ passed. Passing on the iOS simulator
+     (NativeAOT and Mono) and the arm64-v8a Android emulator. `armeabi-v7a`
+     is not run, because an Apple-silicon emulator cannot run it; the
+     disassembly check in step 5 covers it.
+   - **One latent fault it turned up.** Under Mono on iOS, `NativeAudioBridge`'s
+     P/Invokes resolved only because Mono reuses a library already loaded under
+     the same name, and only Miniaudio-CS's assembly had a resolver. The app
+     always opens a context first, so it never showed there. The check probes
+     the bridge first, so it saw no bridge. `MiniaudioSink`'s static constructor
+     now registers the resolver for Flower's assembly too, and `NativeAudioBridge`
+     runs it before its first call. NativeAOT never consults a resolver.
 5. **Split `flower_audio_bridge.c` out of `impl.c`** so both mobile builds take
    it as a second translation unit. No observable change — the refactor the
    desktop half rests on, and where to stop if the phase is interrupted.
@@ -1000,8 +1044,9 @@ day.
      count of 17 above) and links only `libSystem`.
    - **No change to what ships.** The rebuilt binaries export exactly the
      symbols the old ones did on all five slices (1197 on Android, 1199 on
-     iOS), and the Android ones link the same libraries. Rebuilding the
-     simulator slice gave a byte-identical binary.
+     iOS), and the Android ones link the same libraries. The oracle passed
+     on the iOS simulator before the split and after it, and on Android after
+     it. Rebuilding the simulator slice gave a byte-identical binary.
    - **Still no fused multiply-adds**, checked in the bridge's own objects for
      iOS arm64 and every Android ABI. The same check on a build with
      contraction forced on finds 10, so it would see them.
@@ -1026,12 +1071,14 @@ Not urgent. Desktop's controls are responsive today and it has no defect waiting
 on any of this. Mobile's lag is real but reported as not a problem in practice,
 for the good reason that the phone's own volume buttons bypass it entirely.
 
-Steps 1–3 and 5 are built (see above). Steps 1–2 were a fidelity and
+Steps 1–5 are built (see above). Steps 1–2 were a fidelity and
 simplification win with no native work and no build infrastructure; step 3 is
-the one that fixes a defect, and step 4's oracle is next; step 5 made the
-bridge buildable on its own. Steps 6–8 are gated on build infrastructure more
-than on anything audio, and should ride along with `AUTO-UPDATE-PLAN.md`
-Phase 4 rather than justify a CI matrix by themselves.
+the one that fixes a defect; step 4 proved it, by ear and byte for byte; step 5
+made the bridge buildable on its own. Steps 6–8 are gated on build
+infrastructure more than on anything audio, and should ride along with
+`AUTO-UPDATE-PLAN.md` Phase 4 rather than justify a CI matrix by themselves.
+Step 6 also turns `NativeOutputStageTests` into an ordinary desktop test,
+because then desktop has a bridge to check.
 
 ### What not to adopt
 
@@ -1071,6 +1118,7 @@ element and has no render callback of either kind.
 | `Flower.Tests/OutputStageTests.cs`, `RenderStarvationTests.cs` (new) | Phase 2/4 coverage |
 | `docs/AUDIOPHILE-PLAN.md` | item #1's "accepted click" note is superseded; hand it the double-resample item |
 | `native/miniaudio/flower_audio_bridge.c` (new) | Phase 6 step 5: the bridge, out of `impl.c` and independent of miniaudio |
+| `Tests/Flower.Tests.Decoding.Scenarios/NativeOutputStageChecks.cs`, `Flower.Tests/Audio/NativeOutputStageTests.cs` (new) | Phase 6 step 4: the C output stage held to `OutputStage` byte for byte |
 
 ## Verification
 
@@ -1096,8 +1144,9 @@ failures were visible before). `OutputStageTests`, `RenderStarvationTests` and a
 rewritten `EqualizerTests` build on them.
 
 Phase 5 adds `AudioFeederTests` (11 tests) and `TestSupport/FakeAudioBridge.cs`.
-The native callback it feeds has no automated coverage — see that phase's last
-paragraph.
+The native callback it feeds had no automated coverage until Phase 6 step 4's
+`NativeOutputStageChecks`, which checks its arithmetic on the phone runners; see
+that phase's last paragraph for what is still not covered.
 
 By ear, and done — which is the part that could not be automated:
 
@@ -1113,8 +1162,9 @@ By ear, and done — which is the part that could not be automated:
    line to revisit if that ever changes.
 3. **Mobile: sustained everyday listening on a real iPhone, no blips.** This is
    the one that matters most, because it is the only evidence Phase 5's native
-   render callback has. The C in `flower_audio_bridge.h` is exercised by no test
-   on any desktop (see Phase 5's last paragraph for why), and the defect it
+   render callback has against the thing it exists for. Its arithmetic is
+   now checked on the phone runners (Phase 6 step 4), but no test can produce
+   the stall it was built to survive, and the defect it
    fixes — a Mono GC stop-the-world suspending the audio thread — is by nature
    intermittent and mobile-only. Hours of ordinary listening without a blip is
    the shape of evidence that defect actually admits. It is what Phase 6's

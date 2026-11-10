@@ -10,8 +10,8 @@
        the two runs are only worth comparing if the only difference between
        them is the platform. No Avalonia, no audio output, no UI beyond a
        TextView - what is under test is decoding and the HTTP path beneath it,
-       and every dependency this does not have is one that cannot explain a
-       failure. -->
+       plus the native output stage (NativeOutputStageChecks), and every
+       dependency this does not have is one that cannot explain a failure. -->
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -38,14 +38,20 @@
     <ProjectReference Include="..\Flower.Tests.Decoding.Scenarios\Flower.Tests.Decoding.Scenarios.csproj" />
   </ItemGroup>
 
-  <!-- Flower.Tests.Decoding.Scenarios reaches Miniaudio-CS transitively and this runner
-       never plays a sample, but "unused" is not the same as "absent": .NET's
-       RID graph treats android-* as falling back to linux-*, so restore is
-       happy to drop the package's desktop libminiaudio.so into the APK's
-       arm64-v8a slot - a glibc binary in a Bionic process. Flower.Android
-       carries the same exclusion for the same reason, with the fuller story. -->
+  <!-- The libminiaudio.so Flower.Android ships, for the flower_audio_bridge
+       inside it: this runner never opens a device, but
+       NativeOutputStageChecks calls the bridge's render callback directly to
+       hold it to OutputStage. The ABI is read off each file's directory.
+
+       And not the package's own: Flower.Tests.Decoding.Scenarios reaches
+       Miniaudio-CS transitively, and .NET's RID graph treats android-* as
+       falling back to linux-*, so restore is happy to drop its desktop
+       libminiaudio.so into the APK's arm64-v8a slot - a glibc binary in a
+       Bionic process, and a clash with the real one. Flower.Android carries
+       the same exclusion for the same reason, with the fuller story. -->
   <ItemGroup>
     <PackageReference Include="Miniaudio-CS" Version="1.0.4" ExcludeAssets="native" />
+    <AndroidNativeLibrary Include="..\..\Flower.Android\libs\*\libminiaudio.so" />
   </ItemGroup>
 
   <!-- The same FFAudio.NET.Android payload Flower.Android ships: a runner

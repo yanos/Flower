@@ -12,9 +12,9 @@ phone runtime.
 | `Flower.Server.Tests` | In-process server/API, security, and configuration tests |
 | `Flower.Tests.macOS` | Native macOS Trash and Music/iTunes export discovery |
 | `Flower.Tests.Windows` | Native Windows Recycle Bin, and junctions in a library folder |
-| `Flower.Tests.Decoding.Scenarios` | Portable decoding scenarios, fixtures, and sample comparisons, without a test framework; shared by desktop and phone runners |
-| `Flower.Tests.Decoding.iOS` | Focused decoding runner; NativeAOT by default through the script, matching the shipped iOS runtime |
-| `Flower.Tests.Decoding.Android` | Focused decoding runner for an emulator or device |
+| `Flower.Tests.Decoding.Scenarios` | Portable decoding scenarios, fixtures, and sample comparisons, without a test framework; shared by desktop and phone runners. Also `NativeOutputStageChecks`, which holds the phones' C output stage to `OutputStage` byte for byte |
+| `Flower.Tests.Decoding.iOS` | Focused decoding and native-output-stage runner; NativeAOT by default through the script, matching the shipped iOS runtime |
+| `Flower.Tests.Decoding.Android` | Focused decoding and native-output-stage runner for an emulator or device |
 | `Flower.Tests.iOS` | Existing Mono/xUnit iOS runner; runtime and build settings retained pending upstream NativeAOT support |
 | `Flower.Tests.iOS.Suite` | Execution bundle for the Mono runner; compiles shared/UI/decoding sources into one assembly, with no copied test implementations |
 
@@ -58,7 +58,10 @@ dotnet test Tests/Flower.Server.Tests/Flower.Server.Tests.csproj
 ```
 
 `Flower.Tests` and `Flower.Tests.UI` never touch FFmpeg, so they are the fast
-loop. Real decoding is confined to `Flower.Tests.Decoding`, whose classes carry
+loop. `NativeOutputStageTests` in `Flower.Tests` skips on desktop, whose
+miniaudio has no `flower_audio_bridge`; it runs in the Mono iOS suite, and the
+same checks run in both phone runners, which fail rather than skip if the
+bridge is missing. Real decoding is confined to `Flower.Tests.Decoding`, whose classes carry
 `[Trait("Category", "RequiresFfmpeg")]` (and `RequiresClapModel` for the CLAP
 reference tests); no other project uses either trait.
 

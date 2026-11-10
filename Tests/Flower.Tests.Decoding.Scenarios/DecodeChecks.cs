@@ -298,7 +298,7 @@ public static class DecodeChecks
             throw new CheckFailedException($"{drift / (double)BytesPerSecond() * 1000:F0}ms off: expected about {expected} bytes, got {decoded.Length}");
     }
 
-    private static CheckResult Run(string name, Action check)
+    internal static CheckResult Run(string name, Action check)
     {
         var started = Stopwatch.StartNew();
         try

@@ -22,6 +22,10 @@ Three files alongside the vendored header are ours:
   bridge turns floating-point contraction off and Android links `libm`:
   either side fusing a multiply-add the other does not, or rounding
   differently from `MathF.Round`, would break that match.
+  `NativeOutputStageChecks` (in `Tests/Flower.Tests.Decoding.Scenarios`)
+  checks the match byte for byte on the phone runners
+  (`scripts/ios-decoding-tests.sh`, `scripts/android-decoding-tests.sh`) and
+  in the Mono iOS suite. Run one of them after changing either side.
 
 The bridge is the library's second translation unit rather than part of
 `impl.c`, and it includes no miniaudio header: it uses `struct ma_device*` only

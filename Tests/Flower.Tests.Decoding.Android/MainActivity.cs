@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -106,7 +107,10 @@ public class MainActivity : Activity
 
         try
         {
-            var results = DecodeChecks.RunAll();
+            // The native output stage alongside decoding: both are about what
+            // this phone does to a track before it reaches the speaker.
+            var results = new List<CheckResult>(DecodeChecks.RunAll());
+            results.AddRange(NativeOutputStageChecks.RunAll());
 
             foreach (var result in results)
                 Say(ResultPrefix + result);

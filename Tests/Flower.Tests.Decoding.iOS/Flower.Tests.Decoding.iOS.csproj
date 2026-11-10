@@ -7,8 +7,9 @@
        it on a simulator and turns the tally into an exit code.
 
        No Avalonia, no audio output, no UI framework beyond a UILabel: what is
-       under test is decoding and the HTTP path beneath it, and every
-       dependency this does not have is one that cannot explain a failure. -->
+       under test is decoding and the HTTP path beneath it, plus the native
+       output stage (NativeOutputStageChecks), and every dependency this does
+       not have is one that cannot explain a failure. -->
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -45,6 +46,7 @@
        not look inside Frameworks/. -->
   <ItemGroup Condition="'$(FlowerNativeAot)' == 'true'">
     <DirectPInvoke Include="ffaudio" />
+    <DirectPInvoke Include="miniaudio" />
   </ItemGroup>
 
   <!-- The shell shared with Flower.Tests.iOS: the transcript contract, and
@@ -59,11 +61,23 @@
 
   <!-- The same FFAudio.NET.iOS payload Flower.iOS ships: a runner checking a
        different binary would be checking the wrong thing. Without it
-       AvailableDecoders finds nothing loadable and every check is skipped.
-
-       No miniaudio here: this runner decodes and never plays. -->
+       AvailableDecoders finds nothing loadable and every check is skipped. -->
   <ItemGroup>
     <PackageReference Include="FFAudio.NET.iOS" Version="$(FFAudioPackageVersion)" />
+  </ItemGroup>
+
+  <!-- And the miniaudio Flower.iOS ships, for the flower_audio_bridge inside
+       it: this runner never opens a device, but NativeOutputStageChecks calls
+       the bridge's render callback directly to hold it to OutputStage. -->
+  <ItemGroup Condition="$(RuntimeIdentifier.StartsWith('iossimulator'))">
+    <NativeReference Include="..\..\Flower.iOS\Frameworks\ios-simulator\miniaudio.framework">
+      <Kind>Framework</Kind>
+    </NativeReference>
+  </ItemGroup>
+  <ItemGroup Condition="$(RuntimeIdentifier.StartsWith('ios-'))">
+    <NativeReference Include="..\..\Flower.iOS\Frameworks\ios-device\miniaudio.framework">
+      <Kind>Framework</Kind>
+    </NativeReference>
   </ItemGroup>
 
 </Project>

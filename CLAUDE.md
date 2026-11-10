@@ -196,8 +196,10 @@ deletion semantics (a deletion is a removal, never a delete) are in
   refuses it, settled again at every open), with its dither and clamp following
   that format. On the phones the stage runs as C in the native bridge's render
   callback (`native/miniaudio/flower_audio_bridge.c`), a port held to
-  `OutputStage` sample for sample: change one, change both. Changing the
-  bridge's C means rebuilding the vendored miniaudio binaries.
+  `OutputStage` sample for sample: change one, change both.
+  `NativeOutputStageChecks` compares the two byte for byte on the phone
+  runners. Changing the bridge's C means rebuilding the vendored miniaudio
+  binaries.
 - **Miniaudio native libraries** (`native/miniaudio/`): the NuGet ships only
   desktop binaries, so Android and iOS builds are vendored in-repo, pinned to
   the miniaudio commit `Miniaudio-CS`'s bindings were generated against
