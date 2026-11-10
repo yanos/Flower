@@ -239,10 +239,22 @@ namespace Flower.Audio
         // resolves P/Invokes via its own dlopen-by-string lookup, which
         // never tried this path. The default probing doesn't know the real
         // on-disk name.
+        //
+        // Registered for this assembly too, whose own imports of the same
+        // library - the CoreAudio diagnostics below and NativeAudioBridge's -
+        // otherwise resolved only because Mono reuses a library another
+        // assembly already loaded under that name. That holds in the app,
+        // which opens a context first, and not for anything that probes the
+        // bridge before touching miniaudio: NativeOutputStageChecks found it
+        // reporting no bridge in the Mono iOS suite. Under NativeAOT neither
+        // resolver is consulted (DirectPInvoke, in Flower.iOS.csproj).
         static MiniaudioSink()
         {
             if (OperatingSystem.IsIOS())
+            {
                 NativeLibrary.SetDllImportResolver(typeof(ma).Assembly, ResolveIosMiniaudio);
+                NativeLibrary.SetDllImportResolver(typeof(MiniaudioSink).Assembly, ResolveIosMiniaudio);
+            }
         }
 
         private static IntPtr ResolveIosMiniaudio(string libraryName, System.Reflection.Assembly assembly, DllImportSearchPath? searchPath)

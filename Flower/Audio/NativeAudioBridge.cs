@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 using Miniaudio;
@@ -91,6 +92,12 @@ namespace Flower.Audio
         private static extern void NativeTakeSnapshot(IntPtr bridge, out NativeSnapshot snapshot);
 
         private static bool? _isAvailable;
+
+        // MiniaudioSink's static constructor is where iOS on Mono is told
+        // where the framework is, for this assembly's imports as well as the
+        // binding's. Run before this class's first P/Invoke, so that probing
+        // the bridge does not depend on a sink having been made first.
+        static NativeAudioBridge() => RuntimeHelpers.RunClassConstructor(typeof(MiniaudioSink).TypeHandle);
 
         // Probed by calling the cheapest entry point there is and catching the
         // load failure, rather than inferred from OperatingSystem.IsAndroid()
