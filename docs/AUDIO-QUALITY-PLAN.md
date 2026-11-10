@@ -16,7 +16,8 @@ that callback has been heard on an iPhone and is held to `OutputStage` byte for
 byte by `NativeOutputStageChecks`, and the bridge is `libflowerbridge`, a
 library of its own on every platform, built for the six desktop RIDs and run
 by desktop too. What is left is listening to desktop through it, and then
-step 8, deleting the managed callback. The phase was rescoped
+step 8: moving the stage's property tests onto the C and deleting the managed
+callback and `OutputStage` with it. The phase was rescoped
 while writing an earlier status down. It used to read as "collapse Phase 5's desktop/mobile fork"; working out what
 that fork costs turned up **finding M — every interactive control on mobile
 lags by the render buffer's depth, today, because Phase 5 put that buffer on
@@ -856,7 +857,9 @@ to hold a decoder to its fixture. It is stronger than either alone, it keeps
 `OutputStageTests`, `EqualizerTests` and `Pcm.cs`'s Goertzel/step-discontinuity
 harness earning their keep, and it belongs on the phone, where the C actually
 executes. Built as step 4: `NativeOutputStageChecks`, run by the phone runners
-that took over from `Flower.DeviceChecks`.
+that took over from `Flower.DeviceChecks`. Step 8 now retires this arrangement
+once the port has been verified and heard. Those same tests move onto the C
+itself, and the reference implementation goes; step 8 says what that gives up.
 
 ### Steps
 
@@ -1111,18 +1114,77 @@ day.
    `"AudioTiming": { "NativeBufferMs": 0 }` in `settings.json` puts the
    managed callback back for an A/B, from the next device open (a restart or
    an output switch).
-8. **Delete the managed `DataCallback`** once every shipped RID has a binary —
-   with the caveat that keeping `OutputStage` in C# as the oracle is the point,
-   so what goes is the *callback*, not the stage.
+8. **Delete the managed render path: the `DataCallback`, and `OutputStage`
+   with it**, once desktop has been listened to.
 
-   **Not done, deliberately.** Every RID has a binary, but none has been
-   listened to on a desktop, and Linux and Windows never have been at all.
-   Two more things go with the callback and should be decided rather than
-   lost: `NativeBufferMs: 0` as the escape hatch above, and the callback
-   timing diagnostics (`AudioCallbackTiming` - gaps, late callbacks, render
-   overruns), which only the managed callback gathers, so desktop's watchdog
-   already lost them by taking the bridge. Porting them into the bridge's
-   snapshot is the way to keep them.
+   This step used to delete only the callback and keep `OutputStage` in C#
+   as the oracle. Reconsidered in November 2026: now that every platform
+   renders through the bridge, nothing runs `OutputStage` but the fallback
+   and the tests, and holding two implementations to each other byte for
+   byte means every change to the stage is made twice, in two languages,
+   for as long as both exist. The oracle earned its keep while the port was
+   new. Now the port is checked, and what the tests should hold the stage to
+   is the properties it must have, not agreement with a second copy of
+   itself. So the stage goes with the callback, and its tests move onto the C.
+
+   **Not done yet, deliberately.** No desktop has been listened to through
+   the bridge, and Linux and Windows never have been at all. Until they
+   have, the managed callback is the A/B (`NativeBufferMs: 0`, above), and
+   deleting it deletes that.
+
+   In order:
+
+   1. **Listen.** The Mac first, then Linux and Windows, each A/B'd once
+      with `NativeBufferMs: 0`.
+   2. **Point the property tests at the C while the C# still exists**, so
+      each is seen passing against both before one of them goes. They need
+      a harness that drives the bridge's callback the way
+      `NativeOutputStageChecks` already does: a dummy `ma_device` the bridge
+      uses only as a key, and the callback called directly. It sits behind
+      the shape `OutputStage` has, with float frames in, device bytes out,
+      and the gain, timing and EQ controls. Then move:
+      - `OutputStageTests`: ramps, declick, clamp.
+      - `CanonicalFormatTests`: the dither's zero bias and 1.5-count bound.
+      - `EqualizerTests`' response half: gain at each band's centre,
+        filter state carried across calls of different lengths, headroom,
+        stability at every rate. `Equalizer.Process` goes with the stage,
+        since `OutputStage` is its only caller. `Equalizer.BuildFrom` stays
+        in C#, because the coefficients are computed there and handed to
+        the bridge, so its coefficient tests stay as they are.
+      - `FfmpegTrackDecoderTests`' trip through a 24-bit device's stage.
+      - `RenderPumpSink`'s optional `processOutputStage` pass, which nothing
+        currently turns on, so it can simply go.
+
+      The desktop suites already load libflowerbridge through
+      `ClientTests.props`, and the iOS Mono suite carries the framework, so
+      these run on a phone as well. That is more coverage than today, when
+      the property tests only ever run the C#.
+   3. **Delete** the managed `DataCallback`, `OutputStage`,
+      `NativeOutputStageChecks` and `NativeOutputStageTests` (with one
+      implementation there is nothing to compare), and `NativeBufferMs: 0`
+      as a meaning. `FlowerBridge.props`'s missing-library warning becomes
+      an error, and `MiniaudioSink` fails loudly on a missing bridge rather
+      than falling back. CLAUDE.md's "change one, change both" goes too.
+   4. **Decide on the callback timing diagnostics** (`AudioCallbackTiming`:
+      gaps, late callbacks, render overruns). Only the managed callback
+      gathers them, so desktop's watchdog already lost them by taking the
+      bridge. Keeping them means porting them into the bridge's snapshot, in
+      C. Either choice is defensible; losing them by accident is not.
+
+   **What this costs: the cross-check.** Two independent implementations
+   agreeing catches an error that still satisfies every bound, such as
+   halves rounded the wrong way or a coefficient slightly off. Property
+   tests can miss such an error by construction. That price is paid
+   knowingly, and it is smaller now that the port has been verified than
+   when it was new. Stepping through the stage in a C# debugger goes too.
+
+   **Fused multiply-adds stay off**, even with one implementation. Fusing
+   would buy accuracy around −138 dBFS at S24, below the dither, and speed
+   nothing needs, since the whole stage took about 3 ms of a 42.7 ms period
+   on an iPhone. It would cost identical output across architectures:
+   clang fuses by default wherever the CPU has FMA, which is every arm64
+   and only an x64 build targeted at newer CPUs. So `-ffp-contract=off` and
+   the build scripts' disassembly check both stay.
 
 ### Sequencing, and how urgent this is
 
@@ -1135,8 +1197,9 @@ simplification win with no native work and no build infrastructure; step 3 is
 the one that fixes a defect; step 4 proved it, by ear and byte for byte; step 5
 made the bridge buildable on its own; steps 6–7 put desktop on it, which
 turned out to need Docker rather than the CI matrix it was expected to wait
-for. Step 8 waits on desktop listening, and on a decision about the timing
-diagnostics.
+for. Step 8 waits on desktop listening; after that its order is to move the
+property tests onto the C, delete the managed path, and decide about the
+timing diagnostics.
 
 ### What not to adopt
 
