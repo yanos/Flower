@@ -334,6 +334,13 @@ status table and the licensing constraint in full.
 
 ### Step three, built: a pipeline that can carry what the decoder delivers
 
+> **Superseded (November 2026).** The pipeline now carries float from the
+> decoder to `OutputStage`, and nothing below about negotiating or freezing its
+> *sample format* holds any more: the device's format is `OutputStage`'s alone
+> (`DeviceSampleFormat`), chosen again at every open. See
+> `AUDIO-QUALITY-PLAN.md`, Phase 6, step 2. Kept for the reasoning, which is
+> still why 24 bits is the ceiling.
+
 Moving the ceiling out of LibVLC was not the same as removing it.
 `GaplessFormat.BytesPerSample` was `const int = 2`, and the ring buffer, the
 feeder, the render callback, the position arithmetic and every fade computed

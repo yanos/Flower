@@ -165,7 +165,7 @@ namespace Flower.Audio
                    stagingCapacityBytes,
                    format)
         {
-            logger?.LogInformation("Decoding through ffaudio at {Format}", Format.SampleFormat);
+            logger?.LogInformation("Decoding through ffaudio to float at {SampleRate}Hz", Format.SampleRate);
         }
 
         // Lets tests substitute a fake ITrackDecoder to exercise this

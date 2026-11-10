@@ -46,7 +46,7 @@ is left. Read the relevant one before touching that area.
 - `CITED-DECISIONS.md` — resolves source comments citing a retired review's tier or finding number, or a fixed finding of the two code reviews.
 - `CODE-REVIEW.md` — the standing backlog: the September and October 2026 reviews' open findings, under their review and number, in a suggested order (fixed ones are indexed in `CITED-DECISIONS.md`).
 - `SYNC-PLAN.md` — device↔server sync, ingest (admin devices mirroring files, edits, moves and removals to the server), Music.app history, Flower's own folder.
-- `AUDIOPHILE-PLAN.md`, `AUDIO-QUALITY-PLAN.md` — EQ, gapless, hi-res, the S24 pipeline; render-path defects and PCM-level tests.
+- `AUDIOPHILE-PLAN.md`, `AUDIO-QUALITY-PLAN.md` — EQ, gapless, hi-res, the float pipeline; render-path defects and PCM-level tests.
 - `VIBE-PLAYLIST-PLAN.md` — Vibe Playlists and Endless Play (CLAP via ONNX Runtime in `Flower.SemanticAudio.Onnx`, engine in `Flower.Core/SemanticAudio/`).
 - `ONLINE-METADATA-PLAN.md` — lyrics, artist pictures, popularity (`OnlineMetadataEngine`).
 - `AUTO-UPDATE-PLAN.md` — Velopack updates and MinVer versioning from git tags.
@@ -175,10 +175,12 @@ deletion semantics (a deletion is a removal, never a delete) are in
   `FFAudioPackageVersion` in `Directory.Build.props`; the library lives in
   `../FFAudio.NET`, and `scripts/use-latest-main-ffaudio-package.sh` builds
   against an unpublished change.
-- The pipeline carries packed S24, negotiated once at startup and frozen;
-  `MiniaudioSink` can veto it down. `OutputStage`'s dither and clamp follow the
-  destination format, and changing `flower_audio_bridge_create`'s signature
-  means rebuilding the vendored miniaudio binaries.
+- The pipeline carries float32 from the decoder to `OutputStage`; only its
+  sample rate is negotiated (once, at startup, then frozen). `OutputStage`
+  requantises to the device's format (`DeviceSampleFormat`, S24 unless a device
+  refuses it, settled again at every open), with its dither and clamp following
+  that format. Changing `flower_audio_bridge_create`'s signature means
+  rebuilding the vendored miniaudio binaries.
 - **Miniaudio native libraries** (`native/miniaudio/`): the NuGet ships only
   desktop binaries, so Android and iOS builds are vendored in-repo, pinned to
   the miniaudio commit `Miniaudio-CS`'s bindings were generated against

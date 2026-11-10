@@ -7,8 +7,8 @@ namespace Flower.Audio
     // biquads over interleaved stereo float.
     //
     // Float in, float out, and no clipping of its own: it sits in the middle
-    // of OutputStage's float path, which requantises to S16 exactly once at
-    // the very end, with dither and a soft clip. It used to read and write the
+    // of OutputStage's float path, which requantises to the device's format
+    // exactly once at the very end, with dither. It used to read and write the
     // S16 buffer directly, rounding and hard-clamping every sample - so a
     // positive band gain clipped outright, with no headroom and no way for a
     // later stage to pull it back.

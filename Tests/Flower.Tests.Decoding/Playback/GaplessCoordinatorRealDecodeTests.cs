@@ -24,6 +24,11 @@ namespace Flower.Tests.Playback;
 [Trait("Category", "RequiresFfmpeg")]
 public class GaplessCoordinatorRealDecodeTests : IDisposable
 {
+    // The fixtures are 16-bit, and every assertion here reads the capture
+    // narrowed back to them (Pcm.ToS16, which refuses anything off the 16-bit
+    // grid rather than rounding it); the capture itself is the pipeline's float.
+    private const int S16BytesPerFrame = 2 * (int)GaplessFormat.Channels;
+
     private readonly string _tempDir;
 
     public GaplessCoordinatorRealDecodeTests()
@@ -105,14 +110,14 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
 
         Assert.Contains(trackA, endReachedTracks);
 
-        var captured = sink.Captured;
-        Assert.Equal(0, captured.Length % PcmFormat.Default.BytesPerFrame);
+        Assert.Equal(0, sink.Captured.Length % PcmFormat.Default.BytesPerFrame);
+        var captured = Pcm.ToS16(sink.Captured);
 
-        var frameCount = captured.Length / PcmFormat.Default.BytesPerFrame;
+        var frameCount = captured.Length / S16BytesPerFrame;
         int? firstBFrame = null;
         for (var i = 0; i < frameCount; i++)
         {
-            var frame = captured.AsSpan(i * PcmFormat.Default.BytesPerFrame, 2);
+            var frame = captured.AsSpan(i * S16BytesPerFrame, 2);
             var sample = BinaryPrimitives.ReadInt16LittleEndian(frame);
 
             Assert.True(sample is markerA or markerB, $"frame {i} had unexpected sample {sample}, splice likely corrupted");
@@ -188,13 +193,13 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
 
         sink.Pause();
 
-        var captured = sink.Captured;
-        var frameCount = captured.Length / PcmFormat.Default.BytesPerFrame;
+        var captured = Pcm.ToS16(sink.Captured);
+        var frameCount = captured.Length / S16BytesPerFrame;
         int? firstBFrame = null;
         var bFrames = 0;
         for (var i = 0; i < frameCount; i++)
         {
-            var sample = BinaryPrimitives.ReadInt16LittleEndian(captured.AsSpan(i * PcmFormat.Default.BytesPerFrame, 2));
+            var sample = BinaryPrimitives.ReadInt16LittleEndian(captured.AsSpan(i * S16BytesPerFrame, 2));
             Assert.True(sample is markerA or markerB, $"frame {i} had unexpected sample {sample}, splice likely corrupted");
 
             if (sample == markerB)
@@ -250,11 +255,11 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
         // Everything decoded has to make it through the ring before the pump
         // is stopped, or the comparison is against a truncated capture.
         PlaybackWait.UntilReaches(
-            () => sink.CapturedCount, expected.Length - 44, "not everything decoded was rendered");
+            () => sink.CapturedCount, Pcm.FromS16(expected.AsSpan(44)).Length, "not everything decoded was rendered");
         sink.Pause();
 
         // The WAV's data chunk starts at byte 44 - see SyntheticWav.
-        Pcm.AssertBitExact(expected.AsSpan(44), sink.Captured);
+        Pcm.AssertBitExact(expected.AsSpan(44), Pcm.ToS16(sink.Captured));
 
         coordinator.Dispose();
         sink.Dispose();
@@ -329,7 +334,7 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
                 + string.Join("\n  ", log.Entries.Select(e => $"[{e.Level}] {e.Message}")));
         sink.Pause();
 
-        var captured = sink.Captured;
+        var captured = Pcm.ToS16(sink.Captured);
         var samples = Pcm.AsSamples(captured);
         var frames = samples.Length / (int)GaplessFormat.Channels;
 
@@ -390,7 +395,7 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
         PlaybackWait.UntilReaches(() => sink.CapturedCount, targetBytes, "playback never reached the splice");
         sink.Pause();
 
-        var captured = sink.Captured;
+        var captured = Pcm.ToS16(sink.Captured);
 
         // Before the assertions, not after. With the shared ring smaller than a
         // track, B's decoder is still mid-file here, parked on a full ring the
@@ -473,7 +478,7 @@ public class GaplessCoordinatorRealDecodeTests : IDisposable
 
         // Everything captured after Seek() returned, minus the one chunk the
         // pump may already have had in hand.
-        var after = Pcm.AsSamples(sink.Captured.AsSpan((int)capturedAtSeek));
+        var after = Pcm.AsSamples(Pcm.ToS16(sink.Captured.AsSpan((int)capturedAtSeek)));
         var lowValueFrames = 0;
         for (var frame = 0; frame < after.Length / (int)GaplessFormat.Channels; frame++)
         {

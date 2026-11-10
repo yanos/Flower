@@ -19,38 +19,42 @@ namespace Flower.Audio
     // underrun - cut the waveform at whatever amplitude it happened to be at,
     // which is the definition of a click.
     //
-    // So: widen to float once, do all the arithmetic there at full precision,
-    // and requantise exactly once, at the end, with dither. miniaudio's own
-    // master volume is pinned at 1.0 by MiniaudioSink so its integer path is
-    // never used.
+    // So: do all the arithmetic in float at full precision, and requantise
+    // exactly once, at the end, with dither. The pipeline arrives in float
+    // already (see GaplessFormat), so the requantisation is the only
+    // conversion between the decoder and the device. miniaudio's own master
+    // volume is pinned at 1.0 by MiniaudioSink so its integer path is never
+    // used.
     //
     // Real-time contract, same as the ring's Read(): called only from
-    // MiniaudioSink.DataCallback, allocates nothing in steady state (the float
-    // scratch buffers are grow-only and reach their size within the first
-    // callback or two), takes no lock, and blocks on nothing. Everything the
-    // UI thread changes arrives through a volatile field or an Interlocked
-    // exchange and is picked up on the next callback.
+    // MiniaudioSink.DataCallback or AudioFeeder, allocates nothing in steady
+    // state (the crossfade scratch buffer is grow-only and reaches its size
+    // within the first callback or two), takes no lock, and blocks on
+    // nothing. Everything the UI thread changes arrives through a volatile
+    // field or an Interlocked exchange and is picked up on the next
+    // callback.
     public sealed class OutputStage
     {
         private readonly uint _sampleRate;
 
-        // Cached rather than read from GaplessFormat per callback: this runs
-        // on the render path, and the format is frozen for the session anyway
-        // (see GaplessFormat). Holding it here is also what lets a test build
-        // a stage in either format without configuring a process-wide static.
-        private readonly PcmSampleFormat _sampleFormat;
-        private readonly int _bytesPerSample;
+        // What Requantise writes, and the numbers it derives from it. Changed
+        // only while the device is stopped (see DeviceFormat), so the callback
+        // never sees them mid-change.
+        private DeviceSampleFormat _deviceFormat;
+        private int _bytesPerSample;
 
-        // Full-scale for the format being requantised to, as the float
-        // magnitude one LSB below it. The dither and the clamp are both in
-        // native integer units - see Requantise.
-        private readonly float _positiveFullScale;
-        private readonly float _negativeFullScale;
+        // 2^(bits-1): what a normalised sample is multiplied by to land in the
+        // destination's integer units. A power of two, so the multiply is an
+        // exponent change and exact.
+        private float _scale;
 
-        // The two float scratch buffers. _samples carries the signal;
-        // _crossfade only ever holds the *other* EQ's output for the one
-        // callback that spans an EQ change (see Process).
-        private float[] _samples = [];
+        // Full-scale for the format being requantised to, in its integer
+        // units: the dither and the clamp both work there - see Requantise.
+        private float _positiveFullScale;
+        private float _negativeFullScale;
+
+        // Only ever holds the *other* EQ's output for the one callback that
+        // spans an EQ change (see Process).
         private float[] _crossfade = [];
 
         // Live tuning, replaced wholesale rather than field by field so the
@@ -102,23 +106,36 @@ namespace Flower.Audio
         private uint _ditherState = 0x9E3779B9;
         private float _previousDither;
 
-        public OutputStage(uint sampleRate, PcmSampleFormat sampleFormat = GaplessFormat.DefaultSampleFormat)
+        public OutputStage(uint sampleRate, DeviceSampleFormat deviceFormat = DeviceSampleFormat.S16)
         {
             _sampleRate = sampleRate;
-            _sampleFormat = sampleFormat;
-            _bytesPerSample = GaplessFormat.BytesPerSampleOf(sampleFormat);
-
-            var bits = _bytesPerSample * 8;
-            _negativeFullScale = -(1 << (bits - 1));
-            _positiveFullScale = (1 << (bits - 1)) - 1;
+            DeviceFormat = deviceFormat;
         }
 
-        // What this stage was built for. MiniaudioSink compares them against
-        // the negotiated format to decide whether reopening a device needs a
-        // new stage or can keep the one carrying the user's EQ and volume.
+        // What this stage was built for. MiniaudioSink compares it against the
+        // negotiated rate to decide whether reopening a device needs a new
+        // stage or can keep the one carrying the user's EQ and volume.
         public uint SampleRate => _sampleRate;
 
-        public PcmSampleFormat SampleFormat => _sampleFormat;
+        // The format the device was opened in. Settable, unlike the rate,
+        // because a reopen can land on a device that takes a different one,
+        // and replacing the stage for that would drop the EQ and volume it
+        // carries. Set only while no callback is running: MiniaudioSink sets it
+        // in OpenDevice, before the device starts.
+        public DeviceSampleFormat DeviceFormat
+        {
+            get => _deviceFormat;
+            set
+            {
+                _deviceFormat = value;
+                _bytesPerSample = value.BytesPerSample();
+
+                var bits = _bytesPerSample * 8;
+                _scale = 1 << (bits - 1);
+                _negativeFullScale = -(1 << (bits - 1));
+                _positiveFullScale = (1 << (bits - 1)) - 1;
+            }
+        }
 
         public AudioTimingSettings Timing
         {
@@ -193,18 +210,23 @@ namespace Flower.Audio
             _fadeInRemaining = _fadeInLength;
         }
 
-        // Processes one device buffer in place. buffer is the full interleaved
-        // S16 stereo span miniaudio asked for, already silence-padded past
-        // realBytes by the caller; generation is the ring's generation at the
-        // moment those bytes were read.
+        // Processes one device buffer. samples is the interleaved pipeline PCM
+        // for it, already silence-padded past what the ring had by the caller,
+        // and is worked on in place; destination is the device buffer, exactly
+        // as many samples long in DeviceFormat. generation is the ring's
+        // generation at the moment the samples were read.
         //
         // The silence padding is processed along with everything else, not
         // skipped: the EQ's delay lines have to keep advancing across a gap or
         // the filter resumes from pre-gap state on the other side, which is a
         // second discontinuity stacked on top of the first.
-        public void Process(Span<byte> buffer, int generation)
+        public void Process(Span<float> samples, Span<byte> destination, int generation)
         {
-            var sampleCount = buffer.Length / _bytesPerSample;
+            var sampleCount = samples.Length;
+            if (destination.Length != sampleCount * _bytesPerSample)
+                throw new ArgumentException(
+                    $"{destination.Length} bytes of {_deviceFormat} cannot hold {sampleCount} samples", nameof(destination));
+
             if (sampleCount == 0)
                 return;
 
@@ -223,48 +245,10 @@ namespace Flower.Audio
             }
 
             EnsureCapacity(sampleCount);
-            var work = _samples.AsSpan(0, sampleCount);
 
-            Widen(buffer, work);
-            ApplyEqualizer(work, sampleCount);
-            ApplyGainAndEnvelope(work, timing);
-            Requantise(work, buffer);
-        }
-
-        // Interleaved PCM to float, in native integer units rather than
-        // normalised to +-1.
-        //
-        // Units matter here: everything downstream - the dither's one-LSB
-        // triangle, the clamp at full scale, and the "already an exact
-        // integer, so do not dither it" test in Requantise - is expressed in
-        // LSBs of the destination format, and staying in integer units is what
-        // makes all three the same code at 16 bits and at 24. Both formats are
-        // exact in a float (a mantissa holds 24 bits), so this direction never
-        // loses anything and the round trip at unity gain is bit-identical.
-        private void Widen(ReadOnlySpan<byte> source, Span<float> destination)
-        {
-            if (_sampleFormat == PcmSampleFormat.S16)
-            {
-                var samples = MemoryMarshal.Cast<byte, short>(source);
-                for (var i = 0; i < destination.Length; i++)
-                    destination[i] = samples[i];
-
-                return;
-            }
-
-            for (var i = 0; i < destination.Length; i++)
-            {
-                var at = i * 3;
-                var value = source[at] | (source[at + 1] << 8) | (source[at + 2] << 16);
-
-                // Sign-extend out of 24 bits. Packed S24 carries no sign bit
-                // of its own in the 32-bit sense, so a negative sample read
-                // as-is comes back as a large positive one.
-                if ((value & 0x00800000) != 0)
-                    value |= unchecked((int)0xFF000000);
-
-                destination[i] = value;
-            }
+            ApplyEqualizer(samples, sampleCount);
+            ApplyGainAndEnvelope(samples, timing);
+            Requantise(samples, destination);
         }
 
         // Runs the EQ, crossfading over exactly this buffer when it changed
@@ -364,13 +348,20 @@ namespace Flower.Audio
             }
         }
 
-        // Float -> the canonical integer format, once, at the end.
+        // Float -> the device's integer format, once, at the end.
+        //
+        // Scaled to the destination's integer units first, so that everything
+        // after it - the dither's one-LSB triangle, the clamp at full scale,
+        // and the "already an exact integer, so do not dither it" test - is
+        // the same code at 16 bits and at 24. The scale is a power of two, so
+        // a sample that came from an integer source no wider than the
+        // destination lands back on exactly that integer: the round trip at
+        // unity gain is bit-identical.
         //
         // Deliberately a hard clamp and not a soft-knee limiter, having tried
-        // one: the source is already in this format, so a unity-gain pass with
-        // no EQ has to come back out bit-identical, and any knee that starts
-        // below full scale attenuates real signal to buy headroom nothing here
-        // needs. (A knee that starts *at* full scale is arithmetically the
+        // one: such a source has to come back out bit-identical from a
+        // unity-gain pass with no EQ, and any knee that starts below full
+        // scale attenuates real signal to buy headroom nothing here needs. (A knee that starts *at* full scale is arithmetically the
         // same as a clamp - a monotone map that is the identity on [-1,1] and
         // bounded by 1 has nowhere else to go.) Clipping is now reachable only
         // by a deliberate EQ boost past full scale, which is the user asking
@@ -385,20 +376,21 @@ namespace Flower.Audio
         // +-32767 would have hard-limited every 24-bit sample above -48dBFS.
         private void Requantise(Span<float> work, Span<byte> destination)
         {
-            var s16 = _sampleFormat == PcmSampleFormat.S16;
+            var s16 = _deviceFormat == DeviceSampleFormat.S16;
             var shorts = s16 ? MemoryMarshal.Cast<byte, short>(destination) : default;
+            var scale = _scale;
 
             for (var i = 0; i < work.Length; i++)
             {
-                var value = work[i];
+                var value = work[i] * scale;
 
                 // Dither only what actually needs rounding. A sample that is
                 // already an exact integer is not being requantised - nothing
                 // upstream changed it - and adding noise to it would break
                 // the transparency the float path is supposed to preserve: at
                 // unity gain with no EQ this stage must hand back exactly the
-                // S16 it was given. It also keeps digital silence silent, and
-                // lets a fade-out actually reach zero.
+                // integers the source held. It also keeps digital silence
+                // silent, and lets a fade-out actually reach zero.
                 if (value != MathF.Round(value))
                 {
                     // TPDF: successive rectangular draws differenced, giving a
@@ -456,10 +448,9 @@ namespace Flower.Audio
         // here rather than being sized once at Start.
         private void EnsureCapacity(int sampleCount)
         {
-            if (_samples.Length >= sampleCount)
+            if (_crossfade.Length >= sampleCount)
                 return;
 
-            _samples = new float[sampleCount];
             _crossfade = new float[sampleCount];
         }
     }

@@ -16,12 +16,17 @@ namespace Flower.Tests.Audio
     // of it is testable here against FakeAudioBridge, which keeps the same
     // refuse-writes-until-a-flush-is-acknowledged contract the C side has.
     //
-    // What these are really guarding is byte conservation. Bytes read out of
-    // the shared ring are gone from it, so every path that reads and then
+    // What these are really guarding is sample conservation. Samples read out
+    // of the shared ring are gone from it, so every path that reads and then
     // fails to hand over - a short write, a write into an unacknowledged
     // flush - is a silent dropout with nothing left to diagnose it by.
+    //
+    // The two sides are in different formats, which is why sizes here are in
+    // frames: the ring holds the pipeline's float, the bridge what the output
+    // stage requantised it to - S16, its default.
     public class AudioFeederTests
     {
+        private const int BridgeBytesPerFrame = 2 * (int)GaplessFormat.Channels;
         // Transparent settings: no fades, no ramp, no prebuffer or rebuffer,
         // so what arrives at the bridge is exactly what was in the ring and
         // any difference is the feeder's doing rather than the output stage's.
@@ -44,19 +49,31 @@ namespace Flower.Tests.Audio
         // The output stage's declick envelope always starts a stream from
         // silence, so the very first frame is zeroed however short the fade is
         // configured to be. That is the stage's business, not the feeder's;
-        // what the feeder owes is every byte, in order, exactly once.
-        private static void AssertHandedOver(byte[] expected, FakeAudioBridge bridge)
+        // what the feeder owes is every sample, in order, exactly once.
+        private static void AssertHandedOver(Pcm16 expected, FakeAudioBridge bridge)
         {
-            Assert.Equal(expected.Length, bridge.Drained.Count);
-            Assert.Equal(expected[PcmFormat.Default.BytesPerFrame..], bridge.Drained.Skip(PcmFormat.Default.BytesPerFrame));
+            Assert.Equal(expected.Device.Length, bridge.Drained.Count);
+            Assert.Equal(expected.Device[BridgeBytesPerFrame..], bridge.Drained.Skip(BridgeBytesPerFrame));
         }
 
-        private static byte[] Ramp(int byteCount)
+        // The same audio on both sides of the feeder: what goes into the ring,
+        // and what a transparent output stage hands the bridge for it.
+        private sealed record Pcm16(byte[] Ring, byte[] Device);
+
+        private static Pcm16 Ramp(int frames)
         {
-            var data = new byte[byteCount];
-            for (var i = 0; i < byteCount; i++)
-                data[i] = (byte)(i % 251);
-            return data;
+            var samples = new short[frames * (int)GaplessFormat.Channels];
+            for (var i = 0; i < samples.Length; i++)
+                samples[i] = (short)((i % 251) * 97 - 12000);
+
+            return Of(samples);
+        }
+
+        private static Pcm16 Of(short[] samples)
+        {
+            var device = new byte[samples.Length * sizeof(short)];
+            Buffer.BlockCopy(samples, 0, device, 0, device.Length);
+            return new Pcm16(Pcm.FromS16(samples), device);
         }
 
         [Fact]
@@ -66,8 +83,8 @@ namespace Flower.Tests.Audio
             var bridge = new FakeAudioBridge(64 * 1024);
             using var feeder = Feeder(ring, bridge);
 
-            var pcm = Ramp(16 * 1024);
-            ring.TryWrite(pcm);
+            var pcm = Ramp(4096);
+            ring.TryWrite(pcm.Ring);
 
             feeder.Tick();
             bridge.Drain(bridge.Available);
@@ -86,8 +103,8 @@ namespace Flower.Tests.Audio
             var bridge = new FakeAudioBridge(3000);
             using var feeder = Feeder(ring, bridge);
 
-            var pcm = Ramp(32 * 1024);
-            ring.TryWrite(pcm);
+            var pcm = Ramp(6144);
+            ring.TryWrite(pcm.Ring);
 
             for (var i = 0; i < 200; i++)
             {
@@ -106,11 +123,11 @@ namespace Flower.Tests.Audio
             var bridge = new FakeAudioBridge(4096);
             using var feeder = Feeder(ring, bridge);
 
-            ring.TryWrite(Ramp(32 * 1024));
+            ring.TryWrite(Ramp(4096).Ring);
             feeder.Tick();
 
             Assert.Equal(4096, bridge.Available);
-            Assert.Equal(32 * 1024 - 4096, ring.AvailableBytes);
+            Assert.Equal((4096 - 4096 / BridgeBytesPerFrame) * GaplessFormat.BytesPerFrame, ring.AvailableBytes);
         }
 
         [Fact]
@@ -120,7 +137,7 @@ namespace Flower.Tests.Audio
             var bridge = new FakeAudioBridge(64 * 1024);
             using var feeder = Feeder(ring, bridge);
 
-            ring.TryWrite(Ramp(8192));
+            ring.TryWrite(Ramp(2048).Ring);
             feeder.Tick();
             Assert.Equal(0, bridge.RequestedFlushes);
 
@@ -141,19 +158,19 @@ namespace Flower.Tests.Audio
             var bridge = new FakeAudioBridge(64 * 1024);
             using var feeder = Feeder(ring, bridge);
 
-            ring.TryWrite(Ramp(8192));
+            ring.TryWrite(Ramp(2048).Ring);
             feeder.Tick();
 
             var buffered = bridge.Available;
 
             ring.Reset();
-            var second = Ramp(4096);
-            ring.TryWrite(second);
+            var second = Ramp(1024);
+            ring.TryWrite(second.Ring);
 
             feeder.Tick();
             feeder.Tick();
 
-            Assert.Equal(4096, ring.AvailableBytes);
+            Assert.Equal(second.Ring.Length, ring.AvailableBytes);
             Assert.Equal(buffered, bridge.Available);
         }
 
@@ -164,14 +181,13 @@ namespace Flower.Tests.Audio
             var bridge = new FakeAudioBridge(64 * 1024);
             using var feeder = Feeder(ring, bridge);
 
-            var before = new byte[8192];
-            Array.Fill(before, (byte)0x11);
-            ring.TryWrite(before);
+            var before = Of(Enumerable.Repeat((short)0x1111, 2048 * (int)GaplessFormat.Channels).ToArray());
+            ring.TryWrite(before.Ring);
             feeder.Tick();
 
             ring.Reset();
-            var after = Ramp(4096);
-            ring.TryWrite(after);
+            var after = Ramp(1024);
+            ring.TryWrite(after.Ring);
 
             // The flush request, then the callback acknowledging it, then the
             // pass that is finally allowed to move the new stream.
@@ -193,15 +209,15 @@ namespace Flower.Tests.Audio
             var bridge = new FakeAudioBridge(64 * 1024);
             using var feeder = Feeder(ring, bridge);
 
-            ring.TryWrite(Ramp(8192));
+            ring.TryWrite(Ramp(2048).Ring);
             feeder.Tick();
 
             ring.Reset();
             feeder.Tick();
             Assert.False(bridge.FlushedWithoutConsumer);
 
-            var pcm = Ramp(4096);
-            ring.TryWrite(pcm);
+            var pcm = Ramp(1024);
+            ring.TryWrite(pcm.Ring);
 
             var deadline = DateTime.UtcNow.AddSeconds(5);
             while (!bridge.FlushedWithoutConsumer && DateTime.UtcNow < deadline)
@@ -299,12 +315,12 @@ namespace Flower.Tests.Audio
             var bridge = new FakeAudioBridge(64 * 1024);
             using var feeder = Feeder(ring, bridge);
 
-            ring.TryWrite(Ramp(8192));
+            ring.TryWrite(Ramp(2048).Ring);
             feeder.Tick();
-            Assert.Equal(8192, feeder.BufferedBytes);
+            Assert.Equal(2048, feeder.BufferedFrames);
 
-            bridge.Drain(2048);
-            Assert.Equal(6144, feeder.BufferedBytes);
+            bridge.Drain(512 * BridgeBytesPerFrame);
+            Assert.Equal(1536, feeder.BufferedFrames);
         }
 
         [Fact]
@@ -318,10 +334,7 @@ namespace Flower.Tests.Audio
             var stage = new OutputStage(PcmFormat.Default.SampleRate) { Timing = Transparent(), TargetGain = 0.5f };
             using var feeder = new AudioFeeder(ring, bridge, stage);
 
-            var samples = Enumerable.Repeat((short)10000, 2048).ToArray();
-            var pcm = new byte[samples.Length * sizeof(short)];
-            Buffer.BlockCopy(samples, 0, pcm, 0, pcm.Length);
-            ring.TryWrite(pcm);
+            ring.TryWrite(Pcm.FromS16(Enumerable.Repeat((short)10000, 2048).ToArray()));
 
             feeder.Tick();
             bridge.Drain(bridge.Available);
@@ -330,7 +343,7 @@ namespace Flower.Tests.Audio
             Buffer.BlockCopy(bridge.Drained.ToArray(), 0, rendered, 0, bridge.Drained.Count);
             Assert.All(rendered[(int)GaplessFormat.Channels..], sample => Assert.InRange(sample, 4999, 5001));
         }
-    
+
         // ── Following the device ──────────────────────────────────────────
 
         // The regression this pair exists for.
@@ -363,14 +376,15 @@ namespace Flower.Tests.Audio
             var bridge = new FakeAudioBridge(64 * 1024);
             using var feeder = Feeder(ring, bridge);
 
-            ring.TryWrite(Ramp(4096));
+            var pcm = Ramp(1024);
+            ring.TryWrite(pcm.Ring);
             feeder.Start();
             Thread.Sleep(100);
 
             // Nothing moved, and - the part that matters - nothing was counted
             // as an underrun on the way to not moving.
             Assert.Equal(0, bridge.Available);
-            Assert.Equal(4096, ring.AvailableBytes);
+            Assert.Equal(pcm.Ring.Length, ring.AvailableBytes);
             Assert.Equal(0, ring.UnderrunCount);
         }
 
@@ -402,11 +416,11 @@ namespace Flower.Tests.Audio
             var bridge = new FakeAudioBridge(64 * 1024);
             using var feeder = Feeder(ring, bridge);
 
-            ring.TryWrite(Ramp(4096));
+            ring.TryWrite(Ramp(1024).Ring);
             feeder.Start();
             feeder.Resume();
 
-            Assert.True(WaitUntil(() => bridge.Available == 4096), "a running device should be fed");
+            Assert.True(WaitUntil(() => bridge.Available == 1024 * BridgeBytesPerFrame), "a running device should be fed");
             feeder.Pause();
         }
 
@@ -424,8 +438,8 @@ namespace Flower.Tests.Audio
             for (var i = 0; i < 5; i++)
             {
                 feeder.Resume();
-                ring.TryWrite(Ramp(1024));
-                Assert.True(WaitUntil(() => bridge.Available >= 1024 * (i + 1)), $"pass {i} was never fed");
+                ring.TryWrite(Ramp(256).Ring);
+                Assert.True(WaitUntil(() => bridge.Available >= 256 * BridgeBytesPerFrame * (i + 1)), $"pass {i} was never fed");
                 feeder.Pause();
             }
         }

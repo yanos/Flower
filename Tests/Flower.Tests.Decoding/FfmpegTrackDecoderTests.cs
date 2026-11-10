@@ -35,6 +35,10 @@ public class FfmpegTrackDecoderTests : IDisposable
         return new Track { Title = name, Path = path, Duration = duration };
     }
 
+    // The fixtures are 16-bit ramps and the pipeline is float; this is the
+    // first sample of a decoded frame back in the fixture's own units.
+    private static int S16At(byte[] frame) => (int)(BitConverter.ToSingle(frame) * 32768f);
+
     // The ring has to be drained while decode runs or the decoder parks on
     // backpressure, which is what it is supposed to do - so a test that wants
     // a whole track has to play the consumer's part.
@@ -79,7 +83,54 @@ public class FfmpegTrackDecoderTests : IDisposable
 
         Assert.Equal(expectedBytes, pcm.Length);
         for (var frame = 0; frame < 4096; frame++)
-            Assert.Equal(unchecked((short)frame), BitConverter.ToInt16(pcm, frame * PcmFormat.Default.BytesPerFrame));
+            Assert.Equal(unchecked((short)frame) / 32768f, BitConverter.ToSingle(pcm, frame * PcmFormat.Default.BytesPerFrame));
+    }
+
+    // The claim carrying the pipeline as float rests on: a 24-bit sample is
+    // exact in a float's 24-bit mantissa, so a hi-res file goes through FFmpeg
+    // into the ring and out of a 24-bit device's OutputStage as the very
+    // integers it holds. Stated as a test rather than reasoned about, because
+    // it is also the end of the line for the bits below 16 - the ones LibVLC
+    // dropped, and the only reason a 24-bit device is asked for at all.
+    [Fact]
+    public async Task A_24_bit_file_comes_out_of_a_24_bit_device_as_the_integers_it_holds()
+    {
+        const int frames = 48_000;
+        var sampleAt = SyntheticHiResWav.Ramp24();
+        var path = SyntheticHiResWav.CreateFile(_directory, "hi-res.wav", (int)PcmFormat.Default.SampleRate, frames, sampleAt);
+        var track = new Track { Title = "hi-res", Path = path, Duration = TimeSpan.FromSeconds(1) };
+        var expectedBytes = (long)frames * PcmFormat.Default.BytesPerFrame;
+
+        var ring = new GaplessRingBuffer(64 * 1024);
+        using var decoder = new FfmpegTrackDecoder(track, ring);
+        Assert.Equal(DecodePrepareResult.Ready, await decoder.PrepareAsync(TestContext.Current.CancellationToken));
+
+        decoder.StartDecoding();
+        var pcm = await DrainAsync(ring, decoder, expectedBytes);
+        Assert.Equal(expectedBytes, pcm.Length);
+
+        // Past the declick fade-in a new stage gives its first buffer, so
+        // what is measured is the requantisation and nothing else.
+        var stage = new OutputStage(PcmFormat.Default.SampleRate, DeviceSampleFormat.S24)
+        {
+            Timing = new AudioTimingSettings { GainRampMs = 0, DeclickFadeMs = 0, TransportFadeMs = 0, FadeOutWaitMs = 0 },
+        };
+        stage.Process(new float[2], new byte[DeviceSampleFormat.S24.BytesPerFrame()], generation: 1);
+
+        var samples = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, float>(pcm.AsSpan()).ToArray();
+        var device = new byte[samples.Length * DeviceSampleFormat.S24.BytesPerSample()];
+        stage.Process(samples, device, generation: 1);
+
+        for (var frame = 0; frame < frames; frame++)
+        {
+            for (var channel = 0; channel < (int)GaplessFormat.Channels; channel++)
+            {
+                var at = (frame * (int)GaplessFormat.Channels + channel) * DeviceSampleFormat.S24.BytesPerSample();
+                var actual = SyntheticHiResWav.ReadInt24(device.AsSpan(at, 3));
+                if (actual != sampleAt(frame))
+                    Assert.Fail($"frame {frame} channel {channel} came out as {actual}, expected {sampleAt(frame)}");
+            }
+        }
     }
 
     [Fact]
@@ -143,7 +194,7 @@ public class FfmpegTrackDecoderTests : IDisposable
         // decoder's own bookkeeping.
         var afterSeek = await ReadOneFrameAsync(ring);
         var expectedFrame = unchecked((short)(landedBytes / PcmFormat.Default.BytesPerFrame));
-        Assert.InRange(Math.Abs(BitConverter.ToInt16(afterSeek) - expectedFrame), 0, 2048);
+        Assert.InRange(Math.Abs(S16At(afterSeek) - expectedFrame), 0, 2048);
     }
 
     // Draining is not ending, and this is the difference.
@@ -194,7 +245,7 @@ public class FfmpegTrackDecoderTests : IDisposable
         // still in there was decoded from the landing point.
         var afterSeek = await ReadOneFrameAsync(ring);
         var expectedFrame = unchecked((short)(landedBytes / PcmFormat.Default.BytesPerFrame));
-        Assert.InRange(Math.Abs(BitConverter.ToInt16(afterSeek) - expectedFrame), 0, 2048);
+        Assert.InRange(Math.Abs(S16At(afterSeek) - expectedFrame), 0, 2048);
     }
 
     [Fact]

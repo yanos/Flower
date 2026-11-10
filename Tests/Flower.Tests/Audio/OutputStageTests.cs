@@ -6,9 +6,12 @@ using Flower.Tests.TestSupport;
 
 namespace Flower.Tests.Audio;
 
-// The render path's arithmetic: float widening, EQ, gain ramping, the declick
-// envelope and the one dithered requantisation back to S16. Everything here is
-// pure math over spans, so none of it needs an audio device.
+// The render path's arithmetic: EQ, gain ramping, the declick envelope and the
+// one dithered requantisation to the device's format. Everything here is pure
+// math over spans, so none of it needs an audio device.
+//
+// Written in S16 on both sides - a 16-bit source on a 16-bit device - through
+// Process below, so a sample means the same thing going in as coming out.
 //
 // These are the assertions the reported symptoms actually reduce to. A click
 // is a step discontinuity, so the ramp and envelope tests measure steps
@@ -30,7 +33,7 @@ public class OutputStageTests
 
     private static byte[] Sine(double frequencyHz, int frameCount, float amplitude = 0.5f)
     {
-        var bytes = new byte[frameCount * PcmFormat.Default.BytesPerFrame];
+        var bytes = new byte[frameCount * DeviceSampleFormat.S16.BytesPerFrame()];
         var samples = MemoryMarshal.Cast<byte, short>(bytes.AsSpan());
         for (var i = 0; i < frameCount; i++)
         {
@@ -46,29 +49,38 @@ public class OutputStageTests
     // it - any step at all is the stage's doing.
     private static byte[] Constant(short value, int frameCount)
     {
-        var bytes = new byte[frameCount * PcmFormat.Default.BytesPerFrame];
+        var bytes = new byte[frameCount * DeviceSampleFormat.S16.BytesPerFrame()];
         var samples = MemoryMarshal.Cast<byte, short>(bytes.AsSpan());
         samples.Fill(value);
         return bytes;
     }
 
+    // The 16-bit samples in buffer, as the pipeline carries them, through
+    // the stage and back into buffer as what an S16 device is handed.
+    private static void Process(OutputStage stage, byte[] buffer, int generation)
+    {
+        var samples = MemoryMarshal.Cast<byte, float>(Pcm.FromS16(buffer).AsSpan());
+        stage.Process(samples, buffer, generation);
+    }
+
     private static OutputStage Stage(AudioTimingSettings? timing = null)
     {
-        var stage = new OutputStage(PcmFormat.Default.SampleRate) { Timing = timing ?? Timing() };
+        var stage = new OutputStage(PcmFormat.Default.SampleRate, DeviceSampleFormat.S16) { Timing = timing ?? Timing() };
 
         // Past the declick fade-in the first buffer of a new generation always
         // gets, so a test measuring something else isn't measuring that.
         var warmup = Constant(0, 4800);
-        stage.Process(warmup, generation: 1);
+        Process(stage, warmup, generation: 1);
         return stage;
     }
 
-    // The bar the whole float path has to clear: the source is already S16,
-    // so at unity gain with no EQ and no envelope running, every sample must
-    // come back out exactly as it went in. Widening to float, filtering,
-    // ramping and requantising is only worth doing if it is transparent when
-    // it is asked to do nothing - and this is what a soft-knee limiter, which
-    // an earlier version of Requantise had, cannot satisfy.
+    // The bar the whole float path has to clear: for an S16 source on an S16
+    // device, at unity gain with no EQ and no envelope running, every sample
+    // must come back out exactly as it went in. Carrying it as float,
+    // filtering, ramping and requantising is only worth doing if it is
+    // transparent when it is asked to do nothing - and this is what a
+    // soft-knee limiter, which an earlier version of Requantise had, cannot
+    // satisfy.
     [Fact]
     public void At_unity_gain_with_no_processing_the_output_is_bit_identical()
     {
@@ -77,7 +89,7 @@ public class OutputStageTests
 
         var input = Sine(997, 4800, amplitude: 1.0f);
         var buffer = (byte[])input.Clone();
-        stage.Process(buffer, generation: 1);
+        Process(stage, buffer, generation: 1);
 
         Pcm.AssertBitExact(input, buffer);
     }
@@ -106,11 +118,11 @@ public class OutputStageTests
         stage.TargetGain = 1f;
 
         var settle = Constant(10000, 4800);
-        stage.Process(settle, generation: 1);
+        Process(stage, settle, generation: 1);
 
         stage.TargetGain = 0.1f;
         var buffer = Constant(10000, 4800); // 100ms, five times the ramp
-        stage.Process(buffer, generation: 1);
+        Process(stage, buffer, generation: 1);
 
         // 20ms to travel 0.9 of full scale on a 10000-amplitude signal is
         // about 9 units per frame; anything near a step would be thousands.
@@ -132,7 +144,7 @@ public class OutputStageTests
         // A different generation is what a flush looks like to the callback -
         // a seek, a manual skip, a fresh start. Without the envelope the first
         // sample of the new stream lands at full scale from silence.
-        stage.Process(buffer, generation: 2);
+        Process(stage, buffer, generation: 2);
 
         var samples = Pcm.AsSamples(buffer);
         Assert.InRange(samples[0], 0, 200);
@@ -151,12 +163,12 @@ public class OutputStageTests
         stage.TargetGain = 1f;
 
         var settle = Constant(short.MaxValue, 4800);
-        stage.Process(settle, generation: 1);
+        Process(stage, settle, generation: 1);
 
         stage.FadeOutAndWait();
 
         var buffer = Constant(short.MaxValue, 4800); // 100ms, well past the 15ms fade
-        stage.Process(buffer, generation: 1);
+        Process(stage, buffer, generation: 1);
 
         var samples = Pcm.AsSamples(buffer);
         Assert.Equal(0, samples[^1]);
@@ -165,7 +177,7 @@ public class OutputStageTests
         // Still silent on the next buffer - a stop that faded must not let a
         // sample back through before the device actually stops.
         var after = Constant(short.MaxValue, 480);
-        stage.Process(after, generation: 1);
+        Process(stage, after, generation: 1);
         Assert.All(Pcm.AsSamples(after).ToArray(), sample => Assert.Equal(0, sample));
     }
 
@@ -180,7 +192,7 @@ public class OutputStageTests
         stage.TargetGain = 0.5f;
 
         var buffer = Sine(1000, 48000, amplitude: 0.9f);
-        stage.Process(buffer, generation: 1);
+        Process(stage, buffer, generation: 1);
 
         // A clean gain stage leaves a 1kHz tone a 1kHz tone. Truncation at
         // this level lifts THD by more than an order of magnitude over this.
@@ -196,7 +208,7 @@ public class OutputStageTests
         stage.TargetGain = 1f;
 
         var buffer = Constant(1000, 4800);
-        stage.Process(buffer, generation: 1);
+        Process(stage, buffer, generation: 1);
 
         foreach (var sample in Pcm.AsSamples(buffer))
             Assert.InRange(sample, 999, 1001);
@@ -204,8 +216,8 @@ public class OutputStageTests
 
     // The real-time contract: miniaudio's data callback runs on a thread the
     // GC must not have to stop, so the steady state has to be allocation-free.
-    // The float scratch buffers are grow-only, so only the first callback at a
-    // given size allocates.
+    // The crossfade scratch buffer is grow-only, so only the first callback at
+    // a given size allocates.
     [Fact]
     public void Steady_state_processing_allocates_nothing()
     {
@@ -215,7 +227,17 @@ public class OutputStageTests
             new EqualizerSettings { Enabled = true, PreampDb = 3, BandGainsDb = new double[Equalizer.BandCount] },
             PcmFormat.Default.SampleRate);
 
-        var buffer = Sine(1000, 480);
+        var source = MemoryMarshal.Cast<byte, float>(Pcm.FromS16(Sine(1000, 480)).AsSpan()).ToArray();
+        var samples = new float[source.Length];
+        var output = new byte[source.Length * sizeof(short)];
+
+        // Fresh input each pass, since Process works on its samples in place;
+        // CopyTo allocates nothing, so the measurement is still the stage's.
+        void Run()
+        {
+            source.CopyTo(samples, 0);
+            stage.Process(samples, output, generation: 1);
+        }
 
         // Warmed well past tiered compilation's promotion threshold (30 calls
         // by default), not just past OutputStage's own first-call allocation.
@@ -227,11 +249,11 @@ public class OutputStageTests
         // lands at a different moment on every machine. Measuring a steady
         // state means waiting for the runtime to reach one too.
         for (var i = 0; i < 500; i++)
-            stage.Process(buffer, generation: 1);
+            Run();
 
         var before = GC.GetAllocatedBytesForCurrentThread();
         for (var i = 0; i < 200; i++)
-            stage.Process(buffer, generation: 1);
+            Run();
 
         Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
     }
@@ -254,12 +276,12 @@ public class OutputStageTests
         settings.BandGainsDb[Array.IndexOf(Equalizer.CenterFrequenciesHz, 1000.0)] = 12;
 
         var buffer = Sine(1000, 4800, amplitude: 0.4f);
-        stage.Process(buffer, generation: 1);
+        Process(stage, buffer, generation: 1);
 
         stage.Equalizer = Equalizer.BuildFrom(settings, PcmFormat.Default.SampleRate);
 
         var swapped = Sine(1000, 4800, amplitude: 0.4f);
-        stage.Process(swapped, generation: 1);
+        Process(stage, swapped, generation: 1);
 
         // Compared against the same signal through a stage that has been
         // running the boosted curve all along, rather than an absolute step
@@ -268,9 +290,9 @@ public class OutputStageTests
         var reference = Stage(Timing(gainRampMs: 0, declickMs: 0));
         reference.TargetGain = 1f;
         reference.Equalizer = Equalizer.BuildFrom(settings, PcmFormat.Default.SampleRate);
-        reference.Process(Sine(1000, 4800, amplitude: 0.4f), generation: 1);
+        Process(reference, Sine(1000, 4800, amplitude: 0.4f), generation: 1);
         var settled = Sine(1000, 4800, amplitude: 0.4f);
-        reference.Process(settled, generation: 1);
+        Process(reference, settled, generation: 1);
 
         var limit = (int)(Pcm.MaxStep(settled) * 1.2);
         Pcm.AssertContinuous(swapped, limit, "the equalizer swap stepped instead of crossfading");

@@ -11,7 +11,7 @@ set -euo pipefail
 
 usage() {
     cat <<'EOF'
-Usage: scripts/use-ffaudio-package.sh [option]
+Usage: scripts/use-latest-main-ffaudio-package.sh [option]
 
 Build Flower against an unpublished FFAudio.NET instead of the pinned one.
 
@@ -169,7 +169,7 @@ sweep_stale_copies
 
 cat > "$props" <<PROPS
 <Project>
-  <!-- Written by scripts/use-ffaudio-package.sh and gitignored. Delete it, or
+  <!-- Written by scripts/use-latest-main-ffaudio-package.sh and gitignored. Delete it, or
        run the script with --off, to go back to the pinned version. -->
   <PropertyGroup>
     <FFAudioPackageVersion>$version</FFAudioPackageVersion>

@@ -462,21 +462,6 @@ public class GaplessAudioManagerTests
         }
     }
 
-    // The production constructor asks the sink for the decoder's 24 bits and
-    // builds everything after from the sink's answer. That used to be a
-    // process-wide static it set, and left set it moved BytesPerFrame under
-    // every test running beside it - which is how the test above first
-    // announced itself, as an unrelated failure in GaplessCoordinatorTests.
-    [Fact]
-    public void The_production_constructor_asks_the_sink_for_24_bits()
-    {
-        var sink = new FakeAudioSink();
-
-        using var manager = new GaplessAudioManager(sink, NullLogger<GaplessAudioManager>.Instance);
-
-        Assert.Equal(PcmSampleFormat.S24, sink.Format.SampleFormat);
-    }
-
     private sealed class RecordingPlatformAudioSession : IPlatformAudioSession
     {
         public int ActivationCount { get; private set; }

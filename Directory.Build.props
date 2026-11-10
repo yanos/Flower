@@ -32,8 +32,9 @@
   <!-- FFAudio.NET, the FFmpeg decoder, pinned here once for every project that
        references it (Flower and the two phone heads, plus their device-check
        runners). A gitignored FFAudioPackage.local.props may override the
-       version and add a local feed - that is what scripts/use-ffaudio-package.sh
-       writes, to try a CI or locally packed build before it is published. -->
+       version and add a local feed - that is what
+       scripts/use-latest-main-ffaudio-package.sh writes, to try a CI or
+       locally packed build before it is published. -->
   <Import Project="$(MSBuildThisFileDirectory)FFAudioPackage.local.props"
           Condition="Exists('$(MSBuildThisFileDirectory)FFAudioPackage.local.props')" />
   <PropertyGroup>

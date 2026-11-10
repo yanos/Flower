@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -23,7 +24,8 @@ namespace Flower.Tests.TestSupport;
 // period with the non-blocking Read(), silence-pads a short read exactly as
 // DataCallback does, runs the captured bytes through a real OutputStage, and
 // records which periods came up short. What it captures is therefore what a
-// listener would have heard, silence and all.
+// listener would have heard, silence and all - as S16, the device format
+// OutputStage defaults to, so Pcm's analysis reads it directly.
 public sealed class RenderPumpSink : IAudioSink
 {
     private readonly object _gate = new();
@@ -42,10 +44,11 @@ public sealed class RenderPumpSink : IAudioSink
         _periodFrames = periodFrames;
         ProcessOutputStage = processOutputStage;
 
-        // Off by default: most tests want to assert on the exact bytes the
+        // Off by default: most tests want to assert on the exact samples the
         // decode side produced, and the output stage's fades and dither would
         // (correctly) change them. Turned on for tests about the output stage
-        // itself in the pipeline.
+        // itself in the pipeline. Off, the period is narrowed to S16
+        // (Pcm.NarrowToS16), so the capture is in the same format either way.
         _outputStage.Timing = new AudioTimingSettings { PrebufferMs = 0, DeclickFadeMs = 0, GainRampMs = 0, TransportFadeMs = 0, FadeOutWaitMs = 0 };
     }
 
@@ -109,12 +112,10 @@ public sealed class RenderPumpSink : IAudioSink
     public Equalizer? AppliedEqualizer { get; private set; }
     public AudioTimingSettings? AppliedTiming { get; private set; }
 
-    // Always the default: its output stage is built for it, so this sink
-    // narrows whatever it is asked for, as a device that refuses 24 bits does.
+    // Always the default: its output stage is built for it.
     public PcmFormat Format => PcmFormat.Default;
 
-    public void Start(GaplessRingBuffer ringBuffer, PcmSampleFormat sampleFormat = GaplessFormat.DefaultSampleFormat) =>
-        _ring = ringBuffer;
+    public void Start(GaplessRingBuffer ringBuffer) => _ring = ringBuffer;
 
     public void ApplyEqualizer(Equalizer? equalizer)
     {
@@ -135,9 +136,9 @@ public sealed class RenderPumpSink : IAudioSink
     public void SetOutputDevice(string? deviceId) =>
         OutputDeviceId = deviceId is null || OutputDevices.Any(d => d.Id == deviceId) ? deviceId : null;
 
-    public long BufferedBytes => 0;
+    public long BufferedFrames => 0;
 
-        public void Resume()
+    public void Resume()
     {
         CancellationTokenSource cts;
         GaplessRingBuffer ring;
@@ -158,32 +159,37 @@ public sealed class RenderPumpSink : IAudioSink
 
     private void Pump(GaplessRingBuffer ring, CancellationToken token)
     {
-        var period = new byte[_periodFrames * Format.BytesPerFrame];
+        var samples = new float[_periodFrames * (int)GaplessFormat.Channels];
+        var period = MemoryMarshal.AsBytes(samples.AsSpan()).Length;
+        var output = new byte[_periodFrames * _outputStage.DeviceFormat.BytesPerFrame()];
         var delayMs = Math.Max(1, _periodFrames * 1000 / (int)Format.SampleRate);
 
         while (!token.IsCancellationRequested)
         {
             var generation = ring.Generation;
+            var source = MemoryMarshal.AsBytes(samples.AsSpan());
 
             // Exactly what DataCallback does: one non-blocking read, then
             // silence for whatever it did not get.
-            var read = ring.Read(period);
-            if (read < period.Length)
+            var read = ring.Read(source);
+            if (read < period)
             {
-                Array.Clear(period, read, period.Length - read);
+                source[read..].Clear();
                 Interlocked.Increment(ref _shortPeriods);
                 if (read == 0)
                     Interlocked.Increment(ref _silentPeriods);
             }
 
             if (ProcessOutputStage)
-                _outputStage.Process(period, generation);
+                _outputStage.Process(samples, output, generation);
+            else
+                Pcm.NarrowToS16(source, output);
 
             lock (_gate)
             {
                 if (_generationStarts.Count == 0 || _generationStarts[^1].Generation != generation)
                     _generationStarts.Add((generation, _captured.Length));
-                _captured.Write(period);
+                _captured.Write(output);
             }
 
             // Paced to real playback speed, so decode-ahead runs ahead of the

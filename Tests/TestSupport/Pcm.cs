@@ -7,9 +7,12 @@ using Xunit;
 
 namespace Flower.Tests.TestSupport;
 
-// Analysis and assertions over canonical PCM (S16, interleaved stereo, the
-// format GaplessFormat pins the whole pipeline to), plus the float buffers
-// OutputStage works in.
+// Analysis and assertions over what a listener hears: S16 interleaved stereo,
+// the narrowest format a device is opened in, which is what OutputStage writes
+// and what RenderPumpSink captures. Plus the float buffers OutputStage works
+// in, and the two conversions to and from the pipeline's own float PCM (see
+// GaplessFormat) - FromS16 for a fake decoder writing a known signal into a
+// ring, ToS16 for a test reading one back out.
 //
 // Exists because the reported playback faults - clicks, a fragment repeating,
 // a song stopping early - are all properties of the samples that come out, and
@@ -20,6 +23,57 @@ namespace Flower.Tests.TestSupport;
 // a missing tail, and distortion is measurable as THD.
 public static class Pcm
 {
+    private const float S16Scale = 32768f;
+
+    // Pipeline PCM whose samples are exactly these 16-bit ones.
+    public static byte[] FromS16(ReadOnlySpan<short> samples)
+    {
+        var pcm = new byte[samples.Length * GaplessFormat.BytesPerSample];
+        WriteS16(samples, pcm);
+        return pcm;
+    }
+
+    public static byte[] FromS16(ReadOnlySpan<byte> s16) => FromS16(MemoryMarshal.Cast<byte, short>(s16));
+
+    // The same, into a buffer a fake decoder already holds.
+    public static void WriteS16(ReadOnlySpan<short> samples, Span<byte> pipeline)
+    {
+        var destination = MemoryMarshal.Cast<byte, float>(pipeline);
+        for (var i = 0; i < samples.Length; i++)
+            destination[i] = samples[i] / S16Scale;
+    }
+
+    // Pipeline PCM narrowed to S16, the way a unity-gain OutputStage would
+    // narrow it. Exact for anything FromS16 or a 16-bit file produced; a
+    // sample that is not on the 16-bit grid fails, rather than rounding into
+    // passing, so a decoder that is off by a fraction of an LSB is caught.
+    public static byte[] ToS16(ReadOnlySpan<byte> pipeline)
+    {
+        var source = MemoryMarshal.Cast<byte, float>(pipeline);
+        var s16 = new short[source.Length];
+        for (var i = 0; i < source.Length; i++)
+        {
+            var scaled = source[i] * S16Scale;
+            if (scaled != MathF.Round(scaled))
+                Assert.Fail($"sample {i} is {scaled} in 16-bit units, which no 16-bit sample decodes to");
+
+            s16[i] = (short)Math.Clamp(scaled, short.MinValue, short.MaxValue);
+        }
+
+        return MemoryMarshal.AsBytes(s16.AsSpan()).ToArray();
+    }
+
+    // The same narrowing without the check, for a render loop on its own
+    // thread, where a failed assertion would only kill the loop: rounds,
+    // which is what a unity-gain OutputStage does with an on-grid sample too.
+    public static void NarrowToS16(ReadOnlySpan<byte> pipeline, Span<byte> s16)
+    {
+        var source = MemoryMarshal.Cast<byte, float>(pipeline);
+        var destination = MemoryMarshal.Cast<byte, short>(s16);
+        for (var i = 0; i < source.Length; i++)
+            destination[i] = (short)Math.Clamp(MathF.Round(source[i] * S16Scale), short.MinValue, short.MaxValue);
+    }
+
     public static Span<short> AsSamples(byte[] pcm) => MemoryMarshal.Cast<byte, short>(pcm.AsSpan());
 
     public static ReadOnlySpan<short> AsSamples(ReadOnlySpan<byte> pcm) => MemoryMarshal.Cast<byte, short>(pcm);

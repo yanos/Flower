@@ -8,8 +8,10 @@ device logs showed a defect none of A–J covers, and the phone listening is wha
 confirms its native render callback — the one part of this plan no automated
 test can reach.
 
-Phase 6 is not started, and it was rescoped while writing this status down.
-It used to read as "collapse Phase 5's desktop/mobile fork"; working out what
+Phase 6's first two steps are built (November 2026): the `armeabi-v7a` atomics
+question is settled, and the pipeline carries float from the decoder to
+`OutputStage`. Step 3 - the one that fixes M - is next. The phase was rescoped
+while writing an earlier status down. It used to read as "collapse Phase 5's desktop/mobile fork"; working out what
 that fork costs turned up **finding M — every interactive control on mobile
 lags by the render buffer's depth, today, because Phase 5 put that buffer on
 the far side of the output stage.** The fork is a symptom of an ordering
@@ -206,11 +208,11 @@ it is recorded here to stop it being re-proposed:
   (Phase 2). The ring should stay integer PCM. The reasoning at the time was
   that LibVLC 3.0's `amem` hardcoded S16N and never honoured a requested
   fourcc, so a float ring would store an exact widening of S16 at twice the
-  memory for zero benefit. **The premise is gone and the conclusion survives
-  it:** the ring now carries packed S24 because that is what
-  `FfmpegTrackDecoder` delivers, and `PcmSampleFormat` stops at S24 on purpose
-  — `OutputStage` works in float, whose mantissa is exactly 24 bits, so
-  widening the ring further would be a widening that quietly narrows again.
+  memory for zero benefit. **Reversed in Phase 6:** with the decoder able to
+  deliver float natively - most codecs decode to it - an integer ring was a
+  round trip through integer in front of the EQ, and its format had to be
+  negotiated and frozen. The ring carries float now. 24 bits is still the
+  ceiling, as `DeviceSampleFormat`'s comment explains.
 - **`ArrayPool` / GC-pause avoidance** — the RT callback already allocates
   nothing, and `TrackDecoder.OnPlay`'s `_scratch` (`:396-399`) is grow-only and
   reused. The useful artifact is a regression test asserting zero allocation,
@@ -490,7 +492,8 @@ Details worth keeping:
   The callback owns it, and pause/resume stay immediate. The cost is that the
   fade multiplies already-dithered S16 — quantisation error during a ramp to
   silence, which is where it cannot be heard.
-- **Position.** `IAudioSink.BufferedBytes` reports what the sink has taken but
+- **Position.** `IAudioSink.BufferedFrames` (bytes, until Phase 6 put the ring
+  and the bridge in different formats) reports what the sink has taken but
   not played, and `GaplessAudioManager.Time` subtracts it; otherwise the seek
   bar runs a bridge-depth ahead of the music.
 - **Where it applies.** Only where Flower builds its own miniaudio — Android and
@@ -632,7 +635,7 @@ the fix is to drop a decode-ahead's connection once its staging is full and
 reopen at the offset when promoted. If the 3 s loop turns out to be unchanged
 repeats, it should be de-duplicated in `AppleNetworkChange`.
 
-## Phase 6 — put the output stage where the controls are (not started)
+## Phase 6 — put the output stage where the controls are (steps 1–2 built)
 
 Phase 5 left a fork: pure-C render callback on Android and iOS, managed callback
 on desktop. This phase was originally scoped as collapsing that fork — one
@@ -755,21 +758,23 @@ that, and deletes:
 - **`Widen`**, and the packed-S24 sign-extension trap inside it.
 - **`MaxBytesPerSample`**, and `flower_audio_bridge_create`'s `bytesPerSample`
   contract — the 2-or-3 refusal that exists only because the transport envelope
-  reads samples rather than bytes.
+  reads samples rather than bytes. (Step 2 deleted the first. The second stays
+  until step 3: the bridge still carries `OutputStage`'s output, which is the
+  device's integer format.)
 
-`PcmSampleFormat`'s own comment rejects F32, but it rejects it as a *third*
-format alongside S16 and S24, on the grounds that it "means giving `OutputStage`
-a double path". As the single canonical format it removes a path rather than
+`PcmSampleFormat`'s own comment (it is `DeviceSampleFormat` now) rejected
+F32, but it rejected it as a *third* format alongside S16 and S24, on the
+grounds that it "means giving `OutputStage` a double path". As the single canonical format it removes a path rather than
 adding one, so that reasoning does not carry. The note about S32 still does, and
 for the same reason: a float mantissa holds exactly 24 bits.
 
-Three costs, none fatal:
+Three costs, none fatal - all three paid in step 2:
 
 - **`ffaudio` must emit float, and it lives in another repo now**
   (`../FFAudio.NET`, currently producing `pack_s24`). This is the one genuine
-  external dependency in the phase. `scripts/use-ffaudio-package.sh` exists for
-  exactly this: testing an unpublished library change against Flower before it
-  is published.
+  external dependency in the phase.
+  `scripts/use-latest-main-ffaudio-package.sh` exists for exactly this: testing
+  an unpublished library change against Flower before it is published.
 - **Dither loses its integer-units trick.** `Widen` deliberately does not
   normalise, so the dither's one-LSB triangle, the full-scale clamp and the
   "already an exact integer, do not dither it" test are all the same code at 16
@@ -848,11 +853,71 @@ day.
 
 1. **Check the `armeabi-v7a` 64-bit atomics question.** Cheap, and it can
    invalidate the shape before any of it is designed.
+
+   **Done: lock-free on every shipped ABI.** The shipped `armeabi-v7a`
+   `libminiaudio.so` is Thumb-2 with 233 inlined `ldrexd`/`strexd` pairs and
+   imports no `libatomic` or `__sync` helper, and NDK 28's clang reports
+   `ATOMIC_LLONG_LOCK_FREE == 2` for `armv7a`, `aarch64` and `x86_64` (and
+   `i686`, via `cmpxchg8b`). `impl.c` now `_Static_assert`s 64-bit, 32-bit and
+   pointer atomics lock-free, so a target where one is not refuses to build
+   (checked against `armv5te`, which has no 64-bit exclusive pair) instead of
+   shipping a lock on the render thread. Compile-time only, so the vendored
+   binaries did not need rebuilding.
 2. **Float through the managed pipeline first** — `ffaudio` emitting float, the
    ring carrying it, `Widen` deleted, `Requantise` scaling to the destination
    LSB, the format negotiation removed. Entirely in C#, on every platform, with
    the existing tests as the proof. Desktop gets the fidelity win here and
    mobile's lag is untouched, which makes this independently worth shipping.
+
+   **Built.** What it came to, beyond the list above:
+
+   - **No FFAudio.NET change was needed.** `F32` (`AV_SAMPLE_FMT_FLT`) was
+     already in the pinned `1.0.2`, so the "one genuine external dependency"
+     was already met. `FfmpegTrackDecoder` asks for it unconditionally.
+   - **The pipeline's format is a rate and nothing else.** `PcmFormat` is
+     `(SampleRate)`, `GaplessFormat.BytesPerFrame` is a constant 8, and
+     `PcmSampleFormat` became `DeviceSampleFormat` - `OutputStage`'s
+     destination only. `MiniaudioSink.OpenDevice` asks for S24 and falls back
+     to S16 at *every* open, since no decoder depends on the answer; only the
+     rate is still frozen (`_hasNegotiatedRate`). `OutputStage.DeviceFormat` is
+     settable while the device is stopped, so a reopen keeps the stage
+     carrying the EQ and volume.
+   - **`Process(Span<float> samples, Span<byte> destination, ...)`** rather
+     than in place, since input and output no longer share a width. The
+     managed callback reads the ring into a grow-only float scratch; the
+     feeder into a fixed float chunk.
+   - **Units that used to coincide had to be told apart.** The feeder's prime
+     latch adds the bridge's depth to the ring's, and those are now device
+     bytes and float bytes, so `PrimeLatch.TryRelease` counts frames.
+     `IAudioSink.BufferedBytes` became `BufferedFrames` for the same reason -
+     it is subtracted from ring-byte positions.
+   - **A 24-bit file on a device that refused S24** is now requantised by
+     `OutputStage`, dithered, rather than narrowed by swresample before the
+     ring. `CanonicalFormatTests` holds it to the same 1.5-count bound and to
+     zero bias, which is the difference from truncating.
+   - **Bit-exactness re-proved, not assumed.** The real-decode tests narrow the
+     float capture back to 16 bits through `Pcm.ToS16`, which fails on any
+     sample off the 16-bit grid rather than rounding it; `PcmOracle` compares
+     float to the fixture's exact float image bit for bit. New:
+     `A_24_bit_file_comes_out_of_a_24_bit_device_as_the_integers_it_holds`
+     decodes a 24-bit WAV through FFmpeg and an S24 `OutputStage` and gets
+     every integer back (and fails at frame 1 if the low 8 bits are dropped).
+   - **One oracle hole closed.** Float can carry NaN; every comparison against
+     one is false, so `PcmOracle.ToneMismatch` would have passed NaN audio. It
+     now refuses non-finite samples.
+   - **Cost: memory.** Float frames are 8 bytes against S24's 6, so the shared
+     ring and every staging ring are a third larger in bytes for the same
+     time - the 60s staging ring is about 23MB at 48kHz, from 17MB.
+   - **Listened to on the Mac and on an iPhone, both formats** - a
+     24-bit/96kHz ALAC album at S24 and again under `FLOWER_DEVICE_FORMAT=s16`,
+     with the log confirming each; no difference worth noting either way. The
+     S16 case stands in for a device that refuses S24, which now gets
+     `OutputStage`'s dithered requantisation - except that in shared mode
+     none does, because miniaudio converts whatever it is handed. `FLOWER_DEVICE_FORMAT=s16` opens the
+     device at 16 bits anyway, so that path can be heard; on an iPhone, launch
+     with `DEVICECTL_CHILD_FLOWER_DEVICE_FORMAT=s16 scripts/deploy-ios-device.sh`,
+     which `devicectl` passes through to the app. The log says
+     `Rendering the output device's native ...Hz at S16` when it took.
 3. **Move the output stage into the C callback**, bridge carrying raw float.
    Mobile only, since mobile is where the bridge runs. This is the step that
    fixes M.
@@ -892,9 +957,9 @@ Not urgent. Desktop's controls are responsive today and it has no defect waiting
 on any of this. Mobile's lag is real but reported as not a problem in practice,
 for the good reason that the phone's own volume buttons bypass it entirely.
 
-Steps 1–2 are worth doing on their own merits whenever the FFAudio.NET side is
-convenient: a fidelity and simplification win with no native work and no build
-infrastructure. Step 3 is the one that fixes a defect. Steps 5–7 are gated on
+Steps 1–2 are built (see above): a fidelity and simplification win with no
+native work and no build infrastructure. Step 3 is the one that fixes a defect,
+and is next. Steps 5–7 are gated on
 build infrastructure more than on anything audio, and should ride along with
 `AUTO-UPDATE-PLAN.md` Phase 4 rather than justify a CI matrix by themselves.
 

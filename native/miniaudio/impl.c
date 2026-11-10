@@ -522,6 +522,15 @@ void flower_coreaudio_diagnostics_callback_completed(ma_device* pDevice, uint32_
 #define FLOWER_AUDIO_BRIDGE_DEVICE_CAPACITY 4
 #define FLOWER_AUDIO_BRIDGE_FINGERPRINT_STRIDE 64
 
+/* The render callback touches nothing but these atomics, so an atomic that
+   falls back to a lock - libatomic's, on a target without a native 64-bit
+   exclusive pair - would put a lock back on the real-time thread. Every
+   shipped ABI is lock-free today (armeabi-v7a inlines LDREXD/STREXD); this
+   makes a target where it is not refuse to build rather than ship it. */
+_Static_assert(ATOMIC_LLONG_LOCK_FREE == 2, "64-bit atomics must be lock-free on the render thread");
+_Static_assert(ATOMIC_INT_LOCK_FREE == 2, "32-bit atomics must be lock-free on the render thread");
+_Static_assert(ATOMIC_POINTER_LOCK_FREE == 2, "pointer atomics must be lock-free on the render thread");
+
 struct flower_audio_bridge
 {
     uint8_t* pData;

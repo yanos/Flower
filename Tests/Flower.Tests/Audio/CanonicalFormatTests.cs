@@ -1,35 +1,31 @@
 using System;
 using System.Runtime.InteropServices;
 
-using FFAudio;
-
 using Flower.Audio;
-using Flower.Audio.Ffmpeg;
 
 using Miniaudio;
 
 namespace Flower.Tests.Audio;
 
-// The canonical PCM format, now that it is more than one format.
+// The canonical PCM format, float from the decoder to OutputStage, and the
+// one conversion out of it: requantisation to whichever integer format the
+// device was opened in.
 //
-// LibVLC's amem seam truncates every track to 16 bits before Flower sees a
-// byte of it (docs/AUDIOPHILE-PLAN.md, "The 16-bit ceiling, measured"), and
-// ffaudio exists to get past that. But moving the ceiling out of LibVLC
-// is not the same as removing it: PcmFormat.Default.BytesPerSample was a const 2,
-// and every stage between the decoder and the sound card was built on it, so a
-// 24-bit decode would have been narrowed one stage later by the pipeline
-// itself. FfmpegDecoderTests proves the decoder can carry 24 bits; this proves
-// the pipeline can.
+// What float has to be held to is that it costs an integer source nothing.
+// A 16- or 24-bit sample is exact in a float's 24-bit mantissa, and scaling it
+// by a power of two is an exponent change, so a unity-gain pass must hand back
+// the integers that went in - at 24 bits too, which is the widest integer
+// format that survives this exactly, and why DeviceSampleFormat stops there.
+// OutputStageTests holds the S16 path to the same bar.
 //
-// Everything here is arithmetic over spans - no device, no decoder, no LibVLC.
+// Everything here is arithmetic over spans - no device, no decoder.
 public class CanonicalFormatTests
 {
     private const int Channels = (int)GaplessFormat.Channels;
 
-    // Deliberately not GaplessFormat's own constants: the point of these is to
-    // fail if the layout ever stops being packed three-byte little-endian,
-    // which is what miniaudio's ma_format_s24 and the façade's pack_s24 both
-    // mean by S24.
+    // Deliberately not derived from DeviceSampleFormat: the point of these is
+    // to fail if the layout ever stops being packed three-byte little-endian,
+    // which is what miniaudio's ma_format_s24 means by S24.
     private const int S24Max = 8_388_607;
     private const int S24Min = -8_388_608;
 
@@ -42,17 +38,16 @@ public class CanonicalFormatTests
         PrebufferMs = 0,
     };
 
-    private static byte[] PackS24(ReadOnlySpan<int> samples)
+    // An integer source of the given width, as the decoder hands it to the
+    // pipeline: normalised by 2^(bits-1), exactly as FFmpeg converts it.
+    private static float[] Normalised(ReadOnlySpan<int> samples, int bits)
     {
-        var bytes = new byte[samples.Length * 3];
+        var scale = (float)(1 << (bits - 1));
+        var pcm = new float[samples.Length];
         for (var i = 0; i < samples.Length; i++)
-        {
-            bytes[i * 3] = (byte)samples[i];
-            bytes[i * 3 + 1] = (byte)(samples[i] >> 8);
-            bytes[i * 3 + 2] = (byte)(samples[i] >> 16);
-        }
+            pcm[i] = samples[i] / scale;
 
-        return bytes;
+        return pcm;
     }
 
     private static int[] UnpackS24(ReadOnlySpan<byte> bytes)
@@ -70,27 +65,40 @@ public class CanonicalFormatTests
         return samples;
     }
 
+    private static int[] UnpackS16(ReadOnlySpan<byte> bytes)
+    {
+        var shorts = MemoryMarshal.Cast<byte, short>(bytes);
+        var samples = new int[shorts.Length];
+        for (var i = 0; i < shorts.Length; i++)
+            samples[i] = shorts[i];
+
+        return samples;
+    }
+
+    private static int[] Unpack(DeviceSampleFormat format, ReadOnlySpan<byte> bytes) =>
+        format == DeviceSampleFormat.S16 ? UnpackS16(bytes) : UnpackS24(bytes);
+
     // Past the declick fade-in that the first buffer of any new generation
     // gets, so a test measuring something else is not measuring that.
-    private static OutputStage Stage(PcmSampleFormat format)
+    private static OutputStage Stage(DeviceSampleFormat format)
     {
         var stage = new OutputStage(PcmFormat.Default.SampleRate, format) { Timing = Silent() };
         stage.TargetGain = 1f;
-        stage.Process(new byte[4800 * Channels * GaplessFormat.BytesPerSampleOf(format)], generation: 1);
+        stage.Process(new float[4800 * Channels], new byte[4800 * format.BytesPerFrame()], generation: 1);
         return stage;
     }
 
-    // The same bar OutputStageTests holds the S16 path to, at 24: widening to
-    // float, filtering, ramping and requantising is only worth doing if it is
-    // transparent when asked to do nothing.
-    //
-    // It is not a foregone conclusion at this width. A float mantissa holds 24
-    // bits, so S24 is the widest integer format that survives this round trip
-    // exactly - which is why PcmSampleFormat stops here rather than at S32.
+    private static int[] Render(OutputStage stage, float[] pcm)
+    {
+        var output = new byte[pcm.Length * stage.DeviceFormat.BytesPerSample()];
+        stage.Process(pcm, output, generation: 1);
+        return Unpack(stage.DeviceFormat, output);
+    }
+
     [Fact]
     public void At_24_bits_a_unity_gain_pass_is_bit_identical()
     {
-        var stage = Stage(PcmSampleFormat.S24);
+        var stage = Stage(DeviceSampleFormat.S24);
 
         var samples = new int[4800 * Channels];
         for (var i = 0; i < samples.Length; i++)
@@ -102,30 +110,25 @@ public class CanonicalFormatTests
             samples[i] = Math.Clamp(samples[i], S24Min, S24Max);
         }
 
-        var input = PackS24(samples);
-        var buffer = (byte[])input.Clone();
-        stage.Process(buffer, generation: 1);
-
-        Assert.Equal(input, buffer);
+        Assert.Equal(samples, Render(stage, Normalised(samples, 24)));
     }
 
-    // The classic packed-S24 bug, and the reason UnpackS24 above exists twice
-    // over: three bytes carry no sign bit in the 32-bit sense, so a negative
-    // sample read without sign extension comes back as a large positive one -
-    // full-scale positive noise in place of quiet audio.
+    // The classic packed-S24 bug: three bytes carry no sign bit in the 32-bit
+    // sense, so a negative sample written or read without care comes back as
+    // a large positive one - full-scale positive noise in place of quiet
+    // audio. Full scale itself is here too: -1.0 is exactly S24Min, and the
+    // largest positive sample is one LSB short of +1.0.
     [Fact]
     public void Negative_24_bit_samples_survive_the_round_trip()
     {
-        var stage = Stage(PcmSampleFormat.S24);
+        var stage = Stage(DeviceSampleFormat.S24);
 
         int[] samples = [S24Min, -1, -256, -8_388_607, 0, 1, 256, S24Max];
-        var buffer = PackS24(samples);
-        stage.Process(buffer, generation: 1);
 
-        Assert.Equal(samples, UnpackS24(buffer));
+        Assert.Equal(samples, Render(stage, Normalised(samples, 24)));
     }
 
-    // What the widening is actually for, stated as the thing a listener would
+    // What 24 bits are actually for, stated as the thing a listener would
     // notice: signal quiet enough to fall off the bottom of 16 bits is still
     // there at 24.
     //
@@ -135,17 +138,14 @@ public class CanonicalFormatTests
     [Fact]
     public void A_tone_below_the_16_bit_noise_floor_survives_at_24()
     {
-        var stage = Stage(PcmSampleFormat.S24);
+        var stage = Stage(DeviceSampleFormat.S24);
 
         const double amplitude = S24Max / 65536.0; // -96dBFS, in 24-bit counts
         var samples = new int[2400 * Channels];
         for (var i = 0; i < samples.Length; i++)
             samples[i] = (int)Math.Round(amplitude * Math.Sin(2 * Math.PI * 440 * (i / Channels) / 48000.0));
 
-        var buffer = PackS24(samples);
-        stage.Process(buffer, generation: 1);
-
-        var output = UnpackS24(buffer);
+        var output = Render(stage, Normalised(samples, 24));
         Assert.Equal(samples, output);
 
         // And it is a real waveform rather than a couple of counts of
@@ -171,17 +171,14 @@ public class CanonicalFormatTests
         var boosted = new EqualizerSettings { Enabled = true };
         Array.Fill(boosted.BandGainsDb, 12.0);
 
-        var stage = Stage(PcmSampleFormat.S24);
+        var stage = Stage(DeviceSampleFormat.S24);
         stage.Equalizer = Equalizer.BuildFrom(boosted, PcmFormat.Default.SampleRate);
 
         var samples = new int[4800 * Channels];
         for (var i = 0; i < samples.Length; i++)
             samples[i] = (int)(S24Max * 0.95 * Math.Sin(2 * Math.PI * 997 * (i / Channels) / 48000.0));
 
-        var buffer = PackS24(samples);
-        stage.Process(buffer, generation: 1);
-
-        var output = UnpackS24(buffer);
+        var output = Render(stage, Normalised(samples, 24));
         var peak = 0;
         foreach (var sample in output)
             peak = Math.Max(peak, Math.Abs(sample));
@@ -193,20 +190,19 @@ public class CanonicalFormatTests
             Assert.InRange(sample, S24Min, S24Max);
     }
 
-
     // The requantisation noise floor moves down with the format. Both widths
     // land within one and a half counts of the exact value - a half from the
     // rounding and a whole from the TPDF dither's one-LSB triangle, which is
     // the noise it trades the distortion for - but a count is 256 times
-    // smaller at 24 bits, which is the whole of what a wider pipeline buys.
+    // smaller at 24 bits, which is the whole of what a wider device buys.
     //
     // Parameterised over both formats rather than written for the new one:
-    // the arithmetic is now shared, so the assertion that S16 still behaves is
+    // the arithmetic is shared, so the assertion that S16 still behaves is
     // as much the point as the assertion that S24 does.
     [Theory]
-    [InlineData(PcmSampleFormat.S16, 32767)]
-    [InlineData(PcmSampleFormat.S24, S24Max)]
-    public void Requantisation_error_is_at_most_one_lsb_of_the_destination_format(PcmSampleFormat format, int fullScale)
+    [InlineData(DeviceSampleFormat.S16, 32767)]
+    [InlineData(DeviceSampleFormat.S24, S24Max)]
+    public void Requantisation_error_is_at_most_one_lsb_of_the_destination_format(DeviceSampleFormat format, int fullScale)
     {
         var stage = Stage(format);
 
@@ -220,9 +216,8 @@ public class CanonicalFormatTests
         for (var i = 0; i < count; i++)
             source[i] = (int)(fullScale * 0.9 * Math.Sin(2 * Math.PI * 997 * (i / Channels) / 48000.0));
 
-        var buffer = format == PcmSampleFormat.S16 ? PackS16(source) : PackS24(source);
-        stage.Process(buffer, generation: 1);
-        var output = format == PcmSampleFormat.S16 ? UnpackS16(buffer) : UnpackS24(buffer);
+        var bits = format.BytesPerSample() * 8;
+        var output = Render(stage, Normalised(source, bits));
 
         var worst = 0.0;
         for (var i = 0; i < count; i++)
@@ -231,59 +226,48 @@ public class CanonicalFormatTests
         Assert.True(worst <= 1.5, $"worst requantisation error was {worst} counts");
     }
 
-    private static byte[] PackS16(ReadOnlySpan<int> samples)
-    {
-        var bytes = new byte[samples.Length * 2];
-        var shorts = MemoryMarshal.Cast<byte, short>(bytes.AsSpan());
-        for (var i = 0; i < samples.Length; i++)
-            shorts[i] = (short)samples[i];
-
-        return bytes;
-    }
-
-    private static int[] UnpackS16(ReadOnlySpan<byte> bytes)
-    {
-        var shorts = MemoryMarshal.Cast<byte, short>(bytes);
-        var samples = new int[shorts.Length];
-        for (var i = 0; i < shorts.Length; i++)
-            samples[i] = shorts[i];
-
-        return samples;
-    }
-
-    [Theory]
-    [InlineData(PcmSampleFormat.S16, 2, 4)]
-    [InlineData(PcmSampleFormat.S24, 3, 6)]
-    public void Frame_size_follows_the_sample_format(PcmSampleFormat format, int bytesPerSample, int bytesPerFrame)
-    {
-        Assert.Equal(bytesPerSample, GaplessFormat.BytesPerSampleOf(format));
-        Assert.Equal(bytesPerFrame, GaplessFormat.BytesPerSampleOf(format) * (int)GaplessFormat.Channels);
-    }
-
-    // Buffers allocated before the negotiation has happened - the shared ring
-    // above all - are sized in this, so it has to stay the widest the
-    // pipeline can actually carry. If a format is ever added above S24, a ring
-    // sized on a stale maximum silently holds less audio in time than its
-    // comment claims.
+    // A device that refused 24 bits, playing a 24-bit file. The decoder no
+    // longer knows what the device took, so the narrowing is OutputStage's,
+    // and it has to be a requantisation - dithered, within the same one and a
+    // half counts - rather than the low byte simply dropped, which is a
+    // truncation: biased downward by half an LSB and correlated with the
+    // signal, i.e. distortion.
     [Fact]
-    public void The_declared_maximum_frame_is_the_widest_format_there_is()
+    public void A_24_bit_source_on_a_16_bit_device_is_requantised_rather_than_truncated()
     {
-        foreach (PcmSampleFormat format in Enum.GetValues<PcmSampleFormat>())
-            Assert.True(GaplessFormat.BytesPerSampleOf(format) <= GaplessFormat.MaxBytesPerSample);
+        var stage = Stage(DeviceSampleFormat.S16);
 
-        Assert.Equal(GaplessFormat.MaxBytesPerSample * (int)GaplessFormat.Channels, GaplessFormat.MaxBytesPerFrame);
+        var count = 4800 * Channels;
+        var source = new int[count];
+        for (var i = 0; i < count; i++)
+            source[i] = (int)(S24Max * 0.5 * Math.Sin(2 * Math.PI * 997 * (i / Channels) / 48000.0)) + (i % 251) - 125;
+
+        var output = Render(stage, Normalised(source, 24));
+
+        var worst = 0.0;
+        var bias = 0.0;
+        for (var i = 0; i < count; i++)
+        {
+            var error = output[i] - source[i] / 256.0;
+            worst = Math.Max(worst, Math.Abs(error));
+            bias += error;
+        }
+
+        Assert.True(worst <= 1.5, $"worst requantisation error was {worst} counts");
+
+        // A truncation's error averages about -0.5 counts; a rounding with
+        // TPDF dither averages zero.
+        Assert.InRange(bias / count, -0.1, 0.1);
     }
 
     // Packed three-byte little-endian on both sides of the P/Invoke, so
-    // nothing converts between the ring and the device buffer. The mapping is
-    // one line and exactly the kind of line that gets "simplified".
+    // miniaudio converts nothing between the callback's buffer and the device.
+    // The mapping is one line and exactly the kind of line that gets
+    // "simplified".
     [Fact]
-    public void The_pipeline_format_maps_onto_miniaudio_and_ffmpeg_without_conversion()
+    public void The_device_format_maps_onto_miniaudio_without_conversion()
     {
-        Assert.Equal(ma_format.ma_format_s16, MiniaudioSink.MiniaudioFormatFor(PcmSampleFormat.S16));
-        Assert.Equal(ma_format.ma_format_s24, MiniaudioSink.MiniaudioFormatFor(PcmSampleFormat.S24));
-
-        Assert.Equal(SampleFormat.S16, FfmpegTrackDecoder.FormatFor(PcmSampleFormat.S16));
-        Assert.Equal(SampleFormat.S24, FfmpegTrackDecoder.FormatFor(PcmSampleFormat.S24));
+        Assert.Equal(ma_format.ma_format_s16, MiniaudioSink.MiniaudioFormatFor(DeviceSampleFormat.S16));
+        Assert.Equal(ma_format.ma_format_s24, MiniaudioSink.MiniaudioFormatFor(DeviceSampleFormat.S24));
     }
 }

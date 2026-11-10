@@ -96,21 +96,25 @@ namespace Flower.Audio
         }
 
         // Opens the latch once enough is buffered, or once the deadline has
-        // passed. Returns true on the call that opens it. `capacityBytes` is
+        // passed. Returns true on the call that opens it. `capacityFrames` is
         // the most the caller can ever have buffered: a requirement above it
         // could only ever be met by the deadline, so it is capped just under.
-        public bool TryRelease(long bufferedBytes, long capacityBytes, AudioTimingSettings timing, PcmFormat format, long now)
+        //
+        // In frames rather than bytes because the feeder's "buffered" is two
+        // buffers in two formats - the bridge holds device PCM, the ring
+        // behind it float - and only a frame means the same in both.
+        public bool TryRelease(long bufferedFrames, long capacityFrames, AudioTimingSettings timing, uint sampleRate, long now)
         {
             if (_primed)
                 return false;
 
             var milliseconds = _rebuffering ? timing.RebufferMs : timing.PrebufferMs;
             var required = Math.Min(
-                milliseconds * (long)format.SampleRate * format.BytesPerFrame / 1000,
-                capacityBytes - capacityBytes / 10);
+                milliseconds * (long)sampleRate / 1000,
+                capacityFrames - capacityFrames / 10);
 
-            var enough = bufferedBytes >= required;
-            var expired = now >= _deadline && (!_rebuffering || bufferedBytes > 0);
+            var enough = bufferedFrames >= required;
+            var expired = now >= _deadline && (!_rebuffering || bufferedFrames > 0);
             if (!enough && !expired)
                 return false;
 

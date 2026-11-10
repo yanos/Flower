@@ -12,14 +12,34 @@ namespace Flower.Tests.Decoding.Scenarios;
 // TestSupport/Pcm.cs is the richer version of this - THD,
 // step analysis, silence runs - for tests that only ever run on a desktop.
 // What is here is the subset a device can answer with.
+//
+// Everything here reads the pipeline's own PCM, float (see GaplessFormat),
+// rather than narrowing it to the fixture's 16 bits first. Narrowing means
+// rounding, and rounding would pass a decoder that came back a fraction of an
+// LSB off; read as float, the fixture's samples have exact images
+// (k / 32768) and a decoder either reproduces them or does not.
 public static class PcmOracle
 {
-    private static ReadOnlySpan<short> Samples(ReadOnlySpan<byte> pcm) => MemoryMarshal.Cast<byte, short>(pcm);
+    private const float S16Scale = 32768f;
 
-    // Byte-identical to the PCM the fixture was built from. SyntheticWav
-    // writes at the pipeline's own rate and channel count precisely so no
-    // resampling stands between the file and this comparison - anything but an
-    // exact match means something in the path is altering the audio.
+    private static ReadOnlySpan<float> Samples(ReadOnlySpan<byte> pcm) => MemoryMarshal.Cast<byte, float>(pcm);
+
+    // The pipeline PCM a 16-bit fixture's own samples decode to, exactly.
+    public static byte[] FromFixture(ReadOnlySpan<byte> s16)
+    {
+        var samples = MemoryMarshal.Cast<byte, short>(s16);
+        var pcm = new float[samples.Length];
+        for (var i = 0; i < samples.Length; i++)
+            pcm[i] = samples[i] / S16Scale;
+
+        return MemoryMarshal.AsBytes(pcm.AsSpan()).ToArray();
+    }
+
+    // Identical to the PCM the fixture was built from. SyntheticWav writes at
+    // the pipeline's own rate and channel count precisely so no resampling
+    // stands between the file and this comparison - anything but an exact
+    // match means something in the path is altering the audio. Both sides are
+    // pipeline PCM: see FromFixture.
     public static string? Diff(ReadOnlySpan<byte> expected, ReadOnlySpan<byte> actual)
     {
         var expectedSamples = Samples(expected);
@@ -28,11 +48,12 @@ public static class PcmOracle
 
         for (var i = 0; i < shared; i++)
         {
-            if (expectedSamples[i] == actualSamples[i])
+            if (BitConverter.SingleToInt32Bits(expectedSamples[i]) == BitConverter.SingleToInt32Bits(actualSamples[i]))
                 continue;
 
             var frame = i / (int)GaplessFormat.Channels;
-            return $"diverges at frame {frame} ({Milliseconds(frame):F1}ms): expected {expectedSamples[i]}, got {actualSamples[i]}";
+            return $"diverges at frame {frame} ({Milliseconds(frame):F1}ms): expected {expectedSamples[i] * S16Scale}, "
+                + $"got {actualSamples[i] * S16Scale} (16-bit units)";
         }
 
         if (expectedSamples.Length != actualSamples.Length)
@@ -54,18 +75,36 @@ public static class PcmOracle
         if (frames < 2)
             return $"too little audio to judge: {frames} frames";
 
-        for (var frame = 1; frame < frames; frame++)
+        for (var frame = 0; frame < frames; frame++)
         {
-            var expected = unchecked((short)(samples[(frame - 1) * channels] + 1));
             for (var channel = 0; channel < channels; channel++)
             {
-                var actual = samples[frame * channels + channel];
+                if (AsS16(samples[frame * channels + channel]) is not { } actual)
+                {
+                    return $"frame {frame} channel {channel} ({Milliseconds(frame):F1}ms) is "
+                        + $"{samples[frame * channels + channel] * S16Scale}, which no 16-bit sample decodes to";
+                }
+
+                if (frame == 0)
+                    continue;
+
+                var expected = unchecked((short)(AsS16(samples[(frame - 1) * channels])!.Value + 1));
                 if (actual != expected)
                     return $"ramp breaks at frame {frame} channel {channel} ({Milliseconds(frame):F1}ms): {actual}, expected {expected}";
             }
         }
 
         return null;
+    }
+
+    // The 16-bit sample a pipeline sample is the exact image of, or null when
+    // it is not the image of any.
+    private static short? AsS16(float sample)
+    {
+        var scaled = sample * S16Scale;
+        return scaled == MathF.Round(scaled) && scaled is >= short.MinValue and <= short.MaxValue
+            ? (short)scaled
+            : null;
     }
 
     // A decoder that produces the right *number* of bytes and none of the
@@ -98,10 +137,19 @@ public static class PcmOracle
         if (samples.Length == 0)
             return "no audio came out at all";
 
+        // Before anything is measured: a NaN makes every comparison below
+        // false, which would read as "nothing elsewhere is as loud as the
+        // tone" - a pass. Integer PCM could not carry one; float can.
+        for (var i = 0; i < samples.Length; i++)
+        {
+            if (!float.IsFinite(samples[i]))
+                return $"sample {i} is {samples[i]}, which is not audio";
+        }
+
         var channels = (int)GaplessFormat.Channels;
         var mono = new double[samples.Length / channels];
         for (var frame = 0; frame < mono.Length; frame++)
-            mono[frame] = samples[frame * channels] / 32768.0;
+            mono[frame] = samples[frame * channels];
 
         var atTone = Magnitude(mono, toneHz);
         if (atTone <= 0)

@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Threading;
 
 namespace Flower.Audio
@@ -35,10 +36,15 @@ namespace Flower.Audio
         private readonly IAudioBridge _bridge;
         private readonly OutputStage _outputStage;
 
-        // The stage is built for the format the device was opened in, so its
-        // rate and width are this feeder's too.
-        private readonly PcmFormat _format;
-        private readonly byte[] _chunk;
+        // The stage is set to the format the device was opened in, so its
+        // rate and width are this feeder's too: one feeder per opened device.
+        private readonly uint _sampleRate;
+        private readonly int _deviceBytesPerFrame;
+
+        // One chunk on its way through: read out of the ring as float into
+        // _chunk, processed there, and requantised into _output for the bridge.
+        private readonly float[] _chunk;
+        private readonly byte[] _output;
 
         private Thread? _thread;
         private volatile bool _running;
@@ -74,8 +80,10 @@ namespace Flower.Audio
             _ring = ring;
             _bridge = bridge;
             _outputStage = outputStage;
-            _format = new PcmFormat(outputStage.SampleRate, outputStage.SampleFormat);
-            _chunk = new byte[ChunkFrames * _format.BytesPerFrame];
+            _sampleRate = outputStage.SampleRate;
+            _deviceBytesPerFrame = outputStage.DeviceFormat.BytesPerFrame();
+            _chunk = new float[ChunkFrames * (int)GaplessFormat.Channels];
+            _output = new byte[ChunkFrames * _deviceBytesPerFrame];
 
             // Adopt the ring's generation rather than flushing on the first
             // tick: a freshly built bridge holds nothing, and a flush nobody
@@ -86,11 +94,11 @@ namespace Flower.Audio
             ArmPrimeLatch();
         }
 
-        // Bytes handed to the bridge that the device has not rendered yet.
+        // Frames handed to the bridge that the device has not rendered yet.
         // Playback position is derived from the shared ring's read cursor,
         // which this thread advances ahead of what is audible, so the caller
         // subtracts this to keep the seek bar honest.
-        public int BufferedBytes => _bridge.Available;
+        public int BufferedFrames => _bridge.Available / _deviceBytesPerFrame;
 
         public long RebufferCount => _latch.RebufferCount;
 
@@ -210,17 +218,20 @@ namespace Flower.Audio
                 // so a read clamped to it is always one the bridge can take
                 // whole. That matters: these bytes are already gone from the
                 // shared ring by the time the write happens.
-                var free = _bridge.Capacity - _bridge.Available;
-                if (free < _format.BytesPerFrame)
+                var freeFrames = (_bridge.Capacity - _bridge.Available) / _deviceBytesPerFrame;
+                if (freeFrames <= 0)
                     break;
 
-                var want = Math.Min(_chunk.Length, free);
-                var read = _ring.Read(_chunk.AsSpan(0, want));
-                if (read <= 0)
+                var wantFrames = Math.Min(ChunkFrames, freeFrames);
+                var samples = _chunk.AsSpan(0, wantFrames * (int)GaplessFormat.Channels);
+                var read = _ring.Read(MemoryMarshal.AsBytes(samples));
+                var frames = read / GaplessFormat.BytesPerFrame;
+                if (frames <= 0)
                     break;
 
-                _outputStage.Process(_chunk.AsSpan(0, read), generation);
-                _bridge.Write(_chunk.AsSpan(0, read));
+                var output = _output.AsSpan(0, frames * _deviceBytesPerFrame);
+                _outputStage.Process(samples[..(frames * (int)GaplessFormat.Channels)], output, generation);
+                _bridge.Write(output);
                 moved += read;
             }
 
@@ -247,9 +258,9 @@ namespace Flower.Audio
                 return;
             }
 
-            var buffered = (long)_bridge.Available + _ring.AvailableBytes;
-            var capacity = (long)_bridge.Capacity + _ring.Capacity;
-            if (_latch.TryRelease(buffered, capacity, _outputStage.Timing, _format, now))
+            var buffered = (long)BufferedFrames + _ring.AvailableBytes / GaplessFormat.BytesPerFrame;
+            var capacity = (long)_bridge.Capacity / _deviceBytesPerFrame + _ring.Capacity / GaplessFormat.BytesPerFrame;
+            if (_latch.TryRelease(buffered, capacity, _outputStage.Timing, _sampleRate, now))
                 _bridge.SetPrimed(true);
         }
 

@@ -109,12 +109,16 @@ public class GaplessCoordinatorTests
     [Fact]
     public void Completion_log_warns_when_unplayed_pcm_has_no_armed_successor()
     {
-        var h = new Harness(captureLogs: true, sharedRingCapacity: 48_000);
+        // A quarter of a second left in the ring, comfortably past the 100ms
+        // the warning starts at - in time rather than bytes, so it stays past
+        // it whatever the pipeline's frame size is.
+        var quarterSecond = (int)PcmFormat.Default.SampleRate / 4 * PcmFormat.Default.BytesPerFrame;
+        var h = new Harness(captureLogs: true, sharedRingCapacity: 2 * quarterSecond);
         var a = T("A");
         h.Coordinator.Play(a);
         WaitUntil(() => h.LatestDecoderFor(a).StartDecodingCalled, "A should start");
         h.LatestDecoderFor(a).BytesProduced = 3 * 60 * (long)PcmFormat.Default.SampleRate * PcmFormat.Default.BytesPerFrame;
-        h.SharedRing.TryWrite(new byte[24_000]);
+        h.SharedRing.TryWrite(new byte[quarterSecond]);
 
         h.LatestDecoderFor(a).RaiseDrained();
 

@@ -12,11 +12,10 @@ namespace Flower.Tests.Audio
     // this waits on a clock.
     public class PrimeLatchTests
     {
-        private static readonly PcmFormat Format = PcmFormat.Default;
+        private const uint SampleRate = GaplessFormat.DefaultSampleRate;
         private const long Capacity = 64L * 1024 * 1024;
 
-        private static long Bytes(int milliseconds) =>
-            milliseconds * (long)Format.SampleRate * Format.BytesPerFrame / 1000;
+        private static long Frames(int milliseconds) => milliseconds * (long)SampleRate / 1000;
 
         private static long Ms(int milliseconds) => (long)(Stopwatch.Frequency * (milliseconds / 1000.0));
 
@@ -29,7 +28,7 @@ namespace Flower.Tests.Audio
         {
             var latch = new PrimeLatch();
             latch.ArmAfterFlush(0);
-            Assert.True(latch.TryRelease(Bytes(timing.PrebufferMs), Capacity, timing, Format, 0));
+            Assert.True(latch.TryRelease(Frames(timing.PrebufferMs), Capacity, timing, SampleRate, 0));
             latch.Rendered(1024);
             return latch;
         }
@@ -41,8 +40,8 @@ namespace Flower.Tests.Audio
             var latch = new PrimeLatch();
             latch.ArmAfterFlush(0);
 
-            Assert.False(latch.TryRelease(Bytes(100), Capacity, timing, Format, Ms(10)));
-            Assert.True(latch.TryRelease(Bytes(200), Capacity, timing, Format, Ms(20)));
+            Assert.False(latch.TryRelease(Frames(100), Capacity, timing, SampleRate, Ms(10)));
+            Assert.True(latch.TryRelease(Frames(200), Capacity, timing, SampleRate, Ms(20)));
             Assert.True(latch.IsPrimed);
         }
 
@@ -53,7 +52,7 @@ namespace Flower.Tests.Audio
             var latch = new PrimeLatch();
             latch.ArmAfterFlush(0);
 
-            Assert.True(latch.TryRelease(0, Capacity, timing, Format, Ms(PrimeLatch.FlushDeadlineMs)));
+            Assert.True(latch.TryRelease(0, Capacity, timing, SampleRate, Ms(PrimeLatch.FlushDeadlineMs)));
         }
 
         [Fact]
@@ -66,8 +65,8 @@ namespace Flower.Tests.Audio
             Assert.True(latch.IsRebuffering);
 
             // A prebuffer's worth is no longer enough - that is the blip.
-            Assert.False(latch.TryRelease(Bytes(200), Capacity, timing, Format, Ms(1100)));
-            Assert.True(latch.TryRelease(Bytes(1500), Capacity, timing, Format, Ms(3000)));
+            Assert.False(latch.TryRelease(Frames(200), Capacity, timing, SampleRate, Ms(1100)));
+            Assert.True(latch.TryRelease(Frames(1500), Capacity, timing, SampleRate, Ms(3000)));
             Assert.Equal(1, latch.RebufferCount);
         }
 
@@ -78,8 +77,8 @@ namespace Flower.Tests.Audio
             var latch = Playing(timing);
             latch.RanDry(timing, 0);
 
-            Assert.False(latch.TryRelease(Bytes(300), Capacity, timing, Format, Ms(PrimeLatch.RebufferDeadlineMs - 1)));
-            Assert.True(latch.TryRelease(Bytes(300), Capacity, timing, Format, Ms(PrimeLatch.RebufferDeadlineMs)));
+            Assert.False(latch.TryRelease(Frames(300), Capacity, timing, SampleRate, Ms(PrimeLatch.RebufferDeadlineMs - 1)));
+            Assert.True(latch.TryRelease(Frames(300), Capacity, timing, SampleRate, Ms(PrimeLatch.RebufferDeadlineMs)));
         }
 
         // The last song in the queue ending looks exactly like running dry.
@@ -92,7 +91,7 @@ namespace Flower.Tests.Audio
             var latch = Playing(timing);
             latch.RanDry(timing, 0);
 
-            Assert.False(latch.TryRelease(0, Capacity, timing, Format, Ms(PrimeLatch.RebufferDeadlineMs * 10)));
+            Assert.False(latch.TryRelease(0, Capacity, timing, SampleRate, Ms(PrimeLatch.RebufferDeadlineMs * 10)));
             Assert.Equal(1, latch.RebufferCount);
         }
 
@@ -102,7 +101,7 @@ namespace Flower.Tests.Audio
             var timing = Timing();
             var latch = new PrimeLatch();
             latch.ArmAfterFlush(0);
-            latch.TryRelease(0, Capacity, timing, Format, Ms(PrimeLatch.FlushDeadlineMs));
+            latch.TryRelease(0, Capacity, timing, SampleRate, Ms(PrimeLatch.FlushDeadlineMs));
 
             Assert.False(latch.RanDry(timing, Ms(PrimeLatch.FlushDeadlineMs + 10)));
             Assert.True(latch.IsPrimed);
@@ -127,9 +126,9 @@ namespace Flower.Tests.Audio
             var timing = Timing();
             var latch = Playing(timing);
             latch.RanDry(timing, 0);
-            var smallCapacity = Bytes(1000);
+            var smallCapacity = Frames(1000);
 
-            Assert.True(latch.TryRelease(smallCapacity - smallCapacity / 10, smallCapacity, timing, Format, Ms(10)));
+            Assert.True(latch.TryRelease(smallCapacity - smallCapacity / 10, smallCapacity, timing, SampleRate, Ms(10)));
         }
     }
 }

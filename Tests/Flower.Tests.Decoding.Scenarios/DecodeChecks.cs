@@ -59,8 +59,7 @@ public static class DecodeChecks
     // second is well beyond any of that and well short of a missing verse.
     private const int LossyTailToleranceMs = 250;
 
-    // One decoder, named, plus the canonical PCM format decoding through it
-    // pins the pipeline to.
+    // One decoder, named.
     //
     // There is one entry in that list today, and the shape stays anyway. It is
     // what makes "the façade did not load" a failing check instead of a
@@ -68,7 +67,6 @@ public static class DecodeChecks
     // only reason it is per-decoder rather than a flat sequence of checks.
     public sealed record DecoderUnderTest(
         string Name,
-        PcmSampleFormat Format,
         Func<Track, GaplessRingBuffer, ITrackDecoder> Create);
 
     // Every decoder this platform can actually run. An unloadable façade
@@ -81,8 +79,7 @@ public static class DecodeChecks
         var decoders = new List<DecoderUnderTest>();
 
         if (Decoder.IsAvailable)
-            decoders.Add(new("FFmpeg", PcmSampleFormat.S24,
-                (track, ring) => new FfmpegTrackDecoder(track, ring, format: PcmFormat.Default with { SampleFormat = PcmSampleFormat.S24 })));
+            decoders.Add(new("FFmpeg", (track, ring) => new FfmpegTrackDecoder(track, ring)));
 
         return decoders;
     }
@@ -102,13 +99,6 @@ public static class DecodeChecks
         //
         // LibVLC is gone and the loop is not, because the half of that lesson
         // that still applies is about a decoder silently not being under test.
-        //
-        // Each decoder is told its own sample format rather than the run
-        // setting the canonical one and putting it back. GaplessFormat is
-        // process-wide, so moving it would reach every other test sharing
-        // this process - and it did: two checks failed intermittently, in the
-        // full suite only, for reasons that had nothing to do with what they
-        // check.
         var subjects = AvailableDecoders();
         results.AddRange(RequiredDecodersArePresent(subjects));
 
@@ -431,13 +421,9 @@ public static class DecodeChecks
         using var drain = new Drain(ring);
 
         SpinFor(() => drain.Collected > 2 * BytesPerSecond(), TimeSpan.FromSeconds(30));
-        var after = InFixtureUnits(subject, drain.Snapshot());
+        var after = drain.Snapshot();
 
-        // SeekSettled carries an offset in the pipeline's own bytes, so it is
-        // read back through the pipeline's own frame size rather than the
-        // fixture's.
-        var landedAtSeconds = landedAt
-            / (double)(GaplessFormat.DefaultSampleRate * GaplessFormat.BytesPerSampleOf(subject.Format) * GaplessFormat.Channels);
+        var landedAtSeconds = landedAt / (double)BytesPerSecond();
         if (landedAtSeconds < 3.5 || landedAtSeconds > 6.5)
             throw new CheckFailedException($"a seek to the middle of a 10s track landed at {landedAtSeconds:F2}s");
 
@@ -499,7 +485,7 @@ public static class DecodeChecks
         // legitimately race the drain thread and see nothing at all.
         drain.Settle(decoder.BytesProduced, decoderFaulted: true);
 
-        var partial = InFixtureUnits(subject, drain.Snapshot());
+        var partial = drain.Snapshot();
         if (partial.Length == 0)
             throw new CheckFailedException($"no audio at all came out before the cut ({decoder.BytesProduced} bytes decoded)");
 
@@ -518,46 +504,11 @@ public static class DecodeChecks
         Duration = duration,
     };
 
-    // Bytes as the fixtures themselves hold them: 16-bit stereo at the
-    // pipeline's rate. Everything decoded is narrowed to this before an
-    // oracle sees it, so every length and offset in this file means the same
-    // thing whatever canonical format the decoder under check pins the
-    // pipeline to. See InFixtureUnits.
-    private const int FixtureBytesPerFrame = 2 * (int)GaplessFormat.Channels;
-
-    private static int BytesPerSecond() => (int)GaplessFormat.DefaultSampleRate * FixtureBytesPerFrame;
-
-    // The same second, counted in the bytes the decoder under check actually
-    // writes: FFmpeg's are half as many again as the fixture's. Used only for
-    // measuring what the ring holds against what the decoder produced, which
-    // is a question in the pipeline's units rather than the fixture's.
-    private static int PipelineBytesPerSecond(DecoderUnderTest subject) =>
-        (int)GaplessFormat.DefaultSampleRate * GaplessFormat.BytesPerSampleOf(subject.Format) * (int)GaplessFormat.Channels;
-
-    // Whatever the decoder delivered, in the fixture's units.
-    //
-    // Narrowing packed 24 back to 16 is exact here rather than approximate,
-    // and that is a fact about the sources, not a tolerance: every fixture is
-    // 16-bit, so FFmpeg's widening is a shift of exactly eight bits
-    // (swresample scales S16 to S32 by 16, pack_s24 keeps the top three
-    // bytes) and dropping the low byte undoes it. A byte-for-byte oracle
-    // stays byte-for-byte, and a decoder that got the widening wrong fails it
-    // rather than being quietly rounded into passing.
-    private static byte[] InFixtureUnits(DecoderUnderTest subject, byte[] pcm)
-    {
-        if (subject.Format != PcmSampleFormat.S24)
-            return pcm;
-
-        var samples = pcm.Length / 3;
-        var narrowed = new byte[samples * 2];
-        for (var i = 0; i < samples; i++)
-        {
-            narrowed[i * 2] = pcm[i * 3 + 1];
-            narrowed[i * 2 + 1] = pcm[i * 3 + 2];
-        }
-
-        return narrowed;
-    }
+    // Everything this file measures is the pipeline's own PCM, as the decoder
+    // wrote it into the ring - float, at the fixture's rate, which SyntheticWav
+    // writes at precisely so nothing resamples. The fixtures themselves are
+    // 16-bit; PcmOracle.FromFixture is the one place the two meet.
+    private static int BytesPerSecond() => (int)GaplessFormat.DefaultSampleRate * GaplessFormat.BytesPerFrame;
 
     // The fixture's own samples, which is what the decoder should hand back
     // byte for byte: SyntheticWav writes at the pipeline's rate and channel
@@ -698,7 +649,7 @@ public static class DecodeChecks
     private static void AssertMatchesSource(byte[] wav, byte[] decoded)
     {
         const int headerSize = 44;
-        var expected = wav.AsSpan(headerSize);
+        var expected = PcmOracle.FromFixture(wav.AsSpan(headerSize)).AsSpan();
 
         if (decoded.Length == 0)
             throw new CheckFailedException("no audio came out at all");
@@ -774,11 +725,11 @@ public static class DecodeChecks
         // length oracle and reported as a track that ended early - the two
         // have entirely different causes and only one of them is about audio.
         var missing = produced - collected.Length;
-        if (missing > PipelineBytesPerSecond(subject) * TailToleranceMs / 1000)
+        if (missing > BytesPerSecond() * TailToleranceMs / 1000)
             throw new CheckFailedException(
                 $"the drain collected {collected.Length} of the {produced} bytes the decoder produced");
 
-        return InFixtureUnits(subject, collected);
+        return collected;
     }
 
     // Pulls the ring dry on its own thread and keeps what came out. Without a

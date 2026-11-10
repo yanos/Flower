@@ -77,15 +77,6 @@ namespace Flower.Audio
         // this returns, from the sink's Format.
         private static GaplessRingBuffer StartSink(IAudioSink sink)
         {
-            // S24 is simply what the decoder carries now. It used to be the
-            // result of an election - LibVLC pinned the pipeline to S16
-            // because amem hardcodes S16N and ignores the fourcc it is handed,
-            // so widening was only meaningful for the decoder that could fill
-            // the width. With one decoder left there is nothing to elect, and
-            // MiniaudioSink keeps the only vote that remains: a device that
-            // will not open at 24 bits narrows this back and reopens.
-            const PcmSampleFormat decoderFormat = PcmSampleFormat.S24;
-
             // Before the open, because the open is what freezes the rate. A
             // platform whose output is not ready yet answers "what rate are
             // you?" with a placeholder, and that placeholder is then the
@@ -99,15 +90,13 @@ namespace Flower.Audio
             // platform test.
             PlatformAudioSession.Current?.PrepareForOutput();
 
-            // The device tells MiniaudioSink its native rate and settles the
-            // sample format during Start, which is after this - so both are
-            // sized for the worst case rather than for what is configured
-            // right now. The conservative 48k fallback gives 44.1k a little
-            // more than two seconds of headroom and higher-rate devices a
-            // little less; MaxBytesPerFrame keeps that depth from halving if
-            // the format then negotiates up to 24-bit.
-            var ring = new GaplessRingBuffer(2 * (int)GaplessFormat.DefaultSampleRate * GaplessFormat.MaxBytesPerFrame);
-            sink.Start(ring, decoderFormat);
+            // The device tells MiniaudioSink its native rate during Start,
+            // which is after this - so the ring is sized for the fallback
+            // rather than for what the device will say. The conservative 48k
+            // gives 44.1k a little more than two seconds of headroom and
+            // higher-rate devices a little less.
+            var ring = new GaplessRingBuffer(2 * (int)GaplessFormat.DefaultSampleRate * GaplessFormat.BytesPerFrame);
+            sink.Start(ring);
             return ring;
         }
 
@@ -172,7 +161,7 @@ namespace Flower.Audio
             _sink.Stopped += (_, e) => Stopped?.Invoke(this, e);
             _userVolume = _sink.Volume;
             if (!sinkAlreadyStarted)
-                _sink.Start(_sharedRing, _coordinator.Format.SampleFormat);
+                _sink.Start(_sharedRing);
 
             // The former VlcAudioManager's single MediaPlayer used to raise
             // PositionChanged on its own as it played; splitting decode from
@@ -249,9 +238,10 @@ namespace Flower.Audio
                 // coordinator counts bytes read out of the shared ring, and a
                 // sink that buffers downstream of it reads ahead of the
                 // speaker by exactly that much.
-                var bytesProduced = Math.Max(0, _coordinator.CurrentTrackBytesProduced - _sink.BufferedBytes);
                 var format = _coordinator.Format;
-                return (long)(bytesProduced / (double)format.BytesPerFrame / format.SampleRate * 1000);
+                var framesProduced = Math.Max(0,
+                    _coordinator.CurrentTrackBytesProduced / format.BytesPerFrame - _sink.BufferedFrames);
+                return (long)(framesProduced / (double)format.SampleRate * 1000);
             }
         }
 
@@ -357,7 +347,7 @@ namespace Flower.Audio
             if (!_sink.IsPlaying
                 || _coordinator.CurrentTrack != null
                 || _sharedRing.AvailableBytes > 0
-                || _sink.BufferedBytes > 0)
+                || _sink.BufferedFrames > 0)
             {
                 _playedOutSince = 0;
                 return;

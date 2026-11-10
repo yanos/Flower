@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -75,8 +74,10 @@ public class RenderStarvationTests
 
         private void Decode()
         {
+            // Composed as 16-bit samples, which is what the assertions read
+            // back out of RenderPumpSink, and written as the pipeline's float.
             var buffer = new byte[_framesPerWrite * PcmFormat.Default.BytesPerFrame];
-            var samples = MemoryMarshal.Cast<byte, short>(buffer.AsSpan());
+            var samples = new short[_framesPerWrite * (int)GaplessFormat.Channels];
 
             GaplessRingBuffer? watched = null;
             var watchedGeneration = 0;
@@ -118,6 +119,7 @@ public class RenderStarvationTests
                     samples[i * 2 + 1] = value(frame + i);
                 }
 
+                Pcm.WriteS16(samples, buffer);
                 _writer.Write(buffer, () => _retired);
                 BytesProduced += buffer.Length;
 

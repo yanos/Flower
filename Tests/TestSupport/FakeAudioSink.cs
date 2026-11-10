@@ -64,14 +64,13 @@ public sealed class FakeAudioSink : IAudioSink
     // has to have run already. See GaplessAudioManager.StartSink.
     public bool IsStarted { get; private set; }
 
-    // A device that takes whatever sample format it is asked for, at the
-    // default rate - as a real one at 48kHz does.
+    // A device at the default rate - as a real one at 48kHz is. Captured
+    // holds what it read out of the ring as it was, in the pipeline's float.
     public PcmFormat Format { get; private set; } = PcmFormat.Default;
 
-    public void Start(GaplessRingBuffer ringBuffer, PcmSampleFormat sampleFormat = GaplessFormat.DefaultSampleFormat)
+    public void Start(GaplessRingBuffer ringBuffer)
     {
         _ring = ringBuffer;
-        Format = Format with { SampleFormat = sampleFormat };
         IsStarted = true;
     }
 
@@ -97,9 +96,9 @@ public sealed class FakeAudioSink : IAudioSink
         OutputDeviceId = deviceId is null || OutputDevices.Any(d => d.Id == deviceId) ? deviceId : null;
     }
 
-    public long BufferedBytes => 0;
+    public long BufferedFrames => 0;
 
-        public void Resume()
+    public void Resume()
     {
         CancellationTokenSource cts;
         GaplessRingBuffer ring;

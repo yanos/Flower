@@ -4,8 +4,8 @@ namespace Flower.Audio
 {
     // The producer's view of the native PCM hand-off described in
     // native/miniaudio/flower_audio_bridge.h: a buffer of already-processed
-    // S16 frames that a pure-C render callback drains, so that no managed
-    // code runs on the real-time audio thread.
+    // frames, in the device's format, that a pure-C render callback drains,
+    // so that no managed code runs on the real-time audio thread.
     //
     // An interface rather than the P/Invoke wrapper alone because the feeder
     // that drives it is ordinary logic worth testing on a desktop, where the

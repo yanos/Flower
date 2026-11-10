@@ -33,33 +33,29 @@ namespace Flower.Audio.Ffmpeg
     // than performed on the caller's, because one FFmpeg decoder belongs to
     // one thread - but the correlation problem is gone, not merely handled.
     //
-    // Delivers GaplessFormat's canonical PCM. That format is 24 bits because
-    // this decoder can fill it - the LibVLC decoder it replaced could not,
-    // whatever it was asked for, which is why it is gone - and the request
-    // below is what asks the façade for them. Choosing the *source's* own rate
+    // Delivers GaplessFormat's canonical PCM: float, which is what most
+    // codecs produce anyway, so for them the façade converts nothing, and for
+    // integer sources the conversion is exact. Choosing the *source's* own rate
     // and channel layout as well - no resample at all - is direct mode's job
     // and needs the output device to have agreed to it first; see
     // docs/AUDIOPHILE-PLAN.md.
     public sealed class FfmpegTrackDecoder : ITrackDecoder
     {
         // One decode read, and so also the granularity at which a retire or a
-        // seek interrupts one. A quarter of a second of canonical PCM: small
-        // enough that neither is felt, large enough that the P/Invoke and the
-        // ring's own locking are not the work.
+        // seek interrupts one. About an eighth of a second of canonical PCM:
+        // small enough that neither is felt, large enough that the P/Invoke
+        // and the ring's own locking are not the work.
         private const int ReadBufferBytes = 48 * 1024;
 
         private readonly RetargetableRingWriter _writer;
         private readonly Func<bool> _isRetired;
         private readonly ILogger<FfmpegTrackDecoder>? _logger;
 
-        // Given once, at construction: the format the sink settled, handed
-        // down through GaplessCoordinator. A decoder whose format could change
-        // is one whose frame size can change halfway through a track, which is
-        // not a state anything downstream is written for. Taking it as a
-        // parameter also lets Flower.Tests.Decoding.Scenarios run one decoder at S16 and
-        // another at S24 in the same process.
+        // Given once, at construction: the rate the sink settled, handed down
+        // through GaplessCoordinator. A decoder whose rate could change is one
+        // whose clock can change halfway through a track, which is not a state
+        // anything downstream is written for.
         private readonly PcmFormat _format;
-        private readonly PcmSampleFormat _sampleFormat;
         private readonly int _bytesPerFrame;
 
         private Decoder? _decoder;
@@ -120,7 +116,6 @@ namespace Flower.Audio.Ffmpeg
         {
             Track = track;
             _format = format ?? PcmFormat.Default;
-            _sampleFormat = _format.SampleFormat;
             _bytesPerFrame = _format.BytesPerFrame;
             _writer = new RetargetableRingWriter(initialTarget);
             _isRetired = () => Volatile.Read(ref _retired) == 1;
@@ -223,7 +218,7 @@ namespace Flower.Audio.Ffmpeg
                 stream.ProbeAsync(cancellationToken).GetAwaiter().GetResult();
                 Publish(Decoder.OpenStream(
                     stream,
-                    FormatFor(_sampleFormat),
+                    SampleFormat.F32,
                     (int)_format.SampleRate,
                     (int)GaplessFormat.Channels,
                     DemuxerHintFor(Track),
@@ -241,7 +236,7 @@ namespace Flower.Audio.Ffmpeg
             {
                 Publish(Decoder.OpenPath(
                     path,
-                    FormatFor(_sampleFormat),
+                    SampleFormat.F32,
                     (int)_format.SampleRate,
                     (int)GaplessFormat.Channels));
             }
@@ -275,13 +270,6 @@ namespace Flower.Audio.Ffmpeg
         // So an unprepared start opens on the decode thread rather than here:
         // this runs under GaplessCoordinator's lock, and opening a remote
         // track is a network round trip.
-        // What the façade is asked to hand back for a given pipeline format.
-        // This used to live next to the decoder election, so the mapping
-        // between the pipeline's format and FFmpeg's own sat beside the choice
-        // that produced it; with one decoder left it belongs to the decoder.
-        public static SampleFormat FormatFor(PcmSampleFormat format) =>
-            format == PcmSampleFormat.S24 ? SampleFormat.S24 : SampleFormat.S16;
-
         public void StartDecoding()
         {
             if (Interlocked.Exchange(ref _started, 1) == 1)

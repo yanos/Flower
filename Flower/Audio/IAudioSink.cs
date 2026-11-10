@@ -43,16 +43,14 @@ namespace Flower.Audio
         // Begins consuming ringBuffer. Called once, at construction time of
         // whichever GaplessAudioManager owns this sink - the sink runs for
         // the app's entire lifetime after this, the same way the former
-        // VlcAudioManager's single MediaPlayer did.
-        //
-        // sampleFormat is what the decoder would like to carry. The sink may
-        // narrow it (a device that will not open at 24 bits), and settles the
-        // rate from the device; Format is the answer.
-        void Start(GaplessRingBuffer ringBuffer, PcmSampleFormat sampleFormat = GaplessFormat.DefaultSampleFormat);
+        // VlcAudioManager's single MediaPlayer did. Settles the rate from the
+        // device; Format is the answer.
+        void Start(GaplessRingBuffer ringBuffer);
 
-        // The PCM this sink renders, and so what everything feeding it must
+        // The PCM this sink consumes, and so what everything feeding it must
         // produce. Settled by Start and frozen from then on, device changes
-        // included; PcmFormat.Default before it.
+        // included; PcmFormat.Default before it. Whatever sample format the
+        // device itself takes is the sink's own affair and is not in here.
         PcmFormat Format { get; }
 
         // Swaps in a new EQ processor (rebuilt from settings), or clears it
@@ -68,12 +66,13 @@ namespace Flower.Audio
         // change takes effect without restarting playback.
         void ApplyTiming(AudioTimingSettings timing);
 
-        // PCM this sink has taken from the ring buffer but not yet played -
+        // Frames this sink has taken from the ring buffer but not yet played -
         // the depth of whatever buffer sits between the two. Subtracted from
         // the playback position, which is derived from the ring's read cursor
         // and would otherwise run ahead of what can be heard. Zero for a sink
-        // that renders straight out of the ring.
-        long BufferedBytes { get; }
+        // that renders straight out of the ring. Frames rather than bytes
+        // because that buffer may hold the device's format, not the ring's.
+        long BufferedFrames { get; }
 
         void Resume();
         void Pause();

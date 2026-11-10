@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.InteropServices;
 
 using Flower.Audio;
 using Flower.Tests.Decoding.Scenarios;
@@ -15,18 +16,21 @@ public class PcmOracleTests
 {
     private const double ToneHz = 440.0;
 
-    private static byte[] Tone(double hz, TimeSpan duration, short amplitude = 16384)
+    // Pipeline PCM, as a decoder writes it: float.
+    private static byte[] Pipeline(float[] samples) => MemoryMarshal.AsBytes(samples.AsSpan()).ToArray();
+
+    private static byte[] Tone(double hz, TimeSpan duration, float amplitude = 0.5f)
     {
         var frames = (int)(duration.TotalSeconds * PcmFormat.Default.SampleRate);
-        var pcm = new byte[frames * PcmFormat.Default.BytesPerFrame];
+        var samples = new float[frames * (int)GaplessFormat.Channels];
         for (var frame = 0; frame < frames; frame++)
         {
-            var sample = (short)Math.Round(amplitude * Math.Sin(2 * Math.PI * hz * frame / PcmFormat.Default.SampleRate));
+            var sample = (float)(amplitude * Math.Sin(2 * Math.PI * hz * frame / PcmFormat.Default.SampleRate));
             for (var channel = 0; channel < (int)GaplessFormat.Channels; channel++)
-                BitConverter.TryWriteBytes(pcm.AsSpan((frame * (int)GaplessFormat.Channels + channel) * 2), sample);
+                samples[frame * (int)GaplessFormat.Channels + channel] = sample;
         }
 
-        return pcm;
+        return Pipeline(samples);
     }
 
     [Fact]
@@ -56,8 +60,21 @@ public class PcmOracleTests
     public void Noise_is_caught()
     {
         var random = new Random(1);
-        var pcm = new byte[PcmFormat.Default.SampleRate * PcmFormat.Default.BytesPerFrame];
-        random.NextBytes(pcm);
+        var samples = new float[PcmFormat.Default.SampleRate * GaplessFormat.Channels];
+        for (var i = 0; i < samples.Length; i++)
+            samples[i] = (float)(random.NextDouble() - 0.5);
+
+        Assert.NotNull(PcmOracle.ToneMismatch(Pipeline(samples), ToneHz));
+    }
+
+    // What a float pipeline can carry that an integer one could not. Every
+    // comparison against a NaN is false, so without a check of its own the
+    // oracle would find nothing anywhere as loud as the tone, and pass it.
+    [Fact]
+    public void Samples_that_are_not_numbers_are_caught()
+    {
+        var pcm = Tone(ToneHz, TimeSpan.FromSeconds(2));
+        MemoryMarshal.Cast<byte, float>(pcm.AsSpan())[1000] = float.NaN;
 
         Assert.NotNull(PcmOracle.ToneMismatch(pcm, ToneHz));
     }

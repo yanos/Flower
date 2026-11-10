@@ -48,14 +48,15 @@ namespace Flower.Audio
         private NativeAudioBridge? _bridge;
         private AudioFeeder? _feeder;
 
-        // Everything between the ring and the sound card - float widening, EQ,
-        // gain ramping, declick envelope, dithered requantisation. Owned here
-        // and driven from DataCallback; see OutputStage for why none of that
-        // can be left to miniaudio.
+        // Everything between the ring and the sound card - EQ, gain ramping,
+        // declick envelope, dithered requantisation to the device's format.
+        // Owned here and driven from DataCallback; see OutputStage for why none
+        // of that can be left to miniaudio.
         private OutputStage _outputStage = new(GaplessFormat.DefaultSampleRate);
 
-        // What this sink renders - see IAudioSink.Format. Start sets the sample
-        // format asked for, and the first OpenDevice settles both halves.
+        // What this sink consumes - see IAudioSink.Format. The first
+        // OpenDevice settles its rate. The device's own sample format is
+        // _outputStage.DeviceFormat, and is settled again by every open.
         private PcmFormat _format = PcmFormat.Default;
 
         public PcmFormat Format => _format;
@@ -75,7 +76,13 @@ namespace Flower.Audio
         // lifetime of this sink. An output-device change may need miniaudio to
         // resample, but changing the rate while current and armed decoders
         // exist would corrupt timing and playback speed.
-        private bool _hasNegotiatedFormat;
+        private bool _hasNegotiatedRate;
+
+        // Float scratch the managed callback reads the ring into, before
+        // OutputStage requantises it into the device's buffer. Grow-only and
+        // callback-owned, like OutputStage's own: it reaches the device's
+        // period size on the first callback and never allocates again.
+        private float[] _renderScratch = [];
 
         // The output device the user explicitly picked (an opaque base64
         // ma_device_id - see EncodeDeviceId), or null while Flower just
@@ -191,16 +198,14 @@ namespace Flower.Audio
         // ma_on_output__coreaudio in native/miniaudio/vendor/miniaudio.h, which
         // inspects a buffer only when internalFormat is s16 or f32.
         //
-        // Flower opens the device at s16 or s24 and never f32, so electing
-        // FFmpeg - which is the default, and widens the pipeline to S24 - means
-        // nothing walks the PCM at all and all four counters stay at zero
-        // forever. Zero reads as "looked and found no discontinuities", which is
-        // the exact opposite of what it means, and a reader comparing a LibVLC
-        // log against an FFmpeg one would conclude the glitches had been fixed
-        // by the switch. Printed as n/a instead, until the native side grows an
-        // s24 path (which needs the vendored binaries rebuilt - see
+        // Flower opens the device at s16 or s24 and never f32, so on a device
+        // that took s24 - most of them - nothing walks the PCM at all and all
+        // four counters stay at zero forever. Zero reads as "looked and found
+        // no discontinuities", which is the exact opposite of what it means.
+        // Printed as n/a instead, until the native side grows an s24 path
+        // (which needs the vendored binaries rebuilt - see
         // native/miniaudio/README.md).
-        private bool PcmShapeCountersApply => _format.SampleFormat == PcmSampleFormat.S16;
+        private bool PcmShapeCountersApply => _outputStage.DeviceFormat == DeviceSampleFormat.S16;
 
         private string PcmShapeCounter(ulong value) =>
             PcmShapeCountersApply ? value.ToString() : "n/a";
@@ -345,9 +350,9 @@ namespace Flower.Audio
             if (newRebuffers > 0 || longestRebufferMs > 0)
             {
                 _logger.LogWarning(
-                    "Render watchdog: output ran dry mid-track and is rebuffering - Rebuffers={Rebuffers} (+{NewRebuffers}) LongestResumedAfterMs={LongestMs} RebufferMs={RebufferMs} RingAvailable={Available}/{Capacity} BridgeBuffered={BridgeBuffered}",
+                    "Render watchdog: output ran dry mid-track and is rebuffering - Rebuffers={Rebuffers} (+{NewRebuffers}) LongestResumedAfterMs={LongestMs} RebufferMs={RebufferMs} RingAvailable={Available}/{Capacity} BridgeBufferedFrames={BridgeBuffered}",
                     rebufferCount, newRebuffers, longestRebufferMs,
-                    _outputStage.Timing.RebufferMs, ring.AvailableBytes, ring.Capacity, feeder?.BufferedBytes ?? 0);
+                    _outputStage.Timing.RebufferMs, ring.AvailableBytes, ring.Capacity, feeder?.BufferedFrames ?? 0);
             }
 
             if (underruns.Cleared is { } run)
@@ -516,13 +521,11 @@ namespace Flower.Audio
 
         public void ApplyTiming(AudioTimingSettings timing) => _outputStage.Timing = timing;
 
-        public void Start(GaplessRingBuffer ringBuffer, PcmSampleFormat sampleFormat = GaplessFormat.DefaultSampleFormat)
+        public void Start(GaplessRingBuffer ringBuffer)
         {
             lock (_gate)
             {
                 _ringBuffer = ringBuffer;
-                if (!_hasNegotiatedFormat)
-                    _format = _format with { SampleFormat = sampleFormat };
 
                 // Once per sink, however many times Start runs - including
                 // again after a first call that bailed below without a device.
@@ -605,14 +608,15 @@ namespace Flower.Audio
         private bool OpenDevice()
         {
             var config = ma.device_config_init(ma_device_type.ma_device_type_playback);
-            config.playback.format = MiniaudioFormatFor(_format.SampleFormat);
+            var deviceFormat = PreferredDeviceFormat();
+            config.playback.format = MiniaudioFormatFor(deviceFormat);
             config.playback.channels = GaplessFormat.Channels;
             // During the first open, zero asks miniaudio for the endpoint's
             // native rate. The decoder is configured from that result before
-            // playback begins, leaving LibVLC as the only sample-rate
+            // playback begins, leaving FFmpeg as the only sample-rate
             // converter in the chain. Keep that rate on later device changes:
-            // existing current and armed decoders cannot safely change format.
-            config.sampleRate = _hasNegotiatedFormat ? _format.SampleRate : 0;
+            // existing current and armed decoders cannot safely change rate.
+            config.sampleRate = _hasNegotiatedRate ? _format.SampleRate : 0;
             // The bridge's callback is a native symbol in the same library
             // miniaudio itself came from, so installing it costs nothing and
             // needs no managed thunk. It renders silence until AttachTo binds
@@ -685,24 +689,20 @@ namespace Flower.Audio
             var result = ma.device_init(_context, &config, device);
 
             // The one place the device gets a say in the sample format. It is
-            // asked for the 24 bits the decoder carries, and a refusal here is
-            // what says the pipeline has to narrow back to S16 - which is a
-            // real answer rather than a failure, because the decoder can
-            // produce S16 and every device takes it.
+            // asked for 24 bits, and a refusal here is what says OutputStage
+            // has to requantise to S16 instead - which is a real answer rather
+            // than a failure, because every device takes it.
             //
-            // Only on the first open, and only downward. Later reopens keep
-            // the negotiated format for the same reason they keep the
-            // negotiated rate: current and armed decoders are already running
-            // and cannot change format underneath the ring they share.
-            if (result != ma_result.MA_SUCCESS
-                && !_hasNegotiatedFormat
-                && _format.SampleFormat != PcmSampleFormat.S16)
+            // At every open, not just the first. The pipeline is float up to
+            // OutputStage, so no decoder knows or cares what the device takes,
+            // and a later device can be given its own answer - unlike the rate.
+            if (result != ma_result.MA_SUCCESS && deviceFormat != DeviceSampleFormat.S16)
             {
                 _logger.LogWarning(
                     "miniaudio refused a {Format} playback device ({Result}); falling back to 16-bit",
-                    _format.SampleFormat, result);
-                _format = _format with { SampleFormat = PcmSampleFormat.S16 };
-                config.playback.format = MiniaudioFormatFor(PcmSampleFormat.S16);
+                    deviceFormat, result);
+                deviceFormat = DeviceSampleFormat.S16;
+                config.playback.format = MiniaudioFormatFor(deviceFormat);
 
                 result = ma.device_init(_context, &config, device);
             }
@@ -717,7 +717,7 @@ namespace Flower.Audio
             _device = device;
             RegisterCoreAudioDiagnostics();
 
-            if (!_hasNegotiatedFormat)
+            if (!_hasNegotiatedRate)
             {
                 var nativeSampleRate = device->sampleRate;
                 if (nativeSampleRate == 0)
@@ -760,18 +760,18 @@ namespace Flower.Audio
                 // them on any path that reached this block without changing
                 // anything. OpenDevice only runs while the output callback is
                 // stopped, so a replacement cannot race the render path.
-                if (_outputStage.SampleRate != _format.SampleRate
-                    || _outputStage.SampleFormat != _format.SampleFormat)
-                {
-                    _outputStage = new OutputStage(_format.SampleRate, _format.SampleFormat);
-                }
+                if (_outputStage.SampleRate != _format.SampleRate)
+                    _outputStage = new OutputStage(_format.SampleRate);
 
-                _logger.LogInformation(
-                    "Rendering the output device's native {SampleRate}Hz at {Format}",
-                    _format.SampleRate, _format.SampleFormat);
-
-                _hasNegotiatedFormat = true;
+                _hasNegotiatedRate = true;
             }
+
+            // Every open, after any replacement above, and while the device is
+            // stopped - the one time OutputStage.DeviceFormat may change.
+            _outputStage.DeviceFormat = deviceFormat;
+            _logger.LogInformation(
+                "Rendering the output device's native {SampleRate}Hz at {Format}",
+                _format.SampleRate, deviceFormat);
 
             // Pinned at unity, deliberately: miniaudio applies its master
             // volume after the data callback as
@@ -784,10 +784,12 @@ namespace Flower.Audio
             // in the rate actually being rendered rather than the assumed one.
             if (useBridge && _ringBuffer is { } ringBuffer)
             {
+                // In the device's format: the bridge holds what OutputStage has
+                // already requantised, not what the ring holds.
                 var capacity = _outputStage.Timing.NativeBufferMs * (long)_format.SampleRate
-                    * _format.BytesPerFrame / 1000;
+                    * deviceFormat.BytesPerFrame() / 1000;
                 _bridge = NativeAudioBridge.TryCreate(
-                    (int)capacity, _format.BytesPerFrame, _format.BytesPerSample);
+                    (int)capacity, deviceFormat.BytesPerFrame(), deviceFormat.BytesPerSample());
                 if (_bridge == null)
                 {
                     // Nothing to fall back to: the device was initialised with
@@ -812,12 +814,40 @@ namespace Flower.Audio
             return true;
         }
 
-        // The canonical format in miniaudio's own terms. ma_format_s24 is
-        // packed three-byte little-endian, the same layout PcmSampleFormat.S24
-        // names and ffaudio's pack_s24 writes, so nothing converts
-        // between the ring and the device buffer.
-        internal static ma_format MiniaudioFormatFor(PcmSampleFormat format) =>
-            format == PcmSampleFormat.S24 ? ma_format.ma_format_s24 : ma_format.ma_format_s16;
+        // S24, unless FLOWER_DEVICE_FORMAT=s16 asks for the narrower one.
+        //
+        // A listening aid, not a setting. The S16 fallback below is the path a
+        // device refusing 24 bits would take, and in shared mode nothing
+        // refuses: miniaudio converts whatever it is handed into whatever the
+        // endpoint takes. So OutputStage's dithered requantisation to 16 bits
+        // is reachable on no real hardware, and this is how to hear it.
+        // Anything else in the variable is ignored, out loud.
+        private DeviceSampleFormat PreferredDeviceFormat()
+        {
+            var requested = Environment.GetEnvironmentVariable(DeviceFormatVariable);
+            if (string.IsNullOrEmpty(requested))
+                return DeviceSampleFormat.S24;
+
+            if (string.Equals(requested, "s16", StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogInformation("{Variable}={Value}: opening the device at 16-bit", DeviceFormatVariable, requested);
+                return DeviceSampleFormat.S16;
+            }
+
+            if (!string.Equals(requested, "s24", StringComparison.OrdinalIgnoreCase))
+                _logger.LogWarning("Ignoring {Variable}={Value}; it takes s16 or s24", DeviceFormatVariable, requested);
+
+            return DeviceSampleFormat.S24;
+        }
+
+        private const string DeviceFormatVariable = "FLOWER_DEVICE_FORMAT";
+
+        // The device format in miniaudio's own terms. ma_format_s24 is packed
+        // three-byte little-endian, the same layout DeviceSampleFormat.S24
+        // names and OutputStage writes, so miniaudio converts nothing between
+        // the callback's buffer and the device.
+        internal static ma_format MiniaudioFormatFor(DeviceSampleFormat format) =>
+            format == DeviceSampleFormat.S24 ? ma_format.ma_format_s24 : ma_format.ma_format_s16;
 
         // What OpenDevice just ended up on: the explicit pick if there was
         // one, otherwise whichever device the OS currently calls default -
@@ -1099,7 +1129,7 @@ namespace Flower.Audio
 
             try
             {
-                Render(pDevice, dest, byteCount, frameCount);
+                Render(pDevice, dest, frameCount);
             }
             catch
             {
@@ -1108,22 +1138,26 @@ namespace Flower.Audio
             }
         }
 
-        // The device was opened in its sink's format, settled before it
-        // started. Asked here rather than in Render because the silence on
+        // The device was opened in its sink's device format, settled before
+        // it started. Asked here rather than in Render because the silence on
         // the exception path needs the length too.
+        //
+        // The fallback is the narrowest format a device is ever opened in, so
+        // that not knowing can at worst leave part of the buffer uncleared
+        // rather than clear past its end.
         private static int BytesPerFrameOf(ma_device* pDevice)
         {
             try
             {
                 if (pDevice != null && GCHandle.FromIntPtr((IntPtr)pDevice->pUserData).Target is MiniaudioSink sink)
-                    return sink._format.BytesPerFrame;
+                    return sink._outputStage.DeviceFormat.BytesPerFrame();
             }
             catch
             {
                 // Same boundary as DataCallback's own catch.
             }
 
-            return PcmFormat.Default.BytesPerFrame;
+            return DeviceSampleFormat.S16.BytesPerFrame();
         }
 
         // The unmanaged callback boundary cannot let a managed exception
@@ -1148,7 +1182,7 @@ namespace Flower.Audio
             }
         }
 
-        private static void Render(ma_device* pDevice, Span<byte> dest, int byteCount, uint frameCount)
+        private static void Render(ma_device* pDevice, Span<byte> dest, uint frameCount)
         {
             var handle = GCHandle.FromIntPtr((IntPtr)pDevice->pUserData);
             if (handle.Target is not MiniaudioSink sink || sink._ringBuffer is not { } ring)
@@ -1156,6 +1190,17 @@ namespace Flower.Audio
                 dest.Clear();
                 return;
             }
+
+            // The ring's float PCM for this period. Counted in its bytes below,
+            // not the device's: every diagnostic here is about what the ring
+            // gave, and the watchdog sets them against the ring's own counts.
+            var sampleCount = checked((int)frameCount * (int)GaplessFormat.Channels);
+            if (sink._renderScratch.Length < sampleCount)
+                sink._renderScratch = new float[sampleCount];
+
+            var samples = sink._renderScratch.AsSpan(0, sampleCount);
+            var source = MemoryMarshal.AsBytes(samples);
+            var sourceByteCount = source.Length;
 
             // Capture timestamps rather than logging from the real-time
             // thread. The watchdog reports the sampled maxima later, which
@@ -1182,7 +1227,9 @@ namespace Flower.Audio
                 }
 
                 var rebuffering = latch.IsRebuffering;
-                if (latch.TryRelease(ring.AvailableBytes, ring.Capacity, sink._outputStage.Timing, sink._format, now)
+                if (latch.TryRelease(
+                        ring.AvailableBytes / GaplessFormat.BytesPerFrame, ring.Capacity / GaplessFormat.BytesPerFrame,
+                        sink._outputStage.Timing, sink._format.SampleRate, now)
                     && rebuffering)
                 {
                     // Not a flush, so no generation change to fade in on.
@@ -1196,9 +1243,9 @@ namespace Flower.Audio
                 // This callback runs on miniaudio's real-time thread, so the
                 // remainder of the requested frames is silence-padded rather
                 // than waited for.
-                var read = primed ? ring.Read(dest) : 0;
-                if (read < byteCount)
-                    dest[read..].Clear();
+                var read = primed ? ring.Read(source) : 0;
+                if (read < sourceByteCount)
+                    source[read..].Clear();
 
                 if (primed)
                 {
@@ -1206,23 +1253,23 @@ namespace Flower.Audio
 
                     // Closed for the next callback, not this one: what it
                     // read still plays, and Process below still runs over it.
-                    if (read < byteCount && ring.AvailableBytes == 0)
+                    if (read < sourceByteCount && ring.AvailableBytes == 0)
                         latch.RanDry(sink._outputStage.Timing, now);
                 }
 
                 Interlocked.Increment(ref sink._callbackCount);
-                Interlocked.Add(ref sink._requestedBytes, byteCount);
+                Interlocked.Add(ref sink._requestedBytes, sourceByteCount);
                 Interlocked.Add(ref sink._realBytesRendered, read);
-                if (read < byteCount)
+                if (read < sourceByteCount)
                 {
-                    Interlocked.Add(ref sink._silenceBytesRendered, byteCount - read);
+                    Interlocked.Add(ref sink._silenceBytesRendered, sourceByteCount - read);
                     if (primed)
                         Interlocked.Increment(ref sink._shortReadCount);
                 }
 
                 if (read > 0)
                 {
-                    var fingerprint = Fingerprint(dest[..read], out var audible);
+                    var fingerprint = Fingerprint(source[..read], out var audible);
                     var previousFingerprint = Interlocked.Exchange(ref sink._lastCallbackFingerprint, fingerprint);
                     var previousRead = Interlocked.Exchange(ref sink._lastCallbackReadBytes, read);
                     Interlocked.Exchange(ref sink._lastPcmFingerprint, fingerprint);
@@ -1247,12 +1294,15 @@ namespace Flower.Audio
                 // last-seen generation untouched, so the first primed callback is
                 // the one that arms the fade-in, which is where it belongs.
                 if (!primed)
+                {
+                    dest.Clear();
                     return;
+                }
 
                 // The whole buffer, silence padding included - the EQ's delay
                 // lines and the gain ramp both have to keep advancing across a
                 // gap, or they resume from pre-gap state on the other side of it.
-                sink._outputStage.Process(dest, generation);
+                sink._outputStage.Process(samples, dest, generation);
             }
             finally
             {
@@ -1391,9 +1441,9 @@ namespace Flower.Audio
         private int FadeFrames(int milliseconds) =>
             (int)(milliseconds * (long)_format.SampleRate / 1000);
 
-        // See IAudioSink.BufferedBytes - zero without a bridge, where nothing
+        // See IAudioSink.BufferedFrames - zero without a bridge, where nothing
         // sits between the shared ring and the speaker.
-        public long BufferedBytes => _feeder?.BufferedBytes ?? 0;
+        public long BufferedFrames => _feeder?.BufferedFrames ?? 0;
 
         public IReadOnlyList<AudioOutputDevice> GetOutputDevices()
         {
