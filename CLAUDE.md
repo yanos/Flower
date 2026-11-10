@@ -39,6 +39,7 @@ removed; `docs/SYNC-PLAN.md`, "OpenSubsonic, built and removed").
 is left. Read the relevant one before touching that area.
 
 - `SELF-HOSTING.md` — user-facing: running a server and reaching it remotely.
+- `MANAGING-SONGS.md` — user-facing: adding, removing, editing and replacing songs per setup (unpaired, owner, listener), and how a song is recognised.
 - `API.md` — HTTP reference for `Flower.Server`; update it when a route in `Flower.Server/Endpoints/` changes.
 - `SECURITY.md` — the server trust boundary: per-listener playlists, per-device budgets, `FlowerProblem` refusals, `ServerResponseSignature`.
 - `REMOTE-ACCESS.md` — client side of remote access: candidate addresses, LAN↔tailnet handover, `CleartextOrigins`.
