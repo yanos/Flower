@@ -20,10 +20,10 @@ Goal: get `Flower.iOS`/`Flower.Android` from runnable to submitted and approved.
 
 Enroll in Apple Developer Program ($99/yr) + Google Play Console ($25 one-time). iOS: Distribution cert + provisioning profile (project already scaffolds `ProvisioningType=automatic`/`ios-arm64` — though note `ProvisioningType` is read by Rider and Visual Studio, not by MSBuild, which simply signs with the best profile already installed; `scripts/register-ios-device.sh` exists because nothing in the build itself will create one). Android: let Play App Signing manage the signing key. Write/host a one-page privacy policy (GitHub Pages off this repo works). `LICENSE`/`NOTICE` — done.
 
-## Phase 1: Fix the two build-config blockers — open
+## Phase 1: Fix the build-config blockers — one open
 
 1. `Flower.Android.csproj`: `AndroidPackageFormat` → `aab`, verify a clean publish produces one.
-2. `Flower.iOS.csproj`: bump TFM to `net10.0-ios26.2`, requires Xcode 26.x; do a clean device build to catch API breakage from the two-generation SDK jump (medium risk — bigger jump than the earlier Android net7→net8 bump).
+2. ~~`Flower.iOS.csproj`: bump the TFM~~ — done; it is `net10.0-ios27.0`.
 
 ## Phase 2: iOS Privacy Manifest — open
 

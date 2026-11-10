@@ -1,6 +1,6 @@
 # Media Key / OS "Now Playing" Integration Plan
 
-Hardware media-key (play/pause/next/previous) support + OS "Now Playing"/lock-screen integration, across all five platforms. No code for this exists anywhere in Flower today. Not yet started.
+Hardware media-key (play/pause/next/previous) support + OS "Now Playing"/lock-screen integration, across all five platforms. **iOS is built; macOS, Windows, Linux and Android are not started.** `Flower.iOS`'s `AppleNowPlaying` publishes to `MPNowPlayingInfoCenter` and takes `MPRemoteCommandCenter`'s commands, behind the `IPlatformNowPlaying` seam below, which `NowPlayingIntegrationService` drives from `PlaylistControlViewModel` and `IAudioManager`. macOS uses the same API family, so it is the cheapest next one.
 
 ## Why one plan, not per-platform
 
@@ -16,10 +16,10 @@ No cross-platform media-key API exists — each OS routes hardware/lock-screen/h
 
 ## Plan
 
-Add an `IPlatformNowPlaying` seam (a per-platform service behind one interface, with the caller hiding the affordance where the platform returns nothing — the shape `CODE-REVIEW-2026-09.md` E7 proposed for `Process.Start`, which was built as a static `PlatformShell` instead because only the two desktop heads had anything to register), registered per-platform in `App.axaml.cs`'s DI container. Each implementation publishes metadata/play state from `PlaylistControlViewModel`/`Track` and wires transport commands straight into `PlaylistControlViewModel.PlayOrPause()`/`Next()`/`Previous()` — no changes needed to that class.
+Add an `IPlatformNowPlaying` seam (a per-platform service behind one interface, with the caller hiding the affordance where the platform returns nothing — the shape the September 2026 review's E7 proposed for `Process.Start`, which was built as a static `PlatformShell` instead because only the two desktop heads had anything to register; see `CITED-DECISIONS.md`). As built, the head sets it as `PlatformNowPlaying.Current` before Avalonia starts, the same convention as `PlatformMdns.Current`, and `NowPlayingIntegrationService` does nothing where it is left null. Each implementation publishes metadata/play state from `PlaylistControlViewModel`/`Track` and wires transport commands straight into `PlaylistControlViewModel.PlayOrPause()`/`Next()`/`Previous()` — no changes needed to that class.
 
 - **Windows** — wrap `SystemMediaTransportControls`, set `DisplayUpdater` fields, update `PlaybackStatus`, verify taskbar thumbnail controls and the lock-screen card. Small-Medium effort, Low risk.
-- **macOS/iOS** — shared `MPNowPlayingInfoCenter`/`MPRemoteCommandCenter` implementation; land alongside whatever native interop `AIRPLAY-BLUETOOTH-PLAN.md` Phase 2 introduces rather than as a separate effort. iOS also needs the `audio` `UIBackgroundModes` declaration (no mobile audio-session code exists yet) — configure the audio session once, not twice, alongside AirPlay/Bluetooth work. Medium effort; Low risk on macOS, iOS carries the same "first real mobile audio verification" risk flagged elsewhere.
+- **macOS/iOS** — shared `MPNowPlayingInfoCenter`/`MPRemoteCommandCenter` implementation; land alongside whatever native interop `AIRPLAY-BLUETOOTH-PLAN.md` Phase 2 introduces rather than as a separate effort. iOS's `audio` `UIBackgroundModes` declaration and its audio session (`AppleAudioSession`) exist and are shared with the AirPlay/Bluetooth work. Medium effort; Low risk on macOS, iOS carries the same "first real mobile audio verification" risk flagged elsewhere.
 - **Linux** — export `org.mpris.MediaPlayer2`/`.Player` as a D-Bus service under `org.mpris.MediaPlayer2.Flower`; confirm whether the transitive `Tmds.DBus` reference is sufficient or an explicit package reference is needed for exporting (vs. consuming) a service. Smoke-test against both GNOME and KDE — their MPRIS property/signal handling isn't perfectly consistent. Medium effort, Medium risk (DE inconsistency, not the D-Bus mechanics).
 - **Android** — `MediaSessionCompat` (check whether Media3's `MediaSession` makes more sense before adding a second media library), implementing the `onPlay`/`onPause`/`onSkipToNext/Previous` callbacks. Decide whether a foreground notification is needed alongside the session, since Android is more aggressive about killing background playback without one. Medium effort, Medium risk.
 
@@ -49,5 +49,5 @@ without opening the app.
 
 1. Windows — cheapest, validates the `IPlatformNowPlaying` seam shape.
 2. Linux — no mobile-verification dependency.
-3. macOS/iOS — macOS anytime; gate iOS's half on mobile playback being verified working, same as `AIRPLAY-BLUETOOTH-PLAN.md` Phase 2.
+3. macOS/iOS — iOS is done (`AppleNowPlaying`). macOS can go any time, in `Flower.MacOS`.
 4. Android — same mobile-verification gate, plus the new foreground-notification question, so do it last once the pattern is proven elsewhere.

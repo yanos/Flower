@@ -12,7 +12,7 @@ Survey of options for surfacing crashes, layered on top of the existing file log
 
 ## Option A: GitHub issue link (recommended starting point)
 
-On an unhandled exception, show a "Flower crashed" dialog with a "Report on GitHub" button that opens a prefilled `.../issues/new?title=...&body=...&labels=crash` URL (same `Process.Start` pattern as `MainViewModel.OpenAppDataLocation`), including the current log file path. Effort: Small. Risk: Low. Limitation: manual per-crash, no aggregation across users.
+On an unhandled exception, show a "Flower crashed" dialog with a "Report on GitHub" button that opens a prefilled `.../issues/new?title=...&body=...&labels=crash` URL (through `PlatformShell.OpenUrl`, hidden where `PlatformShell.IsAvailable` is false), including the current log file path. Effort: Small. Risk: Low. Limitation: manual per-crash, no aggregation across users.
 
 ## Option B: Sentry (once aggregation is worth it)
 

@@ -13,7 +13,7 @@ Scope: automatic updates for **desktop** (Windows/macOS/Linux) via GitHub Releas
 
 ## Phases
 
-1. **Versioning foundation** — done (MinVer, every project, `fetch-depth: 0` on every CI checkout so a shallow clone cannot silently stamp `0.0.0-alpha.0`). **One thing is still owed and it gates everything below: no `v*` tag has ever been cut**, so every build is `0.1.0-alpha.0.<height>`. `git tag v0.1.0 && git push --tags` is the whole task, and until it happens there is no release for Velopack to publish or for a client to compare itself against.
+1. **Versioning foundation** — done (MinVer, every project, `fetch-depth: 0` on every CI checkout so a shallow clone cannot silently stamp `0.0.0-alpha.0`). Tags are cut (v0.1.0 onwards), so a tagged build carries its real version.
 2. **Packaging + manual first release** — add Velopack NuGet + the `Main()` hook; `dotnet publish` self-contained, `vpk pack -v $(Version)`, manual `vpk upload github --publish` as a one-time dry run before automating in CI. Decide macOS signing now vs. ship unsigned first (users right-click → Open). Medium effort; macOS signing is the one real external dependency.
 3. **Client-side update check** — `UpdateManager(new GithubSource(repoUrl, null, false))`, background task same pattern as the startup rescan, throttled via a persisted `LastUpdateCheck` on `AppSettings`. `CheckForUpdatesAsync` → `DownloadUpdatesAsync` → `ApplyUpdatesAndRestart`, with a simple non-intrusive "restart to install" prompt (not silent/forced). Small–Medium effort.
 4. **CI publish automation** — workflow triggered on `v*` tag push. This is where the release job needs the version *before* it builds, to name a tag or pass a store build number. Do not re-walk the tags: ask MinVer, `dotnet msbuild Flower.Desktop.csproj -target:MinVer -getProperty:Version` (~0.5s, needs a prior `dotnet restore` or it fails `MSB4057`), because that *is* the computation the build uses and so cannot disagree with it. Release vs. pre-release is `MinVerPreRelease` being empty, not a tag-name pattern or a `github.ref` check. The mobile build number — which MinVer cannot supply, since Android `versionCode`/iOS `CFBundleVersion` need a plain increasing integer a pre-release suffix does not even parse as — is `git tag --list 'v*' | wc -l`, passed as `/p:ApplicationVersion=<n>` over the `1` both csproj files carry as a dev placeholder. All four were verified against a real tagged HEAD, an untagged commit and a shallow clone; a script doing them existed briefly and was deleted for having no consumer, which is this phase.
@@ -24,10 +24,11 @@ Scope: automatic updates for **desktop** (Windows/macOS/Linux) via GitHub Releas
 
 Cut `v0.1.0` → Phase 2 on macOS only (dev machine) → Phase 3 against that manual release → Phase 4 CI automation → extend Phase 2/4 to Windows/Linux.
 
-**All four phases are built; none has been through a real release yet.** The
-first tags (v0.1.0 to v0.4.0) predate the installers, so no GitHub release
-exists, and the first tag cut after this is the first end-to-end run. What was
-built, and where it went another way than the phases above:
+**All four phases are built and releasing.** The first tags (v0.1.0 to v0.4.0)
+predate the installers; v0.5.0 onwards (v0.8.0 as of November 2026) each have a
+GitHub release with the dmg, the AppImage, `Setup.exe`, both `.nupkg`s and
+`releases.win.json`/`releases.linux.json`. What was built, and where it went
+another way than the phases above:
 
 - **Packaging and publishing are one CI path, not a manual run first.** A `v*`
   tag runs `scripts/package-desktop.sh` on one runner per OS (the

@@ -8,7 +8,8 @@ cellular. It exists because "install Tailscale on every device" — the answer
 happens on the phone, and the phone is where setup friction actually costs
 something.
 
-Nothing here is built. It is a decision record written before the code, same as
+Steps 1–3 and the certificate are built; UPnP/NAT-PMP and vendoring `cloudflared`
+are not (see "Status"). It started as a decision record written before the code, same as
 `REMOTE-ACCESS.md` was.
 
 ## The thing that is actually scarce

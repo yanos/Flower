@@ -7,7 +7,8 @@ the queue keeps topping itself up.
 
 **Status (November 2026): the server runs the engine (phases 1 and 2), and
 phase 3, the playlist on a paired desktop and in the browser, is built and
-waiting to be tried on the real library.** `Flower.Core/SemanticAudio/` has the tokenizer,
+waiting to be tried on the real library. Phase 4, a paired phone, is built
+and waiting to be tried on a phone; phases 5 and 6 are not started.** `Flower.Core/SemanticAudio/` has the tokenizer,
 the clip grid, the waveform preparation, the model download, the analyzer,
 the index, the search and its filters, and `Flower.SemanticAudio.Onnx` runs
 the two encoders. The C# pipeline matches Python's: waveforms to the sample,
