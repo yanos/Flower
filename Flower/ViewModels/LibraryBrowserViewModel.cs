@@ -194,6 +194,11 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
     private List<Track> _allTracks = new();
     private CancellationTokenSource? _filterCts;
 
+    // ScheduleFilter's debounce. Settable so a test can stretch it past any
+    // timeout and tell a path that waits for it from one that does not,
+    // without racing a stopwatch against a loaded machine.
+    internal TimeSpan FilterDebounce { get; set; } = TimeSpan.FromMilliseconds(250);
+
     private string? _filterText;
     public string? FilterText
     {
@@ -693,7 +698,7 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
 
         try
         {
-            await Task.Delay(250, token);
+            await Task.Delay(FilterDebounce, token);
             await RebuildRowsAsync(token);
         }
         catch (OperationCanceledException) { }

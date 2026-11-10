@@ -59,13 +59,19 @@ public class MainViewModelSidebarNavigationTests : PinnedDataDirectory
         Assert.Single(vm.Rows);
 
         // Switching to Songs used to go through ScheduleFilter's 250ms
-        // debounce like a search-box keystroke, so Rows would still show the
-        // playlist's one track this soon after switching. Awaiting well
-        // under that (50ms) proves the sidebar-switch path no longer waits
-        // for it.
+        // debounce like a search-box keystroke, so Rows kept showing the
+        // playlist's one track for that long. Stretched to an hour, a switch
+        // that still waits for it never lands inside the timeout below, while
+        // one that bypasses it lands however slow the machine is. This used
+        // to check Rows 50ms after the switch, which a busy CI simulator
+        // could miss without anything being wrong.
+        vm.Browser.FilterDebounce = TimeSpan.FromHours(1);
         var songsItem = vm.SidebarItems.Single(i => i.Kind == SidebarItemKind.Songs);
         vm.SelectedSidebarItem = songsItem;
-        await Task.Delay(50);
+
+        var deadline = Environment.TickCount64 + 10_000;
+        while (vm.Rows.Count != 3 && Environment.TickCount64 < deadline)
+            await Task.Delay(10);
 
         Assert.Equal(3, vm.Rows.Count);
     }
