@@ -196,10 +196,15 @@ jobs:
             Directory.Build.props
             Tests/ClientTests.props
 
-      # The native macOS head uses Apple frameworks and needs Xcode 27 headers;
-      # the xcode-27 runner supplies the SDK its workload requires.
+      # The native macOS head uses Apple frameworks and needs Xcode 27 headers.
+      # Pinned to the same workload set and Xcode 27.0 as the iOS jobs: left
+      # unpinned, a new SDK band pulled macOS 27.2, which requires an Xcode
+      # 27.2 the image did not select, and failed the v0.9.0 run. Update it
+      # with the iOS pin, and with the developer's own pairing.
       - name: Install macOS workload
-        run: dotnet workload install macos
+        run: |
+          echo "DEVELOPER_DIR=/Applications/Xcode_27.0.app/Contents/Developer" >> "$GITHUB_ENV"
+          dotnet workload install macos --version 10.0.402
 
       # Build the shared test graph once. Browser publishing has its own job.
       - name: Build test suites
