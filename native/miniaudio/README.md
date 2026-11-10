@@ -4,25 +4,31 @@ Desktop already gets `libminiaudio` via the community `Miniaudio-CS` NuGet packa
 
 ## Flower's own C in here
 
-Two files alongside the vendored header are ours, compiled into the same
-library by `impl.c`:
+Three files alongside the vendored header are ours:
 
 - `flower_coreaudio_diagnostics.h` - iOS-only counters around miniaudio's
   CoreAudio render callback (callback gap, host-time gap, callback duration,
-  abrupt-sample and repeated-buffer detection). `vendor/miniaudio.h` carries a
-  small patch calling into them from `ma_on_output__coreaudio`; that patch is
-  the only edit to the vendored source and has to be reapplied if it is
-  re-pinned.
-- `flower_audio_bridge.h` - the PCM hand-off that keeps managed code off the
-  real-time thread on Mono platforms. Read its header comment for why it
-  exists; the short version is that Mono's GC suspends the render thread, and
-  iPhone logs caught it doing so for 668ms mid-track. It carries the
-  pipeline's float and runs the output stage (EQ, volume ramp, declick,
-  dither) in the callback, as a port of `Flower/Audio/OutputStage.cs` held to
-  it sample for sample. That is why `impl.c` turns floating-point
-  contraction off and Android links `libm`: either side fusing a
-  multiply-add the other does not, or rounding differently from
-  `MathF.Round`, would break that match.
+  abrupt-sample and repeated-buffer detection), implemented in `impl.c`.
+  `vendor/miniaudio.h` carries a small patch calling into them from
+  `ma_on_output__coreaudio`; that patch is the only edit to the vendored
+  source and has to be reapplied if it is re-pinned.
+- `flower_audio_bridge.h` and `flower_audio_bridge.c` - the PCM hand-off that
+  keeps managed code off the real-time thread on Mono platforms. Read the
+  header's comment for why it exists; the short version is that Mono's GC
+  suspends the render thread, and iPhone logs caught it doing so for 668ms
+  mid-track. It carries the pipeline's float and runs the output stage (EQ,
+  volume ramp, declick, dither) in the callback, as a port of
+  `Flower/Audio/OutputStage.cs` held to it sample for sample. That is why the
+  bridge turns floating-point contraction off and Android links `libm`:
+  either side fusing a multiply-add the other does not, or rounding
+  differently from `MathF.Round`, would break that match.
+
+The bridge is the library's second translation unit rather than part of
+`impl.c`, and it includes no miniaudio header: it uses `struct ma_device*` only
+as an opaque key and never dereferences it. So it builds on its own
+(`clang -dynamiclib flower_audio_bridge.c` gives a library that links only
+libc), and that is what will let desktop ship it beside the NuGet's miniaudio
+(`docs/AUDIO-QUALITY-PLAN.md`, Phase 6 step 6). Keep `miniaudio.h` out of it.
 
 Both are absent from the desktop NuGet binary, which is why `MiniaudioSink`
 probes for them rather than assuming a platform.

@@ -28,8 +28,9 @@ namespace Flower.Audio
     //
     // On the phones the same stage runs in C, in flower_audio_bridge's render
     // callback, and is held to this one sample for sample: this is the
-    // reference, and a change here belongs there too (native/miniaudio/impl.c,
-    // "The output stage"). There this object only carries the controls.
+    // reference, and a change here belongs there too
+    // (native/miniaudio/flower_audio_bridge.c, "The output stage"). There
+    // this object only carries the controls.
     //
     // Real-time contract, same as the ring's Read(): called only from
     // MiniaudioSink.DataCallback, allocates nothing in steady

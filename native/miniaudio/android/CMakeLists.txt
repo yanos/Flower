@@ -5,7 +5,11 @@ project(flower_miniaudio C)
 # DllImport("miniaudio") string in Miniaudio-CS's generated bindings, so
 # .NET's Android P/Invoke resolution finds it with no custom
 # DllImportResolver needed.
-add_library(miniaudio SHARED ../impl.c)
+#
+# Two translation units: miniaudio itself (impl.c) and Flower's render-thread
+# bridge, which does not include miniaudio.h at all - see the top of
+# flower_audio_bridge.c for why that is kept so.
+add_library(miniaudio SHARED ../impl.c ../flower_audio_bridge.c)
 
 target_include_directories(miniaudio PRIVATE ../vendor)
 

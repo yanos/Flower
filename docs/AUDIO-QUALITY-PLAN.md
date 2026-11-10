@@ -8,11 +8,12 @@ device logs showed a defect none of A–J covers, and the phone listening is wha
 confirms its native render callback — the one part of this plan no automated
 test can reach.
 
-Phase 6's first three steps are built (November 2026): the `armeabi-v7a` atomics
-question is settled, the pipeline carries float from the decoder to
-`OutputStage`, and on the phones the output stage now runs in the C render
-callback, which is the fix for M. Step 4, hearing that fix on a phone, is
-next. The phase was rescoped
+Phase 6's first three steps and its fifth are built (November 2026): the
+`armeabi-v7a` atomics question is settled, the pipeline carries float from the
+decoder to `OutputStage`, on the phones the output stage now runs in the C
+render callback, which is the fix for M, and the bridge is its own translation
+unit with no dependency on miniaudio. Step 4's oracle, holding that callback to
+`OutputStage` sample for sample, is next. The phase was rescoped
 while writing an earlier status down. It used to read as "collapse Phase 5's desktop/mobile fork"; working out what
 that fork costs turned up **finding M — every interactive control on mobile
 lags by the render buffer's depth, today, because Phase 5 put that buffer on
@@ -985,6 +986,25 @@ day.
    miniaudio from source or dropping the `Miniaudio-CS` NuGet — ship a small
    standalone `libflowerbridge` beside it and hand miniaudio a `dataCallback`
    pointer that lives in a different library, which it has no opinion about.
+
+   **Done.** `native/miniaudio/flower_audio_bridge.c` holds the bridge, and
+   includes no miniaudio header: `struct ma_device*` is an opaque key and the
+   callback's signature is spelled in `stdint` types. `impl.c` is back to
+   miniaudio plus the CoreAudio diagnostics. Android's CMake and
+   `ios/build.sh` compile both files; on iOS the bridge is compiled as plain C,
+   not Objective-C. Checked:
+
+   - **Standalone.** It compiles clean under `-Wall -Wextra -pedantic` for
+     macOS, iOS and all three Android ABIs. Built as a dylib it exports 20
+     `flower_audio_bridge_*` symbols (step 3 added three controls since the
+     count of 17 above) and links only `libSystem`.
+   - **No change to what ships.** The rebuilt binaries export exactly the
+     symbols the old ones did on all five slices (1197 on Android, 1199 on
+     iOS), and the Android ones link the same libraries. Rebuilding the
+     simulator slice gave a byte-identical binary.
+   - **Still no fused multiply-adds**, checked in the bridge's own objects for
+     iOS arm64 and every Android ABI. The same check on a build with
+     contraction forced on finds 10, so it would see them.
 6. **Build `libflowerbridge` for the six desktop RIDs.** `osx-arm64`/`osx-x64`
    build on a Mac today (the x64 cross was verified); `linux-x64`/`linux-arm64`
    need a container; `win-x64`/`win-arm64` need clang or a VS 17.5+ floor, since
@@ -1006,12 +1026,12 @@ Not urgent. Desktop's controls are responsive today and it has no defect waiting
 on any of this. Mobile's lag is real but reported as not a problem in practice,
 for the good reason that the phone's own volume buttons bypass it entirely.
 
-Steps 1–3 are built (see above). Steps 1–2 were a fidelity and
+Steps 1–3 and 5 are built (see above). Steps 1–2 were a fidelity and
 simplification win with no native work and no build infrastructure; step 3 is
-the one that fixes a defect, and step 4 - listening for it on a phone - is
-next. Steps 5–7 are gated on
-build infrastructure more than on anything audio, and should ride along with
-`AUTO-UPDATE-PLAN.md` Phase 4 rather than justify a CI matrix by themselves.
+the one that fixes a defect, and step 4's oracle is next; step 5 made the
+bridge buildable on its own. Steps 6–8 are gated on build infrastructure more
+than on anything audio, and should ride along with `AUTO-UPDATE-PLAN.md`
+Phase 4 rather than justify a CI matrix by themselves.
 
 ### What not to adopt
 
@@ -1050,6 +1070,7 @@ element and has no render callback of either kind.
 | `Flower.Tests/GaplessRingBufferTests.cs`, `EqualizerTests.cs`, `GaplessCoordinatorRealDecodeTests.cs` | new assertions |
 | `Flower.Tests/OutputStageTests.cs`, `RenderStarvationTests.cs` (new) | Phase 2/4 coverage |
 | `docs/AUDIOPHILE-PLAN.md` | item #1's "accepted click" note is superseded; hand it the double-resample item |
+| `native/miniaudio/flower_audio_bridge.c` (new) | Phase 6 step 5: the bridge, out of `impl.c` and independent of miniaudio |
 
 ## Verification
 

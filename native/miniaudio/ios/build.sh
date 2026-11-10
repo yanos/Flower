@@ -40,7 +40,9 @@ build_slice() {
     # backend #includes <AVFoundation/AVFoundation.h> and uses
     # __has_feature(objc_arc) - it requires an Objective-C compiler
     # front-end on iOS specifically (AVAudioSession's category/route APIs
-    # are Objective-C), even though impl.c is a plain .c file.
+    # are Objective-C), even though impl.c is a plain .c file. The bridge,
+    # the second translation unit, is plain C and includes no miniaudio, so
+    # it is compiled as what it is.
     xcrun clang \
         -x objective-c \
         -fobjc-arc \
@@ -56,7 +58,8 @@ build_slice() {
         -framework AudioToolbox \
         -framework CoreAudio \
         -o "$out_dir/$FRAMEWORK_NAME" \
-        "$NATIVE_DIR/impl.c"
+        "$NATIVE_DIR/impl.c" \
+        -x c "$NATIVE_DIR/flower_audio_bridge.c"
 
     cat > "$out_dir/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
