@@ -9,14 +9,14 @@ confirms its native render callback survives a GC pause, which no automated test
 can reach. (Its arithmetic is now checked automatically, on the phone runners:
 Phase 6 step 4.)
 
-Phase 6's first five steps are built (November 2026): the `armeabi-v7a` atomics
+Phase 6's first seven steps are built (November 2026): the `armeabi-v7a` atomics
 question is settled, the pipeline carries float from the decoder to
-`OutputStage`, on the phones the output stage now runs in the C render
-callback (the fix for M), that callback has been heard on an iPhone and is held
-to `OutputStage` byte for byte by `NativeOutputStageChecks` on both phone
-runners, and the bridge is its own translation unit with no dependency on
-miniaudio. What is left is steps 6–8, the desktop half, and it waits on CI
-build infrastructure rather than on anything audio. The phase was rescoped
+`OutputStage`, the output stage runs in the C render callback (the fix for M),
+that callback has been heard on an iPhone and is held to `OutputStage` byte for
+byte by `NativeOutputStageChecks`, and the bridge is `libflowerbridge`, a
+library of its own on every platform, built for the six desktop RIDs and run
+by desktop too. What is left is listening to desktop through it, and then
+step 8, deleting the managed callback. The phase was rescoped
 while writing an earlier status down. It used to read as "collapse Phase 5's desktop/mobile fork"; working out what
 that fork costs turned up **finding M — every interactive control on mobile
 lags by the render buffer's depth, today, because Phase 5 put that buffer on
@@ -648,7 +648,7 @@ the fix is to drop a decode-ahead's connection once its staging is full and
 reopen at the offset when promoted. If the 3 s loop turns out to be unchanged
 repeats, it should be de-duplicated in `AppleNetworkChange`.
 
-## Phase 6 — put the output stage where the controls are (steps 1–3 built)
+## Phase 6 — put the output stage where the controls are (steps 1–7 built)
 
 Phase 5 left a fork: pure-C render callback on Android and iOS, managed callback
 on desktop. This phase was originally scoped as collapsing that fork — one
@@ -1059,11 +1059,70 @@ day.
    4, standing up a matrixed `windows-latest`/`macos-latest`/`ubuntu-latest` job
    over the same six RIDs. Doing them together is the strongest argument for the
    timing of either.
+
+   **Built, and without CI.** The premise was wrong: Docker on a Mac produces
+   all six. `native/miniaudio/desktop/build.sh` builds the macOS pair
+   natively, Linux with GCC in a Debian container (arm64 natively, x64 by the
+   cross compiler, so nothing runs emulated) and Windows with llvm-mingw's
+   clang, both images pinned by digest. The binaries are checked in under
+   `native/miniaudio/desktop/runtimes/<rid>/native/`, like the phones', which
+   keeps every head runnable from a clean clone. What to know:
+
+   - **GCC ignores `#pragma STDC FP_CONTRACT`**, and fuses multiply-adds by
+     default on arm64. Every build now passes `-ffp-contract=off` as well
+     (the phone builds too), and each script checks the disassembly for
+     fused instructions - a build forced to contract finds 13, so the check
+     sees them.
+   - **Exports are explicit.** `FLOWER_AUDIO_BRIDGE_API` marks the 20
+     functions and every build is `-fvisibility=hidden`; the script checks
+     the count, the dependencies (libSystem; libc and libm; the UCRT and
+     kernel32) and a glibc floor of 2.17 (the x64 build asks for 2.14).
+   - **`FlowerBridge.props`** copies the build for the RID (or, with none,
+     the SDK's own platform) flat beside the app. It is imported by the two
+     desktop heads and the desktop test suites, never by `Flower.csproj`,
+     whose references reach the phones. The macOS head bundles it into
+     `Contents/MonoBundle` and rewrites its install name, which needed
+     `-headerpad_max_install_names`.
+   - **`NativeOutputStageTests` is an ordinary desktop test now**, and fails
+     rather than skips without a bridge. Passing on macOS arm64 and, in a
+     .NET SDK container, Linux arm64 (the GCC build, the one the pragma
+     did not cover). CI adds x64 Linux and Windows and macOS. `osx-x64` and
+     `win-arm64` are built and checked but not run anywhere.
+   - **Drift is caught.** Each of the three build scripts writes
+     `flowerbridge-source.sha256` beside its binaries, and CI's Linux job
+     fails a tree whose bridge source matches none of them.
 7. **Point `NativeAudioBridge`'s `DllImport("miniaudio")` at `"flowerbridge"`**,
    and land one RID at a time, listening on each.
+
+   **Built, all RIDs at once rather than one at a time; not yet listened to on
+   a desktop.** One import name everywhere meant the phones had to stop
+   carrying the bridge inside their miniaudio, so they now build it as a
+   library of its own too: `libflowerbridge.so` per ABI beside
+   `libminiaudio.so` (the head globs `libs/<abi>/*.so`), and
+   `flowerbridge.framework` beside `miniaudio.framework` on iOS, with a
+   `DirectPInvoke` for NativeAOT and `MiniaudioSink`'s Mono resolver taught
+   the second framework name. miniaudio itself lost exactly the bridge's 20
+   symbols. Both phone runners pass all 113 checks against the split build
+   (iOS on NativeAOT, Android on the arm64 emulator).
+
+   The managed callback is still there, and still taken when the library is
+   missing (a RID nobody built; the build warns) or `NativeBufferMs` is 0.
+   So listening on the Mac costs nothing to back out of:
+   `"AudioTiming": { "NativeBufferMs": 0 }` in `settings.json` puts the
+   managed callback back for an A/B, from the next device open (a restart or
+   an output switch).
 8. **Delete the managed `DataCallback`** once every shipped RID has a binary —
    with the caveat that keeping `OutputStage` in C# as the oracle is the point,
    so what goes is the *callback*, not the stage.
+
+   **Not done, deliberately.** Every RID has a binary, but none has been
+   listened to on a desktop, and Linux and Windows never have been at all.
+   Two more things go with the callback and should be decided rather than
+   lost: `NativeBufferMs: 0` as the escape hatch above, and the callback
+   timing diagnostics (`AudioCallbackTiming` - gaps, late callbacks, render
+   overruns), which only the managed callback gathers, so desktop's watchdog
+   already lost them by taking the bridge. Porting them into the bridge's
+   snapshot is the way to keep them.
 
 ### Sequencing, and how urgent this is
 
@@ -1071,14 +1130,13 @@ Not urgent. Desktop's controls are responsive today and it has no defect waiting
 on any of this. Mobile's lag is real but reported as not a problem in practice,
 for the good reason that the phone's own volume buttons bypass it entirely.
 
-Steps 1–5 are built (see above). Steps 1–2 were a fidelity and
+Steps 1–7 are built (see above). Steps 1–2 were a fidelity and
 simplification win with no native work and no build infrastructure; step 3 is
 the one that fixes a defect; step 4 proved it, by ear and byte for byte; step 5
-made the bridge buildable on its own. Steps 6–8 are gated on build
-infrastructure more than on anything audio, and should ride along with
-`AUTO-UPDATE-PLAN.md` Phase 4 rather than justify a CI matrix by themselves.
-Step 6 also turns `NativeOutputStageTests` into an ordinary desktop test,
-because then desktop has a bridge to check.
+made the bridge buildable on its own; steps 6–7 put desktop on it, which
+turned out to need Docker rather than the CI matrix it was expected to wait
+for. Step 8 waits on desktop listening, and on a decision about the timing
+diagnostics.
 
 ### What not to adopt
 

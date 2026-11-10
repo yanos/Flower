@@ -12,7 +12,8 @@ and revised once when LibVLC became decode-only. It is now neither: LibVLC is
 gone entirely, `FfmpegTrackDecoder` is the only decoder, and every platform
 renders through `MiniaudioSink`, which pulls float32 out of `GaplessRingBuffer`
 at the negotiated device rate and has `OutputStage` requantise it to the
-device's S24 or S16. On the phones that stage runs in the C render callback.
+device's S24 or S16. On every platform that stage runs in the C render
+callback of `libflowerbridge`.
 
 That matters most for **#2**, which is stale outright — it proposes tuning
 `new LibVLC(options)` and `file-caching`, and neither exists. Its underlying

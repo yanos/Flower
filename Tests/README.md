@@ -12,7 +12,7 @@ phone runtime.
 | `Flower.Server.Tests` | In-process server/API, security, and configuration tests |
 | `Flower.Tests.macOS` | Native macOS Trash and Music/iTunes export discovery |
 | `Flower.Tests.Windows` | Native Windows Recycle Bin, and junctions in a library folder |
-| `Flower.Tests.Decoding.Scenarios` | Portable decoding scenarios, fixtures, and sample comparisons, without a test framework; shared by desktop and phone runners. Also `NativeOutputStageChecks`, which holds the phones' C output stage to `OutputStage` byte for byte |
+| `Flower.Tests.Decoding.Scenarios` | Portable decoding scenarios, fixtures, and sample comparisons, without a test framework; shared by desktop and phone runners. Also `NativeOutputStageChecks`, which holds the C output stage in `libflowerbridge` to `OutputStage` byte for byte |
 | `Flower.Tests.Decoding.iOS` | Focused decoding and native-output-stage runner; NativeAOT by default through the script, matching the shipped iOS runtime |
 | `Flower.Tests.Decoding.Android` | Focused decoding and native-output-stage runner for an emulator or device |
 | `Flower.Tests.iOS` | Existing Mono/xUnit iOS runner; runtime and build settings retained pending upstream NativeAOT support |
@@ -58,10 +58,11 @@ dotnet test Tests/Flower.Server.Tests/Flower.Server.Tests.csproj
 ```
 
 `Flower.Tests` and `Flower.Tests.UI` never touch FFmpeg, so they are the fast
-loop. `NativeOutputStageTests` in `Flower.Tests` skips on desktop, whose
-miniaudio has no `flower_audio_bridge`; it runs in the Mono iOS suite, and the
-same checks run in both phone runners, which fail rather than skip if the
-bridge is missing. Real decoding is confined to `Flower.Tests.Decoding`, whose classes carry
+loop. `NativeOutputStageTests` in `Flower.Tests` holds the C output stage in
+`libflowerbridge` to `OutputStage` byte for byte, against the desktop build
+`native/miniaudio/desktop/FlowerBridge.props` copies beside the tests, and in
+the Mono iOS suite; the same checks run in both phone runners. All of them fail
+rather than skip if the bridge is missing. Real decoding is confined to `Flower.Tests.Decoding`, whose classes carry
 `[Trait("Category", "RequiresFfmpeg")]` (and `RequiresClapModel` for the CLAP
 reference tests); no other project uses either trait.
 
@@ -130,6 +131,13 @@ CI has seven explicitly named jobs: **Linux**, **Windows**, **macOS**,
 **iOS tests (Mono)**, **iOS build and decoding (NativeAOT)**, **Android**, and
 **Web**. The two iOS jobs remain separate temporarily so their long builds run
 in parallel; the Mono runtime and runner settings are unchanged.
+
+The Linux job first checks that the checked-in bridge binaries were built from
+the bridge source in the tree: `native/miniaudio/{desktop,android,ios}/build.sh`
+each write `flowerbridge-source.sha256` beside what they build, so a change to
+`flower_audio_bridge.{c,h}` without all three rebuilds fails there. The desktop
+jobs then run those binaries through `NativeOutputStageTests` on Linux,
+Windows and macOS.
 
 Each desktop job builds `Flower.Desktop.Tests.slnf` once and its platform app,
 then executes shared, UI, decoding, native-platform (where applicable), and

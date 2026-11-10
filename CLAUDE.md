@@ -194,17 +194,22 @@ deletion semantics (a deletion is a removal, never a delete) are in
   sample rate is negotiated (once, at startup, then frozen). `OutputStage`
   requantises to the device's format (`DeviceSampleFormat`, S24 unless a device
   refuses it, settled again at every open), with its dither and clamp following
-  that format. On the phones the stage runs as C in the native bridge's render
-  callback (`native/miniaudio/flower_audio_bridge.c`), a port held to
+  that format. On every platform the stage runs as C in the render callback of
+  `libflowerbridge` (`native/miniaudio/flower_audio_bridge.c`), a port held to
   `OutputStage` sample for sample: change one, change both.
   `NativeOutputStageChecks` compares the two byte for byte on the phone
-  runners. Changing the bridge's C means rebuilding the vendored miniaudio
-  binaries.
-- **Miniaudio native libraries** (`native/miniaudio/`): the NuGet ships only
-  desktop binaries, so Android and iOS builds are vendored in-repo, pinned to
-  the miniaudio commit `Miniaudio-CS`'s bindings were generated against
-  (0.11.22). iOS also needs the `DllImportResolver` in `MiniaudioSink`'s static
-  constructor. See `native/miniaudio/README.md`.
+  runners and in `Flower.Tests` on each desktop. The managed callback is only
+  a fallback, for a platform with no bridge build or `NativeBufferMs` 0.
+- **Native libraries** (`native/miniaudio/`), all vendored as binaries. The
+  NuGet ships only desktop miniaudio, so Android and iOS miniaudio is built
+  here, pinned to the commit `Miniaudio-CS`'s bindings were generated against
+  (0.11.22). The bridge is its own library everywhere (it includes no
+  miniaudio), built by `native/miniaudio/{desktop,android,ios}/build.sh`;
+  desktop's six RIDs reach the heads and tests through `FlowerBridge.props`.
+  Changing the bridge's C means rerunning all three, and CI fails a tree whose
+  source stamps (`flowerbridge-source.sha256`) disagree. iOS on Mono also
+  needs the `DllImportResolver` in `MiniaudioSink`'s static constructor. See
+  `native/miniaudio/README.md`.
 - Playback position comes from `GaplessCoordinator.CurrentTrackBytesProduced`
   (ring bytes *read*), never a decoder's own counter, which freezes for a track
   decoded ahead (`_currentTrackReadSplit`'s remarks).
