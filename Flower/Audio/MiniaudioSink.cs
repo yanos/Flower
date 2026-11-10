@@ -38,13 +38,12 @@ namespace Flower.Audio
         private readonly object _gate = new();
         private GaplessRingBuffer? _ringBuffer;
 
-        // Non-null only where a native miniaudio build carrying
-        // flower_audio_bridge is what got loaded - Android and iOS. There the
-        // render callback is pure C draining _bridge and running its own copy
-        // of the output stage, and _feeder is the managed thread that fills
-        // it; DataCallback below is dead code on those platforms. Everywhere
-        // else both stay null and the managed callback runs as it always has.
-        // See NativeAudioBridge for why the split falls where it does.
+        // Non-null whenever libflowerbridge loaded, which is every platform
+        // Flower ships. The render callback is then pure C draining _bridge
+        // and running its own copy of the output stage, and _feeder is the
+        // managed thread that fills it; DataCallback below is dead code. Both
+        // stay null, and the managed callback runs, only where the library is
+        // missing or NativeBufferMs is 0. See NativeAudioBridge.
         //
         // _bridge is assigned and freed under _stageGate, and read under it by
         // the controls below: they deliberately stay off _gate, which a device
@@ -240,29 +239,35 @@ namespace Flower.Audio
         // never tried this path. The default probing doesn't know the real
         // on-disk name.
         //
-        // Registered for this assembly too, whose own imports of the same
-        // library - the CoreAudio diagnostics below and NativeAudioBridge's -
-        // otherwise resolved only because Mono reuses a library another
-        // assembly already loaded under that name. That holds in the app,
-        // which opens a context first, and not for anything that probes the
-        // bridge before touching miniaudio: NativeOutputStageChecks found it
-        // reporting no bridge in the Mono iOS suite. Under NativeAOT neither
-        // resolver is consulted (DirectPInvoke, in Flower.iOS.csproj).
+        // Registered for this assembly too, for its own imports: the
+        // CoreAudio diagnostics below, which are miniaudio's, and
+        // NativeAudioBridge's, which are flowerbridge.framework's - the same
+        // nested layout, so the same lookup. The diagnostics used to resolve
+        // only because Mono reuses a library another assembly already loaded
+        // under that name, which holds in the app, which opens a context
+        // first, and not for anything that probes the bridge before touching
+        // miniaudio: NativeOutputStageChecks found it reporting no bridge in
+        // the Mono iOS suite. Under NativeAOT neither resolver is consulted
+        // (DirectPInvoke, in Flower.iOS.csproj).
+        //
+        // Nowhere else needs one. Android finds lib<name>.so in the APK by
+        // name, and desktop finds the NuGet's miniaudio through the deps file
+        // and libflowerbridge flat beside the app (FlowerBridge.props).
         static MiniaudioSink()
         {
             if (OperatingSystem.IsIOS())
             {
-                NativeLibrary.SetDllImportResolver(typeof(ma).Assembly, ResolveIosMiniaudio);
-                NativeLibrary.SetDllImportResolver(typeof(MiniaudioSink).Assembly, ResolveIosMiniaudio);
+                NativeLibrary.SetDllImportResolver(typeof(ma).Assembly, ResolveIosFramework);
+                NativeLibrary.SetDllImportResolver(typeof(MiniaudioSink).Assembly, ResolveIosFramework);
             }
         }
 
-        private static IntPtr ResolveIosMiniaudio(string libraryName, System.Reflection.Assembly assembly, DllImportSearchPath? searchPath)
+        private static IntPtr ResolveIosFramework(string libraryName, System.Reflection.Assembly assembly, DllImportSearchPath? searchPath)
         {
-            if (libraryName != "miniaudio")
+            if (libraryName is not ("miniaudio" or NativeAudioBridge.LibraryName))
                 return IntPtr.Zero;
 
-            var path = Path.Combine(AppContext.BaseDirectory, "Frameworks", "miniaudio.framework", "miniaudio");
+            var path = Path.Combine(AppContext.BaseDirectory, "Frameworks", $"{libraryName}.framework", libraryName);
             return NativeLibrary.TryLoad(path, out var handle) ? handle : IntPtr.Zero;
         }
 
@@ -685,11 +690,11 @@ namespace Flower.Audio
             // converter in the chain. Keep that rate on later device changes:
             // existing current and armed decoders cannot safely change rate.
             config.sampleRate = _hasNegotiatedRate ? _format.SampleRate : 0;
-            // The bridge's callback is a native symbol in the same library
-            // miniaudio itself came from, so installing it costs nothing and
-            // needs no managed thunk. It renders silence until AttachTo binds
-            // a bridge to this device below, which happens before anything
-            // can start the device.
+            // The bridge's callback is a native symbol in libflowerbridge,
+            // which miniaudio calls like any other C function pointer, so
+            // installing it costs nothing and needs no managed thunk. It
+            // renders silence until AttachTo binds a bridge to this device
+            // below, which happens before anything can start the device.
             //
             // No format gate: the bridge carries the pipeline's float and
             // requantises to whichever width the device takes, S16 or S24.

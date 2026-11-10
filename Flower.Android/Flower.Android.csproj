@@ -79,9 +79,11 @@
        App.axaml.cs logs one critical line at startup and the app browses,
        edits and syncs without being able to play anything.
 
-       libminiaudio.so is not listed as an AndroidNativeLibrary item. The
-       Android SDK already globs libs/<abi>/*.so and reads the ABI off the
-       directory name, so naming it again packages it twice (XA4301). -->
+       libminiaudio.so and libflowerbridge.so (the render-thread bridge,
+       NativeAudioBridge's DllImport("flowerbridge")) are not listed as
+       AndroidNativeLibrary items. The Android SDK already globs
+       libs/<abi>/*.so and reads the ABI off the directory name, so naming
+       them again packages them twice (XA4301). -->
   <ItemGroup>
     <PackageReference Include="FFAudio.NET.Android" Version="$(FFAudioPackageVersion)" />
   </ItemGroup>

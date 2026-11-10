@@ -5,9 +5,10 @@
    mismatched miniaudio version here would silently desync struct layouts
    (ma_context/ma_device) from what the C# side expects.
 
-   flower_audio_bridge.c is the library's second translation unit, and
-   deliberately not included here: it does not depend on miniaudio at all
-   (see that file), which is what lets it be built on its own. */
+   flower_audio_bridge.c is not part of this library: it is libflowerbridge,
+   a library of its own on every platform, because it does not depend on
+   miniaudio at all (see that file) and desktop's miniaudio is not ours to
+   build. */
 #include "flower_coreaudio_diagnostics.h"
 
 #define MINIAUDIO_IMPLEMENTATION

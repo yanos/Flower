@@ -8,10 +8,10 @@ using Miniaudio;
 
 namespace Flower.Tests.Decoding.Scenarios;
 
-// Is the output stage the phones run in C the one every test checks in C#?
+// Is the output stage Flower runs in C the one every test checks in C#?
 //
-// On Android and iOS the render callback is C (native/miniaudio/
-// flower_audio_bridge.c): the EQ, the volume ramp, the declick, the dither
+// On every platform the render callback is C (native/miniaudio/
+// flower_audio_bridge.c, built as libflowerbridge): the EQ, the volume ramp, the declick, the dither
 // and the requantisation all run there, as a port of Flower/Audio/OutputStage.cs
 // that promises to match it sample for sample. Everything that tests that
 // arithmetic - OutputStageTests, EqualizerTests, the PCM oracle - tests the
@@ -27,9 +27,10 @@ namespace Flower.Tests.Decoding.Scenarios;
 //
 // No audio device: the bridge uses the ma_device pointer only as a key to
 // find itself and never dereferences it, so the callback is called directly
-// with a dummy one. What runs is the compiled callback in the miniaudio
-// binary the app ships, on the phone's own CPU, which is the point - desktop
-// has no build of the bridge to check (AUDIO-QUALITY-PLAN.md, Phase 6 step 6).
+// with a dummy one. What runs is the compiled callback in the libflowerbridge
+// the app ships, on the machine's own CPU, which is the point: the phone
+// runners check the phones' builds, and NativeOutputStageTests the desktop
+// ones, on whichever desktop CI or a developer runs it.
 public static class NativeOutputStageChecks
 {
     private const uint SampleRate = 48000;
@@ -55,26 +56,18 @@ public static class NativeOutputStageChecks
     // on a callback the C splits.
     private const int FirstSplitCallback = 7;
 
-    public static bool IsAvailable => NativeAudioBridge.IsAvailable;
-
     public static IReadOnlyList<CheckResult> RunAll()
     {
+        // Flower ships the bridge on every platform it builds for, so a
+        // runner without it was packaged wrong. That has to fail rather than
+        // quietly check nothing.
         if (!NativeAudioBridge.IsAvailable)
-        {
-            // Flower ships the bridge on both phones, so a phone runner
-            // without it was packaged wrong. That has to fail rather than
-            // quietly check nothing. Elsewhere its absence is a fact: the
-            // desktop miniaudio comes from a NuGet that has no bridge in it.
-            if (OperatingSystem.IsIOS() || OperatingSystem.IsAndroid())
-                return
-                [
-                    DecodeChecks.Run("The native output stage is available to be checked at all", () =>
-                        throw new CheckFailedException(
-                            "this phone's miniaudio has no flower_audio_bridge, or one older than the output stage"))
-                ];
-
-            return [];
-        }
+            return
+            [
+                DecodeChecks.Run("The native output stage is available to be checked at all", () =>
+                    throw new CheckFailedException(
+                        $"no {NativeAudioBridge.LibraryName} library loaded, or one older than the output stage"))
+            ];
 
         var results = new List<CheckResult>();
         foreach (var format in new[] { DeviceSampleFormat.S16, DeviceSampleFormat.S24 })

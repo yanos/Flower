@@ -7,14 +7,11 @@ using Xunit;
 namespace Flower.Tests.Audio;
 
 // NativeOutputStageChecks, as a fact: the C output stage in
-// flower_audio_bridge held to OutputStage, byte for byte. The checks are
-// portable so the phone runners can run them too; this is how they run
-// inside the Mono iOS suite (scripts/ios-tests.sh), which links the
-// miniaudio framework Flower.iOS ships.
-//
-// Skipped on desktop, whose miniaudio is the Miniaudio-CS NuGet's and has no
-// bridge in it, until libflowerbridge is built for the desktop RIDs
-// (AUDIO-QUALITY-PLAN.md, Phase 6 step 6).
+// libflowerbridge held to OutputStage, byte for byte. The checks are portable
+// so the phone runners can run them too; this is how they run on each
+// desktop, against the build FlowerBridge.props copies beside the tests, and
+// inside the Mono iOS suite (scripts/ios-tests.sh), which links the framework
+// Flower.iOS ships.
 public class NativeOutputStageTests
 {
     private readonly ITestOutputHelper _output;
@@ -24,9 +21,6 @@ public class NativeOutputStageTests
     [Fact]
     public void The_native_output_stage_renders_what_OutputStage_renders()
     {
-        Assert.SkipUnless(NativeOutputStageChecks.IsAvailable,
-            "This platform's miniaudio has no flower_audio_bridge to check.");
-
         var results = NativeOutputStageChecks.RunAll();
 
         foreach (var result in results)

@@ -103,6 +103,12 @@ case "$kind" in
             echo "error: the bundle has no libffaudio.dylib, so it would play nothing" >&2
             exit 1
         fi
+        # Without it playback falls back to the managed render callback,
+        # which no other platform runs.
+        if [[ ! -f "$stage/Flower.app/Contents/MonoBundle/libflowerbridge.dylib" ]]; then
+            echo "error: the bundle has no libflowerbridge.dylib, the render-thread bridge" >&2
+            exit 1
+        fi
         ln -s /Applications "$stage/Applications"
 
         dmg="$out/Flower-$version-macos-arm64.dmg"
@@ -118,13 +124,19 @@ case "$kind" in
             exe=Flower.Desktop.exe
             icon="$repo/Flower/Assets/flower-icon.ico"
             native=ffaudio.dll
+            bridge=flowerbridge.dll
         else
             exe=Flower.Desktop
             icon="$repo/Flower/Assets/flower-icon.png"
             native=libffaudio.so
+            bridge=libflowerbridge.so
         fi
         if [[ ! -f "$publish/$native" ]]; then
             echo "error: the publish has no $native, so it would play nothing" >&2
+            exit 1
+        fi
+        if [[ ! -f "$publish/$bridge" ]]; then
+            echo "error: the publish has no $bridge, the render-thread bridge" >&2
             exit 1
         fi
 

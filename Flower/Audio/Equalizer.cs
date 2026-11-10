@@ -76,7 +76,7 @@ namespace Flower.Audio
         }
 
         // The curve as flower_audio_bridge_set_equalizer takes it, for the
-        // native render callback that runs this same filter on the phones:
+        // native render callback that runs this same filter:
         // five coefficients per band in b0 b1 b2 a1 a2 order, and the preamp
         // as linear gain. The C is held to ProcessInPlace sample for sample,
         // so it gets the float coefficients this runs with, not a recomputed

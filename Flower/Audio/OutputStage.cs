@@ -26,12 +26,14 @@ namespace Flower.Audio
     // volume is pinned at 1.0 by MiniaudioSink so its integer path is never
     // used.
     //
-    // On the phones the same stage runs in C, in flower_audio_bridge's render
-    // callback, and is held to this one sample for sample: this is the
-    // reference, and a change here belongs there too
+    // Wherever libflowerbridge loads - every platform Flower ships - the same
+    // stage runs in C, in its render callback, and is held to this one sample
+    // for sample: this is the reference, and a change here belongs there too
     // (native/miniaudio/flower_audio_bridge.c, "The output stage").
-    // NativeOutputStageChecks holds the two to each other byte for byte on
-    // the phone runners. There this object only carries the controls.
+    // NativeOutputStageChecks holds the two to each other byte for byte, on
+    // the phone runners and in Flower.Tests on each desktop. There this
+    // object only carries the controls; Process runs only on the managed
+    // fallback.
     //
     // Real-time contract, same as the ring's Read(): called only from
     // MiniaudioSink.DataCallback, allocates nothing in steady

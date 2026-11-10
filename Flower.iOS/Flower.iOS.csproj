@@ -101,6 +101,7 @@
        build names its framework by path, which resolves on its own. -->
   <ItemGroup Condition="'$(FlowerNativeAot)' == 'true'">
     <DirectPInvoke Include="miniaudio" />
+    <DirectPInvoke Include="flowerbridge" />
     <DirectPInvoke Include="ffaudio" />
     <DirectPInvoke Include="libSkiaSharp" />
   </ItemGroup>
@@ -109,7 +110,9 @@
        from a NuGet package - Miniaudio-CS only ships desktop native
        binaries (see MiniaudioSink.cs). Named miniaudio so Miniaudio-CS's
        own DllImport("miniaudio") bindings resolve it with no custom
-       DllImportResolver needed.
+       DllImportResolver needed. flowerbridge is Flower's render-thread
+       bridge, NativeAudioBridge's DllImport("flowerbridge"), which is a
+       library of its own on every platform.
 
        Two plain per-platform framework folders, not a combined
        .xcframework: confirmed via a real build that <NativeReference>
@@ -122,9 +125,15 @@
     <NativeReference Include="Frameworks\ios-simulator\miniaudio.framework">
       <Kind>Framework</Kind>
     </NativeReference>
+    <NativeReference Include="Frameworks\ios-simulator\flowerbridge.framework">
+      <Kind>Framework</Kind>
+    </NativeReference>
   </ItemGroup>
   <ItemGroup Condition="('$(Platform)' == 'iPhone') OR ('$(RuntimeIdentifier)' == 'ios') OR $(RuntimeIdentifier.StartsWith('ios-')) OR $(RuntimeIdentifier.StartsWith('ios.'))">
     <NativeReference Include="Frameworks\ios-device\miniaudio.framework">
+      <Kind>Framework</Kind>
+    </NativeReference>
+    <NativeReference Include="Frameworks\ios-device\flowerbridge.framework">
       <Kind>Framework</Kind>
     </NativeReference>
   </ItemGroup>

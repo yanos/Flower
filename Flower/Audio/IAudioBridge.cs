@@ -9,8 +9,8 @@ namespace Flower.Audio
     // code runs on the real-time audio thread.
     //
     // An interface rather than the P/Invoke wrapper alone because the feeder
-    // that drives it is ordinary logic worth testing on a desktop, where the
-    // native symbols do not exist - see FakeAudioBridge in the tests.
+    // that drives it is ordinary logic worth testing without a native
+    // callback draining it - see FakeAudioBridge in the tests.
     //
     // Every member except the fade pair is producer-thread-only (AudioFeeder's
     // own thread). The fades are set from whichever thread issued the

@@ -5,16 +5,11 @@ project(flower_miniaudio C)
 # DllImport("miniaudio") string in Miniaudio-CS's generated bindings, so
 # .NET's Android P/Invoke resolution finds it with no custom
 # DllImportResolver needed.
-#
-# Two translation units: miniaudio itself (impl.c) and Flower's render-thread
-# bridge, which does not include miniaudio.h at all - see the top of
-# flower_audio_bridge.c for why that is kept so.
-add_library(miniaudio SHARED ../impl.c ../flower_audio_bridge.c)
+add_library(miniaudio SHARED ../impl.c)
 
 target_include_directories(miniaudio PRIVATE ../vendor)
 
-# Android's AAudio/OpenSL|ES backends need these, and libm the bridge's
-# output stage (rintf, which bionic keeps out of libc); miniaudio auto-detects and
+# Android's AAudio/OpenSL|ES backends need these; miniaudio auto-detects and
 # compiles the right backend in via its own preprocessor checks - no MA_*
 # feature defines needed beyond a standard NDK build.
 target_link_libraries(miniaudio
@@ -23,6 +18,20 @@ target_link_libraries(miniaudio
     m
     OpenSLES
 )
+
+# Flower's render-thread bridge, a library of its own on every platform
+# (libflowerbridge.so here, DllImport("flowerbridge") in NativeAudioBridge).
+# It includes no miniaudio - see the top of flower_audio_bridge.c - so
+# miniaudio is handed a callback that lives in this library instead.
+#
+# libm for rintf, which bionic keeps out of libc. -ffp-contract=off and the
+# hidden default visibility for the reasons native/miniaudio/desktop/build.sh
+# gives: the output stage is held to OutputStage.cs bit for bit, and the
+# header's FLOWER_AUDIO_BRIDGE_API is the whole export list.
+add_library(flowerbridge SHARED ../flower_audio_bridge.c)
+target_link_libraries(flowerbridge m)
+target_compile_options(flowerbridge PRIVATE
+    -std=c11 -O2 -ffp-contract=off -fvisibility=hidden -Wall -Wextra -pedantic)
 
 # AAudio itself is dlopen()'d at runtime by miniaudio (not link-time linked)
 # so it works across the full API 21+ range with a graceful OpenSL|ES

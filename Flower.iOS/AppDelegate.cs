@@ -38,7 +38,7 @@ public partial class AppDelegate : AvaloniaAppDelegate<App>, IMXMetricManagerSub
         // HarfBuzzSharp, which does ship an ios-specific assembly and
         // resolves fine unaided). .NET-for-iOS's default P/Invoke probing
         // for that bare name never looks inside Frameworks/libSkiaSharp.framework -
-        // same underlying limitation as MiniaudioSink.ResolveIosMiniaudio,
+        // same underlying limitation as MiniaudioSink.ResolveIosFramework,
         // and it must run before base.CustomizeAppBuilder's .WithInterFont()/
         // UseSkia() below ever touches SkiaSharp.SKImageInfo.
         NativeLibrary.SetDllImportResolver(typeof(SkiaSharp.SKImageInfo).Assembly, ResolveIosSkiaSharp);

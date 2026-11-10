@@ -9,17 +9,28 @@ namespace Flower.Audio
     // P/Invoke wrapper over native/miniaudio's flower_audio_bridge - read its
     // header for the design; this file is only the marshalling.
     //
-    // Only present where Flower builds its own miniaudio: Android and iOS
-    // (native/miniaudio/{android,ios}/build.sh). On desktop the binary comes
-    // from the Miniaudio-CS NuGet, which of course carries none of these
-    // symbols, so IsAvailable is false there and MiniaudioSink keeps its
-    // managed render callback. That split is the honest one rather than a
-    // temporary state: the stalls this exists to survive are Mono suspending
-    // the render thread for a GC, and desktop runs CoreCLR - a full day of
-    // macOS client logs contains no late render callback at all, against
-    // seven on the phone.
+    // The bridge is libflowerbridge, a library of its own on every platform
+    // and never part of miniaudio: it includes no miniaudio, and desktop's
+    // miniaudio is the Miniaudio-CS NuGet's, which Flower does not build.
+    // miniaudio is handed a dataCallback pointer into this library instead.
+    // The phones build it beside their miniaudio (native/miniaudio/
+    // {android,ios}/build.sh); desktop's six RIDs are checked in beside
+    // native/miniaudio/desktop/build.sh and copied next to the app by
+    // FlowerBridge.props.
+    //
+    // Desktop runs it too, though not for the reason it was built. It exists
+    // because Mono suspends the render thread for a GC on the phones, which
+    // desktop's CoreCLR does not - but it is also where the output stage runs
+    // after the queue rather than before it (finding M), and one render path
+    // is one thing to hold to OutputStage rather than two
+    // (AUDIO-QUALITY-PLAN.md, Phase 6).
     internal sealed unsafe class NativeAudioBridge : IAudioBridge
     {
+        // libflowerbridge.so, libflowerbridge.dylib, flowerbridge.dll, or
+        // flowerbridge.framework on iOS, which MiniaudioSink's resolver and
+        // Flower.iOS's DirectPInvoke find.
+        internal const string LibraryName = "flowerbridge";
+
         [StructLayout(LayoutKind.Sequential)]
         private struct NativeSnapshot
         {
@@ -34,61 +45,61 @@ namespace Flower.Audio
             public uint MaxIdenticalCallbackRun;
         }
 
-        [DllImport("miniaudio", EntryPoint = "flower_audio_bridge_create")]
+        [DllImport(LibraryName, EntryPoint = "flower_audio_bridge_create")]
         private static extern IntPtr Create(uint capacityFrames, uint channels, uint deviceBytesPerSample);
 
-        [DllImport("miniaudio", EntryPoint = "flower_audio_bridge_destroy")]
+        [DllImport(LibraryName, EntryPoint = "flower_audio_bridge_destroy")]
         private static extern void Destroy(IntPtr bridge);
 
-        [DllImport("miniaudio", EntryPoint = "flower_audio_bridge_data_callback")]
+        [DllImport(LibraryName, EntryPoint = "flower_audio_bridge_data_callback")]
         private static extern IntPtr DataCallback();
 
-        [DllImport("miniaudio", EntryPoint = "flower_audio_bridge_attach")]
+        [DllImport(LibraryName, EntryPoint = "flower_audio_bridge_attach")]
         private static extern int Attach(IntPtr bridge, ma_device* device);
 
-        [DllImport("miniaudio", EntryPoint = "flower_audio_bridge_detach")]
+        [DllImport(LibraryName, EntryPoint = "flower_audio_bridge_detach")]
         private static extern void Detach(IntPtr bridge);
 
-        [DllImport("miniaudio", EntryPoint = "flower_audio_bridge_capacity")]
+        [DllImport(LibraryName, EntryPoint = "flower_audio_bridge_capacity")]
         private static extern uint NativeCapacity(IntPtr bridge);
 
-        [DllImport("miniaudio", EntryPoint = "flower_audio_bridge_available")]
+        [DllImport(LibraryName, EntryPoint = "flower_audio_bridge_available")]
         private static extern uint NativeAvailable(IntPtr bridge);
 
-        [DllImport("miniaudio", EntryPoint = "flower_audio_bridge_write")]
+        [DllImport(LibraryName, EntryPoint = "flower_audio_bridge_write")]
         private static extern uint NativeWrite(IntPtr bridge, byte* data, uint byteCount);
 
-        [DllImport("miniaudio", EntryPoint = "flower_audio_bridge_request_flush")]
+        [DllImport(LibraryName, EntryPoint = "flower_audio_bridge_request_flush")]
         private static extern ulong NativeRequestFlush(IntPtr bridge);
 
-        [DllImport("miniaudio", EntryPoint = "flower_audio_bridge_flush_acked")]
+        [DllImport(LibraryName, EntryPoint = "flower_audio_bridge_flush_acked")]
         private static extern ulong NativeFlushAcked(IntPtr bridge);
 
-        [DllImport("miniaudio", EntryPoint = "flower_audio_bridge_flush_now")]
+        [DllImport(LibraryName, EntryPoint = "flower_audio_bridge_flush_now")]
         private static extern void NativeFlushNow(IntPtr bridge);
 
-        [DllImport("miniaudio", EntryPoint = "flower_audio_bridge_set_primed")]
+        [DllImport(LibraryName, EntryPoint = "flower_audio_bridge_set_primed")]
         private static extern void NativeSetPrimed(IntPtr bridge, int primed);
 
-        [DllImport("miniaudio", EntryPoint = "flower_audio_bridge_begin_fade_in")]
+        [DllImport(LibraryName, EntryPoint = "flower_audio_bridge_begin_fade_in")]
         private static extern void NativeBeginFadeIn(IntPtr bridge, uint fadeFrames);
 
-        [DllImport("miniaudio", EntryPoint = "flower_audio_bridge_begin_fade_out")]
+        [DllImport(LibraryName, EntryPoint = "flower_audio_bridge_begin_fade_out")]
         private static extern void NativeBeginFadeOut(IntPtr bridge, uint fadeFrames);
 
-        [DllImport("miniaudio", EntryPoint = "flower_audio_bridge_fade_out_completed")]
+        [DllImport(LibraryName, EntryPoint = "flower_audio_bridge_fade_out_completed")]
         private static extern int NativeFadeOutCompleted(IntPtr bridge);
 
-        [DllImport("miniaudio", EntryPoint = "flower_audio_bridge_set_target_gain")]
+        [DllImport(LibraryName, EntryPoint = "flower_audio_bridge_set_target_gain")]
         private static extern void NativeSetTargetGain(IntPtr bridge, float gain);
 
-        [DllImport("miniaudio", EntryPoint = "flower_audio_bridge_set_timing")]
+        [DllImport(LibraryName, EntryPoint = "flower_audio_bridge_set_timing")]
         private static extern void NativeSetTiming(IntPtr bridge, uint gainRampFrames, uint declickFadeFrames);
 
-        [DllImport("miniaudio", EntryPoint = "flower_audio_bridge_set_equalizer")]
+        [DllImport(LibraryName, EntryPoint = "flower_audio_bridge_set_equalizer")]
         private static extern int NativeSetEqualizer(IntPtr bridge, float* coefficients, uint bandCount, float preamp);
 
-        [DllImport("miniaudio", EntryPoint = "flower_audio_bridge_take_snapshot")]
+        [DllImport(LibraryName, EntryPoint = "flower_audio_bridge_take_snapshot")]
         private static extern void NativeTakeSnapshot(IntPtr bridge, out NativeSnapshot snapshot);
 
         private static bool? _isAvailable;

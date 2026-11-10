@@ -33,6 +33,19 @@ jobs:
             Directory.Build.props
             Tests/ClientTests.props
 
+      # libflowerbridge is checked in, built per platform by three scripts
+      # (native/miniaudio/{desktop,android,ios}/build.sh), and each records
+      # the bridge source it was built from. A change to the C that was not
+      # followed by all three rebuilds fails here, before any suite runs a
+      # binary that is not what the source says.
+      - name: Check the bridge binaries match their source
+        working-directory: native/miniaudio
+        run: |
+          for stamp in desktop/runtimes ../../Flower.Android/libs ../../Flower.iOS/Frameworks; do
+            sha256sum --check --strict "$stamp/flowerbridge-source.sha256" \
+              || { echo "::error::$stamp was built from a different flower_audio_bridge.{c,h}; rerun its build.sh"; exit 1; }
+          done
+
       # Build the shared test graph once. Browser publishing has its own job.
       - name: Build test suites
         run: dotnet build Tests/Flower.Desktop.Tests.slnf --configuration Release -p:IncludeWebUi=false

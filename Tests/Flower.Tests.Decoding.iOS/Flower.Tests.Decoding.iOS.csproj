@@ -47,6 +47,7 @@
   <ItemGroup Condition="'$(FlowerNativeAot)' == 'true'">
     <DirectPInvoke Include="ffaudio" />
     <DirectPInvoke Include="miniaudio" />
+    <DirectPInvoke Include="flowerbridge" />
   </ItemGroup>
 
   <!-- The shell shared with Flower.Tests.iOS: the transcript contract, and
@@ -66,16 +67,22 @@
     <PackageReference Include="FFAudio.NET.iOS" Version="$(FFAudioPackageVersion)" />
   </ItemGroup>
 
-  <!-- And the miniaudio Flower.iOS ships, for the flower_audio_bridge inside
-       it: this runner never opens a device, but NativeOutputStageChecks calls
-       the bridge's render callback directly to hold it to OutputStage. -->
+  <!-- And the miniaudio and flowerbridge Flower.iOS ships: this runner never
+       opens a device, but NativeOutputStageChecks calls the bridge's render
+       callback directly to hold it to OutputStage. -->
   <ItemGroup Condition="$(RuntimeIdentifier.StartsWith('iossimulator'))">
     <NativeReference Include="..\..\Flower.iOS\Frameworks\ios-simulator\miniaudio.framework">
+      <Kind>Framework</Kind>
+    </NativeReference>
+    <NativeReference Include="..\..\Flower.iOS\Frameworks\ios-simulator\flowerbridge.framework">
       <Kind>Framework</Kind>
     </NativeReference>
   </ItemGroup>
   <ItemGroup Condition="$(RuntimeIdentifier.StartsWith('ios-'))">
     <NativeReference Include="..\..\Flower.iOS\Frameworks\ios-device\miniaudio.framework">
+      <Kind>Framework</Kind>
+    </NativeReference>
+    <NativeReference Include="..\..\Flower.iOS\Frameworks\ios-device\flowerbridge.framework">
       <Kind>Framework</Kind>
     </NativeReference>
   </ItemGroup>
