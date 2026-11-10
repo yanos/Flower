@@ -2,7 +2,7 @@
 
 Five requested features: gapless playback, multi-channel/hi-res sample rate support (24-bit/192kHz+), DSD/APE format support, a low-latency playback engine, and EQ with true bypass. Output-device selection itself is `AIRPLAY-BLUETOOTH-PLAN.md` territory, referenced here only where a feature depends on it.
 
-**#1 (EQ) and #6 (true sample-accurate gapless) are done. #4 was superseded by #6 and will never be built. #5 is largely done — the FFmpeg façade shipped on all five heads and the pipeline carries 24-bit end to end; what is left of it is per-track format election rather than one negotiated at startup. #2 and #3 are open and both need re-scoping first, because they were written against LibVLC** — see the note below, which says how much of each survives.
+**#1 (EQ) and #6 (true sample-accurate gapless) are done. #4 was superseded by #6 and will never be built. #5 is largely done — the FFmpeg façade shipped on all five heads, and the pipeline carries float32 from the decoder to the output stage, which requantises once to the device's S24 (S16 if the device refuses it); what is left of it is per-track format election rather than one negotiated at startup. #2 and #3 are open and both need re-scoping first, because they were written against LibVLC** — see the note below, which says how much of each survives.
 
 ## A note on what is stale here
 
@@ -10,8 +10,9 @@ Five requested features: gapless playback, multi-channel/hi-res sample rate supp
 current instructions.** This document was written when LibVLC did everything,
 and revised once when LibVLC became decode-only. It is now neither: LibVLC is
 gone entirely, `FfmpegTrackDecoder` is the only decoder, and every platform
-renders through `MiniaudioSink` pulling packed S24 at the negotiated device rate
-out of `GaplessRingBuffer`.
+renders through `MiniaudioSink`, which pulls float32 out of `GaplessRingBuffer`
+at the negotiated device rate and has `OutputStage` requantise it to the
+device's S24 or S16. On the phones that stage runs in the C render callback.
 
 That matters most for **#2**, which is stale outright — it proposes tuning
 `new LibVLC(options)` and `file-caching`, and neither exists. Its underlying
@@ -55,7 +56,7 @@ Re-scoped, the same question is about three places: `FfmpegTrackDecoder`'s open 
 
 **Monkey's Audio is done** (October 2026), in the same change that added Ogg
 Vorbis, Opus and AIFF: `.ape` is in `Importer.ValidExtensions`, and
-`Tests/Flower.DeviceChecks` carries a `sine.ape` fixture that has to decode back
+`Tests/Flower.Tests.Decoding.Scenarios/Fixtures` carries a `sine.ape` fixture that has to decode back
 to `sine.wav` byte for byte, from disk and over every streaming shape. FFmpeg
 cannot encode APE, so `regenerate.sh` uses Monkey's Audio's own `mac` encoder.
 What follows is the original finding, and the DSD half of it still stands.
@@ -265,7 +266,10 @@ attempt:
   from `Send` exactly as a phone does, so a synchronous call cannot come back
   unnoticed.
 
-  This is also what produced `Flower.DeviceChecks`. Two bugs in a row were
+  This is also what produced `Flower.DeviceChecks`, since split into
+  `Flower.Tests.Decoding.Scenarios` (the portable checks) and the
+  `Flower.Tests.Decoding.iOS`/`.Android` runners. The older name is kept
+  below, where it is history. Two bugs in a row were
   invisible to a green desktop suite and were found by a person listening to a
   phone, which is not a test strategy. The checks decode a fixture from disk
   and over a loopback HTTP server and compare the result to the fixture's own
@@ -917,7 +921,8 @@ underrun count when it was not.
    **Most of it is now done.** Flower fetches its own audio (see "Step one,
    built"); the `ffaudio` façade and `FfmpegTrackDecoder` exist, are
    built for all five heads, and are the only decoder; the pipeline carries
-   packed S24 end to end; and `MiniaudioSink` narrows back only when a device
+   float32 from the decoder to `OutputStage`, which requantises once to S24;
+   and it requantises to S16 instead only when a device
    refuses `ma_format_s24`. What is genuinely left is the *direct-mode format
    policy* — per-track native format rather than one negotiated once at
    startup, which needs device capability probing the current name/id-only
