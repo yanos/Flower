@@ -26,8 +26,12 @@ struct ma_device;
  * by dropping everything queued, and the producer waits for that
  * acknowledgement before writing anything new.
  *
- * Everything the callback touches is a plain atomic. No allocation, no
- * locks, no logging.
+ * Everything the callback touches is a plain atomic or its own state. No
+ * allocation, no locks, no logging. The output stage it runs - EQ, volume
+ * ramp, declick, dither - is fixed arithmetic over pre-allocated buffers,
+ * and the iPhone logs that motivated all this showed the same work never
+ * past ~3ms against a 42.7ms period: what stalled the thread was never the
+ * workload, only a managed runtime suspending it.
  */
 
 typedef struct flower_audio_bridge flower_audio_bridge;
@@ -45,17 +49,17 @@ typedef struct
     uint32_t maxIdenticalCallbackRun;
 } flower_audio_bridge_snapshot;
 
-/* capacityBytes is rounded down to a whole frame. Returns NULL on failure.
+/* capacityFrames is in the pipeline's frames - interleaved float32, which is
+   what the bridge carries: the shared ring's PCM, unprocessed, so that the
+   volume, the EQ and the requantisation all happen in the callback, after
+   the queue rather than before it (AUDIO-QUALITY-PLAN.md, finding M).
 
-   bytesPerSample is 2 for S16 or 3 for packed little-endian S24, and it is
-   passed rather than inferred because the ring carries interleaved frames
-   with no header: bytesPerFrame alone cannot tell 2-channel S24 from
-   3-channel S16. The transport envelope is the only thing here that reads
-   individual samples rather than bytes, and it has to scale them in their
-   own width - see flower_audio_bridge_apply_envelope. Anything else is
-   refused, which is a stricter contract than the pipeline needs today and
-   the point: a format this cannot fade is a format it must not render. */
-flower_audio_bridge* flower_audio_bridge_create(uint32_t capacityBytes, uint32_t bytesPerFrame, uint32_t bytesPerSample);
+   channels must be 2 and deviceBytesPerSample 2 (S16) or 3 (packed
+   little-endian S24): the format the device was opened in, which the
+   output stage requantises to. A bridge lives exactly as long as one
+   device, so this is fixed for its life. Anything else is refused rather
+   than rendered as something it is not. Returns NULL on failure. */
+flower_audio_bridge* flower_audio_bridge_create(uint32_t capacityFrames, uint32_t channels, uint32_t deviceBytesPerSample);
 void flower_audio_bridge_destroy(flower_audio_bridge* pBridge);
 
 /* The ma_device_data_proc to hand to ma_device_config.dataCallback. Cast
@@ -98,6 +102,25 @@ int flower_audio_bridge_is_primed(const flower_audio_bridge* pBridge);
 void flower_audio_bridge_begin_fade_in(flower_audio_bridge* pBridge, uint32_t fadeFrames);
 void flower_audio_bridge_begin_fade_out(flower_audio_bridge* pBridge, uint32_t fadeFrames);
 int flower_audio_bridge_fade_out_completed(const flower_audio_bridge* pBridge);
+
+/* The output stage's controls - Flower/Audio/OutputStage.cs, which this
+   matches sample for sample. Each applies from the next device buffer,
+   however deep the queue is.
+
+   set_target_gain and set_timing are safe from any thread. The gain is
+   linear amplitude, clamped to [0,1]; the ramp and declick lengths are in
+   frames at the device's rate, and 0 means none (the declick then lasts one
+   frame, as OutputStage's does).
+
+   set_equalizer takes Equalizer.BuildFrom's curve: bandCount biquads of five
+   coefficients each (b0 b1 b2 a1 a2, normalised so a0 is 1), plus the
+   preamp as linear gain. NULL coefficients with a bandCount of 0 is a true
+   bypass. The callback crossfades to a new curve over one buffer. Callers
+   must not overlap: it is single-producer, so take a lock around it if more
+   than one thread can call it. Returns 0 when refused. */
+void flower_audio_bridge_set_target_gain(flower_audio_bridge* pBridge, float gain);
+void flower_audio_bridge_set_timing(flower_audio_bridge* pBridge, uint32_t gainRampFrames, uint32_t declickFadeFrames);
+int flower_audio_bridge_set_equalizer(flower_audio_bridge* pBridge, const float* pCoefficients, uint32_t bandCount, float preamp);
 
 void flower_audio_bridge_take_snapshot(flower_audio_bridge* pBridge, flower_audio_bridge_snapshot* pSnapshot);
 

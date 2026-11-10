@@ -34,7 +34,7 @@ namespace Flower.Audio
         }
 
         [DllImport("miniaudio", EntryPoint = "flower_audio_bridge_create")]
-        private static extern IntPtr Create(uint capacityBytes, uint bytesPerFrame, uint bytesPerSample);
+        private static extern IntPtr Create(uint capacityFrames, uint channels, uint deviceBytesPerSample);
 
         [DllImport("miniaudio", EntryPoint = "flower_audio_bridge_destroy")]
         private static extern void Destroy(IntPtr bridge);
@@ -78,6 +78,15 @@ namespace Flower.Audio
         [DllImport("miniaudio", EntryPoint = "flower_audio_bridge_fade_out_completed")]
         private static extern int NativeFadeOutCompleted(IntPtr bridge);
 
+        [DllImport("miniaudio", EntryPoint = "flower_audio_bridge_set_target_gain")]
+        private static extern void NativeSetTargetGain(IntPtr bridge, float gain);
+
+        [DllImport("miniaudio", EntryPoint = "flower_audio_bridge_set_timing")]
+        private static extern void NativeSetTiming(IntPtr bridge, uint gainRampFrames, uint declickFadeFrames);
+
+        [DllImport("miniaudio", EntryPoint = "flower_audio_bridge_set_equalizer")]
+        private static extern int NativeSetEqualizer(IntPtr bridge, float* coefficients, uint bandCount, float preamp);
+
         [DllImport("miniaudio", EntryPoint = "flower_audio_bridge_take_snapshot")]
         private static extern void NativeTakeSnapshot(IntPtr bridge, out NativeSnapshot snapshot);
 
@@ -97,6 +106,13 @@ namespace Flower.Audio
 
                 try
                 {
+                    // The newest entry point too, called on no bridge, which
+                    // it ignores. A binary built before the output stage moved
+                    // into the callback has the old create() signature and a
+                    // bridge carrying the device's format rather than float;
+                    // without this it would pass the probe and be handed
+                    // arguments it reads as something else.
+                    NativeSetTargetGain(IntPtr.Zero, 1f);
                     _isAvailable = DataCallback() != IntPtr.Zero;
                 }
                 catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
@@ -116,17 +132,17 @@ namespace Flower.Audio
         // Null when the native side could not allocate, which the caller
         // treats the same way it treats a platform without the symbols at
         // all: keep the managed callback.
-        public static NativeAudioBridge? TryCreate(int capacityBytes, int bytesPerFrame, int bytesPerSample)
+        //
+        // The bridge carries the pipeline's float, so its capacity is in the
+        // pipeline's frames; the device format is what the native output
+        // stage requantises to on the way out, and is fixed for the bridge's
+        // life because a bridge is made per device open.
+        public static NativeAudioBridge? TryCreate(int capacityFrames, DeviceSampleFormat deviceFormat)
         {
-            if (!IsAvailable || capacityBytes <= 0 || bytesPerFrame <= 0 || bytesPerSample <= 0)
+            if (!IsAvailable || capacityFrames <= 0)
                 return null;
 
-            // The width is passed rather than left to be inferred from the
-            // frame size, which cannot distinguish stereo S24 from three
-            // channels of S16. It is the transport fade that needs it - the
-            // one place in the bridge that reads samples instead of bytes -
-            // and the native side refuses anything it cannot fade.
-            var handle = Create((uint)capacityBytes, (uint)bytesPerFrame, (uint)bytesPerSample);
+            var handle = Create((uint)capacityFrames, GaplessFormat.Channels, (uint)deviceFormat.BytesPerSample());
             return handle == IntPtr.Zero ? null : new NativeAudioBridge(handle);
         }
 
@@ -168,6 +184,32 @@ namespace Flower.Audio
         public void BeginFadeOut(int fadeFrames) => NativeBeginFadeOut(_handle, (uint)Math.Max(0, fadeFrames));
 
         public bool FadeOutCompleted => NativeFadeOutCompleted(_handle) != 0;
+
+        // The output stage's controls, run by the native callback - see
+        // flower_audio_bridge.h. Not on IAudioBridge: they are the sink's to
+        // set, and the feeder never touches them.
+        public void SetTargetGain(float gain) => NativeSetTargetGain(_handle, gain);
+
+        public void SetTiming(int gainRampFrames, int declickFadeFrames) =>
+            NativeSetTiming(_handle, (uint)Math.Max(0, gainRampFrames), (uint)Math.Max(0, declickFadeFrames));
+
+        // Single-producer on the native side; MiniaudioSink serialises its
+        // callers.
+        public void SetEqualizer(Equalizer? equalizer)
+        {
+            if (equalizer == null)
+            {
+                NativeSetEqualizer(_handle, null, 0, 1f);
+                return;
+            }
+
+            Span<float> coefficients = stackalloc float[Equalizer.BandCount * Equalizer.CoefficientsPerBand];
+            equalizer.CopyCoefficientsTo(coefficients);
+            fixed (float* source = coefficients)
+            {
+                NativeSetEqualizer(_handle, source, (uint)equalizer.ActiveBandCount, equalizer.PreampLinear);
+            }
+        }
 
         public AudioBridgeSnapshot TakeSnapshot()
         {

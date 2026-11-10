@@ -100,9 +100,8 @@ namespace Flower.Audio
         // the most the caller can ever have buffered: a requirement above it
         // could only ever be met by the deadline, so it is capped just under.
         //
-        // In frames rather than bytes because the feeder's "buffered" is two
-        // buffers in two formats - the bridge holds device PCM, the ring
-        // behind it float - and only a frame means the same in both.
+        // In frames rather than bytes because a frame is what the requirement
+        // is stated in: milliseconds at the device's rate.
         public bool TryRelease(long bufferedFrames, long capacityFrames, AudioTimingSettings timing, uint sampleRate, long now)
         {
             if (_primed)

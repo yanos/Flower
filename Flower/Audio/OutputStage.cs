@@ -26,8 +26,13 @@ namespace Flower.Audio
     // volume is pinned at 1.0 by MiniaudioSink so its integer path is never
     // used.
     //
+    // On the phones the same stage runs in C, in flower_audio_bridge's render
+    // callback, and is held to this one sample for sample: this is the
+    // reference, and a change here belongs there too (native/miniaudio/impl.c,
+    // "The output stage"). There this object only carries the controls.
+    //
     // Real-time contract, same as the ring's Read(): called only from
-    // MiniaudioSink.DataCallback or AudioFeeder, allocates nothing in steady
+    // MiniaudioSink.DataCallback, allocates nothing in steady
     // state (the crossfade scratch buffer is grow-only and reaches its size
     // within the first callback or two), takes no lock, and blocks on
     // nothing. Everything the UI thread changes arrives through a volatile

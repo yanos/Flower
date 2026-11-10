@@ -40,18 +40,25 @@ namespace Flower.Audio
 
         // Non-null only where a native miniaudio build carrying
         // flower_audio_bridge is what got loaded - Android and iOS. There the
-        // render callback is pure C draining _bridge, and _feeder is the
-        // managed thread that fills it; DataCallback below is dead code on
-        // those platforms. Everywhere else both stay null and the managed
-        // callback runs as it always has. See NativeAudioBridge for why the
-        // split falls where it does.
+        // render callback is pure C draining _bridge and running its own copy
+        // of the output stage, and _feeder is the managed thread that fills
+        // it; DataCallback below is dead code on those platforms. Everywhere
+        // else both stay null and the managed callback runs as it always has.
+        // See NativeAudioBridge for why the split falls where it does.
+        //
+        // _bridge is assigned and freed under _stageGate, and read under it by
+        // the controls below: they deliberately stay off _gate, which a device
+        // open holds for as long as the platform takes, and a control reaching
+        // a bridge being freed would be a use-after-free in native code.
         private NativeAudioBridge? _bridge;
         private AudioFeeder? _feeder;
+        private readonly object _stageGate = new();
 
         // Everything between the ring and the sound card - EQ, gain ramping,
         // declick envelope, dithered requantisation to the device's format.
         // Owned here and driven from DataCallback; see OutputStage for why none
-        // of that can be left to miniaudio.
+        // of that can be left to miniaudio. With a bridge it is the controls'
+        // record and the C's reference, and its Process never runs.
         private OutputStage _outputStage = new(GaplessFormat.DefaultSampleRate);
 
         // What this sink consumes - see IAudioSink.Format. The first
@@ -473,12 +480,20 @@ namespace Flower.Audio
 
         // Reading the native snapshot resets it, so this must happen exactly
         // once per watchdog tick and nowhere else.
+        //
+        // Under _stageGate because this runs on the watchdog's timer, which
+        // does not hold _gate, and CloseDevice frees the bridge.
         private void FoldBridgeCounters()
         {
-            if (_bridge is not { } bridge)
-                return;
+            AudioBridgeSnapshot snapshot;
+            lock (_stageGate)
+            {
+                if (_bridge is not { } bridge)
+                    return;
 
-            var snapshot = bridge.TakeSnapshot();
+                snapshot = bridge.TakeSnapshot();
+            }
+
             Interlocked.Add(ref _callbackCount, snapshot.CallbackCount);
             Interlocked.Add(ref _requestedBytes, snapshot.RequestedBytes);
             Interlocked.Add(ref _realBytesRendered, snapshot.RealBytes);
@@ -504,22 +519,63 @@ namespace Flower.Audio
         {
             get => _volumePercent;
 
-            // No lock and no device call: this is a single volatile store the
-            // render callback picks up on its next pass and ramps toward over
-            // GainRampMs. Taking _gate here used to put the UI thread behind
-            // whatever else held it, for a value nothing but the callback
-            // reads.
+            // Not _gate and no device call: this is a single store the render
+            // callback - managed or native - picks up on its next pass and
+            // ramps toward over GainRampMs. Taking _gate here used to put the
+            // UI thread behind whatever else held it, a device open included,
+            // for a value nothing but the callback reads. _stageGate is held
+            // only around the store itself.
             set
             {
                 var percent = Math.Clamp(value, 0, 100);
                 _volumePercent = percent;
-                _outputStage.TargetGain = OutputStage.GainForVolumePercent(percent);
+                lock (_stageGate)
+                {
+                    _outputStage.TargetGain = OutputStage.GainForVolumePercent(percent);
+                    _bridge?.SetTargetGain(_outputStage.TargetGain);
+                }
             }
         }
 
-        public void ApplyEqualizer(Equalizer? equalizer) => _outputStage.Equalizer = equalizer;
+        public void ApplyEqualizer(Equalizer? equalizer)
+        {
+            lock (_stageGate)
+            {
+                // The same curve again is no change, as it is to OutputStage,
+                // which compares by reference. The native side cannot tell, so
+                // it would crossfade into a copy with its delay lines zeroed.
+                if (ReferenceEquals(_outputStage.Equalizer, equalizer))
+                    return;
 
-        public void ApplyTiming(AudioTimingSettings timing) => _outputStage.Timing = timing;
+                _outputStage.Equalizer = equalizer;
+                _bridge?.SetEqualizer(equalizer);
+            }
+        }
+
+        public void ApplyTiming(AudioTimingSettings timing)
+        {
+            lock (_stageGate)
+            {
+                _outputStage.Timing = timing;
+                if (_bridge is { } bridge)
+                    PushTiming(bridge);
+            }
+        }
+
+        // Everything the native output stage reads, for a bridge just made or
+        // for new timing. The caller holds _stageGate.
+        private void PushTiming(NativeAudioBridge bridge)
+        {
+            var timing = _outputStage.Timing;
+            bridge.SetTiming(FadeFrames(timing.GainRampMs), FadeFrames(timing.DeclickFadeMs));
+        }
+
+        private void PushStage(NativeAudioBridge bridge)
+        {
+            bridge.SetTargetGain(_outputStage.TargetGain);
+            bridge.SetEqualizer(_outputStage.Equalizer);
+            PushTiming(bridge);
+        }
 
         public void Start(GaplessRingBuffer ringBuffer)
         {
@@ -623,16 +679,8 @@ namespace Flower.Audio
             // a bridge to this device below, which happens before anything
             // can start the device.
             //
-            // No format gate any more. This used to be S16-only, because
-            // flower_audio_bridge's transport fade walked its buffer as
-            // int16_t*, and handing that packed 24-bit PCM would not merely
-            // skip the fade - it would rewrite every sample as though
-            // three-byte frames were two-byte ones. So electing FFmpeg on a
-            // phone bought 24 bits by giving up the one thing the bridge
-            // exists for, a render callback Mono's GC cannot suspend, on
-            // exactly the two platforms where that matters. The envelope now
-            // takes the width (flower_audio_bridge_create's bytesPerSample),
-            // so neither has to be traded for the other.
+            // No format gate: the bridge carries the pipeline's float and
+            // requantises to whichever width the device takes, S16 or S24.
             var useBridge = NativeAudioBridge.IsAvailable
                 && _outputStage.Timing.NativeBufferMs > 0;
 
@@ -784,13 +832,11 @@ namespace Flower.Audio
             // in the rate actually being rendered rather than the assumed one.
             if (useBridge && _ringBuffer is { } ringBuffer)
             {
-                // In the device's format: the bridge holds what OutputStage has
-                // already requantised, not what the ring holds.
-                var capacity = _outputStage.Timing.NativeBufferMs * (long)_format.SampleRate
-                    * deviceFormat.BytesPerFrame() / 1000;
-                _bridge = NativeAudioBridge.TryCreate(
-                    (int)capacity, deviceFormat.BytesPerFrame(), deviceFormat.BytesPerSample());
-                if (_bridge == null)
+                // In the pipeline's frames: the bridge holds what the ring
+                // holds, and the output stage runs on the far side of it.
+                var capacityFrames = _outputStage.Timing.NativeBufferMs * (long)_format.SampleRate / 1000;
+                var bridge = NativeAudioBridge.TryCreate((int)capacityFrames, deviceFormat);
+                if (bridge == null)
                 {
                     // Nothing to fall back to: the device was initialised with
                     // the native callback, which without a bridge renders
@@ -801,12 +847,22 @@ namespace Flower.Audio
                 }
                 else
                 {
-                    _bridge.AttachTo(_device);
-                    _feeder = new AudioFeeder(ringBuffer, _bridge, _outputStage);
+                    // Published and loaded with the controls' current values
+                    // in one step, so a control set meanwhile either lands in
+                    // the stage before the push or reaches this bridge after.
+                    lock (_stageGate)
+                    {
+                        _bridge = bridge;
+                        PushStage(bridge);
+                    }
+
+                    bridge.AttachTo(_device);
+                    _feeder = new AudioFeeder(ringBuffer, bridge, _format.SampleRate, () => _outputStage.Timing);
                     _feeder.Start();
                     _logger.LogInformation(
-                        "Rendering through the native audio bridge: {BufferMs}ms ({Capacity} bytes) ahead of the device",
-                        _outputStage.Timing.NativeBufferMs, _bridge.Capacity);
+                        "Rendering through the native audio bridge: {BufferMs}ms ({Capacity} bytes) ahead of the device, "
+                        + "output stage in the callback",
+                        _outputStage.Timing.NativeBufferMs, bridge.Capacity);
                 }
             }
 
@@ -894,9 +950,12 @@ namespace Flower.Audio
                 _intentionalStopDepth--;
             }
 
-            _bridge?.DetachFromDevice();
-            _bridge?.Dispose();
-            _bridge = null;
+            lock (_stageGate)
+            {
+                _bridge?.DetachFromDevice();
+                _bridge?.Dispose();
+                _bridge = null;
+            }
 
             NativeMemory.Free(_device);
             _device = null;

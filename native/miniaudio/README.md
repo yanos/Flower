@@ -16,7 +16,13 @@ library by `impl.c`:
 - `flower_audio_bridge.h` - the PCM hand-off that keeps managed code off the
   real-time thread on Mono platforms. Read its header comment for why it
   exists; the short version is that Mono's GC suspends the render thread, and
-  iPhone logs caught it doing so for 668ms mid-track.
+  iPhone logs caught it doing so for 668ms mid-track. It carries the
+  pipeline's float and runs the output stage (EQ, volume ramp, declick,
+  dither) in the callback, as a port of `Flower/Audio/OutputStage.cs` held to
+  it sample for sample. That is why `impl.c` turns floating-point
+  contraction off and Android links `libm`: either side fusing a
+  multiply-add the other does not, or rounding differently from
+  `MathF.Round`, would break that match.
 
 Both are absent from the desktop NuGet binary, which is why `MiniaudioSink`
 probes for them rather than assuming a platform.
@@ -42,7 +48,7 @@ For a debug build that catches native heap corruption early (relevant given `Min
 
 ## iOS
 
-`ios/build-xcframework.sh` builds a dynamic `miniaudio.xcframework` (device `arm64-apple-ios` + Apple Silicon simulator `arm64-apple-ios-simulator`), wired into `Flower.iOS.csproj` via `<NativeReference Kind="Framework">`. See that script and `Flower.iOS.csproj` for details.
+`ios/build.sh` builds a dynamic `miniaudio.xcframework` (device `arm64-apple-ios` + Apple Silicon simulator `arm64-apple-ios-simulator`), wired into `Flower.iOS.csproj` via `<NativeReference Kind="Framework">`. See that script and `Flower.iOS.csproj` for details.
 
 ## Verification
 

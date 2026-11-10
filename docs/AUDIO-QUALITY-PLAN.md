@@ -8,9 +8,11 @@ device logs showed a defect none of A–J covers, and the phone listening is wha
 confirms its native render callback — the one part of this plan no automated
 test can reach.
 
-Phase 6's first two steps are built (November 2026): the `armeabi-v7a` atomics
-question is settled, and the pipeline carries float from the decoder to
-`OutputStage`. Step 3 - the one that fixes M - is next. The phase was rescoped
+Phase 6's first three steps are built (November 2026): the `armeabi-v7a` atomics
+question is settled, the pipeline carries float from the decoder to
+`OutputStage`, and on the phones the output stage now runs in the C render
+callback, which is the fix for M. Step 4, hearing that fix on a phone, is
+next. The phase was rescoped
 while writing an earlier status down. It used to read as "collapse Phase 5's desktop/mobile fork"; working out what
 that fork costs turned up **finding M — every interactive control on mobile
 lags by the render buffer's depth, today, because Phase 5 put that buffer on
@@ -635,7 +637,7 @@ the fix is to drop a decode-ahead's connection once its staging is full and
 reopen at the offset when promoted. If the 3 s loop turns out to be unchanged
 repeats, it should be de-duplicated in `AppleNetworkChange`.
 
-## Phase 6 — put the output stage where the controls are (steps 1–2 built)
+## Phase 6 — put the output stage where the controls are (steps 1–3 built)
 
 Phase 5 left a fork: pure-C render callback on Android and iOS, managed callback
 on desktop. This phase was originally scoped as collapsing that fork — one
@@ -758,9 +760,10 @@ that, and deletes:
 - **`Widen`**, and the packed-S24 sign-extension trap inside it.
 - **`MaxBytesPerSample`**, and `flower_audio_bridge_create`'s `bytesPerSample`
   contract — the 2-or-3 refusal that exists only because the transport envelope
-  reads samples rather than bytes. (Step 2 deleted the first. The second stays
-  until step 3: the bridge still carries `OutputStage`'s output, which is the
-  device's integer format.)
+  reads samples rather than bytes. (Step 2 deleted the first. Step 3 changed
+  the second rather than deleting it: the transport envelope now works on
+  float, but the callback still has to know the width it requantises to, so
+  `create` still takes it and still refuses anything but 2 or 3.)
 
 `PcmSampleFormat`'s own comment (it is `DeviceSampleFormat` now) rejected
 F32, but it rejected it as a *third* format alongside S16 and S24, on the
@@ -921,8 +924,54 @@ day.
 3. **Move the output stage into the C callback**, bridge carrying raw float.
    Mobile only, since mobile is where the bridge runs. This is the step that
    fixes M.
+
+   **Built.** What changed, and what to know before touching it:
+
+   - **The bridge carries the ring's float, unprocessed.** `AudioFeeder` is
+     now a copy and the prime latch, nothing else; `flower_audio_bridge_create`
+     takes a capacity in pipeline frames, the channel count (2, refused
+     otherwise) and the device's width. Write, flush and prime are unchanged.
+   - **The callback runs a port of `OutputStage`**: EQ with the one-buffer
+     crossfade, volume ramp, declick, TPDF dither, clamp, then S16 or packed
+     S24. The transport envelope is the bridge's own as before, now applied
+     in float before requantising rather than to the integers after it, which
+     deleted the S24 read/write helpers. The controls are
+     `flower_audio_bridge_set_target_gain`, `_set_timing` (in frames) and
+     `_set_equalizer`, which takes `Equalizer.BuildFrom`'s float
+     coefficients as they are, through a triple buffer so neither side waits
+     or reads a half-written curve.
+   - **The declick is armed where the generation change used to arm it**: on
+     a flush acknowledgement and on the prime latch reopening (a rebuffer,
+     which was `FadeInNextAudio`).
+   - **One deliberate difference:** a bridge is made per device open, so the
+     volume ramp starts at the target rather than at unity, or every reopen
+     would sweep down from full volume. `OutputStage` outlives its devices
+     and keeps starting at unity.
+   - **Held to the C# sample for sample, and checked rather than hoped.** A
+     throwaway harness built `impl.c` for macOS and ran both through two
+     seconds of tone and noise at S16 and S24 - unity, a volume ramp mid-play,
+     EQ on, an EQ swap, a clipping boost, swaps to and from bypass, callback
+     sizes from 1 to 5000 frames - and every byte matched. A mutation that
+     only reassociates one subtraction in the biquad fails the EQ cases, so
+     it sees the last bit. Two things make the match possible and must
+     stay: `impl.c` turns floating-point contraction off (clang would
+     otherwise fuse multiply-adds on arm64; none survive in any shipped ABI,
+     checked in the disassembly), and rounding is `rintf`, which rounds
+     half to even like `MathF.Round` - which is why Android now links `libm`.
+     The harness is not in the tree: it becomes an ordinary desktop test once
+     step 6 builds the bridge for desktop, and until then belongs in step 4.
+   - **Controls reach the native side under `_stageGate`**, a lock held only
+     around the store and never across a device open, so a control cannot
+     land on a bridge `CloseDevice` is freeing. The watchdog's snapshot takes
+     it too, which closes the same race it already had.
+   - **An old binary is refused, not misread.** `NativeAudioBridge.IsAvailable`
+     probes `flower_audio_bridge_set_target_gain` as well, so a stale build
+     with the old `create` signature falls back to the managed callback.
 4. **Verify by ear on the phone**: drag the volume slider, sweep an EQ band.
    Plus the sample-for-sample oracle above, in `Flower.DeviceChecks`.
+
+   **First pass done on an iPhone** after step 3: nothing wrong heard. The
+   oracle is still to do.
 5. **Split `flower_audio_bridge.c` out of `impl.c`** so both mobile builds take
    it as a second translation unit. No observable change — the refactor the
    desktop half rests on, and where to stop if the phase is interrupted.
@@ -957,9 +1006,10 @@ Not urgent. Desktop's controls are responsive today and it has no defect waiting
 on any of this. Mobile's lag is real but reported as not a problem in practice,
 for the good reason that the phone's own volume buttons bypass it entirely.
 
-Steps 1–2 are built (see above): a fidelity and simplification win with no
-native work and no build infrastructure. Step 3 is the one that fixes a defect,
-and is next. Steps 5–7 are gated on
+Steps 1–3 are built (see above). Steps 1–2 were a fidelity and
+simplification win with no native work and no build infrastructure; step 3 is
+the one that fixes a defect, and step 4 - listening for it on a phone - is
+next. Steps 5–7 are gated on
 build infrastructure more than on anything audio, and should ride along with
 `AUTO-UPDATE-PLAN.md` Phase 4 rather than justify a CI matrix by themselves.
 

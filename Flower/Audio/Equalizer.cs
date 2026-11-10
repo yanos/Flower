@@ -75,6 +75,24 @@ namespace Flower.Audio
             return count;
         }
 
+        // The curve as flower_audio_bridge_set_equalizer takes it, for the
+        // native render callback that runs this same filter on the phones:
+        // five coefficients per band in b0 b1 b2 a1 a2 order, and the preamp
+        // as linear gain. The C is held to ProcessInPlace sample for sample,
+        // so it gets the float coefficients this runs with, not a recomputed
+        // copy of them.
+        internal int ActiveBandCount => _coefficients.Length;
+
+        internal float PreampLinear => _preampLinear;
+
+        internal const int CoefficientsPerBand = 5;
+
+        internal void CopyCoefficientsTo(Span<float> destination)
+        {
+            for (var band = 0; band < _coefficients.Length; band++)
+                _coefficients[band].CopyTo(destination.Slice(band * CoefficientsPerBand, CoefficientsPerBand));
+        }
+
         // Processes interleaved stereo float PCM in place. Called only from
         // OutputStage on the real-time thread - no locking, no allocation,
         // operates directly on the caller's scratch span.
@@ -137,6 +155,15 @@ namespace Flower.Audio
             return new BiquadCoefficients(
                 (float)(b0 / a0), (float)(b1 / a0), (float)(b2 / a0),
                 (float)(a1 / a0), (float)(a2 / a0));
+        }
+
+        public void CopyTo(Span<float> destination)
+        {
+            destination[0] = _b0;
+            destination[1] = _b1;
+            destination[2] = _b2;
+            destination[3] = _a1;
+            destination[4] = _a2;
         }
 
         // Transposed Direct-Form II: y = b0*x + z1; z1' = b1*x - a1*y + z2; z2' = b2*x - a2*y.

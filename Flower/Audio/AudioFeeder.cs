@@ -1,24 +1,26 @@
 using System;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Threading;
 
 namespace Flower.Audio
 {
-    // Moves PCM from the shared GaplessRingBuffer into an IAudioBridge, running
-    // the output stage on the way, on an ordinary managed thread.
+    // Moves PCM from the shared GaplessRingBuffer into an IAudioBridge, on an
+    // ordinary managed thread.
     //
     // This is the half of the fix that gets managed code off the real-time
-    // thread. Everything the render callback used to do here - the prime
-    // latch, the EQ, the gain ramp, the dither - happens on this thread
-    // instead, some hundreds of milliseconds ahead of the speaker, and the
-    // callback is left with a memcpy and a fade. A GC pause that suspends this
-    // thread is then just a pause in refilling a buffer that is already deep
-    // enough to play through it, rather than a hole in the output.
+    // thread. The prime latch the managed callback runs is run here instead,
+    // some hundreds of milliseconds ahead of the speaker, and the native
+    // callback is left with the output stage over whatever this has queued. A
+    // GC pause that suspends this thread is then just a pause in refilling a
+    // buffer already deep enough to play through it, rather than a hole in
+    // the output.
     //
-    // The cost is that a change applied here - the volume slider, an EQ band -
-    // reaches the speaker a bridge-depth later. See
-    // AudioTimingSettings.NativeBufferMs, which is that trade in one number.
+    // It copies, and does nothing else to the audio. The output stage - EQ,
+    // volume, dither - used to run here, which put a bridge-depth of queue
+    // between every control and the speaker: the volume slider and every EQ
+    // band lagged by NativeBufferMs (AUDIO-QUALITY-PLAN.md, finding M). The
+    // bridge now carries the ring's float as is, and a buffer that holds raw
+    // PCM costs no control latency however deep it is.
     internal sealed class AudioFeeder : IDisposable
     {
         // 1024 frames, matching the smallest period a device is likely to ask
@@ -34,17 +36,14 @@ namespace Flower.Audio
 
         private readonly GaplessRingBuffer _ring;
         private readonly IAudioBridge _bridge;
-        private readonly OutputStage _outputStage;
 
-        // The stage is set to the format the device was opened in, so its
-        // rate and width are this feeder's too: one feeder per opened device.
+        // The device's rate, which the prebuffer and rebuffer are measured in,
+        // and the live timing they are read from. One feeder per opened device.
         private readonly uint _sampleRate;
-        private readonly int _deviceBytesPerFrame;
+        private readonly Func<AudioTimingSettings> _timing;
 
-        // One chunk on its way through: read out of the ring as float into
-        // _chunk, processed there, and requantised into _output for the bridge.
-        private readonly float[] _chunk;
-        private readonly byte[] _output;
+        // One chunk on its way from the ring to the bridge.
+        private readonly byte[] _chunk;
 
         private Thread? _thread;
         private volatile bool _running;
@@ -75,15 +74,13 @@ namespace Flower.Audio
         // alone tops out at NativeBufferMs, short of what a rebuffer waits for.
         private readonly PrimeLatch _latch = new();
 
-        public AudioFeeder(GaplessRingBuffer ring, IAudioBridge bridge, OutputStage outputStage)
+        public AudioFeeder(GaplessRingBuffer ring, IAudioBridge bridge, uint sampleRate, Func<AudioTimingSettings> timing)
         {
             _ring = ring;
             _bridge = bridge;
-            _outputStage = outputStage;
-            _sampleRate = outputStage.SampleRate;
-            _deviceBytesPerFrame = outputStage.DeviceFormat.BytesPerFrame();
-            _chunk = new float[ChunkFrames * (int)GaplessFormat.Channels];
-            _output = new byte[ChunkFrames * _deviceBytesPerFrame];
+            _sampleRate = sampleRate;
+            _timing = timing;
+            _chunk = new byte[ChunkFrames * GaplessFormat.BytesPerFrame];
 
             // Adopt the ring's generation rather than flushing on the first
             // tick: a freshly built bridge holds nothing, and a flush nobody
@@ -98,7 +95,7 @@ namespace Flower.Audio
         // Playback position is derived from the shared ring's read cursor,
         // which this thread advances ahead of what is audible, so the caller
         // subtracts this to keep the seek bar honest.
-        public int BufferedFrames => _bridge.Available / _deviceBytesPerFrame;
+        public int BufferedFrames => _bridge.Available / GaplessFormat.BytesPerFrame;
 
         public long RebufferCount => _latch.RebufferCount;
 
@@ -180,7 +177,7 @@ namespace Flower.Audio
             if (!TryCompleteFlush())
                 return false;
 
-            var moved = Pump(generation);
+            var moved = Pump();
             _latch.Rendered(moved);
             UpdatePrimeLatch(moved);
             return moved > 0;
@@ -208,7 +205,7 @@ namespace Flower.Audio
             return true;
         }
 
-        private int Pump(int generation)
+        private int Pump()
         {
             var moved = 0;
 
@@ -218,20 +215,16 @@ namespace Flower.Audio
                 // so a read clamped to it is always one the bridge can take
                 // whole. That matters: these bytes are already gone from the
                 // shared ring by the time the write happens.
-                var freeFrames = (_bridge.Capacity - _bridge.Available) / _deviceBytesPerFrame;
+                var freeFrames = (_bridge.Capacity - _bridge.Available) / GaplessFormat.BytesPerFrame;
                 if (freeFrames <= 0)
                     break;
 
                 var wantFrames = Math.Min(ChunkFrames, freeFrames);
-                var samples = _chunk.AsSpan(0, wantFrames * (int)GaplessFormat.Channels);
-                var read = _ring.Read(MemoryMarshal.AsBytes(samples));
-                var frames = read / GaplessFormat.BytesPerFrame;
-                if (frames <= 0)
+                var read = _ring.Read(_chunk.AsSpan(0, wantFrames * GaplessFormat.BytesPerFrame));
+                if (read <= 0)
                     break;
 
-                var output = _output.AsSpan(0, frames * _deviceBytesPerFrame);
-                _outputStage.Process(samples[..(frames * (int)GaplessFormat.Channels)], output, generation);
-                _bridge.Write(output);
+                _bridge.Write(_chunk.AsSpan(0, read));
                 moved += read;
             }
 
@@ -248,19 +241,20 @@ namespace Flower.Audio
             // when the decoder has fallen behind, so close the latch and let
             // the ring fill rather than playing each scrap as it lands. The
             // bridge is already empty, so un-priming it drops nothing.
+            //
+            // Un-priming is also what tells the callback that whatever it
+            // renders next comes after a gap, which it fades in.
+            var timing = _timing();
             if (_latch.IsPrimed && moved == 0 && _bridge.Available == 0 && _ring.AvailableBytes == 0
-                && _latch.RanDry(_outputStage.Timing, now))
+                && _latch.RanDry(timing, now))
             {
                 _bridge.SetPrimed(false);
-
-                // Whatever this thread processes next comes after the gap.
-                _outputStage.FadeInNextAudio();
                 return;
             }
 
             var buffered = (long)BufferedFrames + _ring.AvailableBytes / GaplessFormat.BytesPerFrame;
-            var capacity = (long)_bridge.Capacity / _deviceBytesPerFrame + _ring.Capacity / GaplessFormat.BytesPerFrame;
-            if (_latch.TryRelease(buffered, capacity, _outputStage.Timing, _sampleRate, now))
+            var capacity = (long)(_bridge.Capacity + _ring.Capacity) / GaplessFormat.BytesPerFrame;
+            if (_latch.TryRelease(buffered, capacity, timing, _sampleRate, now))
                 _bridge.SetPrimed(true);
         }
 

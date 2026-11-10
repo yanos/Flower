@@ -9,12 +9,14 @@ add_library(miniaudio SHARED ../impl.c)
 
 target_include_directories(miniaudio PRIVATE ../vendor)
 
-# Android's AAudio/OpenSL|ES backends need these; miniaudio auto-detects and
+# Android's AAudio/OpenSL|ES backends need these, and libm the bridge's
+# output stage (rintf, which bionic keeps out of libc); miniaudio auto-detects and
 # compiles the right backend in via its own preprocessor checks - no MA_*
 # feature defines needed beyond a standard NDK build.
 target_link_libraries(miniaudio
     android
     log
+    m
     OpenSLES
 )
 

@@ -53,15 +53,18 @@ namespace Flower.Audio
         // no device at all), and a pause must not hang the UI thread.
         public int FadeOutWaitMs { get; set; } = 30;
 
-        // How much already-processed PCM the native bridge holds ahead of the
-        // device on the platforms that have one (see NativeAudioBridge). This
-        // is the only buffer a GC pause cannot stall, so it is what decides
-        // how long a pause has to be before it is audible: iPhone logs put
-        // almost every stall under 200ms with a rare outlier near 700ms, and
-        // 300 buys all but the outlier. It costs the same in responsiveness -
-        // a volume or EQ change is applied here, so it reaches the speaker
-        // this many milliseconds later. Zero disables the bridge and puts the
-        // render callback back in managed code.
+        // How much PCM the native bridge holds ahead of the device on the
+        // platforms that have one (see NativeAudioBridge). This is the only
+        // buffer a GC pause cannot stall, so it is what decides how long a
+        // pause has to be before it is audible: iPhone logs put almost every
+        // stall under 200ms with a rare outlier near 700ms, and 300 buys all
+        // but the outlier. It costs nothing in responsiveness: the bridge
+        // holds the ring's raw PCM and the output stage runs after it, in the
+        // callback, so a volume or EQ change reaches the next device buffer
+        // however deep this is. (It used to cost exactly this many
+        // milliseconds of lag on both - AUDIO-QUALITY-PLAN.md, finding M.)
+        // Zero disables the bridge and puts the render callback back in
+        // managed code.
         //
         // The one value here that is not live: it sizes a buffer allocated
         // when the output device is opened, so a change takes effect on the

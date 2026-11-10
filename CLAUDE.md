@@ -179,7 +179,9 @@ deletion semantics (a deletion is a removal, never a delete) are in
   sample rate is negotiated (once, at startup, then frozen). `OutputStage`
   requantises to the device's format (`DeviceSampleFormat`, S24 unless a device
   refuses it, settled again at every open), with its dither and clamp following
-  that format. Changing `flower_audio_bridge_create`'s signature means
+  that format. On the phones the stage runs as C in the native bridge's render
+  callback (`native/miniaudio/impl.c`), a port held to `OutputStage` sample
+  for sample: change one, change both. Changing the bridge's C means
   rebuilding the vendored miniaudio binaries.
 - **Miniaudio native libraries** (`native/miniaudio/`): the NuGet ships only
   desktop binaries, so Android and iOS builds are vendored in-repo, pinned to
