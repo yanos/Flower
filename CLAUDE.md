@@ -62,7 +62,8 @@ Issues: GitHub Issues on `yanos/Flower` via `gh`. Domain docs: `CONTEXT.md` and
 dotnet build Flower.Desktop/Flower.Desktop.csproj                               # Windows/Linux head
 dotnet run --project Flower.MacOS/Flower.MacOS.csproj                           # macOS head (needs the macos workload)
 dotnet run --project Flower.Server                                              # server + browser UI
-dotnet test Tests/Flower.Tests/Flower.Tests.csproj --filter 'Category!=RequiresFfmpeg'  # fast, day-to-day
+dotnet test Tests/Flower.Tests/Flower.Tests.csproj                                # fast, day-to-day (no FFmpeg needed)
+dotnet test Tests/Flower.Tests.UI/Flower.Tests.UI.csproj                          # headless views and view models
 dotnet test Tests/Flower.Desktop.Tests.slnf -m:1 -p:IncludeWebUi=false             # all desktop suites
 scripts/ios-tests.sh                                                                  # the suite on an iOS Simulator
 scripts/deploy-ios-device.sh                                                          # physical iPhone, whichever is plugged in
@@ -99,11 +100,24 @@ are: [Tests/README.md](Tests/README.md).
   window (`Views/`) only for what lives in the view alone (pointer capture,
   focus, a binding's echo). A custom control's logic goes in a class it
   delegates to (`TrackRowSelection`, `NameSelectionDragGesture`).
+- **Which project.** Logic with fakes → `Flower.Tests`; anything needing
+  Avalonia's dispatcher → `Flower.Tests.UI`; real FFmpeg decoding →
+  `Flower.Tests.Decoding` (tagged `RequiresFfmpeg`, the only place that tag
+  lives); server → `Flower.Server.Tests`; one desktop OS's native calls →
+  `Flower.Tests.macOS`/`.Windows`. Helpers shared by client suites go in
+  `Tests/TestSupport/` (linked into each by `ClientTests.props`).
+- **App data.** A test whose subject writes app data derives from
+  `PinnedDataDirectory` and carries `[Collection("PlatformDataDirectory")]`;
+  `TestDataDirectoryIsolationTests` fails a subclass missing the collection.
+  An unpinned test still lands in a temp directory (`AssemblySetup`), never
+  the real Application Support folder, trash or `~/Music/Flower`.
 - **Folders by area, namespace following folder**, one class per file:
   `Audio/`, `Decoding/`, `Playback/`, `MusicLibrary/`, `Playlists/`,
-  `Persistence/`, `Sync/`, `Network/`, `Browser/`, `Logging/`, `ViewModels/`,
-  `Controls/`, `Views/`, `AppShell/`. (`MusicLibrary`/`AppShell`, because a
-  namespace named after a type shadows it.)
+  `Persistence/`, `Sync/`, `Network/`, `Browser/`, `Logging/`,
+  `SemanticAudio/`, `ViewModels/`, `Controls/`, `Views/`, `AppShell/`; the
+  server suite adds `Endpoints/`, `Security/`, `Configuration/`.
+  (`MusicLibrary`/`AppShell`, because a namespace named after a type shadows
+  it.)
 - Decoding fixtures and `SyntheticWav` live in `Flower.Tests.Decoding.Scenarios`;
   `FLOWER_REQUIRE_DECODERS=FFmpeg` makes a missing decoder fail rather than skip.
 

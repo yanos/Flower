@@ -202,7 +202,7 @@ Every head runs from a clean clone, no setup:
 ```bash
 dotnet run --project Flower.Desktop     # Windows/Linux
 dotnet run --project Flower.MacOS       # macOS (needs the macos workload)
-dotnet test Tests/Flower.Tests/Flower.Tests.csproj --filter 'Category!=RequiresFfmpeg'
+dotnet test Tests/Flower.Tests/Flower.Tests.csproj
 ```
 
 See [CLAUDE.md](CLAUDE.md) for the architecture and [docs/](docs/) for the

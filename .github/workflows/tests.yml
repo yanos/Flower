@@ -331,7 +331,7 @@ jobs:
         run: dotnet build Flower.Android/Flower.Android.csproj --configuration Release
 
       # Emulator execution remains local-only because of the existing native
-      # payload collision on Linux hosts; see CLAUDE.md. Compile the runner
+      # payload collision on Linux hosts; see Tests/README.md, "Android". Compile the runner
       # here so source changes are still checked.
       - name: Build decoding test runner
         run: dotnet build Tests/Flower.Tests.Decoding.Android/Flower.Tests.Decoding.Android.csproj --configuration Release

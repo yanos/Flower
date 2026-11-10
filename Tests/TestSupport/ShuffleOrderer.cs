@@ -22,8 +22,7 @@ namespace Flower.Tests.TestSupport;
 // is how to check rather than assume:
 //
 //   for seed in 11 22 33 44 55 66 77 88 99; do
-//     FLOWER_TEST_SEED=$seed dotnet test Flower.Tests/Flower.Tests.csproj \
-//       --filter 'Category!=RequiresFfmpeg'
+//     FLOWER_TEST_SEED=$seed dotnet test Tests/Flower.Tests/Flower.Tests.csproj
 //   done
 //
 // Worth running after anything that touches shared test state. The first ten

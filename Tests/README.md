@@ -57,6 +57,21 @@ dotnet test Tests/Flower.Tests.macOS/Flower.Tests.macOS.csproj
 dotnet test Tests/Flower.Server.Tests/Flower.Server.Tests.csproj
 ```
 
+`Flower.Tests` and `Flower.Tests.UI` never touch FFmpeg, so they are the fast
+loop. Real decoding is confined to `Flower.Tests.Decoding`, whose classes carry
+`[Trait("Category", "RequiresFfmpeg")]` (and `RequiresClapModel` for the CLAP
+reference tests); no other project uses either trait.
+
+Switches, all environment variables:
+
+| Variable | Effect |
+| --- | --- |
+| `FLOWER_REQUIRE_DECODERS=FFmpeg` | A missing decoder fails rather than skips (CI and the phone scripts set it) |
+| `FLOWER_CLAP_MODEL_DIR` | Where `ClapEmbeddingReferenceTests` finds the model; default `~/.cache/flower-semantic-audio/export`, skipped when absent |
+| `FLOWER_REQUIRE_CLAP_MODEL=1` | A missing model fails rather than skips (CI's Linux leg only) |
+| `FLOWER_TEST_SEED=<n>` | Runs a client suite in a seeded random order (`ShuffleOrderer`), to check that shared state is not order-dependent |
+| `FLOWER_TEST_ARGS` | xUnit `-class`/`-method` filters for the full iOS runner |
+
 Run on phone runtimes using the existing local SDK/workload prerequisites:
 
 ```sh
@@ -66,10 +81,41 @@ scripts/android-decoding-tests.sh    # focused decoding, local emulator/device
 ```
 
 The iOS scripts accept a simulator name and `IOS_SIMULATOR_RUNTIME`. The decoding
-script retains its `--mono` option for diagnosis. The full iOS runner accepts
-`FLOWER_TEST_ARGS` for xUnit method/class filters. CI compiles the Android
+script retains its `--mono` option for diagnosis. CI compiles the Android
 decoding runner alongside the app; emulator checks remain local-only (see
 "Android" below).
+
+## Shared test state
+
+Every client suite shares one Avalonia application and dispatcher across the
+whole assembly (`AvaloniaTestIsolationLevel.PerAssembly`, see
+`TestAppBuilder`), and several process-wide statics. What keeps that safe, all
+in `TestSupport/`:
+
+- **A safe floor.** `AssemblySetup`'s module initialisers point
+  `PlatformDataDirectory.Current`, `FileTrash.Override` and
+  `FlowerFolder.Override` at temp directories before any test runs, so even an
+  unpinned test or a late fire-and-forget save never reaches the developer's
+  real Application Support folder, trash or `~/Music/Flower`. A default
+  `AppSettings` once overwrote the real `settings.json` (and its one backup)
+  this way. `TestDataDirectoryIsolationTests` asserts the floor holds.
+- **Pinning.** A class whose subject writes app data derives from
+  `PinnedDataDirectory` (or `IsolatedHome`) and is in
+  `[Collection("PlatformDataDirectory")]`, because the override is one shared
+  static; `TestDataDirectoryIsolationTests` fails any subclass missing the
+  collection. Dispose restores the floor, not `null`.
+- **Leaked timers.** `TimerLeakGuard` fails the test after one that leaves a
+  Flower-owned `DispatcherTimer` running, naming the test that started it.
+  Objects that start timers (a `MainViewModel`) are handed to
+  `PinnedDataDirectory.Own` so a failed assertion still disposes them.
+- **Thread pool.** `AssemblySetup` raises the pool minimum, because
+  `SpinWait`-driven tests starved real async continuations under parallel runs.
+- **Other process-wide state** (`GaplessFormat`, native text fields, album art
+  loading) has its own xUnit collection: `GaplessFormatCollection`,
+  `NativeTextFieldCollection`, `AlbumArtLoaderCollection`.
+
+`Flower.Server.Tests` does not use `ClientTests.props`; its own helpers
+(`FlowerServerFixture`, `GuardedRequest`) live in its `TestSupport/` folder.
 
 ## CI
 
@@ -86,6 +132,17 @@ Each desktop job builds `Flower.Desktop.Tests.slnf` once and its platform app,
 then executes shared, UI, decoding, native-platform (where applicable), and
 server suites in named steps with `--no-build`. macOS uses `xcode-27` for both
 its native app build and tests, since that head needs Apple's SDK headers.
+Only Linux runs the CLAP reference tests: it downloads the Vibe Playlists model
+from the repo's release (cached on `SemanticAudioModelManifest.cs`) and sets
+`FLOWER_REQUIRE_CLAP_MODEL`; the other desktops skip them.
+
+The iOS jobs pin the workload (`--version 10.0.402`) and `Xcode_27.0`, because
+a newer workload set can demand a newer Xcode (`NETSDK1140`); move workload,
+TFMs and Xcode together. **iOS tests (Mono)** runs `scripts/ios-tests.sh`;
+**iOS build and decoding (NativeAOT)** builds `Flower.iOS` as it ships
+(`FlowerNativeAot`, `_IsPublishing`, ad hoc signing) and runs
+`scripts/ios-decoding-tests.sh`. **Android** builds the head and the decoding
+runner without running it; **Web** builds `Flower.Web` with `wasm-tools`.
 
 Tags additionally package and upload the desktop installer in each desktop job.
 Release and image publication wait for all seven platform jobs, so a failed
@@ -186,13 +243,15 @@ listening to a phone.
 
 ### Android
 
-Emulator runs are local-only. In CI the job failed honestly: `Flower.csproj`
-picks a desktop ffaudio payload by host, which flows to the Android heads, and
-`android-x64` falls back to `linux-x64` in the RID graph, so the glibc
-`libffaudio.so` wins `lib/x86_64/` (`XA4301`) and `dlopen` fails. The fix is
-`ExcludeAssets="native"` on that host package in both Android heads, as
-`Miniaudio-CS` already has. On a Mac the host payload is macOS and nothing
-collides, which is why it passed locally.
+Emulator runs are local-only. When CI ran them the job failed honestly:
+`Flower.csproj` picks a desktop ffaudio payload by host (`FFAudio.NET.Linux` on
+a Linux runner), which flows to the Android heads, and `android-x64` falls back
+to `linux-x64` in the RID graph, so the glibc `libffaudio.so` wins
+`lib/x86_64/` (`XA4301`) and `dlopen` fails. The fix, not yet made, is to keep
+that host package's native assets out of both Android heads, as
+`ExcludeAssets="native"` on `Miniaudio-CS` already does for miniaudio; then the
+emulator step can come back to CI. On a Mac the host payload is macOS and
+nothing collides, which is why it passes locally.
 
 The runner's ABI follows the host (arm64-v8a on a Mac, x86_64 in CI). Three
 settings are load-bearing: `EmbedAssembliesIntoApk` (Fast Deployment keeps
