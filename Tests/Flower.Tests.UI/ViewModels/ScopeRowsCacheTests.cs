@@ -40,7 +40,7 @@ public class ScopeRowsCacheTests : PinnedDataDirectory
         Assert.Equal(3, songsRows.Count);
 
         vm.SelectedSidebarItem = Item(vm, SidebarItemKind.Albums);
-        vm.SelectedSubItem = "X";
+        vm.SelectedSubItem = MainViewModelHarness.AlbumKey(library, "X");
         await vm.RebuildRowsImmediatelyAsync();
         Assert.Equal(2, vm.Rows.Count);
 
@@ -66,7 +66,7 @@ public class ScopeRowsCacheTests : PinnedDataDirectory
         var songsRows = vm.Rows.ToList();
 
         vm.SelectedSidebarItem = Item(vm, SidebarItemKind.Albums);
-        vm.SelectedSubItem = "X";
+        vm.SelectedSubItem = MainViewModelHarness.AlbumKey(library, "X");
         await vm.RebuildRowsImmediatelyAsync();
 
         Assert.DoesNotContain(vm.Rows, row => songsRows.Any(songsRow => ReferenceEquals(songsRow, row)));
@@ -91,7 +91,7 @@ public class ScopeRowsCacheTests : PinnedDataDirectory
         Assert.False(vm.Browser.SortAscending);
 
         vm.SelectedSidebarItem = Item(vm, SidebarItemKind.Albums);
-        vm.SelectedSubItem = "X";
+        vm.SelectedSubItem = MainViewModelHarness.AlbumKey(library, "X");
         await vm.RebuildRowsImmediatelyAsync();
 
         library.IncrementPlayCount(c);
@@ -136,7 +136,7 @@ public class ScopeRowsCacheTests : PinnedDataDirectory
         await vm.RebuildRowsImmediatelyAsync();
 
         vm.SelectedSidebarItem = Item(vm, SidebarItemKind.Albums);
-        vm.SelectedSubItem = "X";
+        vm.SelectedSubItem = MainViewModelHarness.AlbumKey(library, "X");
         await vm.RebuildRowsImmediatelyAsync();
 
         library.UpdateTracks(library.Tracks.Append(T("D", "Y")).ToList());

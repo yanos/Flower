@@ -47,6 +47,8 @@ public class MobileTabMemoryTests : PinnedDataDirectory
             {
                 Title = $"Track {i:D3}", Path = $"/music/{i}.mp3",
                 Album = i < 100 ? BigAlbum : $"Album {i}", Artists = $"Artist {i:D3}",
+                // One compilation, rather than a hundred albums of one song.
+                AlbumArtists = i < 100 ? "Various Artists" : null,
             }).ToList();
 
             _vm = MainViewModelHarness.BuildMobile(new Library(tracks), new MainPlaylist(tracks));
@@ -97,7 +99,7 @@ public class MobileTabMemoryTests : PinnedDataDirectory
     {
         using var h = new Harness();
         h.SelectTab(MobileTab.Albums);
-        h.Vm.SelectAlbumOrArtistCommand.Execute(BigAlbum);
+        h.Vm.SelectAlbumOrArtistCommand.Execute(MainViewModelHarness.AlbumKey(h.Vm, BigAlbum));
         MainViewModelHarness.WaitForTheDrillIn(h.Vm, BigAlbum);
         Harness.Pump(500);
         h.ScrollTo(900);

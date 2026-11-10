@@ -131,7 +131,7 @@ public class ScreenStackPanelSwipeTests : PinnedDataDirectory
         public void DrillIn()
         {
             SelectTab(MobileTab.Albums);
-            Vm.SelectAlbumOrArtistCommand.Execute("Album 0");
+            Vm.SelectAlbumOrArtistCommand.Execute(MainViewModelHarness.AlbumKey(Vm, "Album 0"));
             Pump();
         }
 
@@ -222,7 +222,7 @@ public class ScreenStackPanelSwipeTests : PinnedDataDirectory
         // out rather than pumped for a fixed 60ms, which a CI iOS simulator
         // under the interpreter can spend still mid-transition, with the
         // destination not yet in the top slot.
-        h.Vm.SelectAlbumOrArtistCommand.Execute("Album 0");
+        h.Vm.SelectAlbumOrArtistCommand.Execute(MainViewModelHarness.AlbumKey(h.Vm, "Album 0"));
         h.LetEasingFinish();
 
         var trackList = h.CurrentTrackList();
@@ -237,7 +237,7 @@ public class ScreenStackPanelSwipeTests : PinnedDataDirectory
     {
         using var h = new Harness();
         h.DrillIn();
-        h.Vm.SelectAlbumOrArtistCommand.Execute("Album 0");
+        h.Vm.SelectAlbumOrArtistCommand.Execute(MainViewModelHarness.AlbumKey(h.Vm, "Album 0"));
         h.LetEasingFinish();
 
         h.Vm.BackCommand.Execute(null);

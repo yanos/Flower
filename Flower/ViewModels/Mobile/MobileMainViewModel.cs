@@ -750,7 +750,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     // reached via the Albums tab's own grid, an artist's album grid
     // (SelectArtistAlbum), or a cover on Home (SelectHomeAlbum) -
     // all three re-point Main.SelectedSidebarItem at the Albums sidebar item
-    // and Main.SelectedSubItem at the album name, the same way Albums' own
+    // and Main.SelectedSubItem at the album (AlbumGroup's key), the same way Albums' own
     // in-place drill-in does. Drives the album header (CurrentAlbumHeader)
     // above the list and hides each row's own small art (see TrackRowTemplate) -
     // redundant once a big header already shows it once.
@@ -777,17 +777,17 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     // by album name rather than rebuilt on every access - a fresh
     // AlbumTileViewModel instance on every binding pass would restart art
     // loading each time and could never settle.
-    private string? _currentAlbumHeaderName;
+    private string? _currentAlbumHeaderKey;
     private AlbumTileViewModel? _currentAlbumHeader;
     public AlbumTileViewModel? CurrentAlbumHeader
     {
         get
         {
-            var albumName = IsShowingAlbumTrackList ? Main.SelectedSubItem : null;
-            if (albumName != _currentAlbumHeaderName)
+            var album = IsShowingAlbumTrackList ? Main.SelectedSubItem : null;
+            if (album != _currentAlbumHeaderKey)
             {
-                _currentAlbumHeaderName = albumName;
-                _currentAlbumHeader = albumName != null ? BuildAlbumHeader(albumName) : null;
+                _currentAlbumHeaderKey = album;
+                _currentAlbumHeader = album != null ? BuildAlbumHeader(album) : null;
             }
             return _currentAlbumHeader;
         }
@@ -858,9 +858,10 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         return header;
     }
 
-    private AlbumTileViewModel? BuildAlbumHeader(string albumName)
+    // album is the AlbumGroup key the album screen is picked by.
+    private AlbumTileViewModel? BuildAlbumHeader(string album)
     {
-        var tracks = Main.Library.Tracks.Where(t => t.Album == albumName).ToList();
+        var tracks = Main.Library.Tracks.Where(t => AlbumGroup.KeyOf(t) == album).ToList();
         if (tracks.Count == 0)
             return null;
 
@@ -880,7 +881,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
 
         var header = new AlbumTileViewModel
         {
-            Name = albumName,
+            Name = AlbumGroup.NameOf(album),
             Artist = artist,
             // The earliest, as the artist page's album sections take it
             // (BrowseSort.YearOf): a reissue's bonus tracks
@@ -1468,7 +1469,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         // itself hasn't changed - a download/rescan can still change which
         // track is "most recently added" (representative art) or the
         // computed artist/year underneath it.
-        _currentAlbumHeaderName = null;
+        _currentAlbumHeaderKey = null;
         _currentPlaylistHeaderKey = default;
         RaiseDetailHeaderChanged();
         RefreshDownloadAllIndicator();
@@ -1672,7 +1673,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             else
                 SelectedTab = tab;
         });
-        SelectAlbumOrArtistCommand = new RelayCommand<object?>(album => SelectAlbumOrArtist(AlbumNameOf(album)));
+        SelectAlbumOrArtistCommand = new RelayCommand<object?>(album => SelectAlbumOrArtist(AlbumKeyOf(album)));
         SelectArtistCommand = new RelayCommand<string>(SelectArtist);
         // Switch tab first (moves Main.SelectedSidebarItem to the right scope -
         // see ApplyTabSelection) then drill in exactly like that tab's own
@@ -1683,13 +1684,13 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         // the raw mutations SelectedTab's setter/SelectAlbumOrArtist/SelectArtist
         // themselves use, deliberately skipped here so this doesn't also push
         // a second entry just for the tab switch.
-        SelectSearchAlbumCommand = new RelayCommand<string>(async name =>
+        SelectSearchAlbumCommand = new RelayCommand<object?>(async album =>
         {
-            if (name == null)
+            if (AlbumKeyOf(album) is not { } key)
                 return;
             PushHistory();
             SetSelectedTabCore(MobileTab.Albums, raiseNavigationChanged: false);
-            await SelectAlbumOrArtistCore(name);
+            await SelectAlbumOrArtistCore(key);
         });
         SelectSearchArtistCommand = new RelayCommand<string>(name =>
         {
@@ -1699,7 +1700,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             SetSelectedTabCore(MobileTab.Artists, raiseNavigationChanged: false);
             SelectArtistCore(name);
         });
-        SelectArtistAlbumCommand = new RelayCommand<object?>(album => SelectArtistAlbum(AlbumNameOf(album)));
+        SelectArtistAlbumCommand = new RelayCommand<object?>(album => SelectArtistAlbum(AlbumKeyOf(album)));
         SelectHomeAlbumCommand = new RelayCommand<AlbumTileViewModel>(SelectHomeAlbum);
         SelectPlaylistCommand = new RelayCommand<SidebarItem>(SelectPlaylist);
         BackCommand = new RelayCommand(async () => await GoBack());
@@ -1765,7 +1766,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         // before the drill-in had landed hid that entrance behind the sheet
         // for its whole length.
         GoToCurrentlyPlayingAlbumCommand = new RelayCommand(async () =>
-            await GoToAlbumAsync(PlaylistControl.CurrentlyPlayingTrack?.Album));
+            await GoToAlbumAsync(PlaylistControl.CurrentlyPlayingTrack is { } playing ? AlbumGroup.KeyOf(playing) : null));
         // The same for its artist - a tap on the artist's name on the sheet, or
         // Go to Artist in its menu: the Artists tab, that artist's albums, one
         // history entry, the sheet sliding down as it arrives.
@@ -2311,13 +2312,14 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
 
     private bool IsAtArtist(string artist) => IsShowingArtistAlbumGrid && _selectedArtistName == artist;
 
-    // What SelectAlbumOrArtistCommand and SelectArtistAlbumCommand are
-    // handed: a cover hands over its tile (AlbumTileView, the same on every
-    // screen), anything else the album's name.
-    private static string? AlbumNameOf(object? album) => album switch
+    // What SelectAlbumOrArtistCommand, SelectArtistAlbumCommand and
+    // SelectSearchAlbumCommand are handed: a cover hands over its tile
+    // (AlbumTileView, the same on every screen), anything else the album's
+    // AlbumGroup key - never its name, which two albums can share.
+    private static string? AlbumKeyOf(object? album) => album switch
     {
-        AlbumTileViewModel tile => tile.Name,
-        string name => name,
+        AlbumTileViewModel tile => tile.AlbumGroupKey,
+        string key => key,
         _ => null,
     };
 
@@ -2392,27 +2394,27 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     // A tile in that artist's album grid -> that album's tracks, reusing the
     // Albums tab's own filtering the same way SelectHomeAlbum does
     // (see its comment) rather than a separate artist+album-scoped track list.
-    private void SelectArtistAlbum(string? albumName)
+    private void SelectArtistAlbum(string? album)
     {
-        if (albumName == null)
+        if (album == null)
             return;
         PushHistory();
-        DrillIntoAsync(AlbumsScope, albumName, DrillLevel.ArtistAlbum)
+        DrillIntoAsync(AlbumsScope, album, DrillLevel.ArtistAlbum)
             .Forget(_logger, "Artist album drill-in");
     }
 
     // Tapping a cover on Home drills into that album's tracks by reusing the
     // Albums tab's own filtering (Main.SelectedSidebarItem set to the Albums
-    // sidebar item, then SelectedSubItem to the album name) - Home's own
+    // sidebar item, then SelectedSubItem to the album's AlbumGroup key) - Home's own
     // screen renders from Main.Home's shelves, not Main.Rows, so it is set
     // explicitly here instead. SelectedTab stays Home so Back returns to the
     // shelves, not to the Albums grid.
     private void SelectHomeAlbum(AlbumTileViewModel? album)
     {
-        if (album == null)
+        if (album?.AlbumGroupKey is not { } key)
             return;
         PushHistory();
-        DrillIntoAsync(AlbumsScope, album.Name).Forget(_logger, "Home album drill-in");
+        DrillIntoAsync(AlbumsScope, key).Forget(_logger, "Home album drill-in");
     }
 
     private void SelectPlaylist(SidebarItem? item)

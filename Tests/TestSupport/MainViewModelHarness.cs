@@ -339,13 +339,20 @@ public static class MainViewModelHarness
     // rows either, and every assertion downstream fails as "not found in
     // collection: []" - which reads like the feature under test is broken
     // rather than like the drill-in never happened.
+    // The album of that name, as a tap on its cover picks it (AlbumGroup) -
+    // the first, where two albums share the name.
+    public static string AlbumKey(MobileMainViewModel mobile, string album) => AlbumKey(mobile.Main.Library, album);
+
+    public static string AlbumKey(Library library, string album) =>
+        AlbumGroup.KeyOf(library.Tracks.First(t => t.Album == album))!;
+
     public static void WaitForTheDrillIn(MobileMainViewModel mobile, string album, int timeoutMs = 2000)
     {
         var deadline = Environment.TickCount64 + timeoutMs;
         while (true)
         {
             Dispatcher.UIThread.RunJobs();
-            if (mobile.IsShowingAlbumTrackList && mobile.CurrentAlbumHeader != null && mobile.AlbumDetailRows.Count > 0)
+            if (mobile.IsShowingAlbumTrackList && mobile.CurrentAlbumHeader?.Name == album && mobile.AlbumDetailRows.Count > 0)
                 return;
             if (Environment.TickCount64 >= deadline)
                 break;

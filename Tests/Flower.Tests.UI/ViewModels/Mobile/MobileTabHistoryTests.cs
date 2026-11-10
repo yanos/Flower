@@ -25,6 +25,8 @@ public class MobileTabHistoryTests : PinnedDataDirectory
         {
             Title = $"Track {i:D3}", Path = $"/music/{i}.mp3",
             Album = i < 100 ? BigAlbum : $"Album {i}", Artists = $"Artist {i:D3}",
+            // One compilation, rather than a hundred albums of one song.
+            AlbumArtists = i < 100 ? "Various Artists" : null,
         }).ToList();
         return MainViewModelHarness.BuildMobile(new Library(tracks), new MainPlaylist(tracks));
     }
@@ -47,7 +49,7 @@ public class MobileTabHistoryTests : PinnedDataDirectory
         using var scope = Build();
         var vm = scope.Mobile;
         SelectTab(vm, MobileTab.Albums);
-        vm.SelectAlbumOrArtistCommand.Execute(BigAlbum);
+        vm.SelectAlbumOrArtistCommand.Execute(MainViewModelHarness.AlbumKey(vm, BigAlbum));
         MainViewModelHarness.WaitForTheDrillIn(vm, BigAlbum);
 
         SelectTab(vm, MobileTab.Artists);
@@ -80,7 +82,7 @@ public class MobileTabHistoryTests : PinnedDataDirectory
         var vm = scope.Mobile;
         SelectTab(vm, MobileTab.Artists);
         SelectTab(vm, MobileTab.Albums);
-        vm.SelectAlbumOrArtistCommand.Execute(BigAlbum);
+        vm.SelectAlbumOrArtistCommand.Execute(MainViewModelHarness.AlbumKey(vm, BigAlbum));
         MainViewModelHarness.WaitForTheDrillIn(vm, BigAlbum);
 
         vm.SelectTabCommand.Execute(nameof(MobileTab.Albums));

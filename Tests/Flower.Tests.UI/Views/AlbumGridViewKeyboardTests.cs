@@ -37,7 +37,7 @@ public class AlbumGridViewKeyboardTests
         window.Show();
         Dispatcher.UIThread.RunJobs();
         grid.ItemsSource = new ObservableCollection<AlbumTileViewModel>(tiles);
-        grid.SelectedNames = new[] { "Album 1" };
+        grid.SelectedAlbums = new[] { tiles[1].AlbumGroupKey };
         grid.Focus();
         return (window, grid, tiles);
     }

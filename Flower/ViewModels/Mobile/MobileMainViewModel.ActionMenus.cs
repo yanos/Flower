@@ -25,7 +25,7 @@ public partial class MobileMainViewModel
             canRemoveFromQueue: CanRemoveActionTargetFromQueue,
             canLocateFiles: false,
             isRecentlyPlayed: IsShowingHome,
-            canGoToAlbum: !string.IsNullOrEmpty(track.Album) && !IsAtAlbum(track.Album),
+            canGoToAlbum: AlbumGroup.KeyOf(track) is { } album && !IsAtAlbum(album),
             canGoToArtist: !string.IsNullOrEmpty(track.Artists) && !IsAtArtist(track.Artists)))
         : [];
 
@@ -71,7 +71,7 @@ public partial class MobileMainViewModel
             _ => null,
         };
         if (entry?.Action == MenuAction.GoToAlbum)
-            GoToAlbumAsync(ActionTarget?.Album).Forget(_logger, "Going to a song's album");
+            GoToAlbumAsync(ActionTarget is { } song ? AlbumGroup.KeyOf(song) : null).Forget(_logger, "Going to a song's album");
         else if (entry?.Action == MenuAction.GoToArtist)
             GoToArtist(ActionTarget?.Artists);
         else

@@ -72,7 +72,7 @@ public class MobileSongOrderTests : PinnedDataDirectory
         await WaitForRows(vm, 3);
 
         vm.SelectTabCommand.Execute(nameof(MobileTab.Albums));
-        vm.SelectAlbumOrArtistCommand.Execute("Bee Thousand");
+        vm.SelectAlbumOrArtistCommand.Execute(MainViewModelHarness.AlbumKey(vm, "Bee Thousand"));
         await WaitForRows(vm, 2);
 
         Assert.Equal(new[] { "Zero Hour", "Apple Tree" }, vm.Main.Rows.Select(r => r.Track.Title));
@@ -87,7 +87,7 @@ public class MobileSongOrderTests : PinnedDataDirectory
         vm.SelectTabCommand.Execute(nameof(MobileTab.Songs));
         await WaitForRows(vm, 3);
         vm.SelectTabCommand.Execute(nameof(MobileTab.Albums));
-        vm.SelectAlbumOrArtistCommand.Execute("Bee Thousand");
+        vm.SelectAlbumOrArtistCommand.Execute(MainViewModelHarness.AlbumKey(vm, "Bee Thousand"));
         await WaitForRows(vm, 2);
 
         // Back out of the album, then back again to the Songs tab.

@@ -80,16 +80,17 @@ public partial class AlbumGridView : UserControl
         set => SetValue(ItemsSourceProperty, value);
     }
 
-    // Album names currently selected (see MainViewModel.SelectedSubItems) -
+    // The albums currently selected, by AlbumGroup's key (see
+    // MainViewModel.SelectedSubItems) -
     // drives which tiles render as selected (drag/multi-select), independent
     // of ExpandedKey below.
-    public static readonly StyledProperty<IEnumerable?> SelectedNamesProperty =
-        AvaloniaProperty.Register<AlbumGridView, IEnumerable?>(nameof(SelectedNames));
+    public static readonly StyledProperty<IEnumerable?> SelectedAlbumsProperty =
+        AvaloniaProperty.Register<AlbumGridView, IEnumerable?>(nameof(SelectedAlbums));
 
-    public IEnumerable? SelectedNames
+    public IEnumerable? SelectedAlbums
     {
-        get => GetValue(SelectedNamesProperty);
-        set => SetValue(SelectedNamesProperty, value);
+        get => GetValue(SelectedAlbumsProperty);
+        set => SetValue(SelectedAlbumsProperty, value);
     }
 
     // The one tile (if any) currently expanded inline - see
@@ -119,7 +120,7 @@ public partial class AlbumGridView : UserControl
     // arrow on the matching row inside an expanded album's track list (see
     // AlbumGridRowViewModel.CurrentlyPlayingTrackId), the same indicator
     // MusicListView's own rows already have (TrackRowViewModel.
-    // IsCurrentlyPlaying) - independent of ExpandedKey/SelectedNames above,
+    // IsCurrentlyPlaying) - independent of ExpandedKey/SelectedAlbums above,
     // since a track can be playing whether or not its album happens to be
     // the one currently expanded or selected. Identified by Id rather than by
     // Path, which is null for every placeholder and therefore identifies none
@@ -225,7 +226,7 @@ public partial class AlbumGridView : UserControl
             _tiles = ItemsSource?.Cast<AlbumTileViewModel>().ToList() ?? new List<AlbumTileViewModel>();
             RebuildRows();
         }
-        else if (change.Property == SelectedNamesProperty)
+        else if (change.Property == SelectedAlbumsProperty)
         {
             ApplySelection();
         }
@@ -333,9 +334,9 @@ public partial class AlbumGridView : UserControl
 
     private void ApplySelection()
     {
-        var selected = new HashSet<string>(SelectedNames?.Cast<string>() ?? Enumerable.Empty<string>());
+        var selected = new HashSet<string>(SelectedAlbums?.Cast<string>() ?? Enumerable.Empty<string>());
         foreach (var tile in _tiles)
-            tile.IsSelected = selected.Contains(tile.Name);
+            tile.IsSelected = tile.AlbumGroupKey is { } album && selected.Contains(album);
     }
 
     private void ApplyExpansion()

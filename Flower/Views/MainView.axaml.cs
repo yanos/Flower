@@ -307,7 +307,7 @@ public partial class MainView : UserControl
             selectOnPlainPress: true);
 
         _albumGridGesture = new NameSelectionDragGesture(
-            () => vm.AlbumGridTiles.Select(t => t.Name).ToList(),
+            () => vm.AlbumGridTiles.Select(t => t.AlbumGroupKey).OfType<string>().ToList(),
             () => vm.SelectedSubItems,
             vm.SetSelectedSubItems,
             selectOnPlainPress: false);
@@ -538,7 +538,9 @@ public partial class MainView : UserControl
         // is constructed with selectOnPlainPress: false), so pressing one of
         // several selected tiles can still drag them all - the drag path falls
         // back to just this tile on its own if it isn't selected.
-        gesture.Press(tile.Name, e.GetPosition(grid), shift, toggle);
+        if (tile.AlbumGroupKey is not { } album)
+            return;
+        gesture.Press(album, e.GetPosition(grid), shift, toggle);
 
         e.Handled = true;
 
@@ -556,7 +558,7 @@ public partial class MainView : UserControl
         if (!gesture.Move(pt))
             return;
 
-        ShowDragGhost(grid, pt, DragGhostLabel(gesture.DragItems!));
+        ShowDragGhost(grid, pt, DragGhostLabel(gesture.DragItems!.Select(AlbumGroup.NameOf).ToList()));
         SetSidebarDropHighlight(HitTestSidebarDrop(grid, pt));
     }
 
@@ -583,7 +585,8 @@ public partial class MainView : UserControl
     // closed.
     private void ActivateAlbumTile(AlbumTileViewModel tile)
     {
-        _viewModel?.SetSelectedSubItems(new[] { tile.Name });
+        if (tile.AlbumGroupKey is { } album)
+            _viewModel?.SetSelectedSubItems(new[] { album });
         _viewModel?.ToggleAlbumExpandedCommand?.Execute(tile);
     }
 
@@ -617,8 +620,8 @@ public partial class MainView : UserControl
         if (tile == null)
             return;
 
-        if (!vm.SelectedSubItems.Contains(tile.Name))
-            vm.SetSelectedSubItems(new List<string> { tile.Name });
+        if (tile.AlbumGroupKey is { } album && !vm.SelectedSubItems.Contains(album))
+            vm.SetSelectedSubItems(new List<string> { album });
 
         var tracks = vm.GetTracksForSubListItems(vm.SelectedSubItems).ToList();
         PlatformContextMenu.Open(BuildAlbumContextMenu(tracks, tile), grid);
@@ -639,8 +642,8 @@ public partial class MainView : UserControl
 
         if (card.FindAncestorOfType<AlbumGridView>() != null)
         {
-            if (!vm.SelectedSubItems.Contains(tile.Name))
-                vm.SetSelectedSubItems(new List<string> { tile.Name });
+            if (tile.AlbumGroupKey is { } album && !vm.SelectedSubItems.Contains(album))
+                vm.SetSelectedSubItems(new List<string> { album });
             var selected = vm.GetTracksForSubListItems(vm.SelectedSubItems).ToList();
             PlatformContextMenu.Open(BuildAlbumContextMenu(selected, tile), card);
             return;
@@ -2474,7 +2477,7 @@ public partial class MainView : UserControl
             songSelection,
             vm.ExpandedAlbumTracks,
             vm.SelectedSubItems,
-            vm.ExpandedAlbumName,
+            vm.ExpandedAlbumGroupKey,
             vm.GetTracksForSubListItems);
         if (target.IsEmpty)
             return false;

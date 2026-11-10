@@ -116,6 +116,26 @@ public class LibraryBrowserViewModelTests
         Assert.Equal(new[] { "a", "b" }, vm.Rows.Select(r => r.Track.Title).Order());
     }
 
+    // The same for an album: the phone's album screen is the picked album's
+    // songs, and on the old name it had none.
+    [AvaloniaFact]
+    public async Task A_picked_album_renamed_stays_picked_under_the_new_name()
+    {
+        var a = Song("a", "One", "Blur");
+        var b = Song("b", "One", "Blur");
+        var (vm, host) = Make(Song("c", "Two", "Abba"), a, b);
+        host.CurrentKind = SidebarItemKind.Albums;
+        vm.Repopulate();
+        vm.SetSelectedSubItems(new[] { AlbumGroup.KeyOf(a)! });
+
+        a.Album = b.Album = "One (Remastered)";
+        vm.Repopulate();
+        await vm.RebuildRowsImmediatelyAsync();
+
+        Assert.Equal(new[] { AlbumGroup.KeyOf(a) }, vm.SelectedSubItems);
+        Assert.Equal(new[] { "a", "b" }, vm.Rows.Select(r => r.Track.Title).Order());
+    }
+
     // The desktop's column of names is put in the order picked from the
     // Artists page's Sort button; SubListItems, which the phone sorts for
     // itself, stays alphabetical - sorted twice, a reversed order would come
@@ -356,12 +376,13 @@ public class LibraryBrowserViewModelTests
         vm.Repopulate();
         var one = vm.AlbumGridTiles.Single(t => t.Name == "One");
         var two = vm.AlbumGridTiles.Single(t => t.Name == "Two");
-        vm.SetSelectedSubItems(["One", "Three"]);
+        var three = vm.AlbumGridTiles.Single(t => t.Name == "Three");
+        vm.SetSelectedSubItems([one.AlbumGroupKey!, three.AlbumGroupKey!]);
         vm.ToggleAlbumExpanded(one);
 
         vm.MoveToAlbum(two);
 
-        Assert.Equal(["Two"], vm.SelectedSubItems);
+        Assert.Equal([two.AlbumGroupKey], vm.SelectedSubItems);
         Assert.Equal("Two", vm.ExpandedAlbumName);
         Assert.Equal(["b"], vm.ExpandedAlbumTracks.Select(t => t.Title));
     }
@@ -372,26 +393,29 @@ public class LibraryBrowserViewModelTests
         var (vm, _) = Make(Song("a", "One", "X"), Song("b", "Two", "Y"));
         vm.Repopulate();
 
-        vm.MoveToAlbum(vm.AlbumGridTiles.Single(t => t.Name == "Two"));
+        var two = vm.AlbumGridTiles.Single(t => t.Name == "Two");
+        vm.MoveToAlbum(two);
 
-        Assert.Equal(["Two"], vm.SelectedSubItems);
+        Assert.Equal([two.AlbumGroupKey], vm.SelectedSubItems);
         Assert.Null(vm.ExpandedAlbumName);
     }
 
     [AvaloniaFact]
     public void Dragging_off_the_album_grid_resolves_tracks_by_album()
     {
-        var (vm, host) = Make(Song("a", "One", "X"), Song("b", "Two", "Y"));
+        var a = Song("a", "One", "X");
+        var (vm, host) = Make(a, Song("b", "Two", "Y"));
         vm.Repopulate();
+        var one = AlbumGroup.KeyOf(a)!;
 
         host.CurrentKind = SidebarItemKind.Albums;
-        Assert.Equal(new[] { "a" }, vm.GetTracksForSubListItems(new[] { "One" }).Select(t => t.Title));
+        Assert.Equal(new[] { "a" }, vm.GetTracksForSubListItems(new[] { one }).Select(t => t.Title));
 
         host.CurrentKind = SidebarItemKind.Artists;
         Assert.Equal(new[] { "b" }, vm.GetTracksForSubListItems(new[] { "Y" }).Select(t => t.Title));
 
         host.CurrentKind = SidebarItemKind.Songs;
-        Assert.Empty(vm.GetTracksForSubListItems(new[] { "One" }));
+        Assert.Empty(vm.GetTracksForSubListItems(new[] { one }));
     }
 
     [AvaloniaFact]

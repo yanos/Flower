@@ -947,7 +947,7 @@
                                 Grid.Column="0" Grid.ColumnSpan="2" Grid.RowSpan="2"
                                 IsVisible="{Binding IsShowingAlbumGrid}"
                                 ItemsSource="{Binding AlbumGridTiles}"
-                                SelectedNames="{Binding SelectedSubItems}"
+                                SelectedAlbums="{Binding SelectedSubItems}"
                                 ExpandedKey="{Binding ExpandedAlbumKey}"
                                 ExpandedTracks="{Binding ExpandedAlbumTracks}"
                                 Availability="{Binding Availability}"

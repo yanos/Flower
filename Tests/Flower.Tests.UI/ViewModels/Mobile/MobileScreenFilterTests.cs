@@ -178,7 +178,7 @@ public class MobileScreenFilterTests : PinnedDataDirectory
         mobile.ScreenFilter = "computer";
         WaitUntil(() => GridAlbums(mobile.AlbumGridRows).Count == 1, "the grid narrowing");
 
-        mobile.SelectAlbumOrArtistCommand.Execute("OK Computer");
+        mobile.SelectAlbumOrArtistCommand.Execute(MainViewModelHarness.AlbumKey(mobile, "OK Computer"));
         MainViewModelHarness.WaitForTheDrillIn(mobile, "OK Computer");
 
         Assert.Null(mobile.ScreenFilter);
@@ -194,7 +194,7 @@ public class MobileScreenFilterTests : PinnedDataDirectory
         mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
         mobile.ScreenFilter = "computer";
         WaitUntil(() => GridAlbums(mobile.AlbumGridRows).Count == 1, "the grid narrowing");
-        mobile.SelectAlbumOrArtistCommand.Execute("OK Computer");
+        mobile.SelectAlbumOrArtistCommand.Execute(MainViewModelHarness.AlbumKey(mobile, "OK Computer"));
         MainViewModelHarness.WaitForTheDrillIn(mobile, "OK Computer");
 
         mobile.BackCommand.Execute(null);
@@ -471,7 +471,7 @@ public class MobileScreenFilterTests : PinnedDataDirectory
         BoxOf(grid).Text = "computer";
         WaitUntil(() => GridAlbums(mobile.AlbumGridRows).Count == 1, "the grid narrowing");
 
-        mobile.SelectAlbumOrArtistCommand.Execute("OK Computer");
+        mobile.SelectAlbumOrArtistCommand.Execute(MainViewModelHarness.AlbumKey(mobile, "OK Computer"));
 
         // The live filter is gone at once; the screen being left still shows it.
         Assert.Null(mobile.ScreenFilter);

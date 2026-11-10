@@ -75,7 +75,7 @@ public class MobileActionMenuTests : PinnedDataDirectory
         MainViewModelHarness.WaitForTheDrillIn(vm, "Avant Hard");
 
         Assert.Equal(MobileSheet.None, vm.ActiveSheet);
-        Assert.Equal("Avant Hard", vm.Main.SelectedSubItem);
+        Assert.Equal("Avant Hard", vm.CurrentAlbumHeader?.Name);
 
         vm.OpenTrackActionsCommand.Execute(vm.AlbumDetailRows.First());
         Assert.DoesNotContain(vm.SongActions, e => e.Action == MenuAction.GoToAlbum);

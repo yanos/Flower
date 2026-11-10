@@ -44,7 +44,7 @@ public class MobileNavigationTransitionTests : PinnedDataDirectory
         var navigations = 0;
         scope.Mobile.NavigationChanged += (_, _) => navigations++;
 
-        scope.Mobile.SelectSearchAlbumCommand.Execute("Album 0");
+        scope.Mobile.SelectSearchAlbumCommand.Execute(MainViewModelHarness.AlbumKey(scope.Mobile, "Album 0"));
         MainViewModelHarness.WaitForTheDrillIn(scope.Mobile, "Album 0");
 
         Assert.Equal(1, navigations);
@@ -85,7 +85,7 @@ public class MobileNavigationTransitionTests : PinnedDataDirectory
         using var scope = Build();
         scope.Parts.PlaylistControl.Play(scope.Parts.Library.Tracks[0]);
         scope.Mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
-        scope.Mobile.SelectAlbumOrArtistCommand.Execute("Album 0");
+        scope.Mobile.SelectAlbumOrArtistCommand.Execute(MainViewModelHarness.AlbumKey(scope.Mobile, "Album 0"));
         MainViewModelHarness.WaitForTheDrillIn(scope.Mobile, "Album 0");
         scope.Mobile.OpenNowPlayingCommand.Execute(null);
         scope.Mobile.ConsumePendingTransition();
@@ -156,7 +156,7 @@ public class MobileNavigationTransitionTests : PinnedDataDirectory
     {
         using var scope = Build();
         scope.Mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
-        scope.Mobile.SelectAlbumOrArtistCommand.Execute("Album 0");
+        scope.Mobile.SelectAlbumOrArtistCommand.Execute(MainViewModelHarness.AlbumKey(scope.Mobile, "Album 0"));
         MainViewModelHarness.WaitForTheDrillIn(scope.Mobile, "Album 0");
         scope.Parts.PlaylistControl.Play(scope.Parts.Library.Tracks[0]);
 
@@ -164,7 +164,7 @@ public class MobileNavigationTransitionTests : PinnedDataDirectory
         // sheet is raised over is not the one its album art leads to.
         scope.Mobile.BackCommand.Execute(null);
         WaitUntil(() => !scope.Mobile.IsShowingAlbumTrackList);
-        scope.Mobile.SelectAlbumOrArtistCommand.Execute("Album 1");
+        scope.Mobile.SelectAlbumOrArtistCommand.Execute(MainViewModelHarness.AlbumKey(scope.Mobile, "Album 1"));
         MainViewModelHarness.WaitForTheDrillIn(scope.Mobile, "Album 1");
 
         scope.Mobile.OpenNowPlayingCommand.Execute(null);
@@ -173,7 +173,7 @@ public class MobileNavigationTransitionTests : PinnedDataDirectory
         Assert.False(scope.Mobile.IsShowingNowPlaying);
 
         scope.Mobile.BackCommand.Execute(null);
-        WaitUntil(() => scope.Mobile.Main.SelectedSubItem == "Album 1");
+        WaitUntil(() => scope.Mobile.CurrentAlbumHeader?.Name == "Album 1");
         Dispatcher.UIThread.RunJobs();
 
         Assert.False(scope.Mobile.IsShowingNowPlaying);
@@ -203,7 +203,7 @@ public class MobileNavigationTransitionTests : PinnedDataDirectory
     {
         using var scope = Build();
         scope.Mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
-        scope.Mobile.SelectAlbumOrArtistCommand.Execute("Album 0");
+        scope.Mobile.SelectAlbumOrArtistCommand.Execute(MainViewModelHarness.AlbumKey(scope.Mobile, "Album 0"));
         MainViewModelHarness.WaitForTheDrillIn(scope.Mobile, "Album 0");
 
         scope.Mobile.BackCommand.Execute(null);

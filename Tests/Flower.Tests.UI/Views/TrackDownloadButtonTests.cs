@@ -114,7 +114,7 @@ public class DetailHeaderDownloadAllTests : PinnedDataDirectory
         var tracks = new List<Track> { new() { Title = "A", Album = "An Album", Path = "/music/a.flac" } };
         using var parts = MainViewModelHarness.BuildMobile(new Library(tracks), new MainPlaylist(tracks));
         parts.Mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
-        parts.Mobile.SelectAlbumOrArtistCommand.Execute("An Album");
+        parts.Mobile.SelectAlbumOrArtistCommand.Execute(MainViewModelHarness.AlbumKey(parts.Mobile, "An Album"));
         MainViewModelHarness.WaitForTheDrillIn(parts.Mobile, "An Album");
 
         var view = new Flower.Views.Mobile.Screens.TrackListScreenView { DataContext = parts.Mobile };

@@ -142,7 +142,7 @@ public class MobileScreenMenuTests : PinnedDataDirectory
     {
         var vm = Build();
         vm.SelectTabCommand.Execute(nameof(MobileTab.Albums));
-        vm.SelectAlbumOrArtistCommand.Execute("Bee Thousand");
+        vm.SelectAlbumOrArtistCommand.Execute(MainViewModelHarness.AlbumKey(vm, "Bee Thousand"));
         await WaitForRows(vm, 2);
 
         Entry(vm, "Add to Playlist").Invoke();

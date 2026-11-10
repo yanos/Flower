@@ -71,6 +71,12 @@ public sealed class AlbumTileViewModel : DownloadIndicatorViewModel, AlbumArtLoa
     // made of.
     public AlbumTileKey Key => new(Name, Artist);
 
+    // The album this tile opens, as an album is picked (AlbumGroup) - the
+    // same album on whichever screen the tile is drawn: an artist's grid
+    // holding only their song from a compilation opens the compilation.
+    // Null for a playlist's header.
+    public string? AlbumGroupKey => RepresentativeTrack is { } track ? AlbumGroup.KeyOf(track) : null;
+
     // Every track this tile stands for - carried (as references; the Track
     // instances are the library's own) purely so IsUnavailable below can be
     // recomputed whenever the paired server comes or goes, without rebuilding

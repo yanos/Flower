@@ -47,7 +47,7 @@ public class NowPlayingMenuTests : PinnedDataDirectory
 
         Assert.False(scope.Mobile.IsShowingNowPlaying);
         Assert.Equal(MobileTab.Albums, scope.Mobile.SelectedTab);
-        Assert.Equal("Ethio Jazz", scope.Mobile.Main.SelectedSubItem);
+        Assert.Equal("Ethio Jazz", scope.Mobile.CurrentAlbumHeader?.Name);
     }
 
     [AvaloniaFact]

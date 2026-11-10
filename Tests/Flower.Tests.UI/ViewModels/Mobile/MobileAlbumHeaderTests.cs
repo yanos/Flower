@@ -28,7 +28,7 @@ public class MobileAlbumHeaderTests : PinnedDataDirectory
         using var parts = MainViewModelHarness.BuildMobile(new Library(tracks), new MainPlaylist(tracks));
         parts.Mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
         Dispatcher.UIThread.RunJobs();
-        parts.Mobile.SelectAlbumOrArtistCommand.Execute("Album");
+        parts.Mobile.SelectAlbumOrArtistCommand.Execute(MainViewModelHarness.AlbumKey(parts.Mobile, "Album"));
 
         // The album's page is built off the UI thread (MainViewModel's row
         // rebuild), so it is waited for rather than assumed after one pass.
@@ -92,14 +92,14 @@ public class MobileAlbumHeaderTests : PinnedDataDirectory
         ]));
     }
 
+    // A compilation tagged by its flag alone, with no album artist.
     [AvaloniaFact]
-    public void Songs_and_album_artists_that_all_differ_are_various_artists()
+    public void A_compilation_is_various_artists()
     {
-        Assert.Equal("Various Artists", HeaderArtistOf(
-        [
-            Song("One", "Artist A"),
-            Song("Two", "Artist B"),
-        ]));
+        var one = Song("One", "Artist A");
+        var two = Song("Two", "Artist B");
+        one.IsCompilation = two.IsCompilation = true;
+        Assert.Equal("Various Artists", HeaderArtistOf([one, two]));
     }
 
     // The artist line goes to that artist's page: the page the songs are
@@ -117,7 +117,11 @@ public class MobileAlbumHeaderTests : PinnedDataDirectory
             Song("One", "Death From Above 1979", albumArtists: "Death From Above 1979"),
             Song("Two", "Death From Above 1979 feat. Someone", albumArtists: "Death From Above 1979"),
         ])?.ArtistPage);
-        Assert.Null(HeaderOf([Song("One", "Artist A"), Song("Two", "Artist B")])?.ArtistPage);
+        Assert.Null(HeaderOf(
+        [
+            Song("One", "Artist A", albumArtists: "Various Artists"),
+            Song("Two", "Artist B", albumArtists: "Various Artists"),
+        ])?.ArtistPage);
     }
 
     [AvaloniaFact]
@@ -127,7 +131,7 @@ public class MobileAlbumHeaderTests : PinnedDataDirectory
         using var parts = MainViewModelHarness.BuildMobile(new Library(tracks), new MainPlaylist(tracks));
         var mobile = parts.Mobile;
         mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
-        mobile.SelectAlbumOrArtistCommand.Execute("Album");
+        mobile.SelectAlbumOrArtistCommand.Execute(MainViewModelHarness.AlbumKey(mobile, "Album"));
         MainViewModelHarness.WaitForTheDrillIn(mobile, "Album");
 
         mobile.GoToArtistCommand.Execute(mobile.CurrentAlbumHeader?.ArtistPage);

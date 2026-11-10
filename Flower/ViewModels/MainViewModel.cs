@@ -844,6 +844,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     public AlbumTileKey? ExpandedAlbumKey                 => Browser.ExpandedAlbumKey;
     public string? ExpandedAlbumName                     => Browser.ExpandedAlbumName;
+    public string? ExpandedAlbumGroupKey                 => Browser.ExpandedAlbumGroupKey;
     public ObservableCollection<Track> ExpandedAlbumTracks => Browser.ExpandedAlbumTracks;
 
     public ObservableCollection<string> SubListItems => Browser.SubListItems;
@@ -2273,9 +2274,9 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // A cover tapped on Home: the album, open, in the Albums grid - the same
     // place a click on it there leads, so there is one way an album is shown
     // on desktop rather than a second screen for albums reached from Home.
-    // Matched by name, which is what the Albums grid groups by.
+    // Matched as the Albums grid groups an album (AlbumGroup).
     public Task ShowAlbumAsync(AlbumTileViewModel album) =>
-        ShowAlbumAsync(tiles => tiles.FirstOrDefault(t => t.Name == album.Name));
+        ShowAlbumAsync(tiles => tiles.FirstOrDefault(t => t.AlbumGroupKey == album.AlbumGroupKey));
 
     private async Task ShowAlbumAsync(Func<IReadOnlyList<AlbumTileViewModel>, AlbumTileViewModel?> pick)
     {
@@ -2995,7 +2996,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
                     SelectedSidebarItem = songs;
                 break;
             case SidebarItemKind.Albums:
-                SelectedSubItem = track.Album;
+                SelectedSubItem = AlbumGroup.KeyOf(track);
                 break;
             case SidebarItemKind.Artists:
                 if (!string.IsNullOrEmpty(ArtistFilterText))
@@ -3031,17 +3032,17 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
         return ShowAlbumAsync(tiles =>
             tiles.FirstOrDefault(t => t.Tracks.Any(x => x.Id == track.Id))
-            ?? tiles.FirstOrDefault(t => t.Name == track.Album));
+            ?? tiles.FirstOrDefault(t => t.AlbumGroupKey == AlbumGroup.KeyOf(track)));
     }
 
     public Task GoToArtistAsync(Track track) =>
         track.Artists is { Length: > 0 } artist ? ShowArtistAsync(artist) : Task.CompletedTask;
 
     // Whether a song menu over these songs has one album, or one artist, to
-    // go to: every one of them is from it, by the raw field the Albums grid
-    // and the Artists column go by.
+    // go to: every one of them is from it, as the Albums grid groups an
+    // album (AlbumGroup) and by the raw field the Artists column goes by.
     public static bool ShareAlbum(IReadOnlyList<Track> tracks) =>
-        tracks.Count > 0 && !string.IsNullOrEmpty(tracks[0].Album) && tracks.All(t => t.Album == tracks[0].Album);
+        tracks.Count > 0 && AlbumGroup.KeyOf(tracks[0]) is { } album && tracks.All(t => AlbumGroup.KeyOf(t) == album);
 
     public static bool ShareArtist(IReadOnlyList<Track> tracks) =>
         tracks.Count > 0 && !string.IsNullOrEmpty(tracks[0].Artists) && tracks.All(t => t.Artists == tracks[0].Artists);
