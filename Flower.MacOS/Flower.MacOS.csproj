@@ -63,6 +63,9 @@
     <ProjectReference Include="..\Flower\Flower.csproj" />
   </ItemGroup>
 
+  <!-- The render-thread bridge, beside the NuGet's miniaudio. -->
+  <Import Project="..\native\miniaudio\desktop\FlowerBridge.props" />
+
   <!-- Set by scripts/package-desktop.sh for the dmg, and by nothing else: the
        one build that looks for a newer release (see Program.Main). A run from
        the IDE is not a release, and offering it the latest one would be

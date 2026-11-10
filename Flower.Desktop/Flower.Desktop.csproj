@@ -27,4 +27,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Flower\Flower.csproj" />
   </ItemGroup>
+
+  <!-- The render-thread bridge, beside the NuGet's miniaudio. -->
+  <Import Project="..\native\miniaudio\desktop\FlowerBridge.props" />
 </Project>

@@ -1,0 +1,42 @@
+<Project>
+  <!-- libflowerbridge, the render-thread bridge, for the desktop being built
+       for: imported by the desktop heads and the desktop test suites, never
+       by Flower.csproj, whose references reach the phone heads too (they
+       bring their own, from native/miniaudio/{android,ios}).
+
+       The binaries beside this file are built by build.sh here and checked
+       in, so a clean clone plays with no native toolchain. Desktop's
+       miniaudio comes from the Miniaudio-CS NuGet and knows nothing of the
+       bridge, so the bridge is a library of its own, copied flat beside the
+       app - where DllImport("flowerbridge") finds it by default, and where
+       the macOS head bundles it into Contents/MonoBundle with the other
+       dylibs.
+
+       Chosen by the RuntimeIdentifier when there is one (a publish) and by
+       the SDK's own platform otherwise (a build, dotnet run, the tests), as
+       Flower.csproj chooses its FFAudio.NET payload. -->
+  <PropertyGroup>
+    <FlowerBridgeRid Condition="'$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</FlowerBridgeRid>
+    <FlowerBridgeRid Condition="'$(FlowerBridgeRid)' == ''">$(NETCoreSdkPortableRuntimeIdentifier)</FlowerBridgeRid>
+    <FlowerBridgeFile Condition="$(FlowerBridgeRid.StartsWith('osx'))">libflowerbridge.dylib</FlowerBridgeFile>
+    <FlowerBridgeFile Condition="$(FlowerBridgeRid.StartsWith('linux'))">libflowerbridge.so</FlowerBridgeFile>
+    <FlowerBridgeFile Condition="$(FlowerBridgeRid.StartsWith('win'))">flowerbridge.dll</FlowerBridgeFile>
+    <FlowerBridgePath>$(MSBuildThisFileDirectory)runtimes/$(FlowerBridgeRid)/native/$(FlowerBridgeFile)</FlowerBridgePath>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(FlowerBridgeFile)' != '' AND Exists('$(FlowerBridgePath)')">
+    <None Include="$(FlowerBridgePath)"
+          Link="$(FlowerBridgeFile)"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest"
+          Visible="false" />
+  </ItemGroup>
+
+  <!-- A platform with no build of the bridge falls back to MiniaudioSink's
+       managed render callback, which works but is not what the other
+       platforms run, so say so at build time rather than only in a log. -->
+  <Target Name="_FlowerBridgeMissing" BeforeTargets="Build"
+          Condition="'$(FlowerBridgeFile)' == '' OR !Exists('$(FlowerBridgePath)')">
+    <Warning Text="No libflowerbridge for $(FlowerBridgeRid) (looked for $(FlowerBridgePath)), so playback falls back to the managed render callback. native/miniaudio/desktop/build.sh builds the desktop RIDs." />
+  </Target>
+</Project>

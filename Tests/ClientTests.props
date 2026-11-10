@@ -48,4 +48,11 @@
   <ItemGroup>
     <Compile Include="$(MSBuildThisFileDirectory)TestSupport\**\*.cs" Link="TestSupport\%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
+
+  <!-- The desktop render-thread bridge, for NativeOutputStageTests and
+       anything else that reaches NativeAudioBridge. Not for the iOS suite,
+       which runs inside Flower.Tests.iOS against the framework Flower.iOS
+       ships. -->
+  <Import Project="$(MSBuildThisFileDirectory)..\native\miniaudio\desktop\FlowerBridge.props"
+          Condition="'$(MSBuildProjectName)' != 'Flower.Tests.iOS.Suite'" />
 </Project>

@@ -3,6 +3,15 @@
 
 #include <stdint.h>
 
+/* The library's whole API, and nothing else: every build compiles with
+   -fvisibility=hidden, so what this does not mark stays internal. A Windows
+   DLL exports nothing unmarked anyway. */
+#if defined(_WIN32)
+#define FLOWER_AUDIO_BRIDGE_API __declspec(dllexport)
+#else
+#define FLOWER_AUDIO_BRIDGE_API __attribute__((visibility("default")))
+#endif
+
 struct ma_device;
 
 /*
@@ -59,49 +68,49 @@ typedef struct
    output stage requantises to. A bridge lives exactly as long as one
    device, so this is fixed for its life. Anything else is refused rather
    than rendered as something it is not. Returns NULL on failure. */
-flower_audio_bridge* flower_audio_bridge_create(uint32_t capacityFrames, uint32_t channels, uint32_t deviceBytesPerSample);
-void flower_audio_bridge_destroy(flower_audio_bridge* pBridge);
+FLOWER_AUDIO_BRIDGE_API flower_audio_bridge* flower_audio_bridge_create(uint32_t capacityFrames, uint32_t channels, uint32_t deviceBytesPerSample);
+FLOWER_AUDIO_BRIDGE_API void flower_audio_bridge_destroy(flower_audio_bridge* pBridge);
 
 /* The ma_device_data_proc to hand to ma_device_config.dataCallback. Cast
    rather than typed, so the header does not have to include miniaudio.h. */
-void* flower_audio_bridge_data_callback(void);
+FLOWER_AUDIO_BRIDGE_API void* flower_audio_bridge_data_callback(void);
 
 /* Binds the bridge to the device the callback will be invoked for. The
    callback finds its bridge by device pointer rather than through
    pUserData, which already carries the managed sink's GCHandle for the
    notification callback. Call after ma_device_init, before ma_device_start. */
-int flower_audio_bridge_attach(flower_audio_bridge* pBridge, struct ma_device* pDevice);
-void flower_audio_bridge_detach(flower_audio_bridge* pBridge);
+FLOWER_AUDIO_BRIDGE_API int flower_audio_bridge_attach(flower_audio_bridge* pBridge, struct ma_device* pDevice);
+FLOWER_AUDIO_BRIDGE_API void flower_audio_bridge_detach(flower_audio_bridge* pBridge);
 
-uint32_t flower_audio_bridge_capacity(const flower_audio_bridge* pBridge);
-uint32_t flower_audio_bridge_available(const flower_audio_bridge* pBridge);
+FLOWER_AUDIO_BRIDGE_API uint32_t flower_audio_bridge_capacity(const flower_audio_bridge* pBridge);
+FLOWER_AUDIO_BRIDGE_API uint32_t flower_audio_bridge_available(const flower_audio_bridge* pBridge);
 
 /* Producer side. Writes as much as fits and returns how much was taken.
    Returns 0 while a requested flush is still unacknowledged. */
-uint32_t flower_audio_bridge_write(flower_audio_bridge* pBridge, const void* pData, uint32_t byteCount);
+FLOWER_AUDIO_BRIDGE_API uint32_t flower_audio_bridge_write(flower_audio_bridge* pBridge, const void* pData, uint32_t byteCount);
 
 /* Producer side. Asks the consumer to drop everything queued; returns the
    request id to wait for. Until flush_acked matches it, write() takes
    nothing - dropping "everything queued" must not be allowed to swallow
    post-flush audio. */
-uint64_t flower_audio_bridge_request_flush(flower_audio_bridge* pBridge);
-uint64_t flower_audio_bridge_flush_acked(const flower_audio_bridge* pBridge);
+FLOWER_AUDIO_BRIDGE_API uint64_t flower_audio_bridge_request_flush(flower_audio_bridge* pBridge);
+FLOWER_AUDIO_BRIDGE_API uint64_t flower_audio_bridge_flush_acked(const flower_audio_bridge* pBridge);
 
 /* Applies a pending flush from the producer thread. Only valid while the
    device is stopped, where no consumer exists to acknowledge one. */
-void flower_audio_bridge_flush_now(flower_audio_bridge* pBridge);
+FLOWER_AUDIO_BRIDGE_API void flower_audio_bridge_flush_now(flower_audio_bridge* pBridge);
 
 /* Producer side. While unprimed the callback renders silence rather than
    whatever little has been buffered so far. Cleared by every flush. */
-void flower_audio_bridge_set_primed(flower_audio_bridge* pBridge, int primed);
-int flower_audio_bridge_is_primed(const flower_audio_bridge* pBridge);
+FLOWER_AUDIO_BRIDGE_API void flower_audio_bridge_set_primed(flower_audio_bridge* pBridge, int primed);
+FLOWER_AUDIO_BRIDGE_API int flower_audio_bridge_is_primed(const flower_audio_bridge* pBridge);
 
 /* The transport envelope, applied by the callback itself so that pause and
    resume stay click-free and immediate however deep the buffer is. Safe
    from any thread. */
-void flower_audio_bridge_begin_fade_in(flower_audio_bridge* pBridge, uint32_t fadeFrames);
-void flower_audio_bridge_begin_fade_out(flower_audio_bridge* pBridge, uint32_t fadeFrames);
-int flower_audio_bridge_fade_out_completed(const flower_audio_bridge* pBridge);
+FLOWER_AUDIO_BRIDGE_API void flower_audio_bridge_begin_fade_in(flower_audio_bridge* pBridge, uint32_t fadeFrames);
+FLOWER_AUDIO_BRIDGE_API void flower_audio_bridge_begin_fade_out(flower_audio_bridge* pBridge, uint32_t fadeFrames);
+FLOWER_AUDIO_BRIDGE_API int flower_audio_bridge_fade_out_completed(const flower_audio_bridge* pBridge);
 
 /* The output stage's controls - Flower/Audio/OutputStage.cs, which this
    matches sample for sample. Each applies from the next device buffer,
@@ -118,10 +127,10 @@ int flower_audio_bridge_fade_out_completed(const flower_audio_bridge* pBridge);
    bypass. The callback crossfades to a new curve over one buffer. Callers
    must not overlap: it is single-producer, so take a lock around it if more
    than one thread can call it. Returns 0 when refused. */
-void flower_audio_bridge_set_target_gain(flower_audio_bridge* pBridge, float gain);
-void flower_audio_bridge_set_timing(flower_audio_bridge* pBridge, uint32_t gainRampFrames, uint32_t declickFadeFrames);
-int flower_audio_bridge_set_equalizer(flower_audio_bridge* pBridge, const float* pCoefficients, uint32_t bandCount, float preamp);
+FLOWER_AUDIO_BRIDGE_API void flower_audio_bridge_set_target_gain(flower_audio_bridge* pBridge, float gain);
+FLOWER_AUDIO_BRIDGE_API void flower_audio_bridge_set_timing(flower_audio_bridge* pBridge, uint32_t gainRampFrames, uint32_t declickFadeFrames);
+FLOWER_AUDIO_BRIDGE_API int flower_audio_bridge_set_equalizer(flower_audio_bridge* pBridge, const float* pCoefficients, uint32_t bandCount, float preamp);
 
-void flower_audio_bridge_take_snapshot(flower_audio_bridge* pBridge, flower_audio_bridge_snapshot* pSnapshot);
+FLOWER_AUDIO_BRIDGE_API void flower_audio_bridge_take_snapshot(flower_audio_bridge* pBridge, flower_audio_bridge_snapshot* pSnapshot);
 
 #endif
