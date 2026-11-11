@@ -27,6 +27,17 @@
     <ProjectReference Include="..\Flower.SemanticAudio.Onnx\Flower.SemanticAudio.Onnx.csproj" />
   </ItemGroup>
 
+  <!-- The licences as plain files beside Flower.Server.dll, where someone
+       looking inside a Docker image or a copied publish folder will find
+       them: the server ships FFmpeg (inside libffaudio.so) and TagLib#, both
+       LGPL. The same texts are embedded in Flower.Core.dll, which the server
+       serves at /licences (WebUiHosting). -->
+  <ItemGroup>
+    <None Include="..\NOTICE" Link="NOTICE" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+    <None Include="..\LICENSE" Link="LICENSE" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+    <None Include="..\licenses\LGPL-2.1.txt" Link="licenses\LGPL-2.1.txt" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
+
   <!-- ONNX Runtime's package carries its phone builds too (an iOS
        xcframework and an Android aar, 110 MB between them), which a
        framework-dependent publish would copy into runtimes/ and so into

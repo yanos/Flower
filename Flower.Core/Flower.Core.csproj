@@ -40,4 +40,15 @@
     <PackageReference Include="FFAudio.NET" Version="$(FFAudioPackageVersion)" />
     <PackageReference Include="System.Numerics.Tensors" Version="10.0.14" />
   </ItemGroup>
+
+  <!-- The licences, inside every build of every head and the server - a
+       phone app has no folder beside it to carry them in, and FFmpeg's LGPL
+       asks for its text to go with each copy. Read by OpenSourceNotices;
+       shown by OpenSourceLicencesWindow, the phone's Settings and the
+       server's /licences. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\NOTICE" LogicalName="Flower.Licences.NOTICE" Visible="false" />
+    <EmbeddedResource Include="..\licenses\LGPL-2.1.txt" LogicalName="Flower.Licences.LGPL-2.1" Visible="false" />
+    <EmbeddedResource Include="..\LICENSE" LogicalName="Flower.Licences.Apache-2.0" Visible="false" />
+  </ItemGroup>
 </Project>

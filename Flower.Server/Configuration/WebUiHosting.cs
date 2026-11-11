@@ -90,6 +90,18 @@ public static class WebUiHosting
                 string.Join(", ", Candidates(app.Environment, options).Where(c => !string.IsNullOrWhiteSpace(c))));
         }
 
+        // NOTICE and the licence texts, for a browser tab's "Open-Source
+        // Licences" link (MainView's sidebar) and for anyone running the
+        // image, which ships FFmpeg and TagLib# - LGPL, whose text has to go
+        // with each copy. Outside /api and its device signature: there is
+        // nothing in it to guard, and a tab that has not paired yet may read
+        // it too. Still behind LanGuard, like the UI itself.
+        app.MapGet(OpenSourceNotices.ServerPath, (HttpContext context) =>
+        {
+            RefuseFraming(context.Response);
+            return Results.Text(OpenSourceNotices.Text, "text/plain; charset=utf-8");
+        });
+
         // Single-page fallback: the browser UI reads its route out of the URL
         // fragment (see Flower.Web), so in practice only "/" is ever requested,
         // but a refresh on any other path must not 404 into nothing. Scoped away

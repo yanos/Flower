@@ -18,6 +18,9 @@ public partial class AboutWindow : Window
             : $"Version {AppVersion.Display}";
     }
 
+    private void LicencesButton_OnClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
+        new OpenSourceLicencesWindow().Show();
+
     // No button here to hang IsCancel="True" off of (unlike SettingsWindow/
     // ColumnSelectorWindow/etc.) - this is a pure info popup, so Escape just
     // closes it directly instead.

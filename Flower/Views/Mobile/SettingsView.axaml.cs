@@ -41,6 +41,12 @@ public partial class SettingsView : UserControl
 
     private MainViewModel? Main => (DataContext as MobileMainViewModel)?.Main;
 
+    private void LicencesExpander_OnExpanding(object? sender, RoutedEventArgs e)
+    {
+        if (LicencesTextBlock.Text is null or "")
+            LicencesTextBlock.Text = OpenSourceNotices.Text;
+    }
+
     // SoftKeyboard.AvoidOcclusion on the scroller ends the viewport above the
     // keyboard, but nothing then moves the box being typed into up into what
     // is left of it - the server address field sits near the bottom of a long

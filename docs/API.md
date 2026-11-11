@@ -21,6 +21,7 @@ the `v1` in the paths is a name, not a promise (see CLAUDE.md, "No Users Yet").
 | `/api/flower/v1/*` | Catalog, playlists, state, art, audio | Any paired device | **PascalCase** |
 | `POST /api/flower/v1/stream-tickets` | Mint a URL an `<audio>` element can open | Any paired device | camelCase |
 | `/api/admin/*` | Devices, settings, library writes, logs | Paired devices flagged admin | camelCase |
+| `GET /licences` | `NOTICE` and the licence texts, as `text/plain` (`OpenSourceNotices`); the browser UI's "Open-Source Licences" link | Anyone the network gate admits | — |
 
 The casing split is real and easy to trip over. The sync group writes whatever
 the client's source-generated context writes — no naming policy, so `Songs`,

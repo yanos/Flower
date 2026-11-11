@@ -1,67 +1,136 @@
 Flower
 Copyright (c) the Flower contributors
 
-This product is licensed under the Apache License, Version 2.0 (see the
-LICENSE file). It depends on the following third-party components, which
-remain under their own licenses:
+Flower is licensed under the Apache License, Version 2.0 (the LICENSE file).
+It uses the third-party components below, which remain under their own
+licences. Every build carries this file, the LICENSE file and
+licenses/LGPL-2.1.txt inside it, and shows them under "Open-Source Licences":
+the About window on a desktop, Settings on a phone, the foot of the sidebar
+in a browser. The server serves them at /licences, and its image carries
+them as files beside Flower.Server.dll as well.
 
---------------------------------------------------------------------------
-LGPL-2.1-or-later
---------------------------------------------------------------------------
-- LibVLCSharp / LibVLCSharp.Avalonia (videolan.org)
-- VideoLAN.LibVLC.Windows / .Android / .iOS / .Mac (videolan.org) —
-  redistributable native LibVLC binaries for the respective platform.
+Flower's own source, including the scripts that build every installer:
+https://github.com/yanos/Flower
 
-Full license text: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
-Source: https://code.videolan.org/videolan/vlc / https://code.videolan.org/videolan/LibVLCSharp
+==========================================================================
+LGPL-2.1-or-later: FFmpeg
+==========================================================================
+Flower decodes audio with FFmpeg (libavformat, libavcodec, libavutil,
+libswresample, https://ffmpeg.org), through FFAudio.NET, a small façade
+under the Apache License 2.0 (https://github.com/yanos/FFAudio.NET). The
+FFmpeg in every build Flower distributes is built under the LGPL: without
+--enable-gpl or --enable-nonfree. Which FFmpeg a running copy holds is shown
+in its About window (Settings on a phone), and FFmpeg reports its own
+configure line and licence through FFAudio.NET's FFmpegBuild.
 
-Note (macOS desktop specifically): on macOS, Flower does not bundle VLC's
-native libraries — at runtime it loads libvlccore and plugins directly from
-a separately, user-installed copy of VLC.app (see
-Flower/Manager/VlcNativeSetup.cs). Flower does not distribute that
-installation; the end user obtains it independently from videolan.org under
-VLC's own licensing (predominantly LGPL-2.1-or-later, with a subset of
-individual plugin modules — e.g. MP3/AAC decoding, libsamplerate-based
-resampling — that are GPL-2-or-later as compiled, per upstream VLC's own
-module headers). This NOTICE covers what Flower itself packages and
-distributes, not software the user separately installs.
+How FFmpeg is linked, and how to put a different FFmpeg in its place:
 
---------------------------------------------------------------------------
-LGPL-2.1-only
---------------------------------------------------------------------------
-- TagLib# (github.com/mono/taglib-sharp)
+  Windows. FFmpeg ships as its own DLLs (avformat-*.dll, avcodec-*.dll,
+  avutil-*.dll, swresample-*.dll) beside ffaudio.dll in the install folder,
+  built from source by FFAudio.NET's native/windows/build-ffmpeg.sh. Replace
+  them with an ABI-compatible build of your own.
 
-Full license text: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
-Source: https://github.com/mono/taglib-sharp
+  macOS, Linux, iOS, Android and the server. FFmpeg is linked statically
+  into the façade, which is itself a separate shared library inside the
+  app: libffaudio.dylib in Flower.app/Contents/MonoBundle (macOS),
+  libffaudio.so in the AppImage (Linux) and the APK (Android),
+  ffaudio.framework in the app (iOS), and
+  /app/runtimes/linux-x64/native/libffaudio.so in the server's Docker
+  image. To use a modified FFmpeg, rebuild that library from
+  FFAudio.NET's source with your FFmpeg - its
+  native/build-all.sh, with the FFmpeg version and component list in
+  native/codec-set.sh - and replace the one in the app. FFAudio.NET's
+  version is FFAudioPackageVersion in Flower's Directory.Build.props, and
+  its repository has a tag for every version. On a phone the changed app
+  has to be signed again, with your own key.
 
---------------------------------------------------------------------------
+The complete corresponding FFmpeg source, on every platform, is FFmpeg's
+release of the version FFAudio.NET's codec-set.sh names, unmodified, from
+https://ffmpeg.org/releases/, configured as that platform's FFAudio.NET
+build script says - and, for as long as Flower distributes a build
+containing it, on request from the Flower project through
+https://github.com/yanos/Flower/issues.
+
+Licence text: licenses/LGPL-2.1.txt
+(https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html)
+
+==========================================================================
+LGPL-2.1-only: TagLib#
+==========================================================================
+- TagLib# (TagLibSharp, https://github.com/mono/taglib-sharp), which reads
+  and writes tags. On a desktop, on the server and in the browser UI it
+  ships as its own assembly, TagLibSharp.dll, replaceable as one. A phone app packs every assembly
+  into itself (on iOS, compiled ahead of time into the app binary), so
+  replacing it there means rebuilding Flower from its source with your
+  TagLib#.
+
+Licence text: licenses/LGPL-2.1.txt
+
+==========================================================================
 MIT
---------------------------------------------------------------------------
-- Avalonia, Avalonia.Controls.DataGrid, Avalonia.Themes.Fluent,
-  Avalonia.Fonts.Inter, Avalonia.Diagnostics (avaloniaui.net)
+==========================================================================
+- Avalonia, Avalonia.Desktop, Avalonia.iOS, Avalonia.Android,
+  Avalonia.Browser, Avalonia.Skia, Avalonia.Themes.Fluent,
+  Avalonia.Controls.DataGrid, Avalonia.Fonts.Inter (avaloniaui.net)
+- AvaloniaEdit (github.com/AvaloniaUI/AvaloniaEdit)
+- SkiaSharp and HarfBuzzSharp (github.com/mono/SkiaSharp), over Skia
+  (BSD-3-Clause, skia.org) and HarfBuzz (MIT-style, harfbuzz.github.io)
 - CommunityToolkit.Mvvm (Microsoft / .NET Foundation)
-- Microsoft.Extensions.DependencyInjection (Microsoft)
-- Material.Icons.Avalonia
-- Makaretu.Dns.Multicast.New
-- plist-cil
+- Microsoft.Extensions.DependencyInjection, Microsoft.Extensions.Logging,
+  Microsoft.Data.Sqlite, System.Numerics.Tensors (Microsoft)
 - ONNX Runtime (Microsoft.ML.OnnxRuntime, github.com/microsoft/onnxruntime),
   in the heads that run Vibe Playlists' engine
+- Miniaudio-CS (the C# bindings to miniaudio)
+- Material.Icons.Avalonia (github.com/SKProCH/Material.Icons); the icons
+  themselves are Pictogrammers' Material Design Icons, under the
+  Pictogrammers Free License (pictogrammers.com/docs/general/license)
+- Makaretu.Dns.Multicast.New
+- plist-cil
+- Velopack (velopack.io), the Windows and Linux updater
 - RoBERTa's tokenizer files, vocab.json and merges.txt (fairseq,
   github.com/facebookresearch/fairseq), downloaded with the model below
 
-Full license text: https://opensource.org/license/mit/
+Licence text: https://opensource.org/license/mit/
 
---------------------------------------------------------------------------
-Apache-2.0, downloaded at runtime rather than packaged
---------------------------------------------------------------------------
+==========================================================================
+Apache-2.0
+==========================================================================
+- FFAudio.NET (github.com/yanos/FFAudio.NET)
+- Serilog, Serilog.Extensions.Logging, Serilog.Sinks.Console,
+  Serilog.Sinks.File (serilog.net)
+- SQLitePCLRaw (github.com/ericsink/SQLitePCL.raw)
+- AndroidX (Xamarin.AndroidX.*, Google / Microsoft), on Android
 - LAION's CLAP music checkpoint, music_audioset_epoch_15_esc_90.14.pt
   (github.com/LAION-AI/CLAP), exported to ONNX and quantized by
   scripts/semantic-audio/export-clap-onnx.py and published as the
-  music_audioset_epoch_15_esc_90.14 release of this repository. Flower
-  downloads it only when Vibe Playlists are switched on, and deletes it when
-  they are switched off.
+  music_audioset_epoch_15_esc_90.14 release of this repository. Downloaded
+  at runtime rather than packaged: only when Vibe Playlists are switched
+  on, and deleted when they are switched off.
 
-Full license text: https://www.apache.org/licenses/LICENSE-2.0
+Licence text: LICENSE (https://www.apache.org/licenses/LICENSE-2.0)
+
+==========================================================================
+Public domain, or a choice of it
+==========================================================================
+- miniaudio (miniaud.io), public domain or MIT No Attribution, at the
+  author's choice; vendored and built in native/miniaudio/
+- SQLite (sqlite.org), public domain, inside SQLitePCLRaw's e_sqlite3
+
+==========================================================================
+SIL Open Font License 1.1
+==========================================================================
+- Geist, copyright 2024 The Geist Project Authors
+  (github.com/vercel/geist-font)
+- JetBrains Mono, copyright 2020 The JetBrains Mono Project Authors
+  (github.com/JetBrains/JetBrainsMono)
+- Newsreader, copyright 2020 The Newsreader Project Authors
+  (github.com/productiontype/Newsreader)
+- The Inter typeface (rsms.me/inter), shipped by Avalonia.Fonts.Inter
+- Noto Sans CJK and Noto Color Emoji (github.com/notofonts), in the
+  browser UI only
+
+Licence text: beside each font, in Flower/Assets/Fonts/*-OFL.txt and
+Flower.Web/wwwroot/fonts/OFL-*.txt (https://openfontlicense.org)
 
 --------------------------------------------------------------------------
 

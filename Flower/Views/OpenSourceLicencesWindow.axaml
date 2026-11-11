@@ -1,0 +1,16 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Flower.Views.OpenSourceLicencesWindow"
+        Title="Open-Source Licences"
+        Width="640" Height="560"
+        MinWidth="400" MinHeight="300"
+        WindowStartupLocation="CenterScreen">
+  <!-- Fixed-width, because NOTICE and the licence texts are laid out for it. -->
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+    <SelectableTextBlock x:Name="NoticesTextBlock"
+                         Margin="20"
+                         FontFamily="{DynamicResource AppMonospaceFontFamily}"
+                         FontSize="12"
+                         TextWrapping="Wrap" />
+  </ScrollViewer>
+</Window>

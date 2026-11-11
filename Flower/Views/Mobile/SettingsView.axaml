@@ -812,6 +812,22 @@
                  Foreground="{DynamicResource AppTextMutedBrush}"
                  TextAlignment="Center" TextWrapping="Wrap"
                  Margin="20,2,20,8" />
+
+      <!-- NOTICE and the licence texts (OpenSourceNotices), which a phone
+           has nowhere else to show. Filled the first time it opens: the LGPL
+           alone is five hundred lines, laid out for nothing on every visit
+           to Settings otherwise. A plain TextBlock, not a selectable one,
+           which would take the drag that scrolls the page. -->
+      <Expander x:Name="LicencesExpander"
+                Header="Open-Source Licences"
+                HorizontalAlignment="Stretch"
+                Margin="20,0,20,24"
+                Expanding="LicencesExpander_OnExpanding">
+        <TextBlock x:Name="LicencesTextBlock"
+                   FontFamily="{DynamicResource AppMonospaceFontFamily}"
+                   FontSize="10"
+                   TextWrapping="Wrap" />
+      </Expander>
     </StackPanel>
     </ScrollViewer>
 

@@ -72,6 +72,12 @@ public partial class MainView : UserControl
         InitializeComponent();
         DataContextChanged += OnDataContextChanged;
 
+        if (OperatingSystem.IsBrowser())
+        {
+            LicencesLink.NavigateUri = new Uri(BrowserLocation.Origin, OpenSourceNotices.ServerPath);
+            LicencesLink.IsVisible = true;
+        }
+
         // The A-Z strips, as the phone's screens set theirs. The grid's albums
         // are sorted on their TrackListBuilder.SortKey, which drops
         // punctuation, so the letter does too; the names are sorted on the

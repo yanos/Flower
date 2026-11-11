@@ -172,6 +172,17 @@
             </Viewbox>
           </Button>
         </StackPanel>
+        <!-- A browser's way to the licences (OpenSourceNotices), which a
+             desktop reaches from About and a phone from Settings: the
+             server's /licences, in a tab of its own. Pointed there and shown
+             by the code-behind, in a browser only. -->
+        <HyperlinkButton x:Name="LicencesLink"
+                         DockPanel.Dock="Bottom"
+                         IsVisible="False"
+                         Content="Open-Source Licences"
+                         FontSize="11"
+                         Padding="0"
+                         Margin="20,0,16,12"/>
         <Panel>
           <ListBox x:Name="SidebarList"
                    Classes="sidebar"
