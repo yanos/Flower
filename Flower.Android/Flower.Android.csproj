@@ -74,6 +74,19 @@
     <PackageReference Include="Miniaudio-CS" Version="1.0.4" ExcludeAssets="native" />
   </ItemGroup>
 
+  <!-- The same trap, for the decoder. Flower.csproj picks a desktop ffaudio
+       payload by host, and it flows here transitively. On a Linux host that is
+       FFAudio.NET.Linux, whose runtimes/linux-x64/native/libffaudio.so wins
+       lib/x86_64/ by the same RID fallback, so the real one from
+       FFAudio.NET.Android below is dropped with an XA4301 and dlopen fails on
+       an x86_64 emulator. Only Linux collides today, but each host's payload is
+       excluded, with Flower.csproj's own conditions, so none of them can. -->
+  <ItemGroup>
+    <PackageReference Include="FFAudio.NET.macOS" Version="$(FFAudioPackageVersion)" ExcludeAssets="native" Condition="$([MSBuild]::IsOSPlatform('OSX'))" />
+    <PackageReference Include="FFAudio.NET.Linux" Version="$(FFAudioPackageVersion)" ExcludeAssets="native" Condition="$([MSBuild]::IsOSPlatform('Linux'))" />
+    <PackageReference Include="FFAudio.NET.Windows" Version="$(FFAudioPackageVersion)" ExcludeAssets="native" Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
+  </ItemGroup>
+
   <!-- ffaudio comes from FFAudio.NET.Android, whose own targets file adds
        libffaudio.so for all three ABIs. Without it there is no decoder at all:
        App.axaml.cs logs one critical line at startup and the app browses,

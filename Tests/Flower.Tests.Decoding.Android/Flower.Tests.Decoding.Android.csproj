@@ -66,4 +66,13 @@
     <PackageReference Include="FFAudio.NET.Android" Version="$(FFAudioPackageVersion)" />
   </ItemGroup>
 
+  <!-- And not the host's desktop payload, which arrives through Flower.csproj
+       and on a Linux runner would take lib/x86_64/ from the one above (XA4301).
+       Flower.Android carries the same exclusion, with the fuller story. -->
+  <ItemGroup>
+    <PackageReference Include="FFAudio.NET.macOS" Version="$(FFAudioPackageVersion)" ExcludeAssets="native" Condition="$([MSBuild]::IsOSPlatform('OSX'))" />
+    <PackageReference Include="FFAudio.NET.Linux" Version="$(FFAudioPackageVersion)" ExcludeAssets="native" Condition="$([MSBuild]::IsOSPlatform('Linux'))" />
+    <PackageReference Include="FFAudio.NET.Windows" Version="$(FFAudioPackageVersion)" ExcludeAssets="native" Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
+  </ItemGroup>
+
 </Project>

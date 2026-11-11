@@ -85,9 +85,9 @@ scripts/android-decoding-tests.sh    # focused decoding, local emulator/device
 ```
 
 The iOS scripts accept a simulator name and `IOS_SIMULATOR_RUNTIME`. The decoding
-script retains its `--mono` option for diagnosis. CI compiles the Android
-decoding runner alongside the app; emulator checks remain local-only (see
-"Android" below).
+script retains its `--mono` option for diagnosis. CI runs the Android
+decoding runner on an x86_64 emulator, beside the app's build (see "Android"
+below).
 
 ## Shared test state
 
@@ -161,9 +161,10 @@ build, test, or installer prevents publication. There is no skipped installer
 matrix with an unresolved name on ordinary branch pushes.
 
 Cache inputs cover every project and the shared test configuration. Superseded
-branch runs are canceled; tag runs finish. Android decoding runner compilation
-is checked in CI, while emulator execution retains its existing local-only
-status.
+branch runs are canceled; tag runs finish. The Android job runs the decoding
+runner on an x86_64 emulator, KVM-accelerated, through
+`reactivecircus/android-emulator-runner`, which owns the emulator; the script
+is handed its serial rather than starting one of its own.
 
 Release publication lives in `tests.yml` rather than a workflow of its own
 because that is the only way it can wait: a tag push fires every `on: push`
@@ -254,15 +255,13 @@ listening to a phone.
 
 ### Android
 
-Emulator runs are local-only. When CI ran them the job failed honestly:
 `Flower.csproj` picks a desktop ffaudio payload by host (`FFAudio.NET.Linux` on
-a Linux runner), which flows to the Android heads, and `android-x64` falls back
-to `linux-x64` in the RID graph, so the glibc `libffaudio.so` wins
-`lib/x86_64/` (`XA4301`) and `dlopen` fails. The fix, not yet made, is to keep
-that host package's native assets out of both Android heads, as
-`ExcludeAssets="native"` on `Miniaudio-CS` already does for miniaudio; then the
-emulator step can come back to CI. On a Mac the host payload is macOS and
-nothing collides, which is why it passes locally.
+a Linux runner), and it flows to the Android heads. `android-x64` falls back to
+`linux-x64` in the RID graph, so without help the glibc `libffaudio.so` wins
+`lib/x86_64/` (`XA4301`) and `dlopen` fails on the emulator. Both Android heads
+therefore re-reference each host's payload with `ExcludeAssets="native"`, as
+they already do for `Miniaudio-CS`. A Mac cannot see this go wrong, because no
+Android RID falls back to `osx-*`: only the CI emulator run, on Linux, can.
 
 The runner's ABI follows the host (arm64-v8a on a Mac, x86_64 in CI). Three
 settings are load-bearing: `EmbedAssembliesIntoApk` (Fast Deployment keeps
