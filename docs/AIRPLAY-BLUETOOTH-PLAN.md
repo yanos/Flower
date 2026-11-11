@@ -1,12 +1,12 @@
 # Bluetooth (all platforms) + AirPlay (macOS/iOS) — Output Routing Plan
 
-Scope: **Bluetooth output** on Windows, macOS, Linux, Android (iOS gets it as a side effect of Phase 2). Phase 1's desktop picker and Phase 2's iOS/macOS route pickers are **built** — see below. **AirPlay sender** on macOS/iOS only — Windows/Linux have no viable AirPlay sender path (no first-party access; third-party reverse-engineered senders like `pyatv`/`shairplay` are stuck on legacy AirPlay 1/RAOP and don't work against AirPlay 2 receivers), dropped from scope by decision.
+Scope: **Bluetooth output** on Windows, macOS, Linux, Android (iOS gets it as a side effect of Phase 2). Phase 1's desktop picker and Phase 2's iOS/macOS route pickers are **built**, and Phase 2 has been heard routing to a real AirPlay receiver from both a Mac and an iPhone (November 2026) — see below. What is left is hardware verification of Phase 1 and of losing the output device, and Phase 3's Android smoke test. **AirPlay sender** on macOS/iOS only — Windows/Linux have no viable AirPlay sender path (no first-party access; third-party reverse-engineered senders like `pyatv`/`shairplay` are stuck on legacy AirPlay 1/RAOP and don't work against AirPlay 2 receivers), dropped from scope by decision.
 
 ## Key findings
 
 - Bluetooth and AirPlay (via macOS CoreAudio routing) already work today with zero code as long as the user sets the OS default output manually — this plan adds an in-app picker instead of sending users to System Settings.
 - **Historical, and the reason the pipeline has the shape it does:** LibVLC's `RendererDiscoverer` only surfaced Chromecast/UPnP, a dead end for AirPlay, while `MediaPlayer.SetAudioCallbacks`/`SetAudioFormatCallback` let Flower keep LibVLC for decode and own the output stage itself. That seam is what the gapless work was built on, and it outlived the decoder that motivated it — the pipeline is now `FfmpegTrackDecoder` → `GaplessRingBuffer` → `IAudioSink`, same shape, no LibVLC anywhere in it.
-- **On iOS the audio route belongs to the `AVAudioSession`, not to a player object.** Every output unit in the process follows it, `MiniaudioSink`'s CoreAudio `RemoteIO` unit included — so `AVRoutePickerView` works there without Flower rendering through `AVAudioEngine`. macOS has no `AVAudioSession` at all, which is why the two halves of Phase 2 came out so differently — and why the macOS half rests on an assumption that still needs confirming by hand.
+- **On iOS the audio route belongs to the `AVAudioSession`, not to a player object.** Every output unit in the process follows it, `MiniaudioSink`'s CoreAudio `RemoteIO` unit included — so `AVRoutePickerView` works there without Flower rendering through `AVAudioEngine`. macOS has no `AVAudioSession` at all, which is why the two halves of Phase 2 came out so differently — and why the macOS half rested on an assumption, since confirmed by hand (see Phase 2).
 - `AVRoutePickerView` (AVKit) is Apple's native Bluetooth+AirPlay route picker (same one Music uses) — Phase 2 hangs its UI on this rather than a custom picker.
 - Android/Windows need no Phase 2 work: OS-level A2DP pairing already transparently redirects all app audio once Bluetooth is the active output.
 
@@ -23,7 +23,7 @@ use.
 - Desktop-only by construction rather than by a platform check: the mobile shell is a separate view tree (`MobileMainView`) that simply never hosts the control. It stays visible on macOS alongside Phase 2's `AVRoutePickerView` — see Phase 2 for why the two are complementary rather than redundant.
 - Verified against real hardware: enumeration, switching between three CoreAudio endpoints mid-playback with no underruns, volume preserved across swaps, and a malformed id falling back cleanly. Not yet verified on Windows/Linux, or against a real Bluetooth endpoint appearing and disappearing.
 
-## Phase 2 — real AirPlay + Bluetooth via `AVRoutePickerView` — **done on iOS; macOS built, unverified**
+## Phase 2 — real AirPlay + Bluetooth via `AVRoutePickerView` — **done, verified on iOS and macOS**
 
 Shipped on iOS as Apple's own route button in the Now Playing sheet's top bar,
 plus the session and route-change work behind it, and on macOS as the same
@@ -49,7 +49,7 @@ What shipped:
 - **The category has to be set at launch, not at first play** (found on a device, after the above). `ActivateForPlayback` used to set the category and activate together, so the first time it ran was the first tap of play — long after `GaplessAudioManager`'s constructor started the sink and `MiniaudioSink` built its `ma_device`. An output unit created while the session still holds iOS's process default, `SoloAmbient`, keeps behaving like that category no matter what is set underneath it afterwards: silenced by the ringer switch, so sound reached AirPods but never the phone's own speaker, and killed by the screen locking, `UIBackgroundModes: audio` or not. `AppleAudioSession` now sets the category in its constructor and only *activates* around real playback, which is the half that would interrupt another app.
 - **And configuring it must never be able to cost activation.** Setting the category on its own did not fix the device; the second half did. `ActivateForPlayback` used to set the category and, if that call returned an error, return without ever calling `setActive:` - and the call it makes is the fussy four-argument one, which iOS rejects outright if it dislikes any part of the category/mode/policy/options combination. One refused call therefore cost both the category and the activation, which is precisely a session that is inaudible with the ringer switch down and dead at the lock screen. It is now a ladder - long-form audio, then plain playback with A2DP, then the bare category - and activation happens regardless of how far down it got: the route sharing policy is a feature, being in the playback category at all is the app working. Confirmed fixed on a real iPhone; which rung the device actually settles on is not known, because the app's log goes to its own file rather than the `devicectl --console` stream. `LogSessionState` records category, mode, policy, options and the live route at startup and at every activation, so the next question of this kind is answerable from the Log tab.
 - **Interruptions are reported and acted on.** `AVAudioSession` interruption notifications (a call, Siri, an alarm, another non-mixing app) come up through `IPlatformAudioSession.PlaybackInterrupted` / `PlaybackInterruptionEnded`, the same shape as `OutputDeviceLost`: the platform reports, `GaplessAudioManager` decides. It pauses on the way in — the sound has already stopped, and without this the transport controls and the Lock Screen card go on claiming a track is playing — and resumes on the way out only when the OS's own `ShouldResume` says it may *and* Flower was playing when the interruption began. `DeactivateAfterPlayback` no-ops while interrupted, since the OS has already taken the session and handing it back a second time only produces a warning per phone call.
-- Verified: all ten projects build, and the fast suite passes with five new tests (`RoutePickerControlTests`, three in `GaplessAudioManagerTests`). **Not verified on a device or simulator** — that nothing here has actually been seen routing to an AirPlay speaker is the gap, and it rides on the same real-device verification `STORE-DEPLOYMENT-PLAN.md` Phase 3 is waiting on.
+- Verified: all ten projects build, and the fast suite passes with five new tests (`RoutePickerControlTests`, three in `GaplessAudioManagerTests`). **Verified on a real iPhone (November 2026):** picking an AirPlay receiver from the button routes playback to it.
 
 ### macOS: the `Flower.MacOS` head
 
@@ -69,7 +69,7 @@ being only about one button, since it is the first place on the desktop where
 - Two files stopped belonging to one head on the way: `MacDockIcon` moved into the shared library (`Flower/Platform/`, still `objc_msgSend` — it has to compile from plain `net10.0` too), and the DOTNET_EnableCrashReport self-relaunch became `Flower.Core`'s `CrashReportRelaunch`, since both desktop heads need it.
 - **The route picker sits beside the Phase 1 device picker, not instead of it.** An earlier note here said Phase 1's control "should hide itself on macOS once Phase 2 ships"; that was wrong. They list different things — `OutputDeviceControl` lists the CoreAudio devices miniaudio can render to, `AVRoutePickerView` reaches AirPlay receivers that are not CoreAudio devices — and dropping one loses real reach.
 - **It compiled and ran first time.** No AVKit/AppKit binding fixes were needed — the `AVRoutePickerView(CGRect)` ctor, `RoutePickerButtonBordered`, and the `NativeHandle` the `PlatformHandle` is built from all bound as written. `Flower.app` launches, the crash-report self-relaunch produces its expected parent/child pair, and both controls render in the status bar: `OutputDeviceControl`'s speaker and, beside it, Apple's own AirPlay glyph drawn by a real `AVRoutePickerView` inside the `NativeControlHost`. So the hosting half of the macOS bet is settled.
-- **The load-bearing claim is still unverified.** macOS has no `AVAudioSession`, so the iOS argument ("the session owns the route, every output unit follows") does not transfer. The macOS assumption is instead that an `AVRoutePickerView` with no `player` attached drives the *system* audio output context, which miniaudio then follows because it renders to the default output device. If that turns out to be false, the picker will open and route nothing, and the fallback is an `AVAudioEngine`-backed `IAudioSink` — now possible in this head, where before it was not. Unlike the iOS half this is cheap to check: run `Flower.MacOS`, click the button, pick a HomePod.
+- **The load-bearing claim held (confirmed November 2026).** macOS has no `AVAudioSession`, so the iOS argument ("the session owns the route, every output unit follows") does not transfer. The macOS assumption was instead that an `AVRoutePickerView` with no `player` attached drives the *system* audio output context, which miniaudio then follows because it renders to the default output device. Picking a real AirPlay receiver from `Flower.MacOS`'s button routes playback to it, so the `AVAudioEngine`-backed `IAudioSink` that was the fallback is not needed.
 
 ### Losing the output device
 
@@ -108,8 +108,8 @@ to. The policy was already shared and already tested — `OutputDeviceLost` →
   and it now has a second thing to check while the headphones are out.
 
 Effort for macOS: was Large, came out Medium — the head itself is small, and no
-new audio path was needed. Risk: concentrated entirely in the unverified claim
-above.
+new audio path was needed. Risk: was concentrated entirely in the claim above,
+which held.
 
 ## Phase 3 — Android: verify, don't build
 
@@ -125,5 +125,5 @@ Flower builds either; it is Apple's own control, surfaced in-app.
 ## Suggested order
 
 1. ~~Phase 1~~ — done on desktop; still owes a Windows/Linux pass and a real Bluetooth endpoint, which is now also what would verify "Losing the output device".
-2. ~~Phase 2~~ — done on iOS and macOS. macOS now builds, runs, and draws the button; what remains there is one click on a real AirPlay receiver to learn whether it routes anything. iOS needs a real phone.
-3. Phase 3 (trivial), together with a device pass over Phase 2 — both need the same thing, which is a real phone.
+2. ~~Phase 2~~ — done, and heard routing to a real AirPlay receiver from both macOS and an iPhone.
+3. Phase 3 (trivial) — a Bluetooth smoke test on a real Android phone, which can ride on the same session as `AUDIO-QUALITY-PLAN.md`'s Android listening pass.
