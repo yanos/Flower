@@ -339,7 +339,13 @@ public sealed class TrackInfoViewModel : ViewModelBase
     public string DurationValue =>
         Summary(t => DurationText.Convert(t.Duration, typeof(string), null, CultureInfo.CurrentCulture) as string ?? "—");
 
-    public string CodecValue => Summary(t => t.Codec ?? "—");
+    // DSD is never passed through: FFmpeg decodes it to PCM at an eighth of its
+    // one-bit rate, and that is what plays. "DSF Audio" beside 2822.4 kHz and
+    // 1-bit reads as though the DAC were sent DSD, so the codec says otherwise.
+    // A one-bit depth is DSD's alone; nothing else TagLib reads reports it.
+    public string CodecValue => Summary(t => t.BitsPerSample == 1
+        ? $"{t.Codec ?? "DSD"}, decoded to PCM"
+        : t.Codec ?? "—");
     public string BitrateValue => Summary(t => t.Bitrate > 0 ? $"{t.Bitrate} kbps" : "—");
     public string SampleRateValue => Summary(t => t.SampleRate > 0 ? $"{t.SampleRate / 1000.0:0.###} kHz" : "—");
 

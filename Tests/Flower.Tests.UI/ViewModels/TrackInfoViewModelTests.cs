@@ -158,4 +158,18 @@ public class TrackInfoViewModelTests : PinnedDataDirectory
         info.ToggleStar();
         Assert.All(songs, s => Assert.False(s.Starred));
     }
+
+    // What TagLib reads off a .dsf, beside what it reads off a FLAC.
+    [Fact]
+    public void A_DSD_song_says_it_is_decoded_to_PCM_and_a_PCM_one_does_not()
+    {
+        var dsd = Song("Debaser");
+        (dsd.Codec, dsd.SampleRate, dsd.BitsPerSample) = ("DSF Audio", 2822400, 1);
+        var flac = Song("Tame");
+        (flac.Codec, flac.SampleRate, flac.BitsPerSample) = ("Flac Audio", 96000, 24);
+        var library = new Library([dsd, flac]);
+
+        Assert.Contains("PCM", Open(library, [dsd]).CodecValue);
+        Assert.Equal("Flac Audio", Open(library, [flac]).CodecValue);
+    }
 }

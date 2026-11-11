@@ -34,6 +34,7 @@ public static class LibraryDtoMapper
         ["aiff"] = "audio/aiff",
         ["aif"] = "audio/aiff",
         ["ape"] = "audio/x-ape",
+        ["dsf"] = "audio/x-dsf",
     };
 
     public static string SuffixOf(Track track) =>

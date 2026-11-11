@@ -17,12 +17,12 @@ confirms its native render callback survives a GC pause, which no automated test
 can reach. (Its arithmetic is now checked automatically, on the phone runners:
 Phase 6 step 4.)
 
-Of the features, §1 (EQ) and §6 (true sample-accurate gapless) are done, and
-§4 was superseded by §6 and will never be built. §5 is largely done: the FFmpeg
+Of the features, §1 (EQ), §3 (Monkey's Audio and DSD) and §6 (true
+sample-accurate gapless) are done, and §4 was superseded by §6 and will never
+be built. §5 is largely done: the FFmpeg
 façade shipped on all five heads, and the pipeline carries float32 from the
 decoder to the output stage, which requantises once to the device's S24, or
-S16 if the device refuses it. §3 is half done (Monkey's Audio shipped; DSD has
-not), and §2 needs re-scoping before anything is built.
+S16 if the device refuses it. §2 needs re-scoping before anything is built.
 
 Phase 6's first seven steps are built (November 2026): the `armeabi-v7a` atomics
 question is settled, the pipeline carries float from the decoder to
@@ -50,28 +50,23 @@ legible; each carries a note saying what was done.
 
 ## What is left, in order
 
-1. **Trust the decoder on Android** (§5, "Where the table stands now"). Put
-   the emulator decoding runner back in CI: keep the host FFAudio package's
-   native assets out of both Android heads with `ExcludeAssets="native"`,
-   which clears `XA4301` (Tests/README.md, "Android"). Then listen on a real
-   Android phone. Android is the one platform nobody has heard on the
-   current decoder, and today no CI job checks it either.
+1. **Listen on a real Android phone** (§5, "Where the table stands now").
+   Android is the one platform nobody has heard on the current decoder. Its
+   emulator decoding runner is back in CI, now that both Android heads keep
+   the host FFAudio package's native assets out (`XA4301`, Tests/README.md,
+   "Android").
 2. **Listen to desktop through the bridge** (Phase 6, step 8's first item).
    The Mac first, then Linux and Windows, which nobody has ever listened to,
    each A/B'd once against `"AudioTiming": { "NativeBufferMs": 0 }`.
-3. **DSD `.dsf`** (§3). Add it to `Importer.ValidExtensions`, add a fixture
-   and a decode test, confirm the pinned FFAudio build carries the `dsd_*`
-   decoders (FFAudio.NET's `native/codec-set.sh` lists them), and say in the
-   UI that DSD is decoded to PCM rather than passed through. Skip `.dff`.
-4. **Retire the C# output stage** (Phase 6, step 8). Move the property tests
+3. **Retire the C# output stage** (Phase 6, step 8). Move the property tests
    onto the C, delete the managed callback, `OutputStage` and the byte for
    byte comparison, and decide whether the callback timing diagnostics are
    ported into the bridge. Waits on item 2.
-5. **Low latency** (§2). Measure `AudioTimingSettings`, `AudioFeeder` and
+4. **Low latency** (§2). Measure `AudioTimingSettings`, `AudioFeeder` and
    `MiniaudioSink`'s period sizing before changing anything; there may be
    nothing to win, and a shorter period spends the bridge's headroom (Phase
    6, "What it costs, honestly").
-6. **The rest of §5: direct mode and multichannel.** A per-track native
+5. **The rest of §5: direct mode and multichannel.** A per-track native
    format rather than one negotiated once at startup, which needs device
    capability probing the current name/id-only device list cannot do, plus
    the controlled transitions that come with changing format mid-session.
@@ -1404,14 +1399,33 @@ Fixed at 10 bands (31Hz–16kHz, ISO-ish spacing, `Q≈1.41`), ±12dB per band, 
 
 Re-scoped, the same question is about three places: `FfmpegTrackDecoder`'s open path (it already avoids blocking work on the play thread, and `StartDecoding` opens on its own decode thread), `AudioFeeder`'s fill policy, and `MiniaudioSink`'s period sizing — the last being the one that actually sets the floor on how quickly a press of play makes a sound. `AudioTimingSettings` is where the tunables already live. Worth measuring before assuming there is anything to win.
 
-### 3. DSD (`.dsf`) + Monkey's Audio (`.ape`) — Small effort for tagging, Medium-Large + Medium-High risk for playback
+### 3. DSD (`.dsf`) + Monkey's Audio (`.ape`) — Done
+
+**DSD `.dsf` is done** (November 2026). `.dsf` is in
+`Importer.ValidExtensions`, and `Tests/Flower.Tests.Decoding.Scenarios/Fixtures/sine.dsf`
+is the same two seconds of 440Hz at DSD64, run through all six per-format
+checks on every platform (from disk, streamed, without ranges, without HEAD,
+mislabelled, and started the way Play starts it). Nothing on a Mac encodes
+DSD, so `regenerate.sh` writes it itself, with a second-order sigma-delta
+modulator and a DSF writer. It cannot be held to `sine.wav` byte for byte,
+since its PCM is a low-pass filter's reading of one-bit samples, so it takes
+the tone oracle the lossy formats take. The pinned FFAudio (1.0.2) carries all
+four `dsd_*` decoders on every head; FFmpeg reports the file as
+`dsd_lsbf_planar` and decodes it at an eighth of the DSD rate (352.8kHz),
+which the pipeline then resamples like any other rate. TagLib# reads and
+writes a DSF's ID3v2 tag and reports its own rate and depth (2822.4kHz,
+1-bit), so Track Info's codec reads "DSF Audio, decoded to PCM" for anything
+1-bit (`TrackInfoViewModel.CodecValue`): those figures beside a bare "DSF
+Audio" read as though the DAC were sent DSD. `.dff` stays out, as below. The
+browser UI cannot play it, as it cannot play Monkey's Audio: its `<audio>`
+element decodes only what the browser does.
 
 **Monkey's Audio is done** (October 2026), in the same change that added Ogg
 Vorbis, Opus and AIFF: `.ape` is in `Importer.ValidExtensions`, and
 `Tests/Flower.Tests.Decoding.Scenarios/Fixtures` carries a `sine.ape` fixture that has to decode back
 to `sine.wav` byte for byte, from disk and over every streaming shape. FFmpeg
 cannot encode APE, so `regenerate.sh` uses Monkey's Audio's own `mac` encoder.
-What follows is the original finding, and the DSD half of it still stands.
+What follows is the original finding, kept for its reasoning.
 
 `.ape` is in `Importer.ValidExtensions`; add `.dsf` — tagging works today regardless of playback, so library browsing/sorting works immediately. Skip `.dff` until TagLib# supports it or a real library needs it. **Playback requires real engineering, but less than it did.** The finding was that mainline VLC ships no Monkey's Audio or DSD demux/decode plugins, leaving two options: build third-party VLC plugins per platform, or decode outside LibVLC. Option (a) is void — there is no VLC. Option (b) is what the whole pipeline now is, which turned the question into a build-configuration one. **That question is now answered.** `ape` was always in both lists; `dsf` was in the demuxer list with no `dsd_*` decoder behind it, which is worse than not claiming the format - the file demuxed and then found no decoder - and the four `dsd_*` decoders are in the list now (`native/ffmpeg/<ios|android>/build-ffmpeg.sh`, and FFAudio.NET's `native/codec-set.sh`, which is where that list is heading). It stays inside the LGPL constraint: neither is a `--enable-gpl` component. Desktop asks nothing of the list at all, since macOS and Linux link the system FFmpeg and Windows a pinned download. What is left is not configuration but proof - no phone has yet been built from a list with DSD in it. Decoded to PCM at an eighth of the DSD rate, never passed through. Until either lands, wrap `Play()` for these formats in a try/catch with a user-facing "unsupported format" message. Once playback exists, be clear in UI copy that DSD is decoded to PCM, not passed through natively.
 
@@ -2048,9 +2062,10 @@ found by a person listening to a phone.
 phone decoding runners, and `Tests/Flower.Tests.Decoding.Android`, run by
 `scripts/android-decoding-tests.sh`, decodes every fixture on Android and
 compares samples. It also holds the C output stage to `OutputStage` byte for
-byte. It passes all 113 checks on the arm64 emulator. Two gaps remain. It runs
-only locally: CI ran it and failed on `XA4301`, because a Linux host's desktop
-`libffaudio.so` wins `lib/x86_64/` (Tests/README.md, "Android"). And it has
+byte. It passes all 119 checks on the arm64 emulator, and runs in CI on an
+x86_64 one. CI once ran it and failed on `XA4301`, because a Linux host's
+desktop `libffaudio.so` won `lib/x86_64/`; both Android heads now exclude that
+payload's native assets (Tests/README.md, "Android"). One gap remains: it has
 never run on a real Android phone, nor has anyone listened to one.)*
 
 That also made `MiniaudioSink`'s S24 bridge gate live rather than theoretical:
@@ -2197,12 +2212,11 @@ hand. The default only reaches a fresh install.
 
 **Where the table stands now (November 2026).** The default is no longer a
 default, because there is no other decoder. Android's row is no longer
-"Nothing": its decoding runner passes all 113 checks on the emulator (see the
-note under "Android, the same shape with a different compiler"). Two gaps
-remain. The runner is local-only until the Android heads exclude the host
-FFAudio package's native assets and CI can run the emulator again. And nobody
-has played anything on a real Android phone. Those two are now the next piece
-of work in this initiative. Linux and Windows are still CI-only. A phone deploy
+"Nothing": its decoding runner passes all 119 checks on the emulator, locally
+and in CI (see the note under "Android, the same shape with a different
+compiler"). One gap remains: nobody has played anything on a real Android
+phone, which is now the next piece of work in this initiative. Linux and
+Windows are still CI-only. A phone deploy
 is now `scripts/deploy-ios-device.sh`, which replaced `Flower.iOS/deploy.sh`.
 
 ### 6. True sample-accurate gapless — Done

@@ -20,7 +20,7 @@ namespace Flower.Importer
             new(StringComparer.OrdinalIgnoreCase)
             {
                 ".mp3", ".m4a", ".wav", ".flac", ".alac",
-                ".ogg", ".opus", ".aiff", ".aif", ".ape",
+                ".ogg", ".opus", ".aiff", ".aif", ".ape", ".dsf",
             };
 
         // Whether a scan would take this file at all, by its name alone - the

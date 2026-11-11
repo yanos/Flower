@@ -8,11 +8,12 @@ namespace Flower.Tests.Decoding.Scenarios;
 
 // One piece of music, in each of the formats a library actually holds.
 //
-// The same two seconds of 440Hz sine is encoded nine ways, so a format that
+// The same two seconds of 440Hz sine is encoded ten ways, so a format that
 // decodes to nothing stands out against the ones that did not. Which oracle
 // applies is a property of the format rather than a choice per check: the
 // lossless five must come back as sine.wav's own samples byte for byte, and
-// the lossy four can only be asked whether they are audible and in tune.
+// the lossy four and DSD can only be asked whether they are audible and in
+// tune.
 public sealed record Fixture(string Name, string Extension, string ResourceName, bool Lossless, uint SampleRate)
 {
     public static readonly Fixture Wav = new("WAV", "wav", "sine.wav", Lossless: true, 48000);
@@ -24,6 +25,12 @@ public sealed record Fixture(string Name, string Extension, string ResourceName,
     public static readonly Fixture Ape = new("Monkey's Audio", "ape", "sine.ape", Lossless: true, 48000);
     public static readonly Fixture Vorbis = new("Vorbis in ogg", "ogg", "sine.ogg", Lossless: false, 48000);
     public static readonly Fixture Opus = new("Opus", "opus", "sine.opus", Lossless: false, 48000);
+
+    // DSD64 in a .dsf, which FFmpeg decodes to PCM at an eighth of its 2.8224MHz
+    // and the pipeline resamples from there. Not lossy, but not byte-exact
+    // either: its PCM is a low-pass filter's reading of a one-bit stream, never
+    // sine.wav's samples, so it is held to the tone like the lossy four.
+    public static readonly Fixture Dsd = new("DSD in dsf", "dsf", "sine.dsf", Lossless: false, 352800);
 
     // The first five again at 44.1kHz, which is what a music library is actually
     // made of - CDs, the iTunes Store, and every AAC rip anyone owns. The
@@ -39,12 +46,12 @@ public sealed record Fixture(string Name, string Extension, string ResourceName,
 
     // Lossy last within each rate, so a run that is cut short has already
     // reported on the formats whose failure is provable rather than
-    // approximate. The four rarer formats are at 48kHz only: the resampler
-    // sits after the decoder, so the 44.1kHz set already proves it for every
-    // format, and what these four add is their own demuxer and decoder.
+    // approximate. The rarer formats are at one rate only: the resampler sits
+    // after the decoder, so the 44.1kHz set already proves it for every
+    // format, and what these add is their own demuxer and decoder.
     public static readonly Fixture[] All =
     [
-        Wav, Flac, Alac, Aiff, Ape, Mp3, Aac, Vorbis, Opus,
+        Wav, Flac, Alac, Aiff, Ape, Mp3, Aac, Vorbis, Opus, Dsd,
         Wav44, Flac44, Alac44, Mp3_44, Aac44,
     ];
 

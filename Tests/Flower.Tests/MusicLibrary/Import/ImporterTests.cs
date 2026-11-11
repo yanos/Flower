@@ -271,15 +271,18 @@ public class ImporterTests : IDisposable
 
     // The formats a scan takes beyond the original five each have a tag layer
     // of their own in TagLib# - Xiph comments in Ogg Vorbis and Opus, ID3v2 in
-    // an AIFF chunk, APEv2 on Monkey's Audio - so taking the extension is only
-    // half of supporting one. These are the device checks' committed fixtures,
-    // the same bytes the decoder is held to there, tagged here and read back.
+    // an AIFF chunk or at the end of a DSF, APEv2 on Monkey's Audio - so taking
+    // the extension is only half of supporting one. These are the device
+    // checks' committed fixtures, the same bytes the decoder is held to there,
+    // tagged here and read back. A DSF reports its own one-bit rate, DSD64's
+    // 2.8224MHz, not the PCM rate it is decoded to.
     [Theory]
-    [InlineData("aiff")]
-    [InlineData("ape")]
-    [InlineData("ogg")]
-    [InlineData("opus")]
-    public void Import_reads_tags_and_properties_of_each_added_format(string extension)
+    [InlineData("aiff", 48000)]
+    [InlineData("ape", 48000)]
+    [InlineData("ogg", 48000)]
+    [InlineData("opus", 48000)]
+    [InlineData("dsf", 2822400)]
+    public void Import_reads_tags_and_properties_of_each_added_format(string extension, int sampleRate)
     {
         var fixture = Flower.Tests.Decoding.Scenarios.Fixture.All.Single(f => f.Extension == extension);
         var path = Path.Combine(_root, "song." + extension);
@@ -296,7 +299,7 @@ public class ImporterTests : IDisposable
         Assert.Equal("Sine", track.Title);
         Assert.Equal("Tone Generator", track.Artists);
         Assert.Equal(2, Math.Round(track.Duration.TotalSeconds));
-        Assert.Equal(48000, track.SampleRate);
+        Assert.Equal(sampleRate, track.SampleRate);
         Assert.Equal(2, track.Channels);
         Assert.False(string.IsNullOrEmpty(track.Codec));
     }
