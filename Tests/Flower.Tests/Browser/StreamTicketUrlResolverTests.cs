@@ -28,12 +28,13 @@ namespace Flower.Tests.Browser;
 // credential a browser attaches to the mint request.
 public class StreamTicketUrlResolverTests
 {
-    private static Track Placeholder(string id = "sg-1") => new()
+    private static Track Placeholder(string id = "sg-1", TimeSpan duration = default) => new()
     {
         Title = "Remote One",
         Path = null,
         OriginTrackId = id,
         OriginDeviceFingerprint = "server-fingerprint",
+        Duration = duration,
     };
 
     private static StreamTicketUrlResolver Resolver(int port, string credential = "browser-credential") =>
@@ -123,6 +124,28 @@ public class StreamTicketUrlResolverTests
         var resolver = Resolver(server.Port);
         await resolver.ResolveAsync(Placeholder());
         var second = await resolver.ResolveAsync(Placeholder());
+
+        Assert.Equal(2, minted);
+        Assert.EndsWith("ticket=tk-2", second);
+    }
+
+    [Fact]
+    public async Task A_ticket_that_would_run_out_before_a_long_track_ends_is_replaced()
+    {
+        // Fifteen minutes left is plenty for a song and not for an hour-long
+        // mix, whose seeks near the end would be refused. The server mints
+        // for the track's length, so the replacement is good to the end.
+        var minted = 0;
+        using var server = new FakePeerHttpServer(context =>
+        {
+            minted++;
+            return ServeTicket(context, "tk-" + minted, DateTimeOffset.UtcNow.AddMinutes(15));
+        });
+
+        var resolver = Resolver(server.Port);
+        var mix = Placeholder(duration: TimeSpan.FromHours(1));
+        await resolver.ResolveAsync(mix);
+        var second = await resolver.ResolveAsync(mix);
 
         Assert.Equal(2, minted);
         Assert.EndsWith("ticket=tk-2", second);

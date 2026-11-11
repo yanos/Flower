@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
+using Flower.Models;
 using Flower.Persistence;
 using Flower.Server.Services;
 using Flower.Services;
@@ -34,7 +35,7 @@ public static class StreamTicketEndpoints
         };
 
         app.MapPost("/api/flower/v1/stream-tickets", async (
-            HttpContext context, RequestGate gate, StreamTicketService tickets, string? id) =>
+            HttpContext context, RequestGate gate, StreamTicketService tickets, Library library, string? id) =>
         {
             // A signature, from the browser too: it holds a WebCrypto keypair
             // and pairs like any other device (see BrowserPeerCredentials). The
@@ -60,7 +61,11 @@ public static class StreamTicketEndpoints
             if (id.Length > PlayReportDto.MaxIdLength)
                 return Problems.BadRequest("That is not a track id.");
 
-            var (ticket, expiresAt) = tickets.Issue(id, fingerprint);
+            // As long as the track, so a seek near the end of a long one is
+            // still admitted - see StreamTicketService.Headroom. An id the
+            // library does not know still gets a ticket, the headroom alone,
+            // and the stream route refuses it.
+            var (ticket, expiresAt) = tickets.Issue(id, fingerprint, library.Find(id)?.Duration ?? TimeSpan.Zero);
 
             // The whole point is a URL that can be dropped straight into an
             // <audio src>, so hand back the assembled thing rather than a bare

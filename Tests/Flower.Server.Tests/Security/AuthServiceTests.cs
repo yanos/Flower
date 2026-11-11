@@ -166,6 +166,27 @@ public class StreamTicketServiceTests
         Assert.False(service.TryRedeem(ticket, "track-1", expiresAt.AddSeconds(1)));
     }
 
+    [Fact]
+    public void A_ticket_for_a_long_track_is_still_good_for_a_seek_near_its_end()
+    {
+        // A media element presents the ticket again on every seek, so it has
+        // to outlast the whole track, not a fixed fifteen minutes.
+        var service = new StreamTicketService();
+        var (ticket, _) = service.Issue("mix", "fingerprint-a", TimeSpan.FromHours(2));
+
+        Assert.True(service.TryRedeem(ticket, "mix", Now + TimeSpan.FromHours(2) + TimeSpan.FromMinutes(5)));
+    }
+
+    [Fact]
+    public void A_broken_duration_does_not_buy_a_ticket_good_for_weeks()
+    {
+        var service = new StreamTicketService();
+        var (ticket, expiresAt) = service.Issue("track-1", "fingerprint-a", TimeSpan.FromDays(30));
+
+        Assert.True(expiresAt < Now + TimeSpan.FromDays(1));
+        Assert.False(service.TryRedeem(ticket, "track-1", Now + TimeSpan.FromDays(1)));
+    }
+
     [Theory]
     [InlineData("", "track-1")]
     [InlineData(null, "track-1")]

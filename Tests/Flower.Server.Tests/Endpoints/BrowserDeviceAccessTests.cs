@@ -194,6 +194,38 @@ public class BrowserDeviceAccessTests(FlowerServerFixture server) : IClassFixtur
     }
 
     [Fact]
+    public async Task A_ticket_is_minted_for_as_long_as_its_track_plays()
+    {
+        // The seeded songs are 100 seconds long; an id the library does not
+        // know gets the headroom alone. What a seek near a long track's end
+        // needs is the difference between the two.
+        using var device = await APairedBrowserAsync();
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var song = server.Seeded[0].Id.ToString("N");
+
+        try
+        {
+            async Task<DateTimeOffset> ExpiryFor(string id)
+            {
+                var (status, body) = await AsBrowserAsync(
+                    device, "POST", "/api/flower/v1/stream-tickets", "10.0.9.6", query: $"?id={id}");
+                Assert.Equal(HttpStatusCode.OK, status);
+                return JsonSerializer.Deserialize<StreamTicketResponse>(
+                    body, new JsonSerializerOptions(JsonSerializerDefaults.Web))!.ExpiresAt;
+            }
+
+            var unknown = await ExpiryFor("sg-unknown");
+            var known = await ExpiryFor(song);
+
+            Assert.InRange(known - unknown, TimeSpan.FromSeconds(95), TimeSpan.FromSeconds(110));
+        }
+        finally
+        {
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    [Fact]
     public async Task A_signed_tab_reaches_cover_art_that_rest_would_have_refused_it()
     {
         using var device = await APairedBrowserAsync();

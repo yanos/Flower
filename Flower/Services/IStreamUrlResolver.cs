@@ -140,14 +140,14 @@ public sealed class StreamTicketUrlResolver(
     private static readonly JsonSerializerOptions Json =
         new(JsonSerializerDefaults.Web) { TypeInfoResolver = FlowerJsonContext.Default };
 
-    // Re-mint rather than reuse once a ticket is inside this of its expiry. A
-    // media element issues many requests for one playback - the initial probe,
-    // then a range request per seek - so a ticket has to outlive the *track*,
-    // not just the request that started it. This margin does not save a track
-    // longer than StreamTicketService's whole 15-minute lifetime, whose later
-    // seeks will be refused; that is a known limit of ticketed playback and the
-    // fix belongs on the server side (a ticket that renews while it is being
-    // read), not here.
+    // Reuse a minted ticket only while it would still outlast playing the
+    // track through from now, with this to spare. A media element issues many
+    // requests for one playback - the initial probe, then a range request per
+    // seek - so a ticket has to outlive the *track*, not just the request that
+    // started it. The server mints each one for its track's length plus
+    // fifteen minutes (StreamTicketService.Headroom), so a ticket is reusable
+    // for its first ten minutes: long enough for the upcoming track primed
+    // near the end of this one, never long enough to run out mid-track.
     private static readonly TimeSpan RenewWithin = TimeSpan.FromMinutes(5);
 
     private readonly ConcurrentDictionary<string, (string Url, DateTimeOffset ExpiresAt)> _minted = new();
@@ -164,7 +164,7 @@ public sealed class StreamTicketUrlResolver(
         }
 
         if (_minted.TryGetValue(track.OriginTrackId, out var cached) &&
-            cached.ExpiresAt - DateTimeOffset.UtcNow > RenewWithin)
+            cached.ExpiresAt - DateTimeOffset.UtcNow > track.Duration + RenewWithin)
         {
             return cached.Url;
         }

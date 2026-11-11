@@ -631,8 +631,9 @@ request it issues, so the tab signs this instead:
   "url": "/api/flower/v1/stream?id=…&ticket=…" }
 ```
 
-A ticket is a bearer token by necessity, so it is narrow: one track id, fifteen
-minutes, in memory only, and revoked with the device that minted it. It is
+A ticket is a bearer token by necessity, so it is narrow: one track id, the
+track's length plus fifteen minutes (an id the library does not know gets the
+fifteen minutes alone; a length over twelve hours counts as twelve), in memory only, and revoked with the device that minted it. It is
 deliberately **not** single-use — a media element makes a probe and then a
 range request per seek. A device holds at most 32; minting another drops its
 oldest. Because it rides in the query string, a ticket appears in full in any

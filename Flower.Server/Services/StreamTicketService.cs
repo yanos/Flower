@@ -26,18 +26,27 @@ namespace Flower.Server.Services;
 // Bounded lifetime is what limits it instead.
 public sealed class StreamTicketService
 {
-    // Long enough to cover playing a track through and seeking around inside
-    // it, short enough that a leaked media URL is worthless well before anyone
-    // could pass it along. Playback of a longer track re-mints transparently:
-    // the player holds a signing key, so minting is a background call and not
-    // something the user experiences.
-    private static readonly TimeSpan TicketLifetime = TimeSpan.FromMinutes(15);
+    // A ticket lasts its track's length plus this. It has to outlive the
+    // whole track, since a media element presents it again on every range
+    // request a seek makes, and the URL is baked into the element when the
+    // track starts. A flat fifteen minutes did that for a song but not for a
+    // DJ mix or a symphony, whose later seeks were refused. The headroom
+    // covers pausing and seeking around, and is short enough that a leaked
+    // media URL is worthless soon after its track could have finished. A
+    // track played again later re-mints transparently: the player holds a
+    // signing key, so minting is a background call the listener never feels.
+    private static readonly TimeSpan Headroom = TimeSpan.FromMinutes(15);
+
+    // The most a track's length may add. A real track is far shorter; this
+    // bounds what a broken duration tag could otherwise turn into a ticket
+    // good for weeks.
+    public static readonly TimeSpan MaxTrackAllowance = TimeSpan.FromHours(12);
 
     // How many one device may hold at once; minting one more drops its
     // oldest. A tab plays one track and arms the next, and re-mints as a
     // ticket nears expiry, so it holds a handful - while the lifetime alone
     // bounded nothing, since a device asking as fast as it liked filled this
-    // table for fifteen minutes at a time. Dropping the oldest rather than
+    // table for a ticket's lifetime at a time. Dropping the oldest rather than
     // refusing the newest keeps playback working for a device that does run
     // past it: the ticket it is about to use is always the newest.
     public const int MaxPerDevice = 32;
@@ -52,11 +61,17 @@ public sealed class StreamTicketService
 
     private sealed record Ticket(string TrackId, string Fingerprint, DateTimeOffset ExpiresAt, long Sequence);
 
-    public (string Ticket, DateTimeOffset ExpiresAt) Issue(string trackId, string fingerprint)
+    // trackDuration is zero for an id the library does not know, which gets
+    // the headroom alone - the stream route refuses that id anyway.
+    public (string Ticket, DateTimeOffset ExpiresAt) Issue(
+        string trackId, string fingerprint, TimeSpan trackDuration = default)
     {
         var now = DateTimeOffset.UtcNow;
         var value = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
-        var expiresAt = now + TicketLifetime;
+        var allowance = trackDuration < TimeSpan.Zero
+            ? TimeSpan.Zero
+            : trackDuration > MaxTrackAllowance ? MaxTrackAllowance : trackDuration;
+        var expiresAt = now + allowance + Headroom;
 
         // Serialised so two mints by one device cannot both see room for
         // themselves; redeeming stays lock-free.

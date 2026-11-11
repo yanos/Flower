@@ -548,7 +548,8 @@ learn or write, and September's backlog had two more. All were closed on
   log that records request URLs. Flower's own log lines name a request's path,
   never its query, and the shipped configuration keeps `Microsoft.*` at
   Warning, so ASP.NET Core's per-request lines are not written. An operator who
-  raises that to Information does log tickets, each good for fifteen minutes.
+  raises that to Information does log tickets, each good for its track's
+  length plus fifteen minutes.
 
 ## Out of scope
 
