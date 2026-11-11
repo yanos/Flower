@@ -4,7 +4,7 @@ Goal: get `Flower.iOS`/`Flower.Android` from runnable to submitted and approved.
 
 ## Key findings
 
-- **Two build-config blockers, open:** `Flower.Android.csproj` produces `.apk` — Play Console requires `.aab`. `Flower.iOS.csproj` targets `net9.0-ios18.0` — Apple requires the iOS 26 SDK (`net10.0-ios26.2`) for submissions since April 2026.
+- **One build-config blocker, open:** `Flower.Android.csproj` produces `.apk` — Play Console requires `.aab`. (The other, the iOS SDK Apple requires since April 2026, is done: `Flower.iOS` targets `net10.0-ios27.0`.)
 - **No real version numbers yet** — Android `versionCode`/iOS `CFBundleVersion` need a strictly-increasing integer, and both csproj files carry a literal `1` as a dev placeholder. The marketing version *is* real (MinVer stamps it from git tags), but the build number is a release-pipeline concern: `AUTO-UPDATE-PLAN.md` Phase 4 owns the `git tag --list 'v*' | wc -l` recipe and the `/p:ApplicationVersion=<n>` override. What belongs here is only confirming the number actually beats the last accepted submission.
 - Android target API level (36) is already compliant — no action needed.
 - **New personal Google Play accounts need a closed test first:** 12 actively-engaging testers for 14 continuous days — a real ~2-week lead time to plan around.
