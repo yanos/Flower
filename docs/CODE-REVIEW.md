@@ -129,9 +129,10 @@ review does not spend its time here. From the September review unless noted.
   and the non-handler cases had been converted, with comments saying why.
   Since then: two timer ticks (`SettingsViewModel.OnLogPollTick`,
   `AiFeaturesSettingsViewModel.OnTick`), which are handlers, and
-  `AppUpdatesViewModel.Start`, which is not. It catches only cancellation, so
-  anything else `CheckAsync` lets out would take the process down. Not
-  reviewed further.
+  `AppUpdatesViewModel.Start`, which is not. `CheckAsync` turns every failed
+  check into a Status line, so all it could let out was a throwing
+  property-changed handler; since November 2026 `Start` logs that per poll
+  and carries on rather than ending the process.
 
 - **Swallowed exceptions.** In September there was one empty catch in the
   client and server (`LibraryBrowserViewModel`,

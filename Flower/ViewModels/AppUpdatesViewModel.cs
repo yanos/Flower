@@ -142,7 +142,10 @@ public sealed class AppUpdatesViewModel : ViewModelBase
         && (_settings.LastUpdateCheck is not { } last || _clock.GetUtcNow() - last >= CheckInterval);
 
     // Runs for the life of the app, from the UI thread so what it finds lands
-    // there.
+    // there. It is async void, so anything let out of here ends the process:
+    // CheckAsync already turns a failed check into a Status line, which
+    // leaves what it cannot catch itself - a handler of one of the property
+    // changes it raises - and that costs this poll, never the app.
     public async void Start(CancellationToken ct = default)
     {
         try
@@ -150,7 +153,14 @@ public sealed class AppUpdatesViewModel : ViewModelBase
             await Task.Delay(FirstCheckDelay, _clock, ct);
             while (!ct.IsCancellationRequested)
             {
-                await CheckIfDueAsync(ct);
+                try
+                {
+                    await CheckIfDueAsync(ct);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogError(ex, "Looking for an update failed unexpectedly");
+                }
                 await Task.Delay(Poll, _clock, ct);
             }
         }
