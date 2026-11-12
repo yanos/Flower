@@ -119,11 +119,23 @@ namespace Flower.Importer
             return false;
         }
 
+        // Every file below folder that a scan would take, for whatever walks a
+        // library folder: a scan, and the folder watcher's listing and its
+        // walk of a folder moved in whole. root is the library folder it is
+        // in, whose own hidden-ness does not count (IsUnderHiddenFolder).
+        //
+        // The walk is also what clears away the copy a tag save left behind
+        // when it never finished (TagFileSave), since it passes every file
+        // anyway: at the scan every launch starts with, and at each listing.
+        public static IEnumerable<string> ScannableFiles(string root, string folder, ILogger? logger = null) =>
+            Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories)
+                .Where(f => !TagFileSave.ClearIfLeftover(f, logger))
+                .Where(IsImportable)
+                .Where(f => !IsUnderHiddenFolder(root, f));
+
         private void ImportFrom(string path, List<Track> tracks, HashSet<string> seenFiles)
         {
-            var files = Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories)
-                .Where(IsImportable)
-                .Where(f => !IsUnderHiddenFolder(path, f));
+            var files = ScannableFiles(path, path, _logger);
 
             // What each folder's cover file measures, so an album with no
             // embedded art lists its folder once rather than once per song.

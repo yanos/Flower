@@ -149,18 +149,15 @@ public static class TrackTagEdits
             {
                 try
                 {
-                    var extraTook = WhileNotHeld(() =>
+                    var extraTook = WhileNotHeld(() => TagFileSave.Edit(path, file =>
                     {
-                        using var file = TagLib.File.Create(path);
                         // The fields apply to a song and a tag together; here the
                         // song is a stand-in nobody reads, so only the tag moves.
                         var standIn = new Track();
                         foreach (var (field, text) in edits)
                             field.Apply(standIn, file.Tag, text);
-                        var took = perFile?.Invoke(file, track) ?? true;
-                        file.Save();
-                        return took;
-                    });
+                        return (true, perFile?.Invoke(file, track) ?? true);
+                    }));
                     if (extraTook)
                         afterFile?.Invoke(track);
                 }
@@ -187,14 +184,15 @@ public static class TrackTagEdits
     // How long a save waits for a reader to let go of the file.
     private static readonly TimeSpan HeldFileBudget = TimeSpan.FromMilliseconds(500);
 
-    // TagLib opens a file to write it with FileShare.None, which .NET turns
-    // into an exclusive lock even on macOS, Linux and the phones, so a cover
-    // being read from the same song at that moment (AlbumArtLoader, for the
-    // Track Info window itself or a row scrolling by) failed the save, and the
-    // edit was dropped with only a warning in the log. Those reads take
-    // milliseconds, so the write waits them out; a file held for longer than
-    // the budget still fails as it did. Nothing has been written when the
-    // lock is refused, so trying again from the start is safe.
+    // A cover being read from the same song at the moment of a save
+    // (AlbumArtLoader, for the Track Info window itself or a row scrolling by)
+    // used to fail it everywhere, when TagLib saved in place under an
+    // exclusive lock. TagFileSave replaces the song by a rename now, which no
+    // reader blocks on macOS, Linux or the phones; on Windows one still does,
+    // since a file open without FileShare.Delete cannot be replaced. Those
+    // reads take milliseconds, so the write waits them out; a file held for
+    // longer than the budget still fails as it did. Nothing has replaced the
+    // song when the lock is refused, so trying again from the start is safe.
     private static T WhileNotHeld<T>(Func<T> write)
     {
         var clock = System.Diagnostics.Stopwatch.StartNew();

@@ -148,17 +148,16 @@ public static class AlbumArtWriter
     {
         try
         {
-            using var tagFile = TagLib.File.Create(path);
-            tagFile.Tag.Pictures =
-            [
-                new TagLib.Picture(new TagLib.ByteVector(bytes))
-                {
-                    Type = TagLib.PictureType.FrontCover,
-                    MimeType = mimeType,
-                    Description = "Cover",
-                },
-            ];
-            tagFile.Save();
+            TagFileSave.Edit(path, tagFile =>
+                tagFile.Tag.Pictures =
+                [
+                    new TagLib.Picture(new TagLib.ByteVector(bytes))
+                    {
+                        Type = TagLib.PictureType.FrontCover,
+                        MimeType = mimeType,
+                        Description = "Cover",
+                    },
+                ]);
             return true;
         }
         catch (Exception ex)
@@ -175,12 +174,19 @@ public static class AlbumArtWriter
     {
         try
         {
-            using var tagFile = TagLib.File.Create(path);
-            if (tagFile.Tag.Pictures.Length == 0)
-                return true;
+            // Opened to read first, because a song with no pictures needs no
+            // copy made of it, and removing an album's covers asks this of
+            // every song in it.
+            using (var tagFile = TagLib.File.Create(path))
+            {
+                if (tagFile.Tag.Pictures.Length == 0)
+                    return true;
+            }
 
-            tagFile.Tag.Pictures = [];
-            tagFile.Save();
+            TagFileSave.Edit(path, tagFile =>
+            {
+                tagFile.Tag.Pictures = [];
+            });
             return true;
         }
         catch (Exception ex)

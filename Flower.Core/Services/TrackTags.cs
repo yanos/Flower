@@ -116,9 +116,11 @@ public static class TrackTags
     // Into the file, through the same TagLib# the importer reads with, so a
     // scan of the file afterwards reads back what was applied. Throws what
     // TagLib throws - a caller decides what a file it cannot write means.
-    public static void WriteToFile(string path, TrackTagsDto tags)
+    public static void WriteToFile(string path, TrackTagsDto tags) =>
+        TagFileSave.Edit(path, file => Write(file, tags));
+
+    private static void Write(TagLib.File file, TrackTagsDto tags)
     {
-        using var file = TagLib.File.Create(path);
         var tag = file.Tag;
         tag.Title = tags.Title;
         tag.Performers = Split(tags.Artists);
@@ -149,7 +151,6 @@ public static class TrackTags
         tag.AlbumSort = tags.AlbumSort;
         tag.ComposersSort = Split(tags.ComposersSort);
         CompilationFlag.Write(file, tags.IsCompilation);
-        file.Save();
     }
 
     // A server applying the edits an owner's device sent - the receiving half

@@ -290,9 +290,7 @@ public sealed class LibraryFolderWatcher : IDisposable
                 if (!Directory.Exists(root))
                     continue;
 
-                var onDisk = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
-                    .Where(Importer.Importer.IsImportable)
-                    .Where(f => !Importer.Importer.IsUnderHiddenFolder(root, f))
+                var onDisk = Importer.Importer.ScannableFiles(root, root, _logger)
                     .ToHashSet(_library.PathRules);
                 arrived.AddRange(onDisk.Where(f => !known.Contains(f) && !_library.IsExcludedPath(f)));
 
@@ -359,9 +357,7 @@ public sealed class LibraryFolderWatcher : IDisposable
         string? root;
         lock (_lock)
             root = _roots.FirstOrDefault(r => IsUnder(r, path));
-        return Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories)
-            .Where(Importer.Importer.IsImportable)
-            .Where(f => root == null || !Importer.Importer.IsUnderHiddenFolder(root, f));
+        return Importer.Importer.ScannableFiles(root ?? path, path, _logger);
     }
 
     private bool HadSongsAt(string path) =>

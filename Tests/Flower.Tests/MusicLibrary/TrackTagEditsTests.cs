@@ -68,8 +68,11 @@ public class TrackTagEditsTests : IDisposable
         Assert.Equal("New", song.Title);
     }
 
+    // Replaced under the reader (TagFileSave), except on Windows, where a
+    // file held open cannot be replaced and the edit is refused rather than
+    // shown on a song whose file does not have it.
     [Fact]
-    public void A_file_held_open_throughout_refuses_the_edit()
+    public void A_file_held_open_throughout_takes_the_edit_except_on_Windows()
     {
         var path = SyntheticWav.CreateFile(_root, "song.wav", TimeSpan.FromSeconds(1), SyntheticWav.Marker(1));
         var song = new Track { Title = "Old", Path = path };
@@ -77,8 +80,16 @@ public class TrackTagEditsTests : IDisposable
 
         var edited = TrackTagEdits.Apply([song], [(TrackTagFields.Title, "New")], _ => true, NullLogger.Instance);
 
-        Assert.Empty(edited);
-        Assert.Equal("Old", song.Title);
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Empty(edited);
+            Assert.Equal("Old", song.Title);
+        }
+        else
+        {
+            Assert.Equal([song], edited);
+            Assert.Equal("New", song.Title);
+        }
     }
 
     [Fact]
