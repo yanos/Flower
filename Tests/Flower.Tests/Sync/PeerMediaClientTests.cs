@@ -83,6 +83,7 @@ public class PeerMediaClientTests
         {
             File.Delete(destination);
             File.Delete(destination + PeerMediaClient.PartialSuffix);
+            File.Delete(destination + PeerMediaClient.PartialSuffix + PeerMediaClient.VersionSuffix);
         }
     }
 
@@ -106,6 +107,7 @@ public class PeerMediaClientTests
         {
             File.Delete(destination);
             File.Delete(destination + PeerMediaClient.PartialSuffix);
+            File.Delete(destination + PeerMediaClient.PartialSuffix + PeerMediaClient.VersionSuffix);
         }
     }
 
@@ -146,6 +148,7 @@ public class PeerMediaClientTests
         {
             File.Delete(destination);
             File.Delete(destination + PeerMediaClient.PartialSuffix);
+            File.Delete(destination + PeerMediaClient.PartialSuffix + PeerMediaClient.VersionSuffix);
         }
     }
 
@@ -161,6 +164,7 @@ public class PeerMediaClientTests
         using var server = new FakePeerHttpServer(async ctx =>
         {
             rangesSeen.Add(ctx.Request.Headers["Range"]);
+            ctx.Response.Headers["ETag"] = "\"v1\"";
             if (Interlocked.Increment(ref sent) == 1)
             {
                 ctx.Response.ContentLength64 = fullPayload.Length;
@@ -195,6 +199,7 @@ public class PeerMediaClientTests
         {
             File.Delete(destination);
             File.Delete(destination + PeerMediaClient.PartialSuffix);
+            File.Delete(destination + PeerMediaClient.PartialSuffix + PeerMediaClient.VersionSuffix);
         }
     }
 
@@ -225,6 +230,7 @@ public class PeerMediaClientTests
         var client = new PeerMediaClient($"http://127.0.0.1:{server.Port}");
         var destination = Path.Combine(Path.GetTempPath(), $"flower-download-test-{Guid.NewGuid():N}.bin");
         File.WriteAllBytes(destination + PeerMediaClient.PartialSuffix, new byte[fullPayload.Length * 2]);
+        File.WriteAllText(destination + PeerMediaClient.PartialSuffix + PeerMediaClient.VersionSuffix, "\"v1\"");
 
         try
         {
@@ -237,6 +243,103 @@ public class PeerMediaClientTests
         {
             File.Delete(destination);
             File.Delete(destination + PeerMediaClient.PartialSuffix);
+            File.Delete(destination + PeerMediaClient.PartialSuffix + PeerMediaClient.VersionSuffix);
+        }
+    }
+
+    // The song changed on the server between attempts - a tag or cover edit
+    // replaces its file and moves its audio. The rest of the new file joined
+    // to the start of the old one would be a file that was never on the
+    // server, so the resume names the version it has (If-Range), and the
+    // server answers it with the whole of the new one.
+    [Fact]
+    public async Task DownloadTrackAsync_fetches_the_whole_of_a_song_changed_since_the_partial_began()
+    {
+        var before = new byte[64 * 1024];
+        Random.Shared.NextBytes(before);
+        var after = new byte[70 * 1024];
+        Random.Shared.NextBytes(after);
+        var serving = (Bytes: before, Version: "\"v1\"");
+        using var server = new FakePeerHttpServer(async ctx =>
+        {
+            var (bytes, version) = serving;
+            ctx.Response.Headers["ETag"] = version;
+            if (bytes == before)
+            {
+                ctx.Response.ContentLength64 = bytes.Length;
+                await ctx.Response.OutputStream.WriteAsync(bytes.AsMemory(0, bytes.Length / 4));
+                await ctx.Response.OutputStream.FlushAsync();
+                ctx.Response.Abort();
+                return;
+            }
+
+            // As ASP.NET does: the range asked for, unless it is of a version
+            // other than this one, when it is all of this one.
+            var ifRange = ctx.Request.Headers["If-Range"];
+            if (ctx.Request.Headers["Range"] is { } range && (ifRange == null || ifRange == version))
+            {
+                var from = int.Parse(range["bytes=".Length..].TrimEnd('-'));
+                ctx.Response.StatusCode = 206;
+                ctx.Response.Headers["Content-Range"] = $"bytes {from}-{bytes.Length - 1}/{bytes.Length}";
+                ctx.Response.ContentLength64 = bytes.Length - from;
+                await ctx.Response.OutputStream.WriteAsync(bytes.AsMemory(from));
+                return;
+            }
+
+            ctx.Response.ContentLength64 = bytes.Length;
+            await ctx.Response.OutputStream.WriteAsync(bytes.AsMemory());
+        });
+        var client = new PeerMediaClient($"http://127.0.0.1:{server.Port}");
+        var destination = Path.Combine(Path.GetTempPath(), $"flower-download-test-{Guid.NewGuid():N}.bin");
+
+        try
+        {
+            await Assert.ThrowsAsync<HttpRequestException>(() => client.DownloadTrackAsync("sg-1", destination));
+            serving = (after, "\"v2\"");
+
+            await client.DownloadTrackAsync("sg-1", destination);
+
+            Assert.Equal(after, File.ReadAllBytes(destination));
+            Assert.False(File.Exists(destination + PeerMediaClient.PartialSuffix + PeerMediaClient.VersionSuffix));
+        }
+        finally
+        {
+            File.Delete(destination);
+            File.Delete(destination + PeerMediaClient.PartialSuffix);
+            File.Delete(destination + PeerMediaClient.PartialSuffix + PeerMediaClient.VersionSuffix);
+        }
+    }
+
+    // Bytes of no known version could be of any; only asking for the whole
+    // file again is sure to give a file the server has.
+    [Fact]
+    public async Task DownloadTrackAsync_starts_over_from_a_partial_whose_version_it_does_not_know()
+    {
+        var fullPayload = new byte[8 * 1024];
+        Random.Shared.NextBytes(fullPayload);
+        var rangesSeen = new List<string?>();
+        using var server = new FakePeerHttpServer(async ctx =>
+        {
+            rangesSeen.Add(ctx.Request.Headers["Range"]);
+            ctx.Response.ContentLength64 = fullPayload.Length;
+            await ctx.Response.OutputStream.WriteAsync(fullPayload.AsMemory());
+        });
+        var client = new PeerMediaClient($"http://127.0.0.1:{server.Port}");
+        var destination = Path.Combine(Path.GetTempPath(), $"flower-download-test-{Guid.NewGuid():N}.bin");
+        File.WriteAllBytes(destination + PeerMediaClient.PartialSuffix, new byte[1024]);
+
+        try
+        {
+            await client.DownloadTrackAsync("sg-1", destination);
+
+            Assert.Equal(fullPayload, File.ReadAllBytes(destination));
+            Assert.Equal([null], rangesSeen);
+        }
+        finally
+        {
+            File.Delete(destination);
+            File.Delete(destination + PeerMediaClient.PartialSuffix);
+            File.Delete(destination + PeerMediaClient.PartialSuffix + PeerMediaClient.VersionSuffix);
         }
     }
 
@@ -278,6 +381,7 @@ public class PeerMediaClientTests
         {
             File.Delete(destination);
             File.Delete(destination + PeerMediaClient.PartialSuffix);
+            File.Delete(destination + PeerMediaClient.PartialSuffix + PeerMediaClient.VersionSuffix);
         }
     }
 

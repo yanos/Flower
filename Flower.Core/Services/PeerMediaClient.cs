@@ -129,6 +129,7 @@ public class PeerMediaClient
     public async Task DownloadTrackAsync(string id, string destinationPath)
     {
         var partPath = destinationPath + PartialSuffix;
+        var versionPath = partPath + VersionSuffix;
 
         // A previous attempt that died mid-transfer left its bytes here, so
         // ask for the rest instead of starting over - on a phone on flaky
@@ -136,19 +137,28 @@ public class PeerMediaClient
         // never finish. Resuming only works because the caller's destination
         // path is deterministic per track (see LibraryDownloadService); a
         // random name per attempt would strand each partial instead.
-        var alreadyHave = File.Exists(partPath) ? new FileInfo(partPath).Length : 0;
+        //
+        // Only a partial whose version is known is resumed. The song can
+        // change on the server between attempts - a tag or cover edit replaces
+        // its file, and moves its audio when the tag changes size - and the
+        // rest of the new file joined to the start of the old one is a file
+        // that was never on the server. If-Range gets the rest of the same
+        // file, or the whole of the new one.
+        var version = File.Exists(partPath) ? ReadVersion(versionPath) : null;
+        var alreadyHave = version != null ? new FileInfo(partPath).Length : 0;
 
-        if (!await TryFetchAsync(id, partPath, alreadyHave))
+        if (!await TryFetchAsync(id, partPath, versionPath, alreadyHave, version))
         {
             // The server refused the range as unsatisfiable, which means our
             // partial is longer than the track now is - it is worthless.
             File.Delete(partPath);
-            await TryFetchAsync(id, partPath, 0);
+            await TryFetchAsync(id, partPath, versionPath, 0, null);
         }
 
         // Only now does the file take the name the library will record, so a
         // half-downloaded track is never mistaken for a playable one.
         File.Move(partPath, destinationPath, overwrite: true);
+        File.Delete(versionPath);
     }
 
     // Writes the track to partPath, appending to what is already there when
@@ -156,13 +166,17 @@ public class PeerMediaClient
     // server rejected the range outright and the caller must retry from zero;
     // a failed *transfer* throws instead, deliberately leaving the partial in
     // place for the next attempt to resume from.
-    private async Task<bool> TryFetchAsync(string id, string partPath, long from)
+    private async Task<bool> TryFetchAsync(
+        string id, string partPath, string versionPath, long from, RangeConditionHeaderValue? version)
     {
         List<(string Key, string Value)> parameters = [("id", id)];
         using var request = new HttpRequestMessage(HttpMethod.Get, BuildPlainUrl(DownloadPath, parameters));
         await AddPeerIdentityHeadersAsync(request, "GET", DownloadPath, parameters);
         if (from > 0)
+        {
             request.Headers.Range = new RangeHeaderValue(from, null);
+            request.Headers.IfRange = version;
+        }
 
         using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
         if (from > 0 && response.StatusCode == HttpStatusCode.RequestedRangeNotSatisfiable)
@@ -170,19 +184,49 @@ public class PeerMediaClient
 
         response.EnsureSuccessStatusCode(); // e.g. a 403 from a peer's trust gate - surfaces as a plain HttpRequestException.
 
-        // A server is free to ignore Range and answer 200 with the whole body
-        // (a peer on an older build does exactly that), and appending that to
-        // a partial would corrupt it - so a 200 always overwrites, and only a
-        // 206 appends. The full body is already on its way either way, so this
-        // is handled by writing it rather than by asking again.
+        // A 200 is the whole file from its start: the file changed since the
+        // partial began, or the server ignores Range altogether. Appending
+        // that to a partial would corrupt it, so a 200 always overwrites, and
+        // only a 206 appends. The full body is already on its way either way,
+        // so this is handled by writing it rather than by asking again.
         var append = from > 0 && response.StatusCode == HttpStatusCode.PartialContent;
+
+        // A fresh partial is a new version's. The old record goes before any
+        // of its bytes arrive, so no crash in between leaves them filed under
+        // the version they are not.
+        if (!append)
+        {
+            File.Delete(versionPath);
+            File.Delete(partPath);
+            if (HttpFileVersion.Of(response) is { } fetching)
+                await File.WriteAllTextAsync(versionPath, fetching.ToString());
+        }
 
         await using var fileStream = new FileStream(partPath, append ? FileMode.Append : FileMode.Create, FileAccess.Write);
         await response.Content.CopyToAsync(fileStream);
         return true;
     }
 
+    private static RangeConditionHeaderValue? ReadVersion(string versionPath)
+    {
+        try
+        {
+            return File.Exists(versionPath) && RangeConditionHeaderValue.TryParse(File.ReadAllText(versionPath), out var version)
+                ? version
+                : null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
     // Kept next to the only two places that care (here and the resume check
     // above) rather than spelled inline, since the two must agree exactly.
     public const string PartialSuffix = ".part";
+
+    // Beside the partial: the version of the file its bytes are from
+    // (HttpFileVersion), as If-Range takes it. Nothing a scan would take for a
+    // song (Importer.IsImportable).
+    public const string VersionSuffix = ".version";
 }
