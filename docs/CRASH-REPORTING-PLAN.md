@@ -26,8 +26,34 @@ What is left:
 - **Calls to `CrashReporting.ReportCaught`.** The API exists; no catch site
   uses it yet. Each one is a judgement: a catch that means Flower is wrong,
   not one that means the world is (a server down, a file gone).
+- **Native crashes on phones.** iOS records nothing the app can read;
+  Android's exit history gives a reason, not frames. Sentry's iOS and Android
+  builds of the SDK carry native crash handlers of their own (Sentry Cocoa,
+  the Android NDK), reached by referencing `Sentry` from the phone heads -
+  but their events are sent by those native SDKs, not through
+  `CrashScrubber`, so what they carry has to be checked before turning them
+  on.
+- Windows' event-log path is unchanged and untested by a deliberate crash;
+  Linux's uses the same .NET report as macOS's fallback, fixed below.
+
 By design: a crash in a run that was not reporting (a pre-release, the
 switch off) is dropped for good, never sent by a later run that is.
+
+Native crashes on the desktop (`CrashReportScanner`, read at the next
+launch, sent by `CrashReporting.CaptureNative`), verified on macOS by a
+deliberate SIGSEGV on a thread .NET never saw - the situation of a fault in
+the audio render thread:
+
+- **macOS:** macOS's own report (`~/Library/Logs/DiagnosticReports/<process>-*.ips`,
+  newer than the last scan, never deleted) - the fault, its address, and the
+  faulting thread's frames as `library!symbol`. Preferred.
+- **macOS and Linux:** .NET's crash report, written by createdump through
+  `CrashReportRelaunch`. Its summary skips .NET's own signal-handler frames,
+  down to the signal trampoline. The relaunch used to set a
+  `DOTNET_CrashReportDirectory` the runtime does not have, so no report was
+  ever written; it now enables the dump, `EnableCrashReportOnly` (the report
+  without the dump) and points `DbgMiniDumpName` at `logs/crash-reports/`.
+- **Windows:** the Application event log, as before.
 
 How Sentry is wired (`Flower.Core/Logging/CrashReporting.cs`, shared by both
 hosts):

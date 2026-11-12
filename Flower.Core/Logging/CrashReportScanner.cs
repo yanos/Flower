@@ -29,6 +29,11 @@ namespace Flower.Logging
     // which both desktop heads enable via a one-time self-relaunch
     // (CrashReportRelaunch - the env vars have to be set before the CLR
     // starts, which is too late to do from here).
+    // macOS also: the report macOS itself writes for every crash
+    // (~/Library/Logs/DiagnosticReports/<process>-<time>.ips), preferred over
+    // .NET's when both exist - it names the fault (EXC_BAD_ACCESS, SIGSEGV,
+    // the address) and the faulting thread's frames by library and symbol,
+    // where .NET's report leads with its own signal handler.
     public static class CrashReportScanner
     {
         // Where CrashReportRelaunch points DOTNET_DbgMiniDumpName
@@ -52,9 +57,129 @@ namespace Flower.Logging
         {
             if (OperatingSystem.IsWindows())
                 return ScanWindowsEventLog(logger);
-            if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
+            if (OperatingSystem.IsMacOS())
+            {
+                var fromMacOS = ScanMacDiagnosticReports(logger);
+                var fromDotNet = ScanCrashReportFiles(logger);
+                return fromMacOS ?? fromDotNet;
+            }
+            if (OperatingSystem.IsLinux())
                 return ScanCrashReportFiles(logger);
             return null;
+        }
+
+        // Where macOS keeps the crash reports it writes for this user's
+        // processes. Settable for tests.
+        public static string MacDiagnosticReportsDirectory { get; set; } =
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library", "Logs", "DiagnosticReports");
+
+        private static string MacMarkerPath => Path.Combine(AppLogging.LogsDirectory, "macos-crash-scan.marker");
+
+        // Flower's own reports among everyone's: macOS names each after the
+        // process, and this is the process. Newer than the last scan only -
+        // macOS keeps them for weeks, and they are not Flower's to delete. A
+        // first scan looks back a day, as the Windows one does.
+        public static PendingCrash? ScanMacDiagnosticReports(ILogger logger, string? processPath = null)
+        {
+            // The executable's whole name: GetFileNameWithoutExtension would
+            // take "Flower.Desktop" for "Flower" plus an extension, and find
+            // nothing (it did, until a deliberate crash showed it).
+            var processName = Path.GetFileName(processPath ?? Environment.ProcessPath);
+            if (string.IsNullOrEmpty(processName) || !Directory.Exists(MacDiagnosticReportsDirectory))
+                return null;
+
+            var since = ReadMarker(MacMarkerPath) ?? DateTime.UtcNow.AddHours(-24);
+            var now = DateTime.UtcNow;
+            PendingCrash? newest = null;
+            try
+            {
+                foreach (var file in Directory.GetFiles(MacDiagnosticReportsDirectory, processName + "-*.ips"))
+                {
+                    var written = File.GetLastWriteTimeUtc(file);
+                    if (written <= since)
+                        continue;
+
+                    try
+                    {
+                        var crash = DescribeMacReport(File.ReadAllText(file), new DateTimeOffset(written, TimeSpan.Zero));
+                        logger.LogCritical("Crash found in macOS's crash reports ({File}): {Summary}\n{Frames}",
+                            Path.GetFileName(file), crash.Summary, crash.Details);
+                        if (newest == null || crash.When > newest.When)
+                            newest = crash;
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogError(ex, "Failed to read macOS crash report {File}", file);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to scan macOS's crash reports");
+            }
+
+            WriteMarker(MacMarkerPath, now);
+            return newest;
+        }
+
+        // An .ips file: a line of JSON about the report, then the report as
+        // JSON. Only the fault and the faulting thread's frames are kept -
+        // the rest carries a reporter key, a sleep/wake ID, the Mac's model
+        // and the path the app ran from, none of which is the crash.
+        public static PendingCrash DescribeMacReport(string content, DateTimeOffset when)
+        {
+            var newline = content.IndexOf('\n');
+            using var document = JsonDocument.Parse(newline >= 0 ? content[(newline + 1)..] : content);
+            var root = document.RootElement;
+
+            var fault = "Native crash";
+            var detail = new StringBuilder();
+            if (root.TryGetProperty("exception", out var exception) && exception.ValueKind == JsonValueKind.Object)
+            {
+                var signal = Text(exception, "signal");
+                var type = Text(exception, "type");
+                fault = (signal, type) switch
+                {
+                    ({ Length: > 0 }, { Length: > 0 }) => $"{signal} ({type})",
+                    ({ Length: > 0 }, _) => signal,
+                    (_, { Length: > 0 }) => type,
+                    _ => fault,
+                };
+                if (Text(exception, "subtype") is { Length: > 0 } subtype)
+                    detail.AppendLine(subtype);
+            }
+
+            string? topFrame = null;
+            if (root.TryGetProperty("faultingThread", out var faulting) && faulting.TryGetInt32(out var index)
+                && root.TryGetProperty("threads", out var threads) && threads.ValueKind == JsonValueKind.Array
+                && index >= 0 && index < threads.GetArrayLength()
+                && threads[index].TryGetProperty("frames", out var frames) && frames.ValueKind == JsonValueKind.Array)
+            {
+                root.TryGetProperty("usedImages", out var images);
+                foreach (var frame in frames.EnumerateArray().Take(ReportedFrames))
+                {
+                    string? image = null;
+                    if (frame.TryGetProperty("imageIndex", out var imageIndex) && imageIndex.TryGetInt32(out var i)
+                        && images.ValueKind == JsonValueKind.Array && i >= 0 && i < images.GetArrayLength())
+                    {
+                        image = Text(images[i], "name");
+                    }
+
+                    var symbol = Text(frame, "symbol");
+                    var name = (image, symbol) switch
+                    {
+                        ({ Length: > 0 }, { Length: > 0 }) => $"{image}!{symbol}",
+                        ({ Length: > 0 }, _) => $"{image}+{Text(frame, "imageOffset")}",
+                        _ => "?",
+                    };
+                    if (image != null)
+                        topFrame ??= name;
+                    detail.Append("  at ").AppendLine(name);
+                }
+            }
+
+            var summary = topFrame != null ? $"{fault} in {topFrame}" : fault;
+            return new PendingCrash(summary, detail.ToString().TrimEnd(), null, null, when, Native: true);
         }
 
         private static PendingCrash? ScanCrashReportFiles(ILogger logger)
@@ -86,6 +211,13 @@ namespace Flower.Logging
             return newest;
         }
 
+        // Where the kernel enters a signal handler: _sigtramp on macOS,
+        // __restore_rt on glibc.
+        private static readonly HashSet<string> SignalTrampolines = new(StringComparer.Ordinal)
+        {
+            "_sigtramp", "__restore_rt", "__kernel_rt_sigreturn",
+        };
+
         // How many of the crashed thread's frames make it into the details -
         // the top of the stack is what says where; the rest is in the log.
         private const int ReportedFrames = 30;
@@ -114,7 +246,12 @@ namespace Flower.Logging
                         string? topFrame = null;
                         if (thread.TryGetProperty("stack_frames", out var stack) && stack.ValueKind == JsonValueKind.Array)
                         {
-                            foreach (var frame in stack.EnumerateArray().Take(ReportedFrames))
+                            // A native fault's thread starts with .NET's own
+                            // signal handler writing this report, down to the
+                            // signal trampoline; the crash is what comes after.
+                            var all = stack.EnumerateArray().ToList();
+                            var trampoline = all.FindIndex(frame => Text(frame, "unmanaged_name") is { } name && SignalTrampolines.Contains(name));
+                            foreach (var frame in all.Skip(trampoline + 1).Take(ReportedFrames))
                             {
                                 var name = FrameName(frame);
                                 topFrame ??= name;
@@ -246,12 +383,14 @@ namespace Flower.Logging
         }
 
         [SupportedOSPlatform("windows")]
-        private static DateTime? ReadWindowsMarker()
+        private static DateTime? ReadWindowsMarker() => ReadMarker(WindowsMarkerPath);
+
+        private static DateTime? ReadMarker(string path)
         {
             try
             {
-                if (File.Exists(WindowsMarkerPath) &&
-                    DateTime.TryParse(File.ReadAllText(WindowsMarkerPath), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var since))
+                if (File.Exists(path) &&
+                    DateTime.TryParse(File.ReadAllText(path), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var since))
                     return since;
             }
             catch
@@ -262,12 +401,14 @@ namespace Flower.Logging
         }
 
         [SupportedOSPlatform("windows")]
-        private static void WriteWindowsMarker(DateTime timestamp)
+        private static void WriteWindowsMarker(DateTime timestamp) => WriteMarker(WindowsMarkerPath, timestamp);
+
+        private static void WriteMarker(string path, DateTime timestamp)
         {
             try
             {
                 Directory.CreateDirectory(AppLogging.LogsDirectory);
-                File.WriteAllText(WindowsMarkerPath, timestamp.ToString("o", CultureInfo.InvariantCulture));
+                File.WriteAllText(path, timestamp.ToString("o", CultureInfo.InvariantCulture));
             }
             catch
             {

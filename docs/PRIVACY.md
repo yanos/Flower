@@ -42,7 +42,11 @@ developer's account; nobody else receives them.
   long one request in a hundred took, by route (`GET
   /api/flower/v1/media/{id}`, never a query string).
 - **For a crash in native code** (audio output, decoding), found at the next
-  launch: which library and function it happened in.
+  launch: the kind of fault (`SIGSEGV`), the memory address it touched, and
+  the libraries and functions it happened in. On a Mac this comes from the
+  crash report macOS itself writes; Flower reads only those parts of it,
+  never the report's other contents (your Mac's model, its crash-reporter
+  ID, the folder Flower ran from).
 
 ### What is removed before a report leaves
 

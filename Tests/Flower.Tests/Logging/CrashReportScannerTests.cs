@@ -165,4 +165,104 @@ public class CrashReportScannerTests : PinnedDataDirectory
 
         Assert.Equal("Native crash in flowerbridge.dll", CrashReportScanner.DescribeWindowsEvent(description, DateTimeOffset.UnixEpoch).Summary);
     }
+
+    // A fault on a native thread - the audio render thread, say. .NET's
+    // report starts with its own signal handler writing the report; the
+    // crash is below the trampoline, and that is what the summary names.
+    [Fact]
+    public void A_native_faults_summary_skips_dotnets_own_signal_handler()
+    {
+        const string report = """
+            { "payload": { "threads": [ { "crashed": "true", "stack_frames": [
+                { "is_managed": "false", "unmanaged_name": "__wait4_nocancel" },
+                { "is_managed": "false", "unmanaged_name": "PROCCreateCrashDump" },
+                { "is_managed": "false", "unmanaged_name": "invoke_previous_action" },
+                { "is_managed": "false", "unmanaged_name": "_sigtramp" },
+                { "is_managed": "false", "unmanaged_name": "flower_render_callback" },
+                { "is_managed": "false", "unmanaged_name": "_pthread_start" }
+            ] } ] } }
+            """;
+
+        var crash = CrashReportScanner.DescribeCrashReport(report, DateTimeOffset.UnixEpoch);
+
+        Assert.Equal("Native crash in flower_render_callback", crash.Summary);
+        Assert.DoesNotContain("PROCCreateCrashDump", crash.Details);
+    }
+
+    // The shape macOS writes: a line about the report, then the report. Only
+    // the fault and the faulting thread's frames are kept.
+    private const string MacReport = """
+        {"app_name":"Flower.Desktop","bug_type":"309","name":"Flower.Desktop"}
+        {
+          "crashReporterKey": "3CF148C2-8E5A-49C4-F8B6-BEF745AF6026",
+          "sleepWakeUUID": "547DFD8B-E1B5-455F-B88C-3E108F534732",
+          "modelCode": "MacBookPro18,4",
+          "procPath": "/Users/someone/Applications/Flower.app/Contents/MacOS/Flower",
+          "exception": { "type": "EXC_BAD_ACCESS", "signal": "SIGSEGV", "subtype": "KERN_INVALID_ADDRESS at 0x0000000000000010" },
+          "faultingThread": 1,
+          "threads": [
+            { "frames": [ { "imageIndex": 1, "symbol": "mach_msg2_trap" } ] },
+            { "frames": [
+              { "imageIndex": 0, "symbol": "flower_render_callback", "imageOffset": 4096 },
+              { "imageIndex": 2, "symbol": "ma_device__read_frames", "imageOffset": 128 }
+            ] }
+          ],
+          "usedImages": [ { "name": "libflowerbridge.dylib" }, { "name": "libsystem_kernel.dylib" }, { "name": "libminiaudio.dylib" } ]
+        }
+        """;
+
+    [Fact]
+    public void A_macOS_crash_report_names_the_fault_and_where_it_happened()
+    {
+        var crash = CrashReportScanner.DescribeMacReport(MacReport, DateTimeOffset.UnixEpoch);
+
+        Assert.True(crash.Native);
+        Assert.Equal("SIGSEGV (EXC_BAD_ACCESS) in libflowerbridge.dylib!flower_render_callback", crash.Summary);
+        Assert.Contains("KERN_INVALID_ADDRESS", crash.Details);
+        Assert.Contains("libminiaudio.dylib!ma_device__read_frames", crash.Details);
+        Assert.DoesNotContain("mach_msg2_trap", crash.Details);
+    }
+
+    [Fact]
+    public void A_macOS_crash_report_leaves_the_machines_identity_behind()
+    {
+        var crash = CrashReportScanner.DescribeMacReport(MacReport, DateTimeOffset.UnixEpoch);
+        var everything = crash.Summary + crash.Details;
+
+        Assert.DoesNotContain("3CF148C2", everything);
+        Assert.DoesNotContain("MacBookPro", everything);
+        Assert.DoesNotContain("someone", everything);
+    }
+
+    // Everyone's crashes share the folder: only this process's, only ones
+    // newer than the last scan, and never deleted - they are macOS's.
+    [Fact]
+    public void Only_this_processs_new_macOS_reports_are_read_and_none_is_deleted()
+    {
+        var folder = Directory.CreateTempSubdirectory("flower-test-diagnostics").FullName;
+        var previous = CrashReportScanner.MacDiagnosticReportsDirectory;
+        CrashReportScanner.MacDiagnosticReportsDirectory = folder;
+        try
+        {
+            var ours = Path.Combine(folder, "Flower.Desktop-2026-11-12-090533.ips");
+            File.WriteAllText(ours, MacReport);
+            File.WriteAllText(Path.Combine(folder, "Safari-2026-11-12-090000.ips"), MacReport);
+            var logger = new RecordingLogger<CrashReportScannerTests>();
+
+            // As the process sees itself: a dot in its name, and no extension.
+            const string process = "/Applications/Flower/Flower.Desktop";
+            var first = CrashReportScanner.ScanMacDiagnosticReports(logger, process);
+            var second = CrashReportScanner.ScanMacDiagnosticReports(new RecordingLogger<CrashReportScannerTests>(), process);
+
+            Assert.NotNull(first);
+            Assert.Equal(1, logger.CountAt(LogLevel.Critical, "macOS"));
+            Assert.Null(second);
+            Assert.True(File.Exists(ours));
+        }
+        finally
+        {
+            CrashReportScanner.MacDiagnosticReportsDirectory = previous;
+            Directory.Delete(folder, recursive: true);
+        }
+    }
 }
