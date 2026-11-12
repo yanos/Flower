@@ -5,12 +5,12 @@ namespace Flower.Services;
 
 // The one place that answers "which build is this?".
 //
-// There are two version attributes and they disagree on purpose. MinVer pins
-// AssemblyVersion to <major>.0.0.0 so that assembly binding stays stable
-// across a patch release - which means it reads 0.0.0.0 for the whole of 0.x
-// and is useless for identifying a build. The real, git-derived version lives
-// in AssemblyInformationalVersion. Reading the wrong one is an easy mistake to
-// make twice, which is why this is a helper rather than three call sites.
+// There are two version attributes. AssemblyVersion is only the numbers,
+// <major>.<minor>.<patch>.0 (Directory.Build.props), so it cannot tell two
+// pre-releases of the same patch apart. The full git-derived version, with
+// its pre-release label and commit, lives in AssemblyInformationalVersion.
+// Reading the wrong one is an easy mistake to make twice, which is why this
+// is a helper rather than three call sites.
 public static class AppVersion
 {
     // Every assembly in this repo carries the same MinVer version (see

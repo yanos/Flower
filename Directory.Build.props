@@ -23,6 +23,18 @@
     <MinVerMinimumMajorMinor>0.1</MinVerMinimumMajorMinor>
   </PropertyGroup>
 
+  <!-- MinVer stamps AssemblyVersion as <major>.0.0.0, which kept binding
+       stable across patch releases for strong-named .NET Framework
+       libraries and means nothing here - it made every Flower assembly read
+       0.0.0.0, in Sentry's module list and anywhere else that asks an
+       assembly its version. The numeric version is the release's instead;
+       the pre-release label and commit stay in the informational version -->
+  <Target Name="StampFullAssemblyVersion" AfterTargets="MinVer">
+    <PropertyGroup>
+      <AssemblyVersion>$(MinVerMajor).$(MinVerMinor).$(MinVerPatch).0</AssemblyVersion>
+    </PropertyGroup>
+  </Target>
+
   <ItemGroup>
     <PackageReference Include="MinVer" Version="8.*">
       <PrivateAssets>all</PrivateAssets>
