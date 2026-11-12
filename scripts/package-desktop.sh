@@ -111,8 +111,28 @@ case "$kind" in
         fi
         ln -s /Applications "$stage/Applications"
 
+        # The mounted disk wears the app's icon rather than a generic drive:
+        # the icns actool built from the head's asset catalog, as
+        # .VolumeIcon.icns, and the volume's root flagged as having a custom
+        # icon. -srcfolder drops that flag from the folder it copies, so it is
+        # set on the image itself, mounted writable, before compressing it.
+        icns="$stage/Flower.app/Contents/Resources/AppIcon.icns"
+        if [[ ! -f "$icns" ]]; then
+            echo "error: the bundle has no AppIcon.icns - is AppIcon still set in the csproj?" >&2
+            exit 1
+        fi
+        cp "$icns" "$stage/.VolumeIcon.icns"
+
+        writable="$work/writable.dmg"
+        hdiutil create -volname Flower -srcfolder "$stage" -fs HFS+ -format UDRW -ov "$writable"
+        mount="$work/mount"
+        mkdir -p "$mount"
+        hdiutil attach -nobrowse -noautoopen -mountpoint "$mount" "$writable" >/dev/null
+        SetFile -a C "$mount"
+        hdiutil detach "$mount" >/dev/null
+
         dmg="$out/Flower-$version-macos-arm64.dmg"
-        hdiutil create -volname Flower -srcfolder "$stage" -fs HFS+ -format UDZO -ov "$dmg"
+        hdiutil convert "$writable" -format UDZO -ov -o "$dmg"
         echo "Wrote $dmg"
         ;;
 

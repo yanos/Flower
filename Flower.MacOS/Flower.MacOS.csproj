@@ -41,6 +41,14 @@
     <ApplicationId>com.yanos.flower</ApplicationId>
     <ApplicationVersion>1</ApplicationVersion>
 
+    <!-- Resources/Assets.xcassets/AppIcon.appiconset: Finder, Launchpad, the
+         Dock and the dmg's volume. Without this actool compiles the catalog
+         with no app icon and says nothing (as Flower.iOS found), and the SDK
+         drops a CFBundleIconFile written into Info.plist by hand. The images
+         sit on Apple's icon grid - an 824 tile on a 1024 canvas, with its
+         shadow - from the same art as the iOS icon. -->
+    <AppIcon>AppIcon</AppIcon>
+
     <!-- The managed HTTP stack rather than NSUrlSessionHandler, for the same
          reason Flower.iOS sets it: NSUrlSessionHandler does not support
          ServerCertificateCustomValidationCallback and throws

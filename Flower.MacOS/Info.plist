@@ -14,9 +14,8 @@
 	<string>public.app-category.music</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
-	<!-- No CFBundleIconFile: there is no .icns in the repo, and the Dock tile
-	     is set at runtime from Flower/Assets/flower-icon.png instead - see
-	     Flower.Platform.MacDockIcon. -->
+	<!-- No CFBundleIconFile/CFBundleIconName: actool writes both, from the
+	     asset catalog the csproj's AppIcon names. -->
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_flowersync._tcp</string>
