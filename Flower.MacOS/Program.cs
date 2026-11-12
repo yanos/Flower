@@ -34,6 +34,15 @@ class Program
         // Avalonia runs the run loop itself, and calling both would start two.
         NSApplication.Init();
 
+        // An exception thrown by managed code AppKit called into - a menu
+        // item's action, a timer, a delegate - goes back out through
+        // Objective-C, and the run loop swallows it: no crash, and
+        // AppDomain.UnhandledException never hears of it (found with a
+        // throwing NSTimer). Sentry's .NET build has no macOS hook for it
+        // either, only iOS's. So it is logged and reported here, as unhandled
+        // but not fatal, since Flower does carry on.
+        ObjCRuntime.Runtime.MarshalManagedException += (_, e) => App.RecordSurvived(e.Exception, "Runtime.MarshalManagedException");
+
         // Apple's AirPlay/Bluetooth route button, hosted by
         // Flower.UserControls.RoutePickerControl. Set before Avalonia starts,
         // same timing/convention as Flower.iOS's AppDelegate, since

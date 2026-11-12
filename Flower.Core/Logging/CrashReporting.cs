@@ -146,6 +146,20 @@ namespace Flower.Logging
             });
         }
 
+        // An exception nothing caught that the process nonetheless survived,
+        // from a place none of the SDK's own hooks watch - the macOS head's
+        // Objective-C callbacks, whose exceptions AppKit swallows. Sent as
+        // unhandled, under `mechanism`, at error level: a bug, but not a crash.
+        public static void ReportUnhandled(Exception exception, string mechanism)
+        {
+            if (!Running || !Enabled)
+                return;
+
+            exception.Data[Sentry.Protocol.Mechanism.HandledKey] = false;
+            exception.Data[Sentry.Protocol.Mechanism.MechanismKey] = mechanism;
+            SentrySdk.CaptureException(exception, scope => scope.Level = SentryLevel.Error);
+        }
+
         // A crash only found at the next launch - native, so no exception
         // object to send - as an event of its own. Its frames are text.
         public static void CaptureNative(PendingCrash crash)

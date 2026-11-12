@@ -65,6 +65,16 @@ public partial class App : Application
         AppLogging.Shutdown();
     }
 
+    // An exception nothing caught, which the process survives anyway: logged
+    // and reported (CrashReporting.ReportUnhandled), but no crash to offer at
+    // the next launch, since there was none. The macOS head calls it from
+    // Runtime.MarshalManagedException.
+    public static void RecordSurvived(Exception exception, string mechanism)
+    {
+        AppLogging.CreateLogger<App>().LogError(exception, "Unhandled exception in {Mechanism}, swallowed by the platform; Flower carries on", mechanism);
+        CrashReporting.ReportUnhandled(exception, mechanism);
+    }
+
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);

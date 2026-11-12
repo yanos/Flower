@@ -89,7 +89,8 @@ hosts):
   `FLOWER_SEND_CRASH_REPORTS=1` forces it in a Release build, to check the
   wiring before a tag. Never in the browser, never in a test
   (`CrashReporting.DisabledForTests`, set by every test assembly).
-- **Sent:** unhandled and unobserved task exceptions (the SDK's own hooks), a
+- **Sent:** unhandled and unobserved task exceptions (the SDK's own hooks;
+  see "Unhandled exceptions, every way out" below), a
   native crash found at the next launch (`CrashReporting.CaptureNative`),
   caught exceptions a call site chooses to send (`CrashReporting.ReportCaught`,
   tagged `caught_in`), and
@@ -122,6 +123,24 @@ hosts):
   pre-release label and commit the numeric assembly version lacks. MinVer
   stamps that as `major.0.0.0`, so it read `0.0.0.0` for every Flower
   assembly and `1.0.0.0` for FFAudio.NET.
+
+Unhandled exceptions, every way out (each exit point thrown at deliberately,
+on the macOS head and an Android emulator; iOS's two paths on a simulator):
+
+| Thrown from | Reaches | Our hook | Sentry |
+|---|---|---|---|
+| UI thread: `Dispatcher.Post`, an event handler, `async void` resuming there | Avalonia's `Dispatcher.UnhandledException`, unhandled, then `AppDomain.UnhandledException` | `App.RecordFatal` | SDK's `AppDomain` hook |
+| A thread, the thread pool, `async void` resuming off the UI thread | `AppDomain.UnhandledException` | `App.RecordFatal` | SDK's `AppDomain` hook |
+| A faulted task nobody awaited | `TaskScheduler.UnobservedTaskException` when the GC collects it; Flower carries on | logged as an error | SDK's `UnobservedTaskException` hook |
+| Android: a Java callback (a `Handler`, a listener) | `AppDomain.UnhandledException` (the runtime raises it before handing Java a `JavaProxyThrowable`) | `App.RecordFatal` | SDK's `AndroidEnvironment` hook, and the Android SDK's own (routed through `BeforeSend`) |
+| iOS: an Objective-C callback, the UI thread | `Runtime.MarshalManagedException` only; the process dies | `App.RecordFatal` (`AppDelegate`) | SDK's `MarshalManagedException` hook |
+| macOS head: an AppKit callback (a menu action, an `NSTimer`, a delegate) | `Runtime.MarshalManagedException` only; AppKit swallows it and Flower carries on | `App.RecordSurvived`: logged, and `CrashReporting.ReportUnhandled` sends it unhandled, at error level | none of its own - the SDK's .NET build has no macOS hook |
+| Server: a request | ASP.NET Core | logged | SDK's middleware |
+| Server: a hosted service | each catches its own (`PublicReachability`, `MdnsAdvertiser`) | logged | - |
+
+A `DispatcherTimer.RunOnce` callback that throws counts as an unobserved
+task, not a crash, in Avalonia 12. Not exercised yet: the Windows and Linux
+desktops' message loops, and a background thread on iOS.
 
 How it works:
 
