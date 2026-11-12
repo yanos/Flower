@@ -8,9 +8,9 @@ using Xunit;
 namespace Flower.Tests.TestSupport;
 
 // Analysis and assertions over what a listener hears: S16 interleaved stereo,
-// the narrowest format a device is opened in, which is what OutputStage writes
-// and what RenderPumpSink captures. Plus the float buffers OutputStage works
-// in, and the two conversions to and from the pipeline's own float PCM (see
+// the narrowest format a device is opened in, which is what the output stage
+// writes for it and what RenderPumpSink captures. Plus float buffers, and the
+// two conversions to and from the pipeline's own float PCM (see
 // GaplessFormat) - FromS16 for a fake decoder writing a known signal into a
 // ring, ToS16 for a test reading one back out.
 //
@@ -43,7 +43,7 @@ public static class Pcm
             destination[i] = samples[i] / S16Scale;
     }
 
-    // Pipeline PCM narrowed to S16, the way a unity-gain OutputStage would
+    // Pipeline PCM narrowed to S16, the way a unity-gain output stage would
     // narrow it. Exact for anything FromS16 or a 16-bit file produced; a
     // sample that is not on the 16-bit grid fails, rather than rounding into
     // passing, so a decoder that is off by a fraction of an LSB is caught.
@@ -65,7 +65,7 @@ public static class Pcm
 
     // The same narrowing without the check, for a render loop on its own
     // thread, where a failed assertion would only kill the loop: rounds,
-    // which is what a unity-gain OutputStage does with an on-grid sample too.
+    // which is what a unity-gain output stage does with an on-grid sample too.
     public static void NarrowToS16(ReadOnlySpan<byte> pipeline, Span<byte> s16)
     {
         var source = MemoryMarshal.Cast<byte, float>(pipeline);

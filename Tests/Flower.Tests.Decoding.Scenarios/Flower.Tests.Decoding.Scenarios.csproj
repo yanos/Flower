@@ -4,8 +4,8 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
-    <!-- NativeOutputStageChecks calls the bridge's render callback through
-         its function pointer, with buffers it pins. -->
+    <!-- OutputStageHarness calls the bridge's render callback through its
+         function pointer, with buffers it pins. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 

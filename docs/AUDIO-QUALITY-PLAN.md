@@ -24,16 +24,15 @@ façade shipped on all five heads, and the pipeline carries float32 from the
 decoder to the output stage, which requantises once to the device's S24, or
 S16 if the device refuses it. §2 needs re-scoping before anything is built.
 
-Phase 6's first seven steps are built (November 2026): the `armeabi-v7a` atomics
-question is settled, the pipeline carries float from the decoder to
-`OutputStage`, the output stage runs in the C render callback (the fix for M),
-that callback has been heard on an iPhone and is held to `OutputStage` byte for
-byte by `NativeOutputStageChecks`, and the bridge is `libflowerbridge`, a
-library of its own on every platform, built for the six desktop RIDs and run
-by desktop too, where it has now been heard on macOS, Linux and Windows
-with nothing wrong (November 2026). What is left is step 8: moving the
-stage's property tests onto the C and deleting the managed callback and
-`OutputStage` with it. The phase was rescoped
+Phase 6 is built, all eight steps (November 2026): the `armeabi-v7a` atomics
+question is settled, the pipeline carries float from the decoder to the
+output stage, the output stage runs in the C render callback (the fix for M),
+that callback has been heard on an iPhone, and the bridge is
+`libflowerbridge`, a library of its own on every platform, built for the six
+desktop RIDs and run by desktop too, where it has been heard on macOS, Linux
+and Windows with nothing wrong. The C is now the only output stage: the
+managed callback and `OutputStage` are gone, the property tests run the C,
+and the callback timing diagnostics were ported into it. The phase was rescoped
 while writing an earlier status down. It used to read as "collapse Phase 5's desktop/mobile fork"; working out what
 that fork costs turned up **finding M — every interactive control on mobile
 lags by the render buffer's depth, today, because Phase 5 put that buffer on
@@ -56,16 +55,11 @@ legible; each carries a note saying what was done.
    emulator decoding runner is back in CI, now that both Android heads keep
    the host FFAudio package's native assets out (`XA4301`, Tests/README.md,
    "Android").
-2. **Retire the C# output stage** (Phase 6, step 8). Move the property tests
-   onto the C, delete the managed callback, `OutputStage` and the byte for
-   byte comparison, and decide whether the callback timing diagnostics are
-   ported into the bridge. Desktop has been heard through the bridge on all
-   three platforms, which is what this waited on.
-3. **Low latency** (§2). Measure `AudioTimingSettings`, `AudioFeeder` and
+2. **Low latency** (§2). Measure `AudioTimingSettings`, `AudioFeeder` and
    `MiniaudioSink`'s period sizing before changing anything; there may be
    nothing to win, and a shorter period spends the bridge's headroom (Phase
    6, "What it costs, honestly").
-4. **The rest of §5: direct mode and multichannel.** A per-track native
+3. **The rest of §5: direct mode and multichannel.** A per-track native
    format rather than one negotiated once at startup, which needs device
    capability probing the current name/id-only device list cannot do, plus
    the controlled transitions that come with changing format mid-session.
@@ -1146,14 +1140,12 @@ day.
    symbols. Both phone runners pass all 113 checks against the split build
    (iOS on NativeAOT, Android on the arm64 emulator).
 
-   The managed callback is still there, and still taken when the library is
-   missing (a RID nobody built; the build warns) or `NativeBufferMs` is 0.
-   So listening on the Mac costs nothing to back out of:
-   `"AudioTiming": { "NativeBufferMs": 0 }` in `settings.json` puts the
-   managed callback back for an A/B, from the next device open (a restart or
-   an output switch).
+   The managed callback stayed until step 8, taken when the library was
+   missing or `NativeBufferMs` was 0, which is what made listening cost
+   nothing to back out of: `"AudioTiming": { "NativeBufferMs": 0 }` put it
+   back for an A/B.
 8. **Delete the managed render path: the `DataCallback`, and `OutputStage`
-   with it**, once desktop has been listened to.
+   with it**, once desktop has been listened to. **Done (November 2026).**
 
    This step used to delete only the callback and keep `OutputStage` in C#
    as the oracle. Reconsidered in November 2026: now that every platform
@@ -1165,12 +1157,11 @@ day.
    is the properties it must have, not agreement with a second copy of
    itself. So the stage goes with the callback, and its tests move onto the C.
 
-   **Not done yet, and no longer waiting.** It waited on desktop being
-   listened to through the bridge, since until then the managed callback was
-   the A/B (`NativeBufferMs: 0`, above) and deleting it deleted that. All
-   three desktops have now been heard through it.
+   It waited on desktop being listened to through the bridge, since until
+   then the managed callback was the A/B (`NativeBufferMs: 0`, above) and
+   deleting it deleted that.
 
-   In order:
+   In order, as planned and then as done:
 
    1. **Listen.** Done (November 2026): macOS, Linux and Windows, all good.
    2. **Point the property tests at the C while the C# still exists**, so
@@ -1196,17 +1187,52 @@ day.
       `ClientTests.props`, and the iOS Mono suite carries the framework, so
       these run on a phone as well. That is more coverage than today, when
       the property tests only ever run the C#.
+
+      **Done.** The harness is `OutputStageHarness`, in
+      `Tests/Flower.Tests.Decoding.Scenarios` so the phone runners can use it
+      too; every test listed moved onto it, the allocation test went with
+      the managed stage it measured, and two were added: audio after a
+      rebuffer fades in, and an EQ boost past full scale is not clipped
+      before the volume brings it down (which replaced "unclipped in the
+      float domain", a domain the C does not expose). Running them in
+      parallel found two real faults in the bridge's device registry: it
+      held only four bridges, and `detach` cleared a slot's device before
+      its bridge, so a concurrent `attach` could have its bridge wiped. It
+      now holds sixteen, clears in the safe order, and `attach` reports a
+      full registry rather than leaving a device that renders nothing.
    3. **Delete** the managed `DataCallback`, `OutputStage`,
       `NativeOutputStageChecks` and `NativeOutputStageTests` (with one
       implementation there is nothing to compare), and `NativeBufferMs: 0`
       as a meaning. `FlowerBridge.props`'s missing-library warning becomes
       an error, and `MiniaudioSink` fails loudly on a missing bridge rather
       than falling back. CLAUDE.md's "change one, change both" goes too.
+
+      **Done, with one change.** `NativeOutputStageChecks` stayed, as
+      `OutputStageChecks` now there is one stage to name, shrunk to
+      a few properties through the same harness - a unity pass at S16 and
+      S24, a fade-out to exact silence, the callback timing - because
+      without it the Android runner and the iOS NativeAOT runner would
+      check nothing about the bridge builds they ship; the property tests
+      reach only desktop and the iOS Mono suite. `NativeBufferMs` is
+      clamped to at least 100. `Equalizer.ProcessInPlace` went with the
+      stage; `VolumeCurve.GainForPercent` is `OutputStage`'s volume curve,
+      moved.
    4. **Decide on the callback timing diagnostics** (`AudioCallbackTiming`:
       gaps, late callbacks, render overruns). Only the managed callback
       gathers them, so desktop's watchdog already lost them by taking the
       bridge. Keeping them means porting them into the bridge's snapshot, in
       C. Either choice is defensible; losing them by accident is not.
+
+      **Ported.** The callback times itself with the monotonic clock
+      (`clock_gettime`, or `QueryPerformanceCounter` on Windows, both inside
+      the dependencies each build already allows) and the snapshot carries
+      the same windowed counts and peaks `AudioCallbackTiming` did, in
+      nanoseconds, so the watchdog's "callback timing pressure" line is back
+      on every platform. `flower_audio_bridge_reset_timing` forgets the last
+      callback around a pause, as `Reset` did; the bridge now takes the
+      device's sample rate, which the period is measured against. Tested by
+      `AudioCallbackTimingTests` with real sleeps, asserting only the lower
+      bounds a sleep guarantees.
 
    **What this costs: the cross-check.** Two independent implementations
    agreeing catches an error that still satisfies every bound, such as
@@ -1229,14 +1255,12 @@ Not urgent. Desktop's controls are responsive today and it has no defect waiting
 on any of this. Mobile's lag is real but reported as not a problem in practice,
 for the good reason that the phone's own volume buttons bypass it entirely.
 
-Steps 1–7 are built (see above). Steps 1–2 were a fidelity and
+All eight steps are built (see above). Steps 1–2 were a fidelity and
 simplification win with no native work and no build infrastructure; step 3 is
 the one that fixes a defect; step 4 proved it, by ear and byte for byte; step 5
 made the bridge buildable on its own; steps 6–7 put desktop on it, which
 turned out to need Docker rather than the CI matrix it was expected to wait
-for. Desktop has been listened to, so step 8 is next: move the
-property tests onto the C, delete the managed path, and decide about the
-timing diagnostics.
+for; step 8 left one output stage and one render path, in C.
 
 ### What not to adopt
 
@@ -1316,7 +1340,7 @@ By ear, and done — which is the part that could not be automated:
 2. **The volume taper is fine as it stands.** It was a real change — the slider
    used to be raw linear amplitude, so 50% was -6dB; it is now cubic, so 50% is
    about -18dB — and the question was whether the new travel feels right rather
-   than whether it works. It does. `OutputStage.GainForVolumePercent` is the one
+   than whether it works. It does. `VolumeCurve.GainForPercent` is the one
    line to revisit if that ever changes.
 3. **Mobile: sustained everyday listening on a real iPhone, no blips.** This is
    the one that matters most, because it is the only evidence Phase 5's native
@@ -2142,7 +2166,10 @@ checked in, and the standing gap is still an Android device-checks head.
 *(Both gaps since closed: the envelope and the rest of the output stage are
 checked byte for byte by `NativeOutputStageChecks` on both phone runners and
 by `NativeOutputStageTests` on each desktop, and Android has its runner - see
-the note under "Android, the same shape with a different compiler".)*
+the note under "Android, the same shape with a different compiler". Since
+Phase 6 step 8 the C is the only stage, held to its properties by the tests in
+`Flower.Tests/Audio` and, on the phone runners, a smaller
+`OutputStageChecks`.)*
 
 Both vendored miniaudio binaries were rebuilt for the new signature:
 `Flower.Android/libs/<abi>/libminiaudio.so` and

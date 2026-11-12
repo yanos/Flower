@@ -2,23 +2,18 @@ using System;
 
 namespace Flower.Audio
 {
-    // Real-time-safe 10-band graphic EQ, run from OutputStage inside
-    // MiniaudioSink's render callback. Pure C# RBJ-cookbook peaking/bell
-    // biquads over interleaved stereo float.
+    // A 10-band graphic EQ curve: RBJ-cookbook peaking/bell biquads, one per
+    // band, plus a preamp. This computes the coefficients; the filter itself
+    // runs in C, in the bridge's render callback (flower_audio_bridge.c, "The
+    // output stage"), over interleaved stereo float with no clipping of its
+    // own - the one requantisation to the device's format clamps, at the end.
     //
-    // Float in, float out, and no clipping of its own: it sits in the middle
-    // of OutputStage's float path, which requantises to the device's format
-    // exactly once at the very end, with dither. It used to read and write the
-    // S16 buffer directly, rounding and hard-clamping every sample - so a
-    // positive band gain clipped outright, with no headroom and no way for a
-    // later stage to pull it back.
-    //
-    // A fresh Equalizer is still built (BuildFrom) on every settings change
-    // and swapped in atomically, but the swap is no longer heard: OutputStage
-    // crossfades from the outgoing filter's output to the incoming one's
-    // across a single callback, rather than dropping in new coefficients on a
-    // zeroed delay line. That was previously an accepted click (see
-    // AUDIO-QUALITY-PLAN.md, audiophile feature §1).
+    // A fresh Equalizer is built on every settings change and handed to the
+    // bridge whole. The swap is not heard: the callback crossfades from the
+    // outgoing filter's output to the incoming one's across a single buffer,
+    // rather than dropping in new coefficients on a zeroed delay line, which
+    // was once an accepted click (AUDIO-QUALITY-PLAN.md, audiophile feature
+    // §1).
     public sealed class Equalizer
     {
         public const int BandCount = 10;
@@ -33,7 +28,7 @@ namespace Flower.Audio
         // past it the peaking formula's w0 reaches pi and the biquad's poles
         // land on or outside the unit circle: at 22050 Hz the 16 kHz band
         // diverged by forty-three orders of magnitude in nine milliseconds,
-        // which OutputStage's clamp turned into full-scale noise. A device can
+        // which the requantiser's clamp turned into full-scale noise. A device can
         // open at 22050 or 32000 (an Android route, an ALSA setting), and a
         // band whose frequency the device cannot carry has nothing to shape
         // anyway - so it is bypassed, not squeezed under the limit.
@@ -41,12 +36,6 @@ namespace Flower.Audio
 
         private readonly BiquadCoefficients[] _coefficients;
         private readonly float _preampLinear;
-
-        // Independent delay-line state per channel per band - stereo needs
-        // separate z1/z2 per channel even though L and R share the same
-        // coefficients (one gain knob affects both channels identically).
-        private readonly BiquadState[] _left = new BiquadState[BandCount];
-        private readonly BiquadState[] _right = new BiquadState[BandCount];
 
         private Equalizer(BiquadCoefficients[] coefficients, double preampDb)
         {
@@ -75,12 +64,10 @@ namespace Flower.Audio
             return count;
         }
 
-        // The curve as flower_audio_bridge_set_equalizer takes it, for the
-        // native render callback that runs this same filter:
-        // five coefficients per band in b0 b1 b2 a1 a2 order, and the preamp
-        // as linear gain. The C is held to ProcessInPlace sample for sample,
-        // so it gets the float coefficients this runs with, not a recomputed
-        // copy of them.
+        // The curve as flower_audio_bridge_set_equalizer takes it: five
+        // coefficients per band in b0 b1 b2 a1 a2 order, and the preamp as
+        // linear gain. Bands too close to Nyquist are left out, so the active
+        // ones are a prefix of the ten.
         internal int ActiveBandCount => _coefficients.Length;
 
         internal float PreampLinear => _preampLinear;
@@ -92,39 +79,11 @@ namespace Flower.Audio
             for (var band = 0; band < _coefficients.Length; band++)
                 _coefficients[band].CopyTo(destination.Slice(band * CoefficientsPerBand, CoefficientsPerBand));
         }
-
-        // Processes interleaved stereo float PCM in place. Called only from
-        // OutputStage on the real-time thread - no locking, no allocation,
-        // operates directly on the caller's scratch span.
-        //
-        // The delay lines carry across calls, so callers must feed it every
-        // sample they render, silence-padded underruns included: skipping a
-        // silent region leaves the filter resuming from pre-gap state on the
-        // other side of it, a second discontinuity on top of the gap.
-        public void ProcessInPlace(Span<float> interleavedStereo)
-        {
-            var frameCount = interleavedStereo.Length / 2;
-
-            for (var frame = 0; frame < frameCount; frame++)
-            {
-                var l = interleavedStereo[frame * 2] * _preampLinear;
-                var r = interleavedStereo[frame * 2 + 1] * _preampLinear;
-
-                for (var band = 0; band < _coefficients.Length; band++)
-                {
-                    l = _coefficients[band].Process(l, ref _left[band]);
-                    r = _coefficients[band].Process(r, ref _right[band]);
-                }
-
-                interleavedStereo[frame * 2] = l;
-                interleavedStereo[frame * 2 + 1] = r;
-            }
-        }
     }
 
-    // Direct-Form I biquad coefficients (RBJ Audio EQ Cookbook peaking/bell
-    // filter), normalized (a0 = 1) at construction so Process() is a plain
-    // 5-multiply-4-add per sample with no per-sample division.
+    // Biquad coefficients (RBJ Audio EQ Cookbook peaking/bell filter),
+    // normalized (a0 = 1) at construction so the filter that runs them is a
+    // plain 5-multiply-4-add per sample with no per-sample division.
     internal readonly struct BiquadCoefficients
     {
         private readonly float _b0, _b1, _b2, _a1, _a2;
@@ -165,22 +124,5 @@ namespace Flower.Audio
             destination[3] = _a1;
             destination[4] = _a2;
         }
-
-        // Transposed Direct-Form II: y = b0*x + z1; z1' = b1*x - a1*y + z2; z2' = b2*x - a2*y.
-        public float Process(float x, ref BiquadState state)
-        {
-            var y = _b0 * x + state.Z1;
-            state.Z1 = _b1 * x - _a1 * y + state.Z2;
-            state.Z2 = _b2 * x - _a2 * y;
-            return y;
-        }
-    }
-
-    // Transposed Direct-Form II delay-line state - two floats per band per
-    // channel, mutated in place by BiquadCoefficients.Process.
-    internal struct BiquadState
-    {
-        public float Z1;
-        public float Z2;
     }
 }

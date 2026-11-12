@@ -38,12 +38,11 @@ namespace Flower.Audio
         private readonly object _gate = new();
         private GaplessRingBuffer? _ringBuffer;
 
-        // Non-null whenever libflowerbridge loaded, which is every platform
-        // Flower ships. The render callback is then pure C draining _bridge
-        // and running its own copy of the output stage, and _feeder is the
-        // managed thread that fills it; DataCallback below is dead code. Both
-        // stay null, and the managed callback runs, only where the library is
-        // missing or NativeBufferMs is 0. See NativeAudioBridge.
+        // Non-null while a device is open. The render callback is pure C in
+        // libflowerbridge, draining _bridge and running the output stage, and
+        // _feeder is the managed thread that fills it. There is no other
+        // render path: a device is never opened without one (OpenDevice). See
+        // NativeAudioBridge.
         //
         // _bridge is assigned and freed under _stageGate, and read under it by
         // the controls below: they deliberately stay off _gate, which a device
@@ -53,26 +52,26 @@ namespace Flower.Audio
         private AudioFeeder? _feeder;
         private readonly object _stageGate = new();
 
-        // Everything between the ring and the sound card - EQ, gain ramping,
-        // declick envelope, dithered requantisation to the device's format.
-        // Owned here and driven from DataCallback; see OutputStage for why none
-        // of that can be left to miniaudio. With a bridge it is the controls'
-        // record and the C's reference, and its Process never runs.
-        private OutputStage _outputStage = new(GaplessFormat.DefaultSampleRate);
+        // The output stage's controls as last set: the volume's target gain,
+        // the EQ curve and the timing. The stage itself - EQ, gain ramp,
+        // declick, dithered requantisation to the device's format - runs in
+        // the bridge's callback, and none of it can be left to miniaudio, whose
+        // own volume is a truncating integer multiply. These are what each new
+        // bridge is loaded with (PushStage). Written under _stageGate.
+        private volatile AudioTimingSettings _timing = new AudioTimingSettings().Clamped();
+        private float _targetGain = 1f;
+        private Equalizer? _equalizer;
 
         // What this sink consumes - see IAudioSink.Format. The first
-        // OpenDevice settles its rate. The device's own sample format is
-        // _outputStage.DeviceFormat, and is settled again by every open.
+        // OpenDevice settles its rate.
         private PcmFormat _format = PcmFormat.Default;
+
+        // The device's own sample format, which the output stage requantises
+        // to. Settled again by every open.
+        private DeviceSampleFormat _deviceFormat = DeviceSampleFormat.S24;
 
         public PcmFormat Format => _format;
 
-        // Prime latch, for the managed callback - see PrimeLatch. While it is
-        // closed the callback renders silence, not counted as an underrun,
-        // because nothing is wrong. Callback-owned; in bridge mode AudioFeeder
-        // keeps its own, and the watchdog reads whichever is rendering.
-        private readonly PrimeLatch _latch = new();
-        private int _primeGeneration = -1;
         private ma_context* _context;
         private ma_device* _device;
         private volatile bool _started;
@@ -83,12 +82,6 @@ namespace Flower.Audio
         // resample, but changing the rate while current and armed decoders
         // exist would corrupt timing and playback speed.
         private bool _hasNegotiatedRate;
-
-        // Float scratch the managed callback reads the ring into, before
-        // OutputStage requantises it into the device's buffer. Grow-only and
-        // callback-owned, like OutputStage's own: it reaches the device's
-        // period size on the first callback and never allocates again.
-        private float[] _renderScratch = [];
 
         // The output device the user explicitly picked (an opaque base64
         // ma_device_id - see EncodeDeviceId), or null while Flower just
@@ -123,16 +116,17 @@ namespace Flower.Audio
         private volatile int _intentionalStopDepth;
 
         // The user's 0-100 volume, kept here rather than read back out of
-        // ma_device: it is applied by OutputStage now, not by miniaudio, whose
+        // ma_device: it is applied by the output stage, not by miniaudio, whose
         // own master volume is pinned at 1.0 (its volume path is a truncating,
-        // undithered integer multiply - see OutputStage).
+        // undithered integer multiply).
         private volatile int _volumePercent = 100;
 
-        // The data callback is [UnmanagedCallersOnly] - it can't close over
-        // instance state, so this instance's GCHandle is stashed in
+        // The notification callback is [UnmanagedCallersOnly] - it can't close
+        // over instance state, so this instance's GCHandle is stashed in
         // ma_device_config.pUserData (copied onto ma_device.pUserData by
-        // miniaudio) as the only way back from the native callback to
-        // _ringBuffer. Freed in Dispose().
+        // miniaudio) as the only way back from it to this sink. The render
+        // callback finds its bridge by device pointer instead. Freed in
+        // Dispose().
         private GCHandle _selfHandle;
 
         // Diagnostic-only: watches ring.UnderrunCount once a second so a
@@ -147,30 +141,25 @@ namespace Flower.Audio
         private readonly Timer _watchdog;
         private readonly UnderrunRunTracker _underruns = new();
         private long _watchdogLastShortReadCount;
-        private long _watchdogLastCallbackExceptionCount;
         private bool _watchdogLastStarted;
         private long _watchdogLastRealBytesRendered;
         private int _watchdogNoProgressTicks;
         private int _watchdogTickCount;
 
-        // Written by the real-time callback and only read/reset by the
-        // watchdog. Keep diagnostics here to counters and a sampled hash;
-        // formatting or logging from the audio thread itself could cause the
-        // very underruns these fields exist to diagnose.
+        // Running totals of the bridge's windowed counters, folded in once per
+        // watchdog tick (FoldBridgeCounters). The callback itself only ever
+        // touches atomics in C; formatting or logging from the audio thread
+        // could cause the very underruns these exist to diagnose.
         private long _callbackCount;
         private long _requestedBytes;
         private long _realBytesRendered;
         private long _silenceBytesRendered;
         private long _shortReadCount;
-        private long _callbackExceptionCount;
         private long _lastPcmFingerprint;
-        private long _lastCallbackFingerprint;
         private int _lastCallbackReadBytes;
-        private int _consecutiveIdenticalCallbacks;
         private int _maxIdenticalCallbackRun;
-        private readonly AudioCallbackTiming _callbackTiming = new();
 
-        // The managed callback tells us whether Flower supplied PCM on time.
+        // The bridge's counters tell us whether Flower supplied PCM on time.
         // These native counters fill in the next boundary on iOS: CoreAudio's
         // callback cadence, its host timestamps, and whether every requested
         // frame was actually handed to miniaudio. They are sampled from the
@@ -211,7 +200,7 @@ namespace Flower.Audio
         // Printed as n/a instead, until the native side grows an s24 path
         // (which needs the vendored binaries rebuilt - see
         // native/miniaudio/README.md).
-        private bool PcmShapeCountersApply => _outputStage.DeviceFormat == DeviceSampleFormat.S16;
+        private bool PcmShapeCountersApply => _deviceFormat == DeviceSampleFormat.S16;
 
         private string PcmShapeCounter(ulong value) =>
             PcmShapeCountersApply ? value.ToString() : "n/a";
@@ -246,8 +235,8 @@ namespace Flower.Audio
         // only because Mono reuses a library another assembly already loaded
         // under that name, which holds in the app, which opens a context
         // first, and not for anything that probes the bridge before touching
-        // miniaudio: NativeOutputStageChecks found it reporting no bridge in
-        // the Mono iOS suite. Under NativeAOT neither resolver is consulted
+        // miniaudio: the native output stage's checks found it reporting no
+        // bridge in the Mono iOS suite. Under NativeAOT neither resolver is consulted
         // (DirectPInvoke, in Flower.iOS.csproj).
         //
         // Nowhere else needs one. Android finds lib<name>.so in the APK by
@@ -331,12 +320,9 @@ namespace Flower.Audio
             if (ring == null)
                 return;
 
-            // In bridge mode the counters live in C, on the far side of the
-            // hand-off. Folding them into the same fields the managed callback
-            // would have written keeps every line below identical on both
-            // paths - the numbers mean the same thing either way, they are
-            // just gathered by whoever is doing the rendering.
-            FoldBridgeCounters();
+            // The counters live in C, on the far side of the hand-off, and
+            // are folded into running totals here once a tick.
+            var callbackTiming = FoldBridgeCounters();
 
             var underrunCount = ring.UnderrunCount;
             var started = _started;
@@ -344,11 +330,7 @@ namespace Flower.Audio
             var shortReadCount = Interlocked.Read(ref _shortReadCount);
             var newShortReads = shortReadCount - Interlocked.Read(ref _watchdogLastShortReadCount);
             Interlocked.Exchange(ref _watchdogLastShortReadCount, shortReadCount);
-            var callbackExceptionCount = Interlocked.Read(ref _callbackExceptionCount);
-            var newCallbackExceptions = callbackExceptionCount - Interlocked.Read(ref _watchdogLastCallbackExceptionCount);
-            Interlocked.Exchange(ref _watchdogLastCallbackExceptionCount, callbackExceptionCount);
             var maxIdenticalRun = Interlocked.Exchange(ref _maxIdenticalCallbackRun, 0);
-            var callbackTiming = _callbackTiming.TakeSnapshot();
             var coreAudioDiagnostics = TakeCoreAudioDiagnostics();
 
             if (started && realBytesRendered == _watchdogLastRealBytesRendered)
@@ -362,8 +344,8 @@ namespace Flower.Audio
             // underruns by definition, and the reader needs both to tell "the
             // stream fell behind and playback paused for it" from a glitch.
             var feeder = _feeder;
-            var rebufferCount = feeder?.RebufferCount ?? _latch.RebufferCount;
-            var longestRebufferMs = feeder?.TakeLongestRebufferMs() ?? _latch.TakeLongestRebufferMs();
+            var rebufferCount = feeder?.RebufferCount ?? 0;
+            var longestRebufferMs = feeder?.TakeLongestRebufferMs() ?? 0;
 
             // A device reopen builds a new feeder, whose count starts again.
             if (rebufferCount < _watchdogLastRebufferCount)
@@ -376,7 +358,7 @@ namespace Flower.Audio
                 _logger.LogWarning(
                     "Render watchdog: output ran dry mid-track and is rebuffering - Rebuffers={Rebuffers} (+{NewRebuffers}) LongestResumedAfterMs={LongestMs} RebufferMs={RebufferMs} RingAvailable={Available}/{Capacity} BridgeBufferedFrames={BridgeBuffered}",
                     rebufferCount, newRebuffers, longestRebufferMs,
-                    _outputStage.Timing.RebufferMs, ring.AvailableBytes, ring.Capacity, feeder?.BufferedFrames ?? 0);
+                    _timing.RebufferMs, ring.AvailableBytes, ring.Capacity, feeder?.BufferedFrames ?? 0);
             }
 
             if (underruns.Cleared is { } run)
@@ -391,13 +373,6 @@ namespace Flower.Audio
                 _logger.LogWarning(
                     "Render watchdog: underrun(s) detected - Started={Started} RingAvailable={Available}/{Capacity} Underruns={Underruns} (+{NewUnderruns}) UnderrunningFor={RunSeconds}s",
                     started, ring.AvailableBytes, ring.Capacity, underrunCount, underruns.New, underruns.RunTicks);
-            }
-            else if (newCallbackExceptions > 0)
-            {
-                _logger.LogError(
-                    "Render watchdog: managed callback exception(s) were silenced - CallbackExceptions={CallbackExceptions} (+{NewCallbackExceptions}) RingAvailable={Available}/{Capacity} RingGeneration={RingGeneration}",
-                    callbackExceptionCount, newCallbackExceptions, ring.AvailableBytes,
-                    ring.Capacity, ring.Generation);
             }
             else if (newShortReads > 0)
             {
@@ -496,17 +471,18 @@ namespace Flower.Audio
         }
 
         // Reading the native snapshot resets it, so this must happen exactly
-        // once per watchdog tick and nowhere else.
+        // once per watchdog tick and nowhere else. Returns the window's
+        // callback timing, which is not a running total.
         //
         // Under _stageGate because this runs on the watchdog's timer, which
         // does not hold _gate, and CloseDevice frees the bridge.
-        private void FoldBridgeCounters()
+        private AudioCallbackTimingSnapshot FoldBridgeCounters()
         {
             AudioBridgeSnapshot snapshot;
             lock (_stageGate)
             {
                 if (_bridge is not { } bridge)
-                    return;
+                    return default;
 
                 snapshot = bridge.TakeSnapshot();
             }
@@ -518,16 +494,11 @@ namespace Flower.Audio
             Interlocked.Add(ref _shortReadCount, snapshot.ShortReadCount);
             Interlocked.Exchange(ref _lastPcmFingerprint, snapshot.LastPcmFingerprint);
 
-            // Folded like the rest, and it was the one field that was not:
-            // _lastCallbackReadBytes is written only by the managed render
-            // callback, which is dead code whenever the bridge is doing the
-            // rendering. So every identical-PCM warning off a phone reported
-            // LastReadBytes=0 - not a zero read, just a field nobody had
-            // written - which reads as "the sink read nothing from a ring that
-            // had data in it" and is a different bug entirely.
             Volatile.Write(ref _lastCallbackReadBytes, (int)snapshot.LastReadBytes);
             if (snapshot.MaxIdenticalCallbackRun > Volatile.Read(ref _maxIdenticalCallbackRun))
                 Volatile.Write(ref _maxIdenticalCallbackRun, snapshot.MaxIdenticalCallbackRun);
+
+            return snapshot.Timing;
         }
 
         public bool IsPlaying => _started;
@@ -537,8 +508,8 @@ namespace Flower.Audio
             get => _volumePercent;
 
             // Not _gate and no device call: this is a single store the render
-            // callback - managed or native - picks up on its next pass and
-            // ramps toward over GainRampMs. Taking _gate here used to put the
+            // callback picks up on its next pass and ramps toward over
+            // GainRampMs. Taking _gate here used to put the
             // UI thread behind whatever else held it, a device open included,
             // for a value nothing but the callback reads. _stageGate is held
             // only around the store itself.
@@ -548,8 +519,8 @@ namespace Flower.Audio
                 _volumePercent = percent;
                 lock (_stageGate)
                 {
-                    _outputStage.TargetGain = OutputStage.GainForVolumePercent(percent);
-                    _bridge?.SetTargetGain(_outputStage.TargetGain);
+                    _targetGain = VolumeCurve.GainForPercent(percent);
+                    _bridge?.SetTargetGain(_targetGain);
                 }
             }
         }
@@ -558,13 +529,13 @@ namespace Flower.Audio
         {
             lock (_stageGate)
             {
-                // The same curve again is no change, as it is to OutputStage,
-                // which compares by reference. The native side cannot tell, so
-                // it would crossfade into a copy with its delay lines zeroed.
-                if (ReferenceEquals(_outputStage.Equalizer, equalizer))
+                // The same curve again is no change. The native side cannot
+                // tell, so it would crossfade into a copy with its delay lines
+                // zeroed.
+                if (ReferenceEquals(_equalizer, equalizer))
                     return;
 
-                _outputStage.Equalizer = equalizer;
+                _equalizer = equalizer;
                 _bridge?.SetEqualizer(equalizer);
             }
         }
@@ -573,7 +544,7 @@ namespace Flower.Audio
         {
             lock (_stageGate)
             {
-                _outputStage.Timing = timing;
+                _timing = timing.Clamped();
                 if (_bridge is { } bridge)
                     PushTiming(bridge);
             }
@@ -583,14 +554,14 @@ namespace Flower.Audio
         // for new timing. The caller holds _stageGate.
         private void PushTiming(NativeAudioBridge bridge)
         {
-            var timing = _outputStage.Timing;
+            var timing = _timing;
             bridge.SetTiming(FadeFrames(timing.GainRampMs), FadeFrames(timing.DeclickFadeMs));
         }
 
         private void PushStage(NativeAudioBridge bridge)
         {
-            bridge.SetTargetGain(_outputStage.TargetGain);
-            bridge.SetEqualizer(_outputStage.Equalizer);
+            bridge.SetTargetGain(_targetGain);
+            bridge.SetEqualizer(_equalizer);
             PushTiming(bridge);
         }
 
@@ -680,6 +651,21 @@ namespace Flower.Audio
         // initialised _context.
         private bool OpenDevice()
         {
+            // The bridge is the only render path, so a build without it - a
+            // RID nobody built, a phone packaged without the framework - is
+            // refused here rather than opened onto silence. FlowerBridge.props
+            // already fails a desktop build that is missing it.
+            if (!NativeAudioBridge.IsAvailable)
+            {
+                _logger.LogCritical(
+                    "No usable {Library} library is loaded, and it is the only way Flower renders audio; not opening a device",
+                    NativeAudioBridge.LibraryName);
+                return false;
+            }
+
+            if (_ringBuffer is not { } ringBuffer)
+                return false;
+
             var config = ma.device_config_init(ma_device_type.ma_device_type_playback);
             var deviceFormat = PreferredDeviceFormat();
             config.playback.format = MiniaudioFormatFor(deviceFormat);
@@ -698,27 +684,15 @@ namespace Flower.Audio
             //
             // No format gate: the bridge carries the pipeline's float and
             // requantises to whichever width the device takes, S16 or S24.
-            var useBridge = NativeAudioBridge.IsAvailable
-                && _outputStage.Timing.NativeBufferMs > 0;
-
-            if (useBridge)
-                config.dataCallback = NativeAudioBridge.RenderCallback;
-            else
-                config.dataCallback = &DataCallback;
+            config.dataCallback = NativeAudioBridge.RenderCallback;
             config.notificationCallback = &NotificationCallback;
             config.pUserData = (void*)GCHandle.ToIntPtr(_selfHandle);
 
-            // miniaudio's default (low-latency) profile picks a very small
-            // period size, tuned for tight native C callbacks. Conservative
-            // trades a little extra latency for a much bigger per-period
-            // safety margin, which is what the managed callback below needs -
-            // a GCHandle lookup and a bounds-checked Span copy, all under the
-            // CLR, can take just long enough to miss a tiny window.
-            //
-            // It is not enough on its own, and was never the real answer on
-            // mobile: what actually stalls the render thread there is Mono
-            // suspending it for a GC, for hundreds of milliseconds, which no
-            // period size survives. That is what the bridge below exists for.
+            // Conservative rather than miniaudio's default low-latency profile:
+            // a bigger period is a bigger per-period safety margin, chosen when
+            // the render callback was managed code, and kept until low latency
+            // (AUDIO-QUALITY-PLAN.md, §2) has measured what a shorter one
+            // would cost the bridge's headroom.
             config.performanceProfile = ma_performance_profile.ma_performance_profile_conservative;
 
             // Only read by device_init, so a stack local is enough - nothing
@@ -754,13 +728,14 @@ namespace Flower.Audio
             var result = ma.device_init(_context, &config, device);
 
             // The one place the device gets a say in the sample format. It is
-            // asked for 24 bits, and a refusal here is what says OutputStage
-            // has to requantise to S16 instead - which is a real answer rather
-            // than a failure, because every device takes it.
+            // asked for 24 bits, and a refusal here is what says the output
+            // stage has to requantise to S16 instead - which is a real answer
+            // rather than a failure, because every device takes it.
             //
             // At every open, not just the first. The pipeline is float up to
-            // OutputStage, so no decoder knows or cares what the device takes,
-            // and a later device can be given its own answer - unlike the rate.
+            // the output stage, so no decoder knows or cares what the device
+            // takes, and a later device can be given its own answer - unlike
+            // the rate.
             if (result != ma_result.MA_SUCCESS && deviceFormat != DeviceSampleFormat.S16)
             {
                 _logger.LogWarning(
@@ -817,23 +792,10 @@ namespace Flower.Audio
                         nativeSampleRate);
                 }
 
-                // Rebuilt only when it would actually be a different stage.
-                // Replacing it drops the EQ curve, the timing and the gain the
-                // caller set on it, which are re-applied right after
-                // IAudioManager construction and not again - so an
-                // unconditional replacement here would be a silent way to lose
-                // them on any path that reached this block without changing
-                // anything. OpenDevice only runs while the output callback is
-                // stopped, so a replacement cannot race the render path.
-                if (_outputStage.SampleRate != _format.SampleRate)
-                    _outputStage = new OutputStage(_format.SampleRate);
-
                 _hasNegotiatedRate = true;
             }
 
-            // Every open, after any replacement above, and while the device is
-            // stopped - the one time OutputStage.DeviceFormat may change.
-            _outputStage.DeviceFormat = deviceFormat;
+            _deviceFormat = deviceFormat;
             _logger.LogInformation(
                 "Rendering the output device's native {SampleRate}Hz at {Format}",
                 _format.SampleRate, deviceFormat);
@@ -841,47 +803,46 @@ namespace Flower.Audio
             // Pinned at unity, deliberately: miniaudio applies its master
             // volume after the data callback as
             // `(ma_int16)(sample * factor)` - a truncating, unrounded,
-            // undithered integer multiply. OutputStage does the gain in float
-            // before requantising, so this path must never be used.
+            // undithered integer multiply. The output stage does the gain in
+            // float before requantising, so this path must never be used.
             ma.device_set_master_volume(_device, 1f);
 
             // After the sample-rate negotiation above, so the buffer is sized
-            // in the rate actually being rendered rather than the assumed one.
-            if (useBridge && _ringBuffer is { } ringBuffer)
+            // in the rate actually being rendered rather than the assumed one,
+            // and in the pipeline's frames: the bridge holds what the ring
+            // holds, and the output stage runs on the far side of it.
+            var capacityFrames = _timing.NativeBufferMs * (long)_format.SampleRate / 1000;
+            var bridge = NativeAudioBridge.TryCreate((int)capacityFrames, deviceFormat, _format.SampleRate);
+            if (bridge == null)
             {
-                // In the pipeline's frames: the bridge holds what the ring
-                // holds, and the output stage runs on the far side of it.
-                var capacityFrames = _outputStage.Timing.NativeBufferMs * (long)_format.SampleRate / 1000;
-                var bridge = NativeAudioBridge.TryCreate((int)capacityFrames, deviceFormat);
-                if (bridge == null)
-                {
-                    // Nothing to fall back to: the device was initialised with
-                    // the native callback, which without a bridge renders
-                    // silence. Reopening with the managed one is a bigger
-                    // hammer than a failed malloc of a third of a second of
-                    // PCM warrants, and it has never been seen to happen.
-                    _logger.LogError("Could not allocate the native audio bridge; playback will be silent");
-                }
-                else
-                {
-                    // Published and loaded with the controls' current values
-                    // in one step, so a control set meanwhile either lands in
-                    // the stage before the push or reaches this bridge after.
-                    lock (_stageGate)
-                    {
-                        _bridge = bridge;
-                        PushStage(bridge);
-                    }
-
-                    bridge.AttachTo(_device);
-                    _feeder = new AudioFeeder(ringBuffer, bridge, _format.SampleRate, () => _outputStage.Timing);
-                    _feeder.Start();
-                    _logger.LogInformation(
-                        "Rendering through the native audio bridge: {BufferMs}ms ({Capacity} bytes) ahead of the device, "
-                        + "output stage in the callback",
-                        _outputStage.Timing.NativeBufferMs, bridge.Capacity);
-                }
+                // A failed malloc of a third of a second of PCM. Never seen,
+                // and without a bridge the device would only render silence.
+                _logger.LogError("Could not allocate the native audio bridge; not opening a device");
+                UnregisterCoreAudioDiagnostics();
+                ma.device_uninit(_device);
+                NativeMemory.Free(_device);
+                _device = null;
+                return false;
             }
+
+            // Published and loaded with the controls' current values in one
+            // step, so a control set meanwhile either lands in the fields
+            // before the push or reaches this bridge after.
+            lock (_stageGate)
+            {
+                _bridge = bridge;
+                PushStage(bridge);
+            }
+
+            if (!bridge.AttachTo(_device))
+                _logger.LogError("The native audio bridge could not register the output device; playback will be silent");
+
+            _feeder = new AudioFeeder(ringBuffer, bridge, _format.SampleRate, () => _timing);
+            _feeder.Start();
+            _logger.LogInformation(
+                "Rendering through the native audio bridge: {BufferMs}ms ({Capacity} bytes) ahead of the device, "
+                + "output stage in the callback",
+                _timing.NativeBufferMs, bridge.Capacity);
 
             _activeDeviceId = ResolveActiveDeviceId(_outputDeviceId, GetOutputDevices());
             return true;
@@ -892,8 +853,8 @@ namespace Flower.Audio
         // A listening aid, not a setting. The S16 fallback below is the path a
         // device refusing 24 bits would take, and in shared mode nothing
         // refuses: miniaudio converts whatever it is handed into whatever the
-        // endpoint takes. So OutputStage's dithered requantisation to 16 bits
-        // is reachable on no real hardware, and this is how to hear it.
+        // endpoint takes. So the dithered requantisation to 16 bits is
+        // reachable on no real hardware, and this is how to hear it.
         // Anything else in the variable is ignored, out loud.
         private DeviceSampleFormat PreferredDeviceFormat()
         {
@@ -917,7 +878,7 @@ namespace Flower.Audio
 
         // The device format in miniaudio's own terms. ma_format_s24 is packed
         // three-byte little-endian, the same layout DeviceSampleFormat.S24
-        // names and OutputStage writes, so miniaudio converts nothing between
+        // names and the output stage writes, so miniaudio converts nothing between
         // the callback's buffer and the device.
         internal static ma_format MiniaudioFormatFor(DeviceSampleFormat format) =>
             format == DeviceSampleFormat.S24 ? ma_format.ma_format_s24 : ma_format.ma_format_s16;
@@ -977,7 +938,6 @@ namespace Flower.Audio
             NativeMemory.Free(_device);
             _device = null;
             _started = false;
-            _callbackTiming.Reset();
             _activeDeviceId = null;
         }
 
@@ -1190,234 +1150,6 @@ namespace Flower.Audio
             ma_device* device,
             out CoreAudioDiagnosticsSnapshot snapshot);
 
-        // Wrapped whole in a try/catch, unlike anything else in this class:
-        // this is an [UnmanagedCallersOnly] boundary, and an exception that
-        // reaches it does not unwind into a handler - it takes the process
-        // down. Silence is the only safe answer, and it is logged nowhere,
-        // because logging from the real-time thread is its own way of causing
-        // the glitches this exists to avoid; the watchdog's counters are what
-        // surface a callback that has stopped producing.
-        [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
-        private static void DataCallback(ma_device* pDevice, void* pOutput, void* pInput, uint frameCount)
-        {
-            var byteCount = checked((int)frameCount * BytesPerFrameOf(pDevice));
-            var dest = new Span<byte>(pOutput, byteCount);
-
-            try
-            {
-                Render(pDevice, dest, frameCount);
-            }
-            catch
-            {
-                RecordCallbackException(pDevice);
-                dest.Clear();
-            }
-        }
-
-        // The device was opened in its sink's device format, settled before
-        // it started. Asked here rather than in Render because the silence on
-        // the exception path needs the length too.
-        //
-        // The fallback is the narrowest format a device is ever opened in, so
-        // that not knowing can at worst leave part of the buffer uncleared
-        // rather than clear past its end.
-        private static int BytesPerFrameOf(ma_device* pDevice)
-        {
-            try
-            {
-                if (pDevice != null && GCHandle.FromIntPtr((IntPtr)pDevice->pUserData).Target is MiniaudioSink sink)
-                    return sink._outputStage.DeviceFormat.BytesPerFrame();
-            }
-            catch
-            {
-                // Same boundary as DataCallback's own catch.
-            }
-
-            return DeviceSampleFormat.S16.BytesPerFrame();
-        }
-
-        // The unmanaged callback boundary cannot let a managed exception
-        // escape, so it must still return silence. Counting it is safe on the
-        // real-time thread and turns what used to be an invisible dropout into
-        // a watchdog error one second later.
-        private static void RecordCallbackException(ma_device* pDevice)
-        {
-            try
-            {
-                if (pDevice == null)
-                    return;
-
-                var handle = GCHandle.FromIntPtr((IntPtr)pDevice->pUserData);
-                if (handle.Target is MiniaudioSink sink)
-                    Interlocked.Increment(ref sink._callbackExceptionCount);
-            }
-            catch
-            {
-                // This is already on the exception path of an unmanaged
-                // callback. Diagnostics must never become a second escape.
-            }
-        }
-
-        private static void Render(ma_device* pDevice, Span<byte> dest, uint frameCount)
-        {
-            var handle = GCHandle.FromIntPtr((IntPtr)pDevice->pUserData);
-            if (handle.Target is not MiniaudioSink sink || sink._ringBuffer is not { } ring)
-            {
-                dest.Clear();
-                return;
-            }
-
-            // The ring's float PCM for this period. Counted in its bytes below,
-            // not the device's: every diagnostic here is about what the ring
-            // gave, and the watchdog sets them against the ring's own counts.
-            var sampleCount = checked((int)frameCount * (int)GaplessFormat.Channels);
-            if (sink._renderScratch.Length < sampleCount)
-                sink._renderScratch = new float[sampleCount];
-
-            var samples = sink._renderScratch.AsSpan(0, sampleCount);
-            var source = MemoryMarshal.AsBytes(samples);
-            var sourceByteCount = source.Length;
-
-            // Capture timestamps rather than logging from the real-time
-            // thread. The watchdog reports the sampled maxima later, which
-            // makes a mid-song click diagnosable even when the PCM ring never
-            // ran short.
-            var callbackStartedAt = Stopwatch.GetTimestamp();
-            try
-            {
-
-                var generation = ring.Generation;
-
-                // Prime latch - see PrimeLatch. A flush (a fresh start, a seek,
-                // a manual skip) empties the ring while the decoder is still
-                // opening the file, and rendering during that window produces a
-                // starved trickle rather than audio. Silence instead, until
-                // there is enough buffered to play through it - and the same
-                // again after running dry mid-track.
-                var latch = sink._latch;
-                var now = Stopwatch.GetTimestamp();
-                if (generation != sink._primeGeneration)
-                {
-                    sink._primeGeneration = generation;
-                    latch.ArmAfterFlush(now);
-                }
-
-                var rebuffering = latch.IsRebuffering;
-                if (latch.TryRelease(
-                        ring.AvailableBytes / GaplessFormat.BytesPerFrame, ring.Capacity / GaplessFormat.BytesPerFrame,
-                        sink._outputStage.Timing, sink._format.SampleRate, now)
-                    && rebuffering)
-                {
-                    // Not a flush, so no generation change to fade in on.
-                    sink._outputStage.FadeInNextAudio();
-                }
-
-                var primed = latch.IsPrimed;
-
-                // Read() never blocks - a short/zero read just means the ring is
-                // temporarily empty (decode running behind), not end-of-stream.
-                // This callback runs on miniaudio's real-time thread, so the
-                // remainder of the requested frames is silence-padded rather
-                // than waited for.
-                var read = primed ? ring.Read(source) : 0;
-                if (read < sourceByteCount)
-                    source[read..].Clear();
-
-                if (primed)
-                {
-                    latch.Rendered(read);
-
-                    // Closed for the next callback, not this one: what it
-                    // read still plays, and Process below still runs over it.
-                    if (read < sourceByteCount && ring.AvailableBytes == 0)
-                        latch.RanDry(sink._outputStage.Timing, now);
-                }
-
-                Interlocked.Increment(ref sink._callbackCount);
-                Interlocked.Add(ref sink._requestedBytes, sourceByteCount);
-                Interlocked.Add(ref sink._realBytesRendered, read);
-                if (read < sourceByteCount)
-                {
-                    Interlocked.Add(ref sink._silenceBytesRendered, sourceByteCount - read);
-                    if (primed)
-                        Interlocked.Increment(ref sink._shortReadCount);
-                }
-
-                if (read > 0)
-                {
-                    var fingerprint = Fingerprint(source[..read], out var audible);
-                    var previousFingerprint = Interlocked.Exchange(ref sink._lastCallbackFingerprint, fingerprint);
-                    var previousRead = Interlocked.Exchange(ref sink._lastCallbackReadBytes, read);
-                    Interlocked.Exchange(ref sink._lastPcmFingerprint, fingerprint);
-
-                    if (audible && previousFingerprint == fingerprint && previousRead == read)
-                    {
-                        var repeated = Interlocked.Increment(ref sink._consecutiveIdenticalCallbacks);
-                        if (repeated > Volatile.Read(ref sink._maxIdenticalCallbackRun))
-                            Volatile.Write(ref sink._maxIdenticalCallbackRun, repeated);
-                    }
-                    else
-                    {
-                        Interlocked.Exchange(ref sink._consecutiveIdenticalCallbacks, 0);
-                    }
-                }
-
-                // Skipped entirely while the prime latch is holding: the buffer is
-                // already pure silence, and running the output stage over it would
-                // spend the declick fade-in on that silence, so the first real
-                // audio after a flush would arrive at full gain - the click the
-                // fade exists to remove. Not calling Process leaves the stage's
-                // last-seen generation untouched, so the first primed callback is
-                // the one that arms the fade-in, which is where it belongs.
-                if (!primed)
-                {
-                    dest.Clear();
-                    return;
-                }
-
-                // The whole buffer, silence padding included - the EQ's delay
-                // lines and the gain ramp both have to keep advancing across a
-                // gap, or they resume from pre-gap state on the other side of it.
-                sink._outputStage.Process(samples, dest, generation);
-            }
-            finally
-            {
-                sink._callbackTiming.Record(callbackStartedAt, Stopwatch.GetTimestamp(), frameCount, sink._format.SampleRate);
-            }
-        }
-
-        // Samples one byte per 64 rather than walking every PCM byte on the
-        // real-time callback. It is not a content hash; it is a cheap signal
-        // for detecting the exact same device buffer being replayed over and
-        // over, which is one reported failure shape.
-        //
-        // Reports through `audible` whether any of the sampled bytes was
-        // non-zero, so the caller can tell "the same buffer again" from
-        // "silence again". Both hash the same, and only the first of them is
-        // worth a warning: a run of silent callbacks is a pause, a fade-out or
-        // a starved ring, all of which have counters of their own, while a run
-        // of identical *audible* buffers is the repeated-buffer static this
-        // exists to catch.
-        private static long Fingerprint(ReadOnlySpan<byte> data, out bool audible)
-        {
-            const ulong offset = 14695981039346656037;
-            const ulong prime = 1099511628211;
-            var hash = offset;
-            byte seen = 0;
-            for (var i = 0; i < data.Length; i += 64)
-            {
-                hash ^= data[i];
-                hash *= prime;
-                seen |= data[i];
-            }
-
-            audible = seen != 0;
-
-            hash ^= (uint)data.Length;
-            hash *= prime;
-            return unchecked((long)hash);
-        }
-
         public void Resume()
         {
             lock (_gate)
@@ -1429,12 +1161,8 @@ namespace Flower.Audio
                 // already renders through the fade-in envelope rather than
                 // jumping straight in at whatever amplitude the stream
                 // happens to begin on.
-                if (_bridge is { } bridge)
-                    bridge.BeginFadeIn(FadeFrames(_outputStage.Timing.TransportFadeMs));
-                else
-                    _outputStage.BeginFadeIn();
-
-                _callbackTiming.Reset();
+                _bridge?.BeginFadeIn(FadeFrames(_timing.TransportFadeMs));
+                _bridge?.ResetTiming();
 
                 var result = ma.device_start(_device);
                 if (result != ma_result.MA_SUCCESS)
@@ -1471,7 +1199,7 @@ namespace Flower.Audio
                 FadeOutAndWait();
                 StopDeviceIntentionally();
                 _started = false;
-                _callbackTiming.Reset();
+                _bridge?.ResetTiming();
                 Paused?.Invoke(this, EventArgs.Empty);
             }
         }
@@ -1487,29 +1215,26 @@ namespace Flower.Audio
                 FadeOutAndWait();
                 StopDeviceIntentionally();
                 _started = false;
-                _callbackTiming.Reset();
+                _bridge?.ResetTiming();
                 Stopped?.Invoke(this, EventArgs.Empty);
             }
         }
 
-        // Whichever side of the hand-off owns the transport envelope. In
-        // bridge mode it is the native callback, so that a pause is as
-        // immediate with a third of a second buffered downstream as it is
-        // with nothing; the output stage's own fade only applies when this
-        // sink is still rendering in managed code.
+        // The native callback owns the transport envelope, so that a pause is
+        // as immediate with a third of a second buffered downstream as it is
+        // with nothing. Bounded, because the callback may never run again and
+        // a transport command must not hang the UI thread on that.
         private void FadeOutAndWait()
         {
             if (_bridge is not { } bridge)
-            {
-                _outputStage.FadeOutAndWait();
                 return;
-            }
 
-            bridge.BeginFadeOut(FadeFrames(_outputStage.Timing.TransportFadeMs));
+            var timing = _timing;
+            bridge.BeginFadeOut(FadeFrames(timing.TransportFadeMs));
 
             var deadline = Stopwatch.GetTimestamp()
                 + (long)(Stopwatch.Frequency
-                    * ((_outputStage.Timing.TransportFadeMs + _outputStage.Timing.FadeOutWaitMs) / 1000.0));
+                    * ((timing.TransportFadeMs + timing.FadeOutWaitMs) / 1000.0));
             while (!bridge.FadeOutCompleted && Stopwatch.GetTimestamp() < deadline)
                 Thread.Sleep(1);
         }
@@ -1517,8 +1242,7 @@ namespace Flower.Audio
         private int FadeFrames(int milliseconds) =>
             (int)(milliseconds * (long)_format.SampleRate / 1000);
 
-        // See IAudioSink.BufferedFrames - zero without a bridge, where nothing
-        // sits between the shared ring and the speaker.
+        // See IAudioSink.BufferedFrames - zero while no device is open.
         public long BufferedFrames => _feeder?.BufferedFrames ?? 0;
 
         public IReadOnlyList<AudioOutputDevice> GetOutputDevices()
@@ -1605,7 +1329,6 @@ namespace Flower.Audio
                     _feeder?.Resume();
                     _started = true;
                     ArmWatchdog();
-                ArmWatchdog();
                 }
                 else
                 {

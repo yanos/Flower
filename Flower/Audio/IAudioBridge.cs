@@ -63,5 +63,6 @@ namespace Flower.Audio
         long UnderrunCount,
         long LastPcmFingerprint,
         long LastReadBytes,
-        int MaxIdenticalCallbackRun);
+        int MaxIdenticalCallbackRun,
+        AudioCallbackTimingSnapshot Timing);
 }

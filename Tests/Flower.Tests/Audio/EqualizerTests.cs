@@ -1,29 +1,29 @@
 using System;
 
 using Flower.Audio;
+using Flower.Tests.Decoding.Scenarios;
 using Flower.Tests.TestSupport;
 
 namespace Flower.Tests.Audio;
 
-// Pure-logic coverage for the DSP core OutputStage runs inside
-// MiniaudioSink's render callback - no LibVLC/audio hardware involved, so none
-// of this needs a real decoder. GaplessAudioManagerTests covers the forwarding
-// plumbing (ApplyEqualizer reaching the sink); this file is only about
-// Equalizer's own signal math.
-//
-// Float in, float out now: the EQ sits in the middle of OutputStage's float
-// path and no longer rounds or clamps to S16 itself, so these work in floats
-// scaled to the same +-32768 range the samples occupy there.
+// The graphic EQ as it runs: Equalizer.BuildFrom's coefficients, filtered by
+// libflowerbridge's render callback. Measured through the whole output stage
+// at 24 bits, at unity gain with no fades, where the requantisation is far
+// below anything asserted here - so what these see is the filter.
+// GaplessAudioManagerTests covers the forwarding plumbing (ApplyEqualizer
+// reaching the sink).
 public class EqualizerTests
 {
     private const uint SampleRate = GaplessFormat.DefaultSampleRate;
 
-    private static float[] GenerateSine(double frequencyHz, int frameCount, float amplitude = 0.5f)
+    private static readonly AudioTimingSettings NoFades = new() { GainRampMs = 0, DeclickFadeMs = 0, TransportFadeMs = 0 };
+
+    private static float[] GenerateSine(double frequencyHz, int frameCount, float amplitude = 0.25f, uint sampleRate = SampleRate)
     {
         var samples = new float[frameCount * (int)GaplessFormat.Channels];
         for (var i = 0; i < frameCount; i++)
         {
-            var value = (float)(amplitude * short.MaxValue * Math.Sin(2 * Math.PI * frequencyHz * i / SampleRate));
+            var value = (float)(amplitude * Math.Sin(2 * Math.PI * frequencyHz * i / sampleRate));
             samples[i * 2] = value;
             samples[i * 2 + 1] = value;
         }
@@ -45,16 +45,47 @@ public class EqualizerTests
         return settings;
     }
 
+    // A stage running the curve from the start. The swap onto it is
+    // crossfaded over the first buffer, so that buffer is silence, rendered
+    // and thrown away, and the declick goes with it.
+    private static OutputStageHarness Stage(EqualizerSettings settings, uint sampleRate = SampleRate)
+    {
+        var stage = new OutputStageHarness(DeviceSampleFormat.S24, NoFades, sampleRate)
+        {
+            Equalizer = Equalizer.BuildFrom(settings, sampleRate),
+        };
+        stage.RenderNothing(480);
+        return stage;
+    }
+
+    // Back to normalised float, for measuring.
+    private static float[] Normalised(byte[] s24)
+    {
+        var samples = OutputStageHarness.Unpack(DeviceSampleFormat.S24, s24);
+        var normalised = new float[samples.Length];
+        for (var i = 0; i < samples.Length; i++)
+            normalised[i] = samples[i] / 8_388_608f;
+
+        return normalised;
+    }
+
+    private static float Peak(ReadOnlySpan<float> samples)
+    {
+        var peak = 0f;
+        foreach (var sample in samples)
+            peak = Math.Max(peak, Math.Abs(sample));
+
+        return peak;
+    }
+
     // The steady-state gain the filter actually applies at one frequency,
     // measured rather than derived: drive it with a tone, discard the first
     // half so the biquads have settled, and compare RMS in to RMS out.
     private static double MeasuredGainDb(EqualizerSettings settings, double toneHz)
     {
-        const int frames = 24000;
-        var input = GenerateSine(toneHz, frames);
-        var output = (float[])input.Clone();
-
-        Equalizer.BuildFrom(settings, SampleRate).ProcessInPlace(output);
+        using var stage = Stage(settings);
+        var input = GenerateSine(toneHz, 24000);
+        var output = Normalised(stage.Render(input));
 
         var half = input.Length / 2;
         var ratio = Pcm.Rms(output.AsSpan(half)) / Pcm.Rms(input.AsSpan(half));
@@ -68,8 +99,7 @@ public class EqualizerTests
     }
 
     // Every band, at its own center frequency, within half a dB of what was
-    // asked for - the whole point of a graphic EQ, and something no previous
-    // test checked: they only asserted that a boost made things louder.
+    // asked for - the whole point of a graphic EQ.
     // 16kHz is excluded: its bell sits close enough to Nyquist at 48kHz that
     // the bilinear transform's frequency warping measurably shifts it, which
     // is inherent to an RBJ biquad rather than a defect.
@@ -100,69 +130,72 @@ public class EqualizerTests
         Assert.InRange(MeasuredGainDb(settings, 700), 5.5, 6.5);
     }
 
-    // The delay lines have to carry across calls: the render callback hands
-    // over one device period at a time, and a filter that restarted from zero
-    // state on each of them would put a discontinuity at every period
-    // boundary - about ten clicks a second.
+    // The delay lines have to carry across callbacks: the device hands over
+    // one period at a time, and a filter that restarted from zero state on
+    // each of them would put a discontinuity at every period boundary - about
+    // ten clicks a second.
     //
-    // Asserted by feeding the same tone once as a single block and again as
-    // uneven chunks, and requiring the two outputs to match. A per-call reset
-    // passes every other test in this file, because they all process one
-    // buffer.
+    // Asserted by rendering the same tone once as a single callback and again
+    // as uneven ones, and requiring the device to be handed the same bytes. A
+    // per-callback reset passes every other test in this file, because they
+    // all render one buffer.
     [Fact]
-    public void Filter_state_carries_across_calls_of_different_lengths()
+    public void Filter_state_carries_across_callbacks_of_different_lengths()
     {
         const int frames = 8000;
-        var wholeInput = GenerateSine(1000, frames);
-        var chunkedInput = (float[])wholeInput.Clone();
+        var tone = GenerateSine(1000, frames);
 
-        Equalizer.BuildFrom(WithBand(1000, 9), SampleRate).ProcessInPlace(wholeInput);
+        using var whole = Stage(WithBand(1000, 9));
+        var expected = whole.Render(tone);
 
-        var chunked = Equalizer.BuildFrom(WithBand(1000, 9), SampleRate);
+        using var chunked = Stage(WithBand(1000, 9));
+        var actual = new byte[expected.Length];
+        var bytesPerFrame = DeviceSampleFormat.S24.BytesPerFrame();
         var offset = 0;
         var chunkFrames = 137; // deliberately uneven, and not a divisor of frames
-        while (offset < chunkedInput.Length)
+        while (offset < frames)
         {
-            var length = Math.Min(chunkFrames * (int)GaplessFormat.Channels, chunkedInput.Length - offset);
-            chunked.ProcessInPlace(chunkedInput.AsSpan(offset, length));
+            var length = Math.Min(chunkFrames, frames - offset);
+            chunked.Render(tone.AsSpan(offset * 2, length * 2)).CopyTo(actual, offset * bytesPerFrame);
             offset += length;
             chunkFrames = chunkFrames == 137 ? 401 : 137;
         }
 
-        for (var i = 0; i < wholeInput.Length; i++)
-            Assert.Equal(wholeInput[i], chunkedInput[i], 3);
+        Pcm.AssertBitExact(expected, actual);
     }
 
-    // A full-scale tone through a maxed-out EQ used to be hard-clamped to S16
-    // inside this class, flat-topping the waveform. Now it stays in float and
-    // simply comes out loud - OutputStage owns the one requantisation, with a
-    // soft clip and dither. Asserted as "the output is a clean scaled tone",
-    // which is what clipping destroys.
+    // The EQ runs in float with no clamp of its own, so a boost past full
+    // scale mid-chain is not clipped there: turning the volume down afterwards
+    // brings back a clean, quieter tone. It used to round and hard-clamp to
+    // S16 inside the filter, flat-topping the waveform before any later gain
+    // could pull it back.
     [Fact]
-    public void A_heavy_boost_leaves_the_signal_unclipped_in_the_float_domain()
+    public void A_boost_past_full_scale_is_not_clipped_before_the_volume_brings_it_down()
     {
         var settings = FlatSettings();
         settings.PreampDb = 12;
-        for (var i = 0; i < Equalizer.BandCount; i++)
-            settings.BandGainsDb[i] = 12;
+        Array.Fill(settings.BandGainsDb, 12.0);
 
-        var buffer = GenerateSine(1000, 24000, amplitude: 1.0f);
-        Equalizer.BuildFrom(settings, SampleRate).ProcessInPlace(buffer);
+        // Around +30dB at 1kHz with every band and the preamp up: 0.9 in is
+        // some 25 times full scale before the volume, and 40dB down from
+        // there lands back inside it.
+        const float volume = 0.01f;
+        using var stage = Stage(settings);
+        stage.TargetGain = volume;
+        var output = Normalised(stage.Render(GenerateSine(1000, 24000, amplitude: 0.9f)));
 
-        var peak = 0f;
-        foreach (var sample in buffer)
-            peak = Math.Max(peak, Math.Abs(sample));
-
-        // Well past full scale, and nothing truncated it on the way - which is
-        // exactly the headroom the old S16 clamp had none of.
-        Assert.True(peak > short.MaxValue, $"expected the boost to exceed full scale, peaked at {peak}");
-        Assert.True(float.IsFinite(peak), "the filter went unstable");
+        // A clamp at full scale before the volume would have held the peak
+        // to the volume itself.
+        var peak = Peak(output.AsSpan(output.Length / 2));
+        Assert.True(peak > volume * 4, $"peaked at {peak}, as though clipped before the volume");
+        Assert.True(peak < 0.9f, $"peaked at {peak}: the volume did not bring it back inside full scale");
     }
 
     // A band at or past Nyquist used to build a biquad with its poles on or
     // outside the unit circle - at 22050 Hz the 16 kHz band diverged into
     // full-scale noise within milliseconds. Every band boosted, every rate a
-    // device might open at: the output has to stay the size of the input.
+    // device might open at: the output has to stay the size of the input,
+    // rather than run up to the clamp.
     [Theory]
     [InlineData(48000u)]
     [InlineData(44100u)]
@@ -174,19 +207,16 @@ public class EqualizerTests
     {
         var settings = FlatSettings();
         Array.Fill(settings.BandGainsDb, 12.0);
-        var equalizer = Equalizer.BuildFrom(settings, sampleRate);
+        using var stage = Stage(settings, sampleRate);
 
-        // A second of white noise, so every band - and Nyquist - is driven.
+        // A second of quiet white noise, so every band - and Nyquist - is
+        // driven, with room for every boost to stack up under full scale.
         var random = new Random(1);
         var samples = new float[(int)sampleRate * 2];
         for (var i = 0; i < samples.Length; i++)
-            samples[i] = (float)((random.NextDouble() * 2 - 1) * short.MaxValue * 0.1);
-        equalizer.ProcessInPlace(samples);
+            samples[i] = (float)((random.NextDouble() * 2 - 1) * 0.02);
 
-        var peak = 0f;
-        foreach (var sample in samples)
-            peak = Math.Max(peak, Math.Abs(sample));
-        Assert.True(float.IsFinite(peak) && peak < short.MaxValue * 0.1 * 50,
-            $"peak {peak} at {sampleRate} Hz");
+        var peak = Peak(Normalised(stage.Render(samples)));
+        Assert.True(peak < 0.5f, $"peak {peak} at {sampleRate} Hz");
     }
 }

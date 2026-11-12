@@ -1,64 +1,98 @@
-using System.Diagnostics;
+using System.Threading;
 
 using Flower.Audio;
+using Flower.Tests.Decoding.Scenarios;
 
 namespace Flower.Tests.Audio;
 
+// The render callback timing itself, in C, which the watchdog reads once a
+// second (MiniaudioSink's "callback timing pressure" line). Driven through
+// OutputStageHarness with real sleeps between callbacks, and asserted only on
+// what a sleep guarantees - at least so long - so a slow machine cannot fail
+// these by oversleeping.
 public class AudioCallbackTimingTests
 {
+    private static OutputStageHarness Stage() =>
+        new(DeviceSampleFormat.S24, new AudioTimingSettings { GainRampMs = 0, DeclickFadeMs = 0 }, sampleRate: 48_000);
+
     [Fact]
-    public void Reports_interesting_delivery_gaps_and_render_overruns_with_the_callback_shape()
+    public void A_late_callback_is_reported_with_the_period_it_was_late_for()
     {
-        var timing = new AudioCallbackTiming();
-        var ticksPerPeriod = 2_048L * Stopwatch.Frequency / 48_000;
-        var sixtyMilliseconds = Stopwatch.Frequency * 60 / 1_000;
+        using var stage = Stage();
 
-        timing.Record(1_000, 1_000 + ticksPerPeriod / 8, 2_048, 48_000);
-        timing.Record(1_000 + sixtyMilliseconds + 1, 1_000 + ticksPerPeriod * 3 + 2, 2_048, 48_000);
+        stage.RenderNothing(2_048);
+        Thread.Sleep(80);
+        stage.RenderNothing(2_048);
 
-        var snapshot = timing.TakeSnapshot();
+        var timing = stage.TakeTiming();
 
-        Assert.Equal(1, snapshot.InterestingGaps);
-        Assert.Equal(1, snapshot.RenderOverruns);
-        Assert.Equal(2, snapshot.CallbackCount);
-        Assert.Equal(4_096, snapshot.TotalFrames);
-        Assert.Equal(2_048, snapshot.AverageFramesPerCallback);
-        Assert.Equal(2_048, snapshot.MinFrames);
-        Assert.Equal(2_048, snapshot.MaxFrames);
-        Assert.Equal(2_048, snapshot.PrecedingFramesAtMaxGap);
-        Assert.Equal(2_048, snapshot.CurrentFramesAtMaxGap);
-        Assert.InRange(snapshot.MaxGapMilliseconds, 60, 61);
-        Assert.InRange(snapshot.MaxRenderMilliseconds, 67, 69);
+        Assert.Equal(1, timing.InterestingGaps);
+        Assert.Equal(2, timing.CallbackCount);
+        Assert.Equal(4_096, timing.TotalFrames);
+        Assert.Equal(2_048, timing.AverageFramesPerCallback);
+        Assert.Equal(2_048, timing.PrecedingFramesAtMaxGap);
+        Assert.Equal(2_048, timing.CurrentFramesAtMaxGap);
+        Assert.True(timing.MaxGapMilliseconds >= 80, $"an 80ms sleep was measured as {timing.MaxGapMilliseconds:F2}ms");
+
+        // 2048 frames at 48kHz, the period the second callback was due after.
+        Assert.InRange(timing.ExpectedPeriodMilliseconds, 42.66, 42.67);
+        Assert.True(timing.MaxLateMilliseconds >= 80 - 42.67, $"late by only {timing.MaxLateMilliseconds:F2}ms");
+    }
+
+    // The gap across a pause is the device not running, not the audio thread
+    // being late; the sink resets around every stop and start so that the
+    // first callback after a resume is not reported as a stall.
+    [Fact]
+    public void A_reset_forgets_the_last_callback_so_a_pause_is_not_a_gap()
+    {
+        using var stage = Stage();
+
+        stage.RenderNothing(2_048);
+        stage.ResetTiming();
+        Thread.Sleep(80);
+        stage.RenderNothing(2_048);
+
+        var timing = stage.TakeTiming();
+
+        Assert.Equal(0, timing.InterestingGaps);
+        Assert.Equal(0, timing.MaxGapNanoseconds);
+        Assert.Equal(1, timing.CallbackCount);
+        Assert.Equal(2_048, timing.TotalFrames);
     }
 
     [Fact]
-    public void Reset_discards_the_pause_gap_before_the_next_callback()
+    public void The_callback_sizes_a_device_asks_for_are_reported()
     {
-        var timing = new AudioCallbackTiming();
-        var ticksPerPeriod = 2_048L * Stopwatch.Frequency / 48_000;
+        using var stage = Stage();
 
-        timing.Record(1_000, 1_001, 2_048, 48_000);
-        timing.Reset();
-        timing.Record(1_000 + ticksPerPeriod * 100, 1_001 + ticksPerPeriod * 100, 2_048, 48_000);
+        stage.RenderNothing(512);
+        stage.RenderNothing(2_048);
+        stage.RenderNothing(1_024);
 
-        var snapshot = timing.TakeSnapshot();
+        var timing = stage.TakeTiming();
 
-        Assert.Equal(0, snapshot.InterestingGaps);
-        Assert.Equal(0, snapshot.MaxGapTicks);
+        Assert.Equal(512, timing.MinFrames);
+        Assert.Equal(2_048, timing.MaxFrames);
+        Assert.Equal(3_584 / 3.0, timing.AverageFramesPerCallback, 6);
     }
 
+    // A snapshot is a window: taking one starts the next from nothing, so a
+    // stall is reported once, by the tick that saw it.
     [Fact]
-    public void Retains_routine_jitter_below_the_interesting_gap_threshold_in_the_snapshot_without_warning_it()
+    public void Taking_a_snapshot_starts_the_next_window_empty()
     {
-        var timing = new AudioCallbackTiming();
-        var fiftyFiveMilliseconds = Stopwatch.Frequency * 55 / 1_000;
+        using var stage = Stage();
 
-        timing.Record(1_000, 1_001, 2_048, 48_000);
-        timing.Record(1_000 + fiftyFiveMilliseconds, 1_001 + fiftyFiveMilliseconds, 2_048, 48_000);
+        stage.RenderNothing(2_048);
+        Thread.Sleep(80);
+        stage.RenderNothing(2_048);
+        stage.TakeTiming();
 
-        var snapshot = timing.TakeSnapshot();
+        var next = stage.TakeTiming();
 
-        Assert.Equal(0, snapshot.InterestingGaps);
-        Assert.InRange(snapshot.MaxGapMilliseconds, 54, 56);
+        Assert.Equal(0, next.InterestingGaps);
+        Assert.Equal(0, next.CallbackCount);
+        Assert.Equal(0, next.MaxGapNanoseconds);
+        Assert.Equal(0, next.MinFrames);
     }
 }

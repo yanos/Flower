@@ -8,7 +8,7 @@
 
        No Avalonia, no audio output, no UI framework beyond a UILabel: what is
        under test is decoding and the HTTP path beneath it, plus the native
-       output stage (NativeOutputStageChecks), and every dependency this does
+       output stage (OutputStageChecks), and every dependency this does
        not have is one that cannot explain a failure. -->
 
   <PropertyGroup>
@@ -68,8 +68,8 @@
   </ItemGroup>
 
   <!-- And the miniaudio and flowerbridge Flower.iOS ships: this runner never
-       opens a device, but NativeOutputStageChecks calls the bridge's render
-       callback directly to hold it to OutputStage. -->
+       opens a device, but OutputStageChecks calls the bridge's render
+       callback directly, to check the output stage this build ships. -->
   <ItemGroup Condition="$(RuntimeIdentifier.StartsWith('iossimulator'))">
     <NativeReference Include="..\..\Flower.iOS\Frameworks\ios-simulator\miniaudio.framework">
       <Kind>Framework</Kind>

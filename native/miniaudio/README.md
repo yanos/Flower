@@ -23,35 +23,35 @@ Three files alongside the vendored header are ours:
   header's comment for why it exists; the short version is that Mono's GC
   suspends the render thread, and iPhone logs caught it doing so for 668ms
   mid-track. It carries the pipeline's float and runs the output stage (EQ,
-  volume ramp, declick, dither) in the callback, as a port of
-  `Flower/Audio/OutputStage.cs` held to it sample for sample, which is why
-  desktop runs it too: one render path to hold to `OutputStage`, with the
-  controls applied after the queue. Every build turns floating-point
-  contraction off (`-ffp-contract=off`, which GCC needs on top of the
-  source's pragma) and Linux and Android link `libm`: either side fusing a
-  multiply-add the other does not, or rounding differently from
-  `MathF.Round`, would break that match. `NativeOutputStageChecks` (in
-  `Tests/Flower.Tests.Decoding.Scenarios`) checks the match byte for byte on
-  the phone runners (`scripts/ios-decoding-tests.sh`,
-  `scripts/android-decoding-tests.sh`), in the Mono iOS suite, and in
-  `Flower.Tests` on whichever desktop runs it. Run one of them after changing
-  either side.
+  volume ramp, declick, dither) in the callback, which is why desktop runs it
+  too: it is Flower's only output stage and its only render path, with the
+  controls applied after the queue. The callback also times itself (gaps,
+  late callbacks, render overruns) for the render watchdog. Every build turns
+  floating-point contraction off (`-ffp-contract=off`, which GCC needs on top
+  of the source's pragma) and Linux and Android link `libm`, so every
+  platform renders the same bytes from the same input. The tests drive the
+  callback directly through `OutputStageHarness` (in
+  `Tests/Flower.Tests.Decoding.Scenarios`): the property tests in
+  `Tests/Flower.Tests/Audio` on each desktop and in the Mono iOS suite, and
+  `OutputStageChecks` on the phone runners
+  (`scripts/ios-decoding-tests.sh`, `scripts/android-decoding-tests.sh`).
+  Run them after changing it.
 
 The bridge includes no miniaudio header: it uses `struct ma_device*` only as an
 opaque key and never dereferences it, and miniaudio calls its render callback
 through a plain function pointer, which may live in another library. That is
 what lets desktop ship it beside the NuGet's miniaudio. Keep `miniaudio.h` out
 of it. Its exports are exactly `FLOWER_AUDIO_BRIDGE_API` (every build is
-`-fvisibility=hidden`), 20 symbols, which each build script checks.
+`-fvisibility=hidden`), 21 symbols, which the desktop build script checks.
 
 **After changing it, rerun all three build scripts.** Each writes
 `flowerbridge-source.sha256` beside its binaries, and CI's Linux job fails a
 tree whose bridge source no longer matches any of them.
 
 The CoreAudio diagnostics are absent from the desktop NuGet binary, which is
-why `MiniaudioSink` probes for them rather than assuming a platform; the bridge
-is probed the same way, so a platform with no build of it falls back to the
-managed render callback.
+why `MiniaudioSink` probes for them rather than assuming a platform. The
+bridge is probed the same way, and a platform with no build of it cannot play:
+`MiniaudioSink` refuses to open a device without one.
 
 ## Why this exact miniaudio commit
 
@@ -68,7 +68,7 @@ Builds `osx-arm64`/`osx-x64` natively, `linux-arm64`/`linux-x64` with GCC in a
 Debian container (x64 by its cross compiler, so nothing runs emulated), and
 `win-x64`/`win-arm64` with llvm-mingw's clang - not MSVC, whose C11
 `<stdatomic.h>` is still behind `/experimental:c11atomics`. Both images are
-pinned by digest in the script. It then checks each binary: 20 exports, no
+pinned by digest in the script. It then checks each binary: 21 exports, no
 dependency past libSystem / libc and libm / the UCRT and kernel32, glibc no
 newer than 2.17, and no fused multiply-add in the disassembly.
 

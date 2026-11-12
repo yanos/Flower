@@ -32,11 +32,11 @@
           Visible="false" />
   </ItemGroup>
 
-  <!-- A platform with no build of the bridge falls back to MiniaudioSink's
-       managed render callback, which works but is not what the other
-       platforms run, so say so at build time rather than only in a log. -->
+  <!-- The bridge is the only render path there is, so a platform with no
+       build of it could not play at all: that fails the build rather than
+       waiting to be found in a log. -->
   <Target Name="_FlowerBridgeMissing" BeforeTargets="Build"
           Condition="'$(FlowerBridgeFile)' == '' OR !Exists('$(FlowerBridgePath)')">
-    <Warning Text="No libflowerbridge for $(FlowerBridgeRid) (looked for $(FlowerBridgePath)), so playback falls back to the managed render callback. native/miniaudio/desktop/build.sh builds the desktop RIDs." />
+    <Error Text="No libflowerbridge for $(FlowerBridgeRid) (looked for $(FlowerBridgePath)), and Flower cannot render audio without it. native/miniaudio/desktop/build.sh builds the desktop RIDs." />
   </Target>
 </Project>

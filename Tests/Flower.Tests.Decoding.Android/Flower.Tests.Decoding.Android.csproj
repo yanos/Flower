@@ -10,7 +10,7 @@
        the two runs are only worth comparing if the only difference between
        them is the platform. No Avalonia, no audio output, no UI beyond a
        TextView - what is under test is decoding and the HTTP path beneath it,
-       plus the native output stage (NativeOutputStageChecks), and every
+       plus the native output stage (OutputStageChecks), and every
        dependency this does not have is one that cannot explain a failure. -->
 
   <PropertyGroup>
@@ -39,8 +39,9 @@
   </ItemGroup>
 
   <!-- The libminiaudio.so and libflowerbridge.so Flower.Android ships: this
-       runner never opens a device, but NativeOutputStageChecks calls the
-       bridge's render callback directly to hold it to OutputStage. The ABI
+       runner never opens a device, but OutputStageChecks calls the
+       bridge's render callback directly, to check the output stage this
+       build ships. The ABI
        is read off each file's directory.
 
        And not the package's own: Flower.Tests.Decoding.Scenarios reaches

@@ -190,16 +190,20 @@ deletion semantics (a deletion is a removal, never a delete) are in
   `FFAudioPackageVersion` in `Directory.Build.props`; the library lives in
   `../FFAudio.NET`, and `scripts/use-latest-main-ffaudio-package.sh` builds
   against an unpublished change.
-- The pipeline carries float32 from the decoder to `OutputStage`; only its
-  sample rate is negotiated (once, at startup, then frozen). `OutputStage`
-  requantises to the device's format (`DeviceSampleFormat`, S24 unless a device
-  refuses it, settled again at every open), with its dither and clamp following
-  that format. On every platform the stage runs as C in the render callback of
-  `libflowerbridge` (`native/miniaudio/flower_audio_bridge.c`), a port held to
-  `OutputStage` sample for sample: change one, change both.
-  `NativeOutputStageChecks` compares the two byte for byte on the phone
-  runners and in `Flower.Tests` on each desktop. The managed callback is only
-  a fallback, for a platform with no bridge build or `NativeBufferMs` 0.
+- The pipeline carries float32 from the decoder to the output stage; only its
+  sample rate is negotiated (once, at startup, then frozen). The output stage
+  (EQ, volume ramp, declick, dithered requantisation to the device's format:
+  `DeviceSampleFormat`, S24 unless a device refuses it, settled again at every
+  open) runs only in C, in the render callback of `libflowerbridge`
+  (`native/miniaudio/flower_audio_bridge.c`), which also times every callback
+  for the render watchdog. There is no managed render path: `MiniaudioSink`
+  refuses to open a device without the bridge, and `FlowerBridge.props` fails
+  a desktop build missing it. `Equalizer.BuildFrom` computes the EQ's
+  coefficients in C#. Tests drive the callback directly through
+  `OutputStageHarness` (`OutputStageTests`, `CanonicalFormatTests`,
+  `EqualizerTests`, `AudioCallbackTimingTests`, desktop and the iOS suite);
+  `OutputStageChecks` runs a few of the same properties on the phone
+  runners.
 - **Native libraries** (`native/miniaudio/`), all vendored as binaries. The
   NuGet ships only desktop miniaudio, so Android and iOS miniaudio is built
   here, pinned to the commit `Miniaudio-CS`'s bindings were generated against

@@ -16,8 +16,8 @@
     <InternalsVisibleTo Include="Flower.Tests.macOS" />
     <InternalsVisibleTo Include="Flower.Tests.Windows" />
     <InternalsVisibleTo Include="Flower.Tests.iOS.Suite" />
-    <!-- NativeOutputStageChecks drives NativeAudioBridge directly, on the
-         phone runners, to hold the C output stage to OutputStage. -->
+    <!-- OutputStageHarness drives NativeAudioBridge directly, for the output
+         stage's tests and the phone runners' checks of it. -->
     <InternalsVisibleTo Include="Flower.Tests.Decoding.Scenarios" />
   </ItemGroup>
 

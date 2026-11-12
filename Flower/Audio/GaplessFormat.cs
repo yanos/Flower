@@ -6,14 +6,14 @@ namespace Flower.Audio
     // sink stay continuous across tracks instead of reconfiguring/glitching at
     // each transition.
     //
-    // Interleaved stereo float32, normalised to +-1, from the decoder to
-    // OutputStage. Float because that is what nearly every source already is
-    // - AAC, MP3, Vorbis and Opus all decode to float natively - and what
-    // OutputStage does its arithmetic in, so the only conversion left is the
+    // Interleaved stereo float32, normalised to +-1, from the decoder to the
+    // output stage. Float because that is what nearly every source already is
+    // - AAC, MP3, Vorbis and Opus all decode to float natively - and what the
+    // output stage does its arithmetic in, so the only conversion left is the
     // one at the device write. It used to be packed S24, which put a round
     // trip through integer in front of the EQ, and the sample format had to be
     // negotiated with the device and frozen, because a decoder already open
-    // cannot change format. A device's format is now OutputStage's business
+    // cannot change format. A device's format is now the output stage's business
     // alone (DeviceSampleFormat). Float loses nothing on the way in: 16- and
     // 24-bit integer PCM are exact in a float's 24-bit mantissa.
     //

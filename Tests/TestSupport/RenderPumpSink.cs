@@ -20,18 +20,18 @@ namespace Flower.Tests.TestSupport;
 // tails were invisible to every test in the suite: the three failure shapes
 // the render path was actually reported to have.
 //
-// This one behaves the way the real callback does. It pulls a fixed-size
+// This one behaves the way the real render path does. It pulls a fixed-size
 // period with the non-blocking Read(), silence-pads a short read exactly as
-// DataCallback does, runs the captured bytes through a real OutputStage, and
-// records which periods came up short. What it captures is therefore what a
-// listener would have heard, silence and all - as S16, the device format
-// OutputStage defaults to, so Pcm's analysis reads it directly.
+// the bridge's callback does, and records which periods came up short. What
+// it captures is therefore the decode side's samples as a listener would
+// have been handed them, silence and all - narrowed to S16, so Pcm's analysis
+// reads it directly. The output stage's own arithmetic is tested on its own,
+// in C (OutputStageTests).
 public sealed class RenderPumpSink : IAudioSink
 {
     private readonly object _gate = new();
     private readonly MemoryStream _captured = new();
     private readonly int _periodFrames;
-    private readonly OutputStage _outputStage = new(GaplessFormat.DefaultSampleRate);
 
     private GaplessRingBuffer? _ring;
     private CancellationTokenSource? _pumpCts;
@@ -39,20 +39,7 @@ public sealed class RenderPumpSink : IAudioSink
 
     // periodFrames defaults to 10ms, small enough that a test's timings stay
     // fine-grained and large enough that the pump isn't spinning.
-    public RenderPumpSink(int periodFrames = 480, bool processOutputStage = false)
-    {
-        _periodFrames = periodFrames;
-        ProcessOutputStage = processOutputStage;
-
-        // Off by default: most tests want to assert on the exact samples the
-        // decode side produced, and the output stage's fades and dither would
-        // (correctly) change them. Turned on for tests about the output stage
-        // itself in the pipeline. Off, the period is narrowed to S16
-        // (Pcm.NarrowToS16), so the capture is in the same format either way.
-        _outputStage.Timing = new AudioTimingSettings { PrebufferMs = 0, DeclickFadeMs = 0, GainRampMs = 0, TransportFadeMs = 0, FadeOutWaitMs = 0 };
-    }
-
-    public bool ProcessOutputStage { get; }
+    public RenderPumpSink(int periodFrames = 480) => _periodFrames = periodFrames;
 
     public event EventHandler? Playing;
     public event EventHandler? Paused;
@@ -112,22 +99,14 @@ public sealed class RenderPumpSink : IAudioSink
     public Equalizer? AppliedEqualizer { get; private set; }
     public AudioTimingSettings? AppliedTiming { get; private set; }
 
-    // Always the default: its output stage is built for it.
+    // Always the default, which is what it paces itself by.
     public PcmFormat Format => PcmFormat.Default;
 
     public void Start(GaplessRingBuffer ringBuffer) => _ring = ringBuffer;
 
-    public void ApplyEqualizer(Equalizer? equalizer)
-    {
-        AppliedEqualizer = equalizer;
-        _outputStage.Equalizer = equalizer;
-    }
+    public void ApplyEqualizer(Equalizer? equalizer) => AppliedEqualizer = equalizer;
 
-    public void ApplyTiming(AudioTimingSettings timing)
-    {
-        AppliedTiming = timing;
-        _outputStage.Timing = timing;
-    }
+    public void ApplyTiming(AudioTimingSettings timing) => AppliedTiming = timing;
 
     public IReadOnlyList<AudioOutputDevice> OutputDevices { get; set; } = [];
     public string? OutputDeviceId { get; private set; }
@@ -161,7 +140,7 @@ public sealed class RenderPumpSink : IAudioSink
     {
         var samples = new float[_periodFrames * (int)GaplessFormat.Channels];
         var period = MemoryMarshal.AsBytes(samples.AsSpan()).Length;
-        var output = new byte[_periodFrames * _outputStage.DeviceFormat.BytesPerFrame()];
+        var output = new byte[_periodFrames * DeviceSampleFormat.S16.BytesPerFrame()];
         var delayMs = Math.Max(1, _periodFrames * 1000 / (int)Format.SampleRate);
 
         while (!token.IsCancellationRequested)
@@ -169,7 +148,7 @@ public sealed class RenderPumpSink : IAudioSink
             var generation = ring.Generation;
             var source = MemoryMarshal.AsBytes(samples.AsSpan());
 
-            // Exactly what DataCallback does: one non-blocking read, then
+            // What the render callback does: one non-blocking read, then
             // silence for whatever it did not get.
             var read = ring.Read(source);
             if (read < period)
@@ -180,10 +159,7 @@ public sealed class RenderPumpSink : IAudioSink
                     Interlocked.Increment(ref _silentPeriods);
             }
 
-            if (ProcessOutputStage)
-                _outputStage.Process(samples, output, generation);
-            else
-                Pcm.NarrowToS16(source, output);
+            Pcm.NarrowToS16(source, output);
 
             lock (_gate)
             {

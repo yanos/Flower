@@ -88,7 +88,7 @@ public class FfmpegTrackDecoderTests : IDisposable
 
     // The claim carrying the pipeline as float rests on: a 24-bit sample is
     // exact in a float's 24-bit mantissa, so a hi-res file goes through FFmpeg
-    // into the ring and out of a 24-bit device's OutputStage as the very
+    // into the ring and out of a 24-bit device's output stage as the very
     // integers it holds. Stated as a test rather than reasoned about, because
     // it is also the end of the line for the bits below 16 - the ones LibVLC
     // dropped, and the only reason a 24-bit device is asked for at all.
@@ -109,17 +109,15 @@ public class FfmpegTrackDecoderTests : IDisposable
         var pcm = await DrainAsync(ring, decoder, expectedBytes);
         Assert.Equal(expectedBytes, pcm.Length);
 
-        // Past the declick fade-in a new stage gives its first buffer, so
-        // what is measured is the requantisation and nothing else.
-        var stage = new OutputStage(PcmFormat.Default.SampleRate, DeviceSampleFormat.S24)
-        {
-            Timing = new AudioTimingSettings { GainRampMs = 0, DeclickFadeMs = 0, TransportFadeMs = 0, FadeOutWaitMs = 0 },
-        };
-        stage.Process(new float[2], new byte[DeviceSampleFormat.S24.BytesPerFrame()], generation: 1);
+        // Past the declick fade-in the first audio rendered gets, so what is
+        // measured is the requantisation and nothing else.
+        using var stage = new OutputStageHarness(
+            DeviceSampleFormat.S24,
+            new AudioTimingSettings { GainRampMs = 0, DeclickFadeMs = 0, TransportFadeMs = 0, FadeOutWaitMs = 0 },
+            PcmFormat.Default.SampleRate);
+        stage.RenderNothing(1);
 
-        var samples = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, float>(pcm.AsSpan()).ToArray();
-        var device = new byte[samples.Length * DeviceSampleFormat.S24.BytesPerSample()];
-        stage.Process(samples, device, generation: 1);
+        var device = stage.Render(System.Runtime.InteropServices.MemoryMarshal.Cast<byte, float>(pcm.AsSpan()));
 
         for (var frame = 0; frame < frames; frame++)
         {

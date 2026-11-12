@@ -20,7 +20,7 @@ namespace Flower.Audio
     {
         // How much PCM must be buffered before a freshly started or freshly
         // seeked stream is allowed to render. Below this the callback emits
-        // silence instead of a starved trickle - see MiniaudioSink's prime
+        // silence instead of a starved trickle - see AudioFeeder's prime
         // latch. Costs exactly this much added latency on a start, and nothing
         // at all on a gapless handover (the ring is already full).
         public int PrebufferMs { get; set; } = 200;
@@ -53,8 +53,8 @@ namespace Flower.Audio
         // no device at all), and a pause must not hang the UI thread.
         public int FadeOutWaitMs { get; set; } = 30;
 
-        // How much PCM the native bridge holds ahead of the device on the
-        // platforms that have one (see NativeAudioBridge). This is the only
+        // How much PCM the native bridge holds ahead of the device (see
+        // NativeAudioBridge). This is the only
         // buffer a GC pause cannot stall, so it is what decides how long a
         // pause has to be before it is audible: iPhone logs put almost every
         // stall under 200ms with a rare outlier near 700ms, and 300 buys all
@@ -63,14 +63,17 @@ namespace Flower.Audio
         // callback, so a volume or EQ change reaches the next device buffer
         // however deep this is. (It used to cost exactly this many
         // milliseconds of lag on both - AUDIO-QUALITY-PLAN.md, finding M.)
-        // Zero disables the bridge and puts the render callback back in
-        // managed code.
+        // At least 100: the bridge is the only render path, so it has to hold
+        // a device period or two whatever is asked. Zero used to put the
+        // render callback back in managed code, which no longer exists.
         //
         // The one value here that is not live: it sizes a buffer allocated
         // when the output device is opened, so a change takes effect on the
         // next device open (an output switch, or a restart) rather than
         // immediately like the rest.
         public int NativeBufferMs { get; set; } = 300;
+
+        public const int MinNativeBufferMs = 100;
 
         // Clamped on the way in rather than trusted: this file is meant to be
         // hand-edited, and a typo that puts a two-second fade on every pause
@@ -84,7 +87,7 @@ namespace Flower.Audio
             DeclickFadeMs = Math.Clamp(DeclickFadeMs, 0, 200),
             GainRampMs = Math.Clamp(GainRampMs, 0, 500),
             FadeOutWaitMs = Math.Clamp(FadeOutWaitMs, 0, 500),
-            NativeBufferMs = Math.Clamp(NativeBufferMs, 0, 2000),
+            NativeBufferMs = Math.Clamp(NativeBufferMs, MinNativeBufferMs, 2000),
         };
     }
 }

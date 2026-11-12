@@ -4,9 +4,9 @@ using System.Threading;
 
 namespace Flower.Audio
 {
-    // When the render path may play, shared by both of them: MiniaudioSink's
-    // managed callback and AudioFeeder, which fills the native bridge. Each
-    // used to keep its own copy of the first half of this.
+    // When the render path may play, run by AudioFeeder, which fills the
+    // native bridge and primes it. MiniaudioSink's managed render callback
+    // ran it too, until there was no managed render callback.
     //
     // Two ways to be closed, one way to open:
     //

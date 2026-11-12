@@ -8,8 +8,8 @@ namespace Flower.Audio
     // ordinary managed thread.
     //
     // This is the half of the fix that gets managed code off the real-time
-    // thread. The prime latch the managed callback runs is run here instead,
-    // some hundreds of milliseconds ahead of the speaker, and the native
+    // thread. The prime latch runs here, some hundreds of milliseconds ahead
+    // of the speaker, and the native
     // callback is left with the output stage over whatever this has queued. A
     // GC pause that suspends this thread is then just a pause in refilling a
     // buffer already deep enough to play through it, rather than a hole in
@@ -68,8 +68,7 @@ namespace Flower.Audio
         private long _pendingFlush;
         private long _flushDeadlineTimestamp;
 
-        // Shared with MiniaudioSink's managed callback - see PrimeLatch. Its
-        // "buffered" here is the bridge plus the ring behind it: while the
+        // See PrimeLatch. Its "buffered" here is the bridge plus the ring behind it: while the
         // latch is closed this thread keeps filling the bridge, so the bridge
         // alone tops out at NativeBufferMs, short of what a rebuffer waits for.
         private readonly PrimeLatch _latch = new();

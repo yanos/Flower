@@ -20,10 +20,10 @@ namespace Flower.Audio
     //
     // Desktop runs it too, though not for the reason it was built. It exists
     // because Mono suspends the render thread for a GC on the phones, which
-    // desktop's CoreCLR does not - but it is also where the output stage runs
-    // after the queue rather than before it (finding M), and one render path
-    // is one thing to hold to OutputStage rather than two
-    // (AUDIO-QUALITY-PLAN.md, Phase 6).
+    // desktop's CoreCLR does not - but it is also where the output stage runs,
+    // after the queue rather than before it (finding M), and it is the only
+    // render path there is: Flower has no managed render callback to fall
+    // back to (AUDIO-QUALITY-PLAN.md, Phase 6).
     internal sealed unsafe class NativeAudioBridge : IAudioBridge
     {
         // libflowerbridge.so, libflowerbridge.dylib, flowerbridge.dll, or
@@ -31,6 +31,7 @@ namespace Flower.Audio
         // Flower.iOS's DirectPInvoke find.
         internal const string LibraryName = "flowerbridge";
 
+        // flower_audio_bridge_snapshot, field for field.
         [StructLayout(LayoutKind.Sequential)]
         private struct NativeSnapshot
         {
@@ -42,11 +43,23 @@ namespace Flower.Audio
             public ulong UnderrunCount;
             public ulong LastPcmFingerprint;
             public ulong LastReadBytes;
+            public ulong TimedCallbackCount;
+            public ulong TotalFrames;
+            public ulong InterestingGapCount;
+            public ulong RenderOverrunCount;
+            public ulong MaxGapNanoseconds;
+            public ulong ExpectedNanosecondsAtMaxGap;
+            public ulong MaxLateNanoseconds;
+            public ulong MaxRenderNanoseconds;
             public uint MaxIdenticalCallbackRun;
+            public uint MinFrames;
+            public uint MaxFrames;
+            public uint PrecedingFramesAtMaxGap;
+            public uint CurrentFramesAtMaxGap;
         }
 
         [DllImport(LibraryName, EntryPoint = "flower_audio_bridge_create")]
-        private static extern IntPtr Create(uint capacityFrames, uint channels, uint deviceBytesPerSample);
+        private static extern IntPtr Create(uint capacityFrames, uint channels, uint deviceBytesPerSample, uint sampleRate);
 
         [DllImport(LibraryName, EntryPoint = "flower_audio_bridge_destroy")]
         private static extern void Destroy(IntPtr bridge);
@@ -102,6 +115,9 @@ namespace Flower.Audio
         [DllImport(LibraryName, EntryPoint = "flower_audio_bridge_take_snapshot")]
         private static extern void NativeTakeSnapshot(IntPtr bridge, out NativeSnapshot snapshot);
 
+        [DllImport(LibraryName, EntryPoint = "flower_audio_bridge_reset_timing")]
+        private static extern void NativeResetTiming(IntPtr bridge);
+
         private static bool? _isAvailable;
 
         // MiniaudioSink's static constructor is where iOS on Mono is told
@@ -111,10 +127,9 @@ namespace Flower.Audio
         static NativeAudioBridge() => RuntimeHelpers.RunClassConstructor(typeof(MiniaudioSink).TypeHandle);
 
         // Probed by calling the cheapest entry point there is and catching the
-        // load failure, rather than inferred from OperatingSystem.IsAndroid()
-        // or IsIOS(): what actually decides this is which miniaudio binary got
-        // linked, and a build that vendors one on a platform this doesn't know
-        // about should get the native path without a code change here.
+        // load failure. Every platform Flower ships carries the library, so
+        // false is a packaging mistake, which MiniaudioSink refuses to play
+        // through rather than render silence: there is no other render path.
         public static bool IsAvailable
         {
             get
@@ -125,12 +140,11 @@ namespace Flower.Audio
                 try
                 {
                     // The newest entry point too, called on no bridge, which
-                    // it ignores. A binary built before the output stage moved
-                    // into the callback has the old create() signature and a
-                    // bridge carrying the device's format rather than float;
-                    // without this it would pass the probe and be handed
-                    // arguments it reads as something else.
-                    NativeSetTargetGain(IntPtr.Zero, 1f);
+                    // it ignores. A binary older than the callback timing has
+                    // a create() without the sample rate and a smaller
+                    // snapshot; without this it would pass the probe and be
+                    // handed arguments it reads as something else.
+                    NativeResetTiming(IntPtr.Zero);
                     _isAvailable = DataCallback() != IntPtr.Zero;
                 }
                 catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
@@ -147,20 +161,19 @@ namespace Flower.Audio
 
         private NativeAudioBridge(IntPtr handle) => _handle = handle;
 
-        // Null when the native side could not allocate, which the caller
-        // treats the same way it treats a platform without the symbols at
-        // all: keep the managed callback.
+        // Null when the library is missing or the native side could not
+        // allocate.
         //
         // The bridge carries the pipeline's float, so its capacity is in the
         // pipeline's frames; the device format is what the native output
-        // stage requantises to on the way out, and is fixed for the bridge's
-        // life because a bridge is made per device open.
-        public static NativeAudioBridge? TryCreate(int capacityFrames, DeviceSampleFormat deviceFormat)
+        // stage requantises to on the way out, and it and the rate are fixed
+        // for the bridge's life because a bridge is made per device open.
+        public static NativeAudioBridge? TryCreate(int capacityFrames, DeviceSampleFormat deviceFormat, uint sampleRate)
         {
-            if (!IsAvailable || capacityFrames <= 0)
+            if (!IsAvailable || capacityFrames <= 0 || sampleRate == 0)
                 return null;
 
-            var handle = Create((uint)capacityFrames, GaplessFormat.Channels, (uint)deviceFormat.BytesPerSample());
+            var handle = Create((uint)capacityFrames, GaplessFormat.Channels, (uint)deviceFormat.BytesPerSample(), sampleRate);
             return handle == IntPtr.Zero ? null : new NativeAudioBridge(handle);
         }
 
@@ -170,7 +183,9 @@ namespace Flower.Audio
         public static delegate* unmanaged[Cdecl]<ma_device*, void*, void*, uint, void> RenderCallback =>
             (delegate* unmanaged[Cdecl]<ma_device*, void*, void*, uint, void>)DataCallback();
 
-        public void AttachTo(ma_device* device) => Attach(_handle, device);
+        // False when the native registry is full, and the callback would
+        // then find no bridge for this device and render nothing.
+        public bool AttachTo(ma_device* device) => Attach(_handle, device) != 0;
 
         public void DetachFromDevice() => Detach(_handle);
 
@@ -241,8 +256,27 @@ namespace Flower.Audio
                 (long)snapshot.UnderrunCount,
                 (long)snapshot.LastPcmFingerprint,
                 (long)snapshot.LastReadBytes,
-                (int)snapshot.MaxIdenticalCallbackRun);
+                (int)snapshot.MaxIdenticalCallbackRun,
+                new AudioCallbackTimingSnapshot(
+                    (long)snapshot.InterestingGapCount,
+                    (long)snapshot.RenderOverrunCount,
+                    (long)snapshot.TimedCallbackCount,
+                    (long)snapshot.TotalFrames,
+                    (long)snapshot.MaxGapNanoseconds,
+                    (long)snapshot.ExpectedNanosecondsAtMaxGap,
+                    (long)snapshot.MaxLateNanoseconds,
+                    (long)snapshot.MaxRenderNanoseconds,
+                    (int)snapshot.MinFrames,
+                    (int)snapshot.MaxFrames,
+                    (int)snapshot.PrecedingFramesAtMaxGap,
+                    (int)snapshot.CurrentFramesAtMaxGap));
         }
+
+        // The gap across a pause is the device not running, not the audio
+        // thread being late, so the sink forgets the last callback around
+        // every stop and start. Not on IAudioBridge, like the controls: the
+        // feeder never touches it.
+        public void ResetTiming() => NativeResetTiming(_handle);
 
         public void Dispose()
         {

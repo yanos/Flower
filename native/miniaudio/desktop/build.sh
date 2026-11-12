@@ -42,7 +42,7 @@ COMMON_FLAGS="-std=c11 -O2 -ffp-contract=off -fvisibility=hidden -Wall -Wextra -
 # is what stands in for it), and -pedantic objects to returning the callback
 # as a void*, which is the header's whole reason for not including miniaudio.
 GCC_FLAGS="-Wno-unknown-pragmas -Wno-pedantic"
-EXPORT_COUNT=20
+EXPORT_COUNT=21
 
 rm -rf "$BUILD"
 mkdir -p "$BUILD"

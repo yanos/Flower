@@ -89,13 +89,10 @@ The next candidate is still whatever grows into a feature of its own.
 Things that look like defects on a first read and are not. Recorded so the next
 review does not spend its time here. From the September review unless noted.
 
-- **`OutputStage`'s fade state being written from two threads.** `BeginFadeIn`
-  and `ArmFadeIn` write `_fadeInLength`, `_fadeInRemaining`, `_fadeOutLength` and
-  `_fadeOutRemaining` from the UI thread, and the render callback owns all four.
-  It is safe: both callers are `MiniaudioSink.Resume`/`Pause`/`Stop`, all under
-  `_gate`, and all with the device stopped — `ma_device_stop` waits for the
-  callback to return before it does. A divide-by-zero on
-  `_fadeOutRemaining / (float)_fadeOutLength` is not reachable.
+- **`OutputStage`'s fade state being written from two threads.** Moot since
+  November 2026: `OutputStage` was deleted with the managed render callback
+  (AUDIO-QUALITY-PLAN.md, Phase 6 step 8). The bridge's transport envelope,
+  which replaced it, reaches the callback only through atomics.
 
 - **`GaplessRingBuffer`'s generation protocol.** The index-before-generation
   publication order, the "counterpart has not rebased yet, treat as empty" rule,

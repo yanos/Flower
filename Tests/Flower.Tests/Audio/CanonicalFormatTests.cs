@@ -2,14 +2,15 @@ using System;
 using System.Runtime.InteropServices;
 
 using Flower.Audio;
+using Flower.Tests.Decoding.Scenarios;
 
 using Miniaudio;
 
 namespace Flower.Tests.Audio;
 
-// The canonical PCM format, float from the decoder to OutputStage, and the
-// one conversion out of it: requantisation to whichever integer format the
-// device was opened in.
+// The canonical PCM format, float from the decoder to the output stage, and
+// the one conversion out of it: requantisation to whichever integer format
+// the device was opened in, in libflowerbridge's render callback.
 //
 // What float has to be held to is that it costs an integer source nothing.
 // A 16- or 24-bit sample is exact in a float's 24-bit mantissa, and scaling it
@@ -18,7 +19,7 @@ namespace Flower.Tests.Audio;
 // format that survives this exactly, and why DeviceSampleFormat stops there.
 // OutputStageTests holds the S16 path to the same bar.
 //
-// Everything here is arithmetic over spans - no device, no decoder.
+// No device and no decoder: OutputStageHarness calls the callback directly.
 public class CanonicalFormatTests
 {
     private const int Channels = (int)GaplessFormat.Channels;
@@ -50,55 +51,22 @@ public class CanonicalFormatTests
         return pcm;
     }
 
-    private static int[] UnpackS24(ReadOnlySpan<byte> bytes)
+    // Past the declick fade-in that the first audio rendered gets, so a test
+    // measuring something else is not measuring that.
+    private static OutputStageHarness Stage(DeviceSampleFormat format)
     {
-        var samples = new int[bytes.Length / 3];
-        for (var i = 0; i < samples.Length; i++)
-        {
-            var value = bytes[i * 3] | (bytes[i * 3 + 1] << 8) | (bytes[i * 3 + 2] << 16);
-            if ((value & 0x00800000) != 0)
-                value |= unchecked((int)0xFF000000);
-
-            samples[i] = value;
-        }
-
-        return samples;
-    }
-
-    private static int[] UnpackS16(ReadOnlySpan<byte> bytes)
-    {
-        var shorts = MemoryMarshal.Cast<byte, short>(bytes);
-        var samples = new int[shorts.Length];
-        for (var i = 0; i < shorts.Length; i++)
-            samples[i] = shorts[i];
-
-        return samples;
-    }
-
-    private static int[] Unpack(DeviceSampleFormat format, ReadOnlySpan<byte> bytes) =>
-        format == DeviceSampleFormat.S16 ? UnpackS16(bytes) : UnpackS24(bytes);
-
-    // Past the declick fade-in that the first buffer of any new generation
-    // gets, so a test measuring something else is not measuring that.
-    private static OutputStage Stage(DeviceSampleFormat format)
-    {
-        var stage = new OutputStage(PcmFormat.Default.SampleRate, format) { Timing = Silent() };
-        stage.TargetGain = 1f;
-        stage.Process(new float[4800 * Channels], new byte[4800 * format.BytesPerFrame()], generation: 1);
+        var stage = new OutputStageHarness(format, Silent());
+        stage.RenderNothing(4800);
         return stage;
     }
 
-    private static int[] Render(OutputStage stage, float[] pcm)
-    {
-        var output = new byte[pcm.Length * stage.DeviceFormat.BytesPerSample()];
-        stage.Process(pcm, output, generation: 1);
-        return Unpack(stage.DeviceFormat, output);
-    }
+    private static int[] Render(OutputStageHarness stage, float[] pcm) =>
+        OutputStageHarness.Unpack(stage.Format, stage.Render(pcm));
 
     [Fact]
     public void At_24_bits_a_unity_gain_pass_is_bit_identical()
     {
-        var stage = Stage(DeviceSampleFormat.S24);
+        using var stage = Stage(DeviceSampleFormat.S24);
 
         var samples = new int[4800 * Channels];
         for (var i = 0; i < samples.Length; i++)
@@ -121,7 +89,7 @@ public class CanonicalFormatTests
     [Fact]
     public void Negative_24_bit_samples_survive_the_round_trip()
     {
-        var stage = Stage(DeviceSampleFormat.S24);
+        using var stage = Stage(DeviceSampleFormat.S24);
 
         int[] samples = [S24Min, -1, -256, -8_388_607, 0, 1, 256, S24Max];
 
@@ -138,7 +106,7 @@ public class CanonicalFormatTests
     [Fact]
     public void A_tone_below_the_16_bit_noise_floor_survives_at_24()
     {
-        var stage = Stage(DeviceSampleFormat.S24);
+        using var stage = Stage(DeviceSampleFormat.S24);
 
         const double amplitude = S24Max / 65536.0; // -96dBFS, in 24-bit counts
         var samples = new int[2400 * Channels];
@@ -163,7 +131,7 @@ public class CanonicalFormatTests
     // above -48dBFS - the widening would make the output worse, not better.
     //
     // Reached the only way it can be reached, since nothing before the
-    // requantiser can clip on its own and TargetGain is clamped to unity: an
+    // requantiser can clip on its own and the gain is clamped to unity: an
     // EQ boost, which is the user asking for it.
     [Fact]
     public void A_boost_past_full_scale_clamps_at_24_bit_full_scale()
@@ -171,7 +139,7 @@ public class CanonicalFormatTests
         var boosted = new EqualizerSettings { Enabled = true };
         Array.Fill(boosted.BandGainsDb, 12.0);
 
-        var stage = Stage(DeviceSampleFormat.S24);
+        using var stage = Stage(DeviceSampleFormat.S24);
         stage.Equalizer = Equalizer.BuildFrom(boosted, PcmFormat.Default.SampleRate);
 
         var samples = new int[4800 * Channels];
@@ -204,7 +172,7 @@ public class CanonicalFormatTests
     [InlineData(DeviceSampleFormat.S24, S24Max)]
     public void Requantisation_error_is_at_most_one_lsb_of_the_destination_format(DeviceSampleFormat format, int fullScale)
     {
-        var stage = Stage(format);
+        using var stage = Stage(format);
 
         // A gain that cannot be represented as an exact division, so every
         // sample genuinely needs rounding rather than passing through the
@@ -227,7 +195,7 @@ public class CanonicalFormatTests
     }
 
     // A device that refused 24 bits, playing a 24-bit file. The decoder no
-    // longer knows what the device took, so the narrowing is OutputStage's,
+    // longer knows what the device took, so the narrowing is the output stage's,
     // and it has to be a requantisation - dithered, within the same one and a
     // half counts - rather than the low byte simply dropped, which is a
     // truncation: biased downward by half an LSB and correlated with the
@@ -235,7 +203,7 @@ public class CanonicalFormatTests
     [Fact]
     public void A_24_bit_source_on_a_16_bit_device_is_requantised_rather_than_truncated()
     {
-        var stage = Stage(DeviceSampleFormat.S16);
+        using var stage = Stage(DeviceSampleFormat.S16);
 
         var count = 4800 * Channels;
         var source = new int[count];

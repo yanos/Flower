@@ -9,6 +9,11 @@
    from the Miniaudio-CS NuGet (AUDIO-QUALITY-PLAN.md, Phase 6 steps 5-6).
    Keep it that way: an #include "miniaudio.h" here ends that. */
 
+/* clock_gettime, which -std=c11 hides without asking for POSIX. */
+#if !defined(_WIN32)
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #include "flower_audio_bridge.h"
 
 #include <math.h>
@@ -16,7 +21,17 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define FLOWER_AUDIO_BRIDGE_DEVICE_CAPACITY 4
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#else
+#include <time.h>
+#endif
+
+/* How many bridges can be attached at once. The app opens one device at a
+   time; the tests attach several in parallel, each to a dummy device. The
+   callback scans this linearly, which at 16 is still nothing. */
+#define FLOWER_AUDIO_BRIDGE_DEVICE_CAPACITY 16
 #define FLOWER_AUDIO_BRIDGE_FINGERPRINT_STRIDE 64
 
 /* The pipeline is stereo end to end (GaplessFormat.Channels), and the EQ's
@@ -33,6 +48,10 @@
 /* Equalizer.BandCount. */
 #define FLOWER_AUDIO_BRIDGE_EQ_MAX_BANDS 10
 
+/* A callback arriving this long after the previous one started is counted
+   as an interesting gap - see flower_audio_bridge_snapshot. */
+#define FLOWER_AUDIO_BRIDGE_INTERESTING_GAP_NS 60000000ULL
+
 /* Set on eqMiddle when the producer has published a slot the callback has
    not picked up yet. Slot indices are 0..2, so bit 2 is free. */
 #define FLOWER_AUDIO_BRIDGE_EQ_FRESH 4u
@@ -47,10 +66,11 @@ _Static_assert(ATOMIC_LLONG_LOCK_FREE == 2, "64-bit atomics must be lock-free on
 _Static_assert(ATOMIC_INT_LOCK_FREE == 2, "32-bit atomics must be lock-free on the render thread");
 _Static_assert(ATOMIC_POINTER_LOCK_FREE == 2, "pointer atomics must be lock-free on the render thread");
 
-/* The output stage below is held to Flower/Audio/OutputStage.cs sample for
-   sample, which the C# can only promise if neither side fuses a multiply
-   and an add the other does not: RyuJIT never contracts, and clang would
-   by default wherever the target has an FMA. */
+/* No fused multiply-adds, so every platform renders the same bytes from the
+   same input: clang fuses by default wherever the target has an FMA, which
+   is every arm64 and only some x64 builds. Fusing would buy accuracy around
+   -138dBFS at S24, below the dither, and speed nothing needs. GCC also needs
+   -ffp-contract=off on the command line, which every build passes. */
 #pragma STDC FP_CONTRACT OFF
 
 /* One EQ curve as Equalizer.BuildFrom computed it: RBJ peaking biquads,
@@ -97,6 +117,12 @@ struct flower_audio_bridge
     float negativeFullScale;
     float positiveFullScale;
 
+    /* The device's rate, for the timing diagnostics' idea of a period. */
+    uint32_t sampleRate;
+#if defined(_WIN32)
+    uint64_t counterFrequency;
+#endif
+
     /* The transport envelope. Targets and step come from any thread as
        float bits; gain itself is touched only by the render callback. */
     _Atomic uint32_t fadeTargetBits;
@@ -142,6 +168,26 @@ struct flower_audio_bridge
     _Atomic uint64_t lastReadBytes;
     _Atomic uint32_t consecutiveIdenticalCallbacks;
     _Atomic uint32_t maxIdenticalCallbackRun;
+
+    /* Callback timing. The previous callback's start and size are the
+       callback's own; the rest is windowed and reset by take_snapshot, which
+       is why it is atomic. timingResetRequested is how reset_timing reaches
+       the callback-owned half from another thread. */
+    uint64_t previousStartedAt;
+    uint32_t previousFrameCount;
+    _Atomic uint32_t timingResetRequested;
+    _Atomic uint64_t timedCallbackCount;
+    _Atomic uint64_t totalFrames;
+    _Atomic uint64_t interestingGapCount;
+    _Atomic uint64_t renderOverrunCount;
+    _Atomic uint64_t maxGapNanoseconds;
+    _Atomic uint64_t expectedNanosecondsAtMaxGap;
+    _Atomic uint64_t maxLateNanoseconds;
+    _Atomic uint64_t maxRenderNanoseconds;
+    _Atomic uint32_t minFrames;
+    _Atomic uint32_t maxFrames;
+    _Atomic uint32_t precedingFramesAtMaxGap;
+    _Atomic uint32_t currentFramesAtMaxGap;
 };
 
 typedef struct
@@ -166,7 +212,7 @@ static uint32_t flower_audio_bridge_float_to_bits(float value)
     return bits;
 }
 
-flower_audio_bridge* flower_audio_bridge_create(uint32_t capacityFrames, uint32_t channels, uint32_t deviceBytesPerSample)
+flower_audio_bridge* flower_audio_bridge_create(uint32_t capacityFrames, uint32_t channels, uint32_t deviceBytesPerSample, uint32_t sampleRate)
 {
     flower_audio_bridge* pBridge;
     uint32_t bytesPerFrame = FLOWER_AUDIO_BRIDGE_CHANNELS * (uint32_t)sizeof(float);
@@ -181,6 +227,10 @@ flower_audio_bridge* flower_audio_bridge_create(uint32_t capacityFrames, uint32_
     }
 
     if (deviceBytesPerSample != 2 && deviceBytesPerSample != 3) {
+        return NULL;
+    }
+
+    if (sampleRate == 0) {
         return NULL;
     }
 
@@ -213,6 +263,15 @@ flower_audio_bridge* flower_audio_bridge_create(uint32_t capacityFrames, uint32_
     pBridge->negativeFullScale = -(float)(1 << (bits - 1));
     pBridge->positiveFullScale = (float)((1 << (bits - 1)) - 1);
 
+    pBridge->sampleRate = sampleRate;
+#if defined(_WIN32)
+    {
+        LARGE_INTEGER frequency;
+        QueryPerformanceFrequency(&frequency);
+        pBridge->counterFrequency = (uint64_t)frequency.QuadPart;
+    }
+#endif
+
     pBridge->gain = 0.0f;
     atomic_store_explicit(&pBridge->fadeTargetBits, flower_audio_bridge_float_to_bits(1.0f), memory_order_relaxed);
     atomic_store_explicit(&pBridge->fadeStepBits, flower_audio_bridge_float_to_bits(1.0f), memory_order_relaxed);
@@ -225,7 +284,7 @@ flower_audio_bridge* flower_audio_bridge_create(uint32_t capacityFrames, uint32_
     atomic_store_explicit(&pBridge->eqMiddle, 1u, memory_order_relaxed);
     pBridge->eqBack = 2;
 
-    /* OutputStage's seed, so the two dither the same. */
+    /* Any non-zero seed: xorshift never leaves zero once it is there. */
     pBridge->ditherState = 0x9E3779B9u;
     pBridge->previousDither = 0.0f;
     return pBridge;
@@ -295,10 +354,13 @@ void flower_audio_bridge_detach(flower_audio_bridge* pBridge)
         return;
     }
 
+    /* The bridge is cleared before the device, which is what frees the
+       slot: the other way round, an attach could claim the slot in between
+       and have its bridge cleared from under it. */
     for (i = 0; i < FLOWER_AUDIO_BRIDGE_DEVICE_CAPACITY; ++i) {
         if (atomic_load_explicit(&g_flowerAudioBridges[i].pBridge, memory_order_acquire) == pBridge) {
-            atomic_store_explicit(&g_flowerAudioBridges[i].pDevice, NULL, memory_order_release);
             atomic_store_explicit(&g_flowerAudioBridges[i].pBridge, NULL, memory_order_release);
+            atomic_store_explicit(&g_flowerAudioBridges[i].pDevice, NULL, memory_order_release);
         }
     }
 }
@@ -371,9 +433,10 @@ uint32_t flower_audio_bridge_write(flower_audio_bridge* pBridge, const void* pDa
     return toWrite;
 }
 
-/* OutputStage.ArmFadeIn: the next audio rendered comes from somewhere else
-   entirely - after a flush, or after a gap the stream itself left - so it is
-   faded in over DeclickFadeMs rather than stepped in at full level. */
+/* The declick: the next audio rendered comes from somewhere else entirely -
+   after a flush, or after a gap the stream itself left - and its first
+   sample is rarely zero, so it is faded in over DeclickFadeMs rather than
+   stepped in at full level. */
 static void flower_audio_bridge_arm_declick(flower_audio_bridge* pBridge)
 {
     uint32_t length = atomic_load_explicit(&pBridge->declickFadeFrames, memory_order_relaxed);
@@ -467,8 +530,8 @@ void flower_audio_bridge_set_target_gain(flower_audio_bridge* pBridge, float gai
         return;
     }
 
-    /* OutputStage.TargetGain's clamp, written so that a NaN lands on
-       silence rather than passing both comparisons. */
+    /* Written so that a NaN lands on silence rather than passing both
+       comparisons. */
     if (!(gain > 0.0f)) {
         gain = 0.0f;
     } else if (gain > 1.0f) {
@@ -538,16 +601,57 @@ void flower_audio_bridge_take_snapshot(flower_audio_bridge* pBridge, flower_audi
     pSnapshot->lastPcmFingerprint = atomic_load_explicit(&pBridge->lastPcmFingerprint, memory_order_relaxed);
     pSnapshot->lastReadBytes = atomic_load_explicit(&pBridge->lastReadBytes, memory_order_relaxed);
     pSnapshot->maxIdenticalCallbackRun = atomic_exchange_explicit(&pBridge->maxIdenticalCallbackRun, 0, memory_order_relaxed);
+
+    pSnapshot->timedCallbackCount = atomic_exchange_explicit(&pBridge->timedCallbackCount, 0, memory_order_relaxed);
+    pSnapshot->totalFrames = atomic_exchange_explicit(&pBridge->totalFrames, 0, memory_order_relaxed);
+    pSnapshot->interestingGapCount = atomic_exchange_explicit(&pBridge->interestingGapCount, 0, memory_order_relaxed);
+    pSnapshot->renderOverrunCount = atomic_exchange_explicit(&pBridge->renderOverrunCount, 0, memory_order_relaxed);
+    pSnapshot->maxGapNanoseconds = atomic_exchange_explicit(&pBridge->maxGapNanoseconds, 0, memory_order_relaxed);
+    pSnapshot->expectedNanosecondsAtMaxGap = atomic_exchange_explicit(&pBridge->expectedNanosecondsAtMaxGap, 0, memory_order_relaxed);
+    pSnapshot->maxLateNanoseconds = atomic_exchange_explicit(&pBridge->maxLateNanoseconds, 0, memory_order_relaxed);
+    pSnapshot->maxRenderNanoseconds = atomic_exchange_explicit(&pBridge->maxRenderNanoseconds, 0, memory_order_relaxed);
+    pSnapshot->minFrames = atomic_exchange_explicit(&pBridge->minFrames, 0, memory_order_relaxed);
+    pSnapshot->maxFrames = atomic_exchange_explicit(&pBridge->maxFrames, 0, memory_order_relaxed);
+    pSnapshot->precedingFramesAtMaxGap = atomic_exchange_explicit(&pBridge->precedingFramesAtMaxGap, 0, memory_order_relaxed);
+    pSnapshot->currentFramesAtMaxGap = atomic_exchange_explicit(&pBridge->currentFramesAtMaxGap, 0, memory_order_relaxed);
+}
+
+/* The timing half of the window only: the byte counters belong to the
+   watchdog's own reckoning, which a pause does not interrupt. */
+void flower_audio_bridge_reset_timing(flower_audio_bridge* pBridge)
+{
+    if (pBridge == NULL) {
+        return;
+    }
+
+    atomic_store_explicit(&pBridge->timingResetRequested, 1, memory_order_release);
+    atomic_store_explicit(&pBridge->timedCallbackCount, 0, memory_order_relaxed);
+    atomic_store_explicit(&pBridge->totalFrames, 0, memory_order_relaxed);
+    atomic_store_explicit(&pBridge->interestingGapCount, 0, memory_order_relaxed);
+    atomic_store_explicit(&pBridge->renderOverrunCount, 0, memory_order_relaxed);
+    atomic_store_explicit(&pBridge->maxGapNanoseconds, 0, memory_order_relaxed);
+    atomic_store_explicit(&pBridge->expectedNanosecondsAtMaxGap, 0, memory_order_relaxed);
+    atomic_store_explicit(&pBridge->maxLateNanoseconds, 0, memory_order_relaxed);
+    atomic_store_explicit(&pBridge->maxRenderNanoseconds, 0, memory_order_relaxed);
+    atomic_store_explicit(&pBridge->minFrames, 0, memory_order_relaxed);
+    atomic_store_explicit(&pBridge->maxFrames, 0, memory_order_relaxed);
+    atomic_store_explicit(&pBridge->precedingFramesAtMaxGap, 0, memory_order_relaxed);
+    atomic_store_explicit(&pBridge->currentFramesAtMaxGap, 0, memory_order_relaxed);
 }
 
 /* ------------------------------------------------------------------ */
-/* The output stage: Flower/Audio/OutputStage.cs and Equalizer.cs, in   */
-/* the same order and the same arithmetic. The C# is the reference -   */
-/* it is what the tests hold to the source - and a change to either    */
-/* belongs in both.                                                     */
+/* The output stage: everything that happens to PCM between the queue  */
+/* and the sound card, in float, ending in the one requantisation to   */
+/* the device's format. Its only implementation; the EQ's coefficients */
+/* come from Equalizer.BuildFrom in C#. Tests/Flower.Tests/Audio holds */
+/* it to its properties (OutputStageTests, CanonicalFormatTests,       */
+/* EqualizerTests), on each desktop and in the iOS suite.              */
 /* ------------------------------------------------------------------ */
 
-/* Equalizer.ProcessInPlace. */
+/* The EQ: RBJ peaking biquads, run on every sample rendered, silence
+   padding included, so the delay lines never resume from pre-gap state on
+   the far side of a gap. Float in, float out, and no clipping of its own:
+   a boost past full scale is the requantiser's to clamp, at the end. */
 static void flower_audio_bridge_eq_process(flower_audio_bridge_eq* pEq, float* pSamples, uint32_t frameCount)
 {
     const flower_audio_bridge_eq_curve* pCurve = &pEq->curve;
@@ -568,7 +672,8 @@ static void flower_audio_bridge_eq_process(flower_audio_bridge_eq* pEq, float* p
             float* zr = pEq->state[band][1];
             float y;
 
-            /* BiquadCoefficients.Process: transposed direct form II. */
+            /* Transposed direct form II: y = b0*x + z1;
+               z1' = b1*x - a1*y + z2; z2' = b2*x - a2*y. */
             y = c[0] * l + zl[0];
             zl[0] = c[1] * l - c[3] * y + zl[1];
             zl[1] = c[2] * l - c[4] * y;
@@ -585,9 +690,10 @@ static void flower_audio_bridge_eq_process(flower_audio_bridge_eq* pEq, float* p
     }
 }
 
-/* OutputStage.ApplyEqualizer: a new curve is crossfaded in over this buffer
-   from the old one's output, rather than dropped onto the running signal
-   with zeroed delay lines, which clicks. */
+/* A new curve is crossfaded in over this buffer from the old one's output,
+   rather than dropped onto the running signal with zeroed delay lines,
+   which clicks. A buffer is a few milliseconds, inaudible as a blend, and
+   by its end the new filter's state has been driven by real signal. */
 static void flower_audio_bridge_apply_equalizer(flower_audio_bridge* pBridge, float* pSamples, uint32_t frameCount)
 {
     uint32_t sampleCount = frameCount * FLOWER_AUDIO_BRIDGE_CHANNELS;
@@ -620,11 +726,10 @@ static void flower_audio_bridge_apply_equalizer(flower_audio_bridge* pBridge, fl
     }
 }
 
-/* OutputStage.ApplyGainAndEnvelope, plus the transport envelope that stage
-   has its own version of. The volume ramp and the declick fade are the
-   stage's; the transport fade is the bridge's, and was applied after the
-   requantiser when the stage ran on the feeder. Multiplied in last, so that
-   with no transport fade running the product is the stage's to the bit. */
+/* Every gain in one pass, since they multiply: the ramp toward the volume
+   target (a step change is zipper noise), the declick fade-in, and the
+   transport envelope that makes a pause or a resume click-free and
+   immediate however deep the queue is. */
 static void flower_audio_bridge_apply_gain(flower_audio_bridge* pBridge, float* pSamples, uint32_t frameCount)
 {
     float target = flower_audio_bridge_bits_to_float(
@@ -686,7 +791,8 @@ static void flower_audio_bridge_apply_gain(flower_audio_bridge* pBridge, float* 
     }
 }
 
-/* OutputStage.NextDither: xorshift32, scaled to +-0.5 LSB. */
+/* xorshift32 - a handful of instructions and plenty of quality for a dither
+   source - scaled to +-0.5 LSB. */
 static float flower_audio_bridge_next_dither(flower_audio_bridge* pBridge)
 {
     uint32_t x = pBridge->ditherState;
@@ -697,10 +803,30 @@ static float flower_audio_bridge_next_dither(flower_audio_bridge* pBridge)
     return ((float)x / (float)UINT32_MAX) - 0.5f;
 }
 
-/* OutputStage.Requantise - read its remarks for why a sample that is
-   already an exact integer is left undithered, and why the clamp is hard.
-   rintf rounds half to even under the default rounding mode, as MathF.Round
-   does. */
+/* Float -> the device's integer format, once, at the end.
+
+   Scaled to the destination's integer units first, so the dither, the
+   clamp and the "already an exact integer" test are the same code at 16
+   bits and at 24. The scale is a power of two, so a sample that came from
+   an integer source no wider than the destination lands back on exactly
+   that integer: at unity gain with no EQ, the round trip is bit-identical.
+
+   Only what needs rounding is dithered. A sample already on an integer was
+   changed by nothing upstream, and noise added to it would break that
+   transparency; it also keeps digital silence silent and lets a fade-out
+   reach zero. The dither is TPDF - successive rectangular draws
+   differenced, a triangle one LSB wide - which decorrelates the error from
+   the signal, so it is a flat noise floor rather than distortion, and
+   leaves no noise modulation.
+
+   The clamp is hard, at the destination's own full scale, deliberately and
+   having tried a soft knee: a source has to come back bit-identical from a
+   unity-gain pass, and a knee starting below full scale attenuates real
+   signal for headroom nothing needs (one starting at full scale is a clamp).
+   Nothing before this can clip, since it all runs in float; only an EQ
+   boost past full scale reaches it, which is the listener asking for it.
+
+   rintf rounds half to even under the default rounding mode. */
 static void flower_audio_bridge_requantise(flower_audio_bridge* pBridge, const float* pSamples, uint8_t* pDestination, uint32_t sampleCount)
 {
     uint32_t i;
@@ -799,6 +925,118 @@ static uint32_t flower_audio_bridge_read(flower_audio_bridge* pBridge, float* pS
     return toRead;
 }
 
+/* Monotonic nanoseconds. Both are cheap enough for the render thread and
+   neither blocks: clock_gettime is a vDSO read wherever Flower runs, and
+   QueryPerformanceCounter reads the TSC. */
+static uint64_t flower_audio_bridge_now(const flower_audio_bridge* pBridge)
+{
+#if defined(_WIN32)
+    LARGE_INTEGER counter;
+    uint64_t ticks;
+    uint64_t frequency = pBridge->counterFrequency;
+
+    QueryPerformanceCounter(&counter);
+    ticks = (uint64_t)counter.QuadPart;
+    /* Split, so ticks * 1e9 cannot overflow after a few days of uptime. */
+    return (ticks / frequency) * 1000000000ULL + (ticks % frequency) * 1000000000ULL / frequency;
+#else
+    struct timespec now;
+
+    (void)pBridge;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return (uint64_t)now.tv_sec * 1000000000ULL + (uint64_t)now.tv_nsec;
+#endif
+}
+
+/* How long frameCount frames last at the device's rate, never zero. */
+static uint64_t flower_audio_bridge_period_ns(const flower_audio_bridge* pBridge, uint32_t frameCount)
+{
+    uint64_t ns = (uint64_t)frameCount * 1000000000ULL / pBridge->sampleRate;
+    return (ns == 0) ? 1 : ns;
+}
+
+/* Raises *pTarget to value, against take_snapshot resetting it to zero
+   from the watchdog's thread meanwhile. Reports whether it did. */
+static int flower_audio_bridge_raise_u64(_Atomic uint64_t* pTarget, uint64_t value)
+{
+    uint64_t current = atomic_load_explicit(pTarget, memory_order_relaxed);
+    while (value > current) {
+        if (atomic_compare_exchange_weak_explicit(pTarget, &current, value, memory_order_relaxed, memory_order_relaxed)) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+static void flower_audio_bridge_raise_u32(_Atomic uint32_t* pTarget, uint32_t value)
+{
+    uint32_t current = atomic_load_explicit(pTarget, memory_order_relaxed);
+    while (value > current && !atomic_compare_exchange_weak_explicit(
+        pTarget, &current, value, memory_order_relaxed, memory_order_relaxed)) {
+    }
+}
+
+/* Zero means none seen yet this window. */
+static void flower_audio_bridge_lower_u32(_Atomic uint32_t* pTarget, uint32_t value)
+{
+    uint32_t current = atomic_load_explicit(pTarget, memory_order_relaxed);
+    while ((current == 0 || value < current) && !atomic_compare_exchange_weak_explicit(
+        pTarget, &current, value, memory_order_relaxed, memory_order_relaxed)) {
+    }
+}
+
+/* One callback's timing, recorded after it rendered. The gap from callback
+   N-1's start to N's covers the frames N-1 asked for, not N's, which is
+   what tells a stall from a deliberately larger callback. */
+static void flower_audio_bridge_record_timing(flower_audio_bridge* pBridge, uint64_t startedAt, uint64_t completedAt, uint32_t frameCount)
+{
+    uint64_t previousStartedAt;
+    uint32_t previousFrames;
+
+    if (atomic_exchange_explicit(&pBridge->timingResetRequested, 0, memory_order_acquire) != 0) {
+        pBridge->previousStartedAt = 0;
+        pBridge->previousFrameCount = 0;
+    }
+
+    previousStartedAt = pBridge->previousStartedAt;
+    previousFrames = pBridge->previousFrameCount;
+    pBridge->previousStartedAt = startedAt;
+    pBridge->previousFrameCount = frameCount;
+
+    flower_audio_bridge_lower_u32(&pBridge->minFrames, frameCount);
+    flower_audio_bridge_raise_u32(&pBridge->maxFrames, frameCount);
+    atomic_fetch_add_explicit(&pBridge->timedCallbackCount, 1, memory_order_relaxed);
+    atomic_fetch_add_explicit(&pBridge->totalFrames, frameCount, memory_order_relaxed);
+
+    if (previousStartedAt != 0 && startedAt > previousStartedAt) {
+        uint64_t gap = startedAt - previousStartedAt;
+        uint64_t expected = flower_audio_bridge_period_ns(pBridge, previousFrames == 0 ? 1 : previousFrames);
+
+        if (flower_audio_bridge_raise_u64(&pBridge->maxGapNanoseconds, gap)) {
+            atomic_store_explicit(&pBridge->expectedNanosecondsAtMaxGap, expected, memory_order_relaxed);
+            atomic_store_explicit(&pBridge->precedingFramesAtMaxGap, previousFrames, memory_order_relaxed);
+            atomic_store_explicit(&pBridge->currentFramesAtMaxGap, frameCount, memory_order_relaxed);
+        }
+
+        if (gap > expected) {
+            flower_audio_bridge_raise_u64(&pBridge->maxLateNanoseconds, gap - expected);
+        }
+
+        if (gap >= FLOWER_AUDIO_BRIDGE_INTERESTING_GAP_NS) {
+            atomic_fetch_add_explicit(&pBridge->interestingGapCount, 1, memory_order_relaxed);
+        }
+    }
+
+    if (completedAt > startedAt) {
+        uint64_t render = completedAt - startedAt;
+        flower_audio_bridge_raise_u64(&pBridge->maxRenderNanoseconds, render);
+        if (render > flower_audio_bridge_period_ns(pBridge, frameCount)) {
+            atomic_fetch_add_explicit(&pBridge->renderOverrunCount, 1, memory_order_relaxed);
+        }
+    }
+}
+
 static void flower_audio_bridge_on_data(struct ma_device* pDevice, void* pOutput, const void* pInput, uint32_t frameCount)
 {
     flower_audio_bridge* pBridge = flower_audio_bridge_for_device(pDevice);
@@ -809,6 +1047,7 @@ static void flower_audio_bridge_on_data(struct ma_device* pDevice, void* pOutput
     uint32_t done = 0;
     uint64_t flushRequest;
     uint64_t fingerprint = 14695981039346656037ULL;
+    uint64_t startedAt;
     int audible = 0;
     int primed;
 
@@ -817,6 +1056,8 @@ static void flower_audio_bridge_on_data(struct ma_device* pDevice, void* pOutput
     if (pBridge == NULL || pOutput == NULL) {
         return;
     }
+
+    startedAt = flower_audio_bridge_now(pBridge);
 
     deviceBytesPerFrame = pBridge->deviceBytesPerSample * FLOWER_AUDIO_BRIDGE_CHANNELS;
     sourceByteCount = frameCount * pBridge->bytesPerFrame;
@@ -829,21 +1070,19 @@ static void flower_audio_bridge_on_data(struct ma_device* pDevice, void* pOutput
             memory_order_release);
         /* Silence on both sides of a flush, so the far side fades in from
            zero rather than stepping in at whatever level it left off. The
-           target is left alone: a flush during a pause must stay quiet. The
-           declick is OutputStage's generation change, here. */
+           target is left alone: a flush during a pause must stay quiet. */
         pBridge->gain = 0.0f;
         flower_audio_bridge_arm_declick(pBridge);
         atomic_store_explicit(&pBridge->flushAcked, flushRequest, memory_order_release);
     }
 
     /* Nothing is rendered or processed while unprimed - not the envelope,
-       not the EQ, not the ramp - exactly as the managed callback skips
-       OutputStage.Process. Running any of them over the silence would spend
-       the declick on nothing, and the first real audio would then arrive at
-       full gain, which is the click it exists to remove.
+       not the EQ, not the ramp. Running any of them over the silence would
+       spend the declick on nothing, and the first real audio would then
+       arrive at full gain, which is the click it exists to remove.
 
        A gap the feeder un-primed for is a rebuffer, which no flush marks, so
-       the declick is armed on the way back in as well: FadeInNextAudio. */
+       the declick is armed on the way back in as well. */
     primed = atomic_load_explicit(&pBridge->primed, memory_order_acquire) != 0;
     if (primed && !pBridge->wasPrimed) {
         flower_audio_bridge_arm_declick(pBridge);
@@ -852,9 +1091,9 @@ static void flower_audio_bridge_on_data(struct ma_device* pDevice, void* pOutput
     pBridge->wasPrimed = primed;
 
     if (primed && !pBridge->hasRendered) {
-        /* A bridge is made for each device open, unlike the C# stage, which
-           outlives its devices; starting the ramp from unity would sweep the
-           volume down from full at the start of every one. */
+        /* A bridge is made for each device open, so the ramp starts at the
+           target: starting it from unity would sweep the volume down from
+           full at the start of every one. */
         pBridge->currentGain = flower_audio_bridge_bits_to_float(
             atomic_load_explicit(&pBridge->targetGainBits, memory_order_relaxed));
         pBridge->hasRendered = 1;
@@ -890,8 +1129,8 @@ static void flower_audio_bridge_on_data(struct ma_device* pDevice, void* pOutput
         }
     }
 
-    /* In the bridge's bytes - the pipeline's - like the managed callback's
-       counters, which the watchdog sets against the ring's own. */
+    /* In the bridge's bytes - the pipeline's - which the watchdog sets
+       against the ring's own. */
     atomic_fetch_add_explicit(&pBridge->callbackCount, 1, memory_order_relaxed);
     atomic_fetch_add_explicit(&pBridge->requestedBytes, sourceByteCount, memory_order_relaxed);
     atomic_fetch_add_explicit(&pBridge->realBytes, totalRead, memory_order_relaxed);
@@ -921,6 +1160,8 @@ static void flower_audio_bridge_on_data(struct ma_device* pDevice, void* pOutput
             atomic_store_explicit(&pBridge->consecutiveIdenticalCallbacks, 0, memory_order_relaxed);
         }
     }
+
+    flower_audio_bridge_record_timing(pBridge, startedAt, flower_audio_bridge_now(pBridge), frameCount);
 }
 
 void* flower_audio_bridge_data_callback(void)
