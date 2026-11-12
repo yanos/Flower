@@ -17,9 +17,11 @@ namespace Flower.Logging
     // often a problem happens is counted by CrashThrottle, which sends it at
     // most once an hour per device and carries the rest as a count.
     //
-    // Runs only in a release: a pre-release version - every untagged build,
-    // and a tagged beta - never starts the SDK (FLOWER_SEND_CRASH_REPORTS=1
-    // forces it, to check the wiring). Never in the browser, never in a test.
+    // Runs only in a release: a Debug build never starts the SDK, and nor
+    // does a pre-release version - every untagged build, and a tagged beta -
+    // unless FLOWER_SEND_CRASH_REPORTS=1 forces it in a Release build, to
+    // check the wiring before a tag (its events are filed under the
+    // "prerelease" environment). Never in the browser, never in a test.
     //
     // The switch (Settings, or Flower:SendCrashReports on the server) is read
     // on every event rather than at startup, so turning reporting off drops
@@ -32,8 +34,7 @@ namespace Flower.Logging
         public const string ForceVariable = "FLOWER_SEND_CRASH_REPORTS";
 
         // One in a hundred operations traced in a release, every one in a
-        // development build forced on, where a trace is wanted to check the
-        // wiring.
+        // pre-release forced on, where a trace is wanted to check the wiring.
         public const double ReleaseTraceSampleRate = 0.01;
 
         private static volatile bool _enabled = true;
@@ -73,9 +74,11 @@ namespace Flower.Logging
         // next launch.
         public static string CacheDirectory => Path.Combine(AppLogging.LogsDirectory, "sentry");
 
-        // A release, unless forced; never a test or the browser.
+        // A Release build of a release, or of a pre-release when forced;
+        // never a Debug build, a test or the browser.
         public static bool ShouldRun(string version) =>
-            !DisabledForTests
+            !IsDevelopmentBuild
+            && !DisabledForTests
             && !System.OperatingSystem.IsBrowser()
             && (!AppVersion.IsPrerelease(version) || Environment.GetEnvironmentVariable(ForceVariable) == "1");
 
@@ -86,11 +89,16 @@ namespace Flower.Logging
         {
             options.Dsn = dsn;
             options.Release = release;
-            options.Environment = IsDevelopmentBuild ? "development" : "production";
+            var prerelease = AppVersion.IsPrerelease(release);
+            options.Environment = prerelease ? "prerelease" : "production";
             options.SendDefaultPii = false;
             options.AutoSessionTracking = false;
             options.MaxBreadcrumbs = 0;
-            options.TracesSampleRate = IsDevelopmentBuild ? 1.0 : ReleaseTraceSampleRate;
+            options.TracesSampleRate = prerelease ? 1.0 : ReleaseTraceSampleRate;
+            // Each loaded assembly's informational version - Flower's own
+            // "0.9.1-alpha.0.22+<commit>", FFAudio.NET's "1.0.3+<commit>" -
+            // rather than its assembly version, which has only the numbers.
+            options.ReportAssembliesMode = ReportAssembliesMode.InformationalVersion;
             options.CacheDirectoryPath = CacheDirectory;
             options.SetBeforeSend(BeforeSend);
             options.SetBeforeSendTransaction(BeforeSendTransaction);

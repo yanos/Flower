@@ -83,17 +83,18 @@ How Sentry is wired (`Flower.Core/Logging/CrashReporting.cs`, shared by both
 hosts):
 
 - **Started** first thing after the log (`App.axaml.cs`, `Program.cs`), so a
-  startup crash is caught - **in a release version only**: a pre-release
-  (every untagged build, a tagged beta) never starts the SDK
-  (`CrashReporting.ShouldRun`; `FLOWER_SEND_CRASH_REPORTS=1` forces it to
-  check the wiring). Never in the browser, never in a test
+  startup crash is caught - **in a Release build of a release version
+  only** (`CrashReporting.ShouldRun`): a Debug build never starts the SDK,
+  and nor does a pre-release (every untagged build, a tagged beta) unless
+  `FLOWER_SEND_CRASH_REPORTS=1` forces it in a Release build, to check the
+  wiring before a tag. Never in the browser, never in a test
   (`CrashReporting.DisabledForTests`, set by every test assembly).
 - **Sent:** unhandled and unobserved task exceptions (the SDK's own hooks), a
   native crash found at the next launch (`CrashReporting.CaptureNative`),
   caught exceptions a call site chooses to send (`CrashReporting.ReportCaught`,
   tagged `caught_in`), and
   one trace per launch, `app.startup` (1% of launches in a release, all in a
-  development build); the server's request traces at the same rate.
+  forced pre-release); the server's request traces at the same rate.
 - **Not sent:** log lines (the server's Sentry logger has every level above
   it), breadcrumbs, sessions.
 - **Anonymous:** `CrashScrubber` on every event and trace - messages lose
@@ -113,8 +114,14 @@ hosts):
 - **Switch:** `AppSettings.SendCrashReports` (Settings on both heads, live;
   peeked before the full settings load) and `Flower:SendCrashReports` on the
   server (read at startup). Both on by default.
-- `development` and `production` environments split by build configuration;
-  the release is `AppVersion.Full`.
+- `production` for a release, `prerelease` for a forced pre-release; the
+  release is `AppVersion.Full`.
+- **Module versions** are each assembly's informational version
+  (`ReportAssembliesMode.InformationalVersion`: Flower's
+  `0.9.1-alpha.0.22+<commit>`, FFAudio.NET's `1.0.3+<commit>`), with the
+  pre-release label and commit the numeric assembly version lacks. MinVer
+  stamps that as `major.0.0.0`, so it read `0.0.0.0` for every Flower
+  assembly and `1.0.0.0` for FFAudio.NET.
 
 How it works:
 

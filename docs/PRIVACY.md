@@ -15,7 +15,8 @@ developer's account; nobody else receives them.
 ### When
 
 - **Release versions only.** A pre-release (a beta, or any build made from
-  source without a release tag) never sends anything.
+  source without a release tag) never sends anything, and nor does a debug
+  build.
 - **On by default, and a switch.** In the app: Settings, "Send anonymous
   crash reports" (desktop: Settings > General; phone: near the bottom of
   Settings). It takes effect at once. On a server: set
@@ -28,7 +29,9 @@ developer's account; nobody else receives them.
   message with names removed (below), and the names of the methods on the
   stack with their source file names and line numbers
   (`Flower.Playback.Player.Open`, `Player.cs`, line 42).
-- **Which build:** Flower's version, and whether it is the app or the server.
+- **Which build:** Flower's version, whether it is the app or the server,
+  and the name and version of each library it had loaded (Avalonia,
+  FFAudio.NET, .NET's own).
 - **What it ran on:** the operating system and its version, the .NET runtime,
   the processor architecture, and the time zone.
 - **How often:** how many times this problem happened on this install since
