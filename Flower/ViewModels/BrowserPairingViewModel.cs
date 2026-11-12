@@ -13,7 +13,7 @@ namespace Flower.ViewModels;
 // handshake, and left as it is on every other head, where nothing sets it.
 //
 // Its own class rather than a region of MainViewModel
-// (docs/CODE-REVIEW.md, September E3): the screen it drives is one page of the
+// (docs/CODE-REVIEW-2026-09.md E3): the screen it drives is one page of the
 // browser head, and nothing else in MainViewModel reads any of it.
 public sealed class BrowserPairingViewModel : ViewModelBase
 {

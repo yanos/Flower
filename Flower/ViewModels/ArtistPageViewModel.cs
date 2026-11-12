@@ -18,7 +18,7 @@ namespace Flower.ViewModels;
 // than on every read, so the covers behind it are fetched once per artist.
 //
 // Its own class rather than a region of MainViewModel
-// (docs/CODE-REVIEW.md, September E3), which tells it who is picked (Show) and
+// (docs/CODE-REVIEW-2026-09.md E3), which tells it who is picked (Show) and
 // how songs should draw (UpdateRows).
 public sealed class ArtistPageViewModel : ViewModelBase
 {

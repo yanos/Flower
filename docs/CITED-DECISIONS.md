@@ -24,8 +24,8 @@ git show ad337e7:docs/SMART-PLAYLIST-PLAN.md
 when the third was deleted, and went in October 2026. `070c2ca` is the last
 commit that has them.)
 
-Everything listed here is **done**. Nothing in this file is a backlog;
-`CODE-REVIEW.md` is where open work lives.
+Everything listed here is **done**, or was looked at and deliberately left
+as it is. Nothing in this file is a backlog.
 
 ---
 
@@ -166,15 +166,16 @@ design. If it happens it gets its own document.
 
 In November 2026 every finding the two reviews had closed was taken out of
 them, and what was left of both was merged into one backlog, `CODE-REVIEW.md`.
-Source comments cite the closed findings as *"docs/CODE-REVIEW-2026-09.md
-B6"*, and this is what those citations resolve against. The findings still
-open (September E3) are in
-`CODE-REVIEW.md` under the same review and number. The full text of both,
-measurements and rejected alternatives included:
+Later that month the backlog was down to September E3, which was left as it
+is, and it was deleted too. Source comments cite the findings as
+*"docs/CODE-REVIEW-2026-09.md B6"*, and this is what those citations resolve
+against. The full text of both reviews, measurements and rejected
+alternatives included, and the merged backlog's last version:
 
 ```bash
 git show 2e55685:docs/CODE-REVIEW-2026-09.md
 git show 2e55685:docs/CODE-REVIEW-2026-10.md
+git show be0c4c79:docs/CODE-REVIEW.md
 ```
 
 ### September 2026
@@ -201,6 +202,7 @@ git show 2e55685:docs/CODE-REVIEW-2026-10.md
 | **D6** | The discovery poll dialled unreachable remembered addresses forever. `PeerRetrySchedule` backs off to one dial a minute, never to never, and any sign the cause may be gone resets it. |
 | **E1** | `LibVlcRawStreamSink` and `GaplessRingBufferStream` were unreachable. Deleted with LibVLC. The lesson that generalises: a fallback nothing can reach is not a fallback. |
 | **E2** | `GaplessFormat` was mutable process-wide static state. The negotiated format is a `PcmFormat`, settled by the sink and handed to every piece. |
+| **E3** | The shell view models are large (`MainViewModel`, `MobileMainViewModel`). Left as it is, in November 2026. Whatever had grown into a feature of its own moved out into a view model the shell binds through: `MobileSearchViewModel`, `MobileServerPairingViewModel`, `MobileLibraryRemovalViewModel`, `BrowserPairingViewModel`, `ArtistPageViewModel`, `PairingCodeIssuerViewModel` and `ServerAdministrationViewModel`. What is left is what a shell is: navigation, sheet state and forwarding to shared services. The two are not duplicates: only 8 public member names are common to both. Looked at and kept in place: mobile's smart playlist sheet, which its neighbours all reach into, and desktop's Back and Forward, whose history is already `NavigationHistory`. The next thing to move out is whatever grows into a feature of its own. |
 | **E4** | `GaplessAudioManager`'s constructor defaulted to the wrong decoder. Resolved when `TrackDecoderKind` went. The lesson that generalises: a parameter default that contradicts the documented one is a trap. |
 | **E5** | `MiniaudioSink.Start` leaked a `GCHandle` when called twice. |
 | **E6** | Promoted decoders kept the event handlers they were given while armed. `ClearArmedSlot` unsubscribes them. |
@@ -241,3 +243,29 @@ git show 2e55685:docs/CODE-REVIEW-2026-10.md
 | **F.1–F.7** | The test gaps behind B1, B2, A1, A2, C1 and D1 have been written. |
 | **F.8** | `PlaylistSessionOverlay.Apply` and `CrashReportScanner` had no tests. `PlaylistSessionOverlayTests` and `CrashReportScannerTests` (Linux and macOS; the Windows event log cannot be filled from a test). |
 | **Denied peers** | Dead since peer-to-peer went. Removed, `denied-peers.json` included. |
+
+### Checked and sound
+
+These look like defects on a first read but are not. They are recorded so the
+next review does not spend its time on them. All are from the September review.
+
+- **`GaplessRingBuffer`'s generation protocol.** The order (index published
+  before generation), the "counterpart not rebased yet, treat as empty" rule
+  and the re-check after the copy are all correct. `Interlocked` is right for
+  the 64-bit indices on armeabi-v7a.
+- **`Library.Tracks` enumerated outside the lock.** Every mutation replaces
+  the list wholesale.
+- **Smart playlist recomputation looping.** `LimitSelector.Random` is seeded
+  per playlist (`SmartPlaylistEvaluator.SeededFor`), so an unchanged library
+  gives an identical result, and the fixed point holds.
+- **The `Play`/`SetUpcoming` identity guards.** `Track.Id` survives `Clone()`
+  and a rescan (`RescanCarryForwardGuardTests`). Repeat-one is unaffected.
+- **`RateLimiter`'s sliding window.** It is the standard weighted
+  approximation, with compare-and-retry. IPv6 collapses to /64; link-local
+  stays at full precision.
+- **`async void`.** Only event handlers, timer ticks and
+  `AppUpdatesViewModel.Start` use it. `Start` logs a failed poll and carries
+  on.
+- **Swallowed exceptions.** The empty `OperationCanceledException` catches in
+  `LibraryBrowserViewModel` and `AppUpdatesViewModel.Start` are correct.
+  Everything else logs.

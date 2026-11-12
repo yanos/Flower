@@ -15,10 +15,10 @@ namespace Flower.ViewModels.Mobile;
 // Remove from Library on the phone: a song's, an album's or a screen's,
 // confirmed through one sheet with an "also delete the files" choice - the
 // wording is LibraryRemovalPrompt's, shared with the desktop dialog. Its own
-// class rather than a region of MobileMainViewModel (docs/CODE-REVIEW.md,
-// September E3). What it needs of the shell is the sheet: Ask puts it up, an
-// answer takes it down, and the shell calls Settle whenever it comes down by
-// any other door.
+// class rather than a region of MobileMainViewModel
+// (docs/CODE-REVIEW-2026-09.md E3). What it needs of the shell is the sheet:
+// Ask puts it up, an answer takes it down, and the shell calls Settle whenever
+// it comes down by any other door.
 //
 // A null service is a head with no peer stack, which offers no entry at all
 // (Ask does nothing, and the menus ask Service before listing the entry).

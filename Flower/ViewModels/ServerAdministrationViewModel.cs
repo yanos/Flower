@@ -12,10 +12,11 @@ namespace Flower.ViewModels;
 
 // Administering the server selected in desktop's sidebar: its settings, shown
 // in place in the device-detail pane, and "Open in Browser" for its own page.
-// Its own class rather than a region of MainViewModel (docs/CODE-REVIEW.md,
-// September E3). What it needs of the shell is which server, if any, may be
-// administered right now (Show) - the shell knows the sidebar selection and
-// the pairing state that decide it - and a way to sign as this device.
+// Its own class rather than a region of MainViewModel
+// (docs/CODE-REVIEW-2026-09.md E3). What it needs of the shell is which
+// server, if any, may be administered right now (Show) - the shell knows the
+// sidebar selection and the pairing state that decide it - and a way to sign
+// as this device.
 public sealed class ServerAdministrationViewModel : ViewModelBase
 {
     private readonly Func<HttpClient, DiscoveredDevice, ServerAdminClient> _clientFor;

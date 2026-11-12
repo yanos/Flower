@@ -16,7 +16,7 @@ namespace Flower.ViewModels;
 
 // The phone's Search tab: its query, the three sections of results, and the
 // suggestions under the box. Its own class rather than a region of
-// MobileMainViewModel (docs/CODE-REVIEW.md, September E3): nothing in here needs
+// MobileMainViewModel (docs/CODE-REVIEW-2026-09.md E3): nothing in here needs
 // the shell, and the shell needs only to know when the query or the results
 // change (QueryChanged, ResultsChanged) and to ask for a fresh scan when the
 // tab is entered (RefreshNow).
