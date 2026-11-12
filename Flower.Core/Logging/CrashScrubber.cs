@@ -120,7 +120,11 @@ namespace Flower.Logging
         }
 
         // Nothing that says who or where: the device's name, its boot time (as
-        // good as a serial number), and its location - Sentry works a city out
+        // good as a serial number), the identifiers Sentry's phone SDKs add of
+        // their own - iOS's device_app_hash, Android's
+        // device_unique_identifier - which are permanent, so they would
+        // outlive the install ID they duplicate, switch or no switch, and its
+        // location - Sentry works a city out
         // from the connection's address unless the event names one, so it
         // names an address that has none. The only identity left is
         // CrashReportingId's random one, which counts installs and says
@@ -132,6 +136,8 @@ namespace Flower.Logging
             eventLike.User = new SentryUser { Id = installId, IpAddress = "0.0.0.0" };
             eventLike.Contexts.Device.Name = null;
             eventLike.Contexts.Device.BootTime = null;
+            eventLike.Contexts.App.Hash = null;
+            eventLike.Contexts.Device.DeviceUniqueIdentifier = null;
 
             var request = eventLike.Request;
             request.QueryString = null;

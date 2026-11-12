@@ -42,6 +42,12 @@ namespace Flower.Logging
         // App or the server would otherwise report its deliberate failures.
         public static bool DisabledForTests { get; set; }
 
+        // A phone head's own options, which need the platform build of the
+        // SDK to name: Android routes its native SDK's events through
+        // BeforeSend (MainActivity), iOS does not start its native SDK at all
+        // (AppDelegate). Set before App starts.
+        public static Action<SentryOptions>? ConfigurePlatform { get; set; }
+
         // Whether this process started the SDK at all - see ShouldRun.
         public static bool Running { get; private set; }
 
@@ -88,6 +94,7 @@ namespace Flower.Logging
             options.CacheDirectoryPath = CacheDirectory;
             options.SetBeforeSend(BeforeSend);
             options.SetBeforeSendTransaction(BeforeSendTransaction);
+            ConfigurePlatform?.Invoke(options);
             Running = true;
         }
 

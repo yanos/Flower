@@ -82,6 +82,8 @@ public class CrashScrubberTests
         crash.ServerName = "someones-macbook";
         crash.Contexts.Device.Name = "Someone's MacBook";
         crash.Contexts.Device.BootTime = System.DateTimeOffset.UnixEpoch;
+        crash.Contexts.App.Hash = "bd8f431a6ed9baa044b63abc0341314cd251793b";
+        crash.Contexts.Device.DeviceUniqueIdentifier = "04a7da6dc14340f0b0840bc0f84110c2";
 
         CrashScrubber.Scrub(crash, Home);
 
@@ -94,6 +96,8 @@ public class CrashScrubberTests
         Assert.Null(crash.ServerName);
         Assert.Null(crash.Contexts.Device.Name);
         Assert.Null(crash.Contexts.Device.BootTime);
+        Assert.Null(crash.Contexts.App.Hash);
+        Assert.Null(crash.Contexts.Device.DeviceUniqueIdentifier);
         Assert.Equal("0.0.0.0", crash.User.IpAddress);
     }
 

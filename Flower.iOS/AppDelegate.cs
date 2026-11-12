@@ -1,5 +1,7 @@
 ﻿using System;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.Reflection;
 using System.Runtime.InteropServices;
 
 using Avalonia;
@@ -53,6 +55,15 @@ public partial class AppDelegate : AvaloniaAppDelegate<App>, IMXMetricManagerSub
         // needs a startup-order workaround - see PlatformCrashInfo) is fine.
         if (OperatingSystem.IsIOSVersionAtLeast(13))
             MXMetricManager.SharedManager.Add(this);
+
+        // An exception thrown on the UI thread leaves .NET through
+        // Objective-C, which ends the process without AppDomain's
+        // UnhandledException ever being raised - found by crashing on
+        // purpose. This is the one place iOS says so, and it is the crash.
+        ObjCRuntime.Runtime.MarshalManagedException += (_, args) => App.RecordFatal(args.Exception);
+
+        // Sentry's Cocoa SDK stays off - see KeepSentryCocoaOff.
+        CrashReporting.ConfigurePlatform = KeepSentryCocoaOff;
 
         // Real iOS hardware can't do raw multicast without a hard-to-get Apple
         // entitlement - see PlatformMdns.cs and BonjourMdnsBackend's own doc
@@ -123,6 +134,28 @@ public partial class AppDelegate : AvaloniaAppDelegate<App>, IMXMetricManagerSub
             .WithFlowerFonts();
     }
 
+    // Sentry's Cocoa SDK sends its own crash events, and on iOS nothing puts
+    // CrashReporting's BeforeSend in their path: a deliberate native crash
+    // arrived with Cocoa's own install ID, a city, a permanent device hash and
+    // the app container's paths, and it would have gone with the switch in
+    // Settings off. So it is never started; the managed SDK still reports
+    // everything managed, and a native crash comes through MetricKit
+    // (DidReceiveDiagnosticPayloads, below).
+    //
+    // The switch that does it, InitNativeSdks, is internal to Sentry - the
+    // only way to it is reflection, kept through trimming by the
+    // DynamicDependency. If a Sentry update ever takes it away, this throws,
+    // and CrashReporting.StartForApp then leaves Sentry off on iOS
+    // altogether: no reports beats reports that leak.
+    [DynamicDependency(DynamicallyAccessedMemberTypes.NonPublicProperties, typeof(Sentry.SentryOptions))]
+    private static void KeepSentryCocoaOff(Sentry.SentryOptions options)
+    {
+        var property = typeof(Sentry.SentryOptions).GetProperty("InitNativeSdks", BindingFlags.Instance | BindingFlags.NonPublic);
+        if (property?.SetMethod == null)
+            throw new InvalidOperationException("Sentry no longer has InitNativeSdks; not starting Sentry rather than let its Cocoa SDK send unscrubbed crashes");
+        property.SetValue(options, false);
+    }
+
     private static IntPtr ResolveIosSkiaSharp(string libraryName, System.Reflection.Assembly assembly, DllImportSearchPath? searchPath)
     {
         if (libraryName != "libSkiaSharp")
@@ -145,6 +178,11 @@ public partial class AppDelegate : AvaloniaAppDelegate<App>, IMXMetricManagerSub
         if (!OperatingSystem.IsIOSVersionAtLeast(14))
             return;
 
+        // And it is how a native crash reaches crash reporting on iOS, where
+        // Sentry's own native SDK is not started (CrashReporting.Configure
+        // says why): scrubbed and throttled like any other report, or, with
+        // reporting off or not running, left for the next launch's GitHub
+        // banner.
         var logger = AppLogging.CreateLogger("Flower.MetricKit");
         foreach (var payload in payloads)
         {
@@ -153,6 +191,17 @@ public partial class AppDelegate : AvaloniaAppDelegate<App>, IMXMetricManagerSub
                 logger.LogCritical(
                     "Native crash reported via MetricKit: signal={Signal} exceptionType={ExceptionType} exceptionCode={ExceptionCode} terminationReason={TerminationReason}",
                     crash.Signal, crash.ExceptionType, crash.ExceptionCode, crash.TerminationReason);
+
+                var tree = crash.CallStackTree?.JsonRepresentation is { } json
+                    ? Foundation.NSString.FromData(json, Foundation.NSStringEncoding.UTF8)?.ToString()
+                    : null;
+                var pending = CrashReportScanner.DescribeMetricKitCrash(
+                    crash.Signal, crash.ExceptionType, crash.TerminationReason, tree,
+                    payload.TimeStampEnd is { } end ? new DateTimeOffset((DateTime)end) : DateTimeOffset.Now);
+                if (CrashReporting.Running && CrashReporting.Enabled)
+                    CrashReporting.CaptureNative(pending);
+                else
+                    pending.RecordUnlessPending();
             }
         }
     }

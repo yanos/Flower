@@ -211,6 +211,81 @@ namespace Flower.Logging
             return newest;
         }
 
+        // A crash MetricKit reported on iOS (the phone head's AppDelegate), as
+        // Apple describes it: a signal and a Mach exception by number, and
+        // the call stacks as JSON - each stack a chain of frames, every frame
+        // holding the one it was called from in subFrames, named by binary
+        // and offset rather than symbol. The attributed thread is the one
+        // that crashed. Nothing in it names the device or the person.
+        public static PendingCrash DescribeMetricKitCrash(int? signal, int? exceptionType, string? terminationReason, string? callStackTree, DateTimeOffset when)
+        {
+            var signalName = signal is { } s && Signals.TryGetValue(s, out var named) ? named : signal?.ToString(CultureInfo.InvariantCulture);
+            var exceptionName = exceptionType is { } e && MachExceptions.TryGetValue(e, out var machName) ? machName : exceptionType?.ToString(CultureInfo.InvariantCulture);
+            var fault = (signalName, exceptionName) switch
+            {
+                ({ } sn, { } en) => $"{sn} ({en})",
+                ({ } sn, null) => sn,
+                (null, { } en) => en,
+                _ => "Native crash",
+            };
+
+            var detail = new StringBuilder();
+            if (!string.IsNullOrEmpty(terminationReason))
+                detail.AppendLine(terminationReason);
+
+            string? topFrame = null;
+            try
+            {
+                if (!string.IsNullOrEmpty(callStackTree))
+                {
+                    using var document = JsonDocument.Parse(callStackTree);
+                    if (document.RootElement.TryGetProperty("callStacks", out var stacks) && stacks.ValueKind == JsonValueKind.Array)
+                    {
+                        var crashed = stacks.EnumerateArray()
+                            .FirstOrDefault(stack => stack.TryGetProperty("threadAttributed", out var attributed) && attributed.ValueKind == JsonValueKind.True);
+                        if (crashed.ValueKind == JsonValueKind.Object
+                            && crashed.TryGetProperty("callStackRootFrames", out var roots) && roots.ValueKind == JsonValueKind.Array
+                            && roots.GetArrayLength() > 0)
+                        {
+                            var frame = roots[0];
+                            for (var depth = 0; depth < ReportedFrames && frame.ValueKind == JsonValueKind.Object; depth++)
+                            {
+                                var binary = Text(frame, "binaryName");
+                                var offset = frame.TryGetProperty("offsetIntoBinaryTextSegment", out var o) && o.TryGetInt64(out var value)
+                                    ? $"+0x{value:x}"
+                                    : "";
+                                var name = string.IsNullOrEmpty(binary) ? "?" : binary + offset;
+                                if (!string.IsNullOrEmpty(binary))
+                                    topFrame ??= binary;
+                                detail.Append("  at ").AppendLine(name);
+
+                                frame = frame.TryGetProperty("subFrames", out var sub) && sub.ValueKind == JsonValueKind.Array && sub.GetArrayLength() > 0
+                                    ? sub[0]
+                                    : default;
+                            }
+                        }
+                    }
+                }
+            }
+            catch (JsonException)
+            {
+                // A tree this does not understand: the fault alone still says something.
+            }
+
+            var summary = topFrame != null ? $"{fault} in {topFrame}" : fault;
+            return new PendingCrash(summary, detail.ToString().TrimEnd(), null, null, when, Native: true);
+        }
+
+        private static readonly Dictionary<int, string> Signals = new()
+        {
+            [4] = "SIGILL", [5] = "SIGTRAP", [6] = "SIGABRT", [8] = "SIGFPE", [9] = "SIGKILL", [10] = "SIGBUS", [11] = "SIGSEGV",
+        };
+
+        private static readonly Dictionary<int, string> MachExceptions = new()
+        {
+            [1] = "EXC_BAD_ACCESS", [2] = "EXC_BAD_INSTRUCTION", [3] = "EXC_ARITHMETIC", [6] = "EXC_BREAKPOINT", [10] = "EXC_CRASH", [11] = "EXC_RESOURCE", [12] = "EXC_GUARD",
+        };
+
         // Where the kernel enters a signal handler: _sigtramp on macOS,
         // __restore_rt on glibc.
         private static readonly HashSet<string> SignalTrampolines = new(StringComparer.Ordinal)

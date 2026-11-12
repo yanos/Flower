@@ -265,4 +265,35 @@ public class CrashReportScannerTests : PinnedDataDirectory
             Directory.Delete(folder, recursive: true);
         }
     }
+
+    // MetricKit's call stack tree: every frame holds the one that called it
+    // in subFrames, named by binary and offset; the attributed thread crashed.
+    private const string MetricKitTree = """
+        { "callStackPerThread": true, "callStacks": [
+          { "threadAttributed": false, "callStackRootFrames": [ { "binaryName": "libsystem_kernel.dylib", "offsetIntoBinaryTextSegment": 4 } ] },
+          { "threadAttributed": true, "callStackRootFrames": [
+            { "binaryName": "libflowerbridge", "offsetIntoBinaryTextSegment": 4096, "subFrames": [
+              { "binaryName": "libminiaudio", "offsetIntoBinaryTextSegment": 128, "subFrames": [
+                { "binaryName": "libsystem_pthread.dylib", "offsetIntoBinaryTextSegment": 27736 } ] } ] } ] } ] }
+        """;
+
+    [Fact]
+    public void A_MetricKit_crash_names_the_fault_and_the_binary_it_happened_in()
+    {
+        var crash = CrashReportScanner.DescribeMetricKitCrash(11, 1, "Namespace SIGNAL, Code 11", MetricKitTree, DateTimeOffset.UnixEpoch);
+
+        Assert.True(crash.Native);
+        Assert.Equal("SIGSEGV (EXC_BAD_ACCESS) in libflowerbridge", crash.Summary);
+        Assert.Contains("libflowerbridge+0x1000", crash.Details);
+        Assert.Contains("libminiaudio+0x80", crash.Details);
+        Assert.DoesNotContain("libsystem_kernel", crash.Details);
+    }
+
+    [Fact]
+    public void A_MetricKit_crash_without_a_readable_stack_still_names_its_fault()
+    {
+        var crash = CrashReportScanner.DescribeMetricKitCrash(6, 10, null, "not json", DateTimeOffset.UnixEpoch);
+
+        Assert.Equal("SIGABRT (EXC_CRASH)", crash.Summary);
+    }
 }

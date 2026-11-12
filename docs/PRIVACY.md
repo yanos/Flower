@@ -46,7 +46,11 @@ developer's account; nobody else receives them.
   the libraries and functions it happened in. On a Mac this comes from the
   crash report macOS itself writes; Flower reads only those parts of it,
   never the report's other contents (your Mac's model, its crash-reporter
-  ID, the folder Flower ran from).
+  ID, the folder Flower ran from). On an iPhone it comes from Apple's own
+  crash diagnostics (MetricKit), which iOS hands over up to a day after
+  the crash: the fault and the names of the libraries on the stack, with
+  offsets into them. On Android, from Sentry's Android SDK, under the same
+  removal rules as everything else.
 
 ### What is removed before a report leaves
 
@@ -56,7 +60,8 @@ developer's account; nobody else receives them.
   Song.flac" arrives as "Could not open `<path>.flac`".
 - **Who and where.** No account, user name or e-mail; no device, computer or
   server name; no IP address (Sentry does not store it, and is not given one
-  to work out a location from); no device boot time.
+  to work out a location from); no device boot time; none of the permanent
+  device identifiers Sentry's phone SDKs would otherwise add.
 - **On a server:** a request's query string (where stream tickets travel),
   headers, cookies and body.
 - **Never sent at all:** log files or log lines, your library, playlists,

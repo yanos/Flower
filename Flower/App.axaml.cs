@@ -48,6 +48,23 @@ public partial class App : Application
     // whether this launch's is kept).
     private static Sentry.ITransactionTracer? _startupTrace;
 
+    private static string? _logPath;
+
+    // An exception that is about to take the process down: logged, and left
+    // for the next launch to offer reporting (PendingCrash), since this one
+    // has no time left to ask. Then the log is flushed, or Serilog's buffered
+    // write never reaches disk and the line is lost along with the crash it
+    // records. AppDomain.UnhandledException calls it on every head; iOS also
+    // from Runtime.MarshalManagedException (the phone head's AppDelegate),
+    // because there an exception thrown on the UI thread goes out through
+    // Objective-C and AppDomain's event never fires.
+    public static void RecordFatal(Exception exception)
+    {
+        AppLogging.CreateLogger<App>().LogCritical(exception, "Unhandled exception, Flower is about to quit");
+        PendingCrash.FromException(exception, AppVersion.Full, _logPath, DateTimeOffset.Now).Record();
+        AppLogging.Shutdown();
+    }
+
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
@@ -129,20 +146,13 @@ public partial class App : Application
         // just vanish (a console nobody's watching, or on some platforms
         // nothing at all) - log it before the process potentially dies so a
         // bug report has something to go on.
+        _logPath = logPath;
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
         {
-            logger.LogCritical(e.ExceptionObject as Exception, "Unhandled exception (IsTerminating={IsTerminating})", e.IsTerminating);
-            // The process is about to die - flush now, or Serilog's buffered
-            // file write never reaches disk and this line is lost right along
-            // with the crash it was recording. And leave the crash for the
-            // next launch to offer reporting (PendingCrash), since this one
-            // has no time left to ask.
-            if (e.IsTerminating)
-            {
-                if (e.ExceptionObject is Exception exception)
-                    PendingCrash.FromException(exception, AppVersion.Full, logPath, DateTimeOffset.Now).Record();
-                AppLogging.Shutdown();
-            }
+            if (e.IsTerminating && e.ExceptionObject is Exception exception)
+                RecordFatal(exception);
+            else
+                logger.LogCritical(e.ExceptionObject as Exception, "Unhandled exception (IsTerminating={IsTerminating})", e.IsTerminating);
         };
         TaskScheduler.UnobservedTaskException += (_, e) =>
         {

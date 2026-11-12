@@ -48,6 +48,23 @@ public class FlowerApplication(nint javaReference, JniHandleOwnership transfer)
 
         PlatformCrashInfo.PendingAndroidExitReasons = CollectCrashExitReasons();
 
+        // Sentry's Android SDK catches Java and native (NDK) crashes the .NET
+        // side cannot, but sends them itself - past CrashReporting's
+        // BeforeSend, so past its scrubbing, its throttle and the switch in
+        // Settings, unless told to hand them over. Its automatic breadcrumbs
+        // (activities, network, system events, taps) go too: no breadcrumb is
+        // sent from any head (docs/PRIVACY.md).
+        CrashReporting.ConfigurePlatform = options =>
+        {
+            options.Native.EnableBeforeSend = true;
+            options.Native.EnableActivityLifecycleBreadcrumbs = false;
+            options.Native.EnableAppComponentBreadcrumbs = false;
+            options.Native.EnableAppLifecycleBreadcrumbs = false;
+            options.Native.EnableNetworkEventBreadcrumbs = false;
+            options.Native.EnableSystemEventBreadcrumbs = false;
+            options.Native.EnableUserInteractionBreadcrumbs = false;
+        };
+
         return base.CustomizeAppBuilder(builder)
             .WithFlowerFonts();
     }

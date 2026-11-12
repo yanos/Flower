@@ -26,13 +26,13 @@ What is left:
 - **Calls to `CrashReporting.ReportCaught`.** The API exists; no catch site
   uses it yet. Each one is a judgement: a catch that means Flower is wrong,
   not one that means the world is (a server down, a file gone).
-- **Native crashes on phones.** iOS records nothing the app can read;
-  Android's exit history gives a reason, not frames. Sentry's iOS and Android
-  builds of the SDK carry native crash handlers of their own (Sentry Cocoa,
-  the Android NDK), reached by referencing `Sentry` from the phone heads -
-  but their events are sent by those native SDKs, not through
-  `CrashScrubber`, so what they carry has to be checked before turning them
-  on.
+- **iOS native crashes arrive late:** MetricKit delivers them up to a day
+  after the crash, real devices only (never the simulator), frames as binary
+  plus offset; nothing has yet been seen arriving that way.
+- **The iOS Debug build (Mono) hangs on a native crash** instead of dying:
+  Mono's own SIGSEGV handler takes it and spins in `mono_dump_mem`. Release
+  is NativeAOT, which crashes and reports normally; a `--mono` device build
+  would hang the same way.
 - Windows' event-log path is unchanged and untested by a deliberate crash;
   Linux's uses the same .NET report as macOS's fallback, fixed below.
 
@@ -54,6 +54,30 @@ the audio render thread:
   ever written; it now enables the dump, `EnableCrashReportOnly` (the report
   without the dump) and points `DbgMiniDumpName` at `logs/crash-reports/`.
 - **Windows:** the Application event log, as before.
+
+Phones (verified by deliberate managed and native crashes on an iPhone
+simulator running the NativeAOT Release build, and an Android emulator
+running the Release build):
+
+- The phone heads get Sentry's platform builds of the SDK, which bring
+  native SDKs of their own (Sentry Cocoa, the Android SDK with its NDK).
+  `CrashReporting.ConfigurePlatform` lets a head set their options.
+- **Android:** `Native.EnableBeforeSend` routes the Android SDK's events -
+  Java crashes and native (NDK) ones - through `BeforeSend`, so they are
+  scrubbed, throttled and switched like the rest; its automatic breadcrumbs
+  are off. Both kinds arrived clean.
+- **iOS:** Sentry Cocoa is never started (`AppDelegate.KeepSentryCocoaOff`,
+  through Sentry's internal `InitNativeSdks` by reflection, failing closed):
+  its events cannot be routed through `BeforeSend`, and a deliberate crash
+  arrived with Cocoa's own install ID, a city, a permanent device hash and
+  container paths - and would have gone with the switch off. Native crashes
+  come from MetricKit through `CrashReportScanner.DescribeMetricKitCrash`
+  and `CaptureNative` instead.
+- A managed exception on iOS's UI thread leaves through Objective-C and never
+  raises `AppDomain.UnhandledException`; the head records it from
+  `Runtime.MarshalManagedException` (`App.RecordFatal`).
+- `CrashScrubber` also drops the phone SDKs' permanent identifiers:
+  `device_app_hash` (iOS) and `device_unique_identifier` (Android).
 
 How Sentry is wired (`Flower.Core/Logging/CrashReporting.cs`, shared by both
 hosts):
