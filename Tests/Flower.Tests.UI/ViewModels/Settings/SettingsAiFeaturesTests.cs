@@ -98,7 +98,7 @@ public class SettingsAiFeaturesTests
 
         settings.AiFeatures.VibeEnabled = false;
 
-        Assert.Contains("deletes the model (330 MB) and the analysis of 16,000 songs", settings.AiFeatures.OffWarning);
+        Assert.Contains($"deletes the model (330 MB) and the analysis of {16_000:N0} songs", settings.AiFeatures.OffWarning);
         Assert.Contains("about 7 h", settings.AiFeatures.OffWarning);
 
         settings.AiFeatures.VibeEnabled = true;
@@ -222,7 +222,7 @@ public class SettingsAiFeaturesTests
     {
         var (_, settings) = await OpenAsync(b => b.Status = Report("Analysing"));
 
-        Assert.Equal("Analysing: 25% (4,000 of 16,000 songs), about 3 h left", settings.AiFeatures.StatusText);
+        Assert.Equal($"Analysing: 25% ({4_000:N0} of {16_000:N0} songs), about 3 h left", settings.AiFeatures.StatusText);
         Assert.Equal("Now: Riders on the Storm by The Doors", settings.AiFeatures.NowText);
         Assert.Equal(25, settings.AiFeatures.Progress);
         Assert.Equal("Using 424 MB (model 330 MB, analysis 94 MB)", settings.AiFeatures.StorageText);
@@ -260,7 +260,7 @@ public class SettingsAiFeaturesTests
         await settings.AiFeatures.PauseCommand.ExecuteAsync(null);
 
         Assert.Equal([true], backend.Pauses);
-        Assert.Equal("Paused: 25% (4,000 of 16,000 songs)", settings.AiFeatures.StatusText);
+        Assert.Equal($"Paused: 25% ({4_000:N0} of {16_000:N0} songs)", settings.AiFeatures.StatusText);
         Assert.False(settings.AiFeatures.CanPause);
         Assert.True(settings.AiFeatures.CanResume);
         Assert.Empty(backend.Saved);
@@ -285,7 +285,7 @@ public class SettingsAiFeaturesTests
     {
         var (_, settings) = await OpenAsync(b => b.Status = Report("WaitingForScan"));
 
-        Assert.Equal("Waiting for the library scan to finish: 25% (4,000 of 16,000 songs)", settings.AiFeatures.StatusText);
+        Assert.Equal($"Waiting for the library scan to finish: 25% ({4_000:N0} of {16_000:N0} songs)", settings.AiFeatures.StatusText);
         Assert.True(settings.AiFeatures.CanPause);
         Assert.False(settings.AiFeatures.CanResume);
     }
