@@ -85,7 +85,7 @@ public static class TagFileSave
                 }
 
                 if (outcome.Changed)
-                    File.Move(copy, target, overwrite: true);
+                    Replace(target, copy);
                 return outcome.Result;
             }
             finally
@@ -139,10 +139,33 @@ public static class TagFileSave
     private static string MimeTypeOf(string path) =>
         "taglib/" + Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
 
+    // Windows refuses to replace a file another process has open without
+    // FileShare.Delete with access denied, not the sharing violation an
+    // in-place save met. It is reported as that violation, which is what it
+    // is and what TrackTagEdits waits out; a song that is itself read-only
+    // stays access denied.
+    private static void Replace(string target, string copy)
+    {
+        try
+        {
+            File.Move(copy, target, overwrite: true);
+        }
+        catch (UnauthorizedAccessException ex) when (OperatingSystem.IsWindows()
+                                                     && (File.GetAttributes(target) & FileAttributes.ReadOnly) == 0)
+        {
+            const int sharingViolation = unchecked((int)0x80070020);
+            throw new IOException($"{LogPath.Short(target)} is open in another process ({ex.Message})", sharingViolation);
+        }
+    }
+
     private static void TryDelete(string path)
     {
         try
         {
+            // The copy takes the song's attributes, and Windows will not
+            // delete a read-only file, which is just the song a save fails on.
+            if (OperatingSystem.IsWindows() && File.Exists(path))
+                File.SetAttributes(path, File.GetAttributes(path) & ~FileAttributes.ReadOnly);
             File.Delete(path);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
