@@ -30,9 +30,10 @@ question is settled, the pipeline carries float from the decoder to
 that callback has been heard on an iPhone and is held to `OutputStage` byte for
 byte by `NativeOutputStageChecks`, and the bridge is `libflowerbridge`, a
 library of its own on every platform, built for the six desktop RIDs and run
-by desktop too. What is left is listening to desktop through it, and then
-step 8: moving the stage's property tests onto the C and deleting the managed
-callback and `OutputStage` with it. The phase was rescoped
+by desktop too, where it has now been heard on macOS, Linux and Windows
+with nothing wrong (November 2026). What is left is step 8: moving the
+stage's property tests onto the C and deleting the managed callback and
+`OutputStage` with it. The phase was rescoped
 while writing an earlier status down. It used to read as "collapse Phase 5's desktop/mobile fork"; working out what
 that fork costs turned up **finding M — every interactive control on mobile
 lags by the render buffer's depth, today, because Phase 5 put that buffer on
@@ -55,18 +56,16 @@ legible; each carries a note saying what was done.
    emulator decoding runner is back in CI, now that both Android heads keep
    the host FFAudio package's native assets out (`XA4301`, Tests/README.md,
    "Android").
-2. **Listen to desktop through the bridge** (Phase 6, step 8's first item).
-   The Mac first, then Linux and Windows, which nobody has ever listened to,
-   each A/B'd once against `"AudioTiming": { "NativeBufferMs": 0 }`.
-3. **Retire the C# output stage** (Phase 6, step 8). Move the property tests
+2. **Retire the C# output stage** (Phase 6, step 8). Move the property tests
    onto the C, delete the managed callback, `OutputStage` and the byte for
    byte comparison, and decide whether the callback timing diagnostics are
-   ported into the bridge. Waits on item 2.
-4. **Low latency** (§2). Measure `AudioTimingSettings`, `AudioFeeder` and
+   ported into the bridge. Desktop has been heard through the bridge on all
+   three platforms, which is what this waited on.
+3. **Low latency** (§2). Measure `AudioTimingSettings`, `AudioFeeder` and
    `MiniaudioSink`'s period sizing before changing anything; there may be
    nothing to win, and a shorter period spends the bridge's headroom (Phase
    6, "What it costs, honestly").
-5. **The rest of §5: direct mode and multichannel.** A per-track native
+4. **The rest of §5: direct mode and multichannel.** A per-track native
    format rather than one negotiated once at startup, which needs device
    capability probing the current name/id-only device list cannot do, plus
    the controlled transitions that come with changing format mid-session.
@@ -1136,8 +1135,8 @@ day.
 7. **Point `NativeAudioBridge`'s `DllImport("miniaudio")` at `"flowerbridge"`**,
    and land one RID at a time, listening on each.
 
-   **Built, all RIDs at once rather than one at a time; not yet listened to on
-   a desktop.** One import name everywhere meant the phones had to stop
+   **Built, all RIDs at once rather than one at a time, and listened to on
+   macOS, Linux and Windows with nothing wrong heard (November 2026).** One import name everywhere meant the phones had to stop
    carrying the bridge inside their miniaudio, so they now build it as a
    library of its own too: `libflowerbridge.so` per ABI beside
    `libminiaudio.so` (the head globs `libs/<abi>/*.so`), and
@@ -1166,15 +1165,14 @@ day.
    is the properties it must have, not agreement with a second copy of
    itself. So the stage goes with the callback, and its tests move onto the C.
 
-   **Not done yet, deliberately.** No desktop has been listened to through
-   the bridge, and Linux and Windows never have been at all. Until they
-   have, the managed callback is the A/B (`NativeBufferMs: 0`, above), and
-   deleting it deletes that.
+   **Not done yet, and no longer waiting.** It waited on desktop being
+   listened to through the bridge, since until then the managed callback was
+   the A/B (`NativeBufferMs: 0`, above) and deleting it deleted that. All
+   three desktops have now been heard through it.
 
    In order:
 
-   1. **Listen.** The Mac first, then Linux and Windows, each A/B'd once
-      with `NativeBufferMs: 0`.
+   1. **Listen.** Done (November 2026): macOS, Linux and Windows, all good.
    2. **Point the property tests at the C while the C# still exists**, so
       each is seen passing against both before one of them goes. They need
       a harness that drives the bridge's callback the way
@@ -1236,7 +1234,7 @@ simplification win with no native work and no build infrastructure; step 3 is
 the one that fixes a defect; step 4 proved it, by ear and byte for byte; step 5
 made the bridge buildable on its own; steps 6–7 put desktop on it, which
 turned out to need Docker rather than the CI matrix it was expected to wait
-for. Step 8 waits on desktop listening; after that its order is to move the
+for. Desktop has been listened to, so step 8 is next: move the
 property tests onto the C, delete the managed path, and decide about the
 timing diagnostics.
 
