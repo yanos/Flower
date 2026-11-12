@@ -170,6 +170,12 @@ public sealed class FlowerServerOptions : MusicLibrarySettings
     // most in the direction that closes the door.
     public bool AllowPublicAccess { get; set; } = false;
 
+    // Whether this server sends its crashes, anonymised, to Flower's
+    // developer (CrashReporting, docs/CRASH-REPORTING-PLAN.md). On by
+    // default, like the app's switch. Read once at startup by Program.cs,
+    // before the container exists, so a change needs a restart.
+    public bool SendCrashReports { get; set; } = true;
+
     // Widens LanGuard's built-in private/loopback/CGNAT allow-list (see
     // Program.cs's LanGuard middleware) for a trusted tunnel/proxy whose
     // source range isn't already covered - e.g. a reverse proxy on its own

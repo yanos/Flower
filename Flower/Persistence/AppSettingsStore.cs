@@ -296,6 +296,13 @@ namespace Flower.Persistence
         // not hand that over, even to their own server, can say so.
         public bool ShareLogsWithPairedServer { get; set; } = true;
 
+        // Whether this device sends its crashes, anonymised, to Flower's
+        // developer (CrashReporting, docs/CRASH-REPORTING-PLAN.md). On by
+        // default: nothing in a report names a person, a song or a server,
+        // and a bug nobody reports is a bug nobody fixes. Read once before
+        // anything else at startup (ReadSendCrashReports), then live.
+        public bool SendCrashReports { get; set; } = true;
+
         // Whether an admin device sends its own files to the paired server
         // when it is reaching that server from somewhere other than the
         // server's own network - over a tailnet, a forwarded port, a phone's
@@ -544,6 +551,29 @@ namespace Flower.Persistence
             }
 
             return LogEventLevel.Debug;
+        }
+
+        // SendCrashReports alone, for the same reason as the level above:
+        // crash reporting starts before the full Load() may run, so a crash
+        // during startup is caught too. Any failure means the default, on.
+        public static bool ReadSendCrashReports()
+        {
+            try
+            {
+                using var stream = File.OpenRead(StorePath);
+                using var document = JsonDocument.Parse(stream);
+                if (document.RootElement.TryGetProperty(nameof(AppSettings.SendCrashReports), out var send)
+                    && send.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                {
+                    return send.GetBoolean();
+                }
+            }
+            catch
+            {
+                // Missing, unreadable or malformed - the default.
+            }
+
+            return true;
         }
 
         // ColumnManager's debounced save fires on every column resize/reorder/

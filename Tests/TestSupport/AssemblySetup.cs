@@ -104,6 +104,14 @@ internal static class AssemblySetup
     {
         Flower.Services.FlowerFolder.Override = DefaultFlowerFolder;
     }
+
+    // And out of the developer's Sentry: a test that boots App, or throws on
+    // purpose, would otherwise report itself as a crash from a real install.
+    [ModuleInitializer]
+    public static void NeverSendCrashReports()
+    {
+        Flower.Logging.CrashReporting.DisabledForTests = true;
+    }
 }
 
 // ── A note on Dispatcher.UIThread.MainLoop in tests ──────────────────────────

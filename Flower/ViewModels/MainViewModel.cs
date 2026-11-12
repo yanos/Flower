@@ -333,6 +333,23 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         }
     }
 
+    // Whether this device sends its crashes, anonymised, to Flower's
+    // developer (AppSettings.SendCrashReports). Live: CrashReporting reads the
+    // switch on every event, so off means nothing more leaves from now on.
+    public bool SendCrashReports
+    {
+        get => _appSettings.SendCrashReports;
+        set
+        {
+            if (_appSettings.SendCrashReports == value)
+                return;
+            _appSettings.SendCrashReports = value;
+            CrashReporting.Enabled = value;
+            OnPropertyChanged();
+            SaveSettings();
+        }
+    }
+
     // Whether this device looks things up online for its own songs, while it
     // is on its own (MusicLibrarySettings.LookUpOnline) - a paired device goes
     // by its server's answer instead (AppSettings.PairedServerLooksUpOnline).

@@ -802,6 +802,18 @@
                        VerticalAlignment="Center" />
             <ToggleSwitch Grid.Column="1" IsChecked="{Binding ShowsFrameMeter}" />
           </Grid>
+
+          <!-- On by default, as on a desktop: a crash goes to Flower's
+               developer, stripped of anything that names a person, a song or
+               a server (CrashReporting, AppSettings.SendCrashReports). -->
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="14">
+            <TextBlock Grid.Column="0" Classes="rowTitle" FontWeight="Normal"
+                       Text="Send anonymous crash reports"
+                       VerticalAlignment="Center" />
+            <ToggleSwitch Grid.Column="1" IsChecked="{Binding Main.SendCrashReports}" />
+          </Grid>
+          <TextBlock Classes="note" Margin="0,-8,0,0"
+                     Text="Helps fix Flower. No names of people, songs, folders or servers." />
         </StackPanel>
       </Border>
 

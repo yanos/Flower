@@ -126,7 +126,7 @@ namespace Flower.Logging
                         var summary = !string.IsNullOrEmpty(exceptionType)
                             ? exceptionType
                             : topFrame != null ? $"Native crash in {topFrame}" : "Native crash";
-                        return new PendingCrash(summary, frames.ToString().TrimEnd(), null, null, when);
+                        return new PendingCrash(summary, frames.ToString().TrimEnd(), null, null, when, Native: true);
                     }
                 }
             }
@@ -135,7 +135,7 @@ namespace Flower.Logging
                 // Not JSON at all - reported raw below.
             }
 
-            return new PendingCrash("Native crash", content, null, null, when);
+            return new PendingCrash("Native crash", content, null, null, when, Native: true);
         }
 
         private static string FrameName(JsonElement frame)
@@ -167,7 +167,7 @@ namespace Flower.Logging
         public static PendingCrash? DescribeAndroidExitReasons(IReadOnlyList<string> reasons, DateTimeOffset when) =>
             reasons.Count == 0
                 ? null
-                : new PendingCrash("Crash recorded by Android", string.Join("\n", reasons), null, null, when);
+                : new PendingCrash("Crash recorded by Android", string.Join("\n", reasons), null, null, when, Native: true);
 
         [SupportedOSPlatform("windows")]
         private static PendingCrash? ScanWindowsEventLog(ILogger logger)
@@ -242,7 +242,7 @@ namespace Flower.Logging
                 : module != null
                     ? $"Native crash in {module["Faulting module name:".Length..].Split(',')[0].Trim()}"
                     : "Native crash";
-            return new PendingCrash(summary, description, null, null, when);
+            return new PendingCrash(summary, description, null, null, when, Native: true);
         }
 
         [SupportedOSPlatform("windows")]

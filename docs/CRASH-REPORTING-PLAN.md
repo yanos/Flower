@@ -2,9 +2,69 @@
 
 ## Status
 
-**Option A is built** (November 2026). What is left: Option B, if crash
-volume ever makes reading issues one at a time too slow; iOS native crashes,
-which nothing records (no crash-report file, no exit history to read).
+**Sentry crash reporting is built** (November 2026), on the app and the
+server, verified end to end from a running app and a running server.
+What a report contains, for users: [PRIVACY.md](PRIVACY.md). Sentry
+org `none-k0o`, projects `flower-app` and `flower-server`; spike protection,
+IP scrubbing and server-side data scrubbing on in both. Reaches users with the
+next `v*` tag. The GitHub banner (Option A, below) remains for anyone who
+switches reporting off.
+
+What is left:
+
+- **Usage stats.** Sentry's .NET SDK now has Metrics (counters, gauges,
+  distributions with attributes), which may cover the events below without
+  Aptabase - to decide before building.
+- **Readable stacks on iOS and Android.** Method names arrive everywhere;
+  file and line only where PDBs ship beside the app (desktop, server). A
+  NativeAOT or AOT phone build needs its debug files uploaded to Sentry from
+  CI, which needs a Sentry auth token as a CI secret.
+- **A first-run notice** that reporting is on (the switch exists; the notice
+  does not).
+- iOS native crashes, which nothing records (no crash-report file, no exit
+  history to read).
+- **Calls to `CrashReporting.ReportCaught`.** The API exists; no catch site
+  uses it yet. Each one is a judgement: a catch that means Flower is wrong,
+  not one that means the world is (a server down, a file gone).
+By design: a crash in a run that was not reporting (a pre-release, the
+switch off) is dropped for good, never sent by a later run that is.
+
+How Sentry is wired (`Flower.Core/Logging/CrashReporting.cs`, shared by both
+hosts):
+
+- **Started** first thing after the log (`App.axaml.cs`, `Program.cs`), so a
+  startup crash is caught - **in a release version only**: a pre-release
+  (every untagged build, a tagged beta) never starts the SDK
+  (`CrashReporting.ShouldRun`; `FLOWER_SEND_CRASH_REPORTS=1` forces it to
+  check the wiring). Never in the browser, never in a test
+  (`CrashReporting.DisabledForTests`, set by every test assembly).
+- **Sent:** unhandled and unobserved task exceptions (the SDK's own hooks), a
+  native crash found at the next launch (`CrashReporting.CaptureNative`),
+  caught exceptions a call site chooses to send (`CrashReporting.ReportCaught`,
+  tagged `caught_in`), and
+  one trace per launch, `app.startup` (1% of launches in a release, all in a
+  development build); the server's request traces at the same rate.
+- **Not sent:** log lines (the server's Sentry logger has every level above
+  it), breadcrumbs, sessions.
+- **Anonymous:** `CrashScrubber` on every event and trace - messages lose
+  paths (extension kept), URLs and quoted names; frames keep method and file
+  name only; no machine or device name, boot time, location (the event names
+  0.0.0.0, so Sentry infers none), request query, headers or cookies.
+  Checked on the received events, not just in tests.
+- **Installs counted, not identified:** `CrashReportingId`, a random GUID in
+  the data directory, is the event's user, so Sentry's user count is how
+  many installs a problem reaches. Deleted when the switch goes off.
+- **How often, within the quota:** `CrashThrottle` (`logs/crash-throttle.txt`)
+  sends each problem at most once an hour per install, keyed by release,
+  exception types and innermost frames; repeats are counted and the next
+  report carries them as `occurrences`. Event count is then device-hours,
+  user count installs, `occurrences` the rest. (It replaced "once per device
+  per version", which hid how frequent a crash was.)
+- **Switch:** `AppSettings.SendCrashReports` (Settings on both heads, live;
+  peeked before the full settings load) and `Flower:SendCrashReports` on the
+  server (read at startup). Both on by default.
+- `development` and `production` environments split by build configuration;
+  the release is `AppVersion.Full`.
 
 How it works:
 
@@ -33,12 +93,77 @@ How it works:
 Reporting needs a GitHub account, which a listener may not have; they can
 tell the owner instead, whose server already receives their device logs.
 
+## Next: crashes and usage from every install
+
+The goal is the developer's: every Flower install, owner's or listener's,
+reports into one place, so bugs get fixed and features prioritised from
+what people actually hit and use. Not a per-owner feature - nothing goes to
+anyone's Flower.Server.
+
+### Decisions (November 2026)
+
+- **Crashes → Sentry, hosted** (a project for the app and one for the
+  server, one developer seat; every install sends into them). Free plan: about 5,000 errors a month shared by all
+  installs.
+- **Spike protection on** in the Sentry project (a project setting, not code).
+- **What is sent:** terminating managed exceptions, native crashes found at
+  the next launch (`PendingCrash`, as today), **and unobserved task
+  exceptions** - real bugs that surface nowhere else. Not `LogError`/
+  `LogWarning` lines: Sentry is not wired as a logging provider (the
+  `Sentry.Extensions.Logging` route in Option B below would send every one),
+  captures are explicit.
+- **At most once an hour per install** for each distinct exception (type plus
+  top frames), repeats counted into the next report, and a random install ID
+  so Sentry counts installs: frequency and reach both matter for what to fix
+  first, and one crash loop still cannot spend the month's quota. (First
+  decided as once per device per version, which hid frequency.) Measured
+  before deciding: zero unobserved task exceptions in the last ten runs on the
+  developer's Mac.
+- **Release versions only;** pre-releases never report.
+- **Crashes + light tracing**: one startup trace per launch, sampled.
+- **Usage → Aptabase** (no IP, no device ID by design) - or Sentry Metrics,
+  see "What is left". Its .NET SDK is
+  MAUI-only; Flower gets its own small client over Aptabase's HTTP API.
+- **On by default, with a notice and a switch.** One line where it is first
+  seen ("Flower sends anonymous crash reports and usage stats") and a switch
+  in Settings on every head. Default-on rests on the data being anonymous
+  (below); a listener's phone is still asked nothing. Declared in the App
+  Store privacy label and Play data safety form as diagnostics and usage, not
+  linked to identity.
+- The GitHub banner stays, as the manual route for anyone who switches
+  reporting off.
+
+### Anonymous, and how
+
+- No account, server or device ID - only a random install ID that counts
+  installs and is deleted with the switch; Sentry with
+  `SendDefaultPii = false` and IP storage off in the project.
+- **Crash contents stripped:** exception type and each frame's method name.
+  No file paths, no source paths, and no exception message unless its type is
+  on an allow-list - a message is where a song title or folder name leaks
+  ("could not open …/Secret Album/01.flac"). `IssueLink.Redact`'s home-folder
+  rule as a backstop.
+- **Usage as flags and ranges only**, never a name or a title.
+
+### Usage events (proposed - to review before any code)
+
+- **Per launch:** version, OS, head (desktop, macOS, iOS, Android, browser),
+  AOT or Mono, role (unpaired, owner, listener).
+- **Library:** song count in ranges (<1k, 1k-10k, 10k-50k, more), playlist and
+  smart-playlist counts in ranges, share lossless and hi-res.
+- **Settings snapshot:** EQ on, theme, update checks, vibe playlists, output
+  sample format the device settled on.
+- **Feature use:** vibe playlist created, download, AirPlay, search, pairing,
+  Music.app import answer.
+- **Health:** render watchdog trips, decode failures by codec, startup and
+  scan time in ranges.
+
 Survey of options for surfacing crashes, layered on top of the existing file logging (`Flower/Logging/AppLogging.cs`, `App.axaml.cs`'s unhandled-exception hooks) — these options are about getting that data out, not duplicating capture that already exists.
 
 ## Key findings
 
 - App Center is confirmed dead (retired March 2025) — ruled out.
-- **Sentry** has confirmed, current Avalonia support. Its `Sentry.Extensions.Logging` package plugs directly into the same `ILoggingBuilder` call already in `App.axaml.cs` as a second provider alongside the file sink — zero changes needed at existing `ILogger` call sites.
+- **Sentry** has no Avalonia integration of its own, but its core .NET package works with one: initialise it early and hand it exceptions (its maintainers' advice). NativeAOT on iOS and Android since SDK 4; SDK 6 targets .NET 10. Its `Sentry.Extensions.Logging` package could plug into the `ILoggingBuilder` call in `App.axaml.cs`, but that sends every error log line, which "Next" above rules out.
 - **GlitchTip** is a real self-hosted alternative: speaks the same Sentry wire protocol, so identical NuGet packages work unchanged — just a different DSN, and a smaller self-hosted footprint (4 components vs. self-hosted Sentry's dozen-plus).
 - A zero-infrastructure option: GitHub supports pre-filling a new issue via URL query params — no token/server/account needed, and directly satisfies `docs/todo.txt`'s "make an issue link" item.
 - Privacy note: stack traces/logs can contain real filesystem paths — keep a human-review step (issue draft, or a confirm dialog) regardless of which option is chosen.

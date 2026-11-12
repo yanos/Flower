@@ -242,6 +242,12 @@ to the binary and survives redeploying it. Environment variables
 (`Flower__Alias=Basement`) and command-line switches (`--Flower:Alias=Basement`)
 still win over both.
 
+A release version of the server sends its crashes, anonymised, to Flower's
+developer: the exception's type and the methods on its stack, with no names
+of people, songs, folders or servers. Set `"SendCrashReports": false` to stop
+it (read at startup). Each device has the same switch in Settings.
+[PRIVACY.md](PRIVACY.md) lists exactly what a report contains.
+
 ### Adding music to the server's folder
 
 Copy songs into the music folder and they appear in the library on their own —

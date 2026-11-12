@@ -141,6 +141,17 @@
                        Margin="0,6,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
           </StackPanel>
 
+          <!-- On by default, anywhere, paired or not: a crash goes to Flower's
+               developer, stripped of anything that names a person, a song or
+               a server (CrashReporting, AppSettings.SendCrashReports). -->
+          <CheckBox Content="Send anonymous crash reports"
+                    Margin="0,20,0,0"
+                    IsChecked="{Binding Device.SendCrashReports, Mode=TwoWay, FallbackValue=True}"
+                    IsVisible="{Binding Device, Converter={x:Static avc:ObjectConverters.IsNotNull}}"/>
+          <TextBlock Text="Helps fix Flower. No names of people, songs, folders or servers."
+                     Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"
+                     IsVisible="{Binding Device, Converter={x:Static avc:ObjectConverters.IsNotNull}}"/>
+
           <!-- On by default: whoever runs the server is the one who ends up
                diagnosing a listener's phone, and a listener cannot be asked to
                find a log file. Still a switch, because the snapshot carries

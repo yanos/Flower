@@ -23,12 +23,18 @@ namespace Flower.Logging
     //
     // One crash at a time, the newest: a run that crashes again before the
     // last one was answered has the fresher story.
+    //
+    // With crash reporting on (CrashReporting), a managed crash has already
+    // gone to Sentry as the process died and this is just forgotten; a native
+    // one (Native) is sent from here at the next launch. Only with reporting
+    // off does it become the GitHub banner.
     public sealed record PendingCrash(
         string Summary,
         string Details,
         string? Version,
         string? LogFile,
-        DateTimeOffset When)
+        DateTimeOffset When,
+        bool Native = false)
     {
         public static string FilePath => Path.Combine(AppLogging.LogsDirectory, "pending-crash.json");
 

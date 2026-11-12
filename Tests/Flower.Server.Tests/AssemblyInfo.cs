@@ -32,6 +32,17 @@ internal static class ServerTestDataDirectory
     }
 }
 
+// And out of the developer's Sentry: every test class boots a server, and a
+// deliberately failing request would otherwise arrive as a crash.
+internal static class ServerTestCrashReporting
+{
+    [System.Runtime.CompilerServices.ModuleInitializer]
+    public static void NeverSendCrashReports()
+    {
+        Flower.Logging.CrashReporting.DisabledForTests = true;
+    }
+}
+
 // And out of the real Trash: POST /library/remove with deleteFiles moves the
 // file there on any host that has one. See FileTrash.Override.
 internal static class ServerTestTrash

@@ -38,6 +38,16 @@ namespace Flower;
 
 public partial class App : Application
 {
+    // The Sentry SDK for the life of the process (CrashReporting), or null
+    // where it does not run - the browser, a test. Held, never disposed: it
+    // flushes on its own as the process exits.
+    private static IDisposable? _crashReporting;
+
+    // How long startup took, from the log being up to the main view built -
+    // the one trace a client sends (CrashReporting's sample rate decides
+    // whether this launch's is kept).
+    private static Sentry.ITransactionTracer? _startupTrace;
+
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
@@ -67,6 +77,14 @@ public partial class App : Application
         // callback tracing) free rather than merely cheap.
         var logPath = AppLogging.Initialize(minimumLevel: AppSettingsStore.ReadLogFileMinimumLevel());
 
+        // Crash reporting, straight after the log, so a crash during startup
+        // reaches Sentry too - anonymised, in a release only, and only while
+        // Settings' switch is on (CrashReporting). The switch is peeked for
+        // the same reason the log level is.
+        CrashReporting.Enabled = AppSettingsStore.ReadSendCrashReports();
+        _crashReporting = CrashReporting.StartForApp(AppVersion.Full);
+        if (_crashReporting != null)
+            _startupTrace = Sentry.SentrySdk.StartTransaction("app.startup", "app.start");
 
         // DI container setup starts here, near the top of startup - logging is
         // the first thing registered on it (via the standard
@@ -790,11 +808,24 @@ public partial class App : Application
 
         var mainViewModel = Ioc.Default.GetRequiredService<MainViewModel>();
 
-        // The last run's crash, if it left one and nobody has answered it yet.
+        // The last run's crash, if it left one and nobody has answered it
+        // yet. With reporting on it goes to Sentry - a managed one already
+        // went as the process died, so only a native one is sent from here -
+        // and nobody is asked anything. With it off, the GitHub banner asks.
         if (PendingCrash.Read() is { } crash)
         {
-            logger.LogInformation("Offering to report the last run's crash: {Summary}", crash.Summary);
-            mainViewModel.CrashReport = new CrashReportOfferViewModel(crash, AppVersion.Full, IssueLink.Platform, IssueLink.HomeDirectory);
+            if (CrashReporting.Enabled && CrashReporting.Running)
+            {
+                logger.LogInformation("Reporting the last run's crash to Sentry: {Summary}", crash.Summary);
+                if (crash.Native)
+                    CrashReporting.CaptureNative(crash);
+                PendingCrash.Clear();
+            }
+            else
+            {
+                logger.LogInformation("Offering to report the last run's crash: {Summary}", crash.Summary);
+                mainViewModel.CrashReport = new CrashReportOfferViewModel(crash, AppVersion.Full, IssueLink.Platform, IssueLink.HomeDirectory);
+            }
         }
 
         // Completed unless a first-run question is on screen - see below. The
@@ -1273,6 +1304,9 @@ public partial class App : Application
                     Dispatcher.UIThread.Post(() => mainViewModel.BrowserPairing.IsChecking = false);
             }
         });
+
+        _startupTrace?.Finish();
+        _startupTrace = null;
 
         return mainView;
     }

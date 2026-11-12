@@ -69,6 +69,7 @@
        the aspnet runtime image does not have and a server drawing no text
        does not need. -->
   <ItemGroup>
+    <PackageReference Include="Sentry.AspNetCore" Version="6.13.0" />
     <PackageReference Include="SkiaSharp" Version="3.119.4" />
     <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="3.119.4" />
   </ItemGroup>

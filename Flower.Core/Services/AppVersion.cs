@@ -72,6 +72,11 @@ public static class AppVersion
         $"{EntryPoint} {Full}, built {(BuildDate is { } date ? date.ToString("yyyy-MM-dd HH:mm:ss 'UTC'", System.Globalization.CultureInfo.InvariantCulture) : "at an unknown time")}, "
         + $"on {System.Runtime.InteropServices.RuntimeInformation.OSDescription} ({System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture})";
 
+    // A version with a pre-release suffix - every untagged build MinVer
+    // stamps (0.9.1-alpha.0.14) and a tagged beta alike. Crash reporting
+    // stays off for these (CrashReporting.ShouldRun).
+    public static bool IsPrerelease(string version) => StripBuildMetadata(version).Contains('-');
+
     // Also for another assembly's version - the decoder's, when it comes from
     // the FFAudio.NET package (see DecoderVersion).
     public static string StripBuildMetadata(string version)

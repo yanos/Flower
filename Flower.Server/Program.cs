@@ -97,6 +97,24 @@ var (serverLogger, logFile) = AppLogging.Build(
     logStore, fileSizeLimitBytes: 32 * 1024 * 1024, minimumLevel: logFloor, categoryOverrides: logOverrides);
 builder.Logging.ClearProviders();
 builder.Logging.AddSerilog(serverLogger, dispose: true);
+
+// Crashes - unhandled request exceptions and unobserved task exceptions - to
+// Flower's developer, anonymised, from a release only (CrashReporting,
+// docs/PRIVACY.md). Never a log line: the Sentry logger is registered with
+// every level above it. On unless the owner sets Flower:SendCrashReports to
+// false; read at startup.
+if (CrashReporting.ShouldRun(AppVersion.Full))
+{
+    CrashReporting.Enabled = builder.Configuration.GetValue(
+        $"{FlowerServerOptions.SectionName}:{nameof(FlowerServerOptions.SendCrashReports)}", true);
+    builder.WebHost.UseSentry(options =>
+    {
+        CrashReporting.Configure(options, CrashReporting.ServerDsn, AppVersion.Full);
+        options.MinimumEventLevel = LogLevel.None;
+        options.MinimumBreadcrumbLevel = LogLevel.None;
+        options.EnableLogs = false;
+    });
+}
 builder.Services.AddSingleton(logStore);
 
 // Nothing in this process should ever accept a body larger than 20 MB (the
