@@ -148,7 +148,8 @@ public partial class MainWindow : Window
             {
                 var aboutItem = new NativeMenuItem("About Flower");
                 _menuIcons.Add((aboutItem, MaterialIconKind.InformationOutline));
-                aboutItem.Click += (_, _) => new AboutWindow().Show();
+                aboutItem.Click += (_, _) =>
+                    new AboutWindow((DataContext as ViewModels.MainViewModel)?.Updates).Show();
 
                 var settingsMenuItem = new NativeMenuItem("Settings…")
                 {

@@ -1,5 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:Flower.ViewModels"
+        xmlns:avc="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
         x:Class="Flower.Views.AboutWindow"
         Title="About Flower"
         Width="320" Height="220"
@@ -26,6 +28,34 @@
                FontSize="11"
                Opacity="0.5"
                HorizontalAlignment="Center"/>
+    <!-- The same check as Settings > General's Check now (AppUpdatesViewModel),
+         and its install button once there is something to install. Hidden
+         where there is no updater: a phone, the browser, a build not
+         installed from a release. -->
+    <StackPanel x:Name="UpdatesPanel"
+                x:DataType="vm:AppUpdatesViewModel"
+                IsVisible="False"
+                Spacing="4"
+                Margin="0,6,0,6"
+                HorizontalAlignment="Center">
+      <Button Classes="standard secondary"
+              Content="Check for Updates"
+              Command="{Binding CheckNowCommand}"
+              IsVisible="{Binding Available, Converter={x:Static avc:ObjectConverters.IsNull}}"
+              HorizontalAlignment="Center"/>
+      <Button Classes="standard primary"
+              Content="{Binding Available.InstallLabel, FallbackValue=''}"
+              Command="{Binding InstallCommand}"
+              IsVisible="{Binding Available, Converter={x:Static avc:ObjectConverters.IsNotNull}}"
+              HorizontalAlignment="Center"/>
+      <TextBlock Text="{Binding Status}"
+                 MaxWidth="272"
+                 TextWrapping="Wrap"
+                 TextAlignment="Center"
+                 FontSize="11"
+                 Opacity="0.6"
+                 HorizontalAlignment="Center"/>
+    </StackPanel>
     <!-- A new GitHub issue with the version already in it (IssueLink). -->
     <HyperlinkButton x:Name="ReportIssueLink"
                      Content="Report an Issue"

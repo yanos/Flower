@@ -2,12 +2,21 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Flower.Audio.Ffmpeg;
 using Flower.Services;
+using Flower.ViewModels;
 
 namespace Flower.Views;
 
 public partial class AboutWindow : Window
 {
-    public AboutWindow()
+    // For the XAML loader and the previewer.
+    public AboutWindow() : this(null)
+    {
+    }
+
+    // `updates` is the app's one AppUpdatesViewModel (MainViewModel.Updates),
+    // so a check from here is the one the banner and Settings see; null
+    // where there is no updater hides the row.
+    public AboutWindow(AppUpdatesViewModel? updates)
     {
         InitializeComponent();
 
@@ -17,6 +26,12 @@ public partial class AboutWindow : Window
             ? $"Version {AppVersion.Display}\n{decoder}"
             : $"Version {AppVersion.Display}";
         ReportIssueLink.NavigateUri = IssueLink.General(AppVersion.Full, IssueLink.Platform);
+
+        if (updates != null)
+        {
+            UpdatesPanel.DataContext = updates;
+            UpdatesPanel.IsVisible = true;
+        }
     }
 
     private void LicencesButton_OnClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>

@@ -80,7 +80,8 @@ public partial class App : Application
         AvaloniaXamlLoader.Load(this);
     }
 
-    private void AboutMenuItem_OnClick(object? sender, System.EventArgs e) => new AboutWindow().Show();
+    private void AboutMenuItem_OnClick(object? sender, System.EventArgs e) =>
+        new AboutWindow(Ioc.Default.GetRequiredService<MainViewModel>().Updates).Show();
 
     // OpenSettingsCommand just raises MainViewModel.SettingsRequested, which
     // MainView.axaml.cs is already subscribed to (the same path Cmd/Ctrl+,

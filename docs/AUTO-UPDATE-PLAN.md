@@ -59,7 +59,7 @@ another way than the phases above:
   launch, then at most once a day across launches (`AppSettings.
   LastUpdateCheck`, advanced only by a check that succeeded), off with
   `CheckForUpdatesAutomatically` in Settings > General, which also has Check
-  Now. An update found is a dismissible banner across the page; Velopack's is
+  Now, as does the About box (Check for Updates, then the install button). An update found is a dismissible banner across the page; Velopack's is
   already downloaded by then, so its button restarts straight into it, and
   one never pressed goes in at the next launch anyway (`VelopackApp.Run`).
   Stable releases only, on every OS; there is no beta channel yet.
