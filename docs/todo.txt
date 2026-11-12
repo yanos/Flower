@@ -6,7 +6,6 @@ Explain how to pair to a server or add music
 bandcamp integration
 other streaming platform integration if possible
 Event bus?
-add an issue link in about box
 write a readme
 transform plans to actual documentation
 try  /ultrareview 

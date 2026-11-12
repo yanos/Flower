@@ -16,6 +16,7 @@ public partial class AboutWindow : Window
         VersionTextBlock.Text = DecoderVersion.Display is { } decoder
             ? $"Version {AppVersion.Display}\n{decoder}"
             : $"Version {AppVersion.Display}";
+        ReportIssueLink.NavigateUri = IssueLink.General(AppVersion.Full, IssueLink.Platform);
     }
 
     private void LicencesButton_OnClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>

@@ -813,6 +813,14 @@
                  TextAlignment="Center" TextWrapping="Wrap"
                  Margin="20,2,20,8" />
 
+      <!-- A new GitHub issue with the version already in it (IssueLink),
+           opened in the phone's browser. -->
+      <HyperlinkButton x:Name="ReportIssueLink"
+                       Content="Report an Issue"
+                       FontSize="12"
+                       HorizontalAlignment="Center"
+                       Margin="20,0,20,8" />
+
       <!-- NOTICE and the licence texts (OpenSourceNotices), which a phone
            has nowhere else to show. Filled the first time it opens: the LGPL
            alone is five hundred lines, laid out for nothing on every visit

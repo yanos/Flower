@@ -537,6 +537,51 @@
         </Grid>
       </Border>
     </Panel>
+
+    <!-- The last run's crash (CrashReportOfferViewModel): a link to a GitHub
+         issue with the details already written, which the person reads
+         before sending anything. Either the link or the close button answers
+         it for good. -->
+    <Panel IsVisible="{Binding CrashReport, Converter={x:Static avc:ObjectConverters.IsNotNull}}">
+      <Border x:Name="CrashReportBanner"
+              DataContext="{Binding CrashReport}"
+              x:DataType="vm:CrashReportOfferViewModel"
+              IsVisible="{Binding IsOpen}"
+              Padding="12,8,8,8"
+              BorderThickness="0,0,0,1"
+              BorderBrush="{DynamicResource AppDividerBrush}"
+              Background="{DynamicResource AppPlaceholderBrush}">
+        <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+          <materialIcons:MaterialIcon Grid.Column="0"
+                                      Kind="BugOutline"
+                                      Width="16" Height="16"
+                                      Margin="0,0,8,0"
+                                      VerticalAlignment="Center"/>
+          <TextBlock Grid.Column="1"
+                     Text="{Binding Message}"
+                     FontSize="12"
+                     TextWrapping="Wrap"
+                     VerticalAlignment="Center"/>
+          <HyperlinkButton Grid.Column="2"
+                           Content="Report on GitHub"
+                           NavigateUri="{Binding IssueUrl}"
+                           Command="{Binding AnswerCommand}"
+                           FontSize="12"
+                           Margin="8,0,0,0"
+                           VerticalAlignment="Center"/>
+          <Button Grid.Column="3"
+                  Command="{Binding AnswerCommand}"
+                  ToolTip.Tip="Dismiss"
+                  Background="Transparent"
+                  BorderThickness="0"
+                  Padding="4"
+                  Margin="8,0,0,0"
+                  VerticalAlignment="Center">
+            <materialIcons:MaterialIcon Kind="Close" Width="14" Height="14"/>
+          </Button>
+        </Grid>
+      </Border>
+    </Panel>
     </StackPanel>
 
     <!-- A list's header: its name in the display serif and how much is in

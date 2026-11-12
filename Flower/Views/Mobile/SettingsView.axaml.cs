@@ -29,6 +29,7 @@ public partial class SettingsView : UserControl
         VersionTextBlock.Text = DecoderVersion.Display is { } decoder
             ? $"Version {AppVersion.Display} · {decoder}"
             : $"Version {AppVersion.Display}";
+        ReportIssueLink.NavigateUri = IssueLink.General(AppVersion.Full, IssueLink.Platform);
 
         AttachedToVisualTree += (_, _) => Hook();
         DetachedFromVisualTree += (_, _) => Unhook();

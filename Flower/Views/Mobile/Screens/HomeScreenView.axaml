@@ -5,6 +5,7 @@
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
              xmlns:fvm="clr-namespace:Flower.ViewModels"
+             xmlns:avc="clr-namespace:Avalonia.Data.Converters;assembly=Avalonia.Base"
              x:Class="Flower.Views.Mobile.Screens.HomeScreenView"
              x:DataType="vm:MobileMainViewModel"
              Background="{DynamicResource AppBackgroundBrush}">
@@ -39,6 +40,42 @@
   <ScrollViewer Classes="screenScroll" controls:RubberBandScroll.IsEnabled="True">
     <StackPanel>
       <controls:ScreenTitle />
+
+      <!-- The last run's crash, as on a desktop's banner
+           (CrashReportOfferViewModel): the link opens GitHub's issue page in
+           the browser with the details written, and either it or the close
+           button answers it for good. Atop Home, the first page a phone
+           opens on. -->
+      <Panel IsVisible="{Binding Main.CrashReport, Converter={x:Static avc:ObjectConverters.IsNotNull}}">
+        <Border DataContext="{Binding Main.CrashReport}"
+                x:DataType="fvm:CrashReportOfferViewModel"
+                IsVisible="{Binding IsOpen}"
+                Margin="16,0,16,12"
+                Padding="14,10,6,10"
+                CornerRadius="12"
+                Background="{DynamicResource AppPlaceholderBrush}">
+          <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+            <TextBlock Grid.Column="0" Grid.Row="0"
+                       Text="{Binding Message}"
+                       FontSize="14"
+                       TextWrapping="Wrap" />
+            <HyperlinkButton Grid.Column="0" Grid.Row="1"
+                             Content="Report on GitHub"
+                             NavigateUri="{Binding IssueUrl}"
+                             Command="{Binding AnswerCommand}"
+                             Padding="0,8,0,0" />
+            <Button Grid.Column="1" Grid.Row="0" Grid.RowSpan="2"
+                    Command="{Binding AnswerCommand}"
+                    AutomationProperties.Name="Dismiss"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Padding="8"
+                    VerticalAlignment="Top">
+              <materialIcons:MaterialIcon Kind="Close" Width="18" Height="18" />
+            </Button>
+          </Grid>
+        </Border>
+      </Panel>
 
       <Grid>
         <!-- One virtualizing list of rows - each shelf's heading, then its

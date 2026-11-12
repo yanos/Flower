@@ -26,6 +26,12 @@
                FontSize="11"
                Opacity="0.5"
                HorizontalAlignment="Center"/>
+    <!-- A new GitHub issue with the version already in it (IssueLink). -->
+    <HyperlinkButton x:Name="ReportIssueLink"
+                     Content="Report an Issue"
+                     Padding="0"
+                     FontSize="11"
+                     HorizontalAlignment="Center"/>
     <HyperlinkButton Content="Open-Source Licences"
                      Click="LicencesButton_OnClick"
                      Padding="0"

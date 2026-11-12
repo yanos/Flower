@@ -67,6 +67,7 @@ public partial class App : Application
         // callback tracing) free rather than merely cheap.
         var logPath = AppLogging.Initialize(minimumLevel: AppSettingsStore.ReadLogFileMinimumLevel());
 
+
         // DI container setup starts here, near the top of startup - logging is
         // the first thing registered on it (via the standard
         // Microsoft.Extensions.Logging AddLogging(...)/AddSerilog() pipeline,
@@ -115,9 +116,15 @@ public partial class App : Application
             logger.LogCritical(e.ExceptionObject as Exception, "Unhandled exception (IsTerminating={IsTerminating})", e.IsTerminating);
             // The process is about to die - flush now, or Serilog's buffered
             // file write never reaches disk and this line is lost right along
-            // with the crash it was recording.
+            // with the crash it was recording. And leave the crash for the
+            // next launch to offer reporting (PendingCrash), since this one
+            // has no time left to ask.
             if (e.IsTerminating)
+            {
+                if (e.ExceptionObject is Exception exception)
+                    PendingCrash.FromException(exception, AppVersion.Full, logPath, DateTimeOffset.Now).Record();
                 AppLogging.Shutdown();
+            }
         };
         TaskScheduler.UnobservedTaskException += (_, e) =>
         {
@@ -131,13 +138,20 @@ public partial class App : Application
         // crash, if any, and fold it into this run's log instead. See
         // CrashReportScanner's own comment for how each platform's evidence
         // gets there.
-        CrashReportScanner.ScanAndLog(logger);
+        //
+        // What either finds is offered for reporting too, unless the hook
+        // above already left the same crash's managed exception, which says
+        // more (see PendingCrash). Its log is the previous run's.
+        var nativeCrash = CrashReportScanner.ScanAndLog(logger);
         if (PlatformCrashInfo.PendingAndroidExitReasons is { Count: > 0 } androidExitReasons)
         {
             foreach (var reason in androidExitReasons)
                 logger.LogCritical("Crash found in Android's process exit history: {Reason}", reason);
+            nativeCrash = CrashReportScanner.DescribeAndroidExitReasons(androidExitReasons, DateTimeOffset.Now);
             PlatformCrashInfo.PendingAndroidExitReasons = null;
         }
+        if (nativeCrash != null)
+            (nativeCrash with { LogFile = PendingCrash.PreviousLogFile(logPath) }).RecordUnlessPending();
 
         // Which build this is and when it was built, first - a log is only
         // evidence once it says which build wrote it.
@@ -775,6 +789,13 @@ public partial class App : Application
         AnimationClock.Current = provider.GetRequiredService<AnimationClock>();
 
         var mainViewModel = Ioc.Default.GetRequiredService<MainViewModel>();
+
+        // The last run's crash, if it left one and nobody has answered it yet.
+        if (PendingCrash.Read() is { } crash)
+        {
+            logger.LogInformation("Offering to report the last run's crash: {Summary}", crash.Summary);
+            mainViewModel.CrashReport = new CrashReportOfferViewModel(crash, AppVersion.Full, IssueLink.Platform, IssueLink.HomeDirectory);
+        }
 
         // Completed unless a first-run question is on screen - see below. The
         // startup rescan waits on it.

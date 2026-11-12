@@ -86,4 +86,83 @@ public class CrashReportScannerTests : PinnedDataDirectory
         Assert.Empty(logger.Entries);
         Assert.True(File.Exists(dump));
     }
+
+    [Fact]
+    public void The_newest_crash_report_comes_back_to_be_offered_for_reporting()
+    {
+        SkipUnlessCrashReportFiles();
+        File.SetLastWriteTimeUtc(Report("1.crashreport.json", "older"), new DateTime(2026, 11, 1, 0, 0, 0, DateTimeKind.Utc));
+        File.SetLastWriteTimeUtc(Report("2.crashreport.json", "newer"), new DateTime(2026, 11, 2, 0, 0, 0, DateTimeKind.Utc));
+
+        var crash = CrashReportScanner.ScanAndLog(new RecordingLogger<CrashReportScannerTests>());
+
+        Assert.Equal("newer", crash?.Details);
+    }
+
+    [Fact]
+    public void No_crash_report_means_nothing_to_offer()
+    {
+        Assert.Null(CrashReportScanner.ScanAndLog(new RecordingLogger<CrashReportScannerTests>()));
+    }
+
+    // The shape createdump writes: the crashed thread's frames, managed and
+    // native, are what the issue shows; every other thread is left to the log.
+    [Fact]
+    public void A_crash_report_is_described_by_its_crashed_threads_frames()
+    {
+        const string report = """
+            {
+              "payload": {
+                "threads": [
+                  { "crashed": "false", "stack_frames": [ { "filename": "libother.dylib", "unmanaged_name": "idle" } ] },
+                  { "crashed": "true", "stack_frames": [
+                      { "is_managed": "false", "filename": "/usr/lib/libminiaudio.dylib", "unmanaged_name": "ma_device_read" },
+                      { "is_managed": "true", "filename": "Flower.dll", "method_name": "Flower.Audio.MiniaudioSink.Render" }
+                  ] }
+                ]
+              }
+            }
+            """;
+
+        var crash = CrashReportScanner.DescribeCrashReport(report, DateTimeOffset.UnixEpoch);
+
+        Assert.Equal("Native crash in libminiaudio.dylib!ma_device_read", crash.Summary);
+        Assert.Contains("Flower.dll!Flower.Audio.MiniaudioSink.Render", crash.Details);
+        Assert.DoesNotContain("idle", crash.Details);
+    }
+
+    [Fact]
+    public void A_managed_exception_in_a_crash_report_is_its_summary()
+    {
+        const string report = """
+            { "payload": { "threads": [ { "crashed": "true", "managed_exception_type": "System.NullReferenceException", "stack_frames": [] } ] } }
+            """;
+
+        Assert.Equal("System.NullReferenceException", CrashReportScanner.DescribeCrashReport(report, DateTimeOffset.UnixEpoch).Summary);
+    }
+
+    [Fact]
+    public void A_crash_report_not_in_the_expected_shape_is_reported_as_it_is()
+    {
+        var crash = CrashReportScanner.DescribeCrashReport("SIGSEGV somewhere", DateTimeOffset.UnixEpoch);
+
+        Assert.Equal("Native crash", crash.Summary);
+        Assert.Equal("SIGSEGV somewhere", crash.Details);
+    }
+
+    [Fact]
+    public void A_windows_runtime_event_is_summarised_by_its_exception()
+    {
+        const string description = "Application: Flower.Desktop.exe\r\nCoreCLR Version: 10.0\r\nDescription: The process was terminated due to an unhandled exception.\r\nException Info: System.IO.IOException: The disk is full\r\n   at Flower.Save()";
+
+        Assert.Equal("System.IO.IOException: The disk is full", CrashReportScanner.DescribeWindowsEvent(description, DateTimeOffset.UnixEpoch).Summary);
+    }
+
+    [Fact]
+    public void A_windows_application_error_is_summarised_by_its_faulting_module()
+    {
+        const string description = "Faulting application name: Flower.Desktop.exe, version: 0.9.0.0\r\nFaulting module name: flowerbridge.dll, version: 0.0.0.0, time stamp: 0x0\r\nException code: 0xc0000005";
+
+        Assert.Equal("Native crash in flowerbridge.dll", CrashReportScanner.DescribeWindowsEvent(description, DateTimeOffset.UnixEpoch).Summary);
+    }
 }

@@ -1,5 +1,38 @@
 # Crash Reporting Plan
 
+## Status
+
+**Option A is built** (November 2026). What is left: Option B, if crash
+volume ever makes reading issues one at a time too slow; iOS native crashes,
+which nothing records (no crash-report file, no exit history to read).
+
+How it works:
+
+- **Capture.** A terminating managed exception is written by `App.axaml.cs`'s
+  `UnhandledException` hook as a `PendingCrash` (`Flower.Core/Logging/`,
+  `logs/pending-crash.json`) as the process dies. A native crash is found at
+  the next launch - `CrashReportScanner` (the .NET crash report on Linux and
+  macOS, the event log on Windows) or Android's exit history - and recorded
+  only if no managed exception already was, since that says more.
+- **Offer.** The next launch shows a banner (`CrashReportOfferViewModel`,
+  `MainViewModel.CrashReport`): across the page on a desktop, atop Home on a
+  phone. Its "Report on GitHub" link is a `HyperlinkButton`, so it opens the
+  browser through Avalonia's launcher on every head, phones included.
+  Reporting or closing forgets the crash; ignoring it asks again next launch.
+- **The issue.** `IssueLink.ForCrash` prefills title (the exception), body
+  (stack, build, OS, when, where the log is) and the `bug` label. The home
+  folder is written as `~`; the log is not attached (a link cannot carry it),
+  and the body warns it names songs and folders. GitHub's new-issue page is
+  the human review step. The link is held under 5,000 characters, the top of
+  the stack kept: signed out, GitHub sends the person to log in with the link
+  in `return_to`, and drops `return_to` past about 5.7 KB (measured November
+  2026), which would lose the report.
+- **Anytime.** "Report an Issue" in the About box and at the foot of the
+  phone's Settings opens `IssueLink.General` (version and OS only).
+
+Reporting needs a GitHub account, which a listener may not have; they can
+tell the owner instead, whose server already receives their device logs.
+
 Survey of options for surfacing crashes, layered on top of the existing file logging (`Flower/Logging/AppLogging.cs`, `App.axaml.cs`'s unhandled-exception hooks) — these options are about getting that data out, not duplicating capture that already exists.
 
 ## Key findings
@@ -30,4 +63,3 @@ Sentry's .NET SDK (and GlitchTip) already has mobile-capable support, so the sam
 
 Start with Option A (zero-cost, satisfies `docs/todo.txt`). Layer in Option B once crash volume makes manual log-reading too slow. Reach for Option C only if third-party data handling becomes a real constraint.
 
-Not yet started.

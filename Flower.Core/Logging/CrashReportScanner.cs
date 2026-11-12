@@ -1,8 +1,12 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics.Eventing.Reader;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Runtime.Versioning;
+using System.Text;
+using System.Text.Json;
 
 using Microsoft.Extensions.Logging;
 
@@ -15,6 +19,8 @@ namespace Flower.Logging
     // the CLR's own use of them - see docs/CRASH-REPORTING-PLAN.md), this
     // reads back whatever the OS/runtime already recorded about the previous
     // run's crash and folds it into this run's log, so it doesn't just vanish.
+    // The newest crash it finds also comes back as a PendingCrash, which the
+    // caller records so this launch can offer to report it.
     //
     // Windows: the CLR already writes native-fault ("Application Error", ID
     // 1000) and managed-unhandled (".NET Runtime", ID 1026) entries to the
@@ -39,25 +45,33 @@ namespace Flower.Logging
         private const string WindowsEventSources = "Application Error";
         private const string DotNetRuntimeEventSource = ".NET Runtime";
 
-        public static void ScanAndLog(ILogger logger)
+        // Version and LogFile are left for the caller: a crash found here
+        // belongs to a run that has already ended, whose build only the
+        // caller can guess at and whose log only it knows to look for.
+        public static PendingCrash? ScanAndLog(ILogger logger)
         {
             if (OperatingSystem.IsWindows())
-                ScanWindowsEventLog(logger);
-            else if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
-                ScanCrashReportFiles(logger);
+                return ScanWindowsEventLog(logger);
+            if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
+                return ScanCrashReportFiles(logger);
+            return null;
         }
 
-        private static void ScanCrashReportFiles(ILogger logger)
+        private static PendingCrash? ScanCrashReportFiles(ILogger logger)
         {
             if (!Directory.Exists(CrashReportsDirectory))
-                return;
+                return null;
 
+            PendingCrash? newest = null;
             foreach (var file in Directory.GetFiles(CrashReportsDirectory, "*.crashreport.json"))
             {
                 try
                 {
                     var content = File.ReadAllText(file);
                     logger.LogCritical("Native crash report found from previous run ({File}):\n{Content}", Path.GetFileName(file), content);
+                    var when = new DateTimeOffset(File.GetLastWriteTimeUtc(file), TimeSpan.Zero);
+                    if (newest == null || when > newest.When)
+                        newest = DescribeCrashReport(content, when);
                 }
                 catch (Exception ex)
                 {
@@ -68,11 +82,97 @@ namespace Flower.Logging
                     TryDelete(file);
                 }
             }
+
+            return newest;
         }
 
-        [SupportedOSPlatform("windows")]
-        private static void ScanWindowsEventLog(ILogger logger)
+        // How many of the crashed thread's frames make it into the details -
+        // the top of the stack is what says where; the rest is in the log.
+        private const int ReportedFrames = 30;
+
+        // A .NET crash report (createdump's JSON) as a summary and the
+        // crashed thread's frames, one per line. Anything that is not the
+        // shape expected is reported as it is, so a report from a runtime
+        // that writes it differently is still a report.
+        public static PendingCrash DescribeCrashReport(string content, DateTimeOffset when)
         {
+            try
+            {
+                using var document = JsonDocument.Parse(content);
+                if (document.RootElement.ValueKind == JsonValueKind.Object &&
+                    document.RootElement.TryGetProperty("payload", out var payload) &&
+                    payload.ValueKind == JsonValueKind.Object &&
+                    payload.TryGetProperty("threads", out var threads) &&
+                    threads.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var thread in threads.EnumerateArray())
+                    {
+                        if (thread.ValueKind != JsonValueKind.Object || Text(thread, "crashed") != "true")
+                            continue;
+
+                        var frames = new StringBuilder();
+                        string? topFrame = null;
+                        if (thread.TryGetProperty("stack_frames", out var stack) && stack.ValueKind == JsonValueKind.Array)
+                        {
+                            foreach (var frame in stack.EnumerateArray().Take(ReportedFrames))
+                            {
+                                var name = FrameName(frame);
+                                topFrame ??= name;
+                                frames.Append("  at ").AppendLine(name);
+                            }
+                        }
+
+                        var exceptionType = Text(thread, "managed_exception_type");
+                        var summary = !string.IsNullOrEmpty(exceptionType)
+                            ? exceptionType
+                            : topFrame != null ? $"Native crash in {topFrame}" : "Native crash";
+                        return new PendingCrash(summary, frames.ToString().TrimEnd(), null, null, when);
+                    }
+                }
+            }
+            catch (JsonException)
+            {
+                // Not JSON at all - reported raw below.
+            }
+
+            return new PendingCrash("Native crash", content, null, null, when);
+        }
+
+        private static string FrameName(JsonElement frame)
+        {
+            if (frame.ValueKind != JsonValueKind.Object)
+                return "?";
+
+            var module = Text(frame, "filename");
+            var method = Text(frame, "method_name") is { Length: > 0 } managed ? managed : Text(frame, "unmanaged_name");
+            if (!string.IsNullOrEmpty(module))
+                module = Path.GetFileName(module);
+
+            return (string.IsNullOrEmpty(module), string.IsNullOrEmpty(method)) switch
+            {
+                (false, false) => $"{module}!{method}",
+                (true, false) => method!,
+                (false, true) => module!,
+                _ => Text(frame, "native_address") ?? "?",
+            };
+        }
+
+        private static string? Text(JsonElement element, string property) =>
+            element.TryGetProperty(property, out var value)
+                ? value.ValueKind == JsonValueKind.String ? value.GetString() : value.ToString()
+                : null;
+
+        // A crash Android recorded in its exit history (MainActivity's
+        // CollectCrashExitReasons), which says little more than why.
+        public static PendingCrash? DescribeAndroidExitReasons(IReadOnlyList<string> reasons, DateTimeOffset when) =>
+            reasons.Count == 0
+                ? null
+                : new PendingCrash("Crash recorded by Android", string.Join("\n", reasons), null, null, when);
+
+        [SupportedOSPlatform("windows")]
+        private static PendingCrash? ScanWindowsEventLog(ILogger logger)
+        {
+            PendingCrash? newest = null;
             // First run ever (no marker yet): only look back 24h rather than
             // the whole Application log's history, since anything older is
             // very unlikely to be the crash that just preceded this launch.
@@ -114,6 +214,9 @@ namespace Flower.Logging
 
                         logger.LogCritical("Crash found in Windows Event Log ({Provider}, ID {Id}, {Time}): {Description}",
                             record.ProviderName, record.Id, record.TimeCreated, description);
+                        var when = record.TimeCreated is { } created ? new DateTimeOffset(created) : DateTimeOffset.Now;
+                        if (newest == null || when > newest.When)
+                            newest = DescribeWindowsEvent(description, when);
                     }
                 }
             }
@@ -123,6 +226,23 @@ namespace Flower.Logging
             }
 
             WriteWindowsMarker(now);
+            return newest;
+        }
+
+        // An Application Error (1000) names the faulting module; a .NET
+        // Runtime (1026) entry carries the exception. Either line makes a
+        // better title than the event's first, which only names the app.
+        public static PendingCrash DescribeWindowsEvent(string description, DateTimeOffset when)
+        {
+            var lines = description.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+            var exception = lines.FirstOrDefault(line => line.StartsWith("Exception Info:", StringComparison.OrdinalIgnoreCase));
+            var module = lines.FirstOrDefault(line => line.StartsWith("Faulting module name:", StringComparison.OrdinalIgnoreCase));
+            var summary = exception != null
+                ? exception["Exception Info:".Length..].Trim()
+                : module != null
+                    ? $"Native crash in {module["Faulting module name:".Length..].Split(',')[0].Trim()}"
+                    : "Native crash";
+            return new PendingCrash(summary, description, null, null, when);
         }
 
         [SupportedOSPlatform("windows")]

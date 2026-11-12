@@ -75,6 +75,20 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         }
     }
 
+    // The last run's crash, offered for reporting - the banner across the
+    // page on a desktop, atop Home on a phone. Set at startup when there is
+    // one (PendingCrash) and null otherwise, which hides both.
+    private CrashReportOfferViewModel? _crashReport;
+    public CrashReportOfferViewModel? CrashReport
+    {
+        get => _crashReport;
+        set
+        {
+            _crashReport = value;
+            OnPropertyChanged();
+        }
+    }
+
     // The same, for the phone's server row to bind: one of the two, or
     // neither.
     public IImage? PairedServerIconImage => PairedIcon?.Image;
