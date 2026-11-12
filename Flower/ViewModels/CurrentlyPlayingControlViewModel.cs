@@ -40,6 +40,16 @@ namespace Flower.ViewModels
         private readonly Timer _seekDebounceTimer;
         private float _pendingSeekPosition;
 
+        // From the moment the thumb is moved until its seek has gone out, the
+        // audio still reports where it was, and the 250ms position tick would
+        // put the thumb back there: click, snap back, then jump to the click
+        // once the seek lands. So the ticks leave the thumb alone while a seek
+        // is pending. The generation, bumped on every move and read only on the
+        // UI thread, keeps a seek that went out mid-drag from ending the hold
+        // the drag still needs.
+        private bool _seekPending;
+        private int _seekGeneration;
+
         public Track? CurrentlyPlayingTrack => _playlistControlViewModel.CurrentlyPlayingTrack;
 
         public bool IsRepeatEnabled => _playlistControlViewModel.IsRepeatEnabled;
@@ -108,6 +118,8 @@ namespace Flower.ViewModels
                     return;
 
                 _pendingSeekPosition = (float)value;
+                _seekPending = true;
+                System.Threading.Interlocked.Increment(ref _seekGeneration);
                 _seekDebounceTimer.Stop();
                 _seekDebounceTimer.Start();
             }
@@ -225,7 +237,19 @@ namespace Flower.ViewModels
             AlbumArtLoader.Shown(this);
 
             _seekDebounceTimer = new Timer(150) { AutoReset = false };
-            _seekDebounceTimer.Elapsed += (_, _) => _audioManager.Position = _pendingSeekPosition;
+            _seekDebounceTimer.Elapsed += (_, _) =>
+            {
+                var generation = System.Threading.Volatile.Read(ref _seekGeneration);
+                _audioManager.Position = _pendingSeekPosition;
+
+                // Behind any tick already queued, so a tick read before the
+                // seek went out is still held off.
+                Dispatcher.UIThread.Post(() =>
+                {
+                    if (generation == _seekGeneration)
+                        _seekPending = false;
+                });
+            };
 
             _subscriptions.Add<System.ComponentModel.PropertyChangedEventHandler>((s, e) =>
             {
@@ -263,9 +287,12 @@ namespace Flower.ViewModels
             {
                 Dispatcher.UIThread.Post(() =>
                 {
-                    _isUpdatingFromAudio = true;
-                    SeekPosition = _audioManager.Position;
-                    _isUpdatingFromAudio = false;
+                    if (!_seekPending)
+                    {
+                        _isUpdatingFromAudio = true;
+                        SeekPosition = _audioManager.Position;
+                        _isUpdatingFromAudio = false;
+                    }
                     OnPropertyChanged(nameof(ElapsedTime));
                     OnPropertyChanged(nameof(TotalTime));
                 });

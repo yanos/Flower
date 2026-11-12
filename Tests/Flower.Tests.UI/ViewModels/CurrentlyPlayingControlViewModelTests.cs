@@ -209,6 +209,49 @@ public class CurrentlyPlayingControlViewModelTests : PinnedDataDirectory
         Assert.Equal(0.55f, audio.Position, 3);
     }
 
+    // A click on the bar waits out the debounce before it seeks, and the
+    // position ticks carry on meanwhile. One landing in that window used to
+    // put the thumb back where the audio still was, before the seek took it
+    // to the click again.
+    [AvaloniaFact]
+    public void A_position_update_before_the_seek_is_sent_does_not_pull_the_thumb_back()
+    {
+        var vm = Make(out var audio, out _);
+        audio.IsPlaying = true;
+        audio.Position = 0.2f;
+
+        vm.SeekPosition = 0.7;
+        audio.RaisePositionChanged();
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(0.7, vm.SeekPosition, 3);
+    }
+
+    // Once the seek has gone out, the thumb follows the audio again.
+    [AvaloniaFact]
+    public void After_the_seek_is_sent_the_thumb_follows_playback_again()
+    {
+        var vm = Make(out var audio, out _);
+        audio.IsPlaying = true;
+        audio.Position = 0.2f;
+
+        vm.SeekPosition = 0.7;
+        Assert.True(SpinWait.SpinUntil(() => Math.Abs(audio.Position - 0.7f) < 0.001f, TimeSpan.FromSeconds(5)),
+                    "the debounced seek never reached the audio manager");
+
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        do
+        {
+            Dispatcher.UIThread.RunJobs();
+            audio.Position = 0.75f;
+            audio.RaisePositionChanged();
+            Dispatcher.UIThread.RunJobs();
+        }
+        while (Math.Abs(vm.SeekPosition - 0.75) > 0.001 && DateTime.UtcNow < deadline);
+
+        Assert.Equal(0.75, vm.SeekPosition, 3);
+    }
+
     [AvaloniaFact]
     public void Stopping_resets_the_slider_to_zero()
     {
