@@ -119,10 +119,10 @@ hosts):
   release is `AppVersion.Full`.
 - **Module versions** are each assembly's informational version
   (`ReportAssembliesMode.InformationalVersion`: Flower's
-  `0.9.1-alpha.0.22+<commit>`, FFAudio.NET's `1.0.3+<commit>`), with the
+  `0.9.1-alpha.0.22+<commit>`, FFAudio.NET's `1.1.0+<commit>`), with the
   pre-release label and commit the numeric assembly version lacks. That
   assembly version used to read `0.0.0.0` for every Flower assembly and
-  `1.0.0.0` for FFAudio.NET, MinVer's `major.0.0.0`; both repos now stamp
+  `1.0.0.0` for FFAudio.NET, MinVer's `major.0.0.0`; both repos now stamp (FFAudio.NET from 1.1.0)
   `major.minor.patch.0` (`Directory.Build.props`).
 
 Unhandled exceptions, every way out (each exit point thrown at deliberately,
