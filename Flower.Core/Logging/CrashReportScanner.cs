@@ -20,12 +20,12 @@ namespace Flower.Logging
     // 1000) and managed-unhandled (".NET Runtime", ID 1026) entries to the
     // Application event log automatically - nothing to enable.
     // Linux/macOS: relies on .NET's own DOTNET_EnableCrashReport feature,
-    // which Flower.Desktop/Program.cs enables via a one-time self-relaunch
-    // (the env var has to be set before the CLR starts, which is too late to
-    // do from here) - see its own comment for why.
+    // which both desktop heads enable via a one-time self-relaunch
+    // (CrashReportRelaunch - the env vars have to be set before the CLR
+    // starts, which is too late to do from here).
     public static class CrashReportScanner
     {
-        // Where Flower.Desktop/Program.cs points DOTNET_CrashReportDirectory
+        // Where CrashReportRelaunch points DOTNET_DbgMiniDumpName
         // on Linux/macOS.
         public static string CrashReportsDirectory => Path.Combine(AppLogging.LogsDirectory, "crash-reports");
 

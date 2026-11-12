@@ -5,7 +5,7 @@ using System.IO;
 namespace Flower.Logging
 {
     // .NET's own native-crash-report feature (see CrashReportScanner) only
-    // works via the DOTNET_EnableCrashReport/DOTNET_CrashReportDirectory env
+    // works via DOTNET_EnableCrashReport and the dump settings below - env
     // vars, which the CLR reads before any managed code - including a head's
     // Main - ever runs, so setting them from inside the process would be too
     // late. The only way to get them in place in time is to have them already
@@ -17,8 +17,18 @@ namespace Flower.Logging
     // both need it and would otherwise carry the same fifty lines twice.
     public static class CrashReportRelaunch
     {
+        // The report is written by createdump, which only runs with dumps
+        // enabled; CrashReportOnly then keeps the report and skips the dump
+        // itself (hundreds of megabytes nobody reads), and the dump's name
+        // decides where the report goes - <name>.crashreport.json. There is
+        // no setting for the report's folder of its own: this once set a
+        // DOTNET_CrashReportDirectory that the runtime does not have, and no
+        // report was ever written (found November 2026, by crashing on
+        // purpose).
         private const string EnableCrashReportVariable = "DOTNET_EnableCrashReport";
-        private const string CrashReportDirectoryVariable = "DOTNET_CrashReportDirectory";
+        private const string CrashReportOnlyVariable = "DOTNET_EnableCrashReportOnly";
+        private const string EnableDumpVariable = "DOTNET_DbgEnableMiniDump";
+        private const string DumpNameVariable = "DOTNET_DbgMiniDumpName";
 
         // Returns true if this process just relaunched a child and should exit
         // immediately instead of starting Avalonia itself.
@@ -61,7 +71,9 @@ namespace Flower.Logging
             foreach (var arg in args)
                 startInfo.ArgumentList.Add(arg);
             startInfo.Environment[EnableCrashReportVariable] = "1";
-            startInfo.Environment[CrashReportDirectoryVariable] = CrashReportScanner.CrashReportsDirectory;
+            startInfo.Environment[CrashReportOnlyVariable] = "1";
+            startInfo.Environment[EnableDumpVariable] = "1";
+            startInfo.Environment[DumpNameVariable] = Path.Combine(CrashReportScanner.CrashReportsDirectory, "flower-%p.dmp");
 
             using var child = Process.Start(startInfo);
             if (child == null)
