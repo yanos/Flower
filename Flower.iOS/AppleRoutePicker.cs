@@ -31,22 +31,21 @@ public sealed class AppleRoutePicker : IPlatformRoutePicker
                 // SystemBlue rather than Flower's own palette: this is the
                 // OS's control, and it reads as one - the same way the route
                 // sheet it opens does.
-                ActiveTintColor = UIColor.SystemBlue
+                ActiveTintColor = UIColor.SystemBlue,
+                // White in either theme: its one place is Now Playing's top
+                // bar, on the cover's colour, where every control is white
+                // (PaletteOnArt).
+                TintColor = UIColor.White
             };
 
-            // The picker itself is iOS 11, but two of the ways it is dressed
-            // here are iOS 13, and the project still deploys back to 12.2.
-            // Same guarding convention as AppDelegate's MetricKit hook.
+            // The picker itself is iOS 11, but this is iOS 13, and the
+            // project still deploys back to 12.2. Same guarding convention as
+            // AppDelegate's MetricKit hook.
             if (OperatingSystem.IsIOSVersionAtLeast(13))
             {
                 // Video devices first would put an Apple TV above a pair of
                 // AirPods, which is the wrong order for a music app.
                 picker.PrioritizesVideoDevices = false;
-
-                // Label tracks light/dark on its own, which a fixed brush
-                // pulled from the Avalonia theme would not. On 12.2 the view
-                // inherits the ambient tint instead.
-                picker.TintColor = UIColor.Label;
             }
 
             return new UIViewControlHandle(picker);

@@ -205,6 +205,20 @@
   <Style Selector="Button.play materialIcons|MaterialIcon, Button.play:pointerover materialIcons|MaterialIcon, Button.play:pressed materialIcons|MaterialIcon">
     <Setter Property="Foreground" Value="{DynamicResource AppOnPrimaryBrush}" />
   </Style>
+  <!-- The round Play/Pause (Controls/PlayPauseButton), which draws its own
+     disc in its Background with the glyph cut out: the same accent and deeper
+     red as Button.play, with the presenter's fill cleared so only the disc
+     shows. -->
+  <Style Selector="Button.playPause">
+    <Setter Property="Background" Value="{DynamicResource AppPrimaryBrush}" />
+    <Setter Property="Padding" Value="0" />
+  </Style>
+  <Style Selector="Button.playPause:pointerover, Button.playPause:pressed">
+    <Setter Property="Background" Value="{DynamicResource AppAccentHoverBrush}" />
+  </Style>
+  <Style Selector="Button.playPause /template/ ContentPresenter#PART_ContentPresenter, Button.playPause:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.playPause:pressed /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="Transparent" />
+  </Style>
   <!-- The desktop page header's round buttons, its Sort and its filter: the
      surface inside a hairline of the control outline, flat on the page -
      the phone's floating ovals' shape without the lift. The Button.pill
@@ -228,7 +242,7 @@
   <!-- These presenter styles outrank Fluent's own disabled one, which would
        otherwise grey them: disabled, each is the same button at half
        strength. -->
-  <Style Selector="Button.primary:disabled, Button.secondary:disabled, Button.play:disabled">
+  <Style Selector="Button.primary:disabled, Button.secondary:disabled, Button.play:disabled, Button.playPause:disabled">
     <Setter Property="Opacity" Value="0.5" />
   </Style>
 

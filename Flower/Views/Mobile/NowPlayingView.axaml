@@ -4,7 +4,6 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
-             xmlns:conv="clr-namespace:Flower.Converters"
              xmlns:controls="clr-namespace:Flower.UserControls"
              xmlns:layout="clr-namespace:Flower.Controls"
              xmlns:services="clr-namespace:Flower.Services"
@@ -23,7 +22,6 @@
        top, which are see-through rings. -->
 
   <UserControl.Resources>
-    <conv:PlayOrPauseConverter x:Key="PlayOrPauseConverter" />
 
     <!-- Fluent's slider brushes, on the colour for things over a cover's
          colour (PaletteOnArt, Theme.axaml, at AppOnArt*'s strengths): the
@@ -61,17 +59,14 @@
     </Style>
     <!-- Play, on the cover's colour, is white like every other control
          here rather than the accent's red, which fought the colour under it:
-         a white fill, the glyph near black, dimming as the other whites do
-         while pressed. After the white-glyph styles above, so it wins over
-         them. -->
-    <Style Selector="layout|NowPlayingBodyPanel Button.play /template/ ContentPresenter#PART_ContentPresenter, layout|NowPlayingBodyPanel Button.play:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+         a white disc with the glyph cut out of it (PlayPauseButton), so the
+         cover's colour shows through the glyph, dimming as the other whites
+         do while pressed. -->
+    <Style Selector="layout|NowPlayingBodyPanel Button.playPause, layout|NowPlayingBodyPanel Button.playPause:pointerover">
       <Setter Property="Background" Value="{DynamicResource AppOnArtBrush}" />
     </Style>
-    <Style Selector="layout|NowPlayingBodyPanel Button.play:pressed /template/ ContentPresenter#PART_ContentPresenter">
+    <Style Selector="layout|NowPlayingBodyPanel Button.playPause:pressed">
       <Setter Property="Background" Value="{DynamicResource AppOnArtRingBrush}" />
-    </Style>
-    <Style Selector="layout|NowPlayingBodyPanel Button.play materialIcons|MaterialIcon, layout|NowPlayingBodyPanel Button.play:pressed materialIcons|MaterialIcon">
-      <Setter Property="Foreground" Value="{DynamicResource AppOnArtInkBrush}" />
     </Style>
     <!-- The back and menu circles at the top: no fill, so the sheet's colour
          shows through them, and ringed and drawn in white like everything
@@ -172,11 +167,12 @@
       <!-- Apple's own AirPlay/Bluetooth route button, hosted natively - and
            nothing at all on platforms that have no such control (see
            RoutePickerControl). Sized here because a NativeControlHost has no
-           intrinsic size of its own to measure. -->
+           intrinsic size of its own to measure. Centred in the bar: the
+           circles either side are the same 40 wide, so the middle of this
+           column is the middle of the sheet. -->
       <controls:RoutePickerControl Grid.Column="1"
                                    Width="30" Height="30"
-                                   Margin="0,0,14,0"
-                                   HorizontalAlignment="Right"
+                                   HorizontalAlignment="Center"
                                    VerticalAlignment="Center" />
 
       <!-- The hamburger every screen has (ScreenMenuButton), here with the
@@ -297,16 +293,12 @@
                     VerticalAlignment="Center">
               <materialIcons:MaterialIcon Kind="SkipPrevious" Width="30" Height="30" />
             </Button>
-            <!-- Play filled in the accent, as it is everywhere it starts the
-                 music (Button.play): the album's own Play, the mini player's,
-                 the desktop's. -->
-            <Button Classes="play"
-                    Command="{Binding ToggleMiniPlayerCommand}"
-                    Width="64" Height="64" CornerRadius="32" Padding="0"
-                    HorizontalContentAlignment="Center" VerticalContentAlignment="Center">
-              <materialIcons:MaterialIcon Kind="{Binding PlaylistControl.IsPlaying, Converter={StaticResource PlayOrPauseConverter}}"
-                                           Width="30" Height="30" />
-            </Button>
+            <!-- The round Play/Pause the mini player has too, here in white
+                 on the cover's colour (the styles above). -->
+            <layout:PlayPauseButton Command="{Binding ToggleMiniPlayerCommand}"
+                                    IsPlaying="{Binding PlaylistControl.IsPlaying}"
+                                    Width="64" Height="64"
+                                    GlyphSize="30" />
             <Button Command="{Binding NextTrackCommand}"
                     Background="Transparent" BorderThickness="0"
                     VerticalAlignment="Center">

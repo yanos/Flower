@@ -21,7 +21,6 @@
              these above a playlist's rows. -->
         <ResourceInclude Source="avares://Flower/Views/Mobile/Screens/AlbumHeaderTemplates.axaml" />
       </ResourceDictionary.MergedDictionaries>
-      <conv:PlayOrPauseConverter x:Key="PlayOrPauseConverter" />
       <!-- Replaced from the code-behind as BottomChrome's height changes. -->
       <Thickness x:Key="ScreenScrollInset">0,64,0,100</Thickness>
       <!-- The status bar's height, and the same pulled the other way: the
@@ -306,17 +305,14 @@
     </Style>
     <!-- Play, on the cover's colour, is white like every other control
          here rather than the accent's red, which fought the colour under it:
-         a white fill, the glyph near black, dimming as the other whites do
-         while pressed. After the white-glyph styles above, so it wins over
-         them. -->
-    <Style Selector="Grid#MiniPlayerHost.onArt Button.play /template/ ContentPresenter#PART_ContentPresenter, Grid#MiniPlayerHost.onArt Button.play:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+         a white disc with the glyph cut out of it (PlayPauseButton), the
+         page's colour showing through, dimming as the other whites do while
+         pressed. -->
+    <Style Selector="Grid#MiniPlayerHost.onArt Button.playPause, Grid#MiniPlayerHost.onArt Button.playPause:pointerover">
       <Setter Property="Background" Value="{DynamicResource AppOnArtBrush}" />
     </Style>
-    <Style Selector="Grid#MiniPlayerHost.onArt Button.play:pressed /template/ ContentPresenter#PART_ContentPresenter">
+    <Style Selector="Grid#MiniPlayerHost.onArt Button.playPause:pressed">
       <Setter Property="Background" Value="{DynamicResource AppOnArtRingBrush}" />
-    </Style>
-    <Style Selector="Grid#MiniPlayerHost.onArt Button.play materialIcons|MaterialIcon, Grid#MiniPlayerHost.onArt Button.play:pressed materialIcons|MaterialIcon">
-      <Setter Property="Foreground" Value="{DynamicResource AppOnArtInkBrush}" />
     </Style>
     <!-- The mini player and the tab oval float over the bottom of the screens
          (BottomChrome below), so every screen's scroller keeps that much room
@@ -656,17 +652,15 @@
             </StackPanel>
           </Grid>
         </Button>
-        <!-- Play in the accent's fill (Button.play), as on Now Playing and an
-             album's actions: the one red thing in the bar. -->
-        <Button Grid.Column="1"
-                Classes="play"
-                Command="{Binding ToggleMiniPlayerCommand}"
-                Width="44" Height="44" CornerRadius="22" Padding="0"
-                HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
-                VerticalAlignment="Center">
-          <materialIcons:MaterialIcon Kind="{Binding PlaylistControl.IsPlaying, Converter={StaticResource PlayOrPauseConverter}}"
-                                       Width="24" Height="24" />
-        </Button>
+        <!-- The round Play/Pause Now Playing has too, in the accent's fill
+             (Button.playPause) with the glyph cut out of it: the one red
+             thing in the bar. -->
+        <controls:PlayPauseButton Grid.Column="1"
+                                  Command="{Binding ToggleMiniPlayerCommand}"
+                                  IsPlaying="{Binding PlaylistControl.IsPlaying}"
+                                  Width="44" Height="44"
+                                  GlyphSize="24"
+                                  VerticalAlignment="Center" />
         <Button Grid.Column="2"
                 Classes="pill"
                 Command="{Binding NextTrackCommand}"
