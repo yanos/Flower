@@ -262,8 +262,12 @@ public partial class MobileMainView : UserControl
 
     private void TabBar_SizeChanged(object? sender, SizeChangedEventArgs e) => UpdateNowPlayingInset();
 
+    // The sides as well: the sheet runs out over the landscape insets
+    // (SheetBleed), so its content comes back in by them.
     private void UpdateNowPlayingInset() =>
-        Resources["NowPlayingBottomInset"] = new Thickness(0, 0, 0, TabBar.Bounds.Height + TabBar.Margin.Bottom + NowPlayingTabBarClearance);
+        Resources["NowPlayingBottomInset"] = new Thickness(_safeArea.Left, 0, _safeArea.Right, TabBar.Bounds.Height + TabBar.Margin.Bottom + NowPlayingTabBarClearance);
+
+    private Thickness _safeArea;
 
     private IInsetsManager? _insets;
 
@@ -315,7 +319,15 @@ public partial class MobileMainView : UserControl
 
     private void ApplySafeArea(Thickness safeArea)
     {
+        _safeArea = safeArea;
         Padding = new Thickness(safeArea.Left, safeArea.Top, safeArea.Right, 0);
+
+        // The sheets undo all of that padding but the bottom, which they
+        // never had - see SheetBleed in the XAML. In landscape the side insets
+        // are the notch's and the home indicator's width, and padding a sheet
+        // by them left a bar of plain background either side of its colour.
+        Resources["SheetBleed"] = new Thickness(-safeArea.Left, -safeArea.Top, -safeArea.Right, 0);
+        Resources["SheetSideBleed"] = new Thickness(-safeArea.Left, 0, -safeArea.Right, 0);
 
         // The screens alone run back up under the status bar, so what they
         // show scrolls on beneath the clock rather than stopping at a strip
@@ -341,7 +353,10 @@ public partial class MobileMainView : UserControl
         // SheetBottomInset, which a card puts on its content and a whole-screen
         // sheet (Settings, Track Info) takes as its own Padding. Now Playing
         // takes NowPlayingBottomInset instead, the tab oval over it.
-        Resources["SheetBottomInset"] = new Thickness(0, 0, 0, safeArea.Bottom);
+        // It carries the side insets too, which every sheet taking it bleeds
+        // over: a card's background runs edge to edge, its rows stay clear of
+        // the notch.
+        Resources["SheetBottomInset"] = new Thickness(safeArea.Left, 0, safeArea.Right, safeArea.Bottom);
         // Settings, which scrolls as a screen does - up under its back button
         // and the clock - starts its content where a screen's starts, and ends
         // it clear of the home indicator.

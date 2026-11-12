@@ -37,6 +37,18 @@
            code-behind with the safe area. -->
       <x:Double x:Key="HeaderBlurHeight">76</x:Double>
       <Thickness x:Key="ScreenStackBleed">0,0,0,0</Thickness>
+      <!-- The sheets' own bleed: up under the status bar as the screens go,
+           and out to either side over the landscape insets the view pads
+           itself by, so a sheet's colour (Now Playing's cover wash, a card's
+           dimming) reaches every edge rather than stopping at a strip of
+           plain background beside the notch. Each sheet's content keeps clear
+           of those insets again through SheetBottomInset or
+           NowPlayingBottomInset, which carry the side insets too. The pages
+           pushed without a top bleed take SheetSideBleed, the sides alone.
+           Replaced from the code-behind with the safe area. -->
+      <Thickness x:Key="SheetBleed">0,0,0,0</Thickness>
+      <Thickness x:Key="SheetSideBleed">0,0,0,0</Thickness>
+      <Thickness x:Key="SheetBottomInset">0,0,0,0</Thickness>
       <!-- The tab oval's height and bottom margin, which the Now Playing
            sheet keeps its content clear of - replaced from the code-behind. -->
       <Thickness x:Key="NowPlayingBottomInset">0,0,0,84</Thickness>
@@ -565,12 +577,13 @@
          it. It is an overlay, never a step in the history. The tab oval stays
          over it (BottomChrome is declared after it, and before every other
          sheet), so the tabs are one tap away from the song too. -->
-    <!-- Pulled up under the status bar like the screens (ScreenStackBleed):
-         the sheet is washed in the cover's colour, and a strip of plain
-         background above it would cut that off at the clock. -->
+    <!-- Pulled up under the status bar like the screens, and out over the
+         landscape side insets (SheetBleed): the sheet is washed in the
+         cover's colour, and a strip of plain background above it or beside
+         it would cut that off at the clock or the notch. -->
     <controls:SlidingSheet x:Name="NowPlayingSheet"
                             Grid.Row="0" Grid.RowSpan="3"
-                            Margin="{DynamicResource ScreenStackBleed}"
+                            Margin="{DynamicResource SheetBleed}"
                             IsOpen="{Binding IsShowingNowPlaying}"
                             Entrance="FromBottom"
                             DismissCommand="{Binding CloseSheetCommand}">
@@ -788,19 +801,19 @@
 
     <!-- Track actions (row "..." menu) and Track Info sheets -->
     <!-- Every sheet drawn as a card over a dimmed backdrop is pulled up under
-         the status bar (ScreenStackBleed), so the dimming covers the clock's
+         the status bar and out to the sides (SheetBleed), so the dimming covers the clock's
          strip too - stopping at it left that strip as whatever was under it,
          the header's plain white or art scrolled up behind it, undimmed. The
          cards sit at the bottom, so only the backdrop reaches up there. -->
     <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"
-                            Margin="{DynamicResource ScreenStackBleed}"
+                            Margin="{DynamicResource SheetBleed}"
                             Entrance="FromBottom"
                             IsOpen="{Binding IsShowingTrackActions}">
       <views:TrackActionsView />
     </controls:SlidingSheet>
     <!-- The album menu, from a long press on a cover in any album grid -->
     <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"
-                            Margin="{DynamicResource ScreenStackBleed}"
+                            Margin="{DynamicResource SheetBleed}"
                             Entrance="FromBottom"
                             IsOpen="{Binding IsShowingAlbumActions}">
       <views:AlbumActionsView />
@@ -808,19 +821,19 @@
     <!-- Pulled up under the status bar, as Now Playing is, so the sheet
          covers the whole screen rather than stopping at the clock. -->
     <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"
-                            Margin="{DynamicResource ScreenStackBleed}"
+                            Margin="{DynamicResource SheetBleed}"
                             Entrance="FromBottom"
                             IsOpen="{Binding IsShowingTrackInfo}">
       <views:TrackInfoView />
     </controls:SlidingSheet>
     <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"
-                            Margin="{DynamicResource ScreenStackBleed}"
+                            Margin="{DynamicResource SheetBleed}"
                             Entrance="FromBottom"
                             IsOpen="{Binding IsShowingAddToPlaylist}">
       <views:AddToPlaylistView />
     </controls:SlidingSheet>
     <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"
-                            Margin="{DynamicResource ScreenStackBleed}"
+                            Margin="{DynamicResource SheetBleed}"
                             Entrance="FromBottom"
                             IsOpen="{Binding IsShowingMoveToFolder}">
       <views:MoveToFolderView />
@@ -843,6 +856,7 @@
          screen, and so left by its back arrow or a rightward swipe - either
          of which lands back on Settings, still open underneath. -->
     <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"
+                            Margin="{DynamicResource SheetSideBleed}"
                             IsOpen="{Binding IsShowingNavigationBarSettings}"
                             DismissCommand="{Binding CloseNavigationBarSettingsCommand}">
       <views:NavigationBarSettingsView />
@@ -851,6 +865,7 @@
          Settings is: it is a page of its own, reached from the Playlists tab's
          New Smart Playlist row. -->
     <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"
+                            Margin="{DynamicResource SheetSideBleed}"
                             IsOpen="{Binding IsShowingSmartPlaylistEditor}"
                             DismissCommand="{Binding CloseSheetCommand}">
       <views:SmartPlaylistEditorSheetView />
@@ -858,36 +873,37 @@
     <!-- The Vibe Playlist editor, pushed the same way, from the Playlists
          tab's New Vibe Playlist row or a Vibe Playlist's Edit. -->
     <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"
+                            Margin="{DynamicResource SheetSideBleed}"
                             IsOpen="{Binding IsShowingVibePlaylistEditor}"
                             DismissCommand="{Binding CloseSheetCommand}">
       <views:VibePlaylistEditorSheetView />
     </controls:SlidingSheet>
     <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"
-                            Margin="{DynamicResource ScreenStackBleed}"
+                            Margin="{DynamicResource SheetBleed}"
                             Entrance="FromBottom"
                             IsOpen="{Binding IsShowingConfirmPairServer}">
       <views:ConfirmPairServerView />
     </controls:SlidingSheet>
     <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"
-                            Margin="{DynamicResource ScreenStackBleed}"
+                            Margin="{DynamicResource SheetBleed}"
                             Entrance="FromBottom"
                             IsOpen="{Binding IsShowingConfirmDeleteFile}">
       <views:ConfirmDeleteFileView />
     </controls:SlidingSheet>
     <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"
-                            Margin="{DynamicResource ScreenStackBleed}"
+                            Margin="{DynamicResource SheetBleed}"
                             Entrance="FromBottom"
                             IsOpen="{Binding IsShowingConfirmDeletePlaylist}">
       <views:ConfirmDeletePlaylistView />
     </controls:SlidingSheet>
     <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"
-                            Margin="{DynamicResource ScreenStackBleed}"
+                            Margin="{DynamicResource SheetBleed}"
                             Entrance="FromBottom"
                             IsOpen="{Binding IsShowingConfirmUnpairServer}">
       <views:ConfirmUnpairServerView />
     </controls:SlidingSheet>
     <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"
-                            Margin="{DynamicResource ScreenStackBleed}"
+                            Margin="{DynamicResource SheetBleed}"
                             Entrance="FromBottom"
                             IsOpen="{Binding IsShowingConfirmRemoveFromLibrary}">
       <views:ConfirmRemoveFromLibraryView />
