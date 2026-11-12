@@ -5,7 +5,9 @@ UI tests (Playwright?)
 Explain how to pair to a server or add music
 bandcamp integration
 other streaming platform integration if possible
-Event bus?
 write a readme
-transform plans to actual documentation
-try  /ultrareview 
+icon too big on macos
+rounded corner on windows and linux icons
+processing notification not appearing
+sentry dll not tagged
+add check for updates
