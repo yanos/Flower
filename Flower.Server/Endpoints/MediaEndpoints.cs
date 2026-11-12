@@ -90,8 +90,21 @@ public static class MediaEndpoints
             return Task.CompletedTask;
         });
 
-        return Results.File(track.Path!, LibraryDtoMapper.ContentTypeOf(track), enableRangeProcessing: true);
+        var file = new FileInfo(track.Path!);
+        return Results.File(file.FullName, LibraryDtoMapper.ContentTypeOf(track),
+            lastModified: file.LastWriteTimeUtc, entityTag: VersionOf(file), enableRangeProcessing: true);
     }
+
+    // Which version of the file this is, as a strong ETag, so a client picking
+    // a song up again partway through can send it back in If-Range and get the
+    // rest of the file it was reading, or the whole of a changed one rather
+    // than a range of it that no longer lines up (SeekableHttpStream.Realign).
+    // A tag edit replaces the file while it may be streaming (TagFileSave),
+    // and moves every byte of audio when the tag changes size. Not the date
+    // alone, which ASP.NET would otherwise send: a second is too coarse to tell
+    // two edits of one song apart.
+    internal static EntityTagHeaderValue VersionOf(FileInfo file) =>
+        new($"\"{file.Length:x}-{file.LastWriteTimeUtc.Ticks:x}\"");
 
     // Named rather than typed: ILogger<T> needs a T, and this class is static.
     private const string StreamLogCategory = "Flower.Server.Media.Stream";
@@ -118,10 +131,12 @@ public static class MediaEndpoints
     internal static IResult Download(string? id, Library library)
     {
         var track = FindPlayable(id, library);
-        return track is null
-            ? Problems.NotFound()
-            : Results.File(track.Path!, LibraryDtoMapper.ContentTypeOf(track),
-                fileDownloadName: Path.GetFileName(track.Path!), enableRangeProcessing: true);
+        if (track is null)
+            return Problems.NotFound();
+
+        var file = new FileInfo(track.Path!);
+        return Results.File(file.FullName, LibraryDtoMapper.ContentTypeOf(track), fileDownloadName: file.Name,
+            lastModified: file.LastWriteTimeUtc, entityTag: VersionOf(file), enableRangeProcessing: true);
     }
 
     private static Track? FindPlayable(string? id, Library library)

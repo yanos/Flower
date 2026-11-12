@@ -28,9 +28,21 @@ public class SeekableHttpStreamTests
     // about bytes.
     private sealed class FakeServer : HttpMessageHandler
     {
-        private readonly byte[] _content;
+        private byte[] _content;
+        private int _version = 1;
 
         public FakeServer(byte[] content) => _content = content;
+
+        // The file on the server replaced, as a tag edit replaces it
+        // (TagFileSave): a body already open reads on from the old one, and
+        // every request from now on gets this, under a new ETag.
+        public void Replace(byte[] content)
+        {
+            _content = content;
+            _version++;
+        }
+
+        private System.Net.Http.Headers.EntityTagHeaderValue ETag => new($"\"v{_version}\"");
 
         public bool ServesRanges { get; init; } = true;
 
@@ -139,6 +151,7 @@ public class SeekableHttpStreamTests
 
                 var head = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent([]) };
                 head.Content.Headers.ContentLength = _content.Length;
+                head.Headers.ETag = ETag;
                 if (ServesRanges)
                     head.Headers.AcceptRanges.Add("bytes");
                 return head;
@@ -172,6 +185,10 @@ public class SeekableHttpStreamTests
             var from = 0L;
             var to = _content.Length - 1L;
             var ranged = request.Headers.Range?.Ranges.FirstOrDefault();
+            // As ASP.NET does: the range of this version, or else the whole of
+            // the file as it is now.
+            if (request.Headers.IfRange?.EntityTag is { } ifRange && !ifRange.Equals(ETag))
+                ranged = null;
             if (ranged != null)
             {
                 RangedRequests++;
@@ -207,6 +224,7 @@ public class SeekableHttpStreamTests
                 response.Content.Headers.ContentRange = new System.Net.Http.Headers.ContentRangeHeaderValue(from, from + length - 1, _content.Length);
             if (ServesRanges)
                 response.Headers.AcceptRanges.Add("bytes");
+            response.Headers.ETag = ETag;
 
             return response;
         }
@@ -732,5 +750,77 @@ public class SeekableHttpStreamTests
 
         Assert.Equal(content, head.Concat(tail).ToArray());
         Assert.Equal(before, server.Requests);
+    }
+
+    // --- A song changed on the server while it is read -------------------
+
+    private static byte[] Noise(int length, int seed)
+    {
+        var bytes = new byte[length];
+        new Random(seed).NextBytes(bytes);
+        return bytes;
+    }
+
+    // Reads half the song, then the server's file is replaced and the
+    // connection drops, so what follows comes from the new file.
+    private static async Task<(byte[] Read, SeekableHttpStream Stream)> ReadAcrossAReplacementAsync(byte[] before, byte[] after)
+    {
+        const int half = 20_000;
+        var (stream, server) = await OpenAsync(before, s => s.TruncateAt = half);
+        var first = ReadFully(stream, half);
+        server.Replace(after);
+
+        using var rest = new MemoryStream();
+        stream.CopyTo(rest);
+        return ([.. first, .. rest.ToArray()], stream);
+    }
+
+    // A new cover in an mp3's ID3v2 or a FLAC's blocks: the tag before the
+    // audio grows, and every byte of audio moves along by as much. The reader
+    // gets the rest of the audio it was reading, with nothing skipped or
+    // played twice.
+    [Fact]
+    public async Task A_tag_grown_ahead_of_the_audio_while_it_is_read_moves_nothing_the_reader_sees()
+    {
+        var audio = Noise(60_000, seed: 1);
+        byte[] before = [.. Noise(200, seed: 2), .. audio];
+        byte[] after = [.. Noise(9_000, seed: 3), .. audio];
+
+        var (read, stream) = await ReadAcrossAReplacementAsync(before, after);
+
+        Assert.Equal(before, read);
+        Assert.Equal(before.Length, stream.Length);
+    }
+
+    // A tag kept after the audio (ID3v1, APE, an mp4's moov at the end) moves
+    // none of it; what comes after the audio is the new file's.
+    [Fact]
+    public async Task A_tag_grown_after_the_audio_while_it_is_read_is_read_where_it_now_is()
+    {
+        var audio = Noise(60_000, seed: 4);
+        byte[] before = [.. audio, .. Noise(100, seed: 5)];
+        byte[] after = [.. audio, .. Noise(5_000, seed: 6)];
+
+        var (read, _) = await ReadAcrossAReplacementAsync(before, after);
+
+        Assert.Equal(after, read);
+    }
+
+    // A different recording under the same id: there is no place to carry
+    // on from, and audio from the wrong song is worse than the song ending.
+    [Fact]
+    public async Task A_song_replaced_by_a_different_recording_fails_rather_than_playing_the_wrong_audio()
+    {
+        var (stream, server) = await OpenAsync(Noise(60_000, seed: 7), s => s.TruncateAt = 20_000);
+        ReadFully(stream, 20_000);
+        server.Replace(Noise(60_000, seed: 8));
+        var requests = server.Requests;
+
+        Assert.ThrowsAny<IOException>(() => ReadFully(stream, 1_000));
+        var gaveUpAfter = server.Requests;
+        Assert.ThrowsAny<IOException>(() => ReadFully(stream, 1_000));
+
+        Assert.True(gaveUpAfter > requests);
+        Assert.Equal(gaveUpAfter, server.Requests);
     }
 }

@@ -2,6 +2,7 @@ using System;
 using System.Buffers;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -144,10 +145,34 @@ public sealed class SeekableHttpStream : Stream
     // - a decode-ahead prepare, or the decoder's own thread - and is read from
     // the other, so a "have we probed yet" bool set after the values it
     // describes can be seen true while they are still stale. One reference,
-    // written once, removes the question.
+    // written by the probe and replaced whole only by Realign, removes the
+    // question.
     private ServerFacts? _facts;
 
-    private sealed record ServerFacts(long Length, bool CanSeek);
+    // Version is which version of the file this is (its ETag, or failing that
+    // its date), sent back in If-Range so a reopen gets the rest of the same
+    // file or finds out that it changed; null for a server that names none.
+    // Length is in the positions the reader knows, not the server's file's.
+    private sealed record ServerFacts(long Length, bool CanSeek, RangeConditionHeaderValue? Version);
+
+    // A song can change on the server while it is being read: a tag edit
+    // replaces the file (TagFileSave), and a bigger or smaller tag moves every
+    // byte of audio after it. A reopen asking for the same offset then gets
+    // audio from somewhere else, or half a frame, and the decoder - which has
+    // long since read the file's header and knows its audio by position -
+    // cannot tell. So when the server says the file changed, Realign looks
+    // for the last bytes the reader was given in the new file and carries on
+    // from just past them, and every offset asked for from then on is moved
+    // by however far they moved (_shift). The decoder never knows: no restart,
+    // no seek, no skip. Every format keeps its tags before its audio (ID3v2,
+    // FLAC's blocks, an mp4's moov ahead of its mdat) or after it (ID3v1, APE,
+    // a moov at the end), so there are two places to look: moved by however
+    // much the file grew or shrank, and not moved at all.
+    private const int AnchorBytes = 4096;
+    private readonly byte[] _anchor = new byte[AnchorBytes];
+    private int _anchorFill;
+    private long _anchorEnd = -1;
+    private long _shift;
 
     private Stream? _body;
     private long _bodyPosition;
@@ -289,8 +314,8 @@ public sealed class SeekableHttpStream : Stream
         if (Volatile.Read(ref _facts) != null)
             return;
 
-        var (length, acceptsRanges) = await ProbeServerAsync(_client, CurrentUri(), _logger, ThrottleWaitBudget, ResponseTimeout, cancellationToken);
-        Adopt(length, acceptsRanges);
+        var (length, acceptsRanges, version) = await ProbeServerAsync(_client, CurrentUri(), _logger, ThrottleWaitBudget, ResponseTimeout, cancellationToken);
+        Adopt(length, acceptsRanges, version);
     }
 
     private ServerFacts EnsureProbed()
@@ -303,19 +328,19 @@ public sealed class SeekableHttpStream : Stream
             if (Volatile.Read(ref _facts) is { } raced)
                 return raced;
 
-            var (length, acceptsRanges) = ProbeServerAsync(_client, CurrentUri(), _logger, ThrottleWaitBudget, ResponseTimeout, _lifetime.Token).GetAwaiter().GetResult();
-            return Adopt(length, acceptsRanges);
+            var (length, acceptsRanges, version) = ProbeServerAsync(_client, CurrentUri(), _logger, ThrottleWaitBudget, ResponseTimeout, _lifetime.Token).GetAwaiter().GetResult();
+            return Adopt(length, acceptsRanges, version);
         }
     }
 
-    private ServerFacts Adopt(long length, bool acceptsRanges)
+    private ServerFacts Adopt(long length, bool acceptsRanges, RangeConditionHeaderValue? version)
     {
         lock (_probeLock)
         {
             if (Volatile.Read(ref _facts) is { } raced)
                 return raced;
 
-            Volatile.Write(ref _facts, new ServerFacts(length, acceptsRanges && length > 0));
+            Volatile.Write(ref _facts, new ServerFacts(length, acceptsRanges && length > 0, version));
         }
 
         if (!acceptsRanges)
@@ -504,7 +529,7 @@ public sealed class SeekableHttpStream : Stream
         return null;
     }
 
-    private static async Task<(long Length, bool AcceptsRanges)> ProbeServerAsync(HttpClient client, Uri uri, ILogger? logger, TimeSpan budget, TimeSpan responseTimeout, CancellationToken cancellationToken)
+    private static async Task<(long Length, bool AcceptsRanges, RangeConditionHeaderValue? Version)> ProbeServerAsync(HttpClient client, Uri uri, ILogger? logger, TimeSpan budget, TimeSpan responseTimeout, CancellationToken cancellationToken)
     {
         using var response = await SendAsync(
             client, uri, () => new HttpRequestMessage(HttpMethod.Head, uri), logger, budget, responseTimeout, cancellationToken);
@@ -513,7 +538,7 @@ public sealed class SeekableHttpStream : Stream
         {
             var length = response.Content.Headers.ContentLength ?? 0;
             if (length > 0)
-                return (length, response.Headers.AcceptRanges.Contains("bytes"));
+                return (length, response.Headers.AcceptRanges.Contains("bytes"), HttpFileVersion.Of(response));
         }
 
         // The fallback: ask for one byte. A server that honours it answers 206
@@ -528,10 +553,16 @@ public sealed class SeekableHttpStream : Stream
         probed.EnsureSuccessStatusCode();
 
         if (probed.StatusCode == HttpStatusCode.PartialContent && probed.Content.Headers.ContentRange is { Length: { } total })
-            return (total, true);
+            return (total, true, HttpFileVersion.Of(probed));
 
-        return (probed.Content.Headers.ContentLength ?? 0, false);
+        return (probed.Content.Headers.ContentLength ?? 0, false, HttpFileVersion.Of(probed));
     }
+
+    // How long the server's file is, whichever way the response says it.
+    private static long FileLengthOf(HttpResponseMessage response) =>
+        (response.StatusCode == HttpStatusCode.PartialContent
+            ? response.Content.Headers.ContentRange?.Length
+            : response.Content.Headers.ContentLength) ?? 0;
 
     public override bool CanRead => true;
     public override bool CanWrite => false;
@@ -582,6 +613,7 @@ public sealed class SeekableHttpStream : Stream
 
                 if (read > 0)
                 {
+                    Remember(buffer[..read], _position);
                     _position += read;
                     _bodyPosition += read;
                     return read;
@@ -590,20 +622,22 @@ public sealed class SeekableHttpStream : Stream
                 // A zero-length read is the end of the body. At the end of the
                 // file that is the truth; anywhere else the connection was cut
                 // and reopening is the answer, not reporting EOF to a decoder
-                // that would take it as a finished track.
-                if (facts.Length == 0 || _position >= facts.Length)
+                // that would take it as a finished track. Asked afresh, since a
+                // file that changed on the server has a new length (Realign).
+                var length = Volatile.Read(ref _facts)!.Length;
+                if (length == 0 || _position >= length)
                     return 0;
 
                 if (++attempts > MaxReopenAttempts)
                 {
                     _broken = true;
                     DropBody();
-                    throw new IOException($"The stream for {LogPath.Short(_uri.ToString())} stopped at {_position} of {facts.Length} bytes and could not be resumed");
+                    throw new IOException($"The stream for {LogPath.Short(_uri.ToString())} stopped at {_position} of {length} bytes and could not be resumed");
                 }
 
                 _logger?.LogWarning(
                     "Stream for {Uri} ended at {Position} of {Length} bytes; reopening from there",
-                    LogPath.Short(_uri.ToString()), _position, facts.Length);
+                    LogPath.Short(_uri.ToString()), _position, length);
             }
             // Ahead of the general clause below, because it is the one
             // failure that must not spend an attempt or latch the stream. By
@@ -632,6 +666,14 @@ public sealed class SeekableHttpStream : Stream
             // a credential the caller can refresh. Failing at once puts the
             // server's own words in the log instead.
             catch (HttpProtocolErrorException)
+            {
+                _broken = true;
+                DropBody();
+                throw;
+            }
+            // The file changed under the reader and its place in the new one
+            // could not be found. Asking again finds the same file.
+            catch (StreamContentLostException)
             {
                 _broken = true;
                 DropBody();
@@ -738,7 +780,8 @@ public sealed class SeekableHttpStream : Stream
             DropBody();
         }
 
-        var seekable = EnsureProbed().CanSeek;
+        var facts = EnsureProbed();
+        var physical = position + _shift;
         var uri = CurrentUri();
         HttpResponseMessage response;
         try
@@ -746,8 +789,13 @@ public sealed class SeekableHttpStream : Stream
             response = SendAsync(_client, uri, () =>
             {
                 var request = new HttpRequestMessage(HttpMethod.Get, uri);
-                if (seekable && position > 0)
-                    request.Headers.Range = new RangeHeaderValue(position, null);
+                if (facts.CanSeek && physical > 0)
+                {
+                    request.Headers.Range = new RangeHeaderValue(physical, null);
+                    // The range of this file, or else the whole of the one
+                    // that replaced it - never a range of a different file.
+                    request.Headers.IfRange = facts.Version;
+                }
                 return request;
             }, _logger, ThrottleWaitBudget, ResponseTimeout, _lifetime.Token).GetAwaiter().GetResult();
         }
@@ -781,19 +829,28 @@ public sealed class SeekableHttpStream : Stream
                 $"{LogPath.Short(uri.ToString())} answered {(int)status} {status}", null, status);
         }
 
+        if (facts.Version is { } known && HttpFileVersion.Of(response) is { } now && !known.Equals(now))
+        {
+            var length = FileLengthOf(response);
+            response.Dispose();
+            Realign(now, length);
+            EnsureBodyAt(position);
+            return;
+        }
+
         // A server that answers a ranged request with 200 is serving from
         // zero regardless of what was asked, and reading it as though it
         // started at the offset would hand the decoder audio from the wrong
         // place. Discarding forward is correct and, on the first open of a
         // track, costs nothing because the offset is zero.
-        if (position > 0 && response.StatusCode != HttpStatusCode.PartialContent)
+        if (physical > 0 && response.StatusCode != HttpStatusCode.PartialContent)
         {
             _body = response.Content.ReadAsStreamAsync().GetAwaiter().GetResult();
-            _bodyPosition = 0;
+            _bodyPosition = position - physical;
             Volatile.Write(ref _bodyOrigin, uri.GetLeftPart(UriPartial.Authority));
             BodyOpened();
-            if (!SkipForward(position))
-                throw new IOException($"Could not reach offset {position} in a response that ignored the range request");
+            if (!SkipForward(physical))
+                throw new IOException($"Could not reach offset {physical} in a response that ignored the range request");
             return;
         }
 
@@ -801,6 +858,86 @@ public sealed class SeekableHttpStream : Stream
         _bodyPosition = position;
         Volatile.Write(ref _bodyOrigin, uri.GetLeftPart(UriPartial.Authority));
         BodyOpened();
+    }
+
+    // The file changed on the server (see _anchor): finds where the bytes the
+    // reader was given last are in the new one, and reads on from there.
+    // Throws StreamContentLostException when they are in neither place, which
+    // only a file replaced by a different recording does.
+    private void Realign(RangeConditionHeaderValue version, long length)
+    {
+        var facts = Volatile.Read(ref _facts)!;
+
+        // Nothing read yet, so nothing has been learnt from the old file.
+        if (_anchorFill == 0)
+        {
+            _logger?.LogInformation("{Uri} changed on the server before any of it was read", LogPath.Short(_uri.ToString()));
+            _shift = 0;
+            Volatile.Write(ref _facts, facts with { Length = length, Version = version });
+            return;
+        }
+
+        var grewBy = length - (facts.Length + _shift);
+        var anchorStart = _anchorEnd - _anchorFill;
+        foreach (var shift in new[] { _shift + grewBy, _shift }.Distinct())
+        {
+            var from = anchorStart + shift;
+            if (from < 0 || from + _anchorFill > length || !HasAnchorAt(from, version))
+                continue;
+
+            _logger?.LogInformation(
+                "{Uri} changed on the server while being read ({OldLength} bytes, now {NewLength}); reading on from the same place in the new file, {Moved} byte(s) along",
+                LogPath.Short(_uri.ToString()), facts.Length + _shift, length, shift - _shift);
+            _shift = shift;
+            Volatile.Write(ref _facts, facts with { Length = length - shift, Version = version });
+            return;
+        }
+
+        throw new StreamContentLostException(
+            $"{LogPath.Short(_uri.ToString())} changed on the server while being read, and the place it was being read from is not in the new file");
+    }
+
+    // Whether the new file has the remembered bytes at this offset. Its own
+    // If-Range, so a file that changed yet again answers 200 and does not match.
+    private bool HasAnchorAt(long from, RangeConditionHeaderValue version)
+    {
+        var uri = CurrentUri();
+        using var response = SendAsync(_client, uri, () =>
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get, uri);
+            request.Headers.Range = new RangeHeaderValue(from, from + _anchorFill - 1);
+            request.Headers.IfRange = version;
+            return request;
+        }, _logger, ThrottleWaitBudget, ResponseTimeout, _lifetime.Token).GetAwaiter().GetResult();
+        if (response.StatusCode != HttpStatusCode.PartialContent)
+            return false;
+
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+        timeout.CancelAfter(StallTimeout);
+        var bytes = response.Content.ReadAsByteArrayAsync(timeout.Token).GetAwaiter().GetResult();
+        return bytes.AsSpan().SequenceEqual(_anchor.AsSpan(0, _anchorFill));
+    }
+
+    // Keeps the last AnchorBytes the reader was given, and where they end.
+    private void Remember(ReadOnlySpan<byte> read, long start)
+    {
+        if (start != _anchorEnd)
+            _anchorFill = 0;
+
+        if (read.Length >= AnchorBytes)
+        {
+            read[^AnchorBytes..].CopyTo(_anchor);
+            _anchorFill = AnchorBytes;
+        }
+        else
+        {
+            var keep = Math.Min(_anchorFill, AnchorBytes - read.Length);
+            _anchor.AsSpan(_anchorFill - keep, keep).CopyTo(_anchor);
+            read.CopyTo(_anchor.AsSpan(keep));
+            _anchorFill = keep + read.Length;
+        }
+
+        _anchorEnd = start + read.Length;
     }
 
     private void BodyOpened()
@@ -1024,6 +1161,11 @@ public sealed class HttpThrottledException(string message) : IOException(message
 // than as a finished one, but distinct so SeekableHttpStream's own read loop
 // can refuse to retry it - see the catch there.
 public sealed class HttpProtocolErrorException(string message) : IOException(message);
+
+// The file changed on the server while it was being read, and where it was
+// being read from could not be found in the new one (Realign). Final, like a
+// protocol error: asking again gets the same file.
+public sealed class StreamContentLostException(string message) : IOException(message);
 
 // Reroute abandoned the open connection for a better address - not a failure,
 // and never counted as one; see the catch in SeekableHttpStream.Read.

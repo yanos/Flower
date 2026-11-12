@@ -615,6 +615,14 @@ The file from disk with range processing on, under the track's own content
 type. `/download` adds a `Content-Disposition` naming the file. `404` when the
 id is unknown or its file is gone.
 
+Both send a strong `ETag` naming this version of the file (its length and
+modification time, to the tick) and honour `If-Range` with it. A tag or cover
+edit replaces the file, even one being streamed, and moves its audio when the
+tag changes size, so a client reopening a song partway through sends the tag
+it was given. It gets `206` with the range when the file is the same, and
+`200` with the whole new file when it changed (`SeekableHttpStream` then finds
+its place in the new file).
+
 Admitted by a device signature, or by `ticket=<ticket>` in the query — tried
 first, valid only on these two routes, and only for the `id` it was minted for.
 
