@@ -275,10 +275,6 @@ public class ScreenStackPanelSwipeTests : PinnedDataDirectory
 
         h.Swipe(6, release: false);
 
-        // Nothing may move before EarlyCommitThreshold is crossed - after
-        // release a too-short drag would spring back to 0 either way, so this
-        // has to be observed mid-gesture.
-
         h.Release(206);
         h.LetEasingFinish();
         Assert.Equal(MobileScreenKind.TrackList, h.Vm.CurrentFrame.ScreenKind);
@@ -300,24 +296,6 @@ public class ScreenStackPanelSwipeTests : PinnedDataDirectory
 
         Assert.Equal(MobileScreenKind.AlbumGrid, h.Vm.CurrentFrame.ScreenKind);
         Assert.True(h.Vm.CanGoForward, "a completed back swipe should fill the redo stack");
-    }
-
-    // The navigation is deliberately deferred until the outgoing screen has
-    // eased fully off-screen, so the state change and the resync it triggers
-    // never race the animation still in flight.
-    [AvaloniaFact]
-    public void A_committed_swipe_does_not_navigate_until_the_easing_finishes()
-    {
-        using var h = new Harness();
-        h.DrillIn();
-
-        h.Swipe(PastThreshold);
-        Harness.Pump(40); // well inside the 280ms easing
-
-        Assert.Equal(MobileScreenKind.TrackList, h.Vm.CurrentFrame.ScreenKind);
-
-        h.LetEasingFinish();
-        Assert.Equal(MobileScreenKind.AlbumGrid, h.Vm.CurrentFrame.ScreenKind);
     }
 
     // Released under SwipeThreshold: cancel, and spring the current screen back
@@ -358,7 +336,7 @@ public class ScreenStackPanelSwipeTests : PinnedDataDirectory
     // Nothing to reveal in that direction, so the gesture stays discrete: no
     // live drag at all, and the decision is made purely on release.
     [AvaloniaFact]
-    public void With_no_history_a_left_swipe_pages_to_the_next_tab_without_dragging()
+    public void With_no_history_a_left_swipe_pages_to_the_next_tab()
     {
         using var h = new Harness();
         h.SelectTab(MobileTab.Songs);

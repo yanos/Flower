@@ -75,39 +75,6 @@ public class MobileScreenFilterTests : PinnedDataDirectory
     private static List<string> GridAlbums(IEnumerable<AlbumGridRow> rows) =>
         rows.SelectMany(r => r.Tiles).Select(t => t.Name).ToList();
 
-    [AvaloniaFact]
-    public void An_album_is_found_by_its_name_and_not_by_its_songs_or_artist()
-    {
-        using var scope = Build();
-        var mobile = scope.Mobile;
-        mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
-        Assert.Equal(3, GridAlbums(mobile.AlbumGridRows).Count);
-
-        mobile.ScreenFilter = "computer";
-        WaitUntil(() => GridAlbums(mobile.AlbumGridRows).Count == 1, "the grid narrowing");
-        Assert.Equal(["OK Computer"], GridAlbums(mobile.AlbumGridRows));
-
-        mobile.ScreenFilter = "karma";
-        WaitUntil(() => GridAlbums(mobile.AlbumGridRows).Count == 0, "a song's title finding nothing");
-
-        mobile.ScreenFilter = "radiohead";
-        WaitUntil(() => GridAlbums(mobile.AlbumGridRows).Count == 0, "an artist's name finding nothing");
-    }
-
-    [AvaloniaFact]
-    public void Clearing_the_filter_brings_every_album_back()
-    {
-        using var scope = Build();
-        var mobile = scope.Mobile;
-        mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
-        mobile.ScreenFilter = "computer";
-        WaitUntil(() => GridAlbums(mobile.AlbumGridRows).Count == 1, "the grid narrowing");
-
-        mobile.ScreenFilter = "";
-
-        WaitUntil(() => GridAlbums(mobile.AlbumGridRows).Count == 3, "the grid widening again");
-    }
-
     // Accents are folded the way the Search tab folds them - see SearchText.
     [AvaloniaFact]
     public void An_artist_is_found_by_name_and_not_by_their_songs()
@@ -152,58 +119,6 @@ public class MobileScreenFilterTests : PinnedDataDirectory
         Assert.Equal("Radiohead", mobile.ArtistPickerItems[0].Name);
     }
 
-    [AvaloniaFact]
-    public void The_songs_list_is_narrowed_by_title_alone()
-    {
-        using var scope = Build();
-        var mobile = scope.Mobile;
-        mobile.SelectTabCommand.Execute(nameof(MobileTab.Songs));
-        WaitUntil(() => mobile.Main.Rows.Count == 5, "the songs list");
-
-        mobile.ScreenFilter = "heroes";
-
-        // The song called Heroes, not the other song on the album of that name.
-        WaitUntil(() => mobile.Main.Rows.Count == 1, "the songs narrowing");
-        Assert.Equal("Heroes", mobile.Main.Rows[0].Track.Title);
-    }
-
-    // A drill-in lands on a screen of its own, with nothing filtered out of
-    // it - the word typed over the grid was about the grid.
-    [AvaloniaFact]
-    public void A_drill_in_starts_unfiltered()
-    {
-        using var scope = Build();
-        var mobile = scope.Mobile;
-        mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
-        mobile.ScreenFilter = "computer";
-        WaitUntil(() => GridAlbums(mobile.AlbumGridRows).Count == 1, "the grid narrowing");
-
-        mobile.SelectAlbumOrArtistCommand.Execute(MainViewModelHarness.AlbumKey(mobile, "OK Computer"));
-        MainViewModelHarness.WaitForTheDrillIn(mobile, "OK Computer");
-
-        Assert.Null(mobile.ScreenFilter);
-        Assert.Null(mobile.Main.FilterText);
-        WaitUntil(() => mobile.AlbumDetailRows.Count == 2, "both of the album's songs");
-    }
-
-    [AvaloniaFact]
-    public void Back_puts_the_filter_back()
-    {
-        using var scope = Build();
-        var mobile = scope.Mobile;
-        mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
-        mobile.ScreenFilter = "computer";
-        WaitUntil(() => GridAlbums(mobile.AlbumGridRows).Count == 1, "the grid narrowing");
-        mobile.SelectAlbumOrArtistCommand.Execute(MainViewModelHarness.AlbumKey(mobile, "OK Computer"));
-        MainViewModelHarness.WaitForTheDrillIn(mobile, "OK Computer");
-
-        mobile.BackCommand.Execute(null);
-
-        WaitUntil(() => mobile.IsShowingAlbumGrid, "landing back on the grid");
-        Assert.Equal("computer", mobile.ScreenFilter);
-        Assert.Equal(["OK Computer"], GridAlbums(mobile.AlbumGridRows));
-    }
-
     // A filtered track list is where Main.FilterText is set at all; leaving
     // it for another tab must not leave the rows the next list builds cut by
     // it.
@@ -232,52 +147,6 @@ public class MobileScreenFilterTests : PinnedDataDirectory
         mobile.ScreenFilter = "zzz";
 
         WaitUntil(() => mobile.IsContentEmpty, "the empty state");
-    }
-
-    // The x is the one way out, and it takes the filtering with it at once.
-    [AvaloniaFact]
-    public void Closing_the_filter_shows_everything_again()
-    {
-        using var scope = Build();
-        var mobile = scope.Mobile;
-        mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
-        Assert.True(mobile.OpenScreenFilter());
-        Assert.True(mobile.IsScreenFilterOpen);
-        mobile.ScreenFilter = "computer";
-        WaitUntil(() => GridAlbums(mobile.AlbumGridRows).Count == 1, "the grid narrowing");
-
-        mobile.CloseScreenFilterCommand.Execute(null);
-
-        Assert.False(mobile.IsScreenFilterOpen);
-        Assert.Null(mobile.ScreenFilter);
-        Assert.Equal(3, GridAlbums(mobile.AlbumGridRows).Count);
-    }
-
-    // Pulled open and then left with nothing in it, the filter was not wanted:
-    // it goes without its x. With something typed, it is a cut screen, and
-    // stays until the x.
-    [AvaloniaFact]
-    public void A_filter_left_empty_closes_and_one_with_text_stays()
-    {
-        using var scope = Build();
-        var mobile = scope.Mobile;
-        mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
-
-        Assert.True(mobile.OpenScreenFilter());
-        mobile.CloseScreenFilterIfEmpty();
-        Assert.False(mobile.IsScreenFilterOpen);
-
-        // A stray space is nothing typed, too.
-        Assert.True(mobile.OpenScreenFilter());
-        mobile.ScreenFilter = " ";
-        mobile.CloseScreenFilterIfEmpty();
-        Assert.False(mobile.IsScreenFilterOpen);
-
-        Assert.True(mobile.OpenScreenFilter());
-        mobile.ScreenFilter = "computer";
-        mobile.CloseScreenFilterIfEmpty();
-        Assert.True(mobile.IsScreenFilterOpen);
-        Assert.Equal("computer", mobile.ScreenFilter);
     }
 
     // The same, from the screen: a press anywhere but the oval - a tile here -
@@ -411,7 +280,6 @@ public class MobileScreenFilterTests : PinnedDataDirectory
     private static void Pull(ScreenSlot slot) =>
         ScrollerOf(slot).RaiseEvent(new RoutedEventArgs(RubberBandScroll.PulledDownEvent));
 
-
     // The view half: pulling the list down opens the oval with focus in it,
     // what is typed reaches the view model, putting the keyboard away leaves
     // it up and the list filtered, and its x closes it and turns the
@@ -483,6 +351,8 @@ public class MobileScreenFilterTests : PinnedDataDirectory
         var album = LiveSlot(window);
         Assert.NotSame(grid, album);
         Assert.False(OvalOf(album).IsEffectivelyVisible);
+        Assert.Null(mobile.Main.FilterText);
+        WaitUntil(() => mobile.AlbumDetailRows.Count == 2, "both of the album's songs");
         // The back button is the screen's too, in its own slot.
         Assert.True(BackPillOf(album).IsVisible);
         Assert.NotSame(BackPillOf(grid), BackPillOf(album));
@@ -494,6 +364,7 @@ public class MobileScreenFilterTests : PinnedDataDirectory
         var back = LiveSlot(window);
         Assert.True(OvalOf(back).IsEffectivelyVisible);
         Assert.Equal("computer", BoxOf(back).Text);
+        Assert.Equal(["OK Computer"], GridAlbums(mobile.AlbumGridRows));
         window.Close();
     }
 }

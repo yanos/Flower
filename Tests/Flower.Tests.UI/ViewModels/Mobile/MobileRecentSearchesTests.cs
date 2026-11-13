@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
-using System.Threading.Tasks;
 
 using Avalonia;
 using Avalonia.Controls;
@@ -39,111 +38,6 @@ public class MobileRecentSearchesTests : PinnedDataDirectory
             Title = $"Track {i}", Path = $"/music/{i}.mp3", Album = $"Album {i}", Artists = $"Artist {i}",
         }).ToList();
         return MainViewModelHarness.BuildMobile(new Library(tracks), new MainPlaylist(tracks));
-    }
-
-    [AvaloniaFact]
-    public void The_latest_search_goes_first_and_a_repeat_moves_rather_than_doubles()
-    {
-        using var parts = Build();
-        var main = parts.Mobile.Main;
-
-        main.RememberSearch("radiohead");
-        main.RememberSearch("bjork");
-        main.RememberSearch("  Radiohead ");
-
-        Assert.Equal(new[] { "Radiohead", "bjork" }, main.RecentSearches);
-    }
-
-    [AvaloniaFact]
-    public void Only_so_many_are_kept()
-    {
-        using var parts = Build();
-        var main = parts.Mobile.Main;
-
-        for (var i = 0; i < MainViewModel.MaxRecentSearches + 5; i++)
-            main.RememberSearch($"query {i}");
-
-        Assert.Equal(MainViewModel.MaxRecentSearches, main.RecentSearches.Count);
-        Assert.Equal($"query {MainViewModel.MaxRecentSearches + 4}", main.RecentSearches[0]);
-    }
-
-    [AvaloniaFact]
-    public async Task What_is_typed_narrows_the_suggestions_and_is_not_offered_back()
-    {
-        using var parts = Build();
-        var vm = parts.Mobile;
-        vm.Main.RememberSearch("the national");
-        vm.Main.RememberSearch("radiohead");
-        vm.Main.RememberSearch("nat king cole");
-        vm.Main.RememberSearch("nat");
-
-        vm.SelectTabCommand.Execute(nameof(MobileTab.Search));
-        vm.Search.Query = "nat";
-        await UiWait.Until(() => vm.Search.HasSuggestions, "the suggestions never arrived");
-
-        Assert.Equal(new[] { "nat king cole", "the national" }, vm.Search.Suggestions.Select(s => s.Text));
-    }
-
-    // Opening Search is the start of a search, not a list of old ones.
-    [AvaloniaFact]
-    public void An_empty_box_offers_nothing()
-    {
-        using var parts = Build();
-        var vm = parts.Mobile;
-        vm.Main.RememberSearch("radiohead");
-
-        vm.SelectTabCommand.Execute(nameof(MobileTab.Search));
-
-        Assert.Empty(vm.Search.Suggestions);
-    }
-
-    // After the past searches, the library: names that start with what is
-    // typed before names with a later word that does, and each kind says
-    // what it is.
-    [AvaloniaFact]
-    public async Task The_library_s_names_are_offered_after_past_searches()
-    {
-        var tracks = new List<Track>
-        {
-            new() { Title = "Wildfire", Path = "/music/1.mp3", Album = "The Wild Hunt", Artists = "Tallest Man" },
-            new() { Title = "Sonata", Path = "/music/2.mp3", Album = "Classics", Artists = "Wilco" },
-        };
-        using var parts = MainViewModelHarness.BuildMobile(new Library(tracks), new MainPlaylist(tracks));
-        var vm = parts.Mobile;
-        vm.Main.RememberSearch("wild nothing");
-
-        vm.SelectTabCommand.Execute(nameof(MobileTab.Search));
-        vm.Search.Query = "wil";
-        await UiWait.Until(() => vm.Search.HasSuggestions, "the suggestions never arrived");
-
-        Assert.Equal(
-            new[]
-            {
-                ("wild nothing", SearchSuggestionKind.Recent),
-                ("Wilco", SearchSuggestionKind.Artist),
-                ("Wildfire", SearchSuggestionKind.Song),
-                ("The Wild Hunt", SearchSuggestionKind.Album),
-            },
-            vm.Search.Suggestions.Select(s => (s.Text, s.Kind)));
-    }
-
-    // Monk's albums and songs all begin with "Monk", his own name only has a
-    // word that does - and the artist never made the five rows.
-    [Fact]
-    public void An_artist_is_offered_when_more_albums_and_songs_than_there_are_rows_match_better()
-    {
-        var tracks = new[] { "Monk's Dream", "Monk's Mood", "Monk's Music", "Monk's Point", "Monk's Blues", "Monkery" }
-            .Select((name, i) => new Track
-            {
-                Title = name, Album = name, Artists = "Thelonious Monk", Path = $"/music/{i}.mp3",
-            })
-            .ToList();
-
-        var suggestions = SearchSuggestion.For("monk", [], tracks, SearchViewModel.MaxSuggestions);
-
-        Assert.Equal(SearchViewModel.MaxSuggestions, suggestions.Count);
-        Assert.Contains(suggestions, s => s is { Text: "Thelonious Monk", Kind: SearchSuggestionKind.Artist });
-        Assert.Contains(suggestions, s => s.Kind == SearchSuggestionKind.Album);
     }
 
     // Past searches are cleared from the Search screen's menu.

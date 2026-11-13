@@ -818,7 +818,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     // How many are kept. More than the dropdown under the search box shows
     // at once, so narrowing it by typing still has older ones to find.
-    public const int MaxRecentSearches = 20;
+    public const int MaxRecentSearches = RecentSearchHistory.MaxCount;
 
     public IReadOnlyList<string> RecentSearches => _appSettings.RecentSearches;
 
@@ -826,17 +826,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // case, so "Radiohead" and "radiohead" are one entry, spelled the latest way.
     public void RememberSearch(string? query)
     {
-        var trimmed = query?.Trim();
-        if (string.IsNullOrEmpty(trimmed))
+        if (!RecentSearchHistory.Remember(_appSettings.RecentSearches, query))
             return;
-
-        var recent = _appSettings.RecentSearches;
-        if (recent.Count > 0 && recent[0] == trimmed)
-            return;
-        recent.RemoveAll(q => string.Equals(q, trimmed, StringComparison.OrdinalIgnoreCase));
-        recent.Insert(0, trimmed);
-        if (recent.Count > MaxRecentSearches)
-            recent.RemoveRange(MaxRecentSearches, recent.Count - MaxRecentSearches);
         SaveSettings();
         OnPropertyChanged(nameof(RecentSearches));
     }

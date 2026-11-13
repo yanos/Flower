@@ -65,7 +65,6 @@ public class NewPlaylistEntryTests : PinnedDataDirectory
         return parts;
     }
 
-
     private static Window Show(Control view, MobileMainViewModel mobile, double width = 390, double height = 700)
     {
         view.DataContext = mobile;
@@ -112,42 +111,6 @@ public class NewPlaylistEntryTests : PinnedDataDirectory
             .GetVisualDescendants().OfType<TextBox>().Single();
 
     [AvaloniaFact]
-    public void The_playlists_screen_offers_playlist_creation()
-    {
-        using var parts = OnThePlaylistsTab();
-        parts.Parts.Main.Playlists.CreateNamed("Mixtape", []);
-        Dispatcher.UIThread.RunJobs();
-
-        var window = Show(new PlaylistPickerScreenView(), parts.Mobile);
-
-        // New itself is in the title line (ScreenTitle), which shows it on
-        // the frame that says it is this list.
-        Assert.True(parts.Mobile.CurrentFrame.IsPlaylistsList);
-        Assert.Single(window.GetVisualDescendants().OfType<NewPlaylistEntry>());
-
-        Assert.Single(window.GetVisualDescendants().OfType<TextBlock>(), t => t.Text == "Mixtape");
-
-        window.Close();
-    }
-
-    [AvaloniaFact]
-    public void Tapping_it_opens_an_empty_focused_box_where_the_playlist_will_be()
-    {
-        using var parts = OnThePlaylistsTab();
-        var window = Show(new PlaylistPickerScreenView(), parts.Mobile);
-
-        parts.Mobile.BeginCreatePlaylistCommand.Execute(null);
-        Pump(window);
-
-        var box = NameBox(window);
-        Assert.True(box.IsEffectivelyVisible);
-        Assert.True(string.IsNullOrEmpty(box.Text));
-        Assert.True(box.IsFocused);
-
-        window.Close();
-    }
-
-    [AvaloniaFact]
     public void A_name_that_was_typed_becomes_a_playlist()
     {
         using var parts = OnThePlaylistsTab();
@@ -155,7 +118,12 @@ public class NewPlaylistEntryTests : PinnedDataDirectory
 
         parts.Mobile.BeginCreatePlaylistCommand.Execute(null);
         Pump(window);
-        NameBox(window).Text = "Late Night";
+        Assert.True(parts.Mobile.CurrentFrame.IsPlaylistsList);
+        var box = NameBox(window);
+        Assert.True(box.IsEffectivelyVisible);
+        Assert.True(string.IsNullOrEmpty(box.Text));
+        Assert.True(box.IsFocused);
+        box.Text = "Late Night";
         window.KeyPressQwerty(PhysicalKey.Enter, RawInputModifiers.None);
         Dispatcher.UIThread.RunJobs();
 

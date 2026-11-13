@@ -59,7 +59,7 @@ public class MobileScreenMenuTests : PinnedDataDirectory
         vm.BuildScreenMenu(vm.CurrentFrame).SelectMany(s => s.Entries).Single(e => e.Label == label);
 
     [AvaloniaFact]
-    public async Task The_songs_menu_reports_the_current_sort()
+    public async Task Picking_date_added_reorders_the_songs_newest_first_and_is_remembered()
     {
         var vm = Build();
         vm.SelectTabCommand.Execute(nameof(MobileTab.Songs));
@@ -67,14 +67,6 @@ public class MobileScreenMenuTests : PinnedDataDirectory
 
         Assert.Equal(ListSortDirection.Ascending, Entry(vm, "Name").Direction);
         Assert.Null(Entry(vm, "Year").Direction);
-    }
-
-    [AvaloniaFact]
-    public async Task Picking_date_added_reorders_the_songs_newest_first_and_is_remembered()
-    {
-        var vm = Build();
-        vm.SelectTabCommand.Execute(nameof(MobileTab.Songs));
-        await WaitForRows(vm, 4);
 
         Entry(vm, "Date Added").Invoke();
         string[] newestFirst = ["Maps", "Quality of Armor"];
@@ -83,19 +75,6 @@ public class MobileScreenMenuTests : PinnedDataDirectory
         Assert.Equal(newestFirst, vm.Main.Rows.Take(2).Select(r => r.Track.Title));
         Assert.Equal(ListSortDirection.Descending, Entry(vm, "Date Added").Direction);
         Assert.Equal((BrowseSortOrder.DateAdded, false), vm.Main.SortOf(BrowseSortScreen.Songs));
-    }
-
-    [AvaloniaFact]
-    public async Task The_album_grid_sorts_by_year()
-    {
-        var vm = Build();
-        vm.SelectTabCommand.Execute(nameof(MobileTab.Albums));
-        await WaitFor(() => vm.AlbumGridRows.Count > 0);
-
-        Entry(vm, "Year").Invoke();
-
-        Assert.Equal(["Propeller", "Bee Thousand", "Alien Lanes"],
-            vm.AlbumGridRows.SelectMany(r => r.Tiles).Select(t => t.Name));
     }
 
     // Picking the sort in use again turns it round, arrow and all - and

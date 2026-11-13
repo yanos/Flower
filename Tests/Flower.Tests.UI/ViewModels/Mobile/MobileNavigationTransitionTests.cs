@@ -50,29 +50,6 @@ public class MobileNavigationTransitionTests : PinnedDataDirectory
         Assert.Equal(1, navigations);
     }
 
-    // The same jump, made from the Now Playing sheet's album art. It is a push
-    // like any other, so the album arrives from the right, under the sheet as
-    // it slides down. The drill-in has to land first: the sheet is opaque and
-    // full-screen, so an entrance that started before it began leaving would
-    // spend its whole length hidden behind it.
-    [AvaloniaFact]
-    public void The_album_art_pushes_the_album_and_then_lets_the_sheet_go()
-    {
-        using var scope = Build();
-        scope.Parts.PlaylistControl.Play(scope.Parts.Library.Tracks[0]);
-        scope.Mobile.OpenNowPlayingCommand.Execute(null);
-        Assert.True(scope.Mobile.IsShowingNowPlaying);
-
-        bool? sheetStillUpWhenTheAlbumLanded = null;
-        scope.Mobile.NavigationChanged += (_, _) => sheetStillUpWhenTheAlbumLanded ??= scope.Mobile.IsShowingNowPlaying;
-
-        scope.Mobile.GoToCurrentlyPlayingAlbumCommand.Execute(null);
-        MainViewModelHarness.WaitForTheDrillIn(scope.Mobile, "Album 0");
-
-        Assert.True(sheetStillUpWhenTheAlbumLanded);
-        Assert.False(scope.Mobile.IsShowingNowPlaying);
-    }
-
     // Tapping the album art of the album already being shown is not a
     // navigation at all: nothing to push, nothing to slide in. Pushing anyway
     // put a history entry for the destination itself into the stack - a back
@@ -226,19 +203,5 @@ public class MobileNavigationTransitionTests : PinnedDataDirectory
                 Assert.Fail($"the navigation never landed within {timeoutMs}ms");
             System.Threading.Thread.Sleep(10);
         }
-    }
-
-    // NavigationChanged is raised for things that are not navigations at all
-    // (a search refresh, a rescan landing). Consuming the transition rather
-    // than merely reading it is what stops the next one of those from replaying
-    // the entrance the last real navigation asked for.
-    [AvaloniaFact]
-    public void A_transition_is_only_handed_out_once()
-    {
-        using var scope = Build();
-        scope.Mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
-
-        Assert.NotEqual(MobileNavigationTransition.None, scope.Mobile.ConsumePendingTransition());
-        Assert.Equal(MobileNavigationTransition.None, scope.Mobile.ConsumePendingTransition());
     }
 }

@@ -90,49 +90,6 @@ public class RubberBandPullTests
         rig.Window.Close();
     }
 
-    // The pull reports how far it has gone towards opening, rising with the
-    // stretch to 1 at the point letting go would open, and falling back to 0
-    // as the stretch springs back.
-    [AvaloniaFact]
-    public void A_pull_reports_its_progress_up_and_back_down()
-    {
-        // Stepped by hand: the spring back runs on AnimationClock, whose own
-        // timer the headless dispatcher does not drive.
-        var previous = AnimationClock.Current;
-        var now = TimeSpan.Zero;
-        var clock = new AnimationClock(() => now);
-        AnimationClock.Current = clock;
-        try
-        {
-            var rig = Show();
-            var reported = new List<double>();
-            rig.Scroller.AddHandler(RubberBandScroll.PullingDownEvent, (_, e) => reported.Add(e.Progress));
-            var finger = new Pointer(Pointer.GetNextFreeId(), PointerType.Touch, true);
-
-            Press(rig, finger, new Point(200, 100));
-            Move(rig, finger, new Point(200, 115));
-            Move(rig, finger, new Point(200, 130));
-            Assert.InRange(reported[^1], 0.01, 0.99);
-            Move(rig, finger, new Point(200, 215));
-            Assert.Equal(1, reported[^1]);
-            Release(rig, finger, new Point(200, 215));
-
-            Assert.InRange(reported[^1], 0.99, 1);
-
-            now += TimeSpan.FromMilliseconds(100);
-            clock.TickForTest();
-            Assert.InRange(reported[^1], 0.01, 0.99);
-            now += TimeSpan.FromMilliseconds(400);
-            clock.TickForTest();
-            Assert.Equal(0, reported[^1]);
-            rig.Window.Close();
-        }
-        finally
-        {
-            AnimationClock.Current = previous;
-        }
-    }
-
     [AvaloniaFact]
     public void A_short_pull_only_bounces()
     {

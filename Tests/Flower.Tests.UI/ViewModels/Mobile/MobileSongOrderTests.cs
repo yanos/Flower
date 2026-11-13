@@ -51,44 +51,21 @@ public class MobileSongOrderTests : PinnedDataDirectory
         return Own(MainViewModelHarness.BuildMobile(library, new MainPlaylist(new List<Track>()))).Mobile;
     }
 
+    // Songs use alphabetical order, albums use track order, and Back restores
+    // the order of the screen being returned to.
     [AvaloniaFact]
-    public async Task The_songs_tab_is_in_alphabetical_order()
+    public async Task Songs_keep_their_alphabetical_order_after_visiting_an_album()
     {
         var vm = Build();
         vm.SelectTabCommand.Execute(nameof(MobileTab.Songs));
         await WaitForRows(vm, 3);
         await WaitForOrder(vm, Alphabetical);
-
         Assert.Equal(Alphabetical, vm.Main.Rows.Select(r => r.Track.Title));
-    }
-
-    // An album is still its own order - the alphabetical rule is about the
-    // library as a list of songs, not about every list of songs.
-    [AvaloniaFact]
-    public async Task An_album_is_still_in_album_order()
-    {
-        var vm = Build();
-        vm.SelectTabCommand.Execute(nameof(MobileTab.Songs));
-        await WaitForRows(vm, 3);
 
         vm.SelectTabCommand.Execute(nameof(MobileTab.Albums));
         vm.SelectAlbumOrArtistCommand.Execute(MainViewModelHarness.AlbumKey(vm, "Bee Thousand"));
         await WaitForRows(vm, 2);
-
         Assert.Equal(new[] { "Zero Hour", "Apple Tree" }, vm.Main.Rows.Select(r => r.Track.Title));
-    }
-
-    // And going back out of one puts the library back the way it was, rather
-    // than leaving it in the album's order.
-    [AvaloniaFact]
-    public async Task Coming_back_from_an_album_is_alphabetical_again()
-    {
-        var vm = Build();
-        vm.SelectTabCommand.Execute(nameof(MobileTab.Songs));
-        await WaitForRows(vm, 3);
-        vm.SelectTabCommand.Execute(nameof(MobileTab.Albums));
-        vm.SelectAlbumOrArtistCommand.Execute(MainViewModelHarness.AlbumKey(vm, "Bee Thousand"));
-        await WaitForRows(vm, 2);
 
         // Back out of the album, then back again to the Songs tab.
         vm.BackCommand.Execute(null);

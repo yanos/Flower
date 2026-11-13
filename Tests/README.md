@@ -26,6 +26,16 @@ one headless session and one dispatcher, as the original combined suite did.
 Test namespaces generally retain their existing names to keep method filters
 stable; select a subject by its project.
 
+Use `Flower.Tests` for ordinary unit tests that can call production logic
+without a window, dispatcher pumping, or `MainViewModelHarness`. This includes
+mobile album metadata, search history and suggestions, tab editing, filter
+models, and navigation-frame classification. Keep input, focus, bindings,
+virtualization, and command/navigation integration in `Flower.Tests.UI`.
+Both projects currently import the common headless infrastructure; placing a
+unit test in the shared project does not require removing those shared packages.
+The mobile cleanup and its counts are recorded in
+[`docs/MOBILE-TEST-AUDIT.md`](../docs/MOBILE-TEST-AUDIT.md).
+
 Tests specific to one desktop OS live in its platform project. Those projects
 exclude native test sources on other hosts, so the desktop solution filter can
 be built anywhere without executing unsupported native calls. POSIX permission

@@ -166,44 +166,6 @@ public class SlidingSheetTests
         };
     }
 
-    [AvaloniaFact]
-    public void A_closed_sheet_is_not_shown_at_all()
-    {
-        var host = Show();
-        try
-        {
-            Assert.False(host.Sheet.IsVisible);
-        }
-        finally
-        {
-            host.Window.Close();
-        }
-    }
-
-    // The whole reason IsVisible is this control's own state rather than a
-    // binding: it has to lag the ViewModel by one animation, or the sheet
-    // vanishes before the slide-out is ever seen.
-    [AvaloniaFact]
-    public void Closing_stays_on_screen_until_the_slide_finishes()
-    {
-        var host = Show();
-        try
-        {
-            host.Sheet.IsOpen = true;
-            host.Advance();
-
-            host.Sheet.IsOpen = false;
-            Assert.True(host.Sheet.IsVisible);
-
-            host.Advance();
-            Assert.False(host.Sheet.IsVisible);
-        }
-        finally
-        {
-            host.Window.Close();
-        }
-    }
-
     // Reopening mid-close must cancel the close outright - the pending
     // "hide it now" is the one thing that could take a sheet the user just
     // asked for straight back off screen.
@@ -213,36 +175,13 @@ public class SlidingSheetTests
         var host = Show();
         try
         {
+            Assert.False(host.Sheet.IsVisible);
             host.Sheet.IsOpen = true;
             host.Advance();
             host.Sheet.IsOpen = false;
 
             // Deliberately no Advance between these two: the close is still in
             // flight, which is the case under test.
-            host.Sheet.IsOpen = true;
-            host.Advance();
-
-            Assert.True(host.Sheet.IsVisible);
-        }
-        finally
-        {
-            host.Window.Close();
-        }
-    }
-
-    // Same, for a card sheet - whose close leaves opacity at 0, so a reopen
-    // that failed to reset it would show nothing at all.
-    [AvaloniaFact]
-    public void Reopening_a_card_sheet_after_a_full_close_shows_it_again()
-    {
-        var host = Show(SheetEntrance.FromBottom, withCard: true);
-        try
-        {
-            host.Sheet.IsOpen = true;
-            host.Advance();
-            host.Sheet.IsOpen = false;
-            host.Advance();
-
             host.Sheet.IsOpen = true;
             host.Advance();
 

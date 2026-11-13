@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -148,18 +147,7 @@ public partial class MobileMainViewModel
         if (row == null)
             return;
 
-        var tabs = _visibleTabs.ToList();
-        if (tabs.Contains(row.Tab))
-        {
-            if (tabs.Count > 1)
-                tabs.Remove(row.Tab);
-        }
-        else if (tabs.Count < MobileTabs.MaxShown)
-        {
-            tabs.Add(row.Tab);
-        }
-
-        ApplyVisibleTabs(tabs);
+        ApplyVisibleTabs(MobileTabs.Toggle(_visibleTabs, row.Tab));
     }
 
     // A drop on the Navigation Bar page: `tab` now sits at `index` of the bar,
@@ -167,12 +155,9 @@ public partial class MobileMainViewModel
     // in the bar moves - showing one is its switch, which puts it at the end.
     public void MoveTab(MobileTab tab, int index)
     {
-        var tabs = _visibleTabs.ToList();
-        if (!tabs.Remove(tab))
+        if (!_visibleTabs.Contains(tab))
             return;
-
-        tabs.Insert(Math.Clamp(index, 0, tabs.Count), tab);
-        ApplyVisibleTabs(tabs);
+        ApplyVisibleTabs(MobileTabs.Move(_visibleTabs, tab, index));
     }
 
     private void ApplyVisibleTabs(List<MobileTab> tabs)

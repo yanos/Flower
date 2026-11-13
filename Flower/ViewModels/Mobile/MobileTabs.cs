@@ -66,6 +66,32 @@ public static class MobileTabs
         return tabs.Count == 0 ? Default : tabs;
     }
 
+    // Showing appends; hiding keeps at least one tab. Enforce the same limits
+    // as the settings switches, including commands invoked with a stale row.
+    public static List<MobileTab> Toggle(IReadOnlyList<MobileTab> visible, MobileTab tab)
+    {
+        var tabs = visible.ToList();
+        if (tabs.Contains(tab))
+        {
+            if (tabs.Count > 1)
+                tabs.Remove(tab);
+        }
+        else if (tabs.Count < MaxShown)
+        {
+            tabs.Add(tab);
+        }
+        return tabs;
+    }
+
+    // A drop index is the position after lifting the tab out of the bar.
+    public static List<MobileTab> Move(IReadOnlyList<MobileTab> visible, MobileTab tab, int index)
+    {
+        var tabs = visible.ToList();
+        if (tabs.Remove(tab))
+            tabs.Insert(Math.Clamp(index, 0, tabs.Count), tab);
+        return tabs;
+    }
+
     // The label under the tab's icon, and its name in Settings.
     public static string Label(MobileTab tab) => tab.ToString();
 

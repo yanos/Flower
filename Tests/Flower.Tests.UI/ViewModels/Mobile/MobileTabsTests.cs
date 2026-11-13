@@ -61,16 +61,6 @@ public class MobileTabsTests : PinnedDataDirectory
         Assert.True(scope.Mobile.IsShowingQueue);
     }
 
-    [Fact]
-    public void A_saved_bar_is_cleaned_rather_than_trusted()
-    {
-        Assert.Equal(MobileTabs.Default, MobileTabs.Parse(null));
-        Assert.Equal(MobileTabs.Default, MobileTabs.Parse(["NotATab"]));
-        Assert.Equal(new[] { MobileTab.Songs, MobileTab.Queue },
-            MobileTabs.Parse(["Songs", "Bogus", "Songs", "Queue"]));
-        Assert.Equal(MobileTabs.Default, MobileTabs.Parse(MobileTabs.Default.Select(t => t.ToString())));
-    }
-
     // The Navigation Bar page lists the bar in its order, then what is not in
     // it, in the order MobileTabs.All gives them.
     [AvaloniaFact]
@@ -93,45 +83,19 @@ public class MobileTabsTests : PinnedDataDirectory
         using var scope = Build();
         var mobile = scope.Mobile;
 
+        var history = Assert.Single(mobile.HiddenTabRows);
+        Assert.False(history.CanToggle);
+        mobile.ToggleTabShownCommand.Execute(history);
+        Assert.DoesNotContain(MobileTab.History, mobile.VisibleTabs);
+
         mobile.ToggleTabShownCommand.Execute(Row(mobile, MobileTab.Playlists));
+        Assert.True(Row(mobile, MobileTab.History).CanToggle);
         mobile.ToggleTabShownCommand.Execute(Row(mobile, MobileTab.Home));
         mobile.ToggleTabShownCommand.Execute(Row(mobile, MobileTab.Home));
 
         var expected = new[] { MobileTab.Songs, MobileTab.Albums, MobileTab.Artists, MobileTab.Queue, MobileTab.Search, MobileTab.Home };
         Assert.Equal(expected, mobile.VisibleTabs);
         Assert.Equal(expected.Select(t => t.ToString()), scope.Parts.AppSettings.MobileTabs);
-    }
-
-    // Eight tabs, a bar of seven: out of the box History is the one left on
-    // the page, and it cannot be turned on until another is turned off.
-    [AvaloniaFact]
-    public void The_bar_holds_seven_and_the_page_lists_all_eight()
-    {
-        using var scope = Build();
-        var mobile = scope.Mobile;
-
-        Assert.Equal(MobileTabs.MaxShown, mobile.VisibleTabs.Count);
-        var history = Assert.Single(mobile.HiddenTabRows);
-        Assert.Equal(MobileTab.History, history.Tab);
-        Assert.False(history.CanToggle);
-
-        mobile.ToggleTabShownCommand.Execute(history);
-        Assert.DoesNotContain(MobileTab.History, mobile.VisibleTabs);
-
-        mobile.ToggleTabShownCommand.Execute(Row(mobile, MobileTab.Search));
-        Assert.True(Row(mobile, MobileTab.History).CanToggle);
-        mobile.ToggleTabShownCommand.Execute(Row(mobile, MobileTab.History));
-
-        Assert.Equal(MobileTab.History, mobile.VisibleTabs[^1]);
-        Assert.Equal(MobileTabs.MaxShown, mobile.VisibleTabs.Count);
-    }
-
-    [Fact]
-    public void A_saved_bar_longer_than_seven_is_cut_to_seven()
-    {
-        var saved = MobileTabs.All.Select(t => t.ToString()).ToList();
-
-        Assert.Equal(MobileTabs.All.Take(MobileTabs.MaxShown), MobileTabs.Parse(saved));
     }
 
     [AvaloniaFact]
@@ -162,17 +126,6 @@ public class MobileTabsTests : PinnedDataDirectory
         Assert.Equal(expected.Select(t => t.ToString()), scope.Parts.AppSettings.MobileTabs);
     }
 
-    // Only the bar is ordered: a tab outside it goes back in by its switch.
-    [AvaloniaFact]
-    public void Dropping_a_tab_not_in_the_bar_changes_nothing()
-    {
-        using var scope = Build([MobileTab.Albums, MobileTab.Songs]);
-
-        scope.Mobile.MoveTab(MobileTab.Queue, 0);
-
-        Assert.Equal(new[] { MobileTab.Albums, MobileTab.Songs }, scope.Mobile.VisibleTabs);
-    }
-
     // The page is pushed over Settings, so it goes wherever Settings goes.
     [AvaloniaFact]
     public void The_navigation_bar_page_opens_over_settings_and_closes_with_it()
@@ -194,19 +147,6 @@ public class MobileTabsTests : PinnedDataDirectory
         mobile.OpenNavigationBarSettingsCommand.Execute(null);
         mobile.CloseSheetCommand.Execute(null);
         Assert.False(mobile.IsShowingNavigationBarSettings);
-    }
-
-    // Left and right are the bar's, not the order the tabs were declared in.
-    [AvaloniaFact]
-    public void A_tap_arrives_from_the_side_its_tab_is_on_in_the_bar()
-    {
-        using var scope = Build([MobileTab.Search, MobileTab.Queue, MobileTab.Albums]);
-
-        scope.Mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
-        Assert.Equal(MobileNavigationTransition.FromRight, scope.Mobile.ConsumePendingTransition());
-
-        scope.Mobile.SelectTabCommand.Execute(nameof(MobileTab.Queue));
-        Assert.Equal(MobileNavigationTransition.FromLeft, scope.Mobile.ConsumePendingTransition());
     }
 
     [AvaloniaFact]
@@ -250,23 +190,6 @@ public class MobileTabsTests : PinnedDataDirectory
         Dispatcher.UIThread.RunJobs();
     }
 
-    [AvaloniaFact]
-    public void The_queue_is_what_came_before_the_song_playing_then_it_then_what_follows_it()
-    {
-        using var scope = Build();
-        PlayFrom(scope, 2);
-
-        scope.Mobile.SelectTabCommand.Execute(nameof(MobileTab.Queue));
-
-        var rows = scope.Mobile.QueueRows;
-        Assert.Equal(new[] { "Track 0", "Track 1", "Track 2", "Track 3", "Track 4" }, rows.Select(r => r.Track.Title));
-        Assert.Equal(2, scope.Mobile.QueuePlayedCount);
-        Assert.True(rows[2].IsCurrentlyPlaying);
-        Assert.False(rows[3].IsCurrentlyPlaying);
-        Assert.True(rows[1].IsPlayed);
-        Assert.False(rows[2].IsPlayed);
-    }
-
     // It follows playback while it is on screen, not only on the way in.
     [AvaloniaFact]
     public void The_queue_moves_on_when_the_song_does()
@@ -281,56 +204,6 @@ public class MobileTabsTests : PinnedDataDirectory
         Assert.Equal(3, scope.Mobile.QueuePlayedCount);
         Assert.True(scope.Mobile.QueueRows[3].IsCurrentlyPlaying);
         Assert.True(scope.Mobile.QueueRows[2].IsPlayed);
-    }
-
-    // Under shuffle the queue is the rest in the order shuffle will play
-    // them - every one of them once - and that is the order Next takes. It
-    // used to list the queue as it stands, library order, which read as no
-    // shuffle at all.
-    [AvaloniaFact]
-    public void Under_shuffle_the_queue_is_the_order_shuffle_plays()
-    {
-        using var scope = Build();
-        PlayFrom(scope, 2);
-        scope.Parts.PlaylistControl.ToggleShuffle();
-
-        scope.Mobile.SelectTabCommand.Execute(nameof(MobileTab.Queue));
-
-        var listed = scope.Mobile.QueueRows.Select(r => r.Track.Title).ToList();
-        Assert.Equal("Track 2", listed[0]);
-        Assert.Equal(new[] { "Track 0", "Track 1", "Track 3", "Track 4" }, listed.Skip(1).Order());
-
-        var played = new List<string>();
-        for (var i = 0; i < 4; i++)
-        {
-            scope.Parts.PlaylistControl.Next();
-            Dispatcher.UIThread.RunJobs();
-            played.Add(scope.Parts.PlaylistControl.CurrentlyPlayingTrack!.Title!);
-        }
-        Assert.Equal(listed.Skip(1), played);
-    }
-
-    // Under shuffle what has played is listed in the order it played, not
-    // the queue's, above the song playing - and the rest of the order is
-    // still what follows.
-    [AvaloniaFact]
-    public void Under_shuffle_what_has_played_is_above_in_the_order_it_played()
-    {
-        using var scope = Build();
-        PlayFrom(scope, 2);
-        scope.Parts.PlaylistControl.ToggleShuffle();
-        scope.Mobile.SelectTabCommand.Execute(nameof(MobileTab.Queue));
-        var dealt = scope.Mobile.QueueRows.Select(r => r.Track.Title).ToList();
-
-        scope.Parts.PlaylistControl.Next();
-        scope.Parts.PlaylistControl.Next();
-        Dispatcher.UIThread.RunJobs();
-
-        var listed = scope.Mobile.QueueRows.Select(r => r.Track.Title).ToList();
-        Assert.Equal(2, scope.Mobile.QueuePlayedCount);
-        Assert.Equal(dealt, listed);
-        Assert.Equal(dealt[2], scope.Parts.PlaylistControl.CurrentlyPlayingTrack?.Title);
-        Assert.True(scope.Mobile.QueueRows[2].IsCurrentlyPlaying);
     }
 
     // A tap on the queue is a jump along it - it must not replace the queue

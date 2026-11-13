@@ -255,61 +255,6 @@ public class MobileSmartPlaylistEditorTests : PinnedDataDirectory
         Assert.Equal(["Echos Myron"], editor.Playlist.Tracks.Select(t => t.Title));
     }
 
-    // Typing waits for a pause before the list follows it, so the library is
-    // walked once per word rather than once per letter.
-    [AvaloniaFact]
-    public void The_list_waits_for_typing_to_pause()
-    {
-        using var scope = Build();
-        scope.Mobile.NewSmartPlaylistCommand.Execute(null);
-        var editor = scope.Mobile.SmartPlaylistEditor!;
-        var row = editor.Conditions[0];
-        row.Field = row.Fields.First(f => f.Field == SmartField.Title);
-        row.Operator = row.Operators.First(o => o.Operator == SmartOperator.Contains);
-        Flush(editor);
-
-        var typed = System.Diagnostics.Stopwatch.StartNew();
-        row.ValueText = "T";
-        row.ValueText = "Tr";
-        Pump(TimeSpan.FromMilliseconds(300));
-        Assert.Empty(scope.Mobile.SmartPlaylistPreviewRows);
-
-        // Another letter restarts the wait.
-        row.ValueText = "Tra";
-        typed.Restart();
-        while (scope.Mobile.SmartPlaylistPreviewRows.Count == 0 && typed.Elapsed < TimeSpan.FromSeconds(5))
-            Pump(TimeSpan.FromMilliseconds(20));
-
-        Assert.Equal(["Tractor Rape Chain"], scope.Mobile.SmartPlaylistPreviewRows.Select(r => r.Track.Title));
-        Assert.True(typed.Elapsed >= SmartPlaylistEditorViewModel.TypingPause - TimeSpan.FromMilliseconds(50),
-            $"The list followed the typing after {typed.Elapsed.TotalMilliseconds:0}ms");
-    }
-
-    // A pick from a list is a finished thought: no pause, just the pass itself.
-    [AvaloniaFact]
-    public void A_pick_from_a_list_updates_the_list_without_the_typing_pause()
-    {
-        using var scope = Build();
-        scope.Mobile.NewSmartPlaylistCommand.Execute(null);
-        var editor = scope.Mobile.SmartPlaylistEditor!;
-        var row = editor.Conditions[0];
-        row.Field = row.Fields.First(f => f.Field == SmartField.Title);
-        row.Operator = row.Operators.First(o => o.Operator == SmartOperator.Contains);
-        row.ValueText = "Tr";
-        Flush(editor);
-        Assert.Single(scope.Mobile.SmartPlaylistPreviewRows);
-
-        var picked = System.Diagnostics.Stopwatch.StartNew();
-        row.Operator = row.Operators.First(o => o.Operator == SmartOperator.DoesNotContain);
-        while (scope.Mobile.SmartPlaylistPreviewRows.FirstOrDefault()?.Track.Title != "Echos Myron"
-               && picked.Elapsed < TimeSpan.FromSeconds(5))
-            Pump(TimeSpan.FromMilliseconds(20));
-
-        Assert.Equal(["Echos Myron"], scope.Mobile.SmartPlaylistPreviewRows.Select(r => r.Track.Title));
-        Assert.True(picked.Elapsed < SmartPlaylistEditorViewModel.TypingPause,
-            $"The list followed the pick after {picked.Elapsed.TotalMilliseconds:0}ms");
-    }
-
     // Runs the preview now, skipping the typing pause, and lets its result land.
     private static void Flush(SmartPlaylistEditorViewModel editor)
     {

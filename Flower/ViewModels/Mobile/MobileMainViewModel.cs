@@ -858,40 +858,11 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         return header;
     }
 
-    // album is the AlbumGroup key the album screen is picked by.
     private AlbumTileViewModel? BuildAlbumHeader(string album)
     {
-        var tracks = Main.Library.Tracks.Where(t => AlbumGroup.KeyOf(t) == album).ToList();
-        if (tracks.Count == 0)
-            return null;
-
-        var representative = AlbumCover.TrackOf(tracks)!;
-        // The songs' own artist (Track.Artists) when they all share one,
-        // whatever the case it is spelled in - the album artist is a sorting
-        // tag, and often not the name the artist goes by on the songs. Songs
-        // by several (a guest on one track, a compilation) fall back to the
-        // album artist, with the same "Various Artists" as AlbumGridBuilder
-        // where even that differs: a header naming one arbitrary artist out of
-        // several would be misleading.
-        var songArtists = ArtistNames.Of(tracks);
-        var albumArtists = tracks.Select(t => t.EffectiveAlbumArtist).Distinct().ToList();
-        var artist = songArtists.Count == 1 && tracks.All(t => !string.IsNullOrEmpty(t.Artists)) ? songArtists[0]
-            : albumArtists.Count == 1 ? albumArtists[0]
-            : "Various Artists";
-
-        var header = new AlbumTileViewModel
-        {
-            Name = AlbumGroup.NameOf(album),
-            Artist = artist,
-            // The earliest, as the artist page's album sections take it
-            // (BrowseSort.YearOf): a reissue's bonus tracks
-            // carry the reissue's.
-            Year = tracks.Select(t => t.Year).Where(y => !string.IsNullOrWhiteSpace(y)).Min(),
-            RepresentativeTrack = representative,
-            MostRecentlyAdded = tracks.Max(t => t.DateAdded),
-            Tracks = tracks,
-        };
-        TrackAvailability.Apply([header], Main.PairedServerFingerprint, Main.IsPairedServerReachable);
+        var header = AlbumHeaderBuilder.Build(Main.Library.Tracks, album);
+        if (header != null)
+            TrackAvailability.Apply([header], Main.PairedServerFingerprint, Main.IsPairedServerReachable);
         return header;
     }
 
