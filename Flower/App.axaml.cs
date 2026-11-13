@@ -931,6 +931,7 @@ public partial class App : Application
                     () => settingsStore.SaveAsync(appSettings),
                     provider.GetRequiredService<ILogger<AppUpdatesViewModel>>());
                 mainViewModel.Updates = updates;
+                window.AddCheckForUpdatesMenuItem(updates);
                 updates.Start();
             }
 

@@ -163,6 +163,7 @@ public partial class MainWindow : Window
                     (DataContext as ViewModels.MainViewModel)?.OpenSettingsCommand?.Execute(null);
 
                 var flowerMenu = new NativeMenuItem("Flower") { Menu = new NativeMenu() };
+                _flowerMenu = flowerMenu.Menu;
                 flowerMenu.Menu.Items.Add(aboutItem);
                 flowerMenu.Menu.Items.Add(new NativeMenuItemSeparator());
                 flowerMenu.Menu.Items.Add(settingsMenuItem);
@@ -213,6 +214,34 @@ public partial class MainWindow : Window
                 PaintMenuIcons();
                 ActualThemeVariantChanged += (_, _) => PaintMenuIcons();
             }
+        }
+    }
+
+    // Windows/Linux's mirror of the macOS app menu (About, Settings), built
+    // in the constructor; null on macOS, where App.axaml's menu is the one.
+    private NativeMenu? _flowerMenu;
+
+    // "Check for Updates…" under About Flower, in the app menu on macOS and
+    // the mirrored Flower menu elsewhere. App.Bootstrap calls this only where
+    // there is an updater, as Settings' and the About window's own button
+    // show only there; the window is built before the updater is, so the item
+    // is added afterwards rather than with About and Settings.
+    public void AddCheckForUpdatesMenuItem(ViewModels.AppUpdatesViewModel updates)
+    {
+        var menu = System.OperatingSystem.IsMacOS()
+            ? NativeMenu.GetMenu(Application.Current!)
+            : _flowerMenu;
+        if (menu is null)
+            return;
+
+        var item = new NativeMenuItem("Check for Updates…");
+        item.Click += (_, _) => AboutWindow.ShowCheckingForUpdates(updates);
+        menu.Items.Insert(1, item);
+
+        if (!System.OperatingSystem.IsMacOS())
+        {
+            _menuIcons.Add((item, MaterialIconKind.Update));
+            PaintMenuIcons();
         }
     }
 

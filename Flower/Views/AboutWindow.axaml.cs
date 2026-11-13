@@ -34,6 +34,15 @@ public partial class AboutWindow : Window
         }
     }
 
+    // The menu's Check for Updates…: the answer shows in this window's
+    // updates row, so it opens here and starts the check its button does.
+    public static void ShowCheckingForUpdates(AppUpdatesViewModel updates)
+    {
+        new AboutWindow(updates).Show();
+        if (updates.CheckNowCommand.CanExecute(null))
+            updates.CheckNowCommand.Execute(null);
+    }
+
     private void LicencesButton_OnClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
         new OpenSourceLicencesWindow().Show();
 
