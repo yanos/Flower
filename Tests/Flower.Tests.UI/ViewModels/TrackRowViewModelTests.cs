@@ -152,15 +152,26 @@ public class TrackRowViewModelTests
     public void The_spinner_turns_while_downloading()
     {
         var row = Row(new Track { Path = null });
-        row.IsDownloading = true;
+        try
+        {
+            row.IsDownloading = true;
 
-        LetTheSpinnerTick();
+            // Until it turns rather than for a fixed time: a CI iOS simulator
+            // under the interpreter has gone past 120ms without a tick.
+            var deadline = Environment.TickCount64 + 10_000;
+            while (row.SpinAngle == 0 && Environment.TickCount64 < deadline)
+                LetTheSpinnerTick(20);
 
-        Assert.True(row.SpinAngle > 0, "the spinner never advanced while downloading");
-
-        // AnimationClock.Current is process-wide; leaving this row subscribed
-        // would leave it running for every later test in the assembly.
-        row.Dispose();
+            Assert.True(row.SpinAngle > 0, "the spinner never advanced while downloading");
+        }
+        finally
+        {
+            // AnimationClock.Current is process-wide; a row left subscribed
+            // keeps it running for every later test in the assembly, and
+            // ScreenStackPanelSwipeTests, which wait for an idle clock, then
+            // fail too.
+            row.Dispose();
+        }
     }
 
     // A row discarded mid-download used to leave its timer registered on the
