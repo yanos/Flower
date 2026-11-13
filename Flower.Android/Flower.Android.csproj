@@ -17,7 +17,11 @@
          assignment here would freeze at the SDK's static default instead of
          MinVer's computed value. -->
     <ApplicationVersion>1</ApplicationVersion>
-    <AndroidPackageFormat>apk</AndroidPackageFormat>
+    <!-- An .apk to run, an .aab to submit: Play Console accepts only App
+         Bundles, while an .apk is what `dotnet run` and adb install
+         directly, with no bundletool pass between a build and the phone. -->
+    <AndroidPackageFormat Condition="'$(Configuration)' == 'Release'">aab</AndroidPackageFormat>
+    <AndroidPackageFormat Condition="'$(Configuration)' != 'Release'">apk</AndroidPackageFormat>
     <AndroidEnableProfiledAot>False</AndroidEnableProfiledAot>
   </PropertyGroup>
 

@@ -79,6 +79,12 @@
     <ProjectReference Include="..\Flower\Flower.csproj" />
   </ItemGroup>
 
+  <!-- At the bundle's root, where App Store Connect looks for it; see the
+       file itself for what it declares and why. -->
+  <ItemGroup>
+    <BundleResource Include="PrivacyInfo.xcprivacy" LogicalName="PrivacyInfo.xcprivacy" />
+  </ItemGroup>
+
   <!-- NativeAOT trims every assembly, where Mono's SdkOnly left third-party ones
        whole. TagLib# makes its per-format File classes with
        Activator.CreateInstance over a table of types, which the trimmer cannot
