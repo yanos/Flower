@@ -353,6 +353,13 @@ public class CurrentlyPlayingControlViewModelTests : PinnedDataDirectory
         loader.Gate = new TaskCompletionSource();
         vm.Playback.Play(first);
         vm.Playback.Play(second);
+        // Each load starts on the thread pool, which a simulator under Mono
+        // can take longer than any fixed sleep to get to.
+        Assert.True(SpinWait.SpinUntil(() =>
+        {
+            lock (loader.Asked)
+                return loader.Asked.Count == 2;
+        }, TimeSpan.FromSeconds(10)));
         loader.Gate.SetResult();          // let the first track's stale load finish last
         Thread.Sleep(200);
         Dispatcher.UIThread.RunJobs();
@@ -364,7 +371,8 @@ public class CurrentlyPlayingControlViewModelTests : PinnedDataDirectory
         // shuffled run order (see ShuffleOrderer) - a real defect in the test,
         // since the claim here is that the stale *answer* is dropped, which the
         // AlbumArt assertion above is what actually checks.
-        Assert.Equal([first, second], loader.Asked.OrderBy(t => t.Title).ToList());
+        lock (loader.Asked)
+            Assert.Equal([first, second], loader.Asked.OrderBy(t => t.Title).ToList());
     }
 
     // Counts what was asked for rather than producing a bitmap: decoding a real
