@@ -11,3 +11,4 @@ rounded corner on windows and linux icons
 processing notification not appearing
 sentry dll not tagged
 add check for updates
+the continue playing albums appears even when only one song was played.
