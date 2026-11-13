@@ -367,6 +367,7 @@ namespace Flower.ViewModels
                         catch (Exception ex)
                         {
                             _logger.LogError(ex, "Post-playback bookkeeping failed for {Path}", LogPath.Short(finishedTrack.Path));
+                            CrashReporting.ReportCaught(ex, "playback bookkeeping");
                         }
                     });
                 });
@@ -457,6 +458,7 @@ namespace Flower.ViewModels
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Counting a play failed for {Path}", LogPath.Short(track.Path));
+                    CrashReporting.ReportCaught(ex, "play count");
                 }
             });
         }

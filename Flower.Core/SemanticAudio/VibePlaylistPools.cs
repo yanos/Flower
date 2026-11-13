@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 
 using Microsoft.Extensions.Logging;
 
+using Flower.Logging;
 using Flower.Models;
 
 namespace Flower.SemanticAudio;
@@ -184,6 +185,7 @@ public sealed class VibePlaylistPools : IDisposable
         catch (Exception ex)
         {
             _logger.LogError(ex, "Vibe Playlists' pools were not rebuilt");
+            CrashReporting.ReportCaught(ex, "vibe pools");
         }
     }
 

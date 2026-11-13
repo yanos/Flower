@@ -24,9 +24,16 @@ What is left:
   CI, which needs a Sentry auth token as a CI secret.
 - iOS native crashes, which nothing records (no crash-report file, no exit
   history to read).
-- **Calls to `CrashReporting.ReportCaught`.** The API exists; no catch site
-  uses it yet. Each one is a judgement: a catch that means Flower is wrong,
-  not one that means the world is (a server down, a file gone).
+- **More calls to `CrashReporting.ReportCaught`, as they turn up.** Eight
+  catch sites use it (November 2026), each one that means Flower is wrong:
+  post-playback bookkeeping, counting a play, an update check failing
+  outside its own handling, a handler of a track's end, a decode thread
+  ending on an exception, the semantic-audio engine stopping on anything but
+  its two expected failures, Vibe Playlists' pools not rebuilding, and a
+  smart-playlist rule failing to evaluate. Deliberately not: `Library`'s
+  persistence failures and `LibraryFolderWatcher` (a locked database or a
+  vanished folder is the world), `TaskExtensions.Forget` (its callers mix
+  both), the crash scanners themselves.
 - **iOS native crashes arrive late:** MetricKit delivers them up to a day
   after the crash, real devices only (never the simulator), frames as binary
   plus offset; nothing has yet been seen arriving that way.

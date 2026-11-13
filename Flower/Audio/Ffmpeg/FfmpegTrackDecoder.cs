@@ -561,6 +561,7 @@ namespace Flower.Audio.Ffmpeg
                 if (Volatile.Read(ref _retired) == 1)
                     return;
                 _logger?.LogError(ex, "The decode thread for {Path} ended unexpectedly", LogPath.Short(Track.Path));
+                CrashReporting.ReportCaught(ex, "decode thread");
                 ReportFaulted();
             }
         }

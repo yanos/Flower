@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 
 using Microsoft.Extensions.Logging;
 
+using Flower.Logging;
 using Flower.Models;
 
 namespace Flower.Services;
@@ -177,6 +178,7 @@ public sealed class SmartPlaylistRefresher : IDisposable
             catch (SmartPlaylistRuleException ex)
             {
                 _logger.LogError(ex, "Smart playlists were not recomputed: a rule could not be evaluated");
+                CrashReporting.ReportCaught(ex, "smart playlists");
                 return [];
             }
 

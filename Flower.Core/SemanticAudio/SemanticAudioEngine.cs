@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 
+using Flower.Logging;
 using Flower.Models;
 
 using Microsoft.Extensions.Logging;
@@ -329,7 +330,10 @@ public sealed class SemanticAudioEngine : IDisposable
                 if (ex is SemanticAudioUnavailableException or ModelDownloadException)
                     _logger.LogWarning("Semantic audio stopped: {Reason}", ex.Message);
                 else
+                {
                     _logger.LogError(ex, "Semantic audio stopped");
+                    CrashReporting.ReportCaught(ex, "semantic audio");
+                }
                 lock (_gate)
                 {
                     _state = SemanticAudioState.Failed;

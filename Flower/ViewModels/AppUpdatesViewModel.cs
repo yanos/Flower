@@ -6,6 +6,7 @@ using System.Windows.Input;
 
 using CommunityToolkit.Mvvm.Input;
 
+using Flower.Logging;
 using Flower.Persistence;
 using Flower.Services;
 
@@ -160,6 +161,7 @@ public sealed class AppUpdatesViewModel : ViewModelBase
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     _logger.LogError(ex, "Looking for an update failed unexpectedly");
+                    CrashReporting.ReportCaught(ex, "update check");
                 }
                 await Task.Delay(Poll, _clock, ct);
             }

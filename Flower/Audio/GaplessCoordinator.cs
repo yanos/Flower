@@ -930,6 +930,7 @@ namespace Flower.Audio
             catch (Exception ex)
             {
                 _logger?.LogError(ex, "A handler for the end of {Finished} threw; carrying on with the handover", LogPath.Short(finishedTrack.Path));
+                CrashReporting.ReportCaught(ex, "track end handler");
             }
 
             // Retire + the promoted decoder's staged-audio drain happen
