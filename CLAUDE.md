@@ -133,8 +133,7 @@ Details: Tests/README.md, "CI".
 ## Git & Style
 
 - Commit only when the user asks; passing tests is not enough.
-- Prefer `rebase` over `merge`. Work on the checked-out branch; no git
-  worktrees (they conflict with Rider).
+- Prefer `rebase` over `merge`. Work on the checked-out branch.
 - `if` bodies always go on their own line.
 
 ## Project Layout
