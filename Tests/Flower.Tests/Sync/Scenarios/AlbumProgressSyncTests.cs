@@ -80,6 +80,14 @@ public class AlbumProgressSyncTests : PinnedDataDirectory
         public DateTimeOffset Tick() => Now = Now.AddSeconds(1);
     }
 
+    // A song starting and enough of it being heard to count as a play - two
+    // of these in a row from one album are what put it on the shelf.
+    private static void Hear(AlbumProgressTracker tracker, Track track)
+    {
+        tracker.TrackStarted(track, shuffling: false);
+        tracker.TrackHeard(track);
+    }
+
     [Fact]
     public async Task An_album_put_down_on_one_device_is_picked_up_at_the_same_place_on_another()
     {
@@ -88,8 +96,8 @@ public class AlbumProgressSyncTests : PinnedDataDirectory
         var phone = NewDevice(server, ServedAlbum("Blue", 5), clock.Tick);
         var desktop = NewDevice(server, ServedAlbum("Blue", 5), clock.Tick);
 
-        phone.Tracker.TrackStarted(phone.Tracks[0], shuffling: false);
-        phone.Tracker.TrackStarted(phone.Tracks[1], shuffling: false);
+        Hear(phone.Tracker, phone.Tracks[0]);
+        Hear(phone.Tracker, phone.Tracks[1]);
         phone.Tracker.UpdatePosition(83_000);
         phone.Tracker.Flush();
         Assert.True(await phone.Sync.ExchangeNowAsync());
@@ -108,13 +116,13 @@ public class AlbumProgressSyncTests : PinnedDataDirectory
         var server = new LedgerServer(new AlbumProgressLedger(NullLogger<AlbumProgressLedger>.Instance));
         var phone = NewDevice(server, ServedAlbum("Blue", 3), clock.Tick);
         var desktop = NewDevice(server, ServedAlbum("Blue", 3), clock.Tick);
-        phone.Tracker.TrackStarted(phone.Tracks[0], shuffling: false);
-        phone.Tracker.TrackStarted(phone.Tracks[1], shuffling: false);
+        Hear(phone.Tracker, phone.Tracks[0]);
+        Hear(phone.Tracker, phone.Tracks[1]);
         await phone.Sync.ExchangeNowAsync();
         await desktop.Sync.ExchangeNowAsync();
         Assert.Single(desktop.Tracker.Entries);
 
-        desktop.Tracker.TrackStarted(desktop.Tracks[2], shuffling: false);
+        Hear(desktop.Tracker, desktop.Tracks[2]);
         desktop.Tracker.TrackFinished(desktop.Tracks[2]);
         await desktop.Sync.ExchangeNowAsync();
         await phone.Sync.ExchangeNowAsync();
@@ -135,10 +143,10 @@ public class AlbumProgressSyncTests : PinnedDataDirectory
         var phone = NewDevice(server, ServedAlbum("Blue", 5), clock.Tick);
         var desktop = NewDevice(server, ServedAlbum("Blue", 5), clock.Tick);
 
-        phone.Tracker.TrackStarted(phone.Tracks[0], shuffling: false);
-        phone.Tracker.TrackStarted(phone.Tracks[1], shuffling: false);
-        desktop.Tracker.TrackStarted(desktop.Tracks[2], shuffling: false);
-        desktop.Tracker.TrackStarted(desktop.Tracks[3], shuffling: false);
+        Hear(phone.Tracker, phone.Tracks[0]);
+        Hear(phone.Tracker, phone.Tracks[1]);
+        Hear(desktop.Tracker, desktop.Tracks[2]);
+        Hear(desktop.Tracker, desktop.Tracks[3]);
 
         await desktop.Sync.ExchangeNowAsync();
         await phone.Sync.ExchangeNowAsync();
@@ -160,10 +168,10 @@ public class AlbumProgressSyncTests : PinnedDataDirectory
         var desktop = NewDevice(server, local.Concat(ServedAlbum("Blue", 3)).ToList(), clock.Tick);
         var phone = NewDevice(server, ServedAlbum("Red", 3), clock.Tick);
 
-        desktop.Tracker.TrackStarted(desktop.Tracks[0], shuffling: false);
-        desktop.Tracker.TrackStarted(desktop.Tracks[1], shuffling: false);
-        desktop.Tracker.TrackStarted(desktop.Tracks[3], shuffling: false);
-        desktop.Tracker.TrackStarted(desktop.Tracks[4], shuffling: false);
+        Hear(desktop.Tracker, desktop.Tracks[0]);
+        Hear(desktop.Tracker, desktop.Tracks[1]);
+        Hear(desktop.Tracker, desktop.Tracks[3]);
+        Hear(desktop.Tracker, desktop.Tracks[4]);
         Assert.Equal(2, desktop.Tracker.Entries.Count);
         Assert.Single(desktop.Sync.Outgoing());
 
@@ -197,8 +205,8 @@ public class AlbumProgressSyncTests : PinnedDataDirectory
         var clock = new Clock();
         var tracks = ServedAlbum("Blue", 5);
         var tracker = new AlbumProgressTracker(new Library(tracks), now: clock.Tick);
-        tracker.TrackStarted(tracks[0], shuffling: false);
-        tracker.TrackStarted(tracks[1], shuffling: false);
+        Hear(tracker, tracks[0]);
+        Hear(tracker, tracks[1]);
         tracker.UpdatePosition(30_000);
 
         var albumId = AlbumProgressTracker.AlbumIdOf(tracks[0])!;

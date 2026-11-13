@@ -199,7 +199,10 @@ namespace Flower.ViewModels
                 // has been heard, rather than when it is left - so skipping on
                 // through a fade-out, stopping, or quitting does not lose it.
                 if (_listen.Observe(time) is { } heard)
+                {
                     CountPlay(heard);
+                    AlbumProgress.TrackHeard(heard);
+                }
             },
                 h => _audioManager.PositionChanged += h, h => _audioManager.PositionChanged -= h);
 
@@ -316,6 +319,12 @@ namespace Flower.ViewModels
                     // say yes to is a track too short, or too badly tagged, to
                     // have crossed that line before its decoder ran out.
                     var playOwed = _listen.Finish(finishedTrack);
+
+                    // Before the next song starts, which would make this one
+                    // no longer the one playing as far as the shelf is
+                    // concerned.
+                    if (playOwed)
+                        AlbumProgress.TrackHeard(finishedTrack);
 
                     var next = GetUpcomingEntry(finishedTrack, ResolveQueueIndex(finishedTrack));
                     if (next.Track != null)

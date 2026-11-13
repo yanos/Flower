@@ -36,7 +36,10 @@ public class AlbumProgressPlaybackTests : PinnedDataDirectory
             Duration = TimeSpan.FromMinutes(4),
         }).ToList();
 
-    private static PlaylistControlViewModel Playback(List<Track> tracks, out FakeAudioManager audio, out Library library)
+    // The listen meter's clock, which only moves when the test plays.
+    private TimeSpan _now = TimeSpan.FromHours(1);
+
+    private PlaylistControlViewModel Playback(List<Track> tracks, out FakeAudioManager audio, out Library library)
     {
         audio = new FakeAudioManager();
         library = new Library(tracks);
@@ -46,9 +49,30 @@ public class AlbumProgressPlaybackTests : PinnedDataDirectory
             library,
             new AppSettings(),
             new AppSettingsStore(NullLogger<AppSettingsStore>.Instance),
-            NullLogger<PlaylistControlViewModel>.Instance);
+            NullLogger<PlaylistControlViewModel>.Instance,
+            listenMeter: new ListenMeter(() => _now));
         vm.OffPlaybackThread = work => work();
         return vm;
+    }
+
+    // Plays the song just started from its top to untilMs, reported the way
+    // the position timer reports it - clock and position moving together.
+    // The default is past nine tenths of a four-minute song: heard.
+    private void Hear(FakeAudioManager audio, long untilMs = 220_000)
+    {
+        audio.Time = 0;
+        while (audio.Time < untilMs)
+        {
+            _now += TimeSpan.FromMilliseconds(250);
+            audio.Time += 250;
+            audio.RaisePositionChanged();
+        }
+    }
+
+    private void PlayAndHear(PlaylistControlViewModel vm, FakeAudioManager audio, Track track, int index)
+    {
+        vm.Play(track, index);
+        Hear(audio);
     }
 
     [AvaloniaFact]
@@ -58,15 +82,51 @@ public class AlbumProgressPlaybackTests : PinnedDataDirectory
         var vm = Playback(album, out var audio, out _);
         vm.SetCurrentPlaylist(new Playlist("Now Playing Queue", album));
 
-        vm.Play(album[0], 0);
-        vm.Play(album[1], 1);
-        audio.Time = 125_000;
-        audio.RaisePositionChanged();
+        PlayAndHear(vm, audio, album[0], 0);
+        PlayAndHear(vm, audio, album[1], 1);
         audio.RaisePaused();
 
         var entry = Assert.Single(vm.AlbumProgress.Entries);
         Assert.Equal(album[1].Id, entry.TrackId);
-        Assert.Equal(TimeSpan.FromSeconds(125), entry.Position);
+        Assert.Equal(TimeSpan.FromSeconds(220), entry.Position);
+    }
+
+    // Sampling an album: a few seconds of each song, skipping on.
+    [AvaloniaFact]
+    public void Skipping_through_an_album_puts_nothing_on_the_shelf()
+    {
+        var album = Album("Blue", 5);
+        var vm = Playback(album, out var audio, out _);
+        vm.SetCurrentPlaylist(new Playlist("Now Playing Queue", album));
+
+        for (var i = 0; i < album.Count; i++)
+        {
+            vm.Play(album[i], i);
+            Hear(audio, untilMs: 20_000);
+        }
+
+        Assert.Empty(vm.AlbumProgress.Entries);
+    }
+
+    // A tag that overstates the length leaves a song short of nine tenths
+    // until it ends, where it is counted after all - and still counts as the
+    // second song heard, though by then the next one is starting.
+    [AvaloniaFact]
+    public void A_song_counted_only_at_its_end_is_still_heard()
+    {
+        var album = Album("Blue", 4);
+        var vm = Playback(album, out var audio, out _);
+        vm.SetCurrentPlaylist(new Playlist("Now Playing Queue", album));
+
+        PlayAndHear(vm, audio, album[0], 0);
+        vm.Play(album[1], 1);
+        Hear(audio, untilMs: 180_000);
+        Assert.Empty(vm.AlbumProgress.Entries);
+
+        audio.RaiseEndReached();
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal(album[2].Id, Assert.Single(vm.AlbumProgress.Entries).TrackId);
     }
 
     [AvaloniaFact]
@@ -76,8 +136,8 @@ public class AlbumProgressPlaybackTests : PinnedDataDirectory
         var vm = Playback(album, out var audio, out _);
         vm.SetCurrentPlaylist(new Playlist("Now Playing Queue", album));
 
-        vm.Play(album[1], 1);
-        vm.Play(album[2], 2);
+        PlayAndHear(vm, audio, album[1], 1);
+        PlayAndHear(vm, audio, album[2], 2);
         Assert.Single(vm.AlbumProgress.Entries);
 
         audio.RaiseEndReached();
@@ -95,12 +155,12 @@ public class AlbumProgressPlaybackTests : PinnedDataDirectory
         using var home = new HomeViewModel(library, vm.AlbumProgress, vm);
 
         vm.SetCurrentPlaylist(new Playlist("Now Playing Queue", blue));
-        vm.Play(blue[0], 0);
-        vm.Play(blue[1], 1);
+        PlayAndHear(vm, audio, blue[0], 0);
+        PlayAndHear(vm, audio, blue[1], 1);
         audio.Time = 60_000;
         audio.RaisePositionChanged();
         vm.SetCurrentPlaylist(new Playlist("Now Playing Queue", red));
-        vm.Play(red[0], 0);
+        PlayAndHear(vm, audio, red[0], 0);
 
         home.Rebuild();
         var item = Assert.Single(home.ContinuePlaying);
@@ -124,8 +184,8 @@ public class AlbumProgressPlaybackTests : PinnedDataDirectory
         var vm = Playback(album, out var audio, out var library);
         using var home = new HomeViewModel(library, vm.AlbumProgress, vm);
         vm.SetCurrentPlaylist(new Playlist("Now Playing Queue", album));
-        vm.Play(album[0], 0);
-        vm.Play(album[1], 1);
+        PlayAndHear(vm, audio, album[0], 0);
+        PlayAndHear(vm, audio, album[1], 1);
         audio.IsPlaying = false;
 
         home.Rebuild();
@@ -143,8 +203,8 @@ public class AlbumProgressPlaybackTests : PinnedDataDirectory
         var vm = Playback(album, out var audio, out var library);
         using var home = new HomeViewModel(library, vm.AlbumProgress, vm);
         vm.SetCurrentPlaylist(new Playlist("Now Playing Queue", album));
-        vm.Play(album[0], 0);
-        vm.Play(album[1], 1);
+        PlayAndHear(vm, audio, album[0], 0);
+        PlayAndHear(vm, audio, album[1], 1);
         audio.IsPlaying = true;
         audio.RaisePlaying();
 
@@ -196,16 +256,16 @@ public class AlbumProgressPlaybackTests : PinnedDataDirectory
     {
         var blue = Album("Blue", 4);
         var red = Album("Red", 4);
-        var vm = Playback(blue.Concat(red).ToList(), out _, out var library);
+        var vm = Playback(blue.Concat(red).ToList(), out var audio, out var library);
         var timers = new ManualTimers();
         using var home = new HomeViewModel(library, vm.AlbumProgress, vm, clock: timers);
 
         vm.SetCurrentPlaylist(new Playlist("Now Playing Queue", blue));
-        vm.Play(blue[0], 0);
-        vm.Play(blue[1], 1);
+        PlayAndHear(vm, audio, blue[0], 0);
+        PlayAndHear(vm, audio, blue[1], 1);
         vm.SetCurrentPlaylist(new Playlist("Now Playing Queue", red));
-        vm.Play(red[0], 0);
-        vm.Play(red[1], 1);
+        PlayAndHear(vm, audio, red[0], 0);
+        PlayAndHear(vm, audio, red[1], 1);
 
         home.Rebuild();
         Assert.Equal(new[] { "Red", "Blue" }, home.ContinuePlaying.Select(c => c.Tile.Name));

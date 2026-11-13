@@ -31,13 +31,15 @@ public sealed record AlbumProgressState(List<AlbumProgressEntry> Entries, List<A
 // Keeps the Home screen's "Continue Playing" shelf: albums started and not
 // finished, each remembered at the exact place it was left, like a cassette.
 //
-// An album is started by two songs from it playing one straight after the
-// other. One song is not enough - playing a single from the Songs list is not
-// listening to its album - and two in a row is what an album being listened to
-// looks like from in here whichever way it was put on: from its own screen,
-// from the Songs list sorted by album, from a playlist that happens to hold two
-// of its songs together. Not under shuffle, where two neighbours from one album
-// are a coincidence.
+// An album is started by two songs from it heard one straight after the
+// other - heard as a play is, nine tenths of each (ListenMeter), so skipping
+// through an album to sample it puts nothing on the shelf. One song is not
+// enough - playing a single from the Songs list is not listening to its album
+// - and two in a row is what an album being listened to looks like from in
+// here whichever way it was put on: from its own screen, from the Songs list
+// sorted by album, from a playlist that happens to hold two of its songs
+// together. Not under shuffle, where two neighbours from one album are a
+// coincidence.
 //
 // From then on every song of it that starts moves the tape, and the position
 // is latched as it plays and written down whenever playback is put down - a
@@ -72,9 +74,13 @@ public sealed class AlbumProgressTracker
     private List<AlbumProgressEntry> _entries;
     private readonly Dictionary<string, DateTimeOffset> _removals = new();
 
-    // The song that started before the one playing - what "two in a row" is
-    // measured against.
-    private Track? _lastStarted;
+    // What "two in a row" is measured against: the song playing, whether it
+    // has been heard yet, and whether it started under shuffle; and the song
+    // before it, if that one was heard.
+    private Track? _playing;
+    private bool _playingHeard;
+    private bool _playingShuffled;
+    private Track? _heardBefore;
 
     // The entry the playing song belongs to, if it belongs to one, and where
     // in that song playback has got to. The song as well as the album, since a
@@ -140,44 +146,68 @@ public sealed class AlbumProgressTracker
             // the latched position is still its own.
             changed = LeaveActiveTrack();
 
-            var previous = _lastStarted;
-            _lastStarted = track;
-            changed |= Enter(track, previous, shuffling);
+            _heardBefore = _playingHeard ? _playing : null;
+            _playing = track;
+            _playingHeard = false;
+            _playingShuffled = shuffling;
+            changed |= MoveTape(track);
         }
 
         if (changed)
             ChangedHere();
     }
 
-    // Whether the song starting belongs on the shelf, and if so puts its album
-    // at the front with the tape at this song.
-    private bool Enter(Track track, Track? previous, bool shuffling)
+    // Enough of the playing song has been heard to count as a play - reported
+    // once per play, at nine tenths or at its end (see ListenMeter). Heard
+    // straight after a song from the same album, it puts that album on the
+    // shelf with the tape here.
+    public void TrackHeard(Track track)
+    {
+        lock (_lock)
+        {
+            // A report that lost a race with the next song starting is about
+            // a song no longer playing.
+            if (_playing == null || _playing.Id != track.Id)
+                return;
+
+            _playingHeard = true;
+
+            var albumId = AlbumIdOf(track);
+            var previous = _heardBefore;
+            if (albumId == null || IndexOf(albumId) >= 0 || _playingShuffled
+                || previous == null || previous.Id == track.Id || AlbumIdOf(previous) != albumId)
+                return;
+
+            _logger.LogInformation("Remembering where {Album} is up to", track.Album);
+            Put(albumId, track, TimeSpan.FromMilliseconds(Interlocked.Read(ref _activePositionMs)));
+        }
+
+        ChangedHere();
+    }
+
+    // A song of an album already on the shelf starting moves its tape there,
+    // two in a row or not - picking an album back up is one song.
+    private bool MoveTape(Track track)
     {
         var albumId = AlbumIdOf(track);
-        if (albumId == null)
+        var index = albumId == null ? -1 : IndexOf(albumId);
+        if (albumId == null || index < 0)
             return false;
 
-        var index = IndexOf(albumId);
-        TimeSpan position;
-        if (index >= 0)
-        {
-            // Starting the very song the tape is at is picking up where it
-            // was left - Continue Playing itself, which seeks there - so the
-            // place survives until playback reports a new one.
-            var existing = _entries[index];
-            position = existing.TrackId == track.Id ? existing.Position : TimeSpan.Zero;
-            _entries.RemoveAt(index);
-        }
-        else if (!shuffling && previous != null && previous.Id != track.Id && AlbumIdOf(previous) == albumId)
-        {
-            position = TimeSpan.Zero;
-            _logger.LogInformation("Remembering where {Album} is up to", track.Album);
-        }
-        else
-        {
-            return false;
-        }
+        // Starting the very song the tape is at is picking up where it was
+        // left - Continue Playing itself, which seeks there - so the place
+        // survives until playback reports a new one.
+        var existing = _entries[index];
+        var position = existing.TrackId == track.Id ? existing.Position : TimeSpan.Zero;
+        _entries.RemoveAt(index);
+        Put(albumId, track, position);
+        return true;
+    }
 
+    // Puts the album at the front of the shelf with the tape at this song,
+    // and makes it the one playing.
+    private void Put(string albumId, Track track, TimeSpan position)
+    {
         _entries.Insert(0, new AlbumProgressEntry(albumId, track.Id, position, _now()));
         _removals.Remove(albumId);
         if (_entries.Count > MaxEntries)
@@ -186,7 +216,6 @@ public sealed class AlbumProgressTracker
         _activeAlbumId = albumId;
         _activeTrackId = track.Id;
         Interlocked.Exchange(ref _activePositionMs, (long)position.TotalMilliseconds);
-        return true;
     }
 
     // Latched as often as the audio manager reports it, since by the time a

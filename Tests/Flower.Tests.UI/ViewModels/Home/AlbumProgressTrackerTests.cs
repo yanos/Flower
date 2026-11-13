@@ -33,30 +33,97 @@ public class AlbumProgressTrackerTests : PinnedDataDirectory
     private static AlbumProgressTracker Tracker(IEnumerable<Track> tracks, AlbumProgressStore? store = null) =>
         new(new Library(tracks.ToList()), store);
 
+    // A song starting and enough of it being heard to count as a play.
+    private static void Hear(AlbumProgressTracker tracker, Track track, bool shuffling)
+    {
+        tracker.TrackStarted(track, shuffling);
+        tracker.TrackHeard(track);
+    }
+
     [Fact]
     public void One_song_from_an_album_is_not_listening_to_it()
     {
         var album = Album("Blue", 5);
         var tracker = Tracker(album);
 
-        tracker.TrackStarted(album[0], shuffling: false);
+        Hear(tracker, album[0], shuffling: false);
 
         Assert.Empty(tracker.Entries);
     }
 
     [Fact]
-    public void Two_songs_in_a_row_from_one_album_put_it_on_the_shelf_at_the_second()
+    public void Two_songs_heard_in_a_row_from_one_album_put_it_on_the_shelf_at_the_second()
+    {
+        var album = Album("Blue", 5);
+        var tracker = Tracker(album);
+
+        Hear(tracker, album[0], shuffling: false);
+        tracker.TrackStarted(album[1], shuffling: false);
+        tracker.UpdatePosition(216_000);
+        tracker.TrackHeard(album[1]);
+
+        var entry = Assert.Single(tracker.Entries);
+        Assert.Equal(AlbumProgressTracker.AlbumIdOf(album[0]), entry.AlbumId);
+        Assert.Equal(album[1].Id, entry.TrackId);
+        Assert.Equal(TimeSpan.FromSeconds(216), entry.Position);
+    }
+
+    // Sampling an album - a few seconds of one song, then the next - is not
+    // listening to it, however many of its songs it starts.
+    [Fact]
+    public void Songs_started_and_skipped_are_not_listening_to_the_album()
     {
         var album = Album("Blue", 5);
         var tracker = Tracker(album);
 
         tracker.TrackStarted(album[0], shuffling: false);
         tracker.TrackStarted(album[1], shuffling: false);
+        tracker.TrackStarted(album[2], shuffling: false);
 
-        var entry = Assert.Single(tracker.Entries);
-        Assert.Equal(AlbumProgressTracker.AlbumIdOf(album[0]), entry.AlbumId);
-        Assert.Equal(album[1].Id, entry.TrackId);
-        Assert.Equal(TimeSpan.Zero, entry.Position);
+        Assert.Empty(tracker.Entries);
+    }
+
+    [Fact]
+    public void A_song_heard_and_the_next_one_skipped_is_one_song()
+    {
+        var album = Album("Blue", 5);
+        var tracker = Tracker(album);
+
+        Hear(tracker, album[0], shuffling: false);
+        tracker.TrackStarted(album[1], shuffling: false);
+        tracker.TrackStarted(album[2], shuffling: false);
+
+        Assert.Empty(tracker.Entries);
+    }
+
+    // Successive means successive: a song skipped in between breaks the run.
+    [Fact]
+    public void A_skipped_song_between_two_heard_ones_breaks_the_run()
+    {
+        var album = Album("Blue", 5);
+        var tracker = Tracker(album);
+
+        Hear(tracker, album[0], shuffling: false);
+        tracker.TrackStarted(album[1], shuffling: false);
+        Hear(tracker, album[2], shuffling: false);
+
+        Assert.Empty(tracker.Entries);
+    }
+
+    // Heard is reported as playback goes, and can arrive after the next song
+    // has already started; it is about a song no longer playing.
+    [Fact]
+    public void A_song_heard_after_the_next_one_started_counts_for_nothing()
+    {
+        var album = Album("Blue", 5);
+        var tracker = Tracker(album);
+
+        tracker.TrackStarted(album[0], shuffling: false);
+        tracker.TrackStarted(album[1], shuffling: false);
+        tracker.TrackHeard(album[0]);
+        Hear(tracker, album[2], shuffling: false);
+
+        Assert.Empty(tracker.Entries);
     }
 
     [Fact]
@@ -66,9 +133,9 @@ public class AlbumProgressTrackerTests : PinnedDataDirectory
         var red = Album("Red", 3);
         var tracker = Tracker(blue.Concat(red));
 
-        tracker.TrackStarted(blue[0], shuffling: false);
-        tracker.TrackStarted(red[0], shuffling: false);
-        tracker.TrackStarted(blue[1], shuffling: false);
+        Hear(tracker, blue[0], shuffling: false);
+        Hear(tracker, red[0], shuffling: false);
+        Hear(tracker, blue[1], shuffling: false);
 
         Assert.Empty(tracker.Entries);
     }
@@ -79,8 +146,8 @@ public class AlbumProgressTrackerTests : PinnedDataDirectory
         var album = Album("Blue", 3);
         var tracker = Tracker(album);
 
-        tracker.TrackStarted(album[0], shuffling: false);
-        tracker.TrackStarted(album[0], shuffling: false);
+        Hear(tracker, album[0], shuffling: false);
+        Hear(tracker, album[0], shuffling: false);
 
         Assert.Empty(tracker.Entries);
     }
@@ -91,8 +158,8 @@ public class AlbumProgressTrackerTests : PinnedDataDirectory
         var album = Album("Blue", 3);
         var tracker = Tracker(album);
 
-        tracker.TrackStarted(album[0], shuffling: true);
-        tracker.TrackStarted(album[1], shuffling: true);
+        Hear(tracker, album[0], shuffling: true);
+        Hear(tracker, album[1], shuffling: true);
 
         Assert.Empty(tracker.Entries);
     }
@@ -103,8 +170,8 @@ public class AlbumProgressTrackerTests : PinnedDataDirectory
         var loose = new[] { new Track { Title = "a", Path = "/a" }, new Track { Title = "b", Path = "/b" } };
         var tracker = Tracker(loose);
 
-        tracker.TrackStarted(loose[0], shuffling: false);
-        tracker.TrackStarted(loose[1], shuffling: false);
+        Hear(tracker, loose[0], shuffling: false);
+        Hear(tracker, loose[1], shuffling: false);
 
         Assert.Empty(tracker.Entries);
     }
@@ -114,8 +181,8 @@ public class AlbumProgressTrackerTests : PinnedDataDirectory
     {
         var album = Album("Blue", 5);
         var tracker = Tracker(album);
-        tracker.TrackStarted(album[0], shuffling: false);
-        tracker.TrackStarted(album[1], shuffling: false);
+        Hear(tracker, album[0], shuffling: false);
+        Hear(tracker, album[1], shuffling: false);
 
         tracker.UpdatePosition(95_000);
         tracker.Flush();
@@ -131,13 +198,13 @@ public class AlbumProgressTrackerTests : PinnedDataDirectory
         var blue = Album("Blue", 5);
         var red = Album("Red", 5);
         var tracker = Tracker(blue.Concat(red));
-        tracker.TrackStarted(blue[0], shuffling: false);
-        tracker.TrackStarted(blue[1], shuffling: false);
+        Hear(tracker, blue[0], shuffling: false);
+        Hear(tracker, blue[1], shuffling: false);
         tracker.UpdatePosition(61_000);
 
-        tracker.TrackStarted(red[2], shuffling: false);
+        Hear(tracker, red[2], shuffling: false);
         tracker.UpdatePosition(10_000);
-        tracker.TrackStarted(red[3], shuffling: false);
+        Hear(tracker, red[3], shuffling: false);
 
         var entries = tracker.Entries;
         Assert.Equal(2, entries.Count);
@@ -155,11 +222,11 @@ public class AlbumProgressTrackerTests : PinnedDataDirectory
         var blue = Album("Blue", 5);
         var red = Album("Red", 5);
         var tracker = Tracker(blue.Concat(red));
-        tracker.TrackStarted(blue[0], shuffling: false);
-        tracker.TrackStarted(blue[1], shuffling: false);
-        tracker.TrackStarted(red[0], shuffling: false);
+        Hear(tracker, blue[0], shuffling: false);
+        Hear(tracker, blue[1], shuffling: false);
+        Hear(tracker, red[0], shuffling: false);
 
-        tracker.TrackStarted(blue[3], shuffling: false);
+        Hear(tracker, blue[3], shuffling: false);
 
         Assert.Equal(blue[3].Id, Assert.Single(tracker.Entries).TrackId);
     }
@@ -172,12 +239,12 @@ public class AlbumProgressTrackerTests : PinnedDataDirectory
         var blue = Album("Blue", 5);
         var red = Album("Red", 5);
         var tracker = Tracker(blue.Concat(red));
-        tracker.TrackStarted(blue[0], shuffling: false);
-        tracker.TrackStarted(blue[1], shuffling: false);
+        Hear(tracker, blue[0], shuffling: false);
+        Hear(tracker, blue[1], shuffling: false);
         tracker.UpdatePosition(80_000);
-        tracker.TrackStarted(red[0], shuffling: false);
+        Hear(tracker, red[0], shuffling: false);
 
-        tracker.TrackStarted(blue[1], shuffling: false);
+        Hear(tracker, blue[1], shuffling: false);
         tracker.Flush();
 
         Assert.Equal(TimeSpan.FromSeconds(80), tracker.Entries.Single(e => e.TrackId == blue[1].Id).Position);
@@ -188,8 +255,8 @@ public class AlbumProgressTrackerTests : PinnedDataDirectory
     {
         var album = Album("Blue", 5);
         var tracker = Tracker(album);
-        tracker.TrackStarted(album[0], shuffling: false);
-        tracker.TrackStarted(album[1], shuffling: false);
+        Hear(tracker, album[0], shuffling: false);
+        Hear(tracker, album[1], shuffling: false);
         tracker.UpdatePosition(239_000);
 
         tracker.TrackFinished(album[1]);
@@ -204,8 +271,8 @@ public class AlbumProgressTrackerTests : PinnedDataDirectory
     {
         var album = Album("Blue", 3);
         var tracker = Tracker(album);
-        tracker.TrackStarted(album[1], shuffling: false);
-        tracker.TrackStarted(album[2], shuffling: false);
+        Hear(tracker, album[1], shuffling: false);
+        Hear(tracker, album[2], shuffling: false);
 
         tracker.TrackFinished(album[2]);
 
@@ -222,8 +289,8 @@ public class AlbumProgressTrackerTests : PinnedDataDirectory
         album[1].DiscNumber = 1;
         album[2].DiscNumber = 1;
         var tracker = Tracker(album);
-        tracker.TrackStarted(album[1], shuffling: false);
-        tracker.TrackStarted(album[2], shuffling: false);
+        Hear(tracker, album[1], shuffling: false);
+        Hear(tracker, album[2], shuffling: false);
 
         tracker.TrackFinished(album[2]);
 
@@ -235,8 +302,8 @@ public class AlbumProgressTrackerTests : PinnedDataDirectory
     {
         var album = Album("Blue", 3);
         var tracker = Tracker(album);
-        tracker.TrackStarted(album[0], shuffling: false);
-        tracker.TrackStarted(album[1], shuffling: false);
+        Hear(tracker, album[0], shuffling: false);
+        Hear(tracker, album[1], shuffling: false);
 
         tracker.Forget(AlbumProgressTracker.AlbumIdOf(album[0])!);
 
@@ -249,8 +316,8 @@ public class AlbumProgressTrackerTests : PinnedDataDirectory
         var album = Album("Blue", 5);
         var store = new AlbumProgressStore(NullLogger<AlbumProgressStore>.Instance);
         var tracker = Tracker(album, store);
-        tracker.TrackStarted(album[0], shuffling: false);
-        tracker.TrackStarted(album[1], shuffling: false);
+        Hear(tracker, album[0], shuffling: false);
+        Hear(tracker, album[1], shuffling: false);
         tracker.UpdatePosition(42_000);
 
         tracker.Flush(synchronously: true);
@@ -269,8 +336,8 @@ public class AlbumProgressTrackerTests : PinnedDataDirectory
 
         foreach (var album in albums)
         {
-            tracker.TrackStarted(album[0], shuffling: false);
-            tracker.TrackStarted(album[1], shuffling: false);
+            Hear(tracker, album[0], shuffling: false);
+            Hear(tracker, album[1], shuffling: false);
         }
 
         Assert.Equal(AlbumProgressTracker.MaxEntries, tracker.Entries.Count);
