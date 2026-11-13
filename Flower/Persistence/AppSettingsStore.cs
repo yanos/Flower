@@ -303,6 +303,11 @@ namespace Flower.Persistence
         // anything else at startup (ReadSendCrashReports), then live.
         public bool SendCrashReports { get; set; } = true;
 
+        // Whether this install has been told that crash reports are on
+        // (CrashReportingNoticeViewModel), once, the first time it ran with
+        // reporting actually sending. Either answer sets it.
+        public bool CrashReportingNoticeSeen { get; set; }
+
         // Whether an admin device sends its own files to the paired server
         // when it is reaching that server from somewhere other than the
         // server's own network - over a tailnet, a forwarded port, a phone's

@@ -19,7 +19,8 @@ developer's account; nobody else receives them.
   build.
 - **On by default, and a switch.** In the app: Settings, "Send anonymous
   crash reports" (desktop: Settings > General; phone: near the bottom of
-  Settings). It takes effect at once. On a server: set
+  Settings). It takes effect at once. The first time a release runs, a
+  notice says reporting is on, links here, and has a "Turn Off" button. On a server: set
   `"SendCrashReports": false` in `flower-server.json` and restart.
 - **Never from the browser tab**, which has no crash to report.
 

@@ -77,6 +77,44 @@
         </Border>
       </Panel>
 
+      <!-- That crash reports are on, said once, as on a desktop's banner
+           (CrashReportingNoticeViewModel). Closing it keeps them on. -->
+      <Panel IsVisible="{Binding Main.CrashReportingNotice, Converter={x:Static avc:ObjectConverters.IsNotNull}}">
+        <Border DataContext="{Binding Main.CrashReportingNotice}"
+                x:DataType="fvm:CrashReportingNoticeViewModel"
+                IsVisible="{Binding IsOpen}"
+                Margin="16,0,16,12"
+                Padding="14,10,6,10"
+                CornerRadius="12"
+                Background="{DynamicResource AppPlaceholderBrush}">
+          <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+            <TextBlock Grid.Column="0" Grid.Row="0"
+                       Text="{Binding Message}"
+                       FontSize="14"
+                       TextWrapping="Wrap" />
+            <StackPanel Grid.Column="0" Grid.Row="1"
+                        Orientation="Horizontal"
+                        Spacing="16">
+              <HyperlinkButton Content="What's Sent"
+                               NavigateUri="{Binding PrivacyUrl}"
+                               Padding="0,8,0,0" />
+              <HyperlinkButton Content="Turn Off"
+                               Command="{Binding TurnOffCommand}"
+                               Padding="0,8,0,0" />
+            </StackPanel>
+            <Button Grid.Column="1" Grid.Row="0" Grid.RowSpan="2"
+                    Command="{Binding KeepCommand}"
+                    AutomationProperties.Name="Dismiss"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Padding="8"
+                    VerticalAlignment="Top">
+              <materialIcons:MaterialIcon Kind="Close" Width="18" Height="18" />
+            </Button>
+          </Grid>
+        </Border>
+      </Panel>
+
       <Grid>
         <!-- One virtualizing list of rows - each shelf's heading, then its
              covers so many to a row (HomeShelfRows, fed by HomeShelfRowsHost

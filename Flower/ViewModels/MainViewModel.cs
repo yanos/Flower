@@ -89,6 +89,25 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         }
     }
 
+    // That crash reports are on, said once to a new install
+    // (CrashReportingNoticeViewModel) - beside CrashReport, on the same two
+    // surfaces. Null once answered, or when there is nothing to say.
+    private CrashReportingNoticeViewModel? _crashReportingNotice;
+    public CrashReportingNoticeViewModel? CrashReportingNotice
+    {
+        get => _crashReportingNotice;
+        private set
+        {
+            _crashReportingNotice = value;
+            OnPropertyChanged();
+        }
+    }
+
+    // Called at startup where reports actually leave (CrashReporting.Running).
+    public void OfferCrashReportingNotice() =>
+        CrashReportingNotice = CrashReportingNoticeViewModel.OfferFor(
+            _appSettings, () => SendCrashReports = false, SaveSettings);
+
     // The same, for the phone's server row to bind: one of the two, or
     // neither.
     public IImage? PairedServerIconImage => PairedIcon?.Image;
@@ -346,6 +365,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             _appSettings.SendCrashReports = value;
             CrashReporting.Enabled = value;
             OnPropertyChanged();
+            if (!value)
+                CrashReportingNotice?.Close();
             SaveSettings();
         }
     }

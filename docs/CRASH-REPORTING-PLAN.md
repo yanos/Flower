@@ -8,7 +8,10 @@ What a report contains, for users: [PRIVACY.md](PRIVACY.md). Sentry
 org `none-k0o`, projects `flower-app` and `flower-server`; spike protection,
 IP scrubbing and server-side data scrubbing on in both. Reaches users with the
 next `v*` tag. The GitHub banner (Option A, below) remains for anyone who
-switches reporting off.
+switches reporting off. A new install is told once that reporting is on
+(`CrashReportingNoticeViewModel`: a banner across a desktop's page, atop a
+phone's Home, with "What's Sent" linking to PRIVACY.md and "Turn Off"), but
+only when reports really leave, so a pre-release says nothing.
 
 What is left:
 
@@ -19,8 +22,6 @@ What is left:
   file and line only where PDBs ship beside the app (desktop, server). A
   NativeAOT or AOT phone build needs its debug files uploaded to Sentry from
   CI, which needs a Sentry auth token as a CI secret.
-- **A first-run notice** that reporting is on (the switch exists; the notice
-  does not).
 - iOS native crashes, which nothing records (no crash-report file, no exit
   history to read).
 - **Calls to `CrashReporting.ReportCaught`.** The API exists; no catch site

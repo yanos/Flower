@@ -582,6 +582,54 @@
         </Grid>
       </Border>
     </Panel>
+
+    <!-- That crash reports are on (CrashReportingNoticeViewModel), said once
+         to a new install: what is sent is a link away, the switch a button
+         away, and closing it keeps reporting on. -->
+    <Panel IsVisible="{Binding CrashReportingNotice, Converter={x:Static avc:ObjectConverters.IsNotNull}}">
+      <Border DataContext="{Binding CrashReportingNotice}"
+              x:DataType="vm:CrashReportingNoticeViewModel"
+              IsVisible="{Binding IsOpen}"
+              Padding="12,8,8,8"
+              BorderThickness="0,0,0,1"
+              BorderBrush="{DynamicResource AppDividerBrush}"
+              Background="{DynamicResource AppPlaceholderBrush}">
+        <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
+          <materialIcons:MaterialIcon Grid.Column="0"
+                                      Kind="ShieldOutline"
+                                      Width="16" Height="16"
+                                      Margin="0,0,8,0"
+                                      VerticalAlignment="Center"/>
+          <TextBlock Grid.Column="1"
+                     Text="{Binding Message}"
+                     FontSize="12"
+                     TextWrapping="Wrap"
+                     VerticalAlignment="Center"/>
+          <HyperlinkButton Grid.Column="2"
+                           Content="What's Sent"
+                           NavigateUri="{Binding PrivacyUrl}"
+                           FontSize="12"
+                           Margin="8,0,0,0"
+                           VerticalAlignment="Center"/>
+          <Button Grid.Column="3"
+                  Content="Turn Off"
+                  Command="{Binding TurnOffCommand}"
+                  FontSize="12"
+                  Margin="8,0,0,0"
+                  VerticalAlignment="Center"/>
+          <Button Grid.Column="4"
+                  Command="{Binding KeepCommand}"
+                  ToolTip.Tip="Dismiss"
+                  Background="Transparent"
+                  BorderThickness="0"
+                  Padding="4"
+                  Margin="8,0,0,0"
+                  VerticalAlignment="Center">
+            <materialIcons:MaterialIcon Kind="Close" Width="14" Height="14"/>
+          </Button>
+        </Grid>
+      </Border>
+    </Panel>
     </StackPanel>
 
     <!-- A list's header: its name in the display serif and how much is in

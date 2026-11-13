@@ -849,6 +849,11 @@ public partial class App : Application
             }
         }
 
+        // A new install hears once that its crashes are reported - only
+        // where they really are, so a pre-release says nothing.
+        if (CrashReporting.Running && CrashReporting.Enabled)
+            mainViewModel.OfferCrashReportingNotice();
+
         // Completed unless a first-run question is on screen - see below. The
         // startup rescan waits on it.
         var firstRunQuestion = Task.CompletedTask;
