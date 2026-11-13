@@ -19,6 +19,10 @@ stores yet.
 Without a server, the app plays the folders you give it. With a server, every
 device sees the same library and can keep copies for offline listening.
 
+**Just listening?** Someone sent you a link, or you want to play your own
+music: [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md) is the plain-language
+guide. The rest of this page is for running a server and building Flower.
+
 ## Run a server
 
 ```bash
@@ -83,6 +87,7 @@ Architecture and conventions: [CLAUDE.md](CLAUDE.md). Tests and CI:
 
 | Question | Read |
 |---|---|
+| Installing, pairing with a server, adding music | [GETTING-STARTED](docs/GETTING-STARTED.md) |
 | Running and exposing a server | [SELF-HOSTING](docs/SELF-HOSTING.md) |
 | Adding, removing, editing songs | [MANAGING-SONGS](docs/MANAGING-SONGS.md) |
 | What leaves my device | [PRIVACY](docs/PRIVACY.md) |

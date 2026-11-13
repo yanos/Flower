@@ -38,6 +38,7 @@ removed; `docs/SYNC-PLAN.md`, "OpenSubsonic, built and removed").
 `docs/` holds one file per initiative, each recording its own status and what
 is left. Read the relevant one before touching that area.
 
+- `GETTING-STARTED.md` — user-facing, for listeners: installing, pairing from a link or code, using Flower on its own. Keep its UI labels in step with the views.
 - `SELF-HOSTING.md` — user-facing: running a server and reaching it remotely.
 - `MANAGING-SONGS.md` — user-facing: adding, removing, editing and replacing songs per setup (unpaired, owner, listener), and how a song is recognised.
 - `API.md` — HTTP reference for `Flower.Server`; update it when a route in `Flower.Server/Endpoints/` changes.
