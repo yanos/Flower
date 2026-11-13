@@ -407,5 +407,47 @@ namespace Flower.Tests.Audio
                 feeder.Pause();
             }
         }
+
+        // The sink frees the bridge once the feeder has stopped, so a feeder
+        // that is still inside a Write when its join gives up has to say so:
+        // freeing then would let the write land in freed memory
+        // (NATIVE-SECURITY-PLAN.md, finding 1).
+        [Fact]
+        public void Stopping_a_feeder_stalled_inside_a_write_reports_that_it_is_still_running()
+        {
+            var ring = new GaplessRingBuffer(64 * 1024);
+            var bridge = new FakeAudioBridge(64 * 1024);
+            using var entered = new ManualResetEventSlim(false);
+            using var release = new ManualResetEventSlim(false);
+            bridge.OnWrite = () =>
+            {
+                entered.Set();
+                release.Wait();
+            };
+            var feeder = Feeder(ring, bridge);
+
+            ring.TryWrite(Ramp(1024));
+            feeder.Start();
+            feeder.Resume();
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(5)), "the feeder never reached the bridge");
+
+            Assert.False(feeder.Stop());
+
+            bridge.OnWrite = null;
+            release.Set();
+        }
+
+        [Fact]
+        public void Stopping_an_idle_feeder_reports_that_it_has_exited()
+        {
+            var ring = new GaplessRingBuffer(64 * 1024);
+            var bridge = new FakeAudioBridge(64 * 1024);
+            var feeder = Feeder(ring, bridge);
+
+            feeder.Start();
+            feeder.Resume();
+
+            Assert.True(feeder.Stop());
+        }
 }
 }

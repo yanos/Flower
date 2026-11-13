@@ -45,8 +45,14 @@ namespace Flower.Tests.TestSupport
 
         public bool FlushedWithoutConsumer { get; private set; }
 
+        // Runs at the start of every Write, on the writing thread: lets a test
+        // hold the feeder inside a write, the way a GC pause would.
+        public Action? OnWrite { get; set; }
+
         public int Write(ReadOnlySpan<byte> data)
         {
+            OnWrite?.Invoke();
+
             if (RequestedFlushes != FlushAcked)
                 return 0;
 

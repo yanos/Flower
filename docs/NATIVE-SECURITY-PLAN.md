@@ -7,46 +7,30 @@ iOS CoreAudio diagnostics), the Flower patches in
 managed side that drives them (`NativeAudioBridge`, `AudioFeeder`,
 `MiniaudioSink`). FFAudio.NET is out of scope.
 
-**Status (November 2026): reviewed, nothing fixed yet.** No buffer overflow
-in the C itself: every copy is bounded by checks it makes, and nothing a song
-carries (sizes, tags) reaches a length or an index - decoded audio enters only
-as float sample values. What is left are lifetime and threading assumptions
-the C relies on but cannot enforce, at the managed/native boundary. Fixes 1
-and 2 are about a dozen lines; anything in the bridge's C means rerunning
+**Status (November 2026): reviewed; findings 1 and 2 fixed, 3-5 left.** No
+buffer overflow in the C itself: every copy is bounded by checks it makes,
+and nothing a song carries (sizes, tags) reaches a length or an index -
+decoded audio enters only as float sample values. What is left are lifetime
+and threading assumptions the C relies on but cannot enforce, at the
+managed/native boundary. Anything in the bridge's C means rerunning
 `native/miniaudio/{desktop,android,ios}/build.sh` (the source stamps fail CI
 otherwise).
 
+## Fixed
+
+- **1. Use-after-free when the feeder outlives its join.** `AudioFeeder.Stop`
+  reports whether its thread exited; when it did not, `MiniaudioSink.CloseDevice`
+  detaches the bridge but leaks it rather than freeing it under a live
+  writer, and logs a warning. `AudioFeederTests` holds a feeder inside a
+  `Write` (`FakeAudioBridge.OnWrite`) to check the report.
+- **2. A flush fallback could push the output to full scale.**
+  `flower_audio_bridge_apply_gain` clamps `fadeInRemaining` to
+  `fadeInLength` before it computes the envelope, so whatever races
+  `flush_now`, the worst outcome is a restarted fade. All three platforms
+  rebuilt. No test reaches it: the state needs a callback racing
+  `flush_now` mid-write.
+
 ## What is left
-
-### 1. Use-after-free when the feeder outlives its join (medium)
-
-`MiniaudioSink.CloseDevice` stops the feeder, uninits the device, then
-destroys the bridge. `AudioFeeder.Dispose` joins its thread for at most a
-second (`_thread.Join(TimeSpan.FromSeconds(1))`) and carries on either way. A
-feeder stalled past that - a long Mono GC or an iOS suspension, a debugger,
-heavy load - wakes up holding a freed bridge, and its next `Write` memcpys
-PCM into the freed `pData`: heap corruption that surfaces later as an
-unrelated-looking crash, like the "Incorrect checksum for freed object" the
-`ma_device` padding once fixed.
-
-Fix: `AudioFeeder.Dispose` reports whether the thread exited; when it did
-not, `CloseDevice` detaches the bridge but does not destroy it, and logs the
-leak.
-
-### 2. A flush fallback can briefly push the output to full scale (low likelihood, nasty outcome)
-
-`AudioFeeder.TryCompleteFlush` calls `flower_audio_bridge_flush_now` once the
-flush-ack timeout passes, and `flush_now` writes callback-owned state (`gain`,
-`fadeInLength`, `fadeInRemaining`) on the assumption that no callback is
-running. Nothing enforces it. A callback resuming at that moment races it,
-and with a declick length changed since the last arm, `fadeInRemaining` can
-end up above `fadeInLength`. `apply_gain`'s
-`(fadeInLength - fadeInRemaining) / fadeInLength` then wraps as unsigned and
-the envelope is around 10^7: full-scale output until the fade runs out.
-
-Fix: clamp `fadeInRemaining` to `fadeInLength` in
-`flower_audio_bridge_apply_gain`, which makes the race harmless whatever
-causes it.
 
 ### 3. The device registry is not read as a pair (low, defensive)
 

@@ -761,6 +761,17 @@ static void flower_audio_bridge_apply_gain(flower_audio_bridge* pBridge, float* 
             }
         }
 
+        /* flush_now arms the declick from another thread on the promise
+           that no callback is running, which nothing enforces. A callback
+           racing it can see a new, shorter length beside the old remaining
+           count, and the unsigned subtraction below would then wrap into an
+           envelope around 10^7: full scale until the fade ran out
+           (NATIVE-SECURITY-PLAN.md, finding 2). Clamped here, the race
+           costs at most a restarted fade. */
+        if (pBridge->fadeInRemaining > pBridge->fadeInLength) {
+            pBridge->fadeInRemaining = pBridge->fadeInLength;
+        }
+
         if (pBridge->fadeInRemaining > 0) {
             envelope = (float)(pBridge->fadeInLength - pBridge->fadeInRemaining) / (float)pBridge->fadeInLength;
             pBridge->fadeInRemaining--;

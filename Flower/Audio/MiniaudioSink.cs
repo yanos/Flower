@@ -914,7 +914,7 @@ namespace Flower.Audio
             // Stopped before device_uninit: the feeder thread must not be
             // mid-write into a bridge that is about to be detached, and the
             // callback must not be mid-read from one about to be freed.
-            _feeder?.Dispose();
+            var feederExited = _feeder?.Stop() ?? true;
             _feeder = null;
 
             _intentionalStopDepth++;
@@ -931,7 +931,21 @@ namespace Flower.Audio
             lock (_stageGate)
             {
                 _bridge?.DetachFromDevice();
-                _bridge?.Dispose();
+
+                // A feeder that outlived its join may still be inside a
+                // Write, so its bridge is leaked rather than freed under it:
+                // a few hundred kilobytes once, against heap corruption that
+                // would surface later as an unrelated crash.
+                if (feederExited)
+                {
+                    _bridge?.Dispose();
+                }
+                else
+                {
+                    _logger.LogWarning(
+                        "Audio feeder did not stop within its join timeout; leaking its native bridge rather than freeing it under a live writer");
+                }
+
                 _bridge = null;
             }
 

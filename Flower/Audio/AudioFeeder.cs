@@ -45,8 +45,14 @@ namespace Flower.Audio
         // One chunk on its way from the ring to the bridge.
         private readonly byte[] _chunk;
 
+        private static readonly TimeSpan StopJoinTimeout = TimeSpan.FromSeconds(1);
+
         private Thread? _thread;
         private volatile bool _running;
+
+        // Set when Stop gave up waiting for the thread, which is then still
+        // running and may still be writing to the bridge.
+        private bool _orphaned;
 
         // Whether the device this feeder fills is actually running. The thread
         // parks on this rather than ticking, because a stopped device drains
@@ -257,25 +263,36 @@ namespace Flower.Audio
                 _bridge.SetPrimed(true);
         }
 
-        public void Dispose()
+        // Stops the thread and reports whether it has actually gone. The join
+        // is bounded, so a thread stalled past it - a long GC, an iOS
+        // suspension, a debugger - is still alive afterwards and may yet be
+        // in the middle of a Write. Whoever owns the bridge must not free it
+        // then: the thread would memcpy PCM into freed memory on waking
+        // (NATIVE-SECURITY-PLAN.md, finding 1). It sees _running on its next
+        // pass and leaves on its own.
+        public bool Stop()
         {
             if (_thread == null)
-                return;
+                return !_orphaned;
 
             _running = false;
             // Unparks a thread waiting on the gate above, which then sees
             // _running and returns rather than ticking.
             _awake.Set();
 
-            var exited = _thread.Join(TimeSpan.FromSeconds(1));
+            var exited = _thread.Join(StopJoinTimeout);
             _thread = null;
+            _orphaned = !exited;
 
             // Only once the thread has actually gone. Disposing the gate out
             // from under one still parked on it throws on that thread, where
-            // there is nobody to catch it - and the join above is bounded, so
-            // "it did not exit" is a state this has to survive.
+            // there is nobody to catch it.
             if (exited)
                 _awake.Dispose();
+
+            return exited;
         }
+
+        public void Dispose() => Stop();
     }
 }
