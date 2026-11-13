@@ -1242,8 +1242,7 @@
                 CornerRadius="6,0,0,0"
                 BorderThickness="1,1,0,0"
                 BorderBrush="{DynamicResource AppDividerBrush}"
-                Background="{DynamicResource AppSurfaceBrush}"
-                RenderTransform="translateY(40px)">
+                Background="{DynamicResource AppSurfaceBrush}">
           <Border.Transitions>
             <Transitions>
               <TransformOperationsTransition Property="RenderTransform"
@@ -1251,7 +1250,13 @@
                                              Easing="CubicEaseOut"/>
             </Transitions>
           </Border.Transitions>
+          <!-- Both positions as styles: a RenderTransform set on the Border
+               itself would outrank the .shown setter, and the tab would never
+               leave the clipped space below the page's edge. -->
           <Border.Styles>
+            <Style Selector="Border#StatusBar">
+              <Setter Property="RenderTransform" Value="translateY(40px)"/>
+            </Style>
             <Style Selector="Border#StatusBar.shown">
               <Setter Property="RenderTransform" Value="translateY(0px)"/>
             </Style>
