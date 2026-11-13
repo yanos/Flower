@@ -37,6 +37,7 @@ public class RenderStarvationTests
         private readonly int _totalFrames;
         private readonly int _framesPerWrite;
         private readonly int _writeDelayMs;
+        private readonly Action<int>? _afterWrite;
         private volatile bool _retired;
         private Task? _decode;
 
@@ -46,7 +47,8 @@ public class RenderStarvationTests
             Func<int, short> value,
             int totalFrames,
             int framesPerWrite = 240,
-            int writeDelayMs = 0)
+            int writeDelayMs = 0,
+            Action<int>? afterWrite = null)
         {
             Track = track;
             _writer = new RetargetableRingWriter(ring);
@@ -54,6 +56,7 @@ public class RenderStarvationTests
             _totalFrames = totalFrames;
             _framesPerWrite = framesPerWrite;
             _writeDelayMs = writeDelayMs;
+            _afterWrite = afterWrite;
         }
 
         public Track Track { get; }
@@ -125,6 +128,8 @@ public class RenderStarvationTests
 
                 if (_writeDelayMs > 0)
                     Thread.Sleep(_writeDelayMs);
+                // Called with the frames written so far.
+                _afterWrite?.Invoke(frame + _framesPerWrite);
             }
 
             if (!_retired)
@@ -311,9 +316,18 @@ public class RenderStarvationTests
         var a = T("A");
 
         // Deliberately slower than the sink drains, so the ring is empty far
-        // more often than not.
+        // more often than not. A quarter of the way in it also holds off until the
+        // sink has rendered silence: the pacing alone left a simulator under
+        // Mono, whose sink thread slept long, never quite running dry.
         harness.Factory = (track, ring) =>
-            new PcmTrackDecoder(track, ring, frame => (short)(frame + 1), totalFrames: 9600, framesPerWrite: 240, writeDelayMs: 15);
+            new PcmTrackDecoder(track, ring, frame => (short)(frame + 1), totalFrames: 9600, framesPerWrite: 240, writeDelayMs: 15,
+                afterWrite: written =>
+                {
+                    if (written != 2400)
+                        return;
+                    var silentBefore = harness.Sink.SilentPeriods;
+                    SpinWait.SpinUntil(() => harness.Sink.SilentPeriods > silentBefore, TimeSpan.FromSeconds(10));
+                });
 
         harness.Coordinator.Play(a);
         harness.Sink.Resume();
