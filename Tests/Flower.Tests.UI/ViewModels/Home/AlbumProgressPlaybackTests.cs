@@ -55,16 +55,23 @@ public class AlbumProgressPlaybackTests : PinnedDataDirectory
         return vm;
     }
 
+    // How far into one of these four-minute songs it has been heard enough to
+    // count as a play.
+    private static readonly long HeardAtMs =
+        (long)Math.Ceiling(TimeSpan.FromMinutes(4).TotalMilliseconds * ListenMeter.CountedFraction);
+
     // Plays the song just started from its top to untilMs, reported the way
     // the position timer reports it - clock and position moving together.
-    // The default is past nine tenths of a four-minute song: heard.
-    private void Hear(FakeAudioManager audio, long untilMs = 220_000)
+    // By default, until it has been heard.
+    private void Hear(FakeAudioManager audio, long? untilMs = null)
     {
+        var until = untilMs ?? HeardAtMs;
         audio.Time = 0;
-        while (audio.Time < untilMs)
+        while (audio.Time < until)
         {
-            _now += TimeSpan.FromMilliseconds(250);
-            audio.Time += 250;
+            var step = Math.Min(250, until - audio.Time);
+            _now += TimeSpan.FromMilliseconds(step);
+            audio.Time += step;
             audio.RaisePositionChanged();
         }
     }
@@ -88,7 +95,7 @@ public class AlbumProgressPlaybackTests : PinnedDataDirectory
 
         var entry = Assert.Single(vm.AlbumProgress.Entries);
         Assert.Equal(album[1].Id, entry.TrackId);
-        Assert.Equal(TimeSpan.FromSeconds(220), entry.Position);
+        Assert.Equal(TimeSpan.FromMilliseconds(HeardAtMs), entry.Position);
     }
 
     // Sampling an album: a few seconds of each song, skipping on.
@@ -108,8 +115,8 @@ public class AlbumProgressPlaybackTests : PinnedDataDirectory
         Assert.Empty(vm.AlbumProgress.Entries);
     }
 
-    // A tag that overstates the length leaves a song short of nine tenths
-    // until it ends, where it is counted after all - and still counts as the
+    // A tag that overstates the length leaves a song short of counting until
+    // it ends, where it is counted after all - and still counts as the
     // second song heard, though by then the next one is starting.
     [AvaloniaFact]
     public void A_song_counted_only_at_its_end_is_still_heard()

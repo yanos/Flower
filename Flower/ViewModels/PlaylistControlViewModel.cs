@@ -315,7 +315,7 @@ namespace Flower.ViewModels
 
                     // Reaching the end is not by itself a play - a track seeked
                     // through gets here too - and a long one heard properly was
-                    // already counted at nine tenths. What is left for this to
+                    // already counted on the way. What is left for this to
                     // say yes to is a track too short, or too badly tagged, to
                     // have crossed that line before its decoder ran out.
                     var playOwed = _listen.Finish(finishedTrack);

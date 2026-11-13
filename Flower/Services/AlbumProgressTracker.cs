@@ -32,7 +32,7 @@ public sealed record AlbumProgressState(List<AlbumProgressEntry> Entries, List<A
 // finished, each remembered at the exact place it was left, like a cassette.
 //
 // An album is started by two songs from it heard one straight after the
-// other - heard as a play is, nine tenths of each (ListenMeter), so skipping
+// other - heard as a play is (ListenMeter.CountedFraction of each), so skipping
 // through an album to sample it puts nothing on the shelf. One song is not
 // enough - playing a single from the Songs list is not listening to its album
 // - and two in a row is what an album being listened to looks like from in
@@ -158,7 +158,7 @@ public sealed class AlbumProgressTracker
     }
 
     // Enough of the playing song has been heard to count as a play - reported
-    // once per play, at nine tenths or at its end (see ListenMeter). Heard
+    // once per play, part-way through or at its end (see ListenMeter). Heard
     // straight after a song from the same album, it puts that album on the
     // shelf with the tape here.
     public void TrackHeard(Track track)

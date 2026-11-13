@@ -28,7 +28,7 @@ namespace Flower.Services;
 // timer's, the decoder's (a track ending) and the UI's (everything else).
 public sealed class ListenMeter
 {
-    public const double CountedFraction = 0.9;
+    public const double CountedFraction = 0.95;
 
     // How much further than the clock the position may have moved and still be
     // playback. The position is counted in the blocks the output device takes,
@@ -127,7 +127,7 @@ public sealed class ListenMeter
             _lastTimeMs = timeMs;
             _lastSeenAt = now;
 
-            // Without a length there is nothing to be nine tenths of, and the
+            // Without a length there is nothing to be a fraction of, and the
             // track ending is the only evidence left - see Finish.
             if (_counted || _durationMs <= 0 || !HeardEnoughOf(_durationMs))
                 return null;

@@ -13,9 +13,9 @@ using Xunit;
 
 namespace Flower.Tests.Playback;
 
-// What counts as a play: nine tenths of the track heard, where "heard" is the
-// position moving at the speed of the clock and a seek is not (see
-// ListenMeter). Tested through PlaylistControlViewModel rather than against the
+// What counts as a play: ListenMeter.CountedFraction of the track heard, where
+// "heard" is the position moving at the speed of the clock and a seek is not.
+// Tested through PlaylistControlViewModel rather than against the
 // meter alone, because the rule is as much about where the meter is told things
 // - a start, a pause, a resume, an end - as about its arithmetic.
 //
@@ -51,6 +51,12 @@ public class PlayCountingTests : PinnedDataDirectory
         return vm;
     }
 
+    // Where a track of this length has been heard enough to count, to the
+    // millisecond - the line every test here is measured against, so none of
+    // them restates the fraction.
+    private static TimeSpan Line(TimeSpan length) =>
+        TimeSpan.FromMilliseconds(Math.Ceiling(length.TotalMilliseconds * ListenMeter.CountedFraction));
+
     // Playback carrying on to a position, reported the way the position timer
     // reports it: the clock and the position moving together.
     private void HearUpTo(TimeSpan position, int everyMs = 250)
@@ -73,16 +79,16 @@ public class PlayCountingTests : PinnedDataDirectory
     }
 
     [Fact]
-    public void A_track_is_counted_once_nine_tenths_of_it_has_been_heard_and_not_before()
+    public void A_track_is_counted_once_enough_of_it_has_been_heard_and_not_before()
     {
         var song = T("Song", ThreeMinutes);
         var vm = Player(song);
         vm.Play(song);
 
-        HearUpTo(TimeSpan.FromSeconds(161));
+        HearUpTo(Line(ThreeMinutes) - TimeSpan.FromSeconds(1));
         Assert.Equal(0, song.PlayCount);
 
-        HearUpTo(TimeSpan.FromSeconds(162));
+        HearUpTo(Line(ThreeMinutes));
         Assert.Equal(1, song.PlayCount);
     }
 
@@ -105,7 +111,7 @@ public class PlayCountingTests : PinnedDataDirectory
         Assert.Null(song.LastPlayedAt);
         Assert.Equal(0, song.PlayCount);
 
-        HearUpTo(TimeSpan.FromSeconds(162));
+        HearUpTo(Line(ThreeMinutes));
         Assert.Equal(1, next.PlayCount);
         Assert.NotNull(next.LastPlayedAt);
     }
@@ -126,14 +132,14 @@ public class PlayCountingTests : PinnedDataDirectory
     // The case the old rule got wrong in one direction: a song heard right
     // through to its fade-out and then skipped never reached its end.
     [Fact]
-    public void Skipping_on_after_nine_tenths_keeps_the_play()
+    public void Skipping_on_once_it_has_counted_keeps_the_play()
     {
         var song = T("Song", ThreeMinutes);
         var next = T("Next", ThreeMinutes);
         var vm = Player(song, next);
         vm.Play(song);
 
-        HearUpTo(TimeSpan.FromSeconds(170));
+        HearUpTo(Line(ThreeMinutes) + TimeSpan.FromSeconds(2));
         vm.Next();
 
         Assert.Equal(1, song.PlayCount);
@@ -141,7 +147,7 @@ public class PlayCountingTests : PinnedDataDirectory
     }
 
     [Fact]
-    public void Skipping_on_before_nine_tenths_counts_nothing()
+    public void Skipping_on_before_it_has_counted_counts_nothing()
     {
         var song = T("Song", ThreeMinutes);
         var next = T("Next", ThreeMinutes);
@@ -180,10 +186,12 @@ public class PlayCountingTests : PinnedDataDirectory
 
         HearUpTo(TimeSpan.FromSeconds(100));
         SeekTo(TimeSpan.FromSeconds(40));
-        HearUpTo(TimeSpan.FromSeconds(101));
+        // The second time over 40s to 100s is heard as well.
+        var stillOwed = Line(ThreeMinutes) - TimeSpan.FromSeconds(100);
+        HearUpTo(TimeSpan.FromSeconds(40) + stillOwed - TimeSpan.FromSeconds(1));
         Assert.Equal(0, song.PlayCount);
 
-        HearUpTo(TimeSpan.FromSeconds(105));
+        HearUpTo(TimeSpan.FromSeconds(40) + stillOwed);
         Assert.Equal(1, song.PlayCount);
     }
 
@@ -216,7 +224,9 @@ public class PlayCountingTests : PinnedDataDirectory
         HearUpTo(TimeSpan.FromSeconds(90));
         _audio.RaisePaused();
         _now += TimeSpan.FromMinutes(10);
-        HearUpTo(TimeSpan.FromSeconds(165));
+        // A little past the line: the first report after a pause only marks
+        // where listening picks up again (ListenMeter.Suspend).
+        HearUpTo(Line(ThreeMinutes) + TimeSpan.FromSeconds(2));
 
         Assert.Equal(1, song.PlayCount);
     }
@@ -230,14 +240,14 @@ public class PlayCountingTests : PinnedDataDirectory
         var vm = Player(song);
         vm.Play(song);
 
-        HearUpTo(TimeSpan.FromSeconds(165), everyMs: 15_000);
+        HearUpTo(Line(ThreeMinutes), everyMs: 15_000);
 
         Assert.Equal(1, song.PlayCount);
     }
 
     // The decoder runs out a couple of seconds before the listener does - the
-    // tail is still buffered - so a short track ends well short of nine tenths
-    // of its length as reported. Nothing was skipped, and it counts.
+    // tail is still buffered - so a short track ends well short of the line
+    // for its length as reported. Nothing was skipped, and it counts.
     [Fact]
     public void A_short_track_that_ends_with_its_tail_still_buffered_is_counted()
     {
@@ -316,22 +326,23 @@ public class PlayCountingTests : PinnedDataDirectory
         _audio.RaisePlaying();
         _audio.Time = (long)TimeSpan.FromMinutes(30).TotalMilliseconds;
 
-        HearUpTo(TimeSpan.FromMinutes(53));
+        HearUpTo(Line(TimeSpan.FromMinutes(60)) - TimeSpan.FromMinutes(1));
         Assert.Equal(0, podcast.PlayCount);
 
-        HearUpTo(TimeSpan.FromMinutes(55));
+        HearUpTo(Line(TimeSpan.FromMinutes(60)));
         Assert.Equal(1, podcast.PlayCount);
     }
 
     // It crossed the line in the sitting that left it there.
     [Fact]
-    public void A_track_resumed_past_nine_tenths_is_not_counted_again()
+    public void A_track_resumed_past_the_line_is_not_counted_again()
     {
-        var podcast = Podcast(leftAt: TimeSpan.FromMinutes(57));
+        var leftAt = Line(TimeSpan.FromMinutes(60)) + TimeSpan.FromSeconds(30);
+        var podcast = Podcast(leftAt);
         var vm = Player(podcast);
         vm.Play(podcast);
         _audio.RaisePlaying();
-        _audio.Time = (long)TimeSpan.FromMinutes(57).TotalMilliseconds;
+        _audio.Time = (long)leftAt.TotalMilliseconds;
 
         HearUpTo(TimeSpan.FromMinutes(60));
         _audio.RaiseEndReached();

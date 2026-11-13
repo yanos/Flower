@@ -393,7 +393,7 @@ namespace Flower.Models
         // volume is set to.
         public int VolumeAdjustment { get; set; }
 
-        // Stats. PlayCount is Flower's own count, incremented once nine tenths
+        // Stats. PlayCount is Flower's own count, incremented once enough
         // of the track has been heard (see ListenMeter); ImportedPlayCount comes
         // from iTunes/Music.app's library export when that sync is enabled
         // (see ITunesPlayCountImporter) - kept as separate fields so re-running

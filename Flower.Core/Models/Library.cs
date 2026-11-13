@@ -20,7 +20,7 @@ namespace Flower.Models
     // scrobble is both halves of a play.
     //
     // The two halves of a play are one event on this device - counted and
-    // stamped together once nine tenths of the track has been heard (see
+    // stamped together once enough of the track has been heard (see
     // Library.IncrementPlayCount) - but stay two flags, because what arrives
     // from elsewhere moves one without the other: another device's count, or
     // a later LastPlayedAt reported by the owner's own phone.
