@@ -383,6 +383,7 @@ jobs:
           fetch-depth: 0
 
       - uses: actions/setup-dotnet@v4
+        id: dotnet
         with:
           dotnet-version: 10.0.x
           cache: true
@@ -390,6 +391,13 @@ jobs:
             **/*.csproj
             Directory.Build.props
             Tests/ClientTests.props
+
+      # Some ubuntu-24.04 images carry a .NET 11 SDK, which with no
+      # global.json is the one picked: the workload below then went to
+      # net11, and the net10 build failed wanting wasm-tools-net10
+      # (NETSDK1147). Pinned for this job only, to the SDK installed above.
+      - name: Use the SDK installed above
+        run: dotnet new globaljson --sdk-version "${{ steps.dotnet.outputs.dotnet-version }}" --roll-forward latestPatch --force
 
       # WasmBuildNative needs Emscripten to link Skia/HarfBuzz; omitting the
       # workload either prevents the build or leaves rendering unavailable.
