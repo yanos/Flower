@@ -51,6 +51,7 @@ is left. Read the relevant one before touching that area.
 - `VIBE-PLAYLIST-PLAN.md` — Vibe Playlists and Endless Play (CLAP via ONNX Runtime in `Flower.SemanticAudio.Onnx`, engine in `Flower.Core/SemanticAudio/`).
 - `ONLINE-METADATA-PLAN.md` — lyrics, artist pictures, popularity (`OnlineMetadataEngine`).
 - `AUTO-UPDATE-PLAN.md` — Velopack updates and MinVer versioning from git tags.
+- `NATIVE-SECURITY-PLAN.md` — memory-safety review of `libflowerbridge` and the iOS CoreAudio diagnostics; findings not yet fixed.
 - `AIRPLAY-BLUETOOTH-PLAN.md`, `MEDIA-KEYS-PLAN.md`, `CRASH-REPORTING-PLAN.md`, `STORE-DEPLOYMENT-PLAN.md`, `PERFORMANCE-TRACKING-PLAN.md`, `STREAMING-SERVICES-PLAN.md`.
 
 Issues: GitHub Issues on `yanos/Flower` via `gh`. Domain docs: `CONTEXT.md` and

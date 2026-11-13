@@ -1,0 +1,102 @@
+# Native Security Plan
+
+A memory-safety review of Flower's own native code: `libflowerbridge`
+(`native/miniaudio/flower_audio_bridge.c/.h`), `native/miniaudio/impl.c` (the
+iOS CoreAudio diagnostics), the Flower patches in
+`native/miniaudio/vendor/miniaudio.h` (`ma_on_output__coreaudio`), and the
+managed side that drives them (`NativeAudioBridge`, `AudioFeeder`,
+`MiniaudioSink`). FFAudio.NET is out of scope.
+
+**Status (November 2026): reviewed, nothing fixed yet.** No buffer overflow
+in the C itself: every copy is bounded by checks it makes, and nothing a song
+carries (sizes, tags) reaches a length or an index - decoded audio enters only
+as float sample values. What is left are lifetime and threading assumptions
+the C relies on but cannot enforce, at the managed/native boundary. Fixes 1
+and 2 are about a dozen lines; anything in the bridge's C means rerunning
+`native/miniaudio/{desktop,android,ios}/build.sh` (the source stamps fail CI
+otherwise).
+
+## What is left
+
+### 1. Use-after-free when the feeder outlives its join (medium)
+
+`MiniaudioSink.CloseDevice` stops the feeder, uninits the device, then
+destroys the bridge. `AudioFeeder.Dispose` joins its thread for at most a
+second (`_thread.Join(TimeSpan.FromSeconds(1))`) and carries on either way. A
+feeder stalled past that - a long Mono GC or an iOS suspension, a debugger,
+heavy load - wakes up holding a freed bridge, and its next `Write` memcpys
+PCM into the freed `pData`: heap corruption that surfaces later as an
+unrelated-looking crash, like the "Incorrect checksum for freed object" the
+`ma_device` padding once fixed.
+
+Fix: `AudioFeeder.Dispose` reports whether the thread exited; when it did
+not, `CloseDevice` detaches the bridge but does not destroy it, and logs the
+leak.
+
+### 2. A flush fallback can briefly push the output to full scale (low likelihood, nasty outcome)
+
+`AudioFeeder.TryCompleteFlush` calls `flower_audio_bridge_flush_now` once the
+flush-ack timeout passes, and `flush_now` writes callback-owned state (`gain`,
+`fadeInLength`, `fadeInRemaining`) on the assumption that no callback is
+running. Nothing enforces it. A callback resuming at that moment races it,
+and with a declick length changed since the last arm, `fadeInRemaining` can
+end up above `fadeInLength`. `apply_gain`'s
+`(fadeInLength - fadeInRemaining) / fadeInLength` then wraps as unsigned and
+the envelope is around 10^7: full-scale output until the fade runs out.
+
+Fix: clamp `fadeInRemaining` to `fadeInLength` in
+`flower_audio_bridge_apply_gain`, which makes the race harmless whatever
+causes it.
+
+### 3. The device registry is not read as a pair (low, defensive)
+
+`flower_audio_bridge_for_device` matches a slot's `pDevice`, then loads its
+`pBridge` separately. A slot detached and reused in between would hand a
+callback another device's bridge, and with a different
+`deviceBytesPerSample` (S24 against S16) it would write 1.5 times past the end
+of the output buffer. Today `device_uninit` always runs before detach, so no
+callback for that device can be in flight; the C should not depend on that.
+
+Fix: after loading `pBridge`, load `pDevice` again and return NULL if it
+changed.
+
+### 4. Capacity past INT32_MAX goes negative in C# (very low)
+
+`flower_audio_bridge_create` allows a byte capacity up to `UINT32_MAX`;
+`NativeAudioBridge.Capacity` and `Available` cast it to `int`. Past about
+268M frames the feeder sees a negative capacity and stops writing - not
+unsafe, just wrong. Fix: refuse a capacity over `INT32_MAX` bytes in
+`create`.
+
+### 5. Build hardening (low)
+
+The Linux and Android builds pass no `-fstack-protector-strong`,
+`-D_FORTIFY_SOURCE=2` or `-Wl,-z,relro,-z,now`. The bridge has almost no
+stack buffers, but `impl.c` compiles all of miniaudio, which does. Fortify
+adds `__memcpy_chk`, which libc provides, so the dependency checks in
+`desktop/build.sh` still pass.
+
+## Checked and clean
+
+- **Ring** (`flower_audio_bridge_write`, `_read`): indices are 64-bit and
+  only increase, used never exceeds capacity, the wrap-around split copies
+  are right, writes are whole frames only, and `create` checks the capacity
+  multiplication for overflow.
+- **Callback scratch:** each chunk is at most
+  `FLOWER_AUDIO_BRIDGE_CHUNK_FRAMES` (4096) frames, and `pSamples` and
+  `pCrossfade` are sized for exactly that.
+- **EQ:** `bandCount` is capped at 10; `NativeAudioBridge.SetEqualizer`
+  always passes a 50-float buffer; the triple-buffer indices stay in 0..2.
+- **Requantiser:** NaN and infinities are clamped or zeroed before the
+  integer cast; destination offsets are `size_t`. The bytes written match
+  miniaudio's buffer because `MiniaudioSink` sets `playback.format` and
+  `playback.channels` explicitly, so miniaudio converts to what the bridge
+  was created for.
+- **Teardown order** (finding 1 aside): feeder, `device_uninit`, detach,
+  destroy.
+- **CoreAudio diagnostics** (`impl.c`, the patched `ma_on_output__coreaudio`):
+  read only buffers sized from the buffer list, and only after checking the
+  internal format and channel count; the deinterleaved path stays inside its
+  4KB `tempBuffer`. One harmless quirk:
+  `flower_coreaudio_diagnostics_register` can register one device in a
+  second slot.
