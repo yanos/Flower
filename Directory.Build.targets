@@ -14,6 +14,22 @@
     </PropertyGroup>
   </Target>
 
+  <!-- A phone's crash reports name the method on every frame but not its
+       file and line: a NativeAOT (iOS) or AOT (Android) build ships no PDBs
+       beside it, unlike a desktop or the server. Sentry resolves them from
+       the build's debug files (dSYM, ELF, the trimmed PDBs), which the
+       Sentry package's own targets upload after a build with its bundled
+       sentry-cli - so a Release build of a phone head uploads them whenever
+       SENTRY_AUTH_TOKEN is set (a CI secret, or the owner's shell before
+       scripts/deploy-ios-device.sh), and does nothing without it. Any build
+       whose binary reaches a phone should have the token, or that build's
+       crashes stay unsymbolicated for good. docs/CRASH-REPORTING-PLAN.md. -->
+  <PropertyGroup Condition="('$(MSBuildProjectName)' == 'Flower.Android' OR '$(MSBuildProjectName)' == 'Flower.iOS') AND '$(Configuration)' == 'Release' AND '$(SENTRY_AUTH_TOKEN)' != ''">
+    <SentryOrg>none-k0o</SentryOrg>
+    <SentryProject>flower-app</SentryProject>
+    <SentryUploadSymbols>true</SentryUploadSymbols>
+  </PropertyGroup>
+
   <!-- When this build happened, stamped as [AssemblyMetadata("BuildDate", ...)]
        and logged at startup beside the version (AppVersion.BuildDate).
 

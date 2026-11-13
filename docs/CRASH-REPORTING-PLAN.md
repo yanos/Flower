@@ -18,10 +18,18 @@ What is left:
 - **Usage stats.** Sentry's .NET SDK now has Metrics (counters, gauges,
   distributions with attributes), which may cover the events below without
   Aptabase - to decide before building.
-- **Readable stacks on iOS and Android.** Method names arrive everywhere;
-  file and line only where PDBs ship beside the app (desktop, server). A
-  NativeAOT or AOT phone build needs its debug files uploaded to Sentry from
-  CI, which needs a Sentry auth token as a CI secret.
+- **Readable stacks on iOS and Android: wired, not yet used.** Method names
+  arrive everywhere; file and line only where PDBs ship beside the app
+  (desktop, server), or where Sentry holds the build's debug files.
+  `Directory.Build.targets` turns on the Sentry package's own upload
+  (`SentryUploadSymbols`, its bundled sentry-cli, org `none-k0o`, project
+  `flower-app`) for a Release build of either phone head whenever
+  `SENTRY_AUTH_TOKEN` is set, and does nothing without it. Nothing has
+  uploaded yet: no CI job builds a phone binary that ships, so the token
+  belongs on whatever job comes to (STORE-DEPLOYMENT-PLAN.md Phase 5), and in
+  the owner's shell before `scripts/deploy-ios-device.sh` meanwhile. An
+  organization auth token (Sentry: Settings > Auth Tokens) is the kind made
+  for CI uploads.
 - iOS native crashes, which nothing records (no crash-report file, no exit
   history to read).
 - **More calls to `CrashReporting.ReportCaught`, as they turn up.** Eight
