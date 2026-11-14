@@ -17,6 +17,7 @@ using Microsoft.Extensions.Logging;
 
 using UIKit;
 
+using Flower.Apple;
 using Flower.Logging;
 using Flower.Audio;
 using Flower.Persistence;
@@ -84,8 +85,7 @@ public partial class AppDelegate : AvaloniaAppDelegate<App>, IMXMetricManagerSub
         PlatformNetworkChange.Current = new AppleNetworkChange();
 
         // Lock Screen / Control Center "Now Playing" card + transport
-        // commands - see AppleNowPlaying.cs / docs/MEDIA-KEYS-PLAN.md Phase
-        // 2. Same before-Avalonia-starts timing as PlatformMdns above, since
+        // commands - see AppleNowPlaying.cs / docs/MEDIA-KEYS-PLAN.md. Same before-Avalonia-starts timing as PlatformMdns above, since
         // NowPlayingIntegrationService reads PlatformNowPlaying.Current once
         // at construction.
         PlatformNowPlaying.Current = new AppleNowPlaying();

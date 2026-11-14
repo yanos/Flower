@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 
 using Avalonia;
+using Avalonia.Controls.ApplicationLifetimes;
 
 using Flower.Logging;
 using Flower.Platform;
@@ -60,8 +61,22 @@ class Program
 
         PlatformAppUpdater.Current = VelopackUpdater.ForThisInstall();
 
+        // Media keys and the OS's media controls - see docs/MEDIA-KEYS-PLAN.md.
+        // Before Avalonia starts, since NowPlayingIntegrationService reads it
+        // once at construction. Windows' controls belong to the main window,
+        // which is looked up when the first song is published; Linux's are an
+        // MPRIS player on the session bus, absent where there is no bus. On
+        // macOS this head has neither: Flower.MacOS is where the Mac's are.
+        if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 10240))
+            PlatformNowPlaying.Current = new WindowsNowPlaying(MainWindowHandle);
+        else if (OperatingSystem.IsLinux())
+            PlatformNowPlaying.Current = MprisNowPlaying.ForSessionBus();
+
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
+
+    private static IntPtr? MainWindowHandle() =>
+        (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow?.TryGetPlatformHandle()?.Handle;
 
     // Avalonia configuration, don't remove; also used by visual designer.
     public static AppBuilder BuildAvaloniaApp()

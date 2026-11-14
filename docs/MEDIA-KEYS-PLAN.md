@@ -1,6 +1,26 @@
 # Media Key / OS "Now Playing" Integration Plan
 
-Hardware media-key (play/pause/next/previous) support + OS "Now Playing"/lock-screen integration, across all five platforms. **iOS is built; macOS, Windows, Linux and Android are not started.** `Flower.iOS`'s `AppleNowPlaying` publishes to `MPNowPlayingInfoCenter` and takes `MPRemoteCommandCenter`'s commands, behind the `IPlatformNowPlaying` seam below, which `NowPlayingIntegrationService` drives from `PlaylistControlViewModel` and `IAudioManager`. macOS uses the same API family, so it is the cheapest next one.
+Hardware media-key (play/pause/next/previous) support + OS "Now Playing"/lock-screen integration, across all five platforms. **iOS, macOS, Windows and Linux are built (November 2026); Android is not started.** iOS has been used on a real phone; the three desktops have not yet been tried by hand (see "What is left"). Each head sets an `IPlatformNowPlaying` (the seam below), which `NowPlayingIntegrationService` drives from `PlaylistControlViewModel` and `IAudioManager`:
+
+| Head | Implementation | Where |
+|---|---|---|
+| Flower.iOS, Flower.MacOS | `AppleNowPlaying` — `MPNowPlayingInfoCenter`/`MPRemoteCommandCenter` | `Flower.iOS/AppleNowPlaying.cs`, linked into `Flower.MacOS` |
+| Flower.Desktop on Windows | `WindowsNowPlaying` over `WindowsMediaTransportControls` | `Flower/Platform/` |
+| Flower.Desktop on Linux | `MprisNowPlaying` — an MPRIS player on the session bus | `Flower/Platform/` |
+
+## What is left
+
+1. **Try each desktop by hand.** macOS: the keyboard's play/pause, next and previous keys, and Control Center's Now Playing module, with Music.app also open (the keys go to whichever app macOS thinks is playing). Windows: the media keys and the flyout above the volume overlay, its art, and the lock screen. Linux: GNOME's media widget in the clock menu and KDE's in the tray (`playerctl status`/`playerctl metadata` show what they read).
+2. **Windows' vtable slots are proved only by CI.** `WindowsMediaTransportControlsTests` (in `Flower.Tests.Windows`) publishes a song to a hidden window's controls and reads it back; it has not yet run, since nothing here builds on Windows outside CI.
+3. **Android** — below, with `STORE-DEPLOYMENT-PLAN.md` Phase 4's foreground service.
+4. **Seeking from the OS.** The seam carries play/pause, next and previous only. MPRIS says `CanSeek` false, Windows' timeline shows progress without accepting a drag, and Apple's card has no scrubber. A `Seek(TimeSpan)` command on the seam would light all three up.
+
+## As built on the desktops
+
+- **macOS shares iOS's file.** MediaPlayer is the same framework on both; only the artwork's image type differs (`#if __MACOS__`). macOS also needs `MPNowPlayingInfoCenter.PlaybackState` set outright: it has no audio session to infer playing from, and without it the card shows but the play key goes to the app it last went to.
+- **Windows is raw WinRT, not the projection.** `Flower.Desktop` is one plain `net10.0` build for Windows and Linux, and C#/WinRT needs a `net10.0-windows10.0.x` target, so `WindowsMediaTransportControls` calls the interfaces through their vtables: `ISystemMediaTransportControlsInterop.GetForWindow` for the main window, the display updater's music properties, a thumbnail built from bytes (`SHCreateMemStream` → `CreateRandomAccessStreamOverStream` → `RandomAccessStreamReference.CreateFromStream`), the timeline, and a hand-made agile `TypedEventHandler` for `ButtonPressed` (IID computed from its parameterized signature). The slot numbers come from Wine's `windows.media.idl`, which follows the SDK's declaration order. `WindowsNowPlaying` opens the controls on the first song, once the main window exists, and does everything on the UI thread; it restates the timeline only when the state changes or every 5 s, since the flyout moves its bar along by itself.
+- **Linux is hand-written over `Tmds.DBus.Protocol`**, the version Avalonia's FreeDesktop backend already ships, now referenced by `Flower` directly. The bus name is `org.mpris.MediaPlayer2.flower`, or `….instance<pid>` when another Flower holds it. Art goes to a file named by its content under `$XDG_RUNTIME_DIR/flower-now-playing/`, since MPRIS takes a URL; the previous one is deleted when the song changes. Position is answered on request and a jump is announced with `Seeked`, never in `PropertiesChanged`, as the spec asks. No session bus (a console login) means no player and nothing else changes. `MprisNowPlayingTests` drives it from a second connection on a private `dbus-daemon` (`PrivateSessionBus`), so it runs in CI's Linux job and on a Mac with MacPorts' or Homebrew's D-Bus.
+- **Play, Pause and Stop map onto one toggle** on Windows and Linux, which have them as separate commands: each acts only when it would change the state the player last published, so a Pause pressed while paused never starts the music.
 
 ## Why one plan, not per-platform
 
@@ -10,17 +30,17 @@ No cross-platform media-key API exists — each OS routes hardware/lock-screen/h
 |---|---|
 | macOS | `MPRemoteCommandCenter`/`MPNowPlayingInfoCenter` (MediaPlayer framework) — the old raw-NSEvent key trick is unreliable, not worth building on |
 | iOS | Same API family as macOS — one shared Apple implementation covers both |
-| Windows | `SystemMediaTransportControls` (WinRT) — first-class .NET projection |
-| Linux | MPRIS over D-Bus — the DE owns key capture and forwards to the registered player. Avalonia already transitively pulls in `Tmds.DBus.Protocol` via `Avalonia.FreeDesktop`; reuse that rather than adding a new dependency |
+| Windows | `SystemMediaTransportControls` (WinRT), called through its vtables — see "As built on the desktops" for why not the projection |
+| Linux | MPRIS over D-Bus — the DE owns key capture and forwards to the registered player. Built on the `Tmds.DBus.Protocol` that `Avalonia.FreeDesktop` already brings |
 | Android | `MediaSession` (AndroidX) — also what makes Bluetooth headset buttons and Android Auto work |
 
 ## Plan
 
 Add an `IPlatformNowPlaying` seam (a per-platform service behind one interface, with the caller hiding the affordance where the platform returns nothing — the shape the September 2026 review's E7 proposed for `Process.Start`, which was built as a static `PlatformShell` instead because only the two desktop heads had anything to register; see `CITED-DECISIONS.md`). As built, the head sets it as `PlatformNowPlaying.Current` before Avalonia starts, the same convention as `PlatformMdns.Current`, and `NowPlayingIntegrationService` does nothing where it is left null. Each implementation publishes metadata/play state from `PlaylistControlViewModel`/`Track` and wires transport commands straight into `PlaylistControlViewModel.PlayOrPause()`/`Next()`/`Previous()` — no changes needed to that class.
 
-- **Windows** — wrap `SystemMediaTransportControls`, set `DisplayUpdater` fields, update `PlaybackStatus`, verify taskbar thumbnail controls and the lock-screen card. Small-Medium effort, Low risk.
-- **macOS/iOS** — shared `MPNowPlayingInfoCenter`/`MPRemoteCommandCenter` implementation; land alongside whatever native interop `AIRPLAY-BLUETOOTH-PLAN.md` Phase 2 introduces rather than as a separate effort. iOS's `audio` `UIBackgroundModes` declaration and its audio session (`AppleAudioSession`) exist and are shared with the AirPlay/Bluetooth work. Medium effort; Low risk on macOS, iOS carries the same "first real mobile audio verification" risk flagged elsewhere.
-- **Linux** — export `org.mpris.MediaPlayer2`/`.Player` as a D-Bus service under `org.mpris.MediaPlayer2.Flower`; confirm whether the transitive `Tmds.DBus` reference is sufficient or an explicit package reference is needed for exporting (vs. consuming) a service. Smoke-test against both GNOME and KDE — their MPRIS property/signal handling isn't perfectly consistent. Medium effort, Medium risk (DE inconsistency, not the D-Bus mechanics).
+- **Windows** — built; see "As built on the desktops".
+- **macOS/iOS** — built, one shared `AppleNowPlaying`.
+- **Linux** — built, `MprisNowPlaying`; still to smoke-test against both GNOME and KDE, whose MPRIS handling isn't perfectly consistent.
 - **Android** — `MediaSessionCompat` (check whether Media3's `MediaSession` makes more sense before adding a second media library), implementing the `onPlay`/`onPause`/`onSkipToNext/Previous` callbacks. Decide whether a foreground notification is needed alongside the session, since Android is more aggressive about killing background playback without one. Medium effort, Medium risk.
 
 ## How long the card stays up
@@ -47,7 +67,4 @@ without opening the app.
 
 ## Suggested order
 
-1. Windows — cheapest, validates the `IPlatformNowPlaying` seam shape.
-2. Linux — no mobile-verification dependency.
-3. macOS/iOS — iOS is done (`AppleNowPlaying`). macOS can go any time, in `Flower.MacOS`.
-4. Android — same mobile-verification gate, plus the new foreground-notification question, so do it last once the pattern is proven elsewhere.
+Windows, Linux, macOS and iOS are built. What remains is the hand checks in "What is left", then Android, alongside `STORE-DEPLOYMENT-PLAN.md` Phase 4's foreground service, since the media session and the notification are one piece of work there.

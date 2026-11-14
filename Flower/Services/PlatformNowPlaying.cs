@@ -25,7 +25,7 @@ namespace Flower.Services
     // Publishes now-playing metadata/state to the OS's lock-screen/Control
     // Center now-playing surface and receives transport commands back from it
     // (headset buttons, lock screen tap, Control Center tap, car head unit).
-    // See docs/MEDIA-KEYS-PLAN.md Phase 2.
+    // See docs/MEDIA-KEYS-PLAN.md.
     public interface IPlatformNowPlaying
     {
         event EventHandler<NowPlayingCommand>? CommandReceived;
@@ -35,9 +35,11 @@ namespace Flower.Services
         void Clear();
     }
 
-    // Set by the platform entry point (Flower.iOS's AppDelegate) before
-    // Avalonia starts - same timing/convention as PlatformMdns.Current. Left
-    // null everywhere else, where NowPlayingIntegrationService just does
+    // Set by the platform entry point before Avalonia starts - same
+    // timing/convention as PlatformMdns.Current: AppleNowPlaying by Flower.iOS
+    // and Flower.MacOS, WindowsNowPlaying or MprisNowPlaying by Flower.Desktop
+    // on Windows and Linux. Left null on Android, in a browser tab and in
+    // Flower.Desktop on a Mac, where NowPlayingIntegrationService just does
     // nothing.
     public static class PlatformNowPlaying
     {

@@ -1102,7 +1102,7 @@ public partial class App : Application
         // Constructed eagerly (nothing else references it) so its
         // subscriptions to PlaylistControlViewModel/IAudioManager start
         // immediately rather than lazily on first use - see
-        // NowPlayingIntegrationService.cs / docs/MEDIA-KEYS-PLAN.md Phase 2.
+        // NowPlayingIntegrationService.cs / docs/MEDIA-KEYS-PLAN.md.
         Ioc.Default.GetRequiredService<NowPlayingIntegrationService>();
 
         base.OnFrameworkInitializationCompleted();

@@ -6,6 +6,7 @@ using AppKit;
 
 using Avalonia;
 
+using Flower.Apple;
 using Flower.Logging;
 using Flower.Platform;
 using Flower.Services;
@@ -54,6 +55,12 @@ class Program
         // hook that catches XAML-declared menus has to be in place before the
         // first window's XAML assigns one.
         PlatformContextMenu.Current = new AppleContextMenu();
+
+        // Control Center's Now Playing card and the keyboard's media keys -
+        // see AppleNowPlaying, shared with Flower.iOS. Before Avalonia
+        // starts, since NowPlayingIntegrationService reads it once at
+        // construction.
+        PlatformNowPlaying.Current = new AppleNowPlaying();
 
         // A newer dmg, looked for on GitHub - only in the dmg itself (see
         // FlowerReleaseBuild in the csproj). Velopack updates the other two

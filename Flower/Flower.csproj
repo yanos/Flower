@@ -52,6 +52,10 @@
     <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
     <PackageReference Include="System.Diagnostics.EventLog" Version="10.0.14" />
     <PackageReference Include="TagLibSharp" Version="2.3.0" />
+    <!-- MprisNowPlaying, Linux's media keys. Avalonia's FreeDesktop backend
+         already brings this version to the desktop heads; named here because
+         the shared library uses it directly. -->
+    <PackageReference Include="Tmds.DBus.Protocol" Version="0.94.1" />
   </ItemGroup>
 
   <!-- The decoder, and its native payload for the desktop building this. The
