@@ -33,13 +33,13 @@ namespace Flower.Tests.Logging;
 // parallel. [AvaloniaFact] because the entry flush lands back on the UI thread
 // through Dispatcher.UIThread.Post.
 [Collection("PlatformDataDirectory")]
-public class LogViewModelTests : PinnedDataDirectory
+public class LogDispatcherTests : PinnedDataDirectory
 {
     private readonly string _marker = "marker-" + Guid.NewGuid().ToString("N");
 
-    private static LogViewModel Make(AppSettings? settings = null) =>
-        new(InMemoryLogStore.Instance, settings ?? new AppSettings(),
-            new AppSettingsStore(NullLogger<AppSettingsStore>.Instance));
+    private LogViewModel Make(AppSettings? settings = null) =>
+        Own(new LogViewModel(InMemoryLogStore.Instance, settings ?? new AppSettings(),
+            new AppSettingsStore(NullLogger<AppSettingsStore>.Instance)));
 
     // Logs one entry to the shared local store, tagged so this test can find it.
     private void LogLocal(string message, string level = "Information", string? source = null) =>
@@ -60,68 +60,6 @@ public class LogViewModelTests : PinnedDataDirectory
             Dispatcher.UIThread.RunJobs();
         }
         Assert.True(condition(), "the expected dispatcher work never completed");
-    }
-
-    // ── Filtering ─────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void FilterText_matches_the_message_case_insensitively()
-    {
-        LogLocal("Alpha Event");
-        LogLocal("Beta Event");
-        var vm = Make();
-
-        vm.FilterText = _marker;
-        var both = vm.DisplayLines.Count;
-
-        vm.FilterText = "alpha";
-        Assert.Equal(2, both);
-        Assert.Contains("Alpha Event", Assert.Single(vm.DisplayLines));
-    }
-
-    [Fact]
-    public void FilterText_also_matches_the_source_context()
-    {
-        LogLocal("nothing distinctive here", source: _marker + ".SomeService");
-        var vm = Make();
-
-        vm.FilterText = _marker + ".SomeService";
-
-        Assert.NotEmpty(vm.DisplayLines);
-    }
-
-    [Fact]
-    public void MinimumLevel_hides_everything_below_it()
-    {
-        LogLocal("a debug line", level: "Debug");
-        LogLocal("a warning line", level: "Warning");
-        var vm = Make();
-        vm.FilterText = _marker;
-
-        vm.MinimumLevel = LogEventLevel.Verbose;
-        Assert.Equal(2, vm.DisplayLines.Count);
-
-        vm.MinimumLevel = LogEventLevel.Warning;
-        Assert.Single(vm.DisplayLines);
-        Assert.Contains("a warning line", vm.DisplayLines[0]);
-    }
-
-    // Reloading is what reopening the window does, and the freshly attached
-    // view has to be scrolled to the end of what it just painted - so a reload
-    // counts as growth even though it is measured against a log that already
-    // had at least as many lines in it.
-    [Fact]
-    public void Reloading_reports_growth_so_the_reopened_window_scrolls_to_the_end()
-    {
-        LogLocal("a line");
-        var vm = Make();
-        vm.FilterText = _marker;
-
-        bool? grew = null;
-        vm.LinesReset += (_, g) => grew = g;
-        vm.Reload();
-
-        Assert.True(grew);
     }
 
     // ── Live entries ──────────────────────────────────────────────────────────

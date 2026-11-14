@@ -70,7 +70,7 @@ public class ScreenStackPanelEntranceTests : PinnedDataDirectory
             Window = new Window { Width = 400, Height = PanelHeight };
             // Without a theme nothing here has a control template, so a
             // ListBox never builds an items presenter and the visual tree
-            // comes back empty - see TrackRowArtistTests, same reason.
+            // comes back empty - the virtualizing list needs its control templates.
             Window.Styles.Add(new FluentTheme());
             Window.Content = Panel;
             Window.Show();
@@ -132,19 +132,10 @@ public class ScreenStackPanelEntranceTests : PinnedDataDirectory
         Assert.True(h.RealizedRows() >= Harness.EnoughToBeShowing,
             $"the Songs list arrived with {h.RealizedRows()} of {TrackCount} rows realized - "
             + "it was measured while parked off-screen by its entrance animation");
-    }
 
-    // The same list, reached the same way, after it has been laid out once
-    // before - the state the reporter reached by "switching view and going
-    // back", and the reason the bug reads as intermittent rather than total.
-    [AvaloniaFact]
-    public void A_screen_revisited_stays_populated()
-    {
-        using var h = new Harness();
-        h.SelectTab(MobileTab.Songs);
         h.SelectTab(MobileTab.Albums);
         h.SelectTab(MobileTab.Songs);
-
-        Assert.True(h.RealizedRows() >= Harness.EnoughToBeShowing);
+        Assert.True(h.RealizedRows() >= Harness.EnoughToBeShowing,
+            "the Songs list was not populated when revisited");
     }
 }

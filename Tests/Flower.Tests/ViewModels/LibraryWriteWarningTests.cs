@@ -2,15 +2,10 @@ using System;
 using System.Reflection;
 using System.Text.Json;
 
-using Avalonia.Controls;
-using Avalonia.Headless.XUnit;
-using Avalonia.Threading;
-
 using Flower.Models;
 using Flower.Services;
 using Flower.Tests.TestSupport;
 using Flower.ViewModels;
-using Flower.Views;
 
 using Xunit;
 
@@ -21,13 +16,8 @@ namespace Flower.Tests.ViewModels;
 // LibraryWriteAccessTests); what is held down here is the page's half - that the
 // list survives the wire into a trimmed head, that it becomes a sentence naming
 // the folder, and that the banner is there exactly when there is one to show.
-[Collection("PlatformDataDirectory")]
-public class LibraryWriteWarningTests : PinnedDataDirectory
+public class LibraryWriteWarningTests
 {
-    // MainView cannot be built without a ColumnManager in Ioc.Default - see
-    // MainViewServerSettingsPageTests.
-    public LibraryWriteWarningTests() => TestIoc.EnsureConfigured();
-
     [Fact]
     public void A_server_that_can_write_everywhere_has_nothing_to_say()
     {
@@ -75,21 +65,5 @@ public class LibraryWriteWarningTests : PinnedDataDirectory
 
         Assert.Equal(["/music"], status!.UnwritableFolders);
         Assert.Null(older!.UnwritableFolders);
-    }
-
-    [AvaloniaFact]
-    public void The_warning_is_shown_only_while_there_is_one_and_can_be_dismissed()
-    {
-        using var parts = MainViewModelHarness.BuildParts(new Library([]), new MainPlaylist([]));
-        var main = parts.Main;
-
-        Assert.False(main.HasServerLibraryWriteWarning);
-
-        main.ServerLibraryWriteWarning = LibraryWriteWarning.For(["/music"]);
-        Assert.True(main.HasServerLibraryWriteWarning);
-
-        main.DismissServerLibraryWriteWarningCommand.Execute(null);
-        Assert.False(main.HasServerLibraryWriteWarning);
-        Assert.Null(main.ServerLibraryWriteWarning);
     }
 }

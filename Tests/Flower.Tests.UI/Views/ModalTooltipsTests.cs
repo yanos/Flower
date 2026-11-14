@@ -39,37 +39,4 @@ public class ModalTooltipsTests
         Assert.True(ToolTip.GetServiceEnabled(button));
         owner.Close();
     }
-
-    [AvaloniaFact]
-    public void Tooltips_stay_off_until_the_last_of_two_dialogs_closes()
-    {
-        var (owner, button) = Owner();
-        var first = new Window();
-        var second = new Window();
-        _ = first.ShowDialog(owner);
-        _ = second.ShowDialog(owner);
-
-        first.Close();
-        Dispatcher.UIThread.RunJobs();
-        Assert.False(ToolTip.GetServiceEnabled(button));
-
-        second.Close();
-        Dispatcher.UIThread.RunJobs();
-        Assert.True(ToolTip.GetServiceEnabled(button));
-        owner.Close();
-    }
-
-    [AvaloniaFact]
-    public void A_window_that_is_not_a_dialog_leaves_them_on()
-    {
-        var (owner, button) = Owner();
-        var beside = new Window();
-
-        beside.Show(owner);
-        Dispatcher.UIThread.RunJobs();
-
-        Assert.True(ToolTip.GetServiceEnabled(button));
-        beside.Close();
-        owner.Close();
-    }
 }

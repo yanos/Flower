@@ -4,8 +4,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
-using Avalonia.Headless.XUnit;
-
 using Flower.Logging;
 using Flower.SemanticAudio;
 using Flower.Services;
@@ -90,7 +88,7 @@ public class SettingsAiFeaturesTests
         return (backend, viewModel);
     }
 
-    [AvaloniaFact]
+    [Fact]
     public async Task Turning_the_last_feature_off_says_what_saving_deletes_until_it_is_turned_back_on()
     {
         var (_, settings) = await OpenAsync();
@@ -106,7 +104,7 @@ public class SettingsAiFeaturesTests
         Assert.Null(settings.AiFeatures.OffWarning);
     }
 
-    [AvaloniaFact]
+    [Fact]
     public async Task Turning_ai_features_off_turns_vibe_playlist_off_with_them()
     {
         var (_, settings) = await OpenAsync();
@@ -119,7 +117,7 @@ public class SettingsAiFeaturesTests
         Assert.False(settings.AiFeatures.CanEditClips);
     }
 
-    [AvaloniaFact]
+    [Fact]
     public async Task Either_feature_keeps_the_listening_so_only_the_last_one_off_deletes_it()
     {
         var (_, settings) = await OpenAsync(b => b.Snapshot = b.Snapshot with { EndlessPlayEnabled = true });
@@ -133,7 +131,7 @@ public class SettingsAiFeaturesTests
         Assert.False(settings.AiFeatures.CanEditClips);
     }
 
-    [AvaloniaFact]
+    [Fact]
     public async Task Endless_play_alone_starts_the_listening()
     {
         var (_, settings) = await OpenAsync(b =>
@@ -148,7 +146,7 @@ public class SettingsAiFeaturesTests
         Assert.Contains("downloads the model", settings.AiFeatures.OnNote);
     }
 
-    [AvaloniaFact]
+    [Fact]
     public async Task A_server_from_before_ai_features_says_it_needs_updating()
     {
         var (_, settings) = await OpenAsync(b =>
@@ -160,7 +158,7 @@ public class SettingsAiFeaturesTests
         Assert.Null(settings.ErrorMessage);
     }
 
-    [AvaloniaFact]
+    [Fact]
     public async Task Saving_sends_every_setting_with_the_rest_of_the_page()
     {
         var (backend, settings) = await OpenAsync();
@@ -178,7 +176,7 @@ public class SettingsAiFeaturesTests
         Assert.Null(settings.AiFeatures.OffWarning);
     }
 
-    [AvaloniaFact]
+    [Fact]
     public async Task Turning_ai_features_on_says_what_saving_will_download()
     {
         var (_, settings) = await OpenAsync(b =>
@@ -194,7 +192,7 @@ public class SettingsAiFeaturesTests
         Assert.False(settings.AiFeatures.ShowsStatus);
     }
 
-    [AvaloniaFact]
+    [Fact]
     public async Task Only_raising_the_clip_setting_says_it_listens_again()
     {
         var (_, settings) = await OpenAsync();
@@ -206,7 +204,7 @@ public class SettingsAiFeaturesTests
         Assert.NotNull(settings.AiFeatures.RaiseNote);
     }
 
-    [AvaloniaFact]
+    [Fact]
     public async Task Each_clip_setting_says_what_it_costs_here()
     {
         var (_, settings) = await OpenAsync();
@@ -217,7 +215,7 @@ public class SettingsAiFeaturesTests
         Assert.True(six.IsSelected);
     }
 
-    [AvaloniaFact]
+    [Fact]
     public async Task Says_where_the_analysis_is_and_what_it_is_listening_to()
     {
         var (_, settings) = await OpenAsync(b => b.Status = Report("Analysing"));
@@ -228,7 +226,7 @@ public class SettingsAiFeaturesTests
         Assert.Equal("Using 424 MB (model 330 MB, analysis 94 MB)", settings.AiFeatures.StorageText);
     }
 
-    [AvaloniaFact]
+    [Fact]
     public async Task Says_how_far_the_download_is()
     {
         var (_, settings) = await OpenAsync(b => b.Status = Report("Downloading", download: new VibeDownloadDto(110 * Megabyte, 330 * Megabyte)));
@@ -237,7 +235,7 @@ public class SettingsAiFeaturesTests
         Assert.Equal(33, settings.AiFeatures.Progress);
     }
 
-    [AvaloniaFact]
+    [Fact]
     public async Task An_error_is_shown_with_a_retry_that_asks_the_server_again()
     {
         var (backend, settings) = await OpenAsync(b => b.Status = Report("Failed", error: "Couldn't download the model: offline"));
@@ -250,7 +248,7 @@ public class SettingsAiFeaturesTests
         Assert.False(settings.AiFeatures.IsFailed);
     }
 
-    [AvaloniaFact]
+    [Fact]
     public async Task Pause_stops_the_listening_at_once_and_resume_starts_it_again()
     {
         var (backend, settings) = await OpenAsync(b => b.Status = Report("Analysing"));
@@ -271,7 +269,7 @@ public class SettingsAiFeaturesTests
         Assert.True(settings.AiFeatures.CanPause);
     }
 
-    [AvaloniaFact]
+    [Fact]
     public async Task There_is_nothing_to_pause_once_every_song_is_heard()
     {
         var (_, settings) = await OpenAsync();
@@ -280,7 +278,7 @@ public class SettingsAiFeaturesTests
         Assert.False(settings.AiFeatures.CanResume);
     }
 
-    [AvaloniaFact]
+    [Fact]
     public async Task Waiting_for_a_scan_is_not_the_owner_pausing()
     {
         var (_, settings) = await OpenAsync(b => b.Status = Report("WaitingForScan"));
@@ -292,7 +290,7 @@ public class SettingsAiFeaturesTests
 
     // A paired device's own Endless Play switch: usable while its server
     // offers it, and greyed with a line saying why while it doesn't.
-    [AvaloniaTheory]
+    [Theory]
     [InlineData(true, true, null)]
     [InlineData(false, false, "Endless Play is off on Lambda. Its owner can turn it on in its AI Features settings.")]
     [InlineData(null, false, null)]

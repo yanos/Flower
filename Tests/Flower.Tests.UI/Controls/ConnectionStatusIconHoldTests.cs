@@ -26,40 +26,8 @@ using State = ConnectionStatusIcon.ConnectionState;
 // them more carefully at each site - it is to have one state resolved before
 // anything is shown. What follows holds both halves of that: the precedence
 // itself, and that the control really does show at most one icon.
-public class ConnectionStatusIconTests
+public class ConnectionStatusIconHoldTests
 {
-    // The defect, as a rule. Busy leads because it is the only one of the three
-    // that is about right now; the others describe what was last found true.
-    [Fact]
-    public void Busy_replaces_connected_rather_than_joining_it()
-    {
-        Assert.Equal(State.Busy, ConnectionStatusIcon.Resolve(connected: true, busy: true, unreachable: false));
-    }
-
-    [Fact]
-    public void Busy_also_leads_a_server_last_seen_unreachable()
-    {
-        Assert.Equal(State.Busy, ConnectionStatusIcon.Resolve(connected: false, busy: true, unreachable: true));
-    }
-
-    [Fact]
-    public void An_unreachable_server_is_not_reported_as_connected()
-    {
-        Assert.Equal(State.Unreachable, ConnectionStatusIcon.Resolve(connected: true, busy: false, unreachable: true));
-    }
-
-    [Fact]
-    public void A_settled_connection_reads_as_connected()
-    {
-        Assert.Equal(State.Connected, ConnectionStatusIcon.Resolve(connected: true, busy: false, unreachable: false));
-    }
-
-    [Fact]
-    public void A_row_with_nothing_to_report_has_no_state()
-    {
-        Assert.Equal(State.None, ConnectionStatusIcon.Resolve(connected: false, busy: false, unreachable: false));
-    }
-
     // A sync of a library nothing has changed is over in milliseconds, so the
     // spinner it raises would otherwise appear and vanish inside a frame or
     // two. That does not read as work happening; it reads as the display

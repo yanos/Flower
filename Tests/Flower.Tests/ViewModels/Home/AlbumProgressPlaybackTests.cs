@@ -4,9 +4,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
-using Avalonia.Headless.XUnit;
-using Avalonia.Threading;
-
 using Microsoft.Extensions.Logging.Abstractions;
 
 using Flower.Models;
@@ -21,7 +18,8 @@ namespace Flower.Tests.ViewModels.Home;
 
 // Continue Playing driven the way the app drives it: through
 // PlaylistControlViewModel's own starts, pauses and ends, and picked back up
-// through HomeViewModel's resume.
+// through HomeViewModel's resume. Playback callbacks run inline; dispatcher
+// delivery and the shelf-hold timer have separate UI integration tests.
 [Collection("PlatformDataDirectory")]
 public class AlbumProgressPlaybackTests : PinnedDataDirectory
 {
@@ -52,7 +50,8 @@ public class AlbumProgressPlaybackTests : PinnedDataDirectory
             NullLogger<PlaylistControlViewModel>.Instance,
             listenMeter: new ListenMeter(() => _now));
         vm.OffPlaybackThread = work => work();
-        return vm;
+        vm.OnUiThread = work => work();
+        return Own(vm);
     }
 
     // How far into one of these four-minute songs it has been heard enough to
@@ -82,7 +81,7 @@ public class AlbumProgressPlaybackTests : PinnedDataDirectory
         Hear(audio);
     }
 
-    [AvaloniaFact]
+    [Fact]
     public void Playing_an_album_and_pausing_it_leaves_it_on_the_shelf_at_the_pause()
     {
         var album = Album("Blue", 5);
@@ -99,7 +98,7 @@ public class AlbumProgressPlaybackTests : PinnedDataDirectory
     }
 
     // Sampling an album: a few seconds of each song, skipping on.
-    [AvaloniaFact]
+    [Fact]
     public void Skipping_through_an_album_puts_nothing_on_the_shelf()
     {
         var album = Album("Blue", 5);
@@ -118,7 +117,7 @@ public class AlbumProgressPlaybackTests : PinnedDataDirectory
     // A tag that overstates the length leaves a song short of counting until
     // it ends, where it is counted after all - and still counts as the
     // second song heard, though by then the next one is starting.
-    [AvaloniaFact]
+    [Fact]
     public void A_song_counted_only_at_its_end_is_still_heard()
     {
         var album = Album("Blue", 4);
@@ -131,12 +130,11 @@ public class AlbumProgressPlaybackTests : PinnedDataDirectory
         Assert.Empty(vm.AlbumProgress.Entries);
 
         audio.RaiseEndReached();
-        Dispatcher.UIThread.RunJobs();
 
         Assert.Equal(album[2].Id, Assert.Single(vm.AlbumProgress.Entries).TrackId);
     }
 
-    [AvaloniaFact]
+    [Fact]
     public void The_last_song_ending_takes_the_album_off_the_shelf()
     {
         var album = Album("Blue", 3);
@@ -148,12 +146,11 @@ public class AlbumProgressPlaybackTests : PinnedDataDirectory
         Assert.Single(vm.AlbumProgress.Entries);
 
         audio.RaiseEndReached();
-        Dispatcher.UIThread.RunJobs();
 
         Assert.Empty(vm.AlbumProgress.Entries);
     }
 
-    [AvaloniaFact]
+    [Fact]
     public void Continue_playing_queues_the_album_and_starts_at_the_saved_place()
     {
         var blue = Album("Blue", 4);
@@ -184,7 +181,7 @@ public class AlbumProgressPlaybackTests : PinnedDataDirectory
 
     // Tapping the album that is already in the deck carries on rather than
     // rewinding it to the last place written down.
-    [AvaloniaFact]
+    [Fact]
     public void Continue_playing_the_album_already_loaded_just_resumes_it()
     {
         var album = Album("Blue", 4);
@@ -203,7 +200,7 @@ public class AlbumProgressPlaybackTests : PinnedDataDirectory
     }
 
     // The album playing shows a pause on its cover, and pressing it pauses.
-    [AvaloniaFact]
+    [Fact]
     public void Continue_playing_the_album_that_is_playing_pauses_it()
     {
         var album = Album("Blue", 4);
@@ -225,68 +222,5 @@ public class AlbumProgressPlaybackTests : PinnedDataDirectory
         audio.IsPlaying = false;
         audio.RaisePaused();
         Assert.False(item.IsPlaying);
-    }
-    // A clock whose one-shot timers go off when the test says so.
-    private sealed class ManualTimers : TimeProvider
-    {
-        private readonly List<TimerCallback> _pending = new();
-
-        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
-        {
-            _pending.Add(callback);
-            return new Timer(() => _pending.Remove(callback));
-        }
-
-        public void FireAll()
-        {
-            foreach (var callback in _pending.ToList())
-                callback(null);
-            _pending.Clear();
-        }
-
-        private sealed class Timer(Action dispose) : ITimer
-        {
-            public bool Change(TimeSpan dueTime, TimeSpan period) => true;
-            public void Dispose() => dispose();
-            public ValueTask DisposeAsync()
-            {
-                dispose();
-                return ValueTask.CompletedTask;
-            }
-        }
-    }
-
-    // Picked up from the shelf, an album stays under the pointer that
-    // clicked it for a while, then goes to the front where playing put it.
-    [AvaloniaFact]
-    public void A_resumed_album_keeps_its_place_on_the_shelf_until_the_hold_runs_out()
-    {
-        var blue = Album("Blue", 4);
-        var red = Album("Red", 4);
-        var vm = Playback(blue.Concat(red).ToList(), out var audio, out var library);
-        var timers = new ManualTimers();
-        using var home = new HomeViewModel(library, vm.AlbumProgress, vm, clock: timers);
-
-        vm.SetCurrentPlaylist(new Playlist("Now Playing Queue", blue));
-        PlayAndHear(vm, audio, blue[0], 0);
-        PlayAndHear(vm, audio, blue[1], 1);
-        vm.SetCurrentPlaylist(new Playlist("Now Playing Queue", red));
-        PlayAndHear(vm, audio, red[0], 0);
-        PlayAndHear(vm, audio, red[1], 1);
-
-        home.Rebuild();
-        Assert.Equal(new[] { "Red", "Blue" }, home.ContinuePlaying.Select(c => c.Tile.Name));
-
-        home.ResumeCommand.Execute(home.ContinuePlaying[1]);
-        // Playing it put it at the front of the tracker straight away.
-        Assert.Equal(AlbumProgressTracker.AlbumIdOf(blue[0]), vm.AlbumProgress.Entries[0].AlbumId);
-
-        home.Rebuild();
-        Assert.Equal(new[] { "Red", "Blue" }, home.ContinuePlaying.Select(c => c.Tile.Name));
-
-        timers.FireAll();
-        Dispatcher.UIThread.RunJobs();
-        home.Rebuild();
-        Assert.Equal(new[] { "Blue", "Red" }, home.ContinuePlaying.Select(c => c.Tile.Name));
     }
 }

@@ -48,55 +48,6 @@ public class HomeShelfSettingsTests : PinnedDataDirectory
         return new HomeViewModel(library, new AlbumProgressTracker(library), null, clock: new FixedClock());
     }
 
-    [AvaloniaFact]
-    public void Recently_added_shows_the_last_three_months_unless_told_otherwise()
-    {
-        using var home = Home([Album("Ten", 10), Album("Fifty", 50), Album("Hundred", 100), Album("Older", 400)]);
-
-        home.Rebuild();
-        Assert.Equal(new[] { "Ten", "Fifty" }, home.RecentlyAdded.Select(t => t.Name));
-
-        home.RecentlyAddedMonths = 12;
-        home.Rebuild();
-        Assert.Equal(new[] { "Ten", "Fifty", "Hundred" }, home.RecentlyAdded.Select(t => t.Name));
-    }
-
-    [AvaloniaFact]
-    public void Zero_hides_the_shelf()
-    {
-        using var home = Home([Album("Ten", 10, playedMinutesAgo: 5)]);
-
-        home.RecentlyPlayedLimit = 0;
-        home.RecentlyAddedMonths = 0;
-        home.Rebuild();
-
-        Assert.False(home.HasRecentlyPlayed);
-        Assert.False(home.HasRecentlyAdded);
-        Assert.True(home.ShowsNothingYet);
-    }
-
-    [AvaloniaFact]
-    public void The_filter_narrows_every_shelf_and_says_when_nothing_matches()
-    {
-        using var home = Home([Album("Blue", 10, playedMinutesAgo: 5), Album("Red", 20, playedMinutesAgo: 50)]);
-        home.Rebuild();
-        Assert.Equal(4, home.RecentlyPlayed.Count);
-
-        home.Filter = "red band";
-        home.Rebuild();
-        Assert.Equal(new[] { "Red 1", "Red 2" }, home.RecentlyPlayed.Select(r => r.Track.Title));
-        Assert.Equal(new[] { "Red" }, home.RecentlyAdded.Select(t => t.Name));
-
-        home.Filter = "green";
-        home.Rebuild();
-        Assert.True(home.ShowsNoMatches);
-        Assert.False(home.ShowsNothingYet);
-
-        home.Filter = "  ";
-        home.Rebuild();
-        Assert.Equal(4, home.RecentlyPlayed.Count);
-    }
-
     // Set on either head through MainViewModel, applied to the shelves and
     // saved - clamped first, so what is saved is what Home shows.
     [AvaloniaFact]
@@ -126,19 +77,6 @@ public class HomeShelfSettingsTests : PinnedDataDirectory
         Assert.Equal(2, parts.Main.Home.ContinuePlayingLimit);
         Assert.Equal(4, parts.Main.Home.RecentlyPlayedLimit);
         Assert.Equal(9, parts.Main.Home.RecentlyAddedMonths);
-    }
-
-    // The shelves come in the order Settings put them in, on either head.
-    [AvaloniaFact]
-    public void The_shelves_come_in_the_order_chosen()
-    {
-        using var home = Home(Enumerable.Range(0, 3).Select(i => Album($"A{i}", addedDaysAgo: i + 1, playedMinutesAgo: i * 10)));
-        home.Rebuild();
-
-        home.ShelfOrder = [HomeShelf.RecentlyAdded, HomeShelf.ContinuePlaying, HomeShelf.RecentlyPlayed];
-        var titles = HomeShelfRows.Build(home, columns: 4).OfType<HomeShelfHeaderRow>().Select(h => h.Title);
-
-        Assert.Equal(new[] { "Recently added", "Recently played" }, titles);
     }
 
     // A shelf dragged to a new place is there at once, and still there at the

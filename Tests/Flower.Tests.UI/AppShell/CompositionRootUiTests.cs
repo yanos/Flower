@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -44,7 +44,7 @@ namespace Flower.Tests.AppShell;
 // those services is inert, it is Start() that opens sockets and nothing here
 // calls it.
 [Collection("PlatformDataDirectory")]
-public class CompositionRootTests : PinnedDataDirectory
+public class CompositionRootUiTests : PinnedDataDirectory
 {
     private static ServiceProvider BuildContainer()
     {
@@ -66,35 +66,6 @@ public class CompositionRootTests : PinnedDataDirectory
             ValidateOnBuild = true,
             ValidateScopes = true,
         });
-    }
-
-    // Factory-lambda registrations are invisible to ValidateOnBuild - the
-    // container cannot see inside the lambda - so they are resolved for real
-    // here instead. These are exactly the registrations that read a file or a
-    // platform hook, which is why they are lambdas in the first place.
-    public static IEnumerable<object[]> EveryService() =>
-        new[]
-        {
-            typeof(LibraryStore), typeof(AppSettingsStore), typeof(PlaylistStore),
-            typeof(DeviceKeyStore), typeof(DeviceIdentityStore), typeof(DeviceNicknameStore),
-            typeof(TrustedPeerStore), typeof(PlaylistSyncStateStore), typeof(ServerStarBaselineStore),
-            typeof(InMemoryLogStore),
-            typeof(AppSettings), typeof(Library), typeof(MainPlaylist),
-            typeof(Importer.IMusicImporter), typeof(ColumnManager), typeof(AlbumArtLoader),
-            typeof(DeviceSigningKey), typeof(DeviceIdentity),
-            typeof(NetworkDiscoveryService), typeof(PlaylistSyncService),
-            typeof(LibrarySyncService), typeof(LibraryDownloadService), typeof(PeerPairingService),
-            typeof(PairedServerReachability), typeof(PeerTrackResolver),
-            typeof(LibraryMirrorService),
-        }.Select(t => new object[] { t });
-
-    [Theory]
-    [MemberData(nameof(EveryService))]
-    public void Every_registered_service_resolves(Type serviceType)
-    {
-        using var provider = BuildContainer();
-
-        Assert.NotNull(provider.GetRequiredService(serviceType));
     }
 
     // The ViewModels resolve last because they are the widest part of the
@@ -200,22 +171,6 @@ public class CompositionRootTests : PinnedDataDirectory
         }
     }
 
-    // Everything is registered AddSingleton, and several of these are shared
-    // mutable state that only works because of it: DeviceIdentity is edited in
-    // place when the user renames the device and every service reads .Alias
-    // live off the same instance, and AppSettings is the object the settings
-    // UI mutates and MainWindow.Closing persists.
-    [Fact]
-    public void Shared_state_is_a_single_instance_across_the_whole_container()
-    {
-        using var provider = BuildContainer();
-
-        Assert.Same(provider.GetRequiredService<AppSettings>(), provider.GetRequiredService<AppSettings>());
-        Assert.Same(provider.GetRequiredService<DeviceIdentity>(), provider.GetRequiredService<DeviceIdentity>());
-        Assert.Same(provider.GetRequiredService<Library>(), provider.GetRequiredService<Library>());
-
-    }
-
     // The same AppSettings instance the container hands out has to be the one
     // every consumer captured - two separate loads of settings.json would mean
     // the Settings UI and MainWindow.Closing writing over each other. Asserted
@@ -232,21 +187,6 @@ public class CompositionRootTests : PinnedDataDirectory
 
         Assert.Equal(settings.ShareLogsWithPairedServer,
             provider.GetRequiredService<MainViewModel>().ShareLogsWithPairedServer);
-    }
-
-    // Fingerprint is the hash of the signing key's public key, not an
-    // independent random value (see DeviceIdentityStore.Load) - which is only
-    // true because the DeviceIdentity factory resolves DeviceSigningKey first
-    // and passes its Fingerprint in. Registering the two independently would
-    // give this device an identity its own signatures do not verify against.
-    [Fact]
-    public void DeviceIdentity_is_derived_from_the_signing_key()
-    {
-        using var provider = BuildContainer();
-
-        Assert.Equal(
-            provider.GetRequiredService<DeviceSigningKey>().Fingerprint,
-            provider.GetRequiredService<DeviceIdentity>().Fingerprint);
     }
 
     // The browser head, which registers none of the P2P sync stack at all (see
@@ -293,23 +233,5 @@ public class CompositionRootTests : PinnedDataDirectory
 
         Assert.NotNull(provider.GetRequiredService<AlbumArtLoader>());
         Assert.NotNull(provider.GetRequiredService<MainViewModel>());
-    }
-
-    // The container's ILoggerFactory registration is what makes an injected
-    // ILogger<T> and Flower.Core's static-field loggers the same pipeline
-    // (App.OnFrameworkInitializationCompleted registers the instance
-    // AppLogging is using). A container that quietly builds its own factory
-    // would send half the app's logs somewhere else.
-    [Fact]
-    public void An_explicitly_registered_logger_factory_wins_over_AddLoggings_own()
-    {
-        var factory = LoggerFactory.Create(_ => { });
-        var services = new ServiceCollection()
-            .AddLogging(builder => builder.AddSerilog(Serilog.Core.Logger.None))
-            .AddSingleton<ILoggerFactory>(factory);
-
-        using var provider = services.BuildServiceProvider();
-
-        Assert.Same(factory, provider.GetRequiredService<ILoggerFactory>());
     }
 }

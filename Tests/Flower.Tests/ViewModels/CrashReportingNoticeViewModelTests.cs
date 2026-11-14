@@ -20,14 +20,6 @@ public class CrashReportingNoticeViewModelTests
     }
 
     [Fact]
-    public void A_new_install_is_told()
-    {
-        var host = new Host();
-
-        Assert.NotNull(host.Offer());
-    }
-
-    [Fact]
     public void Closing_it_keeps_reports_on_and_is_not_asked_again()
     {
         var host = new Host();

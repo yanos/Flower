@@ -3,9 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 
-using Avalonia.Headless.XUnit;
-using Avalonia.Threading;
-
 using Flower.Audio;
 using Flower.Models;
 using Flower.Persistence;
@@ -53,14 +50,6 @@ public class EqualizerViewModelTests : PinnedDataDirectory
         Assert.Contains(nameof(EqualizerBandViewModel.GainDb), raised);
         Assert.NotNull(audio.LastAppliedEqualizer);
         Assert.NotSame(before, audio.LastAppliedEqualizer);
-    }
-
-    [Fact]
-    public void It_builds_one_band_per_equalizer_band()
-    {
-        var vm = Make(out _);
-
-        Assert.Equal(Equalizer.BandCount, vm.Bands.Count);
     }
 
     // First run: no EqualizerSettings at all. The ViewModel installs a flat,

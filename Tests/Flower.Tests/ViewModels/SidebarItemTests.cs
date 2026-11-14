@@ -3,9 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 
-using Avalonia.Headless.XUnit;
-using Avalonia.Threading;
-
 using Flower.Audio;
 using Flower.Models;
 using Flower.Persistence;

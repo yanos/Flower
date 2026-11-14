@@ -5,8 +5,6 @@ using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
 
-using Avalonia.Headless.XUnit;
-
 using Flower.Models;
 using Flower.Services;
 using Flower.ViewModels;

@@ -1,7 +1,5 @@
 using System.Collections.Generic;
 using System.Linq;
-using Avalonia.Controls;
-using Avalonia.Headless.XUnit;
 using Flower.Models;
 using Flower.ViewModels;
 using Xunit;
@@ -61,27 +59,5 @@ public class SidebarSelectionTests
     public void Deselecting_the_only_row_keeps_it()
     {
         Assert.Equal(new[] { _one }, SidebarSelection.Settle(new SidebarItem[0], new SidebarItem[0], _one));
-    }
-
-    // MainView collapses a selection through SelectedItem so the track list
-    // moves once rather than through every row removed - which only works if
-    // the setter replaces a multiple selection instead of adding to it.
-    [AvaloniaFact]
-    public void Setting_SelectedItem_on_a_multiple_selection_ListBox_replaces_the_selection()
-    {
-        var list = new ListBox
-        {
-            SelectionMode = SelectionMode.Multiple,
-            ItemsSource = new[] { _songs, _one, _two },
-        };
-        var window = new Window { Content = list };
-        window.Show();
-        list.SelectedItems!.Add(_one);
-        list.SelectedItems.Add(_two);
-
-        list.SelectedItem = _songs;
-
-        Assert.Equal(new object[] { _songs }, list.SelectedItems.Cast<object>());
-        window.Close();
     }
 }

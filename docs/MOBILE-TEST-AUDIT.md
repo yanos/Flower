@@ -1,15 +1,16 @@
 # Mobile test cleanup
 
-Across both passes, 136 test methods are removed or consolidated and 101 are
-relocated from `Flower.Tests.UI` to `Flower.Tests`. The UI project has 237 fewer
+Across three passes, 144 test methods are removed or consolidated and 432 are
+relocated from `Flower.Tests.UI` to `Flower.Tests`. The UI project has 576 fewer
 test methods. Counts here refer to methods, with a theory counted once; runner
 case counts include its individual data rows.
 
 | Pass | Removed/consolidated | Moved to shared | UI reduction |
 | --- | ---: | ---: | ---: |
 | Initial cleanup, committed as `59fdca0` | 31 | 35 | 66 |
-| Broader cleanup and playback separation | 105 | 66 | 171 |
-| **Total** | **136** | **101** | **237** |
+| Broader cleanup and playback separation, committed as `3700083` | 105 | 66 | 171 |
+| Remaining model/helper separation | 8 | 331 | 339 |
+| **Total** | **144** | **432** | **576** |
 
 The initial cleanup moved these pure checks:
 
@@ -90,3 +91,49 @@ without claiming to simulate a drag or tap.
 
 The broader pass changes test code and documentation only; it introduces no
 production behavior changes or new scheduling abstractions.
+
+The third pass moves all 298 remaining ordinary test methods (after two
+redundant checks are removed) into the shared project and converts another 33
+Avalonia test methods to ordinary Facts/Theories. No ordinary Fact/Theory methods
+remain in the UI project. This is an execution distinction: the shared project
+also has integration coverage, including scratch-file/tag reading, persistence,
+service registration and real timer behavior. Moving an already ordinary test
+changes its classification, without promising a runtime improvement.
+
+| Third-pass area moved to shared | Methods |
+| --- | ---: |
+| Home shelf rules, album progress and resume commands | 41 |
+| Selection, keyboard and gesture state machines | 50 |
+| Menu construction, playlist management and drop placement | 33 |
+| Track metadata, row/tile reuse, current-track state and art identity | 63 |
+| Settings, equalizer and column models | 53 |
+| Updates, renaming and crash-report notice | 19 |
+| Device/sidebar state, history, logging, iTunes offer decisions, service registration and subscriptions | 72 |
+| **Total** | **331** |
+
+The 33 actual conversions are AI settings (16), explicit Home rebuilds (4),
+album-progress/playback behavior (7), current-track metadata and repeat/shuffle
+notifications (5), and server emoji forwarding (1). Playback tests use the
+existing inline callback hooks and dispose their collaborators. Timer delivery,
+position-event marshalling, asynchronous art delivery and the Home shelf hold
+remain in dedicated dispatcher fixtures. Mixed files get distinct UI class names
+so the combined iOS assembly includes every method exactly once.
+
+The third pass also removes seven methods and consolidates one:
+
+- Drop the equalizer band-count check; first-run defaults already checks it.
+- Drop the crash notice existence check; both response flows require it.
+- Drop the app-harness test that only toggles playback-bar placement in settings.
+- Drop the two-dialog and non-dialog tooltip variations; retain the main modal
+  open/close regression.
+- Drop mobile Track Info's play-count/date and server-name display checks;
+  retain batch editing and saving while stepping through songs.
+- Fold the screen-revisit population check into the entrance/population flow,
+  reusing its window and library setup.
+
+Validation after the third pass: 2,553 shared cases and 435 UI cases pass, with
+zero failures or skips. The UI runner count falls from 830 to 435; theory data
+rows explain why this differs from the 339-method reduction. Total cases fall
+by eight, from 2,996 to 2,988. The combined iOS execution assembly is also built
+to check source inclusion and class-name collisions; this does not execute tests
+on an iOS runtime.

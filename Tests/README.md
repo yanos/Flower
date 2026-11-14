@@ -29,7 +29,8 @@ stable; select a subject by its project.
 Use `Flower.Tests` for ordinary unit tests that can call production logic
 without a window, dispatcher pumping, or `MainViewModelHarness`. This includes
 mobile album metadata, search history and suggestions, tab editing, filter
-models, and navigation-frame classification. Keep input, focus, bindings,
+models, navigation history, selection/gesture state machines, menu construction,
+Home shelf rules, settings models and current-track metadata. Keep input, focus, bindings,
 virtualization, and command/navigation integration in `Flower.Tests.UI`.
 Both projects currently import the common headless infrastructure; placing a
 unit test in the shared project does not require removing those shared packages.
@@ -39,6 +40,10 @@ and sinks; some retain a headless dispatcher for real event delivery. That is
 integration coverage, distinct from ordinary unit tests and UI input/binding
 checks. The UI project retains focused tests of backend events reaching the
 dispatcher and real queue views accepting input.
+All ordinary Fact/Theory methods now live in the shared project. Mixed fixtures
+are split so UI-specific tests keep their window, control or dispatcher setup.
+Shared integration tests may still use scratch storage, timers or headless
+platform services; project placement alone does not make a test a unit test.
 The cleanup and its counts are recorded in
 [`docs/MOBILE-TEST-AUDIT.md`](../docs/MOBILE-TEST-AUDIT.md).
 

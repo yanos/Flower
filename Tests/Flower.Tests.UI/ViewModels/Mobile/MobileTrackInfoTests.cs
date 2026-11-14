@@ -18,80 +18,11 @@ using Xunit;
 
 namespace Flower.Tests.ViewModels.Mobile;
 
-// The phone's Track Info sheet shows the same listening record the desktop
-// window does - how often a song has been played, and when it last was -
-// which it had no rows for at all.
+// The phone's Track Info sheet edits a batch and saves while stepping
+// through a song list, through the actual controls and bindings.
 [Collection("PlatformDataDirectory")]
 public class MobileTrackInfoTests : PinnedDataDirectory
 {
-    [AvaloniaFact]
-    public void Track_info_shows_the_play_count_and_when_it_was_last_played()
-    {
-        var lastPlayed = new DateTimeOffset(2026, 9, 12, 21, 30, 0, TimeSpan.Zero);
-        var played = new Track
-        {
-            Title = "Played", Path = "/music/played.mp3", Album = "A", Artists = "X",
-            PlayCount = 3, ImportedPlayCount = 4, LastPlayedAt = lastPlayed,
-        };
-        var never = new Track { Title = "Never", Path = "/music/never.mp3", Album = "A", Artists = "X" };
-        var tracks = new List<Track> { played, never };
-        using var parts = MainViewModelHarness.BuildMobile(new Library(tracks), new MainPlaylist(tracks));
-        var vm = parts.Mobile;
-
-        var window = new Window { Width = 390, Height = 844 };
-        window.Styles.Add(new FluentTheme());
-        window.Content = new MobileMainView { DataContext = vm };
-        window.Show();
-        vm.SelectTabCommand.Execute(nameof(MobileTab.Songs));
-        Pump(500);
-
-        Show(vm, "Played");
-        var sheet = FindSheet(window);
-        Assert.Equal("7", Value(sheet, "PlayCountValue"));
-        Assert.Same(played, vm.ActionTarget);
-        Assert.False(string.IsNullOrWhiteSpace(Value(sheet, "LastPlayedValue")));
-
-        vm.CloseSheetCommand.Execute(null);
-        Show(vm, "Never");
-        Assert.Equal("0", Value(sheet, "PlayCountValue"));
-        Assert.Same(never, vm.ActionTarget);
-        Assert.Null(vm.ActionTarget!.LastPlayedAt);
-
-        Pump(300);
-        window.Close();
-    }
-
-    // A song on the paired server names the server where a file path would
-    // be.
-    [AvaloniaFact]
-    public void A_song_on_the_paired_server_names_the_server_for_its_file()
-    {
-        var local = new Track { Title = "Local", Path = "/music/local.mp3", Album = "A", Artists = "X", Year = "2003", Genre = "Electronic" };
-        var elsewhere = new Track { Title = "Elsewhere", Album = "B", Artists = "Y", OriginDeviceFingerprint = "server-fp" };
-        var tracks = new List<Track> { local, elsewhere };
-        using var parts = MainViewModelHarness.BuildMobile(new Library(tracks), new MainPlaylist(tracks));
-        parts.Parts.AppSettings.PairedServerFingerprint = "server-fp";
-        parts.Parts.AppSettings.PairedServerAlias = "Lambda";
-        var vm = parts.Mobile;
-
-        var window = new Window { Width = 390, Height = 844 };
-        window.Styles.Add(new FluentTheme());
-        window.Content = new MobileMainView { DataContext = vm };
-        window.Show();
-        vm.SelectTabCommand.Execute(nameof(MobileTab.Songs));
-        Pump(500);
-
-        Show(vm, "Local");
-        var sheet = FindSheet(window);
-
-        vm.CloseSheetCommand.Execute(null);
-        Show(vm, "Elsewhere");
-        Assert.Equal("Lambda", Value(sheet, "PathValue"));
-
-        Pump(300);
-        window.Close();
-    }
-
     // Track Info from the album menu edits every song of the album: the
     // common tags in the boxes, "Multiple values" where they differ, and only
     // what is typed applied to them all - the titles stay their own.
@@ -215,8 +146,6 @@ public class MobileTrackInfoTests : PinnedDataDirectory
 
     private static TrackInfoView FindSheet(Window window) =>
         Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(window).OfType<TrackInfoView>().Single();
-
-    private static string? Value(TrackInfoView sheet, string name) => sheet.FindControl<TextBlock>(name)!.Text;
 
     private static void Pump(int milliseconds)
     {
