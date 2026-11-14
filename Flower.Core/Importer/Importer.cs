@@ -34,10 +34,12 @@ namespace Flower.Importer
             _logger = logger;
         }
 
-        public Task<List<Track>> ImportAsync(IEnumerable<string>? libraryPaths = null)
-            => Task.Run(() => Import(libraryPaths));
+        public Task<List<Track>> ImportAsync(IEnumerable<string>? libraryPaths = null, IProgress<SongProgress>? progress = null)
+            => Task.Run(() => Import(libraryPaths, progress));
 
-        public List<Track> Import(IEnumerable<string>? libraryPaths = null)
+        // progress is called on the scanning thread, once the files are all
+        // found with (0, total) and then after each one is read.
+        public List<Track> Import(IEnumerable<string>? libraryPaths = null, IProgress<SongProgress>? progress = null)
         {
             var tracks = new List<Track>();
 
@@ -48,17 +50,40 @@ namespace Flower.Importer
                 return tracks;
             }
 
-            // By each folder's own rule (PathRules). Ignoring case everywhere
-            // took "Song.flac" for "song.flac" on a filesystem where they are
-            // two files, and the second was never seen at all.
-            var seenFiles = new HashSet<string>(PathRules.For(paths));
+            // Every file first, then the reading: the total is what lets the
+            // status bar say how many are left. Listing is the quick half -
+            // reading tags opens every file, listing touches only the folders.
+            var files = FilesToScan(paths);
+            progress?.Report(new SongProgress(0, files.Count));
 
-            foreach (var path in paths)
+            // What each folder's cover file measures, so an album with no
+            // embedded art lists its folder once rather than once per song.
+            var coverFiles = new Dictionary<string, ArtworkDimensions>(StringComparer.Ordinal);
+
+            for (var i = 0; i < files.Count; i++)
             {
-                ImportFrom(path, tracks, seenFiles);
+                if (ImportFile(files[i], coverFiles) is { } track)
+                    tracks.Add(track);
+                progress?.Report(new SongProgress(i + 1, files.Count));
             }
 
             return tracks;
+        }
+
+        private List<string> FilesToScan(List<string> roots)
+        {
+            // By each folder's own rule (PathRules). Ignoring case everywhere
+            // took "Song.flac" for "song.flac" on a filesystem where they are
+            // two files, and the second was never seen at all.
+            var seenFiles = new HashSet<string>(PathRules.For(roots));
+            var files = new List<string>();
+            foreach (var root in roots)
+            {
+                // Skip files already found under an overlapping configured path.
+                files.AddRange(ScannableFiles(root, root, _logger).Where(seenFiles.Add));
+            }
+
+            return files;
         }
 
         // The folders a scan of these settings actually walks - public because
@@ -132,25 +157,6 @@ namespace Flower.Importer
                 .Where(f => !TagFileSave.ClearIfLeftover(f, logger))
                 .Where(IsImportable)
                 .Where(f => !IsUnderHiddenFolder(root, f));
-
-        private void ImportFrom(string path, List<Track> tracks, HashSet<string> seenFiles)
-        {
-            var files = ScannableFiles(path, path, _logger);
-
-            // What each folder's cover file measures, so an album with no
-            // embedded art lists its folder once rather than once per song.
-            var coverFiles = new Dictionary<string, ArtworkDimensions>(StringComparer.Ordinal);
-
-            foreach (var file in files)
-            {
-                // Skip files already imported from an overlapping configured path.
-                if (!seenFiles.Add(file))
-                    continue;
-
-                if (ImportFile(file, coverFiles) is { } track)
-                    tracks.Add(track);
-            }
-        }
 
         // One file read into a Track, or null when it cannot be - the per-file
         // half of a scan, and the whole of what an upload needs (see

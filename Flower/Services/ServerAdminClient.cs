@@ -28,9 +28,11 @@ public sealed record AdminDeviceDto(
 public sealed record AdminPairingCodeDto(string Code, DateTimeOffset ExpiresAt, bool GrantsAdmin, string Invite, string BrowserUrl);
 // UnwritableFolders: the library folders the server found it cannot write to at
 // its last scan (LibraryWriteAccess). Null from a server that predates the field.
+// SongsScanned of SongsToScan: how far the scan in flight has got, both null
+// while none runs or one is still listing its folders.
 public sealed record AdminLibraryStatusDto(
     bool Rescanning, int TrackCount, DateTimeOffset? LastCompletedAt, string? LastError,
-    List<string>? UnwritableFolders = null);
+    List<string>? UnwritableFolders = null, int? SongsScanned = null, int? SongsToScan = null);
 public sealed record AdminLogEntryDto(DateTimeOffset Timestamp, string Level, string? SourceContext, string Message, string? Exception);
 
 // One device's pushed log snapshot. ReceivedAt is load-bearing rather than

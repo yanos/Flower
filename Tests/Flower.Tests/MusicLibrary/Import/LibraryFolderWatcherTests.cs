@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
+using Flower.Importer;
 using Flower.Models;
 using Flower.Services;
 using Flower.Tests.TestSupport;
@@ -78,6 +79,22 @@ public class LibraryFolderWatcherTests : IDisposable
 
         Assert.Equal("One", Assert.Single(_library.Tracks).Title);
         Assert.Equal(0, _rescans);
+    }
+
+    // A drop's second half: the songs it copied in, read straight into the
+    // library, counted for the status bar. A file named twice is read once.
+    [Fact]
+    public async Task Adding_files_reports_each_one_read_of_all_given()
+    {
+        using var watcher = NewWatcher();
+        var one = Song("Artist/Album", "one.wav", "One");
+        var two = Song("Artist/Album", "two.wav", "Two");
+        var progress = new RecordingProgress<SongProgress>();
+
+        var added = await watcher.AddFilesAsync([one, two, one], progress);
+
+        Assert.Equal(2, added);
+        Assert.Equal([new(0, 2), new(1, 2), new(2, 2)], progress.Reports);
     }
 
     [Fact]

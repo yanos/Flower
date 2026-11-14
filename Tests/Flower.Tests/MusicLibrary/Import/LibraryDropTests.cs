@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 
+using Flower.Importer;
 using Flower.Services;
 using Flower.Tests.TestSupport;
 
@@ -65,6 +66,22 @@ public class LibraryDropTests : IDisposable
         Assert.True(File.Exists(copy));
         Assert.True(File.Exists(source));
         Assert.Equal(1, result.Copied);
+    }
+
+    // Copying an album off a slow drive is the part of a drop that takes the
+    // time, so the count covers every song dropped: the ones copied in and
+    // the ones already in the library alike.
+    [Fact]
+    public async Task Dropping_reports_each_song_dealt_with_of_all_dropped()
+    {
+        var copied = Song(Elsewhere, "Thunderstruck.wav", "Live: At Donington", "AC/DC");
+        var inPlace = Song(Path.Combine(Library, "AC_DC", "Back in Black"), "Hells Bells.wav", "Back in Black", "AC/DC");
+        var progress = new RecordingProgress<SongProgress>();
+
+        var result = await NewDrop().PrepareAsync([copied, inPlace], progress);
+
+        Assert.Equal(1, result.Copied);
+        Assert.Equal([new(0, 2), new(1, 2), new(2, 2)], progress.Reports);
     }
 
     [Fact]

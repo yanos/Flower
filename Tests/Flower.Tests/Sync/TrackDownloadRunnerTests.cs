@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 
 using Flower.Models;
 using Flower.Services;
+using Flower.Tests.TestSupport;
 using Flower.ViewModels;
 
 using Xunit;
@@ -132,7 +133,7 @@ public class TrackDownloadRunnerTests
         var runner = new TrackDownloadRunner(
             _ => Task.FromResult(TrackDownloadResult.Downloaded),
             _ => null,
-            _ => { busyScopes++; return new NoopScope(); });
+            _ => { busyScopes++; return new RecordingBusyScope(); });
 
         await runner.DownloadAllAsync([Downloaded("A")]);
 
@@ -143,7 +144,7 @@ public class TrackDownloadRunnerTests
     [Fact]
     public async Task BatchOpensOneBusyScopeAndClosesIt()
     {
-        var scope = new NoopScope();
+        var scope = new RecordingBusyScope();
         var runner = new TrackDownloadRunner(
             _ => Task.FromResult(TrackDownloadResult.Downloaded),
             _ => null,
@@ -152,6 +153,25 @@ public class TrackDownloadRunnerTests
         await runner.DownloadAllAsync([Placeholder("A"), Placeholder("B")]);
 
         Assert.True(scope.Disposed);
+    }
+
+    // An album over a slow connection is minutes, so the status bar counts
+    // each song as it ends - a failed one included, or the count would stop
+    // short of its total.
+    [Fact]
+    public async Task BatchCountsEachSongAsItEnds()
+    {
+        var scope = new RecordingBusyScope();
+        var runner = new TrackDownloadRunner(
+            track => Task.FromResult(track.Title == "B" ? TrackDownloadResult.Failed : TrackDownloadResult.Downloaded),
+            _ => null,
+            _ => scope);
+
+        await runner.DownloadAllAsync([Placeholder("A"), Placeholder("B"), Placeholder("C")]);
+
+        Assert.Equal(
+            ["Downloading: 1 of 3 songs", "Downloading: 2 of 3 songs", "Downloading: 3 of 3 songs"],
+            scope.Said.Order(StringComparer.Ordinal));
     }
 
     // The icon a download leaves behind, which is none: the catalog does not
@@ -275,10 +295,4 @@ public class TrackDownloadRunnerTests
         Tracks = [Placeholder("A"), Placeholder("B")],
         Clock = new AnimationClock(() => TimeSpan.Zero),
     };
-
-    private sealed class NoopScope : IDisposable
-    {
-        public bool Disposed { get; private set; }
-        public void Dispose() => Disposed = true;
-    }
 }

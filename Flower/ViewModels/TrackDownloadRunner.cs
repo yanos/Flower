@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
+using Flower.Importer;
 using Flower.Models;
 using Flower.Services;
 
@@ -23,7 +24,7 @@ public sealed class TrackDownloadRunner : ViewModelBase
 {
     private readonly Func<Track, Task<TrackDownloadResult>> _download;
     private readonly Func<string, TrackRowViewModel?> _resolveRow;
-    private readonly Func<string?, IDisposable>? _beginBusyScope;
+    private readonly Func<string?, IBusyScope>? _beginBusyScope;
 
     // resolveRow maps a Track.SyncKey back to whichever row currently shows it,
     // deliberately re-resolved per download rather than captured up front - see
@@ -31,7 +32,7 @@ public sealed class TrackDownloadRunner : ViewModelBase
     public TrackDownloadRunner(
         Func<Track, Task<TrackDownloadResult>> download,
         Func<string, TrackRowViewModel?> resolveRow,
-        Func<string?, IDisposable>? beginBusyScope = null)
+        Func<string?, IBusyScope>? beginBusyScope = null)
     {
         _download       = download;
         _resolveRow     = resolveRow;
@@ -162,8 +163,14 @@ public sealed class TrackDownloadRunner : ViewModelBase
         IsBulkDownloading = true;
         var allSucceeded = true;
         var busy = _beginBusyScope?.Invoke(byKey.Count == 1
-            ? "Downloading 1 track…"
-            : $"Downloading {byKey.Count} tracks…");
+            ? "Downloading 1 song…"
+            : $"Downloading {byKey.Count} songs…");
+        // Counted as each one ends, however it ends: an album over a slow
+        // connection is minutes, and "Downloading 14 songs…" all that time
+        // says nothing about how much of it is left. A batch of one has
+        // nothing to count.
+        var counting = byKey.Count > 1 ? busy?.CountingSongs("Downloading") : null;
+        var finished = 0;
         try
         {
             using var throttle = new SemaphoreSlim(MaxConcurrentDownloads);
@@ -184,6 +191,7 @@ public sealed class TrackDownloadRunner : ViewModelBase
                 finally
                 {
                     throttle.Release();
+                    counting?.Report(new SongProgress(Interlocked.Increment(ref finished), byKey.Count));
                 }
             });
             await Task.WhenAll(tasks);

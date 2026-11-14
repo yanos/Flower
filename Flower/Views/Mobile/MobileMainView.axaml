@@ -607,6 +607,33 @@
                 Spacing="8"
                 SizeChanged="BottomChrome_SizeChanged">
 
+    <!-- Work going on that the phone would otherwise not mention: a long scan,
+         an album downloading, songs uploading to the server - what the
+         desktop's status tab says, as a small pill of the ovals' look over the
+         mini player. Only for work that has gone on a while, and kept a
+         moment after it ends (MainViewModel.BusyStatus). Not over Now
+         Playing, which this stack is drawn above and whose volume slider
+         ends just over the tabs. Touches pass through it to the list. -->
+    <Border x:Name="BusyStatusPill"
+            Classes="floating"
+            HorizontalAlignment="Center"
+            Margin="12,0"
+            Padding="16,0"
+            BoxShadow="{DynamicResource AppOvalShadow}"
+            IsHitTestVisible="False">
+      <Border.IsVisible>
+        <MultiBinding Converter="{x:Static avc:BoolConverters.And}">
+          <Binding Path="Main.BusyStatus.IsShown" />
+          <Binding Path="!IsShowingNowPlaying" />
+        </MultiBinding>
+      </Border.IsVisible>
+      <TextBlock Text="{Binding Main.BusyStatus.Text}"
+                 FontSize="13"
+                 Opacity="0.75"
+                 VerticalAlignment="Center"
+                 TextTrimming="CharacterEllipsis" />
+    </Border>
+
     <!-- Mini player - an oval of its own, with the same floating look and the
          same length as the tabs under it: one shape repeated, rather than two
          that are nearly the same width. Its art is round to sit in the oval's

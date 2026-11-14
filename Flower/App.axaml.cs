@@ -1227,7 +1227,7 @@ public partial class App : Application
                 // Minus anything removed from the library on purpose, before
                 // the queue sees it as well as the library - see
                 // Library.RemoveTracks.
-                var freshTracks = library.WithoutExcluded(await importer.ImportAsync(scanPaths));
+                var freshTracks = library.WithoutExcluded(await importer.ImportAsync(scanPaths, busy.CountingSongs("Refreshing library")));
                 rescanLogger.LogInformation("Startup rescan found {TrackCount} tracks in {ElapsedMs}ms", freshTracks.Count, stopwatch.ElapsedMilliseconds);
 
                 // A tab has no system fonts, so the ones this catalog's text
@@ -1461,12 +1461,19 @@ public partial class App : Application
         mainViewModel.BrowserPairing.AfterPaired = BrowserLocation.Reload;
     }
 
-    internal static SettingsViewModel CreateOriginServerSettings() =>
-        new(
-            new RemoteServerSettingsBackend(CreateOriginAdminClient()),
+    // beginBusyScope is the tab's own status bar, where a rescan the page
+    // starts is followed - see ServerRescanWatch.
+    internal static SettingsViewModel CreateOriginServerSettings(Func<string?, IBusyScope>? beginBusyScope)
+    {
+        var client = CreateOriginAdminClient();
+        var rescans = new ServerRescanWatch(client.GetLibraryStatusAsync, beginBusyScope, "Scanning the server",
+            logger: AppLogging.CreateLogger("Flower.Browser"));
+        return new(
+            new RemoteServerSettingsBackend(client, rescans),
             Ioc.Default.GetRequiredService<AppSettings>(),
             Ioc.Default.GetRequiredService<AppSettingsStore>(),
             AppLogging.CreateTypedLogger<SettingsViewModel>());
+    }
 
     // The admin API of the server this page was served from, signed with the
     // tab's own key.

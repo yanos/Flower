@@ -20,6 +20,10 @@ public sealed class BusyState
 {
     private int _count;
     private string? _message;
+    // A scope's latest restatement (Scope.Say), and whether a post carrying it
+    // to the UI thread is already queued - see Restate.
+    private string? _latest;
+    private int _restatePosted;
 
     public bool    IsBusy  => _count > 0;
     public string? Message => _message;
@@ -41,7 +45,7 @@ public sealed class BusyState
     // the UI thread instead of unconditionally deferring, so the spinner and
     // message show up as soon as this method returns rather than depending on
     // something else happening to pump the dispatcher queue first.
-    public IDisposable BeginScope(string? message = null)
+    public Scope BeginScope(string? message = null)
     {
         Interlocked.Increment(ref _count);
         Notify(message);
@@ -62,10 +66,42 @@ public sealed class BusyState
             Dispatcher.UIThread.Post(Raise);
     }
 
-    private sealed class Scope : IDisposable
+    // Coalesced, unlike Notify: a scan reports after every file, thousands a
+    // second off a fast disk, and each one posted would be a queue of UI-thread
+    // work saying numbers already out of date. At most one post is queued at a
+    // time, and it carries whatever was said last by the time it runs.
+    // Dropping the ones in between is safe here and not in Notify, because
+    // these never start or end the work - Notify's begin and end each have to
+    // land, or a brief scope would never show.
+    private void Restate(string message)
+    {
+        Volatile.Write(ref _latest, message);
+        if (Dispatcher.UIThread.CheckAccess())
+            RaiseLatest();
+        else if (Interlocked.Exchange(ref _restatePosted, 1) == 0)
+            Dispatcher.UIThread.Post(RaiseLatest);
+    }
+
+    private void RaiseLatest()
+    {
+        // Cleared before reading, so a restatement written after the read
+        // queues a post of its own rather than being left unsaid.
+        Interlocked.Exchange(ref _restatePosted, 0);
+        // Landing after the work ended: the end's own notification stands.
+        if (!IsBusy)
+            return;
+        _message = Volatile.Read(ref _latest);
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    public sealed class Scope : IBusyScope
     {
         private readonly BusyState _owner;
         internal Scope(BusyState owner) => _owner = owner;
+
+        // From any thread - see Restate.
+        public void Say(string message) => _owner.Restate(message);
+
         public void Dispose()
         {
             if (Interlocked.Decrement(ref _owner._count) == 0)

@@ -58,7 +58,9 @@ public class LibraryImportService(
             stored.Count, library.Playlists.Count);
     }
 
-    public async Task RescanAsync(CancellationToken ct = default)
+    // progress hears each song file read, of all those found - see
+    // LibraryRescanCoordinator.Progress.
+    public async Task RescanAsync(CancellationToken ct = default, IProgress<SongProgress>? progress = null)
     {
         var importer = new Flower.Importer.Importer(importerLogger);
         // CurrentValue, re-read on every scan: the library folders are editable
@@ -73,7 +75,7 @@ public class LibraryImportService(
         // So this scan, and every request after it, matches paths the way
         // these folders' filesystems compare names - see PathRules.
         library.UsePathRules(Flower.Services.PathRules.For(Flower.Importer.Importer.ScanRoots(libraryPaths)));
-        var imported = await importer.ImportAsync(libraryPaths);
+        var imported = await importer.ImportAsync(libraryPaths, progress);
         logger.LogInformation(
             "Importer found {Count} tracks across {PathCount} configured path(s)", imported.Count, libraryPaths.Count);
 

@@ -127,6 +127,27 @@ public class ImporterTests : IDisposable
             tracks.Select(t => Path.GetFileName(t.Path)).OrderBy(n => n, StringComparer.Ordinal));
     }
 
+    // What the status bar counts down: every file the scan will read, found
+    // up front, then one more done after each. A file under two configured
+    // folders is one song to read, and one that will not read is still one
+    // dealt with - or the count would stop short of its total.
+    [Fact]
+    public void Import_reports_each_song_read_of_all_it_found()
+    {
+        var album = Dir("artist", "album");
+        Audio(_root, "top.wav");
+        Audio(album, "one.wav");
+        File.WriteAllText(Path.Combine(album, "broken.mp3"), "not audio");
+        var progress = new RecordingProgress<SongProgress>();
+
+        var tracks = NewImporter().Import([_root, album], progress);
+
+        Assert.Equal(2, tracks.Count);
+        Assert.Equal(
+            [new(0, 3), new(1, 3), new(2, 3), new(3, 3)],
+            progress.Reports);
+    }
+
     [Fact]
     public void Import_keeps_only_supported_audio_extensions()
     {

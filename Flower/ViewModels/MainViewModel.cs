@@ -1091,6 +1091,12 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public bool    IsBusy      => _busy.IsBusy;
     public string? BusyMessage => _busy.Message;
 
+    // The phone's status pill over the same work (see DelayedBusyStatus).
+    // Made on first use: the desktop has its status tab instead, and never
+    // asks.
+    private DelayedBusyStatus? _busyStatus;
+    public DelayedBusyStatus BusyStatus => _busyStatus ??= new DelayedBusyStatus(_busy);
+
     // A sentence about a song that would not play, where the person can see
     // it: the desktop's status bar, and on the phone the mini player's second
     // line, in place of the artist. Skipping one is said for a few seconds;
@@ -1139,7 +1145,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // each step's own brief individual scope, since the rescan itself - the
     // longest part by far, ~9s against a large real library - had no busy
     // coverage of its own at all.
-    public IDisposable BeginBusyScope(string? message = null) => _busy.BeginScope(message);
+    public BusyState.Scope BeginBusyScope(string? message = null) => _busy.BeginScope(message);
 
     // ── Sidebar ───────────────────────────────────────────────────────────────
 
@@ -1294,7 +1300,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     private ServerAdministrationViewModel CreateServerAdmin()
     {
-        var admin = new ServerAdministrationViewModel(CreateServerAdminClient, _appSettings, _appSettingsStore, _logger);
+        var admin = new ServerAdministrationViewModel(CreateServerAdminClient, _appSettings, _appSettingsStore, _logger, BeginBusyScope);
         admin.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(ServerAdministrationViewModel.IsOpening))
@@ -2258,6 +2264,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public void Dispose()
     {
         _subscriptions.Dispose();
+        _busyStatus?.Dispose();
         Resources.Dispose();
         _playbackNoticeTimer?.Stop();
         Home.Dispose();
@@ -2888,11 +2895,11 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     {
         if (_importer == null || _mainPlaylist == null)
             return;
-        using var _ = _busy.BeginScope("Rebuilding library…");
+        using var busy = _busy.BeginScope("Rebuilding library…");
         var libraryPaths = DeviceLibraryFolders.ScanPaths(_appSettings);
         ScannedFolders = libraryPaths;
         Library.UsePathRules(PathRules.For(Importer.Importer.ScanRoots(libraryPaths)));
-        var freshTracks = Library.WithoutExcluded(await _importer.ImportAsync(libraryPaths));
+        var freshTracks = Library.WithoutExcluded(await _importer.ImportAsync(libraryPaths, busy.CountingSongs("Rebuilding library")));
         _mainPlaylist.ReplaceAll(freshTracks);
         Library.UpdateTracks(freshTracks);
     }
@@ -2983,14 +2990,14 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         }
 
         using var busy = _busy.BeginScope("Adding songs…");
-        var result = await new LibraryDrop(roots, _logger).PrepareAsync(paths);
+        var result = await new LibraryDrop(roots, _logger).PrepareAsync(paths, busy.CountingSongs("Copying into the library"));
         _logger.LogInformation("Dropped songs: {Count} to add, {Copied} copied into {Root}, {Failed} could not be copied",
             result.Files.Count, result.Copied, roots[0], result.Failed);
         if (result.Files.Count == 0)
             return;
 
         if (FolderWatcher != null)
-            await FolderWatcher.AddFilesAsync(result.Files);
+            await FolderWatcher.AddFilesAsync(result.Files, busy.CountingSongs("Adding to the library"));
         else
             await RescanLibraryAsync();
 

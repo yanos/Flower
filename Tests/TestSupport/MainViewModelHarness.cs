@@ -42,7 +42,7 @@ public static class MainViewModelHarness
 {
     public sealed class FakeMusicImporter : IMusicImporter
     {
-        public Task<List<Track>> ImportAsync(IEnumerable<string>? libraryPaths = null) =>
+        public Task<List<Track>> ImportAsync(IEnumerable<string>? libraryPaths = null, IProgress<SongProgress>? progress = null) =>
             Task.FromResult(new List<Track>());
     }
 

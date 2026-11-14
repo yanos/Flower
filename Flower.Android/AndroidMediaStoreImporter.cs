@@ -41,7 +41,7 @@ public class AndroidMediaStoreImporter : IMusicImporter
         _permissionTcs?.TrySetResult(grantResults.Length > 0 && grantResults[0] == Permission.Granted);
     }
 
-    public async Task<List<Track>> ImportAsync(IEnumerable<string>? libraryPaths = null)
+    public async Task<List<Track>> ImportAsync(IEnumerable<string>? libraryPaths = null, IProgress<SongProgress>? progress = null)
     {
         if (!await EnsurePermissionAsync())
             return new List<Track>();

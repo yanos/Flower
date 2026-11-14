@@ -114,7 +114,7 @@ public sealed class RemoteLibraryImporter : IMusicImporter
     // scan - and so is the ETag, since a caller at this level is asking for the
     // catalog rather than for what changed. Anything conditional goes through
     // FetchAsync.
-    public async Task<List<Track>> ImportAsync(IEnumerable<string>? libraryPaths = null) =>
+    public async Task<List<Track>> ImportAsync(IEnumerable<string>? libraryPaths = null, IProgress<SongProgress>? progress = null) =>
         (await FetchAsync()).Tracks;
 
     // Placeholders for someone else's files, every one of them.

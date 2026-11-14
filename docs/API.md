@@ -745,7 +745,7 @@ out; `Paused` means the owner paused it.
 
 | Method | Path | Body | Answers |
 |---|---|---|---|
-| GET | `/library` | — | `{rescanning, trackCount, lastCompletedAt, lastError, unwritableFolders}` |
+| GET | `/library` | — | `{rescanning, trackCount, lastCompletedAt, lastError, unwritableFolders, songsScanned, songsToScan}` |
 | POST | `/library/rescan` | — | The same, immediately; poll `GET /library` for the end |
 | POST | `/library/remove` | `{trackIds, deleteFiles}` | `{removed, filesTrashed, filesDeleted, filesNotDeleted}` |
 | GET | `/library/removed` | — | `[{path, removedAt, stillOnDisk}]` |
@@ -753,6 +753,11 @@ out; `Paused` means the owner paused it.
 | POST | `/library/removed/delete` | `{paths}` | `{deleted, notDeleted}` |
 | PUT | `/cover-art?id=` | image bytes | `{written, total}` |
 | DELETE | `/cover-art?id=` | — | `{written, total}` |
+
+`songsScanned` of `songsToScan` is how far the scan in flight has got: song
+files read, of all it found. Both are `null` while no scan runs and while one is
+still listing the folders. An administering device polls them into its status
+bar after a rescan it started.
 
 `unwritableFolders` is the library folders the last scan could not create a
 file in. It is a statement rather than an error — a read-only mount is a

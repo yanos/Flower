@@ -23,7 +23,10 @@ namespace Flower.ViewModels;
 // Mac with an existing Music.app library, and the server applies them in its own
 // scan (LibraryImportService). When that machine has no Music.app library the
 // server reports a null AppleMusicFolder and the page disables all three.
-public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISettingsBackend
+//
+// rescans follows a scan this screen started - a rescan, a save, a restore -
+// into the app's status bar (ServerRescanWatch). Unfollowed when null.
+public sealed class RemoteServerSettingsBackend(ServerAdminClient client, ServerRescanWatch? rescans = null) : ISettingsBackend
 {
     private ServerSettingsDto? _lastLoaded;
 
@@ -115,6 +118,10 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
         // a folder and sees nothing happen reasonably concludes it did not work.
         if (draft.LibraryPathsChanged)
             await client.RescanAsync(ct);
+        // Whether or not this asked for one: a changed Music.app switch starts
+        // a scan of the server's own accord. Followed past this call, which
+        // returns now and closes the screen.
+        Follow();
 
         return draft.LibraryPathsChanged ? "Saved. Scanning the library folders now." : null;
     }
@@ -154,7 +161,15 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
         return (issued.Code, issued.Invite);
     }
 
-    public Task RescanAsync(CancellationToken ct = default) => client.RescanAsync(ct);
+    public async Task RescanAsync(CancellationToken ct = default)
+    {
+        await client.RescanAsync(ct);
+        Follow();
+    }
+
+    // Not awaited and not this call's cancellation: the scan outlives the
+    // request that started it, and the screen too.
+    private void Follow() => _ = rescans?.FollowAsync();
 
     public async Task<IReadOnlyList<RemovedFileRow>> LoadRemovedFilesAsync(CancellationToken ct = default) =>
         (await client.GetRemovedFilesAsync(ct))
@@ -169,9 +184,12 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client) : ISet
         return LocalSettingsBackend.DeletedMessage(response.Deleted, response.NotDeleted);
     }
 
-    public async Task<string> RestoreRemovedFilesAsync(IReadOnlyList<string> paths, CancellationToken ct = default) =>
-        LocalSettingsBackend.RestoredMessage(
-            (await client.RestoreRemovedFilesAsync(new RestoreRemovedFilesRequestDto(paths.ToList()), ct)).Restored);
+    public async Task<string> RestoreRemovedFilesAsync(IReadOnlyList<string> paths, CancellationToken ct = default)
+    {
+        var restored = (await client.RestoreRemovedFilesAsync(new RestoreRemovedFilesRequestDto(paths.ToList()), ct)).Restored;
+        Follow();
+        return LocalSettingsBackend.RestoredMessage(restored);
+    }
 
     // A device on the roster that has never pushed answers 404, which is an
     // ordinary state rather than a failure - it has not synced since the server

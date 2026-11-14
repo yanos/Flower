@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 
 using Microsoft.Extensions.Logging;
 
+using Flower.Importer;
 using Flower.Models;
 
 namespace Flower.Services;
@@ -311,13 +312,14 @@ public sealed class LibraryFolderWatcher : IDisposable
     // Reads each of these files into the library now, rather than waiting for
     // the watcher to see them - what a drop on the window does once it has
     // copied them (LibraryDrop). Returns how many were added or updated.
-    public async Task<int> AddFilesAsync(IReadOnlyCollection<string> files)
+    // progress hears each file read, of all those given.
+    public async Task<int> AddFilesAsync(IReadOnlyCollection<string> files, IProgress<SongProgress>? progress = null)
     {
         await _passGate.WaitAsync();
         try
         {
             await _scanInFlight();
-            return await Task.Run(() => AddFiles(files));
+            return await Task.Run(() => AddFiles(files, progress));
         }
         finally
         {
@@ -325,26 +327,35 @@ public sealed class LibraryFolderWatcher : IDisposable
         }
     }
 
-    private int AddFiles(IEnumerable<string> files)
+    private int AddFiles(IEnumerable<string> files, IProgress<SongProgress>? progress = null)
     {
         var added = 0;
-        foreach (var file in files.Distinct(_library.PathRules))
+        var distinct = files.Distinct(_library.PathRules).ToList();
+        progress?.Report(new SongProgress(0, distinct.Count));
+        for (var i = 0; i < distinct.Count; i++)
         {
-            // A song removed from the library on purpose stays out, whatever
-            // happens to its file - see Library.RemoveTracks.
-            if (_library.IsExcludedPath(file))
-                continue;
-            // Null for a file still being written, among other things: the
-            // change that finishes it is noted again.
-            if (_importer.ImportFile(file) is not { } track)
-                continue;
-            _library.AddScannedTrack(track);
-            added++;
+            if (AddFile(distinct[i]))
+                added++;
+            progress?.Report(new SongProgress(i + 1, distinct.Count));
         }
 
         if (added > 0)
             _logger.LogInformation("Added or updated {Count} song(s) from the library folders", added);
         return added;
+    }
+
+    private bool AddFile(string file)
+    {
+        // A song removed from the library on purpose stays out, whatever
+        // happens to its file - see Library.RemoveTracks.
+        if (_library.IsExcludedPath(file))
+            return false;
+        // Null for a file still being written, among other things: the
+        // change that finishes it is noted again.
+        if (_importer.ImportFile(file) is not { } track)
+            return false;
+        _library.AddScannedTrack(track);
+        return true;
     }
 
     private IEnumerable<string> FilesAt(string path)

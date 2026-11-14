@@ -23,15 +23,20 @@ public sealed class ServerAdministrationViewModel : ViewModelBase
     private readonly AppSettings _appSettings;
     private readonly AppSettingsStore? _appSettingsStore;
     private readonly ILogger _logger;
+    private readonly Func<string?, IBusyScope>? _beginBusyScope;
 
+    // beginBusyScope is the window's status bar, where a rescan started from a
+    // server's settings is followed (ServerRescanWatch).
     public ServerAdministrationViewModel(
         Func<HttpClient, DiscoveredDevice, ServerAdminClient> clientFor,
-        AppSettings appSettings, AppSettingsStore? appSettingsStore, ILogger logger)
+        AppSettings appSettings, AppSettingsStore? appSettingsStore, ILogger logger,
+        Func<string?, IBusyScope>? beginBusyScope = null)
     {
         _clientFor = clientFor;
         _appSettings = appSettings;
         _appSettingsStore = appSettingsStore;
         _logger = logger;
+        _beginBusyScope = beginBusyScope;
     }
 
     // ── The settings panel ────────────────────────────────────────────────
@@ -116,8 +121,10 @@ public sealed class ServerAdministrationViewModel : ViewModelBase
         }
 
         _adminHttp ??= PeerHttpClient.Create(TimeSpan.FromSeconds(15));
+        var client = _clientFor(_adminHttp, device);
+        var rescans = new ServerRescanWatch(client.GetLibraryStatusAsync, _beginBusyScope, $"Scanning {device.Alias}", logger: _logger);
         var settings = new SettingsViewModel(
-            new RemoteServerSettingsBackend(_clientFor(_adminHttp, device)),
+            new RemoteServerSettingsBackend(client, rescans),
             _appSettings, _appSettingsStore);
         _kept[device.Fingerprint] = (device.BaseUri, settings);
         return settings;

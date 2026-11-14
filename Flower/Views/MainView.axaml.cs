@@ -2883,7 +2883,7 @@ public partial class MainView : UserControl
             // server rather than this device, so the Devices tab's own server
             // picker does not belong in it, and a page has nothing to cancel
             // back to - only a Save. See UpdateServerSettingsPane.
-            _serverSettingsPage = new SettingsPanel(App.CreateOriginServerSettings());
+            _serverSettingsPage = new SettingsPanel(App.CreateOriginServerSettings(_viewModel == null ? null : _viewModel.BeginBusyScope));
             _serverSettingsPage.UseInlineChrome();
             ServerSettingsPageHost.Content = _serverSettingsPage;
         }

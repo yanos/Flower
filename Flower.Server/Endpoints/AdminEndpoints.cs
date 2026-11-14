@@ -24,9 +24,11 @@ public sealed record TrustedDeviceResponse(
 public sealed record CoverArtWriteResponse(int Written, int Total);
 // UnwritableFolders is the library folders the last scan could not write to -
 // see LibraryWriteAccess. Empty on a server that can write to all of them.
+// SongsScanned of SongsToScan is how far the scan in flight has got, both null
+// while none runs or one is still listing the folders.
 public sealed record LibraryStatusResponse(
     bool Rescanning, int TrackCount, DateTimeOffset? LastCompletedAt, string? LastError,
-    IReadOnlyList<string> UnwritableFolders);
+    IReadOnlyList<string> UnwritableFolders, int? SongsScanned, int? SongsToScan);
 public sealed record LogEntryResponse(DateTimeOffset Timestamp, string Level, string? SourceContext, string Message, string? Exception);
 
 // A device's pushed log, plus when it arrived - the timestamp matters here in
@@ -1057,7 +1059,11 @@ public static class AdminEndpoints
     }
 
     private static LibraryStatusResponse DescribeLibrary(LibraryRescanCoordinator rescans, LibraryWriteAccess writeAccess) =>
-        new(rescans.IsRunning, rescans.TrackCount, rescans.LastCompletedAt, rescans.LastError, writeAccess.UnwritableFolders);
+        rescans.Progress is { } progress
+            ? new(rescans.IsRunning, rescans.TrackCount, rescans.LastCompletedAt, rescans.LastError, writeAccess.UnwritableFolders,
+                progress.Done, progress.Total)
+            : new(rescans.IsRunning, rescans.TrackCount, rescans.LastCompletedAt, rescans.LastError, writeAccess.UnwritableFolders,
+                null, null);
 
     // The operator-editable half of FlowerServerOptions, as the shared wire
     // shape - DataDirectory, Version, Addresses and the public address ride

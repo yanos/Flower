@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
+using Flower.Importer;
 using Flower.Models;
 
 namespace Flower.Services;
@@ -27,45 +28,64 @@ public sealed class LibraryDrop(IReadOnlyList<string> libraryRoots, ILogger logg
 
     // The songs among what was dropped, in place where they already sit in a
     // library folder and copied in where they do not. Files is every song to
-    // add, at its library path.
-    public Task<Result> PrepareAsync(IEnumerable<string> dropped) => Task.Run(() => Prepare(dropped));
+    // add, at its library path. progress hears each song dealt with, of all
+    // those dropped - the copying is what takes the time, an album off a slow
+    // drive or a network share.
+    public Task<Result> PrepareAsync(IEnumerable<string> dropped, IProgress<SongProgress>? progress = null) =>
+        Task.Run(() => Prepare(dropped, progress));
 
-    private Result Prepare(IEnumerable<string> dropped)
+    private Result Prepare(IEnumerable<string> dropped, IProgress<SongProgress>? progress)
     {
         var files = new List<string>();
         int copied = 0, failed = 0;
-        foreach (var source in dropped.SelectMany(SongsAt).Distinct(StringComparer.OrdinalIgnoreCase))
+        var sources = dropped.SelectMany(SongsAt).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        progress?.Report(new SongProgress(0, sources.Count));
+        for (var i = 0; i < sources.Count; i++)
         {
-            if (libraryRoots.Any(r => LibraryFolderWatcher.IsUnder(r, source)))
+            switch (Place(sources[i], files))
             {
-                files.Add(source);
-                continue;
-            }
-            if (libraryRoots.Count == 0)
-            {
-                failed++;
-                continue;
-            }
-
-            try
-            {
-                var (destination, alreadyThere) = Destination(libraryRoots[0], source);
-                if (!alreadyThere)
-                {
-                    Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-                    File.Copy(source, destination);
+                case true:
                     copied++;
-                }
-                files.Add(destination);
+                    break;
+                case null:
+                    failed++;
+                    break;
             }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Could not copy dropped song {Source} into the library", source);
-                failed++;
-            }
+            progress?.Report(new SongProgress(i + 1, sources.Count));
         }
 
         return new Result(files, copied, failed);
+    }
+
+    // Puts one song where the library will find it and adds that path to
+    // files: true when it was copied in, false when it was already there,
+    // null when it could not be.
+    private bool? Place(string source, List<string> files)
+    {
+        if (libraryRoots.Any(r => LibraryFolderWatcher.IsUnder(r, source)))
+        {
+            files.Add(source);
+            return false;
+        }
+        if (libraryRoots.Count == 0)
+            return null;
+
+        try
+        {
+            var (destination, alreadyThere) = Destination(libraryRoots[0], source);
+            if (!alreadyThere)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                File.Copy(source, destination);
+            }
+            files.Add(destination);
+            return !alreadyThere;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not copy dropped song {Source} into the library", source);
+            return null;
+        }
     }
 
     private static IEnumerable<string> SongsAt(string path)

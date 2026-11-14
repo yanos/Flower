@@ -80,7 +80,7 @@ public sealed class OriginLibraryImporter(
     // showing the wrong thing in the meantime.
     public event Action? HandshakeAnswered;
 
-    public async Task<List<Track>> ImportAsync(IEnumerable<string>? libraryPaths = null)
+    public async Task<List<Track>> ImportAsync(IEnumerable<string>? libraryPaths = null, IProgress<SongProgress>? progress = null)
     {
         if (_importer == null)
         {

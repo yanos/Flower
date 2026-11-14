@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
@@ -7,7 +8,10 @@ namespace Flower.Importer
 {
     public interface IMusicImporter
     {
-        Task<List<Track>> ImportAsync(IEnumerable<string>? libraryPaths = null);
+        // progress hears each song read, of all those found, for an importer
+        // that reads files one at a time (Importer); one that fetches a
+        // catalog whole has nothing to count and says nothing.
+        Task<List<Track>> ImportAsync(IEnumerable<string>? libraryPaths = null, IProgress<SongProgress>? progress = null);
 
         // Whether what this returns are files on this machine. False for a
         // catalog pulled off a server, whose tracks are placeholders this device

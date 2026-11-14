@@ -1,3 +1,6 @@
+using System.Diagnostics;
+
+using Flower.Importer;
 using Flower.Models;
 
 namespace Flower.Server.Services;
@@ -53,6 +56,25 @@ public sealed class LibraryRescanCoordinator(
     // startup scan may adopt Music.app's folder).
     public event Action? Completed;
 
+    // How far the scan in flight has got: songs read of all it found. Null
+    // while none runs, and while one is still listing the folders - the admin
+    // API's answer to how long a NAS scan has left (GET /api/admin/library).
+    public SongProgress? Progress
+    {
+        get
+        {
+            lock (_lock)
+                return _progress;
+        }
+    }
+
+    private SongProgress? _progress;
+
+    // The log's version of the same: a line once the folders are listed, then
+    // one every this often, so an owner tailing a minutes-long scan sees it
+    // moving rather than a server gone quiet.
+    private static readonly TimeSpan ProgressLogInterval = TimeSpan.FromSeconds(30);
+
     public DateTimeOffset? LastCompletedAt { get; private set; }
     public string? LastError { get; private set; }
     public int TrackCount => library.Tracks.Count;
@@ -96,7 +118,8 @@ public sealed class LibraryRescanCoordinator(
         try
         {
             using var scope = scopeFactory.CreateScope();
-            await scope.ServiceProvider.GetRequiredService<LibraryImportService>().RescanAsync();
+            await scope.ServiceProvider.GetRequiredService<LibraryImportService>()
+                .RescanAsync(progress: new ScanProgress(this, logger));
             LastError = null;
         }
         catch (Exception ex)
@@ -109,6 +132,8 @@ public sealed class LibraryRescanCoordinator(
         }
         finally
         {
+            lock (_lock)
+                _progress = null;
             LastCompletedAt = DateTimeOffset.UtcNow;
 
             // In the finally, so a scan that threw still releases what was
@@ -131,6 +156,30 @@ public sealed class LibraryRescanCoordinator(
             catch (Exception ex)
             {
                 logger.LogError(ex, "Post-rescan step failed");
+            }
+        }
+    }
+
+    // Reported on the scanning thread after every file, so the cost per report
+    // is a lock and, every thirty seconds, a log line.
+    private sealed class ScanProgress(LibraryRescanCoordinator owner, ILogger logger) : IProgress<SongProgress>
+    {
+        private readonly Stopwatch _sinceLogged = Stopwatch.StartNew();
+
+        public void Report(SongProgress value)
+        {
+            lock (owner._lock)
+                owner._progress = value;
+
+            if (value.Done == 0)
+            {
+                logger.LogInformation("Rescan found {Total} song file(s) to read", value.Total);
+                _sinceLogged.Restart();
+            }
+            else if (value.Done < value.Total && _sinceLogged.Elapsed >= ProgressLogInterval)
+            {
+                logger.LogInformation("Rescan has read {Done} of {Total} song file(s)", value.Done, value.Total);
+                _sinceLogged.Restart();
             }
         }
     }
