@@ -97,7 +97,9 @@ typedef struct
    than rendered as something it is not.
 
    sampleRate is the device's, which the callback's timing diagnostics
-   measure a period against. Returns NULL on failure. */
+   measure a period against. Capacities larger than INT32_MAX bytes are
+   refused because managed callers expose signed byte counts. Returns NULL
+   on failure. */
 FLOWER_AUDIO_BRIDGE_API flower_audio_bridge* flower_audio_bridge_create(uint32_t capacityFrames, uint32_t channels, uint32_t deviceBytesPerSample, uint32_t sampleRate);
 FLOWER_AUDIO_BRIDGE_API void flower_audio_bridge_destroy(flower_audio_bridge* pBridge);
 

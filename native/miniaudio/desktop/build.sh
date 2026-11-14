@@ -99,7 +99,7 @@ build_macos osx-x64 x86_64
 echo "=== linux-arm64, linux-x64 ==="
 docker run --rm \
     -v "$NATIVE_DIR:/src:ro" -v "$BUILD:/build" \
-    -e COMMON_FLAGS="$COMMON_FLAGS $GCC_FLAGS" \
+    -e COMMON_FLAGS="$COMMON_FLAGS $GCC_FLAGS -fstack-protector-strong -D_FORTIFY_SOURCE=2" \
     "$DEBIAN_IMAGE" bash -euo pipefail -c '
         apt-get update -qq >/dev/null
         apt-get install -y -qq --no-install-recommends \
@@ -110,7 +110,7 @@ docker run --rm \
             # -Wl,--as-needed so libm is a dependency only if rintf is not
             # inlined; -z noexecstack because nothing here needs one.
             $cc $COMMON_FLAGS -shared -fPIC \
-                -Wl,-soname,libflowerbridge.so -Wl,--as-needed -Wl,-z,noexecstack \
+                -Wl,-soname,libflowerbridge.so -Wl,--as-needed -Wl,-z,noexecstack,-z,relro,-z,now \
                 -o "/build/$dir/libflowerbridge.so" /src/flower_audio_bridge.c -lm
             $strip --strip-unneeded "/build/$dir/libflowerbridge.so"
         }
@@ -128,13 +128,22 @@ check_linux() {
         $objdump -T /build/$rid/libflowerbridge.so > /build/$rid/dynsym.txt
         $objdump -p /build/$rid/libflowerbridge.so | awk '/NEEDED/ {print \$2}' > /build/$rid/needed.txt
         $objdump -d /build/$rid/libflowerbridge.so > /build/$rid/disasm.txt
+        readelf --wide --program-headers --dynamic /build/$rid/libflowerbridge.so > /build/$rid/elf.txt
     "
     local exports
     exports="$(grep -c ' flower_audio_bridge_' "$BUILD/$rid/dynsym.txt" || true)"
     [[ "$exports" == "$EXPORT_COUNT" ]] || fail "$rid exports $exports bridge symbols, expected $EXPORT_COUNT"
-    local needed
-    needed="$(grep -vxE 'libc\.so\.6|libm\.so\.6' "$BUILD/$rid/needed.txt" || true)"
-    [[ -z "$needed" ]] || fail "$rid needs more than libc and libm: $needed"
+    local needed allowed_needed='libc\.so\.6|libm\.so\.6'
+    # GCC's arm64 stack protector reads __stack_chk_guard from glibc's
+    # loader. It is already present in the process, and still held to the
+    # same glibc floor as libc below.
+    if [[ "$rid" == linux-arm64 ]]; then
+        allowed_needed+='|ld-linux-aarch64\.so\.1'
+    fi
+    needed="$(grep -vxE "$allowed_needed" "$BUILD/$rid/needed.txt" || true)"
+    [[ -z "$needed" ]] || fail "$rid needs more than glibc and libm: $needed"
+    grep -q 'GNU_RELRO' "$BUILD/$rid/elf.txt" || fail "$rid has no RELRO segment"
+    grep -qE 'BIND_NOW|FLAGS.*NOW' "$BUILD/$rid/elf.txt" || fail "$rid does not bind symbols at load time"
     local newest
     newest="$(grep -oE 'GLIBC_[0-9.]+' "$BUILD/$rid/dynsym.txt" | sed 's/GLIBC_//' | sort -t. -k1,1n -k2,2n | tail -1)"
     if [[ "$(printf '%s\n%s\n' "$GLIBC_FLOOR" "$newest" | sort -t. -k1,1n -k2,2n | tail -1)" != "$GLIBC_FLOOR" ]]; then

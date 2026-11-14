@@ -234,7 +234,8 @@ flower_audio_bridge* flower_audio_bridge_create(uint32_t capacityFrames, uint32_
         return NULL;
     }
 
-    if (capacityFrames > UINT32_MAX / bytesPerFrame) {
+    /* The managed bridge exposes byte counts as signed 32-bit integers. */
+    if (capacityFrames > INT32_MAX / bytesPerFrame) {
         return NULL;
     }
 
@@ -313,7 +314,14 @@ static flower_audio_bridge* flower_audio_bridge_for_device(struct ma_device* pDe
 
     for (i = 0; i < FLOWER_AUDIO_BRIDGE_DEVICE_CAPACITY; ++i) {
         if (atomic_load_explicit(&g_flowerAudioBridges[i].pDevice, memory_order_acquire) == pDevice) {
-            return atomic_load_explicit(&g_flowerAudioBridges[i].pBridge, memory_order_acquire);
+            flower_audio_bridge* pBridge = atomic_load_explicit(&g_flowerAudioBridges[i].pBridge, memory_order_acquire);
+            /* Detach and reuse can change the slot between these loads.
+               Never render through another device's bridge. The caller
+               must still stop callbacks before destroying its bridge. */
+            if (atomic_load_explicit(&g_flowerAudioBridges[i].pDevice, memory_order_acquire) != pDevice) {
+                return NULL;
+            }
+            return pBridge;
         }
     }
 

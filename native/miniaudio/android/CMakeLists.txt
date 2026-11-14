@@ -43,6 +43,16 @@ target_compile_options(flowerbridge PRIVATE
 # default visibility - miniaudio's own functions carry no explicit
 # visibility/export attribute to survive a hidden default.
 target_compile_options(miniaudio PRIVATE -O2)
+
+# Both libraries handle audio on native threads. Keep stack protection and
+# fortified libc calls enabled, and resolve relocations before making their
+# pages read-only (full RELRO).
+foreach(target miniaudio flowerbridge)
+    target_compile_options(${target} PRIVATE -fstack-protector-strong)
+    target_compile_definitions(${target} PRIVATE _FORTIFY_SOURCE=2)
+    target_link_options(${target} PRIVATE -Wl,-z,relro,-z,now)
+endforeach()
+
 # Debug-only ASan variant: configure with -DFLOWER_MINIAUDIO_ASAN=ON to
 # catch native heap corruption early (see MiniaudioSink.cs's ma_device
 # struct-sizing padding remarks - AAudio/OpenSL|ES are untested backends).

@@ -30,6 +30,12 @@ for ABI in "${ABIS[@]}"; do
     for LIB in libminiaudio.so libflowerbridge.so; do
         "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-strip" \
             --strip-unneeded -o "$DEST/$LIB" "$ABI_BUILD_DIR/$LIB"
+        ELF_INFO="$("$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-readelf" \
+            --wide --program-headers --dynamic "$DEST/$LIB")"
+        if ! grep -q 'GNU_RELRO' <<< "$ELF_INFO" || ! grep -qE 'BIND_NOW|FLAGS.*NOW' <<< "$ELF_INFO"; then
+            echo "error: $ABI/$LIB was built without full RELRO" >&2
+            exit 1
+        fi
         echo "-> $DEST/$LIB"
     done
 done
