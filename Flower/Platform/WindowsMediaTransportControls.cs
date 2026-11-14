@@ -66,6 +66,7 @@ public sealed unsafe class WindowsMediaTransportControls : IDisposable
     private const int Smtc2_UpdateTimelineProperties = 12;
 
     // ISystemMediaTransportControlsDisplayUpdater
+    private const int Updater_get_Type = 6;
     private const int Updater_put_Type = 7;
     private const int Updater_put_Thumbnail = 11;
     private const int Updater_get_MusicProperties = 12;
@@ -194,6 +195,15 @@ public sealed unsafe class WindowsMediaTransportControls : IDisposable
     // above landed where it was meant to.
     public (string? Title, string? Artist, string? Album) ReadMusic()
     {
+        // ClearAll resets Type to Unknown. Windows rejects MusicProperties
+        // unless Type is Music, so read the cleared state without asking for it.
+        int type;
+        Check(Call(_updater, Updater_get_Type, &type));
+        if (type != MediaPlaybackType_Music)
+        {
+            return (string.Empty, string.Empty, string.Empty);
+        }
+
         var music = MusicProperties();
         try
         {

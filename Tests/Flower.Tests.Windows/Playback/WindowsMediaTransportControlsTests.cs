@@ -98,6 +98,23 @@ public class WindowsMediaTransportControlsTests
         });
     }
 
+    [Fact]
+    public void A_song_published_after_clearing_has_only_its_own_metadata()
+    {
+        OnWindowThread(hwnd =>
+        {
+            using var controls = Open(hwnd);
+            controls.SetMusic("Hey Jude", "The Beatles", "1", null);
+
+            controls.ClearMusic();
+            Assert.Equal(("", "", ""), controls.ReadMusic());
+
+            controls.SetMusic("Another song", null, null, null);
+
+            Assert.Equal(("Another song", "", ""), controls.ReadMusic());
+        });
+    }
+
     [DllImport("user32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
     private static extern IntPtr CreateWindowExW(
         int exStyle, string className, string windowName, int style,
