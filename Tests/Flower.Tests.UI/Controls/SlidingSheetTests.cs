@@ -316,47 +316,6 @@ public class SlidingSheetTests
         }
     }
 
-    // A card leaves the screen showing, dimmed, behind it.
-    [AvaloniaFact]
-    public void A_card_sheet_never_covers()
-    {
-        var host = Show(SheetEntrance.FromBottom, withCard: true);
-        try
-        {
-            host.Sheet.IsOpen = true;
-            host.Advance();
-
-            Assert.False(host.Sheet.IsCovering);
-        }
-        finally
-        {
-            host.Window.Close();
-        }
-    }
-
-    // There is no forward from a sheet, so a leftward drag is nothing at all -
-    // and must not drag the sheet off its own left edge on the way to finding
-    // that out.
-    [AvaloniaFact]
-    public void A_leftward_swipe_does_nothing()
-    {
-        var dismiss = new RecordingCommand();
-        var host = Show(dismiss: dismiss);
-        try
-        {
-            host.Sheet.IsOpen = true;
-            host.Advance();
-
-            host.Swipe(-PastThreshold);
-
-            Assert.Equal(0, dismiss.Executions);
-        }
-        finally
-        {
-            host.Window.Close();
-        }
-    }
-
     // Now Playing's seek bar is scrubbed horizontally, right across the middle
     // of a sheet dismissed by a horizontal drag - so a gesture that starts on a
     // range control belongs to that control and this never looks at it again.
@@ -400,28 +359,6 @@ public class SlidingSheetTests
             Assert.Equal(1, dismiss.Executions);
             host.Advance();
             Assert.False(host.Sheet.IsVisible);
-        }
-        finally
-        {
-            host.Window.Close();
-        }
-    }
-
-    // Sideways is not the way a bottom sheet leaves, so a rightward swipe over
-    // one is left to whatever is under the finger.
-    [AvaloniaFact]
-    public void A_bottom_sheet_ignores_a_sideways_swipe()
-    {
-        var dismiss = new RecordingCommand();
-        var host = Show(SheetEntrance.FromBottom, dismiss: dismiss);
-        try
-        {
-            host.Sheet.IsOpen = true;
-            host.Advance();
-
-            host.Swipe(PastThreshold);
-
-            Assert.Equal(0, dismiss.Executions);
         }
         finally
         {

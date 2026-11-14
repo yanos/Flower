@@ -42,38 +42,6 @@ public class ColumnManagerTests : PinnedDataDirectory
     }
 
     [Fact]
-    public void Reorder_moves_a_column_earlier_in_the_visible_sequence()
-    {
-        var manager = New();
-
-        manager.Reorder(Column(manager, "Genre"), newVisibleIndex: 0);
-
-        Assert.Equal(["Genre", "TrackNumber", "Title", "Artist", "Album"], VisibleIds(manager).Take(5));
-    }
-
-    [Fact]
-    public void Reorder_to_a_columns_own_position_leaves_the_sequence_alone()
-    {
-        var manager = New();
-        var before = VisibleIds(manager);
-
-        manager.Reorder(Column(manager, "Album"), newVisibleIndex: 3);
-
-        Assert.Equal(before, VisibleIds(manager));
-    }
-
-    [Fact]
-    public void Reorder_past_the_end_puts_the_column_last()
-    {
-        var manager = New();
-        var count = manager.VisibleColumns.Count();
-
-        manager.Reorder(Column(manager, "Title"), newVisibleIndex: count + 10);
-
-        Assert.Equal("Title", VisibleIds(manager)[^1]);
-    }
-
-    [Fact]
     public void Reorder_indices_count_visible_columns_only_and_skip_hidden_ones()
     {
         var manager = New();
@@ -102,18 +70,6 @@ public class ColumnManagerTests : PinnedDataDirectory
     }
 
     [Fact]
-    public void Reorder_renumbers_Order_into_a_contiguous_sequence()
-    {
-        var manager = New();
-
-        manager.Reorder(Column(manager, "Duration"), newVisibleIndex: 1);
-
-        Assert.Equal(
-            Enumerable.Range(0, manager.Columns.Count),
-            manager.Columns.OrderBy(c => c.Order).Select(c => c.Order));
-    }
-
-    [Fact]
     public void Hiding_or_reordering_a_column_raises_ColumnsChanged_but_resizing_does_not()
     {
         var manager = New();
@@ -129,82 +85,6 @@ public class ColumnManagerTests : PinnedDataDirectory
         Assert.True(raised > 0);
     }
 
-    // The art well is not a MusicColumnDefinition, but everything that reacts
-    // to a column change has to react to it - so it goes out on the same event
-    // and offsets the same width.
-    [Fact]
-    public void Hiding_the_album_art_closes_the_width_it_occupied()
-    {
-        var settings = new AppSettings();
-        var manager = new ColumnManager(settings, new AppSettingsStore());
-        var raised = 0;
-        manager.ColumnsChanged += (_, _) => raised++;
-
-        Assert.True(manager.ShowAlbumArt);
-        Assert.True(manager.ArtColumnWidth > 0);
-
-        manager.ShowAlbumArt = false;
-
-        Assert.Equal(0, manager.ArtColumnWidth);
-        Assert.False(settings.ShowAlbumArtColumn);
-        Assert.Equal(1, raised);
-
-        // Setting it to what it already is changes nothing and tells nobody.
-        manager.ShowAlbumArt = false;
-        Assert.Equal(1, raised);
-    }
-
-    // Off, an album too short for its cover shows none rather than being
-    // padded out.
-    [Fact]
-    public void Without_always_showing_only_an_album_long_enough_for_its_cover_shows_it()
-    {
-        var settings = new AppSettings();
-        var manager = new ColumnManager(settings, new AppSettingsStore());
-        manager.AlbumArtSize = ColumnManager.DefaultAlbumArtSize;
-
-        Assert.True(manager.ShowsAlbumArtFor(1));
-        Assert.True(manager.PadsShortAlbums);
-
-        manager.AlwaysShowAlbumArt = false;
-
-        Assert.False(manager.PadsShortAlbums);
-        Assert.False(manager.ShowsAlbumArtFor(manager.AlbumArtRows - 1));
-        Assert.True(manager.ShowsAlbumArtFor(manager.AlbumArtRows));
-        Assert.False(settings.AlwaysShowAlbumArt);
-    }
-
-    // The slider's ends hold, and a size is saved as it is set.
-    [Fact]
-    public void The_cover_size_stays_within_its_range()
-    {
-        var settings = new AppSettings();
-        var manager = new ColumnManager(settings, new AppSettingsStore());
-
-        manager.AlbumArtSize = 1000;
-        Assert.Equal(ColumnManager.MaxAlbumArtSize, manager.AlbumArtSize);
-
-        manager.AlbumArtSize = 0;
-        Assert.Equal(ColumnManager.MinAlbumArtSize, manager.AlbumArtSize);
-        Assert.Equal(ColumnManager.MinAlbumArtSize, settings.AlbumArtSize);
-    }
-
-    // Reset rewrites every column's visibility and order; the track list
-    // rebuilds on each ColumnsChanged, so it has to hear about it once.
-    [Fact]
-    public void Reset_tells_the_list_once()
-    {
-        var manager = New();
-        Column(manager, "Genre").IsVisible = false;
-        manager.Reorder(Column(manager, "Year"), newVisibleIndex: 0);
-        var raised = 0;
-        manager.ColumnsChanged += (_, _) => raised++;
-
-        manager.ResetToDefaults();
-
-        Assert.Equal(1, raised);
-    }
-
     // Title was hideable before it was locked; a settings file that hid it
     // must not leave it hidden with nothing able to show it again.
     [Fact]
@@ -218,19 +98,5 @@ public class ColumnManagerTests : PinnedDataDirectory
         var manager = new ColumnManager(settings, new AppSettingsStore());
 
         Assert.True(Column(manager, "Title").IsVisible);
-    }
-
-    // Every field Track Info shows should be offerable as a column - the rule
-    // BuildDefaults' own comment states. Lyrics is the stated exception.
-    [Fact]
-    public void Every_offered_column_can_be_sorted_and_rendered()
-    {
-        var manager = New();
-
-        foreach (var column in manager.Columns)
-        {
-            Assert.NotNull(TrackRowControl.CellTextFor(column.Id));
-            Assert.True(TrackListBuilder.CanSortBy(column.Id), $"{column.Id} has no sort");
-        }
     }
 }

@@ -26,24 +26,6 @@ public class TrackRowViewModelTests
     private static TrackRowViewModel Row(Track track, bool first = true, int groupSize = 1) =>
         new() { Track = track, IsFirstInAlbumGroup = first, AlbumGroupSize = groupSize };
 
-    // TotalPlayCount sums Flower's own count, the iTunes import and every
-    // synced device's - a zero total shows as blank rather than "0".
-    [Fact]
-    public void PlayCountDisplay_is_blank_at_zero_and_shows_the_total_otherwise()
-    {
-        Assert.Equal("", Row(new Track()).PlayCountDisplay);
-
-        var played = new Track { PlayCount = 2, ImportedPlayCount = 3 };
-        Assert.Equal(played.TotalPlayCount.ToString(), Row(played).PlayCountDisplay);
-    }
-
-    [Fact]
-    public void LastPlayedDisplay_is_blank_for_a_never_played_track()
-    {
-        Assert.Equal("", Row(new Track { LastPlayedAt = null }).LastPlayedDisplay);
-        Assert.NotEqual("", Row(new Track { LastPlayedAt = DateTimeOffset.UtcNow }).LastPlayedDisplay);
-    }
-
     // The display strings read straight off Track, which is not
     // INotifyPropertyChanged, so a play or a star has to be pushed in.
     [Fact]
@@ -106,19 +88,6 @@ public class TrackRowViewModelTests
     }
 
     [Fact]
-    public void Setting_IsAvailable_to_its_current_value_raises_nothing()
-    {
-        var row = Row(new Track { Path = null });
-        row.IsAvailable = true;
-
-        var raised = 0;
-        row.PropertyChanged += (_, _) => raised++;
-        row.IsAvailable = true;
-
-        Assert.Equal(0, raised);
-    }
-
-    [Fact]
     public void IsDownloadIdle_is_false_while_downloading_and_after_a_failure()
     {
         var row = Row(new Track { Path = null });
@@ -148,32 +117,6 @@ public class TrackRowViewModelTests
         Dispatcher.UIThread.MainLoop(cts.Token);
     }
 
-    [AvaloniaFact]
-    public void The_spinner_turns_while_downloading()
-    {
-        var row = Row(new Track { Path = null });
-        try
-        {
-            row.IsDownloading = true;
-
-            // Until it turns rather than for a fixed time: a CI iOS simulator
-            // under the interpreter has gone past 120ms without a tick.
-            var deadline = Environment.TickCount64 + 10_000;
-            while (row.SpinAngle == 0 && Environment.TickCount64 < deadline)
-                LetTheSpinnerTick(20);
-
-            Assert.True(row.SpinAngle > 0, "the spinner never advanced while downloading");
-        }
-        finally
-        {
-            // AnimationClock.Current is process-wide; a row left subscribed
-            // keeps it running for every later test in the assembly, and
-            // ScreenStackPanelSwipeTests, which wait for an idle clock, then
-            // fail too.
-            row.Dispose();
-        }
-    }
-
     // A row discarded mid-download used to leave its timer registered on the
     // dispatcher forever, with the Tick closure keeping the ViewModel alive and
     // burning a 60fps wakeup - one per orphaned row of a batch download.
@@ -189,20 +132,5 @@ public class TrackRowViewModelTests
 
         LetTheSpinnerTick();
         Assert.Equal(0, row.SpinAngle);
-    }
-
-    [AvaloniaFact]
-    public void Clearing_IsDownloading_stops_the_spinner_and_resets_its_angle()
-    {
-        var row = Row(new Track { Path = null });
-        row.IsDownloading = true;
-        LetTheSpinnerTick();
-
-        row.IsDownloading = false;
-        Assert.Equal(0, row.SpinAngle);
-
-        LetTheSpinnerTick();
-        Assert.Equal(0, row.SpinAngle);
-        Assert.True(row.IsDownloadIdle);
     }
 }

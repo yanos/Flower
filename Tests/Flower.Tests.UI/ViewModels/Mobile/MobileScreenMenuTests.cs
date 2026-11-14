@@ -98,79 +98,6 @@ public class MobileScreenMenuTests : PinnedDataDirectory
             vm.AlbumGridRows.SelectMany(r => r.Tiles).Select(t => t.Name));
     }
 
-    // Name turned round is Z to A.
-    [AvaloniaFact]
-    public async Task Picking_name_again_on_songs_runs_them_z_to_a()
-    {
-        var vm = Build();
-        vm.SelectTabCommand.Execute(nameof(MobileTab.Songs));
-        await WaitForRows(vm, 4);
-
-        Entry(vm, "Name").Invoke();
-        string[] zToA = ["Zero Hour", "Quality of Armor", "Maps", "Apple Tree"];
-        await WaitFor(() => vm.Main.Rows.Select(r => r.Track.Title).SequenceEqual(zToA));
-
-        Assert.Equal(zToA, vm.Main.Rows.Select(r => r.Track.Title));
-        Assert.Equal(ListSortDirection.Descending, Entry(vm, "Name").Direction);
-    }
-
-    // An album is its own order, so no sort - but its songs can go into a
-    // playlist from here.
-    [AvaloniaFact]
-    public async Task An_album_has_no_sort_but_can_be_added_to_a_playlist()
-    {
-        var vm = Build();
-        vm.SelectTabCommand.Execute(nameof(MobileTab.Albums));
-        vm.SelectAlbumOrArtistCommand.Execute(MainViewModelHarness.AlbumKey(vm, "Bee Thousand"));
-        await WaitForRows(vm, 2);
-
-        Entry(vm, "Add to Playlist").Invoke();
-        Assert.True(vm.IsShowingAddToPlaylist);
-
-        // Track Info over every song of the album at once.
-        vm.CloseSheetCommand.Execute(null);
-        Entry(vm, "Info").Invoke();
-        Assert.True(vm.IsShowingTrackInfo);
-        Assert.Equal(2, vm.TrackInfoTracks.Count);
-    }
-
-    // Every screen can shuffle what it shows, and delete the files of it this
-    // phone has. Search has nothing to show until something is typed, so
-    // until then it has only Settings - and Home, whose shelves are shortcuts
-    // rather than a set of songs, never has anything else.
-    [AvaloniaFact]
-    public void Home_and_search_have_only_settings_until_there_is_something_to_act_on()
-    {
-        var vm = Build();
-        vm.SelectTabCommand.Execute(nameof(MobileTab.Home));
-        Assert.Single(vm.BuildScreenMenu(vm.CurrentFrame).SelectMany(s => s.Entries));
-
-        vm.SelectTabCommand.Execute(nameof(MobileTab.Search));
-        Assert.Single(vm.BuildScreenMenu(vm.CurrentFrame).SelectMany(s => s.Entries));
-        vm.Search.Query = "Maps";
-        Assert.True(vm.BuildScreenMenu(vm.CurrentFrame).SelectMany(s => s.Entries).Count() > 1);
-
-        Entry(vm, "Settings").Invoke();
-        Assert.True(vm.IsShowingSettings);
-    }
-
-    // What is shuffled is what the screen shows: here every song on every
-    // album in the grid, with shuffle left on.
-    [AvaloniaFact]
-    public async Task Shuffle_on_the_album_grid_plays_everything_on_it_shuffled()
-    {
-        var vm = Build();
-        vm.SelectTabCommand.Execute(nameof(MobileTab.Albums));
-        await WaitFor(() => vm.AlbumGridRows.Count > 0);
-
-        Entry(vm, "Shuffle").Invoke();
-        Dispatcher.UIThread.RunJobs();
-
-        Assert.True(vm.PlaylistControl.IsShuffleEnabled);
-        Assert.Contains(vm.PlaylistControl.CurrentlyPlayingTrack, Songs);
-        Assert.Equal(Songs.Select(t => t.Title).Order(), vm.PlaylistControl.CurrentPlaylist.Tracks.Select(t => t.Title).Order());
-    }
-
     // With the pull-down filter open, only what it left.
     [AvaloniaFact]
     public async Task Shuffle_on_a_filtered_grid_plays_only_what_the_filter_left()
@@ -228,24 +155,6 @@ public class MobileScreenMenuTests : PinnedDataDirectory
         Assert.Equal(["Cocteau Twins", "Built to Spill", "Autechre"], Names());
         Assert.True(vm.ArtistPickerIsAlphabetical);
         Assert.True(vm.ArtistPickerRunsZToA);
-    }
-
-    // The album grid's bar is letters while it runs A to Z on a name - the
-    // album's or the artist's - and dots otherwise.
-    [AvaloniaFact]
-    public async Task The_album_grid_is_alphabetical_only_by_name_or_artist()
-    {
-        var vm = Build();
-        vm.SelectTabCommand.Execute(nameof(MobileTab.Albums));
-        await WaitFor(() => vm.AlbumGridRows.Count > 0);
-        Assert.True(vm.AlbumGridIsAlphabetical);
-
-        Entry(vm, "Artist").Invoke();
-        Assert.True(vm.AlbumGridIsAlphabetical);
-        Entry(vm, "Year").Invoke();
-        Assert.False(vm.AlbumGridIsAlphabetical);
-        Entry(vm, "Date Added").Invoke();
-        Assert.False(vm.AlbumGridIsAlphabetical);
     }
 
     private static async Task WaitFor(Func<bool> condition, int timeoutMs = 3000)

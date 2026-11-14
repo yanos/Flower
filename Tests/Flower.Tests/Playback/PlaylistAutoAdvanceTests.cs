@@ -1,10 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Threading;
-
-using Avalonia.Headless.XUnit;
-using Avalonia.Threading;
 
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -16,44 +11,18 @@ using Flower.ViewModels;
 
 namespace Flower.Tests.Playback;
 
-// PlaylistControlViewModelTests' FakeAudioManager is never actually raised
-// there, since running the real EndReached handler needs a Dispatcher.
-// These tests supply that (via Avalonia.Headless's [AvaloniaFact]) to cover
-// the auto-advance track-selection logic itself - repeat/shuffle/wrap
-// choices made when a track naturally ends - without needing real audio or
-// LibVLC decode at all, since that logic lives entirely in
-// PlaylistControlViewModel/Palylist, not in the audio pipeline.
-//
-// PlatformDataDirectory.Current is pinned to an isolated temp directory
-// (same pattern as LibraryStoreTests) because the real EndReached handler
-// calls LibraryStore.SaveAsync, which would otherwise write to the real
-// developer's library.json.
+// Auto-advance and failure rules with deterministic event delivery. The
+// dispatcher integration is covered separately by PlaybackDispatcherTests.
 [Collection("PlatformDataDirectory")]
-public class PlaylistAutoAdvanceTests : IDisposable
+public class PlaylistAutoAdvanceTests : PinnedDataDirectory
 {
-    private readonly string _tempHome;
-
-    public PlaylistAutoAdvanceTests()
-    {
-        _tempHome = Path.Combine(Path.GetTempPath(), "flower-tests-" + Guid.NewGuid());
-        Directory.CreateDirectory(_tempHome);
-        PlatformDataDirectory.Current = _tempHome;
-    }
-
-    public void Dispose()
-    {
-        PlatformDataDirectory.Current = AssemblySetup.DefaultDataDirectory;
-        try { Directory.Delete(_tempHome, recursive: true); } catch { /* best effort */ }
-    }
-
     private static Track T(string title) => new() { Title = title, Path = $"/music/{title}.mp3" };
 
-    private static PlaylistControlViewModel MakeViewModel(List<Track> tracks, out FakeAudioManager audio)
+    private PlaylistControlViewModel MakeViewModel(List<Track> tracks, out FakeAudioManager audio)
     {
         audio = new FakeAudioManager();
         var library = new Library(tracks);
         var playlist = new MainPlaylist(tracks);
-        var libraryStore = new LibraryStore(NullLogger<LibraryStore>.Instance);
         var appSettingsStore = new AppSettingsStore(NullLogger<AppSettingsStore>.Instance);
         var vm = new PlaylistControlViewModel(
             audio, playlist, library, new AppSettings(), appSettingsStore,
@@ -65,31 +34,11 @@ public class PlaylistAutoAdvanceTests : IDisposable
         // test asserting straight after RaiseEndReached() isn't racing the
         // pool - and so no stray pool item outlives the test.
         vm.OffPlaybackThread = work => work();
-        return vm;
+        vm.OnUiThread = work => work();
+        return Own(vm);
     }
 
-    // EndReached's handler is async void, awaiting a real (if isolated)
-    // disk write before posting the next Play() back onto the dispatcher -
-    // pumping Dispatcher.UIThread.RunJobs() in a loop is what lets both
-    // that continuation and the posted Play() actually run, since a plain
-    // blocking SpinWait on this same thread would just starve the
-    // dispatcher instead of letting it process them.
-    private static void PumpUntil(Func<bool> condition, TimeSpan timeout)
-    {
-        var deadline = DateTime.UtcNow + timeout;
-        while (!condition())
-        {
-            Dispatcher.UIThread.RunJobs();
-            if (DateTime.UtcNow > deadline)
-            {
-                Assert.Fail("condition was not met within the timeout");
-                return;
-            }
-            Thread.Sleep(1);
-        }
-    }
-
-    [AvaloniaFact]
+    [Fact]
     public void EndReached_auto_advances_to_the_next_track_in_playlist_order()
     {
         var a = T("A");
@@ -99,14 +48,14 @@ public class PlaylistAutoAdvanceTests : IDisposable
 
         audio.RaiseEndReached();
 
-        PumpUntil(() => vm.CurrentlyPlayingTrack == b, TimeSpan.FromSeconds(5));
+        Assert.Same(b, vm.CurrentlyPlayingTrack);
     }
 
     // The end of the album is the end of the album: the queue advancing on its
     // own does NOT start it again, which is what repeat is for. Manual Next()
     // still wraps (see PlaylistControlViewModelTests) - a press of the skip
     // button has to go somewhere.
-    [AvaloniaFact]
+    [Fact]
     public void EndReached_on_the_last_track_does_not_start_the_queue_again()
     {
         var a = T("A");
@@ -117,14 +66,13 @@ public class PlaylistAutoAdvanceTests : IDisposable
 
         audio.RaiseEndReached();
 
-        Dispatcher.UIThread.RunJobs();
         Assert.Same(b, vm.CurrentlyPlayingTrack);
         Assert.Same(b, audio.LastPlayed);
     }
 
     // Nothing armed behind the last track is what eventually lets the audio
     // manager notice it has played out - see GaplessAudioManager.PlayedOut.
-    [AvaloniaFact]
+    [Fact]
     public void The_last_track_of_a_queue_arms_nothing_behind_it()
     {
         var a = T("A");
@@ -140,7 +88,7 @@ public class PlaylistAutoAdvanceTests : IDisposable
     // to its first track, still "currently playing" so the Lock Screen card
     // stays up, and a press of play starting that track rather than resuming a
     // decoder that was let go when the album finished.
-    [AvaloniaFact]
+    [Fact]
     public void Playing_out_parks_the_queue_at_its_first_track()
     {
         var a = T("A");
@@ -148,7 +96,6 @@ public class PlaylistAutoAdvanceTests : IDisposable
         var vm = MakeViewModel(new List<Track> { a, b }, out var audio);
         vm.Play(b);
         audio.RaiseEndReached();
-        Dispatcher.UIThread.RunJobs();
 
         audio.RaisePlayedOut();
 
@@ -164,7 +111,7 @@ public class PlaylistAutoAdvanceTests : IDisposable
     // The card's own play button lands here too, through
     // NowPlayingIntegrationService - and must not resume, since there is
     // nothing loaded to resume.
-    [AvaloniaFact]
+    [Fact]
     public void Playing_out_does_not_leave_play_resuming_nothing()
     {
         var a = T("A");
@@ -177,7 +124,7 @@ public class PlaylistAutoAdvanceTests : IDisposable
         Assert.Equal(0, audio.ResumeCount);
     }
 
-    [AvaloniaFact]
+    [Fact]
     public void EndReached_with_repeat_enabled_replays_the_same_track()
     {
         var a = T("A");
@@ -188,11 +135,12 @@ public class PlaylistAutoAdvanceTests : IDisposable
 
         audio.RaiseEndReached();
 
-        PumpUntil(() => audio.LastPlayed == a, TimeSpan.FromSeconds(5));
+        Assert.Same(a, audio.LastPlayed);
+        Assert.False(audio.LastPlayWasImmediate);
         Assert.Same(a, vm.CurrentlyPlayingTrack);
     }
 
-    [AvaloniaFact]
+    [Fact]
     public void EndReached_with_shuffle_enabled_never_immediately_repeats_the_finished_track()
     {
         var tracks = new List<Track> { T("A"), T("B"), T("C") };
@@ -202,7 +150,7 @@ public class PlaylistAutoAdvanceTests : IDisposable
 
         audio.RaiseEndReached();
 
-        PumpUntil(() => vm.CurrentlyPlayingTrack != tracks[0], TimeSpan.FromSeconds(5));
+        Assert.NotSame(tracks[0], vm.CurrentlyPlayingTrack);
         Assert.Contains(vm.CurrentlyPlayingTrack, tracks);
     }
 
@@ -212,7 +160,7 @@ public class PlaylistAutoAdvanceTests : IDisposable
     // a finished track does, so it skipped past silently *and* collected a play
     // count on the way. TrackFailed separates the two.
 
-    [AvaloniaFact]
+    [Fact]
     public void TrackFailed_advances_to_the_next_track()
     {
         var a = T("A");
@@ -222,10 +170,10 @@ public class PlaylistAutoAdvanceTests : IDisposable
 
         audio.RaiseTrackFailed(a);
 
-        PumpUntil(() => vm.CurrentlyPlayingTrack == b, TimeSpan.FromSeconds(5));
+        Assert.Same(b, vm.CurrentlyPlayingTrack);
     }
 
-    [AvaloniaFact]
+    [Fact]
     public void TrackFailed_does_not_count_a_play_for_the_track_that_failed()
     {
         var a = T("A");
@@ -235,12 +183,12 @@ public class PlaylistAutoAdvanceTests : IDisposable
 
         audio.RaiseTrackFailed(a);
 
-        PumpUntil(() => vm.CurrentlyPlayingTrack == b, TimeSpan.FromSeconds(5));
+        Assert.Same(b, vm.CurrentlyPlayingTrack);
         Assert.Equal(0, a.PlayCount);
     }
 
     // Repeat would otherwise retry the same unplayable file forever.
-    [AvaloniaFact]
+    [Fact]
     public void TrackFailed_with_repeat_enabled_moves_on_instead_of_retrying_the_broken_track()
     {
         var a = T("A");
@@ -251,10 +199,10 @@ public class PlaylistAutoAdvanceTests : IDisposable
 
         audio.RaiseTrackFailed(a);
 
-        PumpUntil(() => vm.CurrentlyPlayingTrack == b, TimeSpan.FromSeconds(5));
+        Assert.Same(b, vm.CurrentlyPlayingTrack);
     }
 
-    [AvaloniaFact]
+    [Fact]
     public void TrackFailed_raises_PlaybackFailed_for_the_UI()
     {
         var a = T("A");
@@ -264,48 +212,7 @@ public class PlaylistAutoAdvanceTests : IDisposable
 
         audio.RaiseTrackFailed(a);
 
-        PumpUntil(() => reported != null, TimeSpan.FromSeconds(5));
         Assert.Same(a, reported);
-    }
-
-    // The end of a track is raised on its decode thread, and what plays next
-    // is decided on the UI thread, which owns the queue and the shuffle order
-    // (the decode thread dealing it while Next() did was a race). Decided
-    // there, it is decided against what is playing by then: a song the user
-    // picked in the meantime stands. Decided on the decode thread, the
-    // advance to B was already posted, and it replaced the user's choice.
-    [AvaloniaFact]
-    public void A_song_picked_while_the_end_of_the_last_one_is_on_its_way_keeps_playing()
-    {
-        var a = T("A");
-        var b = T("B");
-        var c = T("C");
-        var vm = MakeViewModel(new List<Track> { a, b, c }, out var audio);
-        vm.Play(a);
-
-        var decodeThread = new Thread(audio.RaiseEndReached);
-        decodeThread.Start();
-        decodeThread.Join();
-        vm.Play(c);
-        Dispatcher.UIThread.RunJobs();
-
-        Assert.Same(c, vm.CurrentlyPlayingTrack);
-    }
-
-    // ── Giving up on a source that fails everything ──────────────────────────
-    //
-    // Skipping one broken file is right; skipping every file in the queue at
-    // two a second, forever, is what an unreachable server looks like from in
-    // here. See PlaylistControlViewModel.MaxConsecutiveFailures.
-
-    private static void Pump(TimeSpan duration)
-    {
-        var deadline = DateTime.UtcNow + duration;
-        while (DateTime.UtcNow < deadline)
-        {
-            Dispatcher.UIThread.RunJobs();
-            Thread.Sleep(1);
-        }
     }
 
     // Fails whatever is playing, over and over, until the view model stops
@@ -322,7 +229,6 @@ public class PlaylistAutoAdvanceTests : IDisposable
                 break;
 
             audio.RaiseTrackFailed(current);
-            Pump(TimeSpan.FromMilliseconds(20));
 
             if (vm.CurrentlyPlayingTrack == current)
                 break;
@@ -333,7 +239,7 @@ public class PlaylistAutoAdvanceTests : IDisposable
 
     // Repeat is what makes this unbounded rather than merely long: without a
     // limit the queue wraps and starts again, and nothing ever stops it.
-    [AvaloniaFact]
+    [Fact]
     public void A_source_that_fails_every_track_is_given_up_on_rather_than_cycled_forever()
     {
         var tracks = new List<Track> { T("A"), T("B"), T("C") };
@@ -346,7 +252,7 @@ public class PlaylistAutoAdvanceTests : IDisposable
 
     // The limit counts a *run*. One bad file in the middle of a working album
     // must not spend part of the budget for the next one.
-    [AvaloniaFact]
+    [Fact]
     public void A_track_that_plays_to_the_end_starts_the_count_over()
     {
         // Long enough that the run below never has to wrap: repeat is what
@@ -359,19 +265,19 @@ public class PlaylistAutoAdvanceTests : IDisposable
         {
             var current = vm.CurrentlyPlayingTrack!;
             audio.RaiseTrackFailed(current);
-            PumpUntil(() => vm.CurrentlyPlayingTrack != current, TimeSpan.FromSeconds(5));
+            Assert.NotSame(current, vm.CurrentlyPlayingTrack);
         }
 
         var played = vm.CurrentlyPlayingTrack!;
         audio.RaiseEndReached();
-        PumpUntil(() => vm.CurrentlyPlayingTrack != played, TimeSpan.FromSeconds(5));
+        Assert.NotSame(played, vm.CurrentlyPlayingTrack);
 
         Assert.Equal(5, FailEverything(vm, audio));
     }
 
     // Pressing play is the user saying "try again" - a server that came back
     // should not be one stumble away from being given up on.
-    [AvaloniaFact]
+    [Fact]
     public void Starting_a_track_by_hand_starts_the_count_over()
     {
         var tracks = new List<Track> { T("A"), T("B"), T("C") };

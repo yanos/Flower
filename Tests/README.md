@@ -6,8 +6,8 @@ phone runtime.
 
 | Project | Purpose |
 | --- | --- |
-| `Flower.Tests` | Shared behavior: library, import, playlists, sync, persistence, networking, and audio/playback logic using fakes |
-| `Flower.Tests.UI` | Headless views, controls, view models, and integration tests that require Avalonia's dispatcher; exercises behavior, without launching the full app |
+| `Flower.Tests` | Shared unit and integration behavior: library, import, playlists, sync, persistence, networking, and audio/playback using fakes |
+| `Flower.Tests.UI` | Headless views, controls, app-shell view models, input/binding behavior, and platform/dispatcher wiring |
 | `Flower.Tests.Decoding` | Decoder, HTTP streaming, PCM validation, and playback integration with real decoding |
 | `Flower.Server.Tests` | In-process server/API, security, and configuration tests |
 | `Flower.Tests.macOS` | Native macOS Trash and Music/iTunes export discovery |
@@ -33,7 +33,13 @@ models, and navigation-frame classification. Keep input, focus, bindings,
 virtualization, and command/navigation integration in `Flower.Tests.UI`.
 Both projects currently import the common headless infrastructure; placing a
 unit test in the shared project does not require removing those shared packages.
-The mobile cleanup and its counts are recorded in
+Playback and queue rules belong in the shared project even when their types
+are named `ViewModel`. Its playback pipeline integration tests use fake decoders
+and sinks; some retain a headless dispatcher for real event delivery. That is
+integration coverage, distinct from ordinary unit tests and UI input/binding
+checks. The UI project retains focused tests of backend events reaching the
+dispatcher and real queue views accepting input.
+The cleanup and its counts are recorded in
 [`docs/MOBILE-TEST-AUDIT.md`](../docs/MOBILE-TEST-AUDIT.md).
 
 Tests specific to one desktop OS live in its platform project. Those projects

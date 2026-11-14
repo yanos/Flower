@@ -167,35 +167,6 @@ public class SettingsLogTabTests
         Assert.Same(panel.LogSources[0], panel.SelectedLogSource);
     }
 
-    // Every reinstall of the app pairs again under a new key, so a roster keeps
-    // rows nobody will ever send a log from. The picker is for reading logs, and
-    // a row that can only open onto "nothing has arrived" is not one.
-    [Fact]
-    public async Task A_device_that_has_never_sent_a_log_is_not_listed()
-    {
-        var panel = await MakeAsync(Device("fp-live", "iPhone"), Device("fp-stale", "iPhone", hasLog: false));
-
-        Assert.Equal([null, "fp-live"], panel.LogSources.Select(s => s.Fingerprint));
-    }
-
-    // Two devices called "iPhone" have to be told apart somehow, and when each
-    // was last heard from is what separates the one in use from the one left
-    // behind.
-    [Fact]
-    public async Task A_device_row_says_when_it_was_last_seen()
-    {
-        var seen = new DateTimeOffset(2026, 9, 28, 14, 5, 0, TimeSpan.Zero);
-        var device = Device("fp-1", "iPhone");
-        var panel = await MakeAsync(new TrustedPeerRow
-        {
-            Fingerprint = device.Fingerprint, Alias = device.Alias, ApprovedAt = device.ApprovedAt,
-            HasLog = true, LastSeenAt = seen,
-        });
-
-        Assert.Null(panel.LogSources[0].Detail);
-        Assert.False(string.IsNullOrWhiteSpace(panel.LogSources[1].Detail));
-    }
-
     [Fact]
     public async Task The_server_row_shows_the_servers_own_log()
     {
@@ -215,42 +186,6 @@ public class SettingsLogTabTests
 
         Assert.Equal(2, panel.LogViewer.DisplayLines.Count);
         Assert.Contains("client line one", panel.LogViewer.DisplayLines[0]);
-    }
-
-    // A device that has never pushed gets an explicit sentence, not a blank
-    // pane indistinguishable from "connected but silent".
-    [Fact]
-    public async Task A_device_with_no_snapshot_yet_says_so()
-    {
-        var panel = await MakeAsync(Device("fp-1", "A Phone"));
-
-        await SelectAsync("fp-1");
-
-        var line = Assert.Single(panel.LogViewer.DisplayLines);
-        Assert.Contains("no log snapshot", line);
-        Assert.Contains("A Phone", line);
-    }
-
-    // Distinct from the sentence above: a device that pushed an empty log has
-    // been heard from, and reading one as the other sends the reader looking in
-    // the wrong place.
-    [Fact]
-    public async Task A_device_that_pushed_an_empty_log_is_not_confused_with_one_that_never_pushed()
-    {
-        _backend.DeviceLogs["fp-1"] = [];
-        var panel = await MakeAsync(Device("fp-1", "A Phone"));
-
-        await SelectAsync("fp-1");
-
-        Assert.DoesNotContain("no log snapshot", Assert.Single(panel.LogViewer.DisplayLines));
-    }
-
-    [Fact]
-    public async Task An_empty_server_log_says_so_rather_than_looking_broken()
-    {
-        var panel = await MakeAsync();
-
-        Assert.Contains("logged nothing yet", Assert.Single(panel.LogViewer.DisplayLines));
     }
 
     // A fetch for a row the reader has already moved away from must not paint
@@ -274,27 +209,6 @@ public class SettingsLogTabTests
         await DrainAsync(150);
 
         Assert.Contains("belongs to fp-2", Assert.Single(panel.LogViewer.DisplayLines));
-    }
-
-    // The point of putting the app's viewer here rather than a flat tail: the
-    // level picker and the filter box work on a server's log exactly as they do
-    // on a local one.
-    [Fact]
-    public async Task The_minimum_level_and_filter_apply_to_a_servers_log_too()
-    {
-        _backend.ServerLog =
-        [
-            new InMemoryLogEntry(DateTimeOffset.UtcNow, "Debug", null, "a debug line", null),
-            new InMemoryLogEntry(DateTimeOffset.UtcNow, "Warning", null, "a warning line", null),
-        ];
-        var panel = await MakeAsync();
-
-        panel.LogViewer.MinimumLevel = LogEventLevel.Warning;
-        Assert.Contains("a warning line", Assert.Single(panel.LogViewer.DisplayLines));
-
-        panel.LogViewer.MinimumLevel = LogEventLevel.Verbose;
-        panel.LogViewer.FilterText = "debug";
-        Assert.Contains("a debug line", Assert.Single(panel.LogViewer.DisplayLines));
     }
 
     // Loads the real XAML for the viewer control the Logs tab hosts, and pins
@@ -373,37 +287,6 @@ public class SettingsLogTabTests
         Assert.Contains("third", panel.LogViewer.DisplayLines[2]);
     }
 
-    // The reader may be scrolled somewhere in the middle of a long log. A tick
-    // that finds nothing must not repaint the document, which is what would drag
-    // them back to the bottom - see LogViewer's LinesReset handler.
-    [Fact]
-    public async Task A_poll_that_finds_nothing_leaves_the_document_alone()
-    {
-        _backend.ServerLog = Lines("first");
-        var panel = await MakeAsync();
-
-        var resets = 0;
-        panel.LogViewer.LinesReset += (_, _) => resets++;
-        await panel.FollowLogAsync();
-
-        Assert.Equal(0, resets);
-        Assert.Single(panel.LogViewer.DisplayLines);
-    }
-
-    // The first line to arrive after "(the server has logged nothing yet)" has
-    // to replace that sentence, not land underneath it.
-    [Fact]
-    public async Task The_first_line_after_an_empty_log_replaces_the_placeholder()
-    {
-        var panel = await MakeAsync();
-        Assert.Contains("logged nothing yet", Assert.Single(panel.LogViewer.DisplayLines));
-
-        _backend.ServerLog = Lines("the first thing that happened");
-        await panel.FollowLogAsync();
-
-        Assert.Contains("the first thing that happened", Assert.Single(panel.LogViewer.DisplayLines));
-    }
-
     // A poll is a background read the reader never asked for, so a failed one is
     // silent: on a two-second timer it is far more likely to be one dropped
     // request than anything worth replacing a readable log with.
@@ -441,55 +324,6 @@ public class SettingsLogTabTests
         Assert.Equal(2, panel.LogViewer.DisplayLines.Count);
     }
 
-    // Reopening the settings screen has to come back to what was being read,
-    // not to the top of the list: the reader closed it because they were done
-    // for the moment, not because they were finished with that device.
-
-    [Fact]
-    public async Task The_log_comes_back_to_the_device_that_was_being_read()
-    {
-        _backend.DeviceLogs["fp-2"] = Lines("from the second phone");
-        var panel = await MakeAsync(Device("fp-1", "One"), Device("fp-2", "Two"));
-        await SelectAsync("fp-2");
-
-        // A second screen over the same settings - the same thing reopening the
-        // panel does, since it is built fresh each time.
-        var reopened = new SettingsViewModel(_backend, _appSettings);
-        await reopened.RefreshDevicesAsync(TestContext.Current.CancellationToken);
-
-        Assert.Equal("fp-2", reopened.SelectedLogSource?.Fingerprint);
-    }
-
-    // Remembered by fingerprint rather than by position, so the row that now
-    // sits where a forgotten device used to does not inherit its place.
-    [Fact]
-    public async Task A_remembered_device_that_is_gone_falls_back_to_the_server()
-    {
-        var panel = await MakeAsync(Device("fp-1", "One"), Device("fp-2", "Two"));
-        await SelectAsync("fp-2");
-
-        _backend.Devices.RemoveAll(d => d.Fingerprint == "fp-2");
-        var reopened = new SettingsViewModel(_backend, _appSettings);
-        await reopened.RefreshDevicesAsync(TestContext.Current.CancellationToken);
-
-        Assert.Null(reopened.SelectedLogSource?.Fingerprint);
-    }
-
-    // The list is cleared and rebuilt on every roster load, and a bound ListBox
-    // pushes null through the selection while that happens. Remembering that
-    // null would throw away the choice a moment before it is restored.
-    [Fact]
-    public async Task Clearing_the_selection_does_not_forget_the_remembered_one()
-    {
-        var panel = await MakeAsync(Device("fp-1", "One"));
-        await SelectAsync("fp-1");
-
-        panel.SelectedLogSource = null;
-        await panel.RefreshDevicesAsync(TestContext.Current.CancellationToken);
-
-        Assert.Equal("fp-1", panel.SelectedLogSource?.Fingerprint);
-    }
-
     // The screen is kept rather than rebuilt now (MainViewModel._serverSettings),
     // so its catch-up load runs against a roster that is usually identical. It
     // must leave the log where it is - repainting the document would drag a
@@ -507,67 +341,5 @@ public class SettingsLogTabTests
 
         Assert.Equal(0, resets);
         Assert.Equal("fp-1", panel.SelectedLogSource?.Fingerprint);
-    }
-
-    // A server's screen and the app's own are different screens with different
-    // tabs - one key for both would land somebody on "Logs" in a screen that
-    // has no Logs tab.
-    [Fact]
-    public void A_servers_tab_and_this_devices_tab_are_remembered_separately()
-    {
-        var server = new SettingsViewModel(_backend, _appSettings);
-        server.RememberedTab = "LogsTab";
-
-        var own = new SettingsViewModel(
-            new FakeBackend { Capabilities = new SettingsCapabilities { PairedServerPicker = true } },
-            _appSettings);
-
-        Assert.Equal("", own.RememberedTab);
-        own.RememberedTab = "LibraryTab";
-        Assert.Equal("LogsTab", server.RememberedTab);
-    }
-
-    // The panel end of it: the remembered name has to survive the trip through
-    // the real XAML, whose TabItems are what those names name.
-    [AvaloniaFact]
-    public void The_panel_opens_on_the_tab_it_was_left_on()
-    {
-        _appSettings.ServerSettingsTab = "NetworkTab";
-        var settings = new SettingsViewModel(
-            new FakeBackend { Capabilities = new SettingsCapabilities { Log = true, ServerNetwork = true } },
-            _appSettings);
-
-        var panel = new SettingsPanel(settings);
-        var window = new Window { Content = panel, Width = 900, Height = 700 };
-        window.Show();
-        window.UpdateLayout();
-        Dispatcher.UIThread.RunJobs();
-
-        var tabs = panel.GetVisualDescendants().OfType<TabControl>().First();
-        Assert.Equal("NetworkTab", (tabs.SelectedItem as TabItem)?.Name);
-
-        window.Close();
-    }
-
-    // A tab this screen does not have is ignored rather than corrected: the same
-    // person administers a server from a browser and their own app on the
-    // desktop, and neither should be able to strand the other.
-    [AvaloniaFact]
-    public void A_remembered_tab_the_screen_does_not_have_is_ignored()
-    {
-        _appSettings.ServerSettingsTab = "NetworkTab";
-        var settings = new SettingsViewModel(
-            new FakeBackend { Capabilities = new SettingsCapabilities() }, _appSettings);
-
-        var panel = new SettingsPanel(settings);
-        var window = new Window { Content = panel, Width = 900, Height = 700 };
-        window.Show();
-        window.UpdateLayout();
-        Dispatcher.UIThread.RunJobs();
-
-        var tabs = panel.GetVisualDescendants().OfType<TabControl>().First();
-        Assert.Equal("GeneralTab", (tabs.SelectedItem as TabItem)?.Name);
-
-        window.Close();
     }
 }

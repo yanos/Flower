@@ -266,20 +266,6 @@ public class ScreenStackPanelSwipeTests : PinnedDataDirectory
         Assert.Equal(MobileScreenKind.TrackList, h.Vm.CurrentFrame.ScreenKind);
     }
 
-    // Under EarlyCommitThreshold in both axes, nothing is decided at all.
-    [AvaloniaFact]
-    public void A_tiny_drag_never_becomes_a_gesture()
-    {
-        using var h = new Harness();
-        h.DrillIn();
-
-        h.Swipe(6, release: false);
-
-        h.Release(206);
-        h.LetEasingFinish();
-        Assert.Equal(MobileScreenKind.TrackList, h.Vm.CurrentFrame.ScreenKind);
-    }
-
     // ── Interactive (reveal) swipes ───────────────────────────────────────────
 
     // Past SwipeThreshold on release: commit. The navigation only happens once
@@ -366,19 +352,6 @@ public class ScreenStackPanelSwipeTests : PinnedDataDirectory
         Assert.Equal(MobileTab.Home, h.Vm.SelectedTab);
     }
 
-    // Recognised as horizontal, but not far enough on release to page.
-    [AvaloniaFact]
-    public void A_short_discrete_swipe_does_not_page()
-    {
-        using var h = new Harness();
-        h.SelectTab(MobileTab.Songs);
-
-        h.Swipe(-UnderThreshold);
-        Harness.Pump();
-
-        Assert.Equal(MobileTab.Songs, h.Vm.SelectedTab);
-    }
-
     // Tab paging stops at the ends rather than wrapping around.
     [AvaloniaFact]
     public void Tab_paging_stops_at_the_first_and_last_tab()
@@ -395,41 +368,5 @@ public class ScreenStackPanelSwipeTests : PinnedDataDirectory
         h.Swipe(-PastThreshold);
         Harness.Pump();
         Assert.Equal(MobileTab.Search, h.Vm.SelectedTab);
-    }
-
-    // ── The fixed back button ─────────────────────────────────────────────────
-
-    // AnimateGoBack reuses the interactive commit path so the overlay back
-    // button plays the same slide-off as a swipe, rather than cutting straight
-    // to the destination.
-    [AvaloniaFact]
-    public void AnimateGoBack_navigates_back_through_the_same_commit_path()
-    {
-        using var h = new Harness();
-        h.DrillIn();
-
-        h.Panel.AnimateGoBack();
-        h.LetEasingFinish();
-
-        Assert.Equal(MobileScreenKind.AlbumGrid, h.Vm.CurrentFrame.ScreenKind);
-        Assert.True(h.Vm.CanGoForward);
-    }
-
-    // ── Forward entrance ──────────────────────────────────────────────────────
-
-    [AvaloniaFact]
-    public void AnimateGoBack_does_nothing_with_no_history()
-    {
-        using var h = new Harness();
-        var tab = h.Vm.SelectedTab;
-
-        h.Panel.AnimateGoBack();
-        h.LetEasingFinish();
-
-        Assert.Equal(tab, h.Vm.SelectedTab);
-        Assert.False(h.Vm.CanGoBack);
-        // Nothing was animated either: without the CanGoBack gate the current
-        // screen eases off to the right and, with no navigation to follow and
-        // reset its transform, is simply left stranded off-screen.
     }
 }

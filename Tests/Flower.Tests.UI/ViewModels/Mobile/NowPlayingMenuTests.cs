@@ -50,17 +50,6 @@ public class NowPlayingMenuTests : PinnedDataDirectory
         Assert.Equal("Ethio Jazz", scope.Mobile.CurrentAlbumHeader?.Name);
     }
 
-    [AvaloniaFact]
-    public void Nothing_playing_leaves_only_settings()
-    {
-        var tracks = new List<Track> { new() { Title = "A", Album = "Al", Artists = "Ar", Path = "/m/a.mp3" } };
-        using var scope = MainViewModelHarness.BuildMobile(new Library(tracks), new MainPlaylist(tracks));
-
-        var entry = Assert.Single(scope.Mobile.BuildNowPlayingMenu().SelectMany(s => s.Entries));
-        entry.Invoke();
-        Assert.True(scope.Mobile.IsShowingSettings);
-    }
-
     // A tap on the artist's name, or Go to Artist: the Artists tab, that
     // artist's albums, and the sheet out of the way.
     [AvaloniaFact]

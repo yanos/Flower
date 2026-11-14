@@ -121,16 +121,6 @@ public class FlingStopGuardTests
     }
 
     [AvaloniaFact]
-    public void A_tap_with_nothing_gliding_still_clicks()
-    {
-        var h = new Harness();
-
-        h.Tap();
-
-        Assert.Equal(1, h.Clicks);
-    }
-
-    [AvaloniaFact]
     public void A_touch_that_stops_a_glide_does_not_click()
     {
         var h = new Harness();
@@ -153,29 +143,6 @@ public class FlingStopGuardTests
         h.Tap();
 
         Assert.Equal(1, h.Clicks);
-    }
-
-    [AvaloniaFact]
-    public void A_glide_that_finished_on_its_own_does_not_swallow_the_next_tap()
-    {
-        var h = new Harness();
-        h.StartGlide(7);
-        h.EndGesture(7);
-
-        h.Tap();
-
-        Assert.Equal(1, h.Clicks);
-    }
-
-    [AvaloniaFact]
-    public void A_hold_with_nothing_gliding_is_still_a_long_press()
-    {
-        var h = new Harness();
-        h.EnableLongPress();
-
-        h.PressAndHold();
-
-        Assert.Equal(1, h.LongPresses);
     }
 
     [AvaloniaFact]

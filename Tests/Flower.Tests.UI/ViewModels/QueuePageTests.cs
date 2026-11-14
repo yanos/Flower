@@ -21,7 +21,7 @@ namespace Flower.Tests.ViewModels;
 
 // The queue as a page: the shared QueueViewModel, which the phone's Queue tab
 // and the desktop's Queue sidebar row both draw, and the desktop's half of it.
-// The phone's half - the tab, its menu and its drag - is QueueLineUpTests.
+// The phone's menu commands are covered in MobileQueueLineUpTests.
 [Collection("PlatformDataDirectory")]
 public class QueuePageTests : PinnedDataDirectory
 {
@@ -45,131 +45,6 @@ public class QueuePageTests : PinnedDataDirectory
 
     private static string[] Titles(QueueViewModel queue) => queue.Rows.Select(r => r.Track.Title!).ToArray();
 
-    [AvaloniaFact]
-    public void The_sidebar_has_a_queue_page_under_a_header_without_a_filter()
-    {
-        using var parts = Playing("A", "B", "C");
-        var main = parts.Main;
-
-        ShowQueue(main);
-
-        Assert.True(main.IsShowingQueue);
-        Assert.True(main.IsShowingTrackList);
-        Assert.True(main.ShowsPageHeader);
-        Assert.False(main.ShowsPageFilter);
-        Assert.Equal("Queue", main.PageTitle);
-        Assert.Equal("3 songs", main.PageSubtitle);
-        Assert.Equal(new[] { "A", "B", "C" }, Titles(main.Queue));
-    }
-
-    // Like Home: a queue nobody is looking at is not rebuilt on every song.
-    [AvaloniaFact]
-    public void The_queue_is_only_built_while_it_is_showing()
-    {
-        using var parts = Playing("A", "B", "C");
-        var queue = parts.Main.Queue;
-        Assert.Empty(queue.Rows);
-
-        ShowQueue(parts.Main);
-        Assert.Equal(3, queue.Rows.Count);
-
-        parts.Main.SelectedSidebarItem = parts.Main.SidebarItems.First(i => i.Kind == SidebarItemKind.Songs);
-        parts.PlaylistControl.AddToQueue(Tracks("D"));
-        Assert.Equal(3, queue.Rows.Count);
-
-        ShowQueue(parts.Main);
-        Assert.Equal(new[] { "A", "B", "C", "D" }, Titles(queue));
-    }
-
-    [AvaloniaFact]
-    public void Playing_a_row_jumps_along_the_queue_rather_than_starting_a_new_one()
-    {
-        using var parts = Playing("A", "B", "C", "D");
-        ShowQueue(parts.Main);
-        var queue = parts.Main.Queue;
-
-        Assert.True(queue.Play(queue.Rows[2]));
-
-        Assert.Equal("C", parts.PlaylistControl.CurrentlyPlayingTrack?.Title);
-        Assert.Equal(new[] { "A", "B", "C", "D" }, Titles(queue));
-        Assert.Equal(2, queue.PlayedCount);
-        Assert.Equal(4, parts.PlaylistControl.CurrentPlaylist.Tracks.Count);
-    }
-
-    // What has played stays, above the song playing and faded, so the queue
-    // can be played again from its top - and a tap there goes back, along the
-    // same queue, rather than starting a new one.
-    [AvaloniaFact]
-    public void What_has_played_stays_above_and_plays_again_from_there()
-    {
-        using var parts = Playing("A", "B", "C", "D");
-        ShowQueue(parts.Main);
-        var queue = parts.Main.Queue;
-        queue.Play(queue.Rows[2]);
-
-        Assert.Equal(new[] { true, true, false, false }, queue.Rows.Select(r => r.IsPlayed));
-        Assert.Equal(new[] { false, false, true, false }, queue.Rows.Select(r => r.IsCurrentlyPlaying));
-        Assert.Equal(new[] { false, false, false, true }, queue.Rows.Select(r => r.CanBeDragged));
-        Assert.Equal(2, queue.UpcomingCount);
-
-        Assert.True(queue.Play(queue.Rows[0]));
-
-        Assert.Equal("A", parts.PlaylistControl.CurrentlyPlayingTrack?.Title);
-        Assert.Equal(0, queue.PlayedCount);
-        Assert.Equal(new[] { "A", "B", "C", "D" }, Titles(queue));
-        Assert.Equal(4, parts.PlaylistControl.CurrentPlaylist.Tracks.Count);
-    }
-
-    [AvaloniaFact]
-    public void A_selection_comes_out_of_the_queue_but_never_the_song_playing()
-    {
-        using var parts = Playing("A", "B", "C", "D");
-        ShowQueue(parts.Main);
-        var queue = parts.Main.Queue;
-
-        Assert.False(queue.CanRemove(queue.Rows[0]));
-        queue.Remove([queue.Rows[0], queue.Rows[1], queue.Rows[3]]);
-
-        Assert.Equal(new[] { "A", "C" }, Titles(queue));
-        Assert.Equal("A", parts.PlaylistControl.CurrentlyPlayingTrack?.Title);
-    }
-
-    // A song queued twice is two rows, and the one dragged is the one moved.
-    [AvaloniaFact]
-    public void Dragging_moves_the_copy_that_was_dragged()
-    {
-        using var parts = Playing("A", "B", "C");
-        parts.PlaylistControl.AddToQueue([parts.Library.Tracks[1]]);
-        ShowQueue(parts.Main);
-        var queue = parts.Main.Queue;
-        Assert.Equal(new[] { "A", "B", "C", "B" }, Titles(queue));
-
-        queue.Reorder(queue.Rows[3], queue.Rows[1]);
-
-        Assert.Equal(new[] { "A", "B", "B", "C" }, Titles(queue));
-    }
-
-    [AvaloniaFact]
-    public void Under_shuffle_the_header_says_why_and_the_rows_stay_put()
-    {
-        using var parts = Playing("A", "B", "C");
-        ShowQueue(parts.Main);
-
-        parts.PlaylistControl.ToggleShuffle();
-
-        Assert.False(parts.Main.Queue.IsReorderable);
-        Assert.StartsWith("3 songs · Shuffle is on", parts.Main.PageSubtitle);
-    }
-
-    [AvaloniaFact]
-    public void The_queue_page_is_where_the_app_reopens()
-    {
-        var settings = new Flower.Persistence.AppSettings { LastSidebarKind = nameof(SidebarItemKind.Queue) };
-        using var parts = MainViewModelHarness.BuildParts(new Library([]), new MainPlaylist([]), settings);
-
-        Assert.True(parts.Main.IsShowingQueue);
-    }
-
     // The desktop's list is handed the queue's rows on the Queue page, the
     // browser's everywhere else - and its headers stop showing a sort.
     [AvaloniaFact]
@@ -183,6 +58,8 @@ public class QueuePageTests : PinnedDataDirectory
         ShowQueue(parts.Main);
         Dispatcher.UIThread.RunJobs();
 
+        Assert.True(parts.Main.IsShowingQueue);
+        Assert.True(parts.Main.IsShowingTrackList);
         var list = view.FindControl<MusicListView>("MusicList")!;
         Assert.Same(parts.Main.Queue.Rows, list.Items);
         Assert.True(list.AllowReorder);
@@ -239,33 +116,6 @@ public class QueuePageTests : PinnedDataDirectory
 
         Assert.Equal(before, parts.PlaylistControl.CurrentPlaylist.Tracks.Count);
         window.Close();
-    }
-
-    // A tap on a row under shuffle is a jump along the rows as they are
-    // shown: the song tapped stays where it was, what was above it is what
-    // has played, and Next plays the row under it.
-    [AvaloniaFact]
-    public void Playing_a_row_under_shuffle_leaves_the_rows_where_they_were()
-    {
-        using var parts = Playing("A", "B", "C", "D", "E", "F");
-        parts.PlaylistControl.ToggleShuffle();
-        var queue = parts.Main.Queue;
-        ShowQueue(parts.Main);
-        var before = Titles(queue);
-        var tapped = queue.Rows[3];
-
-        Assert.True(queue.Play(tapped));
-        Dispatcher.UIThread.RunJobs();
-
-        Assert.Equal(before, Titles(queue));
-        Assert.Equal(3, queue.PlayedCount);
-        Assert.Equal(before[3], parts.PlaylistControl.CurrentlyPlayingTrack?.Title);
-
-        parts.PlaylistControl.Next();
-        Dispatcher.UIThread.RunJobs();
-
-        Assert.Equal(before[4], parts.PlaylistControl.CurrentlyPlayingTrack?.Title);
-        Assert.Equal(before, Titles(queue));
     }
 
     private static Point RowCentre(Window window, MainView view, string title)

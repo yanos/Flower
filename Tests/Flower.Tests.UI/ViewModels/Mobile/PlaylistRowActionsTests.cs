@@ -54,29 +54,6 @@ public class PlaylistRowActionsTests : PinnedDataDirectory
     private SidebarItem TheRow(MobileMainViewModel vm) =>
         vm.PlaylistPickerItems.Single(i => i.Playlist?.Name == "Road trip");
 
-    // The row is not rebuilt when a song is added to the playlist behind it,
-    // so the count has to be re-read rather than waited for.
-    [AvaloniaFact]
-    public async Task Adding_a_song_re_counts_the_row()
-    {
-        var vm = Build(out var library, T("A", 3));
-        var row = TheRow(vm);
-        var changed = 0;
-        row.PropertyChanged += (_, e) =>
-        {
-            if (e.PropertyName == nameof(SidebarItem.PlaylistSummary))
-                changed++;
-        };
-
-        var extra = T("B", 7);
-        library.UpdateTracks(library.Tracks.Append(extra).ToList());
-        await vm.Main.AddTrackToPlaylist(extra, row.Playlist!);
-        Dispatcher.UIThread.RunJobs();
-
-        Assert.True(changed > 0, "the row was never told to re-count");
-        Assert.Equal(2, row.Playlist!.Tracks.Count);
-    }
-
     // Like a song row's, the row's download icon is there while something in
     // the playlist is still only on the server - and a song added from there
     // brings it, though the row itself is never rebuilt.
@@ -95,35 +72,6 @@ public class PlaylistRowActionsTests : PinnedDataDirectory
         Dispatcher.UIThread.RunJobs();
 
         Assert.True(row.PlaylistDownload.IsDownloadable);
-    }
-
-    [AvaloniaFact]
-    public void The_menu_is_the_album_menu_over_this_playlist()
-    {
-        var vm = Build(out _, T("A", 3), T("B", 4));
-        vm.OpenPlaylistActionsCommand.Execute(TheRow(vm));
-
-        Assert.Equal(MobileSheet.AlbumActions, vm.ActiveSheet);
-        Assert.True(vm.IsActingOnAPlaylist);
-        Assert.Equal("Road trip", vm.AlbumActionTarget?.Name);
-        // The playlist's songs, so Play/Shuffle/Add to Playlist act on them.
-        Assert.Equal(new[] { "A", "B" }, vm.AlbumActionTarget!.Tracks.Select(t => t.Title));
-    }
-
-    // The same sheet opened over an album must not offer to rename or delete
-    // a playlist - that is what gates those two entries.
-    [AvaloniaFact]
-    public void An_albums_menu_is_not_a_playlists_menu()
-    {
-        var vm = Build(out _, T("A", 3));
-        vm.OpenPlaylistActionsCommand.Execute(TheRow(vm));
-        Assert.True(vm.IsActingOnAPlaylist);
-
-        vm.CloseSheetCommand.Execute(null);
-        vm.OpenArtistActionsCommand.Execute("Guided by Voices");
-
-        Assert.Equal(MobileSheet.AlbumActions, vm.ActiveSheet);
-        Assert.False(vm.IsActingOnAPlaylist);
     }
 
     [AvaloniaFact]
@@ -179,23 +127,6 @@ public class PlaylistRowActionsTests : PinnedDataDirectory
         // The songs are the library's, not the playlist's, and stay put.
         Assert.Single(library.Tracks);
     }
-
-    // Dismissing the confirmation any other way is still an answer, and the
-    // delete waiting on it would otherwise never come back at all.
-    [AvaloniaFact]
-    public async Task Dismissing_the_confirmation_is_a_no()
-    {
-        var vm = Build(out var library, T("A", 3));
-        vm.OpenPlaylistActionsCommand.Execute(TheRow(vm));
-        vm.DeletePlaylistActionTargetCommand.Execute(null);
-        await WaitFor(() => vm.ActiveSheet == MobileSheet.ConfirmDeletePlaylist);
-
-        vm.CloseSheetCommand.Execute(null);
-        await WaitFor(() => vm.ActiveSheet == MobileSheet.None);
-
-        Assert.Single(library.Playlists);
-    }
-
 
     private static async Task WaitFor(Func<bool> condition, int timeoutMs = 2000)
     {

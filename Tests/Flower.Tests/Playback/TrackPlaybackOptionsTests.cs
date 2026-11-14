@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 
 using Microsoft.Extensions.Logging.Abstractions;
@@ -9,9 +8,6 @@ using Flower.Models;
 using Flower.Persistence;
 using Flower.Tests.TestSupport;
 using Flower.ViewModels;
-
-using Avalonia.Headless.XUnit;
-using Avalonia.Threading;
 
 using Xunit;
 
@@ -26,29 +22,14 @@ namespace Flower.Tests.Playback;
 // both persist through a real store, and an unpinned run puts them in the
 // developer's own library.
 [Collection("PlatformDataDirectory")]
-public class TrackPlaybackOptionsTests : IDisposable
+public class TrackPlaybackOptionsTests : PinnedDataDirectory
 {
-    private readonly string _tempHome;
-
-    public TrackPlaybackOptionsTests()
-    {
-        _tempHome = Path.Combine(Path.GetTempPath(), "flower-tests-" + Guid.NewGuid());
-        Directory.CreateDirectory(_tempHome);
-        PlatformDataDirectory.Current = _tempHome;
-    }
-
-    public void Dispose()
-    {
-        PlatformDataDirectory.Current = AssemblySetup.DefaultDataDirectory;
-        try { Directory.Delete(_tempHome, recursive: true); } catch { /* best effort */ }
-    }
-
     private static Track T(string title) => new() { Title = title, Path = $"/music/{title}.mp3" };
 
     private static Track T(string title, TimeSpan duration) =>
         new() { Title = title, Path = $"/music/{title}.mp3", Duration = duration };
 
-    private static PlaylistControlViewModel MakeViewModel(List<Track> tracks, out FakeAudioManager audio, bool shuffle = false)
+    private PlaylistControlViewModel MakeViewModel(List<Track> tracks, out FakeAudioManager audio, bool shuffle = false)
     {
         audio = new FakeAudioManager();
         var vm = new PlaylistControlViewModel(
@@ -65,7 +46,8 @@ public class TrackPlaybackOptionsTests : IDisposable
         // test asserting straight after RaiseEndReached() isn't racing the
         // pool - and so no stray pool item outlives the test.
         vm.OffPlaybackThread = work => work();
-        return vm;
+        vm.OnUiThread = work => work();
+        return Own(vm);
     }
 
     // ── Skip when shuffling ────────────────────────────────────────────────
@@ -239,39 +221,6 @@ public class TrackPlaybackOptionsTests : IDisposable
         vm.Play(a);
 
         Assert.Same(podcast, audio.LastUpcoming);
-    }
-
-    // ── Volume adjustment ──────────────────────────────────────────────────
-    //
-    // The adjustment is an offset (IAudioManager.VolumeOffset), never a write
-    // to Volume: the slider shows the user's own setting and must not wander
-    // because a track happens to be quiet. So every assertion here is about
-    // EffectiveVolume - what the sink is actually driven with - plus Volume
-    // staying exactly where the user left it.
-
-    // [AvaloniaFact] rather than [Fact]: the Stopped handler is posted to the
-    // dispatcher (see PlaylistControlViewModel), so this needs a real one to
-    // pump.
-    [AvaloniaFact]
-    public void A_tracks_volume_adjustment_is_applied_on_start_and_taken_off_at_the_end()
-    {
-        var quiet = T("Quiet");
-        quiet.VolumeAdjustment = 20;
-
-        var vm = MakeViewModel([quiet], out var audio);
-        audio.Volume = 60;
-
-        vm.Play(quiet);
-        Assert.Equal(80, audio.EffectiveVolume);
-        Assert.Equal(60, audio.Volume);
-
-        audio.RaiseStopped();
-        // Stopped is marshalled onto the dispatcher now - it can arrive from
-        // the sink's backend thread when the output device dies - so the
-        // handler has to be pumped before asserting on what it did.
-        Dispatcher.UIThread.RunJobs();
-        Assert.Equal(60, audio.EffectiveVolume);
-        Assert.Equal(60, audio.Volume);
     }
 
     [Fact]

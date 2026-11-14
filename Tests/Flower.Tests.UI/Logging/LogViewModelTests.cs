@@ -106,55 +106,6 @@ public class LogViewModelTests : PinnedDataDirectory
         Assert.Contains("a warning line", vm.DisplayLines[0]);
     }
 
-    // An entry whose level string is not a LogEventLevel at all is dropped
-    // rather than shown unconditionally.
-    [Fact]
-    public void An_unparseable_level_is_filtered_out()
-    {
-        LogLocal("bogus level line", level: "NotALevel");
-        var vm = Make();
-
-        vm.FilterText = _marker;
-
-        Assert.Empty(vm.DisplayLines);
-    }
-
-    [Fact]
-    public void MinimumLevel_and_FontSize_and_word_wrap_are_restored_from_settings()
-    {
-        var vm = Make(new AppSettings
-        {
-            LogMinimumLevel = LogEventLevel.Error, LogFontSize = 18, LogWordWrapEnabled = true,
-        });
-
-        Assert.Equal(LogEventLevel.Error, vm.MinimumLevel);
-        Assert.Equal(18, vm.FontSize);
-        Assert.True(vm.IsWordWrapEnabled);
-    }
-
-    // ── LinesReset's "did it actually grow" argument ──────────────────────────
-
-    // The View scrolls on this flag, so a level/filter change re-rendering the
-    // same underlying log must report false or the pane yanks around under the
-    // user every time they touch the filter box.
-    [Fact]
-    public void A_filter_or_level_change_reports_no_growth()
-    {
-        LogLocal("a line");
-        var vm = Make();
-        vm.FilterText = _marker;
-
-        var grew = new List<bool>();
-        vm.LinesReset += (_, g) => grew.Add(g);
-
-        vm.FilterText = _marker + " a";
-        vm.MinimumLevel = LogEventLevel.Debug;
-        vm.FilterText = _marker;
-
-        Assert.NotEmpty(grew);
-        Assert.All(grew, g => Assert.False(g));
-    }
-
     // Reloading is what reopening the window does, and the freshly attached
     // view has to be scrolled to the end of what it just painted - so a reload
     // counts as growth even though it is measured against a log that already

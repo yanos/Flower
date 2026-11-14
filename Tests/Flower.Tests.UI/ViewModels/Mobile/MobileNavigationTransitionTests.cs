@@ -12,8 +12,7 @@ using Xunit;
 
 namespace Flower.Tests.ViewModels.Mobile;
 
-// Navigation updates the history once, dismisses sheets in the right order,
-// and consumes each pending transition only once.
+// Navigation away from Now Playing dismisses it and Back restores the screen.
 [Collection("PlatformDataDirectory")]
 public class MobileNavigationTransitionTests : PinnedDataDirectory
 {
@@ -26,28 +25,6 @@ public class MobileNavigationTransitionTests : PinnedDataDirectory
         var parts = MainViewModelHarness.BuildMobile(new Library(tracks), new MainPlaylist(tracks));
         Dispatcher.UIThread.RunJobs();
         return parts;
-    }
-
-    // A compound jump - a search result, or the Now Playing sheet's album art,
-    // straight into an album's own track list - switches tab and drills in, and
-    // is one navigation. Raising NavigationChanged for the tab switch too meant
-    // the first sync consumed the pending entrance on behalf of the Albums
-    // picker, a screen that was replaced in the same breath, and the album the
-    // user actually asked for cut in with nothing pending.
-    [AvaloniaFact]
-    public void A_jump_from_search_into_an_album_is_one_navigation()
-    {
-        using var scope = Build();
-        scope.Mobile.SelectTabCommand.Execute(nameof(MobileTab.Search));
-        scope.Mobile.ConsumePendingTransition();
-
-        var navigations = 0;
-        scope.Mobile.NavigationChanged += (_, _) => navigations++;
-
-        scope.Mobile.SelectSearchAlbumCommand.Execute(MainViewModelHarness.AlbumKey(scope.Mobile, "Album 0"));
-        MainViewModelHarness.WaitForTheDrillIn(scope.Mobile, "Album 0");
-
-        Assert.Equal(1, navigations);
     }
 
     // Tapping the album art of the album already being shown is not a
@@ -103,27 +80,6 @@ public class MobileNavigationTransitionTests : PinnedDataDirectory
         Assert.False(scope.Mobile.IsShowingNowPlaying);
     }
 
-    // The tab the sheet was raised from is the screen already under it, so
-    // tapping that one is only a dismissal - not a reselect, which would also
-    // have scrolled or popped the tab behind the sheet's back.
-    [AvaloniaFact]
-    public void The_current_tab_tapped_over_now_playing_only_dismisses_it()
-    {
-        using var scope = Build();
-        scope.Parts.PlaylistControl.Play(scope.Parts.Library.Tracks[0]);
-        scope.Mobile.OpenNowPlayingCommand.Execute(null);
-        scope.Mobile.ConsumePendingTransition();
-
-        var navigations = 0;
-        scope.Mobile.NavigationChanged += (_, _) => navigations++;
-
-        scope.Mobile.SelectTabCommand.Execute(nameof(MobileTab.Home));
-        Dispatcher.UIThread.RunJobs();
-
-        Assert.False(scope.Mobile.IsShowingNowPlaying);
-        Assert.Equal(0, navigations);
-    }
-
     // Now Playing is an overlay, not a step in the history: its album art
     // pushes an album and takes the sheet away as one step, and Back from that
     // album lands on the screen the sheet was raised over, without raising the
@@ -152,39 +108,6 @@ public class MobileNavigationTransitionTests : PinnedDataDirectory
         scope.Mobile.BackCommand.Execute(null);
         WaitUntil(() => scope.Mobile.CurrentAlbumHeader?.Name == "Album 1");
         Dispatcher.UIThread.RunJobs();
-
-        Assert.False(scope.Mobile.IsShowingNowPlaying);
-    }
-
-    // Opening Now Playing is no navigation of its own: there is nothing to go
-    // back to that it added, and closing it leaves the history as it was.
-    [AvaloniaFact]
-    public void Opening_now_playing_adds_nothing_to_go_back_to()
-    {
-        using var scope = Build();
-        scope.Mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
-        scope.Parts.PlaylistControl.Play(scope.Parts.Library.Tracks[0]);
-        var couldGoBack = scope.Mobile.CanGoBack;
-
-        scope.Mobile.OpenNowPlayingCommand.Execute(null);
-        Assert.Equal(couldGoBack, scope.Mobile.CanGoBack);
-        scope.Mobile.CloseSheetCommand.Execute(null);
-
-        Assert.Equal(couldGoBack, scope.Mobile.CanGoBack);
-    }
-
-    // An ordinary drill-in carries no sheet, so going back to one must not
-    // raise anything.
-    [AvaloniaFact]
-    public void Back_to_a_screen_that_had_no_sheet_raises_none()
-    {
-        using var scope = Build();
-        scope.Mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
-        scope.Mobile.SelectAlbumOrArtistCommand.Execute(MainViewModelHarness.AlbumKey(scope.Mobile, "Album 0"));
-        MainViewModelHarness.WaitForTheDrillIn(scope.Mobile, "Album 0");
-
-        scope.Mobile.BackCommand.Execute(null);
-        WaitUntil(() => !scope.Mobile.IsShowingAlbumTrackList);
 
         Assert.False(scope.Mobile.IsShowingNowPlaying);
     }

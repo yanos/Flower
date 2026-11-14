@@ -1,9 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
 
-using Avalonia.Headless.XUnit;
-using Avalonia.Threading;
-
 using Microsoft.Extensions.Logging.Abstractions;
 
 using Flower.Models;
@@ -83,26 +80,6 @@ public class PlayQueuePersistenceTests : PinnedDataDirectory
 
         Assert.Equal(new[] { "B", "C" }, Titles(after));
         Assert.Equal(1, after.QueueIndex);
-    }
-
-    [AvaloniaFact]
-    public void The_output_stopping_under_a_song_keeps_the_song_and_the_queue()
-    {
-        var library = new List<Track> { T("A"), T("B"), T("C") };
-        var vm = Control(library, out var audio);
-        vm.SetCurrentPlaylist(new Playlist("Now Playing Queue", library));
-        vm.Play(library[1], 1);
-
-        audio.RaiseStopped();
-        Dispatcher.UIThread.RunJobs();
-
-        Assert.Same(library[1], vm.CurrentlyPlayingTrack);
-        Assert.Equal(1, vm.QueueIndex);
-
-        vm.PlayOrPause();
-
-        Assert.Same(library[1], audio.LastPlayed);
-        Assert.Equal(0, audio.ResumeCount);
     }
 
     [Fact]

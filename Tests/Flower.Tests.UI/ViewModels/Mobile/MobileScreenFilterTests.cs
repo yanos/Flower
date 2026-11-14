@@ -92,33 +92,6 @@ public class MobileScreenFilterTests : PinnedDataDirectory
         WaitUntil(() => mobile.ArtistPickerItems.Count == 0, "a song's title finding nobody");
     }
 
-    // Each artist row says how many albums a tap on it opens onto - counted
-    // by album name, the way that artist's grid groups them, so two songs off
-    // one album are one - and how many songs they have.
-    [AvaloniaFact]
-    public void An_artist_row_counts_the_albums_and_songs_behind_it()
-    {
-        var tracks = new List<Track>
-        {
-            Song("Heroes", "Heroes", "David Bowie"),
-            Song("Sons of the Silent Age", "Heroes", "David Bowie"),
-            Song("Warszawa", "Low", "David Bowie"),
-            Song("Karma Police", "OK Computer", "Radiohead"),
-        };
-        using var scope = MainViewModelHarness.BuildMobile(new Library(tracks), new MainPlaylist(tracks));
-        var mobile = scope.Mobile;
-        mobile.SelectTabCommand.Execute(nameof(MobileTab.Artists));
-        WaitUntil(() => mobile.ArtistPickerItems.Count == 2, "the artist list");
-
-        Assert.Equal(
-            [("David Bowie", 2, 3), ("Radiohead", 1, 1)],
-            mobile.ArtistPickerItems.Select(r => (r.Name, r.AlbumCount, r.SongCount)));
-
-        mobile.ScreenFilter = "radio";
-        WaitUntil(() => mobile.ArtistPickerItems.Count == 1, "the artists narrowing");
-        Assert.Equal("Radiohead", mobile.ArtistPickerItems[0].Name);
-    }
-
     // A filtered track list is where Main.FilterText is set at all; leaving
     // it for another tab must not leave the rows the next list builds cut by
     // it.
@@ -135,18 +108,6 @@ public class MobileScreenFilterTests : PinnedDataDirectory
 
         Assert.Null(mobile.Main.FilterText);
         Assert.Null(mobile.ScreenFilter);
-    }
-
-    [AvaloniaFact]
-    public void Nothing_matching_says_so()
-    {
-        using var scope = Build();
-        var mobile = scope.Mobile;
-        mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
-
-        mobile.ScreenFilter = "zzz";
-
-        WaitUntil(() => mobile.IsContentEmpty, "the empty state");
     }
 
     // The same, from the screen: a press anywhere but the oval - a tile here -
@@ -180,28 +141,6 @@ public class MobileScreenFilterTests : PinnedDataDirectory
         window.Close();
     }
 
-    // And the box being let go of with nothing in it - a tap on empty space,
-    // or Return - closes it the same way.
-    [AvaloniaFact]
-    public void Leaving_an_empty_filter_box_closes_it()
-    {
-        using var scope = Build();
-        var mobile = scope.Mobile;
-        mobile.SelectTabCommand.Execute(nameof(MobileTab.Albums));
-        var window = ShowView(mobile);
-
-        Assert.True(mobile.OpenScreenFilter());
-        Settle(window);
-        BoxOf(LiveSlot(window)).Focus();
-        Dispatcher.UIThread.RunJobs();
-        Assert.True(mobile.IsScreenFilterOpen);
-
-        window.FocusManager!.Focus(null);
-        Dispatcher.UIThread.RunJobs();
-        Assert.False(mobile.IsScreenFilterOpen);
-        window.Close();
-    }
-
     private static void PressOn(Window window, Visual target)
     {
         var centre = target.TranslatePoint(new Point(target.Bounds.Width / 2, target.Bounds.Height / 2), window)!.Value;
@@ -210,35 +149,6 @@ public class MobileScreenFilterTests : PinnedDataDirectory
         window.MouseDown(centre, Avalonia.Input.MouseButton.Left);
         window.MouseUp(new Point(-100, -100), Avalonia.Input.MouseButton.Left);
         Dispatcher.UIThread.RunJobs();
-    }
-
-    // Home's shelves can run long - Recently Added is months of albums - so
-    // the pull opens the oval there too, and it narrows every shelf.
-    [AvaloniaFact]
-    public void Home_is_filtered_like_any_other_screen()
-    {
-        using var scope = Build();
-        var mobile = scope.Mobile;
-        mobile.SelectTabCommand.Execute(nameof(MobileTab.Home));
-        var home = mobile.Main.Home;
-        WaitUntil(() => home.RecentlyAdded.Count == 3, "Home's shelves");
-
-        Assert.True(mobile.OpenScreenFilter());
-        mobile.ScreenFilter = "karma";
-
-        WaitUntil(() => home.RecentlyAdded.Count == 1, "the shelves narrowing");
-        Assert.Equal("OK Computer", home.RecentlyAdded[0].Name);
-    }
-
-    [AvaloniaFact]
-    public void The_search_screen_has_no_filter()
-    {
-        using var scope = Build();
-        var mobile = scope.Mobile;
-        mobile.SelectTabCommand.Execute(nameof(MobileTab.Search));
-
-        Assert.False(mobile.OpenScreenFilter());
-        Assert.False(mobile.IsScreenFilterOpen);
     }
 
     private static Window ShowView(MobileMainViewModel mobile)

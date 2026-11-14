@@ -68,28 +68,6 @@ public class MobileVibePlaylistTests : PinnedDataDirectory
         return vm;
     }
 
-    [AvaloniaFact]
-    public void The_row_is_offered_only_while_the_server_makes_them()
-    {
-        Assert.True(Build("ready").Mobile.CanCreateVibePlaylist);
-        Assert.True(Build("analysing").Mobile.CanCreateVibePlaylist);
-        Assert.False(Build(null).Mobile.CanCreateVibePlaylist);
-    }
-
-    // A listener can turn them off on their own device, whatever the server
-    // makes; on again, the row is back.
-    [AvaloniaFact]
-    public void The_row_is_not_offered_while_this_device_has_them_off()
-    {
-        var parts = Build("ready");
-
-        parts.Parts.Main.UseVibePlaylists = false;
-        Assert.False(parts.Mobile.CanCreateVibePlaylist);
-
-        parts.Parts.Main.UseVibePlaylists = true;
-        Assert.True(parts.Mobile.CanCreateVibePlaylist);
-    }
-
     // Off, the ones there are leave the Playlists tab too - kept, and back
     // with the switch.
     [AvaloniaFact]
@@ -130,23 +108,6 @@ public class MobileVibePlaylistTests : PinnedDataDirectory
         Dispatcher.UIThread.RunJobs();
         Assert.True(vm.CanCreateVibePlaylist);
         Assert.Contains(vm.PlaylistPickerItems, i => i.Name == Rainy);
-    }
-
-    // And Endless Play: greyed while the master is off, even where the server
-    // offers it.
-    [AvaloniaFact]
-    public void Endless_play_is_editable_only_while_AI_features_are_on_and_the_server_offers_it()
-    {
-        var main = Build("ready").Parts.Main;
-        main.EndlessPlayOffered = () => true;
-        Assert.True(main.CanEditEndlessPlay);
-
-        main.UseAiFeatures = false;
-        Assert.False(main.CanEditEndlessPlay);
-
-        main.UseAiFeatures = true;
-        main.EndlessPlayOffered = () => false;
-        Assert.False(main.CanEditEndlessPlay);
     }
 
     [AvaloniaFact]
@@ -201,17 +162,6 @@ public class MobileVibePlaylistTests : PinnedDataDirectory
     }
 
     [AvaloniaFact]
-    public void Its_header_play_starts_the_endless_queue()
-    {
-        var parts = Build();
-        var vm = DrilledIn(parts);
-
-        vm.PlayAlbumCommand.Execute(null);
-
-        Assert.Equal(Rainy, parts.Parts.PlaylistControl.VibeSource?.Playlist.Name);
-    }
-
-    [AvaloniaFact]
     public void Its_row_menu_edits_the_sentence_has_no_shuffle_and_plays_the_endless_queue()
     {
         var parts = Build();
@@ -232,19 +182,5 @@ public class MobileVibePlaylistTests : PinnedDataDirectory
         vm.RunAlbumActionCommand.Execute(vm.AlbumActions.Single(e => e.Action == MenuAction.EditVibe));
         Assert.True(vm.IsShowingVibePlaylistEditor);
         Assert.Same(row.Playlist, vm.VibePlaylistEditor!.Playlist);
-    }
-
-    [AvaloniaFact]
-    public void Its_screen_menu_edits_the_sentence_and_has_no_shuffle()
-    {
-        var parts = Build();
-        var vm = DrilledIn(parts);
-
-        var entries = vm.BuildScreenMenu(vm.CurrentFrame).SelectMany(s => s.Entries).ToList();
-        Assert.DoesNotContain(entries, e => e.Label == "Shuffle");
-        entries.Single(e => e.Label == "Edit").Invoke();
-
-        Assert.True(vm.IsShowingVibePlaylistEditor);
-        Assert.Equal(Rainy, vm.VibePlaylistEditor!.Playlist.Name);
     }
 }

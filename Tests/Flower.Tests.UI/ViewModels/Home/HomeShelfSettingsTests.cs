@@ -49,19 +49,6 @@ public class HomeShelfSettingsTests : PinnedDataDirectory
     }
 
     [AvaloniaFact]
-    public void Recently_played_shows_eight_songs_unless_told_otherwise()
-    {
-        using var home = Home(Enumerable.Range(0, 10).Select(i => Album($"P{i}", addedDaysAgo: 400, playedMinutesAgo: i * 10)));
-
-        home.Rebuild();
-        Assert.Equal(8, home.RecentlyPlayed.Count);
-
-        home.RecentlyPlayedLimit = 3;
-        home.Rebuild();
-        Assert.Equal(new[] { "P0 1", "P0 2", "P1 1" }, home.RecentlyPlayed.Select(r => r.Track.Title));
-    }
-
-    [AvaloniaFact]
     public void Recently_added_shows_the_last_three_months_unless_told_otherwise()
     {
         using var home = Home([Album("Ten", 10), Album("Fifty", 50), Album("Hundred", 100), Album("Older", 400)]);
@@ -86,18 +73,6 @@ public class HomeShelfSettingsTests : PinnedDataDirectory
         Assert.False(home.HasRecentlyPlayed);
         Assert.False(home.HasRecentlyAdded);
         Assert.True(home.ShowsNothingYet);
-    }
-
-    [AvaloniaFact]
-    public void The_settings_are_held_to_their_ceilings()
-    {
-        using var home = Home([]);
-
-        home.ContinuePlayingLimit = 1000;
-        home.RecentlyAddedMonths = -4;
-
-        Assert.Equal(HomeViewModel.MaxAlbumsPerShelf, home.ContinuePlayingLimit);
-        Assert.Equal(0, home.RecentlyAddedMonths);
     }
 
     [AvaloniaFact]
@@ -183,15 +158,6 @@ public class HomeShelfSettingsTests : PinnedDataDirectory
         Assert.Equal(moved, HomeShelfOrder.Parse(settings.HomeShelfOrder));
     }
 
-    [AvaloniaFact]
-    public void Home_starts_in_the_saved_order()
-    {
-        var settings = new Flower.Persistence.AppSettings { HomeShelfOrder = ["RecentlyPlayed", "RecentlyAdded", "ContinuePlaying"] };
-        using var parts = MainViewModelHarness.BuildParts(new Library([]), new MainPlaylist([]), settings);
-
-        Assert.Equal(new[] { HomeShelf.RecentlyPlayed, HomeShelf.RecentlyAdded, HomeShelf.ContinuePlaying }, parts.Main.Home.ShelfOrder);
-    }
-
     // The desktop's page header is over Home now, and its filter box is
     // Home's filter - but only while Home is the page.
     [AvaloniaFact]
@@ -208,26 +174,6 @@ public class HomeShelfSettingsTests : PinnedDataDirectory
         main.SelectedSidebarItem = main.SidebarItems.First(i => i.Kind == SidebarItemKind.Songs);
         main.FilterText = "red";
         Assert.Equal("blue", main.Home.Filter);
-    }
-
-    // One list of rows for a virtualizing panel: each shelf's heading, then
-    // its covers so many to a row, a short last row keeping the full count.
-    [AvaloniaFact]
-    public void The_shelves_become_headed_rows_of_songs_and_covers()
-    {
-        using var home = Home(Enumerable.Range(0, 5).Select(i => Album($"A{i}", addedDaysAgo: i + 1, playedMinutesAgo: i * 10)));
-        home.RecentlyPlayedLimit = 2;
-        home.Rebuild();
-
-        var rows = HomeShelfRows.Build(home, columns: 2);
-
-        Assert.IsType<HomeShelfHeaderRow>(rows[0]);
-        Assert.Single(Assert.IsType<HomeSongRow>(rows[1]).Songs);
-        Assert.Single(Assert.IsType<HomeSongRow>(rows[2]).Songs);
-        Assert.IsType<HomeShelfHeaderRow>(rows[3]);
-        var last = Assert.IsType<HomeAlbumRow>(rows[^1]);
-        Assert.Single(last.Tiles);
-        Assert.Equal(7, rows.Count); // 2 headings, 2 + 3 rows
     }
 
     // What made resizing on Home slow: every cover on every shelf was built

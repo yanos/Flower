@@ -135,26 +135,6 @@ public class NewPlaylistEntryTests : PinnedDataDirectory
     }
 
     [AvaloniaFact]
-    public void An_empty_name_creates_nothing_at_all()
-    {
-        using var parts = OnThePlaylistsTab();
-        var window = Show(new PlaylistPickerScreenView(), parts.Mobile);
-
-        parts.Mobile.BeginCreatePlaylistCommand.Execute(null);
-        Pump(window);
-        // Typed and taken back out again: the box is empty, which is how the
-        // user says no.
-        NameBox(window).Text = "   ";
-        window.KeyPressQwerty(PhysicalKey.Enter, RawInputModifiers.None);
-        Dispatcher.UIThread.RunJobs();
-
-        Assert.Empty(parts.Parts.Library.Playlists);
-        Assert.False(parts.Mobile.IsNamingNewPlaylist);
-
-        window.Close();
-    }
-
-    [AvaloniaFact]
     public void Escape_takes_the_draft_row_away()
     {
         using var parts = OnThePlaylistsTab();

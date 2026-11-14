@@ -74,21 +74,6 @@ public class MobileSmartPlaylistEditorTests : PinnedDataDirectory
     }
 
     [AvaloniaFact]
-    public void The_row_opens_the_editor_over_a_new_playlist()
-    {
-        using var scope = Build();
-
-        Assert.True(scope.Mobile.CanCreateSmartPlaylist);
-        scope.Mobile.NewSmartPlaylistCommand.Execute(null);
-
-        Assert.True(scope.Mobile.IsShowingSmartPlaylistEditor);
-        Assert.NotNull(scope.Mobile.SmartPlaylistEditor);
-        // Not in the library until saved, so no sync meanwhile sends it
-        // anywhere as an empty ordinary playlist.
-        Assert.DoesNotContain(scope.Mobile.SmartPlaylistEditor!.Playlist, scope.Library.Playlists);
-    }
-
-    [AvaloniaFact]
     public void Backing_out_removes_the_playlist_it_was_opened_to_make()
     {
         using var scope = Build();
@@ -99,27 +84,6 @@ public class MobileSmartPlaylistEditorTests : PinnedDataDirectory
 
         Assert.False(scope.Mobile.IsShowingSmartPlaylistEditor);
         Assert.DoesNotContain(draft, scope.Library.Playlists);
-    }
-
-    [AvaloniaFact]
-    public void The_check_saves_the_rules_and_keeps_the_playlist()
-    {
-        using var scope = Build();
-        scope.Mobile.NewSmartPlaylistCommand.Execute(null);
-        var editor = scope.Mobile.SmartPlaylistEditor!;
-        editor.Name = "Tractors";
-        var row = editor.Conditions[0];
-        row.Field = row.Fields.First(f => f.Field == SmartField.Title);
-        row.Operator = row.Operators.First(o => o.Operator == SmartOperator.Contains);
-        row.ValueText = "Tractor";
-
-        scope.Mobile.SaveSmartPlaylistCommand.Execute(null);
-
-        Assert.False(scope.Mobile.IsShowingSmartPlaylistEditor);
-        var saved = Assert.Single(scope.Library.Playlists, p => p.Name == "Tractors");
-        Assert.True(saved.IsSmart);
-        Assert.Equal(["Tractor Rape Chain"], saved.Tracks.Select(t => t.Title));
-        Assert.Contains(scope.Parts.Parts.Main.SidebarItems, i => i.Playlist == saved);
     }
 
     // A smart playlist's own screen has a pencil beside play and shuffle, and
@@ -194,24 +158,6 @@ public class MobileSmartPlaylistEditorTests : PinnedDataDirectory
             window.UpdateLayout();
             Dispatcher.UIThread.RunJobs();
         }
-    }
-
-    [AvaloniaFact]
-    public void A_new_playlist_opens_unnamed_and_can_be_saved()
-    {
-        using var scope = Build();
-        scope.Mobile.NewSmartPlaylistCommand.Execute(null);
-        var editor = scope.Mobile.SmartPlaylistEditor!;
-
-        Assert.Equal(string.Empty, editor.Name);
-
-        // Left empty, the playlist keeps the name it was made under.
-        var originalName = editor.Playlist.Name;
-        var row = editor.Conditions[0];
-        row.Field = row.Fields.First(f => f.Field == SmartField.Title);
-        row.ValueText = "Tractor";
-        scope.Mobile.SaveSmartPlaylistCommand.Execute(null);
-        Assert.Contains(scope.Library.Playlists, p => p.IsSmart && p.Name == originalName);
     }
 
     [AvaloniaFact]

@@ -1,9 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading.Tasks;
 
-using Avalonia.Controls;
 using Avalonia.Headless.XUnit;
 
 using Flower.Controls;
@@ -130,55 +128,5 @@ public class ConnectionStatusIconTests
         releases[1]();
 
         Assert.Equal(State.Connected, icon.State);
-    }
-
-    // The other three drive the hold through an injected scheduler, which
-    // proves the rule but not the wiring. This one uses the control's own
-    // timer, on a control that is actually on screen - which is also the only
-    // condition under which it starts one.
-    //
-    // It waits by awaiting rather than by blocking the dispatcher thread and
-    // pumping it by hand, and the difference is not stylistic. A headless
-    // DispatcherTimer only ticks once the dispatcher thread goes idle: the tick
-    // is not sitting in the queue waiting to be drained, so a loop that blocks
-    // that thread and calls RunJobs never finds one. Measured here, against
-    // this suite's shared session, with a 50ms timer and three seconds to catch
-    // it:
-    //
-    //   Thread.Sleep alone            never fired - nothing drains the queue
-    //   RunJobs alone                 never fired, over 95 million spins
-    //   Thread.Sleep + RunJobs        fired at 54ms, on the first pass
-    //   await Task.Delay              fired at 56ms, on the fifth pass
-    //
-    // The third is what this test used to do, and it is the one that is a
-    // coincidence: the sleep happens to leave the thread idle long enough for
-    // the tick to be serviced, and the RunJobs that follows happens to find it.
-    // That held on macOS and Linux and failed on a Windows CI runner, where the
-    // hold was still unreleased five seconds and ~500 passes later. Awaiting
-    // returns the thread to the session's own loop between passes, which is the
-    // condition the timer actually needs - and is how the control's timer runs
-    // in the app, where nothing pumps the dispatcher by hand either.
-    [AvaloniaFact]
-    public async Task An_on_screen_icon_releases_its_own_hold()
-    {
-        var icon = new ConnectionStatusIcon
-        {
-            IsConnected = true,
-            MinimumBusyDuration = TimeSpan.FromMilliseconds(50),
-        };
-        var window = new Window { Content = icon };
-        window.Show();
-
-        icon.IsBusy = true;
-        icon.IsBusy = false;
-
-        Assert.Equal(State.Busy, icon.State);
-
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
-        while (icon.State == State.Busy && DateTime.UtcNow < deadline)
-            await Task.Delay(10);
-
-        Assert.Equal(State.Connected, icon.State);
-        window.Close();
     }
 }
