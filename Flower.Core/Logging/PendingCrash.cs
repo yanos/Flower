@@ -6,9 +6,9 @@ using System.Text.Json.Serialization;
 
 namespace Flower.Logging
 {
-    // A crash the next launch has yet to offer to report - see
-    // docs/CRASH-REPORTING-PLAN.md. The crash itself cannot ask: a terminating
-    // exception leaves no time for a dialog, and a native one runs no managed
+    // A crash the next launch has yet to offer to report.
+    // The crash itself cannot ask: a terminating exception leaves no time
+    // for a dialog, and a native one runs no managed
     // code at all. So whatever caught it leaves this behind, and the next
     // launch shows a banner asking to open a prefilled GitHub issue
     // (CrashIssueLink), which is where a person reads what is about to be

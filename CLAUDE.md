@@ -51,9 +51,8 @@ is left. Read the relevant one before touching that area.
 - `AUDIO-QUALITY-PLAN.md` — render-path defects and PCM-level tests, the float pipeline and output stage, and the audiophile features (EQ, gapless, hi-res, DSD, low latency); what is left is at the top.
 - `VIBE-PLAYLIST-PLAN.md` — Vibe Playlists and Endless Play (CLAP via ONNX Runtime in `Flower.SemanticAudio.Onnx`, engine in `Flower.Core/SemanticAudio/`).
 - `ONLINE-METADATA-PLAN.md` — lyrics, artist pictures, popularity (`OnlineMetadataEngine`).
-- `AUTO-UPDATE-PLAN.md` — Velopack updates and MinVer versioning from git tags.
-- `NATIVE-SECURITY-PLAN.md` — memory-safety review of `libflowerbridge` and the iOS CoreAudio diagnostics; findings not yet fixed.
-- `AIRPLAY-BLUETOOTH-PLAN.md`, `MEDIA-KEYS-PLAN.md`, `CRASH-REPORTING-PLAN.md`, `STORE-DEPLOYMENT-PLAN.md`, `PERFORMANCE-TRACKING-PLAN.md`, `STREAMING-SERVICES-PLAN.md`.
+- `NATIVE-SECURITY-PLAN.md` — completed memory-safety review of `libflowerbridge` and the iOS CoreAudio diagnostics; all five findings fixed.
+- `AIRPLAY-BLUETOOTH-PLAN.md`, `MEDIA-KEYS-PLAN.md`, `STORE-DEPLOYMENT-PLAN.md`, `PERFORMANCE-TRACKING-PLAN.md`, `STREAMING-SERVICES-PLAN.md`.
 
 Issues: GitHub Issues on `yanos/Flower` via `gh`. Domain docs: `CONTEXT.md` and
 `docs/adr/` don't exist yet, which is fine.

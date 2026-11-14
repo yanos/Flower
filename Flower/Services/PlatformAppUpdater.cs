@@ -4,9 +4,9 @@ using System.Threading.Tasks;
 
 namespace Flower.Services
 {
-    // Where a newer Flower comes from, for a desktop installed from a release -
-    // see docs/AUTO-UPDATE-PLAN.md. Everything about when to look and what to
-    // say is shared (AppUpdatesViewModel); only finding and installing differ,
+    // Where a newer Flower comes from, for a desktop installed from a release.
+    // Everything about when to look and what to say is shared
+    // (AppUpdatesViewModel); only finding and installing differ,
     // and they differ by head:
     //
     // - Flower.Desktop (Windows, Linux) was installed by Velopack, which

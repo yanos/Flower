@@ -19,9 +19,8 @@
 # The dmg is Flower.MacOS, the head with AVKit and AppKit, as a drag-to-
 # Applications disk image; it is Apple Silicon only because FFAudio.NET.macOS
 # ships osx-arm64 and nothing else. The other two are Flower.Desktop packed by
-# Velopack (vpk, pinned in .config/dotnet-tools.json), the updater
-# docs/AUTO-UPDATE-PLAN.md chose - Setup.exe installs per user with no admin
-# prompt, and the AppImage runs where it is. Building the AppImage needs
+# Velopack (vpk, pinned in .config/dotnet-tools.json) - Setup.exe installs per
+# user with no admin prompt, and the AppImage runs where it is. Building the AppImage needs
 # mksquashfs (`apt install squashfs-tools`). Nothing is signed: the dmg's
 # bundle carries the ad hoc signature the SDK gives every arm64 build, so a
 # downloaded copy opens through System Settings > Privacy & Security > Open

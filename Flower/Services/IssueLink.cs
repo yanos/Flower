@@ -8,12 +8,12 @@ using Flower.Logging;
 
 namespace Flower.Services;
 
-// A new GitHub issue with its title and body already written - the whole of
-// Flower's crash reporting (docs/CRASH-REPORTING-PLAN.md, Option A). No
-// token, no server, no account of Flower's own: the link opens GitHub's
+// A new GitHub issue with its title and body already written - Flower's
+// manual crash-reporting route. No token, no server, no account of Flower's
+// own: the link opens GitHub's
 // new-issue page in the browser, and the person reads what it says before
-// anything is sent. That page is the review step the plan asks for, since a
-// stack trace can carry real paths.
+// anything is sent. That page is the review step, since a stack trace can
+// carry real paths.
 //
 // What can be redacted here is: the home folder, which names the person, is
 // written as ~. The log file is not attached - a link cannot carry one - so

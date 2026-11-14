@@ -297,7 +297,7 @@ namespace Flower.Persistence
         public bool ShareLogsWithPairedServer { get; set; } = true;
 
         // Whether this device sends its crashes, anonymised, to Flower's
-        // developer (CrashReporting, docs/CRASH-REPORTING-PLAN.md). On by
+        // developer (CrashReporting, docs/PRIVACY.md). On by
         // default: nothing in a report names a person, a song or a server,
         // and a bug nobody reports is a bug nobody fixes. Read once before
         // anything else at startup (ReadSendCrashReports), then live.

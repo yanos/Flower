@@ -49,8 +49,6 @@ The browser model tests await rebuilds directly without a dispatcher; their
 debounce regression also waits for the scheduled grid publication. Recently
 Played's row reuse and layout tests construct Home directly, while playback
 and settings forwarding remain in the UI suite.
-The cleanup and its counts are recorded in
-[`docs/MOBILE-TEST-AUDIT.md`](../docs/MOBILE-TEST-AUDIT.md).
 
 Tests specific to one desktop OS live in its platform project. Those projects
 exclude native test sources on other hosts, so the desktop solution filter can
@@ -203,7 +201,7 @@ step's `needs`. The image is built on tags only, so check a Dockerfile change
 with `docker compose build` from `docker/` before tagging; installers can be
 tried with `scripts/package-desktop.sh dmg|appimage|setup` on their own OS.
 A tag is not a private act: MinVer reads it, and every installed desktop is
-offered it as an update (`docs/AUTO-UPDATE-PLAN.md`).
+offered it as an update.
 
 ## Why the runners are built this way
 

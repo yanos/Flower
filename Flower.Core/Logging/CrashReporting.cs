@@ -8,7 +8,7 @@ using Sentry;
 namespace Flower.Logging
 {
     // Crashes from every Flower install, into the developer's Sentry - see
-    // docs/CRASH-REPORTING-PLAN.md for how, docs/PRIVACY.md for what. One
+    // docs/PRIVACY.md for what a report contains. One
     // setup shared by the app and the server, each with its own project (DSN).
     //
     // Anonymous: no personal data from the SDK, no breadcrumbs, and every

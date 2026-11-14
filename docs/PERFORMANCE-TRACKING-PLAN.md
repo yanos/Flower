@@ -8,7 +8,7 @@ Two complementary halves: (A) CI benchmark regression tracking, catching a PR th
 - **`benchmark-action/github-action-benchmark`** as the CI mechanism — has native `tool: 'benchmarkdotnet'` support, reading the JSON exporter's report. Two output modes: a GitHub Pages historical dashboard (`auto-push`) or simpler PR/commit comments (`comment-on-alert`) — start with comments, no Pages setup needed for v1.
 - Known caveat: GitHub-hosted runners are noisy/shared — treat results as relative trend/regression detection, not precise absolute numbers.
 - (B) already exists in embryonic form: the startup rescan is wrapped in a `Stopwatch` + logged in `App.axaml.cs`. This plan extends that pattern rather than introducing a new one.
-- If `CRASH-REPORTING-PLAN.md`'s Sentry option is adopted, its SDK also does performance tracing (`SentrySdk.StartTransaction`) — same package, not a second tool, so (B) shouldn't stand up separate telemetry infrastructure.
+- Sentry already handles crash reporting; its SDK also does performance tracing (`SentrySdk.StartTransaction`) — same package, not a second tool, so (B) shouldn't stand up separate telemetry infrastructure. See [PRIVACY.md](PRIVACY.md) for what reporting sends.
 
 ## Phase A: CI benchmark regression tracking
 
@@ -21,11 +21,11 @@ Targets `TrackListBuilder.Sort`/`Filter`/row-building, `Library.UpdateTracks`'s 
 ## Phase B: Runtime/production performance signal
 
 - Extend the existing `Stopwatch`+`ILogger` pattern to iTunes play-count sync and track-list rebuild time (the thing a user actually feels as "sluggish").
-- If Sentry gets adopted, wrap the same operations in `SentrySdk.StartTransaction` instead of/alongside log timings — don't stand up telemetry infra just for this.
-- Effort: Small now, free later if Sentry already exists. Risk: Low.
+- Wrap the same operations in `SentrySdk.StartTransaction` instead of/alongside log timings — don't stand up telemetry infra just for this.
+- Effort: Small. Risk: Low.
 
 ## Suggested order
 
-Phase A (self-contained) → Phase B step 1 (cheap, anytime) → Phase B step 2 (only once Sentry is adopted for crash reporting).
+Phase A (self-contained) → Phase B step 1 (cheap, anytime) → Phase B step 2 (using the existing Sentry integration).
 
 Not yet started beyond the existing rescan-logging pattern.

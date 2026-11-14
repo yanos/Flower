@@ -16,7 +16,7 @@ namespace Flower.Logging
     // AppDomain.UnhandledException entirely - it never becomes a managed
     // exception, so App.axaml.cs's existing hook never fires for it. Rather
     // than installing our own signal/SEH handlers (risking interference with
-    // the CLR's own use of them - see docs/CRASH-REPORTING-PLAN.md), this
+    // the CLR's own use of them), this
     // reads back whatever the OS/runtime already recorded about the previous
     // run's crash and folds it into this run's log, so it doesn't just vanish.
     // The newest crash it finds also comes back as a PendingCrash, which the

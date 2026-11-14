@@ -171,7 +171,7 @@ public sealed class FlowerServerOptions : MusicLibrarySettings
     public bool AllowPublicAccess { get; set; } = false;
 
     // Whether this server sends its crashes, anonymised, to Flower's
-    // developer (CrashReporting, docs/CRASH-REPORTING-PLAN.md). On by
+    // developer (CrashReporting, docs/PRIVACY.md). On by
     // default, like the app's switch. Read once at startup by Program.cs,
     // before the container exists, so a change needs a restart.
     public bool SendCrashReports { get; set; } = true;

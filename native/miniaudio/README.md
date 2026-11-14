@@ -69,8 +69,12 @@ Debian container (x64 by its cross compiler, so nothing runs emulated), and
 `win-x64`/`win-arm64` with llvm-mingw's clang - not MSVC, whose C11
 `<stdatomic.h>` is still behind `/experimental:c11atomics`. Both images are
 pinned by digest in the script. It then checks each binary: 21 exports, no
-dependency past libSystem / libc and libm / the UCRT and kernel32, glibc no
+dependency past libSystem / glibc and libm / the UCRT and kernel32, glibc no
 newer than 2.17, and no fused multiply-add in the disassembly.
+Linux builds also enable stack protection, fortified libc calls and full
+RELRO; the script checks for a RELRO segment and eager symbol binding.
+On arm64, stack protection also references glibc's loader for its guard value;
+that dependency is held to the same glibc version floor.
 
 `FlowerBridge.props` copies the one for the RID being built (the SDK's own
 platform when there is no RID) flat beside the app, where `DllImport` finds it
@@ -88,6 +92,9 @@ native/miniaudio/android/build.sh
 ```
 
 Builds `arm64-v8a` (real device), `x86_64` (emulator), `armeabi-v7a` (stretch/older devices) via the NDK's CMake toolchain, strips debug info, and copies each into `Flower.Android/libs/<abi>/` as `libminiaudio.so` and `libflowerbridge.so`. `Flower.Android.csproj` lists neither: the Android SDK globs `libs/<abi>/*.so` on its own, and naming them again packages them twice (XA4301).
+Both libraries enable stack protection, fortified libc calls and full RELRO.
+The script checks each copied library for a RELRO segment and eager symbol
+binding.
 
 **Do not add `-fvisibility=hidden`** to the `miniaudio` target - it hides every `ma_*` symbol from `Miniaudio-CS`'s P/Invoke resolution (this was hit and fixed during initial bring-up: 0 exported symbols with it, 1169 without).
 

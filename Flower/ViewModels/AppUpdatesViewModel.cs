@@ -15,8 +15,8 @@ using Microsoft.Extensions.Logging;
 namespace Flower.ViewModels;
 
 // When a desktop installed from a release looks for a newer one, and what it
-// says when there is one - docs/AUTO-UPDATE-PLAN.md, Phase 3. Where the new
-// version comes from and how it goes in are the head's (IAppUpdater); this is
+// says when there is one. Where the new version comes from and how it goes
+// in are the head's (IAppUpdater); this is
 // the part every head shares: at most one check a day, remembered across
 // launches (AppSettings.LastUpdateCheck), none at all with the setting off,
 // and an update found becomes a banner across the window that asks rather

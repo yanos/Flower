@@ -1090,8 +1090,8 @@ day.
    need a container; `win-x64`/`win-arm64` need clang or a VS 17.5+ floor, since
    MSVC only supports C11 `stdatomic` behind `/experimental:c11atomics`. Neither
    Linux nor Windows can be produced from a Mac without extra tooling, so this
-   wants CI — which makes it a natural companion to `AUTO-UPDATE-PLAN.md` Phase
-   4, standing up a matrixed `windows-latest`/`macos-latest`/`ubuntu-latest` job
+   wants CI — which makes it a natural companion to desktop release packaging,
+   standing up a matrixed `windows-latest`/`macos-latest`/`ubuntu-latest` job
    over the same six RIDs. Doing them together is the strongest argument for the
    timing of either.
 

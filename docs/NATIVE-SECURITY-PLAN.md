@@ -7,11 +7,11 @@ iOS CoreAudio diagnostics), the Flower patches in
 managed side that drives them (`NativeAudioBridge`, `AudioFeeder`,
 `MiniaudioSink`). FFAudio.NET is out of scope.
 
-**Status (November 2026): reviewed; findings 1 and 2 fixed, 3-5 left.** No
+**Status (November 2026): reviewed; all five findings fixed.** No
 buffer overflow in the C itself: every copy is bounded by checks it makes,
 and nothing a song carries (sizes, tags) reaches a length or an index -
-decoded audio enters only as float sample values. What is left are lifetime
-and threading assumptions the C relies on but cannot enforce, at the
+decoded audio enters only as float sample values. The bridge still relies
+on its caller to stop callbacks before destroying a bridge, at the
 managed/native boundary. Anything in the bridge's C means rerunning
 `native/miniaudio/{desktop,android,ios}/build.sh` (the source stamps fail CI
 otherwise).
@@ -30,9 +30,7 @@ otherwise).
   rebuilt. No test reaches it: the state needs a callback racing
   `flush_now` mid-write.
 
-## What is left
-
-### 3. The device registry is not read as a pair (low, defensive)
+### 3. Guard device-registry reads against slot reuse (low, defensive) — fixed
 
 `flower_audio_bridge_for_device` matches a slot's `pDevice`, then loads its
 `pBridge` separately. A slot detached and reused in between would hand a
@@ -41,24 +39,40 @@ callback another device's bridge, and with a different
 of the output buffer. Today `device_uninit` always runs before detach, so no
 callback for that device can be in flight; the C should not depend on that.
 
-Fix: after loading `pBridge`, load `pDevice` again and return NULL if it
-changed.
+After loading `pBridge`, the lookup now loads `pDevice` again and returns
+NULL if it changed. This is a defensive check; it does not replace the
+requirement to stop callbacks before destroying a bridge.
 
-### 4. Capacity past INT32_MAX goes negative in C# (very low)
+### 4. Reject capacities past INT32_MAX bytes (very low) — fixed
 
-`flower_audio_bridge_create` allows a byte capacity up to `UINT32_MAX`;
+`flower_audio_bridge_create` previously allowed a byte capacity up to `UINT32_MAX`;
 `NativeAudioBridge.Capacity` and `Available` cast it to `int`. Past about
 268M frames the feeder sees a negative capacity and stops writing - not
-unsafe, just wrong. Fix: refuse a capacity over `INT32_MAX` bytes in
-`create`.
+unsafe, just wrong. `create` now refuses a capacity over `INT32_MAX` bytes
+before allocating. `NativeAudioBridgeTests` checks the first overflowing
+frame count and a larger one through the managed/native boundary, for
+both S16 and S24 output.
 
-### 5. Build hardening (low)
+### 5. Build hardening (low) — fixed
 
-The Linux and Android builds pass no `-fstack-protector-strong`,
-`-D_FORTIFY_SOURCE=2` or `-Wl,-z,relro,-z,now`. The bridge has almost no
+The Linux bridge and both Android libraries now explicitly enable
+`-fstack-protector-strong`, `-D_FORTIFY_SOURCE=2` and
+`-Wl,-z,relro,-z,now`. The bridge has almost no
 stack buffers, but `impl.c` compiles all of miniaudio, which does. Fortify
 adds `__memcpy_chk`, which libc provides, so the dependency checks in
-`desktop/build.sh` still pass.
+`desktop/build.sh` still pass; the arm64 stack guard also needs glibc's
+loader, allowed at the same version floor. Both build scripts check the
+resulting ELF files for a RELRO segment and eager symbol binding.
+
+## Validation
+
+- Rebuilt all six desktop RIDs, all three Android ABIs, and the iOS device
+  and simulator frameworks; all three source-checksum checks pass.
+- Desktop export, dependency, glibc-floor and floating-point checks pass;
+  Linux and Android full-RELRO checks pass.
+- `Flower.Tests`: 2,596 passed, including four capacity-regression cases.
+- iOS NativeAOT simulator and Android emulator decoding/native-output
+  runners: 106 passed each, zero failures.
 
 ## Checked and clean
 

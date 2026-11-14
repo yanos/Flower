@@ -1,6 +1,6 @@
 # Media Key / OS "Now Playing" Integration Plan
 
-Hardware media-key (play/pause/next/previous) support + OS "Now Playing"/lock-screen integration, across all five platforms. **iOS, macOS, Windows and Linux are built (November 2026); Android is not started.** iOS has been used on a real phone; the three desktops have not yet been tried by hand (see "What is left"). Each head sets an `IPlatformNowPlaying` (the seam below), which `NowPlayingIntegrationService` drives from `PlaylistControlViewModel` and `IAudioManager`:
+Hardware media-key (play/pause/next/previous) support + OS "Now Playing"/lock-screen integration, across all five platforms. **iOS, macOS, Windows and Linux are built (November 2026); Android is not started.** iOS has been used on a real phone, and macOS has been tested by hand; Windows and Linux still need manual verification (see "What is left"). Each head sets an `IPlatformNowPlaying` (the seam below), which `NowPlayingIntegrationService` drives from `PlaylistControlViewModel` and `IAudioManager`:
 
 | Head | Implementation | Where |
 |---|---|---|
@@ -10,7 +10,7 @@ Hardware media-key (play/pause/next/previous) support + OS "Now Playing"/lock-sc
 
 ## What is left
 
-1. **Try each desktop by hand.** macOS: the keyboard's play/pause, next and previous keys, and Control Center's Now Playing module, with Music.app also open (the keys go to whichever app macOS thinks is playing). Windows: the media keys and the flyout above the volume overlay, its art, and the lock screen. Linux: GNOME's media widget in the clock menu and KDE's in the tray (`playerctl status`/`playerctl metadata` show what they read).
+1. **Try Windows and Linux by hand.** Windows: the media keys and the flyout above the volume overlay, its art, and the lock screen. Linux: GNOME's media widget in the clock menu and KDE's in the tray (`playerctl status`/`playerctl metadata` show what they read).
 2. **Windows' vtable slots are proved only by CI.** `WindowsMediaTransportControlsTests` (in `Flower.Tests.Windows`) publishes a song to a hidden window's controls and reads it back; it has not yet run, since nothing here builds on Windows outside CI.
 3. **Android** — below, with `STORE-DEPLOYMENT-PLAN.md` Phase 4's foreground service.
 4. **Seeking from the OS.** The seam carries play/pause, next and previous only. MPRIS says `CanSeek` false, Windows' timeline shows progress without accepting a drag, and Apple's card has no scrubber. A `Seek(TimeSpan)` command on the seam would light all three up.

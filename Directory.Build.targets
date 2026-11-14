@@ -23,7 +23,7 @@
        SENTRY_AUTH_TOKEN is set (a CI secret, or the owner's shell before
        scripts/deploy-ios-device.sh), and does nothing without it. Any build
        whose binary reaches a phone should have the token, or that build's
-       crashes stay unsymbolicated for good. docs/CRASH-REPORTING-PLAN.md. -->
+       crashes stay unsymbolicated for good. -->
   <PropertyGroup Condition="('$(MSBuildProjectName)' == 'Flower.Android' OR '$(MSBuildProjectName)' == 'Flower.iOS') AND '$(Configuration)' == 'Release' AND '$(SENTRY_AUTH_TOKEN)' != ''">
     <SentryOrg>none-k0o</SentryOrg>
     <SentryProject>flower-app</SentryProject>
