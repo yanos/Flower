@@ -1,7 +1,7 @@
 # Mobile test cleanup
 
-Across three passes, 144 test methods are removed or consolidated and 432 are
-relocated from `Flower.Tests.UI` to `Flower.Tests`. The UI project has 576 fewer
+Across four passes, 144 test methods are removed or consolidated and 465 are
+relocated from `Flower.Tests.UI` to `Flower.Tests`. The UI project has 609 fewer
 test methods. Counts here refer to methods, with a theory counted once; runner
 case counts include its individual data rows.
 
@@ -10,7 +10,8 @@ case counts include its individual data rows.
 | Initial cleanup, committed as `59fdca0` | 31 | 35 | 66 |
 | Broader cleanup and playback separation, committed as `3700083` | 105 | 66 | 171 |
 | Remaining model/helper separation | 8 | 331 | 339 |
-| **Total** | **144** | **432** | **576** |
+| Browser, artist icon, Home row and sync-message follow-up | 0 | 33 | 33 |
+| **Total** | **144** | **465** | **609** |
 
 The initial cleanup moved these pure checks:
 
@@ -137,3 +138,32 @@ rows explain why this differs from the 339-method reduction. Total cases fall
 by eight, from 2,996 to 2,988. The combined iOS execution assembly is also built
 to check source inclusion and class-name collisions; this does not execute tests
 on an iOS runtime.
+
+The fourth pass converts another 33 Avalonia test methods into ordinary shared
+tests, preserving their behavior coverage:
+
+| Area | Methods | Change |
+| --- | ---: | --- |
+| Artist icon metadata | 4 | Construct `ArtistIcons` directly; no image loading or dispatcher |
+| Library browser model | 21 | Keep the existing fake browse host; await rebuilds without a UI session |
+| Recently Played rows | 2 | Construct Home directly with a fixed clock for row reuse and layout data |
+| Forced-sync result messages | 6 | Extract `ForceSyncResultMessage`; test success and failure wording directly |
+| **Total** | **33** | |
+
+The browser's filtered-grid regression now checks both the immediate publication
+and the scheduled rebuild. The sync wording checks also cover explicit
+unreachable and unusable-catalog failures. The UI suite keeps discovery,
+initiator selection, trust confirmation and message forwarding, with spinner
+cleanup checked after both successful and failed syncs. Its discovered-server
+fixture now stays alive until the caller finishes, and is owned by the test
+fixture so failed setup assertions still dispose its timers and subscriptions.
+
+Only result formatting moves in production; the sync decisions and displayed
+messages stay the same. The combined iOS assembly picks up the relocated sources
+without changes to its source lists.
+
+Validation after the fourth pass: 2,588 shared cases and 403 UI cases pass, with
+zero failures or skips. The UI runner has 32 fewer cases; the two extra sync
+failure cases and the additional spinner-failure row bring the combined count
+to 2,991, three more than before this pass. The combined iOS execution assembly
+also builds successfully; this checks source inclusion, not iOS runtime behavior.

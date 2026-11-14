@@ -12,8 +12,8 @@ using Xunit;
 
 namespace Flower.Tests.ViewModels.Home;
 
-// Home's Recently Played, which is songs: played from the picked one down,
-// taken off one at a time, and laid out so many to a row.
+// Recently Played's playback and persistence wiring through the app shell.
+// Row reuse and layout data are covered by RecentlyPlayedModelTests.
 [Collection("PlatformDataDirectory")]
 public class RecentlyPlayedTests : PinnedDataDirectory
 {
@@ -70,39 +70,5 @@ public class RecentlyPlayedTests : PinnedDataDirectory
         home.Rebuild();
 
         Assert.Equal(new[] { "Blue 1", "Blue 2" }, home.RecentlyPlayed.Select(r => r.Track.Title));
-    }
-
-    // A song still on the shelf keeps its row across a rebuild, and with it
-    // the cover the row has already loaded.
-    [AvaloniaFact]
-    public void A_song_still_on_the_shelf_keeps_its_row()
-    {
-        var parts = Build(Album("Blue", 5), Album("Red", 50));
-        var home = parts.Main.Home;
-        home.Rebuild();
-        var red = home.RecentlyPlayed.Single(r => r.Track.Title == "Red 1");
-
-        home.RecentlyPlayed[0].Track.LastPlayedAt = Now.AddMinutes(-500);
-        home.Rebuild();
-
-        Assert.Same(red, home.RecentlyPlayed.Single(r => r.Track.Title == "Red 1"));
-    }
-
-    [AvaloniaFact]
-    public void The_songs_go_so_many_to_a_row_under_a_heading_that_can_lead_to_history()
-    {
-        var parts = Build(Album("Blue", 5), Album("Red", 50));
-        var home = parts.Main.Home;
-        home.RecentlyAddedMonths = 0;
-        home.Rebuild();
-
-        var desktop = HomeShelfRows.Build(home, columns: 5, songColumns: 2, historyLink: true);
-        var header = Assert.IsType<HomeShelfHeaderRow>(desktop[0]);
-        Assert.True(header.ShowsHistoryLink);
-        Assert.Equal(new[] { 2, 2 }, desktop.Skip(1).Cast<HomeSongRow>().Select(r => r.Songs.Count));
-
-        var phone = HomeShelfRows.Build(home, columns: 2);
-        Assert.False(Assert.IsType<HomeShelfHeaderRow>(phone[0]).ShowsHistoryLink);
-        Assert.Equal(4, phone.OfType<HomeSongRow>().Count());
     }
 }

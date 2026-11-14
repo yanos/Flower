@@ -1,7 +1,5 @@
 using System.Linq;
 
-using Avalonia.Headless.XUnit;
-
 using Flower.Models;
 using Flower.ViewModels;
 
@@ -21,7 +19,7 @@ public class ArtistIconsTests
 
     // Made of the artist's albums alone, most played first, and the same
     // icon however the name is cased, as the library counts them one artist.
-    [AvaloniaFact]
+    [Fact]
     public void An_artists_icon_is_made_of_their_own_albums()
     {
         var icons = new ArtistIcons();
@@ -34,7 +32,7 @@ public class ArtistIconsTests
     }
 
     // A row's and a header's are two sizes of one icon, from the same songs.
-    [AvaloniaFact]
+    [Fact]
     public void A_rows_icon_and_a_headers_are_of_the_same_albums()
     {
         var icons = new ArtistIcons();
@@ -45,7 +43,7 @@ public class ArtistIconsTests
             icons.For("X", thumbnail: true).AlbumsInPlayOrder);
     }
 
-    [AvaloniaFact]
+    [Fact]
     public void A_name_with_no_songs_has_an_empty_icon()
     {
         var icons = new ArtistIcons();
@@ -56,7 +54,7 @@ public class ArtistIconsTests
 
     // An album added since is in the icon drawn after the library changes,
     // rather than the one made before it.
-    [AvaloniaFact]
+    [Fact]
     public void An_artists_icon_follows_the_library()
     {
         var icons = new ArtistIcons();

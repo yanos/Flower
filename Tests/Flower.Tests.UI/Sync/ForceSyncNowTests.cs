@@ -27,8 +27,8 @@ namespace Flower.Tests.Sync;
 // Both halves are now driven for real rather than worked around: the peer is
 // discovered through the actual discovery pipeline (FakeMdnsBackend raising
 // InstanceFound, a fake HttpMessageHandler answering /info), and only the two
-// sync entry points themselves are stubbed - what is under test is the result
-// reporting and trust confirmation around a sync, not the sync.
+// sync entry points themselves are stubbed. These tests cover execution and
+// trust confirmation; result wording is covered by ForceSyncResultMessageTests.
 [Collection("PlatformDataDirectory")]
 public class ForceSyncNowTests : PinnedDataDirectory
 {
@@ -46,9 +46,9 @@ public class ForceSyncNowTests : PinnedDataDirectory
     }
 
     // A Client paired with a Server that is actually on the network.
-    private static MainViewModelHarness.Parts PairedWithADiscoveredServer()
+    private MainViewModelHarness.Parts PairedWithADiscoveredServer()
     {
-        using var parts = MainViewModelHarness.BuildParts(
+        var parts = Own(MainViewModelHarness.BuildParts(
             new Library(new List<Track>()),
             new MainPlaylist(new List<Track>()),
             new AppSettings
@@ -57,7 +57,7 @@ public class ForceSyncNowTests : PinnedDataDirectory
                 PairedServerAlias       = "Living Room",
             },
             stubSyncServices: true,
-            discoveryHttpClient: new HttpClient(new FakeInfoHandler()));
+            discoveryHttpClient: new HttpClient(new FakeInfoHandler())));
 
         // Discovering a peer is itself a sync trigger (first contact - see
         // TriggerSyncIfReady), and that automatic sync would otherwise be the
@@ -91,90 +91,6 @@ public class ForceSyncNowTests : PinnedDataDirectory
         return parts;
     }
 
-    [AvaloniaFact]
-    public async Task A_sync_that_fetched_new_tracks_reports_how_many()
-    {
-        using var parts = PairedWithADiscoveredServer();
-        parts.StubLibrarySync!.Result = new LibrarySyncResult(Success: true, FetchedCount: 40, AddedCount: 3);
-
-        await parts.Main.Sync.ForceSyncNowAsync();
-
-        Assert.Equal("Added 3 new track(s) from Living Room", parts.Main.LastForceSyncResult);
-    }
-
-    // A 304 from the server: its catalog is exactly what was merged last time,
-    // so there is no fetched count worth reporting.
-    [AvaloniaFact]
-    public async Task A_server_that_answered_unchanged_reports_no_counts_at_all()
-    {
-        using var parts = PairedWithADiscoveredServer();
-        parts.StubLibrarySync!.Result = new LibrarySyncResult(Success: true, FetchedCount: 0, AddedCount: 0, Unchanged: true);
-
-        await parts.Main.Sync.ForceSyncNowAsync();
-
-        Assert.Equal("Already up to date with Living Room", parts.Main.LastForceSyncResult);
-    }
-
-    [AvaloniaFact]
-    public async Task A_sync_that_checked_tracks_but_added_none_says_how_many_it_checked()
-    {
-        using var parts = PairedWithADiscoveredServer();
-        parts.StubLibrarySync!.Result = new LibrarySyncResult(Success: true, FetchedCount: 40, AddedCount: 0);
-
-        await parts.Main.Sync.ForceSyncNowAsync();
-
-        Assert.Equal("Already up to date with Living Room (40 track(s) checked)", parts.Main.LastForceSyncResult);
-    }
-
-    // Discovered but not actually answering - the peer went away between the
-    // last /info poll and the button press.
-    [AvaloniaFact]
-    public async Task A_failed_sync_says_so_rather_than_claiming_to_be_up_to_date()
-    {
-        using var parts = PairedWithADiscoveredServer();
-        parts.StubLibrarySync!.Result = new LibrarySyncResult(Success: false, FetchedCount: 0, AddedCount: 0);
-
-        await parts.Main.Sync.ForceSyncNowAsync();
-
-        Assert.Equal("Could not reach Living Room - check it's still on the network and paired",
-            parts.Main.LastForceSyncResult);
-    }
-
-    // A server that answered, promptly, with 429. The old message sent the user
-    // to go and check a network that was working, next to a connection icon
-    // that was correctly showing the server as reachable - and the natural next
-    // move, unpair and pair again, spends more of the very budget that ran out.
-    // See SyncEndpoints.BulkLimiter: sixty bulk requests a minute, and a
-    // handful of app restarts while debugging is enough to exhaust it.
-    [AvaloniaFact]
-    public async Task A_throttled_sync_says_to_wait_rather_than_to_check_the_network()
-    {
-        using var parts = PairedWithADiscoveredServer();
-        parts.StubLibrarySync!.Result = new LibrarySyncResult(
-            Success: false, FetchedCount: 0, AddedCount: 0, Failure: SyncFailure.Throttled);
-
-        await parts.Main.Sync.ForceSyncNowAsync();
-
-        Assert.Equal("Living Room is asking for fewer requests just now - it should catch up on its own in a minute",
-            parts.Main.LastForceSyncResult);
-    }
-
-    // Reached and refused. The action is to pair again, which is the one case
-    // where the old message's "and paired" half was pointing somewhere useful -
-    // buried in a sentence that was mostly about the network.
-    [AvaloniaFact]
-    public async Task A_refused_sync_says_the_pairing_is_what_is_wrong()
-    {
-        using var parts = PairedWithADiscoveredServer();
-        parts.StubLibrarySync!.Result = new LibrarySyncResult(
-            Success: false, FetchedCount: 0, AddedCount: 0, Failure: SyncFailure.NotTrusted);
-
-        await parts.Main.Sync.ForceSyncNowAsync();
-
-        Assert.Equal("Living Room refused this device - it may need pairing again",
-            parts.Main.LastForceSyncResult);
-    }
-
     // Force sync is the user saying "sync with this one, now": it deliberately
     // bypasses the initiator election every automatic playlist sync goes
     // through, so a Client can pull from a Server that would otherwise have
@@ -197,10 +113,12 @@ public class ForceSyncNowTests : PinnedDataDirectory
     public async Task A_successful_sync_confirms_the_server_still_trusts_us()
     {
         using var parts = PairedWithADiscoveredServer();
+        parts.StubLibrarySync!.Result = new LibrarySyncResult(Success: true, FetchedCount: 40, AddedCount: 3);
 
         await parts.Main.Sync.ForceSyncNowAsync();
 
         Assert.True(parts.Main.IsPairedServerTrustConfirmed);
+        Assert.Equal("Added 3 new track(s) from Living Room", parts.Main.LastForceSyncResult);
     }
 
     [AvaloniaFact]
@@ -212,14 +130,19 @@ public class ForceSyncNowTests : PinnedDataDirectory
         await parts.Main.Sync.ForceSyncNowAsync();
 
         Assert.False(parts.Main.IsPairedServerTrustConfirmed);
+        Assert.Equal("Could not reach Living Room - check it's still on the network and paired",
+            parts.Main.LastForceSyncResult);
     }
 
     // IsSyncing drives the sidebar spinner, and it has to be back off by the
     // time the awaited call returns whichever way the sync went.
-    [AvaloniaFact]
-    public async Task The_syncing_indicator_is_cleared_when_a_forced_sync_finishes()
+    [AvaloniaTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task The_syncing_indicator_is_cleared_when_a_forced_sync_finishes(bool success)
     {
         using var parts = PairedWithADiscoveredServer();
+        parts.StubLibrarySync!.Result = new LibrarySyncResult(success, FetchedCount: 0, AddedCount: 0);
 
         await parts.Main.Sync.ForceSyncNowAsync();
 

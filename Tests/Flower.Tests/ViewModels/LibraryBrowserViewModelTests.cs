@@ -1,11 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.Linq;
-using System.Net;
+using System.Threading;
 using System.Threading.Tasks;
-
-using Avalonia.Headless.XUnit;
 
 using Flower.Models;
 using Flower.Services;
@@ -64,7 +61,7 @@ public class LibraryBrowserViewModelTests
         return (new LibraryBrowserViewModel(new Library(tracks.ToList()), host, NullLogger<LibraryBrowserViewModel>.Instance), host);
     }
 
-    [AvaloniaFact]
+    [Fact]
     public async Task Songs_shows_every_track()
     {
         var (vm, _) = Make(Song("a", "One", "X"), Song("b", "One", "X"), Song("c", "Two", "Y"));
@@ -78,7 +75,7 @@ public class LibraryBrowserViewModelTests
     // "Add N to (X)" on two albums and "Add N To (X)" on one: one artist,
     // as the catalog already counts them, named the way most of the songs
     // spell it - and picking it shows every one of them.
-    [AvaloniaFact]
+    [Fact]
     public async Task An_artist_spelled_in_two_cases_is_one_artist()
     {
         var (vm, host) = Make(
@@ -98,7 +95,7 @@ public class LibraryBrowserViewModelTests
     // Renaming the artist on screen takes the old name out of the column; the
     // pick goes with the songs to the new one, rather than to the top of the
     // column, which is where the desktop then scrolled to show it.
-    [AvaloniaFact]
+    [Fact]
     public async Task A_picked_artist_renamed_stays_picked_under_the_new_name()
     {
         var a = Song("a", "One", "Blur");
@@ -118,7 +115,7 @@ public class LibraryBrowserViewModelTests
 
     // The same for an album: the phone's album screen is the picked album's
     // songs, and on the old name it had none.
-    [AvaloniaFact]
+    [Fact]
     public async Task A_picked_album_renamed_stays_picked_under_the_new_name()
     {
         var a = Song("a", "One", "Blur");
@@ -140,7 +137,7 @@ public class LibraryBrowserViewModelTests
     // Artists page's Sort button; SubListItems, which the phone sorts for
     // itself, stays alphabetical - sorted twice, a reversed order would come
     // back the right way round.
-    [AvaloniaFact]
+    [Fact]
     public void The_artist_column_takes_the_order_picked_and_the_names_behind_it_do_not()
     {
         var (vm, host) = Make(
@@ -160,7 +157,7 @@ public class LibraryBrowserViewModelTests
         Assert.Equal(new[] { "Abba", "Blur", "Cure" }, vm.SubListItems);
     }
 
-    [AvaloniaFact]
+    [Fact]
     public void The_album_grid_takes_the_order_picked()
     {
         var (vm, host) = Make(
@@ -181,7 +178,7 @@ public class LibraryBrowserViewModelTests
         Assert.Equal(new[] { "Alpha", "Beta", "Gamma" }, vm.AlbumGridTiles.Select(t => t.Name));
     }
 
-    [AvaloniaFact]
+    [Fact]
     public async Task Artists_shows_nothing_until_an_artist_is_picked_then_only_that_artists_tracks()
     {
         var (vm, host) = Make(Song("a", "One", "X"), Song("b", "Two", "Y"));
@@ -199,7 +196,7 @@ public class LibraryBrowserViewModelTests
         Assert.Equal("a", Assert.Single(vm.Rows).Track.Title);
     }
 
-    [AvaloniaFact]
+    [Fact]
     public async Task History_excludes_tracks_that_have_never_been_played()
     {
         var (vm, host) = Make(
@@ -213,7 +210,7 @@ public class LibraryBrowserViewModelTests
         Assert.Equal("played", Assert.Single(vm.Rows).Track.Title);
     }
 
-    [AvaloniaFact]
+    [Fact]
     public async Task The_search_filter_narrows_the_rows()
     {
         var (vm, _) = Make(Song("hello", "One", "X"), Song("goodbye", "One", "X"));
@@ -227,7 +224,7 @@ public class LibraryBrowserViewModelTests
 
     // Songs finds a song by its title; an album's or an artist's name is
     // what the other two pages find.
-    [AvaloniaFact]
+    [Fact]
     public async Task Songs_are_found_by_title_alone()
     {
         var (vm, _) = Make(Song("Heroes", "Heroes", "Bowie"), Song("Sons of the Silent Age", "Heroes", "Bowie"));
@@ -243,7 +240,7 @@ public class LibraryBrowserViewModelTests
     }
 
     // Any other list of songs - here a playlist - still finds one by anything.
-    [AvaloniaFact]
+    [Fact]
     public async Task A_playlist_still_finds_a_song_by_its_artist()
     {
         var song = Song("Heroes", "Heroes", "Bowie");
@@ -258,7 +255,7 @@ public class LibraryBrowserViewModelTests
         Assert.Single(vm.Rows);
     }
 
-    [AvaloniaFact]
+    [Fact]
     public async Task The_album_grid_finds_an_album_by_its_name_alone()
     {
         var (vm, host) = Make(Song("Karma Police", "OK Computer", "Radiohead"), Song("Heroes", "Heroes", "Bowie"));
@@ -283,7 +280,7 @@ public class LibraryBrowserViewModelTests
     // the whole library for that second - every album shuffling into place
     // over the ones being looked at, then back - which is what a cover change
     // made of a grid filtered down to its album.
-    [AvaloniaFact]
+    [Fact]
     public async Task A_library_change_keeps_the_album_grid_filtered_while_it_rebuilds()
     {
         var (vm, host) = Make(Song("Karma Police", "OK Computer", "Radiohead"), Song("Heroes", "Heroes", "Bowie"));
@@ -292,12 +289,26 @@ public class LibraryBrowserViewModelTests
         vm.FilterText = "computer";
         await vm.RebuildRowsImmediatelyAsync();
 
+        var rebuilt = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var gridChanges = 0;
+        vm.PropertyChanged += (_, e) =>
+        {
+            // Repopulate publishes the immediate grid first, then the scheduled
+            // rebuild publishes its own. Wait for that second grid itself.
+            if (e.PropertyName == nameof(LibraryBrowserViewModel.AlbumGridTiles)
+                && Interlocked.Increment(ref gridChanges) == 2)
+                rebuilt.TrySetResult();
+        };
+
         vm.Repopulate();
 
         Assert.Equal("OK Computer", Assert.Single(vm.AlbumGridTiles).Name);
+
+        await rebuilt.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        Assert.Equal("OK Computer", Assert.Single(vm.AlbumGridTiles).Name);
     }
 
-    [AvaloniaFact]
+    [Fact]
     public void History_keeps_sort_state_independent_of_songs()
     {
         var (vm, host) = Make(Song("a", "One", "X"));
@@ -323,7 +334,7 @@ public class LibraryBrowserViewModelTests
         Assert.Equal("Title", vm.SortColumn);
     }
 
-    [AvaloniaFact]
+    [Fact]
     public void Clicking_the_same_column_twice_reverses_it()
     {
         var (vm, _) = Make(Song("a", "One", "X"));
@@ -339,7 +350,7 @@ public class LibraryBrowserViewModelTests
         Assert.True(vm.SortAscending);
     }
 
-    [AvaloniaFact]
+    [Fact]
     public void Expanding_an_album_is_an_accordion_and_orders_by_disc_then_track()
     {
         var (vm, _) = Make(
@@ -369,7 +380,7 @@ public class LibraryBrowserViewModelTests
 
     // The arrow keys in the grid: the open album, if there is one, goes where
     // the selection goes, so the open album is still the selected one.
-    [AvaloniaFact]
+    [Fact]
     public void Moving_to_an_album_selects_it_alone_and_takes_an_open_album_along()
     {
         var (vm, _) = Make(Song("a", "One", "X"), Song("b", "Two", "Y"), Song("c", "Three", "Z"));
@@ -387,7 +398,7 @@ public class LibraryBrowserViewModelTests
         Assert.Equal(["b"], vm.ExpandedAlbumTracks.Select(t => t.Title));
     }
 
-    [AvaloniaFact]
+    [Fact]
     public void Moving_to_an_album_with_none_open_opens_nothing()
     {
         var (vm, _) = Make(Song("a", "One", "X"), Song("b", "Two", "Y"));
@@ -400,7 +411,7 @@ public class LibraryBrowserViewModelTests
         Assert.Null(vm.ExpandedAlbumName);
     }
 
-    [AvaloniaFact]
+    [Fact]
     public void Dragging_off_the_album_grid_resolves_tracks_by_album()
     {
         var a = Song("a", "One", "X");
@@ -418,7 +429,7 @@ public class LibraryBrowserViewModelTests
         Assert.Empty(vm.GetTracksForSubListItems(new[] { one }));
     }
 
-    [AvaloniaFact]
+    [Fact]
     public async Task Tile_grids_are_built_only_for_the_views_that_paint_them()
     {
         var (vm, host) = Make(Song("a", "One", "X"));
@@ -437,7 +448,7 @@ public class LibraryBrowserViewModelTests
         Assert.Empty(vm.AlbumGridTiles);
     }
 
-    [AvaloniaFact]
+    [Fact]
     public async Task A_playlist_view_shows_the_playlists_own_order()
     {
         var b = Song("b", "One", "X");

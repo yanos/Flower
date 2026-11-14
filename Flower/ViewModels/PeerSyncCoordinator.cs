@@ -1212,7 +1212,7 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         {
             _logger.LogInformation("Force sync requested with {Alias} ({Fingerprint}) while it is rate limiting this device; not sending",
                 device.Alias, device.Fingerprint);
-            LastForceSyncResult = DescribeFailure(SyncFailure.Throttled, device.Alias);
+            LastForceSyncResult = ForceSyncResultMessage.DescribeFailure(SyncFailure.Throttled, device.Alias);
             return;
         }
 
@@ -1240,16 +1240,7 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
             await PushTagEdits(device, libraryResult);
             StartUploads(device, libraryResult);
 
-            LastForceSyncResult = !libraryResult.Success
-                ? DescribeFailure(libraryResult.Failure, device.Alias)
-                // Unchanged means the server answered 304 - its catalog is
-                // exactly what was merged last time, so there is no fetched
-                // count to report (see LibrarySyncResult).
-                : libraryResult.Unchanged
-                    ? $"Already up to date with {device.Alias}"
-                    : libraryResult.AddedCount > 0
-                        ? $"Added {libraryResult.AddedCount} new track(s) from {device.Alias}"
-                        : $"Already up to date with {device.Alias} ({libraryResult.FetchedCount} track(s) checked)";
+            LastForceSyncResult = ForceSyncResultMessage.Format(libraryResult, device.Alias);
             _logger.LogInformation("Force sync result: {Result}", LastForceSyncResult);
         }
         finally
@@ -1258,29 +1249,6 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
                 NotifyIsSyncingChanged();
         }
     }
-
-    // What to tell the user, in terms of what they should do next. This used to
-    // be one sentence for every failure - "could not reach X, check it's still
-    // on the network and paired" - which was actively misleading for three of
-    // the four cases: the server was reached, the connection icon beside this
-    // line was correctly showing it as reachable, and the advice was to go and
-    // check a network that was fine.
-    //
-    // Throttled is the one worth naming most precisely. The budget rolls over
-    // by itself (see SyncEndpoints.BulkLimiter), so the whole of the required
-    // action is to wait, and saying so stops the next instinct - unpair and
-    // pair again - which spends more of the same budget.
-    private static string DescribeFailure(SyncFailure failure, string alias) => failure switch
-    {
-        SyncFailure.Throttled =>
-            $"{alias} is asking for fewer requests just now - it should catch up on its own in a minute",
-        SyncFailure.NotTrusted =>
-            $"{alias} refused this device - it may need pairing again",
-        SyncFailure.Refused =>
-            $"{alias} answered, but not with a catalog - see the log for what it said",
-        _ =>
-            $"Could not reach {alias} - check it's still on the network and paired",
-    };
 
     // ── Discovery-driven sync triggers ────────────────────────────────────
 
