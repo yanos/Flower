@@ -227,6 +227,15 @@ public sealed class SeekableHttpStream : Stream
     private string? _bodyOrigin;
     private volatile bool _rerouteRequested;
 
+    // The origin a request is being sent to while no body is open yet, and
+    // what Reroute cancels to give up on it. Leaving Wi-Fi, the dial that
+    // matters is usually this one rather than a body: the reopen after the
+    // first failure goes to another address on the same fading network,
+    // which neither connects nor fails for several seconds. Guarded by
+    // _stallLock, like _stall.
+    private string? _dialOrigin;
+    private CancellationTokenSource? _dial;
+
     // Construction costs nothing and asks the server nothing.
     //
     // That matters because of who opens these: FfmpegTrackDecoder builds one
@@ -256,26 +265,39 @@ public sealed class SeekableHttpStream : Stream
     //
     // Why not simply let the old connection fail: it does not fail, it goes
     // silent, and waiting out StallTimeout is ten seconds of dead air for a
-    // server that was reachable the whole time. Safe from any thread, and a
-    // no-op when the route has not moved or nothing is open.
+    // server that was reachable the whole time. The same goes for a request
+    // still connecting to the old address, which is given up the same way.
+    // Safe from any thread, and a no-op when the route has not moved or
+    // nothing is open or being dialled.
     public void Reroute()
     {
-        if (_route == null || _disposed || Volatile.Read(ref _bodyOrigin) is not { } open)
+        if (_route == null || _disposed)
+            return;
+
+        string? open = Volatile.Read(ref _bodyOrigin);
+        string? from;
+        lock (_stallLock)
+            from = open ?? _dialOrigin;
+        if (from == null)
             return;
 
         var now = _route(_uri).GetLeftPart(UriPartial.Authority);
-        if (now.Equals(open, StringComparison.OrdinalIgnoreCase))
+        if (now.Equals(from, StringComparison.OrdinalIgnoreCase))
             return;
 
         _logger?.LogInformation(
-            "{Uri} moves from {From} to {To}; abandoning the open connection",
-            LogPath.Short(_uri.ToString()), open, now);
+            "{Uri} moves from {From} to {To}; abandoning the {What}",
+            LogPath.Short(_uri.ToString()), from, now,
+            open != null ? "open connection" : "request still connecting");
 
         _rerouteRequested = true;
         lock (_stallLock)
         {
             if (!_disposed)
+            {
                 _stall.Cancel();
+                _dial?.Cancel();
+            }
         }
     }
 
@@ -783,6 +805,7 @@ public sealed class SeekableHttpStream : Stream
         var facts = EnsureProbed();
         var physical = position + _shift;
         var uri = CurrentUri();
+        var dial = BeginDial(uri);
         HttpResponseMessage response;
         try
         {
@@ -797,12 +820,20 @@ public sealed class SeekableHttpStream : Stream
                     request.Headers.IfRange = facts.Version;
                 }
                 return request;
-            }, _logger, ThrottleWaitBudget, ResponseTimeout, _lifetime.Token).GetAwaiter().GetResult();
+            }, _logger, ThrottleWaitBudget, ResponseTimeout, dial).GetAwaiter().GetResult();
+        }
+        catch (OperationCanceledException) when (_rerouteRequested && !_lifetime.IsCancellationRequested)
+        {
+            throw new StreamReroutedException();
         }
         catch (Exception ex) when (ex is (IOException or HttpRequestException)
                                    and not HttpThrottledException and not HttpProtocolErrorException)
         {
             throw new ServerUnreachableException(ex);
+        }
+        finally
+        {
+            EndDial();
         }
 
         if (!response.IsSuccessStatusCode)
@@ -1110,6 +1141,27 @@ public sealed class SeekableHttpStream : Stream
 
             _lifetime.Cancel();
             _stall.Cancel();
+        }
+    }
+
+    private CancellationToken BeginDial(Uri uri)
+    {
+        lock (_stallLock)
+        {
+            _lifetime.Token.ThrowIfCancellationRequested();
+            _dial = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+            _dialOrigin = uri.GetLeftPart(UriPartial.Authority);
+            return _dial.Token;
+        }
+    }
+
+    private void EndDial()
+    {
+        lock (_stallLock)
+        {
+            _dial?.Dispose();
+            _dial = null;
+            _dialOrigin = null;
         }
     }
 

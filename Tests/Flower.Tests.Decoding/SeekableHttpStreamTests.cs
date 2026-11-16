@@ -95,6 +95,11 @@ public class SeekableHttpStreamTests
         public string? DeadHost { get; set; }
         public int RequestsToOtherHosts { get; private set; }
 
+        // Every body request to this host is left unanswered until it is
+        // cancelled: a connect to the LAN address of a Wi-Fi network that is
+        // still fading, which neither succeeds nor fails for several seconds.
+        public string? HangingHost { get; set; }
+
         // The first body opens and then never delivers another byte, and
         // never fails either - a socket whose network has gone away.
         public bool StallsFirstBody { get; set; }
@@ -229,8 +234,12 @@ public class SeekableHttpStreamTests
             return response;
         }
 
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
-            Task.FromResult(Respond(request));
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.Method == HttpMethod.Get && request.RequestUri!.Host == HangingHost)
+                await Task.Delay(Timeout.Infinite, cancellationToken);
+            return Respond(request);
+        }
     }
 
     // A body that is open and says nothing: every read waits until it is
@@ -728,6 +737,37 @@ public class SeekableHttpStreamTests
 
         server.DeadHost = "server";
         moved = true;
+        stream.Reroute();
+
+        Assert.Equal(content, await reading.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+        Assert.True(server.RequestsToOtherHosts >= 1, "the reopen should have gone to the new address");
+    }
+
+    // Walking out of the house, as a phone logged it: the stream gave up on
+    // the LAN address and redialled another LAN address that had answered a
+    // moment before, the route then moved on to the public address, and the
+    // request still dialling the dead LAN one was left to run out its connect
+    // timeout - three more seconds of silence for a server that was already
+    // reachable. A route that moves away from the address being dialled
+    // abandons that dial too, not only an open body.
+    [Fact]
+    public async Task Rerouting_abandons_a_request_still_waiting_to_connect()
+    {
+        var content = Content(20_000);
+        var host = "server";
+        var (stream, server) = await OpenAsync(
+            content,
+            route: uri => new UriBuilder(uri) { Host = host }.Uri);
+        stream.ResponseTimeout = TimeSpan.FromMinutes(5);
+
+        server.HangingHost = "lan";
+        host = "lan";
+        var reading = Task.Run(() => ReadFully(stream, 20_000));
+        await Task.Delay(200, TestContext.Current.CancellationToken);
+        Assert.False(reading.IsCompleted);
+
+        server.DeadHost = "lan";
+        host = "public";
         stream.Reroute();
 
         Assert.Equal(content, await reading.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
