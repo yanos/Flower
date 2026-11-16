@@ -60,6 +60,7 @@ namespace Flower.Audio.Ffmpeg
 
         private Decoder? _decoder;
         private SeekableHttpStream? _remoteStream;
+        private ReadAheadStream? _remoteReader;
         private Thread? _thread;
 
         // Held while Open publishes _decoder/_remoteStream and while Retire
@@ -185,6 +186,16 @@ namespace Flower.Audio.Ffmpeg
                 format.Duration?.TotalMilliseconds ?? -1);
         }
 
+        // How much of a streamed file is fetched ahead of the decoder: enough
+        // to play through a phone moving from Wi-Fi to cellular, which takes
+        // five to fifteen seconds, with room to spare. Sized by the file's
+        // own bitrate once FFmpeg has found its duration - a 128k MP3 needs
+        // under half a megabyte, a 24/192 FLAC eighteen - and until then by
+        // the opening size, which covers FFmpeg's probe. See ReadAheadStream.
+        private const double ReadAheadSeconds = 30;
+        private const int OpeningReadAheadBytes = 1024 * 1024;
+        private const int MaxReadAheadBytes = 24 * 1024 * 1024;
+
         // Same budget as LibVLC's parse had, and for the same reason: it is
         // how long a stopped or unreachable server takes to be reported, and
         // it runs off the lock while the current track keeps playing.
@@ -205,19 +216,21 @@ namespace Flower.Audio.Ffmpeg
                 // another thread, and shuffling retires the armed decoder while
                 // it is mid-open - which handed FFmpeg a null stream.
                 var stream = new SeekableHttpStream(AudioHttpClient, new Uri(path), logger: _logger, route: RouteStream);
+                var reader = new ReadAheadStream(stream, OpeningReadAheadBytes);
                 lock (_resourceGate)
                 {
                     if (Volatile.Read(ref _retired) == 1)
                     {
-                        stream.Dispose();
+                        reader.Dispose();
                         throw new OperationCanceledException();
                     }
                     _remoteStream = stream;
+                    _remoteReader = reader;
                     LiveStreams.TryAdd(stream, 0);
                 }
                 stream.ProbeAsync(cancellationToken).GetAwaiter().GetResult();
                 Publish(Decoder.OpenStream(
-                    stream,
+                    reader,
                     SampleFormat.F32,
                     (int)_format.SampleRate,
                     (int)GaplessFormat.Channels,
@@ -230,7 +243,12 @@ namespace Flower.Audio.Ffmpeg
                 // delivery line).
                 var duration = _decoder?.Format.Duration ?? Track.Duration;
                 if (duration > TimeSpan.Zero && stream.Length > 0)
+                {
                     stream.RealTimeBytesPerSecond = stream.Length / duration.TotalSeconds;
+                    reader.CapacityBytes = (int)Math.Clamp(
+                        stream.RealTimeBytesPerSecond * ReadAheadSeconds,
+                        OpeningReadAheadBytes, MaxReadAheadBytes);
+                }
             }
             else
             {
@@ -702,12 +720,15 @@ namespace Flower.Audio.Ffmpeg
             var thread = _thread;
             Decoder? decoder;
             SeekableHttpStream? stream;
+            ReadAheadStream? reader;
             lock (_resourceGate)
             {
                 decoder = _decoder;
                 stream = _remoteStream;
+                reader = _remoteReader;
                 _decoder = null;
                 _remoteStream = null;
+                _remoteReader = null;
             }
             if (stream != null)
                 LiveStreams.TryRemove(stream, out _);
@@ -734,7 +755,12 @@ namespace Flower.Audio.Ffmpeg
                     LiveDecoders.Closed();
                 }
 
-                stream?.Dispose();
+                // The reader owns the stream: it disposes it once its own
+                // read-ahead thread has let go of it.
+                if (reader != null)
+                    reader.Dispose();
+                else
+                    stream?.Dispose();
 
                 // After the join, so a parked thread is never woken by a
                 // disposed handle.

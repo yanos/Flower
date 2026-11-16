@@ -293,6 +293,13 @@ answering until they answer again (`NetworkDiscoveryService.SuspectOtherPortsOf`
 A refused connection does not spread like this, because the machine that
 refused is still there.
 
+**A streamed file is read thirty seconds ahead.** The handover had only two
+seconds of cover, which is all the output ring holds. A streamed file is now
+read about thirty seconds ahead of the decoder (`ReadAheadStream`, sized from
+the file's bitrate, at most 24 MB). The output ring stays at two seconds,
+because `GaplessCoordinator` hands over when a track's decode ends: a deeper
+ring would show, count and skip the next song that much early.
+
 **Not yet verified against a real tailnet.** There is no Tailscale on the
 development machine, so the `100.64/10` branch of `ReachRank` and the whole
 LAN↔tailnet handover are still covered by tests rather than by observation. The
