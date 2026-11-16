@@ -1069,6 +1069,9 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
             _logger.LogTrace("Still could not resolve /info for {InstanceName} at {EndPoint}: {Message}",
                 device.InstanceName, device.BaseUri, Describe(ex));
 
+        if (failures == 1 && IsAddressSilent(ex))
+            SuspectOtherPortsOf(device);
+
         // A link-local address failing doesn't mean the peer is gone -
         // see OnInstanceFound's own comment - it just means this
         // particular address was never going to work, and pruning the
@@ -1108,6 +1111,54 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
                 device.InstanceName, failures);
             DeviceLost?.Invoke(this, device.InstanceName);
         }
+    }
+
+    // An address that has stopped answering at one port has stopped
+    // answering at every port. A server is remembered at its plain and its
+    // TLS port on the same LAN address, and walking out of the house the
+    // plain one timed out while the TLS one still read as answering - it had,
+    // a few seconds earlier, on the same Wi-Fi - so the route moved to it, and
+    // a stream spent its connect timeout there before reaching the public
+    // address, which had been answering all along.
+    //
+    // Suspicion rather than a verdict: each sibling's own next answer clears
+    // it (ResolveAliasAsync), and only on the first miss, so a port that
+    // keeps failing cannot keep knocking down one that works.
+    private void SuspectOtherPortsOf(DiscoveredDevice device)
+    {
+        if (device.Ip is not { } address)
+            return;
+
+        foreach (var sibling in _knownDevices.Values)
+        {
+            if (ReferenceEquals(sibling, device) || !sibling.IsResponding || !address.Equals(sibling.Ip))
+                continue;
+
+            sibling.IsResponding = false;
+            _logger.LogInformation(
+                "{InstanceName} at {EndPoint} is on {Address}, which just stopped answering at {Failed}; treating it as unreachable until it answers again",
+                sibling.InstanceName, sibling.BaseUri, address, device.BaseUri);
+            DeviceDiscovered?.Invoke(this, sibling);
+        }
+    }
+
+    // Whether a failure says nothing is answering at this address at all - a
+    // timeout, a network or host that cannot be reached - as opposed to a
+    // machine that answered and refused this port, or a TLS handshake this
+    // side declined. Only the first says anything about the address's other
+    // ports.
+    internal static bool IsAddressSilent(Exception ex)
+    {
+        for (var e = ex; e != null; e = e.InnerException)
+        {
+            if (e is TimeoutException)
+                return true;
+            if (e is SocketException { SocketErrorCode: SocketError.TimedOut or SocketError.HostUnreachable
+                    or SocketError.NetworkUnreachable or SocketError.NetworkDown or SocketError.HostDown })
+                return true;
+        }
+
+        return false;
     }
 
     // Resolves a peer by its stable Fingerprint (not the mDNS instance name

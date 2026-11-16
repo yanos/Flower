@@ -286,6 +286,13 @@ the public address had already answered. `SeekableHttpStream` now remembers
 the origin it is dialling and cancels that request when the route moves away
 from it (`Rerouting_abandons_a_request_still_waiting_to_connect`).
 
+**A timeout on one port now counts against the address's other ports.** The
+TLS port was picked even though the plain port on the same address had just
+timed out. A timeout on one port now marks the address's other ports as not
+answering until they answer again (`NetworkDiscoveryService.SuspectOtherPortsOf`).
+A refused connection does not spread like this, because the machine that
+refused is still there.
+
 **Not yet verified against a real tailnet.** There is no Tailscale on the
 development machine, so the `100.64/10` branch of `ReachRank` and the whole
 LAN↔tailnet handover are still covered by tests rather than by observation. The

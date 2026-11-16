@@ -54,6 +54,27 @@ public class NetworkDiscoveryServiceTests : IDisposable
 
         public void RefuseWith(int port, HttpStatusCode status) => _refusalsByPort[port] = status;
 
+        // How a port fails once it stops answering, when that matters: by
+        // timing out, as an address on a network the phone is leaving does,
+        // or by refusing, as a closed port on a machine that is still there.
+        private readonly Dictionary<int, Exception> _failuresByPort = [];
+
+        public void TimeOut(int port)
+        {
+            _responsesByPort.Remove(port);
+            _failuresByPort[port] = new TaskCanceledException(
+                "The request was canceled due to the configured HttpClient.Timeout of 3 seconds elapsing.",
+                new TimeoutException());
+        }
+
+        public void RefuseConnections(int port)
+        {
+            _responsesByPort.Remove(port);
+            _failuresByPort[port] = new HttpRequestException(
+                HttpRequestError.ConnectionError, "Connection refused",
+                new System.Net.Sockets.SocketException((int)System.Net.Sockets.SocketError.ConnectionRefused));
+        }
+
         public Uri? LastRequestUri { get; private set; }
 
         // The headers of the most recent /info poll, so a test can check what
@@ -72,7 +93,9 @@ public class NetworkDiscoveryServiceTests : IDisposable
                 return Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent("<html>denied</html>") });
 
             if (!_responsesByPort.TryGetValue(port, out var json))
-                throw new HttpRequestException("simulated unreachable peer");
+                throw _failuresByPort.TryGetValue(port, out var failure)
+                    ? failure
+                    : new HttpRequestException("simulated unreachable peer");
 
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json) });
         }
@@ -213,6 +236,72 @@ public class NetworkDiscoveryServiceTests : IDisposable
         _handler.RespondWith(4533, """{"alias":"Basement","fingerprint":"server-fp","isServer":true}""");
         await _service.AddRememberedAsync("192.168.1.40:4533", TestContext.Current.CancellationToken);
         Assert.True(device.IsResponding);
+    }
+
+    // ── One address, several ports ───────────────────────────────────────
+    //
+    // A server is remembered at its plain and its TLS port on the same LAN
+    // address. Walking out of the house, the plain one timed out and the
+    // route moved to the TLS one - on the same machine, on the same Wi-Fi
+    // that was already gone - because it had answered a few seconds before.
+    // The stream then spent its connect timeout on it before reaching the
+    // public address, which was answering all along.
+
+    private const string ServerInfo = """{"alias":"Basement","fingerprint":"server-fp","isServer":true}""";
+
+    private async Task<(DiscoveredDevice Plain, DiscoveredDevice Tls, DiscoveredDevice Public)> RememberAtHomeAndOutside()
+    {
+        _handler.RespondWith(4533, ServerInfo);
+        _handler.RespondWith(4534, ServerInfo);
+        _handler.RespondWith(4600, ServerInfo);
+        var plain = await _service.AddRememberedAsync("http://192.168.1.40:4533", TestContext.Current.CancellationToken);
+        var tls = await _service.AddRememberedAsync("https://192.168.1.40:4534", TestContext.Current.CancellationToken);
+        var outside = await _service.AddRememberedAsync("https://80.1.2.3:4600", TestContext.Current.CancellationToken);
+        Assert.Same(tls, _service.EndpointFor("server-fp"));
+        return (plain!, tls!, outside!);
+    }
+
+    [Fact]
+    public async Task An_address_that_times_out_takes_its_other_ports_with_it()
+    {
+        var (_, tls, outside) = await RememberAtHomeAndOutside();
+
+        _handler.TimeOut(4534);
+        _handler.TimeOut(4533);
+        await _service.AddRememberedAsync("http://192.168.1.40:4533", TestContext.Current.CancellationToken);
+
+        Assert.False(tls.IsResponding);
+        Assert.Same(outside, _service.EndpointFor("server-fp"));
+    }
+
+    // A refusal comes from a machine that is there, with that one port
+    // closed, so the next port along may well be open.
+    [Fact]
+    public async Task An_address_that_refuses_one_port_keeps_its_others()
+    {
+        var (_, tls, _) = await RememberAtHomeAndOutside();
+
+        _handler.RefuseConnections(4533);
+        await _service.AddRememberedAsync("http://192.168.1.40:4533", TestContext.Current.CancellationToken);
+
+        Assert.True(tls.IsResponding);
+        Assert.Same(tls, _service.EndpointFor("server-fp"));
+    }
+
+    // Suspicion, not a verdict: the sibling's own next answer clears it.
+    [Fact]
+    public async Task A_port_suspected_with_its_address_comes_back_on_its_own_answer()
+    {
+        var (_, tls, _) = await RememberAtHomeAndOutside();
+
+        _handler.TimeOut(4533);
+        await _service.AddRememberedAsync("http://192.168.1.40:4533", TestContext.Current.CancellationToken);
+        Assert.False(tls.IsResponding);
+
+        await _service.AddRememberedAsync("https://192.168.1.40:4534", TestContext.Current.CancellationToken);
+
+        Assert.True(tls.IsResponding);
+        Assert.Same(tls, _service.EndpointFor("server-fp"));
     }
 
     // ── How loudly a peer that is simply not there fails ─────────────────
