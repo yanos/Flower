@@ -38,7 +38,7 @@ public sealed class ExpandedTrackRowViewModel : DownloadIndicatorViewModel, Albu
     // row that does not show it. Track is fixed for the row's life, so unlike
     // there nothing can make a load stale but the cover itself being replaced
     // (AlbumArtLoader.CacheGeneration).
-    private Bitmap? _albumArt;
+    private ShownArt _albumArt;
     private int     _artState; // 0=idle, 1=loading, 2=done
     private int     _artCacheGeneration;
 
@@ -50,11 +50,15 @@ public sealed class ExpandedTrackRowViewModel : DownloadIndicatorViewModel, Albu
                 return null;
             if (Volatile.Read(ref _artState) == 2 && Volatile.Read(ref _artCacheGeneration) != AlbumArtLoader.CacheGeneration)
                 Interlocked.Exchange(ref _artState, 0);
+            // Let go since it was last drawn (ShownArt): drawn again, it is
+            // loaded again.
+            if (Volatile.Read(ref _artState) == 2 && _albumArt.LetGo)
+                Interlocked.Exchange(ref _artState, 0);
             if (Interlocked.CompareExchange(ref _artState, 1, 0) == 0)
                 _ = LoadArtAsync();
-            return _albumArt;
+            return _albumArt.Bitmap;
         }
-        private set { _albumArt = value; OnPropertyChanged(); }
+        private set { _albumArt.Hold(value); OnPropertyChanged(); }
     }
 
     private async Task LoadArtAsync()

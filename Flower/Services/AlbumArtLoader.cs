@@ -260,7 +260,36 @@ public class AlbumArtLoader
     private const int ThumbnailPixels = CoverArtBatch.ThumbnailPixels;
 
     private static Bitmap Decode(Stream stream, ArtSize size) =>
-        size == ArtSize.Thumbnail ? DecodeThumbnail(stream) : DecodeScaled(stream);
+        PixelPressure.Weigh(size == ArtSize.Thumbnail ? DecodeThumbnail(stream) : DecodeScaled(stream));
+
+    // To the GC a Bitmap is a few dozen managed bytes; its pixels are native,
+    // and freed only when it is collected. A fling allocates little managed
+    // memory, so the covers it lets go of could wait a long time for the full
+    // collection that frees them - by then thousands of them, gigabytes on a
+    // phone. Told each one's real size, the GC collects as fast as covers are
+    // decoded and let go, and is told again when one is gone: the weight is
+    // tied to the bitmap's lifetime, and finalised with it.
+    private sealed class PixelPressure
+    {
+        private static readonly ConditionalWeakTable<Bitmap, PixelPressure> Weights = new();
+        private readonly long _bytes;
+
+        private PixelPressure(long bytes)
+        {
+            _bytes = bytes;
+            GC.AddMemoryPressure(bytes);
+        }
+
+        ~PixelPressure() => GC.RemoveMemoryPressure(_bytes);
+
+        public static Bitmap Weigh(Bitmap bitmap)
+        {
+            var bytes = (long)bitmap.PixelSize.Width * bitmap.PixelSize.Height * 4;
+            if (bytes > 0)
+                Weights.AddOrUpdate(bitmap, new PixelPressure(bytes));
+            return bitmap;
+        }
+    }
 
     // One decode, straight to the width wanted - a JPEG decoder can do most of
     // that downscale inside the decode itself, so this is cheaper than reading

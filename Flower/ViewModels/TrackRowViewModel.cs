@@ -334,7 +334,7 @@ public class TrackRowViewModel : DownloadIndicatorViewModel, AlbumArtLoader.ISho
 
     // ── Album art (lazy, async) ───────────────────────────────────────────────
 
-    private Bitmap? _albumArt;
+    private ShownArt _albumArt;
     private int     _artState; // 0=idle, 1=loading, 2=done
     // Bumped by ResetAlbumArt so a load already in flight for the *previous*
     // track can tell it has been superseded and drop its result, rather than
@@ -369,11 +369,16 @@ public class TrackRowViewModel : DownloadIndicatorViewModel, AlbumArtLoader.ISho
                 Interlocked.Exchange(ref _artState, 0);
             }
 
+            // Let go since it was last drawn (ShownArt): drawn again, it is
+            // loaded again.
+            if (Volatile.Read(ref _artState) == 2 && _albumArt.LetGo)
+                Interlocked.Exchange(ref _artState, 0);
+
             if (Interlocked.CompareExchange(ref _artState, 1, 0) == 0)
                 _ = LoadArtAsync();
-            return _albumArt;
+            return _albumArt.Bitmap;
         }
-        private set { _albumArt = value; OnPropertyChanged(); }
+        private set { _albumArt.Hold(value); OnPropertyChanged(); }
     }
 
     // Back to state 0 (idle) rather than straight to a reload: nothing may ever
