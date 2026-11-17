@@ -1,4 +1,6 @@
+using System;
 using System.Linq;
+using System.Runtime.CompilerServices;
 
 using Flower.Models;
 using Flower.ViewModels;
@@ -51,6 +53,27 @@ public class ArtistIconsTests
 
         Assert.Same(AlbumCollage.Empty, icons.For("Nobody", thumbnail: true));
     }
+
+    // An icon nothing draws any more is let go with its pictures, rather than
+    // kept for every artist ever scrolled past - which held hundreds of
+    // megabytes of covers on a phone after one fling down its Artists tab.
+    [Fact]
+    public void An_icon_nothing_draws_is_let_go()
+    {
+        var icons = new ArtistIcons();
+        icons.LibraryChanged([Song("a", "One", "X")]);
+
+        var drawn = AskedAndDropped(icons);
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+
+        Assert.False(drawn.TryGetTarget(out _));
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static WeakReference<AlbumCollage> AskedAndDropped(ArtistIcons icons) =>
+        new(icons.For("X", thumbnail: true));
 
     // An album added since is in the icon drawn after the library changes,
     // rather than the one made before it.

@@ -33,6 +33,13 @@ public class AlbumCollageTests : IDisposable
     {
         public readonly Dictionary<Bitmap, string> AlbumOf = new();
         public int Loads { get; private set; }
+        public int ThumbnailLoads { get; private set; }
+
+        public override Task<Bitmap?> LoadThumbnailAsync(Track track)
+        {
+            ThumbnailLoads++;
+            return LoadAsync(track);
+        }
 
         public override Task<Bitmap?> LoadAsync(Track track)
         {
@@ -46,7 +53,13 @@ public class AlbumCollageTests : IDisposable
     }
 
     private readonly AlbumArtLoader _previousLoader = AlbumArtLoader.Current;
-    public void Dispose() => AlbumArtLoader.Current = _previousLoader;
+    private readonly ArtistPictureLoader _previousPictures = ArtistPictureLoader.Current;
+
+    public void Dispose()
+    {
+        AlbumArtLoader.Current = _previousLoader;
+        ArtistPictureLoader.Current = _previousPictures;
+    }
 
     // Album "A" played least, then "B", and so on - each over two songs, so
     // what counts is the album's plays rather than one song's.
@@ -63,7 +76,7 @@ public class AlbumCollageTests : IDisposable
     {
         var loader = new FakeArtLoader(bare.ToHashSet());
         AlbumArtLoader.Current = loader;
-        var covers = await AlbumCollage.LoadCoversAsync(AlbumCollage.ForArtist("Artist", tracks, thumbnail: false).AlbumsInPlayOrder);
+        var covers = await AlbumCollage.LoadCoversAsync(AlbumCollage.ForArtist("Artist", tracks, thumbnail: false).AlbumsInPlayOrder, thumbnail: false);
         return (covers.Select(c => loader.AlbumOf[c]).ToArray(), loader.Loads);
     }
 
@@ -118,6 +131,26 @@ public class AlbumCollageTests : IDisposable
 
         Assert.Empty(covers);
         Assert.Equal(AlbumCollage.MaxAlbumsLooked, loads);
+    }
+
+    // A row's collage is drawn from covers at a row's size, a page header's
+    // from full-size ones. Full-size covers in every row of a phone's Artists
+    // tab held up to four 2.4 MB pictures per artist scrolled past, and ran
+    // the iPhone out of memory.
+    [AvaloniaTheory]
+    [InlineData(true, 4)]
+    [InlineData(false, 0)]
+    public void A_rows_collage_is_made_of_thumbnails(bool thumbnail, int thumbnailLoads)
+    {
+        var loader = new FakeArtLoader([]);
+        AlbumArtLoader.Current = loader;
+        ArtistPictureLoader.Current = new ArtistPictureLoader(null, NullLogger<ArtistPictureLoader>.Instance);
+        var collage = AlbumCollage.ForArtist("Artist", Albums(4), thumbnail);
+
+        _ = collage.CoverArt;
+
+        Assert.Equal(4, collage.CoverArt?.Count);
+        Assert.Equal(thumbnailLoads, loader.ThumbnailLoads);
     }
 
     [AvaloniaFact]

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 using Flower.Models;
@@ -19,12 +20,18 @@ namespace Flower.ViewModels;
 // Made on first asking, since the lists are virtualised and only the rows on
 // screen ask, and all dropped when the library changes
 // (LibraryBrowserViewModel.Repopulate), when an artist's songs may have.
+//
+// Kept only while something draws them. An icon holds its pictures, and
+// keeping every one ever asked for kept the covers of every artist scrolled
+// past, which on a phone's Artists tab was hundreds of megabytes after one
+// fling. An icon made again is of the same albums, and finds its covers in
+// AlbumArtLoader's caches, which are the ones that bound what is kept.
 public sealed class ArtistIcons
 {
     private IReadOnlyList<Track> _library = [];
     private Dictionary<string, List<Track>>? _tracksByArtist;
-    private readonly Dictionary<string, AlbumCollage> _thumbnails = new(ArtistNames.Comparer);
-    private readonly Dictionary<string, AlbumCollage> _headers = new(ArtistNames.Comparer);
+    private readonly Dictionary<string, WeakReference<AlbumCollage>> _thumbnails = new(ArtistNames.Comparer);
+    private readonly Dictionary<string, WeakReference<AlbumCollage>> _headers = new(ArtistNames.Comparer);
 
     public void LibraryChanged(IReadOnlyList<Track> library)
     {
@@ -38,7 +45,7 @@ public sealed class ArtistIcons
     public AlbumCollage For(string artist, bool thumbnail)
     {
         var icons = thumbnail ? _thumbnails : _headers;
-        if (icons.TryGetValue(artist, out var icon))
+        if (icons.TryGetValue(artist, out var weak) && weak.TryGetTarget(out var icon))
             return icon;
 
         _tracksByArtist ??= BrowseSort.TracksByArtist(_library);
@@ -46,7 +53,7 @@ public sealed class ArtistIcons
             return AlbumCollage.Empty;
 
         icon = AlbumCollage.ForArtist(artist, tracks, thumbnail);
-        icons[artist] = icon;
+        icons[artist] = new WeakReference<AlbumCollage>(icon);
         return icon;
     }
 }

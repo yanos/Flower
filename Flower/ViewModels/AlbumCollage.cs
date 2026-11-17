@@ -95,7 +95,13 @@ public sealed class AlbumCollage : ObservableObject, AlbumArtLoader.IShowsAlbumA
     // whole art budget, and the cover just edited was refused with the rest.
     public const int MaxAlbumsLooked = 16;
 
-    public static async Task<IReadOnlyList<Bitmap>> LoadCoversAsync(IReadOnlyList<Track> albumsByPlays)
+    // thumbnail for a row's collage: the covers at a row's size, as a song
+    // row's are. A full-size cover is ~2.4 MB of decoded pixels, up to four
+    // of them per artist, and a fling down a phone's Artists tab draws a
+    // hundred artists a second. Decoded at full size, one such fling took the
+    // iPhone from 400 MB to 1 GB, and the next song's staging ring could no
+    // longer be allocated.
+    public static async Task<IReadOnlyList<Bitmap>> LoadCoversAsync(IReadOnlyList<Track> albumsByPlays, bool thumbnail)
     {
         var found = new List<Bitmap>();
         var next = 0;
@@ -104,7 +110,9 @@ public sealed class AlbumCollage : ObservableObject, AlbumArtLoader.IShowsAlbumA
         {
             var round = albumsByPlays.Skip(next).Take(Math.Min(4 - found.Count, albums - next)).ToList();
             next += round.Count;
-            var art = await Task.WhenAll(round.Select(t => AlbumArtLoader.Current.LoadAsync(t)));
+            var art = await Task.WhenAll(round.Select(t => thumbnail
+                ? AlbumArtLoader.Current.LoadThumbnailAsync(t)
+                : AlbumArtLoader.Current.LoadAsync(t)));
             found.AddRange(art.OfType<Bitmap>());
         }
         return found.Take(CoverCountFor(found.Count)).ToList();
@@ -159,7 +167,7 @@ public sealed class AlbumCollage : ObservableObject, AlbumArtLoader.IShowsAlbumA
             return;
         }
 
-        var art = await LoadCoversAsync(AlbumsInPlayOrder);
+        var art = await LoadCoversAsync(AlbumsInPlayOrder, thumbnail: _artist?.Thumbnail ?? false);
         Publish(picture is { IsCompleted: true } && await picture is { } arrived ? [arrived] : art, cacheGeneration);
 
         // One looked up for the first time takes as long as the internet
