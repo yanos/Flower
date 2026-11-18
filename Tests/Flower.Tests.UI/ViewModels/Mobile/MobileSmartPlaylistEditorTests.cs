@@ -201,6 +201,30 @@ public class MobileSmartPlaylistEditorTests : PinnedDataDirectory
         Assert.Equal(["Echos Myron"], editor.Playlist.Tracks.Select(t => t.Title));
     }
 
+    // The row's live error reaches the box it belongs to: "hg" under "Plays is
+    // greater than" was taken without a word until Save.
+    [AvaloniaFact]
+    public void Letters_in_a_number_box_mark_that_box_as_wrong()
+    {
+        using var scope = Build();
+        scope.Mobile.NewSmartPlaylistCommand.Execute(null);
+        var row = scope.Mobile.SmartPlaylistEditor!.Conditions[0];
+        row.Field = row.Fields.First(f => f.Field == SmartField.PlayCount);
+        row.Operator = row.Operators.First(o => o.Operator == SmartOperator.GreaterThan);
+
+        var (window, view) = Render(scope);
+        var box = view.GetVisualDescendants().OfType<TextInput>().Single(t => t.IsEffectivelyVisible && t.Text == row.ValueText && t.DataContext == row);
+
+        row.ValueText = "hg";
+        Settle(window);
+        Assert.True(DataValidationErrors.GetHasErrors(box));
+
+        row.ValueText = "10";
+        Settle(window);
+        Assert.False(DataValidationErrors.GetHasErrors(box));
+        window.Close();
+    }
+
     // Runs the preview now, skipping the typing pause, and lets its result land.
     private static void Flush(SmartPlaylistEditorViewModel editor)
     {

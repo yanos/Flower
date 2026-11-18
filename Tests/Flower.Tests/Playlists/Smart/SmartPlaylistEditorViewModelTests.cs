@@ -165,6 +165,84 @@ public class SmartPlaylistEditorViewModelTests
         Assert.True(editor.HasError);
     }
 
+    // Reported on the box while typed, not only when Save is pressed - the
+    // phone showed "Plays is greater than hg" as if it were a rule.
+    [Fact]
+    public void A_number_box_holding_letters_reports_it_as_typed()
+    {
+        var library = NewLibrary(T("A"));
+        var row = NewEditor(library, AddPlaylist(library, "New")).Conditions[0];
+        row.Field = SmartConditionRowViewModel.AllFields.First(f => f.Field == SmartField.PlayCount);
+
+        var raised = new List<string?>();
+        ((System.ComponentModel.INotifyDataErrorInfo)row).ErrorsChanged += (_, e) => raised.Add(e.PropertyName);
+        row.ValueText = "hg";
+
+        Assert.Contains(nameof(row.ValueText), raised);
+        Assert.True(row.HasErrors);
+        Assert.Single(row.GetErrors(nameof(row.ValueText)));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("42")]
+    public void An_empty_or_numeric_number_box_reports_nothing(string text)
+    {
+        var library = NewLibrary(T("A"));
+        var row = NewEditor(library, AddPlaylist(library, "New")).Conditions[0];
+        row.Field = SmartConditionRowViewModel.AllFields.First(f => f.Field == SmartField.PlayCount);
+
+        row.ValueText = text;
+
+        Assert.False(row.HasErrors);
+        Assert.Empty(row.GetErrors(nameof(row.ValueText)));
+    }
+
+    // The same text is a fine title and no number at all, so the error follows
+    // the field rather than only the typing.
+    [Fact]
+    public void Switching_to_a_text_field_clears_the_error_and_back_brings_it_back()
+    {
+        var library = NewLibrary(T("A"));
+        var row = NewEditor(library, AddPlaylist(library, "New")).Conditions[0];
+        row.Field = SmartConditionRowViewModel.AllFields.First(f => f.Field == SmartField.PlayCount);
+        row.ValueText = "hg";
+
+        row.Field = SmartConditionRowViewModel.AllFields.First(f => f.Field == SmartField.Title);
+        Assert.False(row.HasErrors);
+
+        row.Field = SmartConditionRowViewModel.AllFields.First(f => f.Field == SmartField.Year);
+        Assert.True(row.HasErrors);
+    }
+
+    [Fact]
+    public void Only_the_second_box_of_a_range_is_blamed_for_its_own_text()
+    {
+        var library = NewLibrary(T("A"));
+        var row = NewEditor(library, AddPlaylist(library, "New")).Conditions[0];
+        row.Field = SmartConditionRowViewModel.AllFields.First(f => f.Field == SmartField.Year);
+        row.Operator = row.Operators.First(o => o.Operator == SmartOperator.Between);
+        row.ValueText = "1970";
+        row.SecondValueText = "soon";
+
+        Assert.Empty(row.GetErrors(nameof(row.ValueText)));
+        Assert.Single(row.GetErrors(nameof(row.SecondValueText)));
+    }
+
+    [Theory]
+    [InlineData("NaN")]
+    [InlineData("Infinity")]
+    public void A_number_that_is_not_finite_is_not_a_number(string text)
+    {
+        var library = NewLibrary(T("A"));
+        var row = NewEditor(library, AddPlaylist(library, "New")).Conditions[0];
+        row.Field = SmartConditionRowViewModel.AllFields.First(f => f.Field == SmartField.PlayCount);
+        row.ValueText = text;
+
+        Assert.False(row.TryBuild(out _, out _));
+        Assert.True(row.HasErrors);
+    }
+
     // "3:30" is three and a half minutes to everyone except TimeSpan.Parse,
     // which reads it as three and a half hours - hence the row's own parser.
     [Theory]

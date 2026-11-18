@@ -140,11 +140,14 @@
          whole cell, up to the -/+ buttons, one box or a "between" pair sharing
          it; the date and relative controls keep their own widths and wrap, so
          a pair that fits beside itself on a desktop drops to a second line on
-         a phone rather than off its edge. -->
+         a phone rather than off its edge. A typed value that cannot be read
+         is reported under its box as it is typed (the row's GetErrors), and
+         a number raises a phone's number pad. -->
     <DataTemplate x:Key="ValueControls" x:DataType="vm:SmartConditionRowViewModel">
       <Panel>
         <controls:TextInput Text="{Binding ValueText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                             ToolTip.Tip="{Binding ValueHint}"
+                            TextInputOptions.ContentType="{Binding ValueContentType}"
                             IsVisible="{Binding ShowSingleValueBox}"
                             HorizontalAlignment="Stretch" VerticalAlignment="Center"/>
 
@@ -153,11 +156,13 @@
           <controls:TextInput Grid.Column="0"
                               Text="{Binding ValueText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                               ToolTip.Tip="{Binding ValueHint}"
+                              TextInputOptions.ContentType="{Binding ValueContentType}"
                               VerticalAlignment="Center"/>
           <TextBlock Grid.Column="1" Text="and" VerticalAlignment="Center" Opacity="0.75"/>
           <controls:TextInput Grid.Column="2"
                               Text="{Binding SecondValueText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                               ToolTip.Tip="{Binding ValueHint}"
+                              TextInputOptions.ContentType="{Binding ValueContentType}"
                               VerticalAlignment="Center"/>
         </Grid>
 

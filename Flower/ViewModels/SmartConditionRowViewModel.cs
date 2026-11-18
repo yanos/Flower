@@ -1,8 +1,12 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.ComponentModel;
 using System.Globalization;
 using System.Linq;
+
+using Avalonia.Input.TextInput;
 
 using Flower.Models;
 using Flower.Services;
@@ -19,8 +23,11 @@ namespace Flower.ViewModels;
 //
 // Nothing here validates against the library - a row that cannot be turned into
 // a condition says so through TryBuild, and the editor is what decides whether
-// that blocks a save.
-public sealed class SmartConditionRowViewModel : ViewModelBase
+// that blocks a save. A typed value that cannot be read is also reported as it
+// is typed (INotifyDataErrorInfo, which the box draws as an error under
+// itself), so "hg" under "Plays is greater than" is caught on the spot rather
+// than only when Save is pressed.
+public sealed class SmartConditionRowViewModel : ViewModelBase, INotifyDataErrorInfo
 {
     // Display wrappers so the ComboBoxes can bind a name without a converter
     // each. The operator's name depends on the field's kind ("is after" for a
@@ -130,6 +137,7 @@ public sealed class SmartConditionRowViewModel : ViewModelBase
 
             RefreshPlaylists();
             NotifyLayoutChanged();
+            NotifyValueErrorsChanged();
         }
     }
 
@@ -153,6 +161,7 @@ public sealed class SmartConditionRowViewModel : ViewModelBase
             _chosenOperator = value.Operator;
             OnPropertyChanged();
             NotifyLayoutChanged();
+            NotifyValueErrorsChanged();
         }
     }
 
@@ -197,14 +206,24 @@ public sealed class SmartConditionRowViewModel : ViewModelBase
     public string ValueText
     {
         get => _valueText;
-        set { _valueText = value ?? string.Empty; OnPropertyChanged(); }
+        set
+        {
+            _valueText = value ?? string.Empty;
+            OnPropertyChanged();
+            ErrorsChanged?.Invoke(this, new DataErrorsChangedEventArgs(nameof(ValueText)));
+        }
     }
 
     private string _secondValueText = string.Empty;
     public string SecondValueText
     {
         get => _secondValueText;
-        set { _secondValueText = value ?? string.Empty; OnPropertyChanged(); }
+        set
+        {
+            _secondValueText = value ?? string.Empty;
+            OnPropertyChanged();
+            ErrorsChanged?.Invoke(this, new DataErrorsChangedEventArgs(nameof(SecondValueText)));
+        }
     }
 
     private DateTimeOffset? _dateValue = DateTimeOffset.Now;
@@ -310,6 +329,11 @@ public sealed class SmartConditionRowViewModel : ViewModelBase
         : Kind == SmartValueKind.Duration ? "A length, written as m:ss - 3:30, or 1:03:30."
         : null;
 
+    // The keyboard a phone raises for the typed box: digits for a number. A
+    // duration keeps the full keyboard, since a number pad has no colon.
+    public TextInputContentType ValueContentType =>
+        Kind == SmartValueKind.Number ? TextInputContentType.Number : TextInputContentType.Normal;
+
     private void NotifyLayoutChanged()
     {
         OnPropertyChanged(nameof(ShowValueBox));
@@ -323,6 +347,48 @@ public sealed class SmartConditionRowViewModel : ViewModelBase
         OnPropertyChanged(nameof(ShowSingleValueBox));
         OnPropertyChanged(nameof(ShowWrappedValues));
         OnPropertyChanged(nameof(ValueHint));
+        OnPropertyChanged(nameof(ValueContentType));
+    }
+
+    // ── Errors in what has been typed ─────────────────────────────────────────
+
+    // Why the typed value cannot be read, or null when it can - or when there
+    // is nothing typed yet, which is half a rule rather than a wrong one (see
+    // IsBlank), or when the box is not showing at all.
+    public string? ValueError => ShowValueBox ? TextError(ValueText) : null;
+
+    public string? SecondValueError => ShowSecondValueBox ? TextError(SecondValueText) : null;
+
+    private string? TextError(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return null;
+
+        return Kind switch
+        {
+            SmartValueKind.Number when !TryParseNumber(text, out _) => NotANumber(text),
+            SmartValueKind.Duration when !TryParseDuration(text, out _) => NotALength(text),
+            _ => null,
+        };
+    }
+
+    public event EventHandler<DataErrorsChangedEventArgs>? ErrorsChanged;
+
+    public bool HasErrors => ValueError != null || SecondValueError != null;
+
+    public IEnumerable GetErrors(string? propertyName) => propertyName switch
+    {
+        nameof(ValueText) when ValueError is { } error => new[] { error },
+        nameof(SecondValueText) when SecondValueError is { } error => new[] { error },
+        _ => Array.Empty<string>(),
+    };
+
+    // A field or operator change can make the same text right or wrong ("hg"
+    // is a fine title and no number at all).
+    private void NotifyValueErrorsChanged()
+    {
+        ErrorsChanged?.Invoke(this, new DataErrorsChangedEventArgs(nameof(ValueText)));
+        ErrorsChanged?.Invoke(this, new DataErrorsChangedEventArgs(nameof(SecondValueText)));
     }
 
     // ── Reading a stored condition back into the row ──────────────────────────
@@ -431,10 +497,9 @@ public sealed class SmartConditionRowViewModel : ViewModelBase
                 return true;
 
             case SmartValueKind.Number:
-                if (!double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out var number)
-                    && !double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out number))
+                if (!TryParseNumber(text, out var number))
                 {
-                    error = $"“{text}” is not a number.";
+                    error = NotANumber(text);
                     return false;
                 }
                 value = new SmartValue.Number(number);
@@ -443,7 +508,7 @@ public sealed class SmartConditionRowViewModel : ViewModelBase
             case SmartValueKind.Duration:
                 if (!TryParseDuration(text, out var duration))
                 {
-                    error = $"“{text}” is not a length - write it as m:ss.";
+                    error = NotALength(text);
                     return false;
                 }
                 value = new SmartValue.Duration(duration);
@@ -486,6 +551,17 @@ public sealed class SmartConditionRowViewModel : ViewModelBase
                 return false;
         }
     }
+
+    // Finite only: "NaN" and "Infinity" parse, and compare false against
+    // every song.
+    private static bool TryParseNumber(string text, out double number) =>
+        (double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out number)
+         || double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out number))
+        && double.IsFinite(number);
+
+    private static string NotANumber(string text) => $"“{text.Trim()}” is not a number.";
+
+    private static string NotALength(string text) => $"“{text.Trim()}” is not a length - write it as m:ss.";
 
     // Accepts "210", "3:30" and "1:03:30" - the three ways someone reaches for
     // a length - rather than only TimeSpan.Parse's own "hh:mm:ss", which reads
