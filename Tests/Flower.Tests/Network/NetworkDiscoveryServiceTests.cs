@@ -274,6 +274,52 @@ public class NetworkDiscoveryServiceTests : IDisposable
         Assert.Same(outside, _service.EndpointFor("server-fp"));
     }
 
+    // From a phone log: on cellular, with music streaming over the same
+    // link, the server's only address answered /info in 2-3s against a 3s
+    // timeout, and one miss made the server unreachable while it streamed.
+    [Fact]
+    public async Task One_timeout_of_a_servers_only_route_leaves_it_reachable_and_a_second_does_not()
+    {
+        _handler.RespondWith(4600, ServerInfo);
+        var outside = await _service.AddRememberedAsync("https://80.1.2.3:4600", TestContext.Current.CancellationToken);
+
+        _handler.TimeOut(4600);
+        await _service.AddRememberedAsync("https://80.1.2.3:4600", TestContext.Current.CancellationToken);
+        Assert.True(outside!.IsResponding);
+        Assert.Same(outside, _service.EndpointFor("server-fp"));
+
+        await _service.AddRememberedAsync("https://80.1.2.3:4600", TestContext.Current.CancellationToken);
+        Assert.False(outside.IsResponding);
+    }
+
+    // Silence is all that is forgiven: a refusal is an answer.
+    [Fact]
+    public async Task A_refusal_from_a_servers_only_route_still_counts_at_once()
+    {
+        _handler.RespondWith(4600, ServerInfo);
+        var outside = await _service.AddRememberedAsync("https://80.1.2.3:4600", TestContext.Current.CancellationToken);
+
+        _handler.RefuseConnections(4600);
+        await _service.AddRememberedAsync("https://80.1.2.3:4600", TestContext.Current.CancellationToken);
+
+        Assert.False(outside!.IsResponding);
+    }
+
+    // Just after the network really changed, the first miss is the answer.
+    [Fact]
+    public async Task A_timeout_just_after_the_network_changed_counts_at_once()
+    {
+        _handler.RespondWith(4600, ServerInfo);
+        var outside = await _service.AddRememberedAsync("https://80.1.2.3:4600", TestContext.Current.CancellationToken);
+
+        _handler.TimeOut(4600);
+        _service.NetworkChangeFollowUp = TimeSpan.Zero;
+        await _service.RecheckAfterNetworkChangeAsync(TestContext.Current.CancellationToken);
+        WaitUntil(() => !outside!.IsResponding, "the recheck's miss should count");
+
+        Assert.False(outside!.IsResponding);
+    }
+
     // A refusal comes from a machine that is there, with that one port
     // closed, so the next port along may well be open.
     [Fact]

@@ -1069,6 +1069,11 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
             _logger.LogTrace("Still could not resolve /info for {InstanceName} at {EndPoint}: {Message}",
                 device.InstanceName, device.BaseUri, Describe(ex));
 
+        // Asked before SuspectOtherPortsOf below, which can take this
+        // address's other ports out of the running and make this one look
+        // like the only route when it was not.
+        var forgiven = IsOneSlowAnswerFromTheOnlyRoute(device, ex, failures);
+
         if (failures == 1 && IsAddressSilent(ex))
             SuspectOtherPortsOf(device);
 
@@ -1090,6 +1095,14 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
         // server the user is not currently near.
         if (device.IsRemembered)
         {
+            if (forgiven)
+            {
+                _logger.LogInformation(
+                    "Remembered peer {InstanceName} at {EndPoint} was slow to answer once; still treating it as reachable, since it is the only route to it",
+                    device.InstanceName, device.BaseUri);
+                return;
+            }
+
             if (device.IsResponding)
             {
                 device.IsResponding = false;
@@ -1112,6 +1125,30 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
             DeviceLost?.Invoke(this, device.InstanceName);
         }
     }
+
+    // One timed-out poll of the only address a server is answering on, with
+    // the network where it was. Taken as the server gone, that one slow
+    // answer made it unreachable outright - nothing else to fall back to -
+    // and from a real phone log, on cellular with streams sharing the link,
+    // /info took 2-3s against a 3s timeout: the server went "unreachable"
+    // for a second at a time while it was streaming to this phone, and a
+    // song asked for in that second would not play. So the first timeout of
+    // the only route is forgiven, and the second in a row is not. Where
+    // another route is answering, switching to it costs nothing and still
+    // happens at once (walking out of the house: the LAN address times out
+    // and the public one takes over); so does any miss just after the
+    // network really changed, and any failure that is not silence - a
+    // refusal, a TLS error - which no amount of waiting turns into an
+    // answer.
+    private bool IsOneSlowAnswerFromTheOnlyRoute(DiscoveredDevice device, Exception ex, int failures) =>
+        device.IsRemembered
+        && device.IsResponding
+        && failures == 1
+        && IsAddressSilent(ex)
+        && !NetworkJustChanged()
+        && device.Fingerprint.Length > 0
+        && !_knownDevices.Values.Any(other =>
+            !ReferenceEquals(other, device) && other.IsResponding && other.Fingerprint == device.Fingerprint);
 
     // An address that has stopped answering at one port has stopped
     // answering at every port. A server is remembered at its plain and its
