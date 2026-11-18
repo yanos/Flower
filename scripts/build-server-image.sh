@@ -154,11 +154,16 @@ fi
 # change each time, and BuildKit keeps the old ones. Unchecked, that grew to
 # 81 GB on a server redeployed this way, until a full disk stopped SQLite
 # from opening the database and the server crash-looped on "disk I/O error".
-# What a rebuild reuses - the SDK, the restore, wasm-tools - is about 2 GB and
-# the most recently used, so a 5 GB ceiling keeps builds fast. The ceiling
-# applies to the machine's whole build cache, not only this image's; it has
-# no label to filter on. --max-used-space is BuildKit's, --keep-storage the
-# legacy builder's, and a failure here never fails a build that worked.
+# The ceiling counts only cache not shared with an image, and "5GB" means
+# 5 GiB, so the whole cache settles near 8 GB (docker buildx du). Trimmed
+# to it on lambda, the cache kept the wasm-tools layer, at 2.9 GB the
+# slowest step to redo, and a rebuild straight after was fully cached; a
+# new SDK image (monthly) costs one slower build. It applies to the
+# machine's whole build cache, not only this image's: there is no label to
+# filter on, and an age filter is no use either, since BuildKit's "last
+# used" is not moved by a cache hit. --max-used-space is BuildKit's,
+# --keep-storage the legacy builder's, and a failure here never fails a
+# build that worked.
 docker builder prune -f --max-used-space 5GB >/dev/null 2>&1 \
   || docker builder prune -f --keep-storage 5GB >/dev/null 2>&1 \
   || echo "warning: could not trim the build cache - see docker system df" >&2

@@ -611,8 +611,9 @@ docker builder prune -f --max-used-space 5GB               # only if you build: 
 
 The first removes only Flower's untagged images. Images you pinned by version
 (`flower-server:0.2.1`) keep their tag and are left alone, so you can still go
-back to one. The second applies to all of Docker's build cache on the machine
-and keeps the 5 GB used most recently, enough for the next build to be quick.
+back to one. The second applies to all of Docker's build cache on the machine,
+not only Flower's. It caps the cache at about 8 GB and keeps what the next
+build reuses, so that build is still quick.
 
 The shipped compose file tracks `ghcr.io/yanos/flower-server:latest`, which is
 less alarming than it sounds: nothing re-pulls on its own, so the image moves
