@@ -78,10 +78,11 @@
       <Panel Grid.Column="1" VerticalAlignment="Top">
       <!-- The suggestions are SearchViewModel's (SearchSuggestion.For), not
            the box's own filtering of a list - FilterMode None shows them as
-           they are, past searches first. Picking one fills the box with it. -->
+           they are, past searches first. Picking one fills the box with it.
+           Not bound: the box is handed a list only when it asks for one
+           (Box_Populating) - see the code-behind for why. -->
       <AutoCompleteBox x:Name="Box"
                        Text="{Binding Search.Query, Mode=TwoWay}"
-                       ItemsSource="{Binding Search.Suggestions}"
                        ValueMemberBinding="{Binding Text, x:DataType=vm:SearchSuggestion}"
                        FilterMode="None"
                        MinimumPrefixLength="1"
@@ -90,7 +91,8 @@
                        FontSize="14"
                        Width="300"
                        KeyDown="Box_KeyDown"
-                       LostFocus="Box_LostFocus">
+                       LostFocus="Box_LostFocus"
+                       Populating="Box_Populating">
         <AutoCompleteBox.ItemTemplate>
           <DataTemplate x:DataType="vm:SearchSuggestion">
             <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,3">

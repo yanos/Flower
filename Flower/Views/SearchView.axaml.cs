@@ -1,3 +1,7 @@
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -23,6 +27,63 @@ public partial class SearchView : UserControl
     }
 
     private MainViewModel? Main => DataContext as MainViewModel;
+
+    private SearchViewModel? _search;
+
+    protected override void OnDataContextChanged(EventArgs e)
+    {
+        base.OnDataContextChanged(e);
+        if (_search is not null)
+            _search.PropertyChanged -= Search_PropertyChanged;
+        _search = Main?.Search;
+        if (_search is not null)
+            _search.PropertyChanged += Search_PropertyChanged;
+    }
+
+    // ── The box's suggestions ────────────────────────────────────────────
+    //
+    // Handed to the box only when it asks (Populating), which is when what is
+    // in it was typed or set - never when a suggestion put it there. Bound
+    // straight to Search.Suggestions, picking one went wrong: the pick is a
+    // new query, so a new list followed 150ms later; a new list empties the
+    // box's dropdown, which drops the row it had picked; and a box whose
+    // picked row goes puts back what it last had typed (its SearchText). So
+    // the pick was replaced by the words it was picked for, and walking the
+    // list with the arrows snapped back at every step. Remembering the search
+    // and a rescan refresh the list too, and were the same trap.
+
+    // The box has asked and is waiting for SearchViewModel's next list.
+    private bool _awaitingSuggestions;
+
+    private void Box_Populating(object? sender, PopulatingEventArgs e)
+    {
+        e.Cancel = true;
+        // Blank is answered at once, with nothing (SearchViewModel's
+        // ScheduleSuggestions) - before the box asked, so no list follows.
+        if (string.IsNullOrWhiteSpace(e.Parameter))
+        {
+            _awaitingSuggestions = false;
+            Fill([]);
+            return;
+        }
+        _awaitingSuggestions = true;
+    }
+
+    // Every query change starts a fresh list and cancels the one before, so
+    // a list arriving while the box waits is the list for what is in it.
+    private void Search_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(SearchViewModel.Suggestions) || !_awaitingSuggestions || _search is null)
+            return;
+        _awaitingSuggestions = false;
+        Fill(_search.Suggestions);
+    }
+
+    private void Fill(IReadOnlyList<SearchSuggestion> suggestions)
+    {
+        Box.ItemsSource = suggestions;
+        Box.PopulateComplete();
+    }
 
     // From the container's factory the view model carries, as every view
     // XAML instantiates reaches its logger.
