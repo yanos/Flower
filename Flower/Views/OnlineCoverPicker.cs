@@ -23,7 +23,9 @@ internal static class OnlineCoverPicker
         values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v))?.Trim() ?? "";
 
     // What to say under the cover when a search leaves nothing to show, or
-    // null when it found something.
+    // null when it found something. Finding nothing also brings up the host's
+    // search row, holding what was searched for, to search again in other
+    // words without changing the tags.
     public static string? NothingFound(IReadOnlyList<OnlineCoverArt.Candidate>? found, string album, string title)
     {
         if (found is null)
@@ -31,7 +33,7 @@ internal static class OnlineCoverPicker
         if (found.Count > 0)
             return null;
         var named = string.IsNullOrWhiteSpace(album) ? title : album;
-        return $"No cover found online for “{named}”. Check the album and artist, then try again.";
+        return $"No cover found online for “{named}”. Try other words for the album or artist.";
     }
 
     /// <summary>

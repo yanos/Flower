@@ -146,6 +146,7 @@ public partial class TrackInfoWindow : Window
     private void Populate(IReadOnlyList<Track> tracks)
     {
         StopFindingArt();
+        ArtSearchRow.IsVisible = false;
         _info.Load(tracks);
         GenreMenuButton.IsVisible = _info.IsEditable && _info.GenreSuggestions.Count > 0;
         _ = LoadAlbumArtAsync();
@@ -349,6 +350,8 @@ public partial class TrackInfoWindow : Window
         PasteArtButton.IsEnabled = false;
         FindArtButton.IsEnabled = false;
         RemoveArtButton.IsEnabled = false;
+        // A cover chosen some other way leaves nothing to search for again.
+        ArtSearchRow.IsVisible = false;
 
         var message = await change(editor);
         await LoadAlbumArtAsync();
@@ -379,17 +382,40 @@ public partial class TrackInfoWindow : Window
     // like Change, once Use This Cover is pressed.
     private async void FindArtButton_Click(object? sender, RoutedEventArgs e)
     {
-        if (_editTracks.Count == 0 || !ArtEditor().CanWrite)
+        if (_editTracks.Count == 0)
             return;
 
         var track = _editTracks[0];
-        var album = OnlineCoverPicker.FirstNonBlank(_info.Album.Text, track.Album);
-        var artist = OnlineCoverPicker.FirstNonBlank(_info.AlbumArtists.Text, _info.Artists.Text, track.EffectiveAlbumArtist);
-        var title = OnlineCoverPicker.FirstNonBlank(_info.Title.Text, track.Title);
+        await FindArtAsync(
+            OnlineCoverPicker.FirstNonBlank(_info.Album.Text, track.Album),
+            OnlineCoverPicker.FirstNonBlank(_info.AlbumArtists.Text, _info.Artists.Text, track.EffectiveAlbumArtist));
+    }
+
+    // The search row's words instead of the tags' - see ArtSearchRow.
+    private async void ArtSearchButton_Click(object? sender, RoutedEventArgs e) =>
+        await FindArtAsync(ArtSearchAlbum.Text?.Trim() ?? "", ArtSearchArtist.Text?.Trim() ?? "");
+
+    private async void ArtSearchRow_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter)
+            return;
+        e.Handled = true;
+        await FindArtAsync(ArtSearchAlbum.Text?.Trim() ?? "", ArtSearchArtist.Text?.Trim() ?? "");
+    }
+
+    // A search that finds nothing offers the row, holding what it searched
+    // for, so the words can be changed and tried again.
+    private async Task FindArtAsync(string album, string artist)
+    {
+        if (_editTracks.Count == 0 || !ArtEditor().CanWrite || !FindArtButton.IsEnabled)
+            return;
+
+        var title = OnlineCoverPicker.FirstNonBlank(_info.Title.Text, _editTracks[0].Title);
 
         StopFindingArt();
         var find = _findArt = new CancellationTokenSource();
         FindArtButton.IsEnabled = false;
+        ArtSearchButton.IsEnabled = false;
         FindArtButton.Content = "Searching…";
 
         var finder = new OnlineCoverArt(_logger);
@@ -404,8 +430,9 @@ public partial class TrackInfoWindow : Window
         }
         finally
         {
-            FindArtButton.Content = "Find Online…";
+            FindArtButton.Content = "Find online…";
             FindArtButton.IsEnabled = ArtEditor().CanWrite;
+            ArtSearchButton.IsEnabled = true;
         }
 
         if (find.IsCancellationRequested)
@@ -413,6 +440,12 @@ public partial class TrackInfoWindow : Window
         if (OnlineCoverPicker.NothingFound(found, album, title) is { } nothing)
         {
             ArtworkInfoText.Text = nothing;
+            if (found is { Count: 0 })
+            {
+                ArtSearchAlbum.Text = album;
+                ArtSearchArtist.Text = artist;
+                ArtSearchRow.IsVisible = true;
+            }
             return;
         }
 

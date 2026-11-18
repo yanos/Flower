@@ -202,7 +202,7 @@
              rather than waiting for Save: a picture goes into the file, not
              into a box. Tapping the cover shows it on the whole screen. -->
         <Border Classes="card">
-          <Grid ColumnDefinitions="128,*" RowDefinitions="Auto,Auto" ColumnSpacing="14">
+          <Grid ColumnDefinitions="128,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="14">
             <StackPanel Grid.Column="0" Spacing="6" VerticalAlignment="Top">
               <!-- While a cover is being written, the cover dims under a
                    spinner (ArtBusy), and the line under the card says how
@@ -293,6 +293,28 @@
                        TextWrapping="Wrap"
                        Margin="0,10,0,0"
                        IsVisible="False" />
+            <!-- Searching again in other words, once a search has found
+                 nothing: what was searched for, to change and search again
+                 without touching the tags below (Find online itself always
+                 searches what those say). -->
+            <StackPanel Grid.Row="2" Grid.ColumnSpan="2"
+                        x:Name="ArtSearchRow"
+                        Spacing="8"
+                        Margin="0,10,0,0"
+                        IsVisible="False"
+                        KeyDown="ArtSearchRow_KeyDown">
+              <controls:TextInput x:Name="ArtSearchAlbum" PlaceholderText="Album" />
+              <controls:TextInput x:Name="ArtSearchArtist" PlaceholderText="Artist" />
+              <Button x:Name="ArtSearchButton"
+                      Classes="secondary soft"
+                      HorizontalAlignment="Stretch"
+                      Click="ArtSearch_Click">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <materialIcons:MaterialIcon Kind="Magnify" />
+                  <TextBlock Text="Search again" VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+            </StackPanel>
           </Grid>
         </Border>
 

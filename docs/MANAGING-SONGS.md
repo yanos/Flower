@@ -127,6 +127,7 @@ Flower saves the change **into the song file**.
 | Listener's device | You can only edit your own songs. The server's songs are read-only. |
 
 - **Covers** are saved inside each song file by default. To save one image file in the album's folder instead, turn on **Save covers in the album's folder**.
+- **Find online** searches for a cover using the song's album and artist. If it finds nothing, you can change the words and search again. That doesn't change the song's tags.
 - **In a web browser**, you can't edit tags yet.
 
 ### Editing in another program

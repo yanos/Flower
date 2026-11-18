@@ -123,6 +123,7 @@ public partial class TrackInfoView : UserControl
         ArtButtons.IsVisible = ArtEditor() is { CanWrite: true };
         SetArtBusy(false);
         ArtMessage.IsVisible = false;
+        ArtSearchRow.IsVisible = false;
 
         if (_track is { } first)
             _ = LoadAlbumArtAsync(first);
@@ -212,14 +213,40 @@ public partial class TrackInfoView : UserControl
         if (_track is not { } track)
             return;
 
-        var album = OnlineCoverPicker.FirstNonBlank(_info?.Album.Text, track.Album);
-        var artist = OnlineCoverPicker.FirstNonBlank(_info?.AlbumArtists.Text, _info?.Artists.Text, track.EffectiveAlbumArtist);
+        await FindArtAsync(track,
+            OnlineCoverPicker.FirstNonBlank(_info?.Album.Text, track.Album),
+            OnlineCoverPicker.FirstNonBlank(_info?.AlbumArtists.Text, _info?.Artists.Text, track.EffectiveAlbumArtist));
+    }
+
+    // The search row's words instead of the tags' - see ArtSearchRow.
+    private async void ArtSearch_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_track is { } track)
+            await FindArtAsync(track, ArtSearchAlbum.Text?.Trim() ?? "", ArtSearchArtist.Text?.Trim() ?? "");
+    }
+
+    private async void ArtSearchRow_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || _track is not { } track)
+            return;
+        e.Handled = true;
+        await FindArtAsync(track, ArtSearchAlbum.Text?.Trim() ?? "", ArtSearchArtist.Text?.Trim() ?? "");
+    }
+
+    // A search that finds nothing offers the row, holding what it searched
+    // for, so the words can be changed and tried again.
+    private async Task FindArtAsync(Track track, string album, string artist)
+    {
+        if (!FindArtButton.IsEnabled)
+            return;
+
         var title = OnlineCoverPicker.FirstNonBlank(_info?.Title.Text, track.Title);
 
         _findArt?.Cancel();
         var find = _findArt = new CancellationTokenSource();
         ArtMessage.IsVisible = false;
         FindArtButton.IsEnabled = false;
+        ArtSearchButton.IsEnabled = false;
         FindArtLabel.Text = "Searching…";
 
         var finder = new OnlineCoverArt(_logger);
@@ -235,7 +262,8 @@ public partial class TrackInfoView : UserControl
         finally
         {
             FindArtButton.IsEnabled = true;
-            FindArtLabel.Text = "Find Online";
+            ArtSearchButton.IsEnabled = true;
+            FindArtLabel.Text = "Find online";
         }
 
         if (find.IsCancellationRequested || _track != track)
@@ -243,6 +271,12 @@ public partial class TrackInfoView : UserControl
         if (OnlineCoverPicker.NothingFound(found, album, title) is { } nothing)
         {
             ShowArtMessage(nothing);
+            if (found is { Count: 0 })
+            {
+                ArtSearchAlbum.Text = album;
+                ArtSearchArtist.Text = artist;
+                ArtSearchRow.IsVisible = true;
+            }
             return;
         }
 
@@ -277,6 +311,8 @@ public partial class TrackInfoView : UserControl
             return;
 
         SetArtBusy(true);
+        // A cover chosen some other way leaves nothing to search for again.
+        ArtSearchRow.IsVisible = false;
         ShowArtMessage(UpdatingFilesText(editor));
         string? message;
         try
@@ -309,6 +345,7 @@ public partial class TrackInfoView : UserControl
         ArtBusy.IsVisible = busy;
         ChoosePhotoButton.IsEnabled = !busy;
         FindArtButton.IsEnabled = !busy;
+        ArtSearchButton.IsEnabled = !busy;
         PasteArtButton.IsEnabled = !busy;
         RemoveArtButton.IsEnabled = !busy;
     }
