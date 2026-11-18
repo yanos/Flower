@@ -1131,8 +1131,7 @@ public partial class App : Application
             // Told the moment the network moves - Wi-Fi to cellular walking
             // out of the house - rather than finding out from a request to
             // an address that no longer exists. See INetworkChangeSource.
-            (PlatformNetworkChange.Current ?? new DotNetNetworkChangeSource()).Changed +=
-                networkDiscovery.NotifyNetworkChanged;
+            networkDiscovery.ListenForNetworkChanges(PlatformNetworkChange.Current ?? new DotNetNetworkChangeSource());
 
             // Every address the paired server has told us about, registered as
             // a peer so the ordinary poll loop starts probing them. This is

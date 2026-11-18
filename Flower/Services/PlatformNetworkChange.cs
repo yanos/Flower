@@ -16,9 +16,19 @@ namespace Flower.Services
     // Raised on whatever thread the platform reports on, possibly several times
     // for one change (an interface going down, then routes, then DNS) -
     // consumers coalesce rather than assume one event per change.
+    //
+    // A report is a hint, not a verdict: every platform's signal has been seen
+    // to fire for changes that move nothing, so what is acted on is whether
+    // DescribeNetwork reads differently afterwards (NetworkChangeFilter).
     public interface INetworkChangeSource
     {
         event Action? Changed;
+
+        // The network as it is now, as one line that reads the same for as
+        // long as the network is the same (NetworkDescription writes it, where
+        // the platform can list its addresses); null when it cannot be told,
+        // which counts as a change.
+        string? DescribeNetwork();
     }
 
     // Set by a platform entry point before Avalonia starts, the same way as
@@ -45,5 +55,7 @@ namespace Flower.Services
             NetworkChange.NetworkAddressChanged += (_, _) => Changed?.Invoke();
             NetworkChange.NetworkAvailabilityChanged += (_, _) => Changed?.Invoke();
         }
+
+        public string? DescribeNetwork() => NetworkDescription.OfThisMachine();
     }
 }

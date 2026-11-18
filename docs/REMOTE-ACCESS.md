@@ -293,6 +293,30 @@ answering until they answer again (`NetworkDiscoveryService.SuspectOtherPortsOf`
 A refused connection does not spread like this, because the machine that
 refused is still there.
 
+**One slow answer no longer takes a server's only route away** (November
+2026). A phone log on cellular showed `NWPathMonitor` re-reporting the same
+path every three seconds, 2,896 times in a day. Each report set off two
+rechecks of every address, over the link the music was streaming on. `/info`
+then took 2–3 s against its 3 s timeout, and a single miss marked the server
+unreachable while it was streaming. A song asked for in that second would not
+play. Two changes:
+- A reported change is acted on only when the network reads differently
+  afterwards (`NetworkChangeFilter`, on every platform). Each
+  `INetworkChangeSource` now also describes the network
+  (`DescribeNetwork`): iOS from the `NWPath`, Android from the default
+  network's `LinkProperties`, the desktops from .NET's interface list
+  (`NetworkDescription`). The description is read once a burst of reports has
+  settled, and counts the interfaces that are up, their addresses (not
+  link-local ones) and their gateways. So a move between two Wi-Fi networks
+  still counts, and so does a laptop joining a phone's hotspot. Android's
+  link-property churn and a Mac's AirDrop interface do not.
+- A timeout on the only address a remembered server is answering on is
+  forgiven once; a second in a row counts
+  (`NetworkDiscoveryService.IsOneSlowAnswerFromTheOnlyRoute`). Any other miss
+  still counts at once: one where another route is answering (so leaving the
+  house still hands over immediately), one just after a real network change,
+  or a refusal.
+
 **A streamed file is read thirty seconds ahead.** The handover had only two
 seconds of cover, which is all the output ring holds. A streamed file is now
 read about thirty seconds ahead of the decoder (`ReadAheadStream`, sized from

@@ -376,9 +376,23 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
         _backend.Browse(ServiceType);
     }
 
+    // Set by ListenForNetworkChanges; null rechecks on every report, as a
+    // test calling NotifyNetworkChanged directly wants.
+    private NetworkChangeFilter? _networkChangeFilter;
+
+    // Rechecks every peer whenever the network this device is on has really
+    // moved - see INetworkChangeSource and NetworkChangeFilter.
+    public void ListenForNetworkChanges(INetworkChangeSource source)
+    {
+        _networkChangeFilter = new NetworkChangeFilter(source.DescribeNetwork, _logger);
+        source.Changed += NotifyNetworkChanged;
+    }
+
     // The network this device is on has changed - see INetworkChangeSource.
     // Safe to call from any thread and as often as the platform likes: a
-    // burst is coalesced into one re-check.
+    // burst is coalesced into one re-check, and one that leaves the network
+    // where it was is dropped (NetworkChangeFilter), asked once the burst has
+    // settled so it sees where the network ended up.
     public void NotifyNetworkChanged()
     {
         if (Interlocked.Exchange(ref _networkChangePending, 1) == 1)
@@ -391,6 +405,8 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
             {
                 await Task.Delay(NetworkChangeSettle, token);
                 Volatile.Write(ref _networkChangePending, 0);
+                if (_networkChangeFilter?.HasMoved() == false)
+                    return;
                 await RecheckAfterNetworkChangeAsync(token);
             }
             catch (OperationCanceledException)

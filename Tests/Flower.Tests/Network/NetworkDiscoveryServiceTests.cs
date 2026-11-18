@@ -537,6 +537,31 @@ public class NetworkDiscoveryServiceTests : IDisposable
         Assert.Empty(_backend.Advertised);
     }
 
+    private sealed class FakeNetworkChangeSource : INetworkChangeSource
+    {
+        public string? Network = "en0=[192.168.1.20] via [192.168.1.1]";
+        public event Action? Changed;
+        public void Report() => Changed?.Invoke();
+        public string? DescribeNetwork() => Network;
+    }
+
+    // A report that leaves the network where it was rechecks nothing - on
+    // cellular, iOS made one every three seconds for hours.
+    [Fact]
+    public async Task A_network_change_report_that_moved_nothing_rechecks_nothing()
+    {
+        var source = new FakeNetworkChangeSource();
+        _service.ListenForNetworkChanges(source);
+
+        source.Report();
+        await Task.Delay(TimeSpan.FromMilliseconds(600), TestContext.Current.CancellationToken);
+        Assert.Empty(_backend.Browsed);
+
+        source.Network = "pdp_ip0=[10.20.30.40] via []";
+        source.Report();
+        WaitUntil(() => _backend.Browsed.Count > 0, "a real move should recheck every peer");
+    }
+
     [Fact]
     public void Restart_re_browses_and_still_advertises_nothing()
     {
