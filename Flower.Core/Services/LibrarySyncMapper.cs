@@ -78,6 +78,8 @@ public static class LibrarySyncMapper
             // Music.app's count, the library's one number for it - see
             // TrackDto.ImportedPlayCount.
             ImportedPlayCount = song.ImportedPlayCount ?? 0,
+            RemoteSkipCounts = OthersPlayCounts(song.SkipCounts, ownFingerprint),
+            ImportedSkipCount = song.ImportedSkipCount ?? 0,
             // Falls back to the Track record's own "now" default (see Track.DateAdded)
             // when talking to a third-party server that doesn't send this - see
             // TrackDto.DateAdded's own doc comment for why this matters for Recently
@@ -154,6 +156,8 @@ public static class LibrarySyncMapper
         OriginTrackId = song.Id,
         RemotePlayCounts = OthersPlayCounts(song.PlayCounts, ownFingerprint),
         ImportedPlayCount = song.ImportedPlayCount ?? 0,
+        RemoteSkipCounts = OthersPlayCounts(song.SkipCounts, ownFingerprint),
+        ImportedSkipCount = song.ImportedSkipCount ?? 0,
         LastPlayedAt = song.LastPlayed,
         RememberPlaybackPosition = song.RememberPlaybackPosition,
         ResumePosition = song.ResumePositionSeconds is { } seconds ? TimeSpan.FromSeconds(seconds) : null,
@@ -162,7 +166,7 @@ public static class LibrarySyncMapper
     };
 
     // Every device's count but this one's - see ToPlaceholderTrack's
-    // ownFingerprint note.
+    // ownFingerprint note. Plays and skips alike.
     private static Dictionary<string, int> OthersPlayCounts(Dictionary<string, int>? counts, string ownFingerprint) =>
         (counts ?? new Dictionary<string, int>())
             .Where(kv => kv.Key != ownFingerprint)

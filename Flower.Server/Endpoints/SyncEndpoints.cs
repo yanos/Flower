@@ -473,6 +473,10 @@ public static class SyncEndpoints
             ? new Dictionary<string, int> { [guestFingerprint] = own }
             : null,
         ImportedPlayCount = null,
+        SkipCounts = song.SkipCounts?.TryGetValue(guestFingerprint, out var ownSkips) == true
+            ? new Dictionary<string, int> { [guestFingerprint] = ownSkips }
+            : null,
+        ImportedSkipCount = null,
         LastPlayed = null,
         ResumePositionSeconds = null,
     };

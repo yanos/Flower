@@ -55,15 +55,20 @@ namespace Flower.Models
         // (see Library.RecordOrigin). Nothing a row draws.
         Origin = 512,
 
+        // A skip counted against the track, here or on another device - see
+        // Track.SkipCount. Not a play: LastPlayed does not move.
+        Skipped = 1024,
+
         Plays = LastPlayed | PlayFinished,
 
         // What Library.ListeningToken follows rather than ChangeToken: who
-        // played a song, how often, when last, and where a listen was left.
-        Listening = Plays | ResumePosition,
+        // played a song, how often, when last, where a listen was left, and
+        // who skipped it.
+        Listening = Plays | ResumePosition | Skipped,
 
         // What a paired device tells its server about a track - see
         // LibrarySyncService.PushTrackStateAsync.
-        TrackState = Plays | Starred | Options | ResumePosition | DateAdded,
+        TrackState = Plays | Skipped | Starred | Options | ResumePosition | DateAdded,
 
         // What can move a track to another album, artist or sort position, or
         // change what its row draws beyond a cell or two. A subscriber showing
@@ -95,6 +100,8 @@ namespace Flower.Models
         public bool Reshapes => (Change & TrackChange.Reshaping) != 0;
 
         public bool IsPlay => (Change & TrackChange.Plays) != 0;
+
+        public bool IsSkip => (Change & TrackChange.Skipped) != 0;
     }
 
     // What a pull finds that only somebody who handles files can finish - see
@@ -1109,6 +1116,9 @@ namespace Flower.Models
                 placeholder.PlayCount = was.PlayCount;
                 placeholder.ImportedPlayCount = was.ImportedPlayCount;
                 MergeRemotePlayCounts(placeholder, was.RemotePlayCounts);
+                placeholder.SkipCount = was.SkipCount;
+                placeholder.ImportedSkipCount = was.ImportedSkipCount;
+                MergeRemoteSkipCounts(placeholder, was.RemoteSkipCounts);
                 MergeLastPlayed(placeholder, was);
                 if (ownersDevice && was.DateAdded < placeholder.DateAdded)
                     placeholder.DateAdded = was.DateAdded;
@@ -1151,7 +1161,10 @@ namespace Flower.Models
             track.IgnoreWhenShuffling      = was.IgnoreWhenShuffling;
             track.VolumeAdjustment         = was.VolumeAdjustment;
             track.WithdrawnByOrigin        = was.WithdrawnByOrigin;
+            track.SkipCount                = was.SkipCount;
+            track.ImportedSkipCount        = was.ImportedSkipCount;
             MergeRemotePlayCounts(track, was.RemotePlayCounts);
+            MergeRemoteSkipCounts(track, was.RemoteSkipCounts);
         }
 
         // Which record a returning song claims. By the path it had, first: a
@@ -1618,7 +1631,10 @@ namespace Flower.Models
             track.ResumePosition           = previous.ResumePosition;
             track.IgnoreWhenShuffling      = previous.IgnoreWhenShuffling;
             track.VolumeAdjustment         = previous.VolumeAdjustment;
+            track.SkipCount                = previous.SkipCount;
+            track.ImportedSkipCount        = previous.ImportedSkipCount;
             MergeRemotePlayCounts(track, previous.RemotePlayCounts);
+            MergeRemoteSkipCounts(track, previous.RemoteSkipCounts);
         }
 
         // Applies a peer's known-songs catalog (see LibrarySyncService,
@@ -1899,6 +1915,9 @@ namespace Flower.Models
             // every device settles on the highest any admin device read - see
             // TrackDto.ImportedPlayCount.
             existing.ImportedPlayCount = Math.Max(existing.ImportedPlayCount, remote.ImportedPlayCount);
+            // Skips by the same two rules as plays.
+            MergeRemoteSkipCounts(existing, remote.RemoteSkipCounts);
+            existing.ImportedSkipCount = Math.Max(existing.ImportedSkipCount, remote.ImportedSkipCount);
             // Before MergeLastPlayed: which side played last is what decides
             // the options, and that has to be read before the server's date is
             // taken.
@@ -2203,6 +2222,7 @@ namespace Flower.Models
             string? OriginRelativePath, string? OriginAlbumArtId, bool WithdrawnByOrigin,
             DateTimeOffset DateAdded,
             int RemoteCountDevices, long RemoteCountTotal, int ImportedPlayCount,
+            int RemoteSkipDevices, long RemoteSkipTotal, int ImportedSkipCount,
             DateTimeOffset? LastPlayedAt,
             bool Starred,
             bool RememberPlaybackPosition, TimeSpan? ResumePosition, bool IgnoreWhenShuffling, int VolumeAdjustment,
@@ -2216,12 +2236,16 @@ namespace Flower.Models
                 long total = 0;
                 foreach (var count in track.RemotePlayCounts.Values)
                     total += count;
+                long skips = 0;
+                foreach (var count in track.RemoteSkipCounts.Values)
+                    skips += count;
 
                 return new MergedTrackState(
                     track.OriginDeviceFingerprint, track.OriginTrackId, track.OriginFileExtension,
                     track.OriginRelativePath, track.OriginAlbumArtId, track.WithdrawnByOrigin,
                     track.DateAdded,
                     track.RemotePlayCounts.Count, total, track.ImportedPlayCount,
+                    track.RemoteSkipCounts.Count, skips, track.ImportedSkipCount,
                     track.LastPlayedAt,
                     track.Starred,
                     track.RememberPlaybackPosition, track.ResumePosition, track.IgnoreWhenShuffling, track.VolumeAdjustment,
@@ -2243,6 +2267,8 @@ namespace Flower.Models
                     change |= TrackChange.DateAdded;
                 if ((RemoteCountDevices, RemoteCountTotal, ImportedPlayCount) != (after.RemoteCountDevices, after.RemoteCountTotal, after.ImportedPlayCount))
                     change |= TrackChange.PlayFinished;
+                if ((RemoteSkipDevices, RemoteSkipTotal, ImportedSkipCount) != (after.RemoteSkipDevices, after.RemoteSkipTotal, after.ImportedSkipCount))
+                    change |= TrackChange.Skipped;
                 if (LastPlayedAt != after.LastPlayedAt)
                     change |= TrackChange.LastPlayed;
                 if (Starred != after.Starred)
@@ -2265,13 +2291,17 @@ namespace Flower.Models
         // comment: a device's own reported count only ever grows, so this is
         // safe to apply repeatedly, in any order, including a report relayed
         // through a third device rather than learned directly from its origin.
-        private static void MergeRemotePlayCounts(Track existing, Dictionary<string, int> incoming)
+        private static void MergeRemotePlayCounts(Track existing, Dictionary<string, int> incoming) =>
+            MergeCounts(existing.RemotePlayCounts, incoming);
+
+        // Track.RemoteSkipCounts, by the same rule as the plays above.
+        private static void MergeRemoteSkipCounts(Track existing, Dictionary<string, int> incoming) =>
+            MergeCounts(existing.RemoteSkipCounts, incoming);
+
+        private static void MergeCounts(Dictionary<string, int> into, Dictionary<string, int> incoming)
         {
             foreach (var (fingerprint, count) in incoming)
-            {
-                existing.RemotePlayCounts[fingerprint] =
-                    Math.Max(existing.RemotePlayCounts.GetValueOrDefault(fingerprint), count);
-            }
+                into[fingerprint] = Math.Max(into.GetValueOrDefault(fingerprint), count);
         }
 
         // Atomically resolves whichever Track object currently represents
@@ -2315,6 +2345,28 @@ namespace Flower.Models
             // line should report the increment it is actually about.
             _logger.LogTrace("PlayCount incremented to {NewCount} for {Title}", newCount, current.Title);
             return current;
+        }
+
+        // A skip on this device (see Track.SkipCount): IncrementPlayCount's
+        // resolve-under-lock and one stats write, without the LastPlayedAt
+        // stamp - a song skipped was not played.
+        public Track IncrementSkipCount(Track skippedTrack)
+        {
+            var current = BumpSkipCount(skippedTrack);
+            Persist(() => _store!.UpdateStats(current));
+            RaiseTrackChanged([current], TrackChange.Skipped);
+            return current;
+        }
+
+        private Track BumpSkipCount(Track skippedTrack)
+        {
+            lock (_lock)
+            {
+                var current = ResolveCurrent(skippedTrack);
+                current.SkipCount++;
+                BumpListening(current);
+                return current;
+            }
         }
 
         // Whichever Track object currently represents playedTrack's file.
@@ -2507,6 +2559,43 @@ namespace Flower.Models
             return true;
         }
 
+        // RecordPlay's skip: a browser tab of the owner's reporting one, which
+        // moves this library's own SkipCount.
+        public bool RecordSkip(string? id)
+        {
+            if (Find(id) is not { } track)
+                return false;
+
+            var current = BumpSkipCount(track);
+            Persist(() => _store!.UpdateStats(current));
+
+            RaiseTrackChanged([current], TrackChange.Skipped, ChangeSource.Remote);
+            return true;
+        }
+
+        // RecordPlayFor's skip, filed under the guest device that made it and
+        // for the same reason.
+        public bool RecordSkipFor(string? id, string deviceFingerprint)
+        {
+            if (string.IsNullOrEmpty(deviceFingerprint))
+                return false;
+
+            Track skipped;
+            lock (_lock)
+            {
+                if (Find(id) is not { } track)
+                    return false;
+
+                track.RemoteSkipCounts[deviceFingerprint] = track.RemoteSkipCounts.GetValueOrDefault(deviceFingerprint) + 1;
+                BumpListening(track);
+                skipped = track;
+            }
+
+            Persist(() => _store!.Upsert(skipped));
+            RaiseTrackChanged([skipped], TrackChange.Skipped, ChangeSource.Remote);
+            return true;
+        }
+
         // What another device knows about the tracks this one serves, stated
         // as that device's own current values rather than as the changes that
         // got there - see TrackStateDto, and Track.RemotePlayCounts for the
@@ -2592,6 +2681,15 @@ namespace Flower.Models
                         moved |= TrackChange.PlayFinished;
                     }
 
+                    // Skips by the same rule, and like the count open to any
+                    // paired device: it is filed under the reporter's name.
+                    if (entry.SkipCount > 0 &&
+                        track.RemoteSkipCounts.GetValueOrDefault(deviceFingerprint) < entry.SkipCount)
+                    {
+                        track.RemoteSkipCounts[deviceFingerprint] = entry.SkipCount;
+                        moved |= TrackChange.Skipped;
+                    }
+
                     if (callerIsAdmin)
                         moved |= ApplyReportedOwnerState(track, entry);
 
@@ -2667,6 +2765,13 @@ namespace Flower.Models
             {
                 track.ImportedPlayCount = entry.ImportedCount;
                 moved |= TrackChange.PlayFinished;
+            }
+
+            // Music.app's skips, by the same rule.
+            if (entry.ImportedSkipCount > track.ImportedSkipCount)
+            {
+                track.ImportedSkipCount = entry.ImportedSkipCount;
+                moved |= TrackChange.Skipped;
             }
 
             // Backwards only. Date Added is the earliest this song is known to

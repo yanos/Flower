@@ -447,6 +447,20 @@ namespace Flower.Models
         [JsonIgnore]
         public int TotalPlayCount => PlayCount + ImportedPlayCount + RemotePlayCounts.Values.Sum();
 
+        // Skips, kept exactly as plays are above and travelling the same roads:
+        // SkipCount is this device's own tally, ImportedSkipCount is Music.app's
+        // "Skip Count" for the song (the library's one number, highest any admin
+        // device read), and RemoteSkipCounts every other device's tally by
+        // fingerprint, merged per-key by max. A skip is Next pressed in a song's
+        // first SkipWithin, before it counted as a play (ListenMeter.Skip) - the
+        // same rule a Vibe Playlist's queue draws less often by.
+        public int SkipCount { get; set; }
+        public int ImportedSkipCount { get; set; }
+        public Dictionary<string, int> RemoteSkipCounts { get; set; } = new();
+
+        [JsonIgnore]
+        public int TotalSkipCount => SkipCount + ImportedSkipCount + RemoteSkipCounts.Values.Sum();
+
         // When this track first appeared in the library. Defaults to "now" for a
         // freshly-imported Track; Library.UpdateTracks carries the original value
         // forward across rescans by matching Path, so it only reflects the first
@@ -562,6 +576,7 @@ namespace Flower.Models
             // it in place) - sharing it would make a copy's merges land on the
             // original too.
             copy.RemotePlayCounts = new Dictionary<string, int>(RemotePlayCounts);
+            copy.RemoteSkipCounts = new Dictionary<string, int>(RemoteSkipCounts);
             return copy;
         }
 
@@ -632,6 +647,10 @@ namespace Flower.Models
             && Starred == other.Starred
             && DateAdded == other.DateAdded
             && RemotePlayCounts.Count == other.RemotePlayCounts.Count
-            && RemotePlayCounts.All(kv => other.RemotePlayCounts.TryGetValue(kv.Key, out var n) && n == kv.Value);
+            && RemotePlayCounts.All(kv => other.RemotePlayCounts.TryGetValue(kv.Key, out var n) && n == kv.Value)
+            && SkipCount == other.SkipCount
+            && ImportedSkipCount == other.ImportedSkipCount
+            && RemoteSkipCounts.Count == other.RemoteSkipCounts.Count
+            && RemoteSkipCounts.All(kv => other.RemoteSkipCounts.TryGetValue(kv.Key, out var n) && n == kv.Value);
     }
 }

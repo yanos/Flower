@@ -264,13 +264,15 @@ public enum LimitUnit
 public enum LimitSelector
 {
     Random,
-    Title,
-    Artist,
-    Album,
+    Starred,
     MostPlayed,
     LeastPlayed,
+    MostSkipped,
+    LeastSkipped,
     MostRecentlyPlayed,
     LeastRecentlyPlayed,
     MostRecentlyAdded,
     LeastRecentlyAdded,
+    NewestRelease,
+    OldestRelease,
 }

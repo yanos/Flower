@@ -437,9 +437,12 @@ public static class SmartPlaylistEvaluator
         // context so tests get one answer twice.
         LimitSelector.Random => matched.OrderBy(_ => context.Random.Next()),
 
-        LimitSelector.Title  => matched.OrderBy(t => t.TitleSortValue, StringComparer.CurrentCultureIgnoreCase),
-        LimitSelector.Artist => matched.OrderBy(t => t.ArtistsSortValue, StringComparer.CurrentCultureIgnoreCase),
-        LimitSelector.Album  => matched.OrderBy(t => t.AlbumSortValue, StringComparer.CurrentCultureIgnoreCase),
+        // Starred is yes or no, so most often played settles everything else:
+        // a "25 selected by starred" playlist is the songs you starred, then
+        // topped up with the ones you play most rather than an arbitrary few.
+        LimitSelector.Starred => matched
+            .OrderByDescending(t => t.Starred)
+            .ThenByDescending(t => t.TotalPlayCount),
 
         LimitSelector.MostPlayed  => matched.OrderByDescending(t => t.TotalPlayCount),
         LimitSelector.LeastPlayed => matched.OrderBy(t => t.TotalPlayCount),
@@ -453,8 +456,27 @@ public static class SmartPlaylistEvaluator
         LimitSelector.MostRecentlyAdded  => matched.OrderByDescending(t => t.DateAdded),
         LimitSelector.LeastRecentlyAdded => matched.OrderBy(t => t.DateAdded),
 
+        LimitSelector.MostSkipped  => matched.OrderByDescending(t => t.TotalSkipCount),
+        LimitSelector.LeastSkipped => matched.OrderBy(t => t.TotalSkipCount),
+
+        // A song with no year goes last either way: it is neither the newest
+        // nor the oldest thing in the library, and a "50 newest" playlist
+        // topped up with undated songs would be the wrong answer.
+        LimitSelector.NewestRelease => matched
+            .OrderBy(t => ReleaseYear(t) is null)
+            .ThenByDescending(ReleaseYear),
+        LimitSelector.OldestRelease => matched
+            .OrderBy(t => ReleaseYear(t) is null)
+            .ThenBy(ReleaseYear),
+
         _ => matched,
     };
+
+    // The year a song came out, from a Year tag that may be "1979", "1979-03"
+    // or "1979-03-14" - the leading four digits, which every one of those
+    // starts with. Null for a tag that does not.
+    private static int? ReleaseYear(Track track) =>
+        track.Year is { Length: >= 4 } year && int.TryParse(year.AsSpan(0, 4), out var parsed) ? parsed : null;
 
     // Everything wrong with a rule that can be found without a library, so a
     // blob arriving from a peer (or from a newer Flower) can be checked once on

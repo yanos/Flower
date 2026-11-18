@@ -81,6 +81,11 @@ namespace Flower.Persistence.Sql
                 last_played_at            INTEGER,
                 date_added                INTEGER NOT NULL,
 
+                -- Track.SkipCount and Track.ImportedSkipCount; other devices'
+                -- skips are in track_remote_skip_counts (SqliteMigrations' step 16).
+                skip_count                INTEGER NOT NULL DEFAULT 0,
+                imported_skip_count       INTEGER NOT NULL DEFAULT 0,
+
                 -- Stored, not computed on read, even though both are a pure
                 -- function of album_artist/album via CatalogIdentity. The
                 -- server looks tracks up *by* them - getArtist, getAlbum,

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Text.Json;
@@ -98,6 +99,24 @@ public class OriginPlayReporterTests
 
         var play = Assert.Single(Assert.Single(origin.Batches).Plays);
         Assert.Equal("tr-1", play.TrackId);
+    }
+
+    // A skip goes the same way, marked as one, so the origin moves its skip
+    // count rather than its play count.
+    [Fact]
+    public async Task A_skip_reaches_the_origin_as_a_skip_and_a_play_as_a_play()
+    {
+        using var origin = new RecordingOrigin();
+        var reporter = Reporter(origin.Server);
+
+        reporter.Report(Changed(Placeholder("skipped"), TrackChange.Skipped));
+        await reporter.InFlight;
+        reporter.Report(Changed(Placeholder("played"), TrackChange.Plays));
+        await reporter.InFlight;
+
+        var events = origin.Batches.SelectMany(b => b.Plays).ToList();
+        Assert.True(events.Single(e => e.TrackId == "skipped").Skipped);
+        Assert.False(events.Single(e => e.TrackId == "played").Skipped);
     }
 
     // A desktop's own file, or a track imported from somewhere that is not this

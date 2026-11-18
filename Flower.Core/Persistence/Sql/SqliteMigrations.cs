@@ -115,6 +115,21 @@ namespace Flower.Persistence.Sql
                 PRIMARY KEY (playlist_id, track_id)
             );
             """,
+
+            // 16: Track.RemoteSkipCounts - track_remote_play_counts' twin, for
+            // the skips each OTHER device has reported. A table of its own
+            // rather than a column beside play_count, so a device that only
+            // ever skipped a song is not a play count of zero.
+            """
+            CREATE TABLE IF NOT EXISTS track_remote_skip_counts (
+                track_id           TEXT    NOT NULL,
+                device_fingerprint TEXT    NOT NULL,
+                skip_count         INTEGER NOT NULL,
+
+                PRIMARY KEY (track_id, device_fingerprint),
+                FOREIGN KEY (track_id) REFERENCES tracks (id) ON DELETE CASCADE
+            );
+            """,
         ];
 
         public static int LatestVersion => BaselineVersion + Steps.Count;

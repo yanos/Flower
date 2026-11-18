@@ -507,6 +507,7 @@ public class LibrarySyncService
                     IgnoreWhenShuffling = served.IgnoreWhenShuffling,
                     VolumeAdjustment = served.VolumeAdjustment,
                     ImportedPlayCount = served.ImportedPlayCount,
+                    ImportedSkipCount = served.ImportedSkipCount,
                 };
             }
         }
@@ -859,6 +860,7 @@ public class LibrarySyncService
         try
         {
             var sentCounts = _sentCounts.GetOrAdd(device.Fingerprint, _ => new ConcurrentDictionary<string, int>());
+            var sentSkipCounts = _sentSkipCounts.GetOrAdd(device.Fingerprint, _ => new ConcurrentDictionary<string, int>());
             var known = _knownServerState.GetOrAdd(device.Fingerprint, _ => new ConcurrentDictionary<string, TrackStateSnapshot>());
 
             // Only for a server that made this device an admin. The server
@@ -867,7 +869,7 @@ public class LibrarySyncService
             // from the /info answer, kept here so a phone that is only a
             // listener does not spend a request stating what will be dropped.
             var reportOwnerState = device.WeAreAdmin;
-            var report = UnreportedTrackState(candidates.Tracks, sentCounts, known, reportOwnerState);
+            var report = UnreportedTrackState(candidates.Tracks, sentCounts, known, reportOwnerState, sentSkipCounts);
 
             if (report.Count == 0)
                 return true;
@@ -898,6 +900,7 @@ public class LibrarySyncService
             foreach (var entry in report)
             {
                 sentCounts[entry.TrackId] = entry.Count;
+                sentSkipCounts[entry.TrackId] = entry.SkipCount;
                 if (reportOwnerState)
                     known[entry.TrackId] = TrackStateSnapshot.Of(entry);
             }
@@ -979,17 +982,19 @@ public class LibrarySyncService
         bool IgnoreWhenShuffling,
         int VolumeAdjustment,
         DateTimeOffset? DateAdded = null,
-        int ImportedPlayCount = 0)
+        int ImportedPlayCount = 0,
+        int ImportedSkipCount = 0)
     {
         public static TrackStateSnapshot Of(Track track) => new(
             track.LastPlayedAt, track.Starred, track.RememberPlaybackPosition,
             track.ResumePosition, track.IgnoreWhenShuffling, track.VolumeAdjustment, track.DateAdded,
-            track.ImportedPlayCount);
+            track.ImportedPlayCount, track.ImportedSkipCount);
 
         public static TrackStateSnapshot Of(TrackStateDto entry) => new(
             entry.LastPlayedAt, entry.Starred, entry.RememberPlaybackPosition,
             entry.ResumePositionSeconds is { } seconds ? TimeSpan.FromSeconds(seconds) : null,
-            entry.IgnoreWhenShuffling, entry.VolumeAdjustment, entry.DateAdded, entry.ImportedCount);
+            entry.IgnoreWhenShuffling, entry.VolumeAdjustment, entry.DateAdded, entry.ImportedCount,
+            entry.ImportedSkipCount);
 
         // Would telling the server this actually move it? Deliberately not
         // `!=` against what it served: the two sides have to agree about what
@@ -1009,7 +1014,8 @@ public class LibrarySyncService
             || MovesListeningForward(served)
             || MovesPositionWithinTheSameListen(served)
             || MovesDateAddedBack(served)
-            || ImportedPlayCount > served.ImportedPlayCount;
+            || ImportedPlayCount > served.ImportedPlayCount
+            || ImportedSkipCount > served.ImportedSkipCount;
 
         // The mirror image of the listening rule below: Date Added is a
         // low-water mark there, so only an older one is news. A device that
@@ -1074,7 +1080,8 @@ public class LibrarySyncService
         IEnumerable<Track> tracks,
         IReadOnlyDictionary<string, int> sentCounts,
         IReadOnlyDictionary<string, TrackStateSnapshot> knownServerState,
-        bool includeOwnerState)
+        bool includeOwnerState,
+        IReadOnlyDictionary<string, int>? sentSkipCounts = null)
     {
         var report = new List<TrackStateDto>();
         foreach (var track in tracks)
@@ -1091,6 +1098,10 @@ public class LibrarySyncService
             // for the song, and goes as owner state below (ImportedCount).
             var total = track.PlayCount;
             var countIsNews = total > 0 && sentCounts.GetValueOrDefault(originTrackId) < total;
+
+            // Skips, by the same G-Counter rule as the plays above.
+            var skips = track.SkipCount;
+            countIsNews |= skips > 0 && (sentSkipCounts?.GetValueOrDefault(originTrackId) ?? 0) < skips;
 
             var local = TrackStateSnapshot.Of(track);
             var stateIsNews = includeOwnerState
@@ -1112,8 +1123,8 @@ public class LibrarySyncService
                     track.LastPlayedAt, track.Starred,
                     track.RememberPlaybackPosition, track.ResumePosition?.TotalSeconds,
                     track.IgnoreWhenShuffling, track.VolumeAdjustment, track.DateAdded,
-                    track.ImportedPlayCount)
-                : new TrackStateDto(originTrackId, total));
+                    track.ImportedPlayCount, skips, track.ImportedSkipCount)
+                : new TrackStateDto(originTrackId, total, SkipCount: skips));
         }
 
         return report;
@@ -1174,6 +1185,7 @@ public class LibrarySyncService
     // restart re-pulls, which re-seeds the second of these, and the first
     // re-sends into a max-merge.
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, int>> _sentCounts = new();
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, int>> _sentSkipCounts = new();
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, TrackStateSnapshot>> _knownServerState = new();
 
     // What PushTrackStateAsync has to look at next: the tracks marked since the

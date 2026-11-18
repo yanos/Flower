@@ -15,7 +15,7 @@ using Flower.Persistence;
 namespace Flower.Importer;
 
 // Reads per-track "Play Count" from Music.app and applies it to
-// Track.ImportedPlayCount, and "Play Date UTC" - when Music.app last played it
+// Track.ImportedPlayCount, "Skip Count" to Track.ImportedSkipCount, and "Play Date UTC" - when Music.app last played it
 // - to Track.LastPlayedAt where that is later than Flower's own. Deliberately
 // leaves Track.PlayCount (Flower's own count, incremented by
 // PlaylistControlViewModel) untouched -
@@ -112,11 +112,15 @@ public static class ITunesPlayCountImporter
             {
                 if (entry is not NSDictionary iTunesTrack)
                     continue;
+                // Music.app leaves out a count that is zero, so a song only ever
+                // skipped has a Skip Count and no Play Count, and one never
+                // touched has neither - and is left out here as it always was.
+                var playCount = iTunesTrack.TryGetValue("Play Count", out var playCountNode) && playCountNode is NSNumber playNumber ? playNumber.ToInt() : (int?)null;
+                var skipCount = iTunesTrack.TryGetValue("Skip Count", out var skipCountNode) && skipCountNode is NSNumber skipNumber ? skipNumber.ToInt() : (int?)null;
                 if (iTunesTrack.TryGetValue("Name", out var nameNode) &&
                     iTunesTrack.TryGetValue("Total Time", out var totalTimeNode) &&
                     totalTimeNode is NSNumber totalTimeMs &&
-                    iTunesTrack.TryGetValue("Play Count", out var playCountNode) &&
-                    playCountNode is NSNumber playCount)
+                    (playCount != null || skipCount != null))
                 {
                     iTunesTrack.TryGetValue("Artist", out var artistNode);
                     iTunesTrack.TryGetValue("Album", out var albumNode);
@@ -133,7 +137,7 @@ public static class ITunesPlayCountImporter
                     var looseKey = Track.BuildLooseKey(nameNode.ToString(), artistNode?.ToString(), albumNode?.ToString());
 
                     iTunesTrack.TryGetValue("Play Date UTC", out var playDateNode);
-                    var plays = new MusicAppPlays(playCount.ToInt(), playDateNode is NSDate playDate ? Utc(playDate.Date) : null);
+                    var plays = new MusicAppPlays(playCount ?? 0, playDateNode is NSDate playDate ? Utc(playDate.Date) : null, skipCount ?? 0);
 
                     // Sum rather than overwrite: a library that's been through a
                     // merge/duplicate-import can have more than one Music.app
@@ -171,8 +175,9 @@ public static class ITunesPlayCountImporter
                 if (plays is not { } value)
                     continue;
 
-                var changed = track.ImportedPlayCount != value.Count;
+                var changed = track.ImportedPlayCount != value.Count || track.ImportedSkipCount != value.Skips;
                 track.ImportedPlayCount = value.Count;
+                track.ImportedSkipCount = value.Skips;
                 // Later only: LastPlayedAt is a high-water mark everywhere it
                 // is kept (Library.ApplyReportedOwnerState), so Music.app's
                 // date fills in a song Flower has never played and moves one
@@ -205,10 +210,10 @@ public static class ITunesPlayCountImporter
     // One Music.app record's listening: how often, and when last. Two records
     // for one file are summed, and keep the later date - see the duplicate-entry
     // note where they are built.
-    private readonly record struct MusicAppPlays(int Count, DateTimeOffset? LastPlayedAt)
+    private readonly record struct MusicAppPlays(int Count, DateTimeOffset? LastPlayedAt, int Skips)
     {
         public static MusicAppPlays Combine(MusicAppPlays a, MusicAppPlays b) =>
-            new(a.Count + b.Count, a.LastPlayedAt is null || b.LastPlayedAt > a.LastPlayedAt ? b.LastPlayedAt : a.LastPlayedAt);
+            new(a.Count + b.Count, a.LastPlayedAt is null || b.LastPlayedAt > a.LastPlayedAt ? b.LastPlayedAt : a.LastPlayedAt, a.Skips + b.Skips);
     }
 
     // The plist parser hands back a DateTime that may arrive Unspecified, which

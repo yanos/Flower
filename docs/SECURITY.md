@@ -169,9 +169,9 @@ household a fingerprint is a person), when the owner last played it, where the
 owner left a podcast, and the owner's Music.app count. TLS does not help here,
 because the guest's own app is the legitimate recipient. Now there are two
 catalogs. The owner's devices get all of it, because merging it is how their
-libraries agree. A guest's device gets the songs and its own entry in
-`PlayCounts`, with `LastPlayed`, `ResumePositionSeconds` and
-`ImportedPlayCount` left out (`SyncEndpoints.ForGuest`). Stars are still
+libraries agree. A guest's device gets the songs and its own entries in
+`PlayCounts` and `SkipCounts`, with `LastPlayed`, `ResumePositionSeconds`,
+`ImportedPlayCount` and `ImportedSkipCount` left out (`SyncEndpoints.ForGuest`). Stars are still
 served: they are the owner's curation of the library, not a record of
 listening.
 
@@ -241,7 +241,8 @@ Tests, all passing:
 - a guest's own playlists are kept apart from the owner's;
 - a guest's playlist edit moves only its own `playlistsToken`
   (`DiscoveryEndpointTests`);
-- a guest's plays move its own `RemotePlayCounts` entry and nothing else;
+- a guest's plays move its own `RemotePlayCounts` entry and nothing else, and
+  its skips its own `RemoteSkipCounts` entry;
 - an over-long report or event id is a `400`, an oversized body a `413`;
 - a device's 33rd ticket evicts its first (`StreamTicketServiceTests`);
 - a log push keeps its oldest 5,000 lines, and a device over its size cap loses

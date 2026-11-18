@@ -556,6 +556,39 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
         }
     }
 
+    // A reported skip moves the skip count and nothing a play moves.
+    [Fact]
+    public async Task A_reported_skip_counts_a_skip_and_not_a_play()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var library = server.Services.GetRequiredService<Library>();
+        using var device = await AdminDeviceAsync(trustedPeers);
+        var track = library.Tracks.First(t => t.Title == "Love Song");
+        var (playsBefore, skipsBefore, playedBefore) = (track.PlayCount, track.SkipCount, track.LastPlayedAt);
+
+        try
+        {
+            var report = new PlayReportDto(
+            [
+                new PlayEventDto(Guid.NewGuid().ToString("N"), track.Id.ToKey(), DateTimeOffset.UtcNow, Skipped: true),
+            ]);
+
+            var (status, _, _) = await SendAsync(
+                device, "POST", "/api/flower/v1/plays", "10.0.2.5",
+                body: JsonSerializer.Serialize(report));
+
+            Assert.Equal(HttpStatusCode.NoContent, status);
+            Assert.Equal(skipsBefore + 1, track.SkipCount);
+            Assert.Equal(playsBefore, track.PlayCount);
+            Assert.Equal(playedBefore, track.LastPlayedAt);
+        }
+        finally
+        {
+            track.SkipCount = skipsBefore;
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
     // What makes the reporter's retry safe: a batch the server applied but
     // whose response never came back is re-sent verbatim, and an increment
     // applied twice is simply wrong. The event id is what stops it.

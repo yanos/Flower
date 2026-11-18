@@ -64,9 +64,13 @@ public sealed class PlayReportService(Library library, ILogger<PlayReportService
                 continue;
             }
 
-            var recorded = callerIsAdmin
-                ? library.RecordPlay(play.TrackId)
-                : library.RecordPlayFor(play.TrackId, deviceFingerprint);
+            var recorded = (play.Skipped, callerIsAdmin) switch
+            {
+                (false, true)  => library.RecordPlay(play.TrackId),
+                (false, false) => library.RecordPlayFor(play.TrackId, deviceFingerprint),
+                (true, true)   => library.RecordSkip(play.TrackId),
+                (true, false)  => library.RecordSkipFor(play.TrackId, deviceFingerprint),
+            };
 
             if (recorded)
             {

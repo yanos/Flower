@@ -463,6 +463,24 @@ namespace Flower.ViewModels
             });
         }
 
+        // A skip, handed off the UI thread like CountPlay and for its reason:
+        // Library's lock is something a rescan can hold for a while.
+        private void CountSkip(Track track)
+        {
+            OffPlaybackThread(() =>
+            {
+                try
+                {
+                    _library.IncrementSkipCount(track);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Counting a skip failed for {Path}", LogPath.Short(track.Path));
+                    CrashReporting.ReportCaught(ex, "skip count");
+                }
+            });
+        }
+
         // Every event this class attaches to in its constructor, paired with
         // its teardown - see SubscriptionBag, and docs/ARCHITECTURE-REVIEW.md
         // Tier 2.3.
@@ -1909,6 +1927,11 @@ namespace Flower.ViewModels
                 var next = GetNextEntry(CurrentlyPlayingTrack, ResolveQueueIndex(CurrentlyPlayingTrack));
                 if (next.Track != null)
                 {
+                    // Inside the check, so an empty queue's Next - which goes
+                    // nowhere - leaves the song uncounted.
+                    if (_listen.Skip(CurrentlyPlayingTrack, _audioManager.Time))
+                        CountSkip(CurrentlyPlayingTrack);
+
                     Play(next.Track, next.Index);
                 }
             }

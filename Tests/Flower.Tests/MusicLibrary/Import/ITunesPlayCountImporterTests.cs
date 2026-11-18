@@ -104,6 +104,31 @@ public class ITunesPlayCountImporterTests : IsolatedHome
         Assert.Equal(12, track.ImportedPlayCount);
     }
 
+    // Music.app leaves a zero count out, so a song it only ever skipped has a
+    // Skip Count and no Play Count at all.
+    [Fact]
+    public void ApplyFromXmlFile_reads_skips_including_a_song_never_played()
+    {
+        var xmlPath = WriteLibraryXml($$"""
+            {{TrackEntry(1, "Played", "Artist", null, 75023, 7).Replace("</dict>", "<key>Skip Count</key><integer>2</integer></dict>")}}
+            <key>2</key>
+            <dict>
+                <key>Track ID</key><integer>2</integer>
+                <key>Name</key><string>Skipped</string>
+                <key>Artist</key><string>Artist</string>
+                <key>Total Time</key><integer>75023</integer>
+                <key>Skip Count</key><integer>4</integer>
+            </dict>
+            """);
+        var played = new Track { Title = "Played", Artists = "Artist", Duration = TimeSpan.FromSeconds(75.031) };
+        var skipped = new Track { Title = "Skipped", Artists = "Artist", Duration = TimeSpan.FromSeconds(75.031) };
+
+        Assert.True(ITunesPlayCountImporter.ApplyFromXmlFile(new List<Track> { played, skipped }, xmlPath));
+
+        Assert.Equal((7, 2), (played.ImportedPlayCount, played.ImportedSkipCount));
+        Assert.Equal((0, 4), (skipped.ImportedPlayCount, skipped.ImportedSkipCount));
+    }
+
     // What lets a launch that finds the numbers the last one left skip the
     // whole-table rewrite (ITunesImportCoordinator, October C1.3).
     [Fact]

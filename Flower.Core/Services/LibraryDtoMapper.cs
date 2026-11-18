@@ -66,7 +66,9 @@ public static class LibraryDtoMapper
         ResumePositionSeconds: ResumeSecondsOf(track),
         RememberPlaybackPosition: track.RememberPlaybackPosition,
         IgnoreWhenShuffling: track.IgnoreWhenShuffling,
-        VolumeAdjustment: track.VolumeAdjustment);
+        VolumeAdjustment: track.VolumeAdjustment,
+        SkipCounts: SkipCountsOf(track, selfFingerprint),
+        ImportedSkipCount: track.ImportedSkipCount > 0 ? track.ImportedSkipCount : null);
 
     // This server's own tally under its own name, plus every other device's
     // count it has learned - see ToTrackDto's PlayCounts.
@@ -76,6 +78,17 @@ public static class LibraryDtoMapper
             : new Dictionary<string, int>(track.RemotePlayCounts)
             {
                 [selfFingerprint] = track.PlayCount,
+            };
+
+    // The same for skips. Null rather than a map of zeros for a song nobody
+    // has skipped, which is nearly every song, so the catalog does not carry
+    // one more entry per song for nothing.
+    private static Dictionary<string, int>? SkipCountsOf(Track track, string? selfFingerprint) =>
+        selfFingerprint == null || (track.SkipCount == 0 && track.RemoteSkipCounts.Count == 0)
+            ? null
+            : new Dictionary<string, int>(track.RemoteSkipCounts)
+            {
+                [selfFingerprint] = track.SkipCount,
             };
 
     private static int? ResumeSecondsOf(Track track) =>
@@ -130,6 +143,8 @@ public static class LibraryDtoMapper
             // of the same count that device holds itself.
             PlayCounts: PlayCountsOf(track, selfFingerprint),
             ImportedPlayCount: track.ImportedPlayCount > 0 ? track.ImportedPlayCount : null,
+            SkipCounts: SkipCountsOf(track, selfFingerprint),
+            ImportedSkipCount: track.ImportedSkipCount > 0 ? track.ImportedSkipCount : null,
             LastPlayed: track.LastPlayedAt,
             // The same albumArtist already used for AlbumId/ArtistId/CoverArt
             // above, now also sent as a value - see TrackDto.DisplayAlbumArtist for

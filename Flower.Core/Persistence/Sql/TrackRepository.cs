@@ -33,7 +33,8 @@ namespace Flower.Persistence.Sql
             title_sort, artists_sort, composers_sort,
             remember_playback_position, resume_position_ticks, ignore_when_shuffling, volume_adjustment,
             encoder_profile, withdrawn_by_origin, moved_from_path, origin_file_stamp, tags_edited_at, art_edited_at, file_replaced_at,
-            art_width, art_height, art_hash
+            art_width, art_height, art_hash,
+            skip_count, imported_skip_count
             """;
 
         public List<Track> LoadAll()
@@ -73,6 +74,17 @@ namespace Flower.Persistence.Sql
                 }
             }
 
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "SELECT track_id, device_fingerprint, skip_count FROM track_remote_skip_counts;";
+                using var reader = command.ExecuteReader();
+                while (reader.Read())
+                {
+                    if (byId.TryGetValue(EntityId.FromKey(reader.GetString(0)), out var track))
+                        track.RemoteSkipCounts[reader.GetString(1)] = reader.GetInt32(2);
+                }
+            }
+
             return tracks;
         }
 
@@ -105,7 +117,7 @@ namespace Flower.Persistence.Sql
             }
 
             DeleteTracksNotIn(connection, transaction, seen);
-            WriteRemotePlayCounts(connection, transaction, tracks, seen);
+            WriteRemoteCounts(connection, transaction, tracks, seen);
 
             transaction.Commit();
         }
@@ -122,12 +134,16 @@ namespace Flower.Persistence.Sql
                 UPDATE tracks
                    SET play_count = $play_count,
                        imported_play_count = $imported_play_count,
-                       last_played_at = $last_played_at
+                       last_played_at = $last_played_at,
+                       skip_count = $skip_count,
+                       imported_skip_count = $imported_skip_count
                  WHERE id = $id;
                 """;
             command.Parameters.AddWithValue("$play_count", track.PlayCount);
             command.Parameters.AddWithValue("$imported_play_count", track.ImportedPlayCount);
             command.Parameters.AddWithValue("$last_played_at", (object?)track.LastPlayedAt?.UtcTicks ?? DBNull.Value);
+            command.Parameters.AddWithValue("$skip_count", track.SkipCount);
+            command.Parameters.AddWithValue("$imported_skip_count", track.ImportedSkipCount);
             command.Parameters.AddWithValue("$id", track.Id.ToKey());
             command.ExecuteNonQuery();
         }
@@ -189,7 +205,7 @@ namespace Flower.Persistence.Sql
                 }
             }
 
-            WriteRemotePlayCounts(connection, transaction, tracks, written);
+            WriteRemoteCounts(connection, transaction, tracks, written);
             transaction.Commit();
         }
 
@@ -396,7 +412,9 @@ namespace Flower.Persistence.Sql
             }
         }
 
-        private static void WriteRemotePlayCounts(
+        // Track.RemotePlayCounts and Track.RemoteSkipCounts, each into its own
+        // child table by the same rule.
+        private static void WriteRemoteCounts(
             SqliteConnection connection,
             SqliteTransaction transaction,
             IEnumerable<Track> tracks,
@@ -405,20 +423,34 @@ namespace Flower.Persistence.Sql
             if (written.Count == 0)
                 return;
 
+            WriteCounts(connection, transaction, tracks, "track_remote_play_counts", "play_count", t => t.RemotePlayCounts);
+            WriteCounts(connection, transaction, tracks, "track_remote_skip_counts", "skip_count", t => t.RemoteSkipCounts);
+        }
+
+        // table and column are one of the two constant pairs above, never
+        // anything a caller passed in - SQLite binds values, not identifiers.
+        private static void WriteCounts(
+            SqliteConnection connection,
+            SqliteTransaction transaction,
+            IEnumerable<Track> tracks,
+            string table,
+            string column,
+            Func<Track, Dictionary<string, int>> countsOf)
+        {
             using var delete = connection.CreateCommand();
             delete.Transaction = transaction;
-            delete.CommandText = "DELETE FROM track_remote_play_counts WHERE track_id = $track_id;";
+            delete.CommandText = $"DELETE FROM {table} WHERE track_id = $track_id;";
             var deleteId = delete.Parameters.Add("$track_id", SqliteType.Text);
 
             using var insert = connection.CreateCommand();
             insert.Transaction = transaction;
-            insert.CommandText = """
-                INSERT INTO track_remote_play_counts (track_id, device_fingerprint, play_count)
-                VALUES ($track_id, $device_fingerprint, $play_count);
+            insert.CommandText = $"""
+                INSERT INTO {table} (track_id, device_fingerprint, {column})
+                VALUES ($track_id, $device_fingerprint, $count);
                 """;
             var insertId = insert.Parameters.Add("$track_id", SqliteType.Text);
             var insertFingerprint = insert.Parameters.Add("$device_fingerprint", SqliteType.Text);
-            var insertCount = insert.Parameters.Add("$play_count", SqliteType.Integer);
+            var insertCount = insert.Parameters.Add("$count", SqliteType.Integer);
 
             foreach (var track in tracks)
             {
@@ -430,7 +462,7 @@ namespace Flower.Persistence.Sql
                 deleteId.Value = id;
                 delete.ExecuteNonQuery();
 
-                foreach (var (fingerprint, count) in track.RemotePlayCounts)
+                foreach (var (fingerprint, count) in countsOf(track))
                 {
                     insertId.Value = id;
                     insertFingerprint.Value = fingerprint;
@@ -455,7 +487,8 @@ namespace Flower.Persistence.Sql
                 title_sort, artists_sort, composers_sort,
                 remember_playback_position, resume_position_ticks, ignore_when_shuffling, volume_adjustment,
                 encoder_profile, withdrawn_by_origin, moved_from_path, origin_file_stamp, tags_edited_at, art_edited_at, file_replaced_at,
-            art_width, art_height, art_hash
+            art_width, art_height, art_hash,
+                skip_count, imported_skip_count
             ) VALUES (
                 $id, $path, $title, $subtitle, $artists, $album_artists, $is_compilation,
                 $album, $album_sort, $year, $track_number, $track_count, $disc_number, $disc_count,
@@ -470,7 +503,8 @@ namespace Flower.Persistence.Sql
                 $title_sort, $artists_sort, $composers_sort,
                 $remember_playback_position, $resume_position_ticks, $ignore_when_shuffling, $volume_adjustment,
                 $encoder_profile, $withdrawn_by_origin, $moved_from_path, $origin_file_stamp, $tags_edited_at, $art_edited_at, $file_replaced_at,
-                $art_width, $art_height, $art_hash
+                $art_width, $art_height, $art_hash,
+                $skip_count, $imported_skip_count
             )
             ON CONFLICT (id) DO UPDATE SET
                 path = excluded.path,
@@ -535,7 +569,9 @@ namespace Flower.Persistence.Sql
                 file_replaced_at = excluded.file_replaced_at,
                 art_width = excluded.art_width,
                 art_height = excluded.art_height,
-                art_hash = excluded.art_hash;
+                art_hash = excluded.art_hash,
+                skip_count = excluded.skip_count,
+                imported_skip_count = excluded.imported_skip_count;
             """;
 
         private static readonly string[] UpsertParameterNames =
@@ -554,6 +590,7 @@ namespace Flower.Persistence.Sql
             "$remember_playback_position", "$resume_position_ticks", "$ignore_when_shuffling", "$volume_adjustment",
             "$encoder_profile", "$withdrawn_by_origin", "$moved_from_path", "$origin_file_stamp", "$tags_edited_at", "$art_edited_at", "$file_replaced_at",
             "$art_width", "$art_height", "$art_hash",
+            "$skip_count", "$imported_skip_count",
         ];
 
         // Parameters are added once and then only have their Value reassigned
@@ -639,6 +676,8 @@ namespace Flower.Persistence.Sql
             p["$art_width"].Value = track.ArtWidth;
             p["$art_height"].Value = track.ArtHeight;
             p["$art_hash"].Value = Nullable(track.ArtHash);
+            p["$skip_count"].Value = track.SkipCount;
+            p["$imported_skip_count"].Value = track.ImportedSkipCount;
         }
 
         private static object Nullable(string? value) => (object?)value ?? DBNull.Value;
@@ -711,6 +750,8 @@ namespace Flower.Persistence.Sql
             ArtWidth = (int)reader.GetInt64(61),
             ArtHeight = (int)reader.GetInt64(62),
             ArtHash = Text(reader, 63),
+            SkipCount = (int)reader.GetInt64(64),
+            ImportedSkipCount = (int)reader.GetInt64(65),
         };
 
         private static string? Text(SqliteDataReader reader, int ordinal) =>

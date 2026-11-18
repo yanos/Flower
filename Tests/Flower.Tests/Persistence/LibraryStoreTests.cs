@@ -263,11 +263,14 @@ public class LibraryStoreTests : IsolatedHome
             OriginDeviceFingerprint = "fp", OriginTrackId = "otid",
             OriginFileExtension = "flac", OriginAlbumArtId = "al-art",
             PlayCount = 4, ImportedPlayCount = 7,
+            SkipCount = 2, ImportedSkipCount = 5,
             LastPlayedAt = new DateTimeOffset(2026, 3, 4, 5, 6, 7, TimeSpan.Zero),
             DateAdded = new DateTimeOffset(2025, 1, 2, 3, 4, 5, TimeSpan.Zero),
         };
         track.RemotePlayCounts["peer-a"] = 11;
         track.RemotePlayCounts["peer-b"] = 22;
+        // A device that only ever skipped it: a skip count with no play count beside it.
+        track.RemoteSkipCounts["peer-c"] = 3;
 
         Repo().ReplaceAll([track]);
         var reloaded = Assert.Single(store.Load());
@@ -324,6 +327,10 @@ public class LibraryStoreTests : IsolatedHome
         Assert.Equal(track.DateAdded, reloaded.DateAdded);
         Assert.Equal(11, reloaded.RemotePlayCounts["peer-a"]);
         Assert.Equal(22, reloaded.RemotePlayCounts["peer-b"]);
+        Assert.Equal(2, reloaded.SkipCount);
+        Assert.Equal(5, reloaded.ImportedSkipCount);
+        Assert.Equal(3, Assert.Single(reloaded.RemoteSkipCounts).Value);
+        Assert.False(reloaded.RemotePlayCounts.ContainsKey("peer-c"));
     }
 
     [Fact]

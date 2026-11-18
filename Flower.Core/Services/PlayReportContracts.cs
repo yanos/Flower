@@ -28,13 +28,17 @@ namespace Flower.Services;
 // completion, sent minutes apart; History then showed songs the play count
 // said were never played.
 //
+// Skipped makes the event a skip instead (Track.SkipCount): Next pressed early
+// in a song, which moves the far side's skip count and nothing else.
+//
 // EventId exists only so a retry is safe. A batch that reached the server and
 // whose response was lost is re-sent by the reporter, and increments are not
 // idempotent on their own - the server drops an id it has already applied.
 public sealed record PlayEventDto(
     string EventId,
     string TrackId,
-    DateTimeOffset At);
+    DateTimeOffset At,
+    bool Skipped = false);
 
 // POST /api/flower/v1/plays. A batch rather than one request per event
 // because a failed send has to be able to carry its backlog along with the
@@ -102,6 +106,9 @@ public sealed record PlayReportDto(List<PlayEventDto> Plays)
 // for the song, which the server raises to the highest any admin device
 // reports. Kept apart from Count because the owner's Macs usually share one
 // Music.app history, and summing each Mac's tally counted it once per Mac.
+//
+// SkipCount and ImportedSkipCount are the same two numbers for skips
+// (Track.SkipCount), under the same two rules.
 public sealed record TrackStateDto(
     string TrackId,
     int Count,
@@ -112,7 +119,9 @@ public sealed record TrackStateDto(
     bool IgnoreWhenShuffling = false,
     int VolumeAdjustment = 0,
     DateTimeOffset? DateAdded = null,
-    int ImportedCount = 0);
+    int ImportedCount = 0,
+    int SkipCount = 0,
+    int ImportedSkipCount = 0);
 
 // The fingerprint the report belongs to is deliberately absent: the server
 // files it under the one the request signature proved, because a body is

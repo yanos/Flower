@@ -65,15 +65,17 @@ public static class SmartPlaylistLabels
     public static string Name(LimitSelector selector) => selector switch
     {
         LimitSelector.Random              => "random",
-        LimitSelector.Title               => "title",
-        LimitSelector.Artist              => "artist",
-        LimitSelector.Album               => "album",
+        LimitSelector.Starred             => "starred",
         LimitSelector.MostPlayed          => "most often played",
         LimitSelector.LeastPlayed         => "least often played",
         LimitSelector.MostRecentlyPlayed  => "most recently played",
         LimitSelector.LeastRecentlyPlayed => "least recently played",
         LimitSelector.MostRecentlyAdded   => "most recently added",
         LimitSelector.LeastRecentlyAdded  => "least recently added",
+        LimitSelector.MostSkipped         => "most often skipped",
+        LimitSelector.LeastSkipped        => "least often skipped",
+        LimitSelector.NewestRelease       => "newest release",
+        LimitSelector.OldestRelease       => "oldest release",
         _ => selector.ToString(),
     };
 

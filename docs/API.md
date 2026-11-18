@@ -368,10 +368,14 @@ Each song's `PlayCounts` holds plays counted in Flower, one entry per device
 plus the server's own; its `ImportedPlayCount` is the library's Music.app count
 (see `POST /track-state`), served apart so the admin device that reported it
 does not get it back as the server's plays. A song's total is the sum of both.
+`SkipCounts` and `ImportedSkipCount` are the same two for skips (Next pressed
+in a song's first 30 seconds, `Track.SkipCount`); `SkipCounts` is left out for
+a song nobody has skipped.
 
 That is the owner's view. A device that is not an admin gets the same songs
-with only its own entry in `PlayCounts`, and without `LastPlayed`,
-`ResumePositionSeconds` or `ImportedPlayCount`, so a guest learns nothing about
+with only its own entry in `PlayCounts` and `SkipCounts`, and without
+`LastPlayed`, `ResumePositionSeconds`, `ImportedPlayCount` or
+`ImportedSkipCount`, so a guest learns nothing about
 anyone else's listening. See `SECURITY.md`.
 
 The response's `ETag` is the library change token — the same value `/info`
@@ -431,8 +435,8 @@ just played is what a guest's catalog withholds). Returns
 `since` is a listening token: a catalog's `ListeningToken`, `/info`'s
 `listeningToken`, or an earlier answer's `Token`. `Songs` is every song whose
 listening moved after it, and only those, with the catalog's spelling of the
-same fields (`PlayCounts`, `ImportedPlayCount`, `LastPlayed`,
-`ResumePositionSeconds`) plus the three playback options, which a device
+same fields (`PlayCounts`, `ImportedPlayCount`, `SkipCounts`,
+`ImportedSkipCount`, `LastPlayed`, `ResumePositionSeconds`) plus the three playback options, which a device
 applies together with the resume position. `Token` is where the answer leaves
 the device. Ask from it next time.
 
@@ -444,17 +448,19 @@ a few songs instead.
 
 ### `POST /plays`
 
-`{"Plays": [{"EventId", "TrackId", "At"}]}` → `204`.
+`{"Plays": [{"EventId", "TrackId", "At", "Skipped"}]}` → `204`.
 
 Events, not totals, because a browser tab has no durable counter to state a
 total from. `EventId` makes a retry safe: the server drops one the same device
 has already sent, remembering up to 5,000 per device for six hours. An event
 is a play heard, sent once it has been: the play count and `LastPlayed` move
-together, and a skipped track is not reported at all.
+together. An event with `"Skipped": true` is a skip instead, and moves the skip
+count alone.
 
 Who signed decides where a play lands. An admin device's plays move the
 library's own `PlayCount` and `LastPlayed`. Any other device's plays go under
-its own fingerprint in `PlayCounts`, and move nothing else. A
+its own fingerprint in `PlayCounts`, and move nothing else. Skips land the same
+way: the library's `SkipCount`, or the device's entry in `SkipCounts`. A
 report holds at most 500 events, with ids of at most 64 characters; past either
 limit it is a `400`.
 
@@ -467,15 +473,16 @@ report of plays alone moves only the listening token. A star, an option or a
 
 Totals, not events: `Count` is this device's own play count for the track —
 plays counted in Flower — filed under the fingerprint the signature proved and
-merged by max, so re-sending converges. Everything else in the record —
-`LastPlayedAt`, `Starred`, the playback options, `DateAdded`,
-`ImportedCount` — is a single-valued field on the shared library, and is
+merged by max, so re-sending converges. `SkipCount` is the same for skips.
+Everything else in the record — `LastPlayedAt`, `Starred`, the playback
+options, `DateAdded`, `ImportedCount`, `ImportedSkipCount` — is a single-valued field on the shared library, and is
 applied **only from an admin device**. A non-admin sending them still gets
 `204`; the fields are dropped in the merge. `DateAdded` only ever moves
 backwards. `ImportedCount` is the song's play count as read from Music.app on
 the reporting device; the library keeps one such count per song and only ever
 raises it, to the highest any admin device reports, so two Macs sharing one
-Music.app history count it once.
+Music.app history count it once. `ImportedSkipCount` is Music.app's skip
+count, by the same rule.
 
 The response headers exist to break a loop: reporting a play moves a token,
 and a client that did not recognise its own echo would fetch back what it had

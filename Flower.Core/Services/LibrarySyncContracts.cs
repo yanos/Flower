@@ -57,4 +57,6 @@ public sealed record TrackListeningDto(
     int? ResumePositionSeconds = null,
     bool RememberPlaybackPosition = false,
     bool IgnoreWhenShuffling = false,
-    int VolumeAdjustment = 0);
+    int VolumeAdjustment = 0,
+    Dictionary<string, int>? SkipCounts = null,
+    int? ImportedSkipCount = null);

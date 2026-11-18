@@ -185,4 +185,8 @@ public sealed record TrackDto(
     // picture. What a device that holds the catalog but not the file asks a
     // smart playlist about "songs with no cover" with.
     int? ArtWidth = null,
-    int? ArtHeight = null);
+    int? ArtHeight = null,
+    // Flower-specific. Skips, in the same two shapes as PlayCounts and
+    // ImportedPlayCount above and for the same reasons - see Track.SkipCount.
+    Dictionary<string, int>? SkipCounts = null,
+    int? ImportedSkipCount = null);

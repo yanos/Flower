@@ -462,6 +462,55 @@ public class SmartPlaylistEvaluatorTests
         Assert.Equal(["Never", "Stale", "Recent"], Evaluate(rules, tracks).Select(t => t.Title));
     }
 
+    // Every device's skips and Music.app's, as the Plays column counts plays.
+    [Fact]
+    public void Selected_by_most_often_skipped_counts_every_devices_skips()
+    {
+        var local = T(title: "Local");
+        local.SkipCount = 3;
+        var elsewhere = T(title: "Elsewhere");
+        elsewhere.RemoteSkipCounts["phone"] = 2;
+        elsewhere.ImportedSkipCount = 5;
+        var never = T(title: "Never");
+        var rules = SmartPlaylistRules.MatchAll() with { Limit = new SmartLimit(2, LimitUnit.Items, LimitSelector.MostSkipped) };
+
+        Assert.Equal(["Elsewhere", "Local"], Evaluate(rules, [local, elsewhere, never]).Select(t => t.Title));
+    }
+
+    // A song with no year is neither the newest thing nor the oldest.
+    [Theory]
+    [InlineData(LimitSelector.NewestRelease, new[] { "2020", "1979", "Undated" })]
+    [InlineData(LimitSelector.OldestRelease, new[] { "1979", "2020", "Undated" })]
+    public void Selected_by_release_puts_undated_songs_last_either_way(LimitSelector selector, string[] expected)
+    {
+        var tracks = new List<Track>
+        {
+            T(title: "Undated"),
+            T(title: "1979", year: "1979-03-14"),
+            T(title: "2020", year: "2020"),
+        };
+        var rules = SmartPlaylistRules.MatchAll() with { Limit = new SmartLimit(3, LimitUnit.Items, selector) };
+
+        Assert.Equal(expected, Evaluate(rules, tracks).Select(t => t.Title));
+    }
+
+    // Starred only splits the library in two, so play count has to decide
+    // which starred songs make the cut and what tops the list up after them.
+    [Fact]
+    public void Selected_by_starred_takes_starred_songs_first_then_the_most_played()
+    {
+        var tracks = new List<Track>
+        {
+            T(title: "Popular",        plays: 90),
+            T(title: "Starred, quiet", plays: 1,  starred: true),
+            T(title: "Starred, loud",  plays: 40, starred: true),
+            T(title: "Forgotten",      plays: 0),
+        };
+        var rules = SmartPlaylistRules.MatchAll() with { Limit = new SmartLimit(3, LimitUnit.Items, LimitSelector.Starred) };
+
+        Assert.Equal(["Starred, loud", "Starred, quiet", "Popular"], Evaluate(rules, tracks).Select(t => t.Title));
+    }
+
     [Fact]
     public void A_time_limit_stops_before_overshooting_its_budget()
     {

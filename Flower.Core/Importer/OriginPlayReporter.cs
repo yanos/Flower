@@ -71,7 +71,7 @@ public sealed class OriginPlayReporter(
     {
         // The guard the event's breadth makes load-bearing: without it a star
         // would go out as a play report with neither half set.
-        if (change.Source != ChangeSource.Local || !change.IsPlay)
+        if (change.Source != ChangeSource.Local || !(change.IsPlay || change.IsSkip))
             return;
 
         foreach (var track in change.Tracks)
@@ -88,10 +88,14 @@ public sealed class OriginPlayReporter(
             return;
         }
 
+        // A play and a skip are never one change - IncrementPlayCount and
+        // IncrementSkipCount each raise their own - so the event is one or the
+        // other.
         var play = new PlayEventDto(
             Guid.NewGuid().ToString("N"),
             originTrackId,
-            DateTimeOffset.UtcNow);
+            DateTimeOffset.UtcNow,
+            Skipped: (change & TrackChange.Plays) == 0);
 
         lock (_gate)
         {

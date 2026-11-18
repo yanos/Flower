@@ -167,8 +167,32 @@ public sealed class ListenMeter
         }
     }
 
-    // Nothing here for a track left any other way - skipped, stopped, the queue
-    // emptied. None of those owes a play: one is counted when it crosses the
-    // line, and the next Begin starts the measure over.
+    // How early in a song pressing Next makes it a skip: the window a Vibe
+    // Playlist's queue already uses to draw a skipped song less often, so the
+    // two never disagree about what a skip is.
+    public static readonly TimeSpan SkipWithin = VibeQueueSource.SkipWithin;
+
+    // Next was pressed at timeMs into the track. Answers whether that is a
+    // skip (Track.SkipCount): early enough, and of a track not already
+    // counted as a play - a short one heard through to its last seconds was
+    // listened to, not skipped. Once per start, like a play.
+    //
+    // Only Next. Picking another song from a list is choosing that song, not
+    // rejecting this one, and Previous is going back to something.
+    public bool Skip(Track track, long timeMs)
+    {
+        lock (_lock)
+        {
+            if (!ReferenceEquals(_track, track) || _counted || timeMs >= SkipWithin.TotalMilliseconds)
+                return false;
+
+            _track = null;
+            return true;
+        }
+    }
+
+    // Nothing here for a track left any other way - stopped, the queue
+    // emptied, another song picked. None of those owes a play: one is counted
+    // when it crosses the line, and the next Begin starts the measure over.
     private bool HeardEnoughOf(long lengthMs) => _listenedMs >= CountedFraction * lengthMs;
 }
