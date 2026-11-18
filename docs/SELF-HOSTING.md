@@ -599,6 +599,21 @@ block.
 The data volume is untouched either way, so the server comes back with the same
 identity and the same paired devices.
 
+Each update leaves the image it replaced on disk, about 440 MB a release, and a
+`--build` update also leaves its build cache, about a gigabyte each time.
+Neither is ever cleaned up on its own, and a disk that fills up stops the
+server: it can no longer open its database. Clear them after updating:
+
+```bash
+docker image prune -f --filter label=flower.image=server   # the replaced server image
+docker builder prune -f --max-used-space 5GB               # only if you build: trims the build cache
+```
+
+The first removes only Flower's untagged images. Images you pinned by version
+(`flower-server:0.2.1`) keep their tag and are left alone, so you can still go
+back to one. The second applies to all of Docker's build cache on the machine
+and keeps the 5 GB used most recently, enough for the next build to be quick.
+
 The shipped compose file tracks `ghcr.io/yanos/flower-server:latest`, which is
 less alarming than it sounds: nothing re-pulls on its own, so the image moves
 only when you run `docker compose pull`, and a pre-release tag never takes

@@ -148,6 +148,28 @@ echo "built $image"
 
 if [ "$up" = true ]; then
   run_compose up -d
+fi
+
+# Every build leaves about a gigabyte behind: the source and publish layers
+# change each time, and BuildKit keeps the old ones. Unchecked, that grew to
+# 81 GB on a server redeployed this way, until a full disk stopped SQLite
+# from opening the database and the server crash-looped on "disk I/O error".
+# What a rebuild reuses - the SDK, the restore, wasm-tools - is about 2 GB and
+# the most recently used, so a 5 GB ceiling keeps builds fast. The ceiling
+# applies to the machine's whole build cache, not only this image's; it has
+# no label to filter on. --max-used-space is BuildKit's, --keep-storage the
+# legacy builder's, and a failure here never fails a build that worked.
+docker builder prune -f --max-used-space 5GB >/dev/null 2>&1 \
+  || docker builder prune -f --keep-storage 5GB >/dev/null 2>&1 \
+  || echo "warning: could not trim the build cache - see docker system df" >&2
+
+# The flower-server:local this build replaced, untagged now and, after --up,
+# no longer running. The label (docker/Dockerfile) keeps this to Flower's own
+# images; an unfiltered prune would take every untagged image on the machine.
+docker image prune -f --filter label=flower.image=server >/dev/null \
+  || echo "warning: could not remove the image this build replaced" >&2
+
+if [ "$up" = true ]; then
   echo "running $image - back to the published image with:"
   printf '  cd %q && docker compose' "$workdir"
   if [ ${#compose[@]} -gt 0 ]; then

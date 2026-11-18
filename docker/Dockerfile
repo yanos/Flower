@@ -52,6 +52,13 @@ RUN set -e; \
 # Debian, not Alpine: the server needs ICU (see InvariantGlobalization in its csproj).
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 
+# What `docker image prune --filter label=flower.image=server` matches, so an
+# update can remove the server image it replaced without touching anyone
+# else's (docs/SELF-HOSTING.md, "Settings, and updating"). Its own key rather
+# than an org.opencontainers one, which the release job's metadata-action
+# overwrites.
+LABEL flower.image=server
+
 # /data: database, device key, logs, flower-server.json. /music: the library, read-only.
 # Set here so flower-server.json cannot override them.
 ENV Flower__DataDirectory=/data \
