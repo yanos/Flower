@@ -18,9 +18,68 @@
       <Setter Property="BorderThickness" Value="0" />
       <Setter Property="HorizontalAlignment" Value="Stretch" />
       <Setter Property="HorizontalContentAlignment" Value="Left" />
-      <Setter Property="Padding" Value="20,14" />
+      <Setter Property="Padding" Value="20,8" />
+    </Style>
+    <!-- The full list's rows are pushed in under their folder, as the
+         Playlists tab's are; the Recent section's are not. A style rather
+         than the row's own value, which would outrank it. -->
+    <Style Selector="ItemsControl.tree Button.action" x:DataType="svm:SidebarItem">
+      <Setter Property="Padding" Value="{Binding Depth, Converter={x:Static conv:DepthIndentConverter.Instance}, ConverterParameter='20,8,20,8'}" />
+    </Style>
+    <Style Selector="TextBlock.sectionLabel">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Opacity" Value="0.55" />
+      <Setter Property="Margin" Value="20,12,20,4" />
     </Style>
   </UserControl.Styles>
+
+  <UserControl.Resources>
+    <!-- One playlist to add to, as the Playlists tab draws it
+         (PlaylistPickerScreenView), smaller: its cover - the albums most
+         played in it - or, for a folder, the folder glyph on a tile the
+         cover's size. -->
+    <!-- Stretched, unlike the menu entries Button.action is otherwise: this
+         row has something at its right edge, and a left-aligned content
+         presenter would hand the grid only as much width as its text needs
+         and leave the count trailing the name instead. -->
+    <!-- A folder's row opens and closes it rather than taking the song
+         (AddTrackToPlaylistCommand). -->
+    <DataTemplate x:Key="PlaylistTargetRow" x:DataType="svm:SidebarItem">
+      <Button Classes="action"
+              HorizontalContentAlignment="Stretch"
+              Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).AddTrackToPlaylistCommand}"
+              CommandParameter="{Binding}">
+        <!-- 12 past a 40px cover is where the name being typed in the New
+             Playlist row above sits too - see controls:NewPlaylistEntry's
+             editorSlot. The count and length on the right are the ones the
+             Playlists tab's own rows show, from the same property: which of
+             two playlists with similar names to add a song to is usually
+             answered by how big they are. -->
+        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+          <controls:AlbumArtView Grid.Column="0"
+                                 IsVisible="{Binding !IsFolder}"
+                                 Covers="{Binding PlaylistCover.CoverArt}"
+                                 Width="40" Height="40" />
+          <Border Grid.Column="0"
+                  IsVisible="{Binding IsFolder}"
+                  Background="{DynamicResource AppSurfaceBrush}"
+                  CornerRadius="{x:Static controls:AlbumArtView.CoverCornerRadius}"
+                  Width="40" Height="40">
+            <materialIcons:MaterialIcon Kind="FolderOutline" Width="22" Height="22" />
+          </Border>
+          <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="16" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+          <TextBlock Grid.Column="2" Text="{Binding PlaylistSummary}"
+                     IsVisible="{Binding !IsFolder}"
+                     FontSize="13" Opacity="0.55" VerticalAlignment="Center" />
+          <Panel Grid.Column="2" IsVisible="{Binding IsFolder}" VerticalAlignment="Center">
+            <materialIcons:MaterialIcon Kind="ChevronDown" Width="20" Height="20" Opacity="0.55" IsVisible="{Binding IsExpanded}" />
+            <materialIcons:MaterialIcon Kind="ChevronRight" Width="20" Height="20" Opacity="0.55" IsVisible="{Binding !IsExpanded}" />
+          </Panel>
+        </Grid>
+      </Button>
+    </DataTemplate>
+  </UserControl.Resources>
 
   <Grid>
     <!-- Dimmed backdrop; tapping it dismisses the sheet -->
@@ -105,46 +164,22 @@
             <!-- The same row, and the same naming flow, the Playlists tab
                  itself offers (controls:NewPlaylistEntry) - inset like the
                  rows under it here rather than like the ones there. -->
-            <controls:NewPlaylistEntry RowPadding="20,14" />
+            <controls:NewPlaylistEntry RowPadding="20,8" />
 
-            <ItemsControl ItemsSource="{Binding PlaylistPickerItems}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="svm:SidebarItem">
-                  <!-- Stretched, unlike the menu entries Button.action is
-                       otherwise: this row has something at its right edge, and
-                       a left-aligned content presenter would hand the grid only
-                       as much width as its text needs and leave the count
-                       trailing the name instead. -->
-                  <!-- A folder's row opens and closes it rather than taking
-                       the song (AddTrackToPlaylistCommand), and the rows in it
-                       are pushed in as the Playlists tab's are. -->
-                  <Button Classes="action"
-                          HorizontalContentAlignment="Stretch"
-                          Padding="{Binding Depth, Converter={x:Static conv:DepthIndentConverter.Instance}, ConverterParameter='20,14,20,14'}"
-                          Command="{Binding $parent[UserControl].((vm:MobileMainViewModel)DataContext).AddTrackToPlaylistCommand}"
-                          CommandParameter="{Binding}">
-                    <!-- 12, with the 22px glyph, is what puts a name here at
-                         the same offset as the one in the New Playlist row
-                         above (26 + 8) - see controls:NewPlaylistEntry. The
-                         count and length on the right are the ones the
-                         Playlists tab's own rows show, from the same property:
-                         which of two playlists with similar names to add a
-                         song to is usually answered by how big they are. -->
-                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
-                      <materialIcons:MaterialIcon Grid.Column="0" Kind="{Binding Icon}" Width="22" Height="22" />
-                      <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="16" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                      <TextBlock Grid.Column="2" Text="{Binding PlaylistSummary}"
-                                 IsVisible="{Binding !IsFolder}"
-                                 FontSize="13" Opacity="0.55" VerticalAlignment="Center" />
-                      <Panel Grid.Column="2" IsVisible="{Binding IsFolder}" VerticalAlignment="Center">
-                        <materialIcons:MaterialIcon Kind="ChevronDown" Width="20" Height="20" Opacity="0.55" IsVisible="{Binding IsExpanded}" />
-                        <materialIcons:MaterialIcon Kind="ChevronRight" Width="20" Height="20" Opacity="0.55" IsVisible="{Binding !IsExpanded}" />
-                      </Panel>
-                    </Grid>
-                  </Button>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
+            <!-- The playlists last changed, ahead of them all: the one a song
+                 goes into is most often the one the last went into
+                 (RecentPlaylistTargets). The same rows as the list below, not
+                 indented by a folder's depth: here they are out of the tree. -->
+            <StackPanel IsVisible="{Binding HasRecentPlaylistTargets}">
+              <TextBlock Classes="sectionLabel" Text="Recent" />
+              <ItemsControl ItemsSource="{Binding RecentPlaylistTargets}"
+                            ItemTemplate="{StaticResource PlaylistTargetRow}" />
+              <TextBlock Classes="sectionLabel" Text="All Playlists" />
+            </StackPanel>
+
+            <ItemsControl Classes="tree"
+                          ItemsSource="{Binding PlaylistPickerItems}"
+                          ItemTemplate="{StaticResource PlaylistTargetRow}" />
           </StackPanel>
         </ScrollViewer>
       </DockPanel>

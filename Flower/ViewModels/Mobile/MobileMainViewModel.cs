@@ -981,6 +981,11 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             OnPropertyChanged(nameof(IsShowingConfirmUnpairServer));
             OnPropertyChanged(nameof(IsShowingConfirmRemoveFromLibrary));
             OnPropertyChanged(nameof(IsShowingMoveToFolder));
+            if (value == MobileSheet.AddToPlaylist)
+            {
+                OnPropertyChanged(nameof(RecentPlaylistTargets));
+                OnPropertyChanged(nameof(HasRecentPlaylistTargets));
+            }
 
             // Sampling costs a timer tick a second, so it runs only while the
             // readout that consumes it is actually on screen - a diagnostics

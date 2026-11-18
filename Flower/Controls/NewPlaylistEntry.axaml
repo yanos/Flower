@@ -48,8 +48,10 @@
     <Style Selector="Grid.editorRow">
       <Setter Property="ColumnSpacing" Value="12" />
     </Style>
+    <!-- As wide as the add-to-playlist sheet's covers, so a name being
+         typed sits where the rows below have theirs. -->
     <Style Selector="Border.editorSlot">
-      <Setter Property="Width" Value="22" />
+      <Setter Property="Width" Value="40" />
     </Style>
 
     <!-- The Playlists tab's: the pill as tall as every other oval on the
