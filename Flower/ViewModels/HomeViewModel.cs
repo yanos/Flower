@@ -402,9 +402,9 @@ public sealed class HomeViewModel : ViewModelBase, IDisposable
         // rather than reaching past them for more.
         if (_filter is { } filter)
         {
-            continuing = continuing.Where(c => FilterableAlbumGrid.Matches(c.Tile, filter)).ToList();
+            continuing = continuing.Where(c => AlbumGridBuilder.Matches(c.Tile, filter)).ToList();
             played = played.Where(t => TrackListBuilder.Matches(t, filter)).ToList();
-            added = added.Where(t => FilterableAlbumGrid.Matches(t, filter)).ToList();
+            added = added.Where(t => AlbumGridBuilder.Matches(t, filter)).ToList();
         }
 
         SetContinuePlaying(ApplyHold(continuing));

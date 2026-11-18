@@ -42,4 +42,18 @@ public static class AlbumGridBuilder
             })
             .OrderBy(a => a.Name)
             .ToList();
+
+    // The tiles the filter lets through, each kept whole: filtering the
+    // songs before grouping them cut a compilation down to the one song
+    // whose artist was typed.
+    public static List<AlbumTileViewModel> Filter(List<AlbumTileViewModel> tiles, string? text) =>
+        string.IsNullOrWhiteSpace(text) ? tiles : tiles.Where(t => Matches(t, text)).ToList();
+
+    // Every album grid's, Home's shelves included: an album is found by its
+    // own name and artist, and by anything any of its songs would be found
+    // by - typing a song's title finds the album it is on.
+    public static bool Matches(AlbumTileViewModel tile, string text) =>
+        SearchText.Contains(tile.Name, text) ||
+        SearchText.Contains(tile.Artist, text) ||
+        tile.Tracks.Any(t => TrackListBuilder.Matches(t, text));
 }

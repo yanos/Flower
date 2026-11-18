@@ -29,7 +29,8 @@ namespace Flower.Tests.ViewModels.Mobile;
 // (MobileMainViewModel.ScreenFilter, drawn by MobileMainView as an oval). It narrows
 // whichever list the screen is - album grid, artist or playlist picker, or a
 // track list - belongs to that one screen, and comes back with it on Back. The
-// Songs, Albums and Artists tabs find what they list by its own name alone.
+// Artists tab finds an artist by name alone; Songs and Albums by anything
+// about a song.
 [Collection("PlatformDataDirectory")]
 public class MobileScreenFilterTests : PinnedDataDirectory
 {

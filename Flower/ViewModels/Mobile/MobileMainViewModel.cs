@@ -670,8 +670,8 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
 
     // The artists the Artists tab lists - Main.SubListItems, each with how
     // many albums a tap on it shows, or those of them the filter lets
-    // through. An artist is found by name alone (TrackListBuilder
-    // .TitleMatches says why).
+    // through. An artist is found by name alone: a song's title finding the
+    // artist who sang it made the list a search of the whole library.
     private string? _artistPickerFilter;
     private IReadOnlyList<ArtistPickerRow> _artistPickerRows = [];
     private IReadOnlyList<ArtistPickerRow> _filteredArtistPickerItems = [];

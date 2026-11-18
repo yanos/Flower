@@ -359,7 +359,7 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
     // grid was the whole library for a second in between.
     private void RebuildAlbumGrids()
     {
-        SetTiles(AlbumGridBuilder.Build(TrackListBuilder.Filter(_allTracks, _filterText, TrackListBuilder.AlbumMatches)));
+        SetTiles(AlbumGridBuilder.Filter(AlbumGridBuilder.Build(_allTracks), _filterText));
         ApplyTileAvailability();
 
         // An expanded album's tracks came from a tile built against the
@@ -758,13 +758,6 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         var libraryChangeToken = $"{_library.ChangeToken}/{_library.ListeningToken}";
         var pairedServerFingerprint = _host.PairedServerFingerprint;
         var pairedServerReachable   = _host.IsPairedServerReachable;
-        // Songs finds a song by its title alone (TrackListBuilder
-        // .TitleMatches); every other list of songs - an album's, an
-        // artist's, a playlist, History - by anything about it.
-        Func<Track, string, bool>? matches = _host.CurrentKind == SidebarItemKind.Songs
-            ? TrackListBuilder.TitleMatches
-            : null;
-
         // Albums shows a tile grid instead of Rows built straight
         // from _allTracks, not from GetBaseTracksForFilter's (mostly
         // Albums-view-irrelevant) result - so without this, FilterText had no
@@ -827,12 +820,11 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         // PropertyChanged on them.
         var (plan, albumTiles) = await Task.Run(() =>
         {
-            var builtPlan = TrackListBuilder.Plan(baseTracks, text, sortCol, sortAsc, playing, _sortArtistAlbumsByYear, pairedServerFingerprint, pairedServerReachable, matches);
+            var builtPlan = TrackListBuilder.Plan(baseTracks, text, sortCol, sortAsc, playing, _sortArtistAlbumsByYear, pairedServerFingerprint, pairedServerReachable);
             if (!buildGrids)
                 return (builtPlan, (List<AlbumTileViewModel>?)null);
 
-            var filteredForGrids = TrackListBuilder.Filter(allTracks, text, TrackListBuilder.AlbumMatches).ToList();
-            return (builtPlan, AlbumGridBuilder.Build(filteredForGrids));
+            return (builtPlan, AlbumGridBuilder.Filter(AlbumGridBuilder.Build(allTracks), text));
         }, token);
 
         if (token.IsCancellationRequested)

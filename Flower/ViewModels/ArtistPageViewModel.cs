@@ -73,7 +73,7 @@ public sealed class ArtistPageViewModel : ViewModelBase
                     $"{ArtistPickerRow.Summary(albums, tracks.Count)} · {length}");
             }
             if (filter != null)
-                tracks = tracks.Where(t => TrackListBuilder.TitleMatches(t, filter) || TrackListBuilder.AlbumMatches(t, filter)).ToList();
+                tracks = tracks.Where(t => SearchText.Contains(t.Title, filter) || SearchText.Contains(t.Album, filter)).ToList();
 
             // In the order picked from the page's Sort button - oldest first
             // until one is (BrowseSort.DefaultFor).

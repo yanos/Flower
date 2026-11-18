@@ -222,21 +222,20 @@ public class LibraryBrowserViewModelTests
         Assert.Equal("hello", Assert.Single(vm.Rows).Track.Title);
     }
 
-    // Songs finds a song by its title; an album's or an artist's name is
-    // what the other two pages find.
+    // Songs finds a song by anything its row shows, not its title alone.
     [Fact]
-    public async Task Songs_are_found_by_title_alone()
+    public async Task Songs_are_found_by_their_artist_and_album_too()
     {
-        var (vm, _) = Make(Song("Heroes", "Heroes", "Bowie"), Song("Sons of the Silent Age", "Heroes", "Bowie"));
+        var (vm, _) = Make(Song("Heroes", "Heroes", "Bowie"), Song("Sons of the Silent Age", "Heroes", "Bowie"), Song("Karma Police", "OK Computer", "Radiohead"));
         vm.Repopulate();
 
         vm.FilterText = "heroes";
         await vm.RebuildRowsImmediatelyAsync();
-        Assert.Equal("Heroes", Assert.Single(vm.Rows).Track.Title);
+        Assert.Equal(2, vm.Rows.Count);
 
-        vm.FilterText = "bowie";
+        vm.FilterText = "radiohead";
         await vm.RebuildRowsImmediatelyAsync();
-        Assert.Empty(vm.Rows);
+        Assert.Equal("Karma Police", Assert.Single(vm.Rows).Track.Title);
     }
 
     // Any other list of songs - here a playlist - still finds one by anything.
@@ -256,7 +255,7 @@ public class LibraryBrowserViewModelTests
     }
 
     [Fact]
-    public async Task The_album_grid_finds_an_album_by_its_name_alone()
+    public async Task The_album_grid_finds_an_album_by_its_name_its_artist_or_its_songs()
     {
         var (vm, host) = Make(Song("Karma Police", "OK Computer", "Radiohead"), Song("Heroes", "Heroes", "Bowie"));
         host.CurrentKind = SidebarItemKind.Albums;
@@ -266,13 +265,13 @@ public class LibraryBrowserViewModelTests
         await vm.RebuildRowsImmediatelyAsync();
         Assert.Equal("OK Computer", Assert.Single(vm.AlbumGridTiles).Name);
 
-        vm.FilterText = "karma";
-        await vm.RebuildRowsImmediatelyAsync();
-        Assert.Empty(vm.AlbumGridTiles);
-
         vm.FilterText = "radiohead";
         await vm.RebuildRowsImmediatelyAsync();
-        Assert.Empty(vm.AlbumGridTiles);
+        Assert.Equal("OK Computer", Assert.Single(vm.AlbumGridTiles).Name);
+
+        vm.FilterText = "karma";
+        await vm.RebuildRowsImmediatelyAsync();
+        Assert.Equal("OK Computer", Assert.Single(vm.AlbumGridTiles).Name);
     }
 
     // A library change rebuilds the grid twice: at once, and again once the
