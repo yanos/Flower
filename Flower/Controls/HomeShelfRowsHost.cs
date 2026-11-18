@@ -41,6 +41,7 @@ public sealed class HomeShelfRowsHost
     private readonly bool _historyLink;
     private HomeViewModel? _home;
     private int _columns;
+    private List<HomeShelfRow> _rows = new();
 
     private IDisposable? _sliding;
     private readonly List<Control> _moved = new();
@@ -78,11 +79,39 @@ public sealed class HomeShelfRowsHost
         if (ReferenceEquals(home, _home))
             return;
         if (_home != null)
+        {
             _home.ShelvesChanged -= OnShelvesChanged;
+            _home.PropertyChanged -= OnHomePropertyChanged;
+        }
         _home = home;
         if (_home != null)
+        {
             _home.ShelvesChanged += OnShelvesChanged;
+            _home.PropertyChanged += OnHomePropertyChanged;
+        }
         Rebuild(_columns > 0 ? _columns : _columnsFor(_list.Bounds.Width));
+    }
+
+    // An album opening or closing on Recently Added, and what its songs show,
+    // reach the rows already on screen rather than rebuilding them: a row
+    // handed a new object is shown open or closed outright, and the card
+    // would never animate (AlbumExpansionCard).
+    private void OnHomePropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (_home is not { } home)
+            return;
+        switch (e.PropertyName)
+        {
+            case nameof(HomeViewModel.ExpandedAlbumKey):
+                HomeShelfRows.ApplyExpansion(_rows, home);
+                break;
+            case nameof(HomeViewModel.Availability):
+                HomeShelfRows.ApplyAvailability(_rows, home);
+                break;
+            case nameof(HomeViewModel.CurrentlyPlayingTrackId):
+                HomeShelfRows.ApplyPlaying(_rows, home);
+                break;
+        }
     }
 
     private void OnShelvesChanged(object? sender, EventArgs e) => Rebuild(_columns > 0 ? _columns : _columnsFor(_list.Bounds.Width));
@@ -95,7 +124,8 @@ public sealed class HomeShelfRowsHost
         StopSliding();
 
         _columns = columns;
-        _list.ItemsSource = _home == null ? null : HomeShelfRows.Build(_home, columns, _songColumns, _historyLink);
+        _rows = _home == null ? new List<HomeShelfRow>() : HomeShelfRows.Build(_home, columns, _songColumns, _historyLink, _rows);
+        _list.ItemsSource = _home == null ? null : _rows;
 
         if (before is { Count: > 0 })
             SlideFromAfterLayout(before);

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -29,6 +30,13 @@ public sealed class HomeShelfHeaderRow(string title, bool isFirst, HomeViewModel
     public HomeViewModel? HistoryLink { get; } = historyLink;
 
     public bool ShowsHistoryLink => HistoryLink != null;
+
+    // The same heading in a rebuilt list is equal to this one, so the list
+    // (ShelfRowPanel) still knows its height before it comes back into view.
+    public override bool Equals(object? obj) =>
+        obj is HomeShelfHeaderRow other && other.Title == Title && other.IsFirst == IsFirst && other.ShowsHistoryLink == ShowsHistoryLink;
+
+    public override int GetHashCode() => HashCode.Combine(Title, IsFirst, ShowsHistoryLink);
 }
 
 public sealed class HomeContinuePlayingRow(IReadOnlyList<ContinuePlayingItemViewModel> items, int columns) : HomeShelfRow
@@ -41,6 +49,26 @@ public sealed class HomeAlbumRow(IReadOnlyList<AlbumTileViewModel> tiles, int co
 {
     public IReadOnlyList<AlbumTileViewModel> Tiles { get; } = tiles;
     public int Columns { get; } = columns;
+
+    // The album opened under this row on the desktop (AlbumExpansionCard),
+    // as an Albums grid row opens one - see HomeViewModel.ExpandedAlbumKey.
+    // The phone opens an album's own screen instead, and never reads it.
+    public AlbumGridRowViewModel Album { get; } = new() { Tiles = tiles, Columns = columns };
+
+    // A row of the same albums in a rebuilt list is equal to this one, so the
+    // list (ShelfRowPanel) still knows how tall an open album makes it while
+    // it is out of view - the tiles themselves may be new.
+    public override bool Equals(object? obj) =>
+        obj is HomeAlbumRow other && other.Columns == Columns && other.Tiles.Select(t => t.Key).SequenceEqual(Tiles.Select(t => t.Key));
+
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        hash.Add(Columns);
+        foreach (var tile in Tiles)
+            hash.Add(tile.Key);
+        return hash.ToHashCode();
+    }
 }
 
 // Recently Played's songs, so many to a row - two side by side on the
@@ -55,9 +83,15 @@ public static class HomeShelfRows
 {
     // songColumns: how many of Recently Played's songs go side by side.
     // historyLink: whether the head has a History page for Recently Played's
-    // heading to lead to.
-    public static List<HomeShelfRow> Build(HomeViewModel home, int columns, int songColumns = 1, bool historyLink = false)
+    // heading to lead to. previous: the rows built last time, whose rows of
+    // Recently Added covers are handed back where they hold the same covers -
+    // Home rebuilds on every song that starts, and a new row object for an
+    // open album is a card shown again from nothing, its songs' selection
+    // gone, and a row the list (ShelfRowPanel) no longer knows the height of.
+    public static List<HomeShelfRow> Build(HomeViewModel home, int columns, int songColumns = 1, bool historyLink = false,
+        IReadOnlyList<HomeShelfRow>? previous = null)
     {
+        var reusable = previous?.OfType<HomeAlbumRow>().Where(r => r.Columns == columns).ToList() ?? [];
         var rows = new List<HomeShelfRow>();
         if (columns < 1)
             columns = 1;
@@ -81,10 +115,51 @@ public static class HomeShelfRows
                 case HomeShelf.RecentlyAdded when home.HasRecentlyAdded:
                     rows.Add(new HomeShelfHeaderRow(HomeShelfOrder.Title(shelf), rows.Count == 0));
                     foreach (var chunk in home.RecentlyAdded.Chunk(columns))
-                        rows.Add(new HomeAlbumRow(chunk, columns));
+                        rows.Add(reusable.FirstOrDefault(r => r.Tiles.SequenceEqual(chunk)) ?? new HomeAlbumRow(chunk, columns));
                     break;
             }
         }
+        ApplyExpansion(rows, home);
+        ApplyPlaying(rows, home);
         return rows;
+    }
+
+    // Opens the album Home has open (HomeViewModel.ExpandedAlbumKey) under
+    // the row holding it, and closes every other row's. A row closing keeps
+    // its album and songs to fold away with (AlbumGridRowViewModel
+    // .ExpandedTile), as in the Albums grid (AlbumGridView.ApplyExpansion).
+    public static void ApplyExpansion(IEnumerable<HomeShelfRow> rows, HomeViewModel home)
+    {
+        var key = home.ExpandedAlbumKey;
+        foreach (var tile in home.RecentlyAdded)
+            tile.IsExpanded = key != null && tile.Key == key;
+
+        foreach (var row in rows.OfType<HomeAlbumRow>())
+        {
+            var album = row.Album;
+            var tile = key == null ? null : row.Tiles.FirstOrDefault(t => t.Key == key);
+            album.IsExpanded = tile != null;
+            // Before the songs, which read it as their rows are built.
+            album.Availability = home.Availability;
+            if (tile == null)
+                continue;
+            album.ExpandedTile = tile;
+            // Only when they differ: handing the same songs again rebuilds
+            // every one of their rows.
+            if (!album.ExpandedTracks.SequenceEqual(home.ExpandedAlbumTracks))
+                album.ExpandedTracks = home.ExpandedAlbumTracks;
+        }
+    }
+
+    public static void ApplyAvailability(IEnumerable<HomeShelfRow> rows, HomeViewModel home)
+    {
+        foreach (var row in rows.OfType<HomeAlbumRow>())
+            row.Album.Availability = home.Availability;
+    }
+
+    public static void ApplyPlaying(IEnumerable<HomeShelfRow> rows, HomeViewModel home)
+    {
+        foreach (var row in rows.OfType<HomeAlbumRow>())
+            row.Album.CurrentlyPlayingTrackId = home.CurrentlyPlayingTrackId;
     }
 }

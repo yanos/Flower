@@ -213,9 +213,58 @@ public sealed class HomeViewModel : ViewModelBase, IDisposable
 
     public event EventHandler? HiddenFromRecentlyPlayedChanged;
 
-    // A Continue Playing or Recently Added cover tapped - where that goes is
-    // the head's to decide (an album screen on a phone, the Albums grid with it
-    // open on desktop), so it is handed back up.
+    // A Recently Added cover clicked on the desktop: its album opens under its
+    // row, as one opens in the Albums grid, and clicking it again closes it.
+    // One at a time. By key, as the grid's is (AlbumTileKey): the tiles are
+    // rebuilt with the shelf, and the open one is found again in the new ones.
+    private AlbumTileKey? _expandedAlbumKey;
+    public AlbumTileKey? ExpandedAlbumKey
+    {
+        get => _expandedAlbumKey;
+        private set
+        {
+            if (_expandedAlbumKey == value)
+                return;
+            _expandedAlbumKey = value;
+            OnPropertyChanged();
+        }
+    }
+
+    // The open album's songs, in the order the grid lists them.
+    public IReadOnlyList<Track> ExpandedAlbumTracks { get; private set; } = [];
+
+    public ICommand ToggleAlbumCommand { get; }
+
+    public void ToggleAlbum(AlbumTileViewModel? tile)
+    {
+        if (tile == null)
+            return;
+        if (_expandedAlbumKey == tile.Key)
+        {
+            ExpandedAlbumTracks = [];
+            ExpandedAlbumKey = null;
+            return;
+        }
+        ExpandedAlbumTracks = LibraryBrowserViewModel.ExpandedTracksFor(tile);
+        ExpandedAlbumKey = tile.Key;
+    }
+
+    // What the open album's songs are greyed and marked by.
+    public TrackAvailabilityContext Availability
+    {
+        get
+        {
+            var (fingerprint, reachable) = _availability();
+            return new TrackAvailabilityContext(fingerprint, reachable);
+        }
+    }
+
+    public Guid? CurrentlyPlayingTrackId => _playback?.CurrentlyPlayingTrack?.Id;
+
+    // An album asked for from Home - a phone's cover tapped, the desktop's
+    // Continue Playing "Show Album" - where that goes is the head's to decide
+    // (an album screen on a phone, the Albums grid with it open on desktop),
+    // so it is handed back up.
     public ICommand OpenAlbumCommand { get; }
     public event EventHandler<AlbumTileViewModel>? AlbumOpened;
 
@@ -245,6 +294,7 @@ public sealed class HomeViewModel : ViewModelBase, IDisposable
                 PlayRecentlyPlayed(row);
         });
         ShowHistoryCommand = new RelayCommand(() => HistoryRequested?.Invoke(this, EventArgs.Empty));
+        ToggleAlbumCommand = new RelayCommand<AlbumTileViewModel>(ToggleAlbum);
         OpenAlbumCommand = new RelayCommand<AlbumTileViewModel>(tile =>
         {
             if (tile != null)
@@ -273,6 +323,8 @@ public sealed class HomeViewModel : ViewModelBase, IDisposable
             {
                 if (e.PropertyName is nameof(PlaylistControlViewModel.IsPlaying) or nameof(PlaylistControlViewModel.CurrentlyPlayingTrack))
                     MarkPlayingAlbum();
+                if (e.PropertyName == nameof(PlaylistControlViewModel.CurrentlyPlayingTrack))
+                    OnPropertyChanged(nameof(CurrentlyPlayingTrackId));
             },
                 h => playback.PropertyChanged += h, h => playback.PropertyChanged -= h);
         }
@@ -410,6 +462,7 @@ public sealed class HomeViewModel : ViewModelBase, IDisposable
         SetContinuePlaying(ApplyHold(continuing));
         SetSongs(played);
         SetTiles(RecentlyAdded, added);
+        KeepExpandedAlbum();
         ApplyAvailability();
 
         OnPropertyChanged(nameof(HasContinuePlaying));
@@ -419,6 +472,22 @@ public sealed class HomeViewModel : ViewModelBase, IDisposable
         OnPropertyChanged(nameof(ShowsNothingYet));
         OnPropertyChanged(nameof(ShowsNoMatches));
         ShelvesChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    // The open album, found again among the rebuilt tiles and given their
+    // songs - a tag edit or a download replaces them - or closed when it has
+    // left the shelf, filtered out or no longer recent.
+    private void KeepExpandedAlbum()
+    {
+        if (_expandedAlbumKey is not { } key)
+            return;
+        if (RecentlyAdded.FirstOrDefault(t => t.Key == key) is { } tile)
+        {
+            ExpandedAlbumTracks = LibraryBrowserViewModel.ExpandedTracksFor(tile);
+            return;
+        }
+        ExpandedAlbumTracks = [];
+        ExpandedAlbumKey = null;
     }
 
     // After every rebuild - what a view laying the shelves out in rows of its
@@ -433,6 +502,7 @@ public sealed class HomeViewModel : ViewModelBase, IDisposable
         TrackAvailability.Apply(ContinuePlaying.Select(c => c.Tile), pairedServerFingerprint, reachable);
         TrackAvailability.Apply(RecentlyPlayed.ToList(), pairedServerFingerprint, reachable);
         TrackAvailability.Apply(RecentlyAdded, pairedServerFingerprint, reachable);
+        OnPropertyChanged(nameof(Availability));
     }
 
     // Is this album on the Continue Playing shelf - for a menu offering to

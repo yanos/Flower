@@ -30,22 +30,6 @@ public partial class AlbumGridView : UserControl
     // is over at the right.
     private const double CellWidth = 180 + 16;
 
-    // Room left between an opened album's songs and the foot of the page -
-    // the player bar, when the playback controls are at the bottom - once the
-    // grid has scrolled them into view.
-    private const double RevealGap = 24;
-
-    // The reveal's scroll runs as long as the expansion's own Height
-    // transition (AlbumGridRowControl.axaml), with the same easing, so a row
-    // closing above the one opening shrinks exactly as fast as the scroll
-    // makes up for it.
-    private static readonly TimeSpan RevealDuration = TimeSpan.FromMilliseconds(220);
-
-    // How much longer the reveal keeps after its target once its own time is
-    // up: the expansion may finish a frame after it, and until it does the
-    // scroller cannot reach an offset past the end of what it holds.
-    private static readonly TimeSpan RevealSettle = TimeSpan.FromMilliseconds(150);
-
     private IDisposable? _reveal;
 
     private IReadOnlyList<AlbumTileViewModel> _tiles = Array.Empty<AlbumTileViewModel>();
@@ -419,22 +403,10 @@ public partial class AlbumGridView : UserControl
         RevealExpanded(-1);
     }
 
-    // Scrolls an album just opened so its songs show whole, with RevealGap to
-    // spare under them - but never so far that its cover leaves the top of
-    // the page: an album with more songs than the page holds stops with its
-    // cover at the top and the rest a scroll away. Nothing moves when the
-    // songs already fit where they are, and a cover partly above the top is
-    // brought down into view.
-    //
-    // Worked out from where the songs will end rather than waiting for them
-    // to finish opening (AlbumGridRowControl.ExpandedBottom), so the scroll
-    // runs alongside the expansion. A row closing above the one opening
-    // takes what it still holds away from everything under it as it goes,
-    // and the scroll gives that back over the same time with the same easing
-    // - the tile clicked holds still instead of sliding up under the pointer.
-    // What it still holds is read here, not when it was told to close: its
-    // transition may already have run a frame, and the row opening has been
-    // laid out against that frame's height.
+    // Scrolls an album just opened so its songs show whole (ExpansionReveal).
+    // What the row closing above it still holds is read here, not when it was
+    // told to close: its transition may already have run a frame, and the
+    // row opening has been laid out against that frame's height.
     private void RevealExpanded(int closing)
     {
         StopReveal();
@@ -444,36 +416,11 @@ public partial class AlbumGridView : UserControl
         Scroller.UpdateLayout();
 
         var index = _rows.FindIndex(r => r.IsExpanded);
-        if (RowControlAt(index) is not { } row || row.TranslatePoint(default, Scroller) is not { } at)
+        if (RowControlAt(index) is not { } row)
             return;
 
-        // Where the row's top will be in the page once the row closing above
-        // it, if any, has closed; where the page would have to sit for the
-        // tile to stay just where it was clicked; and from there, the least
-        // scroll that shows the songs whole, but not past the cover.
-        var from = Scroller.Offset;
         var shift = closing >= 0 && closing < index ? RowControlAt(closing)?.CurrentExpansionHeight ?? 0 : 0;
-        var top = from.Y + at.Y - shift;
-        var bottom = top + row.ExpandedBottom + RevealGap;
-        var held = top - at.Y;
-        var target = Math.Max(0, Math.Min(Math.Max(held, bottom - Scroller.Viewport.Height), top));
-        var by = target - from.Y;
-        if (Math.Abs(by) < 0.5)
-            return;
-
-        var to = target;
-        IDisposable? reveal = null;
-        reveal = AnimationClock.Current.Subscribe(elapsed =>
-        {
-            var t = Math.Min(1.0, elapsed / RevealDuration);
-            Scroller.Offset = new Vector(from.X, from.Y + by * EaseOut(t));
-            if (t < 1.0 || (Math.Abs(Scroller.Offset.Y - to) >= 0.5 && elapsed < RevealDuration + RevealSettle))
-                return;
-            reveal!.Dispose();
-            if (ReferenceEquals(_reveal, reveal))
-                _reveal = null;
-        });
-        _reveal = reveal;
+        _reveal = ExpansionReveal.Start(Scroller, row, row.ExpandedBottom, shift);
     }
 
     private void StopReveal()
@@ -481,9 +428,6 @@ public partial class AlbumGridView : UserControl
         _reveal?.Dispose();
         _reveal = null;
     }
-
-    // The same curve as the expansion's CubicEaseOut.
-    private static double EaseOut(double t) => 1 - Math.Pow(1 - t, 3);
 
     private AlbumGridRowControl? RowControlAt(int index) =>
         index < 0 ? null : RowsList.ContainerFromIndex(index)?.FindDescendantOfType<AlbumGridRowControl>(includeSelf: true);

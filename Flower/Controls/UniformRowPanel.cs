@@ -36,8 +36,8 @@ namespace Flower.Controls;
 // what the taller rows above it add. A taller row is kept realized wherever it
 // is scrolled to, so that what it adds is always its height now rather than
 // the height it had when it was last on screen - its album may close while it
-// is out of view. A list whose rows are many heights (Home's headings and
-// shelves) wants VirtualizingStackPanel.
+// is out of view. A list of several kinds of row, each its own height - the
+// desktop's Home - wants ShelfRowPanel.
 public sealed class UniformRowPanel : VirtualizingPanel
 {
     // Whether any row may be taller than the rest - see above.

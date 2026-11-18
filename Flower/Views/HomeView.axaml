@@ -80,6 +80,11 @@
     <Style Selector="Button.homeTile:pointerover /template/ ContentPresenter#PART_ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource AppHoverBrush}" />
     </Style>
+    <!-- A Recently Added cover whose album is open below it, tinted as an
+         open tile in the Albums grid is. -->
+    <Style Selector="Button.homeTile.expanded /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AppSelectedBrush}" />
+    </Style>
   </UserControl.Styles>
 
   <Grid>
@@ -87,13 +92,22 @@
          so many to a row (HomeShelfRows, fed by HomeShelfRowsHost from this
          list's width) - so only what is on screen is built, as in the Albums
          grid, and each row built once and handed shelf after shelf
-         (RecyclingItemsControl), as on the phone. Its own ScrollViewer, as
-         AlbumGridView has: an ItemsControl's template has none. -->
-    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+         (RecyclingItemsControl), as on the phone. Laid out by ShelfRowPanel,
+         which places a row exactly however tall an open album makes it,
+         where VirtualizingStackPanel guessed and the page jumped about. Its
+         own ScrollViewer, as
+         AlbumGridView has: an ItemsControl's template has none. Not scrolled
+         to whatever takes the focus, as AlbumGridView is not: an open album's
+         songs take it on a click, and pulled the page about under the
+         pointer. -->
+    <ScrollViewer x:Name="Scroller"
+                  BringIntoViewOnFocusChange="False"
+                  HorizontalScrollBarVisibility="Disabled"
+                  VerticalScrollBarVisibility="Auto">
       <controls:RecyclingItemsControl x:Name="Rows" Margin="16,0,32,40">
         <ItemsControl.ItemsPanel>
           <ItemsPanelTemplate>
-            <VirtualizingStackPanel Orientation="Vertical" />
+            <controls:ShelfRowPanel />
           </ItemsPanelTemplate>
         </ItemsControl.ItemsPanel>
         <ItemsControl.DataTemplates>
@@ -154,18 +168,26 @@
             </controls:TileRowPanel>
           </DataTemplate>
 
+          <!-- Recently Added: a click opens the album under its row, as the
+               Albums grid does (HomeViewModel.ToggleAlbumCommand,
+               AlbumExpansionCard), and again closes it. The open cover takes
+               the selected tint, which points at the card. -->
           <DataTemplate DataType="vm:HomeAlbumRow">
-            <controls:TileRowPanel Columns="{Binding Columns}" Items="{Binding Tiles}" Margin="0,0,0,8">
-              <controls:TileRowPanel.ItemTemplate>
-                <DataTemplate x:DataType="vm:AlbumTileViewModel">
-                  <Button Classes="homeTile"
-                          Command="{Binding $parent[UserControl].((vm:HomeViewModel)DataContext).OpenAlbumCommand}"
-                          CommandParameter="{Binding}">
-                    <controls:AlbumCard Classes="desktop" Tile="{Binding}" />
-                  </Button>
-                </DataTemplate>
-              </controls:TileRowPanel.ItemTemplate>
-            </controls:TileRowPanel>
+            <StackPanel Margin="0,0,0,8">
+              <controls:TileRowPanel Columns="{Binding Columns}" Items="{Binding Tiles}">
+                <controls:TileRowPanel.ItemTemplate>
+                  <DataTemplate x:DataType="vm:AlbumTileViewModel">
+                    <Button Classes="homeTile"
+                            Classes.expanded="{Binding IsExpanded}"
+                            Command="{Binding $parent[UserControl].((vm:HomeViewModel)DataContext).ToggleAlbumCommand}"
+                            CommandParameter="{Binding}">
+                      <controls:AlbumCard Classes="desktop" Tile="{Binding}" />
+                    </Button>
+                  </DataTemplate>
+                </controls:TileRowPanel.ItemTemplate>
+              </controls:TileRowPanel>
+              <controls:AlbumExpansionCard DataContext="{Binding Album}" Margin="0,0,0,8" />
+            </StackPanel>
           </DataTemplate>
 
           <!-- Recently Played's songs, two to a row with a gutter between -
