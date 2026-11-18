@@ -1207,7 +1207,7 @@ namespace Flower.ViewModels
             // MainViewModel.PlayResolvingPlaceholder, above this class, and the
             // half of those callers that never went through MainViewModel
             // crashed the decoder instead (see IStreamUrlResolver).
-            var pending = ResolveForPlaybackAsync(track);
+            var pending = ResolveOrUseArmed(track);
             if (!pending.IsCompleted)
             {
                 StartWhenResolved(pending, generation, immediate, startAt);
@@ -1376,7 +1376,7 @@ namespace Flower.ViewModels
                 // Same faulted-task care as Play above - arming nothing is the
                 // right answer for a track that could not be resolved, and it
                 // is what SetUpcoming(null) already means.
-                _audioManager.SetUpcoming(pending.IsCompletedSuccessfully ? pending.Result : null);
+                SetUpcoming(pending.IsCompletedSuccessfully ? pending.Result : null);
                 return;
             }
 
@@ -1386,8 +1386,55 @@ namespace Flower.ViewModels
                 // Nothing to arm for a track that is no longer the current one's
                 // successor.
                 if (generation == _playGeneration)
-                    _audioManager.SetUpcoming(resolved.IsCompletedSuccessfully ? resolved.Result : null);
+                    SetUpcoming(resolved.IsCompletedSuccessfully ? resolved.Result : null);
             }));
+        }
+
+        private void SetUpcoming(Track? playable)
+        {
+            _armedPlayable = playable;
+            _audioManager.SetUpcoming(playable);
+        }
+
+        // The playable copy last handed to SetUpcoming - for a streamed track,
+        // the one carrying the stream URL the pipeline is decoding ahead from.
+        private Track? _armedPlayable;
+
+        // What Play starts: the track made playable afresh, or - when that
+        // fails - the copy armed for it, if it is the track armed. A track that
+        // fails makes the pipeline promote what was armed behind it on its
+        // own (GaplessCoordinator.HandleDrainedOrFaulted), and the skip that
+        // follows here plays that same track. Resolving it again asks whether
+        // the server is reachable right now, and on a phone whose network is
+        // changing every few seconds the answer can be no - from a real
+        // phone log: the next song played for two and a half minutes behind a
+        // Now Playing sheet still showing the one that had failed, because
+        // the skip gave up at "no stream URL could be built" and never got as
+        // far as saying what was playing. The armed copy's URL is the one the
+        // pipeline already opened; if it no longer works, that fails like any
+        // other track.
+        private Task<Track?> ResolveOrUseArmed(Track track)
+        {
+            var pending = ResolveForPlaybackAsync(track);
+            if (_armedPlayable is not { } armed || armed.Id != track.Id
+                || (pending.IsCompletedSuccessfully && pending.Result != null))
+                return pending;
+            return OrArmed(pending, armed);
+
+            async Task<Track?> OrArmed(Task<Track?> resolving, Track fallback)
+            {
+                try
+                {
+                    if (await resolving is { } resolved)
+                        return resolved;
+                }
+                catch (Exception ex)
+                {
+                    LogUnplayable(track, Task.FromException<Track?>(ex));
+                }
+                _logger.LogInformation("Playing {Title} from the stream it was armed with", track.Title);
+                return fallback;
+            }
         }
 
         // One line for either way a track fails to become playable: the

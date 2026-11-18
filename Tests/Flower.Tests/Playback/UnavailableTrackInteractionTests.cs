@@ -156,4 +156,54 @@ public class UnavailableTrackInteractionTests
         Assert.True(rows[0].IsCurrentlyPlaying);
         Assert.False(rows[1].IsCurrentlyPlaying);
     }
+
+    // Answers while the server is reachable, and stops once it is not.
+    private sealed class FlakyResolver : IStreamUrlResolver
+    {
+        public bool Reachable = true;
+        public Task<string?> ResolveAsync(Track track) =>
+            Task.FromResult(Reachable ? $"https://server/stream?id={track.OriginTrackId}" : null);
+    }
+
+    // From a phone log: a song failed, the pipeline promoted the one armed
+    // behind it and played it, and the skip here asked for that song's
+    // stream again at a moment the server looked unreachable - so it gave
+    // up, and Now Playing went on naming the song that had failed for as
+    // long as the next one played.
+    [Fact]
+    public void A_skip_past_a_failed_song_plays_the_armed_one_when_its_stream_cannot_be_asked_for_again()
+    {
+        var failing = Local("Tree");
+        var next = Placeholder("To Cure A Weakling Child");
+        var resolver = new FlakyResolver();
+        var vm = Playback([failing, next], out var audio, resolver);
+        vm.OnUiThread = work => work();
+        vm.Play(failing, 0);
+        var armed = audio.LastUpcoming;
+        Assert.Equal(next.Id, armed?.Id);
+
+        resolver.Reachable = false;
+        audio.RaiseTrackFailed(failing);
+
+        Assert.Equal(next.Id, vm.CurrentlyPlayingTrack?.Id);
+        Assert.Same(armed, audio.LastPlayed);
+    }
+
+    // Only the track armed: anything else still needs its own stream.
+    [Fact]
+    public void A_song_that_was_not_armed_is_still_not_played_without_a_stream()
+    {
+        var first = Local("A");
+        var armedOne = Placeholder("B");
+        var other = Placeholder("C");
+        var resolver = new FlakyResolver();
+        var vm = Playback([first, armedOne, other], out var audio, resolver);
+        vm.OnUiThread = work => work();
+        vm.Play(first, 0);
+
+        resolver.Reachable = false;
+        vm.Play(other, 2);
+
+        Assert.Same(first, vm.CurrentlyPlayingTrack);
+    }
 }
