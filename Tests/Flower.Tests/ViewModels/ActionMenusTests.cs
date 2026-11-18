@@ -144,6 +144,16 @@ public class ActionMenusTests
         Assert.DoesNotContain(ActionMenus.Flat(ActionMenus.ForAlbum(Nothing)), e => e.Action == MenuAction.GoToArtist);
     }
 
+    // What an album's menu is mostly opened for, and the phone's primary
+    // entry - not under Go to Artist.
+    [Fact]
+    public void Play_leads_an_album_menu_even_when_it_can_go_to_the_artist()
+    {
+        var entries = ActionMenus.Flat(ActionMenus.ForAlbum(Nothing, canGoToArtist: true));
+
+        Assert.Equal(MenuAction.Play, entries[0].Action);
+    }
+
     [Fact]
     public void A_selection_goes_to_an_album_or_artist_only_when_it_shares_one()
     {

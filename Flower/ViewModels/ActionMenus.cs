@@ -63,7 +63,8 @@ public sealed record MenuFacts(int Songs, int Downloadable, bool IsBulkDownloadi
 // and both heads have it.
 //
 // Groups, in order: where the songs go, then what they are, then taking them
-// away - and over songs, where they are from ahead of all that. The desktop
+// away - and over songs, where they are from ahead of all that (over an
+// album, just after where they go: Play leads). The desktop
 // draws a rule between groups; the phone's sheet runs them together.
 public static class ActionMenus
 {
@@ -187,7 +188,10 @@ public static class ActionMenus
         else if (isPlaylist)
             away.Add(new(MenuAction.DeletePlaylist, "Delete Playlist", MaterialIconKind.PlaylistRemove, IsDestructive: true));
 
-        return Groups(from, where, what, away);
+        // Play first, ahead of Go to Artist: playing is what an album's menu
+        // is mostly opened for, and the phone rings it as the sheet's primary
+        // entry - under Go to Artist, it read as second best.
+        return Groups(where, from, what, away);
     }
 
     // Shown only when there is something to fetch right now, with the count
