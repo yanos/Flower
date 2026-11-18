@@ -233,6 +233,7 @@ public partial class MainView : UserControl
             _viewModel.PlaylistConflictRequested -= OnPlaylistConflictRequested;
             _viewModel.RenamePlaylistRequested -= OnRenamePlaylistRequested;
             _viewModel.DeletePlaylistConfirmationRequested -= OnDeletePlaylistConfirmationRequested;
+            _viewModel.DuplicateTracksConfirmationRequested -= OnDuplicateTracksConfirmationRequested;
             _viewModel.SmartPlaylistEditorRequested -= OnSmartPlaylistEditorRequested;
             _viewModel.VibePlaylistEditorRequested -= OnVibePlaylistEditorRequested;
             HideStatusBar();
@@ -259,6 +260,7 @@ public partial class MainView : UserControl
             _viewModel.PlaylistConflictRequested += OnPlaylistConflictRequested;
             _viewModel.RenamePlaylistRequested += OnRenamePlaylistRequested;
             _viewModel.DeletePlaylistConfirmationRequested += OnDeletePlaylistConfirmationRequested;
+            _viewModel.DuplicateTracksConfirmationRequested += OnDuplicateTracksConfirmationRequested;
             _viewModel.SmartPlaylistEditorRequested += OnSmartPlaylistEditorRequested;
             _viewModel.VibePlaylistEditorRequested += OnVibePlaylistEditorRequested;
             BuildColumnMenu();
@@ -2205,6 +2207,17 @@ public partial class MainView : UserControl
         };
         var confirmed = await ConfirmDialogWindow.ShowAsync(owner, title, message, "Delete");
         e.Confirmed.TrySetResult(confirmed);
+    }
+
+    private async void OnDuplicateTracksConfirmationRequested(object? sender, DuplicateTracksConfirmationEventArgs e)
+    {
+        if (TopLevel.GetTopLevel(this) is not Window owner)
+        {
+            e.Confirmed.TrySetResult(true);
+            return;
+        }
+
+        e.Confirmed.TrySetResult(await ConfirmDialogWindow.ShowAsync(owner, e.Title, e.Message, e.ConfirmText, e.DeclineText));
     }
 
     private void OpenSettingsWindow()

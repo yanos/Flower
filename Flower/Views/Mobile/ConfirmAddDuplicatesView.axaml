@@ -1,0 +1,56 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:Flower.ViewModels.Mobile"
+             xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             xmlns:controls="clr-namespace:Flower.Controls"
+             mc:Ignorable="d"
+             x:Class="Flower.Views.Mobile.ConfirmAddDuplicatesView"
+             x:DataType="vm:MobileMainViewModel">
+
+  <!-- "Add it again?" - asked when a song going into a playlist is in it
+       already (PlaylistManagementViewModel.AddTracks; desktop's is a dialog
+       raised from MainView). The card and buttons of ConfirmDeletePlaylistView,
+       but nothing is lost either way, so a tap on the backdrop answers it too:
+       no, as the second button does. -->
+  <UserControl.Styles>
+    <Style Selector="Button.confirmAction">
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="Padding" Value="16,12" />
+      <Setter Property="FontSize" Value="16" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="CornerRadius" Value="10" />
+    </Style>
+  </UserControl.Styles>
+
+  <Grid>
+    <Button Command="{Binding DeclineAddDuplicatesCommand}"
+            Background="{DynamicResource AppScrimBrush}"
+            BorderThickness="0"
+            HorizontalAlignment="Stretch"
+            VerticalAlignment="Stretch" />
+
+    <Border VerticalAlignment="Bottom"
+            controls:SlidingSheet.IsCard="True"
+            Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
+            CornerRadius="12,12,0,0"
+            Padding="20,20,20,28">
+      <StackPanel Spacing="14" Margin="{DynamicResource SheetBottomInset}">
+        <StackPanel Orientation="Horizontal" Spacing="10">
+          <materialIcons:MaterialIcon Kind="PlaylistCheck" Width="24" Height="24" />
+          <TextBlock Text="{Binding ConfirmAddDuplicatesTitle}"
+                     FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"
+                     TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+
+        <TextBlock Text="{Binding ConfirmAddDuplicatesMessage}"
+                   FontSize="14" Opacity="0.75" TextWrapping="Wrap" />
+
+        <Button Classes="confirmAction primary" Content="{Binding ConfirmAddDuplicatesText}" Command="{Binding ConfirmAddDuplicatesCommand}" />
+        <Button Classes="confirmAction secondary" Content="{Binding DeclineAddDuplicatesText}" Command="{Binding DeclineAddDuplicatesCommand}" />
+      </StackPanel>
+    </Border>
+  </Grid>
+</UserControl>

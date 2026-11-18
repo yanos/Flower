@@ -41,7 +41,7 @@ public enum MobileNavigationTransition { None, FromRight, FromLeft }
 
 // Full-screen overlays shown on top of the tab content, e.g. the expanded
 // now-playing view opened by tapping the mini-player.
-public enum MobileSheet { None, NowPlaying, TrackActions, AlbumActions, TrackInfo, AddToPlaylist, Settings, SmartPlaylistEditor, VibePlaylistEditor, ConfirmPairServer, ConfirmDeleteFile, ConfirmDeletePlaylist, ConfirmUnpairServer, ConfirmRemoveFromLibrary, MoveToFolder }
+public enum MobileSheet { None, NowPlaying, TrackActions, AlbumActions, TrackInfo, AddToPlaylist, Settings, SmartPlaylistEditor, VibePlaylistEditor, ConfirmPairServer, ConfirmDeleteFile, ConfirmDeletePlaylist, ConfirmUnpairServer, ConfirmRemoveFromLibrary, MoveToFolder, ConfirmAddDuplicates }
 
 // Translates the desktop MainViewModel's sidebar+sublist (side-by-side master-detail)
 // navigation model into tab+drill-down navigation for a phone screen, without changing
@@ -965,6 +965,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
                 // and PlaylistManagementViewModel.DeleteAsync is sitting on
                 // that task until something does.
                 ResolvePendingPlaylistDeletion(confirmed: false);
+                ResolvePendingDuplicates(added: false);
             }
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsShowingNowPlaying));
@@ -981,6 +982,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             OnPropertyChanged(nameof(IsShowingConfirmUnpairServer));
             OnPropertyChanged(nameof(IsShowingConfirmRemoveFromLibrary));
             OnPropertyChanged(nameof(IsShowingMoveToFolder));
+            OnPropertyChanged(nameof(IsShowingConfirmAddDuplicates));
             if (value == MobileSheet.AddToPlaylist)
             {
                 OnPropertyChanged(nameof(RecentPlaylistTargets));
@@ -1563,6 +1565,9 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             h => Main.VibePlaylistEditorRequested += h, h => Main.VibePlaylistEditorRequested -= h);
         _subscriptions.Add<EventHandler<DeletePlaylistConfirmationEventArgs>>((_, e) => AskToDeletePlaylist(e),
             h => Main.DeletePlaylistConfirmationRequested += h, h => Main.DeletePlaylistConfirmationRequested -= h);
+        // Mobile's answer to "add it again?" - see AskToAddDuplicates.
+        _subscriptions.Add<EventHandler<DuplicateTracksConfirmationEventArgs>>((_, e) => AskToAddDuplicates(e),
+            h => Main.DuplicateTracksConfirmationRequested += h, h => Main.DuplicateTracksConfirmationRequested -= h);
         _subscriptions.Add<EventHandler>((_, _) => Dispatcher.UIThread.Post(RebuildLibraryDerivedState),
             h => Main.Library.LibraryChanged += h, h => Main.Library.LibraryChanged -= h);
         // Only a change that can move a track between albums, or change its

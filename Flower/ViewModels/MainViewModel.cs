@@ -276,6 +276,9 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // See DeletePlaylistConfirmationEventArgs above.
     public event EventHandler<DeletePlaylistConfirmationEventArgs>? DeletePlaylistConfirmationRequested;
 
+    // See DuplicateTracksConfirmationEventArgs.
+    public event EventHandler<DuplicateTracksConfirmationEventArgs>? DuplicateTracksConfirmationRequested;
+
     public Library Library { get; private set; }
 
     public IReadOnlyList<string> LibraryPaths => _appSettings.LibraryPaths;
@@ -1920,6 +1923,16 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         _subscriptions.Add<EventHandler<DeletePlaylistConfirmationEventArgs>>(
             (_, e) => DeletePlaylistConfirmationRequested?.Invoke(this, e),
             h => Playlists.DeleteConfirmationRequested += h, h => Playlists.DeleteConfirmationRequested -= h);
+        _subscriptions.Add<EventHandler<DuplicateTracksConfirmationEventArgs>>(
+            // Nobody to ask - a test, a head without a window yet - adds them.
+            (_, e) =>
+            {
+                if (DuplicateTracksConfirmationRequested is { } ask)
+                    ask.Invoke(this, e);
+                else
+                    e.Confirmed.TrySetResult(true);
+            },
+            h => Playlists.DuplicateConfirmationRequested += h, h => Playlists.DuplicateConfirmationRequested -= h);
 
         // A recompute changes a playlist's contents without going through
         // PlaylistsChanged (deliberately - see Library.SavePlaylists), so this

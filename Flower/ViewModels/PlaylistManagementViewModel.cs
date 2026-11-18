@@ -21,6 +21,39 @@ public sealed class DeletePlaylistConfirmationEventArgs : EventArgs
     public required TaskCompletionSource<bool> Confirmed { get; init; }
 }
 
+// Raised by AddTracks when some of the songs are in the playlist already: the
+// view asks whether to add them again, the same handoff as a delete's. True
+// adds every song, copies and all; false only the ones not there yet - for a
+// single song, nothing.
+public sealed class DuplicateTracksConfirmationEventArgs : EventArgs
+{
+    public required Playlist Playlist { get; init; }
+
+    // The songs being added that the playlist holds already - at least one.
+    public required IReadOnlyList<Track> AlreadyThere { get; init; }
+
+    // How many songs are being added in all.
+    public required int Adding { get; init; }
+
+    public required TaskCompletionSource<bool> Confirmed { get; init; }
+
+    // The question, in the same words on both heads: a dialog on the desktop,
+    // a sheet on the phone.
+    public string Title => $"Already in \u201C{Playlist.Name}\u201D";
+
+    private int New => Adding - AlreadyThere.Count;
+
+    public string Message => Adding == 1
+        ? $"{(AlreadyThere[0].Title is { Length: > 0 } title ? $"\u201C{title}\u201D" : "This song")} is in this playlist already. Add it again?"
+        : New == 0
+            ? $"These {Adding} songs are in this playlist already. Add them again?"
+            : $"{AlreadyThere.Count} of these {Adding} songs {(AlreadyThere.Count == 1 ? "is" : "are")} in this playlist already. Add {(AlreadyThere.Count == 1 ? "it" : "them")} again?";
+
+    // What true does, and what false does.
+    public string ConfirmText => New == 0 ? "Add Again" : $"Add All {Adding}";
+    public string DeclineText => New == 0 ? "Don't Add" : $"Add the {New} New";
+}
+
 // What PlaylistManagementViewModel needs from whoever owns the sidebar - the
 // same shape as IDeviceSidebarHost, and for the same reason: playlist CRUD
 // mutates the sidebar's Playlists section, but nothing else about it is a
@@ -83,6 +116,9 @@ public sealed class PlaylistManagementViewModel
 
     // See DeletePlaylistConfirmationEventArgs above.
     public event EventHandler<DeletePlaylistConfirmationEventArgs>? DeleteConfirmationRequested;
+
+    // See DuplicateTracksConfirmationEventArgs above.
+    public event EventHandler<DuplicateTracksConfirmationEventArgs>? DuplicateConfirmationRequested;
 
     // Rebuilds just the "Playlists" section in place, preserving the current
     // selection by playlist Id when possible - PlaylistsUpdated replaces the
@@ -466,7 +502,7 @@ public sealed class PlaylistManagementViewModel
     public Task AddTrack(Track track, Playlist playlist)
         => AddTracks(new[] { track }, playlist);
 
-    public Task AddTracks(IEnumerable<Track> tracks, Playlist playlist)
+    public async Task AddTracks(IEnumerable<Track> tracks, Playlist playlist)
     {
         // A smart playlist's members are the result of its rules, so an added
         // track would be silently dropped by the next recompute. Refused here
@@ -477,15 +513,34 @@ public sealed class PlaylistManagementViewModel
         // no-op. See docs/SMART-PLAYLIST-PLAN.md, "UI". A folder has no songs
         // of its own to add to, for the same effect.
         if (!playlist.IsOrdinary)
-            return Task.CompletedTask;
+            return;
 
-        foreach (var track in tracks)
+        // A song already in the playlist is usually added again by mistake,
+        // so it is asked about rather than taken on trust - here, so every
+        // way in (the menus, the phone's sheet, a drop on the sidebar) asks.
+        // No subscriber adds them all, as a delete proceeds unconfirmed.
+        var adding = tracks.ToList();
+        var there = playlist.Tracks.Select(t => t.Id).ToHashSet();
+        var alreadyThere = adding.Where(t => there.Contains(t.Id)).ToList();
+        if (alreadyThere.Count > 0 && DuplicateConfirmationRequested is { } handler)
+        {
+            var confirmed = new TaskCompletionSource<bool>();
+            handler.Invoke(this, new DuplicateTracksConfirmationEventArgs
+            {
+                Playlist = playlist, AlreadyThere = alreadyThere, Adding = adding.Count, Confirmed = confirmed,
+            });
+            if (!await confirmed.Task)
+                adding.RemoveAll(t => there.Contains(t.Id));
+        }
+        if (adding.Count == 0)
+            return;
+
+        foreach (var track in adding)
             playlist.AppendTrack(track);
         if (IsShowing(playlist))
             _host.PlaylistContentChanged();
 
         _host.ScheduleContentSync();
-        return Task.CompletedTask;
     }
 
     public Task ReorderTrack(Playlist playlist, Track dragged, Track? insertBefore)

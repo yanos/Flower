@@ -365,4 +365,68 @@ public class PlaylistManagementViewModelTests
         Assert.Empty(folder.Tracks);
         Assert.Equal(syncsBefore, host.ScheduledSyncs);
     }
+
+    // A song already in the playlist is asked about, not taken on trust.
+    [Fact]
+    public async Task Adding_a_song_already_there_asks_and_a_no_adds_nothing()
+    {
+        var (vm, _, _, _) = Make();
+        var song = Song("Tassels");
+        var playlist = new Playlist("Mix", [song]);
+        DuplicateTracksConfirmationEventArgs? asked = null;
+        vm.DuplicateConfirmationRequested += (_, e) =>
+        {
+            asked = e;
+            e.Confirmed.SetResult(false);
+        };
+
+        await vm.AddTracks([song], playlist);
+
+        Assert.NotNull(asked);
+        Assert.Equal([song], asked!.AlreadyThere);
+        Assert.Single(playlist.Tracks);
+    }
+
+    [Fact]
+    public async Task A_yes_adds_the_song_a_second_time()
+    {
+        var (vm, _, _, _) = Make();
+        var song = Song("Tassels");
+        var playlist = new Playlist("Mix", [song]);
+        vm.DuplicateConfirmationRequested += (_, e) => e.Confirmed.SetResult(true);
+
+        await vm.AddTracks([song], playlist);
+
+        Assert.Equal(2, playlist.Tracks.Count);
+    }
+
+    // An album some of whose songs are there already: a no still adds the
+    // rest.
+    [Fact]
+    public async Task A_no_over_several_songs_adds_only_the_ones_not_there_yet()
+    {
+        var (vm, _, _, _) = Make();
+        var there = Song("Xtal");
+        var fresh = Song("Tha");
+        var playlist = new Playlist("Mix", [there]);
+        vm.DuplicateConfirmationRequested += (_, e) => e.Confirmed.SetResult(false);
+
+        await vm.AddTracks([there, fresh], playlist);
+
+        Assert.Equal(["Xtal", "Tha"], playlist.Tracks.Select(t => t.Title));
+    }
+
+    [Fact]
+    public async Task Songs_not_in_the_playlist_go_in_without_a_question()
+    {
+        var (vm, _, _, _) = Make();
+        var playlist = new Playlist("Mix", [Song("Xtal")]);
+        var asked = false;
+        vm.DuplicateConfirmationRequested += (_, _) => asked = true;
+
+        await vm.AddTracks([Song("Tha")], playlist);
+
+        Assert.False(asked);
+        Assert.Equal(2, playlist.Tracks.Count);
+    }
 }
