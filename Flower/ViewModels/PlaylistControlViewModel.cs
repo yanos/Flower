@@ -534,6 +534,31 @@ namespace Flower.ViewModels
         // second of two identical entries actually anchors to the second.
         public int QueueIndex => ResolveQueueIndex(CurrentlyPlayingTrack);
 
+        // Which copy of the playing song is the one playing, counting from 0:
+        // how many slots ahead of its own in the queue hold the same song. A
+        // list that holds it twice (a playlist with a song added twice) marks
+        // only that copy as playing - its own k-th - rather than every row
+        // with its Id. The queue was made from that list when one of its rows
+        // was played (SyncPlayQueueToCurrentView), and songs lined up since
+        // only ever go in after the one playing, so the count carries over.
+        public int CurrentlyPlayingOccurrence
+        {
+            get
+            {
+                var index = QueueIndex;
+                if (index < 0 || CurrentlyPlayingTrack is not { } playing)
+                    return 0;
+                var tracks = _currentPlaylist.Tracks;
+                var occurrence = 0;
+                for (var i = 0; i < index; i++)
+                {
+                    if (tracks[i].Id == playing.Id)
+                        occurrence++;
+                }
+                return occurrence;
+            }
+        }
+
         // Trusts the remembered position only while it still holds the track it
         // was recorded for - the queue can be replaced wholesale (a rescan
         // rebinding instances, SetCurrentPlaylist, a playlist edit) between the

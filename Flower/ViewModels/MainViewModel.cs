@@ -921,6 +921,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     SidebarItemKind? ILibraryBrowseHost.CurrentKind => _selectedSidebarItem?.Kind;
     Playlist? ILibraryBrowseHost.CurrentPlaylist    => _selectedSidebarItem?.Playlist;
+    int ILibraryBrowseHost.CurrentlyPlayingOccurrence => _playlistControlViewModel.CurrentlyPlayingOccurrence;
 
     void ILibraryBrowseHost.PersistSort(string column, bool ascending)
     {

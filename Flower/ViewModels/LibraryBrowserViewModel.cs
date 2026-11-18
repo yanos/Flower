@@ -23,6 +23,10 @@ public interface ILibraryBrowseHost
     Playlist? CurrentPlaylist { get; }
     Track? CurrentlyPlayingTrack { get; }
 
+    // Which copy of CurrentlyPlayingTrack plays, for a list holding it more
+    // than once - see PlaylistControlViewModel.CurrentlyPlayingOccurrence.
+    int CurrentlyPlayingOccurrence => 0;
+
     // Both feed TrackListBuilder's per-row availability marking - a track whose
     // origin peer is the paired server shows as streamable only while that
     // server is reachable. See TrackAvailability.
@@ -803,8 +807,7 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
             // The one thing that moves under a cached scope without touching
             // its signature - UpdatePlayingIndicators only reaches the rows on
             // screen.
-            foreach (var row in cached.Rows)
-                row.IsCurrentlyPlaying = playing != null && row.Track.Id == playing.Id;
+            MarkPlaying(cached.Rows);
             _currentFilteredTracks = cached.Tracks;
             IsRowsRebuildPending = false;
             _logger.LogTrace("Rows reused: {Rows} row(s) ({Kind})", cached.Rows.Count, _host.CurrentKind);
@@ -861,6 +864,8 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         _logger.LogTrace("Rows rebuilt: {Rows} row(s) from {Base} track(s) of {All} ({Kind})",
             rows.Count, baseTracks.Count, allTracks.Count, _host.CurrentKind);
 
+        // The plan marks every copy of the playing song; only one is playing.
+        MarkPlaying(rows);
         PublishRows(rows);
         foreach (var row in retired)
             row.Dispose();
@@ -972,11 +977,37 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
 
     // ── Row-level refreshes ───────────────────────────────────────────────
 
-    public void UpdatePlayingIndicators()
+    public void UpdatePlayingIndicators() => MarkPlaying(_rows);
+
+    // One row lit, even where the list holds the playing song twice: the
+    // copy the queue is playing (CurrentlyPlayingOccurrence), counted down
+    // the list - or the first, when the list holds fewer copies than that,
+    // the song having been started from somewhere that held more.
+    private void MarkPlaying(IList<TrackRowViewModel> rows)
     {
-        var playing = _host.CurrentlyPlayingTrack;
-        foreach (var row in _rows)
-            row.IsCurrentlyPlaying = playing != null && row.Track.Id == playing.Id;
+        var lit = PlayingRowIndex(rows.Select(r => r.Track).ToList(),
+            _host.CurrentlyPlayingTrack, _host.CurrentlyPlayingOccurrence);
+        for (var i = 0; i < rows.Count; i++)
+            rows[i].IsCurrentlyPlaying = i == lit;
+    }
+
+    // Which of tracks is the playing one, -1 for none - see MarkPlaying.
+    private static int PlayingRowIndex(IReadOnlyList<Track> tracks, Track? playing, int occurrence)
+    {
+        if (playing == null)
+            return -1;
+        var first = -1;
+        var seen = 0;
+        for (var i = 0; i < tracks.Count; i++)
+        {
+            if (tracks[i].Id != playing.Id)
+                continue;
+            if (seen++ == occurrence)
+                return i;
+            if (first < 0)
+                first = i;
+        }
+        return first;
     }
 
     // A play, a star or an option changes a cell or two on the rows showing

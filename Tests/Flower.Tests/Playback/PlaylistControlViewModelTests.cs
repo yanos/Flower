@@ -327,6 +327,22 @@ public class PlaylistControlViewModelTests : IDisposable
         Assert.Same(c, audio.LastUpcoming);
     }
 
+    // What a list holding the song twice lights only one row by - see
+    // LibraryBrowserViewModel.MarkPlaying.
+    [Fact]
+    public void Playing_the_second_copy_of_a_song_says_it_is_the_second()
+    {
+        var dup = T("Dup");
+        var b = T("B");
+        var vm = MakeViewModel(new List<Track> { dup, b, dup }, out _);
+
+        vm.Play(dup, 2);
+        Assert.Equal(1, vm.CurrentlyPlayingOccurrence);
+
+        vm.Play(dup, 0);
+        Assert.Equal(0, vm.CurrentlyPlayingOccurrence);
+    }
+
     [Fact]
     public void Play_without_a_position_still_resolves_the_first_matching_entry()
     {

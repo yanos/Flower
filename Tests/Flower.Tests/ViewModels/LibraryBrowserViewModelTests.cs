@@ -24,6 +24,7 @@ public class LibraryBrowserViewModelTests
         public SidebarItemKind? CurrentKind { get; set; } = SidebarItemKind.Songs;
         public Playlist? CurrentPlaylist { get; set; }
         public Track? CurrentlyPlayingTrack { get; set; }
+        public int CurrentlyPlayingOccurrence { get; set; }
         public string? PairedServerFingerprint { get; set; }
         public bool IsPairedServerReachable { get; set; }
         public (string Column, bool Ascending)? PersistedSort;
@@ -462,5 +463,32 @@ public class LibraryBrowserViewModelTests
         // Playlists have a user-defined, drag-reorderable order, so the column
         // sort is ignored while viewing one.
         Assert.Equal(new[] { "b", "a" }, vm.Rows.Select(r => r.Track.Title));
+    }
+
+    // A song added to a playlist twice: playing one copy lights that row
+    // alone, not both - and the first, when the song was started somewhere
+    // that held more copies than this list does.
+    [Fact]
+    public async Task Only_the_copy_playing_of_a_song_in_a_playlist_twice_is_lit()
+    {
+        var dup = Song("Tassels", "Syro", "Aphex Twin");
+        var other = Song("Xtal", "SAW", "Aphex Twin");
+        var (vm, host) = Make(dup, other);
+        host.CurrentKind = SidebarItemKind.Playlist;
+        host.CurrentPlaylist = new Playlist("mine", new List<Track> { dup, other, dup });
+        host.CurrentlyPlayingTrack = dup;
+        host.CurrentlyPlayingOccurrence = 1;
+        vm.Repopulate();
+
+        await vm.RebuildRowsImmediatelyAsync();
+        Assert.Equal(new[] { false, false, true }, vm.Rows.Select(r => r.IsCurrentlyPlaying));
+
+        host.CurrentlyPlayingOccurrence = 0;
+        vm.UpdatePlayingIndicators();
+        Assert.Equal(new[] { true, false, false }, vm.Rows.Select(r => r.IsCurrentlyPlaying));
+
+        host.CurrentlyPlayingOccurrence = 5;
+        vm.UpdatePlayingIndicators();
+        Assert.Equal(new[] { true, false, false }, vm.Rows.Select(r => r.IsCurrentlyPlaying));
     }
 }
