@@ -15,7 +15,8 @@ namespace Flower.Controls;
 // Blurs whatever has already been drawn under it - a backdrop filter, which
 // Avalonia does not have for the app's own content. Each screen's header band
 // (ScreenSlot) uses it so a list scrolled up under the clock and the back
-// button goes soft there.
+// button goes soft there; FrostedBorder draws the same blur behind each of the
+// phone's floating ovals, rounded to its shape.
 //
 // It replaced a blurred VisualBrush copy of the screen, which was wrong twice
 // over. A VisualBrush is recorded when the control painting it renders, and
@@ -72,11 +73,17 @@ public class BackdropBlur : Control
         context.Custom(new BlurOperation(
             new Rect(Bounds.Size),
             Radius,
+            rounding: 0,
+            sealedIn: false,
             stops?.Select(s => s.Color.A / 255f).ToArray(),
             stops?.Select(s => (float)s.Offset).ToArray()));
     }
 
-    private sealed class BlurOperation(Rect bounds, double radius, float[]? alphas, float[]? offsets) : ICustomDrawOperation
+    // Also drawn by FrostedBorder, rounded to its corners, with no mask and
+    // sealed in (sealedIn): reading nothing from outside its own area, where
+    // the oval's own shadow is - blurred in, it darkened the oval's edges.
+    // The header band reads past its edges as it always has.
+    internal sealed class BlurOperation(Rect bounds, double radius, float rounding, bool sealedIn, float[]? alphas, float[]? offsets) : ICustomDrawOperation
     {
         public Rect Bounds => bounds;
 
@@ -97,7 +104,7 @@ public class BackdropBlur : Control
                 return;
             using var lease = feature.Lease();
             var canvas = lease.SkCanvas;
-            var rect = new SKRect(0, 0, (float)bounds.Width, (float)bounds.Height);
+            var rect = new SKRect((float)bounds.X, (float)bounds.Y, (float)bounds.Right, (float)bounds.Bottom);
             // BlurEffect's own radius-to-sigma (Avalonia.Skia's
             // SkBlurRadiusToSigma), so a Radius here is as soft as it was
             // there. The filter is in this control's coordinates; Skia scales
@@ -105,8 +112,15 @@ public class BackdropBlur : Control
             var sigma = 0.288675f * (float)radius + 0.5f;
 
             canvas.Save();
-            canvas.ClipRect(rect);
-            using var blur = SKImageFilter.CreateBlur(sigma, sigma, SKShaderTileMode.Clamp);
+            if (rounding > 0)
+                canvas.ClipRoundRect(new SKRoundRect(rect, rounding, rounding), antialias: true);
+            else
+                canvas.ClipRect(rect);
+            // With a crop, Skia clamps what the blur reads to it, extending
+            // the edge pixels outward rather than reading past them.
+            using var blur = sealedIn
+                ? SKImageFilter.CreateBlur(sigma, sigma, SKShaderTileMode.Clamp, null, rect)
+                : SKImageFilter.CreateBlur(sigma, sigma, SKShaderTileMode.Clamp);
             canvas.SaveLayer(new SKCanvasSaveLayerRec { Bounds = rect, Backdrop = blur });
             // Keeps the layer - the blurred backdrop - only as much as the mask
             // says at each height, so restoring it lays the blur over the
@@ -115,7 +129,7 @@ public class BackdropBlur : Control
                 .Select(a => new SKColor(0, 0, 0, (byte)Math.Round(a * lease.CurrentOpacity * 255)))
                 .ToArray();
             using var shader = SKShader.CreateLinearGradient(
-                new SKPoint(0, 0), new SKPoint(0, rect.Height), colors,
+                new SKPoint(0, rect.Top), new SKPoint(0, rect.Bottom), colors,
                 alphas is { Length: > 1 } ? offsets : [0f, 1f], SKShaderTileMode.Clamp);
             using var paint = new SKPaint { Shader = shader, BlendMode = SKBlendMode.DstIn };
             canvas.DrawRect(rect, paint);

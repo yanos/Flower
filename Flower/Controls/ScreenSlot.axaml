@@ -123,7 +123,7 @@
           ColumnDefinitions="Auto,*,Auto"
           Margin="12,0,12,0"
           Classes.onArt="{Binding #Root.Frame.IsAlbumTrackList, FallbackValue=False}">
-      <Border x:Name="BackPill"
+      <controls:FrostedBorder x:Name="BackPill"
               Grid.Column="0"
               Classes="floating"
               Width="40"
@@ -133,7 +133,7 @@
                 HorizontalAlignment="Center">
           <materialIcons:MaterialIcon Kind="ChevronLeft" Width="22" Height="22" />
         </Button>
-      </Border>
+      </controls:FrostedBorder>
 
       <!-- The screen's filter, pulled down from the top of its list (see
            RubberBandScroll.PulledDownEvent and MobileMainViewModel's
@@ -146,7 +146,7 @@
            at the point letting go would open it. It stays until its x is
            tapped, which is also what turns the filtering off. Visibility,
            opacity and hit-testing are the code-behind's. -->
-      <Border x:Name="FilterOval"
+      <controls:FrostedBorder x:Name="FilterOval"
               Grid.Column="1"
               Classes="floating"
               Height="40"
@@ -217,7 +217,7 @@
             <materialIcons:MaterialIcon Kind="Close" Width="20" Height="20" />
           </Button>
         </Grid>
-      </Border>
+      </controls:FrostedBorder>
 
       <!-- The screen's menu (ScreenMenuButton) - its entries are this
            screen's, MobileMainViewModel.BuildScreenMenu, handed over in the

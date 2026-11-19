@@ -270,10 +270,13 @@
          code-behind, which outranks the Transparent here). The tab showing
          keeps its pill, in white, faint - the accent's would not read on the
          sheet's colour, and white icons alone leave nothing to say which tab
-         is under the sheet. Pressed, the white dims, as on the sheet. After
+         is under the sheet. Pressed, the white dims, as on the sheet. No
+         frost tint over the colour (FrostedBorder.Tint), which would wash
+         it out from under the white. After
          the resting and pressed colours above, so these win over both. -->
     <Style Selector="Grid#TabBar.onArt Border#TabOval">
       <Setter Property="Background" Value="Transparent" />
+      <Setter Property="(controls:FrostedBorder.Tint)" Value="{x:Null}" />
       <Setter Property="BorderBrush" Value="{DynamicResource AppOnArtBrush}" />
     </Style>
     <Style Selector="Grid#TabBar.onArt Button.tab materialIcons|MaterialIcon">
@@ -304,6 +307,7 @@
          while pressed. Not over Now Playing, which it tucks away under. -->
     <Style Selector="Grid#MiniPlayerHost.onArt Border#MiniPlayerOval">
       <Setter Property="Background" Value="Transparent" />
+      <Setter Property="(controls:FrostedBorder.Tint)" Value="{x:Null}" />
       <Setter Property="BorderBrush" Value="{DynamicResource AppOnArtBrush}" />
     </Style>
     <Style Selector="Grid#MiniPlayerHost.onArt TextBlock">
@@ -612,7 +616,7 @@
          moment after it ends (MainViewModel.BusyStatus). Not over Now
          Playing, which this stack is drawn above and whose volume slider
          ends just over the tabs. Touches pass through it to the list. -->
-    <Border x:Name="BusyStatusPill"
+    <controls:FrostedBorder x:Name="BusyStatusPill"
             Classes="floating"
             HorizontalAlignment="Center"
             Margin="12,0"
@@ -630,7 +634,7 @@
                  Opacity="0.75"
                  VerticalAlignment="Center"
                  TextTrimming="CharacterEllipsis" />
-    </Border>
+    </controls:FrostedBorder>
 
     <!-- Mini player - an oval of its own, with the same floating look and the
          same length as the tabs under it: one shape repeated, rather than two
@@ -647,7 +651,7 @@
           ColumnDefinitions="3*,194*,3*">
     <!-- Ringed like every other oval (Border.floating's pixel of the primary
          red), over a soft shadow that lifts it off the list. -->
-    <Border x:Name="MiniPlayerOval"
+    <controls:FrostedBorder x:Name="MiniPlayerOval"
             Grid.Column="1"
             Classes="floating"
             Height="56"
@@ -706,7 +710,7 @@
           <materialIcons:MaterialIcon Kind="SkipNext" Width="28" Height="28" />
         </Button>
       </Grid>
-    </Border>
+    </controls:FrostedBorder>
     </Grid>
 
     <!-- Tab oval. Which tabs it holds and in what order is the user's choice
@@ -732,8 +736,8 @@
           Margin="12,0"
           SizeChanged="TabBar_SizeChanged"
           ColumnDefinitions="3*,194*,3*">
-    <!-- Ringed and shadowed the same as the mini player above it. -->
-    <Border x:Name="TabOval"
+    <!-- Frosted, ringed and shadowed the same as the mini player above it. -->
+    <controls:FrostedBorder x:Name="TabOval"
             Grid.Column="1"
             Classes="floating"
             Height="68"
@@ -819,7 +823,7 @@
         </StackPanel>
       </Button>
     </Grid>
-    </Border>
+    </controls:FrostedBorder>
     </Grid>
     </StackPanel>
 

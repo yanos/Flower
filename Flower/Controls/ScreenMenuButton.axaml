@@ -1,5 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:Flower.Controls"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="Flower.Controls.ScreenMenuButton">
 
@@ -32,7 +33,7 @@
 
   <!-- Named as they were when this lived in ScreenSlot: tests find the
        band's menu by these names. -->
-  <Border x:Name="MenuPill" Classes="floating" Width="40">
+  <local:FrostedBorder x:Name="MenuPill" Classes="floating" Width="40">
     <Button x:Name="MenuButton"
             Classes="pill"
             HorizontalAlignment="Center">
@@ -51,5 +52,5 @@
       </Button.Flyout>
       <materialIcons:MaterialIcon Kind="Menu" Width="20" Height="20" />
     </Button>
-  </Border>
+  </local:FrostedBorder>
 </UserControl>

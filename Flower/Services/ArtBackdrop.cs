@@ -24,7 +24,8 @@ public static class ArtBackdrop
     // Small enough that fine detail does not survive the stretch back up,
     // large enough that the cover's shapes do - a flower still reads as a
     // flower, softened, rather than as a blot of red where it was.
-    private const int TinySide = 32;
+    // 40 rather than 32, a touch sharper behind the album page and Now Playing.
+    private const int TinySide = 40;
 
     // How large the tiny copy is smoothed back up to before anything draws
     // it. The page and the buttons over it (TrackListScreenView.PageDrawing)

@@ -73,6 +73,9 @@
          its entries keep their own colours. -->
     <Style Selector="Grid#TopBar Border.floating">
       <Setter Property="Background" Value="Transparent" />
+      <!-- The theme's frost would wash the sheet's colour out from under
+           the white ring (FrostedBorder; the menu's circle is one). -->
+      <Setter Property="(layout:FrostedBorder.Tint)" Value="{x:Null}" />
       <Setter Property="BorderBrush" Value="{DynamicResource AppOnArtBrush}" />
     </Style>
     <Style Selector="Grid#TopBar Border.floating > Button.pill > materialIcons|MaterialIcon">
@@ -138,6 +141,23 @@
        it rather than to the whole sheet. -->
   <!-- Below the status bar: the sheet itself runs up under it (MobileMainView
        pulls it up by ScreenStackBleed) so the colour reaches the top edge. -->
+  <Panel>
+  <!-- The cover again, behind everything, blurred and fading out below the
+       song's names, from the very top of the sheet under the status bar - the
+       album page's backdrop (TrackListScreenView's Backdrop), drawn the same
+       way: ArtBackdrop.Soft stretched across, dimmed and faded alike. As tall
+       as the cover and the names stand (SizeBackdrop in the code-behind), so
+       it fades out under the words wherever the panel puts them. -->
+  <Border x:Name="Backdrop"
+          VerticalAlignment="Top"
+          ClipToBounds="True"
+          IsHitTestVisible="False"
+          OpacityMask="{DynamicResource AppBackdropFadeMask}">
+    <Image x:Name="BackdropImage"
+           Stretch="UniformToFill"
+           Opacity="0.6"
+           RenderOptions.BitmapInterpolationMode="LowQuality" />
+  </Border>
   <Panel Margin="{DynamicResource StatusBarInset}">
   <Grid RowDefinitions="Auto,*" Margin="0,0,0,10">
 
@@ -194,7 +214,8 @@
            track with no art yet has nothing to give the button a size of its
            own - left to its default it would collapse to nothing and the slot
            would sit empty. -->
-      <Border CornerRadius="{x:Static layout:AlbumArtView.CoverCornerRadius}"
+      <Border x:Name="CoverFrame"
+              CornerRadius="{x:Static layout:AlbumArtView.CoverCornerRadius}"
               BoxShadow="{DynamicResource AppCoverShadow}">
         <Button Command="{Binding GoToCurrentlyPlayingAlbumCommand}"
                 HorizontalAlignment="Stretch"
@@ -219,7 +240,7 @@
         <!-- The title in the display serif, white on the cover's colour: on
              this screen the song is the subject, not one row among many. Cormorant's small
              x-height is why it is 28 where Inter would be 22. -->
-        <StackPanel Grid.Row="0" Spacing="2" HorizontalAlignment="Center">
+        <StackPanel x:Name="Names" Grid.Row="0" Spacing="2" HorizontalAlignment="Center">
           <TextBlock Text="{Binding CurrentlyPlaying.CurrentlyPlayingTrack.Title}"
                      FontFamily="{DynamicResource AppDisplayFontFamily}"
                      FontSize="28"
@@ -340,5 +361,6 @@
       </Grid>
     </layout:NowPlayingBodyPanel>
   </Grid>
+  </Panel>
   </Panel>
 </UserControl>

@@ -1,6 +1,7 @@
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia">
+        xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+        xmlns:controls="clr-namespace:Flower.Controls">
 
   <!-- Icon-only buttons, app-wide: the floating back and menu buttons over
        the mobile screens, the tabs in the oval below them, the back buttons of
@@ -25,6 +26,15 @@
     <!-- Just enough to lift the circle off the page: a darker or wider one
          read as a halo round every button. -->
     <Setter Property="BoxShadow" Value="{DynamicResource AppButtonShadow}" />
+  </Style>
+  <!-- The phone's ovals floating over a screen (FrostedBorder) are frosted
+       glass instead: no fill, so what is under them shows through, blurred
+       and washed whiter in the light theme, darker in the dark
+       (AppFrostTintBrush), inside the rim. Over a painted page (an album's) they are filled with
+       the page, which outranks this. -->
+  <Style Selector="Border.floating:frosted">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="(controls:FrostedBorder.Tint)" Value="{DynamicResource AppFrostTintBrush}" />
   </Style>
 
   <!-- A text box inside an oval - the phone's filter and Search boxes

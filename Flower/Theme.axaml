@@ -102,6 +102,8 @@
       <!-- Roles the design does not name. -->
       <Color x:Key="PaletteOnArt">#FFFFFF</Color>
       <Color x:Key="PaletteScrim">#000000</Color>
+      <!-- Over the frosted ovals' blur (FrostedBorder): whiter in the light. -->
+      <Color x:Key="PaletteFrostTint">#A6FFFFFF</Color>
     </ResourceDictionary>
 
     <ResourceDictionary x:Key="Dark">
@@ -140,6 +142,8 @@
 
       <Color x:Key="PaletteOnArt">#FFFFFF</Color>
       <Color x:Key="PaletteScrim">#000000</Color>
+      <!-- Over the frosted ovals' blur (FrostedBorder): darker in the dark. -->
+      <Color x:Key="PaletteFrostTint">#A6000000</Color>
     </ResourceDictionary>
 
   </ResourceDictionary.ThemeDictionaries>
@@ -240,6 +244,10 @@
 
   <!-- Dimmed behind a card raised over the screen (the action sheets). -->
   <SolidColorBrush x:Key="AppScrimBrush" Color="{DynamicResource PaletteScrim}" Opacity="0.4" />
+  <!-- Washed over the blur inside each frosted oval (FrostedBorder): white
+       at about 65% in the light theme, black in the dark, so the blur
+       reads as frosted glass of the theme's own shade. -->
+  <SolidColorBrush x:Key="AppFrostTintBrush" Color="{DynamicResource PaletteFrostTint}" />
 
   <!-- On a sheet washed in a cover's colour (the phone's Now Playing and
        album page - see ArtBackdrop.SheetBrush), which is dark whatever the
@@ -280,13 +288,14 @@
   </LinearGradientBrush>
 
   <!-- The blur behind each screen's header band (ScreenSlot): fully there
-       at the top of the screen, fading to nothing a little below the back
-       button, so a list scrolling up under the header goes soft gradually
-       rather than at a line. -->
+       down the top quarter of it, then fading to nothing a little below
+       the back button, so a list scrolling up under the header goes soft
+       gradually rather than at a line. -->
   <LinearGradientBrush x:Key="AppHeaderBlurMask" StartPoint="0%,0%" EndPoint="0%,100%">
     <GradientStop Color="#FF000000" Offset="0" />
-    <GradientStop Color="#E6000000" Offset="0.45" />
-    <GradientStop Color="#80000000" Offset="0.75" />
+    <GradientStop Color="#FF000000" Offset="0.25" />
+    <GradientStop Color="#E6000000" Offset="0.5875" />
+    <GradientStop Color="#80000000" Offset="0.8125" />
     <GradientStop Color="#00000000" Offset="1" />
   </LinearGradientBrush>
 
