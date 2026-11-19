@@ -1152,10 +1152,13 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         }
     }
 
-    // Shown for an album on Home's Continue Playing shelf: the one way to take
-    // it off without playing it to the end.
+    // Shown for an album whose menu was raised on Home's Continue Playing
+    // shelf: the one way to take it off without playing it to the end. Not
+    // for the same album met anywhere else, whose menu is not the shelf's.
+    private bool _isActingOnContinuing;
+
     public bool CanForgetAlbumActionTargetProgress =>
-        AlbumActionTarget is { } tile && Main.Home.IsContinuing(tile);
+        _isActingOnContinuing && AlbumActionTarget is { } tile && Main.Home.IsContinuing(tile);
 
     public ICommand ForgetAlbumActionTargetProgressCommand { get; private set; } = null!;
 
@@ -1769,13 +1772,17 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             OnPropertyChanged(nameof(SongActions));
             ActiveSheet = MobileSheet.TrackActions;
         });
-        OpenAlbumActionsCommand = new RelayCommand<AlbumTileViewModel>(tile =>
+        // An album's tile, or the Continue Playing item around one when the
+        // menu is raised on that shelf (AlbumTileView).
+        OpenAlbumActionsCommand = new RelayCommand<object>(target =>
         {
-            if (tile == null)
+            var continuing = target as ContinuePlayingItemViewModel;
+            if ((continuing?.Tile ?? target as AlbumTileViewModel) is not { } tile)
                 return;
             _playlistTargets = null;
             ActionTarget = null;
             _isActingOnAnArtist = false;
+            _isActingOnContinuing = continuing != null;
             AlbumActionTarget = tile;
             ActiveSheet = MobileSheet.AlbumActions;
         });
@@ -1789,6 +1796,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             _playlistTargets = null;
             ActionTarget = null;
             _isActingOnAnArtist = false;
+            _isActingOnContinuing = false;
             AlbumActionTarget = BuildPlaylistHeader(playlist);
             PlaylistActionTarget = item;
             ActiveSheet = MobileSheet.AlbumActions;

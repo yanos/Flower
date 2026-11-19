@@ -114,7 +114,8 @@ public static class ActionMenus
         return Groups(from, where, what, Removals(facts));
     }
 
-    // isContinuing: the album is on Home's Continue Playing shelf.
+    // isContinuing: the menu was raised on Home's Continue Playing shelf -
+    // not merely over an album that is also on it.
     // isPlaylist: the phone's playlist row opens this same menu, since play,
     // shuffle and putting the songs somewhere are the same questions of a
     // different pile of songs; the playlist adds its own two.

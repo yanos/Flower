@@ -47,34 +47,38 @@ public partial class AlbumTileView : Button
                 Command = item.Home.ResumeCommand;
                 CommandParameter = item;
                 Show(item.Tile, item.Progress, item.Detail);
-                Card.IsPlaying = item.IsPlaying;
                 break;
             case AlbumTileViewModel tile:
                 Command = Host?.OpenAlbumCommand;
                 CommandParameter = tile;
                 Show(tile, null, null);
-                Card.IsPlaying = false;
                 break;
         }
     }
 
     private void Show(AlbumTileViewModel tile, double? progress, string? detail)
     {
-        // The x that takes the album off its shelf - Continue Playing's.
+        // The x that takes the album off its shelf - Continue Playing's. Its
+        // menu is raised with the item rather than the album, since only
+        // there does the menu offer the same (MobileMainViewModel.
+        // OpenAlbumActionsCommand).
         if (DataContext is ContinuePlayingItemViewModel item)
         {
             Card.DismissCommand = item.Home.ForgetCommand;
             Card.DismissParameter = item;
             Card.DismissTip = "Remove from Continue Playing";
+            Card.MenuParameter = item;
+            LongPress.SetCommandParameter(this, item);
         }
         else
         {
             Card.DismissCommand = null;
             Card.DismissParameter = null;
             Card.DismissTip = null;
+            Card.MenuParameter = null;
+            LongPress.SetCommandParameter(this, tile);
         }
 
-        LongPress.SetCommandParameter(this, tile);
         Card.Tile = tile;
         Card.ShowsProgress = progress != null;
         Card.Progress = progress ?? 0;

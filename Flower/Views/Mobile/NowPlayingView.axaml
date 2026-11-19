@@ -58,10 +58,8 @@
       <Setter Property="Foreground" Value="{DynamicResource AppOnArtRingBrush}" />
     </Style>
     <!-- Play, on the cover's colour, is white like every other control
-         here rather than the accent's red, which fought the colour under it:
-         a white disc with the glyph cut out of it (PlayPauseButton), so the
-         cover's colour shows through the glyph, dimming as the other whites
-         do while pressed. -->
+         here: a white ring and glyph (PlayPauseButton), the cover's colour
+         showing through, dimming as the other whites do while pressed. -->
     <Style Selector="layout|NowPlayingBodyPanel Button.playPause, layout|NowPlayingBodyPanel Button.playPause:pointerover">
       <Setter Property="Background" Value="{DynamicResource AppOnArtBrush}" />
     </Style>
@@ -298,7 +296,8 @@
             <layout:PlayPauseButton Command="{Binding ToggleMiniPlayerCommand}"
                                     IsPlaying="{Binding PlaylistControl.IsPlaying}"
                                     Width="64" Height="64"
-                                    GlyphSize="30" />
+                                    GlyphSize="30"
+                                    RingThickness="2.5" />
             <Button Command="{Binding NextTrackCommand}"
                     Background="Transparent" BorderThickness="0"
                     VerticalAlignment="Center">

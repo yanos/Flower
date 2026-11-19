@@ -4,8 +4,6 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 
-using Material.Icons;
-
 using Flower.ViewModels;
 
 namespace Flower.Controls;
@@ -23,14 +21,14 @@ public partial class AlbumCard : UserControl
     public static readonly StyledProperty<double> ProgressProperty =
         AvaloniaProperty.Register<AlbumCard, double>(nameof(Progress));
 
-    public static readonly StyledProperty<bool> IsPlayingProperty =
-        AvaloniaProperty.Register<AlbumCard, bool>(nameof(IsPlaying));
-
     public static readonly StyledProperty<string?> DetailProperty =
         AvaloniaProperty.Register<AlbumCard, string?>(nameof(Detail));
 
     public static readonly StyledProperty<ICommand?> MenuCommandProperty =
         AvaloniaProperty.Register<AlbumCard, ICommand?>(nameof(MenuCommand));
+
+    public static readonly StyledProperty<object?> MenuParameterProperty =
+        AvaloniaProperty.Register<AlbumCard, object?>(nameof(MenuParameter));
 
     public static readonly StyledProperty<ICommand?> DismissCommandProperty =
         AvaloniaProperty.Register<AlbumCard, ICommand?>(nameof(DismissCommand));
@@ -52,7 +50,7 @@ public partial class AlbumCard : UserControl
         set => SetValue(TileProperty, value);
     }
 
-    // Continue Playing's: the play badge on the cover and the bar under it.
+    // Continue Playing's: the bar under the cover.
     public bool ShowsProgress
     {
         get => GetValue(ShowsProgressProperty);
@@ -65,13 +63,6 @@ public partial class AlbumCard : UserControl
         set => SetValue(ProgressProperty, value);
     }
 
-    // Continue Playing's: the album is the one playing, so the badge is a
-    // pause rather than a play.
-    public bool IsPlaying
-    {
-        get => GetValue(IsPlayingProperty);
-        set => SetValue(IsPlayingProperty, value);
-    }
 
     // A third line under the artist, where there is one (Continue Playing's
     // "Song 4 of 10 · 26 min left").
@@ -81,11 +72,20 @@ public partial class AlbumCard : UserControl
         set => SetValue(DetailProperty, value);
     }
 
-    // Run with the tile when the "..." is pressed.
+    // Run with the tile when the "..." is pressed - or with MenuParameter,
+    // where the host gives one.
     public ICommand? MenuCommand
     {
         get => GetValue(MenuCommandProperty);
         set => SetValue(MenuCommandProperty, value);
+    }
+
+    // What MenuCommand is run with instead of the tile: the phone's Continue
+    // Playing item, whose menu alone can take the album off that shelf.
+    public object? MenuParameter
+    {
+        get => GetValue(MenuParameterProperty);
+        set => SetValue(MenuParameterProperty, value);
     }
 
     // The round x on the cover, shown only where there is one to run: Continue
@@ -132,8 +132,7 @@ public partial class AlbumCard : UserControl
         base.OnPropertyChanged(change);
         if (change.Property == TileProperty)
             _tile.Watch(Tile);
-        else if (change.Property == ShowsProgressProperty || change.Property == ProgressProperty || change.Property == DetailProperty
-                 || change.Property == IsPlayingProperty)
+        else if (change.Property == ShowsProgressProperty || change.Property == ProgressProperty || change.Property == DetailProperty)
             ShowProgress();
         else if (change.Property == DismissCommandProperty)
             DismissButton.IsVisible = DismissCommand != null;
@@ -152,8 +151,6 @@ public partial class AlbumCard : UserControl
 
     private void ShowProgress()
     {
-        Badge.IsVisible = ShowsProgress;
-        BadgeIcon.Kind = IsPlaying ? MaterialIconKind.Pause : MaterialIconKind.Play;
         ProgressLine.IsVisible = ShowsProgress;
         ProgressLine.Value = Progress;
         DetailLine.Text = Detail;
@@ -170,8 +167,9 @@ public partial class AlbumCard : UserControl
     private void Menu_Click(object? sender, RoutedEventArgs e)
     {
         e.Handled = true;
-        if (MenuCommand is { } command && command.CanExecute(Tile))
-            command.Execute(Tile);
+        var parameter = MenuParameter ?? Tile;
+        if (MenuCommand is { } command && command.CanExecute(parameter))
+            command.Execute(parameter);
         RaiseEvent(new RoutedEventArgs(MenuRequestedEvent, this));
     }
 }

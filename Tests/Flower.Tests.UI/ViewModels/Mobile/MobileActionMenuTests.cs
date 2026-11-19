@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -5,6 +6,7 @@ using System.Threading.Tasks;
 using Avalonia.Headless.XUnit;
 
 using Flower.Models;
+using Flower.Services;
 using Flower.Tests.TestSupport;
 using Flower.ViewModels;
 using Flower.ViewModels.Mobile;
@@ -40,6 +42,29 @@ public class MobileActionMenuTests : PinnedDataDirectory
 
         Assert.Equal(MobileSheet.None, vm.ActiveSheet);
         Assert.Equal(tracks, parts.Parts.PlaylistControl.CurrentPlaylist.Tracks.Take(2));
+    }
+
+    // Remove from Continue Playing is the shelf's own: on the album's menu
+    // when it is raised there, not when the same album is long-pressed in
+    // the grid or on another shelf.
+    [AvaloniaFact]
+    public void Only_the_continue_playing_shelf_offers_to_take_an_album_off_it()
+    {
+        var tracks = Album();
+        using var parts = MainViewModelHarness.BuildMobile(new Library(tracks), new MainPlaylist(tracks));
+        var vm = parts.Mobile;
+        parts.Parts.PlaylistControl.AlbumProgress.MergeRemote(
+            [new AlbumProgressEntry(AlbumProgressTracker.AlbumIdOf(tracks[0])!, tracks[1].Id, TimeSpan.Zero, DateTimeOffset.UtcNow)],
+            []);
+        vm.Main.Home.Rebuild();
+        var item = vm.Main.Home.ContinuePlaying.Single();
+
+        vm.OpenAlbumActionsCommand.Execute(item.Tile);
+        Assert.DoesNotContain(vm.AlbumActions, e => e.Action == MenuAction.ForgetProgress);
+
+        vm.OpenAlbumActionsCommand.Execute(item);
+        vm.RunAlbumActionCommand.Execute(vm.AlbumActions.Single(e => e.Action == MenuAction.ForgetProgress));
+        Assert.Empty(parts.Parts.PlaylistControl.AlbumProgress.Entries);
     }
 
     // The desktop's Go to Album and Go to Artist, on the song sheet: where the

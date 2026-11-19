@@ -4,14 +4,10 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:Flower.ViewModels"
              xmlns:materialIcons="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
-             xmlns:conv="clr-namespace:Flower.Converters"
+             xmlns:controls="clr-namespace:Flower.Controls"
              mc:Ignorable="d"
              x:Class="Flower.UserControls.PlaylistControls"
              x:DataType="vm:PlaylistControlViewModel">
-
-  <UserControl.Resources>
-    <conv:PlayOrPauseConverter x:Key="PlayOrPauseConverter"/>
-  </UserControl.Resources>
 
   <UserControl.Styles>
     <!-- The transport's glyphs in the text's colour, the song title's beside
@@ -41,16 +37,22 @@
     <Style Selector=":is(Button):pressed materialIcons|MaterialIcon">
       <Setter Property="Foreground" Value="{DynamicResource AppIconPressedBrush}"/>
     </Style>
-    <!-- ...except on play, which is white on its red throughout. -->
-    <Style Selector="Button.play materialIcons|MaterialIcon, Button.play:pointerover materialIcons|MaterialIcon, Button.play:pressed materialIcons|MaterialIcon">
-      <Setter Property="Foreground" Value="{DynamicResource AppOnPrimaryBrush}"/>
+    <!-- Play/Pause, a ring round its glyph (PlayPauseButton), in the same
+         inks as its neighbours rather than a red fill. -->
+    <Style Selector="Button.playPause">
+      <Setter Property="Background" Value="{DynamicResource AppTextPrimaryBrush}"/>
+    </Style>
+    <Style Selector="Button.playPause:pointerover">
+      <Setter Property="Background" Value="{DynamicResource AppIconHoverBrush}"/>
+    </Style>
+    <Style Selector="Button.playPause:pressed">
+      <Setter Property="Background" Value="{DynamicResource AppIconPressedBrush}"/>
     </Style>
   </UserControl.Styles>
 
   <!-- The transport, in a row: shuffle and repeat at either end, previous
-       and next either side of play, and play the one filled red circle in the
-       bar (Button.play, Styles/IconButtons.axaml). The seek bar is under it
-       (MainView). -->
+       and next either side of play, and play a ring round its glyph
+       (PlayPauseButton). The seek bar is under it (MainView). -->
   <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="8">
 
     <Button Classes="pill" Padding="13" Click="Shuffle" ToolTip.Tip="Shuffle"
@@ -64,16 +66,11 @@
       <materialIcons:MaterialIcon Kind="SkipPrevious" Width="22" Height="22"/>
     </Button>
 
-    <Button Classes="play"
-            Width="48" Height="48"
-            CornerRadius="24"
-            Padding="0"
-            HorizontalContentAlignment="Center"
-            VerticalContentAlignment="Center"
-            Click="PlayOrPause">
-      <materialIcons:MaterialIcon Kind="{Binding IsPlaying, Converter={StaticResource PlayOrPauseConverter}}"
-                                  Width="24" Height="24"/>
-    </Button>
+    <controls:PlayPauseButton Width="48" Height="48"
+                              GlyphSize="24"
+                              IsPlaying="{Binding IsPlaying}"
+                              VerticalAlignment="Center"
+                              Click="PlayOrPause"/>
 
     <Button Classes="pill" Padding="11" Click="Next" ToolTip.Tip="Next">
       <materialIcons:MaterialIcon Kind="SkipNext" Width="22" Height="22"/>

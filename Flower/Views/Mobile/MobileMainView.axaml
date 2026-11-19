@@ -316,10 +316,8 @@
       <Setter Property="Foreground" Value="{DynamicResource AppOnArtRingBrush}" />
     </Style>
     <!-- Play, on the cover's colour, is white like every other control
-         here rather than the accent's red, which fought the colour under it:
-         a white disc with the glyph cut out of it (PlayPauseButton), the
-         page's colour showing through, dimming as the other whites do while
-         pressed. -->
+         here: a white ring and glyph (PlayPauseButton), the page's colour
+         showing through, dimming as the other whites do while pressed. -->
     <Style Selector="Grid#MiniPlayerHost.onArt Button.playPause, Grid#MiniPlayerHost.onArt Button.playPause:pointerover">
       <Setter Property="Background" Value="{DynamicResource AppOnArtBrush}" />
     </Style>
@@ -692,9 +690,8 @@
             </StackPanel>
           </Grid>
         </Button>
-        <!-- The round Play/Pause Now Playing has too, in the accent's fill
-             (Button.playPause) with the glyph cut out of it: the one red
-             thing in the bar. -->
+        <!-- The round Play/Pause Now Playing has too: a ring round the
+             glyph in the bar's ink, as Next is (Button.playPause). -->
         <controls:PlayPauseButton Grid.Column="1"
                                   Command="{Binding ToggleMiniPlayerCommand}"
                                   IsPlaying="{Binding PlaylistControl.IsPlaying}"

@@ -157,7 +157,6 @@
                                         Tile="{Binding Tile}"
                                         ShowsProgress="True"
                                         Progress="{Binding Progress}"
-                                        IsPlaying="{Binding IsPlaying}"
                                         Detail="{Binding Detail}"
                                         DismissCommand="{Binding Home.ForgetCommand}"
                                         DismissParameter="{Binding}"

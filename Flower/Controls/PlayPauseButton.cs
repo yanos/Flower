@@ -7,18 +7,20 @@ using Avalonia.Media;
 
 namespace Flower.Controls;
 
-// The round Play/Pause button: a disc in the button's Background with
-// Material's Play or Pause glyph cut out of it, so whatever is under the
-// button - the cover's colour on Now Playing, the mini player's oval - shows
-// through the glyph rather than a second colour painted over the fill. Now
-// Playing's transport and the mini player both use it.
+// The round Play/Pause button: a ring in the button's Background with
+// Material's Play or Pause glyph solid inside it, and nothing filled between
+// the two, so whatever is under the button - the cover's colour on Now
+// Playing, the mini player's oval, the desktop's player bar - shows through.
+// Now Playing's transport, the mini player and the desktop's player bar all
+// use it.
 //
-// The disc is drawn here rather than by the template's presenter, whose fill
-// cannot have a hole in it: Button.playPause (Styles/IconButtons.axaml), a
+// The ring is drawn here rather than by the template's presenter, whose
+// border is a rounded rectangle at a fixed thickness and which cannot draw
+// the glyph in the same brush: Button.playPause (Styles/IconButtons.axaml), a
 // class every one of these carries, clears the presenter's Background, and a
-// host restyles the disc through Background like any button's fill. It keeps
-// Button's own theme and styles (StyleKeyOverride), so it takes taps, press
-// states and a Command as every other button does.
+// host restyles the ring and glyph through Background like any button's
+// fill. It keeps Button's own theme and styles (StyleKeyOverride), so it
+// takes taps, clicks, press states and a Command as every other button does.
 public sealed class PlayPauseButton : Button
 {
     public static readonly StyledProperty<bool> IsPlayingProperty =
@@ -30,6 +32,12 @@ public sealed class PlayPauseButton : Button
     /// </summary>
     public static readonly StyledProperty<double> GlyphSizeProperty =
         AvaloniaProperty.Register<PlayPauseButton, double>(nameof(GlyphSize), 24);
+
+    /// <summary>
+    /// How thick the ring round the glyph is, in pixels.
+    /// </summary>
+    public static readonly StyledProperty<double> RingThicknessProperty =
+        AvaloniaProperty.Register<PlayPauseButton, double>(nameof(RingThickness), 2);
 
     // Material's Pause and Play (Material.Icons' path data for each), in its
     // 24-unit box: two bars, and a triangle.
@@ -46,7 +54,7 @@ public sealed class PlayPauseButton : Button
 
     static PlayPauseButton()
     {
-        AffectsRender<PlayPauseButton>(BackgroundProperty, IsPlayingProperty, GlyphSizeProperty);
+        AffectsRender<PlayPauseButton>(BackgroundProperty, IsPlayingProperty, GlyphSizeProperty, RingThicknessProperty);
     }
 
     public PlayPauseButton()
@@ -69,6 +77,12 @@ public sealed class PlayPauseButton : Button
         set => SetValue(GlyphSizeProperty, value);
     }
 
+    public double RingThickness
+    {
+        get => GetValue(RingThicknessProperty);
+        set => SetValue(RingThicknessProperty, value);
+    }
+
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
@@ -77,7 +91,7 @@ public sealed class PlayPauseButton : Button
     }
 
     // Drawn under the template, whose presenter is clear (Button.playPause),
-    // so the disc is what shows.
+    // so the ring and glyph are what show.
     public override void Render(DrawingContext context)
     {
         base.Render(context);
@@ -85,7 +99,8 @@ public sealed class PlayPauseButton : Button
             return;
 
         var radius = Math.Min(Bounds.Width, Bounds.Height) / 2;
-        if (radius <= 0)
+        var inner = radius - RingThickness;
+        if (inner <= 0)
             return;
 
         var centre = new Point(Bounds.Width / 2, Bounds.Height / 2);
@@ -95,13 +110,12 @@ public sealed class PlayPauseButton : Button
         var geometry = new StreamGeometry();
         using (var ctx = geometry.Open())
         {
-            // Even-odd, so the glyph inside the disc is a hole in it.
+            // Even-odd: the inner circle is a hole in the outer, leaving the
+            // ring, and the glyph inside that hole is solid again.
             ctx.SetFillRule(FillRule.EvenOdd);
 
-            ctx.BeginFigure(new Point(centre.X - radius, centre.Y), isFilled: true);
-            ctx.ArcTo(new Point(centre.X + radius, centre.Y), new Size(radius, radius), 0, false, SweepDirection.Clockwise);
-            ctx.ArcTo(new Point(centre.X - radius, centre.Y), new Size(radius, radius), 0, false, SweepDirection.Clockwise);
-            ctx.EndFigure(isClosed: true);
+            AddCircle(ctx, centre, radius);
+            AddCircle(ctx, centre, inner);
 
             foreach (var figure in IsPlaying ? PauseGlyph : PlayGlyph)
             {
@@ -113,6 +127,14 @@ public sealed class PlayPauseButton : Button
         }
 
         context.DrawGeometry(fill, null, geometry);
+    }
+
+    private static void AddCircle(StreamGeometryContext ctx, Point centre, double radius)
+    {
+        ctx.BeginFigure(new Point(centre.X - radius, centre.Y), isFilled: true);
+        ctx.ArcTo(new Point(centre.X + radius, centre.Y), new Size(radius, radius), 0, false, SweepDirection.Clockwise);
+        ctx.ArcTo(new Point(centre.X - radius, centre.Y), new Size(radius, radius), 0, false, SweepDirection.Clockwise);
+        ctx.EndFigure(isClosed: true);
     }
 
     // Screen readers hear what a tap will do, as the glyph shows it.

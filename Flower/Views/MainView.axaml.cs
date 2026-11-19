@@ -1848,9 +1848,10 @@ public partial class MainView : UserControl
     private ContextMenu BuildAlbumContextMenu(IReadOnlyList<Track> tracks, AlbumTileViewModel clickedTile, Action? getInfo = null)
     {
         var vm = _viewModel!;
-        var groups = ActionMenus.ForAlbum(
-            vm.MenuFactsFor(tracks, LibraryRemovalDialog.Service),
-            isContinuing: vm.Home.IsContinuing(clickedTile));
+        // Never Remove from Continue Playing: that shelf's tiles open their
+        // own menu (OpenHomeTileMenu), and an album met anywhere else is not
+        // the shelf's to take off.
+        var groups = ActionMenus.ForAlbum(vm.MenuFactsFor(tracks, LibraryRemovalDialog.Service));
 
         return DesktopActionMenu.Build(groups, async action =>
         {
@@ -1876,9 +1877,6 @@ public partial class MainView : UserControl
                     break;
                 case MenuAction.Download:
                     StartDownload(tracks);
-                    break;
-                case MenuAction.ForgetProgress:
-                    vm.Home.Forget(clickedTile);
                     break;
                 case MenuAction.DeleteLocalFiles:
                     await LocalFileDeletionDialog.DeleteAsync(TopLevel.GetTopLevel(this), vm, tracks);

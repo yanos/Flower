@@ -206,15 +206,16 @@
     <Setter Property="Foreground" Value="{DynamicResource AppOnPrimaryBrush}" />
   </Style>
   <!-- The round Play/Pause (Controls/PlayPauseButton), which draws its own
-     disc in its Background with the glyph cut out: the same accent and deeper
-     red as Button.play, with the presenter's fill cleared so only the disc
-     shows. -->
+     ring and glyph in its Background: the ink every other icon button
+     beside it wears, never the red, dimmed while pressed as theirs are, with
+     the presenter's fill cleared so only the ring and glyph show. Hosts
+     restyle it to their own ink (the player bar, Now Playing's white). -->
   <Style Selector="Button.playPause">
-    <Setter Property="Background" Value="{DynamicResource AppPrimaryBrush}" />
+    <Setter Property="Background" Value="{DynamicResource AppChromeBrush}" />
     <Setter Property="Padding" Value="0" />
   </Style>
-  <Style Selector="Button.playPause:pointerover, Button.playPause:pressed">
-    <Setter Property="Background" Value="{DynamicResource AppAccentHoverBrush}" />
+  <Style Selector="Button.playPause:pressed">
+    <Setter Property="Background" Value="{DynamicResource AppIconPressedBrush}" />
   </Style>
   <Style Selector="Button.playPause /template/ ContentPresenter#PART_ContentPresenter, Button.playPause:pointerover /template/ ContentPresenter#PART_ContentPresenter, Button.playPause:pressed /template/ ContentPresenter#PART_ContentPresenter">
     <Setter Property="Background" Value="Transparent" />
