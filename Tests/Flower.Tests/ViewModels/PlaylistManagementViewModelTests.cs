@@ -253,6 +253,39 @@ public class PlaylistManagementViewModelTests
         Assert.Equal(0, host.ContentChangedCount);
     }
 
+    // A song in the playlist twice, removed once, is in it once.
+    [Fact]
+    public async Task Removing_songs_takes_one_entry_each_and_syncs()
+    {
+        var (vm, library, _, host) = Make();
+        var a = Song("a");
+        var b = Song("b");
+        await vm.CreateWithTracks(new[] { a, b, a });
+        var playlist = library.Playlists[0];
+        var syncsBefore = host.ScheduledSyncs;
+
+        await vm.RemoveTracks(playlist, [a]);
+
+        Assert.Equal(["b", "a"], playlist.Tracks.Select(t => t.Title));
+        Assert.Equal(syncsBefore + 1, host.ScheduledSyncs);
+    }
+
+    [Fact]
+    public async Task Removing_a_song_the_playlist_does_not_contain_neither_syncs_nor_rebuilds()
+    {
+        var (vm, library, _, host) = Make();
+        await vm.CreateWithTracks(new[] { Song("a") });
+        var playlist = library.Playlists[0];
+        var syncsBefore = host.ScheduledSyncs;
+        var rebuildsBefore = host.ContentChangedCount;
+
+        await vm.RemoveTracks(playlist, [Song("stranger")]);
+
+        Assert.Single(playlist.Tracks);
+        Assert.Equal(syncsBefore, host.ScheduledSyncs);
+        Assert.Equal(rebuildsBefore, host.ContentChangedCount);
+    }
+
     // ── Folders ───────────────────────────────────────────────────────────
 
     private static List<string> PlaylistRows(ObservableCollection<SidebarItem> items) =>

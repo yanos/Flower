@@ -323,14 +323,23 @@ namespace Flower.Models
             Touch();
         }
 
-        public void RemoveTrack(Track track)
+        public void RemoveTrack(Track track) => RemoveEntries([track]);
+
+        // One entry for each of these tracks - a song in the playlist twice
+        // and named once loses one of the two - as one edit, or no edit at
+        // all when none of them is here. Returns whether anything went.
+        public bool RemoveEntries(IReadOnlyList<Track> tracks)
         {
             var next = new List<Track>(_tracks);
-            if (!next.Remove(track))
-                return;
+            var removed = false;
+            foreach (var track in tracks)
+                removed |= next.Remove(track);
+            if (!removed)
+                return false;
 
             _tracks = next;
             Touch();
+            return true;
         }
 
         // Every entry for any of these tracks, as one edit - or no edit at all,

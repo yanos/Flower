@@ -3,6 +3,7 @@ using System.Windows.Input;
 
 using CommunityToolkit.Mvvm.Input;
 
+using Flower.Models;
 using Flower.Services;
 
 namespace Flower.ViewModels.Mobile;
@@ -26,8 +27,17 @@ public partial class MobileMainViewModel
             canLocateFiles: false,
             isRecentlyPlayed: IsShowingHome,
             canGoToAlbum: AlbumGroup.KeyOf(track) is { } album && !IsAtAlbum(album),
-            canGoToArtist: !string.IsNullOrEmpty(track.Artists) && !IsAtArtist(track.Artists)))
+            canGoToArtist: !string.IsNullOrEmpty(track.Artists) && !IsAtArtist(track.Artists),
+            canRemoveFromPlaylist: ActionTargetPlaylist is not null))
         : [];
+
+    // The playlist the song menu can take its song out of: the ordinary one
+    // on screen, when the menu was raised on one of its rows - not on the
+    // player's song, or the smart playlist editor's preview over it.
+    private Playlist? ActionTargetPlaylist =>
+        CurrentPlaylist is { IsOrdinary: true } playlist && _actionRow is { } row && Main.Rows.Contains(row)
+            ? playlist
+            : null;
 
     // The album menu, for AlbumActionTarget - or for the playlist whose row
     // raised the same sheet.
@@ -63,6 +73,7 @@ public partial class MobileMainViewModel
             MenuAction.AddToQueue => AddActionTargetToQueueCommand,
             MenuAction.AddToPlaylist => OpenAddToPlaylistCommand,
             MenuAction.RemoveFromQueue => RemoveActionTargetFromQueueCommand,
+            MenuAction.RemoveFromPlaylist => RemoveActionTargetFromPlaylistCommand,
             MenuAction.HideFromRecentlyPlayed => HideActionTargetFromRecentlyPlayedCommand,
             MenuAction.GetInfo => ViewTrackInfoCommand,
             MenuAction.Download => DownloadActionTargetCommand,

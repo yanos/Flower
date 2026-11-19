@@ -26,6 +26,7 @@ public partial class MobileMainViewModel
     public ICommand PlayNextAlbumActionTargetCommand { get; private set; } = null!;
     public ICommand AddAlbumActionTargetToQueueCommand { get; private set; } = null!;
     public ICommand RemoveActionTargetFromQueueCommand { get; private set; } = null!;
+    public ICommand RemoveActionTargetFromPlaylistCommand { get; private set; } = null!;
 
     private void InitializeQueueCommands()
     {
@@ -39,6 +40,14 @@ public partial class MobileMainViewModel
             ActiveSheet = MobileSheet.None;
             if (row != null)
                 Main.Queue.Remove([row]);
+        });
+        RemoveActionTargetFromPlaylistCommand = new RelayCommand(() =>
+        {
+            var playlist = ActionTargetPlaylist;
+            var track = ActionTarget;
+            ActiveSheet = MobileSheet.None;
+            if (playlist != null && track != null)
+                Main.RemoveFromPlaylist(playlist, [track]).Forget(_logger, "Removing a song from a playlist");
         });
     }
 

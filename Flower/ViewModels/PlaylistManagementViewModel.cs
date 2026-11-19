@@ -564,6 +564,22 @@ public sealed class PlaylistManagementViewModel
         return Task.CompletedTask;
     }
 
+    // The song menu's Remove from Playlist, on either head: one entry for
+    // each song named (Playlist.RemoveEntries). The songs stay in the
+    // library, so nothing asks first. Refused for a smart playlist or a
+    // folder, like AddTracks.
+    public Task RemoveTracks(Playlist playlist, IReadOnlyList<Track> tracks)
+    {
+        if (!playlist.IsOrdinary || !playlist.RemoveEntries(tracks))
+            return Task.CompletedTask;
+
+        if (_host.SelectedSidebarItem?.Playlist == playlist)
+            _host.PlaylistContentChanged();
+
+        _host.ScheduleContentSync();
+        return Task.CompletedTask;
+    }
+
     // A smart or Vibe Playlist editor that has closed, on any head: the list
     // follows a rename, a new playlist saved is shown, and a save goes to the
     // server now rather than whenever something else next syncs - an editor

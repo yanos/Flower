@@ -2747,6 +2747,9 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public Task ReorderPlaylistTrack(Playlist playlist, Track dragged, Track? insertBefore) =>
         Playlists.ReorderTrack(playlist, dragged, insertBefore);
 
+    public Task RemoveFromPlaylist(Playlist playlist, IReadOnlyList<Track> tracks) =>
+        Playlists.RemoveTracks(playlist, tracks);
+
     // ── Smart playlists ───────────────────────────────────────────────────
 
     // Null on Flower.Web/WASM and in tests that did not ask for one - see the

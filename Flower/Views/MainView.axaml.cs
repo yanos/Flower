@@ -1095,7 +1095,8 @@ public partial class MainView : UserControl
             canRemoveFromQueue: vm.IsShowingQueue && MusicList.SelectedRows.Any(vm.Queue.CanRemove),
             canLocateFiles: PlatformShell.IsAvailable,
             canGoToAlbum: MainViewModel.ShareAlbum(tracks),
-            canGoToArtist: MainViewModel.ShareArtist(tracks));
+            canGoToArtist: MainViewModel.ShareArtist(tracks),
+            canRemoveFromPlaylist: ShownOrdinaryPlaylist(vm) is not null);
         PlatformContextMenu.Open(DesktopActionMenu.Build(groups, RunTrackListAction, tracks, vm), MusicList);
     }
 
@@ -1124,6 +1125,9 @@ public partial class MainView : UserControl
             case MenuAction.RemoveFromQueue:
                 vm.Queue.Remove(MusicList.SelectedRows);
                 break;
+            case MenuAction.RemoveFromPlaylist when ShownOrdinaryPlaylist(vm) is { } playlist:
+                vm.RemoveFromPlaylist(playlist, tracks).Forget(Logger, "Removing songs from a playlist");
+                break;
             case MenuAction.GetInfo:
                 OpenTrackInfo();
                 break;
@@ -1141,6 +1145,11 @@ public partial class MainView : UserControl
                 break;
         }
     }
+
+    // The playlist the track list is showing, when its songs are its own to
+    // take out - an ordinary playlist's, not a smart one's or a folder's.
+    private static Playlist? ShownOrdinaryPlaylist(MainViewModel vm) =>
+        !vm.IsShowingQueue && vm.SelectedSidebarItem?.Playlist is { IsOrdinary: true } playlist ? playlist : null;
 
     private void OnHeaderContextMenu(object? sender, EventArgs e)
         => PlatformContextMenu.Open(_columnMenu, MusicList);

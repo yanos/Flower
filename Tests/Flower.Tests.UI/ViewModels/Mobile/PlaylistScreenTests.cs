@@ -137,6 +137,39 @@ public class PlaylistScreenTests : PinnedDataDirectory
         Assert.Equal(PlaylistName, scope.Mobile.CurrentPlaylistHeader?.Name);
     }
 
+    // A playlist's song, long-pressed on its screen, can be taken out of it -
+    // and the song stays in the library.
+    [AvaloniaFact]
+    public void A_songs_menu_on_its_playlist_takes_it_out_of_the_playlist()
+    {
+        using var scope = DrilledIn(3);
+        var vm = scope.Mobile;
+        var playlist = vm.CurrentPlaylist!;
+        var row = vm.Main.Rows.Single(r => r.Track.Title == "Song 1");
+
+        vm.OpenTrackActionsCommand.Execute(row);
+        vm.RunSongActionCommand.Execute(vm.SongActions.Single(e => e.Action == MenuAction.RemoveFromPlaylist));
+
+        Assert.Equal(MobileSheet.None, vm.ActiveSheet);
+        Assert.Equal(["Song 0", "Song 2"], playlist.Tracks.Select(t => t.Title));
+        UiWait.Settle(() => vm.Main.Rows.Count == 2, "the playlist's screen still lists the song");
+        Assert.Contains(vm.Main.Library.Tracks, t => t.Title == "Song 1");
+    }
+
+    // The same song anywhere but its playlist's screen is not the playlist's.
+    [AvaloniaFact]
+    public void A_songs_menu_off_a_playlist_offers_no_removal_from_one()
+    {
+        using var scope = DrilledIn(3);
+        var vm = scope.Mobile;
+        vm.SelectTabCommand.Execute(nameof(MobileTab.Songs));
+        UiWait.Settle(() => vm.CurrentPlaylist == null && vm.Main.Rows.Count == 3, "never reached Songs");
+
+        vm.OpenTrackActionsCommand.Execute(vm.Main.Rows[0]);
+
+        Assert.DoesNotContain(vm.SongActions, e => e.Action == MenuAction.RemoveFromPlaylist);
+    }
+
     // The buttons were there, bound and enabled, and a tap did nothing: a
     // playlist's header sits inside the track ListBox (ScreenScroll.Header),
     // and the list's drag-to-reorder handler tunnels over everything in it,

@@ -70,12 +70,13 @@ network drive (NAS) that can take up to 5 minutes. See
 
 ## Deleting a copy vs removing a song
 
-These are two different menu items.
+These are different menu items.
 
 | Menu item | What it does |
 |---|---|
 | **Delete Local File** | Deletes the file **from this device only**. If the server has the song, it stays in your library as a stream and you can download it again later. Flower warns you if this file is your only copy. |
 | **Remove from Library** | Takes the song out of your library **and every playlist**. See below. |
+| **Remove from Playlist** | Offered on a playlist's own songs (long-press one on a phone). Takes the song out of **that playlist only**; it stays in your library. |
 
 ---
 

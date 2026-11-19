@@ -19,6 +19,7 @@ public enum MenuAction
     AddToQueue,
     AddToPlaylist,
     RemoveFromQueue,
+    RemoveFromPlaylist,
     GoToAlbum,
     GoToArtist,
     GetInfo,
@@ -72,6 +73,8 @@ public static class ActionMenus
     // song playing. canLocateFiles: the head can show a file in the platform's
     // file manager, which a phone cannot - and then only when one of the songs
     // has a file here to show, which one streamed from the server does not.
+    // canRemoveFromPlaylist: opened over songs listed as an ordinary
+    // playlist's - not a smart one's, which its rules decide, nor a folder's.
     // isRecentlyPlayed: opened over a song on Home's Recently Played.
     // canGoToAlbum, canGoToArtist: every song is from the one album, or by the
     // one artist (MainViewModel.ShareAlbum/ShareArtist), and the menu is not
@@ -79,7 +82,7 @@ public static class ActionMenus
     // for a song in a list.
     public static IReadOnlyList<IReadOnlyList<ActionMenuEntry>> ForSongs(
         MenuFacts facts, bool canRemoveFromQueue, bool canLocateFiles, bool isRecentlyPlayed = false,
-        bool canGoToAlbum = false, bool canGoToArtist = false)
+        bool canGoToAlbum = false, bool canGoToArtist = false, bool canRemoveFromPlaylist = false)
     {
         var from = new List<ActionMenuEntry>();
         if (canGoToAlbum)
@@ -96,6 +99,8 @@ public static class ActionMenus
         };
         if (canRemoveFromQueue)
             where.Add(new(MenuAction.RemoveFromQueue, "Remove from Queue", MaterialIconKind.PlaylistRemove));
+        if (canRemoveFromPlaylist)
+            where.Add(new(MenuAction.RemoveFromPlaylist, "Remove from Playlist", MaterialIconKind.PlaylistMinus));
 
         var what = new List<ActionMenuEntry> { new(MenuAction.GetInfo, "Info", MaterialIconKind.InformationOutline, IsEnabled: hasSongs) };
         if (canLocateFiles && facts.LocalFiles > 0)
