@@ -39,9 +39,13 @@ public sealed record RemovedFileRow(string Path, DateTimeOffset RemovedAt, bool 
 
     public string Folder => LastSeparator <= 0 ? "" : Path[..LastSeparator];
 
+    // A column of its own beside the name rather than the start of Detail,
+    // so it lines up down the list and reads at a glance which removals are old.
+    public string RemovedAtDisplay => $"{RemovedAt.LocalDateTime:g}";
+
     public string Detail => StillOnDisk
-        ? $"Removed {RemovedAt.LocalDateTime:g} · {Folder}"
-        : $"Removed {RemovedAt.LocalDateTime:g} · no longer on disk, restoring only clears it from this list";
+        ? Folder
+        : "No longer on disk, restoring only clears it from this list";
 }
 
 // Extends ViewModelBase (not a plain record) for IsConfirmingForget alone - the

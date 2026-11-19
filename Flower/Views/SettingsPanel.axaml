@@ -637,18 +637,24 @@
                         Command="{Binding DeleteAllRemovedFilesCommand}"/>
               </Grid>
 
-              <Border MaxHeight="240" Classes="listFrame">
+              <!-- Tall enough to go through a real clean-up without scrolling
+                   a few rows at a time; the tab's own scroller takes over
+                   past it. -->
+              <Border MaxHeight="520" Classes="listFrame">
                 <ListBox ItemsSource="{Binding RemovedFiles}">
                   <ListBox.ItemTemplate>
                     <DataTemplate x:DataType="vm:RemovedFileRow">
-                      <Grid ColumnDefinitions="*,Auto">
+                      <Grid ColumnDefinitions="*,Auto,Auto">
                         <StackPanel Grid.Column="0" Margin="4,2" VerticalAlignment="Center">
                           <TextBlock Text="{Binding FileName}" TextTrimming="CharacterEllipsis"/>
                           <TextBlock Text="{Binding Detail}" FontSize="11" Opacity="0.6"
                                      TextTrimming="CharacterEllipsis"
                                      ToolTip.Tip="{Binding Path}"/>
                         </StackPanel>
-                        <Button Grid.Column="1" Classes="standard secondary small" Content="Restore" VerticalAlignment="Center"
+                        <TextBlock Grid.Column="1" Text="{Binding RemovedAtDisplay}" FontSize="11" Opacity="0.6"
+                                   VerticalAlignment="Center" Margin="12,0"
+                                   ToolTip.Tip="When it was removed from the library"/>
+                        <Button Grid.Column="2" Classes="standard secondary small" Content="Restore" VerticalAlignment="Center"
                                 Click="RestoreRemovedFileButton_Click"/>
                       </Grid>
                     </DataTemplate>
