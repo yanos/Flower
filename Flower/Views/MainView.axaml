@@ -1140,9 +1140,15 @@
              library by LibrarySyncService and play from the ordinary track list,
              so browsing them again under the sidebar row was the same catalog
              twice. -->
-        <Grid Grid.Column="0" Grid.ColumnSpan="2" Grid.RowSpan="2"
-              IsVisible="{Binding IsShowingDeviceDetail}"
-              Margin="28,24,28,16" RowDefinitions="Auto,*">
+        <!-- Padding rather than Margin, on a transparent background, so the
+             gutter beside the server's settings is part of the pane and its
+             wheel reaches DeviceDetail_PointerWheelChanged; over a margin it
+             fell through to nothing and the settings would not scroll. -->
+        <Border Grid.Column="0" Grid.ColumnSpan="2" Grid.RowSpan="2"
+                IsVisible="{Binding IsShowingDeviceDetail}"
+                Background="Transparent" Padding="28,24,28,16"
+                PointerWheelChanged="DeviceDetail_PointerWheelChanged">
+        <Grid RowDefinitions="Auto,*">
           <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,0,0,16">
             <StackPanel VerticalAlignment="Center" Spacing="2">
               <StackPanel Orientation="Horizontal" Spacing="6">
@@ -1268,6 +1274,7 @@
                      VerticalAlignment="Top"/>
 
         </Grid>
+        </Border>
       </Grid>
 
       </Grid>

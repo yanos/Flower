@@ -65,7 +65,7 @@ public static class PredominantAxisScroll
     // only kind this is used on. A content panel implementing ILogicalScrollable
     // would take a different path inside the presenter and scroll by lines, and
     // this would then move it at the wrong rate.
-    private const double PixelsPerDelta = 50;
+    internal const double PixelsPerDelta = 50;
 
     // See RubberBandScroll's identical note: an attached property has no
     // constructor for DI to inject a logger through.

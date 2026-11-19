@@ -2964,6 +2964,16 @@ public partial class MainView : UserControl
     private void ServerSettingsButton_Click(object? sender, RoutedEventArgs e) =>
         _ = _viewModel?.OpenSelectedServerSettingsAsync();
 
+    // The wheel anywhere on a server's page - the gutter beside its settings,
+    // the header above them - scrolls the settings tab that is open, as the
+    // page's one scrolling thing. What landed on the panel itself was already
+    // handled there (SettingsPanel.ScrollSelectedTab).
+    private void DeviceDetail_PointerWheelChanged(object? sender, PointerWheelEventArgs e)
+    {
+        if (!e.Handled && ServerSettingsHost.Content is SettingsPanel panel && panel.ScrollSelectedTab(e.Delta))
+            e.Handled = true;
+    }
+
     private async void PairActionButton_Click(object? sender, RoutedEventArgs e)
     {
         if (_viewModel is not { } vm)

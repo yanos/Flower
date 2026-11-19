@@ -2,6 +2,7 @@ using System;
 using System.ComponentModel;
 using System.Linq;
 
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
@@ -42,6 +43,35 @@ public partial class SettingsPanel : UserControl
         _ = new HandleDragReorder(HomeShelfList,
             item => item is HomeShelfSettingRow row && _viewModel?.Device is { } device ? device.HomeShelfSettings.IndexOf(row) : -1,
             (item, to) => _viewModel?.Device?.MoveHomeShelf(((HomeShelfSettingRow)item).Shelf, to));
+
+        // The wheel over the panel's margin, beside or below a tab's scroller
+        // rather than over it, scrolls that tab anyway. Background="Transparent"
+        // on the panel is what makes the margin hit-testable at all.
+        AddHandler(PointerWheelChangedEvent, (_, e) =>
+        {
+            if (!e.Handled && ScrollSelectedTab(e.Delta))
+                e.Handled = true;
+        }, RoutingStrategies.Bubble);
+    }
+
+    // Scrolls the open tab by a wheel delta that landed outside its scroller -
+    // here, or in a host's own margin around this panel (MainView's server
+    // page). Only a tab whose content *is* a ScrollViewer: the Devices and Logs
+    // tabs hold lists of their own, and a wheel beside one should not move it.
+    // False when nothing moved, so a sideways swipe stays free for whoever
+    // handles it next (MainView's back/forward).
+    public bool ScrollSelectedTab(Vector delta)
+    {
+        if (Tabs.SelectedItem is not TabItem { Content: ScrollViewer scroller })
+            return false;
+
+        var maxY = Math.Max(0, scroller.Extent.Height - scroller.Viewport.Height);
+        var y = Math.Clamp(scroller.Offset.Y - delta.Y * PredominantAxisScroll.PixelsPerDelta, 0, maxY);
+        if (y == scroller.Offset.Y)
+            return false;
+
+        scroller.Offset = scroller.Offset.WithY(y);
+        return true;
     }
 
     public SettingsPanel(SettingsViewModel viewModel, MainViewModel? mainViewModel = null) : this() =>

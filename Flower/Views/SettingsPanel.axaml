@@ -7,7 +7,8 @@
              xmlns:views="clr-namespace:Flower.Views"
              xmlns:conv="clr-namespace:Flower.Converters"
              x:Class="Flower.Views.SettingsPanel"
-             x:DataType="vm:SettingsViewModel">
+             x:DataType="vm:SettingsViewModel"
+             Background="Transparent">
 
   <!-- The settings screen itself, hosted twice: by SettingsWindow on desktop, and
        full-page by MainView in the browser, where Avalonia is single-view and
