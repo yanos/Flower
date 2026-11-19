@@ -42,7 +42,7 @@ public class LogViewerViewModelTests
 
         Assert.Equal(4, vm.DisplayLines.Count);
         Assert.Contains("retrying  ×3 · since 12:22:27", vm.DisplayLines[0]);
-        Assert.StartsWith(At.AddSeconds(2).ToString("HH:mm:ss.fff"), vm.DisplayLines[0]);
+        Assert.StartsWith(At.AddSeconds(2).ToString("yyyy-MM-dd HH:mm:ss.fff"), vm.DisplayLines[0]);
         Assert.DoesNotContain("×", vm.DisplayLines[1]);
         Assert.DoesNotContain("×", vm.DisplayLines[3]);
     }

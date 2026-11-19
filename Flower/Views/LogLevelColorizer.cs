@@ -10,7 +10,7 @@ namespace Flower.Views;
 
 // Colours a log line the way InMemoryLogEntry.ToDisplayLine lays it out -
 // "12:22:27.854 [INF] Flower.Sync: message" - in the log viewer's text
-// editor: the time muted, the level's tag on its own tint (the theme's
+// editor: the date and time muted, the level's tag on its own tint (the theme's
 // AppLog* brushes), the source in the value colour, and a grouped line's
 // "×N · since" muted after the message. Lines that do not start that way -
 // an exception's stack, a placeholder - are left as they are.
@@ -27,9 +27,9 @@ public sealed class LogLevelColorizer : DocumentColorizingTransformer
 
     public Palette? Colours { get; set; }
 
-    // "HH:mm:ss.fff " then "[XXX]".
-    private const int TimeLength = 12;
-    private const int TagStart = 13;
+    // "yyyy-MM-dd HH:mm:ss.fff " then "[XXX]" (InMemoryLogEntry.ToDisplayLine).
+    private const int TimeLength = 23;
+    private const int TagStart = 24;
     private const int TagLength = 5;
 
     protected override void ColorizeLine(DocumentLine line)
@@ -38,7 +38,7 @@ public sealed class LogLevelColorizer : DocumentColorizingTransformer
             return;
 
         var text = CurrentContext.Document.GetText(line);
-        if (text[2] != ':' || text[8] != '.' || text[TagStart] != '[' || text[TagStart + TagLength - 1] != ']')
+        if (text[4] != '-' || text[13] != ':' || text[19] != '.' || text[TagStart] != '[' || text[TagStart + TagLength - 1] != ']')
             return;
 
         var start = line.Offset;
