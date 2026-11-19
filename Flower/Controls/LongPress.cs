@@ -7,11 +7,13 @@ using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 
+using Flower.Services;
+
 namespace Flower.Controls;
 
 // Runs a command when a finger rests on an element (touch and pen only; a
-// mouse has a right button for this). The track rows use it to open the same
-// menu their "..." button does.
+// mouse has a right button for this), with the platform's haptic tick as it
+// does. The track rows use it to open the same menu their "..." button does.
 //
 // Timed here rather than taken from Avalonia's Holding gesture, which gives up
 // once the finger drifts 4px - see LongPressTracker, which decides whether the
@@ -121,5 +123,6 @@ public static class LongPress
 
         pointer.Capture(null);
         command.Execute(parameter);
+        PlatformHaptics.Current?.LongPress();
     }
 }

@@ -165,6 +165,9 @@ public class MainActivity : AvaloniaMainActivity
     protected override void OnCreate(Bundle? savedInstanceState)
     {
         PlatformMusicImporter.Current = new AndroidMediaStoreImporter(this);
+        // Through this activity's window, so here rather than with the
+        // Context-only hooks above.
+        PlatformHaptics.Current = new AndroidHaptics(this);
 
         base.OnCreate(savedInstanceState);
     }

@@ -112,6 +112,9 @@ public partial class AppDelegate : AvaloniaAppDelegate<App>, IMXMetricManagerSub
         // since RoutePickerControl reads Current once in its constructor.
         PlatformRoutePicker.Current = new AppleRoutePicker();
 
+        // The tick a long press gives as its menu opens - see IHaptics.
+        PlatformHaptics.Current = new AppleHaptics();
+
         // UIKit's own text field, laid over a box while it is typed in - see
         // INativeTextFieldFactory. Same before-Avalonia-starts timing: every
         // TextInput reads it as it is built.
