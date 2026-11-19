@@ -45,6 +45,10 @@ public sealed class LongPressTracker
             _pointer = null;
     }
 
+    // Whatever touch is waiting is not a long press after all - the list it
+    // is in has started scrolling (LongPress).
+    public void Cancel() => _pointer = null;
+
     // The wait is up: true once, for a touch still resting where it landed.
     public bool Fire(object pointer)
     {
