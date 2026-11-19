@@ -76,7 +76,7 @@ public class SettingsRemovedSongsTests
         await viewModel.RestoreRemovedFileCommand.ExecuteAsync(viewModel.RemovedFiles[0]);
 
         Assert.Equal(["/music/A/One.mp3"], backend.Restored);
-        Assert.Equal(["Two.mp3"], viewModel.RemovedFiles.Select(r => r.FileName));
+        Assert.Equal(["/music/A/Two.mp3"], viewModel.RemovedFiles.Select(r => r.Path));
     }
 
     [Fact]
@@ -128,18 +128,5 @@ public class SettingsRemovedSongsTests
 
         await viewModel.DeleteAllRemovedFilesCommand.ExecuteAsync(null);
         Assert.Empty(backend.Deleted);
-    }
-
-    // The path is the server's when the panel is administering one, so the
-    // row splits it on either separator rather than this machine's.
-    [Theory]
-    [InlineData("/srv/music/Band/Song.flac", "Song.flac", "/srv/music/Band")]
-    [InlineData(@"D:\Music\Band\Song.flac", "Song.flac", @"D:\Music\Band")]
-    public void A_row_names_the_file_and_its_folder_whichever_machine_the_path_is_from(string path, string file, string folder)
-    {
-        var row = Row(path);
-
-        Assert.Equal(file, row.FileName);
-        Assert.Equal(folder, row.Folder);
     }
 }

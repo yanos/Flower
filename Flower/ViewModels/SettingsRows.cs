@@ -28,24 +28,15 @@ public sealed record LibraryPathRow(string Path, int SongCount)
 
 // One file in the Library tab's "Removed Songs": removed from the library with
 // its file kept, and so left out of every scan until it is restored (see
-// Library.ExcludedPaths). The path may be the server's rather than this
-// machine's, so it is split on either separator rather than through
-// System.IO.Path, which only knows this machine's.
+// Library.ExcludedPaths). Shown by its whole path, which may be the
+// server's rather than this machine's.
 public sealed record RemovedFileRow(string Path, DateTimeOffset RemovedAt, bool StillOnDisk)
 {
-    private int LastSeparator => Path.LastIndexOfAny(['/', '\\']);
-
-    public string FileName => LastSeparator < 0 ? Path : Path[(LastSeparator + 1)..];
-
-    public string Folder => LastSeparator <= 0 ? "" : Path[..LastSeparator];
-
-    // A column of its own beside the name rather than the start of Detail,
-    // so it lines up down the list and reads at a glance which removals are old.
-    public string RemovedAtDisplay => $"{RemovedAt.LocalDateTime:g}";
-
+    // The line under the path: when it went, which reads down the list as a
+    // column of dates, and the note when the file is gone already.
     public string Detail => StillOnDisk
-        ? Folder
-        : "No longer on disk, restoring only clears it from this list";
+        ? $"Removed {RemovedAt.LocalDateTime:g}"
+        : $"Removed {RemovedAt.LocalDateTime:g} · no longer on disk, restoring only clears it from this list";
 }
 
 // Extends ViewModelBase (not a plain record) for IsConfirmingForget alone - the
