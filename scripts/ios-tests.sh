@@ -46,10 +46,13 @@ export SIMCTL_CHILD_FLOWER_TEST_ARGS="${FLOWER_TEST_ARGS:-}"
 
 # About two minutes of tests on an Apple Silicon Mac. The ceiling is for a
 # CI runner, which is slower, and is there to turn a hang into a failure rather
-# than to be reached.
+# than to be reached. Runners on the one xcode-27 image ran the same commit's
+# suite in 4, 9 and 20 minutes on 2026-11-20, building it in 12, 17 and 25
+# alongside, so the speed is the machine's: 20 minutes was a ceiling a slow
+# runner could reach without anything hanging.
 ios_simulator_run \
   Tests/Flower.Tests.iOS/bin/Release/net10.0-ios27.0/iossimulator-arm64/Flower.Tests.iOS.app \
-  com.yanos.flower.tests flower-tests.log 'FLOWER-TESTS ' 1200 summarize
+  com.yanos.flower.tests flower-tests.log 'FLOWER-TESTS ' 2400 summarize
 
 if [ "$IOS_TALLY" != "FLOWER-TESTS exit 0" ]; then
   exit 1
