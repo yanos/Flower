@@ -188,6 +188,7 @@ jobs:
           fetch-depth: 0
 
       - uses: actions/setup-dotnet@v4
+        id: dotnet
         with:
           dotnet-version: 10.0.x
           cache: true
@@ -195,6 +196,13 @@ jobs:
             **/*.csproj
             Directory.Build.props
             Tests/ClientTests.props
+
+      # Pinned to the SDK installed above, for the workload below: with no
+      # global.json the newest SDK on the image is picked, and some images
+      # now carry a .NET 11 one, whose workload manifests conflict with
+      # .NET 10's (the web job below hit the same).
+      - name: Use the SDK installed above
+        run: dotnet new globaljson --sdk-version "${{ steps.dotnet.outputs.dotnet-version }}" --roll-forward latestPatch --force
 
       # The native macOS head uses Apple frameworks and needs Xcode 27 headers.
       # Pinned to the same workload set and Xcode 27.0 as the iOS jobs: left
@@ -254,6 +262,7 @@ jobs:
           fetch-depth: 0
 
       - uses: actions/setup-dotnet@v4
+        id: dotnet
         with:
           dotnet-version: 10.0.x
           cache: true
@@ -261,6 +270,13 @@ jobs:
             **/*.csproj
             Directory.Build.props
             Tests/ClientTests.props
+
+      # Pinned to the SDK installed above, for the workload below: with no
+      # global.json the newest SDK on the image is picked, and some images
+      # now carry a .NET 11 one, whose workload manifests conflict with
+      # .NET 10's (the web job below hit the same).
+      - name: Use the SDK installed above
+        run: dotnet new globaljson --sdk-version "${{ steps.dotnet.outputs.dotnet-version }}" --roll-forward latestPatch --force
 
       # Pin the workload to net10.0-ios27.0 and its required Xcode 27.0.
       # A newer workload set can require iOS/Xcode 27.1 (NETSDK1140).
@@ -291,6 +307,7 @@ jobs:
           fetch-depth: 0
 
       - uses: actions/setup-dotnet@v4
+        id: dotnet
         with:
           dotnet-version: 10.0.x
           cache: true
@@ -298,6 +315,13 @@ jobs:
             **/*.csproj
             Directory.Build.props
             Tests/ClientTests.props
+
+      # Pinned to the SDK installed above, for the workload below: with no
+      # global.json the newest SDK on the image is picked, and some images
+      # now carry a .NET 11 one, whose workload manifests conflict with
+      # .NET 10's (the web job below hit the same).
+      - name: Use the SDK installed above
+        run: dotnet new globaljson --sdk-version "${{ steps.dotnet.outputs.dotnet-version }}" --roll-forward latestPatch --force
 
       # Pin the workload to net10.0-ios27.0 and its required Xcode 27.0.
       # A newer workload set can require iOS/Xcode 27.1 (NETSDK1140).
@@ -334,6 +358,7 @@ jobs:
           fetch-depth: 0
 
       - uses: actions/setup-dotnet@v4
+        id: dotnet
         with:
           dotnet-version: 10.0.x
           cache: true
@@ -341,6 +366,13 @@ jobs:
             **/*.csproj
             Directory.Build.props
             Tests/ClientTests.props
+
+      # Pinned to the SDK installed above, for the workload below: with no
+      # global.json the newest SDK on the image is picked, and some images
+      # now carry a .NET 11 one, whose workload manifests conflict with
+      # .NET 10's (the web job below hit the same).
+      - name: Use the SDK installed above
+        run: dotnet new globaljson --sdk-version "${{ steps.dotnet.outputs.dotnet-version }}" --roll-forward latestPatch --force
 
       - name: Install Android workload
         run: dotnet workload install android
