@@ -102,8 +102,9 @@ Worth reading once before handing one out, because it is more than "can
 listen":
 
 - **Any paired device** plays the whole library, and its plays are added to
-  this server's counts. Its playlists **replace** the ones here, so it can add
-  or remove playlists for everybody. There is no read-only pairing.
+  this server's counts. Its playlists are its listener's own: it can add,
+  change and remove those, and never sees or touches anyone else's. There is
+  no read-only pairing.
 - **An administrator** can also change the server's settings — including which
   folders the library is read from, which is how music is added to or removed
   from it — star tracks for everyone, and add and remove devices, including

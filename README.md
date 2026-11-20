@@ -48,7 +48,7 @@ apps).
 | Option | What to do |
 |---|---|
 | **Tailscale** (easiest) | Install it on the server. Nothing else. |
-| **Port forward** | Forward **4534**, never 4533. Set `AllowPublicAccess: true` **and** `AdvertisedHost: "https://<public-ip>:4534"`. Write the scheme and port, and never use a `.local` name. |
+| **Port forward** | Forward **4534**, never 4533, and set `AllowPublicAccess: true`. Leave `AdvertisedHost` empty: the server looks up its public IP and follows it when it changes. Set it only for a DNS name (`"https://music.example.com:4534"`, scheme and port included, never a `.local` name). |
 | **Behind a proxy/tunnel** | Set `TrustedProxies`, or every listener counts as one caller. |
 
 A browser on another machine needs HTTPS (port 4534, which shows a

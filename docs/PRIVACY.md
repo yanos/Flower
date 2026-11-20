@@ -107,12 +107,18 @@ contains file names.
 
 None of these go to Flower's developer.
 
-- **Artist pictures** from Deezer: Flower sends an artist's name. A server
-  does this for every device paired to it, so a listener's phone sends
-  nothing. Switch: "Look up artist pictures online" in the phone's Settings;
-  for a server and everything paired to it, the server's own settings.
+- **Artist pictures** from Deezer: Flower sends an artist's name, and when
+  the artist's albums don't settle which artist it is, the artist's name with
+  a few of their song titles. Whoever holds the song does the asking: a server
+  for the songs it serves, a device for the songs on it. A paired device's
+  asking goes by its server's switch, never its own. Switch: on a server, its
+  own settings, which cover every device paired to it; on a phone on its own,
+  "Look up artist pictures online" in Settings; on a desktop on its own,
+  `"LookUpOnline": false` in `settings.json` (it has no switch in Settings
+  yet).
 - **Find album art online**, only when you ask for it: the album and artist
-  names go to Apple's iTunes Search, MusicBrainz with the Cover Art Archive,
+  names (or a song's title and artist), or whatever words you type in their
+  place, go to Apple's iTunes Search, MusicBrainz with the Cover Art Archive,
   and Bandcamp.
 - **Update checks** (desktop installs from a release): once a day, GitHub is
   asked for the latest release. Switch: Settings > General, "Check for updates

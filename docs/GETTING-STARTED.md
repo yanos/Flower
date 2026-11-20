@@ -73,8 +73,8 @@ you're not, ask for a link.
 - **Away from home**, Flower carries on with nothing to set up, as long as
   whoever runs the server has made it reachable from outside. If it only
   works at home, tell them.
-- **Your playlists are shared** with everyone on the server, and your plays
-  count towards its play counts.
+- **Your playlists are your own**: nobody else on the server sees them, and
+  you don't see theirs. Your plays count towards its play counts.
 
 ### If something goes wrong
 

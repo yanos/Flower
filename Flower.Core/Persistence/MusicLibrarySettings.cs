@@ -53,7 +53,8 @@ public class MusicLibrarySettings
     // Whether this host looks things up on the internet for the songs it owns
     // - for now a picture of each artist, from Deezer (OnlineMetadataEngine,
     // docs/ONLINE-METADATA-PLAN.md). On by default: it asks for no key and no
-    // account, and what it sends is an artist's name. Here because it is the
+    // account, and what it sends is an artist's name, with a few song titles
+    // when the albums don't tell artists apart (docs/PRIVACY.md). Here because it is the
     // same switch on both hosts and means the same thing - with one
     // difference in reach: on a server it covers every device paired to it,
     // which ask the server rather than the internet, and a paired device's own

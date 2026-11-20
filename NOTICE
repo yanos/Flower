@@ -77,7 +77,12 @@ MIT
   (BSD-3-Clause, skia.org) and HarfBuzz (MIT-style, harfbuzz.github.io)
 - CommunityToolkit.Mvvm (Microsoft / .NET Foundation)
 - Microsoft.Extensions.DependencyInjection, Microsoft.Extensions.Logging,
-  Microsoft.Data.Sqlite, System.Numerics.Tensors (Microsoft)
+  Microsoft.Data.Sqlite, System.Numerics.Tensors,
+  System.Diagnostics.EventLog (Microsoft)
+- Sentry and Sentry.AspNetCore (github.com/getsentry/sentry-dotnet), the
+  crash reporter, with the Sentry SDKs they carry on iOS (sentry-cocoa) and
+  Android (sentry-java, sentry-native)
+- Tmds.DBus.Protocol (github.com/tmds/Tmds.DBus), on Linux
 - ONNX Runtime (Microsoft.ML.OnnxRuntime, github.com/microsoft/onnxruntime),
   in the heads that run Vibe Playlists' engine
 - Miniaudio-CS (the C# bindings to miniaudio)
