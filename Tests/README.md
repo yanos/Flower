@@ -178,8 +178,9 @@ a newer workload set can demand a newer Xcode (`NETSDK1140`); move workload,
 TFMs and Xcode together. **iOS tests (Mono)** runs `scripts/ios-tests.sh`;
 **iOS build and decoding (NativeAOT)** builds `Flower.iOS` as it ships
 (`FlowerNativeAot`, `_IsPublishing`, ad hoc signing) and runs
-`scripts/ios-decoding-tests.sh`. **Android** builds the head and the decoding
-runner without running it; **Web** builds `Flower.Web` with `wasm-tools`.
+`scripts/ios-decoding-tests.sh`. **Android** builds the head, then runs the
+decoding runner on an x86_64 emulator; **Web** builds `Flower.Web` with
+`wasm-tools`.
 
 Tags additionally package and upload the desktop installer in each desktop job.
 Release and image publication wait for all seven platform jobs, so a failed

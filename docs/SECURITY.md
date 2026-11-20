@@ -18,8 +18,10 @@ apply at the trust boundary. A listener's phone can be buggy, stolen or hostile.
 So can anything that sits between a client and the server, such as a captive
 portal, a proxy, or a device that picked up the server's old DHCP address.
 
-What each kind of rogue caller can do today. All of this was read from the code
-and, for the budgets, checked against a running server on 2026-10-02:
+What each kind of rogue caller could do when this was written, read from the
+code and, for the budgets, checked against a running server on 2026-10-02. The
+steps below closed each of them; this is the record of why they exist, not what
+a caller can do now:
 
 **A paired device that is not an admin**
 
@@ -249,8 +251,8 @@ Tests, all passing:
   its oldest days (`ClientLogStoreTests`);
 - a large client backlog goes in several reports, each under the cap
   (`LibrarySyncLogPushTests`);
-- the listener column round-trips, and a version-10 database gives every
-  existing playlist to the owner (`StoreRoundTripTests`).
+- the listener column round-trips (`PlaylistStoreTests`), and an existing
+  database gains it (`SqliteMigrationTests`).
 
 ## Step 2 — Budgets per device, failures per address
 

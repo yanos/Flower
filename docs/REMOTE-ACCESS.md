@@ -112,10 +112,10 @@ The engine already exists. `PollKnownDevicesAsync` runs every 5 seconds
 (`AliasPollInterval`) and already dials `/info` at every known peer. Re-probing
 candidates when the paired server is *not* currently reachable slots into that
 loop, so a network transition heals within about 15 seconds with no new
-machinery. `NetworkChange.NetworkAddressChanged` — used nowhere in this repo
-today — would cut that to near-instant and is worth adding as an optimisation,
-but not as the mechanism: on iOS it is not dependable enough to be the only
-thing standing between the user and a dead player.
+machinery. Hearing the network change would cut that to near-instant, as an
+optimisation rather than the mechanism: on iOS no one signal is dependable
+enough to be the only thing standing between the user and a dead player. It was
+added later (`INetworkChangeSource`, "Network changes are now heard" below).
 
 ### The pruning rule has to change with it
 
@@ -192,12 +192,11 @@ the client's probes at hosts of its choosing.
 
 **Deliberately not built here:**
 
-- **HTTPS on the native client.** All nine peer URLs are built as
-  `$"http://{device.EndPoint}"`, so a `tailscale serve` HTTPS front end is
-  unreachable from the app. Plain HTTP over WireGuard is the tested path and
-  `SELF-HOSTING.md` presents it as a complete option, because WireGuard already
-  encrypts it. The scheme rework — nine call sites, and `IPEndPoint` widened to
-  hold a name — is its own change with its own reason to happen.
+- **HTTPS on the native client** was left out of this step, and built since:
+  `DiscoveredDevice.BaseUri` carries the scheme, the server serves TLS on 4534
+  with a certificate the client pins (`REMOTE-TRANSPORT-PLAN.md`, "The
+  certificate"), and plain http is dialled only on networks
+  `CleartextOrigins` allows.
 - **A QR code.** Nothing draws one yet. Since the scheme is registered, one
   would need no scanner in the app: a phone's own camera opens the link inside it.
 - **Transcoding.** There is none anywhere in the codebase, so streaming ships
@@ -248,7 +247,7 @@ exemption and `ReachRank`, `AppSettings.PairedServerAddresses`/
 both `Flower/Views/Mobile/SettingsView.axaml` and
 `Flower/Views/ServerPickerView.axaml`.
 
-Verified: `Flower.Tests` 1068/1068, `Flower.Server.Tests` 165/165, iOS builds
+Verified at the time: `Flower.Tests` 1068/1068, `Flower.Server.Tests` 165/165, iOS builds
 for the simulator. A live server was confirmed to report its own LAN and ULA
 addresses at the bound port, with no loopback or link-local entry.
 

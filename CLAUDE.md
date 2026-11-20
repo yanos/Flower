@@ -226,7 +226,7 @@ deletion semantics (a deletion is a removal, never a delete) are in
   `menu.Open(...)` (macOS draws them as `NSMenu`s). XAML `Control.ContextMenu`
   needs nothing.
 - **Shortcuts:** `Space` play/pause, `Enter` play selected, Cmd/Ctrl+`I` track
-  info, `,` settings, `L` scroll to now playing. Track-list shortcuts are
+  info, Cmd/Ctrl+`,` settings, `L` scroll to now playing. Track-list shortcuts are
   tunnel-routed in `MainView.axaml.cs` so `MusicListView` doesn't swallow them.
 - `PlaybackControlsPlacement`'s row is set by a style on `ContentGrid`, because
   a local value outranks a style.

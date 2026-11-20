@@ -93,6 +93,8 @@ Architecture and conventions: [CLAUDE.md](CLAUDE.md). Tests and CI:
 | What leaves my device | [PRIVACY](docs/PRIVACY.md) |
 | Server trust boundary | [SECURITY](docs/SECURITY.md) |
 | HTTP API | [API](docs/API.md) |
+| How a device reaches its server away from home | [REMOTE-ACCESS](docs/REMOTE-ACCESS.md) |
+| A source comment citing an old review finding | [CITED-DECISIONS](docs/CITED-DECISIONS.md) |
 | Anything else | `docs/*-PLAN.md`, one per initiative, each with its status |
 
 ## License

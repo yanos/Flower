@@ -52,8 +52,9 @@ public static class ServerDataDirectory
             "_LibraryPaths": ["Folders to scan for music, e.g. /music or /srv/media/library."],
             "_Alias": "The name this server shows up as in a Flower client's sidebar. Defaults to the machine name.",
             "_IconEmoji": "An emoji to show beside that name instead of the generic server icon. A picture can be set instead from the settings page.",
-            "_AdvertisedHost": "host:port to put in pairing invites when the address a device should dial isn't the one the request arrived on (reverse proxy, remapped container port).",
+            "_AdvertisedHost": "The origin to give paired devices and pairing invites, scheme and port included (https://music.example.com:4534), when the address a device should dial isn't one this server can see for itself: a DNS name, a reverse proxy, a remapped port. Leave it empty with AllowPublicAccess on and the server looks up its own public IP instead, and follows it when it changes.",
             "_AdvertiseOnLan": "false to stop announcing this server over mDNS - for tailnet/reverse-proxy-only deployments.",
+            "_TrustTailscaleRange": "false to take 100.64.0.0/10 - the Tailscale range, which is also carrier-grade NAT - off the built-in allow-list, on a server nobody reaches over a tailnet. On by default.",
             "_LibraryListingMinutes": "How often to list the library folders for songs added or removed behind the server's back, in minutes - 5 by default, 0 to turn it off. Changes on a local disk are noticed at once anyway; this is for a network share, which does not report what other machines do to it.",
             "_IntegrateWithITunes": "false to make this server ignore a local iTunes/Music.app library entirely. On by default: Music.app's own media folder is added to LibraryPaths on the first scan that finds it, and the two switches below then import play counts and Date Added from it.",
             "_SyncPlayCountFromITunes": "false to stop importing per-track play counts and last-played dates from Music.app on each rescan.",
@@ -65,6 +66,11 @@ public static class ServerDataDirectory
             "_SendCrashReports": "false to stop this server sending its crashes to Flower's developer. On by default. A report carries the exception's type and the methods on its stack - no names of people, songs, folders or servers, no addresses - and only release versions send. docs/PRIVACY.md has the whole list. Read at startup.",
             "_AllowedCidrs": ["Extra networks allowed to reach this server, e.g. 10.8.0.0/24. Private, loopback and Tailscale addresses are already allowed."],
             "_TrustedProxies": ["Networks whose X-Forwarded-For this server believes, e.g. 127.0.0.1/32. Empty by default, so no forwarded header is trusted from anyone. Set it to the proxy in front of this server (127.0.0.1/32 for 'tailscale serve'), or every client behind that proxy is seen as one address and shares one rate-limit bucket. Read once at startup."],
+            "_AiFeaturesEnabled": "true to turn on the AI features (Vibe Playlists, Endless Play) for this server and every device paired to it. Off by default: it downloads a 330 MB model and listens to every song, hours of CPU. Turning it off deletes the model and everything it worked out.",
+            "_VibeEnabled": "false to turn Vibe Playlists off while AiFeaturesEnabled is on. On by default.",
+            "_EndlessPlayEnabled": "true to offer Endless Play - a queue that runs out carried on with songs like the last few played - while AiFeaturesEnabled is on. Off by default; each device still chooses for itself.",
+            "_VibeClipsPerSong": "How many 10-second clips of each song the AI features listen to, spread over it - 6 by default, 0 for the whole song.",
+            "_SemanticAudioPaused": "true to pause the AI features' listening, kept across restarts. The settings page's Pause button sets it.",
             "_WebUiPath": "Override for where the browser UI lives. Empty looks next to the binary (where the build puts it), then here. Set, it is the only place looked at."
           }
         }

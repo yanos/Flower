@@ -35,8 +35,8 @@ How FFmpeg is linked, and how to put a different FFmpeg in its place:
   app: libffaudio.dylib in Flower.app/Contents/MonoBundle (macOS),
   libffaudio.so in the AppImage (Linux) and the APK (Android),
   ffaudio.framework in the app (iOS), and
-  /app/runtimes/linux-x64/native/libffaudio.so in the server's Docker
-  image. To use a modified FFmpeg, rebuild that library from
+  /app/runtimes/linux-x64/native/libffaudio.so (linux-arm64 on an ARM
+  machine) in the server's Docker image. To use a modified FFmpeg, rebuild that library from
   FFAudio.NET's source with your FFmpeg - its
   native/build-all.sh, with the FFmpeg version and component list in
   native/codec-set.sh - and replace the one in the app. FFAudio.NET's

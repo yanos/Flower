@@ -253,7 +253,13 @@ Where that differs from the plan above, or settles something it left open:
   other and the shorter is at least four characters ("OK Computer OKNOTOK
   1997 2017" is OK Computer; "Up" is not in "Upstairs at Eric's"). The one
   exception is an artist the library has no album by at all, who takes a
-  single exact namesake and nothing if there are two. Real collisions found
+  single exact namesake and nothing if there are two.
+- **When the albums decide nothing, the songs do.** An artist the library has
+  only on compilations, or on an album Deezer lacks, is searched for by song
+  (`/search/track`, "artist title", up to three distinct titles), and the
+  candidate Deezer files the most of those songs under wins
+  (`DeezerArtistSearch.ChooseBySongs`). It is what finds Al Hirt from his one
+  song on the Kill Bill soundtrack. Real collisions found
   while building it: Nirvana and Nirvana (UK), whose names normalise alike,
   and two acts called Ohmme.
 - **A collaboration keeps its collage.** The Artists list names

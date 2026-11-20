@@ -383,9 +383,9 @@ enabled:
    (scheme, host, port) with the resolved address kept beside it as `Ip` for
    ranking only, `/info` reports full origins rather than bare `host:port`, and
    the eleven hardcoded `http://` call sites go through `DiscoveredDevice.Url`.
-   Nothing serves TLS yet, so behaviour is unchanged — but every HTTPS front end
-   is now reachable in principle, `tailscale serve` included, which was
-   documented and impossible before.
+   It changed no behaviour when it landed, since nothing served TLS yet, but made
+   every HTTPS front end reachable, `tailscale serve` included; the server's own
+   TLS port followed (see "The certificate").
 2. **The `LanGuard` / rate-limit / signature review**, on the assumption that
    requests arrive from the open internet. Non-negotiable before either the
    tunnel or a mapped port is switched on, and the two differ in a way that
@@ -405,7 +405,14 @@ nothing above changes what happens to someone who never turns it on.
 ## Status
 
 **Steps 1, 2 and 3 are built, and so is the certificate design; steps 4 and 5
-are still a decision on paper.** The scheme rework landed (see above) and both
+are still a decision on paper. A port the owner forwards by hand is built
+too**, without step 4's UPnP: forwarding 4534 and turning on
+`AllowPublicAccess` is the whole setup. The server looks up its own public IP,
+advertises `https://<that IP>:4534` to paired devices, looks again every
+fifteen minutes, and dials itself there to check the forward
+(`PublicReachability`, shown on the settings page's Network tab). See
+`REMOTE-ACCESS.md`, "The public address, advertised without being asked", and
+`SELF-HOSTING.md`'s port-forwarding section. The scheme rework landed (see above) and both
 suites pass — `Flower.Tests` 1107/1107, `Flower.Server.Tests` 190/190.
 
 The server now serves TLS on a second port with no configuration at all, and a

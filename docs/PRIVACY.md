@@ -44,7 +44,7 @@ developer's account; nobody else receives them.
   two.
 - **How long startup took**, for one launch in a hundred, and on a server how
   long one request in a hundred took, by route (`GET
-  /api/flower/v1/media/{id}`, never a query string).
+  /api/flower/v1/stream`, never a query string).
 - **For a crash in native code** (audio output, decoding), found at the next
   launch: the kind of fault (`SIGSEGV`), the memory address it touched, and
   the libraries and functions it happened in. On a Mac this comes from the
@@ -100,8 +100,11 @@ contains the names of your songs and folders.
 
 A device paired to a server sends its log to that server, for the server's
 owner to diagnose problems ("Send diagnostic logs to server", on by default).
-It goes only to your own server, never to Flower's developer, and it
-contains file names.
+It goes only to your own server, never to Flower's developer. It contains file
+names, and the device's network addresses: at startup, and each time the device
+moves between networks (Wi-Fi to cellular, one Wi-Fi to another), the log notes
+its IP addresses and routers, so whoever runs the server can see
+which networks the device was on, and when. Crash reports carry no log lines.
 
 ## Other connections Flower makes
 

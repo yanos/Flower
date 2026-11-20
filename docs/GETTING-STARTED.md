@@ -108,7 +108,7 @@ More on adding, removing, editing and replacing songs:
 ## Good to know
 
 - **Crash reports.** When Flower crashes, it sends an anonymous report to its
-  developer, so the crash gets fixed. The first time it does, it says so,
+  developer, so the crash gets fixed. It says so the first time you open it,
   with a button to turn it off. What is sent, in full:
   [PRIVACY.md](PRIVACY.md).
 - **Keyboard shortcuts on a computer:** `Space` play/pause, `Enter` play the

@@ -8,5 +8,4 @@ other streaming platform integration if possible
 setting for directory structure 
 replacing files
 extract ios gesture emulation to a nuget
-there's no date shown in the log viewer, only the time
 asses for bug related to db corruption or accidental deletion of files

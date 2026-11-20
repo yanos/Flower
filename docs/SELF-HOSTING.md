@@ -41,7 +41,7 @@ because no device can administer it yet:
 ```
   No device can administer this server yet.
   Pair one with this code (valid until 14:32:07): G6RJR
-  Or open: flower://pair?host=<this-server>:4533&code=G6RJR&fp=...
+  Or open: flower://pair?host=192.168.1.20:4533&code=G6RJR&fp=...
 
   Or set it up in a browser (same code, valid just as long):
   https://192.168.1.20:4534/#pair=G6RJR&page=settings
@@ -270,8 +270,10 @@ The repository's `docker/` directory holds a `Dockerfile` and a
 `docker-compose.yml`, plus three override files: two for the remote-access
 paths that need an extra container, and one for bridge networking (required on
 macOS and Windows). Nothing has to be installed on the host first — no .NET
-runtime, no SQLite, no ffmpeg. The server does not decode audio either (that is
-the client's job), so no decoder is involved on this side at all.
+runtime, no SQLite, no ffmpeg. The server does not decode audio to play it
+(streaming sends the original file, and the client decodes it); the one time it
+decodes is Vibe Playlists' listening, through the FFmpeg the image already
+carries.
 
 Tell it where your music is, and start it:
 
@@ -609,6 +611,11 @@ server: it can no longer open its database. Clear them after updating:
 docker image prune -f --filter label=flower.image=server   # the replaced server image
 docker builder prune -f --max-used-space 5GB               # only if you build: trims the build cache
 ```
+
+Images from 0.10.1 and earlier carry no `flower.image=server` label, so the
+first prune after updating from one leaves it behind. Remove it once by hand:
+`docker images ghcr.io/yanos/flower-server` lists it, `docker image rm <id>`
+removes it.
 
 The first removes only Flower's untagged images. Images you pinned by version
 (`flower-server:0.2.1`) keep their tag and are left alone, so you can still go
@@ -966,7 +973,7 @@ it is reconnaissance against everything *around* the check, including TLS
 termination and the HTTP stack.
 
 What holds the door afterwards is real: **every route that matters requires a
-paired device's signature**, and unsigned callers get a `403` whether they came
+paired device's signature**, and unsigned callers get a `401` whether they came
 from your sofa or from a botnet. Since the OpenSubsonic adapter was removed
 there is no password anywhere in Flower, so there is nothing guessable left
 except a pairing code during the ten minutes one is outstanding. The allow-list
@@ -1308,7 +1315,7 @@ the steps.
 > **Do not forward port 4533 to the server and stop there.** That port is the
 > plain one, and unencrypted on the open internet two things leak that matter:
 > a browser tab has no pin to fall back on, and everything it sends — including
-> the session it was paired with — crosses in the clear. That is not fine across
+> the pairing code it was paired with — crosses in the clear. That is not fine across
 > the internet.
 >
 > The server's own TLS port (`4534`, above) is a real answer for *paired Flower
@@ -1401,7 +1408,8 @@ forwarded 4533 is precisely the unencrypted exposure the warning above is about.
 Identical to the tunnel setup, and for identical reasons — Caddy is a proxy on
 loopback the same way `cloudflared` is. `AllowPublicAccess` is what stops the
 allow-list refusing every listener once `TrustedProxies` correctly resolves them
-to their real public address. Restart the server; both are read at startup.
+to their real public address. Restart the server: `TrustedProxies` is read at
+startup (`AllowPublicAccess` applies at once).
 
 ### 6. Check you got it right
 
@@ -1551,10 +1559,13 @@ Over a tunnel or `tailscale serve` it should be `https://`; on the server itself
 use `http://localhost`. A LAN address over plain `http://` cannot work, and the
 message says which of the two you are hitting.
 
-**A device is getting 429s it did not earn.** Every per-source rate limit is
-keyed by the address the request arrived from, so if `TrustedProxies` is not set
-that is the proxy's address and every device shares one budget. See step 3, and
-check the log for the `X-Forwarded-For arrived from ...` warning.
+**A device is getting 429s it did not earn.** A signed request is budgeted per
+device, so one listener cannot spend another's. What is budgeted by the address
+a request arrived from is everything that has not proved who it is: strangers,
+failed authentications, anonymous `/info` and pairing. If `TrustedProxies` is not
+set, that address is the proxy's, and every device behind it shares those
+budgets. See step 3, and check the log for the
+`X-Forwarded-For arrived from ...` warning.
 
 Failed authentications are narrower than the rest: that budget only ever gates
 requests that failed to prove who they were. A paired Flower device signs every

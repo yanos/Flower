@@ -633,7 +633,8 @@ Admitted by a device signature, or by `ticket=<ticket>` in the query — tried
 first, valid only on these two routes, and only for the `id` it was minted for.
 
 The catalogued suffix describes a file on the server's disk; treat it as a
-hint about the bytes, not a fact (CLAUDE.md, "Device Checks").
+hint about the bytes, not a fact: the decoder reads what the file is, whatever
+it is called.
 
 ### `POST /api/flower/v1/stream-tickets?id=`
 
@@ -761,8 +762,8 @@ out; `Paused` means the owner paused it.
 | DELETE | `/cover-art?id=` | — | `{written, total}` |
 
 `songsScanned` of `songsToScan` is how far the scan in flight has got: song
-files read, of all it found. Both are `null` while no scan runs and while one is
-still listing the folders. An administering device polls them into its status
+files read, of all it found. Both are left out while no scan runs and while one
+is still listing the folders. An administering device polls them into its status
 bar after a rescan it started.
 
 `unwritableFolders` is the library folders the last scan could not create a
