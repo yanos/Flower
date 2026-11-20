@@ -60,7 +60,12 @@ public sealed class StreamVersionEndpointTests(FlowerServerFixture server) : ICl
         (string Key, string Value)[] query = [("id", song.Id.ToKey())];
         var (signature, timestamp, nonce) = device.Sign("GET", StreamPath, query, []);
 
-        return await server.Server.SendAsync(c =>
+        // Read to the end before handing it back: SendAsync returns once the
+        // response has started, while the route is still writing the file and
+        // holds it open, and Windows refuses the rewrite and the Dispose
+        // below on a file still open. The body ends only once the route has
+        // finished, and closed the file.
+        var context = await server.Server.SendAsync(c =>
         {
             c.Request.Method = "GET";
             c.Request.Path = StreamPath;
@@ -76,6 +81,8 @@ public sealed class StreamVersionEndpointTests(FlowerServerFixture server) : ICl
             if (ifRange != null)
                 c.Request.Headers.IfRange = ifRange;
         });
+        await context.Response.Body.CopyToAsync(Stream.Null);
+        return context;
     }
 
     [Fact]
