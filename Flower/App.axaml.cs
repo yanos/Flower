@@ -473,20 +473,11 @@ public partial class App : Application
             .AddSingleton<ICoverArtUrlResolver, PeerCoverArtUrlResolver>()
             // What is looked up online (docs/ONLINE-METADATA-PLAN.md): by this
             // device for its own songs, by the paired server for the server's,
-            // chosen per artist (RoutedOnlineMetadata). On its own, this
-            // device goes by its own switch; paired, by its server's, for its
-            // own songs too - the owner's switch covers everyone.
-            .AddSingleton(sp =>
-            {
-                var appSettings = sp.GetRequiredService<AppSettings>();
-                return new OnlineMetadataEngine(
-                    OnlineLookup.CreateClient(),
-                    Path.Combine(AppDataDirectory.Path, "ArtistPictures"),
-                    () => string.IsNullOrEmpty(appSettings.PairedServerFingerprint)
-                        ? appSettings.LookUpOnline
-                        : appSettings.PairedServerLooksUpOnline,
-                    sp.GetRequiredService<ILogger<OnlineMetadataEngine>>());
-            })
+            // chosen per artist (RoutedOnlineMetadata).
+            .AddSingleton(sp => new OnlineMetadataEngine(
+                OnlineLookup.CreateClient(),
+                Path.Combine(AppDataDirectory.Path, "ArtistPictures"),
+                sp.GetRequiredService<ILogger<OnlineMetadataEngine>>()))
             .AddSingleton<IOnlineMetadata>(sp =>
             {
                 var appSettings = sp.GetRequiredService<AppSettings>();

@@ -72,8 +72,8 @@ public sealed class OnlineMetadataEngineTests : IDisposable
         public override DateTimeOffset GetUtcNow() => Now;
     }
 
-    private OnlineMetadataEngine Engine(FakeDeezer deezer, Func<bool>? enabled = null, TimeProvider? clock = null) =>
-        new(new HttpClient(deezer), _cache, enabled ?? (() => true), NullLogger<OnlineMetadataEngine>.Instance, clock);
+    private OnlineMetadataEngine Engine(FakeDeezer deezer, TimeProvider? clock = null) =>
+        new(new HttpClient(deezer), _cache, NullLogger<OnlineMetadataEngine>.Instance, clock);
 
     private static readonly IReadOnlyCollection<string> TheirAlbums = ["OK Computer"];
     private static readonly IReadOnlyCollection<string> TheirSongs = ["Karma Police", "Airbag"];
@@ -150,21 +150,6 @@ public sealed class OnlineMetadataEngineTests : IDisposable
 
         deezer.Refuse = false;
         Assert.Equal(Picture, await engine.ArtistPictureAsync("Radiohead", TheirAlbums, TheirSongs));
-    }
-
-    [Fact]
-    public async Task Switched_off_it_asks_nobody_but_still_has_what_it_found()
-    {
-        var deezer = new FakeDeezer();
-        var on = true;
-        var engine = Engine(deezer, () => on);
-        await engine.ArtistPictureAsync("Radiohead", TheirAlbums, TheirSongs);
-
-        on = false;
-        var asked = deezer.Requests;
-        Assert.Equal(Picture, await engine.ArtistPictureAsync("Radiohead", TheirAlbums, TheirSongs));
-        Assert.Empty((await engine.ArtistPictureAsync("Somebody New", [], []))!);
-        Assert.Equal(asked, deezer.Requests);
     }
 
     [Fact]

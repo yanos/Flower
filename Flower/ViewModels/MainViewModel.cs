@@ -374,23 +374,6 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         }
     }
 
-    // Whether this device looks things up online for its own songs, while it
-    // is on its own (MusicLibrarySettings.LookUpOnline) - a paired device goes
-    // by its server's answer instead (AppSettings.PairedServerLooksUpOnline).
-    // Persist-immediately, same as above.
-    public bool LookUpOnline
-    {
-        get => _appSettings.LookUpOnline;
-        set
-        {
-            if (_appSettings.LookUpOnline == value)
-                return;
-            _appSettings.LookUpOnline = value;
-            OnPropertyChanged();
-            SaveSettings();
-        }
-    }
-
     // This device's AI features as a whole (AppSettings.UseAiFeatures): off,
     // neither Vibe Playlists nor Endless Play, each feature's own switch
     // keeping its setting. Persist-immediately, same as above.

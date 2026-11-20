@@ -70,13 +70,6 @@ public static class SyncProtocol
 // a verified caller, since only a paired device can fetch the picture. Null
 // when the server has none of either.
 //
-// LooksUpOnline is the owner's switch for looking things up on the internet
-// (MusicLibrarySettings.LookUpOnline), which governs every device paired to
-// the server: a song of the server's is looked up by the server, and a
-// device's own song is looked up by the device only when this is true - so
-// nothing paired here asks the internet behind the owner's back. Verified
-// callers only; nobody else has anything to look up.
-//
 // VibePlaylists is whether this server makes Vibe Playlists
 // (docs/VIBE-PLAYLIST-PLAN.md, "The wire"): "off", "analysing" with
 // VibePercent of the library heard so far, or "ready". A paired device offers
@@ -93,6 +86,6 @@ public sealed record SyncInfoResponseDto(
     string Fingerprint, string PublicKey, bool Download, bool? TrustsCaller,
     string LibraryToken, List<string>? Addresses = null, bool? CallerIsAdmin = null,
     string? PlaylistsToken = null, bool? ImportsMusicAppPlays = null,
-    string? IconEmoji = null, string? IconToken = null, bool? LooksUpOnline = null,
+    string? IconEmoji = null, string? IconToken = null,
     string? VibePlaylists = null, int? VibePercent = null, bool? EndlessPlay = null,
     string? ListeningToken = null);

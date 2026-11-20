@@ -103,9 +103,6 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client, Server
                 draft.SyncDateAddedFromITunes,
                 draft.AllowPublicAccess,
                 draft.IconEmoji,
-                // LookUpOnline: left as the server has it - no switch here
-                // sets it, only the server's config file.
-                null,
                 draft.AiFeaturesEnabled,
                 draft.VibeEnabled,
                 draft.VibeClipsPerSong,

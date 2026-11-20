@@ -211,14 +211,6 @@ namespace Flower.Persistence
         // answered.
         public bool PairedServerImportsMusicAppPlays { get; set; }
 
-        // Whether the paired server looks things up online
-        // (DiscoveredDevice.ServerLooksUpOnline): the owner's switch, which on
-        // a paired device decides whether this device may look up its own
-        // songs too - LookUpOnline is not consulted while paired. Off until
-        // the server has said, so a device that has just paired asks the
-        // internet nothing before its owner's answer arrives.
-        public bool PairedServerLooksUpOnline { get; set; }
-
         // Whether the paired server makes Vibe Playlists
         // (DiscoveredDevice.ServerVibePlaylists): "off", "analysing" or
         // "ready", and the percent heard while analysing. Remembered so New

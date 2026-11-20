@@ -920,7 +920,6 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         _appSettings.PairedServerTrustConfirmed = false;
         _appSettings.PairedServerGrantsAdmin = false;
         _appSettings.PairedServerImportsMusicAppPlays = false;
-        _appSettings.PairedServerLooksUpOnline = false;
         _appSettings.PairedServerVibePlaylists = null;
         _appSettings.PairedServerVibePercent = null;
         _appSettings.PairedServerEndlessPlay = null;
@@ -957,12 +956,9 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         // which is remembered for the times the server is not there to ask -
         // see AppSettings.PairedServerGrantsAdmin.
         // And, for an administrator, whether the server counts Music.app's
-        // plays itself - see AppSettings.PairedServerImportsMusicAppPlays -
-        // and for anyone, whether it looks things up online
-        // (AppSettings.PairedServerLooksUpOnline).
+        // plays itself - see AppSettings.PairedServerImportsMusicAppPlays.
         if (_appSettings.PairedServerGrantsAdmin != device.WeAreAdmin
             || _appSettings.PairedServerImportsMusicAppPlays != device.ServerImportsMusicAppPlays
-            || _appSettings.PairedServerLooksUpOnline != device.ServerLooksUpOnline
             || (device.ServerVibePlaylists != null
                 && (_appSettings.PairedServerVibePlaylists != device.ServerVibePlaylists
                     || _appSettings.PairedServerVibePercent != device.ServerVibePercent))
@@ -972,7 +968,6 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
             var vibesChanged = device.ServerVibePlaylists != null && _appSettings.PairedServerVibePlaylists != device.ServerVibePlaylists;
             _appSettings.PairedServerGrantsAdmin = device.WeAreAdmin;
             _appSettings.PairedServerImportsMusicAppPlays = device.ServerImportsMusicAppPlays;
-            _appSettings.PairedServerLooksUpOnline = device.ServerLooksUpOnline;
             // And whether it makes Vibe Playlists, which only a server that
             // has heard of them says (AppSettings.PairedServerVibePlaylists).
             if (device.ServerVibePlaylists != null)

@@ -17,10 +17,8 @@ namespace Flower.Services;
 // (ServerOnlineMetadata). Nothing here knows which of the two it is in.
 //
 // Keyless, like OnlineCoverArt: nobody, owner or listener, signs up for
-// anything. The owner's one switch (MusicLibrarySettings.LookUpOnline) is
-// `enabled`, asked on every lookup so that turning it off takes effect at
-// once; what is already cached is still served, since it was fetched while
-// the switch was on and serving it asks nobody anything.
+// anything, and there is no switch - it asks for an artist's name and a few
+// of their song titles, which docs/PRIVACY.md says.
 public sealed class OnlineMetadataEngine
 {
     private const string DeezerApi = "https://api.deezer.com";
@@ -37,7 +35,6 @@ public sealed class OnlineMetadataEngine
 
     private readonly HttpClient _http;
     private readonly ArtistPictureCache _pictures;
-    private readonly Func<bool> _enabled;
     private readonly ILogger _logger;
 
     // One lookup per artist at a time: an artist page and that artist's row
@@ -48,23 +45,19 @@ public sealed class OnlineMetadataEngine
     private readonly SemaphoreSlim _deezerTurn = new(1, 1);
     private DateTimeOffset _nextDeezerRequest;
 
-    public OnlineMetadataEngine(HttpClient http, string cacheDirectory, Func<bool> enabled,
+    public OnlineMetadataEngine(HttpClient http, string cacheDirectory,
         ILogger<OnlineMetadataEngine> logger, TimeProvider? clock = null)
     {
         _http = http;
         _pictures = new ArtistPictureCache(cacheDirectory, MissLifetime, clock);
-        _enabled = enabled;
         _logger = logger;
     }
 
-    public bool Enabled => _enabled();
-
     // The artist's picture: the bytes of an image, empty when there is none
-    // to be had - not on Deezer, not told apart from a namesake, or lookups
-    // switched off - and null when it could not be found out just now (no
-    // connection, Deezer refusing), which is worth asking again later and
-    // so is not remembered. The same three answers AlbumArtLoader gives for
-    // a cover.
+    // to be had - not on Deezer, or not told apart from a namesake - and null
+    // when it could not be found out just now (no connection, Deezer
+    // refusing), which is worth asking again later and so is not remembered.
+    // The same three answers AlbumArtLoader gives for a cover.
     //
     // albums and songs are the names of the library's albums and songs by
     // this artist, which is how the right one of several same-named artists
@@ -83,7 +76,7 @@ public sealed class OnlineMetadataEngine
         var (state, picture) = _pictures.Read(key);
         if (state == ArtistPictureCache.State.Found)
             return picture;
-        if (state == ArtistPictureCache.State.None || !_enabled())
+        if (state == ArtistPictureCache.State.None)
             return [];
 
         var lookup = _looking.GetOrAdd(key, _ => new Lazy<Task<byte[]?>>(() => LookUpArtistPictureAsync(artist, key, albums, songs)));

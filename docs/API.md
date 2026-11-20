@@ -283,7 +283,6 @@ device it answers more, on that device's budget, and the answer is signed back.
 | `importsMusicAppPlays` | **Verified administrators only**, `null` otherwise. Whether this server reads play counts from a Music.app library of its own; an admin device that brings its own Music.app plays leaves them alone while this is `true`, so they are not counted twice |
 | `iconEmoji` | The emoji the server shows as beside `alias`, `null` for none. Told to anyone, as `alias` is |
 | `iconToken` | Names the server's icon picture, `null` for none. **Verified callers only**, `null` otherwise — only they can fetch it, from `GET /server-icon`. A server has an emoji or a picture, never both |
-| `looksUpOnline` | **Verified callers only**, `null` otherwise. The owner's switch for looking things up online (`lookUpOnline` in the settings). It governs every device paired here: a paired device looks up its *own* songs only while this is `true`, and never before it has heard it |
 | `vibePlaylists`, `vibePercent` | **Verified callers only**, `null` otherwise. Whether this server makes Vibe Playlists: `off`, `analysing` with `vibePercent` of the library heard so far, or `ready`. A paired device offers New Vibe Playlist… only when it is not `off` |
 | `endlessPlay` | **Verified callers only**, `null` otherwise. Whether this server offers Endless Play; a device's own switch is greyed while it is `false` |
 
@@ -605,8 +604,8 @@ the name as the catalog's `artists` field has it, compared without case.
 - `404` when there is no picture to be had: the library has no songs by that
   artist (checked before anything is asked of the internet, so the route is
   not a lookup service for any name), Deezer has no photo of them, none of
-  Deezer's artists of that name has an album the library has by them, or the
-  server has `lookUpOnline` off. A client may remember this for a while; the
+  Deezer's artists of that name has an album or song the library has by them.
+  A client may remember this for a while; the
   app does for a day.
 - `503` `unavailable` when there may be one but it could not be found out
   just now — the server has no way out, or Deezer refused. Ask again later.
@@ -688,7 +687,7 @@ reports to a paired device — the public one among them when public access is o
 Editable: `alias`, `iconEmoji`, `advertisedHost`, `advertiseOnLan`,
 `trustTailscaleRange`, `allowedCidrs`, `libraryPaths`, `integrateWithITunes`,
 `syncPlayCountFromITunes`, `syncDateAddedFromITunes`, `allowPublicAccess`,
-`lookUpOnline`, `aiFeaturesEnabled`, `vibeEnabled`, `endlessPlayEnabled`, `vibeClipsPerSong`. Every field is optional and an absent one is left alone. Read-only alongside
+`aiFeaturesEnabled`, `vibeEnabled`, `endlessPlayEnabled`, `vibeClipsPerSong`. Every field is optional and an absent one is left alone. Read-only alongside
 them: `dataDirectory`, `version`, `addresses`, `publicAddress`, `publicOrigin`,
 `publicReachability`, `fingerprint`, `advertisedAs`, `appleMusicFolder`,
 `iTunesLibraryDescription`, `iconToken`, and `overridden` — settings pinned by

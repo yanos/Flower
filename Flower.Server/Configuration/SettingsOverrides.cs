@@ -30,7 +30,6 @@ public static class SettingsOverrides
         nameof(FlowerServerOptions.SyncPlayCountFromITunes),
         nameof(FlowerServerOptions.SyncDateAddedFromITunes),
         nameof(FlowerServerOptions.AllowPublicAccess),
-        nameof(FlowerServerOptions.LookUpOnline),
         nameof(FlowerServerOptions.AiFeaturesEnabled),
         nameof(FlowerServerOptions.VibeEnabled),
         nameof(FlowerServerOptions.EndlessPlayEnabled),

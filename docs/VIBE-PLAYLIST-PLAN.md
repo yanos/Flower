@@ -645,8 +645,8 @@ Signed like every route (`PeerSignatureAuth`):
   for an admin's settings screen to poll; `POST /api/admin/vibe/pause` and
   `/resume` pause and resume the listening and answer with it.
 
-The settings themselves travel in the existing admin settings DTO, as
-`LookUpOnline` does.
+The settings themselves travel in the existing admin settings DTO, as the
+other server settings do.
 
 Refusals use `FlowerProblem`:
 - `vibe-off` (409): the switch is off;
@@ -670,7 +670,7 @@ listen to is their own business, even on a shared server.
 
 An **AI Features** tab in `SettingsPanel` (desktop window, and the browser
 for a server), and an **AI FEATURES** section in the phone's `SettingsView`.
-Where each appears follows `LookUpOnline`:
+Where each appears:
 
 | Screen | Shows |
 |---|---|
@@ -731,7 +731,7 @@ The settings live in `MusicLibrarySettings` (`AiFeaturesEnabled`,
 `RunsVibePlaylists` and `RunsEndlessPlay` are a feature's switch with the
 master, `RunsSemanticAudio` either of them), so the server's `FlowerServerOptions` and a device's
 `AppSettings` both inherit them. They are drafted and saved like
-`LookUpOnline`, and can be locked from the server's config file
+the other settings, and can be locked from the server's config file
 (`SettingsOverrides`) like every other server setting.
 
 ## Testing

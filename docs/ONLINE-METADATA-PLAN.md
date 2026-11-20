@@ -188,13 +188,10 @@ not searched again on every scroll.
 
 ## Settings
 
-One switch: "Look up lyrics, artist pictures and popular songs online", on by
-default.
-- On a device on its own: `AppSettings`.
-- On the server: `FlowerServerOptions`, which also governs every device paired
-  to it (see above). The paired device's own settings show the server's answer
-  rather than a switch of their own, using a `SettingsCapabilities` flag like
-  the other per-backend differences.
+None, on any host. Lookups ask for no key or account and send only an
+artist's name and a few of their song titles (`docs/PRIVACY.md`), so they are
+always on; a switch (on the server, on a phone, and passed to paired devices in
+`/info`) was built and removed in November 2026.
 
 ## Phases
 
@@ -275,14 +272,6 @@ Where that differs from the plan above, or settles something it left open:
   spacing the engine's requests 125 ms apart, one at a time. A phone scrolling
   a long Artists tab queues lookups rather than tripping it; several devices
   asking for one artist share one lookup.
-- **The switch is labelled for what exists**: "Look up artist pictures
-  online". It is `MusicLibrarySettings.LookUpOnline`, the base both hosts'
-  settings share, and its label grows with the phases. On a paired device the
-  server's value travels in `/info` as `looksUpOnline` (verified callers),
-  is remembered as `AppSettings.PairedServerLooksUpOnline`, and governs the
-  device's own songs as well — off until it has been heard, so a device that
-  has just paired asks the internet nothing first. Off, the engine still
-  serves what it already found; it only stops asking.
 - **On screen**, the picture replaces the collage rather than adding to it:
   one already cached is waited for up to 150 ms so the collage never flashes
   first, and one looked up for the first time lets the collage show and then

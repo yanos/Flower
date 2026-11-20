@@ -226,10 +226,6 @@ public static class DiscoveryEndpoints
                 // fetch the picture it names.
                 options.IconEmoji.Length > 0 ? options.IconEmoji : null,
                 callerIsTrusted ? icons.Current?.Token : null,
-                // Whether this server looks things up online, which decides
-                // whether a paired device may for its own songs - see
-                // SyncInfoResponseDto.
-                callerIsTrusted ? options.LookUpOnline : null,
                 // Whether this server makes Vibe Playlists, for a paired
                 // device to offer them or not - see SyncInfoResponseDto.
                 vibeState,

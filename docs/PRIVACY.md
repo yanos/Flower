@@ -110,12 +110,7 @@ None of these go to Flower's developer.
 - **Artist pictures** from Deezer: Flower sends an artist's name, and when
   the artist's albums don't settle which artist it is, the artist's name with
   a few of their song titles. Whoever holds the song does the asking: a server
-  for the songs it serves, a device for the songs on it. A paired device's
-  asking goes by its server's switch, never its own. Switch: on a server, its
-  own settings, which cover every device paired to it; on a phone on its own,
-  "Look up artist pictures online" in Settings; on a desktop on its own,
-  `"LookUpOnline": false` in `settings.json` (it has no switch in Settings
-  yet).
+  for the songs it serves, a device for the songs on it. There is no switch.
 - **Find album art online**, only when you ask for it: the album and artist
   names (or a song's title and artist), or whatever words you type in their
   place, go to Apple's iTunes Search, MusicBrainz with the Cover Art Archive,

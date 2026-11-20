@@ -225,27 +225,6 @@
             </StackPanel>
           </Grid>
 
-          <!-- Looking up artist pictures online (MusicLibrarySettings.
-               LookUpOnline): this device's own switch while it is on its own.
-               A paired phone has none - its server's owner decides, for this
-               phone's own songs too (AppSettings.PairedServerLooksUpOnline) -
-               so the row is simply not there. It had a card of its own, which
-               while paired said only that. -->
-          <StackPanel Spacing="12"
-                      IsVisible="{Binding Main.PairedServerAlias, Converter={x:Static avc:StringConverters.IsNullOrEmpty}}">
-            <Border Classes="divider" Margin="58,4,0,4" />
-            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14" Classes="badgeRow">
-              <Border Grid.Column="0" Classes="badge" VerticalAlignment="Center">
-                <materialIcons:MaterialIcon Kind="AccountMusicOutline" />
-              </Border>
-              <TextBlock Grid.Column="1" Classes="rowTitle" FontWeight="Normal"
-                         Text="Look up artist pictures online"
-                         TextWrapping="Wrap"
-                         VerticalAlignment="Center" />
-              <ToggleSwitch Grid.Column="2" IsChecked="{Binding Main.LookUpOnline}" />
-            </Grid>
-          </StackPanel>
-
           <StackPanel IsVisible="{Binding HasMediaPermissionPrompt}" Spacing="12">
             <Border Classes="divider" Margin="58,4,0,4" />
             <Grid ColumnDefinitions="Auto,*" ColumnSpacing="14" Classes="badgeRow">

@@ -311,7 +311,6 @@ public static class AdminEndpoints
                 IntegrateWithITunes = before.IntegrateWithITunes,
                 SyncPlayCountFromITunes = before.SyncPlayCountFromITunes,
                 SyncDateAddedFromITunes = before.SyncDateAddedFromITunes,
-                LookUpOnline = before.LookUpOnline,
                 AiFeaturesEnabled = before.AiFeaturesEnabled,
                 VibeEnabled = before.VibeEnabled,
                 VibeClipsPerSong = before.VibeClipsPerSong,
@@ -387,15 +386,6 @@ public static class AdminEndpoints
             {
                 after.SyncDateAddedFromITunes = syncDateAdded;
                 values[nameof(FlowerServerOptions.SyncDateAddedFromITunes)] = JsonValue.Create(syncDateAdded);
-            }
-
-            // No restart and no rescan: OnlineMetadataEngine reads it on every
-            // lookup through IOptionsMonitor, and a paired device hears it on
-            // its next /info.
-            if (update.LookUpOnline is { } lookUpOnline && lookUpOnline != before.LookUpOnline && Editable(nameof(FlowerServerOptions.LookUpOnline)))
-            {
-                after.LookUpOnline = lookUpOnline;
-                values[nameof(FlowerServerOptions.LookUpOnline)] = JsonValue.Create(lookUpOnline);
             }
 
             // Applied to the engine below, at once: a feature turned on (its
@@ -1112,7 +1102,6 @@ public static class AdminEndpoints
             PublicReachability: reachability?.Status.ToString(),
             IconEmoji: options.IconEmoji,
             IconToken: icons.Current?.Token,
-            LookUpOnline: options.LookUpOnline,
             AiFeaturesEnabled: options.AiFeaturesEnabled,
             VibeEnabled: options.VibeEnabled,
             VibeClipsPerSong: options.VibeClipsPerSong,

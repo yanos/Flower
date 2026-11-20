@@ -91,9 +91,6 @@ public sealed record ServerSettingsDto(
     // ServerIcon.ImagePath, like any paired device's.
     string IconEmoji = "",
     string? IconToken = null,
-    // Whether the server looks things up online for its library, and so for
-    // every device paired to it - see MusicLibrarySettings.LookUpOnline.
-    bool LookUpOnline = true,
     // The AI features' master switch, each feature's own, and the clips per
     // song they share - see MusicLibrarySettings.AiFeaturesEnabled. Where the
     // listening stands, paused or not, is GET /api/admin/vibe/status
@@ -116,7 +113,6 @@ public sealed record ServerSettingsUpdateDto(
     bool? AllowPublicAccess,
     // Empty to have none; a non-empty one replaces the server's picture.
     string? IconEmoji = null,
-    bool? LookUpOnline = null,
     bool? AiFeaturesEnabled = null,
     bool? VibeEnabled = null,
     int? VibeClipsPerSong = null,

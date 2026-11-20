@@ -110,11 +110,6 @@ public class DiscoveredDevice
     // was, starting false: a server that says nothing is not importing.
     public bool ServerImportsMusicAppPlays { get; set; }
 
-    // Whether this server looks things up online (looksUpOnline, told to
-    // paired devices only) - see AppSettings.PairedServerLooksUpOnline.
-    // Absent leaves it as it was, starting false.
-    public bool ServerLooksUpOnline { get; set; }
-
     // Whether this server makes Vibe Playlists (vibePlaylists, told to paired
     // devices only): "off", "analysing" or "ready", with the percent heard so
     // far while analysing - see AppSettings.PairedServerVibePlaylists. Null
@@ -800,16 +795,6 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
                     changed = true;
                 }
             }
-            if (doc.RootElement.TryGetProperty("looksUpOnline", out var onlineProp) &&
-                onlineProp.ValueKind is JsonValueKind.True or JsonValueKind.False)
-            {
-                var looksUpOnline = onlineProp.ValueKind == JsonValueKind.True;
-                if (looksUpOnline != device.ServerLooksUpOnline)
-                {
-                    device.ServerLooksUpOnline = looksUpOnline;
-                    changed = true;
-                }
-            }
             if (doc.RootElement.TryGetProperty("vibePlaylists", out var vibeProp) &&
                 vibeProp.ValueKind == JsonValueKind.String &&
                 vibeProp.GetString() is { } vibePlaylists)
@@ -1388,7 +1373,6 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
                     TrustsUs = existing.TrustsUs,
                     WeAreAdmin = existing.WeAreAdmin,
                     ServerImportsMusicAppPlays = existing.ServerImportsMusicAppPlays,
-                    ServerLooksUpOnline = existing.ServerLooksUpOnline,
                     ServerVibePlaylists = existing.ServerVibePlaylists,
                     ServerVibePercent = existing.ServerVibePercent,
                     ServerEndlessPlay = existing.ServerEndlessPlay,

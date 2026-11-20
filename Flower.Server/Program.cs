@@ -303,16 +303,14 @@ builder.Services.AddSingleton<AlbumProgressLedger>();
 builder.Services.AddSingleton<LibraryManifestCache>();
 builder.Services.AddSingleton<CoverArtCache>();
 builder.Services.AddSingleton<ServerIconStore>();
-// What this server looks up online for its library (artists' pictures), with
-// the owner's switch read on every lookup, so turning it off on the settings
-// page stops it at once. Cached under the data directory, beside flower.db.
+// What this server looks up online for its library (artists' pictures),
+// cached under the data directory, beside flower.db.
 builder.Services.AddSingleton(services =>
 {
     var options = services.GetRequiredService<IOptionsMonitor<FlowerServerOptions>>();
     return new OnlineMetadataEngine(
         OnlineLookup.CreateClient(),
         Path.Combine(options.CurrentValue.DataDirectory, "ArtistPictures"),
-        () => options.CurrentValue.LookUpOnline,
         services.GetRequiredService<ILogger<OnlineMetadataEngine>>());
 });
 builder.Services.AddSingleton<PlayReportService>();
