@@ -272,8 +272,13 @@ public class LibrarySyncLogPushTests : IDisposable
         Assert.True(peer.Reports.Count > 1);
         Assert.All(peer.Reports, report => Assert.True(
             JsonSerializer.SerializeToUtf8Bytes(report, FlowerJsonContext.Default.LogReportDto).Length < 4 * 1024 * 1024));
-        var delivered = peer.Reports.SelectMany(r => r.Entries).Select(e => e.Message).ToList();
-        Assert.All(markers, marker => Assert.Single(delivered, m => m == marker + padding));
+        // Counted once, not searched once per marker: 1,500 searches of 1,500
+        // lines, each building its 2 KB line afresh, was most of this test's
+        // time, and on the iOS simulator's interpreter the whole of it.
+        var delivered = peer.Reports.SelectMany(r => r.Entries)
+            .GroupBy(e => e.Message, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
+        Assert.All(markers, marker => Assert.Equal(1, delivered.GetValueOrDefault(marker + padding)));
     }
 
     [Fact]
