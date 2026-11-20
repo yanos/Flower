@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Threading.Tasks;
 
 using Avalonia;
@@ -81,10 +81,20 @@ public class ShownArtTests : IDisposable
         }
     }
 
-    // Read in a frame of its own, so nothing on the test's stack still holds
-    // the bitmap when it collects.
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private static WeakReference<Bitmap> Drawn(Func<Bitmap?> art) => new(art()!);
+    // Drawn on a thread of its own, which has ended before the test collects,
+    // so no stack still holds the bitmap. A frame of its own on the test's
+    // thread was not enough: Mono, which the iOS suite runs on interpreted,
+    // scans stacks conservatively, and a stale slot left in the interpreter's
+    // frames kept the cover alive on some runs and not others. Nothing scans
+    // the stack of a thread that has finished.
+    private static WeakReference<Bitmap> Drawn(Func<Bitmap?> art)
+    {
+        WeakReference<Bitmap>? drawn = null;
+        var thread = new Thread(() => drawn = new WeakReference<Bitmap>(art()!));
+        thread.Start();
+        thread.Join();
+        return drawn!;
+    }
 
     private static void Collect()
     {
