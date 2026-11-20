@@ -64,6 +64,28 @@ public class SearchViewSuggestionTests : PinnedDataDirectory
             Dispatcher.UIThread.MainLoop(cts.Token);
         }
 
+        // Until SearchViewModel has made a list since `before` and the box
+        // has what it should of it: rather than a fixed wait, which on the
+        // iOS simulator's interpreter ran out before the list arrived.
+        public void PumpUntilSuggested(System.Collections.Generic.IReadOnlyList<SearchSuggestion> before, bool boxTakesIt = true)
+        {
+            var deadline = Environment.TickCount64 + 10_000;
+            while (!(!ReferenceEquals(Search.Suggestions, before)
+                     && (!boxTakesIt || ReferenceEquals(Box.ItemsSource, Search.Suggestions))))
+            {
+                Assert.True(Environment.TickCount64 < deadline, "no new suggestions arrived");
+                Pump(20);
+            }
+        }
+
+        // A key typed, then its list in the box.
+        public void Type(string text)
+        {
+            var before = Search.Suggestions;
+            Window.KeyTextInput(text);
+            PumpUntilSuggested(before);
+        }
+
         public void Dispose()
         {
             Window.Close();
@@ -80,10 +102,7 @@ public class SearchViewSuggestionTests : PinnedDataDirectory
             h.Box.GetVisualDescendants().OfType<TextBox>().First().Focus();
             // A key at a time, as typed.
             foreach (var key in text)
-            {
-                h.Window.KeyTextInput(key.ToString());
-                Harness.Pump();
-            }
+                h.Type(key.ToString());
             Assert.True(h.Box.IsDropDownOpen);
             return h;
         }
@@ -119,8 +138,33 @@ public class SearchViewSuggestionTests : PinnedDataDirectory
     {
         using var h = Typed("mon");
         var picked = h.Search.Suggestions[0].Text;
+        var before = h.Search.Suggestions;
 
         h.Window.KeyPressQwerty(PhysicalKey.ArrowDown, RawInputModifiers.None);
+        h.Window.KeyPressQwerty(PhysicalKey.Enter, RawInputModifiers.None);
+        // The pick's own list, which must not take it back out.
+        h.PumpUntilSuggested(before, boxTakesIt: false);
+        Harness.Pump();
+
+        Assert.Equal(picked, h.Box.Text);
+        Assert.Equal(picked, h.Search.Query);
+    }
+
+    // A row walked to on the list on show before the one for the last key
+    // arrived: that list came for the walk instead, while it was still a
+    // walk, and dropped the row - putting back what was typed. Enter then
+    // searched for that. The iOS simulator was slow enough to do this to the
+    // test above.
+    [AvaloniaFact]
+    public void A_row_walked_to_before_the_last_keys_list_arrives_stays_in_the_box()
+    {
+        using var h = Typed("mo");
+        var picked = ((SearchSuggestion)h.Box.ItemsSource!.Cast<object>().First()).Text;
+        var before = h.Search.Suggestions;
+
+        h.Window.KeyTextInput("n");
+        h.Window.KeyPressQwerty(PhysicalKey.ArrowDown, RawInputModifiers.None);
+        h.PumpUntilSuggested(before, boxTakesIt: false);
         Harness.Pump();
         h.Window.KeyPressQwerty(PhysicalKey.Enter, RawInputModifiers.None);
         Harness.Pump();
@@ -192,8 +236,7 @@ public class SearchViewSuggestionTests : PinnedDataDirectory
         h.Box.Text = "";
         Harness.Pump();
 
-        h.Window.KeyTextInput("duke");
-        Harness.Pump();
+        h.Type("duke");
 
         Assert.Equal("duke", h.Box.Text);
         Assert.Contains(h.Box.ItemsSource!.Cast<SearchSuggestion>(), s => s.Text == "Duke Ellington");

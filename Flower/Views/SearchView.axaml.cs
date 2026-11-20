@@ -69,6 +69,17 @@ public partial class SearchView : UserControl
         _awaitingSuggestions = true;
     }
 
+    // A row picked or walked to ends the wait. The pick is a new query, whose
+    // list would otherwise be the one handed over - and a new list drops the
+    // picked row, putting back what was typed. That happened whenever a row
+    // was picked from the list on show before the one for the last key had
+    // arrived, inside SuggestionDelay of typing.
+    private void Box_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (Box.SelectedItem is not null)
+            _awaitingSuggestions = false;
+    }
+
     // Every query change starts a fresh list and cancels the one before, so
     // a list arriving while the box waits is the list for what is in it.
     private void Search_PropertyChanged(object? sender, PropertyChangedEventArgs e)

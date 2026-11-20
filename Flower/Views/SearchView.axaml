@@ -92,7 +92,8 @@
                        Width="300"
                        KeyDown="Box_KeyDown"
                        LostFocus="Box_LostFocus"
-                       Populating="Box_Populating">
+                       Populating="Box_Populating"
+                       SelectionChanged="Box_SelectionChanged">
         <AutoCompleteBox.ItemTemplate>
           <DataTemplate x:DataType="vm:SearchSuggestion">
             <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,3">
