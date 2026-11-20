@@ -175,9 +175,16 @@ public static class ITunesPlayCountImporter
                 if (plays is not { } value)
                     continue;
 
-                var changed = track.ImportedPlayCount != value.Count || track.ImportedSkipCount != value.Skips;
-                track.ImportedPlayCount = value.Count;
-                track.ImportedSkipCount = value.Skips;
+                // Upwards only, as everywhere else these two are kept
+                // (Library.ApplyReportedOwnerState, Library.MergeListening):
+                // the library holds the highest count any of the owner's Macs
+                // read, so a Mac whose Music.app has fewer - or only skips,
+                // which reads as no plays - must not walk it back.
+                var playCount = Math.Max(track.ImportedPlayCount, value.Count);
+                var skipCount = Math.Max(track.ImportedSkipCount, value.Skips);
+                var changed = track.ImportedPlayCount != playCount || track.ImportedSkipCount != skipCount;
+                track.ImportedPlayCount = playCount;
+                track.ImportedSkipCount = skipCount;
                 // Later only: LastPlayedAt is a high-water mark everywhere it
                 // is kept (Library.ApplyReportedOwnerState), so Music.app's
                 // date fills in a song Flower has never played and moves one

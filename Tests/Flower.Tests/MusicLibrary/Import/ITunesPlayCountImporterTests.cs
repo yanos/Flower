@@ -129,6 +129,32 @@ public class ITunesPlayCountImporterTests : IsolatedHome
         Assert.Equal((0, 4), (skipped.ImportedPlayCount, skipped.ImportedSkipCount));
     }
 
+    // The library keeps the highest Music.app count any of the owner's Macs
+    // read. A Mac whose Music.app has fewer plays, or has only skipped the
+    // song, used to write its own lower number over it.
+    [Fact]
+    public void ApplyFromXmlFile_never_lowers_a_count_another_Mac_brought_in()
+    {
+        var xmlPath = WriteLibraryXml($$"""
+            {{TrackEntry(1, "Fewer", "Artist", null, 75023, 2).Replace("</dict>", "<key>Skip Count</key><integer>1</integer></dict>")}}
+            <key>2</key>
+            <dict>
+                <key>Track ID</key><integer>2</integer>
+                <key>Name</key><string>Skipped</string>
+                <key>Artist</key><string>Artist</string>
+                <key>Total Time</key><integer>75023</integer>
+                <key>Skip Count</key><integer>4</integer>
+            </dict>
+            """);
+        var fewer = new Track { Title = "Fewer", Artists = "Artist", Duration = TimeSpan.FromSeconds(75.031), ImportedPlayCount = 9, ImportedSkipCount = 3 };
+        var skipped = new Track { Title = "Skipped", Artists = "Artist", Duration = TimeSpan.FromSeconds(75.031), ImportedPlayCount = 5 };
+
+        ITunesPlayCountImporter.ApplyFromXmlFile(new List<Track> { fewer, skipped }, xmlPath);
+
+        Assert.Equal((9, 3), (fewer.ImportedPlayCount, fewer.ImportedSkipCount));
+        Assert.Equal((5, 4), (skipped.ImportedPlayCount, skipped.ImportedSkipCount));
+    }
+
     // What lets a launch that finds the numbers the last one left skip the
     // whole-table rewrite (ITunesImportCoordinator, October C1.3).
     [Fact]
