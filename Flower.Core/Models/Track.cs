@@ -445,7 +445,15 @@ namespace Flower.Models
         // and TrackListBuilder's PlayCount sort can't independently drift on the
         // formula the way two copies of it eventually would.
         [JsonIgnore]
-        public int TotalPlayCount => PlayCount + ImportedPlayCount + RemotePlayCounts.Values.Sum();
+        public int TotalPlayCount => Total(PlayCount, ImportedPlayCount, RemotePlayCounts);
+
+        // Added up as long and held at int.MaxValue. Every count but this
+        // device's own comes from another device (/track-state, a pulled
+        // catalog), trusted only to be positive, so a listener reporting a
+        // huge one overflowed the sum - and LINQ's int Sum throws on overflow,
+        // out of the smart playlist refresh the app runs at startup.
+        private static int Total(int own, int imported, Dictionary<string, int> remote) =>
+            (int)Math.Min(int.MaxValue, (long)own + imported + remote.Values.Sum(count => (long)count));
 
         // Skips, kept exactly as plays are above and travelling the same roads:
         // SkipCount is this device's own tally, ImportedSkipCount is Music.app's
@@ -459,7 +467,7 @@ namespace Flower.Models
         public Dictionary<string, int> RemoteSkipCounts { get; set; } = new();
 
         [JsonIgnore]
-        public int TotalSkipCount => SkipCount + ImportedSkipCount + RemoteSkipCounts.Values.Sum();
+        public int TotalSkipCount => Total(SkipCount, ImportedSkipCount, RemoteSkipCounts);
 
         // When this track first appeared in the library. Defaults to "now" for a
         // freshly-imported Track; Library.UpdateTracks carries the original value

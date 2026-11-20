@@ -61,7 +61,9 @@ public sealed class AlbumCollage : ObservableObject, AlbumArtLoader.IShowsAlbumA
             .Where(t => !string.IsNullOrEmpty(t.Album))
             .GroupBy(album)
             .Select(g => (
-                Plays: g.Sum(t => t.TotalPlayCount),
+                // long: a few songs each at Track.TotalPlayCount's ceiling
+                // would overflow an int sum, which throws.
+                Plays: g.Sum(t => (long)t.TotalPlayCount),
                 Added: g.Max(t => t.DateAdded),
                 Name: g.First().Album!,
                 Cover: AlbumCover.TrackOf(g)!))

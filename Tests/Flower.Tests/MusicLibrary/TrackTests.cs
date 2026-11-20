@@ -21,6 +21,25 @@ public class TrackTests
         Assert.Equal(17, track.TotalPlayCount);
     }
 
+    // Another device's count is whatever it reported; two at the top of the
+    // range used to throw OverflowException out of every sort and smart
+    // playlist that reads the total.
+    [Fact]
+    public void Totals_hold_at_the_largest_int_when_the_devices_counts_overflow_it()
+    {
+        var huge = new Dictionary<string, int> { ["peer-1"] = int.MaxValue, ["peer-2"] = int.MaxValue };
+        var track = new Track
+        {
+            PlayCount = 1,
+            RemotePlayCounts = new Dictionary<string, int>(huge),
+            SkipCount = 1,
+            RemoteSkipCounts = new Dictionary<string, int>(huge),
+        };
+
+        Assert.Equal(int.MaxValue, track.TotalPlayCount);
+        Assert.Equal(int.MaxValue, track.TotalSkipCount);
+    }
+
     [Fact]
     public void EffectiveAlbumArtist_prefers_AlbumArtists_when_present()
     {

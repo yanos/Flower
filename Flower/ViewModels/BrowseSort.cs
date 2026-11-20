@@ -127,7 +127,8 @@ public static class BrowseSort
         var (order, ascending) = sort;
         return order switch
         {
-            BrowseSortOrder.MostPlayed => Order(artists, a => tracksOf(a).Sum(t => t.TotalPlayCount), ascending).ToList(),
+            // long, as AlbumCollage.AlbumsByPlays adds them up.
+            BrowseSortOrder.MostPlayed => Order(artists, a => tracksOf(a).Sum(t => (long)t.TotalPlayCount), ascending).ToList(),
             BrowseSortOrder.DateAdded => Order(artists, a => tracksOf(a).Select(t => t.DateAdded).DefaultIfEmpty().Max(), ascending).ToList(),
             _ when !ascending => Enumerable.Reverse(artists).ToList(),
             _ => artists.ToList(),
