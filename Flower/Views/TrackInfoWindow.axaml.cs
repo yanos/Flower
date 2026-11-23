@@ -137,6 +137,9 @@ public partial class TrackInfoWindow : Window
         if (next < 0 || next >= _tracks.Count)
             return;
         _info.Save();
+        if (_info.SaveError != null)
+            return;
+
         _index = next;
         Populate([_track]);
         UpdateNavButtons();
@@ -220,7 +223,8 @@ public partial class TrackInfoWindow : Window
     private void OkButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         _info.Save();
-        Close();
+        if (_info.SaveError == null)
+            Close();
     }
 
     private void CancelButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)

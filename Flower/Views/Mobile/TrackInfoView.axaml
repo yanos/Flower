@@ -194,6 +194,12 @@
                   controls:SoftKeyboard.AvoidOcclusion="True">
       <StackPanel Margin="0,4,0,16">
 
+        <!-- Why Save stayed on this sheet: a file refused the edit. -->
+        <TextBlock Text="{Binding SaveError}"
+                   IsVisible="{Binding SaveError, Converter={x:Static ObjectConverters.IsNotNull}}"
+                   Margin="16,4,16,8"
+                   TextWrapping="Wrap" />
+
         <!-- The cover, its size in pixels under it, and beside it the ways to
              change it: a photo from the phone, the clipboard's image
              (ClipboardArt), or one found online for the album named in the

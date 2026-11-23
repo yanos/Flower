@@ -92,13 +92,18 @@ public partial class TrackInfoView : UserControl
                 CloseArtwork();
             }
 
-            if (vm.IsShowingTrackInfo && vm.TrackInfoTracks.Count > 0 && !ReferenceEquals(vm.TrackInfoTracks, _tracks))
+            if (vm.IsShowingTrackInfo && vm.TrackInfoTracks.Count > 0 && !ReferenceEquals(vm.TrackInfoTracks, _populatedFrom))
                 Populate(vm, vm.TrackInfoTracks);
         }
     }
 
+    // The list this sheet was last filled from. Not _tracks: Load swaps in the
+    // library's own songs, so that is a different list.
+    private IReadOnlyList<Track>? _populatedFrom;
+
     private void Populate(MobileMainViewModel vm, IReadOnlyList<Track> tracks)
     {
+        _populatedFrom = tracks;
         var info = _info = vm.Main.TrackInfo();
         info.Load(tracks);
         Body.DataContext = info;
@@ -485,6 +490,13 @@ public partial class TrackInfoView : UserControl
     private void Save_Click(object? sender, RoutedEventArgs e)
     {
         _info?.Save();
+        if (_info?.SaveError != null)
+        {
+            // The message is at the top of the sheet.
+            Body.ScrollToHome();
+            return;
+        }
+
         (DataContext as MobileMainViewModel)?.CloseSheetCommand.Execute(null);
     }
 
@@ -496,6 +508,13 @@ public partial class TrackInfoView : UserControl
     private void Step(int delta)
     {
         _info?.Save();
+        if (_info?.SaveError != null)
+        {
+            // The message is at the top of the sheet.
+            Body.ScrollToHome();
+            return;
+        }
+
         (DataContext as MobileMainViewModel)?.StepTrackInfo(delta);
     }
 

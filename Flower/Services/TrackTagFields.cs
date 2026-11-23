@@ -132,14 +132,16 @@ public static class TrackTagEdits
     // refused the edit keeps what it had rather than showing an edit its file
     // does not have. A song with no file here - one this device streams from
     // its server - is edited on the song alone, and the edit reaches the
-    // server's file from there (LibraryMirrorService).
+    // server's file from there (LibraryMirrorService). failed, when given,
+    // collects the songs whose file refused.
     public static List<Track> Apply(
         IEnumerable<Track> tracks,
         IReadOnlyList<(TrackTagField Field, string Text)> edits,
         Func<Track, bool> mayEdit,
         ILogger logger,
         Func<TagLib.File, Track, bool>? perFile = null,
-        Action<Track>? afterFile = null)
+        Action<Track>? afterFile = null,
+        ICollection<Track>? failed = null)
     {
         var edited = new List<Track>();
         foreach (var track in tracks)
@@ -166,6 +168,7 @@ public static class TrackTagEdits
                 catch (Exception ex)
                 {
                     logger.LogWarning(ex, "Could not save tag edits to {Path}; this track's changes were not applied", path);
+                    failed?.Add(track);
                     continue;
                 }
             }

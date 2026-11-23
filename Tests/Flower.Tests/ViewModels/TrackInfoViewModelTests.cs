@@ -30,6 +30,40 @@ public class TrackInfoViewModelTests : PinnedDataDirectory
         return info;
     }
 
+    // UF-9: a file that refuses the edit is said out loud, and what was typed
+    // is still there to try again.
+    [Fact]
+    public void A_file_that_refuses_the_edit_is_reported_and_keeps_what_was_typed()
+    {
+        var song = Song("Debaser");
+        song.Path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), Guid.NewGuid().ToString("N"), "missing.mp3");
+        var info = Open(new Library([song]), [song]);
+        info.Title.Text = "Debaser (Demo)";
+
+        Assert.Empty(info.Save());
+
+        Assert.Contains("Debaser", info.SaveError);
+        Assert.Equal("Debaser (Demo)", info.Title.Text);
+        Assert.Equal("Debaser", song.Title);
+    }
+
+    // What plays from a server is a private copy whose Path is the stream's
+    // URL. Editing that copy always failed, and left the library's song alone.
+    [Fact]
+    public void Info_on_a_streaming_song_edits_the_librarys_own()
+    {
+        var song = Song("Debaser");
+        var streaming = song.Clone();
+        streaming.Path = "https://server.example/stream/1";
+        var info = Open(new Library([song]), [streaming]);
+        info.Title.Text = "Debaser (Demo)";
+
+        info.Save();
+
+        Assert.Null(info.SaveError);
+        Assert.Equal("Debaser (Demo)", song.Title);
+    }
+
     [Fact]
     public void Songs_that_disagree_leave_the_box_empty_and_say_so_and_ones_that_agree_show_their_value()
     {

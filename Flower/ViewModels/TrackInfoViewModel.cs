@@ -84,7 +84,12 @@ public sealed class TrackInfoViewModel : ViewModelBase
 
     public void Load(IReadOnlyList<Track> tracks)
     {
+        // The library's own song. What is playing from a server is a private
+        // copy whose Path is the stream's URL (ResolveForPlaybackAsync), which
+        // no tag can be written into.
+        tracks = tracks.Select(t => _library.Find(t.Id.ToKey()) ?? t).ToList();
         Tracks = tracks;
+        SaveError = null;
         IsEditable = tracks.Count > 0 && tracks.All(_mayEdit);
 
         foreach (var field in Fields)
@@ -391,17 +396,31 @@ public sealed class TrackInfoViewModel : ViewModelBase
 
     // ── Saving ─────────────────────────────────────────────────────────────
 
+    // Why the last Save did not reach every file, or null when it did.
+    private string? _saveError;
+    public string? SaveError
+    {
+        get => _saveError;
+        private set => SetProperty(ref _saveError, value);
+    }
+
     // The boxes whose text changed since Load, and the compilation flag if it
     // was moved, applied to every song this device may edit, file first
     // (TrackTagEdits). A song this device only streams is edited on the song,
     // and the edit goes up to the server from there. Returns the songs edited.
+    //
+    // A file that refused is reported in SaveError, and what was typed stays
+    // in the boxes, so the window can stay open to try again; writing the
+    // songs that did take a second time changes nothing.
     public IReadOnlyList<Track> Save()
     {
+        SaveError = null;
         var edits = Fields.Where(f => f.IsDirty).Select(f => (f.Tag, f.Text)).ToList();
         var compilation = IsCompilation == _compilationShown ? null : IsCompilation;
         if (edits.Count == 0 && compilation == null)
             return [];
 
+        var failed = new List<Track>();
         var edited = TrackTagEdits.Apply(
             Tracks,
             edits,
@@ -412,7 +431,8 @@ public sealed class TrackInfoViewModel : ViewModelBase
             {
                 if (compilation is { } isCompilation)
                     track.IsCompilation = isCompilation;
-            });
+            },
+            failed: failed);
 
         // NotifyTracksChanged, not UpdateTracks(Library.Tracks) - see
         // MainViewModel.SyncITunesPlayCountAsync on why passing Tracks back in
@@ -422,6 +442,14 @@ public sealed class TrackInfoViewModel : ViewModelBase
         if (compilation != null)
             fields |= TrackTagFieldSet.IsCompilation;
         _library.NotifyTagsEdited(edited, fields);
+
+        if (failed.Count > 0)
+        {
+            SaveError = failed.Count == 1
+                ? $"Couldn't save changes to \"{failed[0].Title}\". Check that its file isn't locked or read-only, then try again."
+                : $"Couldn't save changes to {failed.Count} songs. Check that their files aren't locked or read-only, then try again.";
+            return edited;
+        }
 
         // What was written is now what is shown, so a second Save - Prev/Next
         // then OK - writes nothing twice.

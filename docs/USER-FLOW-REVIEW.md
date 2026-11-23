@@ -4,7 +4,7 @@ Bugs a person using Flower would hit: data lost, the wrong thing done, a dead
 end, or behaviour that misleads. The `user-flow-review` skill finds them and
 keeps this list; `/release` treats every open **P0** here as blocking the tag.
 
-**Status:** 7 open (0 P0, 1 fix-now, 6 later), from the review of `ef6695fb`
+**Status:** 6 open (0 P0, 0 fix-now, 6 later), from the review of `ef6695fb`
 on 2026-11-22.
 
 Severities are the ones in `.claude/skills/release/REVIEW.md`. **Reproduced**
@@ -15,16 +15,6 @@ that commit.
 
 An id is never reused. A fixed finding leaves this list, and its commit records
 the fix.
-
-## Fix-now: the app does the wrong thing
-
-**UF-9. Failed tag saves look successful.** *Reproduced for the streaming case; read for the rest.*
-Track Info closes normally when a file could not be written. Cmd/Ctrl+I on a
-streaming song with no row selected always fails this way, because it edits the
-temporary stream copy.
-`Flower/Services/TrackTagFields.cs:166`, `Flower/Views/TrackInfoWindow.axaml.cs:222`,
-`Flower/Views/MainView.axaml.cs:2029`.
-*Direction:* say what failed and keep the window open; resolve to the library's track.
 
 ## Later: confusing, or impossible to do
 
