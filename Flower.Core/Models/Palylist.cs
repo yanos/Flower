@@ -282,7 +282,8 @@ namespace Flower.Models
             Guid? parentId = null,
             double? sortKey = null,
             string? vibePrompt = null,
-            bool vibeInstrumental = false)
+            bool vibeInstrumental = false,
+            IReadOnlyList<AbsentEntry>? absent = null)
         {
             Id = id;
             Listener = listener;
@@ -306,7 +307,126 @@ namespace Flower.Models
             // with the fresh (PlayCount/DateAdded/ImportedPlayCount-defaulted) data -
             // silently discarding whatever was actually there, every single rescan.
             _tracks = new List<Track>(tracks);
+            _absent = absent is { Count: > 0 } ? [.. absent] : [];
             UpdatedAt = updatedAt;
+        }
+
+        // An entry whose song is not in the library right now: a drive that is
+        // unplugged, a NAS that did not mount, a folder taken out of Settings.
+        // Not shown and not playable, and not gone either. It is kept through
+        // every load and save, in its place (just after the song it followed,
+        // or first when After is null), and becomes an ordinary entry again
+        // the moment the library has the song back (RebindTracks). Only a
+        // hand-picked playlist has any: a smart or Vibe playlist's songs are
+        // worked out again.
+        public readonly record struct AbsentEntry(Guid TrackId, Guid? After);
+
+        // Copy-on-write like _tracks, and written after it, so that a save
+        // reading this first and _tracks second (Slots) can at worst see an
+        // entry in both, which it drops, and never in neither.
+        private List<AbsentEntry> _absent;
+
+        // Every entry in order, present or not: what is stored.
+        public IEnumerable<Guid> StoredTrackIds() => Slots().Select(slot => slot.Id);
+
+        private List<(Guid Id, Track? Track)> Slots()
+        {
+            var absent = _absent;
+            var tracks = _tracks;
+            var slots = new List<(Guid Id, Track? Track)>(tracks.Count + absent.Count);
+            if (absent.Count == 0)
+            {
+                foreach (var track in tracks)
+                    slots.Add((track.Id, track));
+                return slots;
+            }
+
+            var present = tracks.Select(t => t.Id).ToHashSet();
+            var waiting = absent.Where(e => !present.Contains(e.TrackId)).ToList();
+            void Emit(Guid? after)
+            {
+                foreach (var entry in waiting.Where(e => e.After == after))
+                    slots.Add((entry.TrackId, null));
+                waiting.RemoveAll(e => e.After == after);
+            }
+
+            Emit(null);
+            foreach (var track in tracks)
+            {
+                slots.Add((track.Id, track));
+                Emit(track.Id);
+            }
+
+            // What they followed has left the playlist since.
+            foreach (var entry in waiting)
+                slots.Add((entry.TrackId, null));
+            return slots;
+        }
+
+        private void SetSlots(List<(Guid Id, Track? Track)> slots)
+        {
+            var tracks = new List<Track>(slots.Count);
+            var absent = new List<AbsentEntry>();
+            Guid? after = null;
+            foreach (var (id, track) in slots)
+            {
+                if (track != null)
+                {
+                    tracks.Add(track);
+                    after = id;
+                }
+                else
+                {
+                    absent.Add(new AbsentEntry(id, after));
+                }
+            }
+
+            _tracks = tracks;
+            _absent = absent;
+        }
+
+        // Entries have been removed: an absent entry that followed one of them
+        // now follows whatever came before it, rather than falling to the end.
+        private void SetTracksKeepingAbsentInPlace(List<Track> next)
+        {
+            if (_absent.Count == 0)
+            {
+                _tracks = next;
+                return;
+            }
+
+            var remaining = next.GroupBy(t => t.Id).ToDictionary(g => g.Key, g => g.Count());
+            var absent = new List<AbsentEntry>();
+            Guid? after = null;
+            foreach (var (id, track) in Slots())
+            {
+                if (track == null)
+                {
+                    absent.Add(new AbsentEntry(id, after));
+                }
+                else if (remaining.GetValueOrDefault(id) > 0)
+                {
+                    remaining[id]--;
+                    after = id;
+                }
+            }
+
+            _tracks = next;
+            _absent = absent;
+        }
+
+        // A newer copy of this playlist taking over from `previous` (a sync
+        // adopting the other side's). That copy was made by a device that could
+        // not see these songs either, so its not listing them says nothing.
+        internal void KeepAbsentFrom(Playlist previous)
+        {
+            if (!IsOrdinary || previous._absent.Count == 0)
+                return;
+
+            var mine = _absent.Select(e => e.TrackId).ToHashSet();
+            var carried = previous._absent.Where(e => !mine.Contains(e.TrackId));
+            _absent = [.. _absent, .. carried];
+            SetSlots(Slots());
         }
 
         public void InsertTrack(int index, Track track)
@@ -337,7 +457,7 @@ namespace Flower.Models
             if (!removed)
                 return false;
 
-            _tracks = next;
+            SetTracksKeepingAbsentInPlace(next);
             Touch();
             return true;
         }
@@ -350,7 +470,8 @@ namespace Flower.Models
             if (!_tracks.Any(t => ids.Contains(t.Id)))
                 return;
 
-            _tracks = _tracks.Where(t => !ids.Contains(t.Id)).ToList();
+            _absent = _absent.Where(e => !ids.Contains(e.TrackId)).ToList();
+            SetTracksKeepingAbsentInPlace(_tracks.Where(t => !ids.Contains(t.Id)).ToList());
             Touch();
         }
 
@@ -407,7 +528,10 @@ namespace Flower.Models
         // is the only caller and explains why. Not a mutation in the sense the
         // methods above are: same songs, same order, same playlist, just the
         // objects a rescan replaced underneath it.
-        internal void RebindTracks(Func<Track, Track?> current)
+        //
+        // Also where an absent entry comes back: back is the library having
+        // its id again, which is no more an edit than the rest of this.
+        internal void RebindTracks(Func<Track, Track?> current, Func<Guid, Track?> byId)
         {
             var next = new List<Track>(_tracks);
             for (var i = 0; i < next.Count; i++)
@@ -416,6 +540,17 @@ namespace Flower.Models
                     next[i] = replacement;
             }
             _tracks = next;
+
+            if (_absent.Count == 0)
+                return;
+
+            var slots = Slots();
+            for (var i = 0; i < slots.Count; i++)
+            {
+                if (slots[i].Track == null && byId(slots[i].Id) is { } back)
+                    slots[i] = (slots[i].Id, back);
+            }
+            SetSlots(slots);
         }
 
         // Installs the result of evaluating Rules, without touching UpdatedAt.

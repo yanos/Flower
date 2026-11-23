@@ -4,7 +4,7 @@ Bugs a person using Flower would hit: data lost, the wrong thing done, a dead
 end, or behaviour that misleads. The `user-flow-review` skill finds them and
 keeps this list; `/release` treats every open **P0** here as blocking the tag.
 
-**Status:** 15 open (6 P0, 4 fix-now, 5 later), from the review of `ef6695fb`
+**Status:** 14 open (5 P0, 4 fix-now, 5 later), from the review of `ef6695fb`
 on 2026-11-22.
 
 Severities are the ones in `.claude/skills/release/REVIEW.md`. **Reproduced**
@@ -17,16 +17,6 @@ An id is never reused. A fixed finding leaves this list, and its commit records
 the fix.
 
 ## P0: data is lost or damaged
-
-**UF-2. Playlists permanently lose songs when a drive is away for two launches.** *Reproduced.*
-The first launch drops the songs from the library. The second loads playlists
-without them, and any playlist save then deletes their rows, so when the drive
-returns the songs are back in the library and gone from the playlist. Removing
-a folder in Settings does the same, the server loads playlists the same way
-(a NAS mount missing across two restarts), and a smart playlist refresh can
-trigger the save with no user action.
-`Flower.Core/Persistence/Sql/PlaylistRepository.cs:65`.
-*Direction:* keep entries that do not resolve through a load and a save.
 
 **UF-3. A listener's own file can be overwritten by the server's version.** *Reproduced.*
 A listener's own rip, matched to a server song only by its tags, is replaced

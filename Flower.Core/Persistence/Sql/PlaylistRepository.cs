@@ -50,6 +50,7 @@ namespace Flower.Persistence.Sql
             }
 
             var membership = new Dictionary<Guid, List<Track>>();
+            var absent = new Dictionary<Guid, List<Playlist.AbsentEntry>>();
             using (var command = connection.CreateCommand())
             {
                 command.CommandText = "SELECT playlist_id, track_id FROM playlist_tracks ORDER BY playlist_id, position;";
@@ -57,16 +58,22 @@ namespace Flower.Persistence.Sql
                 while (reader.Read())
                 {
                     var playlistId = EntityId.FromKey(reader.GetString(0));
-
-                    // An entry whose id doesn't resolve is dropped - by then the
-                    // track really is gone from the library. Same rule the JSON
-                    // store applied, and the same one Flower.Server's
-                    // LibraryDtoMapper applies to its own playlist entries.
-                    if (!byId.TryGetValue(EntityId.FromKey(reader.GetString(1)), out var track))
-                        continue;
+                    var trackId = EntityId.FromKey(reader.GetString(1));
 
                     if (!membership.TryGetValue(playlistId, out var tracks))
                         membership[playlistId] = tracks = [];
+
+                    // Not in the library right now, which is not the same as
+                    // gone: a drive can be away for any number of launches.
+                    // Held in its place, so that saving this playlist does
+                    // not delete the row (Playlist.AbsentEntry).
+                    if (!byId.TryGetValue(trackId, out var track))
+                    {
+                        if (!absent.TryGetValue(playlistId, out var entries))
+                            absent[playlistId] = entries = [];
+                        entries.Add(new Playlist.AbsentEntry(trackId, tracks.Count > 0 ? tracks[^1].Id : null));
+                        continue;
+                    }
 
                     tracks.Add(track);
                 }
@@ -93,7 +100,9 @@ namespace Flower.Persistence.Sql
                     row.ParentId,
                     row.SortKey,
                     row.VibePrompt,
-                    row.VibeInstrumental));
+                    row.VibeInstrumental,
+                    // A smart or Vibe playlist's songs are worked out again.
+                    row.Rules == null && row.VibePrompt == null && !row.IsFolder ? absent.GetValueOrDefault(row.Id) : null));
             }
 
             return result;
@@ -213,15 +222,16 @@ namespace Flower.Persistence.Sql
                     clear.ExecuteNonQuery();
 
                     // Every entry is written, including not-yet-downloaded ones
-                    // (see SYNC-PLAN.md Phase 3). An earlier version of the JSON
+                    // (see SYNC-PLAN.md Phase 3) and ones whose song is away
+                    // right now (Playlist.AbsentEntry). An earlier version of the JSON
                     // store filtered on Path != null here and silently dropped
                     // any synced track the moment the playlist was saved.
                     var position = 0;
-                    foreach (var track in playlist.Tracks)
+                    foreach (var trackId in playlist.StoredTrackIds())
                     {
                         insertPlaylistId.Value = id;
                         insertPosition.Value = position++;
-                        insertTrackId.Value = track.Id.ToKey();
+                        insertTrackId.Value = trackId.ToKey();
                         insert.ExecuteNonQuery();
                     }
                 }

@@ -1603,7 +1603,7 @@ namespace Flower.Models
             }
 
             foreach (var playlist in Playlists)
-                playlist.RebindTracks(Current);
+                playlist.RebindTracks(Current, id => byId.GetValueOrDefault(id));
         }
 
         // THE list of everything about a Track that a rescan must not reset.
@@ -3170,6 +3170,13 @@ namespace Flower.Models
                 installed = compose(Playlists);
                 if (PlaylistsUnchanged(Playlists, installed))
                     return installed;
+
+                var outgoing = Playlists.ToDictionary(p => p.Id);
+                foreach (var playlist in installed)
+                {
+                    if (outgoing.TryGetValue(playlist.Id, out var previous) && !ReferenceEquals(previous, playlist))
+                        playlist.KeepAbsentFrom(previous);
+                }
 
                 SwapPlaylists(new List<Playlist>(installed));
             }

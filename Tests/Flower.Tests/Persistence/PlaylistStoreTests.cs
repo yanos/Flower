@@ -199,10 +199,9 @@ public class PlaylistStoreTests : IsolatedHome
     }
 
     // Track.Id is the only thing a playlist entry stores, so an entry naming a
-    // track the library no longer has is simply dropped - there's no path
-    // fallback to rescue it with.
+    // track the library does not have right now has nothing to show.
     [Fact]
-    public async Task PlaylistStore_drops_entries_whose_track_is_gone_from_the_library()
+    public async Task PlaylistStore_does_not_show_entries_whose_track_is_away_from_the_library()
     {
         var kept = new Track { Title = "A", Path = "/music/a.mp3" };
         var gone = new Track { Title = "B", Path = "/music/b.mp3" };
@@ -384,5 +383,95 @@ public class PlaylistStoreTests : IsolatedHome
         var reloaded = Assert.Single(playlistStore.Load(libraryStore.Load()));
         Assert.False(reloaded.IsSmart);
         Assert.Equal(["A"], reloaded.Tracks.Select(t => t.Title));
+    }
+
+    // ── A song that is away ──────────────────────────────────────────────
+
+    private static Track Song(string title) => new() { Title = title, Path = $"/music/{title}.mp3" };
+
+    // A drive unplugged for two launches: the first drops its songs from the
+    // library, the second loads the playlist without them, and any save then
+    // used to delete their rows for good.
+    [Fact]
+    public void A_song_away_across_a_load_and_a_save_is_back_in_its_place_when_it_returns()
+    {
+        var (a, b, c) = (Song("A"), Song("B"), Song("C"));
+        PlaylistRepo().Save([new Playlist("Mix", [a, b, c])]);
+
+        var away = PlaylistRepo().Load([a, c]);
+        Assert.Equal(["A", "C"], away[0].Tracks.Select(t => t.Title));
+        PlaylistRepo().Save(away);
+
+        var back = PlaylistRepo().Load([a, b, c]);
+        Assert.Equal(["A", "B", "C"], Assert.Single(back).Tracks.Select(t => t.Title));
+    }
+
+    [Fact]
+    public void Editing_a_playlist_while_a_song_is_away_keeps_the_song()
+    {
+        var (a, b, c, d) = (Song("A"), Song("B"), Song("C"), Song("D"));
+        PlaylistRepo().Save([new Playlist("Mix", [a, b, c])]);
+
+        var away = PlaylistRepo().Load([a, c, d]);
+        away[0].AppendTrack(d);
+        away[0].RemoveTrack(a);
+        PlaylistRepo().Save(away);
+
+        var back = PlaylistRepo().Load([a, b, c, d]);
+        Assert.Equal(["B", "C", "D"], Assert.Single(back).Tracks.Select(t => t.Title));
+    }
+
+    // Back in the running session, without a relaunch and without being an
+    // edit that sync would carry.
+    [Fact]
+    public void A_song_the_library_gets_back_returns_to_the_playlist_without_an_edit()
+    {
+        var (a, b, c) = (Song("A"), Song("B"), Song("C"));
+        var library = new Library([a, b, c]);
+        library.UpdateTracks([Song("A"), Song("C")]);
+        PlaylistRepo().Save([new Playlist("Mix", [a, b, c])]);
+        library.ResetPlaylists(PlaylistRepo().Load(library.Tracks));
+        var playlist = library.Playlists.Single();
+        var updatedAt = playlist.UpdatedAt;
+        Assert.Equal(2, playlist.Tracks.Count);
+
+        library.UpdateTracks([Song("A"), Song("B"), Song("C")]);
+
+        Assert.Equal(["A", "B", "C"], playlist.Tracks.Select(t => t.Title));
+        Assert.Equal(updatedAt, playlist.UpdatedAt);
+    }
+
+    // The other side could not see the song either, so a newer copy of the
+    // playlist not listing it says nothing about it.
+    [Fact]
+    public void A_newer_copy_from_sync_does_not_lose_a_song_that_is_away()
+    {
+        var (a, b, c) = (Song("A"), Song("B"), Song("C"));
+        var original = new Playlist("Mix", [a, b, c]);
+        PlaylistRepo().Save([original]);
+        var library = new Library([a, c]);
+        library.ResetPlaylists(PlaylistRepo().Load(library.Tracks));
+
+        library.ReplacePlaylists([new Playlist(original.Id, "Renamed", [a, c], DateTimeOffset.UtcNow.AddMinutes(1))]);
+
+        var installed = library.Playlists.Single();
+        Assert.Equal("Renamed", installed.Name);
+        Assert.Equal(new[] { a.Id, b.Id, c.Id }, installed.StoredTrackIds());
+    }
+
+    // Its songs are whatever its rules say next, so there is nothing to hold.
+    [Fact]
+    public void A_smart_playlist_does_not_hold_on_to_songs_that_left()
+    {
+        var (a, b) = (Song("A"), Song("B"));
+        var smart = new Playlist("Smart", [a, b])
+        {
+            Rules = SmartPlaylistRules.MatchAll(new SmartCondition(SmartField.Genre, SmartOperator.Is, new SmartValue.Text("Jazz"))),
+        };
+        PlaylistRepo().Save([smart]);
+
+        PlaylistRepo().Save(PlaylistRepo().Load([a]));
+
+        Assert.Equal(["A"], Assert.Single(PlaylistRepo().Load([a, b])).Tracks.Select(t => t.Title));
     }
 }
