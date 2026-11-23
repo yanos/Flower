@@ -33,17 +33,20 @@ namespace Flower.Logging
         // Returns true if this process just relaunched a child and should exit
         // immediately instead of starting Avalonia itself.
         //
-        // Skipped on Windows (the feature isn't supported there -
-        // CrashReportScanner reads the Windows Event Log instead) and skipped
-        // whenever a debugger is already attached, so a normal Rider/VS
-        // Run/Debug launch (which attaches its debugger to the process it
-        // starts) still debugs the real process directly instead of an
-        // un-debugged child.
+        // Linux only. Windows has no such feature (CrashReportScanner reads its
+        // Event Log instead). On macOS createdump needs debugger rights over
+        // the app, which an ad-hoc signed app does not grant, so macOS put up
+        // an administrator password prompt and the crashed app hung until
+        // someone answered it (found November 2026, by crashing on purpose).
+        // The report macOS writes by itself says more anyway.
+        //
+        // Also skipped whenever a debugger is already attached, so a normal
+        // Rider/VS Run/Debug launch (which attaches its debugger to the
+        // process it starts) still debugs the real process directly instead
+        // of an un-debugged child.
         public static bool RelaunchIfNeeded(string[] args)
         {
-            if (OperatingSystem.IsWindows())
-                return false;
-            if (!OperatingSystem.IsLinux() && !OperatingSystem.IsMacOS())
+            if (!OperatingSystem.IsLinux())
                 return false;
             if (Debugger.IsAttached)
                 return false;

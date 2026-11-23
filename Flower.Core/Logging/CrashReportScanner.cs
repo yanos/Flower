@@ -25,15 +25,14 @@ namespace Flower.Logging
     // Windows: the CLR already writes native-fault ("Application Error", ID
     // 1000) and managed-unhandled (".NET Runtime", ID 1026) entries to the
     // Application event log automatically - nothing to enable.
-    // Linux/macOS: relies on .NET's own DOTNET_EnableCrashReport feature,
-    // which both desktop heads enable via a one-time self-relaunch
-    // (CrashReportRelaunch - the env vars have to be set before the CLR
-    // starts, which is too late to do from here).
-    // macOS also: the report macOS itself writes for every crash
-    // (~/Library/Logs/DiagnosticReports/<process>-<time>.ips), preferred over
-    // .NET's when both exist - it names the fault (EXC_BAD_ACCESS, SIGSEGV,
-    // the address) and the faulting thread's frames by library and symbol,
-    // where .NET's report leads with its own signal handler.
+    // Linux: relies on .NET's own DOTNET_EnableCrashReport feature, enabled
+    // via a one-time self-relaunch (CrashReportRelaunch - the env vars have to
+    // be set before the CLR starts, which is too late to do from here).
+    // macOS: the report macOS itself writes for every crash
+    // (~/Library/Logs/DiagnosticReports/<process>-<time>.ips), which names the
+    // fault (EXC_BAD_ACCESS, SIGSEGV, the address) and the faulting thread's
+    // frames by library and symbol. .NET's is not turned on there
+    // (CrashReportRelaunch says why), but is read if someone's environment did.
     public static class CrashReportScanner
     {
         // Where CrashReportRelaunch points DOTNET_DbgMiniDumpName
