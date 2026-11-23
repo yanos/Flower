@@ -12,6 +12,7 @@ Find your question in the table, then read that section only.
 | Fix a title, artist, album or cover | [Editing tags and covers](#editing-tags-and-covers) |
 | Rename or move a file | [Renaming and moving files](#renaming-and-moving-files) |
 | Swap a song for a better file | [Replacing a file](#replacing-a-file) |
+| Find songs I have twice | [Duplicate songs](#duplicate-songs) |
 | Know how Flower tells songs apart | [How Flower recognises a song](#how-flower-recognises-a-song) |
 
 ---
@@ -167,6 +168,20 @@ yourself:
 > until you're home. Tag edits, covers and removals go over any connection. To
 > send files over cellular or remote connections too, turn on **Transfer songs
 > when away from home**.
+
+---
+
+## Duplicate songs
+
+When two files have the same title, artist, album and length (to the second),
+Flower keeps both and tells you once with a banner. **Show Duplicates** opens
+the **Duplicates** page, which names each copy's file so you can tell them
+apart. For as long as there are any, the page stays in the sidebar on a
+computer and in the **Home** screen's menu on a phone. To clear one, remove the
+copy you don't want ([Removing songs](#removing-songs)).
+
+Only a device on its own or an owner's device sees this. A listener can't
+change the server's songs, so Flower doesn't mention them there.
 
 ---
 

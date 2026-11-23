@@ -943,7 +943,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // their own.
     public bool ShowsPageHeader => _selectedSidebarItem?.Kind is
         SidebarItemKind.Home or SidebarItemKind.Queue or SidebarItemKind.Songs or SidebarItemKind.Albums
-        or SidebarItemKind.History or SidebarItemKind.Playlist;
+        or SidebarItemKind.History or SidebarItemKind.Playlist or SidebarItemKind.Duplicates;
 
     // Home's name stands alone; its shelves say what they hold.
     public bool ShowsPageSubtitle => !IsShowingHome;
@@ -1151,12 +1151,16 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         {
             if (value != null && !value.IsSelectable)
                 return;
+            var leftDuplicates = _selectedSidebarItem?.Kind == SidebarItemKind.Duplicates
+                && value?.Kind != SidebarItemKind.Duplicates;
             _selectedSidebarItem = value;
             // Before the page changes, so the album it closes on the way out
             // stays open in the page left behind (RecordOpenAlbum).
             ScheduleRecordPlace();
             OnPropertyChanged();
             OnSidebarSelectionChanged();
+            if (leftDuplicates)
+                Dispatcher.UIThread.Post(RefreshDuplicateSongs);
         }
     }
 
@@ -2054,6 +2058,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             h => _busy.Changed += h, h => _busy.Changed -= h);
 
         BuildSidebarItems();
+        RefreshDuplicateSongs();
         Home.IsActive = IsShowingHome;
         Queue.IsActive = IsShowingQueue;
         Browser.Repopulate();
@@ -2066,6 +2071,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         _subscriptions.Add<EventHandler>((_, _) => Dispatcher.UIThread.Post(() =>
         {
             Browser.Repopulate();
+            RefreshDuplicateSongs();
             if (IsShowingSearch)
                 Search.RefreshNow();
             // A merge in flight means this fired because one of our own
@@ -2152,6 +2158,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             Browser.ApplyTrackAvailability(StreamingServerFingerprint, IsStreamingServerReachable);
             Home.ApplyAvailability();
             Queue.ApplyAvailability();
+            RefreshDuplicateSongsIfRoleChanged();
             ReachabilityChanged?.Invoke(this, EventArgs.Empty);
         },
                 h => reachability.Changed += h, h => reachability.Changed -= h);
@@ -2685,6 +2692,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         if (e.Reshapes)
         {
             Browser.Repopulate();
+            RefreshDuplicateSongs();
             if (e.Source == ChangeSource.Local && !Sync.IsMergingOwnSync)
                 ScheduleContentSync();
             return;
@@ -2847,6 +2855,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             _search?.CancelRebuild();
         OnPropertyChanged(nameof(IsShowingDeviceDetail));
         OnPropertyChanged(nameof(IsShowingServerSettings));
+        OnPropertyChanged(nameof(IsShowingDuplicateSongs));
         OnPropertyChanged(nameof(ShowsPageHeader));
         OnPropertyChanged(nameof(ShowsPageSubtitle));
         OnPropertyChanged(nameof(ShowsPagePlay));

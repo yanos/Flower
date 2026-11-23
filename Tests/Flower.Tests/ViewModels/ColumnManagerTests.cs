@@ -32,6 +32,31 @@ public class ColumnManagerTests : PinnedDataDirectory
         manager.Columns.Single(c => c.Id == id);
 
     [Fact]
+    public void File_names_join_the_list_for_a_page_without_changing_the_saved_choice()
+    {
+        var manager = New();
+
+        manager.ShowsFileNames = true;
+        Assert.Equal(["TrackNumber", "Title", ColumnManager.FileNameId, "Artist"], VisibleIds(manager).Take(4));
+        Assert.False(Column(manager, ColumnManager.FileNameId).IsVisible);
+        Assert.DoesNotContain(manager.ChosenColumns, c => c.Id == ColumnManager.FileNameId);
+
+        manager.ShowsFileNames = false;
+        Assert.DoesNotContain(ColumnManager.FileNameId, VisibleIds(manager));
+    }
+
+    [Fact]
+    public void A_file_name_column_already_chosen_is_not_shown_twice()
+    {
+        var manager = New();
+        Column(manager, ColumnManager.FileNameId).IsVisible = true;
+
+        manager.ShowsFileNames = true;
+
+        Assert.Single(VisibleIds(manager), ColumnManager.FileNameId);
+    }
+
+    [Fact]
     public void Reorder_moves_a_column_later_in_the_visible_sequence()
     {
         var manager = New();

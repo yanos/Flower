@@ -101,12 +101,19 @@ public sealed class ColumnHeaderDrag(ColumnManager columns)
         return cursor;
     }
 
-    // ColumnManager.Reorder's index counts the visible columns with the dragged
-    // one already taken out.
+    // ColumnManager.Reorder's index counts the chosen columns with the dragged
+    // one already taken out, so a column borrowed for this page is not counted
+    // either.
     private int ExcludingIndex(int gapIndex, MusicColumnDefinition excluding)
     {
-        int draggedIndex = columns.VisibleColumns.ToList().IndexOf(excluding);
-        return gapIndex > draggedIndex ? gapIndex - 1 : gapIndex;
+        var others = columns.VisibleColumns.ToList();
+        int draggedIndex = others.IndexOf(excluding);
+        others.RemoveAt(draggedIndex);
+        int index = gapIndex > draggedIndex ? gapIndex - 1 : gapIndex;
+
+        if (columns.BorrowedColumn is { } borrowed && borrowed != excluding && index > others.IndexOf(borrowed))
+            index--;
+        return index;
     }
 }
 

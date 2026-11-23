@@ -48,6 +48,7 @@ public partial class TrackRowView : Button
         Art.AlbumArt = row.AlbumArt;
         Title.Text = row.Track.Title;
         Artists.Text = row.Track.Artists;
+        FileName.Text = Flower.Services.DuplicateSongs.FileNameOf(row.Track);
         Duration.Text = row.DurationDisplay;
     }
 }

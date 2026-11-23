@@ -287,6 +287,15 @@ public partial class MobileMainViewModel
         if (frame.ScreenKind == MobileScreenKind.Queue && PlaylistControl.CanClearQueue)
             actions.Add(new ScreenMenuEntry("Clear Queue", MaterialIconKind.PlaylistRemove,
                 () => PlaylistControl.ClearQueue(), IsDestructive: true));
+
+        // The way back to the page once its banner has been answered: a phone
+        // has no sidebar to keep it in. There for as long as any duplicate is.
+        if (frame.ScreenKind == MobileScreenKind.Home
+            && Main.SidebarItems.FirstOrDefault(i => i.Kind == SidebarItemKind.Duplicates) is { } duplicates)
+        {
+            actions.Add(new ScreenMenuEntry("Duplicates", MaterialIconKind.ContentDuplicate,
+                () => SelectPlaylist(duplicates)));
+        }
         if (actions.Count > 0)
             sections.Add(new ScreenMenuSection(null, actions));
 

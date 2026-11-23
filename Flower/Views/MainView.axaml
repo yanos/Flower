@@ -630,6 +630,47 @@
         </Grid>
       </Border>
     </Panel>
+
+    <!-- Songs the library holds more than once (DuplicateSongsNoticeViewModel):
+         the button opens the Duplicates page, and either answer lasts until
+         a duplicate it has not mentioned turns up. -->
+    <Border x:Name="DuplicateSongsBanner"
+            DataContext="{Binding DuplicateSongsNotice}"
+            x:DataType="vm:DuplicateSongsNoticeViewModel"
+            IsVisible="{Binding IsOpen}"
+            Padding="12,8,8,8"
+            BorderThickness="0,0,0,1"
+            BorderBrush="{DynamicResource AppDividerBrush}"
+            Background="{DynamicResource AppPlaceholderBrush}">
+      <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+        <materialIcons:MaterialIcon Grid.Column="0"
+                                    Kind="ContentDuplicate"
+                                    Width="16" Height="16"
+                                    Margin="0,0,8,0"
+                                    VerticalAlignment="Center"/>
+        <TextBlock Grid.Column="1"
+                   Text="{Binding Message}"
+                   FontSize="12"
+                   TextWrapping="Wrap"
+                   VerticalAlignment="Center"/>
+        <Button Grid.Column="2"
+                Classes="standard primary small"
+                Content="Show Duplicates"
+                Command="{Binding ShowCommand}"
+                Margin="8,0,0,0"
+                VerticalAlignment="Center"/>
+        <Button Grid.Column="3"
+                Command="{Binding DismissCommand}"
+                ToolTip.Tip="Dismiss"
+                Background="Transparent"
+                BorderThickness="0"
+                Padding="4"
+                Margin="8,0,0,0"
+                VerticalAlignment="Center">
+          <materialIcons:MaterialIcon Kind="Close" Width="14" Height="14"/>
+        </Button>
+      </Grid>
+    </Border>
     </StackPanel>
 
     <!-- A list's header: its name in the display serif and how much is in

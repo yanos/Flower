@@ -380,6 +380,9 @@ public partial class MainView : UserControl
             case nameof(MainViewModel.IsShowingServerSettings):
                 UpdateServerSettingsPage();
                 break;
+            case nameof(MainViewModel.IsShowingDuplicateSongs):
+                MusicList.ColumnManager.ShowsFileNames = _viewModel!.IsShowingDuplicateSongs;
+                break;
         }
     }
 
@@ -1618,7 +1621,7 @@ public partial class MainView : UserControl
         var libraryEndIndex = -1;
         for (var i = 0; i < items.Count; i++)
         {
-            if (items[i].Kind is SidebarItemKind.Songs or SidebarItemKind.Albums or SidebarItemKind.Artists)
+            if (items[i].Kind is SidebarItemKind.Songs or SidebarItemKind.Albums or SidebarItemKind.Artists or SidebarItemKind.Duplicates)
                 libraryEndIndex = i;
         }
         if (libraryEndIndex < 0)

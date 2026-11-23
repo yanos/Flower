@@ -17,4 +17,8 @@ public interface ITrackRowHost
     // row only knows its own track, and "the same for this whole view" is a
     // property of the list it is in.
     bool ShowsRowArtist { get; }
+
+    // True on the Duplicates page, where the line under the title names the
+    // file instead: the one thing that tells two copies of a song apart.
+    bool ShowsRowFileName => false;
 }

@@ -144,6 +144,7 @@ public static class TrackListBuilder
             "Channels"         => Order(tracks, t => t.Channels, asc),
             "BitDepth"         => Order(tracks, t => t.BitsPerSample, asc),
             "Location"         => Order(tracks, t => SortKey(t.Path), asc),
+            Controls.ColumnManager.FileNameId => Order(tracks, t => SortKey(DuplicateSongs.FileNameOf(t)), asc),
             _             => null,
         };
 

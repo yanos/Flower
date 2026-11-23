@@ -95,6 +95,11 @@
                         FontSize="15"
                         Opacity="0.65"
                         TextTrimming="CharacterEllipsis" />
+      <controls:RowText x:Name="FileName"
+                        IsVisible="{Binding $parent[views:ITrackRowHost].ShowsRowFileName}"
+                        FontSize="15"
+                        Opacity="0.65"
+                        TextTrimming="CharacterEllipsis" />
     </StackPanel>
 
     <!-- Ranged right against the duration, so it lines up down the screen

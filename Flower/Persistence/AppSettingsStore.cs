@@ -300,6 +300,10 @@ namespace Flower.Persistence
         // reporting actually sending. Either answer sets it.
         public bool CrashReportingNoticeSeen { get; set; }
 
+        // The duplicate songs (Track.SyncKey) the banner has already been
+        // answered about - see DuplicateSongsNoticeViewModel.
+        public List<string> DismissedDuplicateSongs { get; set; } = new();
+
         // Whether an admin device sends its own files to the paired server
         // when it is reaching that server from somewhere other than the
         // server's own network - over a tailnet, a forwarded port, a phone's

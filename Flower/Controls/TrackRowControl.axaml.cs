@@ -340,6 +340,7 @@ public partial class TrackRowControl : UserControl
             "Channels"         => static row => row.ChannelsDisplay,
             "BitDepth"         => static row => row.BitDepthDisplay,
             "Location"         => static row => row.Track.Path,
+            ColumnManager.FileNameId => static row => Flower.Services.DuplicateSongs.FileNameOf(row.Track),
             _ => null,
         };
 

@@ -188,6 +188,20 @@ public partial class TrackListScreenView : UserControl, ITrackRowHost
         private set => SetValue(ShowsRowArtistProperty, value);
     }
 
+    public static readonly StyledProperty<bool> ShowsRowFileNameProperty =
+        AvaloniaProperty.Register<TrackListScreenView, bool>(nameof(ShowsRowFileName));
+
+    /// <summary>
+    /// Whether this is the Duplicates page, whose rows name the file in place
+    /// of the artist (see ITrackRowHost). From the frame when frozen, like
+    /// IsAlbumMode.
+    /// </summary>
+    public bool ShowsRowFileName
+    {
+        get => GetValue(ShowsRowFileNameProperty);
+        private set => SetValue(ShowsRowFileNameProperty, value);
+    }
+
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
@@ -201,8 +215,12 @@ public partial class TrackListScreenView : UserControl, ITrackRowHost
         }
         else if (change.Property == DisplayRowsProperty)
         {
-            ShowsRowArtist = TrackRowViewModel.ArtistIsWorthShowing(DisplayRows);
+            ShowsRowArtist = !ShowsRowFileName && TrackRowViewModel.ArtistIsWorthShowing(DisplayRows);
             AlbumItems = BuildAlbumItems();
+        }
+        else if (change.Property == ShowsRowFileNameProperty)
+        {
+            ShowsRowArtist = !ShowsRowFileName && TrackRowViewModel.ArtistIsWorthShowing(DisplayRows);
         }
         else if (change.Property == IsAlbumModeProperty)
         {
@@ -328,6 +346,7 @@ public partial class TrackListScreenView : UserControl, ITrackRowHost
         IsAlbumMode = frame.IsAlbumTrackList;
         IsPlaylistMode = frame.IsPlaylistTrackList;
         IsSongsMode = frame.Tab == MobileTab.Songs && !IsAlbumMode;
+        ShowsRowFileName = frame.IsDuplicatesList;
         ListHeader = IsPlaylistMode ? frame.FrozenHeader : null;
     }
 
@@ -352,6 +371,7 @@ public partial class TrackListScreenView : UserControl, ITrackRowHost
         IsAlbumMode = _observedVm.IsShowingAlbumTrackList;
         IsPlaylistMode = _observedVm.IsShowingPlaylistTracks;
         IsSongsMode = _observedVm.SelectedTab == MobileTab.Songs && !IsAlbumMode;
+        ShowsRowFileName = _observedVm.Main.IsShowingDuplicateSongs;
         // Letters while sorted on a name, dots on Year or Date Added. Left as
         // they were on Freeze: the sort cannot change behind a pushed screen.
         IndexBar.ShowsLetters = _observedVm.SongsAreAlphabetical;

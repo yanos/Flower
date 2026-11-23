@@ -645,6 +645,8 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
             // makes sense for tracks that actually have a LastPlayedAt.
             SidebarItemKind.History
                 => _allTracks.Where(t => t.LastPlayedAt != null).ToList(),
+            SidebarItemKind.Duplicates
+                => DuplicateSongs.Find(_allTracks).SelectMany(group => group).ToList(),
             _ => _allTracks
         };
     }
@@ -662,6 +664,7 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         SidebarItemKind.Artists       => $"artist:{string.Join('\u0001', _selectedSubItems.OrderBy(s => s))}",
         SidebarItemKind.Playlist      => $"playlist:{_host.CurrentPlaylist?.Name}",
         SidebarItemKind.History       => "history",
+        SidebarItemKind.Duplicates    => "duplicates",
         SidebarItemKind.Home          => "home",
         SidebarItemKind.Queue         => "queue",
         // Both build no rows (GetBaseTracksForFilter). Keyed as Songs, a

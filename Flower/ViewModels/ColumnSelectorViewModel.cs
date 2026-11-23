@@ -31,7 +31,7 @@ public sealed class ColumnSelectorViewModel : ViewModelBase, IDisposable
         ("Credits",    ["Composer", "Conductor", "RemixedBy", "Publisher", "Copyright", "Grouping"]),
         ("Details",    ["Subtitle", "Description", "Comment", "Bpm", "InitialKey", "Isrc"]),
         ("Sorting",    ["SortTitle", "SortArtist", "SortAlbum", "SortComposer"]),
-        ("File",       ["Codec", "Encoding", "Bitrate", "SampleRate", "BitDepth", "Channels", "Location"]),
+        ("File",       ["Codec", "Encoding", "Bitrate", "SampleRate", "BitDepth", "Channels", "Location", ColumnManager.FileNameId]),
     ];
 
     private readonly ColumnManager _columns;
@@ -109,7 +109,7 @@ public sealed class ColumnSelectorViewModel : ViewModelBase, IDisposable
 
     private void RebuildShown()
     {
-        var visible = _columns.VisibleColumns.ToList();
+        var visible = _columns.ChosenColumns.ToList();
         Shown = visible
             .Select((column, i) => new ShownColumn(
                 column,

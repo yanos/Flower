@@ -38,6 +38,22 @@ public class ColumnHeaderDragTests : PinnedDataDirectory
     }
 
     [Fact]
+    public void A_drop_lands_where_it_was_aimed_with_a_page_column_showing()
+    {
+        _columns.ShowsFileNames = true;
+        var drag = new ColumnHeaderDrag(_columns);
+        var year = _columns.VisibleColumns.Single(c => c.Id == "Year");
+        var from = CenterOf(5);
+        var justBeforeArtist = CenterOf(3) - 1;
+
+        drag.Press(year, from);
+        drag.Move(justBeforeArtist);
+        Apply(drag.Release(justBeforeArtist));
+
+        Assert.Equal(["TrackNumber", "Title", ColumnManager.FileNameId, "Year", "Artist"], Order().Take(5));
+    }
+
+    [Fact]
     public void A_click_sorts_by_the_column()
     {
         var drag = new ColumnHeaderDrag(_columns);

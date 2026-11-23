@@ -31,8 +31,49 @@ public class ColumnManager : INotifyPropertyChanged
 
     public event EventHandler? ColumnsChanged;
 
-    public IEnumerable<MusicColumnDefinition> VisibleColumns =>
+    // What the person chose to show, in their order: what is saved, and what
+    // the Columns window lists.
+    public IEnumerable<MusicColumnDefinition> ChosenColumns =>
         Columns.Where(c => c.IsVisible).OrderBy(c => c.Order);
+
+    // What the list draws: the chosen columns, plus a borrowed one beside the
+    // title on a page that needs it.
+    public IEnumerable<MusicColumnDefinition> VisibleColumns
+    {
+        get
+        {
+            if (BorrowedColumn is not { } borrowed)
+                return ChosenColumns;
+
+            var shown = ChosenColumns.ToList();
+            shown.Insert(shown.FindIndex(IsAlwaysShown) + 1, borrowed);
+            return shown;
+        }
+    }
+
+    public const string FileNameId = "FileName";
+    private readonly MusicColumnDefinition _fileNameColumn;
+    private bool _showsFileNames;
+
+    // On over the Duplicates page, where the copies of a song differ by
+    // nothing else. For as long as the page is up and never saved, so the
+    // person's own choice of columns is what they come back to.
+    public bool ShowsFileNames
+    {
+        get => _showsFileNames;
+        set
+        {
+            if (_showsFileNames == value)
+                return;
+            _showsFileNames = value;
+            ColumnsChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    // File Name, while a page wants it and the person has not turned it on
+    // themselves.
+    public MusicColumnDefinition? BorrowedColumn =>
+        _showsFileNames && !_fileNameColumn.IsVisible ? _fileNameColumn : null;
 
     // The album-art well down the left of the track list (see
     // TrackRowControl's art cell). Not a MusicColumnDefinition, because it is
@@ -118,6 +159,7 @@ public class ColumnManager : INotifyPropertyChanged
         _appSettings = appSettings;
         _appSettingsStore = appSettingsStore;
         Columns = BuildDefaults();
+        _fileNameColumn = Columns.First(c => c.Id == FileNameId);
 
         var saved = appSettings.ColumnStates;
         if (saved != null && saved.Count > 0)
@@ -184,6 +226,10 @@ public class ColumnManager : INotifyPropertyChanged
     // in the constructor.
     public void Reorder(MusicColumnDefinition column, int newVisibleIndex)
     {
+        // A borrowed column has no place of its own to move to.
+        if (column == BorrowedColumn)
+            return;
+
         var ordered = Columns.OrderBy(c => c.Order).ToList();
         ordered.Remove(column);
 
@@ -327,5 +373,6 @@ public class ColumnManager : INotifyPropertyChanged
         new("Channels",     "Channels",      70, 50, false, 38),
         new("BitDepth",     "Bit Depth",     70, 50, false, 39),
         new("Location",     "Location",     300, 80, false, 40),
+        new(FileNameId,     "File Name",    240, 80, false, 41),
     ];
 }

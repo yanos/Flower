@@ -1687,6 +1687,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         SelectArtistAlbumCommand = new RelayCommand<object?>(album => SelectArtistAlbum(AlbumKeyOf(album)));
         SelectHomeAlbumCommand = new RelayCommand<AlbumTileViewModel>(SelectHomeAlbum);
         SelectPlaylistCommand = new RelayCommand<SidebarItem>(SelectPlaylist);
+        Main.OpenDuplicateSongs = SelectPlaylist;
         BackCommand = new RelayCommand(async () => await GoBack());
         // Takes the row rather than its Track: the row's position in the list
         // on screen is the queue position, and two rows can hold the same

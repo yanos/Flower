@@ -115,6 +115,36 @@
         </Border>
       </Panel>
 
+      <!-- Songs the library holds more than once, as on a desktop's banner
+           (DuplicateSongsNoticeViewModel). -->
+      <Border DataContext="{Binding Main.DuplicateSongsNotice}"
+              x:DataType="fvm:DuplicateSongsNoticeViewModel"
+              IsVisible="{Binding IsOpen}"
+              Margin="16,0,16,12"
+              Padding="14,10,6,10"
+              CornerRadius="12"
+              Background="{DynamicResource AppPlaceholderBrush}">
+        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+          <TextBlock Grid.Column="0" Grid.Row="0"
+                     Text="{Binding Message}"
+                     FontSize="14"
+                     TextWrapping="Wrap" />
+          <HyperlinkButton Grid.Column="0" Grid.Row="1"
+                           Content="Show Duplicates"
+                           Command="{Binding ShowCommand}"
+                           Padding="0,8,0,0" />
+          <Button Grid.Column="1" Grid.Row="0" Grid.RowSpan="2"
+                  Command="{Binding DismissCommand}"
+                  AutomationProperties.Name="Dismiss"
+                  Background="Transparent"
+                  BorderThickness="0"
+                  Padding="8"
+                  VerticalAlignment="Top">
+            <materialIcons:MaterialIcon Kind="Close" Width="18" Height="18" />
+          </Button>
+        </Grid>
+      </Border>
+
       <Grid>
         <!-- One virtualizing list of rows - each shelf's heading, then its
              covers so many to a row (HomeShelfRows, fed by HomeShelfRowsHost

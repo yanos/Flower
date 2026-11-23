@@ -109,6 +109,9 @@ public sealed record MobileNavigationFrame(
     // which is the whole library.
     public bool IsTrackList => IsAlbumTrackList || IsPlaylistTrackList;
 
+    // The Duplicates page, whose rows name each copy's file.
+    public bool IsDuplicatesList => SidebarItem?.Kind == SidebarItemKind.Duplicates;
+
     // The flat Songs list, the whole library - the one track list that is
     // nobody's one thing, and so has a title of its own (with its Shuffle
     // button beside it - see ScreenTitle) rather than an album's header.

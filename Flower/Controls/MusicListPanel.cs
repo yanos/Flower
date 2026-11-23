@@ -148,7 +148,7 @@ public class MusicListPanel : Panel
             var width = _columnManager.ArtColumnWidth + TrackRowControl.MenuCellWidth;
             foreach (var column in _columnManager.Columns)
             {
-                if (column.IsVisible)
+                if (column.IsVisible || column == _columnManager.BorrowedColumn)
                     width += column.Width;
             }
             return width;
