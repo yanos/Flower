@@ -40,8 +40,13 @@ to what lands on disk or the wire, then back to what the screen says. Follow the
 state into the next launch and onto the next device. Put every lens in FLOWS.md
 to each step.
 
+Then trace it sideways. Name the state the action changes and search the code for
+its **dependents**: everything that reads it, was built from it or holds a copy,
+whichever flow they belong to. Replay the action with each dependent live, and
+follow it to the app's next move, which is often where the wrong outcome shows.
+
 Done when every flow in scope has a line in your notes: its candidates, or
-"clean" with the setups walked.
+"clean" with the setups walked and the dependents checked, by name.
 
 ## 3. Reproduce
 

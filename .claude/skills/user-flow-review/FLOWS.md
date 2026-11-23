@@ -33,6 +33,9 @@ Put each question to each step of a flow.
 - **Ownership.** Whose file, song or playlist is this, and may this device touch it?
 - **Concurrency.** The same thing edited on two devices, an edit during a sync or
   scan, clocks that disagree, a server restored from an older backup.
+- **Dependents.** While this thing is in use (playing, open on another screen, being
+  synced or downloaded), does every copy and derived list follow the change? Does
+  what the app does next match what the screen now shows?
 - **Truth.** Does the prompt describe what happens (Trash or gone for good, here or
   everywhere)? What does dismissing it choose? Does success show after a failure?
 - **Parity.** Does the same action behave the same on desktop, phone and browser,
