@@ -572,7 +572,9 @@ namespace Flower.Models
                     .Where(t => !string.IsNullOrWhiteSpace(t.Title))
                     .Where(t => t.Path == null || !freshPaths.Contains(t.Path))
                     .GroupBy(t => t.SyncKey)
-                    .ToDictionary(g => g.Key, g => g.First());
+                    // A file that moved is the row that had a file, when a
+                    // server's second copy of the song tags the same.
+                    .ToDictionary(g => g.Key, g => g.FirstOrDefault(t => t.Path != null) ?? g.First());
 
                 var unrecognized = new List<Track>();
                 foreach (var track in tracks)
@@ -649,7 +651,19 @@ namespace Flower.Models
                 // UnpairServer now prunes them at the moment of unpairing (see
                 // RemoveTracksFromOrigin); this is what heals a library that
                 // was already in that state before it did.
-                var freshSyncKeys = new HashSet<string>(tracks.Select(t => t.SyncKey));
+                //
+                // Matching tags only make a row the same song as a scanned
+                // file while nothing says otherwise. A server can hold two
+                // files that tag identically, under two ids: the row for the
+                // copy this device has no file of is not a duplicate of the
+                // file it does have. Dropping it had the next sync add it back
+                // as a newcomer with a new Id, on every launch.
+                var freshByKey = tracks.ToLookup(t => t.SyncKey);
+                bool FreshFileAccountsFor(Track known) => freshByKey[known.SyncKey].Any(fresh =>
+                    fresh.OriginDeviceFingerprint != known.OriginDeviceFingerprint
+                    || fresh.OriginTrackId is not { Length: > 0 } freshId
+                    || known.OriginTrackId is not { Length: > 0 } knownId
+                    || freshId == knownId);
 
                 // A download whose file is gone, though, goes back to being
                 // the server's song, streamed - as Remove Download leaves it
@@ -662,7 +676,7 @@ namespace Flower.Models
                 var deletedDownloads = Tracks.Where(t =>
                     t is { IsLocallyDownloaded: true, Path: { } path }
                     && !freshPaths.Contains(path)
-                    && !freshSyncKeys.Contains(t.SyncKey)
+                    && !FreshFileAccountsFor(t)
                     && DeletedDownload(path))
                     .ToList();
                 foreach (var track in deletedDownloads)
@@ -675,7 +689,7 @@ namespace Flower.Models
                 var carriedForwardSyncTracks = Tracks.Where(t =>
                     (t.Path == null || t.IsLocallyDownloaded)
                     && (t.Path == null || !freshPaths.Contains(t.Path))
-                    && !freshSyncKeys.Contains(t.SyncKey)
+                    && !FreshFileAccountsFor(t)
                     && (t.Path != null || HasSomewhereToComeFrom(t)))
                     .ToList();
 
