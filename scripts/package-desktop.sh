@@ -81,13 +81,19 @@ case "$kind" in
         # name and in every assembly. CreatePackage=false: publish would
         # otherwise also build a .pkg nobody asked for. FlowerReleaseBuild is
         # what makes this build, and only this one, look for a newer release
-        # (see the csproj).
+        # (see the csproj). A pre-release's build number is 0: it is the one
+        # thing macOS's crash reports can carry to say this was not a release,
+        # which is never reported (CrashReportScanner.MacReportVersion).
         numeric="${version%%[-+]*}"
+        build_number="$numeric"
+        case "$version" in
+            *-*) build_number=0 ;;
+        esac
         dotnet publish "$csproj" -c Release -r "$rid" \
             -p:CreatePackage=false \
             -p:FlowerReleaseBuild=true \
             -p:ApplicationDisplayVersion="$numeric" \
-            -p:ApplicationVersion="$numeric"
+            -p:ApplicationVersion="$build_number"
 
         # Flower.MacOS.app on disk because the IDEs need that name (see
         # _AppBundleName in the csproj); the copy someone drags into

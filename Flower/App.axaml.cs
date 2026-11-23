@@ -830,7 +830,7 @@ public partial class App : Application
             {
                 logger.LogInformation("Reporting the last run's crash to Sentry: {Summary}", crash.Summary);
                 if (crash.Native)
-                    CrashReporting.CaptureNative(crash);
+                    CrashReporting.CaptureRecorded(crash);
                 PendingCrash.Clear();
             }
             else

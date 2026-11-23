@@ -16,7 +16,9 @@ developer's account; nobody else receives them.
 
 - **Release versions only.** A pre-release (a beta, or any build made from
   source without a release tag) never sends anything, and nor does a debug
-  build.
+  build. The one exception: if a pre-release dies so abruptly that nothing
+  records its version, a release launched later can report that crash, marked
+  as being of unknown version.
 - **On by default, and a switch.** In the app: Settings, "Send anonymous
   crash reports" (desktop: Settings > General; phone: near the bottom of
   Settings). It takes effect at once. The first time a release runs, a
@@ -30,8 +32,9 @@ developer's account; nobody else receives them.
   message with names removed (below), and the names of the methods on the
   stack with their source file names and line numbers
   (`Flower.Playback.Player.Open`, `Player.cs`, line 42).
-- **Which build:** Flower's version, whether it is the app or the server,
-  and the name and version of each library it had loaded (Avalonia,
+- **Which build:** the version of Flower that crashed, whether it is the app or the server
+  (in the rare case a crash report doesn't say, it is marked unknown, with the
+  version that found it), and the name and version of each library it had loaded (Avalonia,
   FFAudio.NET, .NET's own).
 - **What it ran on:** the operating system and its version, the .NET runtime,
   the processor architecture, and the time zone.

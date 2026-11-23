@@ -234,6 +234,22 @@ public class CrashReportScannerTests : PinnedDataDirectory
         Assert.DoesNotContain("someone", everything);
     }
 
+    // What scripts/package-desktop.sh and a plain build put in the bundle.
+    [Theory]
+    [InlineData("0.11.0", "0.11.0", "0.11.0")]
+    [InlineData("0.12.0", "0", "0.12.0-prerelease")]
+    [InlineData("1", "1", "1-prerelease")]
+    public void A_macOS_crash_report_says_which_build_crashed_and_whether_it_was_a_release(
+        string appVersion, string buildVersion, string expected)
+    {
+        var report = MacReport.Replace(
+            "\"bug_type\"", $"\"app_version\":\"{appVersion}\",\"build_version\":\"{buildVersion}\",\"bug_type\"");
+
+        var crash = CrashReportScanner.DescribeMacReport(report, DateTimeOffset.UnixEpoch);
+
+        Assert.Equal(expected, crash.Version);
+    }
+
     // Everyone's crashes share the folder: only this process's, only ones
     // newer than the last scan, and never deleted - they are macOS's.
     [Fact]

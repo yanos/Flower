@@ -19,9 +19,9 @@ namespace Flower.Logging
     //
     // Runs only in a release: a Debug build never starts the SDK, and nor
     // does a pre-release version - every untagged build, and a tagged beta -
-    // unless FLOWER_SEND_CRASH_REPORTS=1 forces it in a Release build, to
-    // check the wiring before a tag (its events are filed under the
-    // "prerelease" environment). Never in the browser, never in a test.
+    // with no way to force it. A release that finds a pre-release's crash at
+    // its next launch does not send that either (RecordedEvent). Never in the
+    // browser, never in a test.
     //
     // The switch (Settings, or Flower:SendCrashReports on the server) is read
     // on every event rather than at startup, so turning reporting off drops
@@ -31,10 +31,7 @@ namespace Flower.Logging
         public const string AppDsn = "https://be3a13e25a158b08ff277ce9f1bc90fe@o4512418960834560.ingest.us.sentry.io/4512418976038912";
         public const string ServerDsn = "https://f442cf89158896fab7dc205e8a827a54@o4512418960834560.ingest.us.sentry.io/4512418976104448";
 
-        public const string ForceVariable = "FLOWER_SEND_CRASH_REPORTS";
-
-        // One in a hundred operations traced in a release, every one in a
-        // pre-release forced on, where a trace is wanted to check the wiring.
+        // One in a hundred operations traced.
         public const double ReleaseTraceSampleRate = 0.01;
 
         private static volatile bool _enabled = true;
@@ -74,27 +71,32 @@ namespace Flower.Logging
         // next launch.
         public static string CacheDirectory => Path.Combine(AppLogging.LogsDirectory, "sentry");
 
-        // A Release build of a release, or of a pre-release when forced;
-        // never a Debug build, a test or the browser.
+        // A Release build of a release; never a pre-release, a Debug build, a
+        // test or the browser.
         public static bool ShouldRun(string version) =>
             !IsDevelopmentBuild
             && !DisabledForTests
             && !System.OperatingSystem.IsBrowser()
-            && (!AppVersion.IsPrerelease(version) || Environment.GetEnvironmentVariable(ForceVariable) == "1");
+            && !AppVersion.IsPrerelease(version);
 
         // The options both hosts share; the server adds its ASP.NET Core ones
         // on top. Never a logging provider: a log line is not a crash, and
         // log lines are where song and folder names live.
+        //
+        // The release is the version without its commit, because that is all
+        // an operating system's crash report knows about the build: with the
+        // commit in it, one version's crashes would be split across two
+        // releases. The commit is still on every event, in Flower's entry
+        // among the loaded assemblies.
         public static void Configure(SentryOptions options, string dsn, string release)
         {
             options.Dsn = dsn;
-            options.Release = release;
-            var prerelease = AppVersion.IsPrerelease(release);
-            options.Environment = prerelease ? "prerelease" : "production";
+            options.Release = AppVersion.StripBuildMetadata(release);
+            options.Environment = "production";
             options.SendDefaultPii = false;
             options.AutoSessionTracking = false;
             options.MaxBreadcrumbs = 0;
-            options.TracesSampleRate = prerelease ? 1.0 : ReleaseTraceSampleRate;
+            options.TracesSampleRate = ReleaseTraceSampleRate;
             // Each loaded assembly's informational version - Flower's own
             // "0.9.1-alpha.0.22+<commit>", FFAudio.NET's "1.0.3+<commit>" -
             // rather than its assembly version, which has only the numbers.
@@ -160,23 +162,49 @@ namespace Flower.Logging
             SentrySdk.CaptureException(exception, scope => scope.Level = SentryLevel.Error);
         }
 
-        // A crash only found at the next launch - native, so no exception
-        // object to send - as an event of its own. Its frames are text.
-        public static void CaptureNative(PendingCrash crash)
+        // A crash the SDK did not see happen - a native one, or an exception
+        // from before it started - as an event of its own, with no exception
+        // object to send. Its frames are text.
+        public static void CaptureRecorded(PendingCrash crash)
         {
             if (!Running || !Enabled)
                 return;
+
+            if (RecordedEvent(crash) is { } sentryEvent)
+                SentrySdk.CaptureEvent(sentryEvent);
+        }
+
+        // The release of a crash whose report does not say which build it was.
+        public const string UnknownRelease = "unknown";
+
+        // The process sending this is not the one that crashed, and at a next
+        // launch may not even be the same build: going back a version after a
+        // crash is the obvious thing to do. So the event names the crashed
+        // build, and a known pre-release is not sent.
+        //
+        // A crash of unknown build is sent all the same, because losing a real
+        // crash costs more than the rare report from a pre-release. It goes
+        // under a release of its own rather than the launch's, which would
+        // blame a version that may never have crashed.
+        public static SentryEvent? RecordedEvent(PendingCrash crash)
+        {
+            if (crash.Version is { } crashed && AppVersion.IsPrerelease(crashed))
+                return null;
 
             var sentryEvent = new SentryEvent
             {
                 Level = SentryLevel.Fatal,
                 Message = new SentryMessage { Formatted = crash.Summary },
+                Release = crash.Version is { } version ? AppVersion.StripBuildMetadata(version) : UnknownRelease,
             };
+            if (crash.Version == null)
+                sentryEvent.SetExtra("reported_by_version", AppVersion.Display);
             sentryEvent.SetExtra("crashed_at", crash.When.ToString("O"));
-            sentryEvent.SetTag("crash.kind", "native");
+            var kind = crash.Native ? "native" : "managed";
+            sentryEvent.SetTag("crash.kind", kind);
             sentryEvent.SetExtra("frames", crash.Details);
-            sentryEvent.SetFingerprint(new[] { "native", crash.Summary });
-            SentrySdk.CaptureEvent(sentryEvent);
+            sentryEvent.SetFingerprint(new[] { kind, crash.Summary });
+            return sentryEvent;
         }
 
         private static SentryEvent? BeforeSend(SentryEvent sentryEvent, SentryHint hint)

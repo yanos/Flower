@@ -52,6 +52,11 @@ namespace Flower.Logging
         // Version and LogFile are left for the caller: a crash found here
         // belongs to a run that has already ended, whose build only the
         // caller can guess at and whose log only it knows to look for.
+        // A crash found here belongs to a run that has already ended. Its
+        // Version is set only where the report itself names the build
+        // (macOS); otherwise it stays unknown, and is sent as that
+        // (CrashReporting.UnknownRelease). LogFile is left for the caller,
+        // which knows where the last log is.
         public static PendingCrash? ScanAndLog(ILogger logger)
         {
             if (OperatingSystem.IsWindows())
@@ -178,7 +183,35 @@ namespace Flower.Logging
             }
 
             var summary = topFrame != null ? $"{fault} in {topFrame}" : fault;
-            return new PendingCrash(summary, detail.ToString().TrimEnd(), null, null, when, Native: true);
+            var version = newline >= 0 ? MacReportVersion(content[..newline]) : null;
+            return new PendingCrash(summary, detail.ToString().TrimEnd(), version, null, when, Native: true);
+        }
+
+        // The build named by an .ips file's header line. The bundle's version
+        // is numbers only, so a pre-release cannot say so there: a package of
+        // one has a build number of 0 instead (scripts/package-desktop.sh),
+        // and a build that was never packaged says "1" for both. Only a
+        // package of a release has X.Y.Z twice; anything else comes back
+        // labelled a pre-release, which is never reported.
+        private static string? MacReportVersion(string header)
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(header);
+                if (document.RootElement.ValueKind != JsonValueKind.Object
+                    || Text(document.RootElement, "app_version") is not { Length: > 0 } version)
+                {
+                    return null;
+                }
+
+                var isRelease = Version.TryParse(version, out var parsed) && parsed.Build >= 0 && parsed.Revision < 0
+                    && Text(document.RootElement, "build_version") == version;
+                return isRelease ? version : $"{version}-prerelease";
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
         }
 
         private static PendingCrash? ScanCrashReportFiles(ILogger logger)
@@ -216,7 +249,11 @@ namespace Flower.Logging
         // holding the one it was called from in subFrames, named by binary
         // and offset rather than symbol. The attributed thread is the one
         // that crashed. Nothing in it names the device or the person.
-        public static PendingCrash DescribeMetricKitCrash(int? signal, int? exceptionType, string? terminationReason, string? callStackTree, DateTimeOffset when)
+        //
+        // The version is MetricKit's own record of the build that crashed,
+        // which may not be the one running now: an iOS bundle carries the full
+        // pre-release label (Directory.Build.targets).
+        public static PendingCrash DescribeMetricKitCrash(int? signal, int? exceptionType, string? terminationReason, string? callStackTree, DateTimeOffset when, string? version = null)
         {
             var signalName = signal is { } s && Signals.TryGetValue(s, out var named) ? named : signal?.ToString(CultureInfo.InvariantCulture);
             var exceptionName = exceptionType is { } e && MachExceptions.TryGetValue(e, out var machName) ? machName : exceptionType?.ToString(CultureInfo.InvariantCulture);
@@ -272,7 +309,7 @@ namespace Flower.Logging
             }
 
             var summary = topFrame != null ? $"{fault} in {topFrame}" : fault;
-            return new PendingCrash(summary, detail.ToString().TrimEnd(), null, null, when, Native: true);
+            return new PendingCrash(summary, detail.ToString().TrimEnd(), version, null, when, Native: true);
         }
 
         private static readonly Dictionary<int, string> Signals = new()

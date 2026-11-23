@@ -200,9 +200,10 @@ public partial class AppDelegate : AvaloniaAppDelegate<App>, IMXMetricManagerSub
                     : null;
                 var pending = CrashReportScanner.DescribeMetricKitCrash(
                     crash.Signal, crash.ExceptionType, crash.TerminationReason, tree,
-                    payload.TimeStampEnd is { } end ? new DateTimeOffset((DateTime)end) : DateTimeOffset.Now);
+                    payload.TimeStampEnd is { } end ? new DateTimeOffset((DateTime)end) : DateTimeOffset.Now,
+                    crash.ApplicationVersion);
                 if (CrashReporting.Running && CrashReporting.Enabled)
-                    CrashReporting.CaptureNative(pending);
+                    CrashReporting.CaptureRecorded(pending);
                 else
                     pending.RecordUnlessPending();
             }
