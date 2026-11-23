@@ -33,6 +33,12 @@ public partial class AppDelegate : AvaloniaAppDelegate<App>, IMXMetricManagerSub
 {
     protected override AppBuilder CustomizeAppBuilder(AppBuilder builder)
     {
+        // First, so nothing below can die unreported. Sentry's Cocoa SDK stays
+        // off - see KeepSentryCocoaOff.
+        App.CatchFatalExceptions();
+        CrashReporting.ConfigurePlatform = KeepSentryCocoaOff;
+        App.StartCrashReporting();
+
         // SkiaSharp ships no ios-specific bindings assembly (its net10.0-ios*
         // lib group is an empty placeholder), so it falls back to the same
         // generic lib/net10.0/SkiaSharp.dll used on desktop, whose
@@ -62,9 +68,6 @@ public partial class AppDelegate : AvaloniaAppDelegate<App>, IMXMetricManagerSub
         // UnhandledException ever being raised - found by crashing on
         // purpose. This is the one place iOS says so, and it is the crash.
         ObjCRuntime.Runtime.MarshalManagedException += (_, args) => App.RecordFatal(args.Exception);
-
-        // Sentry's Cocoa SDK stays off - see KeepSentryCocoaOff.
-        CrashReporting.ConfigurePlatform = KeepSentryCocoaOff;
 
         // Real iOS hardware can't do raw multicast without a hard-to-get Apple
         // entitlement - see PlatformMdns.cs and BonjourMdnsBackend's own doc

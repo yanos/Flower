@@ -8,6 +8,7 @@ using Avalonia;
 
 using Flower.Apple;
 using Flower.Logging;
+using Flower.Persistence;
 using Flower.Platform;
 using Flower.Services;
 
@@ -27,8 +28,12 @@ class Program
     [STAThread]
     public static void Main(string[] args)
     {
-        if (CrashReportRelaunch.RelaunchIfNeeded(args))
+        App.CatchFatalExceptions();
+
+        if (CrashReportRelaunch.RelaunchIfNeeded(args, AppSettingsStore.ReadSendCrashReports))
             return;
+
+        App.StartCrashReporting();
 
         // Brings up the ObjC<->managed bridge that every AppKit/AVKit type
         // here depends on. Deliberately *not* followed by NSApplication.Main:

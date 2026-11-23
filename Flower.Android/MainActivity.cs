@@ -37,16 +37,9 @@ public class FlowerApplication(nint javaReference, JniHandleOwnership transfer)
 {
     protected override AppBuilder CustomizeAppBuilder(AppBuilder builder)
     {
+        // First: both of the calls below write under it.
         PlatformDataDirectory.Current = FilesDir!.AbsolutePath;
-        PlatformPermissions.Current = new AndroidMediaPermissionStatus(this);
-        PlatformMulticastLock.Current = new AndroidMulticastLockHolder(this);
-        PlatformNetworkChange.Current = new AndroidNetworkChange(this);
-        // Android's own text field, laid over a box while it is typed in -
-        // see INativeTextFieldFactory. Before Avalonia starts: every
-        // TextInput reads it as it is built.
-        PlatformNativeTextField.Factory = new AndroidNativeTextFieldFactory();
-
-        PlatformCrashInfo.PendingAndroidExitReasons = CollectCrashExitReasons();
+        App.CatchFatalExceptions();
 
         // Sentry's Android SDK catches Java and native (NDK) crashes the .NET
         // side cannot, but sends them itself - past CrashReporting's
@@ -64,6 +57,17 @@ public class FlowerApplication(nint javaReference, JniHandleOwnership transfer)
             options.Native.EnableSystemEventBreadcrumbs = false;
             options.Native.EnableUserInteractionBreadcrumbs = false;
         };
+        App.StartCrashReporting();
+
+        PlatformPermissions.Current = new AndroidMediaPermissionStatus(this);
+        PlatformMulticastLock.Current = new AndroidMulticastLockHolder(this);
+        PlatformNetworkChange.Current = new AndroidNetworkChange(this);
+        // Android's own text field, laid over a box while it is typed in -
+        // see INativeTextFieldFactory. Before Avalonia starts: every
+        // TextInput reads it as it is built.
+        PlatformNativeTextField.Factory = new AndroidNativeTextFieldFactory();
+
+        PlatformCrashInfo.PendingAndroidExitReasons = CollectCrashExitReasons();
 
         return base.CustomizeAppBuilder(builder)
             .WithFlowerFonts();
@@ -71,8 +75,9 @@ public class FlowerApplication(nint javaReference, JniHandleOwnership transfer)
 
     // A native crash (e.g. inside libffaudio.so) bypasses .NET's own exception
     // handling entirely - Android's own record of why the previous process
-    // died (ApplicationExitInfo, API 30+) is the only way to learn about it
-    // without a third-party native-crash library. Stashed via
+    // died (ApplicationExitInfo, API 30+) goes in the log and, with reporting
+    // off, the GitHub banner. Sentry hears of the crash from its own handler
+    // (DescribeAndroidExitReasons). Stashed via
     // PlatformCrashInfo rather than logged directly - AppLogging hasn't been
     // initialized yet at this point in startup, see its own doc comment.
     private IReadOnlyList<string>? CollectCrashExitReasons()

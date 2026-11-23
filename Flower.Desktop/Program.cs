@@ -5,6 +5,7 @@ using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 
 using Flower.Logging;
+using Flower.Persistence;
 using Flower.Platform;
 using Flower.Services;
 
@@ -20,8 +21,10 @@ class Program
     [STAThread]
     public static void Main(string[] args)
     {
-        // First, before anything else: the Windows installer runs the app
-        // with arguments of its own while installing, updating and
+        App.CatchFatalExceptions();
+
+        // Before anything else that does work: the Windows installer runs the
+        // app with arguments of its own while installing, updating and
         // uninstalling, and this answers them and exits. Without it Setup.exe
         // would open Flower's window instead. A no-op for a run that is not
         // one of those, a plain `dotnet run` included.
@@ -36,8 +39,10 @@ class Program
             })
             .Run();
 
-        if (CrashReportRelaunch.RelaunchIfNeeded(args))
+        if (CrashReportRelaunch.RelaunchIfNeeded(args, AppSettingsStore.ReadSendCrashReports))
             return;
+
+        App.StartCrashReporting();
 
         // A pairing link opened while Flower already runs reaches a new
         // process on Windows and Linux, as its argument. Handed to the running

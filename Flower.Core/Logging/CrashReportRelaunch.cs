@@ -12,11 +12,21 @@ namespace Flower.Logging
     // set in the process's environment *before* the process starts, hence
     // relaunching ourselves once with them added.
     //
+    // The process that relaunched then stays behind, waiting, which makes it
+    // the one healthy process able to report the app's crash the moment it
+    // happens (CrashWatcher). That is why macOS and Windows relaunch too,
+    // though only Linux has those variables set.
+    //
     // Shared by every desktop head rather than living in one of them: the
     // macOS head (Flower.MacOS) and the Windows/Linux head (Flower.Desktop)
     // both need it and would otherwise carry the same fifty lines twice.
     public static class CrashReportRelaunch
     {
+        // Marks the relaunched child. Cleared as soon as it is read, so a
+        // process the app starts in turn - the updater restarting it, say -
+        // gets a watcher of its own.
+        private const string WatchedVariable = "FLOWER_CRASH_WATCHED";
+
         // The report is written by createdump, which only runs with dumps
         // enabled; CrashReportOnly then keeps the report and skips the dump
         // itself (hundreds of megabytes nobody reads), and the dump's name
@@ -33,25 +43,21 @@ namespace Flower.Logging
         // Returns true if this process just relaunched a child and should exit
         // immediately instead of starting Avalonia itself.
         //
-        // Linux only. Windows has no such feature (CrashReportScanner reads its
-        // Event Log instead). On macOS createdump needs debugger rights over
-        // the app, which an ad-hoc signed app does not grant, so macOS put up
-        // an administrator password prompt and the crashed app hung until
-        // someone answered it (found November 2026, by crashing on purpose).
-        // The report macOS writes by itself says more anyway.
-        //
-        // Also skipped whenever a debugger is already attached, so a normal
+        // Skipped whenever a debugger is already attached, so a normal
         // Rider/VS Run/Debug launch (which attaches its debugger to the
         // process it starts) still debugs the real process directly instead
         // of an un-debugged child.
-        public static bool RelaunchIfNeeded(string[] args)
+        public static bool RelaunchIfNeeded(string[] args, Func<bool> reportingEnabled)
         {
-            if (!OperatingSystem.IsLinux())
+            if (!OperatingSystem.IsWindows() && !OperatingSystem.IsLinux() && !OperatingSystem.IsMacOS())
                 return false;
             if (Debugger.IsAttached)
                 return false;
-            if (Environment.GetEnvironmentVariable(EnableCrashReportVariable) == "1")
+            if (Environment.GetEnvironmentVariable(WatchedVariable) == "1")
+            {
+                Environment.SetEnvironmentVariable(WatchedVariable, null);
                 return false; // already the relaunched child
+            }
 
             var processPath = Environment.ProcessPath;
             if (string.IsNullOrEmpty(processPath))
@@ -65,25 +71,53 @@ namespace Flower.Logging
             if (string.Equals(Path.GetFileNameWithoutExtension(processPath), "dotnet", StringComparison.OrdinalIgnoreCase))
                 return false;
 
-            Directory.CreateDirectory(CrashReportScanner.CrashReportsDirectory);
-
             var startInfo = new ProcessStartInfo(processPath)
             {
                 UseShellExecute = false,
             };
             foreach (var arg in args)
                 startInfo.ArgumentList.Add(arg);
-            startInfo.Environment[EnableCrashReportVariable] = "1";
-            startInfo.Environment[CrashReportOnlyVariable] = "1";
-            startInfo.Environment[EnableDumpVariable] = "1";
-            startInfo.Environment[DumpNameVariable] = Path.Combine(CrashReportScanner.CrashReportsDirectory, "flower-%p.dmp");
+            startInfo.Environment[WatchedVariable] = "1";
 
-            using var child = Process.Start(startInfo);
+            // Linux only. On macOS createdump needs debugger rights over the
+            // app, which an ad-hoc signed app does not grant, so macOS put up
+            // an administrator password prompt and the crashed app hung until
+            // someone answered it (found November 2026, by crashing on
+            // purpose). The report macOS writes by itself says more anyway.
+            if (OperatingSystem.IsLinux())
+            {
+                Directory.CreateDirectory(CrashReportScanner.CrashReportsDirectory);
+                startInfo.Environment[EnableCrashReportVariable] = "1";
+                startInfo.Environment[CrashReportOnlyVariable] = "1";
+                startInfo.Environment[EnableDumpVariable] = "1";
+                startInfo.Environment[DumpNameVariable] = Path.Combine(CrashReportScanner.CrashReportsDirectory, "flower-%p.dmp");
+            }
+
+            var startedAt = DateTimeOffset.UtcNow;
+            Process? child;
+            try
+            {
+                child = Process.Start(startInfo);
+            }
+            catch (System.ComponentModel.Win32Exception)
+            {
+                // Could not start a second copy: this one runs unwatched,
+                // which beats not running at all.
+                return false;
+            }
+
             if (child == null)
                 return false;
 
-            child.WaitForExit();
-            Environment.Exit(child.ExitCode);
+            using (child)
+            {
+                var processId = child.Id;
+                child.WaitForExit();
+                var exitCode = child.ExitCode;
+                CrashWatcher.ReportChildCrash(processId, exitCode, startedAt, reportingEnabled);
+                Environment.Exit(exitCode);
+            }
+
             return true;
         }
     }

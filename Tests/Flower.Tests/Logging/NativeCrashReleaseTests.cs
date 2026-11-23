@@ -60,4 +60,14 @@ public class NativeCrashReleaseTests : PinnedDataDirectory
 
         Assert.Equal(sent, CrashReporting.RecordedEvent(crash) != null);
     }
+
+    // Android's history is for the log and the banner: Sentry's own handler
+    // reports the crash, so this must not be a second report.
+    [Fact]
+    public void An_Android_exit_record_does_not_report_the_crash_again()
+    {
+        var crash = CrashReportScanner.DescribeAndroidExitReasons(["reason=5"], DateTimeOffset.UnixEpoch);
+
+        Assert.True(crash!.ReachedSentry);
+    }
 }

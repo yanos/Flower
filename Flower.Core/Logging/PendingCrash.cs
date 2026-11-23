@@ -17,24 +17,26 @@ namespace Flower.Logging
     // Two kinds of evidence fill it. A managed exception is recorded by
     // App.axaml.cs's UnhandledException hook as the process dies. A native
     // crash is found at the next launch by CrashReportScanner or Android's
-    // exit history, and only fills an empty slot: on Linux and macOS a
-    // terminating managed exception also leaves a .NET crash report, which
+    // exit history, and only fills an empty slot: a terminating managed
+    // exception also leaves an operating system or .NET crash report, which
     // says less than the exception the hook already wrote.
     //
     // One crash at a time, the newest: a run that crashes again before the
     // last one was answered has the fresher story.
     //
-    // With crash reporting on (CrashReporting), a managed crash has already
-    // gone to Sentry as the process died and this is just forgotten; a native
-    // one (Native) is sent from here at the next launch. Only with reporting
-    // off does it become the GitHub banner.
+    // With crash reporting on (CrashReporting), a crash that has already been
+    // through Sentry (ReachedSentry: a managed one as the process died, a
+    // native one from the desktop's CrashWatcher or Sentry's Android SDK) is
+    // just forgotten; any other is sent at the next launch. Only with
+    // reporting off does it become the GitHub banner.
     public sealed record PendingCrash(
         string Summary,
         string Details,
         string? Version,
         string? LogFile,
         DateTimeOffset When,
-        bool Native = false)
+        bool Native = false,
+        bool ReachedSentry = false)
     {
         public static string FilePath => Path.Combine(AppLogging.LogsDirectory, "pending-crash.json");
 

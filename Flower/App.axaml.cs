@@ -50,6 +50,48 @@ public partial class App : Application
 
     private static string? _logPath;
 
+    private static bool _catchingFatalExceptions;
+    private static bool _crashReportingStarted;
+
+    // The first thing every head does, so that nothing it does afterwards can
+    // die unrecorded. Needs nothing set up: before the log exists, the record
+    // PendingCrash leaves is still there for the next launch.
+    public static void CatchFatalExceptions()
+    {
+        if (_catchingFatalExceptions)
+            return;
+        _catchingFatalExceptions = true;
+
+        var logger = AppLogging.CreateLogger<App>();
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+        {
+            if (e.IsTerminating && e.ExceptionObject is Exception exception)
+                RecordFatal(exception);
+            else
+                logger.LogCritical(e.ExceptionObject as Exception, "Unhandled exception (IsTerminating={IsTerminating})", e.IsTerminating);
+        };
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            logger.LogError(e.Exception, "Unobserved task exception");
+            e.SetObserved();
+        };
+    }
+
+    // Sentry, as early as a head can: right after CatchFatalExceptions, except
+    // on a desktop, where the process that only waits on the app must not run
+    // it (CrashReportRelaunch). A release only, and only while Settings'
+    // switch is on (CrashReporting). The switch is peeked because the settings
+    // are not loaded yet.
+    public static void StartCrashReporting()
+    {
+        if (_crashReportingStarted)
+            return;
+        _crashReportingStarted = true;
+
+        CrashReporting.Enabled = AppSettingsStore.ReadSendCrashReports();
+        _crashReporting = CrashReporting.StartForApp(AppVersion.Full);
+    }
+
     // An exception that is about to take the process down: logged, and left
     // for the next launch to offer reporting (PendingCrash), since this one
     // has no time left to ask. Then the log is flushed, or Serilog's buffered
@@ -57,11 +99,13 @@ public partial class App : Application
     // records. AppDomain.UnhandledException calls it on every head; iOS also
     // from Runtime.MarshalManagedException (the phone head's AppDelegate),
     // because there an exception thrown on the UI thread goes out through
-    // Objective-C and AppDomain's event never fires.
+    // Objective-C and AppDomain's event never fires. With the SDK running, its
+    // own hook on those same events sends the exception.
     public static void RecordFatal(Exception exception)
     {
         AppLogging.CreateLogger<App>().LogCritical(exception, "Unhandled exception, Flower is about to quit");
-        PendingCrash.FromException(exception, AppVersion.Full, _logPath, DateTimeOffset.Now).Record();
+        (PendingCrash.FromException(exception, AppVersion.Full, _logPath, DateTimeOffset.Now)
+            with { ReachedSentry = CrashReporting.Running }).Record();
         AppLogging.Shutdown();
     }
 
@@ -104,13 +148,12 @@ public partial class App : Application
         // which is what makes the per-tick Trace lines (discovery polls, decoder
         // callback tracing) free rather than merely cheap.
         var logPath = AppLogging.Initialize(minimumLevel: AppSettingsStore.ReadLogFileMinimumLevel());
+        _logPath = logPath;
 
-        // Crash reporting, straight after the log, so a crash during startup
-        // reaches Sentry too - anonymised, in a release only, and only while
-        // Settings' switch is on (CrashReporting). The switch is peeked for
-        // the same reason the log level is.
-        CrashReporting.Enabled = AppSettingsStore.ReadSendCrashReports();
-        _crashReporting = CrashReporting.StartForApp(AppVersion.Full);
+        // Every head has already done both, first thing in its Main. Here for
+        // the one that has no such place: the browser.
+        CatchFatalExceptions();
+        StartCrashReporting();
         if (_crashReporting != null)
             _startupTrace = Sentry.SentrySdk.StartTransaction("app.startup", "app.start");
 
@@ -152,24 +195,6 @@ public partial class App : Application
             .AddSingleton(loggerFactory);
 
         var logger = AppLogging.CreateLogger<App>();
-
-        // Anything that throws without a handler further up would otherwise
-        // just vanish (a console nobody's watching, or on some platforms
-        // nothing at all) - log it before the process potentially dies so a
-        // bug report has something to go on.
-        _logPath = logPath;
-        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
-        {
-            if (e.IsTerminating && e.ExceptionObject is Exception exception)
-                RecordFatal(exception);
-            else
-                logger.LogCritical(e.ExceptionObject as Exception, "Unhandled exception (IsTerminating={IsTerminating})", e.IsTerminating);
-        };
-        TaskScheduler.UnobservedTaskException += (_, e) =>
-        {
-            logger.LogError(e.Exception, "Unobserved task exception");
-            e.SetObserved();
-        };
 
         // A *native* crash (e.g. inside libvlc) bypasses UnhandledException
         // above entirely - it never becomes a managed exception. Pick up
@@ -821,16 +846,18 @@ public partial class App : Application
         var mainViewModel = Ioc.Default.GetRequiredService<MainViewModel>();
 
         // The last run's crash, if it left one and nobody has answered it
-        // yet. With reporting on it goes to Sentry - a managed one already
-        // went as the process died, so only a native one is sent from here -
-        // and nobody is asked anything. With it off, the GitHub banner asks.
+        // yet. With reporting on it goes to Sentry, unless it has been already
+        // (PendingCrash.ReachedSentry), and nobody is asked anything. With it
+        // off, the GitHub banner asks.
         if (PendingCrash.Read() is { } crash)
         {
             if (CrashReporting.Enabled && CrashReporting.Running)
             {
-                logger.LogInformation("Reporting the last run's crash to Sentry: {Summary}", crash.Summary);
-                if (crash.Native)
+                if (!crash.ReachedSentry)
+                {
+                    logger.LogInformation("Reporting the last run's crash to Sentry: {Summary}", crash.Summary);
                     CrashReporting.CaptureRecorded(crash);
+                }
                 PendingCrash.Clear();
             }
             else

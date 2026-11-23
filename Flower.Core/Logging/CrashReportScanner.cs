@@ -7,6 +7,7 @@ using System.Linq;
 using System.Runtime.Versioning;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 
 using Microsoft.Extensions.Logging;
 
@@ -21,6 +22,10 @@ namespace Flower.Logging
     // run's crash and folds it into this run's log, so it doesn't just vanish.
     // The newest crash it finds also comes back as a PendingCrash, which the
     // caller records so this launch can offer to report it.
+    //
+    // On a desktop the parent process normally gets there first, moments after
+    // the crash (CrashWatcher, through TakeCrashOfProcess). This launch's scan
+    // is for a crash whose parent went down with it.
     //
     // Windows: the CLR already writes native-fault ("Application Error", ID
     // 1000) and managed-unhandled (".NET Runtime", ID 1026) entries to the
@@ -49,9 +54,99 @@ namespace Flower.Logging
         private const string WindowsEventSources = "Application Error";
         private const string DotNetRuntimeEventSource = ".NET Runtime";
 
-        // Version and LogFile are left for the caller: a crash found here
-        // belongs to a run that has already ended, whose build only the
-        // caller can guess at and whose log only it knows to look for.
+        // A report an operating system is still writing when the watcher stops
+        // waiting for it. The scan markers are set this far ahead, so the next
+        // launch does not take it for a second crash.
+        private static readonly TimeSpan LateReport = TimeSpan.FromSeconds(30);
+
+        // The crash of one process that has just died, for the parent that
+        // was waiting on it: the report is taken, so the next launch does not
+        // report it again. macOS's says more than .NET's, naming the C function
+        // that faulted, and lands a moment after it.
+        public static PendingCrash? TakeCrashOfProcess(ILogger logger, int processId, DateTimeOffset startedAt, TimeSpan wait, string? processPath = null)
+        {
+            var fromDotNet = TakeDotNetReport(logger, processId);
+
+            if (OperatingSystem.IsMacOS())
+            {
+                var fromMacOS = Await(() => FindMacReport(processId, startedAt, processPath), wait);
+                WriteMarker(MacMarkerPath, DateTime.UtcNow + LateReport);
+                return fromMacOS ?? fromDotNet;
+            }
+
+            if (OperatingSystem.IsWindows())
+                return TakeWindowsEvent(logger, processId, startedAt, wait);
+
+            return fromDotNet;
+        }
+
+        private static PendingCrash? Await(Func<PendingCrash?> find, TimeSpan wait)
+        {
+            var waited = System.Diagnostics.Stopwatch.StartNew();
+            while (true)
+            {
+                var crash = find();
+                if (crash != null || waited.Elapsed >= wait)
+                    return crash;
+                Thread.Sleep(100);
+            }
+        }
+
+        private static PendingCrash? TakeDotNetReport(ILogger logger, int processId)
+        {
+            var path = Path.Combine(CrashReportsDirectory, $"flower-{processId}.dmp.crashreport.json");
+            if (!File.Exists(path))
+                return null;
+
+            try
+            {
+                return DescribeCrashReport(File.ReadAllText(path), new DateTimeOffset(File.GetLastWriteTimeUtc(path), TimeSpan.Zero));
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to read crash report {File}", path);
+                return null;
+            }
+            finally
+            {
+                TryDelete(path);
+            }
+        }
+
+        private static PendingCrash? FindMacReport(int processId, DateTimeOffset startedAt, string? processPath)
+        {
+            var processName = Path.GetFileName(processPath ?? Environment.ProcessPath);
+            if (string.IsNullOrEmpty(processName) || !Directory.Exists(MacDiagnosticReportsDirectory))
+                return null;
+
+            foreach (var file in Directory.GetFiles(MacDiagnosticReportsDirectory, processName + "-*.ips"))
+            {
+                var written = File.GetLastWriteTimeUtc(file);
+                if (written < startedAt.UtcDateTime)
+                    continue;
+
+                try
+                {
+                    var content = File.ReadAllText(file);
+                    if (MacReportProcessId(content) == processId)
+                        return DescribeMacReport(content, new DateTimeOffset(written, TimeSpan.Zero));
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
+                {
+                    // Still being written, most likely: the next look has it.
+                }
+            }
+
+            return null;
+        }
+
+        private static int? MacReportProcessId(string content)
+        {
+            var newline = content.IndexOf('\n');
+            using var document = JsonDocument.Parse(newline >= 0 ? content[(newline + 1)..] : content);
+            return document.RootElement.TryGetProperty("pid", out var pid) && pid.TryGetInt32(out var id) ? id : null;
+        }
+
         // A crash found here belongs to a run that has already ended. Its
         // Version is set only where the report itself names the build
         // (macOS); otherwise it stays unknown, and is sent as that
@@ -411,21 +506,59 @@ namespace Flower.Logging
                 : null;
 
         // A crash Android recorded in its exit history (MainActivity's
-        // CollectCrashExitReasons), which says little more than why.
+        // CollectCrashExitReasons), which says little more than why. For the
+        // log and the GitHub banner: Sentry's Android SDK has its own handler
+        // for the same crash, and reports it with the right release.
         public static PendingCrash? DescribeAndroidExitReasons(IReadOnlyList<string> reasons, DateTimeOffset when) =>
             reasons.Count == 0
                 ? null
-                : new PendingCrash("Crash recorded by Android", string.Join("\n", reasons), null, null, when, Native: true);
+                : new PendingCrash("Crash recorded by Android", string.Join("\n", reasons), null, null, when, Native: true, ReachedSentry: true);
 
         [SupportedOSPlatform("windows")]
         private static PendingCrash? ScanWindowsEventLog(ILogger logger)
         {
-            PendingCrash? newest = null;
             // First run ever (no marker yet): only look back 24h rather than
             // the whole Application log's history, since anything older is
             // very unlikely to be the crash that just preceded this launch.
             var since = ReadWindowsMarker() ?? DateTime.UtcNow.AddHours(-24);
             var now = DateTime.UtcNow;
+            var newest = ReadWindowsEvents(logger, since, processId: null);
+            WriteWindowsMarker(now);
+            return newest;
+        }
+
+        // Windows writes the event from a helper process, a moment after the
+        // crash.
+        [SupportedOSPlatform("windows")]
+        private static PendingCrash? TakeWindowsEvent(ILogger logger, int processId, DateTimeOffset startedAt, TimeSpan wait)
+        {
+            var crash = Await(() => ReadWindowsEvents(logger, startedAt.UtcDateTime, processId), wait);
+            WriteWindowsMarker(DateTime.UtcNow + LateReport);
+            return crash;
+        }
+
+        // Which process an Application Error (1000) event is about. A .NET
+        // Runtime event does not say, and neither does one in a language whose
+        // label differs: null, which any process matches.
+        public static int? WindowsEventProcessId(string description)
+        {
+            const string label = "Faulting process id:";
+            var line = description
+                .Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+                .FirstOrDefault(l => l.StartsWith(label, StringComparison.OrdinalIgnoreCase));
+            if (line == null)
+                return null;
+
+            var value = line[label.Length..].Trim();
+            if (value.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+                value = value[2..];
+            return int.TryParse(value, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var id) ? id : null;
+        }
+
+        [SupportedOSPlatform("windows")]
+        private static PendingCrash? ReadWindowsEvents(ILogger logger, DateTime since, int? processId)
+        {
+            PendingCrash? newest = null;
 
             // The exe name as it appears in the event's formatted description
             // ("Faulting application name: Flower.Desktop.exe", "Application:
@@ -460,6 +593,9 @@ namespace Flower.Logging
                             !description.Contains(exeName, StringComparison.OrdinalIgnoreCase))
                             continue;
 
+                        if (processId is { } wanted && WindowsEventProcessId(description) is { } named && named != wanted)
+                            continue;
+
                         logger.LogCritical("Crash found in Windows Event Log ({Provider}, ID {Id}, {Time}): {Description}",
                             record.ProviderName, record.Id, record.TimeCreated, description);
                         var when = record.TimeCreated is { } created ? new DateTimeOffset(created) : DateTimeOffset.Now;
@@ -473,7 +609,6 @@ namespace Flower.Logging
                 logger.LogError(ex, "Failed to scan Windows Event Log for crash records");
             }
 
-            WriteWindowsMarker(now);
             return newest;
         }
 

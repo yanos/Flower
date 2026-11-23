@@ -48,12 +48,16 @@ developer's account; nobody else receives them.
 - **How long startup took**, for one launch in a hundred, and on a server how
   long one request in a hundred took, by route (`GET
   /api/flower/v1/stream`, never a query string).
-- **For a crash in native code** (audio output, decoding), found at the next
-  launch: the kind of fault (`SIGSEGV`), the memory address it touched, and
-  the libraries and functions it happened in. On a Mac this comes from the
+- **For a crash in native code** (audio output, decoding): the kind of fault
+  (`SIGSEGV`), the memory address it touched, and the libraries and functions
+  it happened in. On a computer it is sent moments after the crash, by a small
+  helper process that waits beside Flower, or at the next launch if there is
+  no network. On a Mac this comes from the
   crash report macOS itself writes; Flower reads only those parts of it,
   never the report's other contents (your Mac's model, its crash-reporter
-  ID, the folder Flower ran from). On an iPhone it comes from Apple's own
+  ID, the folder Flower ran from). On Windows it comes from the event Windows
+  logs for the crash, and on Linux from .NET's own crash report, with paths
+  removed like everything else. On an iPhone it comes from Apple's own
   crash diagnostics (MetricKit), which iOS hands over up to a day after
   the crash: the fault and the names of the libraries on the stack, with
   offsets into them. On Android, from Sentry's Android SDK, under the same
