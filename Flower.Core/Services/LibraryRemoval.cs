@@ -56,15 +56,10 @@ public static class LibraryRemoval
                 // next scan finds it and it is simply back.
                 if (File.Exists(path))
                 {
-                    if (FileTrash.TryMoveToTrash(path))
-                    {
+                    if (TrashOrDelete(path))
                         trashed++;
-                    }
                     else
-                    {
-                        File.Delete(path);
                         deleted++;
-                    }
                 }
             }
             catch (Exception ex)
@@ -78,6 +73,18 @@ public static class LibraryRemoval
 
         var removed = library.RemoveTracks(tracks, keptOnDisk);
         return new LibraryRemovalResult(removed.Count, trashed, deleted, notDeleted);
+    }
+
+    // To the platform's trash, or deleted outright on one with no trash (a
+    // phone). True when it went to the trash. Throws when the file could not
+    // be moved or deleted.
+    public static bool TrashOrDelete(string path)
+    {
+        if (FileTrash.TryMoveToTrash(path))
+            return true;
+
+        File.Delete(path);
+        return false;
     }
 
     // The other way out of "Removed Songs": the files that were removed from

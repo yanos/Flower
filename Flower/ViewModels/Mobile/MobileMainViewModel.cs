@@ -1323,7 +1323,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     // bulk sync) both mean the same thing here: nothing will resync it back.
     // For an album, only if every one of its files would come back.
     public bool IsRecoverableDownload => DeleteTargets.Count > 0 && DeleteTargets.All(t =>
-        t.OriginDeviceFingerprint != null && t.OriginDeviceFingerprint == Main.PairedServerFingerprint);
+        LocalFileDeletion.ServerHasCopy(t, Main.PairedServerFingerprint));
 
     // The album menu's Delete Local Files confirms through the same sheet as
     // a song's Delete, over every file of the album's on this device. Null
@@ -1341,12 +1341,20 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         ? $"Delete {files.Count} local {(files.Count == 1 ? "file" : "files")}{(_deleteTargetsName is { } name ? $" of \"{name}\"" : "")}?"
         : $"Delete \"{ActionTarget?.Title}\"?";
 
-    public string ConfirmDeleteFileMessage => (_albumDeleteTargets != null, IsRecoverableDownload) switch
+    // Set when a confirmed delete could not remove a file; the sheet stays
+    // open and says so.
+    private string? _deleteFileError;
+
+    public string ConfirmDeleteFileMessage => _deleteFileError ?? (_albumDeleteTargets != null, IsRecoverableDownload) switch
     {
         (false, true) => "This removes the downloaded copy from this device. Your paired server still has it, so you can download it again later.",
-        (false, false) => "Your currently paired server doesn't have this file, so it won't be synced back automatically. Deleting it now will remove your only copy.",
+        (false, false) => Main.PairedServerFingerprint == null
+            ? "This is your only copy. Deleting it will remove the file for good, and the song will leave your library."
+            : "Your currently paired server doesn't have this file, so it won't be synced back automatically. Deleting it now will remove your only copy, and the song will leave your library.",
         (true, true) => "This removes the downloaded copies from this device. Your paired server still has them, so you can download them again later.",
-        (true, false) => "Your currently paired server doesn't have some of these files, so they won't be synced back automatically. Deleting them now will remove your only copy.",
+        (true, false) => Main.PairedServerFingerprint == null
+            ? "These are your only copies. Deleting them will remove the files for good, and the songs will leave your library."
+            : "Your currently paired server doesn't have some of these files, so they won't be synced back automatically. Deleting them now will remove your only copy, and those songs will leave your library.",
     };
 
     // ── Remove from Library ───────────────────────────────────────────────
@@ -1364,6 +1372,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     {
         _albumDeleteTargets = albumFiles;
         _deleteTargetsName = of;
+        _deleteFileError = null;
         OnPropertyChanged(nameof(IsRecoverableDownload));
         OnPropertyChanged(nameof(ConfirmDeleteFileTitle));
         OnPropertyChanged(nameof(ConfirmDeleteFileMessage));
@@ -2044,8 +2053,22 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         });
         ConfirmDeleteFileCommand = new RelayCommand(async () =>
         {
+            var failed = 0;
             foreach (var track in DeleteTargets.ToList())
-                await Main.DeleteDownloadedFileAsync(track);
+            {
+                if (!await Main.DeleteDownloadedFileAsync(track))
+                    failed++;
+            }
+
+            if (failed > 0)
+            {
+                _deleteFileError = failed == 1
+                    ? "One file could not be deleted, so its song was left as it was."
+                    : $"{failed} files could not be deleted, so their songs were left as they were.";
+                OnPropertyChanged(nameof(ConfirmDeleteFileMessage));
+                return;
+            }
+
             ActiveSheet = MobileSheet.None;
         });
         CancelDeleteFileCommand = new RelayCommand(() => ActiveSheet = MobileSheet.None);

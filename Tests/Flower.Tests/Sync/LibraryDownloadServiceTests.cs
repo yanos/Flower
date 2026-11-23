@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
@@ -87,14 +88,14 @@ public class LibraryDownloadServiceTests : IDisposable
     private static FlowerFolder FolderFor(AppSettings settings) =>
         new(settings, () => Task.CompletedTask, NullLogger<FlowerFolder>.Instance);
 
-    private static LibraryDownloadService MakeService(Track track, out Library library)
+    private static LibraryDownloadService MakeService(Track track, out Library library, string? pairedServer = "peer-fp")
     {
         // A real TrackRepository, because persistence is Library's own now
         // (see its ITrackStore) - the service no longer saves anything itself.
         library = new Library([track], NullLogger<Library>.Instance, new TrackRepository(FlowerDb.OpenDefault()));
         var identity = new DeviceIdentity { Fingerprint = "my-fp", Alias = "Me" };
         var signingKey = MakeSigningKey();
-        var appSettings = new AppSettings();
+        var appSettings = new AppSettings { PairedServerFingerprint = pairedServer };
         return new LibraryDownloadService(library, identity, signingKey, appSettings, FolderFor(appSettings), NullLogger<LibraryDownloadService>.Instance);
     }
 
@@ -355,5 +356,46 @@ public class LibraryDownloadServiceTests : IDisposable
         await service.DeleteDownloadedFileAsync(track);
 
         Assert.Null(track.Path);
+    }
+
+    // UF-5 and UF-11: with no server behind it the file is the only copy. It
+    // goes to the trash rather than being destroyed, and the song goes with
+    // it rather than staying as a row with nothing to play.
+    [Theory]
+    [InlineData(null)]
+    [InlineData("a-different-server")]
+    public async Task Deleting_the_only_copy_trashes_it_and_the_song_leaves_the_library(string? pairedServer)
+    {
+        var filePath = Path.Combine(_tempHome, "only-copy.mp3");
+        await File.WriteAllTextAsync(filePath, "only copy", TestContext.Current.CancellationToken);
+        var track = Placeholder(path: filePath);
+        track.IsLocallyDownloaded = true;
+        var trashedBefore = Directory.GetFiles(AssemblySetup.TestTrash).ToHashSet();
+        var service = MakeService(track, out var library, pairedServer);
+
+        Assert.True(await service.DeleteDownloadedFileAsync(track));
+
+        Assert.False(File.Exists(filePath));
+        Assert.Contains(Directory.GetFiles(AssemblySetup.TestTrash).Except(trashedBefore),
+            trashed => File.ReadAllText(trashed) == "only copy");
+        Assert.Empty(library.Tracks);
+        Assert.Contains(library.RemovedTracks, removed => removed.Track.Id == track.Id);
+    }
+
+    [Fact]
+    public async Task A_file_that_cannot_be_deleted_leaves_the_song_as_it_was()
+    {
+        // A directory where the file should be: File.Delete refuses it.
+        var notAFile = Path.Combine(_tempHome, "held.mp3");
+        Directory.CreateDirectory(notAFile);
+        var track = Placeholder(path: notAFile);
+        track.IsLocallyDownloaded = true;
+        var service = MakeService(track, out var library);
+
+        Assert.False(await service.DeleteDownloadedFileAsync(track));
+
+        Assert.Equal(notAFile, track.Path);
+        Assert.True(track.IsLocallyDownloaded);
+        Assert.Single(library.Tracks);
     }
 }

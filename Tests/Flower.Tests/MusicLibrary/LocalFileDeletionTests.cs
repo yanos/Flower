@@ -5,26 +5,43 @@ namespace Flower.Tests.MusicLibrary;
 
 public class LocalFileDeletionTests
 {
+    private const string Paired = "paired-server";
+
+    private static Track Download(string? origin) => new()
+    {
+        Path = "/music/downloaded.mp3",
+        OriginDeviceFingerprint = origin,
+        IsLocallyDownloaded = true,
+    };
 
     [Fact]
-    public void RequiresWarning_only_for_files_not_downloaded_from_a_server()
+    public void A_download_its_paired_server_still_has_needs_no_warning()
     {
-        var downloaded = new Track
-        {
-            Path = "/music/downloaded.mp3",
-            IsLocallyDownloaded = true,
-        };
-        // An imported file can still have an origin fingerprint after a sync
-        // merge. IsLocallyDownloaded, not the fingerprint, is the source of
-        // truth for whether this device fetched its bytes from a server.
+        Assert.False(LocalFileDeletion.RequiresWarning([Download(Paired)], Paired));
+    }
+
+    // UF-5: IsLocallyDownloaded outlives the server the file came from.
+    [Theory]
+    [InlineData(null, Paired)]            // The server stopped listing it.
+    [InlineData("old-server", Paired)]    // From a server this device left.
+    [InlineData(Paired, null)]            // Unpaired since.
+    public void A_download_with_no_server_behind_it_is_the_only_copy(string? origin, string? paired)
+    {
+        Assert.True(LocalFileDeletion.RequiresWarning([Download(origin)], paired));
+    }
+
+    // An imported file can carry an origin after a sync merge, and is still
+    // the user's own rather than cache.
+    [Fact]
+    public void An_imported_file_is_warned_about_even_when_the_server_has_it()
+    {
         var imported = new Track
         {
             Path = "/music/imported.mp3",
-            OriginDeviceFingerprint = "server-that-also-has-it",
+            OriginDeviceFingerprint = Paired,
             IsLocallyDownloaded = false,
         };
 
-        Assert.False(LocalFileDeletion.RequiresWarning([downloaded]));
-        Assert.True(LocalFileDeletion.RequiresWarning([downloaded, imported]));
+        Assert.True(LocalFileDeletion.RequiresWarning([Download(Paired), imported], Paired));
     }
 }

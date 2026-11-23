@@ -4,7 +4,7 @@ Bugs a person using Flower would hit: data lost, the wrong thing done, a dead
 end, or behaviour that misleads. The `user-flow-review` skill finds them and
 keeps this list; `/release` treats every open **P0** here as blocking the tag.
 
-**Status:** 11 open (3 P0, 3 fix-now, 5 later), from the review of `ef6695fb`
+**Status:** 9 open (2 P0, 2 fix-now, 5 later), from the review of `ef6695fb`
 on 2026-11-22.
 
 Severities are the ones in `.claude/skills/release/REVIEW.md`. **Reproduced**
@@ -17,13 +17,6 @@ An id is never reused. A fixed finding leaves this list, and its commit records
 the fix.
 
 ## P0: data is lost or damaged
-
-**UF-5. Desktop can delete the only remaining copy without asking.** *Reproduced for unpairing; read for a song the server stopped listing.*
-A download keeps `IsLocallyDownloaded` after its server is gone, so Delete Local
-File skips the warning and bypasses Trash. The phone asks the right question
-(does the paired server still have it).
-`Flower/Services/LocalFileDeletion.cs:17`, `Flower.Core/Models/Library.cs:1511`.
-*Direction:* share the phone's rule, and use the Trash.
 
 **UF-6. Restoring a server backup deletes newer playlists on every device.** *Read.*
 A playlist created after the backup is missing on the server and unchanged since
@@ -55,11 +48,6 @@ temporary stream copy.
 `Flower/Services/TrackTagFields.cs:166`, `Flower/Views/TrackInfoWindow.axaml.cs:222`,
 `Flower/Views/MainView.axaml.cs:2029`.
 *Direction:* say what failed and keep the window open; resolve to the library's track.
-
-**UF-11. Delete Local File leaves a dead row on an unpaired library.** *Read.*
-The song stays listed with nothing to play and no source to get it from.
-`Flower/Services/LibraryDownloadService.cs:236`.
-*Direction:* a song with no other source leaves the library with its file.
 
 ## Later: confusing, or impossible to do
 

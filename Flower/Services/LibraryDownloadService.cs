@@ -204,37 +204,53 @@ public class LibraryDownloadService
         }
     }
 
-    // Reverts a track back to a placeholder (Path == null) and deletes the
-    // local file - the counterpart to DownloadAsync above, freeing the
-    // storage it used without forgetting the track. OriginDeviceFingerprint
-    // is left untouched either way, so if it's set to a peer that still has
-    // this exact track, the (now-placeholder) track can be re-downloaded or
-    // streamed on demand from there afterward, exactly like any other not-
-    // yet-downloaded synced track - if it's null (a purely local import with
-    // no known peer copy), it just becomes a permanently-undownloadable
-    // placeholder instead, which is why the mobile UI warns first for that
-    // case (see MobileMainViewModel.IsRecoverableDownload) rather than
-    // gating this outright - deleting a file that won't come back is still a
-    // choice the user should be able to make, just not by accident.
-    public async Task DeleteDownloadedFileAsync(Track track)
+    // Delete Local File, on every head. What happens depends on whether the
+    // song can come back (LocalFileDeletion):
+    //
+    //   - The paired server has it: the song stays, as a stream that can be
+    //     downloaded again. A download is deleted outright, being cache; a
+    //     file of the user's own goes to the trash.
+    //   - Nothing else has it: the file goes to the trash (deleted outright
+    //     on a phone, which has none) and the song leaves the library, on
+    //     record in Removed Songs. Left behind it would be a row with nothing
+    //     to play and nowhere to get it from.
+    //
+    // False when the file could not be removed, in which case the song is
+    // left exactly as it was.
+    public Task<bool> DeleteDownloadedFileAsync(Track track)
     {
-        if (track.Path == null)
-            return;
+        if (track.Path is not { } path)
+            return Task.FromResult(true);
 
+        var paired = _appSettings.PairedServerFingerprint;
         try
         {
-            File.Delete(track.Path);
+            if (LocalFileDeletion.IsDisposable(track, paired))
+                File.Delete(path);
+            else if (File.Exists(path))
+                LibraryRemoval.TrashOrDelete(path);
+        }
+        catch (DirectoryNotFoundException)
+        {
+            // Its folder is gone, and the file with it.
         }
         catch (Exception ex)
         {
-            // Still proceed to revert to a placeholder below even if the file
-            // is already gone/inaccessible - a failed delete of a file that
-            // doesn't exist anymore isn't a reason to leave Path pointing at it.
-            _logger.LogWarning(ex, "Failed to delete downloaded file for {Title} ({Path})", track.Title, LogPath.Short(track.Path));
+            _logger.LogWarning(ex, "Failed to delete local file for {Title} ({Path})", track.Title, LogPath.Short(path));
+            return Task.FromResult(false);
         }
 
-        track.Path = null;
-        track.IsLocallyDownloaded = false;
-        _library.NotifyTrackChanged(track, TrackChange.File);
+        if (LocalFileDeletion.ServerHasCopy(track, paired))
+        {
+            track.Path = null;
+            track.IsLocallyDownloaded = false;
+            _library.NotifyTrackChanged(track, TrackChange.File);
+        }
+        else
+        {
+            _library.RemoveTracks([track], []);
+        }
+
+        return Task.FromResult(true);
     }
 }

@@ -20,10 +20,10 @@ internal static class LocalFileDeletionDialog
         if (localFiles.Count == 0)
             return;
 
-        // A downloaded file is disposable cache: it can be fetched from its
-        // server again. A scanned/imported file is potentially the user's only
-        // copy, so require an explicit choice before touching it.
-        if (LocalFileDeletion.RequiresWarning(localFiles))
+        // A download its server still has is disposable cache. Anything else
+        // is potentially the user's only copy, so it takes an explicit choice.
+        var paired = viewModel.PairedServerFingerprint;
+        if (LocalFileDeletion.RequiresWarning(localFiles, paired))
         {
             if (topLevel is not Window owner)
                 return;
@@ -31,15 +31,25 @@ internal static class LocalFileDeletionDialog
             var title = localFiles.Count == 1
                 ? $"Delete \"{localFiles[0].Title ?? "Local File"}\"?"
                 : $"Delete {localFiles.Count} Local Files?";
-            var message = localFiles.Count == 1
-                ? "This file was not downloaded from a server. Deleting it will permanently remove this local copy."
-                : "One or more of these files were not downloaded from a server. Deleting them will permanently remove those local copies.";
+            var message = LocalFileDeletion.WarningMessage(localFiles, paired);
             var confirmed = await ConfirmDialogWindow.ShowAsync(owner, title, message, "Delete");
             if (!confirmed)
                 return;
         }
 
+        var failed = 0;
         foreach (var track in localFiles)
-            await viewModel.DeleteDownloadedFileAsync(track);
+        {
+            if (!await viewModel.DeleteDownloadedFileAsync(track))
+                failed++;
+        }
+
+        if (failed > 0 && topLevel is Window window)
+        {
+            await ConfirmDialogWindow.ShowMessageAsync(window, "Couldn't delete",
+                failed == 1
+                    ? "One file could not be deleted, so its song was left as it was. Check that the file isn't locked or read-only."
+                    : $"{failed} files could not be deleted, so their songs were left as they were. Check that the files aren't locked or read-only.");
+        }
     }
 }

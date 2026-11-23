@@ -1473,8 +1473,8 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         _libraryDownloadService?.DownloadAsync(track, ResolvePeerForTrack(track)) ?? Task.FromResult(TrackDownloadResult.Failed);
 
     // Counterpart to DownloadTrackAsync - see LibraryDownloadService.DeleteDownloadedFileAsync.
-    public Task DeleteDownloadedFileAsync(Track track) =>
-        _libraryDownloadService?.DeleteDownloadedFileAsync(track) ?? Task.CompletedTask;
+    public Task<bool> DeleteDownloadedFileAsync(Track track) =>
+        _libraryDownloadService?.DeleteDownloadedFileAsync(track) ?? Task.FromResult(false);
 
     private readonly SubscriptionBag _subscriptions = new();
 
