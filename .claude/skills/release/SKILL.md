@@ -121,7 +121,9 @@ Then put the notes on the release: `gh release edit vX.Y.Z --notes-file <notes>`
   download the dmg with `gh release download vX.Y.Z -p '*macos-arm64.dmg'`,
   mount it, replace `/Applications/Flower.app` with its app, launch it. Done
   when the newest log in `~/Library/Application Support/Flower/logs/` reads
-  `Flower starting: Flower.MacOS X.Y.Z` with no `-alpha`/`+sha`, has no
+  exactly `Flower starting: Flower.MacOS X.Y.Z+<sha>`, where `<sha>` is
+  `git rev-parse 'vX.Y.Z^{commit}'` (a suffix or another commit means this
+  is not the tagged build), has no
   `[ERR]`/`[FTL]` lines, the app is still running after a minute, and the
   library shows the same songs and playlists as before.
 - **GHCR image**: covered by step 8, which deploys exactly that image.
@@ -165,8 +167,8 @@ the compose commands. Never touch `~/torrents`.
 
 Then check: `docker ps` shows `flower` Up (not Restarting) on
 `ghcr.io/yanos/flower-server`; `docker logs flower` shows
-`Flower.Server starting: X.Y.Z…` with no `-alpha`, no exceptions, and a
-`PublicReachability` line; `df -h /` has room.
+`Flower.Server starting: Flower.Server X.Y.Z+<sha>` with the tag's commit, as
+in step 7, no exceptions, and a `PublicReachability` line; `df -h /` has room.
 
 Rollback, if it is not healthy: `docker compose down`, restore the backup into
 the volume, `FLOWER_IMAGE=ghcr.io/yanos/flower-server:<PREV without v> docker compose up -d`.
