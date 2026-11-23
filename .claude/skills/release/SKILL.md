@@ -1,6 +1,6 @@
 ---
 name: release
-description: Cut a Flower release - audit docs, security and P0 risks, get CI green, tag, keep the tag green, verify the installers, deploy to lambda.
+description: Cut a Flower release - audit docs, security, P0 risks and user flows, get CI green, tag, keep the tag green, verify the installers, deploy to lambda.
 disable-model-invocation: true
 argument-hint: "[vX.Y.Z]"
 ---
@@ -32,7 +32,8 @@ Done when you hold `PREV`, the head sha and a proposed version.
 ## 2. Audit
 
 Dispatch the three review briefs in [REVIEW.md](REVIEW.md) as parallel
-subagents (docs, security, P0), each given `PREV`. While they run, do the
+subagents (docs, security, P0), each given `PREV`, and invoke the
+`user-flow-review` skill with `$PREV --report-only`. While they run, do the
 inline checks:
 
 - **Sentry**: `sentry issue list none-k0o/flower-app -f` and
@@ -45,18 +46,23 @@ inline checks:
   that is a P0 (definition in REVIEW.md).
 - **Dependencies**: `dotnet list Flower.sln package --vulnerable --include-transitive`.
 
-Done when all three subagents have reported and every inline check has run.
-Merge everything into one findings list, each tagged **P0** (blocks the tag),
-**fix-now** (cheap, do before tagging) or **later**.
+Done when all three subagents and the user-flow review have reported and every
+inline check has run. Merge everything into one findings list, each tagged
+**P0** (blocks the tag), **fix-now** (cheap, do before tagging) or **later**.
+The findings still open in `docs/USER-FLOW-REVIEW.md` are on it, at their
+severity.
 
 ## 3. Fix
 
 Present the findings list. Fix every P0 and fix-now item, a diff at a time,
 each waiting for approval. Offer to file each **later** item as a GitHub
 issue. A P0 fix that changes behaviour waits for the user to test it, not
-just for approval of the diff.
+just for approval of the diff. Keep `docs/USER-FLOW-REVIEW.md` current in those
+same diffs: a fixed finding leaves it, a new user-flow finding that stays open
+joins it.
 
-Done when no P0 is open and the user has said which fix-now items to drop.
+Done when no P0 is open, in the findings list or that file, and the user has
+said which fix-now items to drop.
 
 ## 4. Green on master
 
