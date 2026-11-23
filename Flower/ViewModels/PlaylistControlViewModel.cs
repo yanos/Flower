@@ -224,7 +224,12 @@ namespace Flower.ViewModels
                 AlbumProgress.Flush();
                 OnPropertyChanged(nameof(IsPlaying));
                 if (CurrentlyPlayingTrack is { } stopped && !_parked)
-                    ParkAt(stopped, ResolveQueueIndex(stopped), position);
+                {
+                    if (_playingHasLeft)
+                        ParkPastLeftSong();
+                    else
+                        ParkAt(stopped, ResolveQueueIndex(stopped), position);
+                }
             }),
                 h => _audioManager.Stopped += h, h => _audioManager.Stopped -= h);
 
@@ -404,6 +409,21 @@ namespace Flower.ViewModels
                     Play(next.Track, next.Index, immediate: false);
             }),
                 h => _audioManager.TrackFailed += h, h => _audioManager.TrackFailed -= h);
+
+            // On the UI thread, which owns the queue: a removal can arrive
+            // from a sync.
+            _subscriptions.Add<EventHandler<IReadOnlySet<Guid>>>((_, ids) => OnUiThread(() => TakeOutOfQueue(ids)),
+                h => _library.TracksRemovedOnPurpose += h, h => _library.TracksRemovedOnPurpose -= h);
+
+            // Likewise, since a playlist can change under a sync. Every edit
+            // to any playlist lands here, and FollowSource sorts out whether
+            // it was this queue's.
+            _subscriptions.Add<EventHandler>((_, _) =>
+            {
+                if (_queueSource != null)
+                    OnUiThread(FollowSource);
+            },
+                h => _library.PlaylistsChanged += h, h => _library.PlaylistsChanged -= h);
         }
 
         // Skipping past a track that won't play is the right thing to do once.
@@ -508,9 +528,14 @@ namespace Flower.ViewModels
         // MainViewModel.SetPlayQueue.
         public Playlist CurrentPlaylist => _currentPlaylist;
 
-        public void SetCurrentPlaylist(Playlist playlist)
+        // source is the playlist this queue is a copy of, when it is one, and
+        // followsOrder whether it was played in that playlist's own order
+        // (see FollowSource).
+        public void SetCurrentPlaylist(Playlist playlist, Playlist? source = null, bool followsOrder = false)
         {
             _currentPlaylist = playlist;
+            _queueSource = source == null ? null : new QueueSource(source.Id, followsOrder, source.StoredTrackIds().ToList());
+            _playingHasLeft = false;
 
             // Playing anything else ends a Vibe Playlist's endless queue; the
             // songs it queued stay where they are (see PlayVibe). And any
@@ -1028,6 +1053,146 @@ namespace Flower.ViewModels
             SaveQueue();
         }
 
+        // ── The queue following what it was made from ─────────────────────
+        //
+        // The queue is a copy, so an edit to the list it came from has to be
+        // carried across or the next song contradicts the screen.
+
+        // The playlist this queue was played from, by id because a sync
+        // replaces the Playlist object, and its entries as last followed.
+        private sealed record QueueSource(Guid Id, bool FollowsOrder, List<Guid> Seen);
+
+        private QueueSource? _queueSource;
+
+        // The song playing left the library or the playlist the queue follows.
+        // It plays to its end, as a song taken out of the queue by hand would,
+        // and leaves with the next move.
+        private bool _playingHasLeft;
+
+        // One path for every edit, wherever it was made: a drag, a menu, or
+        // another device's arriving by sync. See QueueFollowsPlaylist.
+        private void FollowSource()
+        {
+            if (_queueSource is not { } followed)
+                return;
+
+            // Deleted: the queue carries on as a list of its own.
+            if (_library.Playlists.FirstOrDefault(p => p.Id == followed.Id) is not { IsOrdinary: true } source)
+            {
+                _queueSource = null;
+                return;
+            }
+
+            var now = source.StoredTrackIds().ToList();
+            if (now.SequenceEqual(followed.Seen))
+                return;
+
+            _queueSource = followed with { Seen = now };
+            var edit = QueueFollowsPlaylist.Apply(
+                _currentPlaylist.Tracks, QueueIndex, _linedUpCount, _playingHasLeft, followed.FollowsOrder,
+                followed.Seen, now, source.Tracks);
+            _playingHasLeft = edit.PlayingLeft;
+
+            // Parked, there is nothing to finish: the place moves on now.
+            if (_parked && edit.PlayingLeft)
+            {
+                _currentPlaylist = new Playlist("Now Playing Queue", edit.Queue);
+                _queueIndex = edit.Place;
+                ParkPastLeftSong();
+                return;
+            }
+
+            ReplaceQueueKeepingPlace(edit.Queue, edit.Place);
+        }
+
+        // Songs removed on purpose leave the queue at once, except the one
+        // playing, which finishes. One that is only parked has nothing to
+        // finish, and the place moves to the song after it.
+        private void TakeOutOfQueue(IReadOnlySet<Guid> ids)
+        {
+            // First: a Vibe Playlist's pool can hold a song not queued yet.
+            _vibe?.Remove(ids);
+
+            var tracks = _currentPlaylist.Tracks;
+            if (CurrentlyPlayingTrack == null || !tracks.Any(t => ids.Contains(t.Id)))
+                return;
+
+            var index = QueueIndex;
+            var currentLeft = index >= 0 && ids.Contains(tracks[index].Id);
+            var finishes = currentLeft && !_parked;
+
+            var queue = new List<Track>(tracks.Count);
+            var place = -1;
+            var keptBefore = 0;
+            var linedUp = 0;
+            for (var i = 0; i < tracks.Count; i++)
+            {
+                if (ids.Contains(tracks[i].Id) && !(i == index && finishes))
+                    continue;
+
+                if (i == index)
+                    place = queue.Count;
+                else if (i < index)
+                    keptBefore++;
+                else if (index >= 0 && i <= index + _linedUpCount)
+                    linedUp++;
+                queue.Add(tracks[i]);
+            }
+
+            _logger.LogInformation("Took {Count} removed songs out of the queue", tracks.Count - queue.Count);
+            _playingHasLeft |= finishes;
+
+            if (currentLeft && _parked)
+            {
+                _currentPlaylist = new Playlist("Now Playing Queue", queue);
+                _linedUpCount = Math.Max(0, linedUp - 1);
+                ParkInQueue(keptBefore);
+                OnPropertyChanged(nameof(LinedUpCount));
+                OnPropertyChanged(nameof(CurrentPlaylist));
+                SaveQueue();
+                return;
+            }
+
+            _linedUpCount = linedUp;
+            ReplaceQueueKeepingPlace(queue, place);
+        }
+
+        // Takes the song that left out of the queue now that it is being left,
+        // answering where `slot` is afterwards.
+        private int LetGoOfLeftSong(int slot)
+        {
+            if (!_playingHasLeft)
+                return slot;
+
+            _playingHasLeft = false;
+            var at = ResolveQueueIndex(CurrentlyPlayingTrack);
+            if (at < 0)
+                return slot;
+
+            var queue = new List<Track>(_currentPlaylist.Tracks);
+            queue.RemoveAt(at);
+            var moved = slot > at ? slot - 1 : slot == at ? -1 : slot;
+            _currentPlaylist = new Playlist("Now Playing Queue", queue);
+            _queueIndex = moved;
+            OnPropertyChanged(nameof(CurrentPlaylist));
+            return moved;
+        }
+
+        // The output went away under a song that has left: there is nothing
+        // to come back to, so the place is the song after it.
+        private void ParkPastLeftSong()
+        {
+            var slot = ResolveQueueIndex(CurrentlyPlayingTrack);
+            LetGoOfLeftSong(slot);
+            if (_linedUpCount > 0)
+            {
+                _linedUpCount--;
+                OnPropertyChanged(nameof(LinedUpCount));
+            }
+            ParkInQueue(slot);
+            SaveQueue();
+        }
+
         public void ToggleRepeat()
         {
             IsRepeatEnabled = !IsRepeatEnabled;
@@ -1075,7 +1240,7 @@ namespace Flower.ViewModels
         // track, which is what eventually lets the audio manager notice it has
         // played out - see IAudioManager.PlayedOut and ParkAtTopOfQueue below.
         private (Track? Track, int Index) GetUpcomingEntry(Track currentTrack, int currentIndex) =>
-            Repeats ? (currentTrack, currentIndex) : GetNextEntry(currentTrack, currentIndex, wrap: false);
+            Repeats && !_playingHasLeft ? (currentTrack, currentIndex) : GetNextEntry(currentTrack, currentIndex, wrap: false);
 
         private (Track? Track, int Index) GetNextEntry(Track currentTrack, int currentIndex, bool wrap = true)
         {
@@ -1195,6 +1360,9 @@ namespace Flower.ViewModels
                 _linedUpCount = LinedUpAfterMoving(previousIndex, _queueIndex);
                 OnPropertyChanged(nameof(LinedUpCount));
             }
+
+            if (track != CurrentlyPlayingTrack)
+                _queueIndex = LetGoOfLeftSong(_queueIndex);
 
             // Every start of playback ages out any earlier one still waiting on
             // a stream URL - see StartWhenResolved.
@@ -1521,6 +1689,7 @@ namespace Flower.ViewModels
             // out after a run of failures has not) and its volume adjustment,
             // which must not be left applied to whatever plays next.
             LeavePlayingTrack();
+            LetGoOfLeftSong(-1);
 
             var first = _currentPlaylist.Tracks.FirstOrDefault();
             _logger.LogInformation(
@@ -1528,16 +1697,26 @@ namespace Flower.ViewModels
             // Endless Play's answer, if one is still coming, starts playing.
             _ranOut = _endless != null;
 
-            if (first != null)
-                ParkAt(first, 0, null);
-            else
-            {
-                _queueIndex = -1;
-                _parked = false;
-                CurrentlyPlayingTrack = null;
-                OnPropertyChanged(nameof(IsPlaying));
-            }
+            ParkInQueue(0);
             SaveQueue();
+        }
+
+        // Parks at this slot, or the last one when it is past the end, and
+        // on nothing at all when the queue is empty.
+        private void ParkInQueue(int slot)
+        {
+            var tracks = _currentPlaylist.Tracks;
+            if (tracks.Count > 0)
+            {
+                slot = Math.Clamp(slot, 0, tracks.Count - 1);
+                ParkAt(tracks[slot], slot, null);
+                return;
+            }
+
+            _queueIndex = -1;
+            _parked = false;
+            CurrentlyPlayingTrack = null;
+            OnPropertyChanged(nameof(IsPlaying));
         }
 
         public void PlayOrPause(Track track)
@@ -1890,7 +2069,20 @@ namespace Flower.ViewModels
             var ids = new List<Guid>(_currentPlaylist.Tracks.Count);
             foreach (var track in _currentPlaylist.Tracks)
                 ids.Add(track.Id);
-            return new PlayQueueState(ids, index, _playheadMs, _linedUpCount);
+
+            // Quit during a song that has left: the next launch comes back to
+            // the song after it, since it cannot come back to this one.
+            if (_playingHasLeft)
+            {
+                ids.RemoveAt(index);
+                if (ids.Count == 0)
+                    return null;
+                return new PlayQueueState(ids, Math.Min(index, ids.Count - 1), 0, Math.Max(0, _linedUpCount - 1),
+                    _queueSource?.Id, _queueSource?.FollowsOrder ?? false);
+            }
+
+            return new PlayQueueState(ids, index, _playheadMs, _linedUpCount,
+                _queueSource?.Id, _queueSource?.FollowsOrder ?? false);
         }
 
         private void SaveQueue(bool synchronously = false)
@@ -1957,6 +2149,10 @@ namespace Flower.ViewModels
                 return;
 
             _currentPlaylist = new Playlist("Now Playing Queue", queue);
+            _queueSource = state.SourcePlaylistId is { } sourceId
+                && _library.Playlists.FirstOrDefault(p => p.Id == sourceId) is { IsOrdinary: true } source
+                    ? new QueueSource(sourceId, state.SourceFollowsOrder, source.StoredTrackIds().ToList())
+                    : null;
             _linedUpCount = linedUp;
             OnPropertyChanged(nameof(CurrentPlaylist));
             OnPropertyChanged(nameof(LinedUpCount));
@@ -1996,8 +2192,12 @@ namespace Flower.ViewModels
             {
                 NoteVibeSkip();
 
-                var next = GetNextEntry(CurrentlyPlayingTrack, ResolveQueueIndex(CurrentlyPlayingTrack));
-                if (next.Track != null)
+                var currentIndex = ResolveQueueIndex(CurrentlyPlayingTrack);
+                var next = GetNextEntry(CurrentlyPlayingTrack, currentIndex);
+
+                // Alone in the queue after leaving the library: there is
+                // nothing to skip to, and starting it again would fail.
+                if (next.Track != null && !(_playingHasLeft && next.Index == currentIndex))
                 {
                     // Inside the check, so an empty queue's Next - which goes
                     // nowhere - leaves the song uncounted.
@@ -2029,6 +2229,15 @@ namespace Flower.ViewModels
                 var previous = Shuffles
                     ? StepBackInShuffledOrder(CurrentlyPlayingTrack, currentIndex)
                     : GetPreviousEntry(currentIndex);
+
+                // Nothing before a song that has left: back to its start
+                // rather than opening a file that may be gone.
+                if (_playingHasLeft && previous.Index == currentIndex)
+                {
+                    _audioManager.Position = 0;
+                    return;
+                }
+
                 if (previous.Track != null)
                 {
                     Play(previous.Track, previous.Index);

@@ -63,6 +63,7 @@ public sealed class VibeQueueSource
     {
         Playlist = playlist;
         _pool = playlist.Tracks.DistinctBy(t => t.Id).ToList();
+        _ownCount = _pool.Count;
         for (var i = 0; i < _pool.Count; i++)
             _rank[_pool[i].Id] = i;
         _skipped = skipped?.ToHashSet() ?? [];
@@ -75,7 +76,10 @@ public sealed class VibeQueueSource
 
     // Songs added beyond the playlist's own pool, by the server's id - what an
     // extension request names so it is not sent the same songs again.
-    public IEnumerable<Track> Extensions => _pool.Skip(Playlist.Tracks.Count);
+    public IEnumerable<Track> Extensions => _pool.Skip(_ownCount);
+
+    // How many of the pool, from the top, are the playlist's own.
+    private int _ownCount;
 
     // True once fewer than a quarter of the pool are left to play: the owner
     // asks for more (a paired device's one request), and calls Add with what
@@ -91,6 +95,18 @@ public sealed class VibeQueueSource
             if (_rank.TryAdd(track.Id, _pool.Count))
                 _pool.Add(track);
         }
+    }
+
+    // Songs removed from the library on purpose: never drawn again.
+    public void Remove(IReadOnlySet<Guid> ids)
+    {
+        _ownCount -= _pool.Take(_ownCount).Count(t => ids.Contains(t.Id));
+        if (_pool.RemoveAll(t => ids.Contains(t.Id)) == 0)
+            return;
+
+        _rank.Clear();
+        for (var i = 0; i < _pool.Count; i++)
+            _rank[_pool[i].Id] = i;
     }
 
     public void RecordSkip(Track track) => _skipped.Add(track.Id);

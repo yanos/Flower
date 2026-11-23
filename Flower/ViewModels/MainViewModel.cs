@@ -2469,8 +2469,46 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // search results are a separate mirror of Rows rather than Rows itself, so
     // it cannot just call SyncPlayQueueToCurrentView above - which is what left
     // it with its own copy of this until now.
-    public void SetPlayQueue(IEnumerable<Track> tracks) =>
-        _playlistControlViewModel.SetCurrentPlaylist(new Playlist("Now Playing Queue", new List<Track>(tracks)));
+    //
+    // A queue of the shown playlist's songs (all of them, or the ones a filter
+    // left) follows that playlist's edits. One sorted by a column takes its
+    // additions and removals and keeps an order of its own.
+    public void SetPlayQueue(IEnumerable<Track> tracks)
+    {
+        var queue = new List<Track>(tracks);
+        var source = _selectedSidebarItem?.Playlist is { IsOrdinary: true } shown && IsAllWithin(queue, shown.Tracks)
+            ? shown
+            : null;
+        _playlistControlViewModel.SetCurrentPlaylist(
+            new Playlist("Now Playing Queue", queue), source,
+            followsOrder: source != null && IsInOrderWithin(queue, source.Tracks));
+    }
+
+    private static bool IsAllWithin(List<Track> queue, IReadOnlyList<Track> list)
+    {
+        var available = new Dictionary<Guid, int>();
+        foreach (var track in list)
+            available[track.Id] = available.GetValueOrDefault(track.Id) + 1;
+
+        foreach (var track in queue)
+        {
+            if (available.GetValueOrDefault(track.Id) == 0)
+                return false;
+            available[track.Id]--;
+        }
+        return true;
+    }
+
+    private static bool IsInOrderWithin(List<Track> queue, IReadOnlyList<Track> list)
+    {
+        var matched = 0;
+        foreach (var track in list)
+        {
+            if (matched < queue.Count && queue[matched] == track)
+                matched++;
+        }
+        return matched == queue.Count;
+    }
 
     // Into the queue that is playing, rather than in place of it - see
     // PlaylistControlViewModel.PlayNext/AddToQueue.

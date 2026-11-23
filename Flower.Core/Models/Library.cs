@@ -378,6 +378,19 @@ namespace Flower.Models
         // it shows. A change to tracks already known is TrackChanged instead.
         public event EventHandler? LibraryChanged;
 
+        // These songs (by Id) were taken out on purpose: Remove from Library,
+        // a removal at the paired server, or the pairing that served them
+        // ending. Raised before LibraryChanged, on whichever thread did it.
+        // Not for a song a scan merely stopped finding, or one a server's
+        // catalog stopped listing: a drive or a mount can come back.
+        public event EventHandler<IReadOnlySet<Guid>>? TracksRemovedOnPurpose;
+
+        private void RaiseTracksRemovedOnPurpose(IReadOnlySet<Guid> ids)
+        {
+            if (ids.Count > 0)
+                TracksRemovedOnPurpose?.Invoke(this, ids);
+        }
+
         // These tracks changed in place, in this way - a play, a star, a tag
         // edit, new artwork, a download landing, a playback option. One event
         // per action, however many tracks it touched: starring an album or
@@ -963,6 +976,7 @@ namespace Flower.Models
 
             _logger.LogInformation("Removed {Count} track(s) from the library, keeping {Kept} file(s) on disk out of future scans",
                 removed.Count, excludePaths.Count);
+            RaiseTracksRemovedOnPurpose(removed.Select(t => t.Id).ToHashSet());
             LibraryChanged?.Invoke(this, EventArgs.Empty);
             return removed;
         }
@@ -1497,6 +1511,7 @@ namespace Flower.Models
         public int RemoveTracksFromOrigin(string originFingerprint)
         {
             int removedCount;
+            var dropped = new HashSet<Guid>();
             lock (_lock)
             {
                 var kept = new List<Track>(Tracks.Count);
@@ -1514,7 +1529,10 @@ namespace Flower.Models
                     }
 
                     if (track.Path == null)
+                    {
+                        dropped.Add(track.Id);
                         continue;
+                    }
 
                     ClearOrigin(track);
                     kept.Add(track);
@@ -1535,6 +1553,7 @@ namespace Flower.Models
             _logger.LogInformation("Dropped {RemovedCount} placeholder(s) from origin {Origin} and cleared its metadata from the rest",
                 removedCount, originFingerprint);
 
+            RaiseTracksRemovedOnPurpose(dropped);
             LibraryChanged?.Invoke(this, EventArgs.Empty);
             return removedCount;
         }
@@ -1763,6 +1782,7 @@ namespace Flower.Models
             SyncedFileWork? fileWork = null, IReadOnlyDictionary<string, TimeSpan?>? resumeBaseline = null)
         {
             int removedCount;
+            HashSet<Guid> removedOnPurpose;
             bool reshaped;
             Dictionary<Track, TrackChange> changed;
             TrackChange inPlace;
@@ -1878,6 +1898,10 @@ namespace Flower.Models
                     }
                 }
                 removedCount = stale.Count;
+                removedOnPurpose = stale
+                    .Where(t => t.OriginTrackId is { } id && removedAtSource?.Contains(id) == true)
+                    .Select(t => t.Id)
+                    .ToHashSet();
 
                 // Songs arriving or leaving reshape the library, and so does a
                 // change to where a song comes from (what can be downloaded,
@@ -1917,6 +1941,8 @@ namespace Flower.Models
                     Persist(() => _store!.UpsertMany(changed.Keys));
                 }
             }
+
+            RaiseTracksRemovedOnPurpose(removedOnPurpose);
 
             // An in-place change is announced as Remote, like every other
             // change that arrived from somewhere else: nothing in it is this

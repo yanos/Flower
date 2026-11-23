@@ -4,7 +4,7 @@ Bugs a person using Flower would hit: data lost, the wrong thing done, a dead
 end, or behaviour that misleads. The `user-flow-review` skill finds them and
 keeps this list; `/release` treats every open **P0** here as blocking the tag.
 
-**Status:** 12 open (3 P0, 4 fix-now, 5 later), from the review of `ef6695fb`
+**Status:** 11 open (3 P0, 3 fix-now, 5 later), from the review of `ef6695fb`
 on 2026-11-22.
 
 Severities are the ones in `.claude/skills/release/REVIEW.md`. **Reproduced**
@@ -55,11 +55,6 @@ temporary stream copy.
 `Flower/Services/TrackTagFields.cs:166`, `Flower/Views/TrackInfoWindow.axaml.cs:222`,
 `Flower/Views/MainView.axaml.cs:2029`.
 *Direction:* say what failed and keep the window open; resolve to the library's track.
-
-**UF-10. Removed songs stay in the current queue.** *Read.*
-They keep playing until relaunch, or fail when reached if their file was trashed.
-`Flower/ViewModels/PlaylistControlViewModel.cs:1010`.
-*Direction:* take removed songs out of the live queue.
 
 **UF-11. Delete Local File leaves a dead row on an unpaired library.** *Read.*
 The song stays listed with nothing to play and no source to get it from.

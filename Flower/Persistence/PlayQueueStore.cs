@@ -13,7 +13,11 @@ namespace Flower.Persistence
     // and how far into it playback had got. A phone puts a paused app away and
     // kills it whenever it likes, and without this every one of those launches
     // came back to an empty queue - see PlaylistControlViewModel.RestoreQueue.
-    public sealed record PlayQueueState(List<Guid> TrackIds, int Index, long PositionMs, int LinedUpCount);
+    // SourcePlaylistId is the playlist whose edits it follows, if any, and
+    // SourceFollowsOrder whether it takes that playlist's order too.
+    public sealed record PlayQueueState(
+        List<Guid> TrackIds, int Index, long PositionMs, int LinedUpCount,
+        Guid? SourcePlaylistId = null, bool SourceFollowsOrder = false);
 
     // A file of its own, like AlbumProgressStore and for the same reason: it
     // is rewritten on every song change, which settings.json should not be.
