@@ -834,8 +834,11 @@ the song keeps its id.
 from comparing layouts. Same refusals as an upload.
 
 **Tags.** `POST /library/tags` with
-`{edits: [{trackId, editedAt, tags}]}` → `{applied, notWritten, libraryToken}`.
-`tags` is a whole `TrackTagsDto` — an edit replaces the song's tags as a set.
+`{edits: [{trackId, editedAt, tags, fields}]}` → `{applied, notWritten, libraryToken}`.
+`tags` is a `TrackTagsDto` and `fields` the `TrackTagFieldSet` flags naming which
+of its values were edited. Only those are applied; the rest of the file's tags
+stay as they are. The catalog's `tagFields` names every tag edited on a song, and
+a device with its own copy of the file takes only those.
 `notWritten` lists the ids whose file could not be written and are worth
 sending again; every other edit is settled, including one the server already
 holds something newer for.

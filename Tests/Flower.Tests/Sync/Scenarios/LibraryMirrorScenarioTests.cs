@@ -104,7 +104,7 @@ public class LibraryMirrorScenarioTests : PinnedDataDirectory
             }
 
             track.Title = newTitle;
-            Library.NotifyTrackChanged(track, TrackChange.Tags);
+            Library.NotifyTagsEdited([track], TrackTagFieldSet.Title);
         }
 
         // A cover changed in Track Info, as AlbumArtEditor does it for a song
@@ -1812,4 +1812,72 @@ public class LibraryMirrorScenarioTests : PinnedDataDirectory
         Assert.NotNull(mine.Path);
         Assert.False(mine.IsLocallyDownloaded);
     }
+
+    // ── An edit carries only what was edited ─────────────────────────────
+
+    private static void WriteExtraTags(string path, string comment)
+    {
+        using var file = TagLib.File.Create(path);
+        file.Tag.Comment = comment;
+        file.Tag.Lyrics = "La la la";
+        file.Tag.Genres = ["Rock", "Jazz"];
+        file.Save();
+    }
+
+    // The catalog leaves these out for a song nobody has edited, so a phone
+    // that only streams it holds blanks, which must not reach any file.
+    [Fact]
+    public async Task Retitling_a_streamed_song_leaves_its_other_tags_in_every_file()
+    {
+        var server = NewServer();
+        var desktop = NewDevice();
+        desktop.AddFile("song.wav", "Teh Song");
+        WriteExtraTags(desktop.PathOf("song.wav"), "A note");
+        desktop.Scan();
+        await desktop.SyncAsync(server);
+        var phone = NewDevice();
+        await phone.SyncAsync(server);
+        Assert.Null(phone.Single("Teh Song").Path);
+
+        phone.EditTitle("Teh Song", "The Song");
+        await phone.SyncAsync(server);
+        await desktop.SyncAsync(server);
+
+        foreach (var path in new[] { ServerPath(server, "song.wav"), desktop.PathOf("song.wav") })
+        {
+            using var file = TagLib.File.Create(path);
+            Assert.Equal("The Song", file.Tag.Title);
+            Assert.Equal("A note", file.Tag.Comment);
+            Assert.Equal("La la la", file.Tag.Lyrics);
+            Assert.Equal(["Rock", "Jazz"], file.Tag.Genres);
+        }
+    }
+
+    // Tags nobody edited are each file's own, even where the server's differ.
+    [Fact]
+    public async Task A_device_takes_the_edited_tag_and_keeps_the_rest_of_its_own_file()
+    {
+        var server = NewServer();
+        var desktop = NewDevice();
+        var laptop = NewDevice();
+        desktop.AddFile("song.wav", "Teh Song");
+        WriteExtraTags(desktop.PathOf("song.wav"), "The desktop's");
+        laptop.AddFile("song.wav", "Teh Song");
+        WriteExtraTags(laptop.PathOf("song.wav"), "The laptop's");
+        desktop.Scan();
+        laptop.Scan();
+        await desktop.SyncAsync(server);
+        await laptop.SyncAsync(server);
+
+        desktop.EditTitle("Teh Song", "The Song");
+        await desktop.SyncAsync(server);
+        await laptop.SyncAsync(server);
+
+        Assert.Equal("The Song", laptop.Single("The Song").Title);
+        Assert.Equal("The laptop's", laptop.Single("The Song").Comment);
+        using var file = TagLib.File.Create(laptop.PathOf("song.wav"));
+        Assert.Equal("The Song", file.Tag.Title);
+        Assert.Equal("The laptop's", file.Tag.Comment);
+    }
+
 }

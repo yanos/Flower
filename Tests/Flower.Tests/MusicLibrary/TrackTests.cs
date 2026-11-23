@@ -96,6 +96,7 @@ public class TrackTests
         _ when type == typeof(bool) => !(bool)value!,
         _ when type == typeof(int) => (int)value! + 1,
         _ when type == typeof(uint) => (uint)value! + 1,
+        _ when type == typeof(Flower.Services.TrackTagFieldSet) => (Flower.Services.TrackTagFieldSet)value! ^ Flower.Services.TrackTagFieldSet.Title,
         _ when type == typeof(Guid) => Guid.NewGuid(),
         _ when type == typeof(TimeSpan) => (TimeSpan)value! + TimeSpan.FromSeconds(1),
         _ when type == typeof(TimeSpan?) => ((TimeSpan?)value ?? TimeSpan.Zero) + TimeSpan.FromSeconds(1),

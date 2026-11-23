@@ -130,6 +130,8 @@ namespace Flower.Persistence.Sql
                 moved_from_path           TEXT,
                 origin_file_stamp         TEXT,
                 tags_edited_at            INTEGER,
+                tag_fields_edited         INTEGER NOT NULL DEFAULT 0,
+                tag_fields_to_send        INTEGER NOT NULL DEFAULT 0,
                 art_edited_at             INTEGER,
                 file_replaced_at          INTEGER
             );

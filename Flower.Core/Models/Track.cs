@@ -330,6 +330,16 @@ namespace Flower.Models
         // whichever device made it.
         public DateTimeOffset? TagsEditedAt { get; set; }
 
+        // Which tags a person has edited, ever. Set on the server and handed
+        // to devices with the catalog, so that a device with its own copy of
+        // the file takes those tags and keeps the rest of what its file says.
+        public Flower.Services.TrackTagFieldSet TagFieldsEdited { get; set; }
+
+        // The tags edited on this device that the server has not taken yet:
+        // all a push sends. The other values on a streamed song may simply
+        // never have been sent to this device.
+        public Flower.Services.TrackTagFieldSet TagFieldsToSend { get; set; }
+
         // The same for the artwork: when this song's picture was last changed
         // by a person, in Flower, on any device. Travels the way TagsEditedAt
         // does - stamped where the change is made, sent to the server with the
@@ -643,6 +653,8 @@ namespace Flower.Models
             && MovedFromPath == other.MovedFromPath
             && OriginFileStamp == other.OriginFileStamp
             && TagsEditedAt == other.TagsEditedAt
+            && TagFieldsEdited == other.TagFieldsEdited
+            && TagFieldsToSend == other.TagFieldsToSend
             && ArtEditedAt == other.ArtEditedAt
             && FileReplacedAt == other.FileReplacedAt
             && RememberPlaybackPosition == other.RememberPlaybackPosition

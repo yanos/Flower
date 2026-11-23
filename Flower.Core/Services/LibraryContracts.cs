@@ -170,6 +170,9 @@ public sealed record TrackDto(
     // sixteen thousand too many.
     System.DateTimeOffset? TagsEditedAt = null,
     TrackTagsDto? Tags = null,
+    // Which of Tags a person has actually edited (Track.TagFieldsEdited). A
+    // device with its own copy of the file takes those and keeps the rest.
+    TrackTagFieldSet TagFields = TrackTagFieldSet.None,
     // Flower-specific. When this song's artwork was last changed by a person
     // (Track.ArtEditedAt). Only the date: the picture is megabytes and has its
     // own route, and a device that finds this newer than its own goes and

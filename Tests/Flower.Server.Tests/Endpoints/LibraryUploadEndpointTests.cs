@@ -247,7 +247,8 @@ public class LibraryUploadEndpointTests(FlowerServerFixture server) : IClassFixt
         var uploaded = await UploadAsync(admin, "Tags/song.wav", Wav(10));
         var editedAt = DateTimeOffset.UtcNow;
         var request = new LibraryTagEditsRequestDto(
-            [new TrackTagEditDto(uploaded.TrackId!, editedAt, new TrackTagsDto(Title: "Edited", Artists: "Somebody", Comment: "a note"))]);
+            [new TrackTagEditDto(uploaded.TrackId!, editedAt, new TrackTagsDto(Title: "Edited", Artists: "Somebody", Comment: "a note"),
+                TrackTagFieldSet.Title | TrackTagFieldSet.Artists | TrackTagFieldSet.Comment)]);
 
         var (refused, _) = await PostJsonAsync(guest, "/api/admin/library/tags", request);
         Assert.Equal(HttpStatusCode.Forbidden, refused);

@@ -4,8 +4,8 @@ Bugs a person using Flower would hit: data lost, the wrong thing done, a dead
 end, or behaviour that misleads. The `user-flow-review` skill finds them and
 keeps this list; `/release` treats every open **P0** here as blocking the tag.
 
-**Status:** 16 open (7 P0, 4 fix-now, 5 later), from the review of `ef6695fb`
-on 2026-11-22. Nothing below is fixed yet.
+**Status:** 15 open (6 P0, 4 fix-now, 5 later), from the review of `ef6695fb`
+on 2026-11-22.
 
 Severities are the ones in `.claude/skills/release/REVIEW.md`. **Reproduced**
 means a throwaway test against an export of that commit went red on the bug;
@@ -17,15 +17,6 @@ An id is never reused. A fixed finding leaves this list, and its commit records
 the fix.
 
 ## P0: data is lost or damaged
-
-**UF-1. Editing a streamed song erases its other tags.** *Reproduced.*
-An admin phone retitles a song it only streams. The catalog omits lyrics,
-composer, comment, copyright and most other tags for a song nobody has edited,
-so the push sends them blank and the server writes the blanks into its file,
-from where they reach other devices' copies. A device holding the real file
-still strips every genre but the first, because `Track.Genre` keeps only one.
-`Flower/Services/LibraryMirrorService.cs:353`, `Flower.Core/Services/TrackTags.cs:122`.
-*Direction:* send and apply only the fields that were edited.
 
 **UF-2. Playlists permanently lose songs when a drive is away for two launches.** *Reproduced.*
 The first launch drops the songs from the library. The second loads playlists

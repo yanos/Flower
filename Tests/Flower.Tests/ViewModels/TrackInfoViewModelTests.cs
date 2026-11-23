@@ -172,4 +172,18 @@ public class TrackInfoViewModelTests : PinnedDataDirectory
         Assert.Contains("PCM", Open(library, [dsd]).CodecValue);
         Assert.Equal("Flac Audio", Open(library, [flac]).CodecValue);
     }
+
+    // All that goes to the server: the rest of a streamed song's tags may
+    // never have been sent to this device, and would go up as blanks.
+    [Fact]
+    public void A_save_records_only_the_fields_that_were_edited()
+    {
+        var song = Song("Debaser");
+        var info = Open(new Library([song]), [song]);
+
+        info.Title.Text = "Debaser (Demo)";
+        info.Save();
+
+        Assert.Equal(Flower.Services.TrackTagFieldSet.Title, song.TagFieldsToSend);
+    }
 }

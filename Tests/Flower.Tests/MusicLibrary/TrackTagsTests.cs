@@ -62,6 +62,35 @@ public sealed class TrackTagsTests : IDisposable
         Assert.Equal(TrackTags.Of(new Track { Title = "A", Artists = "" }), TrackTags.Of(new Track { Title = " A ", Artists = null }));
     }
 
+    // Every field, because each is its own line in three lists that have to
+    // agree: what is compared, what is merged and what is written.
+    [Fact]
+    public void Writing_one_field_changes_that_field_and_no_other()
+    {
+        var other = new TrackTagsDto(
+            Title: "Title 2", Artists: "Three", Album: "Album 2", AlbumArtists: "Album Artist 2",
+            TrackNumber: 4, TrackCount: 13, DiscNumber: 2, DiscCount: 3,
+            Year: "2001", Genre: "Genre 2", BeatsPerMinute: 121, InitialKey: "Bm", Grouping: "Grouping 2",
+            Composers: "Composer 2", Conductor: "Conductor 2", RemixedBy: "Remixer 2",
+            Subtitle: "Subtitle 2", Description: "Description 2", Comment: "Comment 2", Publisher: "Publisher 2",
+            Copyright: "Copyright 2", Isrc: "USRC17607840", Lyrics: "Na na na",
+            TitleSort: "Title Sort 2", ArtistsSort: "Artist Sort 2", AlbumSort: "Album Sort 2", ComposersSort: "Composer Sort 2",
+            IsCompilation: !Everything.IsCompilation);
+        var importer = new Flower.Importer.Importer(NullLogger<Flower.Importer.Importer>.Instance);
+
+        foreach (var field in Enum.GetValues<TrackTagFieldSet>().Where(f => f is not (TrackTagFieldSet.None or TrackTagFieldSet.All)))
+        {
+            var path = TaggedAudioFile.Create(_root, $"{field}.wav", "Before");
+            TrackTags.WriteToFile(path, Everything);
+
+            TrackTags.WriteToFile(path, other, field);
+
+            var read = TrackTags.Of(importer.ImportFile(path)!);
+            Assert.Equal(field, TrackTags.Differences(Everything, read));
+            Assert.Equal(read, TrackTags.Merge(Everything, other, field));
+        }
+    }
+
     // ── A server taking edits ────────────────────────────────────────────
 
     [Fact]
@@ -73,7 +102,7 @@ public sealed class TrackTagsTests : IDisposable
         var at = DateTimeOffset.UtcNow;
 
         var response = TrackTags.ApplyEdits(
-            library, [new TrackTagEditDto(track.Id.ToKey(), at, Everything)], NullLogger.Instance);
+            library, [new TrackTagEditDto(track.Id.ToKey(), at, Everything, TrackTagFieldSet.All)], NullLogger.Instance);
 
         Assert.Equal(1, response.Applied);
         Assert.Empty(response.NotWritten);
@@ -93,7 +122,7 @@ public sealed class TrackTagsTests : IDisposable
         var library = new Library([track]);
 
         var response = TrackTags.ApplyEdits(
-            library, [new TrackTagEditDto(track.Id.ToKey(), newer.AddMinutes(-5), Everything)], NullLogger.Instance);
+            library, [new TrackTagEditDto(track.Id.ToKey(), newer.AddMinutes(-5), Everything, TrackTagFieldSet.All)], NullLogger.Instance);
 
         Assert.Equal(0, response.Applied);
         Assert.Equal("Newer", track.Title);
@@ -109,7 +138,7 @@ public sealed class TrackTagsTests : IDisposable
         var library = new Library([track]);
 
         var response = TrackTags.ApplyEdits(
-            library, [new TrackTagEditDto(track.Id.ToKey(), DateTimeOffset.UtcNow, Everything)], NullLogger.Instance);
+            library, [new TrackTagEditDto(track.Id.ToKey(), DateTimeOffset.UtcNow, Everything, TrackTagFieldSet.All)], NullLogger.Instance);
 
         Assert.Equal(0, response.Applied);
         Assert.Equal([track.Id.ToKey()], response.NotWritten);
@@ -336,7 +365,7 @@ public sealed class TrackTagsTests : IDisposable
         TrackChangedEventArgs? raised = null;
         library.TrackChanged += (_, e) => raised = e;
 
-        library.ApplySyncedTags([(track, Everything, at, null)]);
+        library.ApplySyncedTags([(track, Everything, at, null, TrackTagFieldSet.All)]);
 
         Assert.Equal(ChangeSource.Remote, raised!.Source);
         Assert.Equal(at, track.TagsEditedAt);

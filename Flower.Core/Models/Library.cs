@@ -1265,7 +1265,8 @@ namespace Flower.Models
         // handed a file does not read as having changed one.
         public Track AddScannedTrack(
             Track track, DateTimeOffset? knownSince = null, DateTimeOffset? tagsEditedAt = null, DateTimeOffset? artEditedAt = null,
-            DateTimeOffset? fileReplacedAt = null, string? fileStamp = null)
+            DateTimeOffset? fileReplacedAt = null, string? fileStamp = null,
+            TrackTagFieldSet editedTagFields = TrackTagFieldSet.None)
         {
             lock (_lock)
             {
@@ -1282,7 +1283,11 @@ namespace Flower.Models
                 if (knownSince is { } since && since < track.DateAdded)
                     track.DateAdded = since;
                 if (tagsEditedAt is { } edited)
+                {
                     track.TagsEditedAt = edited;
+                    track.TagFieldsEdited |= editedTagFields;
+                    track.TagFieldsToSend = TrackTagFieldSet.None;
+                }
                 if (artEditedAt is { } repainted)
                     track.ArtEditedAt = repainted;
                 if (fileReplacedAt is { } replacedAt)
@@ -1349,7 +1354,10 @@ namespace Flower.Models
                 // file is what changed them there: this device's are the same
                 // tags, and are not older.
                 if (tagsEditedAt != null)
+                {
                     current.TagsEditedAt = tagsEditedAt;
+                    current.TagFieldsToSend = TrackTagFieldSet.None;
+                }
                 if (artEditedAt != null)
                     current.ArtEditedAt = artEditedAt;
                 if (fileReplacedAt != null)
@@ -1637,6 +1645,8 @@ namespace Flower.Models
             track.MovedFromPath           = previous.MovedFromPath;
             track.OriginFileStamp         = previous.OriginFileStamp;
             track.TagsEditedAt            = previous.TagsEditedAt;
+            track.TagFieldsEdited         = previous.TagFieldsEdited;
+            track.TagFieldsToSend         = previous.TagFieldsToSend;
             track.ArtEditedAt             = previous.ArtEditedAt;
             track.FileReplacedAt          = previous.FileReplacedAt;
             // Track Info's Options tab - Flower's own per-track playback state,
@@ -2039,6 +2049,8 @@ namespace Flower.Models
             if (remote.TagsEditedAt != null)
                 TrackTags.ApplyTo(existing, TrackTags.Of(remote));
             existing.TagsEditedAt = remote.TagsEditedAt;
+            existing.TagFieldsEdited = remote.TagFieldsEdited;
+            existing.TagFieldsToSend = TrackTagFieldSet.None;
             existing.ArtEditedAt = remote.ArtEditedAt;
             existing.FileReplacedAt = remote.FileReplacedAt;
 
@@ -2991,7 +3003,7 @@ namespace Flower.Models
         // for a file whose changes this device uploads (Track.OriginFileStamp):
         // the write changed the file, and it is still the same as the server's.
         public void ApplySyncedTags(
-            IReadOnlyList<(Track Track, TrackTagsDto Tags, DateTimeOffset EditedAt, string? FileStamp)> edits)
+            IReadOnlyList<(Track Track, TrackTagsDto Tags, DateTimeOffset EditedAt, string? FileStamp, TrackTagFieldSet EditedFields)> edits)
         {
             if (edits.Count == 0)
                 return;
@@ -2999,11 +3011,13 @@ namespace Flower.Models
             var changed = new List<Track>(edits.Count);
             lock (_lock)
             {
-                foreach (var (track, tags, editedAt, fileStamp) in edits)
+                foreach (var (track, tags, editedAt, fileStamp, editedFields) in edits)
                 {
                     var current = ResolveCurrent(track);
                     TrackTags.ApplyTo(current, tags);
                     current.TagsEditedAt = editedAt;
+                    current.TagFieldsEdited = editedFields;
+                    current.TagFieldsToSend = TrackTagFieldSet.None;
                     if (fileStamp != null && current.OriginFileStamp != null)
                         current.OriginFileStamp = fileStamp;
                     changed.Add(current);
@@ -3057,6 +3071,45 @@ namespace Flower.Models
         }
 
         public void NotifyTrackChanged(Track changed, TrackChange change) => NotifyTracksChanged([changed], change);
+
+        // A person edited these tags of these songs, here: what is sent to the
+        // server is these fields and no others (Track.TagFieldsToSend).
+        public void NotifyTagsEdited(IReadOnlyList<Track> edited, TrackTagFieldSet fields)
+        {
+            foreach (var track in edited)
+            {
+                track.TagFieldsEdited |= fields;
+                track.TagFieldsToSend |= fields;
+            }
+
+            NotifyTracksChanged(edited, TrackChange.Tags);
+        }
+
+        // The server has taken these fields of an edit. Bookkeeping, so written
+        // and not announced. A song edited again since keeps everything owed,
+        // because the newer edit may have changed the same field.
+        public void SettleSentTags(IReadOnlyList<(Track Track, DateTimeOffset EditedAt, TrackTagFieldSet Sent)> sent)
+        {
+            var changed = new List<Track>(sent.Count);
+            lock (_lock)
+            {
+                foreach (var (track, editedAt, fields) in sent)
+                {
+                    var current = ResolveCurrent(track);
+                    if (current.TagsEditedAt != editedAt)
+                        continue;
+
+                    current.TagFieldsToSend &= ~fields;
+                    changed.Add(current);
+                }
+            }
+
+            Persist(() =>
+            {
+                foreach (var track in changed)
+                    _store!.Upsert(track);
+            });
+        }
 
         private void RaiseTrackChanged(IReadOnlyList<Track> tracks, TrackChange change, ChangeSource source = ChangeSource.Local) =>
             TrackChanged?.Invoke(this, new TrackChangedEventArgs(tracks, change, source));

@@ -176,6 +176,7 @@ public static class LibraryDtoMapper
             DiscCount: track.DiscCount > 0 ? (int)track.DiscCount : null,
             TagsEditedAt: track.TagsEditedAt,
             Tags: track.TagsEditedAt != null ? TrackTags.Of(track) : null,
+            TagFields: track.TagFieldsEdited,
             ArtEditedAt: track.ArtEditedAt,
             FileReplacedAt: track.FileReplacedAt,
             ArtWidth: track.ArtWidth > 0 ? track.ArtWidth : null,

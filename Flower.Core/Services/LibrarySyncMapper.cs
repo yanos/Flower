@@ -140,6 +140,7 @@ public static class LibrarySyncMapper
         }
 
         track.TagsEditedAt = song.TagsEditedAt;
+        track.TagFieldsEdited = song.TagFields;
         track.ArtEditedAt = song.ArtEditedAt;
         track.FileReplacedAt = song.FileReplacedAt;
         return track;

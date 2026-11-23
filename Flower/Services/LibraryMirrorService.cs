@@ -323,6 +323,10 @@ public class LibraryMirrorService
     // and its catalog then carries them to every other device. Returns how
     // many edits the server took.
     //
+    // Only the fields edited here (Track.TagFieldsToSend). The rest of what a
+    // streamed song holds is not the file's: the catalog leaves most tags out
+    // for a song nobody has edited, and sending those blanks erased them.
+    //
     // The values, not the file, which is what makes this work from a phone on
     // a train: a few hundred bytes a song, over any connection, where sending
     // the file again would wait for home. A device that does have the file
@@ -335,6 +339,7 @@ public class LibraryMirrorService
 
         var owed = _library.Tracks
             .Where(t => IsOnServer(t, device)
+                        && t.TagFieldsToSend != TrackTagFieldSet.None
                         && t.TagsEditedAt is { } mine
                         && !(_librarySync.ServerTagsEditedAt(device.Fingerprint, t.OriginTrackId!) is { } theirs && theirs >= mine))
             .ToList();
@@ -350,7 +355,7 @@ public class LibraryMirrorService
             foreach (var batch in owed.Chunk(TagEditBatch))
             {
                 var edits = batch
-                    .Select(t => new TrackTagEditDto(t.OriginTrackId!, t.TagsEditedAt!.Value, TrackTags.Of(t)))
+                    .Select(t => new TrackTagEditDto(t.OriginTrackId!, t.TagsEditedAt!.Value, TrackTags.Of(t), t.TagFieldsToSend))
                     .ToList();
                 var response = await Throttled(() => client.EditTagsAsync(new LibraryTagEditsRequestDto(edits), ct), ct);
                 _librarySync.NoteLibraryTokenCausedHere(device.Fingerprint, response.LibraryToken);
@@ -365,6 +370,10 @@ public class LibraryMirrorService
                         _librarySync.NoteServerTagsEditedAt(device.Fingerprint, edit.TrackId, edit.EditedAt);
                 }
 
+                _library.SettleSentTags(batch.Zip(edits)
+                    .Where(pair => !notWritten.Contains(pair.Second.TrackId))
+                    .Select(pair => (pair.First, pair.Second.EditedAt, pair.Second.Fields))
+                    .ToList());
                 NoteUnwritten(device, _unwrittenTags, edits.Select(e => e.TrackId), notWritten);
                 AcceptAsSent(batch.Where(t => !notWritten.Contains(t.OriginTrackId!)));
 

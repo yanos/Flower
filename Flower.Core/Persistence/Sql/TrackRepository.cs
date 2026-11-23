@@ -34,7 +34,8 @@ namespace Flower.Persistence.Sql
             remember_playback_position, resume_position_ticks, ignore_when_shuffling, volume_adjustment,
             encoder_profile, withdrawn_by_origin, moved_from_path, origin_file_stamp, tags_edited_at, art_edited_at, file_replaced_at,
             art_width, art_height, art_hash,
-            skip_count, imported_skip_count
+            skip_count, imported_skip_count,
+            tag_fields_edited, tag_fields_to_send
             """;
 
         public List<Track> LoadAll()
@@ -488,7 +489,8 @@ namespace Flower.Persistence.Sql
                 remember_playback_position, resume_position_ticks, ignore_when_shuffling, volume_adjustment,
                 encoder_profile, withdrawn_by_origin, moved_from_path, origin_file_stamp, tags_edited_at, art_edited_at, file_replaced_at,
             art_width, art_height, art_hash,
-                skip_count, imported_skip_count
+                skip_count, imported_skip_count,
+                tag_fields_edited, tag_fields_to_send
             ) VALUES (
                 $id, $path, $title, $subtitle, $artists, $album_artists, $is_compilation,
                 $album, $album_sort, $year, $track_number, $track_count, $disc_number, $disc_count,
@@ -504,7 +506,8 @@ namespace Flower.Persistence.Sql
                 $remember_playback_position, $resume_position_ticks, $ignore_when_shuffling, $volume_adjustment,
                 $encoder_profile, $withdrawn_by_origin, $moved_from_path, $origin_file_stamp, $tags_edited_at, $art_edited_at, $file_replaced_at,
                 $art_width, $art_height, $art_hash,
-                $skip_count, $imported_skip_count
+                $skip_count, $imported_skip_count,
+                $tag_fields_edited, $tag_fields_to_send
             )
             ON CONFLICT (id) DO UPDATE SET
                 path = excluded.path,
@@ -571,7 +574,9 @@ namespace Flower.Persistence.Sql
                 art_height = excluded.art_height,
                 art_hash = excluded.art_hash,
                 skip_count = excluded.skip_count,
-                imported_skip_count = excluded.imported_skip_count;
+                imported_skip_count = excluded.imported_skip_count,
+                tag_fields_edited = excluded.tag_fields_edited,
+                tag_fields_to_send = excluded.tag_fields_to_send;
             """;
 
         private static readonly string[] UpsertParameterNames =
@@ -591,6 +596,7 @@ namespace Flower.Persistence.Sql
             "$encoder_profile", "$withdrawn_by_origin", "$moved_from_path", "$origin_file_stamp", "$tags_edited_at", "$art_edited_at", "$file_replaced_at",
             "$art_width", "$art_height", "$art_hash",
             "$skip_count", "$imported_skip_count",
+            "$tag_fields_edited", "$tag_fields_to_send",
         ];
 
         // Parameters are added once and then only have their Value reassigned
@@ -678,6 +684,8 @@ namespace Flower.Persistence.Sql
             p["$art_hash"].Value = Nullable(track.ArtHash);
             p["$skip_count"].Value = track.SkipCount;
             p["$imported_skip_count"].Value = track.ImportedSkipCount;
+            p["$tag_fields_edited"].Value = (long)(uint)track.TagFieldsEdited;
+            p["$tag_fields_to_send"].Value = (long)(uint)track.TagFieldsToSend;
         }
 
         private static object Nullable(string? value) => (object?)value ?? DBNull.Value;
@@ -752,6 +760,8 @@ namespace Flower.Persistence.Sql
             ArtHash = Text(reader, 63),
             SkipCount = (int)reader.GetInt64(64),
             ImportedSkipCount = (int)reader.GetInt64(65),
+            TagFieldsEdited = (Flower.Services.TrackTagFieldSet)(uint)reader.GetInt64(66),
+            TagFieldsToSend = (Flower.Services.TrackTagFieldSet)(uint)reader.GetInt64(67),
         };
 
         private static string? Text(SqliteDataReader reader, int ordinal) =>

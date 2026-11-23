@@ -356,7 +356,8 @@ public sealed class LibraryIngest
         // The picture likewise (Track.ArtEditedAt).
         var now = DateTimeOffset.UtcNow;
         var before = _library.Tracks.FirstOrDefault(t => _library.PathRules.Equals(t.Path, target));
-        DateTimeOffset? edited = before != null && TrackTags.Of(before) != TrackTags.Of(track) ? now : null;
+        var editedFields = before != null ? TrackTags.Differences(TrackTags.Of(before), TrackTags.Of(track)) : TrackTagFieldSet.None;
+        DateTimeOffset? edited = editedFields != TrackTagFieldSet.None ? now : null;
         DateTimeOffset? repainted = hadOld && !TrackArtwork.Same(oldArt, LocalAlbumArtReader.EmbeddedIn(target)) ? now : null;
 
         // The same path as before, so this is the same song with new tags:
@@ -364,7 +365,8 @@ public sealed class LibraryIngest
         //
         // And a new version is a new file, whatever else it is: dated, so
         // every other copy of the song is replaced with it (Track.FileReplacedAt).
-        var replaced = _library.AddScannedTrack(track, tagsEditedAt: edited, artEditedAt: repainted, fileReplacedAt: now);
+        var replaced = _library.AddScannedTrack(
+            track, tagsEditedAt: edited, artEditedAt: repainted, fileReplacedAt: now, editedTagFields: editedFields);
         _logger.LogInformation("Replaced {RelativePath} with a newer version of the same song ({TrackId})",
             session.RelativePath, replaced.Id.ToKey());
 

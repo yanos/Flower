@@ -119,6 +119,7 @@ public class RescanCarryForwardGuardTests
         if (underlying == typeof(int))               return 4711;
         if (underlying == typeof(uint))              return 4711u;
         if (underlying == typeof(bool))              return true;
+        if (underlying == typeof(Flower.Services.TrackTagFieldSet)) return Flower.Services.TrackTagFieldSet.Lyrics;
         if (underlying == typeof(TimeSpan))          return TimeSpan.FromSeconds(4711);
         if (underlying == typeof(DateTimeOffset))    return new DateTimeOffset(1999, 9, 9, 9, 9, 9, TimeSpan.Zero);
         if (underlying == typeof(Dictionary<string, int>)) return new Dictionary<string, int> { ["peer"] = 7 };

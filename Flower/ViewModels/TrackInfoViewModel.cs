@@ -418,7 +418,10 @@ public sealed class TrackInfoViewModel : ViewModelBase
         // MainViewModel.SyncITunesPlayCountAsync on why passing Tracks back in
         // as a "fresh scan" silently doubles every placeholder. Persists just
         // these rows.
-        _library.NotifyTracksChanged(edited, TrackChange.Tags);
+        var fields = edits.Aggregate(TrackTagFieldSet.None, (all, edit) => all | edit.Tag.Set);
+        if (compilation != null)
+            fields |= TrackTagFieldSet.IsCompilation;
+        _library.NotifyTagsEdited(edited, fields);
 
         // What was written is now what is shown, so a second Save - Prev/Next
         // then OK - writes nothing twice.

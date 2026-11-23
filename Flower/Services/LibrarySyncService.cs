@@ -688,7 +688,8 @@ public class LibrarySyncService
         {
             _library.AddScannedTrack(
                 scanned, tagsEditedAt: remote.TagsEditedAt, artEditedAt: remote.ArtEditedAt,
-                fileReplacedAt: replacedAt, fileStamp: LibraryMirrorService.StampOf(path));
+                fileReplacedAt: replacedAt, fileStamp: LibraryMirrorService.StampOf(path),
+                editedTagFields: remote.TagFieldsEdited);
         }
         finally
         {
@@ -770,23 +771,28 @@ public class LibrarySyncService
         if (newer.Count == 0)
             return;
 
-        var applied = new List<(Track Track, TrackTagsDto Tags, DateTimeOffset EditedAt, string? FileStamp)>();
+        var applied = new List<(Track Track, TrackTagsDto Tags, DateTimeOffset EditedAt, string? FileStamp, TrackTagFieldSet EditedFields)>();
         foreach (var (local, remote) in newer)
         {
             if (local.Path is not { } path || remote.TagsEditedAt is not { } editedAt)
                 continue;
 
             var tags = TrackTags.Of(remote);
+            var mine = TrackTags.Of(local);
+
+            // Only what somebody edited, and only where this file differs. A
+            // tag nobody touched is this file's own to keep, whatever the
+            // server's copy says. Nothing to write means this device made the
+            // edit, or both made the same one, and only the date is news.
+            var fields = TrackTags.Differences(mine, tags) & remote.TagFieldsEdited;
             try
             {
-                // Already what the file says - this device made the edit, or
-                // both made the same one. Only the date is news.
-                if (TrackTags.Of(local) != tags)
-                    TrackTags.WriteToFile(path, tags);
+                if (fields != TrackTagFieldSet.None)
+                    TrackTags.WriteToFile(path, tags, fields);
 
                 // What the file looks like now. Writing tags into it changed
                 // it, and it has not thereby become something to upload.
-                applied.Add((local, tags, editedAt, LibraryMirrorService.StampOf(path)));
+                applied.Add((local, TrackTags.Merge(mine, tags, fields), editedAt, LibraryMirrorService.StampOf(path), remote.TagFieldsEdited));
             }
             catch (Exception ex)
             {
