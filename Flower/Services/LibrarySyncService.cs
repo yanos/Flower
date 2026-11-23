@@ -577,9 +577,8 @@ public class LibrarySyncService
 
     // A song's file was replaced on the server by a new version, and this
     // device has a copy of the old one: the new one is downloaded and put
-    // where the copy was, so that every copy of a song is the same file. A
-    // download or a file of this device's own alike - what a device holds of a
-    // server's song is a copy either way.
+    // where the copy was, so that every copy of a song is the same file - a
+    // download, or an owner's own file (MayTakeNewVersion).
     //
     // A file is megabytes, so this keeps the rule uploads keep: on the
     // server's own network, unless the user has said that files may travel
@@ -645,6 +644,23 @@ public class LibrarySyncService
             _logger.LogInformation("Replaced {Count} file(s) on this device with the newer versions on {Alias}", replaced, device.Alias);
     }
 
+    // Whose file this is decides whether the server's new version may take its
+    // place. A download is the server's copy, and an owner's stamped file is
+    // kept in step with the server on purpose. A listener's own rip that merely
+    // matched a server song by its tags is neither: it is that person's file,
+    // and the only copy of it. And never across formats, since the bytes would
+    // land under the old extension.
+    private static bool MayTakeNewVersion(DiscoveredDevice device, Track local, Track remote)
+    {
+        if (!local.IsLocallyDownloaded && !(device.WeAreAdmin && local.OriginFileStamp != null))
+            return false;
+
+        return string.Equals(
+            System.IO.Path.GetExtension(local.Path)?.TrimStart('.'),
+            remote.OriginFileExtension?.TrimStart('.'),
+            StringComparison.OrdinalIgnoreCase);
+    }
+
     // True when there is nothing more to do about this song - replaced, or no
     // longer something to replace.
     private async Task<bool> ReplaceWithNewerFileAsync(
@@ -667,10 +683,24 @@ public class LibrarySyncService
             return true;
         }
 
+        if (!MayTakeNewVersion(device, current, remote))
+            return true;
+
         // Named for the version, so a part left over from fetching an older
         // one is never resumed into this one.
         var incoming = $"{path}.{replacedAt.UtcTicks}.incoming";
         await client.DownloadTrackAsync(id, incoming);
+
+        // Before the swap: a version this device cannot read must not cost it
+        // the copy it can. Settled, since fetching it again gets the same
+        // bytes; a newer version on the server is a new finding.
+        if (!Flower.Importer.Importer.CanRead(incoming, path))
+        {
+            System.IO.File.Delete(incoming);
+            _logger.LogWarning("The new version of {Path} from {Alias} could not be read; keeping this device's copy", LogPath.Short(path), device.Alias);
+            return true;
+        }
+
         System.IO.File.Move(incoming, path, overwrite: true);
 
         // Read back the way a scan would, because that is what it now is: a

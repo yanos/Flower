@@ -1880,4 +1880,84 @@ public class LibraryMirrorScenarioTests : PinnedDataDirectory
         Assert.Equal("The laptop's", file.Tag.Comment);
     }
 
+    // ── Whose file a new version may replace ─────────────────────────────
+
+    // Matched to the server's song only by its tags: it is this listener's
+    // own rip, and possibly the only copy of it.
+    [Fact]
+    public async Task A_new_version_does_not_replace_a_listeners_own_file()
+    {
+        var server = NewServer();
+        var desktop = NewDevice();
+        desktop.AddFile("song.wav", "Song", seed: 1);
+        desktop.Scan();
+        await desktop.SyncAsync(server);
+        var guest = NewDevice();
+        guest.AddFile("my rip.wav", "Song", seed: 9);
+        guest.Scan();
+        server.CallerIsAdmin = false;
+        await guest.SyncAsync(server);
+        var own = File.ReadAllBytes(guest.PathOf("my rip.wav"));
+        server.CallerIsAdmin = true;
+
+        desktop.AddFile("song.wav", "Song", seed: 2);
+        desktop.Scan();
+        await desktop.SyncAsync(server);
+        server.CallerIsAdmin = false;
+        await guest.SyncAsync(server);
+
+        Assert.Equal(own, File.ReadAllBytes(guest.PathOf("my rip.wav")));
+    }
+
+    [Fact]
+    public async Task A_new_version_in_another_format_does_not_land_under_the_old_extension()
+    {
+        var server = NewServer();
+        var desktop = NewDevice();
+        desktop.AddFile("song.wav", "Song", seed: 1);
+        desktop.Scan();
+        await desktop.SyncAsync(server);
+        var phone = NewDevice();
+        await phone.SyncAsync(server);
+        var copy = phone.PathOf("downloads/song.flac");
+        Directory.CreateDirectory(Path.GetDirectoryName(copy)!);
+        File.Copy(desktop.PathOf("song.wav"), copy);
+        phone.Single("Song").Path = copy;
+        phone.Single("Song").IsLocallyDownloaded = true;
+        var before = File.ReadAllBytes(copy);
+
+        desktop.AddFile("song.wav", "Song", seed: 2);
+        desktop.Scan();
+        await desktop.SyncAsync(server);
+        await phone.SyncAsync(server);
+
+        Assert.Equal(before, File.ReadAllBytes(copy));
+    }
+
+    [Fact]
+    public async Task A_new_version_this_device_cannot_read_leaves_its_copy_in_place()
+    {
+        var server = NewServer();
+        var desktop = NewDevice();
+        desktop.AddFile("song.wav", "Song", seed: 1);
+        desktop.Scan();
+        await desktop.SyncAsync(server);
+        var phone = NewDevice();
+        await phone.SyncAsync(server);
+        phone.AddFile("downloads/song.wav", "Song", seed: 1);
+        phone.Single("Song").Path = phone.PathOf("downloads/song.wav");
+        phone.Single("Song").IsLocallyDownloaded = true;
+        var before = File.ReadAllBytes(phone.PathOf("downloads/song.wav"));
+
+        desktop.AddFile("song.wav", "Song", seed: 2);
+        desktop.Scan();
+        await desktop.SyncAsync(server);
+        var noise = new byte[5000];
+        Random.Shared.NextBytes(noise);
+        File.WriteAllBytes(ServerPath(server, "song.wav"), noise);
+        await phone.SyncAsync(server);
+
+        Assert.Equal(before, File.ReadAllBytes(phone.PathOf("downloads/song.wav")));
+        Assert.Equal(["song.wav"], Directory.EnumerateFiles(phone.PathOf("downloads")).Select(Path.GetFileName));
+    }
 }

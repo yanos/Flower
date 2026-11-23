@@ -4,7 +4,7 @@ Bugs a person using Flower would hit: data lost, the wrong thing done, a dead
 end, or behaviour that misleads. The `user-flow-review` skill finds them and
 keeps this list; `/release` treats every open **P0** here as blocking the tag.
 
-**Status:** 14 open (5 P0, 4 fix-now, 5 later), from the review of `ef6695fb`
+**Status:** 13 open (4 P0, 4 fix-now, 5 later), from the review of `ef6695fb`
 on 2026-11-22.
 
 Severities are the ones in `.claude/skills/release/REVIEW.md`. **Reproduced**
@@ -17,15 +17,6 @@ An id is never reused. A fixed finding leaves this list, and its commit records
 the fix.
 
 ## P0: data is lost or damaged
-
-**UF-3. A listener's own file can be overwritten by the server's version.** *Reproduced.*
-A listener's own rip, matched to a server song only by its tags, is replaced
-without going to Trash when the owner uploads a new version. A different format
-ends up under the old extension, and the swap happens before the new file is
-checked as readable.
-`Flower/Services/LibrarySyncService.cs:664`, `:674`.
-*Direction:* replace only downloads and an owner's copies, never across formats,
-and validate before the swap.
 
 **UF-4. A full music disk corrupts a song during replacement.** *Reproduced.*
 Uploads are staged on the data volume, so moving one into the music folder is a

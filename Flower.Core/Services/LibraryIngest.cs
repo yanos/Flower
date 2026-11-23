@@ -154,6 +154,11 @@ public sealed class LibraryIngest
         {
             if (_library.Find(request.ReplacesTrackId) is not { Path: { } current })
                 return Refuse(IngestOutcome.Invalid, "This server no longer has the song that file replaces.");
+
+            // It would land under the old extension, as FLAC named .mp3, and
+            // from here reach every device's copy.
+            if (!string.Equals(Path.GetExtension(current), Path.GetExtension(request.RelativePath), StringComparison.OrdinalIgnoreCase))
+                return Refuse(IngestOutcome.Invalid, "A new version cannot change what kind of file a song is.");
             target = current;
         }
         else if (ResolveTarget(request.RelativePath, _libraryRoots(), out target) is { } refusal)

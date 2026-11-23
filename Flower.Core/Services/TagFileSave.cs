@@ -136,7 +136,7 @@ public static class TagFileSave
     }
 
     // What TagLib.File.Create(path) would have chosen for the song.
-    private static string MimeTypeOf(string path) =>
+    internal static string MimeTypeOf(string path) =>
         "taglib/" + Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
 
     // Windows refuses to replace a file another process has open without

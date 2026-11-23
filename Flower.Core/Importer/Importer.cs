@@ -164,6 +164,25 @@ namespace Flower.Importer
         // to walk the rest of the library to find it.
         public Track? ImportFile(string file) => ImportFile(file, coverFiles: null);
 
+        // Whether a file under a temporary name reads as the kind of song
+        // namedAs is, before anything is replaced with it. TagLib picks its
+        // parser from the name, so it is told the name the file is going to
+        // have.
+        public static bool CanRead(string file, string namedAs)
+        {
+            try
+            {
+                using var tagFile = TagLib.File.Create(
+                    new TagLib.File.LocalFileAbstraction(file), TagFileSave.MimeTypeOf(namedAs), TagLib.ReadStyle.Average);
+                return true;
+            }
+            catch (Exception)
+            {
+                // TagLib throws more than its own types on a damaged file.
+                return false;
+            }
+        }
+
         private Track? ImportFile(string file, IDictionary<string, ArtworkDimensions>? coverFiles)
         {
             try

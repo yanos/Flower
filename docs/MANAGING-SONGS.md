@@ -136,7 +136,8 @@ Flower saves the change **into the song file**.
 
 Flower reads the new tags on its next scan, and the song stays the same song.
 On an **owner's device**, the changed file is uploaded and replaces the copy on
-the server and on every other device.
+the server, on the owner's other devices and every download. A listener's own
+copy of a song, added from their own files, is never replaced.
 
 ### Renaming and moving files
 
@@ -160,7 +161,7 @@ yourself:
 
 | Replacement | What to do |
 |---|---|
-| Same format (for example a better MP3 rip) | Overwrite the old file, keeping the same name. The song keeps its history. On an owner's device, every copy everywhere is updated. |
+| Same format (for example a better MP3 rip) | Overwrite the old file, keeping the same name. The song keeps its history. On an owner's device, the server, your other devices and every download are updated. |
 | Different format (MP3 → FLAC), **on its own** | Delete the old file and add the new one. It's the same song only if the title, artist, album and length (to the second) all match. Otherwise it's a new song. |
 | Different format, **paired device** | **Not supported yet.** A *Replace File…* command is planned. |
 

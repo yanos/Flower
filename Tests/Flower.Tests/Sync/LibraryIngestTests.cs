@@ -483,4 +483,19 @@ public sealed class LibraryIngestTests : IDisposable
 
         Assert.Equal(IngestOutcome.UnknownUpload, result.Outcome);
     }
+
+    [Fact]
+    public async Task A_new_version_in_another_format_is_refused_and_the_song_is_left_alone()
+    {
+        var good = SongBytes("A");
+        await UploadAsync("a.wav", good);
+        var id = _library.Tracks.Single().Id.ToKey();
+
+        var result = await UploadReplacementAsync(id, "a.flac", SongBytes("A", seed: 2));
+
+        Assert.Equal(IngestOutcome.Invalid, result.Outcome);
+        Assert.Equal(good, File.ReadAllBytes(Path.Combine(_music, "a.wav")));
+        Assert.Equal(["a.wav"], Directory.EnumerateFiles(_music).Select(Path.GetFileName));
+    }
+
 }
