@@ -1,0 +1,71 @@
+using System;
+using System.Windows.Input;
+
+using CommunityToolkit.Mvvm.Input;
+
+using Flower.Services;
+
+namespace Flower.ViewModels.Mobile;
+
+// The phone's version of PlaylistConflictWindow: the same playlist changed here
+// and on the server, and only the person can say which to keep. The sync
+// session waits on the answer, so every way out of the sheet gives one.
+public partial class MobileMainViewModel
+{
+    private PlaylistConflictEventArgs? _pendingConflict;
+
+    public bool IsShowingPlaylistConflict => ActiveSheet == MobileSheet.PlaylistConflict;
+
+    public string PlaylistConflictHeadline => _pendingConflict is { } c ? PlaylistConflictText.Headline(c) : "";
+    public string PlaylistConflictExplanation => PlaylistConflictText.Explanation;
+    public string PlaylistConflictLocalSummary => _pendingConflict is { } c ? PlaylistConflictText.LocalSummary(c) : "";
+    public string PlaylistConflictRemoteName => _pendingConflict?.RemoteAlias ?? "";
+    public string PlaylistConflictRemoteSummary => _pendingConflict is { } c ? PlaylistConflictText.RemoteSummary(c) : "";
+    public string PlaylistConflictKeepRemoteText => _pendingConflict is { } c ? PlaylistConflictText.KeepRemote(c) : "";
+
+    private ICommand? _keepLocalPlaylist;
+    public ICommand KeepLocalPlaylistCommand => _keepLocalPlaylist ??=
+        new RelayCommand(() => AnswerPlaylistConflict(PlaylistConflictChoice.KeepLocal));
+
+    private ICommand? _keepRemotePlaylist;
+    public ICommand KeepRemotePlaylistCommand => _keepRemotePlaylist ??=
+        new RelayCommand(() => AnswerPlaylistConflict(PlaylistConflictChoice.KeepRemote));
+
+    private ICommand? _decidePlaylistConflictLater;
+    public ICommand DecidePlaylistConflictLaterCommand => _decidePlaylistConflictLater ??=
+        new RelayCommand(() => AnswerPlaylistConflict(PlaylistConflictChoice.Later));
+
+    // Never over a sheet the person is using: that one is not theirs to lose
+    // to a background sync, and the next session asks again.
+    internal void AskAboutPlaylistConflict(PlaylistConflictEventArgs e)
+    {
+        if (ActiveSheet != MobileSheet.None)
+        {
+            e.Resolution.TrySetResult(PlaylistConflictChoice.NotAsked);
+            return;
+        }
+
+        _pendingConflict = e;
+        OnPropertyChanged(nameof(PlaylistConflictHeadline));
+        OnPropertyChanged(nameof(PlaylistConflictLocalSummary));
+        OnPropertyChanged(nameof(PlaylistConflictRemoteName));
+        OnPropertyChanged(nameof(PlaylistConflictRemoteSummary));
+        OnPropertyChanged(nameof(PlaylistConflictKeepRemoteText));
+        ActiveSheet = MobileSheet.PlaylistConflict;
+    }
+
+    private void AnswerPlaylistConflict(PlaylistConflictChoice choice)
+    {
+        ResolvePendingConflict(choice);
+        ActiveSheet = MobileSheet.None;
+    }
+
+    // Answers at most once: closing the sheet comes back through here with
+    // the answer already given.
+    private void ResolvePendingConflict(PlaylistConflictChoice choice)
+    {
+        var pending = _pendingConflict;
+        _pendingConflict = null;
+        pending?.Resolution.TrySetResult(choice);
+    }
+}

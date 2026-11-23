@@ -2163,18 +2163,16 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         },
                 h => reachability.Changed += h, h => reachability.Changed -= h);
 
-        // On mobile, MainViewModel is still constructed (App.axaml.cs resolves it
-        // unconditionally) but MainView - the only subscriber to
-        // PlaylistConflictRequested - never is, since mobile shows MobileMainView
-        // instead. Without this check, a conflict during a mobile-initiated sync
-        // would await e.Resolution forever. Until mobile gets its own conflict UI,
-        // fail safe by keeping the local version rather than hanging the sync.
+        // MainView asks on desktop and MobileMainViewModel on a phone. With
+        // neither attached yet nobody can be asked, and the sync must not wait
+        // on e.Resolution forever, so the conflict is left open for the next
+        // session - never settled in favour of one side.
         if (playlistSyncService != null)
             _subscriptions.Add<EventHandler<PlaylistConflictEventArgs>>((_, e) =>
         {
             if (PlaylistConflictRequested == null)
             {
-                e.Resolution.TrySetResult(PlaylistConflictChoice.KeepLocal);
+                e.Resolution.TrySetResult(PlaylistConflictChoice.NotAsked);
                 return;
             }
             Dispatcher.UIThread.Post(() => PlaylistConflictRequested?.Invoke(this, e));

@@ -41,7 +41,7 @@ public enum MobileNavigationTransition { None, FromRight, FromLeft }
 
 // Full-screen overlays shown on top of the tab content, e.g. the expanded
 // now-playing view opened by tapping the mini-player.
-public enum MobileSheet { None, NowPlaying, TrackActions, AlbumActions, TrackInfo, AddToPlaylist, Settings, SmartPlaylistEditor, VibePlaylistEditor, ConfirmPairServer, ConfirmDeleteFile, ConfirmDeletePlaylist, ConfirmUnpairServer, ConfirmRemoveFromLibrary, MoveToFolder, ConfirmAddDuplicates }
+public enum MobileSheet { None, NowPlaying, TrackActions, AlbumActions, TrackInfo, AddToPlaylist, Settings, SmartPlaylistEditor, VibePlaylistEditor, ConfirmPairServer, ConfirmDeleteFile, ConfirmDeletePlaylist, ConfirmUnpairServer, ConfirmRemoveFromLibrary, MoveToFolder, ConfirmAddDuplicates, PlaylistConflict }
 
 // Translates the desktop MainViewModel's sidebar+sublist (side-by-side master-detail)
 // navigation model into tab+drill-down navigation for a phone screen, without changing
@@ -966,6 +966,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
                 // that task until something does.
                 ResolvePendingPlaylistDeletion(confirmed: false);
                 ResolvePendingDuplicates(added: false);
+                ResolvePendingConflict(PlaylistConflictChoice.Later);
             }
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsShowingNowPlaying));
@@ -983,6 +984,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             OnPropertyChanged(nameof(IsShowingConfirmRemoveFromLibrary));
             OnPropertyChanged(nameof(IsShowingMoveToFolder));
             OnPropertyChanged(nameof(IsShowingConfirmAddDuplicates));
+            OnPropertyChanged(nameof(IsShowingPlaylistConflict));
             if (value == MobileSheet.AddToPlaylist)
             {
                 OnPropertyChanged(nameof(RecentPlaylistTargets));
@@ -1526,6 +1528,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
+        ResolvePendingConflict(PlaylistConflictChoice.NotAsked);
         _subscriptions.Dispose();
     }
 
@@ -1571,6 +1574,8 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         // Mobile's answer to "really delete this playlist?" - desktop's is a
         // dialog raised from MainView. Something has to answer, or the delete
         // waits forever; see AskToDeletePlaylist.
+        _subscriptions.Add<EventHandler<PlaylistConflictEventArgs>>((_, e) => AskAboutPlaylistConflict(e),
+            h => Main.PlaylistConflictRequested += h, h => Main.PlaylistConflictRequested -= h);
         _subscriptions.Add<EventHandler<SmartPlaylistEditorEventArgs>>((_, e) => OpenSmartPlaylistEditor(e),
             h => Main.SmartPlaylistEditorRequested += h, h => Main.SmartPlaylistEditorRequested -= h);
         _subscriptions.Add<EventHandler<VibePlaylistEditorEventArgs>>((_, e) => OpenVibePlaylistEditor(e),

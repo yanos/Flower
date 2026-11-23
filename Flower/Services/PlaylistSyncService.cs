@@ -15,7 +15,12 @@ using Flower.Persistence;
 
 namespace Flower.Services;
 
-public enum PlaylistConflictChoice { KeepLocal, KeepRemote }
+// Later is first so that it is what a dialog closed without a choice answers.
+// It and NotAsked both leave the conflict open, with neither version pushed or
+// marked as agreed: Later is the person putting it off, so it is not raised
+// again until one of the two versions changes or the app restarts; NotAsked is
+// that nobody could be asked just then, so the next session asks.
+public enum PlaylistConflictChoice { Later, KeepLocal, KeepRemote, NotAsked }
 
 // Raised when the server refuses a gated request as device-unknown (see
 // FlowerProblem) - i.e. it has no key for this device, as opposed to being
@@ -213,6 +218,11 @@ public class PlaylistSyncService
         // missing there, unedited here, and deleted it as deleted there.
         var agreedOnPush = new HashSet<Guid>();
 
+        // Conflicts nobody has settled: this device's copy stays as it is, the
+        // server's is not overwritten, and the baseline does not move, so the
+        // two still read as a conflict next time.
+        var unresolved = new HashSet<Guid>();
+
         foreach (var decision in decisions)
         {
             var name = decision.Local?.Name ?? decision.Remote?.Name ?? "?";
@@ -244,7 +254,7 @@ public class PlaylistSyncService
             if (decision.Kind == PlaylistSyncDecisionKind.NoChange && decision.Local!.IsVibe)
                 decision.Local.Materialize(index.Resolve(decision.Remote!.Tracks, out _));
 
-            var resolved = decision.Kind switch
+            Playlist? resolved = decision.Kind switch
             {
                 PlaylistSyncDecisionKind.NoChange  => decision.Local!,
                 PlaylistSyncDecisionKind.KeepLocal => decision.Local!,
@@ -252,6 +262,13 @@ public class PlaylistSyncService
                 PlaylistSyncDecisionKind.Conflict => await ResolveConflictAsync(decision, remoteDisplayName, index),
                 _ => throw new ArgumentOutOfRangeException(),
             };
+
+            if (resolved == null)
+            {
+                finalPlaylists.Add(decision.Local!);
+                unresolved.Add(decision.PlaylistId);
+                continue;
+            }
 
             finalPlaylists.Add(resolved);
             newBaselines[decision.PlaylistId] = resolved.UpdatedAt;
@@ -310,7 +327,7 @@ public class PlaylistSyncService
         {
             // Held back from the push too: the server takes a copy newer than
             // its own, which this is, and the other edit would go unasked.
-            var pushed = installed.Where(p => !result.HeldBack.Contains(p.Id)).ToList();
+            var pushed = installed.Where(p => !result.HeldBack.Contains(p.Id) && !unresolved.Contains(p.Id)).ToList();
             var manifest = PlaylistSyncMapper.ToManifest(_deviceIdentity.Fingerprint, pushed, deletedHere);
             var bodyBytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(manifest, FlowerJsonContext.Default.PlaylistSyncManifestDto));
             const string postPath = "/api/flower/v1/playlists/apply";
@@ -363,7 +380,9 @@ public class PlaylistSyncService
         request.Headers.ConnectionClose = true;
     }
 
-    private async Task<Playlist> ResolveConflictAsync(PlaylistSyncDecision decision, string remoteAlias, PlaylistTrackIndex index)
+    // The version to keep, or null while the conflict stays open (see
+    // PlaylistConflictChoice).
+    private async Task<Playlist?> ResolveConflictAsync(PlaylistSyncDecision decision, string remoteAlias, PlaylistTrackIndex index)
     {
         // Delete-vs-edit: one side deleted a playlist the two devices had
         // previously agreed on, while the other side edited it since that same
@@ -389,13 +408,15 @@ public class PlaylistSyncService
             return survivor;
         }
 
+        var versions = (decision.Local.UpdatedAt, decision.Remote.UpdatedAt);
+        if (_putOff.TryGetValue(decision.PlaylistId, out var putOff) && putOff == versions)
+            return null;
+
+        // No UI listening (sync running before the view attaches): nobody has
+        // chosen, so nothing is overwritten on either side.
         var handler = ConflictDetected;
         if (handler == null)
-        {
-            // No UI listening (e.g. sync running before the view attaches) -
-            // keep local rather than silently discarding it.
-            return KeepLocalOver(decision.Local!, decision.Remote!);
-        }
+            return null;
 
         var tcs = new TaskCompletionSource<PlaylistConflictChoice>();
         handler.Invoke(this, new PlaylistConflictEventArgs
@@ -409,10 +430,25 @@ public class PlaylistSyncService
         var choice = await tcs.Task;
         _logger.LogInformation("Playlist conflict for {Name} with {RemoteAlias} resolved: {Choice}",
             decision.Local!.Name, remoteAlias, choice);
-        return choice == PlaylistConflictChoice.KeepLocal
-            ? KeepLocalOver(decision.Local!, decision.Remote!)
-            : PlaylistSyncMapper.ToPlaylist(decision.Remote!, index, _logger);
+        switch (choice)
+        {
+            case PlaylistConflictChoice.KeepLocal:
+                _putOff.Remove(decision.PlaylistId);
+                return KeepLocalOver(decision.Local!, decision.Remote!);
+            case PlaylistConflictChoice.KeepRemote:
+                _putOff.Remove(decision.PlaylistId);
+                return PlaylistSyncMapper.ToPlaylist(decision.Remote!, index, _logger);
+            case PlaylistConflictChoice.Later:
+                _putOff[decision.PlaylistId] = versions;
+                return null;
+            default:
+                return null;
+        }
     }
+
+    // The conflicts put off, by the two versions they were put off at. Only
+    // touched inside a session, which _sessionGate keeps to one at a time.
+    private readonly Dictionary<Guid, (DateTimeOffset Local, DateTimeOffset Remote)> _putOff = new();
 
     // Keeping this device's version of a conflict is an edit made after the
     // remote one, whatever the two clocks said: the peer takes a pushed copy

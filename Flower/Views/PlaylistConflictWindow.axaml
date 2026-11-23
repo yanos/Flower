@@ -11,7 +11,7 @@
                FontWeight="SemiBold"
                FontSize="14"
                TextWrapping="Wrap"/>
-    <TextBlock Text="Both this device and the other device changed it since they last synced. Which version should be kept?"
+    <TextBlock x:Name="ExplanationText"
                TextWrapping="Wrap"
                Opacity="0.75"
                FontSize="12"/>
@@ -25,14 +25,22 @@
 
     <Border Classes="listFrame" Padding="10">
       <StackPanel Spacing="4">
-        <TextBlock x:Name="RemoteHeaderText" FontWeight="SemiBold" FontSize="12"/>
+        <TextBlock x:Name="RemoteHeaderText" FontWeight="SemiBold" FontSize="12" TextTrimming="CharacterEllipsis"/>
         <TextBlock x:Name="RemoteSummaryText" FontSize="12" TextWrapping="Wrap"/>
       </StackPanel>
     </Border>
 
-    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
-      <Button x:Name="KeepLocalButton" Classes="standard secondary" Content="Keep this device" Click="KeepLocalButton_Click"/>
-      <Button x:Name="KeepRemoteButton" Classes="standard primary" Click="KeepRemoteButton_Click" IsDefault="True"/>
+    <!-- Stacked, because the second names a server and can be any length. No
+         default button: Enter must not overwrite either side's edits. -->
+    <StackPanel Spacing="8">
+      <Button x:Name="KeepLocalButton" Classes="standard primary" Content="Keep This Device's Version"
+              HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="KeepLocalButton_Click"/>
+      <Button x:Name="KeepRemoteButton" Classes="standard secondary"
+              HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="KeepRemoteButton_Click">
+        <TextBlock x:Name="KeepRemoteText" TextTrimming="CharacterEllipsis"/>
+      </Button>
+      <Button x:Name="DecideLaterButton" Classes="standard secondary" Content="Decide Later"
+              HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" IsCancel="True" Click="DecideLaterButton_Click"/>
     </StackPanel>
   </StackPanel>
 </Window>

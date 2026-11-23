@@ -2192,10 +2192,11 @@ public partial class MainView : UserControl
     {
         if (TopLevel.GetTopLevel(this) is not Window owner)
         {
-            e.Resolution.TrySetResult(PlaylistConflictChoice.KeepLocal);
+            e.Resolution.TrySetResult(PlaylistConflictChoice.NotAsked);
             return;
         }
 
+        // Closing the window answers Later, the enum's default.
         var choice = await new PlaylistConflictWindow(e).ShowDialog<PlaylistConflictChoice>(owner);
         e.Resolution.TrySetResult(choice);
     }

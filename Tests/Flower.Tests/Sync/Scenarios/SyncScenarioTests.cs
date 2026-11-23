@@ -1132,6 +1132,76 @@ public class SyncScenarioTests : PinnedDataDirectory
         Assert.Equal("The owner's", Assert.Single(server.Library.Playlists).Name);
     }
 
+    private async Task<(SimulatedFlowerServer Server, Client Client)> BothSidesEdited()
+    {
+        var a = ServerTrack("A");
+        var b = ServerTrack("B");
+        var server = new SimulatedFlowerServer([a, b]);
+        server.Library.AddPlaylist(new Playlist("Mix", [a]));
+        var client = NewClient();
+        await client.PullLibraryAsync(server);
+        await client.SyncPlaylistsAsync(server);
+        client.Playlist("Mix").AppendTrack(client.Single("B"));
+        await Task.Delay(5, TestContext.Current.CancellationToken);
+        server.Library.Playlists.Single().Name = "Renamed";
+        return (server, client);
+    }
+
+    // UF-7: with nobody to ask, neither side's edit is thrown away.
+    [Fact]
+    public async Task A_conflict_nobody_was_asked_about_overwrites_neither_side()
+    {
+        var (server, client) = await BothSidesEdited();
+        using (server)
+        {
+            await client.SyncPlaylistsAsync(server);
+
+            Assert.Equal(["A", "B"], Titles(client.Playlist("Mix")));
+            var held = Assert.Single(server.Library.Playlists);
+            Assert.Equal("Renamed", held.Name);
+            Assert.Equal(["A"], Titles(held));
+
+            var asked = 0;
+            client.PlaylistSync.ConflictDetected += (_, e) =>
+            {
+                asked++;
+                e.Resolution.SetResult(PlaylistConflictChoice.KeepRemote);
+            };
+            await client.SyncPlaylistsAsync(server);
+
+            Assert.Equal(1, asked);
+            Assert.Equal(["A"], Titles(client.Playlist("Renamed")));
+        }
+    }
+
+    [Fact]
+    public async Task A_conflict_put_off_is_not_raised_again_until_a_version_changes()
+    {
+        var (server, client) = await BothSidesEdited();
+        using (server)
+        {
+            var asked = 0;
+            client.PlaylistSync.ConflictDetected += (_, e) =>
+            {
+                asked++;
+                e.Resolution.SetResult(PlaylistConflictChoice.Later);
+            };
+
+            await client.SyncPlaylistsAsync(server);
+            await client.SyncPlaylistsAsync(server);
+
+            Assert.Equal(1, asked);
+            Assert.Equal(["A", "B"], Titles(client.Playlist("Mix")));
+            Assert.Equal("Renamed", server.Library.Playlists.Single().Name);
+
+            await Task.Delay(5, TestContext.Current.CancellationToken);
+            client.Playlist("Mix").Name = "Mine";
+            await client.SyncPlaylistsAsync(server);
+
+            Assert.Equal(2, asked);
+        }
+    }
+
     // A browser tab deletes a playlist: the server has to hear that as a
     // delete now that a push leaving a playlist out no longer means one.
     [Fact]

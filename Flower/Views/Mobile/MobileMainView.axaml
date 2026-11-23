@@ -934,6 +934,13 @@
     <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"
                             Margin="{DynamicResource SheetBleed}"
                             Entrance="FromBottom"
+                            IsOpen="{Binding IsShowingPlaylistConflict}"
+                            DismissCommand="{Binding DecidePlaylistConflictLaterCommand}">
+      <views:PlaylistConflictView />
+    </controls:SlidingSheet>
+    <controls:SlidingSheet Grid.Row="0" Grid.RowSpan="3"
+                            Margin="{DynamicResource SheetBleed}"
+                            Entrance="FromBottom"
                             IsOpen="{Binding IsShowingConfirmUnpairServer}">
       <views:ConfirmUnpairServerView />
     </controls:SlidingSheet>

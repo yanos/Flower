@@ -4,7 +4,7 @@ Bugs a person using Flower would hit: data lost, the wrong thing done, a dead
 end, or behaviour that misleads. The `user-flow-review` skill finds them and
 keeps this list; `/release` treats every open **P0** here as blocking the tag.
 
-**Status:** 8 open (1 P0, 2 fix-now, 5 later), from the review of `ef6695fb`
+**Status:** 7 open (0 P0, 2 fix-now, 5 later), from the review of `ef6695fb`
 on 2026-11-22.
 
 Severities are the ones in `.claude/skills/release/REVIEW.md`. **Reproduced**
@@ -15,16 +15,6 @@ that commit.
 
 An id is never reused. A fixed finding leaves this list, and its commit records
 the fix.
-
-## P0: data is lost or damaged
-
-**UF-7. Playlist conflicts can silently discard edits.** *Read.*
-Phones have no conflict screen, so they always keep their own version, stamp it
-newer and push it over the other device's edits. Closing the desktop conflict
-window with its close button chooses the same.
-`Flower/ViewModels/MainViewModel.cs:2177`, `Flower/Views/MainView.axaml.cs:2199`.
-*Direction:* a conflict screen on phones, and a dismissed prompt leaves the
-conflict unresolved.
 
 ## Fix-now: the app does the wrong thing
 
