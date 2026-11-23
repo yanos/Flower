@@ -1129,7 +1129,7 @@ public partial class MainView : UserControl
                 vm.Queue.Remove(MusicList.SelectedRows);
                 break;
             case MenuAction.RemoveFromPlaylist when ShownOrdinaryPlaylist(vm) is { } playlist:
-                vm.RemoveFromPlaylist(playlist, tracks).Forget(Logger, "Removing songs from a playlist");
+                vm.RemoveRowsFromPlaylist(playlist, MusicList.SelectedRows.ToList()).Forget(Logger, "Removing songs from a playlist");
                 break;
             case MenuAction.GetInfo:
                 OpenTrackInfo();
@@ -2826,7 +2826,7 @@ public partial class MainView : UserControl
         if (vm.SelectedSidebarItem?.Playlist is not Playlist playlist)
             return;
 
-        await vm.ReorderPlaylistTrack(playlist, e.dragged.Track, e.insertBefore?.Track);
+        await vm.ReorderPlaylistRow(playlist, e.dragged, e.insertBefore);
     }
 
     // ── Device detail: the selected server's own settings ──────────────────────

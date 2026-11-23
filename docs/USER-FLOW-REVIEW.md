@@ -4,7 +4,7 @@ Bugs a person using Flower would hit: data lost, the wrong thing done, a dead
 end, or behaviour that misleads. The `user-flow-review` skill finds them and
 keeps this list; `/release` treats every open **P0** here as blocking the tag.
 
-**Status:** 7 open (0 P0, 2 fix-now, 5 later), from the review of `ef6695fb`
+**Status:** 7 open (0 P0, 1 fix-now, 6 later), from the review of `ef6695fb`
 on 2026-11-22.
 
 Severities are the ones in `.claude/skills/release/REVIEW.md`. **Reproduced**
@@ -17,12 +17,6 @@ An id is never reused. A fixed finding leaves this list, and its commit records
 the fix.
 
 ## Fix-now: the app does the wrong thing
-
-**UF-8. Duplicate playlist rows act on the wrong copy.** *Reproduced.*
-Removing row 3 of `A, B, A` leaves `B, A`, and dragging the last row of
-`A, B, C, A` above `B` does nothing, because both operations find the song
-rather than the row. `Flower.Core/Models/Palylist.cs:336`, `:379`.
-*Direction:* address entries by slot, as the queue does.
 
 **UF-9. Failed tag saves look successful.** *Reproduced for the streaming case; read for the rest.*
 Track Info closes normally when a file could not be written. Cmd/Ctrl+I on a
@@ -58,3 +52,10 @@ one playlist onto another. `Flower/Controls/MusicListView.axaml.cs:579`.
 Adding 5,000 songs took 22 seconds, because each one rewrites every playlist on
 the UI thread. `Flower/ViewModels/PlaylistManagementViewModel.cs:538`.
 *Direction:* append the batch as one edit.
+
+**UF-17. A queue can land on the wrong copy of a song in a playlist twice.** *Read.*
+The queue works out which entry an edit changed from the playlist's old and new
+order. It cannot tell two copies apart when they end up side by side, or when one
+selection removes some copies of a song but not all, so the song playing can be
+treated as the copy that left. `Flower/Services/QueueFollowsPlaylist.cs`.
+*Direction:* carry the edited slots from `Playlist` to the queue.

@@ -414,7 +414,7 @@ public class PlaylistStoreTests : IsolatedHome
 
         var away = PlaylistRepo().Load([a, c, d]);
         away[0].AppendTrack(d);
-        away[0].RemoveTrack(a);
+        away[0].RemoveEntriesAt([away[0].Tracks.ToList().IndexOf(a)]);
         PlaylistRepo().Save(away);
 
         var back = PlaylistRepo().Load([a, b, c, d]);

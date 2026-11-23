@@ -28,13 +28,24 @@ namespace Flower.Controls;
 /// dropped all of them in. Id is the same identity TrackRowMerge already reuses
 /// rows by, and it survives a rescan (Library.CarryForwardMutableState copies it
 /// onto the new Track instance).
+///
+/// With which copy of it, because a playlist or the queue can hold one song
+/// twice and only the first copy's row survives a rebuild (TrackRowMerge).
+/// Keyed by the song alone, picking one copy selected both after the next
+/// rebuild, and Remove from Playlist then took both out. A filter keeps or
+/// drops every copy together and the sort is stable, so the nth row of a song
+/// is still its nth row afterwards.
 /// </remarks>
 public sealed class TrackRowSelection
 {
     private IReadOnlyList<TrackRowViewModel> _items = [];
-    private readonly HashSet<Guid> _selectedIds = new();
+    private readonly record struct RowKey(Guid Track, int Occurrence);
+
+    private readonly HashSet<RowKey> _selectedKeys = new();
     private readonly List<TrackRowViewModel> _selectedRows = new();
-    private Guid? _anchorId;
+    private TrackRowViewModel? _anchor;
+    private RowKey? _anchorKey;
+    private RowKey? _currentKey;
 
     /// <summary>The row the selection is about - the last one picked.</summary>
     public TrackRowViewModel? Current { get; private set; }
@@ -76,9 +87,9 @@ public sealed class TrackRowSelection
         {
             row.IsSelected = true;
             _selectedRows.Add(row);
-            _selectedIds.Add(row.Track.Id);
-            _anchorId = row.Track.Id;
+            _anchor = row;
         }
+        Remember();
     }
 
     public void Toggle(TrackRowViewModel row)
@@ -86,18 +97,17 @@ public sealed class TrackRowSelection
         row.IsSelected = !row.IsSelected;
         if (row.IsSelected)
         {
-            _selectedIds.Add(row.Track.Id);
             _selectedRows.Add(row);
             Current = row;
-            _anchorId = row.Track.Id;
+            _anchor = row;
         }
         else
         {
-            _selectedIds.Remove(row.Track.Id);
             _selectedRows.Remove(row);
             if (Current == row)
                 Current = _selectedRows.Count > 0 ? _selectedRows[^1] : null;
         }
+        Remember();
     }
 
     /// <summary>
@@ -107,8 +117,7 @@ public sealed class TrackRowSelection
     /// </summary>
     public void ExtendTo(TrackRowViewModel row)
     {
-        var anchorRow = _anchorId is { } anchorId ? _items.FirstOrDefault(r => r.Track.Id == anchorId) : null;
-        int anchorIdx = anchorRow != null ? IndexOf(anchorRow) : IndexOf(row);
+        int anchorIdx = _anchor != null ? IndexOf(_anchor) : IndexOf(row);
         int clickIdx = IndexOf(row);
         if (anchorIdx < 0)
             anchorIdx = clickIdx;
@@ -119,10 +128,10 @@ public sealed class TrackRowSelection
         for (int i = lo; i <= hi; i++)
         {
             _items[i].IsSelected = true;
-            _selectedIds.Add(_items[i].Track.Id);
             _selectedRows.Add(_items[i]);
         }
         Current = row;
+        Remember();
     }
 
     /// <summary>
@@ -145,6 +154,23 @@ public sealed class TrackRowSelection
         return next;
     }
 
+    /// <summary>
+    /// <paramref name="row"/> is being dragged to just before
+    /// <paramref name="insertBefore"/>, or to the end for null. Dragged past
+    /// another copy of its song it becomes a different occurrence, and the
+    /// selection has to stay on the one that moved through the rebuild to come.
+    /// </summary>
+    public void NoteMoved(TrackRowViewModel row, TrackRowViewModel? insertBefore)
+    {
+        var order = _items.Where(r => !ReferenceEquals(r, row)).ToList();
+        var at = insertBefore == null ? order.Count : order.IndexOf(insertBefore);
+        if (at < 0)
+            return;
+
+        order.Insert(at, row);
+        Remember(order);
+    }
+
     public TrackRowViewModel? RowFor(FlowerTrack? track) =>
         track != null ? _items.FirstOrDefault(r => r.Track.Id == track.Id) : null;
 
@@ -158,23 +184,96 @@ public sealed class TrackRowSelection
         _items = items;
 
         _selectedRows.Clear();
-        if (_selectedIds.Count > 0)
+        TrackRowViewModel? anchor = null;
+        TrackRowViewModel? current = null;
+        var songs = _selectedKeys.Select(k => k.Track).ToHashSet();
+        if (_anchorKey is { } anchorKey)
+            songs.Add(anchorKey.Track);
+        if (_currentKey is { } currentKey)
+            songs.Add(currentKey.Track);
+
+        if (songs.Count > 0)
         {
-            var stillPresent = new HashSet<Guid>();
+            var stillPresent = new HashSet<RowKey>();
+            var seen = new Dictionary<Guid, int>();
             foreach (var row in items)
             {
-                if (_selectedIds.Contains(row.Track.Id))
+                if (!songs.Contains(row.Track.Id))
+                    continue;
+
+                var occurrence = seen.GetValueOrDefault(row.Track.Id);
+                seen[row.Track.Id] = occurrence + 1;
+                var key = new RowKey(row.Track.Id, occurrence);
+
+                // Set either way: the row reused for a song's first copy may
+                // be carrying the mark of a copy that has moved.
+                row.IsSelected = _selectedKeys.Contains(key);
+                if (row.IsSelected)
                 {
-                    row.IsSelected = true;
                     _selectedRows.Add(row);
-                    stillPresent.Add(row.Track.Id);
+                    stillPresent.Add(key);
                 }
+                if (key == _anchorKey)
+                    anchor = row;
+                if (key == _currentKey)
+                    current = row;
             }
-            _selectedIds.IntersectWith(stillPresent);
+            _selectedKeys.IntersectWith(stillPresent);
+        }
+        _anchor = anchor;
+
+        if (current != null && (selectedTrack == null || current.Track.Id == selectedTrack.Id))
+        {
+            Current = current;
+        }
+        else if (RowFor(selectedTrack) is { } match)
+        {
+            Current = match;
+            _currentKey = null;
+        }
+    }
+
+    // Which occurrence of its song each row the selection cares about is, in
+    // `order` (the items, unless they are about to change).
+    private void Remember(IReadOnlyList<TrackRowViewModel>? order = null)
+    {
+        _selectedKeys.Clear();
+        _anchorKey = null;
+        _currentKey = null;
+
+        var unplaced = new HashSet<TrackRowViewModel>(_selectedRows, ReferenceEqualityComparer.Instance);
+        var songs = _selectedRows.Select(r => r.Track.Id).ToHashSet();
+        if (_anchor != null)
+            songs.Add(_anchor.Track.Id);
+        if (Current != null)
+            songs.Add(Current.Track.Id);
+        if (songs.Count == 0)
+            return;
+
+        var seen = new Dictionary<Guid, int>();
+        foreach (var row in order ?? _items)
+        {
+            if (!songs.Contains(row.Track.Id))
+                continue;
+
+            var occurrence = seen.GetValueOrDefault(row.Track.Id);
+            seen[row.Track.Id] = occurrence + 1;
+            var key = new RowKey(row.Track.Id, occurrence);
+            if (unplaced.Remove(row))
+                _selectedKeys.Add(key);
+            if (ReferenceEquals(row, _anchor))
+                _anchorKey = key;
+            if (ReferenceEquals(row, Current))
+                _currentKey = key;
         }
 
-        if (RowFor(selectedTrack) is { } match)
-            Current = match;
+        // A row that is not one of the items: its song is all there is to go on.
+        foreach (var row in unplaced)
+            _selectedKeys.Add(new RowKey(row.Track.Id, 0));
+        if (_anchor != null)
+            _anchorKey ??= new RowKey(_anchor.Track.Id, 0);
+        if (Current != null)
+            _currentKey ??= new RowKey(Current.Track.Id, 0);
     }
 
     private void Clear()
@@ -182,7 +281,7 @@ public sealed class TrackRowSelection
         foreach (var row in _selectedRows)
             row.IsSelected = false;
         _selectedRows.Clear();
-        _selectedIds.Clear();
+        _selectedKeys.Clear();
     }
 
     private int IndexOf(TrackRowViewModel item)

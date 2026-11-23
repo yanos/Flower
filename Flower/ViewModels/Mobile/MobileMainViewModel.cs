@@ -2657,11 +2657,11 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
 
     // Driven by the track list's touch drag-to-reorder gesture (see MobileMainView's
     // code-behind); a no-op if the user isn't currently viewing a playlist's tracks.
-    public void ReorderCurrentPlaylistTrack(Track dragged, Track? insertBefore)
+    public void ReorderCurrentPlaylistRow(TrackRowViewModel dragged, TrackRowViewModel? insertBefore)
     {
         if (CurrentPlaylist is not { } playlist)
             return;
-        Main.ReorderPlaylistTrack(playlist, dragged, insertBefore)
+        Main.ReorderPlaylistRow(playlist, dragged, insertBefore)
             .Forget(_logger, "Playlist track reorder");
     }
 }

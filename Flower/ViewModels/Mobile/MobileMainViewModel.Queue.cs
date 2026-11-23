@@ -44,10 +44,10 @@ public partial class MobileMainViewModel
         RemoveActionTargetFromPlaylistCommand = new RelayCommand(() =>
         {
             var playlist = ActionTargetPlaylist;
-            var track = ActionTarget;
+            var row = _actionRow;
             ActiveSheet = MobileSheet.None;
-            if (playlist != null && track != null)
-                Main.RemoveFromPlaylist(playlist, [track]).Forget(_logger, "Removing a song from a playlist");
+            if (playlist != null && row != null)
+                Main.RemoveRowsFromPlaylist(playlist, [row]).Forget(_logger, "Removing a song from a playlist");
         });
     }
 

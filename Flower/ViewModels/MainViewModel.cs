@@ -2771,11 +2771,25 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     public Task AddTracksToPlaylist(IEnumerable<Track> tracks, Playlist playlist) => Playlists.AddTracks(tracks, playlist);
 
-    public Task ReorderPlaylistTrack(Playlist playlist, Track dragged, Track? insertBefore) =>
-        Playlists.ReorderTrack(playlist, dragged, insertBefore);
+    // By row, because a playlist can hold one song twice and the row is what
+    // says which copy was meant (PlaylistRowSlots). A null insertBefore is the
+    // end of the playlist.
+    public Task ReorderPlaylistRow(Playlist playlist, TrackRowViewModel dragged, TrackRowViewModel? insertBefore)
+    {
+        var entries = playlist.Tracks;
+        if (PlaylistRowSlots.SlotsOf(entries, Rows, [dragged]) is not [var from])
+            return Task.CompletedTask;
 
-    public Task RemoveFromPlaylist(Playlist playlist, IReadOnlyList<Track> tracks) =>
-        Playlists.RemoveTracks(playlist, tracks);
+        if (insertBefore == null)
+            return Playlists.ReorderEntry(playlist, from, entries.Count);
+
+        return PlaylistRowSlots.SlotsOf(entries, Rows, [insertBefore]) is [var before]
+            ? Playlists.ReorderEntry(playlist, from, before)
+            : Task.CompletedTask;
+    }
+
+    public Task RemoveRowsFromPlaylist(Playlist playlist, IReadOnlyCollection<TrackRowViewModel> rows) =>
+        Playlists.RemoveEntries(playlist, PlaylistRowSlots.SlotsOf(playlist.Tracks, Rows, rows));
 
     // ── Smart playlists ───────────────────────────────────────────────────
 

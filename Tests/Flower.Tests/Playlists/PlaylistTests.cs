@@ -57,7 +57,7 @@ public class PlaylistTests
         var second = Untagged();
         var playlist = new Playlist("My Mix", new List<Track> { first, second });
 
-        playlist.RemoveTrack(second);
+        playlist.RemoveEntriesAt([1]);
 
         Assert.Same(first, Assert.Single(playlist.Tracks));
     }
@@ -113,14 +113,14 @@ public class PlaylistTests
         var before = DateTimeOffset.UtcNow.AddMinutes(-5);
         var playlist = new Playlist(Guid.NewGuid(), "p", new List<Track> { a, b, c }, before);
 
-        Assert.True(playlist.MoveTrack(c, a));
+        Assert.True(playlist.MoveEntry(2, 0));
 
         Assert.Equal(new[] { "C", "A", "B" }, playlist.Tracks.Select(t => t.Title));
         Assert.True(playlist.UpdatedAt > before);
     }
 
     [Fact]
-    public void MoveTrack_to_the_end_reorders_and_bumps_UpdatedAt()
+    public void MoveEntry_to_the_end_reorders_and_bumps_UpdatedAt()
     {
         var a = T("A");
         var b = T("B");
@@ -128,7 +128,7 @@ public class PlaylistTests
         var before = DateTimeOffset.UtcNow.AddMinutes(-5);
         var playlist = new Playlist(Guid.NewGuid(), "p", new List<Track> { a, b }, before);
 
-        Assert.True(playlist.MoveTrack(a, null));
+        Assert.True(playlist.MoveEntry(0, 2));
 
         Assert.Equal(new[] { "B", "A" }, playlist.Tracks.Select(t => t.Title));
         Assert.True(playlist.UpdatedAt > before);
@@ -136,21 +136,18 @@ public class PlaylistTests
 
     [Theory]
     // Dropped onto the entry that already follows it.
-    [InlineData("A", "B")]
-    // Dropped onto itself - before the guard this removed it first, failed to
-    // find the target in the shortened list, and silently appended it.
-    [InlineData("B", "B")]
+    [InlineData(0, 1)]
+    // Dropped onto itself.
+    [InlineData(1, 1)]
     // Already last, dropped at the end.
-    [InlineData("C", null)]
-    public void MoveTrack_that_changes_nothing_reports_false_and_leaves_UpdatedAt_alone(string dragged, string? insertBefore)
+    [InlineData(2, 3)]
+    public void MoveEntry_that_changes_nothing_reports_false_and_leaves_UpdatedAt_alone(int from, int insertBefore)
     {
         var tracks = new List<Track> { T("A"), T("B"), T("C") };
         var playlist = new Playlist("p", tracks);
         var before = playlist.UpdatedAt;
 
-        var moved = playlist.MoveTrack(
-            tracks.Single(t => t.Title == dragged),
-            insertBefore == null ? null : tracks.Single(t => t.Title == insertBefore));
+        var moved = playlist.MoveEntry(from, insertBefore);
 
         Assert.False(moved);
         Assert.Equal(new[] { "A", "B", "C" }, playlist.Tracks.Select(t => t.Title));
@@ -158,14 +155,37 @@ public class PlaylistTests
     }
 
     [Fact]
-    public void MoveTrack_of_a_track_the_playlist_does_not_contain_reports_false()
+    public void MoveEntry_of_a_slot_the_playlist_does_not_have_reports_false()
     {
         var playlist = new Playlist("p", new List<Track> { T("A") });
         var before = playlist.UpdatedAt;
 
-        Assert.False(playlist.MoveTrack(T("stranger"), null));
+        Assert.False(playlist.MoveEntry(1, 1 + 1));
 
         Assert.Equal(before, playlist.UpdatedAt);
+    }
+
+    // UF-8: one song twice is two entries, and the slot says which.
+    [Fact]
+    public void Removing_the_second_copy_of_a_song_leaves_the_first_where_it_was()
+    {
+        var (a, b) = (T("A"), T("B"));
+        var playlist = new Playlist("p", new List<Track> { a, b, a });
+
+        Assert.True(playlist.RemoveEntriesAt([2]));
+
+        Assert.Equal(new[] { "A", "B" }, playlist.Tracks.Select(t => t.Title));
+    }
+
+    [Fact]
+    public void Dragging_the_last_copy_of_a_song_up_moves_that_copy()
+    {
+        var (a, b, c) = (T("A"), T("B"), T("C"));
+        var playlist = new Playlist("p", new List<Track> { a, b, c, a });
+
+        Assert.True(playlist.MoveEntry(3, 1));
+
+        Assert.Equal(new[] { "A", "A", "B", "C" }, playlist.Tracks.Select(t => t.Title));
     }
 
     // The invariant the whole smart-playlist design rests on. UpdatedAt is the

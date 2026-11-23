@@ -229,7 +229,7 @@ public class PlaylistManagementViewModelTests
         host.SelectedSidebarItem = null;
         var syncsBefore = host.ScheduledSyncs;
 
-        await vm.ReorderTrack(playlist, b, a);
+        await vm.ReorderEntry(playlist, 1, 0);
 
         Assert.Equal("b", playlist.Tracks[0].Title);
         Assert.Equal(syncsBefore + 1, host.ScheduledSyncs);
@@ -244,10 +244,10 @@ public class PlaylistManagementViewModelTests
         var playlist = library.Playlists[0];
         var syncsBefore = host.ScheduledSyncs;
 
-        // MoveTrack returns false for a drag that reorders nothing - see
+        // MoveEntry returns false for a drag that reorders nothing - see
         // PlaylistTests for the full set of those - and this ViewModel must
         // then neither rebuild rows nor schedule a peer sync.
-        await vm.ReorderTrack(playlist, Song("stranger"), null);
+        await vm.ReorderEntry(playlist, 7, 8);
 
         Assert.Equal(syncsBefore, host.ScheduledSyncs);
         Assert.Equal(0, host.ContentChangedCount);
@@ -264,7 +264,7 @@ public class PlaylistManagementViewModelTests
         var playlist = library.Playlists[0];
         var syncsBefore = host.ScheduledSyncs;
 
-        await vm.RemoveTracks(playlist, [a]);
+        await vm.RemoveEntries(playlist, [0]);
 
         Assert.Equal(["b", "a"], playlist.Tracks.Select(t => t.Title));
         Assert.Equal(syncsBefore + 1, host.ScheduledSyncs);
@@ -279,7 +279,7 @@ public class PlaylistManagementViewModelTests
         var syncsBefore = host.ScheduledSyncs;
         var rebuildsBefore = host.ContentChangedCount;
 
-        await vm.RemoveTracks(playlist, [Song("stranger")]);
+        await vm.RemoveEntries(playlist, [7]);
 
         Assert.Single(playlist.Tracks);
         Assert.Equal(syncsBefore, host.ScheduledSyncs);

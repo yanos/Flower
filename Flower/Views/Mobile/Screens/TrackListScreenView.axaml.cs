@@ -299,7 +299,7 @@ public partial class TrackListScreenView : UserControl, ITrackRowHost
         _ = new TrackRowDragReorder(TrackListBox, this, DropIndicator, (dragged, insertBefore) =>
         {
             if (DataContext is MobileMainViewModel vm)
-                vm.ReorderCurrentPlaylistTrack(dragged.Track, insertBefore?.Track);
+                vm.ReorderCurrentPlaylistRow(dragged, insertBefore);
         });
 
         // Songs are sorted on the sort-as value of their title, artist or album

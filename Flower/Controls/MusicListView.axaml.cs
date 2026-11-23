@@ -114,6 +114,12 @@ public partial class MusicListView : UserControl
         _selectedTrack = track;
         if (_isRaisingSelectedTrack)
             return; // echo of our own change via the TwoWay binding - see RaiseSelectedTrackChanged
+
+        // The song already picked, which may be the second copy of it in a
+        // playlist: RowFor below would answer with the first.
+        if (track != null && _selection.Current?.Track.Id == track.Id)
+            return;
+
         var row = _selection.RowFor(track);
         if (row != _selection.Current)
             _selection.SelectOnly(row);
@@ -643,7 +649,10 @@ public partial class MusicListView : UserControl
             int index = InsertionIndexAt(pt.Y);
             var insertBefore = index < _items.Count ? _items[index] : null;
             if (insertBefore != _draggedRow)
+            {
+                _selection.NoteMoved(_draggedRow, insertBefore);
                 RowReordered?.Invoke(this, (_draggedRow, insertBefore));
+            }
         }
         e.Pointer.Capture(null);
         EndDrag();

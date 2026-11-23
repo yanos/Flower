@@ -283,10 +283,10 @@ public class LibraryPlaylistTests
                 playlist.AppendTrack(new Track { Title = "C" });
                 break;
             case "remove":
-                playlist.RemoveTrack(a);
+                playlist.RemoveEntriesAt([playlist.Tracks.ToList().IndexOf(a)]);
                 break;
             case "reorder":
-                playlist.MoveTrack(b, a);
+                playlist.MoveEntry(playlist.Tracks.ToList().IndexOf(b), playlist.Tracks.ToList().IndexOf(a));
                 break;
         }
 

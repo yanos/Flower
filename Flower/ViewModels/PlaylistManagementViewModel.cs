@@ -543,7 +543,9 @@ public sealed class PlaylistManagementViewModel
         _host.ScheduleContentSync();
     }
 
-    public Task ReorderTrack(Playlist playlist, Track dragged, Track? insertBefore)
+    // The entry at slot `from` to just before the one at `insertBefore`, or to
+    // the end when that is the playlist's length (Playlist.MoveEntry).
+    public Task ReorderEntry(Playlist playlist, int from, int insertBefore)
     {
         // Same reasoning as AddTracks: the order of a smart playlist is the
         // order its rules produced, and a drag would last until the next pass.
@@ -551,10 +553,7 @@ public sealed class PlaylistManagementViewModel
         if (!playlist.IsOrdinary)
             return Task.CompletedTask;
 
-        // Was an open-coded Remove()+Insert() on playlist.Tracks, which bumped
-        // neither UpdatedAt nor Changed - so a reorder was invisible to both
-        // sync and the save. See Playlist.Tracks.
-        if (!playlist.MoveTrack(dragged, insertBefore))
+        if (!playlist.MoveEntry(from, insertBefore))
             return Task.CompletedTask;
 
         if (_host.SelectedSidebarItem?.Playlist == playlist)
@@ -564,13 +563,13 @@ public sealed class PlaylistManagementViewModel
         return Task.CompletedTask;
     }
 
-    // The song menu's Remove from Playlist, on either head: one entry for
-    // each song named (Playlist.RemoveEntries). The songs stay in the
-    // library, so nothing asks first. Refused for a smart playlist or a
-    // folder, like AddTracks.
-    public Task RemoveTracks(Playlist playlist, IReadOnlyList<Track> tracks)
+    // The song menu's Remove from Playlist, on either head: the entries at
+    // these slots (Playlist.RemoveEntriesAt). The songs stay in the library,
+    // so nothing asks first. Refused for a smart playlist or a folder, like
+    // AddTracks.
+    public Task RemoveEntries(Playlist playlist, IReadOnlyCollection<int> slots)
     {
-        if (!playlist.IsOrdinary || !playlist.RemoveEntries(tracks))
+        if (!playlist.IsOrdinary || !playlist.RemoveEntriesAt(slots))
             return Task.CompletedTask;
 
         if (_host.SelectedSidebarItem?.Playlist == playlist)

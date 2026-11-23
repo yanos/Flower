@@ -93,7 +93,7 @@ public class SmartPlaylistManagementTests
         var playlist = Smart(library, "Smart");
         playlist.ReplaceAll([first, second]);
 
-        await playlists.ReorderTrack(playlist, second, first);
+        await playlists.ReorderEntry(playlist, 1, 0);
 
         Assert.Equal(["A", "B"], playlist.Tracks.Select(t => t.Title));
     }

@@ -108,7 +108,7 @@ public class QueueAcrossRemovalsTests : PinnedDataDirectory
 
         var after = Control(library, out _);
         after.RestoreQueue();
-        playlist.MoveTrack(songs[3], songs[1]);
+        playlist.MoveEntry(3, 1);
 
         Assert.Equal(new[] { "A", "D", "B", "C" }, Titles(after));
     }
@@ -128,7 +128,7 @@ public class QueueAcrossRemovalsTests : PinnedDataDirectory
 
         var after = Control(library, out var audio);
         after.RestoreQueue();
-        playlist.RemoveEntries([songs[1]]);
+        playlist.RemoveEntriesAt([1]);
 
         Assert.Equal(new[] { "A", "C" }, Titles(after));
         Assert.Equal("C", after.CurrentlyPlayingTrack?.Title);

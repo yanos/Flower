@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Avalonia.Headless.XUnit;
 
 using Flower.Models;
+using Flower.ViewModels;
 using Flower.Tests.TestSupport;
 
 using Xunit;
@@ -25,6 +26,9 @@ public class QueueFollowsItsSourceTests : PinnedDataDirectory
         parts.PlaylistControl.CurrentPlaylist.Tracks.Select(t => t.Title!).ToArray();
 
     private static Track Song(Playlist playlist, string title) => playlist.Tracks.First(t => t.Title == title);
+
+    private static TrackRowViewModel Row(MainViewModelHarness.Parts parts, string title) =>
+        parts.Main.Rows.First(r => r.Track.Title == title);
 
     // A playlist of these on screen, played from the row at `playing`.
     private async Task<(MainViewModelHarness.Parts Parts, Playlist Playlist)> Playing(int playing, params string[] titles)
@@ -48,7 +52,7 @@ public class QueueFollowsItsSourceTests : PinnedDataDirectory
     {
         var (parts, playlist) = await Playing(1, "A", "B", "C", "D");
 
-        await parts.Main.ReorderPlaylistTrack(playlist, Song(playlist, "D"), Song(playlist, "C"));
+        await parts.Main.ReorderPlaylistRow(playlist, Row(parts, "D"), Row(parts, "C"));
 
         Assert.Equal(new[] { "A", "B", "D", "C" }, Queue(parts));
         Assert.Equal(1, parts.PlaylistControl.QueueIndex);
@@ -60,7 +64,7 @@ public class QueueFollowsItsSourceTests : PinnedDataDirectory
     {
         var (parts, playlist) = await Playing(2, "A", "B", "C", "D");
 
-        await parts.Main.ReorderPlaylistTrack(playlist, Song(playlist, "D"), Song(playlist, "A"));
+        await parts.Main.ReorderPlaylistRow(playlist, Row(parts, "D"), Row(parts, "A"));
 
         Assert.Equal(new[] { "D", "A", "B", "C" }, Queue(parts));
         Assert.Equal(3, parts.PlaylistControl.QueueIndex);
@@ -72,7 +76,7 @@ public class QueueFollowsItsSourceTests : PinnedDataDirectory
     {
         var (parts, playlist) = await Playing(0, "A", "B", "C");
 
-        await parts.Main.ReorderPlaylistTrack(playlist, Song(playlist, "A"), null);
+        await parts.Main.ReorderPlaylistRow(playlist, Row(parts, "A"), null);
 
         Assert.Equal(new[] { "B", "C", "A" }, Queue(parts));
         Assert.Equal(2, parts.PlaylistControl.QueueIndex);
@@ -85,7 +89,7 @@ public class QueueFollowsItsSourceTests : PinnedDataDirectory
         var (parts, playlist) = await Playing(1, "A", "B", "C", "D");
         parts.Main.PlayNext([T("X")]);
 
-        await parts.Main.ReorderPlaylistTrack(playlist, Song(playlist, "D"), Song(playlist, "C"));
+        await parts.Main.ReorderPlaylistRow(playlist, Row(parts, "D"), Row(parts, "C"));
 
         Assert.Equal(new[] { "A", "B", "X", "D", "C" }, Queue(parts));
         Assert.Equal(1, parts.PlaylistControl.LinedUpCount);
@@ -100,7 +104,7 @@ public class QueueFollowsItsSourceTests : PinnedDataDirectory
         parts.Main.SetPlayQueue(sorted);
         parts.PlaylistControl.Play(sorted[0], 0);
 
-        await parts.Main.ReorderPlaylistTrack(playlist, Song(playlist, "C"), Song(playlist, "A"));
+        await parts.Main.ReorderPlaylistRow(playlist, Row(parts, "C"), Row(parts, "A"));
 
         Assert.Equal(new[] { "C", "B", "A" }, Queue(parts));
     }
@@ -175,7 +179,7 @@ public class QueueFollowsItsSourceTests : PinnedDataDirectory
     {
         var (parts, playlist) = await Playing(1, "A", "B", "C", "D");
 
-        await parts.Main.RemoveFromPlaylist(playlist, [Song(playlist, "C")]);
+        await parts.Main.RemoveRowsFromPlaylist(playlist, [Row(parts, "C")]);
 
         Assert.Equal(new[] { "A", "B", "D" }, Queue(parts));
         Assert.Equal("D", parts.Audio.LastUpcoming?.Title);
@@ -187,7 +191,7 @@ public class QueueFollowsItsSourceTests : PinnedDataDirectory
         var (parts, playlist) = await Playing(1, "A", "B", "C");
         var playing = Song(playlist, "B");
 
-        await parts.Main.RemoveFromPlaylist(playlist, [playing]);
+        await parts.Main.RemoveRowsFromPlaylist(playlist, [Row(parts, playing.Title!)]);
 
         Assert.Same(playing, parts.PlaylistControl.CurrentlyPlayingTrack);
         Assert.Equal("C", parts.Audio.LastUpcoming?.Title);
@@ -241,7 +245,7 @@ public class QueueFollowsItsSourceTests : PinnedDataDirectory
         parts.Main.SetPlayQueue(sorted);
         parts.PlaylistControl.Play(sorted[0], 0);
 
-        await parts.Main.RemoveFromPlaylist(playlist, [Song(playlist, "B")]);
+        await parts.Main.RemoveRowsFromPlaylist(playlist, [Row(parts, "B")]);
         await parts.Main.AddTracksToPlaylist([T("X")], playlist);
 
         Assert.Equal(new[] { "C", "A", "X" }, Queue(parts));

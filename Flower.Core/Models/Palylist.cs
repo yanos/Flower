@@ -213,7 +213,7 @@ namespace Flower.Models
 
         // Read-only so that every mutation has to go through the methods below,
         // which are what bump UpdatedAt and raise Changed. It used to be a bare
-        // List<Track>, and MainViewModel.ReorderPlaylistTrack duly reached in
+        // List<Track>, and MainViewModel.ReorderPlaylistRow duly reached in
         // and did its own Remove()+Insert() - so a drag-reorder changed the
         // playlist without bumping UpdatedAt at all, and PlaylistSyncPlanner
         // (which decides "did this side change?" purely from UpdatedAt against
@@ -443,19 +443,23 @@ namespace Flower.Models
             Touch();
         }
 
-        public void RemoveTrack(Track track) => RemoveEntries([track]);
-
-        // One entry for each of these tracks - a song in the playlist twice
-        // and named once loses one of the two - as one edit, or no edit at
-        // all when none of them is here. Returns whether anything went.
-        public bool RemoveEntries(IReadOnlyList<Track> tracks)
+        // The entries at these slots (indexes into Tracks), as one edit, or no
+        // edit at all when none of them is a slot here. By slot rather than by
+        // song because a playlist can hold one song twice, and a song cannot
+        // say which of the two was meant. Returns whether anything went.
+        public bool RemoveEntriesAt(IReadOnlyCollection<int> slots)
         {
-            var next = new List<Track>(_tracks);
-            var removed = false;
-            foreach (var track in tracks)
-                removed |= next.Remove(track);
-            if (!removed)
+            var tracks = _tracks;
+            var doomed = slots.Where(slot => slot >= 0 && slot < tracks.Count).ToHashSet();
+            if (doomed.Count == 0)
                 return false;
+
+            var next = new List<Track>(tracks.Count - doomed.Count);
+            for (var i = 0; i < tracks.Count; i++)
+            {
+                if (!doomed.Contains(i))
+                    next.Add(tracks[i]);
+            }
 
             SetTracksKeepingAbsentInPlace(next);
             Touch();
@@ -481,43 +485,33 @@ namespace Flower.Models
             Touch();
         }
 
-        // Drag-to-reorder: move an entry to sit immediately before insertBefore,
-        // or to the end when that is null. Returns false - changing nothing,
-        // not even UpdatedAt - when the drag would not actually reorder
-        // anything: the dragged track is not in this playlist, it was dropped
-        // onto itself, or it was dropped where it already sits (onto the entry
-        // that already follows it, or at the end when it is already last).
+        // Drag-to-reorder: the entry at slot `from` moves to sit just before the
+        // entry now at slot `insertBefore`, or to the end when that is
+        // Tracks.Count. By slot for RemoveEntriesAt's reason. Returns false -
+        // changing nothing, not even UpdatedAt - for a slot that is not here
+        // or a drag that would not reorder anything (dropped onto itself, or
+        // onto the entry already following it).
         //
         // That last group matters beyond tidiness. UpdatedAt is the entire
         // basis on which PlaylistSyncPlanner decides "did this side change?"
         // against its per-peer baseline, so bumping it here would manufacture a
         // sync-visible edit out of a drag that moved nothing - and a drag that
         // lands back where it started is the single most common way a
-        // drag-reorder ends. Same reasoning as RemoveTrack's own no-op guard;
-        // see docs/ARCHITECTURE-REVIEW.md 2.4.
-        public bool MoveTrack(Track dragged, Track? insertBefore)
+        // drag-reorder ends.
+        public bool MoveEntry(int from, int insertBefore)
         {
-            var originalIndex = _tracks.IndexOf(dragged);
-            if (originalIndex < 0)
+            var tracks = _tracks;
+            if (from < 0 || from >= tracks.Count || insertBefore < 0 || insertBefore > tracks.Count)
                 return false;
 
-            // Dropped onto itself. Without this the removal below happens
-            // first, IndexOf then fails to find insertBefore in the shortened
-            // list, and the track silently lands at the end instead.
-            if (insertBefore == dragged)
+            var target = insertBefore > from ? insertBefore - 1 : insertBefore;
+            if (target == from)
                 return false;
 
-            var next = new List<Track>(_tracks);
-            next.RemoveAt(originalIndex);
-
-            var index = insertBefore != null ? next.IndexOf(insertBefore) : -1;
-            var targetIndex = index < 0 ? next.Count : index;
-            // Removing at originalIndex and re-inserting at the same index
-            // reproduces the list exactly.
-            if (targetIndex == originalIndex)
-                return false;
-
-            next.Insert(targetIndex, dragged);
+            var next = new List<Track>(tracks);
+            var moved = next[from];
+            next.RemoveAt(from);
+            next.Insert(target, moved);
             _tracks = next;
             Touch();
             return true;
