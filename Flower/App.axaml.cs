@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Markup.Xaml.MarkupExtensions;
 using Avalonia.Threading;
@@ -52,6 +53,7 @@ public partial class App : Application
 
     private static bool _catchingFatalExceptions;
     private static bool _crashReportingStarted;
+    private static bool _survivingUiExceptions;
 
     // The first thing every head does, so that nothing it does afterwards can
     // die unrecorded. Needs nothing set up: before the log exists, the record
@@ -111,12 +113,39 @@ public partial class App : Application
 
     // An exception nothing caught, which the process survives anyway: logged
     // and reported (CrashReporting.ReportUnhandled), but no crash to offer at
-    // the next launch, since there was none. The macOS head calls it from
-    // Runtime.MarshalManagedException.
+    // the next launch, since there was none. From the macOS head's
+    // Runtime.MarshalManagedException, and the UI thread's dispatcher.
     public static void RecordSurvived(Exception exception, string mechanism)
     {
-        AppLogging.CreateLogger<App>().LogError(exception, "Unhandled exception in {Mechanism}, swallowed by the platform; Flower carries on", mechanism);
+        AppLogging.CreateLogger<App>().LogError(exception, "Unhandled exception in {Mechanism}; Flower carries on", mechanism);
         CrashReporting.ReportUnhandled(exception, mechanism);
+    }
+
+    // Once the app is on screen, a failed click or a bad binding need not stop
+    // the music (UiExceptionPolicy). Handling it here takes it away from
+    // AppDomain's event and so from Sentry's hook, which is why RecordSurvived
+    // reports it. Before that the app is half built, and crashing is right.
+    // Never in a test, where it would hide the failure.
+    private static void SurviveUiExceptionsOnceShown(Control mainView)
+    {
+        if (_survivingUiExceptions || CrashReporting.DisabledForTests)
+            return;
+        _survivingUiExceptions = true;
+
+        void Shown(object? sender, RoutedEventArgs e)
+        {
+            mainView.Loaded -= Shown;
+            var policy = new UiExceptionPolicy();
+            Dispatcher.UIThread.UnhandledException += (_, unhandled) =>
+            {
+                if (!policy.Survives(unhandled.Exception, DateTimeOffset.UtcNow))
+                    return;
+
+                unhandled.Handled = true;
+                RecordSurvived(unhandled.Exception, "Dispatcher.UnhandledException");
+            };
+        }
+        mainView.Loaded += Shown;
     }
 
     public override void Initialize()
@@ -1030,7 +1059,10 @@ public partial class App : Application
         // lazily: a single view has no TopLevel until the platform attaches it,
         // and until then the clock falls back to its timer.
         if (mainView != null)
+        {
             AnimationClock.Current.TopLevelProvider = () => TopLevel.GetTopLevel(mainView);
+            SurviveUiExceptionsOnceShown(mainView);
+        }
 
         // Where a half-listened track got to has to survive the app going away,
         // not just a pause - see PlaylistControlViewModel.SavePlaybackState.
