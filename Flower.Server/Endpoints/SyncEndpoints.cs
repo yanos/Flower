@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 
 using Flower.Models;
 using Flower.Persistence;
+using Flower.Persistence.Sql;
 using Flower.Server.Configuration;
 using Flower.Server.Services;
 using Flower.Services;
@@ -198,8 +199,8 @@ public static class SyncEndpoints
         // captured above reaches these three: a bare, non-generic ILogger is
         // not something the container can resolve as a handler parameter.
         sync.MapPost("/playlists/apply",
-            (HttpContext context, Library library, TrustedPeerStore trustedPeers) =>
-                ApplyPlaylists(context, library, trustedPeers, logger));
+            (HttpContext context, Library library, TrustedPeerStore trustedPeers, PlaylistDeletionRepository deletions) =>
+                ApplyPlaylists(context, library, trustedPeers, deletions, logger));
         sync.MapPost("/plays",
             (HttpContext context, PlayReportService plays, TrustedPeerStore trustedPeers) =>
                 ReportPlays(context, plays, trustedPeers, logger));
@@ -485,14 +486,16 @@ public static class SyncEndpoints
     // guest device sees the playlists it made; every admin device sees the
     // owner's.
     private static IResult GetPlaylists(
-        HttpContext context, Library library, DeviceSigningKey signingKey, TrustedPeerStore trustedPeers)
+        HttpContext context, Library library, DeviceSigningKey signingKey, TrustedPeerStore trustedPeers,
+        PlaylistDeletionRepository deletions)
     {
         if (ListenerOf(context, trustedPeers) is not { } listener)
             return Problems.Of(StatusCodes.Status401Unauthorized, ProblemCodes.SignatureInvalid);
 
         return Results.Text(
             JsonSerializer.Serialize(
-                PlaylistSyncMapper.ToManifest(signingKey.Fingerprint, PlaylistSyncMapper.For(library.Playlists, listener)),
+                PlaylistSyncMapper.ToManifest(
+                    signingKey.Fingerprint, PlaylistSyncMapper.For(library.Playlists, listener), deletions.DeletedFor(listener)),
                 JsonOptions),
             "application/json");
     }
@@ -515,7 +518,7 @@ public static class SyncEndpoints
     // pushing ids that belong to the owner gets them back in Refused, and the
     // owner's playlists are untouched.
     private static async Task<IResult> ApplyPlaylists(
-        HttpContext context, Library library, TrustedPeerStore trustedPeers, ILogger logger)
+        HttpContext context, Library library, TrustedPeerStore trustedPeers, PlaylistDeletionRepository deletions, ILogger logger)
     {
         if (ListenerOf(context, trustedPeers) is not { } listener)
             return Problems.Of(StatusCodes.Status401Unauthorized, ProblemCodes.SignatureInvalid);
@@ -526,7 +529,7 @@ public static class SyncEndpoints
 
         // Persists itself, through the same PlaylistRepository the client's
         // own Library writes through.
-        var result = PlaylistSyncMapper.ApplyPushedManifest(library, manifest, listener, logger);
+        var result = PlaylistSyncMapper.ApplyPushedManifest(library, manifest, listener, deletions, logger);
 
         logger.LogInformation(
             "Applied {Count} playlist(s) pushed by {Fingerprint} for listener {Listener}",

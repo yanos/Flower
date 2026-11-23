@@ -142,6 +142,7 @@ public class PlaylistSyncService
         var remoteDisplayName = _deviceNicknameStore.Get(device.Fingerprint) ?? device.Alias;
 
         List<PlaylistSyncPlaylistDto> remotePlaylists;
+        List<Guid> deletedOnServer;
         try
         {
             const string getPath = "/api/flower/v1/playlists";
@@ -154,6 +155,7 @@ public class PlaylistSyncService
             var json = await getResponse.Content.ReadAsStringAsync();
             var manifest = JsonSerializer.Deserialize(json, FlowerJsonContext.Default.PlaylistSyncManifestDto);
             remotePlaylists = manifest?.Playlists ?? new List<PlaylistSyncPlaylistDto>();
+            deletedOnServer = manifest?.Deleted ?? [];
         }
         catch (Exception ex)
         {
@@ -193,7 +195,8 @@ public class PlaylistSyncService
             plannedFrom,
             remotePlaylists,
             id => baselines.TryGetValue(id, out var v) ? v : null,
-            index);
+            index,
+            deletedOnServer);
 
         var finalPlaylists = new List<Playlist>();
         var newBaselines = new Dictionary<Guid, DateTimeOffset>(baselines);

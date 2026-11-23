@@ -108,11 +108,12 @@ public static class PlaylistSyncMapper
     // Returns the pushing listener's playlists as installed, and the ids
     // refused.
     public static PlaylistApplyResult ApplyPushedManifest(
-        Library library, PlaylistSyncManifestDto manifest, string listener, ILogger? logger = null)
+        Library library, PlaylistSyncManifestDto manifest, string listener, IPlaylistDeletionLog deletions, ILogger? logger = null)
     {
         var index = new PlaylistTrackIndex(library.Tracks);
         var deleted = manifest.Deleted?.ToHashSet() ?? [];
         var refused = new List<Guid>();
+        var removed = new List<Guid>();
 
         var installed = library.ReplacePlaylists(current =>
         {
@@ -147,14 +148,24 @@ public static class PlaylistSyncMapper
                         refused.Add(playlist.Id);
                     result.Add(playlist);
                 }
-                else if (!pushedIds.Contains(playlist.Id) && !deleted.Contains(playlist.Id))
+                else if (!pushedIds.Contains(playlist.Id))
                 {
-                    result.Add(playlist);
+                    if (deleted.Contains(playlist.Id))
+                        removed.Add(playlist.Id);
+                    else
+                        result.Add(playlist);
                 }
             }
 
             return result;
         });
+
+        // After the install: a crash between the two leaves a deletion
+        // unrecorded, which at worst brings the playlist back from a device
+        // that still has it. A refused id is recorded too, so that device's
+        // next session drops its copy (PlaylistApplyResponseDto).
+        deletions.Record(listener, [.. removed, .. refused]);
+        deletions.Forget(listener, installed.Where(p => p.Listener == listener).Select(p => p.Id).ToList());
 
         if (refused.Count > 0)
         {

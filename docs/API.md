@@ -409,6 +409,10 @@ optional `VibePrompt` and `VibeInstrumental` for a Vibe Playlist), and
 optional `Deleted` ids. A track entry is `Title`/`Artists`/`Album`/
 `DurationSeconds` plus the catalog `Id` when the sender has one.
 
+On a `GET`, `Deleted` is the server's record of the playlists deleted for this
+listener. It is the only thing that makes a missing playlist a deletion: a
+playlist that is simply absent, as after restoring a backup, is pushed back.
+
 Playlists belong to a **listener** (`Listeners`): every admin device shares
 the owner's set, and each other device has a set of its own. `GET` returns the
 caller's listener's playlists only, and a push only ever writes them.
@@ -419,7 +423,8 @@ playlist missing from it is kept unless `Deleted` names it, and a pushed copy
 no newer than the one held is ignored. A pushed or deleted id that belongs to
 another listener is not applied. The answer is `200` with
 `{"Refused": [ids]}` naming those ids; it is empty for an honest push. The
-client only logs it: its next sync drops those playlists the ordinary way.
+client only logs it. The server records those ids in that listener's `Deleted`,
+so the client's next sync drops them the ordinary way.
 
 ### `GET /listening?since=`
 

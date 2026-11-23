@@ -213,9 +213,25 @@ public class PlaylistSyncPlannerTests
         var baseline = DateTimeOffset.UtcNow.AddMinutes(-10);
         var local = new Playlist(id, "Road Trip", new List<Track> { T("A") }, baseline);
 
-        var decisions = PlaylistSyncPlanner.Plan(new List<Playlist> { local }, new List<PlaylistSyncPlaylistDto>(), _ => baseline);
+        var decisions = PlaylistSyncPlanner.Plan(
+            new List<Playlist> { local }, new List<PlaylistSyncPlaylistDto>(), _ => baseline, deletedRemotely: [id]);
 
         Assert.Equal(PlaylistSyncDecisionKind.Delete, Assert.Single(decisions).Kind);
+    }
+
+    // UF-6: a server restored from a backup is missing whatever was made since,
+    // with no record of anyone deleting it.
+    [Fact]
+    public void A_playlist_missing_from_the_server_with_no_record_of_a_deletion_is_kept()
+    {
+        var id = Guid.NewGuid();
+        var baseline = DateTimeOffset.UtcNow.AddMinutes(-10);
+        var local = new Playlist(id, "Road Trip", new List<Track> { T("A") }, baseline);
+
+        var decisions = PlaylistSyncPlanner.Plan(
+            new List<Playlist> { local }, new List<PlaylistSyncPlaylistDto>(), _ => baseline);
+
+        Assert.Equal(PlaylistSyncDecisionKind.KeepLocal, Assert.Single(decisions).Kind);
     }
 
     [Fact]
@@ -286,7 +302,7 @@ public class PlaylistSyncPlannerTests
         var local = new Playlist(id, "Road Trip", new List<Track> { T("A"), T("B") }, baseline.AddMinutes(30));
 
         var decisions = PlaylistSyncPlanner.Plan(
-            new List<Playlist> { local }, new List<PlaylistSyncPlaylistDto>(), _ => baseline);
+            new List<Playlist> { local }, new List<PlaylistSyncPlaylistDto>(), _ => baseline, deletedRemotely: [id]);
 
         Assert.Equal(PlaylistSyncDecisionKind.Conflict, Assert.Single(decisions).Kind);
     }
@@ -299,7 +315,7 @@ public class PlaylistSyncPlannerTests
         var local = new Playlist(id, "Road Trip", new List<Track> { T("A") }, baseline);
 
         var decisions = PlaylistSyncPlanner.Plan(
-            new List<Playlist> { local }, new List<PlaylistSyncPlaylistDto>(), _ => baseline);
+            new List<Playlist> { local }, new List<PlaylistSyncPlaylistDto>(), _ => baseline, deletedRemotely: [id]);
 
         Assert.Equal(PlaylistSyncDecisionKind.Delete, Assert.Single(decisions).Kind);
     }

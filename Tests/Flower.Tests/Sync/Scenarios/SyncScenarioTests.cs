@@ -1071,6 +1071,67 @@ public class SyncScenarioTests : PinnedDataDirectory
         Assert.Equal(["A", "B"], Titles(server.Library.Playlists.Single()));
     }
 
+    // UF-6: a server restored from a backup is missing what was made since,
+    // and has no record of anybody deleting it.
+    [Fact]
+    public async Task A_server_restored_from_a_backup_gets_the_newer_playlists_back()
+    {
+        var a = ServerTrack("A");
+        using var server = new SimulatedFlowerServer([a]);
+        var client = NewClient();
+        await client.PullLibraryAsync(server);
+        client.Library.AddPlaylist(new Playlist("Made since", [client.Single("A")]));
+        await client.SyncPlaylistsAsync(server);
+        Assert.Single(server.Library.Playlists);
+
+        server.Library.ReplacePlaylists([]);
+        await client.SyncPlaylistsAsync(server);
+
+        Assert.Equal(["A"], Titles(client.Playlist("Made since")));
+        Assert.Equal("Made since", Assert.Single(server.Library.Playlists).Name);
+    }
+
+    [Fact]
+    public async Task A_playlist_deleted_on_one_device_is_deleted_on_the_other()
+    {
+        var a = ServerTrack("A");
+        using var server = new SimulatedFlowerServer([a]);
+        server.Library.AddPlaylist(new Playlist("Doomed", [a]));
+        var (phone, laptop) = (NewClient(), NewClient());
+        await phone.PullLibraryAsync(server);
+        await laptop.PullLibraryAsync(server);
+        await phone.SyncPlaylistsAsync(server);
+        await laptop.SyncPlaylistsAsync(server);
+
+        phone.Library.RemovePlaylist(phone.Playlist("Doomed"));
+        await phone.SyncPlaylistsAsync(server);
+        await laptop.SyncPlaylistsAsync(server);
+
+        Assert.Empty(server.Library.Playlists);
+        Assert.Empty(laptop.Library.Playlists);
+    }
+
+    // A device that kept a copy of a playlist it may no longer see: the push
+    // is refused, the server records that, and the next session drops it.
+    [Fact]
+    public async Task A_copy_of_another_listeners_playlist_is_dropped_after_its_push_is_refused()
+    {
+        var a = ServerTrack("A");
+        using var server = new SimulatedFlowerServer([a]);
+        server.Library.AddPlaylist(new Playlist("The owner's", [a]));
+        var client = NewClient();
+        await client.PullLibraryAsync(server);
+        await client.SyncPlaylistsAsync(server);
+        Assert.Single(client.Library.Playlists);
+
+        server.CallerIsAdmin = false;
+        await client.SyncPlaylistsAsync(server);
+        await client.SyncPlaylistsAsync(server);
+
+        Assert.Empty(client.Library.Playlists);
+        Assert.Equal("The owner's", Assert.Single(server.Library.Playlists).Name);
+    }
+
     // A browser tab deletes a playlist: the server has to hear that as a
     // delete now that a push leaving a playlist out no longer means one.
     [Fact]

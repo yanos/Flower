@@ -58,6 +58,10 @@ public sealed class SimulatedFlowerServer : IDisposable
     public Library Library { get; }
     public string Fingerprint { get; }
 
+    // The server's record of deleted playlists. A scenario restoring a backup
+    // leaves it as the backup had it.
+    public InMemoryPlaylistDeletionLog PlaylistDeletions { get; } = new();
+
     // Whether the device dialling in is one the server made an admin - what
     // TrustedPeerStore.IsAdmin answers on the real host.
     public bool CallerIsAdmin { get; set; } = true;
@@ -180,7 +184,8 @@ public sealed class SimulatedFlowerServer : IDisposable
                     return;
                 case ("GET", PlaylistsPath):
                     await WriteJsonAsync(context, PlaylistSyncMapper.ToManifest(
-                        Fingerprint, PlaylistSyncMapper.For(Library.Playlists, ListenerOf(context))));
+                        Fingerprint, PlaylistSyncMapper.For(Library.Playlists, ListenerOf(context)),
+                        PlaylistDeletions.DeletedFor(ListenerOf(context))));
                     var after = AfterNextPlaylistsGet;
                     AfterNextPlaylistsGet = null;
                     after?.Invoke();
@@ -193,7 +198,7 @@ public sealed class SimulatedFlowerServer : IDisposable
                         return;
                     }
                     var manifest = await ReadJsonAsync<PlaylistSyncManifestDto>(context);
-                    var applied = PlaylistSyncMapper.ApplyPushedManifest(Library, manifest!, ListenerOf(context));
+                    var applied = PlaylistSyncMapper.ApplyPushedManifest(Library, manifest!, ListenerOf(context), PlaylistDeletions);
                     PlaylistApplyCount++;
                     await WriteJsonAsync(context, new PlaylistApplyResponseDto(applied.Refused));
                     return;

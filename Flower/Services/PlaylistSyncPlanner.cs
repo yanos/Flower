@@ -19,10 +19,10 @@ public enum PlaylistSyncDecisionKind
     // differs) - can't pick a winner automatically, see PlaylistSyncService.
     Conflict,
 
-    // One side no longer has a playlist the two devices previously agreed
-    // existed (see Plan's baselineFor check) - it was deleted there, not just
-    // never created on this side, so it should be removed from the other side
-    // too rather than being treated as "adopt/keep the one side that still has it".
+    // A playlist the two devices previously agreed existed (see Plan's
+    // baselineFor check) was deleted on one side: gone from this device, or on
+    // the server's record of deletions. It is removed from the other side too
+    // rather than being treated as "adopt/keep the one side that still has it".
     Delete
 }
 
@@ -44,12 +44,17 @@ public static class PlaylistSyncPlanner
     // index is this device's library, for reading the remote entries as the
     // tracks they would become here. Without one, content is compared by
     // SyncKey alone and a copy that lost entries is never recognised as such.
+    //
+    // deletedRemotely is the server's record of what was deleted there
+    // (IPlaylistDeletionLog).
     public static IReadOnlyList<PlaylistSyncDecision> Plan(
         IReadOnlyList<Playlist> local,
         IReadOnlyList<PlaylistSyncPlaylistDto> remote,
         Func<Guid, DateTimeOffset?> baselineFor,
-        PlaylistTrackIndex? index = null)
+        PlaylistTrackIndex? index = null,
+        IReadOnlyCollection<Guid>? deletedRemotely = null)
     {
+        var deletedThere = deletedRemotely?.ToHashSet() ?? [];
         var localById  = local.ToDictionary(p => p.Id);
         var remoteById = remote.ToDictionary(p => p.Id);
         var allIds     = localById.Keys.Union(remoteById.Keys);
@@ -61,7 +66,13 @@ public static class PlaylistSyncPlanner
             remoteById.TryGetValue(id, out var r);
             var baseline = baselineFor(id);
 
-            // A missing side is only a deletion to propagate if the two devices
+            // Missing from the server and not on its record of deletions: the
+            // server lost it rather than anyone deleting it - it was restored
+            // from a backup older than the playlist. Kept, and the push puts it
+            // back. Read as a deletion, this removed every playlist made since
+            // the backup from every device.
+            //
+            // Otherwise a missing side is only a deletion to propagate if the two devices
             // previously agreed the playlist existed (a baseline) AND the side
             // that still has it hasn't changed it since. Without that second
             // check this was an unconditional Delete, so a playlist edited here
@@ -73,7 +84,7 @@ public static class PlaylistSyncPlanner
             if (r == null)
             {
                 var localOnlyKind =
-                    baseline == null                ? PlaylistSyncDecisionKind.KeepLocal
+                    baseline == null || !deletedThere.Contains(id) ? PlaylistSyncDecisionKind.KeepLocal
                     : l != null && l.UpdatedAt > baseline ? PlaylistSyncDecisionKind.Conflict
                     : PlaylistSyncDecisionKind.Delete;
                 decisions.Add(new PlaylistSyncDecision(id, localOnlyKind, l, null));

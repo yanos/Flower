@@ -206,11 +206,13 @@ somebody is listening.
 **Done (2026-10-02).** What it turned out to be, where that differs from the
 above:
 
-- **The client does not drop refused playlists itself.** It logs them. Its
-  planner already reads a playlist that is missing on the server, with a
-  baseline and no local edit, as deleted there, so the next session drops it.
-  Deleting on the strength of an unsigned answer would have given anything on
-  the path a new way to remove a playlist.
+- **The client does not drop refused playlists itself.** It logs them. The
+  server records a refused id as deleted for that listener, and the `Deleted`
+  list on the next `GET /playlists` is what drops it, with a baseline and no
+  local edit. A playlist merely missing from that answer is never a deletion
+  (`IPlaylistDeletionLog`), so a restored backup cannot delete anything from a
+  device. Deleting on the strength of an unsigned answer would have given
+  anything on the path a new way to remove a playlist.
 - **Pushed logs are capped by size, not by 20,000 lines.** A phone's own
   archive runs to about 50 MB of these lines a week, which is a few hundred
   thousand lines, so 20,000 would have kept less than a day. The caps are

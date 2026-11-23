@@ -55,6 +55,12 @@ public sealed record PlaylistSyncPlaylistDto(
 // collection wholesale, though - see PlaylistSyncMapper.ApplyPushedManifest: a
 // playlist missing from the push is kept unless Deleted names it, and a pushed copy
 // no newer than the one held is not taken.
+//
+// On a GET, Deleted is the server's record of what was deleted for this
+// listener (IPlaylistDeletionLog). It is the only thing that makes a playlist
+// missing from the answer a deletion: a server restored from a backup is
+// missing everything made since, and that must come back up rather than be
+// deleted from every device.
 public sealed record PlaylistSyncManifestDto(
     string DeviceFingerprint, List<PlaylistSyncPlaylistDto> Playlists, List<Guid>? Deleted = null);
 
@@ -65,12 +71,23 @@ public sealed record PlaylistSyncManifestDto(
 // from an honest push.
 //
 // Said rather than silently dropped so the refusal shows in the pushing
-// device's log. The device deletes nothing on the strength of it: its next
-// session reads those playlists as deleted on the server, which they are as
-// far as that listener is concerned, and drops them the ordinary way (see
-// PlaylistSyncPlanner) - so a forged answer cannot remove a playlist that the
-// server still has for this device.
+// device's log. The device deletes nothing on the strength of it: the server
+// records those ids as deleted for this listener, which they are as far as it
+// is concerned, and the device's next session reads that record and drops them
+// the ordinary way (see PlaylistSyncPlanner) - so a forged answer cannot remove
+// a playlist that the server still has for this device.
 public sealed record PlaylistApplyResponseDto(List<Guid> Refused);
+
+// A server's record of the playlists deleted from it, per listener. Kept
+// because a playlist's absence proves nothing: see PlaylistSyncManifestDto.
+public interface IPlaylistDeletionLog
+{
+    IReadOnlySet<Guid> DeletedFor(string listener);
+    void Record(string listener, IReadOnlyCollection<Guid> playlistIds);
+
+    // These exist again: pushed back by a device that kept an edit of them.
+    void Forget(string listener, IReadOnlyCollection<Guid> playlistIds);
+}
 
 // What ApplyPushedManifest did: the pushing listener's playlists as now
 // installed, and what it refused.

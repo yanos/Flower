@@ -130,6 +130,21 @@ namespace Flower.Persistence.Sql
                 FOREIGN KEY (track_id) REFERENCES tracks (id) ON DELETE CASCADE
             );
             """,
+
+            // 17: the playlists a server knows were deleted, per listener -
+            // see PlaylistDeletionRepository. A device reads a playlist missing
+            // from the server as deleted only when it is named here, so a
+            // server restored from a backup, which is missing whatever was made
+            // since, does not delete those playlists off every device.
+            """
+            CREATE TABLE IF NOT EXISTS deleted_playlists (
+                listener    TEXT    NOT NULL,
+                playlist_id TEXT    NOT NULL,
+                deleted_at  INTEGER NOT NULL,
+
+                PRIMARY KEY (listener, playlist_id)
+            );
+            """,
         ];
 
         public static int LatestVersion => BaselineVersion + Steps.Count;

@@ -4,7 +4,7 @@ Bugs a person using Flower would hit: data lost, the wrong thing done, a dead
 end, or behaviour that misleads. The `user-flow-review` skill finds them and
 keeps this list; `/release` treats every open **P0** here as blocking the tag.
 
-**Status:** 9 open (2 P0, 2 fix-now, 5 later), from the review of `ef6695fb`
+**Status:** 8 open (1 P0, 2 fix-now, 5 later), from the review of `ef6695fb`
 on 2026-11-22.
 
 Severities are the ones in `.claude/skills/release/REVIEW.md`. **Reproduced**
@@ -17,13 +17,6 @@ An id is never reused. A fixed finding leaves this list, and its commit records
 the fix.
 
 ## P0: data is lost or damaged
-
-**UF-6. Restoring a server backup deletes newer playlists on every device.** *Read.*
-A playlist created after the backup is missing on the server and unchanged since
-the last sync, which the planner reads as deleted there.
-`Flower/Services/PlaylistSyncPlanner.cs:78`.
-*Direction:* delete only on an explicit record of a deletion, or detect that the
-server's state went backwards.
 
 **UF-7. Playlist conflicts can silently discard edits.** *Read.*
 Phones have no conflict screen, so they always keep their own version, stamp it

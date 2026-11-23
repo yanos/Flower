@@ -286,6 +286,45 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
         }
     }
 
+    // UF-6: what makes a missing playlist a deletion is the server saying so.
+    [Fact]
+    public async Task A_deleted_playlist_is_named_to_its_listener_until_it_comes_back()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var library = server.Services.GetRequiredService<Library>();
+        using var device = await TrustedDeviceAsync(trustedPeers);
+        var id = Guid.NewGuid();
+        var playlist = new PlaylistSyncPlaylistDto(id, "Doomed", DateTimeOffset.UtcNow, []);
+
+        async Task<PlaylistSyncManifestDto> ApplyThenGet(PlaylistSyncManifestDto push)
+        {
+            var (status, _, _) = await SendAsync(device, "POST", "/api/flower/v1/playlists/apply", "10.0.2.4",
+                body: JsonSerializer.Serialize(push));
+            Assert.Equal(HttpStatusCode.OK, status);
+            var (_, body, _) = await SendAsync(device, "GET", "/api/flower/v1/playlists", "10.0.2.4");
+            return JsonSerializer.Deserialize<PlaylistSyncManifestDto>(body)!;
+        }
+
+        try
+        {
+            var made = await ApplyThenGet(new PlaylistSyncManifestDto(device.Fingerprint, [playlist]));
+            Assert.Null(made.Deleted);
+
+            var deleted = await ApplyThenGet(new PlaylistSyncManifestDto(device.Fingerprint, [], [id]));
+            Assert.Empty(deleted.Playlists);
+            Assert.Equal([id], deleted.Deleted);
+
+            var back = await ApplyThenGet(new PlaylistSyncManifestDto(device.Fingerprint, [playlist]));
+            Assert.Single(back.Playlists);
+            Assert.Null(back.Deleted);
+        }
+        finally
+        {
+            library.ReplacePlaylists([]);
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
     // docs/SECURITY.md step 1: playlists belong to a listener. The
     // owner's devices share one set; a guest's phone has its own, and can
     // neither see the owner's nor change them - not by pushing one of their

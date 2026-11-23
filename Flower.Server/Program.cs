@@ -224,6 +224,7 @@ builder.Services.AddSingleton<TrackRepository>();
 // registers both the same way. Loaded from the database at startup below, then
 // reconciled by each rescan.
 builder.Services.AddSingleton<PlaylistRepository>();
+builder.Services.AddSingleton<PlaylistDeletionRepository>();
 builder.Services.AddSingleton(services => new Library(
     services.GetRequiredService<TrackRepository>().LoadAll(),
     services.GetRequiredService<ILogger<Library>>(),
