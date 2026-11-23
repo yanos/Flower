@@ -117,6 +117,7 @@ public sealed class LibraryIngest
     private readonly string _stagingDirectory;
     private readonly Importer.Importer _importer;
     private readonly ILogger _logger;
+    private readonly Action<string, string> _moveAcrossVolumes;
 
     // One upload at a time. An owner's device sends them one after another
     // anyway, and serialising here is what lets "is this name taken" and
@@ -127,15 +128,18 @@ public sealed class LibraryIngest
     private sealed record Session(
         string Target, string RelativePath, long Length, string Sha256, DateTimeOffset DateAdded, bool Replaces);
 
+    // moveAcrossVolumes is File.Move; a test passes one that runs out of space
+    // partway, which no real temp folder can be made to do on every platform.
     public LibraryIngest(
         Library library, Func<IReadOnlyList<string>> libraryRoots, string stagingDirectory,
-        Importer.Importer importer, ILogger logger)
+        Importer.Importer importer, ILogger logger, Action<string, string>? moveAcrossVolumes = null)
     {
         _library = library;
         _libraryRoots = libraryRoots;
         _stagingDirectory = stagingDirectory;
         _importer = importer;
         _logger = logger;
+        _moveAcrossVolumes = moveAcrossVolumes ?? ((from, to) => File.Move(from, to));
     }
 
     public async Task<IngestResult> BeginAsync(LibraryUploadRequestDto request, CancellationToken ct = default)
@@ -282,36 +286,67 @@ public sealed class LibraryIngest
 
         try
         {
-            if (File.Exists(session.Target))
+            if (File.Exists(session.Target) && !_library.IsExcludedPath(session.Target))
             {
-                if (!_library.IsExcludedPath(session.Target))
-                {
-                    _sessions.Remove(uploadId);
-                    File.Delete(part);
-                    return Refuse(IngestOutcome.Conflict, $"This server already has a different file at {session.RelativePath}.");
-                }
-
-                // Set aside and now in the way of the file that replaces it.
-                // To the trash where there is one, since nobody has yet said
-                // "delete it for good" - that is what Removed Songs is for.
-                if (!FileTrash.TryMoveToTrash(session.Target))
-                    File.Delete(session.Target);
+                _sessions.Remove(uploadId);
+                File.Delete(part);
+                return Refuse(IngestOutcome.Conflict, $"This server already has a different file at {session.RelativePath}.");
             }
 
             Directory.CreateDirectory(Path.GetDirectoryName(session.Target)!);
-            File.Move(part, session.Target);
+            var beside = MoveBeside(part, session.Target);
+            try
+            {
+                // Set aside and now in the way of the file that replaces it.
+                // To the trash where there is one, since nobody has yet said
+                // "delete it for good" - that is what Removed Songs is for.
+                // Only now that the new file is known to fit.
+                if (File.Exists(session.Target) && !FileTrash.TryMoveToTrash(session.Target))
+                    File.Delete(session.Target);
+
+                File.Move(beside, session.Target);
+            }
+            catch
+            {
+                TryDelete(beside);
+                throw;
+            }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // The staged bytes stay: this is about the music folder, not the
-            // file, and once it is fixed the next attempt completes from here
-            // without sending anything again.
+            // The staged bytes stay when it was the copy that failed: this is
+            // about the music folder, not the file, and once it is fixed the
+            // next attempt completes from here without sending anything again.
             _logger.LogWarning(ex, "Could not move an uploaded file into place at {Path}", LogPath.Short(session.Target));
             return Refuse(IngestOutcome.CannotWrite, CannotWrite);
         }
 
         _sessions.Remove(uploadId);
         return Adopt(session.Target, session.RelativePath, session.Length, session.DateAdded, uploaded: true);
+    }
+
+    // The staged upload, moved to a hidden name beside where it is going.
+    // Staging is on the data volume and the music folder usually is not, so
+    // this is the step that copies, and the one a full disk fails. Nothing at
+    // the song's own path has been touched when it does, and what it leaves
+    // is cleared away; the rename that follows cannot run out of space.
+    private string MoveBeside(string part, string target)
+    {
+        var beside = TagFileSave.TemporaryPathBeside(target);
+        try
+        {
+            _moveAcrossVolumes(part, beside);
+
+            // A move keeps the upload's date, and a part retried days later
+            // would look like a leftover to a sweep (TagFileSave.ClearIfLeftover).
+            File.SetLastWriteTimeUtc(beside, DateTime.UtcNow);
+            return beside;
+        }
+        catch
+        {
+            TryDelete(beside);
+            throw;
+        }
     }
 
     // A new version of a file the library already has, swapped in under it.
@@ -328,16 +363,20 @@ public sealed class LibraryIngest
 
         // Read while the old file still has a name TagLib can make sense of.
         var oldArt = hadOld ? LocalAlbumArtReader.EmbeddedIn(target) : null;
+        string? beside = null;
         try
         {
+            beside = MoveBeside(part, target);
             if (hadOld)
                 File.Move(target, aside);
-            File.Move(part, target);
+            File.Move(beside, target);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            if (hadOld && File.Exists(aside) && !File.Exists(target))
-                File.Move(aside, target);
+            if (beside != null)
+                TryDelete(beside);
+            if (hadOld && File.Exists(aside))
+                File.Move(aside, target, overwrite: true);
             _logger.LogWarning(ex, "Could not replace {Path} with its uploaded version", LogPath.Short(target));
             return Refuse(IngestOutcome.CannotWrite, CannotWrite);
         }
@@ -345,9 +384,10 @@ public sealed class LibraryIngest
         _sessions.Remove(uploadId);
         if (_importer.ImportFile(target) is not { } track)
         {
-            TryDelete(target);
             if (hadOld)
-                File.Move(aside, target);
+                File.Move(aside, target, overwrite: true);
+            else
+                TryDelete(target);
             return Refuse(IngestOutcome.Invalid, $"The new version of {session.RelativePath} is not an audio file this server can read.");
         }
 

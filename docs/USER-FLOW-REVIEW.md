@@ -4,7 +4,7 @@ Bugs a person using Flower would hit: data lost, the wrong thing done, a dead
 end, or behaviour that misleads. The `user-flow-review` skill finds them and
 keeps this list; `/release` treats every open **P0** here as blocking the tag.
 
-**Status:** 13 open (4 P0, 4 fix-now, 5 later), from the review of `ef6695fb`
+**Status:** 12 open (3 P0, 4 fix-now, 5 later), from the review of `ef6695fb`
 on 2026-11-22.
 
 Severities are the ones in `.claude/skills/release/REVIEW.md`. **Reproduced**
@@ -17,16 +17,6 @@ An id is never reused. A fixed finding leaves this list, and its commit records
 the fix.
 
 ## P0: data is lost or damaged
-
-**UF-4. A full music disk corrupts a song during replacement.** *Reproduced.*
-Uploads are staged on the data volume, so moving one into the music folder is a
-copy. When it runs out of space, a truncated file stays at the song's path and
-the good original is stranded in a hidden `.flower-replaced-*` file. A new
-upload that fails the same way leaves a partial file that later reads as a
-conflict.
-`Flower.Core/Services/LibraryIngest.cs:297`, `:334`.
-*Direction:* copy to a temporary name beside the target, rename, and always
-restore the original on failure.
 
 **UF-5. Desktop can delete the only remaining copy without asking.** *Reproduced for unpairing; read for a song the server stopped listing.*
 A download keeps `IsLocallyDownloaded` after its server is gone, so Delete Local

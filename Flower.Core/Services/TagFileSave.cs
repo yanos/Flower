@@ -103,6 +103,12 @@ public static class TagFileSave
             return (true, 0);
         });
 
+    // A hidden name beside this file for a whole file on its way to replacing
+    // it, which no scan or watcher takes for a song, and which the same sweep
+    // clears up if a crash leaves it behind.
+    public static string TemporaryPathBeside(string path) =>
+        Path.Combine(Path.GetDirectoryName(path) ?? ".", LeftoverPrefix + Guid.NewGuid().ToString("N") + LeftoverExtension);
+
     // Whether this is the copy of a save, by its name.
     public static bool IsLeftover(string path)
     {

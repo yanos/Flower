@@ -31,7 +31,25 @@ public sealed class LibraryIngestTests : IDisposable
         Directory.CreateDirectory(_music);
         _ingest = new LibraryIngest(
             _library, () => [_music], Path.Combine(_root, "staging"),
-            new Flower.Importer.Importer(NullLogger<Flower.Importer.Importer>.Instance), NullLogger.Instance);
+            new Flower.Importer.Importer(NullLogger<Flower.Importer.Importer>.Instance), NullLogger.Instance,
+            MoveOntoADiskThatMayBeFull);
+    }
+
+    // Set, and the copy from the staging volume to the music folder gets
+    // halfway and runs out of space, leaving what it wrote.
+    private bool _diskFull;
+
+    private void MoveOntoADiskThatMayBeFull(string from, string to)
+    {
+        if (!_diskFull)
+        {
+            File.Move(from, to);
+            return;
+        }
+
+        var bytes = File.ReadAllBytes(from);
+        File.WriteAllBytes(to, bytes[..(bytes.Length / 2)]);
+        throw new IOException("No space left on device");
     }
 
     public void Dispose() => TempDirectory.DeleteWhenReleased(_root);
@@ -498,4 +516,46 @@ public sealed class LibraryIngestTests : IDisposable
         Assert.Equal(["a.wav"], Directory.EnumerateFiles(_music).Select(Path.GetFileName));
     }
 
+    // ── A music folder that runs out of space ────────────────────────────
+
+    [Fact]
+    public async Task A_replacement_that_runs_out_of_space_leaves_the_song_as_it_was_and_can_be_retried()
+    {
+        var good = SongBytes("A");
+        await UploadAsync("a.wav", good);
+        var id = _library.Tracks.Single().Id.ToKey();
+        var newer = SongBytes("A", seed: 2);
+
+        _diskFull = true;
+        var refused = await UploadReplacementAsync(id, "a.wav", newer);
+
+        Assert.Equal(IngestOutcome.CannotWrite, refused.Outcome);
+        Assert.Equal(good, File.ReadAllBytes(Path.Combine(_music, "a.wav")));
+        Assert.Equal(["a.wav"], Directory.EnumerateFiles(_music).Select(Path.GetFileName));
+
+        _diskFull = false;
+        var retried = await UploadReplacementAsync(id, "a.wav", newer);
+
+        Assert.Equal(IngestOutcome.Completed, retried.Outcome);
+        Assert.Equal(newer, File.ReadAllBytes(Path.Combine(_music, "a.wav")));
+        Assert.Equal(["a.wav"], Directory.EnumerateFiles(_music).Select(Path.GetFileName));
+    }
+
+    [Fact]
+    public async Task A_new_upload_that_runs_out_of_space_leaves_nothing_behind_to_read_as_a_conflict()
+    {
+        var bytes = SongBytes("A");
+
+        _diskFull = true;
+        var refused = await UploadAsync("a.wav", bytes);
+
+        Assert.Equal(IngestOutcome.CannotWrite, refused.Outcome);
+        Assert.Empty(Directory.EnumerateFiles(_music));
+
+        _diskFull = false;
+        var retried = await UploadAsync("a.wav", bytes);
+
+        Assert.Equal(IngestOutcome.Completed, retried.Outcome);
+        Assert.Equal(bytes, File.ReadAllBytes(Path.Combine(_music, "a.wav")));
+    }
 }
