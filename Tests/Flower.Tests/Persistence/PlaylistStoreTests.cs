@@ -459,6 +459,29 @@ public class PlaylistStoreTests : IsolatedHome
         Assert.Equal(new[] { a.Id, b.Id, c.Id }, installed.StoredTrackIds());
     }
 
+    // A row is the same row after a relaunch, and one whose song is away still
+    // knows what song it is, so that it can be sent on and matched later.
+    [Fact]
+    public void A_row_keeps_its_id_and_its_song_while_the_song_is_away()
+    {
+        var (a, b) = (Song("A"), Song("B"));
+        var original = new Playlist("Mix", [a, b]);
+        var ids = original.Entries.Select(e => e.EntryId).ToList();
+        PlaylistRepo().Save([original]);
+
+        var away = Assert.Single(PlaylistRepo().Load([a]));
+        Assert.Equal(ids, away.Entries.Select(e => e.EntryId));
+        Assert.Equal(["A"], away.Tracks.Select(t => t.Title));
+        Assert.Equal(1, away.UnavailableCount);
+        Assert.Equal("B", away.Entries[1].ToWire().Title);
+        PlaylistRepo().Save([away]);
+
+        var back = Assert.Single(PlaylistRepo().Load([a, b]));
+        Assert.Equal(ids, back.Entries.Select(e => e.EntryId));
+        Assert.Equal(["A", "B"], back.Tracks.Select(t => t.Title));
+        Assert.Equal(0, back.UnavailableCount);
+    }
+
     // Its songs are whatever its rules say next, so there is nothing to hold.
     [Fact]
     public void A_smart_playlist_does_not_hold_on_to_songs_that_left()

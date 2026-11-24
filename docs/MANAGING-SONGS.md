@@ -79,6 +79,8 @@ These are different menu items.
 | **Remove from Library** | Takes the song out of your library **and every playlist**. See below. |
 | **Remove from Playlist** | Offered on a playlist's own songs (long-press one on a phone). Takes the song out of **that playlist only**; it stays in your library. |
 
+A playlist can also say **"2 songs unavailable"**. Those songs are still in it, hidden because this device can neither play nor stream them: the server doesn't have them, or a drive is away. They keep their place and return by themselves when the song is back.
+
 ---
 
 ## Removing songs

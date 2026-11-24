@@ -98,6 +98,11 @@
                    FontSize="16" Opacity="0.7"
                    TextWrapping="Wrap" />
       </Button>
+      <!-- How many of a playlist's songs this device cannot play (Note). -->
+      <TextBlock Text="{Binding Note}"
+                 IsVisible="{Binding Note, Converter={x:Static ObjectConverters.IsNotNull}}"
+                 FontSize="13" Opacity="0.55"
+                 TextWrapping="Wrap" />
       <!-- Hidden when Settings says so (ShowAlbumButtons), on a playlist as
            on an album: everything in it, a playlist's pencil included, is
            also in the screen's header menu. -->

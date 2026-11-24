@@ -1621,8 +1621,12 @@ namespace Flower.Models
                 return byKey.GetValueOrDefault(entry.SyncKey);
             }
 
+            // Only built for a row that needs it, which most rescans have none of.
+            PlaylistTrackIndex? songs = null;
+            Track? BySong(PlaylistSyncTrackDto song) => (songs ??= new PlaylistTrackIndex(Tracks)).Find(song);
+
             foreach (var playlist in Playlists)
-                playlist.RebindTracks(Current, id => byId.GetValueOrDefault(id));
+                playlist.RebindTracks(Current, id => byId.GetValueOrDefault(id), BySong);
         }
 
         // THE list of everything about a Track that a rescan must not reset.
@@ -3201,7 +3205,7 @@ namespace Flower.Models
                 foreach (var playlist in installed)
                 {
                     if (outgoing.TryGetValue(playlist.Id, out var previous) && !ReferenceEquals(previous, playlist))
-                        playlist.KeepAbsentFrom(previous);
+                        playlist.KeepUnavailableFrom(previous);
                 }
 
                 SwapPlaylists(new List<Playlist>(installed));
@@ -3215,6 +3219,11 @@ namespace Flower.Models
             RaisePlaylistsChanged();
             return installed;
         }
+
+        // Rows took on another copy's ids (Playlist.TakeEntryIdsFrom): the same
+        // songs in the same order, which still has to be saved, and which a
+        // queue following the playlist has to hear about.
+        public void NotePlaylistRowsRenamed() => RaisePlaylistsChanged();
 
         // Installs a new playlist list, moving the Playlist.Changed subscription
         // from the outgoing set to the incoming one. That subscription is what
@@ -3339,10 +3348,25 @@ namespace Flower.Models
             {
                 if (a[i].Id != b[i].Id || a[i].UpdatedAt != b[i].UpdatedAt)
                     return false;
-                if (!ReferenceEquals(a[i], b[i]) && !a[i].Tracks.Select(t => t.Id).SequenceEqual(b[i].Tracks.Select(t => t.Id)))
+                if (!ReferenceEquals(a[i], b[i]) && !SameRows(a[i].Entries, b[i].Entries))
                     return false;
             }
 
+            return true;
+        }
+
+        // Rows the device cannot play count: two copies listing the same songs
+        // can still differ by one that is hidden.
+        private static bool SameRows(IReadOnlyList<PlaylistEntry> a, IReadOnlyList<PlaylistEntry> b)
+        {
+            if (a.Count != b.Count)
+                return false;
+
+            for (var i = 0; i < a.Count; i++)
+            {
+                if (a[i].EntryId != b[i].EntryId && (a[i].TrackId == null || a[i].TrackId != b[i].TrackId))
+                    return false;
+            }
             return true;
         }
     }

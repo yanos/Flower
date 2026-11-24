@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 using Microsoft.Data.Sqlite;
 
@@ -9,9 +10,9 @@ using Flower.Services;
 namespace Flower.Persistence.Sql
 {
     // Reading and writing playlists. Like the JSON store this replaces,
-    // playlists hold track *references* only - membership is stored as track
-    // ids and resolved against the library on load, never as duplicated track
-    // metadata.
+    // playlists hold track *references* - membership is resolved against the
+    // library on load. Each row also keeps what song it is (PlaylistEntry), the
+    // one thing left to identify it while the library does not have it.
     public sealed class PlaylistRepository(FlowerDb db) : IPlaylistStore
     {
         public List<Playlist> Load(IReadOnlyList<Track> libraryTracks)
@@ -49,33 +50,34 @@ namespace Flower.Persistence.Sql
                 }
             }
 
-            var membership = new Dictionary<Guid, List<Track>>();
-            var absent = new Dictionary<Guid, List<Playlist.AbsentEntry>>();
+            // A row whose song is not in the library right now is not gone: a
+            // drive can be away for any number of launches. It is held in its
+            // place, so that saving this playlist does not delete it.
+            var index = new PlaylistTrackIndex(libraryTracks);
+            var membership = new Dictionary<Guid, List<PlaylistEntry>>();
             using (var command = connection.CreateCommand())
             {
-                command.CommandText = "SELECT playlist_id, track_id FROM playlist_tracks ORDER BY playlist_id, position;";
+                command.CommandText = "SELECT playlist_id, entry_id, track_id, title, artists, album, seconds, origin_id FROM playlist_tracks ORDER BY playlist_id, position;";
                 using var reader = command.ExecuteReader();
                 while (reader.Read())
                 {
                     var playlistId = EntityId.FromKey(reader.GetString(0));
-                    var trackId = EntityId.FromKey(reader.GetString(1));
+                    var entryId = EntityId.FromKey(reader.GetString(1));
+                    Guid? trackId = reader.IsDBNull(2) ? null : EntityId.FromKey(reader.GetString(2));
+                    var song = new PlaylistSyncTrackDto(
+                        reader.IsDBNull(3) ? null : reader.GetString(3),
+                        reader.IsDBNull(4) ? null : reader.GetString(4),
+                        reader.IsDBNull(5) ? null : reader.GetString(5),
+                        reader.IsDBNull(6) ? 0 : reader.GetInt32(6),
+                        reader.IsDBNull(7) ? null : reader.GetString(7));
 
-                    if (!membership.TryGetValue(playlistId, out var tracks))
-                        membership[playlistId] = tracks = [];
+                    if (!membership.TryGetValue(playlistId, out var entries))
+                        membership[playlistId] = entries = [];
 
-                    // Not in the library right now, which is not the same as
-                    // gone: a drive can be away for any number of launches.
-                    // Held in its place, so that saving this playlist does
-                    // not delete the row (Playlist.AbsentEntry).
-                    if (!byId.TryGetValue(trackId, out var track))
-                    {
-                        if (!absent.TryGetValue(playlistId, out var entries))
-                            absent[playlistId] = entries = [];
-                        entries.Add(new Playlist.AbsentEntry(trackId, tracks.Count > 0 ? tracks[^1].Id : null));
-                        continue;
-                    }
-
-                    tracks.Add(track);
+                    var track = (trackId is { } id ? byId.GetValueOrDefault(id) : null) ?? index.Find(song);
+                    entries.Add(track != null
+                        ? new PlaylistEntry(entryId, track)
+                        : new PlaylistEntry(entryId, null, trackId, song));
                 }
             }
 
@@ -86,10 +88,13 @@ namespace Flower.Persistence.Sql
                 // exactly like an ordinary one - the rules are re-evaluated by
                 // the recomputation pass, not by the load, so the app has a
                 // populated sidebar before any of that runs.
+                // A smart or Vibe playlist's songs are worked out again, so
+                // it holds no row for one it cannot find.
+                var entries = membership.GetValueOrDefault(row.Id) ?? [];
                 result.Add(new Playlist(
                     row.Id,
                     row.Name,
-                    membership.TryGetValue(row.Id, out var tracks) ? tracks : [],
+                    [],
                     row.UpdatedAt,
                     row.Comment,
                     row.IsPublic,
@@ -101,8 +106,9 @@ namespace Flower.Persistence.Sql
                     row.SortKey,
                     row.VibePrompt,
                     row.VibeInstrumental,
-                    // A smart or Vibe playlist's songs are worked out again.
-                    row.Rules == null && row.VibePrompt == null && !row.IsFolder ? absent.GetValueOrDefault(row.Id) : null));
+                    row.Rules == null && row.VibePrompt == null && !row.IsFolder
+                        ? entries
+                        : entries.Where(e => e.Track != null).ToList()));
             }
 
             return result;
@@ -184,12 +190,18 @@ namespace Flower.Persistence.Sql
 
                 insert.Transaction = transaction;
                 insert.CommandText = """
-                    INSERT INTO playlist_tracks (playlist_id, position, track_id)
-                    VALUES ($playlist_id, $position, $track_id);
+                    INSERT INTO playlist_tracks (playlist_id, position, entry_id, track_id, title, artists, album, seconds, origin_id)
+                    VALUES ($playlist_id, $position, $entry_id, $track_id, $title, $artists, $album, $seconds, $origin_id);
                     """;
                 var insertPlaylistId = insert.Parameters.Add("$playlist_id", SqliteType.Text);
                 var insertPosition = insert.Parameters.Add("$position", SqliteType.Integer);
+                var insertEntryId = insert.Parameters.Add("$entry_id", SqliteType.Text);
                 var insertTrackId = insert.Parameters.Add("$track_id", SqliteType.Text);
+                var insertTitle = insert.Parameters.Add("$title", SqliteType.Text);
+                var insertArtists = insert.Parameters.Add("$artists", SqliteType.Text);
+                var insertAlbum = insert.Parameters.Add("$album", SqliteType.Text);
+                var insertSeconds = insert.Parameters.Add("$seconds", SqliteType.Integer);
+                var insertOriginId = insert.Parameters.Add("$origin_id", SqliteType.Text);
 
                 foreach (var playlist in playlists)
                 {
@@ -222,16 +234,22 @@ namespace Flower.Persistence.Sql
                     clear.ExecuteNonQuery();
 
                     // Every entry is written, including not-yet-downloaded ones
-                    // (see SYNC-PLAN.md Phase 3) and ones whose song is away
-                    // right now (Playlist.AbsentEntry). An earlier version of the JSON
-                    // store filtered on Path != null here and silently dropped
-                    // any synced track the moment the playlist was saved.
+                    // (see SYNC-PLAN.md Phase 3) and ones this library has no
+                    // song for right now (PlaylistEntry), with what song each
+                    // is, so that a row whose drive goes away can still say.
                     var position = 0;
-                    foreach (var trackId in playlist.StoredTrackIds())
+                    foreach (var entry in playlist.Entries)
                     {
+                        var song = entry.ToWire();
                         insertPlaylistId.Value = id;
                         insertPosition.Value = position++;
-                        insertTrackId.Value = trackId.ToKey();
+                        insertEntryId.Value = entry.EntryId.ToKey();
+                        insertTrackId.Value = entry.TrackId is { } trackId ? trackId.ToKey() : DBNull.Value;
+                        insertTitle.Value = (object?)song.Title ?? DBNull.Value;
+                        insertArtists.Value = (object?)song.Artists ?? DBNull.Value;
+                        insertAlbum.Value = (object?)song.Album ?? DBNull.Value;
+                        insertSeconds.Value = song.DurationSeconds;
+                        insertOriginId.Value = (object?)song.Id ?? DBNull.Value;
                         insert.ExecuteNonQuery();
                     }
                 }

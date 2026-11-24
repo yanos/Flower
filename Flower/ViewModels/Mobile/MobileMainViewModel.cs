@@ -806,14 +806,14 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     // about it is fixed for as long as it is that playlist's header, and
     // rebuilding on every binding pass would restart the download indicator
     // underneath it.
-    private (Playlist? Playlist, int Count) _currentPlaylistHeaderKey;
+    private (Playlist? Playlist, int Count, string? Unavailable) _currentPlaylistHeaderKey;
     private AlbumTileViewModel? _currentPlaylistHeader;
     public AlbumTileViewModel? CurrentPlaylistHeader
     {
         get
         {
             var playlist = CurrentPlaylist;
-            var key = (playlist, playlist?.Tracks.Count ?? 0);
+            var key = (playlist, playlist?.Tracks.Count ?? 0, Main.UnavailableSongsIn(playlist));
             if (key != _currentPlaylistHeaderKey)
             {
                 _currentPlaylistHeaderKey = key;
@@ -849,6 +849,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             // What the playlist's own row says in the picker, from the same
             // place - how many songs, and how long they run, here in words.
             Artist = PlaylistSummaryText.ForHeader(tracks),
+            Note = Main.UnavailableSongsIn(playlist),
             RepresentativeTrack = null,
             Collage = AlbumCollage.ByAlbumAndArtist(tracks),
             MostRecentlyAdded = tracks.Count == 0 ? default : tracks.Max(t => t.DateAdded),

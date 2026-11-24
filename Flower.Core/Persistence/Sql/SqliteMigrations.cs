@@ -145,6 +145,32 @@ namespace Flower.Persistence.Sql
                 PRIMARY KEY (listener, playlist_id)
             );
             """,
+
+            // 18: a playlist row has an identity of its own (PlaylistEntry),
+            // and knows what song it is even while this library lacks it, so
+            // track_id can be empty. Rebuilt because a NOT NULL cannot be
+            // altered away. The song fields fill in on the next save, from
+            // the library's tracks.
+            """
+            CREATE TABLE playlist_tracks_new (
+                playlist_id TEXT    NOT NULL,
+                position    INTEGER NOT NULL,
+                entry_id    TEXT    NOT NULL,
+                track_id    TEXT,
+                title       TEXT,
+                artists     TEXT,
+                album       TEXT,
+                seconds     INTEGER,
+                origin_id   TEXT,
+
+                PRIMARY KEY (playlist_id, position),
+                FOREIGN KEY (playlist_id) REFERENCES playlists (id) ON DELETE CASCADE
+            );
+            INSERT INTO playlist_tracks_new (playlist_id, position, entry_id, track_id)
+                SELECT playlist_id, position, lower(hex(randomblob(16))), track_id FROM playlist_tracks;
+            DROP TABLE playlist_tracks;
+            ALTER TABLE playlist_tracks_new RENAME TO playlist_tracks;
+            """,
         ];
 
         public static int LatestVersion => BaselineVersion + Steps.Count;

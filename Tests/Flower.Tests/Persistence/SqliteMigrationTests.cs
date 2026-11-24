@@ -186,6 +186,37 @@ public class SqliteMigrationTests : IDisposable
         Assert.Equal(1L, read.ExecuteScalar());
     }
 
+    // Step 18. A playlist's rows survive being given ids, each its own.
+    [Fact]
+    public void Playlist_rows_keep_their_songs_and_order_and_gain_an_id_each()
+    {
+        using var connection = OpenNew("entry-ids.db");
+        SqliteMigrations.Apply(connection);
+        Execute(connection, """
+            DROP TABLE playlist_tracks;
+            CREATE TABLE playlist_tracks (
+                playlist_id TEXT NOT NULL, position INTEGER NOT NULL, track_id TEXT NOT NULL,
+                PRIMARY KEY (playlist_id, position),
+                FOREIGN KEY (playlist_id) REFERENCES playlists (id) ON DELETE CASCADE
+            );
+            INSERT INTO playlists (id, name, updated_at) VALUES ('p1', 'Mix', 0);
+            INSERT INTO playlist_tracks (playlist_id, position, track_id) VALUES ('p1', 0, 't1'), ('p1', 1, 't2'), ('p1', 2, 't1');
+            PRAGMA user_version = 17;
+            """);
+
+        SqliteMigrations.Apply(connection);
+
+        using var read = connection.CreateCommand();
+        read.CommandText = "SELECT track_id, entry_id FROM playlist_tracks ORDER BY position;";
+        using var reader = read.ExecuteReader();
+        var rows = new List<(string Track, string Entry)>();
+        while (reader.Read())
+            rows.Add((reader.GetString(0), reader.GetString(1)));
+        Assert.Equal(["t1", "t2", "t1"], rows.Select(r => r.Track));
+        Assert.Equal(3, rows.Select(r => r.Entry).Distinct().Count());
+        Assert.All(rows, r => Guid.ParseExact(r.Entry, "N"));
+    }
+
     // Applying twice is what every startup after the first one does.
     [Fact]
     public void Applying_again_changes_nothing()

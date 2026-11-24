@@ -175,28 +175,21 @@ public static class PlaylistSyncPlanner
             var remoteChanged = baseline == null || r.UpdatedAt > baseline;
 
             // Different content with neither side moved past the baseline is
-            // not two edits: nobody edited anything. It is what the last apply
-            // left behind - PlaylistSyncMapper.ResolveTracks drops every track
-            // the receiving side cannot match and keeps UpdatedAt as it was, so
-            // a peer missing some of a playlist's tracks stores a shorter copy
-            // at the same timestamp. Reporting that as a conflict asked the
-            // user to pick between versions they never made, and picking one
-            // went through the same lossy matching and asked again next sync.
-            // Local wins because it is the copy that lost nothing on this
-            // device, and the server keeps its own copy of an unedited
-            // playlist whatever is pushed (PlaylistSyncMapper.ApplyPushedManifest).
+            // not two edits: nobody edited anything. It is a copy from before
+            // rows were kept without their song, which is shorter at the same
+            // timestamp. Reporting that as a conflict asked the user to pick
+            // between versions they never made. Local wins, and the server
+            // keeps its own copy of an unedited playlist whatever is pushed
+            // (PlaylistSyncMapper.ApplyPushedManifest).
             //
-            // Unless the remote copy now reads as everything local has and
-            // more. That is the other direction of the same loss: this device
-            // took the remote copy while its library lacked some of the songs -
-            // a phone whose first playlist sync ran before its first catalog
-            // pull resolved none of them - and nothing would ever have moved
-            // either timestamp to make it look again.
+            // Unless the remote copy holds every row local has and more, when
+            // this is the shorter one, and nothing would ever have moved either
+            // timestamp to make it look again.
             var kind = (localChanged, remoteChanged) switch
             {
                 (true, false)  => PlaylistSyncDecisionKind.KeepLocal,
                 (false, true)  => PlaylistSyncDecisionKind.AdoptRemote,
-                (false, false) => index != null && IsStrictSuperset(index.Resolve(r.Tracks, out _), l.Tracks)
+                (false, false) => index != null && HoldsAllAndMore(r.Tracks, l.Entries, index)
                     ? PlaylistSyncDecisionKind.AdoptRemote
                     : PlaylistSyncDecisionKind.KeepLocal,
                 _              => PlaylistSyncDecisionKind.Conflict,
@@ -207,16 +200,15 @@ public static class PlaylistSyncPlanner
         return decisions;
     }
 
-    // Given an index, against what the remote entries resolve to here - an
-    // entry this library has no track for is one this device could never
-    // hold, and is not a difference it can do anything about.
+    // Row by row, the ones this device cannot play included: a row it lacks is
+    // a difference now, since it can hold one without having the song.
     private static bool ContentEquals(Playlist local, PlaylistSyncPlaylistDto remote, PlaylistTrackIndex? index)
     {
         if (local.Name != remote.Name || local.ParentId != remote.ParentId || local.SortKey != remote.SortKey)
             return false;
 
         if (index != null)
-            return index.Resolve(remote.Tracks, out _).Select(t => t.Id).SequenceEqual(local.Tracks.Select(t => t.Id));
+            return SameRows(local.Entries, remote.Tracks, index);
         if (local.Tracks.Count != remote.Tracks.Count)
             return false;
 
@@ -230,21 +222,45 @@ public static class PlaylistSyncPlanner
         return true;
     }
 
-    // Every entry of `smaller` (counting repeats) is in `larger`, and larger
-    // has more.
-    private static bool IsStrictSuperset(IReadOnlyList<Track> larger, IReadOnlyList<Track> smaller)
+    private static bool SameRows(
+        IReadOnlyList<PlaylistEntry> entries, IReadOnlyList<PlaylistSyncTrackDto> rows, PlaylistTrackIndex index)
     {
-        if (larger.Count <= smaller.Count)
+        if (entries.Count != rows.Count)
             return false;
 
-        var remaining = larger.GroupBy(t => t.Id).ToDictionary(g => g.Key, g => g.Count());
-        foreach (var track in smaller)
+        for (var i = 0; i < rows.Count; i++)
         {
-            if (remaining.GetValueOrDefault(track.Id) == 0)
+            if (entries[i].EntryId != rows[i].EntryId && SongOf(entries[i]) != SongOf(rows[i], index))
                 return false;
-            remaining[track.Id]--;
         }
-
         return true;
     }
+
+    // Every local row (counting repeats) is among the remote ones, and there
+    // are more of those.
+    private static bool HoldsAllAndMore(
+        IReadOnlyList<PlaylistSyncTrackDto> rows, IReadOnlyList<PlaylistEntry> entries, PlaylistTrackIndex index)
+    {
+        if (rows.Count <= entries.Count)
+            return false;
+
+        var remaining = rows.GroupBy(row => SongOf(row, index)).ToDictionary(g => g.Key, g => g.Count());
+        foreach (var entry in entries)
+        {
+            var song = SongOf(entry);
+            if (remaining.GetValueOrDefault(song) == 0)
+                return false;
+            remaining[song]--;
+        }
+        return true;
+    }
+
+    private static string SongOf(PlaylistEntry entry) =>
+        entry.Track?.Id.ToKey() ?? SongOf(entry.ToWire());
+
+    private static string SongOf(PlaylistSyncTrackDto row, PlaylistTrackIndex index) =>
+        index.Find(row)?.Id.ToKey() ?? SongOf(row);
+
+    private static string SongOf(PlaylistSyncTrackDto row) =>
+        row.Id is { Length: > 0 } id ? id : Track.BuildSyncKey(row.Title, row.Artists, row.Album, row.DurationSeconds);
 }

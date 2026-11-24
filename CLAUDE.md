@@ -49,7 +49,7 @@ is left. Read the relevant one before touching that area.
 - `CITED-DECISIONS.md` — resolves source comments citing a retired review's tier or finding number, including every finding of the September and October 2026 code reviews (all closed).
 - `USER-FLOW-REVIEW.md` — open findings of the `user-flow-review` skill: data loss, wrong actions, dead ends. An open P0 blocks `/release`.
 - `SYNC-PLAN.md` — device↔server sync, ingest (admin devices mirroring files, edits, moves and removals to the server), Music.app history, Flower's own folder.
-- `PLAYLIST-SYNC-PLAN.md` — lasting playlist entries, server revisions and three-way merge; fixes UF-18 to UF-24, and phases 1 and 2 block the next release.
+- `PLAYLIST-SYNC-PLAN.md` — lasting playlist entries, server revisions and three-way merge; fixes UF-18 to UF-24. Phase 1 is built; phase 2 blocks the next release.
 - `AUDIO-QUALITY-PLAN.md` — render-path defects and PCM-level tests, the float pipeline and output stage, and the audiophile features (EQ, gapless, hi-res, DSD, low latency); what is left is at the top.
 - `VIBE-PLAYLIST-PLAN.md` — Vibe Playlists and Endless Play (CLAP via ONNX Runtime in `Flower.SemanticAudio.Onnx`, engine in `Flower.Core/SemanticAudio/`).
 - `ONLINE-METADATA-PLAN.md` — lyrics, artist pictures, popularity (`OnlineMetadataEngine`).

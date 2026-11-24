@@ -212,24 +212,52 @@ namespace Flower.Models
         // thread may be adding a track to the very same playlist.
         private EntryList _entries;
 
-        // The songs and, once something has asked (StoredEntries), a key per
-        // entry. One object so that a reader on another thread never pairs
-        // one edit's songs with another's keys.
-        private sealed class EntryList(List<Track> tracks, List<long>? keys)
+        // Every entry, and the songs among them this library has. One object
+        // so that a reader on another thread never pairs one edit's songs with
+        // another's entries. A list made from songs alone mints its entries
+        // when something first asks: the queue is a Playlist too, rebuilt on
+        // every play, and never needs them.
+        private sealed class EntryList
         {
-            private List<long>? _keys = keys;
+            private IReadOnlyList<PlaylistEntry>? _all;
 
-            public List<Track> Tracks { get; } = tracks;
+            // Where each of Tracks sits in All, or null when they line up.
+            private readonly int[]? _places;
 
-            public List<long>? KnownKeys => Volatile.Read(ref _keys);
+            public IReadOnlyList<Track> Tracks { get; }
 
-            public List<long> Keys => LazyInitializer.EnsureInitialized(
-                ref _keys, () => Tracks.Select(_ => NewEntryKey()).ToList());
+            public EntryList(List<Track> tracks) => Tracks = tracks;
+
+            public EntryList(IReadOnlyList<PlaylistEntry> all)
+            {
+                _all = all;
+                var tracks = new List<Track>(all.Count);
+                var places = new List<int>(all.Count);
+                for (var i = 0; i < all.Count; i++)
+                {
+                    if (all[i].Track is not { } track)
+                        continue;
+
+                    tracks.Add(track);
+                    places.Add(i);
+                }
+
+                Tracks = tracks;
+                _places = tracks.Count == all.Count ? null : [.. places];
+            }
+
+            public bool HasEntries => Volatile.Read(ref _all) != null;
+
+            public IReadOnlyList<PlaylistEntry> All => LazyInitializer.EnsureInitialized(
+                ref _all, () => (IReadOnlyList<PlaylistEntry>)Tracks.Select(PlaylistEntry.Of).ToList())!;
+
+            public int UnavailableCount => HasEntries ? All.Count - Tracks.Count : 0;
+
+            // Where in All the song at this slot of Tracks is, or the end for
+            // the slot just past the last.
+            public int PlaceOf(int slot) =>
+                slot == Tracks.Count ? All.Count : _places?[slot] ?? slot;
         }
-
-        private static long _lastEntryKey;
-
-        private static long NewEntryKey() => Interlocked.Increment(ref _lastEntryKey);
 
         // Read-only so that every mutation has to go through the methods below,
         // which are what bump UpdatedAt and raise Changed. It used to be a bare
@@ -303,7 +331,7 @@ namespace Flower.Models
             double? sortKey = null,
             string? vibePrompt = null,
             bool vibeInstrumental = false,
-            IReadOnlyList<AbsentEntry>? absent = null)
+            IReadOnlyList<PlaylistEntry>? entries = null)
         {
             Id = id;
             Listener = listener;
@@ -326,184 +354,77 @@ namespace Flower.Models
             // own "previous" snapshot from a list that had *already* been overwritten
             // with the fresh (PlayCount/DateAdded/ImportedPlayCount-defaulted) data -
             // silently discarding whatever was actually there, every single rescan.
-            _entries = new EntryList(new List<Track>(tracks), null);
-            _absent = absent is { Count: > 0 } ? [.. absent] : [];
+            _entries = entries != null ? new EntryList(UniqueIds(entries)) : new EntryList(new List<Track>(tracks));
             UpdatedAt = updatedAt;
         }
 
-        // An entry whose song is not in the library right now: a drive that is
-        // unplugged, a NAS that did not mount, a folder taken out of Settings.
-        // Not shown and not playable, and not gone either. It is kept through
-        // every load and save, in its place (just after the song it followed,
-        // or first when After is null), and becomes an ordinary entry again
-        // the moment the library has the song back (RebindTracks). Only a
-        // hand-picked playlist has any: a smart or Vibe playlist's songs are
-        // worked out again.
-        public readonly record struct AbsentEntry(Guid TrackId, Guid? After);
-
-        // Copy-on-write like _entries, and written after it, so that a save
-        // reading this first and _entries second (Slots) can at worst see an
-        // entry in both, which it drops, and never in neither.
-        private List<AbsentEntry> _absent;
-
-        // Every entry in order, present or not: what is stored.
-        public IEnumerable<Guid> StoredTrackIds() => Slots().Select(slot => slot.Id);
-
-        // One entry of this playlist. A song in a playlist twice is two
-        // entries with one TrackId, and Key is what tells them apart across
-        // edits: it stays with its entry through moves and removals of others.
-        // Only for this object and this run of the app, so a copy that arrived
-        // by sync shares no keys with the one it replaced. 0 for an absent
-        // entry, which has no key until its song is back.
-        public readonly record struct StoredEntry(Guid TrackId, long Key);
-
-        public List<StoredEntry> StoredEntries() =>
-            Slots(withKeys: true).Select(slot => new StoredEntry(slot.Id, slot.Key)).ToList();
-
-        private List<(Guid Id, Track? Track, long Key)> Slots(bool withKeys = false)
+        // An id appearing twice is two rows that could not be told apart, so
+        // the later one gets a new id. Entries arrive from other devices.
+        private static List<PlaylistEntry> UniqueIds(IReadOnlyList<PlaylistEntry> entries)
         {
-            var absent = _absent;
-            var entries = _entries;
-            var tracks = entries.Tracks;
-            var keys = withKeys ? entries.Keys : entries.KnownKeys;
-            long KeyAt(int slot) => keys?[slot] ?? 0;
-
-            var slots = new List<(Guid Id, Track? Track, long Key)>(tracks.Count + absent.Count);
-            if (absent.Count == 0)
-            {
-                for (var i = 0; i < tracks.Count; i++)
-                    slots.Add((tracks[i].Id, tracks[i], KeyAt(i)));
-                return slots;
-            }
-
-            var present = tracks.Select(t => t.Id).ToHashSet();
-            var waiting = absent.Where(e => !present.Contains(e.TrackId)).ToList();
-            void Emit(Guid? after)
-            {
-                foreach (var entry in waiting.Where(e => e.After == after))
-                    slots.Add((entry.TrackId, null, 0));
-                waiting.RemoveAll(e => e.After == after);
-            }
-
-            Emit(null);
-            for (var i = 0; i < tracks.Count; i++)
-            {
-                slots.Add((tracks[i].Id, tracks[i], KeyAt(i)));
-                Emit(tracks[i].Id);
-            }
-
-            // What they followed has left the playlist since.
-            foreach (var entry in waiting)
-                slots.Add((entry.TrackId, null, 0));
-            return slots;
+            var seen = new HashSet<Guid>();
+            var unique = new List<PlaylistEntry>(entries.Count);
+            foreach (var entry in entries)
+                unique.Add(entry.EntryId != Guid.Empty && seen.Add(entry.EntryId) ? entry : entry with { EntryId = Guid.NewGuid() });
+            return unique;
         }
 
-        private void SetSlots(List<(Guid Id, Track? Track, long Key)> slots)
-        {
-            var tracks = new List<Track>(slots.Count);
-            var keys = _entries.KnownKeys == null ? null : new List<long>(slots.Count);
-            var absent = new List<AbsentEntry>();
-            Guid? after = null;
-            foreach (var (id, track, key) in slots)
-            {
-                if (track != null)
-                {
-                    tracks.Add(track);
-                    keys?.Add(key != 0 ? key : NewEntryKey());
-                    after = id;
-                }
-                else
-                {
-                    absent.Add(new AbsentEntry(id, after));
-                }
-            }
+        // Every entry in order, whether this device can play its song or not.
+        public IReadOnlyList<PlaylistEntry> Entries => _entries.All;
 
-            _entries = new EntryList(tracks, keys);
-            _absent = absent;
-        }
+        // How many of them it cannot: hidden, and waiting for their song.
+        public int UnavailableCount => _entries.UnavailableCount;
 
-        // Entries have been removed: an absent entry that followed one of them
-        // now follows whatever came before it, rather than falling to the end.
-        private void SetTracksKeepingAbsentInPlace(List<Track> next, List<long>? nextKeys)
-        {
-            if (_absent.Count == 0)
-            {
-                _entries = new EntryList(next, nextKeys);
-                return;
-            }
-
-            var remaining = next.GroupBy(t => t.Id).ToDictionary(g => g.Key, g => g.Count());
-            var absent = new List<AbsentEntry>();
-            Guid? after = null;
-            foreach (var (id, track, _) in Slots())
-            {
-                if (track == null)
-                {
-                    absent.Add(new AbsentEntry(id, after));
-                }
-                else if (remaining.GetValueOrDefault(id) > 0)
-                {
-                    remaining[id]--;
-                    after = id;
-                }
-            }
-
-            _entries = new EntryList(next, nextKeys);
-            _absent = absent;
-        }
-
-        // The entries and keys left once `leaves` says which slots go.
-        private (List<Track> Tracks, List<long>? Keys) Without(Func<int, bool> leaves)
-        {
-            var entries = _entries;
-            var known = entries.KnownKeys;
-            var tracks = new List<Track>(entries.Tracks.Count);
-            var keys = known == null ? null : new List<long>(known.Count);
-            for (var i = 0; i < entries.Tracks.Count; i++)
-            {
-                if (leaves(i))
-                    continue;
-
-                tracks.Add(entries.Tracks[i]);
-                keys?.Add(known![i]);
-            }
-            return (tracks, keys);
-        }
+        public IEnumerable<Guid> StoredTrackIds() =>
+            Entries.Where(e => e.TrackId != null).Select(e => e.TrackId!.Value);
 
         // A newer copy of this playlist taking over from `previous` (a sync
-        // adopting the other side's). That copy was made by a device that could
-        // not see these songs either, so its not listing them says nothing.
-        internal void KeepAbsentFrom(Playlist previous)
+        // adopting the other side's). A copy sharing entries with it says
+        // exactly which rows it holds. One sharing none has no history with
+        // this one and could not see these songs either, so its not listing
+        // them says nothing, and they stay.
+        internal void KeepUnavailableFrom(Playlist previous)
         {
-            if (!IsOrdinary || previous._absent.Count == 0)
+            if (!IsOrdinary || previous.UnavailableCount == 0)
                 return;
 
-            var mine = _absent.Select(e => e.TrackId).ToHashSet();
-            var carried = previous._absent.Where(e => !mine.Contains(e.TrackId));
-            _absent = [.. _absent, .. carried];
-            SetSlots(Slots());
+            var mine = Entries.Select(e => e.EntryId).ToHashSet();
+            if (previous.Entries.Any(e => mine.Contains(e.EntryId)))
+                return;
+
+            var present = Tracks.Select(t => t.Id).ToHashSet();
+            var merged = Entries.ToList();
+            var at = 0;
+            foreach (var entry in previous.Entries)
+            {
+                if (entry.Track is { } track)
+                {
+                    var followed = merged.FindIndex(e => e.Track?.Id == track.Id);
+                    at = followed >= 0 ? followed + 1 : merged.Count;
+                    continue;
+                }
+
+                if (entry.TrackId is { } id && present.Contains(id))
+                    continue;
+
+                merged.Insert(at++, entry);
+            }
+
+            _entries = new EntryList(merged);
         }
 
         public void InsertTrack(int index, Track track)
         {
             var entries = _entries;
-            var next = new List<Track>(entries.Tracks);
-            next.Insert(index, track);
-            List<long>? keys = null;
-            if (entries.KnownKeys is { } known)
-            {
-                keys = new List<long>(known);
-                keys.Insert(index, NewEntryKey());
-            }
-            _entries = new EntryList(next, keys);
+            var next = entries.All.ToList();
+            next.Insert(entries.PlaceOf(index), PlaylistEntry.Of(track));
+            _entries = new EntryList(next);
             Touch();
         }
 
         public void AppendTrack(Track track)
         {
-            var entries = _entries;
-            var keys = entries.KnownKeys is { } known ? new List<long>(known) { NewEntryKey() } : null;
-            _entries = new EntryList(new List<Track>(entries.Tracks) { track }, keys);
+            _entries = new EntryList([.. _entries.All, PlaylistEntry.Of(track)]);
             Touch();
         }
 
@@ -513,13 +434,13 @@ namespace Flower.Models
         // say which of the two was meant. Returns whether anything went.
         public bool RemoveEntriesAt(IReadOnlyCollection<int> slots)
         {
-            var count = _entries.Tracks.Count;
-            var doomed = slots.Where(slot => slot >= 0 && slot < count).ToHashSet();
+            var entries = _entries;
+            var count = entries.Tracks.Count;
+            var doomed = slots.Where(slot => slot >= 0 && slot < count).Select(entries.PlaceOf).ToHashSet();
             if (doomed.Count == 0)
                 return false;
 
-            var (next, keys) = Without(doomed.Contains);
-            SetTracksKeepingAbsentInPlace(next, keys);
+            _entries = new EntryList(entries.All.Where((_, place) => !doomed.Contains(place)).ToList());
             Touch();
             return true;
         }
@@ -529,20 +450,45 @@ namespace Flower.Models
         // Library.RemoveTracks.
         public void RemoveTracks(IReadOnlySet<Guid> ids)
         {
-            var tracks = _entries.Tracks;
-            if (!tracks.Any(t => ids.Contains(t.Id)))
+            var all = _entries.All;
+            bool Leaves(PlaylistEntry entry) => entry.TrackId is { } id && ids.Contains(id);
+            if (!all.Any(Leaves))
                 return;
 
-            _absent = _absent.Where(e => !ids.Contains(e.TrackId)).ToList();
-            var (next, keys) = Without(slot => ids.Contains(tracks[slot].Id));
-            SetTracksKeepingAbsentInPlace(next, keys);
+            _entries = new EntryList(all.Where(e => !Leaves(e)).ToList());
             Touch();
         }
 
         public void ReplaceAll(List<Track> tracks)
         {
-            _entries = new EntryList(new List<Track>(tracks), null);
+            var entries = _entries;
+            _entries = entries.HasEntries
+                ? new EntryList(KeepingEntryIds(entries.All, tracks))
+                : new EntryList(new List<Track>(tracks));
             Touch();
+        }
+
+        // A list worked out again: a song it still holds is still that entry.
+        private static List<PlaylistEntry> KeepingEntryIds(IReadOnlyList<PlaylistEntry> old, IReadOnlyList<Track> tracks)
+        {
+            var waiting = new Dictionary<Guid, Queue<Guid>>();
+            foreach (var entry in old)
+            {
+                if (entry.TrackId is not { } id)
+                    continue;
+                if (!waiting.TryGetValue(id, out var ids))
+                    waiting[id] = ids = new Queue<Guid>();
+                ids.Enqueue(entry.EntryId);
+            }
+
+            var next = new List<PlaylistEntry>(tracks.Count);
+            foreach (var track in tracks)
+            {
+                next.Add(waiting.TryGetValue(track.Id, out var ids) && ids.Count > 0
+                    ? new PlaylistEntry(ids.Dequeue(), track)
+                    : PlaylistEntry.Of(track));
+            }
+            return next;
         }
 
         // Drag-to-reorder: the entry at slot `from` moves to sit just before the
@@ -569,21 +515,13 @@ namespace Flower.Models
             if (target == from)
                 return false;
 
-            var next = new List<Track>(tracks);
-            var moved = next[from];
-            next.RemoveAt(from);
-            next.Insert(target, moved);
+            var next = entries.All.ToList();
+            var moved = next[entries.PlaceOf(from)];
+            var before = insertBefore == tracks.Count ? (Guid?)null : next[entries.PlaceOf(insertBefore)].EntryId;
+            next.RemoveAt(entries.PlaceOf(from));
+            next.Insert(before is { } id ? next.FindIndex(e => e.EntryId == id) : next.Count, moved);
 
-            List<long>? keys = null;
-            if (entries.KnownKeys is { } known)
-            {
-                keys = new List<long>(known);
-                var key = keys[from];
-                keys.RemoveAt(from);
-                keys.Insert(target, key);
-            }
-
-            _entries = new EntryList(next, keys);
+            _entries = new EntryList(next);
             Touch();
             return true;
         }
@@ -596,27 +534,59 @@ namespace Flower.Models
         //
         // Also where an absent entry comes back: back is the library having
         // its id again, which is no more an edit than the rest of this.
-        internal void RebindTracks(Func<Track, Track?> current, Func<Guid, Track?> byId)
+        internal void RebindTracks(
+            Func<Track, Track?> current, Func<Guid, Track?> byId, Func<PlaylistSyncTrackDto, Track?> bySong)
         {
             var entries = _entries;
-            var next = new List<Track>(entries.Tracks);
-            for (var i = 0; i < next.Count; i++)
+            if (!entries.HasEntries)
             {
-                if (current(next[i]) is { } replacement)
-                    next[i] = replacement;
-            }
-            _entries = new EntryList(next, entries.KnownKeys);
-
-            if (_absent.Count == 0)
+                _entries = new EntryList(entries.Tracks.Select(t => current(t) ?? t).ToList());
                 return;
-
-            var slots = Slots();
-            for (var i = 0; i < slots.Count; i++)
-            {
-                if (slots[i].Track == null && byId(slots[i].Id) is { } back)
-                    slots[i] = (slots[i].Id, back, 0);
             }
-            SetSlots(slots);
+
+            var next = new List<PlaylistEntry>(entries.All.Count);
+            foreach (var entry in entries.All)
+            {
+                if (entry.Track is { } track)
+                {
+                    next.Add(entry with { Track = current(track) ?? track });
+                    continue;
+                }
+
+                var back = (entry.AwayTrackId is { } id ? byId(id) : null)
+                    ?? (entry.Song is { } song ? bySong(song) : null);
+                next.Add(back == null || !IsOrdinary ? entry : new PlaylistEntry(entry.EntryId, back));
+            }
+            _entries = new EntryList(next);
+        }
+
+        // This device's copy turned out to hold the same songs as the other
+        // side's, under ids of its own: it takes theirs, with no edit to sync.
+        // Only if the list is still the one that was compared.
+        public bool TakeEntryIdsFrom(IReadOnlyList<PlaylistEntry> compared, IReadOnlyList<PlaylistSyncTrackDto> rows)
+        {
+            var entries = _entries;
+            if (!ReferenceEquals(entries.All, compared) || compared.Count != rows.Count)
+                return false;
+
+            var used = new HashSet<Guid>();
+            var next = new List<PlaylistEntry>(compared.Count);
+            var changed = false;
+            for (var i = 0; i < compared.Count; i++)
+            {
+                if (rows[i].EntryId is { } id && id != Guid.Empty && used.Add(id))
+                {
+                    changed |= id != compared[i].EntryId;
+                    next.Add(compared[i] with { EntryId = id });
+                }
+                else
+                {
+                    next.Add(compared[i]);
+                }
+            }
+
+            return changed
+                && ReferenceEquals(Interlocked.CompareExchange(ref _entries, new EntryList(next), entries), entries);
         }
 
         // Installs the result of evaluating Rules, without touching UpdatedAt.
@@ -638,7 +608,8 @@ namespace Flower.Models
         // reason (VibePlaylistPools, and a paired device taking its server's).
         public bool Materialize(IReadOnlyList<Track> tracks)
         {
-            var current = _entries.Tracks;
+            var entries = _entries;
+            var current = entries.Tracks;
             if (current.Count == tracks.Count)
             {
                 var identical = true;
@@ -655,7 +626,9 @@ namespace Flower.Models
                     return false;
             }
 
-            _entries = new EntryList(new List<Track>(tracks), null);
+            _entries = entries.HasEntries
+                ? new EntryList(KeepingEntryIds(entries.All, tracks))
+                : new EntryList(new List<Track>(tracks));
             return true;
         }
 

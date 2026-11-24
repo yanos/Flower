@@ -254,8 +254,8 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
         {
             // A playlist naming one seeded track by the tag/duration triple
             // PlaylistSyncMapper resolves against the library by SyncKey - a
-            // track the server does not have would simply be dropped, which
-            // would make this pass for the wrong reason.
+            // track the server does not have would be held without a song,
+            // which would make this pass for the wrong reason.
             var track = server.Seeded[0];
             var pushed = new PlaylistSyncManifestDto(device.Fingerprint,
             [
@@ -278,6 +278,45 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
             var playlist = Assert.Single(served.Playlists);
             Assert.Equal("From the phone", playlist.Name);
             Assert.Equal(track.Title, Assert.Single(playlist.Tracks).Title);
+        }
+        finally
+        {
+            library.ReplacePlaylists([]);
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    // UF-18, UF-20: a row the server has no song for is held and served back,
+    // under its own id, rather than dropped from everybody's copy.
+    [Fact]
+    public async Task A_row_the_server_has_no_song_for_survives_apply()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var library = server.Services.GetRequiredService<Library>();
+        using var device = await TrustedDeviceAsync(trustedPeers);
+
+        try
+        {
+            var track = server.Seeded[0];
+            var (here, elsewhere) = (Guid.NewGuid(), Guid.NewGuid());
+            var pushed = new PlaylistSyncManifestDto(device.Fingerprint,
+            [
+                new PlaylistSyncPlaylistDto(Guid.NewGuid(), "From the phone", DateTimeOffset.UtcNow,
+                [
+                    new PlaylistSyncTrackDto(track.Title, track.Artists, track.Album, Track.RoundedSeconds(track.Duration), EntryId: here),
+                    new PlaylistSyncTrackDto("Only On The Phone", "Nobody", "Nothing", 123, "phone-only", elsewhere),
+                ]),
+            ]);
+
+            var (applyStatus, _, _) = await SendAsync(
+                device, "POST", "/api/flower/v1/playlists/apply", "10.0.2.4",
+                body: JsonSerializer.Serialize(pushed));
+            Assert.Equal(HttpStatusCode.OK, applyStatus);
+
+            var (_, body, _) = await SendAsync(device, "GET", "/api/flower/v1/playlists", "10.0.2.4");
+            var rows = Assert.Single(JsonSerializer.Deserialize<PlaylistSyncManifestDto>(body)!.Playlists).Tracks;
+            Assert.Equal([here, elsewhere], rows.Select(r => r.EntryId!.Value));
+            Assert.Equal("Only On The Phone", rows[1].Title);
         }
         finally
         {

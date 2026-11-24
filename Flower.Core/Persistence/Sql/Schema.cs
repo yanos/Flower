@@ -214,7 +214,7 @@ namespace Flower.Persistence.Sql
             -- track_id is deliberately NOT a foreign key into tracks: a rescan
             -- can legitimately drop a track whose file was deleted without that
             -- having to cascade through every playlist referencing it. Resolution is done on load, and an entry
-            -- that does not resolve is held in its place (Playlist.AbsentEntry).
+            -- that does not resolve is held in its place (PlaylistEntry).
             CREATE TABLE playlist_tracks (
                 playlist_id TEXT    NOT NULL,
                 position    INTEGER NOT NULL,

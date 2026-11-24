@@ -17,7 +17,7 @@ namespace Flower.Services;
 public static class PlaylistSyncMapper
 {
     public static PlaylistSyncPlaylistDto ToDto(Playlist playlist) =>
-        new(playlist.Id, playlist.Name, playlist.UpdatedAt, playlist.Tracks.Select(ToDto).ToList(), playlist.Rules,
+        new(playlist.Id, playlist.Name, playlist.UpdatedAt, playlist.Entries.Select(e => e.ToWire()).ToList(), playlist.Rules,
             playlist.IsFolder, playlist.ParentId, playlist.SortKey, playlist.VibePrompt, playlist.VibeInstrumental);
 
     // Track.RoundedSeconds, not a separate inline Math.Round - must agree with
@@ -36,9 +36,9 @@ public static class PlaylistSyncMapper
         new(deviceFingerprint, playlists.Select(ToDto).ToList(), deleted?.ToList() is { Count: > 0 } ids ? ids : null);
 
     // Matches each wire track against the local library - by its origin id
-    // first, then by SyncKey (see Track.BuildSyncKey). Tracks the peer has
-    // that this device doesn't are dropped from the resulting playlist: a
-    // playlist can only hold tracks the library has.
+    // first, then by SyncKey (see Track.BuildSyncKey). For the songs of a smart
+    // or Vibe playlist, and Vibe's ranked answers: what this library lacks
+    // simply is not listed. A hand-picked playlist's rows are ToPlaylist's.
     public static List<Track> ResolveTracks(
         IEnumerable<PlaylistSyncTrackDto> tracks, IReadOnlyList<Track> localLibrary, out List<PlaylistSyncTrackDto> unmatched) =>
         new PlaylistTrackIndex(localLibrary).Resolve(tracks, out unmatched);
@@ -52,28 +52,44 @@ public static class PlaylistSyncMapper
     // merged set raises Library.PlaylistsChanged, which SmartPlaylistRefresher
     // is already subscribed to.
     //
-    // The drop is logged when a logger is given, because nothing else records
-    // it: the playlist keeps its UpdatedAt, so a shorter copy looks like the
-    // same version everywhere, and "why does the server's playlist have fewer
-    // songs" used to take reading both databases to answer.
+    // An ordinary playlist keeps every row, including those this library has
+    // no song for: they are hidden here and go on in the next push, because a
+    // row leaves a playlist only when somebody removes it. Dropping them is how
+    // one edit on a device missing the songs emptied a playlist everywhere.
     public static Playlist ToPlaylist(PlaylistSyncPlaylistDto dto, IReadOnlyList<Track> localLibrary, ILogger? logger = null) =>
         ToPlaylist(dto, new PlaylistTrackIndex(localLibrary), logger);
 
     public static Playlist ToPlaylist(
         PlaylistSyncPlaylistDto dto, PlaylistTrackIndex index, ILogger? logger = null, string listener = Listeners.Owner)
     {
-        var tracks = index.Resolve(dto.Tracks, out var unmatched);
+        var keepsRows = dto.Rules == null && dto.VibePrompt == null && !dto.IsFolder;
+        var entries = new List<PlaylistEntry>(dto.Tracks.Count);
+        var unmatched = new List<PlaylistSyncTrackDto>();
+        foreach (var row in dto.Tracks)
+        {
+            var id = row.EntryId ?? Guid.NewGuid();
+            if (index.Find(row) is { } track)
+            {
+                entries.Add(new PlaylistEntry(id, track));
+                continue;
+            }
+
+            unmatched.Add(row);
+            if (keepsRows)
+                entries.Add(new PlaylistEntry(id, null, Song: row with { EntryId = null }));
+        }
+
         if (unmatched.Count > 0)
         {
             logger?.LogInformation(
-                "Playlist {Name} ({PlaylistId}): {Dropped} of {Total} track(s) are not in this library and were dropped: {Tracks}",
+                "Playlist {Name} ({PlaylistId}): {Unmatched} of {Total} track(s) are not in this library: {Tracks}",
                 dto.Name, dto.Id, unmatched.Count, dto.Tracks.Count,
                 string.Join("; ", unmatched.Select(t => $"{t.Artists} - {t.Title} [{t.Album}, {t.DurationSeconds}s]")));
         }
 
-        return new(dto.Id, dto.Name, tracks, dto.UpdatedAt, rules: dto.Rules, listener: listener,
+        return new(dto.Id, dto.Name, [], dto.UpdatedAt, rules: dto.Rules, listener: listener,
             isFolder: dto.IsFolder, parentId: dto.ParentId, sortKey: dto.SortKey,
-            vibePrompt: dto.VibePrompt, vibeInstrumental: dto.VibeInstrumental);
+            vibePrompt: dto.VibePrompt, vibeInstrumental: dto.VibeInstrumental, entries: entries);
     }
 
     // What a server does with a manifest a device pushed to /playlists/apply,
@@ -89,10 +105,7 @@ public static class PlaylistSyncMapper
     //     playlist another device added between this device's read and its
     //     write was deleted by a push that had never heard of it.
     //   - A pushed copy no newer than the one held is not taken. The pusher
-    //     did not edit it, so any difference is loss, not change: its copy
-    //     is what survived matching against a library that lacks some of the
-    //     songs - a phone whose first playlist sync ran before its first
-    //     catalog pull resolved nothing and pushed every playlist back empty.
+    //     did not edit it, so any difference is not a change to carry.
     //     The one exception is the rules of a smart playlist at an equal
     //     timestamp, which the planner hands to whichever side has them for
     //     the same reason (see PlaylistSyncPlanner).
@@ -227,10 +240,14 @@ public sealed class PlaylistTrackIndex
         }
     }
 
+    // A row with no title has no tags to match on, and must not land on
+    // whichever untagged song the library happens to hold.
     public Track? Find(PlaylistSyncTrackDto dto) =>
         dto.Id is { Length: > 0 } id && _byOriginId.TryGetValue(id, out var byId)
             ? byId
-            : _byKey.GetValueOrDefault(Track.BuildSyncKey(dto.Title, dto.Artists, dto.Album, dto.DurationSeconds));
+            : string.IsNullOrWhiteSpace(dto.Title)
+                ? null
+                : _byKey.GetValueOrDefault(Track.BuildSyncKey(dto.Title, dto.Artists, dto.Album, dto.DurationSeconds));
 
     public List<Track> Resolve(IEnumerable<PlaylistSyncTrackDto> tracks, out List<PlaylistSyncTrackDto> unmatched)
     {

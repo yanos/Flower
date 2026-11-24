@@ -18,7 +18,11 @@ namespace Flower.Services;
 // file name and in a playlist under nothing, and the two never matched. Null
 // for a song only the sender has, which the far side then looks for by tags
 // alone, the way every entry used to be.
-public sealed record PlaylistSyncTrackDto(string? Title, string? Artists, string? Album, int DurationSeconds, string? Id = null);
+//
+// EntryId is the playlist row this is (PlaylistEntry). Null where a song is sent
+// without being a row of anything, as Vibe's ranked songs are.
+public sealed record PlaylistSyncTrackDto(
+    string? Title, string? Artists, string? Album, int DurationSeconds, string? Id = null, Guid? EntryId = null);
 
 public sealed record PlaylistSyncPlaylistDto(
     Guid Id,

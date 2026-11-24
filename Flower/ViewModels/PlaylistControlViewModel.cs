@@ -534,7 +534,7 @@ namespace Flower.ViewModels
         public void SetCurrentPlaylist(Playlist playlist, Playlist? source = null, bool followsOrder = false)
         {
             _currentPlaylist = playlist;
-            _queueSource = source == null ? null : FollowFrom(source, followsOrder, playlist.Tracks, savedSlots: null);
+            _queueSource = source == null ? null : FollowFrom(source, followsOrder, playlist.Tracks, savedEntries: null);
             _playingHasLeft = false;
 
             // Playing anything else ends a Vibe Playlist's endless queue; the
@@ -574,15 +574,16 @@ namespace Flower.ViewModels
                 if (index < 0 || CurrentlyPlayingTrack is not { } playing)
                     return 0;
 
-                if (_queueSource is { } followed && followed.Origins[index] is >= 0 and var origin)
+                if (_queueSource is { } followed && followed.Origins[index] is { } origin)
                 {
                     var copy = 0;
-                    for (var i = 0; i < origin; i++)
+                    foreach (var entry in followed.Seen)
                     {
-                        if (followed.Seen[i].TrackId == playing.Id)
+                        if (entry.EntryId == origin)
+                            return copy;
+                        if (entry.TrackId == playing.Id)
                             copy++;
                     }
-                    return copy;
                 }
 
                 var tracks = _currentPlaylist.Tracks;
@@ -866,7 +867,7 @@ namespace Flower.ViewModels
                 queue.Add(next);
 
             _logger.LogInformation("Endless Play: adding {Count} songs like the last few", queue.Count - tracks.Count);
-            _queueSource?.Origins.AddRange(Enumerable.Repeat(-1, queue.Count - tracks.Count));
+            _queueSource?.Origins.AddRange(Enumerable.Repeat<Guid?>(null, queue.Count - tracks.Count));
             if (_ranOut && _parked)
             {
                 // Ran out while asking: carry on from the first of them.
@@ -945,7 +946,7 @@ namespace Flower.ViewModels
                 if (_queueSource is { } followed)
                 {
                     followed.Origins.Clear();
-                    followed.Origins.Add(-1);
+                    followed.Origins.Add(null);
                 }
             }
 
@@ -958,7 +959,7 @@ namespace Flower.ViewModels
                 at = queue.Count;
 
             queue.InsertRange(at, tracks);
-            _queueSource?.Origins.InsertRange(at, Enumerable.Repeat(-1, tracks.Count));
+            _queueSource?.Origins.InsertRange(at, Enumerable.Repeat<Guid?>(null, tracks.Count));
             if (at <= index + 1 + _linedUpCount)
                 _linedUpCount += tracks.Count;
 
@@ -1053,7 +1054,7 @@ namespace Flower.ViewModels
             _logger.LogInformation("Cleared the queue");
             if (_queueSource is { } followed)
             {
-                var origin = QueueIndex is >= 0 and var at ? followed.Origins[at] : -1;
+                var origin = QueueIndex is >= 0 and var at ? followed.Origins[at] : null;
                 followed.Origins.Clear();
                 followed.Origins.Add(origin);
             }
@@ -1092,20 +1093,20 @@ namespace Flower.ViewModels
 
         // The playlist this queue was played from, by id because a sync
         // replaces the Playlist object, and its entries as last followed.
-        // Origins runs alongside the queue: for each row, the slot in Seen of
-        // the entry it came from, or -1 for a song lined up by hand. Every
-        // edit to the queue edits it too.
+        // Origins runs alongside the queue: for each row, the EntryId it came
+        // from, or null for a song lined up by hand. Every edit to the queue
+        // edits it too.
         private sealed record QueueSource(
-            Guid Id, bool FollowsOrder, List<Playlist.StoredEntry> Seen, List<int> Origins);
+            Guid Id, bool FollowsOrder, IReadOnlyList<PlaylistEntry> Seen, List<Guid?> Origins);
 
         private QueueSource? _queueSource;
 
         private static QueueSource FollowFrom(
-            Playlist source, bool followsOrder, IReadOnlyList<Track> queue, List<int>? savedSlots)
+            Playlist source, bool followsOrder, IReadOnlyList<Track> queue, List<Guid?>? savedEntries)
         {
-            var seen = source.StoredEntries();
-            var origins = savedSlots != null && QueueFollowsPlaylist.OriginsFit(queue, savedSlots, seen)
-                ? savedSlots
+            var seen = source.Entries;
+            var origins = savedEntries != null && QueueFollowsPlaylist.OriginsFit(queue, savedEntries, seen)
+                ? savedEntries
                 : QueueFollowsPlaylist.OriginsIn(queue, seen);
             return new QueueSource(source.Id, followsOrder, seen, origins);
         }
@@ -1129,13 +1130,13 @@ namespace Flower.ViewModels
                 return;
             }
 
-            var now = source.StoredEntries();
+            var now = source.Entries;
             if (now.SequenceEqual(followed.Seen))
                 return;
 
             var edit = QueueFollowsPlaylist.Apply(
                 _currentPlaylist.Tracks, followed.Origins, QueueIndex, _linedUpCount, _playingHasLeft,
-                followed.FollowsOrder, followed.Seen, now, source.Tracks);
+                followed.FollowsOrder, followed.Seen, now);
             _queueSource = followed with { Seen = now, Origins = edit.Origins };
 
             // The same entries in a new object: a sync that changed nothing here.
@@ -1173,7 +1174,7 @@ namespace Flower.ViewModels
             var finishes = currentLeft && !_parked;
 
             var queue = new List<Track>(tracks.Count);
-            var origins = new List<int>(tracks.Count);
+            var origins = new List<Guid?>(tracks.Count);
             var place = -1;
             var keptBefore = 0;
             var linedUp = 0;
@@ -2134,22 +2135,22 @@ namespace Flower.ViewModels
                 ids.Add(track.Id);
 
             // A copy, since the save runs off this thread.
-            List<int>? slots = _queueSource is { } followed ? [.. followed.Origins] : null;
+            List<Guid?>? rows = _queueSource is { } followed ? [.. followed.Origins] : null;
 
             // Quit during a song that has left: the next launch comes back to
             // the song after it, since it cannot come back to this one.
             if (_playingHasLeft)
             {
                 ids.RemoveAt(index);
-                slots?.RemoveAt(index);
+                rows?.RemoveAt(index);
                 if (ids.Count == 0)
                     return null;
                 return new PlayQueueState(ids, Math.Min(index, ids.Count - 1), 0, Math.Max(0, _linedUpCount - 1),
-                    _queueSource?.Id, _queueSource?.FollowsOrder ?? false, slots);
+                    _queueSource?.Id, _queueSource?.FollowsOrder ?? false, rows);
             }
 
             return new PlayQueueState(ids, index, _playheadMs, _linedUpCount,
-                _queueSource?.Id, _queueSource?.FollowsOrder ?? false, slots);
+                _queueSource?.Id, _queueSource?.FollowsOrder ?? false, rows);
         }
 
         private void SaveQueue(bool synchronously = false)
@@ -2199,14 +2200,14 @@ namespace Flower.ViewModels
                 byId.TryAdd(track.Id, track);
 
             var queue = new List<Track>(state.TrackIds.Count);
-            var savedSlots = state.SourceSlots?.Count == state.TrackIds.Count ? new List<int>(queue.Capacity) : null;
+            var savedEntries = state.SourceEntries?.Count == state.TrackIds.Count ? new List<Guid?>(queue.Capacity) : null;
             var index = -1;
             var linedUp = 0;
             for (var i = 0; i < state.TrackIds.Count; i++)
             {
                 if (!byId.TryGetValue(state.TrackIds[i], out var track))
                     continue;
-                savedSlots?.Add(state.SourceSlots![i]);
+                savedEntries?.Add(state.SourceEntries![i]);
                 if (i == state.Index)
                     index = queue.Count;
                 else if (i > state.Index && i <= state.Index + state.LinedUpCount)
@@ -2220,7 +2221,7 @@ namespace Flower.ViewModels
             _currentPlaylist = new Playlist("Now Playing Queue", queue);
             _queueSource = state.SourcePlaylistId is { } sourceId
                 && _library.Playlists.FirstOrDefault(p => p.Id == sourceId) is { IsOrdinary: true } source
-                    ? FollowFrom(source, state.SourceFollowsOrder, queue, savedSlots)
+                    ? FollowFrom(source, state.SourceFollowsOrder, queue, savedEntries)
                     : null;
             _linedUpCount = linedUp;
             OnPropertyChanged(nameof(CurrentPlaylist));

@@ -75,6 +75,9 @@ you're not, ask for a link.
   works at home, tell them.
 - **Your playlists are your own**: nobody else on the server sees them, and
   you don't see theirs. Your plays count towards its play counts.
+- **"2 songs unavailable" under a playlist** means those songs can't be played
+  from this device right now, usually because the server doesn't have them or
+  its drive is away. They aren't lost, and they come back by themselves.
 
 ### If something goes wrong
 

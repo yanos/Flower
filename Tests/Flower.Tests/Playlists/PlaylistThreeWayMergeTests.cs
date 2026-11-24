@@ -145,4 +145,19 @@ public class PlaylistThreeWayMergeTests
 
         Assert.Null(PlaylistThreeWayMerge.Merge(PlannedPlaylist.Of(Version("ABC")), smart, Version("ABCE", minutesLater: 2)));
     }
+
+    // UF-24: which copy left is known, not counted.
+    [Fact]
+    public void Removing_one_copy_of_a_song_is_not_mistaken_for_the_other()
+    {
+        var original = Version("AAB");
+        var ours = new Playlist(Id, "Mix", [], Then, entries: original.Entries);
+        var theirs = new Playlist(Id, "Mix", [], Then, entries: original.Entries);
+        ours.RemoveEntriesAt([0]);
+        theirs.InsertTrack(1, Songs["C"]);
+
+        var merged = PlaylistThreeWayMerge.Merge(PlannedPlaylist.Of(original), ours, theirs);
+
+        Assert.Equal("CAB", string.Concat(merged!.Tracks.Select(t => t.Title)));
+    }
 }

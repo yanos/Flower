@@ -4,9 +4,10 @@ Make a playlist edit impossible to lose, and stop asking people to settle
 conflicts that are not conflicts. It replaces how playlists are identified,
 versioned and merged between devices and `Flower.Server`.
 
-**Status (November 2026): planned, nothing built.** It fixes UF-18 to UF-24 in
-[USER-FLOW-REVIEW.md](USER-FLOW-REVIEW.md). UF-18, UF-19 and UF-20 are P0, so
-phases 1 and 2 block the next release.
+**Status (November 2026): phase 1 is built** and has fixed UF-18, UF-20 and
+UF-24. What is left is UF-19, UF-21, UF-22 and UF-23 in
+[USER-FLOW-REVIEW.md](USER-FLOW-REVIEW.md). UF-19 is P0, so phase 2 blocks the
+next release.
 
 ## Why patching stops working
 
@@ -89,7 +90,7 @@ a comparison with the snapshot, so an edit and its undo is no change at all.
 There is no compatibility to keep, so this replaces the current routes outright.
 
 **`GET /api/flower/v1/playlists`** answers each playlist with `Revision`,
-`History` (its recent revisions) and `Entries`, and each recorded deletion with
+`History` (its recent revisions) and its rows, and each recorded deletion with
 its `Revision` and `History`.
 
 **`POST /api/flower/v1/playlists/changes`** replaces `/playlists/apply`. It is one
@@ -156,7 +157,19 @@ pushes, without going through `PlaylistSyncService`.
 - The "2 songs unavailable" line on the desktop and phone playlist screens.
 
 **Deleted:** `AlignByOrder`, `TryAlignMove`, `TryAlignInOrder`, `KeepPlayingCopy`,
-`OriginsIn`, `OriginsFit`, `AbsentEntry`, `StoredEntry`.
+`AbsentEntry`, `StoredEntry`.
+
+What building it changed from the above:
+
+- **Rows stay in the wire's `Tracks` field,** each with an `EntryId`, rather than
+  moving to a new `Entries` field.
+- **`OriginsIn` and `OriginsFit` stay,** on `EntryId`. A queue is still built from
+  a list of songs, so which row each came from is worked out when it is made.
+- **Copies from before rows had ids** hold the same songs under different ids. A
+  device seeing the same songs takes the server's ids with no edit
+  (`TakeEntryIdsFrom`). A copy sharing no ids is paired by song, and does not
+  remove rows it could not have known about (`KeepUnavailableFrom`).
+- **Both sides adding the same song** during a session is one addition, as it was.
 
 ### Phase 2: revisions (UF-19, UF-21, UF-22)
 
@@ -164,7 +177,7 @@ pushes, without going through `PlaylistSyncService`.
 - The agreed copy in `flower.db`, and the read table above in the planner.
 - The session stops holding a read across a prompt.
 
-**Deleted:** `PlaylistSyncStateStore`, `Supersedes`, `IsStrictSuperset`, the
+**Deleted:** `PlaylistSyncStateStore`, `Supersedes`, `HoldsAllAndMore`, the
 planner's "neither side moved" branch, `/playlists/apply`.
 
 ### Phase 3: merge by default (UF-23)

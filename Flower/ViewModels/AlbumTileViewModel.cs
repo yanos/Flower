@@ -41,6 +41,10 @@ public sealed class AlbumTileViewModel : DownloadIndicatorViewModel, AlbumArtLoa
     public required string Name { get; init; }
     public string? Artist { get; init; }
 
+    // A quiet line of its own under Artist, on a playlist's header: how many of
+    // its songs this device cannot play. Null, and no line, on everything else.
+    public string? Note { get; init; }
+
     // Only an album's own screen sets these (MobileMainViewModel
     // .BuildAlbumHeader): its name heads that screen with the year in
     // brackets, the way Now Playing's album line has it

@@ -1027,6 +1027,127 @@ public class SyncScenarioTests : PinnedDataDirectory
         Assert.Contains(client.Library.Tracks, t => t.Id == client.Playlist("Mix").Tracks[0].Id);
     }
 
+    // UF-18: a device that cannot see a playlist's songs yet still holds its
+    // rows, so its edit is an edit of the whole playlist.
+    [Fact]
+    public async Task An_edit_on_a_device_without_the_catalog_keeps_the_playlists_songs()
+    {
+        var (a, b, c) = (ServerTrack("A"), ServerTrack("B"), ServerTrack("C"));
+        using var server = new SimulatedFlowerServer([a, b, c]);
+        var playlist = new Playlist("Mix", [a, b, c]);
+        server.Library.AddPlaylist(playlist);
+        var owner = NewClient();
+        await owner.PullLibraryAsync(server);
+        await owner.SyncPlaylistsAsync(server);
+
+        var newDevice = NewClient();
+        await newDevice.SyncPlaylistsAsync(server);
+        Assert.Empty(newDevice.Playlist("Mix").Tracks);
+        Assert.Equal(3, newDevice.Playlist("Mix").UnavailableCount);
+        newDevice.Playlist("Mix").Name = "Renamed";
+        await newDevice.SyncPlaylistsAsync(server);
+
+        Assert.Equal(["A", "B", "C"], Titles(server.Library.Playlists.Single()));
+        await owner.SyncPlaylistsAsync(server);
+        Assert.Equal(["A", "B", "C"], Titles(owner.Playlist("Renamed")));
+
+        await newDevice.PullLibraryAsync(server);
+        Assert.Equal(["A", "B", "C"], Titles(newDevice.Playlist("Renamed")));
+        Assert.Equal(0, newDevice.Playlist("Renamed").UnavailableCount);
+    }
+
+    // UF-20: the server and the other device hold the row without the song.
+    [Fact]
+    public async Task A_song_only_one_device_has_stays_in_its_playlist_through_another_devices_edit()
+    {
+        var (a, b) = (ServerTrack("A"), ServerTrack("B"));
+        using var server = new SimulatedFlowerServer([a, b]);
+        var first = NewClient([LocalFile("Only Here")]);
+        var second = NewClient();
+        await first.PullLibraryAsync(server);
+        await second.PullLibraryAsync(server);
+        first.Library.AddPlaylist(new Playlist("Mix", [first.Single("A"), first.Single("Only Here")]));
+        await first.SyncPlaylistsAsync(server);
+        await second.SyncPlaylistsAsync(server);
+        Assert.Equal(1, second.Playlist("Mix").UnavailableCount);
+
+        second.Playlist("Mix").AppendTrack(second.Single("B"));
+        await second.SyncPlaylistsAsync(server);
+        await first.SyncPlaylistsAsync(server);
+
+        Assert.Equal(["A", "Only Here", "B"], Titles(first.Playlist("Mix")));
+    }
+
+    // A row a device could not see is still a row: somebody removing it
+    // elsewhere removes it here.
+    [Fact]
+    public async Task A_row_removed_elsewhere_leaves_a_device_that_could_not_see_its_song()
+    {
+        var a = ServerTrack("A");
+        using var server = new SimulatedFlowerServer([a]);
+        var first = NewClient([LocalFile("Only Here")]);
+        var second = NewClient();
+        await first.PullLibraryAsync(server);
+        await second.PullLibraryAsync(server);
+        first.Library.AddPlaylist(new Playlist("Mix", [first.Single("A"), first.Single("Only Here")]));
+        await first.SyncPlaylistsAsync(server);
+        await second.SyncPlaylistsAsync(server);
+
+        first.Playlist("Mix").RemoveEntriesAt([1]);
+        await first.SyncPlaylistsAsync(server);
+        await second.SyncPlaylistsAsync(server);
+
+        Assert.Equal(0, second.Playlist("Mix").UnavailableCount);
+        Assert.Single(second.Playlist("Mix").Entries);
+    }
+
+    // Copies made before rows had ids hold the same songs under different
+    // ones. Seeing that is no edit, and they end up as one set of rows.
+    [Fact]
+    public async Task A_device_holding_the_same_songs_takes_the_servers_row_ids()
+    {
+        var (a, b) = (ServerTrack("A"), ServerTrack("B"));
+        using var server = new SimulatedFlowerServer([a, b]);
+        var onServer = new Playlist("Mix", [a, b]);
+        server.Library.AddPlaylist(onServer);
+        var client = NewClient();
+        await client.PullLibraryAsync(server);
+        var mine = new Playlist(onServer.Id, "Mix", [client.Single("A"), client.Single("B")], onServer.UpdatedAt);
+        client.Library.AddPlaylist(mine);
+        var updatedAt = client.Playlist("Mix").UpdatedAt;
+
+        await client.SyncPlaylistsAsync(server);
+
+        Assert.Equal(onServer.Entries.Select(e => e.EntryId), client.Playlist("Mix").Entries.Select(e => e.EntryId));
+        Assert.Equal(updatedAt, client.Playlist("Mix").UpdatedAt);
+    }
+
+    // A device can hold fewer rows than the server at the same version: a copy
+    // made before it could keep rows it had no song for.
+    [Fact]
+    public async Task A_row_the_device_never_had_arrives_at_an_unchanged_version()
+    {
+        var a = ServerTrack("A");
+        using var server = new SimulatedFlowerServer([a]);
+        var first = new Playlist("Mix", [a]);
+        server.Library.AddPlaylist(first);
+        var client = NewClient();
+        await client.PullLibraryAsync(server);
+        await client.SyncPlaylistsAsync(server);
+
+        server.Library.ReplacePlaylists(
+        [
+            new Playlist(first.Id, "Mix", [], first.UpdatedAt, entries:
+            [
+                .. first.Entries,
+                new PlaylistEntry(Guid.NewGuid(), null, Song: new PlaylistSyncTrackDto("Elsewhere", "Artist", "Album", 100, "elsewhere")),
+            ]),
+        ]);
+        await client.SyncPlaylistsAsync(server);
+
+        Assert.Equal(1, client.Playlist("Mix").UnavailableCount);
+    }
+
     // The lossy copy from the first-contact test above, pushed alongside a
     // genuine edit to a different playlist - so the set as a whole has
     // changed and cannot be waved through as "nothing new".

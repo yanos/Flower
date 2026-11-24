@@ -10,10 +10,10 @@ namespace Flower.Services;
 // a playlist swaps in a new track list on every edit rather than changing the
 // one it has (see Playlist.Tracks), so holding the reference holds the version.
 public sealed record PlannedPlaylist(
-    string Name, IReadOnlyList<Track> Tracks, DateTimeOffset UpdatedAt, Guid? ParentId = null, double? SortKey = null)
+    string Name, IReadOnlyList<PlaylistEntry> Entries, DateTimeOffset UpdatedAt, Guid? ParentId = null, double? SortKey = null)
 {
     public static PlannedPlaylist Of(Playlist playlist) =>
-        new(playlist.Name, playlist.Tracks, playlist.UpdatedAt, playlist.ParentId, playlist.SortKey);
+        new(playlist.Name, playlist.Entries, playlist.UpdatedAt, playlist.ParentId, playlist.SortKey);
 }
 
 // What a session installs: its merge laid over what the user did while it ran.
@@ -108,9 +108,10 @@ public static class PlaylistSessionOverlay
 // one a session planned from, edited here while the session ran, and edited
 // on the other side before it. Null when they cannot both be kept.
 //
-// Entries are told apart by track and by which occurrence of that track they
-// are, so a song in a playlist twice is two entries, and removing one of them
-// on one side is not mistaken for removing both.
+// Entries are told apart by EntryId, so a song in a playlist twice is two
+// entries, and removing one of them is never read as removing the other. A side
+// sharing no entries with the base has no history with it (a copy from before
+// rows had ids): its rows are paired with the base's by song, nth copy to nth.
 //
 // What combines: each side adding songs, each side removing songs, and one
 // side reordering - the other side's additions and removals are applied to
@@ -151,42 +152,73 @@ public static class PlaylistThreeWayMerge
         else
             return null;
 
-        var tracks = MergeTracks(before.Tracks, ours.Tracks, theirs.Tracks);
-        if (tracks == null)
+        var entries = MergeEntries(before.Entries, ours.Entries, theirs.Entries);
+        if (entries == null)
             return null;
 
-        var result = new Playlist(ours.Id, name, tracks, ours.UpdatedAt, ours.Comment, ours.IsPublic, ours.CreatedAt,
-            listener: ours.Listener, isFolder: ours.IsFolder, parentId: parentId, sortKey: sortKey);
+        var result = new Playlist(ours.Id, name, [], ours.UpdatedAt, ours.Comment, ours.IsPublic, ours.CreatedAt,
+            listener: ours.Listener, isFolder: ours.IsFolder, parentId: parentId, sortKey: sortKey, entries: entries);
         // Newer than both, so the other side takes it from the push.
         result.MarkEditedAfter(ours.UpdatedAt > theirs.UpdatedAt ? ours.UpdatedAt : theirs.UpdatedAt);
         return result;
     }
 
-    private readonly record struct Entry(Guid Track, int Occurrence);
-
-    private static List<Entry> Entries(IReadOnlyList<Track> tracks)
+    private static List<PlaylistEntry> AlignedTo(IReadOnlyList<PlaylistEntry> baseEntries, IReadOnlyList<PlaylistEntry> side)
     {
-        var seen = new Dictionary<Guid, int>();
-        var entries = new List<Entry>(tracks.Count);
-        foreach (var track in tracks)
-        {
-            var n = seen.GetValueOrDefault(track.Id);
-            seen[track.Id] = n + 1;
-            entries.Add(new Entry(track.Id, n));
-        }
-        return entries;
+        var known = baseEntries.Select(e => e.EntryId).ToHashSet();
+        if (side.Count == 0 || side.Any(e => known.Contains(e.EntryId)))
+            return side.ToList();
+
+        return TakingIdsFrom(baseEntries, side);
     }
 
-    private static List<Track>? MergeTracks(IReadOnlyList<Track> before, IReadOnlyList<Track> ours, IReadOnlyList<Track> theirs)
+    // Both sides adding the same song is one addition, not two copies of it.
+    private static List<PlaylistEntry> PairingAdditions(
+        IReadOnlyList<PlaylistEntry> before, List<PlaylistEntry> ours, List<PlaylistEntry> theirs)
     {
-        var baseEntries = Entries(before);
-        var ourEntries = Entries(ours);
-        var theirEntries = Entries(theirs);
+        var old = before.Select(e => e.EntryId).ToHashSet();
+        var ourIds = ours.Select(e => e.EntryId).ToHashSet();
+        var ourAdditions = ours.Where(e => !old.Contains(e.EntryId)).ToList();
+        bool IsTheirAddition(PlaylistEntry e) => !old.Contains(e.EntryId) && !ourIds.Contains(e.EntryId);
+
+        var next = new Queue<PlaylistEntry>(TakingIdsFrom(ourAdditions, theirs.Where(IsTheirAddition).ToList()));
+        return theirs.Select(e => IsTheirAddition(e) ? next.Dequeue() : e).ToList();
+    }
+
+    // Each row of `side` takes the id of the nth entry of `source` holding its
+    // song, when there is one.
+    private static List<PlaylistEntry> TakingIdsFrom(IReadOnlyList<PlaylistEntry> source, IReadOnlyList<PlaylistEntry> side)
+    {
+        var waiting = new Dictionary<Guid, Queue<Guid>>();
+        foreach (var entry in source)
+        {
+            if (entry.TrackId is not { } id)
+                continue;
+            if (!waiting.TryGetValue(id, out var ids))
+                waiting[id] = ids = new Queue<Guid>();
+            ids.Enqueue(entry.EntryId);
+        }
+
+        return side
+            .Select(e => e.TrackId is { } id && waiting.TryGetValue(id, out var ids) && ids.Count > 0
+                ? e with { EntryId = ids.Dequeue() }
+                : e)
+            .ToList();
+    }
+
+    private static List<PlaylistEntry>? MergeEntries(
+        IReadOnlyList<PlaylistEntry> before, IReadOnlyList<PlaylistEntry> oursGiven, IReadOnlyList<PlaylistEntry> theirsGiven)
+    {
+        var ours = AlignedTo(before, oursGiven);
+        var theirs = PairingAdditions(before, ours, AlignedTo(before, theirsGiven));
+        var baseEntries = before.Select(e => e.EntryId).ToList();
+        var ourEntries = ours.Select(e => e.EntryId).ToList();
+        var theirEntries = theirs.Select(e => e.EntryId).ToList();
 
         if (ourEntries.SequenceEqual(baseEntries) || ourEntries.SequenceEqual(theirEntries))
-            return theirs.ToList();
+            return theirs;
         if (theirEntries.SequenceEqual(baseEntries))
-            return ours.ToList();
+            return ours;
 
         // The songs both sides kept, in each side's order: a side whose order
         // differs from the original's reordered them.
@@ -241,9 +273,13 @@ public static class PlaylistThreeWayMerge
             inResult.Add(entry);
         }
 
-        var byId = new Dictionary<Guid, Track>();
-        foreach (var track in before.Concat(ours).Concat(theirs))
-            byId.TryAdd(track.Id, track);
-        return result.Select(e => byId[e.Track]).ToList();
+        // A row both sides still have keeps whichever copy can play its song.
+        var byId = new Dictionary<Guid, PlaylistEntry>();
+        foreach (var entry in ours.Concat(theirs).Concat(before))
+        {
+            if (!byId.TryGetValue(entry.EntryId, out var held) || (held.Track == null && entry.Track != null))
+                byId[entry.EntryId] = entry;
+        }
+        return result.Select(id => byId[id]).ToList();
     }
 }

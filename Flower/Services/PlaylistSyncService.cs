@@ -276,6 +276,15 @@ public class PlaylistSyncService
                 agreedOnPush.Add(decision.PlaylistId);
         }
 
+        // Copies holding the same songs under different row ids become one set
+        // of rows, this device taking the server's. No edit, so nothing to push.
+        var tookRowIds = false;
+        foreach (var decision in decisions)
+        {
+            if (decision is { Kind: PlaylistSyncDecisionKind.NoChange, Local.IsOrdinary: true, Remote: not null })
+                tookRowIds |= decision.Local.TakeEntryIdsFrom(planned[decision.PlaylistId].Entries, decision.Remote.Tracks);
+        }
+
         // Persisted by Library.PlaylistsChanged. Laid over what the user did
         // while this session ran (PlaylistSessionOverlay): a playlist deleted
         // here mid-session keeps the baseline just agreed, so the next session
@@ -288,6 +297,8 @@ public class PlaylistSyncService
             return result.Installed;
         });
         var installed = result.Installed;
+        if (tookRowIds)
+            _library.NotePlaylistRowsRenamed();
 
         // An edit made here mid-session and combined with the other side's
         // is a new version, and is agreed once the push below lands.

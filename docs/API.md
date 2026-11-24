@@ -407,7 +407,9 @@ Both carry `PlaylistSyncManifestDto`: `DeviceFingerprint`, `Playlists`
 (`Id`, `Name`, `UpdatedAt`, `Tracks`, optional `Rules` for a smart playlist,
 optional `VibePrompt` and `VibeInstrumental` for a Vibe Playlist), and
 optional `Deleted` ids. A track entry is `Title`/`Artists`/`Album`/
-`DurationSeconds` plus the catalog `Id` when the sender has one.
+`DurationSeconds`, the catalog `Id` when the sender has one, and `EntryId`, the
+row's own id, which stays with it through moves and across devices. A row whose
+song the receiver does not have is kept and sent back, never dropped.
 
 On a `GET`, `Deleted` is the server's record of the playlists deleted for this
 listener. It is the only thing that makes a missing playlist a deletion: a

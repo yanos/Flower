@@ -974,8 +974,24 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         SidebarItemKind.Queue => Queue.Caption is { } caption
             ? $"{CountOf(Queue.UpcomingCount, "song")} · {caption}"
             : CountOf(Queue.UpcomingCount, "song"),
-        _ => CountOf(DisplayedTracks.Count, "song"),
+        _ => UnavailableSongsIn(_selectedSidebarItem?.Playlist) is { } unavailable
+            ? $"{CountOf(DisplayedTracks.Count, "song")} · {unavailable}"
+            : CountOf(DisplayedTracks.Count, "song"),
     };
+
+    // What a playlist's page says about the rows this device cannot play.
+    // Nothing on a paired device whose catalog has not arrived, when every row
+    // is waiting for it and the words would only alarm for a moment.
+    public string? UnavailableSongsIn(Playlist? playlist)
+    {
+        if (playlist is not { IsOrdinary: true, UnavailableCount: > 0 })
+            return null;
+
+        var server = PairedServerFingerprint;
+        return string.IsNullOrEmpty(server) || Library.Tracks.Any(t => t.OriginDeviceFingerprint == server)
+            ? PlaylistSummaryText.Unavailable(playlist.UnavailableCount)
+            : null;
+    }
 
     private static string CountOf(int count, string noun) =>
         count == 1 ? $"1 {noun}" : $"{count:N0} {noun}s";
@@ -2092,6 +2108,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         _subscriptions.Add<EventHandler>((_, _) => Dispatcher.UIThread.Post(() =>
         {
             Playlists.RefreshSidebarItems();
+            OnPropertyChanged(nameof(PageSubtitle));
             if (!Sync.IsMergingOwnSync)
                 ScheduleContentSync();
             else

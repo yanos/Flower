@@ -157,7 +157,7 @@ public class QueueKeepsItsCopiesTests : PinnedDataDirectory
 
         library.ReplacePlaylists(
         [
-            new Playlist(playlist.Id, "Mix", [_a, _b], playlist.UpdatedAt.AddMinutes(1)),
+            new Playlist(playlist.Id, "Mix", [], playlist.UpdatedAt.AddMinutes(1), entries: playlist.Entries.Skip(1).ToList()),
         ]);
 
         Assert.Equal(["A", "B"], Titles(vm));
@@ -165,6 +165,22 @@ public class QueueKeepsItsCopiesTests : PinnedDataDirectory
         vm.Next();
         Assert.Equal("B", vm.CurrentlyPlayingTrack?.Title);
         Assert.Equal(["A", "B"], Titles(vm));
+    }
+
+    [Fact]
+    public void Taking_the_servers_row_ids_leaves_the_queue_on_its_copy()
+    {
+        var (vm, playlist, library) = Playing([_a, _a, _b], slot: 1);
+        var rows = playlist.Entries.Select(e => e.ToWire() with { EntryId = Guid.NewGuid() }).ToList();
+
+        Assert.True(playlist.TakeEntryIdsFrom(playlist.Entries, rows));
+        library.NotePlaylistRowsRenamed();
+
+        Assert.Equal(["A", "A", "B"], Titles(vm));
+        Assert.Equal(1, vm.QueueIndex);
+        playlist.RemoveEntriesAt([0]);
+        Assert.Equal(["A", "B"], Titles(vm));
+        Assert.Equal(0, vm.QueueIndex);
     }
 
     [Fact]
