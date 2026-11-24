@@ -5,14 +5,10 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
-using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Threading;
 
 using Flower.Services;
-
-using Material.Icons;
-using Material.Icons.Avalonia;
 
 namespace Flower.Controls;
 
@@ -164,18 +160,7 @@ public class TextInput : TextBox
 
     private Button BuildClearButton()
     {
-        var button = new Button
-        {
-            Background = Brushes.Transparent,
-            BorderThickness = default,
-            Padding = new Thickness(4),
-            // Nothing about this button is a place to type, and taking focus
-            // would be a real change of behaviour rather than a cosmetic one:
-            // a box that commits what it holds when it loses focus (the new
-            // playlist's name box) would commit on the way to being cleared.
-            Focusable = false,
-            Content = new MaterialIcon { Kind = MaterialIconKind.CloseCircle, Width = 16, Height = 16, Opacity = 0.6 },
-        };
+        var button = new ClearButton();
         button.Click += (_, e) =>
         {
             if (string.IsNullOrEmpty(Text) && EmptyClearCommand is { } command && command.CanExecute(null))

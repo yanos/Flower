@@ -45,32 +45,24 @@ public sealed class TrackInfoField(TrackTagField tag) : ViewModelBase
     // (UF-14): the box's clear button, offered while it shows "Multiple
     // values". Cleared, it saves as empty for every song, until something is
     // typed in it.
+    // The button shows while ClearCommand can run, so nothing else about
+    // this is raised.
     private bool _isCleared;
-    public bool IsCleared
-    {
-        get => _isCleared;
-        private set
-        {
-            if (!SetProperty(ref _isCleared, value))
-                return;
-            OnPropertyChanged(nameof(OffersClear));
-            _clear?.NotifyCanExecuteChanged();
-        }
-    }
 
-    public bool OffersClear => IsMixed && !IsCleared;
+    public bool OffersClear => IsMixed && !_isCleared;
 
     private RelayCommand? _clear;
     public ICommand ClearCommand => _clear ??= new RelayCommand(Clear, () => OffersClear);
 
-    public bool IsDirty => IsCleared || Text != ShownText;
+    public bool IsDirty => _isCleared || Text != ShownText;
 
     public void Clear()
     {
         if (!OffersClear)
             return;
         Text = "";
-        IsCleared = true;
+        _isCleared = true;
+        _clear?.NotifyCanExecuteChanged();
         Placeholder = TrackInfoViewModel.ClearedValues;
     }
 
@@ -79,8 +71,7 @@ public sealed class TrackInfoField(TrackTagField tag) : ViewModelBase
         IsMixed = common is null;
         ShownText = common ?? "";
         Text = ShownText;
-        IsCleared = false;
-        OnPropertyChanged(nameof(OffersClear));
+        _isCleared = false;
         _clear?.NotifyCanExecuteChanged();
         Placeholder = IsMixed ? TrackInfoViewModel.MixedValues : hint;
     }

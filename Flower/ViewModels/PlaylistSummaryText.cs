@@ -17,12 +17,7 @@ public static class PlaylistSummaryText
 
     // The rows of a playlist this device cannot play or stream, or null for
     // none. Quiet, and in these words, because they are not gone.
-    public static string? Unavailable(int count) => count switch
-    {
-        <= 0 => null,
-        1 => "1 song unavailable",
-        _ => $"{count:N0} songs unavailable",
-    };
+    public static string? Unavailable(int count) => count > 0 ? $"{Songs(count)} unavailable" : null;
 
     // A folder's row, which holds playlists rather than songs.
     public static string Playlists(int count) => count == 1 ? "1 playlist" : $"{count:N0} playlists";
