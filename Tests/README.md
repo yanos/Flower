@@ -143,6 +143,10 @@ in `TestSupport/`:
 - **Other process-wide state** (`GaplessFormat`, native text fields, album art
   loading) has its own xUnit collection: `GaplessFormatCollection`,
   `NativeTextFieldCollection`, `AlbumArtLoaderCollection`.
+- **Signing clock.** Clock-skew refusal tests run in `SignatureClockCollection`
+  without other collections: their temporary `SignatureClock` correction
+  affects every request signer, including unrelated signature-verification
+  tests.
 
 `Flower.Server.Tests` does not use `ClientTests.props`; its own helpers
 (`FlowerServerFixture`, `GuardedRequest`) live in its `TestSupport/` folder.

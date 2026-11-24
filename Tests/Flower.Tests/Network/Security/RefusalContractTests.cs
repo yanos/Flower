@@ -20,7 +20,7 @@ namespace Flower.Tests.Network.Security;
 // The client half of docs/SECURITY.md step 3: a refusal is read by
 // its code, not its status. The one that matters most is which refusals may
 // end a pairing - device-unknown, and nothing else, however it arrives.
-[Collection("PlatformDataDirectory")]
+[Collection("SignatureClock")]
 public class RefusalContractTests : IDisposable
 {
     private readonly string? _originalHome;
