@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 using Flower.Services;
@@ -209,7 +210,26 @@ namespace Flower.Models
         // Library.Playlists is: the save triggered by Changed runs on a
         // threadpool thread (App.axaml.cs) and enumerates this while the UI
         // thread may be adding a track to the very same playlist.
-        private List<Track> _tracks;
+        private EntryList _entries;
+
+        // The songs and, once something has asked (StoredEntries), a key per
+        // entry. One object so that a reader on another thread never pairs
+        // one edit's songs with another's keys.
+        private sealed class EntryList(List<Track> tracks, List<long>? keys)
+        {
+            private List<long>? _keys = keys;
+
+            public List<Track> Tracks { get; } = tracks;
+
+            public List<long>? KnownKeys => Volatile.Read(ref _keys);
+
+            public List<long> Keys => LazyInitializer.EnsureInitialized(
+                ref _keys, () => Tracks.Select(_ => NewEntryKey()).ToList());
+        }
+
+        private static long _lastEntryKey;
+
+        private static long NewEntryKey() => Interlocked.Increment(ref _lastEntryKey);
 
         // Read-only so that every mutation has to go through the methods below,
         // which are what bump UpdatedAt and raise Changed. It used to be a bare
@@ -218,7 +238,7 @@ namespace Flower.Models
         // playlist without bumping UpdatedAt at all, and PlaylistSyncPlanner
         // (which decides "did this side change?" purely from UpdatedAt against
         // a per-peer baseline) never saw the reorder and never propagated it.
-        public IReadOnlyList<Track> Tracks => _tracks;
+        public IReadOnlyList<Track> Tracks => _entries.Tracks;
 
         // Raised after any mutation that bumps UpdatedAt. Library subscribes to
         // every playlist it holds and relays this as Library.PlaylistsChanged,
@@ -306,7 +326,7 @@ namespace Flower.Models
             // own "previous" snapshot from a list that had *already* been overwritten
             // with the fresh (PlayCount/DateAdded/ImportedPlayCount-defaulted) data -
             // silently discarding whatever was actually there, every single rescan.
-            _tracks = new List<Track>(tracks);
+            _entries = new EntryList(new List<Track>(tracks), null);
             _absent = absent is { Count: > 0 } ? [.. absent] : [];
             UpdatedAt = updatedAt;
         }
@@ -321,23 +341,38 @@ namespace Flower.Models
         // worked out again.
         public readonly record struct AbsentEntry(Guid TrackId, Guid? After);
 
-        // Copy-on-write like _tracks, and written after it, so that a save
-        // reading this first and _tracks second (Slots) can at worst see an
+        // Copy-on-write like _entries, and written after it, so that a save
+        // reading this first and _entries second (Slots) can at worst see an
         // entry in both, which it drops, and never in neither.
         private List<AbsentEntry> _absent;
 
         // Every entry in order, present or not: what is stored.
         public IEnumerable<Guid> StoredTrackIds() => Slots().Select(slot => slot.Id);
 
-        private List<(Guid Id, Track? Track)> Slots()
+        // One entry of this playlist. A song in a playlist twice is two
+        // entries with one TrackId, and Key is what tells them apart across
+        // edits: it stays with its entry through moves and removals of others.
+        // Only for this object and this run of the app, so a copy that arrived
+        // by sync shares no keys with the one it replaced. 0 for an absent
+        // entry, which has no key until its song is back.
+        public readonly record struct StoredEntry(Guid TrackId, long Key);
+
+        public List<StoredEntry> StoredEntries() =>
+            Slots(withKeys: true).Select(slot => new StoredEntry(slot.Id, slot.Key)).ToList();
+
+        private List<(Guid Id, Track? Track, long Key)> Slots(bool withKeys = false)
         {
             var absent = _absent;
-            var tracks = _tracks;
-            var slots = new List<(Guid Id, Track? Track)>(tracks.Count + absent.Count);
+            var entries = _entries;
+            var tracks = entries.Tracks;
+            var keys = withKeys ? entries.Keys : entries.KnownKeys;
+            long KeyAt(int slot) => keys?[slot] ?? 0;
+
+            var slots = new List<(Guid Id, Track? Track, long Key)>(tracks.Count + absent.Count);
             if (absent.Count == 0)
             {
-                foreach (var track in tracks)
-                    slots.Add((track.Id, track));
+                for (var i = 0; i < tracks.Count; i++)
+                    slots.Add((tracks[i].Id, tracks[i], KeyAt(i)));
                 return slots;
             }
 
@@ -346,33 +381,35 @@ namespace Flower.Models
             void Emit(Guid? after)
             {
                 foreach (var entry in waiting.Where(e => e.After == after))
-                    slots.Add((entry.TrackId, null));
+                    slots.Add((entry.TrackId, null, 0));
                 waiting.RemoveAll(e => e.After == after);
             }
 
             Emit(null);
-            foreach (var track in tracks)
+            for (var i = 0; i < tracks.Count; i++)
             {
-                slots.Add((track.Id, track));
-                Emit(track.Id);
+                slots.Add((tracks[i].Id, tracks[i], KeyAt(i)));
+                Emit(tracks[i].Id);
             }
 
             // What they followed has left the playlist since.
             foreach (var entry in waiting)
-                slots.Add((entry.TrackId, null));
+                slots.Add((entry.TrackId, null, 0));
             return slots;
         }
 
-        private void SetSlots(List<(Guid Id, Track? Track)> slots)
+        private void SetSlots(List<(Guid Id, Track? Track, long Key)> slots)
         {
             var tracks = new List<Track>(slots.Count);
+            var keys = _entries.KnownKeys == null ? null : new List<long>(slots.Count);
             var absent = new List<AbsentEntry>();
             Guid? after = null;
-            foreach (var (id, track) in slots)
+            foreach (var (id, track, key) in slots)
             {
                 if (track != null)
                 {
                     tracks.Add(track);
+                    keys?.Add(key != 0 ? key : NewEntryKey());
                     after = id;
                 }
                 else
@@ -381,24 +418,24 @@ namespace Flower.Models
                 }
             }
 
-            _tracks = tracks;
+            _entries = new EntryList(tracks, keys);
             _absent = absent;
         }
 
         // Entries have been removed: an absent entry that followed one of them
         // now follows whatever came before it, rather than falling to the end.
-        private void SetTracksKeepingAbsentInPlace(List<Track> next)
+        private void SetTracksKeepingAbsentInPlace(List<Track> next, List<long>? nextKeys)
         {
             if (_absent.Count == 0)
             {
-                _tracks = next;
+                _entries = new EntryList(next, nextKeys);
                 return;
             }
 
             var remaining = next.GroupBy(t => t.Id).ToDictionary(g => g.Key, g => g.Count());
             var absent = new List<AbsentEntry>();
             Guid? after = null;
-            foreach (var (id, track) in Slots())
+            foreach (var (id, track, _) in Slots())
             {
                 if (track == null)
                 {
@@ -411,8 +448,26 @@ namespace Flower.Models
                 }
             }
 
-            _tracks = next;
+            _entries = new EntryList(next, nextKeys);
             _absent = absent;
+        }
+
+        // The entries and keys left once `leaves` says which slots go.
+        private (List<Track> Tracks, List<long>? Keys) Without(Func<int, bool> leaves)
+        {
+            var entries = _entries;
+            var known = entries.KnownKeys;
+            var tracks = new List<Track>(entries.Tracks.Count);
+            var keys = known == null ? null : new List<long>(known.Count);
+            for (var i = 0; i < entries.Tracks.Count; i++)
+            {
+                if (leaves(i))
+                    continue;
+
+                tracks.Add(entries.Tracks[i]);
+                keys?.Add(known![i]);
+            }
+            return (tracks, keys);
         }
 
         // A newer copy of this playlist taking over from `previous` (a sync
@@ -431,15 +486,24 @@ namespace Flower.Models
 
         public void InsertTrack(int index, Track track)
         {
-            var next = new List<Track>(_tracks);
+            var entries = _entries;
+            var next = new List<Track>(entries.Tracks);
             next.Insert(index, track);
-            _tracks = next;
+            List<long>? keys = null;
+            if (entries.KnownKeys is { } known)
+            {
+                keys = new List<long>(known);
+                keys.Insert(index, NewEntryKey());
+            }
+            _entries = new EntryList(next, keys);
             Touch();
         }
 
         public void AppendTrack(Track track)
         {
-            _tracks = new List<Track>(_tracks) { track };
+            var entries = _entries;
+            var keys = entries.KnownKeys is { } known ? new List<long>(known) { NewEntryKey() } : null;
+            _entries = new EntryList(new List<Track>(entries.Tracks) { track }, keys);
             Touch();
         }
 
@@ -449,19 +513,13 @@ namespace Flower.Models
         // say which of the two was meant. Returns whether anything went.
         public bool RemoveEntriesAt(IReadOnlyCollection<int> slots)
         {
-            var tracks = _tracks;
-            var doomed = slots.Where(slot => slot >= 0 && slot < tracks.Count).ToHashSet();
+            var count = _entries.Tracks.Count;
+            var doomed = slots.Where(slot => slot >= 0 && slot < count).ToHashSet();
             if (doomed.Count == 0)
                 return false;
 
-            var next = new List<Track>(tracks.Count - doomed.Count);
-            for (var i = 0; i < tracks.Count; i++)
-            {
-                if (!doomed.Contains(i))
-                    next.Add(tracks[i]);
-            }
-
-            SetTracksKeepingAbsentInPlace(next);
+            var (next, keys) = Without(doomed.Contains);
+            SetTracksKeepingAbsentInPlace(next, keys);
             Touch();
             return true;
         }
@@ -471,17 +529,19 @@ namespace Flower.Models
         // Library.RemoveTracks.
         public void RemoveTracks(IReadOnlySet<Guid> ids)
         {
-            if (!_tracks.Any(t => ids.Contains(t.Id)))
+            var tracks = _entries.Tracks;
+            if (!tracks.Any(t => ids.Contains(t.Id)))
                 return;
 
             _absent = _absent.Where(e => !ids.Contains(e.TrackId)).ToList();
-            SetTracksKeepingAbsentInPlace(_tracks.Where(t => !ids.Contains(t.Id)).ToList());
+            var (next, keys) = Without(slot => ids.Contains(tracks[slot].Id));
+            SetTracksKeepingAbsentInPlace(next, keys);
             Touch();
         }
 
         public void ReplaceAll(List<Track> tracks)
         {
-            _tracks = new List<Track>(tracks);
+            _entries = new EntryList(new List<Track>(tracks), null);
             Touch();
         }
 
@@ -500,7 +560,8 @@ namespace Flower.Models
         // drag-reorder ends.
         public bool MoveEntry(int from, int insertBefore)
         {
-            var tracks = _tracks;
+            var entries = _entries;
+            var tracks = entries.Tracks;
             if (from < 0 || from >= tracks.Count || insertBefore < 0 || insertBefore > tracks.Count)
                 return false;
 
@@ -512,7 +573,17 @@ namespace Flower.Models
             var moved = next[from];
             next.RemoveAt(from);
             next.Insert(target, moved);
-            _tracks = next;
+
+            List<long>? keys = null;
+            if (entries.KnownKeys is { } known)
+            {
+                keys = new List<long>(known);
+                var key = keys[from];
+                keys.RemoveAt(from);
+                keys.Insert(target, key);
+            }
+
+            _entries = new EntryList(next, keys);
             Touch();
             return true;
         }
@@ -527,13 +598,14 @@ namespace Flower.Models
         // its id again, which is no more an edit than the rest of this.
         internal void RebindTracks(Func<Track, Track?> current, Func<Guid, Track?> byId)
         {
-            var next = new List<Track>(_tracks);
+            var entries = _entries;
+            var next = new List<Track>(entries.Tracks);
             for (var i = 0; i < next.Count; i++)
             {
                 if (current(next[i]) is { } replacement)
                     next[i] = replacement;
             }
-            _tracks = next;
+            _entries = new EntryList(next, entries.KnownKeys);
 
             if (_absent.Count == 0)
                 return;
@@ -542,7 +614,7 @@ namespace Flower.Models
             for (var i = 0; i < slots.Count; i++)
             {
                 if (slots[i].Track == null && byId(slots[i].Id) is { } back)
-                    slots[i] = (slots[i].Id, back);
+                    slots[i] = (slots[i].Id, back, 0);
             }
             SetSlots(slots);
         }
@@ -566,12 +638,13 @@ namespace Flower.Models
         // reason (VibePlaylistPools, and a paired device taking its server's).
         public bool Materialize(IReadOnlyList<Track> tracks)
         {
-            if (_tracks.Count == tracks.Count)
+            var current = _entries.Tracks;
+            if (current.Count == tracks.Count)
             {
                 var identical = true;
                 for (var i = 0; i < tracks.Count; i++)
                 {
-                    if (ReferenceEquals(_tracks[i], tracks[i]))
+                    if (ReferenceEquals(current[i], tracks[i]))
                         continue;
 
                     identical = false;
@@ -582,7 +655,7 @@ namespace Flower.Models
                     return false;
             }
 
-            _tracks = new List<Track>(tracks);
+            _entries = new EntryList(new List<Track>(tracks), null);
             return true;
         }
 

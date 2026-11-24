@@ -4,7 +4,7 @@ Bugs a person using Flower would hit: data lost, the wrong thing done, a dead
 end, or behaviour that misleads. The `user-flow-review` skill finds them and
 keeps this list; `/release` treats every open **P0** here as blocking the tag.
 
-**Status:** 6 open (0 P0, 0 fix-now, 6 later), from the review of `ef6695fb`
+**Status:** 5 open (0 P0, 0 fix-now, 5 later), from the review of `ef6695fb`
 on 2026-11-22.
 
 Severities are the ones in `.claude/skills/release/REVIEW.md`. **Reproduced**
@@ -42,10 +42,3 @@ one playlist onto another. `Flower/Controls/MusicListView.axaml.cs:579`.
 Adding 5,000 songs took 22 seconds, because each one rewrites every playlist on
 the UI thread. `Flower/ViewModels/PlaylistManagementViewModel.cs:538`.
 *Direction:* append the batch as one edit.
-
-**UF-17. A queue can land on the wrong copy of a song in a playlist twice.** *Read.*
-The queue works out which entry an edit changed from the playlist's old and new
-order. It cannot tell two copies apart when they end up side by side, or when one
-selection removes some copies of a song but not all, so the song playing can be
-treated as the copy that left. `Flower/Services/QueueFollowsPlaylist.cs`.
-*Direction:* carry the edited slots from `Playlist` to the queue.

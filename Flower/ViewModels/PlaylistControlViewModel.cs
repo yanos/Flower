@@ -534,7 +534,7 @@ namespace Flower.ViewModels
         public void SetCurrentPlaylist(Playlist playlist, Playlist? source = null, bool followsOrder = false)
         {
             _currentPlaylist = playlist;
-            _queueSource = source == null ? null : new QueueSource(source.Id, followsOrder, source.StoredTrackIds().ToList());
+            _queueSource = source == null ? null : FollowFrom(source, followsOrder, playlist.Tracks, savedSlots: null);
             _playingHasLeft = false;
 
             // Playing anything else ends a Vibe Playlist's endless queue; the
@@ -559,13 +559,13 @@ namespace Flower.ViewModels
         // second of two identical entries actually anchors to the second.
         public int QueueIndex => ResolveQueueIndex(CurrentlyPlayingTrack);
 
-        // Which copy of the playing song is the one playing, counting from 0:
-        // how many slots ahead of its own in the queue hold the same song. A
-        // list that holds it twice (a playlist with a song added twice) marks
-        // only that copy as playing - its own k-th - rather than every row
-        // with its Id. The queue was made from that list when one of its rows
-        // was played (SyncPlayQueueToCurrentView), and songs lined up since
-        // only ever go in after the one playing, so the count carries over.
+        // Which copy of the playing song is the one playing, counting from 0.
+        // A list that holds it twice (a playlist with a song added twice)
+        // marks only that copy as playing - its own k-th - rather than every
+        // row with its Id. In the playlist the queue follows, that is the entry
+        // its row came from. Otherwise it is how many slots ahead of its own
+        // in the queue hold the same song: the queue was made from that list
+        // when one of its rows was played (SyncPlayQueueToCurrentView).
         public int CurrentlyPlayingOccurrence
         {
             get
@@ -573,6 +573,18 @@ namespace Flower.ViewModels
                 var index = QueueIndex;
                 if (index < 0 || CurrentlyPlayingTrack is not { } playing)
                     return 0;
+
+                if (_queueSource is { } followed && followed.Origins[index] is >= 0 and var origin)
+                {
+                    var copy = 0;
+                    for (var i = 0; i < origin; i++)
+                    {
+                        if (followed.Seen[i].TrackId == playing.Id)
+                            copy++;
+                    }
+                    return copy;
+                }
+
                 var tracks = _currentPlaylist.Tracks;
                 var occurrence = 0;
                 for (var i = 0; i < index; i++)
@@ -854,6 +866,7 @@ namespace Flower.ViewModels
                 queue.Add(next);
 
             _logger.LogInformation("Endless Play: adding {Count} songs like the last few", queue.Count - tracks.Count);
+            _queueSource?.Origins.AddRange(Enumerable.Repeat(-1, queue.Count - tracks.Count));
             if (_ranOut && _parked)
             {
                 // Ran out while asking: carry on from the first of them.
@@ -929,6 +942,11 @@ namespace Flower.ViewModels
                 queue = [current];
                 index = 0;
                 _linedUpCount = 0;
+                if (_queueSource is { } followed)
+                {
+                    followed.Origins.Clear();
+                    followed.Origins.Add(-1);
+                }
             }
 
             int at;
@@ -940,6 +958,7 @@ namespace Flower.ViewModels
                 at = queue.Count;
 
             queue.InsertRange(at, tracks);
+            _queueSource?.Origins.InsertRange(at, Enumerable.Repeat(-1, tracks.Count));
             if (at <= index + 1 + _linedUpCount)
                 _linedUpCount += tracks.Count;
 
@@ -979,6 +998,12 @@ namespace Flower.ViewModels
             queue.RemoveAt(from);
             var target = insertBefore > from ? insertBefore - 1 : insertBefore;
             queue.Insert(target, track);
+            if (_queueSource is { } followed)
+            {
+                var origin = followed.Origins[from];
+                followed.Origins.RemoveAt(from);
+                followed.Origins.Insert(target, origin);
+            }
 
             // Only something moved from before the playing song to after it
             // shifts it - a move behind it, or between two songs after it,
@@ -1001,6 +1026,7 @@ namespace Flower.ViewModels
             if (index >= 0 && slot > index && slot <= index + _linedUpCount)
                 _linedUpCount--;
             queue.RemoveAt(slot);
+            _queueSource?.Origins.RemoveAt(slot);
             if (index >= 0 && slot < index)
                 index--;
 
@@ -1025,6 +1051,12 @@ namespace Flower.ViewModels
                 _shufflePlayedOrder.Add(current.Id);
             }
             _logger.LogInformation("Cleared the queue");
+            if (_queueSource is { } followed)
+            {
+                var origin = QueueIndex is >= 0 and var at ? followed.Origins[at] : -1;
+                followed.Origins.Clear();
+                followed.Origins.Add(origin);
+            }
             ReplaceQueueKeepingPlace([current], 0);
         }
 
@@ -1060,9 +1092,23 @@ namespace Flower.ViewModels
 
         // The playlist this queue was played from, by id because a sync
         // replaces the Playlist object, and its entries as last followed.
-        private sealed record QueueSource(Guid Id, bool FollowsOrder, List<Guid> Seen);
+        // Origins runs alongside the queue: for each row, the slot in Seen of
+        // the entry it came from, or -1 for a song lined up by hand. Every
+        // edit to the queue edits it too.
+        private sealed record QueueSource(
+            Guid Id, bool FollowsOrder, List<Playlist.StoredEntry> Seen, List<int> Origins);
 
         private QueueSource? _queueSource;
+
+        private static QueueSource FollowFrom(
+            Playlist source, bool followsOrder, IReadOnlyList<Track> queue, List<int>? savedSlots)
+        {
+            var seen = source.StoredEntries();
+            var origins = savedSlots != null && QueueFollowsPlaylist.OriginsFit(queue, savedSlots, seen)
+                ? savedSlots
+                : QueueFollowsPlaylist.OriginsIn(queue, seen);
+            return new QueueSource(source.Id, followsOrder, seen, origins);
+        }
 
         // The song playing left the library or the playlist the queue follows.
         // It plays to its end, as a song taken out of the queue by hand would,
@@ -1083,14 +1129,19 @@ namespace Flower.ViewModels
                 return;
             }
 
-            var now = source.StoredTrackIds().ToList();
+            var now = source.StoredEntries();
             if (now.SequenceEqual(followed.Seen))
                 return;
 
-            _queueSource = followed with { Seen = now };
             var edit = QueueFollowsPlaylist.Apply(
-                _currentPlaylist.Tracks, QueueIndex, _linedUpCount, _playingHasLeft, followed.FollowsOrder,
-                followed.Seen, now, source.Tracks);
+                _currentPlaylist.Tracks, followed.Origins, QueueIndex, _linedUpCount, _playingHasLeft,
+                followed.FollowsOrder, followed.Seen, now, source.Tracks);
+            _queueSource = followed with { Seen = now, Origins = edit.Origins };
+
+            // The same entries in a new object: a sync that changed nothing here.
+            if (!edit.Changed)
+                return;
+
             _playingHasLeft = edit.PlayingLeft;
 
             // Parked, there is nothing to finish: the place moves on now.
@@ -1122,6 +1173,7 @@ namespace Flower.ViewModels
             var finishes = currentLeft && !_parked;
 
             var queue = new List<Track>(tracks.Count);
+            var origins = new List<int>(tracks.Count);
             var place = -1;
             var keptBefore = 0;
             var linedUp = 0;
@@ -1130,6 +1182,8 @@ namespace Flower.ViewModels
                 if (ids.Contains(tracks[i].Id) && !(i == index && finishes))
                     continue;
 
+                if (_queueSource is { } source)
+                    origins.Add(source.Origins[i]);
                 if (i == index)
                     place = queue.Count;
                 else if (i < index)
@@ -1141,6 +1195,8 @@ namespace Flower.ViewModels
 
             _logger.LogInformation("Took {Count} removed songs out of the queue", tracks.Count - queue.Count);
             _playingHasLeft |= finishes;
+            if (_queueSource is { } followed)
+                _queueSource = followed with { Origins = origins };
 
             if (currentLeft && _parked)
             {
@@ -1158,19 +1214,25 @@ namespace Flower.ViewModels
         }
 
         // Takes the song that left out of the queue now that it is being left,
-        // answering where `slot` is afterwards.
-        private int LetGoOfLeftSong(int slot)
+        // answering where `slot` is afterwards. leftAt is the row it was
+        // playing from, when the place has already moved on: by then a search
+        // for the song could find its twin.
+        private int LetGoOfLeftSong(int slot, int leftAt = -1)
         {
             if (!_playingHasLeft)
                 return slot;
 
             _playingHasLeft = false;
-            var at = ResolveQueueIndex(CurrentlyPlayingTrack);
+            var tracks = _currentPlaylist.Tracks;
+            var at = leftAt >= 0 && leftAt < tracks.Count && tracks[leftAt] == CurrentlyPlayingTrack
+                ? leftAt
+                : ResolveQueueIndex(CurrentlyPlayingTrack);
             if (at < 0)
                 return slot;
 
             var queue = new List<Track>(_currentPlaylist.Tracks);
             queue.RemoveAt(at);
+            _queueSource?.Origins.RemoveAt(at);
             var moved = slot > at ? slot - 1 : slot == at ? -1 : slot;
             _currentPlaylist = new Playlist("Now Playing Queue", queue);
             _queueIndex = moved;
@@ -1361,8 +1423,9 @@ namespace Flower.ViewModels
                 OnPropertyChanged(nameof(LinedUpCount));
             }
 
-            if (track != CurrentlyPlayingTrack)
-                _queueIndex = LetGoOfLeftSong(_queueIndex);
+            // The other copy of the song counts as moving on, too.
+            if (track != CurrentlyPlayingTrack || _queueIndex != previousIndex)
+                _queueIndex = LetGoOfLeftSong(_queueIndex, previousIndex);
 
             // Every start of playback ages out any earlier one still waiting on
             // a stream URL - see StartWhenResolved.
@@ -2070,19 +2133,23 @@ namespace Flower.ViewModels
             foreach (var track in _currentPlaylist.Tracks)
                 ids.Add(track.Id);
 
+            // A copy, since the save runs off this thread.
+            List<int>? slots = _queueSource is { } followed ? [.. followed.Origins] : null;
+
             // Quit during a song that has left: the next launch comes back to
             // the song after it, since it cannot come back to this one.
             if (_playingHasLeft)
             {
                 ids.RemoveAt(index);
+                slots?.RemoveAt(index);
                 if (ids.Count == 0)
                     return null;
                 return new PlayQueueState(ids, Math.Min(index, ids.Count - 1), 0, Math.Max(0, _linedUpCount - 1),
-                    _queueSource?.Id, _queueSource?.FollowsOrder ?? false);
+                    _queueSource?.Id, _queueSource?.FollowsOrder ?? false, slots);
             }
 
             return new PlayQueueState(ids, index, _playheadMs, _linedUpCount,
-                _queueSource?.Id, _queueSource?.FollowsOrder ?? false);
+                _queueSource?.Id, _queueSource?.FollowsOrder ?? false, slots);
         }
 
         private void SaveQueue(bool synchronously = false)
@@ -2132,12 +2199,14 @@ namespace Flower.ViewModels
                 byId.TryAdd(track.Id, track);
 
             var queue = new List<Track>(state.TrackIds.Count);
+            var savedSlots = state.SourceSlots?.Count == state.TrackIds.Count ? new List<int>(queue.Capacity) : null;
             var index = -1;
             var linedUp = 0;
             for (var i = 0; i < state.TrackIds.Count; i++)
             {
                 if (!byId.TryGetValue(state.TrackIds[i], out var track))
                     continue;
+                savedSlots?.Add(state.SourceSlots![i]);
                 if (i == state.Index)
                     index = queue.Count;
                 else if (i > state.Index && i <= state.Index + state.LinedUpCount)
@@ -2151,7 +2220,7 @@ namespace Flower.ViewModels
             _currentPlaylist = new Playlist("Now Playing Queue", queue);
             _queueSource = state.SourcePlaylistId is { } sourceId
                 && _library.Playlists.FirstOrDefault(p => p.Id == sourceId) is { IsOrdinary: true } source
-                    ? new QueueSource(sourceId, state.SourceFollowsOrder, source.StoredTrackIds().ToList())
+                    ? FollowFrom(source, state.SourceFollowsOrder, queue, savedSlots)
                     : null;
             _linedUpCount = linedUp;
             OnPropertyChanged(nameof(CurrentPlaylist));

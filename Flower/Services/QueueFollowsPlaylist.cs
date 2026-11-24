@@ -19,81 +19,117 @@ namespace Flower.Services;
 //     stay straight after the song playing, and songs added at the end stay
 //     after the playlist's own.
 //
-// Ids rather than tracks for the two orders, and all of a playlist's entries:
-// a song on an unplugged drive is not in Playlist.Tracks, and has not left.
+// All of a playlist's entries rather than its tracks: a song on an unplugged
+// drive is not in Playlist.Tracks, and has not left.
 //
 // A song in the playlist twice is two entries, and an edit is to one of them.
-// The two orders are all that arrives, from a drag, a menu or another device
-// alike, so Align works out which entry went where. The nth copy of a song in
-// the queue is taken to be its nth copy in the playlist.
+// So each queue row keeps its origin, the slot of the entry it came from in
+// `before` (-1 for one that is not the playlist's), and the entries' keys say
+// where each of them went. A copy that arrived from another device has no keys
+// in common with this one, and only its order to go on (AlignByOrder).
 public static class QueueFollowsPlaylist
 {
-    public readonly record struct Result(List<Track> Queue, int Place, bool PlayingLeft);
+    public readonly record struct Result(
+        List<Track> Queue, int Place, bool PlayingLeft, List<int> Origins, bool Changed);
 
-    private sealed class Entry(Track track, bool isPlaying)
+    private sealed class Entry(Track track, bool isPlaying, int origin)
     {
         public Track Track { get; } = track;
         public bool IsPlaying { get; } = isPlaying;
-        public bool IsPlaylists { get; set; }
 
-        // Which copy of its song this is, or -1 for the song playing after it
-        // has left the playlist.
-        public int Copy { get; set; } = -1;
+        // Its slot in the playlist as it is now, or -1.
+        public int Origin { get; set; } = origin;
+    }
+
+    // The entries a queue just made from a playlist came from: the queue was
+    // built from the playlist's rows, and a sort or filter keeps a song's
+    // copies in order, so its nth copy here is the nth copy there.
+    public static List<int> OriginsIn(IReadOnlyList<Track> queue, IReadOnlyList<Playlist.StoredEntry> entries)
+    {
+        var waiting = new Dictionary<Guid, Queue<int>>();
+        for (var slot = 0; slot < entries.Count; slot++)
+        {
+            if (!waiting.TryGetValue(entries[slot].TrackId, out var slots))
+                waiting[entries[slot].TrackId] = slots = new Queue<int>();
+            slots.Enqueue(slot);
+        }
+
+        var origins = new List<int>(queue.Count);
+        foreach (var track in queue)
+            origins.Add(waiting.TryGetValue(track.Id, out var slots) && slots.Count > 0 ? slots.Dequeue() : -1);
+        return origins;
+    }
+
+    // Whether saved origins still describe this queue and these entries: each
+    // names a distinct entry holding the song in its row.
+    public static bool OriginsFit(
+        IReadOnlyList<Track> queue, IReadOnlyList<int> origins, IReadOnlyList<Playlist.StoredEntry> entries)
+    {
+        if (origins.Count != queue.Count)
+            return false;
+
+        var used = new HashSet<int>();
+        for (var i = 0; i < queue.Count; i++)
+        {
+            var origin = origins[i];
+            if (origin == -1)
+                continue;
+            if (origin < 0 || origin >= entries.Count || entries[origin].TrackId != queue[i].Id || !used.Add(origin))
+                return false;
+        }
+        return true;
     }
 
     public static Result Apply(
-        IReadOnlyList<Track> queue, int playing, int linedUp, bool playingHasLeft, bool followsOrder,
-        IReadOnlyList<Guid> before, IReadOnlyList<Guid> after, IReadOnlyList<Track> present)
+        IReadOnlyList<Track> queue, IReadOnlyList<int> origins, int playing, int linedUp, bool playingHasLeft,
+        bool followsOrder, IReadOnlyList<Playlist.StoredEntry> before, IReadOnlyList<Playlist.StoredEntry> after,
+        IReadOnlyList<Track> present)
     {
-        var block = new List<Track>();
-        var entries = new List<Entry>(queue.Count);
-        for (var i = 0; i < queue.Count; i++)
-        {
-            if (playing >= 0 && i > playing && i <= playing + linedUp)
-                block.Add(queue[i]);
-            else
-                entries.Add(new Entry(queue[i], i == playing));
-        }
+        var playingOrigin = playing >= 0 && !playingHasLeft ? origins[playing] : -1;
+        var sources = Align(before, after, playingOrigin);
+        if (IsSameOrder(sources, before.Count))
+            return new Result([.. queue], playing, playingHasLeft, [.. origins], Changed: false);
 
-        var sources = Align(before, after);
-        var copyOf = CopyNumbers(before);
-        var survivors = new HashSet<(Guid Id, int Copy)>();
-        foreach (var source in sources)
+        var movedTo = new int[before.Count];
+        Array.Fill(movedTo, -1);
+        for (var slot = 0; slot < sources.Length; slot++)
         {
-            if (source >= 0)
-                survivors.Add((before[source], copyOf[source]));
+            if (sources[slot] >= 0)
+                movedTo[sources[slot]] = slot;
         }
 
         var left = playingHasLeft;
-        var kept = new List<Entry>(entries.Count);
-        var copies = new Dictionary<Guid, int>();
-        var inBefore = Count(before);
-        foreach (var entry in entries)
+        var block = new List<Entry>();
+        var kept = new List<Entry>(queue.Count);
+        for (var i = 0; i < queue.Count; i++)
         {
-            if (!(entry.IsPlaying && playingHasLeft))
+            var isPlaying = i == playing;
+            var origin = origins[i];
+            var now = origin >= 0 ? movedTo[origin] : -1;
+
+            if (playing >= 0 && i > playing && i <= playing + linedUp)
             {
-                var copy = copies.GetValueOrDefault(entry.Track.Id);
-                copies[entry.Track.Id] = copy + 1;
-                entry.Copy = copy;
-                if (copy < inBefore.GetValueOrDefault(entry.Track.Id) && !survivors.Contains((entry.Track.Id, copy)))
-                {
-                    if (!entry.IsPlaying)
-                        continue;
-                    left = true;
-                }
+                block.Add(new Entry(queue[i], false, now));
             }
-            kept.Add(entry);
+            else if (isPlaying && playingHasLeft)
+            {
+                kept.Add(new Entry(queue[i], true, -1));
+            }
+            else if (origin >= 0 && now < 0)
+            {
+                if (!isPlaying)
+                    continue;
+                left = true;
+                kept.Add(new Entry(queue[i], true, -1));
+            }
+            else
+            {
+                kept.Add(new Entry(queue[i], isPlaying, now));
+            }
         }
 
-        foreach (var entry in kept)
-        {
-            if (entry.IsPlaying && left)
-                continue;
-            entry.IsPlaylists = survivors.Contains((entry.Track.Id, entry.Copy));
-        }
-
-        var own = kept.Where(e => e.IsPlaylists).ToList();
-        var arranged = Arrange(own, followsOrder, before, after, sources, copyOf, present);
+        var own = kept.Where(e => e.Origin >= 0).ToList();
+        var arranged = Arrange(own, followsOrder, after, sources, present);
 
         // What is not the playlist's follows the song it followed. Songs past
         // the last of the playlist's stay past it, whatever joins, except the
@@ -105,7 +141,7 @@ public static class QueueFollowsPlaylist
         var seen = 0;
         foreach (var entry in kept)
         {
-            if (entry.IsPlaylists)
+            if (entry.Origin >= 0)
             {
                 previous = entry;
                 seen++;
@@ -132,23 +168,21 @@ public static class QueueFollowsPlaylist
         ordered.AddRange(tail);
 
         var place = ordered.FindIndex(e => e.IsPlaying);
-        var result = ordered.Select(e => e.Track).ToList();
         if (place >= 0)
-            result.InsertRange(place + 1, block);
-        return new Result(result, place, left);
+            ordered.InsertRange(place + 1, block);
+        return new Result(
+            ordered.Select(e => e.Track).ToList(), place, left, ordered.Select(e => e.Origin).ToList(), Changed: true);
     }
 
     private static List<Entry> Arrange(
-        List<Entry> own, bool followsOrder, IReadOnlyList<Guid> before, IReadOnlyList<Guid> after,
-        int[] sources, int[] copyOf, IReadOnlyList<Track> present)
+        List<Entry> own, bool followsOrder, IReadOnlyList<Playlist.StoredEntry> after, int[] sources,
+        IReadOnlyList<Track> present)
     {
         var byId = new Dictionary<Guid, Track>();
         foreach (var track in present)
             byId.TryAdd(track.Id, track);
 
-        var waiting = followsOrder
-            ? own.ToDictionary(entry => (entry.Track.Id, entry.Copy))
-            : [];
+        var waiting = followsOrder ? own.ToDictionary(entry => entry.Origin) : [];
 
         var arranged = new List<Entry>(own.Count);
         if (!followsOrder)
@@ -156,27 +190,111 @@ public static class QueueFollowsPlaylist
 
         for (var slot = 0; slot < after.Count; slot++)
         {
-            var source = sources[slot];
-            if (source >= 0)
+            if (sources[slot] >= 0)
             {
-                if (waiting.Remove((before[source], copyOf[source]), out var entry))
+                if (waiting.Remove(slot, out var entry))
                     arranged.Add(entry);
             }
             // Absent from the library right now: nothing to queue.
-            else if (byId.TryGetValue(after[slot], out var track))
+            else if (byId.TryGetValue(after[slot].TrackId, out var track))
             {
-                arranged.Add(new Entry(track, isPlaying: false) { IsPlaylists = true });
+                arranged.Add(new Entry(track, isPlaying: false, slot));
             }
         }
         return arranged;
     }
 
+    private static bool IsSameOrder(int[] sources, int beforeCount)
+    {
+        if (sources.Length != beforeCount)
+            return false;
+
+        for (var slot = 0; slot < sources.Length; slot++)
+        {
+            if (sources[slot] != slot)
+                return false;
+        }
+        return true;
+    }
+
     // For each slot of `after`, the slot of `before` it came from, or -1 for
-    // one that is new. Exact for what a single gesture does - entries removed,
-    // entries added, one entry moved - except that twin copies ending up side
-    // by side cannot be told apart. Anything else, which only a sync brings,
+    // one that is new.
+    private static int[] Align(
+        IReadOnlyList<Playlist.StoredEntry> before, IReadOnlyList<Playlist.StoredEntry> after, int playingOrigin)
+    {
+        var slotOfKey = new Dictionary<long, int>(before.Count);
+        for (var slot = 0; slot < before.Count; slot++)
+        {
+            if (before[slot].Key != 0)
+                slotOfKey[before[slot].Key] = slot;
+        }
+
+        var sources = new int[after.Count];
+        Array.Fill(sources, -1);
+        var claimed = new bool[before.Count];
+        var sharesKeys = false;
+        for (var slot = 0; slot < after.Count; slot++)
+        {
+            if (after[slot].Key != 0 && slotOfKey.TryGetValue(after[slot].Key, out var source))
+            {
+                sources[slot] = source;
+                claimed[source] = true;
+                sharesKeys = true;
+            }
+        }
+
+        if (!sharesKeys)
+        {
+            sources = AlignByOrder(before.Select(e => e.TrackId).ToList(), after.Select(e => e.TrackId).ToList());
+            KeepPlayingCopy(before, sources, playingOrigin);
+            return sources;
+        }
+
+        // A song back from an unplugged drive had no key while it was away.
+        var returning = new Dictionary<Guid, Queue<int>>();
+        for (var slot = 0; slot < before.Count; slot++)
+        {
+            if (claimed[slot] || before[slot].Key != 0)
+                continue;
+            if (!returning.TryGetValue(before[slot].TrackId, out var slots))
+                returning[before[slot].TrackId] = slots = new Queue<int>();
+            slots.Enqueue(slot);
+        }
+        for (var slot = 0; slot < after.Count; slot++)
+        {
+            if (sources[slot] < 0 && returning.TryGetValue(after[slot].TrackId, out var slots) && slots.Count > 0)
+                sources[slot] = slots.Dequeue();
+        }
+        return sources;
+    }
+
+    // Copies side by side look the same from another device, so when one of
+    // them went there is no saying which. It is not the one playing.
+    private static void KeepPlayingCopy(IReadOnlyList<Playlist.StoredEntry> before, int[] sources, int playingOrigin)
+    {
+        if (playingOrigin < 0 || playingOrigin >= before.Count || Array.IndexOf(sources, playingOrigin) >= 0)
+            return;
+
+        var id = before[playingOrigin].TrackId;
+        foreach (var step in new[] { -1, 1 })
+        {
+            for (var twin = playingOrigin + step; twin >= 0 && twin < before.Count && before[twin].TrackId == id; twin += step)
+            {
+                var slot = Array.IndexOf(sources, twin);
+                if (slot < 0)
+                    continue;
+
+                sources[slot] = playingOrigin;
+                return;
+            }
+        }
+    }
+
+    // The same, from the two orders alone. Exact for what a single gesture
+    // does - entries removed, entries added, one entry moved - except that
+    // twin copies ending up side by side cannot be told apart. Anything else
     // pairs the nth copy of a song with its nth copy.
-    private static int[] Align(IReadOnlyList<Guid> before, IReadOnlyList<Guid> after)
+    private static int[] AlignByOrder(IReadOnlyList<Guid> before, IReadOnlyList<Guid> after)
     {
         var sources = new int[after.Count];
         Array.Fill(sources, -1);
@@ -286,25 +404,5 @@ public static class QueueFollowsPlaylist
                 return false;
         }
         return true;
-    }
-
-    private static int[] CopyNumbers(IReadOnlyList<Guid> ids)
-    {
-        var seen = new Dictionary<Guid, int>();
-        var copies = new int[ids.Count];
-        for (var i = 0; i < ids.Count; i++)
-        {
-            copies[i] = seen.GetValueOrDefault(ids[i]);
-            seen[ids[i]] = copies[i] + 1;
-        }
-        return copies;
-    }
-
-    private static Dictionary<Guid, int> Count(IReadOnlyList<Guid> ids)
-    {
-        var counts = new Dictionary<Guid, int>();
-        foreach (var id in ids)
-            counts[id] = counts.GetValueOrDefault(id) + 1;
-        return counts;
     }
 }

@@ -9,18 +9,21 @@ using Xunit;
 
 namespace Flower.Tests.Playback;
 
-// UF-8, for a queue following its playlist: an edit names one copy of a song in
-// the playlist twice, and the queue has to change that copy and not its twin.
+// UF-8, for a playlist edit that arrives as nothing but a new order, the way
+// another device's does: which copy of a song it changed comes from the order.
 public class QueueFollowsPlaylistCopiesTests
 {
     private static readonly Track A = new() { Title = "A" };
     private static readonly Track B = new() { Title = "B" };
     private static readonly Track C = new() { Title = "C" };
 
+    private static List<Playlist.StoredEntry> Unkeyed(Track[] tracks) =>
+        tracks.Select(t => new Playlist.StoredEntry(t.Id, 0)).ToList();
+
     private static QueueFollowsPlaylist.Result Edit(Track[] before, int playing, Track[] after) =>
         QueueFollowsPlaylist.Apply(
-            before, playing, linedUp: 0, playingHasLeft: false, followsOrder: true,
-            before.Select(t => t.Id).ToList(), after.Select(t => t.Id).ToList(), after);
+            before, Enumerable.Range(0, before.Length).ToList(), playing, linedUp: 0, playingHasLeft: false,
+            followsOrder: true, Unkeyed(before), Unkeyed(after), after);
 
     private static string[] Titles(QueueFollowsPlaylist.Result result) =>
         result.Queue.Select(t => t.Title!).ToArray();
