@@ -102,7 +102,7 @@ public class OriginPlaylistWriterTests
         await writer.InFlight;
 
         var push = Assert.Single(captured);
-        Assert.Equal(OriginPlaylistWriter.ChangesPath, push.Path);
+        Assert.Equal(PlaylistChangesClient.Path, push.Path);
         // The same gate GET /playlists sits behind - sending nothing here is a
         // 403 and an edit that silently never lands.
         Assert.Equal("session-token", push.Credential);

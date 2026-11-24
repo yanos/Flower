@@ -30,7 +30,7 @@ public sealed class SimulatedFlowerServer : IDisposable
     public const string LibraryPath = "/api/flower/v1/library";
     public const string ListeningPath = "/api/flower/v1/listening";
     public const string PlaylistsPath = "/api/flower/v1/playlists";
-    public const string ChangesPath = "/api/flower/v1/playlists/changes";
+    public const string ChangesPath = PlaylistChangesClient.Path;
     public const string TrackStatePath = "/api/flower/v1/track-state";
     public const string RemoveFromLibraryPath = "/api/admin/library/remove";
     public const string UploadsPath = "/api/admin/library/uploads";

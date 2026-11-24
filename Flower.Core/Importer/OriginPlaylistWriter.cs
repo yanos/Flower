@@ -2,8 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
-using System.Text;
-using System.Text.Json;
 using System.Threading.Tasks;
 
 using Microsoft.Extensions.Logging;
@@ -40,8 +38,6 @@ public sealed class OriginPlaylistWriter(
     IPeerCredentials credentials,
     ILogger<OriginPlaylistWriter> logger) : IPlaylistWriter
 {
-    public const string ChangesPath = "/api/flower/v1/playlists/changes";
-
     private readonly object _gate = new();
 
     // What the origin is believed to hold, by playlist: its revision and which
@@ -124,20 +120,8 @@ public sealed class OriginPlaylistWriter(
 
         try
         {
-            var body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(
-                new PlaylistChangesRequestDto(changes), PlaylistSyncJsonContext.Default.PlaylistChangesRequestDto));
-
-            using var request = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl.TrimEnd('/')}{ChangesPath}")
-            {
-                Content = new ByteArrayContent(body),
-            };
-            request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
-            await request.AddPeerCredentialsAsync(credentials, body);
-
-            using var response = await http.SendAsync(request);
-            response.EnsureSuccessStatusCode();
-            var answer = JsonSerializer.Deserialize(
-                await response.Content.ReadAsStringAsync(), PlaylistSyncJsonContext.Default.PlaylistChangesResponseDto);
+            var answer = await PlaylistChangesClient.PostAsync(
+                http, new Uri($"{baseUrl.TrimEnd('/')}{PlaylistChangesClient.Path}"), credentials, changes);
 
             lock (_gate)
             {

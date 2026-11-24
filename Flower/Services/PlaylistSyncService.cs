@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
-using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -452,20 +451,9 @@ public class PlaylistSyncService
         }
     }
 
-    private async Task<PlaylistChangesResponseDto?> PushAsync(DiscoveredDevice device, List<PlaylistChangeDto> changes)
-    {
-        var bodyBytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(
-            new PlaylistChangesRequestDto(changes), PlaylistSyncJsonContext.Default.PlaylistChangesRequestDto));
-        const string postPath = "/api/flower/v1/playlists/changes";
-        using var content = new ByteArrayContent(bodyBytes);
-        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
-        using var postRequest = new HttpRequestMessage(HttpMethod.Post, device.Url(postPath)) { Content = content };
-        await AddSignedIdentityHeadersAsync(postRequest, bodyBytes);
-        using var postResponse = await Http.SendAsync(postRequest);
-        postResponse.EnsureSuccessStatusCode();
-        return JsonSerializer.Deserialize(
-            await postResponse.Content.ReadAsStringAsync(), PlaylistSyncJsonContext.Default.PlaylistChangesResponseDto);
-    }
+    private Task<PlaylistChangesResponseDto?> PushAsync(DiscoveredDevice device, List<PlaylistChangeDto> changes) =>
+        PlaylistChangesClient.PostAsync(
+            Http, device.Url(PlaylistChangesClient.Path), _credentials, changes, closeConnection: true);
 
     // See Flower.Server's trust gate - every gated endpoint requires these.
     // ConnectionClose forces a fresh connection per request: a session is a
