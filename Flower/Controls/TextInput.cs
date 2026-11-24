@@ -1,4 +1,5 @@
 using System;
+using System.Windows.Input;
 
 using Avalonia;
 using Avalonia.Controls;
@@ -51,6 +52,21 @@ public class TextInput : TextBox
     {
         get => GetValue(ShowsClearButtonProperty);
         set => SetValue(ShowsClearButtonProperty, value);
+    }
+
+    public static readonly StyledProperty<ICommand?> EmptyClearCommandProperty =
+        AvaloniaProperty.Register<TextInput, ICommand?>(nameof(EmptyClearCommand));
+
+    /// <summary>
+    /// What the clear button does while the box is already empty, and whether
+    /// it is offered then: while the command can run. Track Info's box over
+    /// songs that disagree is empty, saying "Multiple values", and this is how
+    /// it is emptied for every song (TrackInfoField.Clear).
+    /// </summary>
+    public ICommand? EmptyClearCommand
+    {
+        get => GetValue(EmptyClearCommandProperty);
+        set => SetValue(EmptyClearCommandProperty, value);
     }
 
     private readonly Button _clearButton;
@@ -162,7 +178,10 @@ public class TextInput : TextBox
         };
         button.Click += (_, e) =>
         {
-            Clear();
+            if (string.IsNullOrEmpty(Text) && EmptyClearCommand is { } command && command.CanExecute(null))
+                command.Execute(null);
+            else
+                Clear();
             Focus();
             e.Handled = true;
         };
@@ -174,6 +193,14 @@ public class TextInput : TextBox
         base.OnPropertyChanged(change);
         if (change.Property == TextProperty || change.Property == ShowsClearButtonProperty)
             UpdateClearButton();
+        if (change.Property == EmptyClearCommandProperty)
+        {
+            if (change.GetOldValue<ICommand?>() is { } old)
+                old.CanExecuteChanged -= OnEmptyClearChanged;
+            if (change.GetNewValue<ICommand?>() is { } now)
+                now.CanExecuteChanged += OnEmptyClearChanged;
+            UpdateClearButton();
+        }
         if (change.Property == TextProperty)
             _session?.BoxTextChanged();
         // Kept off for good where the platform types: anything turning
@@ -187,5 +214,8 @@ public class TextInput : TextBox
     // the first character is typed: a collapsed child of the inner presenter
     // takes no width either way.
     private void UpdateClearButton() =>
-        _clearButton.IsVisible = ShowsClearButton && !string.IsNullOrEmpty(Text);
+        _clearButton.IsVisible = ShowsClearButton
+            && (!string.IsNullOrEmpty(Text) || EmptyClearCommand?.CanExecute(null) == true);
+
+    private void OnEmptyClearChanged(object? sender, EventArgs e) => UpdateClearButton();
 }

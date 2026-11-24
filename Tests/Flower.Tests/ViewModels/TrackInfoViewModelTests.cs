@@ -93,6 +93,34 @@ public class TrackInfoViewModelTests : PinnedDataDirectory
         Assert.Equal(["Debaser", "Tame"], songs.Select(s => s.Title));
     }
 
+    // UF-14: an empty box over songs that disagree leaves each as it is, so
+    // emptying the field for all of them is its own action.
+    [Fact]
+    public void Clearing_a_box_that_shows_multiple_values_empties_it_for_every_song()
+    {
+        var songs = new[] { Song("Debaser", album: "Doolittle"), Song("Gigantic", album: "Surfer Rosa") };
+        var info = Open(new Library([.. songs]), songs);
+        Assert.True(info.Album.OffersClear);
+
+        info.Album.ClearCommand.Execute(null);
+        info.Save();
+
+        Assert.All(songs, s => Assert.True(string.IsNullOrEmpty(s.Album)));
+        Assert.Equal(["Debaser", "Gigantic"], songs.Select(s => s.Title));
+        Assert.Empty(info.Save());
+    }
+
+    // A box all the songs agree on is cleared the ordinary way, by emptying it.
+    [Fact]
+    public void A_box_the_songs_agree_on_offers_no_separate_clear()
+    {
+        var songs = new[] { Song("Debaser"), Song("Tame") };
+        var info = Open(new Library([.. songs]), songs);
+
+        Assert.False(info.Album.OffersClear);
+        Assert.False(info.Album.ClearCommand.CanExecute(null));
+    }
+
     // Prev/Next saves on the way, and OK saves again: the second must not
     // write the same edit twice.
     [Fact]

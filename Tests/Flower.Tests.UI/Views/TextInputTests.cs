@@ -60,4 +60,31 @@ public class TextInputTests
         Assert.False(clear.IsVisible);
         window.Close();
     }
+
+    // UF-14: Track Info's box over songs that disagree is empty, and its x is
+    // how the field is emptied for every song - offered while that can be done.
+    [AvaloniaFact]
+    public void An_empty_box_offers_its_empty_clear_and_runs_it()
+    {
+        var (window, box) = Show();
+        var ran = 0;
+        var offered = true;
+        var command = new CommunityToolkit.Mvvm.Input.RelayCommand(() =>
+        {
+            ran++;
+            offered = false;
+        }, () => offered);
+        box.EmptyClearCommand = command;
+        Pump(window);
+
+        var clear = ClearButton(window);
+        Assert.True(clear.IsVisible);
+        clear.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+        command.NotifyCanExecuteChanged();
+        Pump(window);
+
+        Assert.Equal(1, ran);
+        Assert.False(clear.IsVisible);
+        window.Close();
+    }
 }

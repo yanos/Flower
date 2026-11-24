@@ -37,6 +37,10 @@ public sealed class TrackInfoViewModel : ViewModelBase
 {
     public const string MixedValues = "Multiple values";
 
+    // What a mixed box says once its clear button has emptied it for every
+    // song (TrackInfoField.Clear).
+    public const string ClearedValues = "Cleared for all songs";
+
     private static readonly DurationConverter DurationText = new();
 
     private readonly Library _library;

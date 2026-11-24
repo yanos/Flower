@@ -33,11 +33,6 @@ The same name and size counts as already there, and failed copies are only logge
 `Flower/Services/LibraryDrop.cs:115`, `Flower/ViewModels/MainViewModel.cs:3003`.
 *Direction:* compare content, and report what was not added.
 
-**UF-14. A field with mixed values cannot be cleared across several songs.** *Read.*
-An empty box means "leave unchanged", so there is no way to say "make this empty".
-`Flower/ViewModels/TrackInfoField.cs:39`.
-*Direction:* an explicit clear action on a mixed field.
-
 **UF-15. Dragging in a playlist is limited.** *Read.*
 A multi-selection moves only the grabbed row, and songs cannot be dragged from
 one playlist onto another. `Flower/Controls/MusicListView.axaml.cs:579`.

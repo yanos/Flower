@@ -328,15 +328,15 @@
           <StackPanel Spacing="10">
             <Grid ColumnDefinitions="88,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="10">
               <TextBlock Grid.Row="0" Classes="lbl" Text="Title" />
-              <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="TitleBox" Text="{Binding Title.Text, Mode=TwoWay}" PlaceholderText="{Binding Title.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val" />
+              <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="TitleBox" Text="{Binding Title.Text, Mode=TwoWay}" PlaceholderText="{Binding Title.Placeholder}" EmptyClearCommand="{Binding Title.ClearCommand}" IsEnabled="{Binding IsEditable}" Classes="val" />
               <TextBlock Grid.Row="1" Classes="lbl" Text="Artist" VerticalAlignment="Top" Margin="0,10,0,0" />
               <StackPanel Grid.Row="1" Grid.Column="1">
-                <controls:TextInput x:Name="ArtistBox" Text="{Binding Artists.Text, Mode=TwoWay}" PlaceholderText="{Binding Artists.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val" />
+                <controls:TextInput x:Name="ArtistBox" Text="{Binding Artists.Text, Mode=TwoWay}" PlaceholderText="{Binding Artists.Placeholder}" EmptyClearCommand="{Binding Artists.ClearCommand}" IsEnabled="{Binding IsEditable}" Classes="val" />
                 <WrapPanel x:Name="ArtistSuggestions" Classes="suggestions" Margin="0,6,0,0" IsVisible="False" />
               </StackPanel>
               <TextBlock Grid.Row="2" Classes="lbl" Text="Album" VerticalAlignment="Top" Margin="0,10,0,0" />
               <StackPanel Grid.Row="2" Grid.Column="1">
-                <controls:TextInput x:Name="AlbumBox" Text="{Binding Album.Text, Mode=TwoWay}" PlaceholderText="{Binding Album.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val" />
+                <controls:TextInput x:Name="AlbumBox" Text="{Binding Album.Text, Mode=TwoWay}" PlaceholderText="{Binding Album.Placeholder}" EmptyClearCommand="{Binding Album.ClearCommand}" IsEnabled="{Binding IsEditable}" Classes="val" />
                 <WrapPanel x:Name="AlbumSuggestions" Classes="suggestions" Margin="0,6,0,0" IsVisible="False" />
               </StackPanel>
             </Grid>
@@ -347,17 +347,17 @@
           <StackPanel Spacing="10">
             <Grid ColumnDefinitions="88,*,40,*" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="10">
               <TextBlock Grid.Row="0" Classes="lbl" Text="Track #" />
-              <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="TrackNumBox" Text="{Binding TrackNumber.Text, Mode=TwoWay}" PlaceholderText="{Binding TrackNumber.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val num" />
+              <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="TrackNumBox" Text="{Binding TrackNumber.Text, Mode=TwoWay}" PlaceholderText="{Binding TrackNumber.Placeholder}" EmptyClearCommand="{Binding TrackNumber.ClearCommand}" IsEnabled="{Binding IsEditable}" Classes="val num" />
               <TextBlock Grid.Row="0" Grid.Column="2" Classes="lbl" Text="of" HorizontalAlignment="Center" />
-              <controls:TextInput Grid.Row="0" Grid.Column="3" x:Name="TrackTotalBox" Text="{Binding TrackCount.Text, Mode=TwoWay}" PlaceholderText="{Binding TrackCount.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val num" />
+              <controls:TextInput Grid.Row="0" Grid.Column="3" x:Name="TrackTotalBox" Text="{Binding TrackCount.Text, Mode=TwoWay}" PlaceholderText="{Binding TrackCount.Placeholder}" EmptyClearCommand="{Binding TrackCount.ClearCommand}" IsEnabled="{Binding IsEditable}" Classes="val num" />
 
               <TextBlock Grid.Row="1" Classes="lbl" Text="Disc #" />
-              <controls:TextInput Grid.Row="1" Grid.Column="1" x:Name="DiscNumBox" Text="{Binding DiscNumber.Text, Mode=TwoWay}" PlaceholderText="{Binding DiscNumber.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val num" />
+              <controls:TextInput Grid.Row="1" Grid.Column="1" x:Name="DiscNumBox" Text="{Binding DiscNumber.Text, Mode=TwoWay}" PlaceholderText="{Binding DiscNumber.Placeholder}" EmptyClearCommand="{Binding DiscNumber.ClearCommand}" IsEnabled="{Binding IsEditable}" Classes="val num" />
               <TextBlock Grid.Row="1" Grid.Column="2" Classes="lbl" Text="of" HorizontalAlignment="Center" />
-              <controls:TextInput Grid.Row="1" Grid.Column="3" x:Name="DiscTotalBox" Text="{Binding DiscCount.Text, Mode=TwoWay}" PlaceholderText="{Binding DiscCount.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val num" />
+              <controls:TextInput Grid.Row="1" Grid.Column="3" x:Name="DiscTotalBox" Text="{Binding DiscCount.Text, Mode=TwoWay}" PlaceholderText="{Binding DiscCount.Placeholder}" EmptyClearCommand="{Binding DiscCount.ClearCommand}" IsEnabled="{Binding IsEditable}" Classes="val num" />
 
               <TextBlock Grid.Row="2" Classes="lbl" Text="Year" />
-              <controls:TextInput Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" x:Name="YearBox" Text="{Binding Year.Text, Mode=TwoWay}" PlaceholderText="{Binding Year.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val num" />
+              <controls:TextInput Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" x:Name="YearBox" Text="{Binding Year.Text, Mode=TwoWay}" PlaceholderText="{Binding Year.Placeholder}" EmptyClearCommand="{Binding Year.ClearCommand}" IsEnabled="{Binding IsEditable}" Classes="val num" />
 
               <!-- Typed like any other field, with the library's own genres a
                    tap away on the chevron - so picking one reuses its exact
@@ -365,7 +365,7 @@
               <TextBlock Grid.Row="3" Classes="lbl" Text="Genre" VerticalAlignment="Top" Margin="0,10,0,0" />
               <StackPanel Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="3">
               <Panel>
-                <controls:TextInput x:Name="GenreBox" Text="{Binding Genre.Text, Mode=TwoWay}" PlaceholderText="{Binding Genre.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val" ShowsClearButton="False" Padding="12,9,44,9" />
+                <controls:TextInput x:Name="GenreBox" Text="{Binding Genre.Text, Mode=TwoWay}" PlaceholderText="{Binding Genre.Placeholder}" EmptyClearCommand="{Binding Genre.ClearCommand}" IsEnabled="{Binding IsEditable}" Classes="val" ShowsClearButton="False" Padding="12,9,44,9" />
                 <Button x:Name="GenreMenuButton"
                         HorizontalAlignment="Right" VerticalAlignment="Center"
                         Margin="0,0,4,0" Padding="8"
@@ -385,12 +385,12 @@
           <StackPanel Spacing="10">
             <Grid ColumnDefinitions="88,*,52,*" RowDefinitions="Auto,Auto" RowSpacing="10">
               <TextBlock Grid.Row="0" Classes="lbl" Text="BPM" />
-              <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="BpmBox" Text="{Binding BeatsPerMinute.Text, Mode=TwoWay}" PlaceholderText="{Binding BeatsPerMinute.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val num" />
+              <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="BpmBox" Text="{Binding BeatsPerMinute.Text, Mode=TwoWay}" PlaceholderText="{Binding BeatsPerMinute.Placeholder}" EmptyClearCommand="{Binding BeatsPerMinute.ClearCommand}" IsEnabled="{Binding IsEditable}" Classes="val num" />
               <TextBlock Grid.Row="0" Grid.Column="2" Classes="lbl" Text="Key" HorizontalAlignment="Center" />
-              <controls:TextInput Grid.Row="0" Grid.Column="3" x:Name="KeyBox" Text="{Binding InitialKey.Text, Mode=TwoWay}" PlaceholderText="{Binding InitialKey.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val" />
+              <controls:TextInput Grid.Row="0" Grid.Column="3" x:Name="KeyBox" Text="{Binding InitialKey.Text, Mode=TwoWay}" PlaceholderText="{Binding InitialKey.Placeholder}" EmptyClearCommand="{Binding InitialKey.ClearCommand}" IsEnabled="{Binding IsEditable}" Classes="val" />
 
               <TextBlock Grid.Row="1" Classes="lbl" Text="Grouping" />
-              <controls:TextInput Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" x:Name="GroupingBox" Text="{Binding Grouping.Text, Mode=TwoWay}" PlaceholderText="{Binding Grouping.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val" />
+              <controls:TextInput Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" x:Name="GroupingBox" Text="{Binding Grouping.Text, Mode=TwoWay}" PlaceholderText="{Binding Grouping.Placeholder}" EmptyClearCommand="{Binding Grouping.ClearCommand}" IsEnabled="{Binding IsEditable}" Classes="val" />
             </Grid>
           </StackPanel>
         </Border>
@@ -400,16 +400,16 @@
             <Grid ColumnDefinitions="108,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="10">
               <TextBlock Grid.Row="0" Classes="lbl" Text="Album Artist" VerticalAlignment="Top" Margin="0,10,0,0" />
               <StackPanel Grid.Row="0" Grid.Column="1">
-                <controls:TextInput x:Name="AlbumArtistBox" Text="{Binding AlbumArtists.Text, Mode=TwoWay}" PlaceholderText="{Binding AlbumArtists.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val" />
+                <controls:TextInput x:Name="AlbumArtistBox" Text="{Binding AlbumArtists.Text, Mode=TwoWay}" PlaceholderText="{Binding AlbumArtists.Placeholder}" EmptyClearCommand="{Binding AlbumArtists.ClearCommand}" IsEnabled="{Binding IsEditable}" Classes="val" />
                 <WrapPanel x:Name="AlbumArtistSuggestions" Classes="suggestions" Margin="0,6,0,0" IsVisible="False" />
               </StackPanel>
               <TextBlock Grid.Row="1" Classes="lbl" Text="Composer" VerticalAlignment="Top" Margin="0,10,0,0" />
               <StackPanel Grid.Row="1" Grid.Column="1">
-                <controls:TextInput x:Name="ComposerBox" Text="{Binding Composers.Text, Mode=TwoWay}" PlaceholderText="{Binding Composers.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val" />
+                <controls:TextInput x:Name="ComposerBox" Text="{Binding Composers.Text, Mode=TwoWay}" PlaceholderText="{Binding Composers.Placeholder}" EmptyClearCommand="{Binding Composers.ClearCommand}" IsEnabled="{Binding IsEditable}" Classes="val" />
                 <WrapPanel x:Name="ComposerSuggestions" Classes="suggestions" Margin="0,6,0,0" IsVisible="False" />
               </StackPanel>
               <TextBlock Grid.Row="2" Classes="lbl" Text="Conductor" />
-              <controls:TextInput Grid.Row="2" Grid.Column="1" x:Name="ConductorBox" Text="{Binding Conductor.Text, Mode=TwoWay}" PlaceholderText="{Binding Conductor.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val" />
+              <controls:TextInput Grid.Row="2" Grid.Column="1" x:Name="ConductorBox" Text="{Binding Conductor.Text, Mode=TwoWay}" PlaceholderText="{Binding Conductor.Placeholder}" EmptyClearCommand="{Binding Conductor.ClearCommand}" IsEnabled="{Binding IsEditable}" Classes="val" />
               <TextBlock Grid.Row="3" Classes="lbl" Text="Remixed By" />
               <!-- A tag like the boxes, saved with them; three-state only while
                    the songs disagree, as on the desktop's Options tab. -->
@@ -419,7 +419,7 @@
                         IsChecked="{Binding IsCompilation}"
                         IsThreeState="{Binding CompilationIsThreeState}"
                         IsEnabled="{Binding IsEditable}" />
-              <controls:TextInput Grid.Row="3" Grid.Column="1" x:Name="RemixedByBox" Text="{Binding RemixedBy.Text, Mode=TwoWay}" PlaceholderText="{Binding RemixedBy.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val" />
+              <controls:TextInput Grid.Row="3" Grid.Column="1" x:Name="RemixedByBox" Text="{Binding RemixedBy.Text, Mode=TwoWay}" PlaceholderText="{Binding RemixedBy.Placeholder}" EmptyClearCommand="{Binding RemixedBy.ClearCommand}" IsEnabled="{Binding IsEditable}" Classes="val" />
             </Grid>
           </StackPanel>
         </Border>
@@ -428,17 +428,17 @@
           <StackPanel Spacing="10">
             <Grid ColumnDefinitions="108,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="10">
               <TextBlock Grid.Row="0" Classes="lbl" Text="Subtitle" />
-              <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="SubtitleBox" Text="{Binding Subtitle.Text, Mode=TwoWay}" PlaceholderText="{Binding Subtitle.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val" />
+              <controls:TextInput Grid.Row="0" Grid.Column="1" x:Name="SubtitleBox" Text="{Binding Subtitle.Text, Mode=TwoWay}" PlaceholderText="{Binding Subtitle.Placeholder}" EmptyClearCommand="{Binding Subtitle.ClearCommand}" IsEnabled="{Binding IsEditable}" Classes="val" />
               <TextBlock Grid.Row="1" Classes="lbl top" Text="Description" />
-              <controls:TextInput Grid.Row="1" Grid.Column="1" x:Name="DescriptionBox" Text="{Binding Description.Text, Mode=TwoWay}" PlaceholderText="{Binding Description.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val multi" />
+              <controls:TextInput Grid.Row="1" Grid.Column="1" x:Name="DescriptionBox" Text="{Binding Description.Text, Mode=TwoWay}" PlaceholderText="{Binding Description.Placeholder}" EmptyClearCommand="{Binding Description.ClearCommand}" IsEnabled="{Binding IsEditable}" Classes="val multi" />
               <TextBlock Grid.Row="2" Classes="lbl top" Text="Comment" />
-              <controls:TextInput Grid.Row="2" Grid.Column="1" x:Name="CommentBox" Text="{Binding Comment.Text, Mode=TwoWay}" PlaceholderText="{Binding Comment.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val multi" />
+              <controls:TextInput Grid.Row="2" Grid.Column="1" x:Name="CommentBox" Text="{Binding Comment.Text, Mode=TwoWay}" PlaceholderText="{Binding Comment.Placeholder}" EmptyClearCommand="{Binding Comment.ClearCommand}" IsEnabled="{Binding IsEditable}" Classes="val multi" />
               <TextBlock Grid.Row="3" Classes="lbl" Text="Publisher" />
-              <controls:TextInput Grid.Row="3" Grid.Column="1" x:Name="PublisherBox" Text="{Binding Publisher.Text, Mode=TwoWay}" PlaceholderText="{Binding Publisher.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val" />
+              <controls:TextInput Grid.Row="3" Grid.Column="1" x:Name="PublisherBox" Text="{Binding Publisher.Text, Mode=TwoWay}" PlaceholderText="{Binding Publisher.Placeholder}" EmptyClearCommand="{Binding Publisher.ClearCommand}" IsEnabled="{Binding IsEditable}" Classes="val" />
               <TextBlock Grid.Row="4" Classes="lbl" Text="Copyright" />
-              <controls:TextInput Grid.Row="4" Grid.Column="1" x:Name="CopyrightBox" Text="{Binding Copyright.Text, Mode=TwoWay}" PlaceholderText="{Binding Copyright.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val" />
+              <controls:TextInput Grid.Row="4" Grid.Column="1" x:Name="CopyrightBox" Text="{Binding Copyright.Text, Mode=TwoWay}" PlaceholderText="{Binding Copyright.Placeholder}" EmptyClearCommand="{Binding Copyright.ClearCommand}" IsEnabled="{Binding IsEditable}" Classes="val" />
               <TextBlock Grid.Row="5" Classes="lbl" Text="ISRC" />
-              <controls:TextInput Grid.Row="5" Grid.Column="1" x:Name="ISRCBox" Text="{Binding ISRC.Text, Mode=TwoWay}" PlaceholderText="{Binding ISRC.Placeholder}" IsEnabled="{Binding IsEditable}" Classes="val" />
+              <controls:TextInput Grid.Row="5" Grid.Column="1" x:Name="ISRCBox" Text="{Binding ISRC.Text, Mode=TwoWay}" PlaceholderText="{Binding ISRC.Placeholder}" EmptyClearCommand="{Binding ISRC.ClearCommand}" IsEnabled="{Binding IsEditable}" Classes="val" />
             </Grid>
           </StackPanel>
         </Border>
@@ -448,6 +448,7 @@
             <controls:TextInput x:Name="LyricsBox" Classes="val multi" MinHeight="100"
                                 Text="{Binding Lyrics.Text, Mode=TwoWay}"
                                 PlaceholderText="{Binding Lyrics.Placeholder, TargetNullValue=Lyrics}"
+                                EmptyClearCommand="{Binding Lyrics.ClearCommand}"
                                 IsEnabled="{Binding IsEditable}" />
           </StackPanel>
         </Border>
