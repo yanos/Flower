@@ -162,31 +162,16 @@ public sealed class QueueViewModel : ViewModelBase, IDisposable
     /// <summary>
     /// Several rows dragged together (UF-15): each moved, in the order given,
     /// to just before <paramref name="insertBefore"/>, so they land side by
-    /// side in that order. One move at a time, each by the slot it holds by
-    /// then, since the queue's lined-up songs and the song playing have rules
-    /// of their own for every move (PlaylistControlViewModel.MoveQueueEntry).
+    /// side in that order - see PlaylistControlViewModel.MoveQueueEntries.
     /// </summary>
     public void Reorder(IReadOnlyList<TrackRowViewModel> dragged, TrackRowViewModel? insertBefore)
     {
-        // Slots worked out first: each move rebuilds the rows, so a row asked
-        // for its slot after one would answer with where it used to be. Where
-        // each queue entry is now is followed through the moves instead.
         var moving = dragged.Select(SlotOf).Where(slot => slot >= 0).ToList();
-        var target = insertBefore == null ? -1 : SlotOf(insertBefore);
-        if (moving.Count == 0 || (insertBefore != null && target < 0))
+        var target = insertBefore == null ? _playback.CurrentPlaylist.Tracks.Count : SlotOf(insertBefore);
+        if (moving.Count == 0 || target < 0)
             return;
 
-        var order = Enumerable.Range(0, _playback.CurrentPlaylist.Tracks.Count).ToList();
-        foreach (var slot in moving)
-        {
-            var from = order.IndexOf(slot);
-            var to = target < 0 ? order.Count : order.IndexOf(target);
-            if (!_playback.MoveQueueEntry(from, to))
-                continue;
-
-            order.RemoveAt(from);
-            order.Insert(to > from ? to - 1 : to, slot);
-        }
+        _playback.MoveQueueEntries(moving, target);
     }
 
     /// <summary>

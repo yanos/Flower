@@ -962,10 +962,43 @@ namespace Flower.ViewModels
         /// queue's length - both as slots in <see cref="CurrentPlaylist"/>, since
         /// a queue can hold one song twice. The song playing stays where it is,
         /// and nothing moves in front of it.</summary>
-        public bool MoveQueueEntry(int from, int insertBefore)
+        public bool MoveQueueEntry(int from, int insertBefore) => MoveQueueEntries([from], insertBefore);
+
+        /// <summary>Several rows dragged together (UF-15): the entries at
+        /// <paramref name="slots"/> moved, in the order given, to just before
+        /// the one at <paramref name="insertBefore"/> (or to the end, for the
+        /// queue's length), so they land side by side in that order. Each by
+        /// MoveQueueEntry's rules, one after another, and the queue replaced
+        /// once at the end.</summary>
+        public bool MoveQueueEntries(IReadOnlyList<int> slots, int insertBefore)
         {
             var queue = QueueEntries();
             var index = QueueIndex;
+            if (insertBefore < 0 || insertBefore > queue.Count)
+                return false;
+
+            // Where each entry is now, followed through the moves.
+            var order = Enumerable.Range(0, queue.Count).ToList();
+            var moved = false;
+            foreach (var slot in slots)
+            {
+                var from = order.IndexOf(slot);
+                var to = insertBefore == queue.Count ? order.Count : order.IndexOf(insertBefore);
+                if (from < 0 || !MoveWithin(queue, ref index, from, to))
+                    continue;
+
+                order.RemoveAt(from);
+                order.Insert(to > from ? to - 1 : to, slot);
+                moved = true;
+            }
+
+            if (moved)
+                ReplaceQueueKeepingPlace(queue, index);
+            return moved;
+        }
+
+        private bool MoveWithin(List<PlaylistEntry> queue, ref int index, int from, int insertBefore)
+        {
             if (from < 0 || from >= queue.Count || from == index)
                 return false;
             if (insertBefore <= index || insertBefore > queue.Count)
@@ -994,8 +1027,6 @@ namespace Flower.ViewModels
             // leaves its slot alone.
             if (index >= 0 && from < index)
                 index--;
-
-            ReplaceQueueKeepingPlace(queue, index);
             return true;
         }
 
