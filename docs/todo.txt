@@ -1,11 +1,57 @@
 localisation
 visualizers
 themes
-UI tests (Playwright?)
 Explain how to pair to a server or add music in the server web page
 bandcamp integration
 other streaming platform integration if possible
 setting for directory structure 
 replacing files
 extract ios gesture emulation to a nuget
-asses for bug related to db corruption or accidental deletion of files
+analyse recent logs for errors.
+potential race conditions
+beta channel
+
+Audit the entire first-party repository for simplification, duplicated business rules, competing sources of truth, unnecessary indirection, and obsolete compatibility paths. Read CLAUDE.md and relevant domain docs. Maintain explicit coverage by subsystem and review cross-subsystem ownership. Distinguish intentional caches and platform differences from problematic duplication. For each finding, provide file locations, evidence, consequence, smallest proposed change, confidence, and verification needed. Report findings without editing code.
+
+
+Fixed
+- Playlist reorder: the separate single-row path is gone at all three layers. Every drag, one row or several, now uses the multi-row code. A drop that leaves the visible order unchanged is still not an edit, as the single-row path already guaranteed.
+- "nth copy of a song gets the nth entry id": one shared helper (CopiesBySong) replaces four hand-written copies in the playlist model, the merge and the queue.
+- Repeated expressions: a playlist's content version and a wire row's song key are each written once now, instead of six and two times.
+- Dead code:                                                                       - the forceInitiator switch and its election branch, which every caller bypassed;
+  - the conflict event's unused Deletion field;                                    - the unused PlaylistSyncMapper.ResolveTracks;
+  - a test-only NoteMoved overload;                                                - Track Info change notifications that nothing listens to.
+- Efficiency:                                                                      - A sync session no longer rewrites the stored copy of every playlist that is
+    already agreed at the same revision.                                           - Delete Local File removes a whole selection as one library edit, where it used to
+    make one edit per song.                                                        - The merge's check for songs added at the end is linear instead of quadratic.
+  - Startup builds the song-matching index only if some row needs it.              - The server no longer re-checks every playlist a second time after a push thatalready triggered the check.
+  - Adding songs to a playlist no longer makes an extra trip to a background thread just to hand back its own input.
+- Duplication: Track Info's clear button and TextInput's now share one ClearButton class.
+- Comments: stale ones in Palylist.cs and elsewhere no longer say sync decides "did this change?" from UpdatedAt or by electing an initiator.
+
+Skipped, because they are redesigns or change behaviour
+- Rows carrying their entry id, which would replace the copy-counting in selection, slots and the queue. This is the deepest finding, and the biggest change.
+- The queue's parallel origin list, which has to be updated by hand at about nine places.
+- Moving the "a drop restores a removed song" rule out of the folder watcher. It runs inside the watcher's lock, and the watcher's tests rely on that.
+- Smaller ones: one queue rebuild per row in a multi-row queue drag, a shared client for the playlist changes request, a single record for the conflict prompt's text, and skipping playlists whose rows didn't change on save.
+
+Worth a /code-review. Three findings looked like real bugs, so I left them alone:
+- When a sync session changes nothing but a Vibe Playlist's song pool, that pool is installed in place but never saved or shown.
+- The /info playlists token still hashes UpdatedAt. An install that changes content without moving it gets a new revision, but devices aren't told to come back for it.
+- The phone's Delete Local File warning doesn't use LocalFileDeletion, so it describes the user's own file differently from the desktop.
+
+
+Audit the whole codebase for:
+1. Multiple sources of truth: the same state, config, constants, types or business rules defined or derived in more than one place
+2. Code duplication: copy-pasted logic, near-identical functions or components
+3. Simplification: dead code, needless layers, over-generic code, hand-rolled helpers that duplicate the standard library or a framework
+
+For each finding, give the file:line references, why it's a problem, the suggested fix and a rough effort. Rank them by impact. Don't change any code yet.
+
+- /engineering:tech-debt: designed for a codebase-wide audit. It finds, categorizes and prioritizes debt, which overlaps a lot with what you want.
+- /code-review high <path>: accepts a path, so it can cover a whole directory, not just a diff. It mainly hunts for bugs, though, so it won't focus on duplication.
+
+Three questions from the release are still open:
+1. Delete the old images on lambda (flower-server:local, rescan-bg and 0.2.2, about 1.5 GB, with the disk 93% full)?
+2. Fix the /release skill's "no +sha" wording to "no -alpha"?
+3. File an issue for the 12 Tigers Blood placeholders that every startup rescan drops and the next sync restores?
