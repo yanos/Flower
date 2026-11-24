@@ -55,6 +55,30 @@ public class MobilePlaylistConflictTests : PinnedDataDirectory
         Assert.False(scope.Mobile.IsShowingPlaylistConflict);
     }
 
+    // UF-21: deleted on the server, with nothing on this phone to say whether
+    // its copy holds an edit. The sheet asks; deleting it here is the answer
+    // the session then carries out.
+    [AvaloniaFact]
+    public void A_playlist_deleted_on_the_server_is_asked_about_and_can_be_deleted_here()
+    {
+        using var scope = Build();
+        var local = new Playlist("Mix", new List<Track>());
+        var deletion = new PlaylistConflictEventArgs
+        {
+            Local = local,
+            Deletion = new PlaylistDeletionDto(local.Id, 20),
+            RemoteAlias = "Attic",
+            Resolution = new TaskCompletionSource<PlaylistConflictChoice>(),
+        };
+
+        scope.Mobile.AskAboutPlaylistConflict(deletion);
+        Assert.True(scope.Mobile.IsShowingPlaylistConflict);
+
+        scope.Mobile.KeepRemotePlaylistCommand.Execute(null);
+
+        Assert.Equal(PlaylistConflictChoice.KeepRemote, deletion.Resolution.Task.Result);
+    }
+
     [AvaloniaFact]
     public void Closing_the_sheet_decides_nothing()
     {

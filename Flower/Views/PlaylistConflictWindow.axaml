@@ -33,7 +33,7 @@
     <!-- Stacked, because the second names a server and can be any length. No
          default button: Enter must not overwrite either side's edits. -->
     <StackPanel Spacing="8">
-      <Button x:Name="KeepLocalButton" Classes="standard primary" Content="Keep This Device's Version"
+      <Button x:Name="KeepLocalButton" Classes="standard primary"
               HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="KeepLocalButton_Click"/>
       <Button x:Name="KeepRemoteButton" Classes="standard secondary"
               HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Click="KeepRemoteButton_Click">

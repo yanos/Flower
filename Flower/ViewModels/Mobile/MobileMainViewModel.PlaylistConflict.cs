@@ -8,8 +8,9 @@ using Flower.Services;
 namespace Flower.ViewModels.Mobile;
 
 // The phone's version of PlaylistConflictWindow: the same playlist changed here
-// and on the server, and only the person can say which to keep. The sync
-// session waits on the answer, so every way out of the sheet gives one.
+// and on the server, or deleted there with no way to tell whether this copy
+// holds an edit, and only the person can say which to keep. Every way out of
+// the sheet gives an answer.
 public partial class MobileMainViewModel
 {
     private PlaylistConflictEventArgs? _pendingConflict;
@@ -17,10 +18,11 @@ public partial class MobileMainViewModel
     public bool IsShowingPlaylistConflict => ActiveSheet == MobileSheet.PlaylistConflict;
 
     public string PlaylistConflictHeadline => _pendingConflict is { } c ? PlaylistConflictText.Headline(c) : "";
-    public string PlaylistConflictExplanation => PlaylistConflictText.Explanation;
+    public string PlaylistConflictExplanation => _pendingConflict is { } c ? PlaylistConflictText.Explanation(c) : "";
     public string PlaylistConflictLocalSummary => _pendingConflict is { } c ? PlaylistConflictText.LocalSummary(c) : "";
     public string PlaylistConflictRemoteName => _pendingConflict?.RemoteAlias ?? "";
     public string PlaylistConflictRemoteSummary => _pendingConflict is { } c ? PlaylistConflictText.RemoteSummary(c) : "";
+    public string PlaylistConflictKeepLocalText => _pendingConflict is { } c ? PlaylistConflictText.KeepLocal(c) : "";
     public string PlaylistConflictKeepRemoteText => _pendingConflict is { } c ? PlaylistConflictText.KeepRemote(c) : "";
 
     private ICommand? _keepLocalPlaylist;
@@ -50,6 +52,8 @@ public partial class MobileMainViewModel
         OnPropertyChanged(nameof(PlaylistConflictLocalSummary));
         OnPropertyChanged(nameof(PlaylistConflictRemoteName));
         OnPropertyChanged(nameof(PlaylistConflictRemoteSummary));
+        OnPropertyChanged(nameof(PlaylistConflictExplanation));
+        OnPropertyChanged(nameof(PlaylistConflictKeepLocalText));
         OnPropertyChanged(nameof(PlaylistConflictKeepRemoteText));
         ActiveSheet = MobileSheet.PlaylistConflict;
     }

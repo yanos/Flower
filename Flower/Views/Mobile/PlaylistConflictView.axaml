@@ -54,7 +54,7 @@
           <TextBlock Text="{Binding PlaylistConflictRemoteSummary}" FontSize="14" TextWrapping="Wrap" />
         </StackPanel>
 
-        <Button Classes="confirmAction primary" Content="Keep This Device's Version" Command="{Binding KeepLocalPlaylistCommand}" />
+        <Button Classes="confirmAction primary" Content="{Binding PlaylistConflictKeepLocalText}" Command="{Binding KeepLocalPlaylistCommand}" />
         <Button Classes="confirmAction secondary" Command="{Binding KeepRemotePlaylistCommand}">
           <TextBlock Text="{Binding PlaylistConflictKeepRemoteText}" TextTrimming="CharacterEllipsis" />
         </Button>
