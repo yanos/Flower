@@ -79,7 +79,7 @@ public class QueueFollowsItsSourceTests : PinnedDataDirectory
     {
         var (parts, playlist) = await Playing(1, "A", "B", "C", "D");
 
-        await parts.Main.ReorderPlaylistRow(playlist, Row(parts, "D"), Row(parts, "C"));
+        await parts.Main.ReorderPlaylistRows(playlist, [Row(parts, "D")], Row(parts, "C"));
 
         Assert.Equal(new[] { "A", "B", "D", "C" }, Queue(parts));
         Assert.Equal(1, parts.PlaylistControl.QueueIndex);
@@ -91,7 +91,7 @@ public class QueueFollowsItsSourceTests : PinnedDataDirectory
     {
         var (parts, playlist) = await Playing(2, "A", "B", "C", "D");
 
-        await parts.Main.ReorderPlaylistRow(playlist, Row(parts, "D"), Row(parts, "A"));
+        await parts.Main.ReorderPlaylistRows(playlist, [Row(parts, "D")], Row(parts, "A"));
 
         Assert.Equal(new[] { "D", "A", "B", "C" }, Queue(parts));
         Assert.Equal(3, parts.PlaylistControl.QueueIndex);
@@ -103,7 +103,7 @@ public class QueueFollowsItsSourceTests : PinnedDataDirectory
     {
         var (parts, playlist) = await Playing(0, "A", "B", "C");
 
-        await parts.Main.ReorderPlaylistRow(playlist, Row(parts, "A"), null);
+        await parts.Main.ReorderPlaylistRows(playlist, [Row(parts, "A")], null);
 
         Assert.Equal(new[] { "B", "C", "A" }, Queue(parts));
         Assert.Equal(2, parts.PlaylistControl.QueueIndex);
@@ -116,7 +116,7 @@ public class QueueFollowsItsSourceTests : PinnedDataDirectory
         var (parts, playlist) = await Playing(1, "A", "B", "C", "D");
         parts.Main.PlayNext([T("X")]);
 
-        await parts.Main.ReorderPlaylistRow(playlist, Row(parts, "D"), Row(parts, "C"));
+        await parts.Main.ReorderPlaylistRows(playlist, [Row(parts, "D")], Row(parts, "C"));
 
         Assert.Equal(new[] { "A", "B", "X", "D", "C" }, Queue(parts));
         Assert.Equal(1, parts.PlaylistControl.LinedUpCount);
@@ -131,7 +131,7 @@ public class QueueFollowsItsSourceTests : PinnedDataDirectory
         parts.Main.SetPlayQueue(sorted);
         parts.PlaylistControl.Play(sorted[0], 0);
 
-        await parts.Main.ReorderPlaylistRow(playlist, Row(parts, "C"), Row(parts, "A"));
+        await parts.Main.ReorderPlaylistRows(playlist, [Row(parts, "C")], Row(parts, "A"));
 
         Assert.Equal(new[] { "C", "B", "A" }, Queue(parts));
     }

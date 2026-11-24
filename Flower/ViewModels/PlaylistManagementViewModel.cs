@@ -555,31 +555,14 @@ public sealed class PlaylistManagementViewModel
         _host.ScheduleContentSync();
     }
 
-    // The entry at slot `from` to just before the one at `insertBefore`, or to
-    // the end when that is the playlist's length (Playlist.MoveEntry).
-    public Task ReorderEntry(Playlist playlist, int from, int insertBefore)
+    // A row, or a selection dragged as one (UF-15): the entries at these slots
+    // to just before the one at `insertBefore`, or to the end when that is the
+    // playlist's length (Playlist.MoveEntries).
+    public Task ReorderEntries(Playlist playlist, IReadOnlyCollection<int> slots, int insertBefore)
     {
         // Same reasoning as AddTracks: the order of a smart playlist is the
         // order its rules produced, and a drag would last until the next pass.
         // A folder's order is its playlists'.
-        if (!playlist.IsOrdinary)
-            return Task.CompletedTask;
-
-        if (!playlist.MoveEntry(from, insertBefore))
-            return Task.CompletedTask;
-
-        if (_host.SelectedSidebarItem?.Playlist == playlist)
-            _host.PlaylistContentChanged();
-
-        _host.ScheduleContentSync();
-        return Task.CompletedTask;
-    }
-
-    // A selection dragged as one (UF-15): the entries at these slots to just
-    // before the one at `insertBefore`, or to the end (Playlist.MoveEntries).
-    public Task ReorderEntries(Playlist playlist, IReadOnlyCollection<int> slots, int insertBefore)
-    {
-        // Refused for the same reason as ReorderEntry.
         if (!playlist.IsOrdinary || !playlist.MoveEntries(slots, insertBefore))
             return Task.CompletedTask;
 

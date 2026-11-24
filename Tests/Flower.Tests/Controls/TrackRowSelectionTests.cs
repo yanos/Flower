@@ -269,7 +269,7 @@ public class TrackRowSelectionTests
         selection.SetItems(before, null);
         selection.SelectOnly(before[2]);
 
-        selection.NoteMoved(before[2], before[0]);
+        selection.NoteMoved([before[2]], before[0]);
         var after = new[] { before[0], CopyOf(a), before[1] };
         selection.SetItems(after, a);
 

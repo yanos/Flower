@@ -2662,7 +2662,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     {
         if (CurrentPlaylist is not { } playlist)
             return;
-        Main.ReorderPlaylistRow(playlist, dragged, insertBefore)
+        Main.ReorderPlaylistRows(playlist, [dragged], insertBefore)
             .Forget(_logger, "Playlist track reorder");
     }
 }

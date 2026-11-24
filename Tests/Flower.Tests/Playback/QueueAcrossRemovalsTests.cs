@@ -108,7 +108,7 @@ public class QueueAcrossRemovalsTests : PinnedDataDirectory
 
         var after = Control(library, out _);
         after.RestoreQueue();
-        playlist.MoveEntry(3, 1);
+        playlist.MoveEntries([3], 1);
 
         Assert.Equal(new[] { "A", "D", "B", "C" }, Titles(after));
     }

@@ -132,21 +132,11 @@ public static class PlaylistThreeWayMerge
     // song, when there is one.
     private static List<PlaylistEntry> TakingIdsFrom(IReadOnlyList<PlaylistEntry> source, IReadOnlyList<PlaylistEntry> side)
     {
-        var waiting = new Dictionary<Guid, Queue<Guid>>();
+        var waiting = new CopiesBySong<Guid>();
         foreach (var entry in source)
-        {
-            if (entry.TrackId is not { } id)
-                continue;
-            if (!waiting.TryGetValue(id, out var ids))
-                waiting[id] = ids = new Queue<Guid>();
-            ids.Enqueue(entry.EntryId);
-        }
+            waiting.Add(entry.TrackId, entry.EntryId);
 
-        return side
-            .Select(e => e.TrackId is { } id && waiting.TryGetValue(id, out var ids) && ids.Count > 0
-                ? e with { EntryId = ids.Dequeue() }
-                : e)
-            .ToList();
+        return side.Select(e => waiting.TryTake(e.TrackId, out var id) ? e with { EntryId = id } : e).ToList();
     }
 
     private static List<PlaylistEntry>? MergeEntries(

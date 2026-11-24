@@ -260,12 +260,8 @@ namespace Flower.Models
         }
 
         // Read-only so that every mutation has to go through the methods below,
-        // which are what bump UpdatedAt and raise Changed. It used to be a bare
-        // List<Track>, and MainViewModel.ReorderPlaylistRow duly reached in
-        // and did its own Remove()+Insert() - so a drag-reorder changed the
-        // playlist without bumping UpdatedAt at all, and PlaylistSyncPlanner
-        // (which decides "did this side change?" purely from UpdatedAt against
-        // a per-peer baseline) never saw the reorder and never propagated it.
+        // which are what bump UpdatedAt and raise Changed - and so what saves
+        // and syncs the edit.
         public IReadOnlyList<Track> Tracks => _entries.Tracks;
 
         // Raised after any mutation that bumps UpdatedAt. Library subscribes to
@@ -276,8 +272,8 @@ namespace Flower.Models
 
         // Never backwards, and never standing still: an edit is always later
         // than the version it edited. UpdatedAt is compared across devices
-        // (PlaylistSyncPlanner, and the server taking a push only when it is
-        // newer), and a copy adopted from a device whose clock runs ahead
+        // (which side's name or settings a merge keeps, and which copy wins
+        // when only one may), and a copy adopted from a device whose clock runs ahead
         // carries that device's time - so on a device whose clock runs behind,
         // "now" could be earlier than the playlist being edited, and the edit
         // read everywhere as no edit at all.
@@ -329,9 +325,9 @@ namespace Flower.Models
             Touch(justAfter > now ? justAfter : now);
         }
 
-        // Bumped on every mutation (rename, track add/remove/reorder). Sync uses
-        // this against a per-peer last-synced baseline to tell which side(s)
-        // changed since they last agreed - see PlaylistSyncPlanner.
+        // Bumped on every mutation (rename, track add/remove/reorder). Whether
+        // a side changed is decided by content (PlaylistVersion), not by this;
+        // it orders two edits that both did - see Touch.
         public DateTimeOffset UpdatedAt { get; private set; }
 
         public Playlist(string name, List<Track> tracks) : this(Guid.NewGuid(), name, tracks, DateTimeOffset.UtcNow)
@@ -513,71 +509,24 @@ namespace Flower.Models
         // A list worked out again: a song it still holds is still that entry.
         private static List<PlaylistEntry> KeepingEntryIds(IReadOnlyList<PlaylistEntry> old, IReadOnlyList<Track> tracks)
         {
-            var waiting = new Dictionary<Guid, Queue<Guid>>();
+            var waiting = new CopiesBySong<Guid>();
             foreach (var entry in old)
-            {
-                if (entry.TrackId is not { } id)
-                    continue;
-                if (!waiting.TryGetValue(id, out var ids))
-                    waiting[id] = ids = new Queue<Guid>();
-                ids.Enqueue(entry.EntryId);
-            }
+                waiting.Add(entry.TrackId, entry.EntryId);
 
             var next = new List<PlaylistEntry>(tracks.Count);
             foreach (var track in tracks)
-            {
-                next.Add(waiting.TryGetValue(track.Id, out var ids) && ids.Count > 0
-                    ? new PlaylistEntry(ids.Dequeue(), track)
-                    : PlaylistEntry.Of(track));
-            }
+                next.Add(waiting.TryTake(track.Id, out var id) ? new PlaylistEntry(id, track) : PlaylistEntry.Of(track));
             return next;
         }
 
-        // Drag-to-reorder: the entry at slot `from` moves to sit just before the
-        // entry now at slot `insertBefore`, or to the end when that is
-        // Tracks.Count. By slot for RemoveEntriesAt's reason. Returns false -
-        // changing nothing, not even UpdatedAt - for a slot that is not here
-        // or a drag that would not reorder anything (dropped onto itself, or
-        // onto the entry already following it).
-        //
-        // That last group matters beyond tidiness. UpdatedAt is the entire
-        // basis on which PlaylistSyncPlanner decides "did this side change?"
-        // against its per-peer baseline, so bumping it here would manufacture a
-        // sync-visible edit out of a drag that moved nothing - and a drag that
-        // lands back where it started is the single most common way a
-        // drag-reorder ends.
-        public bool MoveEntry(int from, int insertBefore)
-        {
-            var moved = Edit(entries =>
-            {
-                var tracks = entries.Tracks;
-                if (from < 0 || from >= tracks.Count || insertBefore < 0 || insertBefore > tracks.Count)
-                    return null;
-
-                var target = insertBefore > from ? insertBefore - 1 : insertBefore;
-                if (target == from)
-                    return null;
-
-                var next = entries.All.ToList();
-                var entry = next[entries.PlaceOf(from)];
-                var before = insertBefore == tracks.Count ? (Guid?)null : next[entries.PlaceOf(insertBefore)].EntryId;
-                next.RemoveAt(entries.PlaceOf(from));
-                next.Insert(before is { } id ? next.FindIndex(e => e.EntryId == id) : next.Count, entry);
-                return new EntryList(next);
-            });
-            if (!moved)
-                return false;
-
-            Touch();
-            return true;
-        }
-
-        // Several entries dragged together (UF-15): the ones at these slots
-        // move, in the order they stand, to sit just before the entry now at
-        // slot insertBefore - or at the end, for Tracks.Count. One edit, by
-        // slot for RemoveEntriesAt's reason. False, changing nothing (not even
-        // UpdatedAt, for MoveEntry's reason), when no slot is here, the place
-        // is one of those moving, or the order comes out as it was.
+        // Drag-to-reorder, of one row or a selection (UF-15): the entries at
+        // these slots move, in the order they stand, to sit just before the
+        // entry now at slot insertBefore - or at the end, for Tracks.Count.
+        // One edit, by slot for RemoveEntriesAt's reason. False, changing
+        // nothing, not even UpdatedAt, when no slot is here, the place is one
+        // of those moving, or the songs this device shows come out in the
+        // order they were: a drag that lands back where it started is the most
+        // common way a drag ends, and must not become an edit to sync.
         public bool MoveEntries(IReadOnlyCollection<int> slots, int insertBefore)
         {
             var moved = Edit(entries =>
@@ -606,7 +555,9 @@ namespace Flower.Models
                 }
 
                 rest.InsertRange(at, places.Select(place => all[place]));
-                return rest.Select(e => e.EntryId).SequenceEqual(all.Select(e => e.EntryId)) ? null : new EntryList(rest);
+                static IEnumerable<Guid> Shown(IEnumerable<PlaylistEntry> list) =>
+                    list.Where(e => e.Track != null).Select(e => e.EntryId);
+                return Shown(rest).SequenceEqual(Shown(all)) ? null : new EntryList(rest);
             });
             if (!moved)
                 return false;

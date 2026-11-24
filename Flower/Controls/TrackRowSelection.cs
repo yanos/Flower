@@ -155,14 +155,12 @@ public sealed class TrackRowSelection
     }
 
     /// <summary>
-    /// <paramref name="row"/> is being dragged to just before
-    /// <paramref name="insertBefore"/>, or to the end for null. Dragged past
-    /// another copy of its song it becomes a different occurrence, and the
-    /// selection has to stay on the one that moved through the rebuild to come.
+    /// <paramref name="rows"/> are being dragged, landing in the order given,
+    /// to just before <paramref name="insertBefore"/>, or to the end for null.
+    /// Dragged past another copy of its song a row becomes a different
+    /// occurrence, and the selection has to stay on the one that moved through
+    /// the rebuild to come.
     /// </summary>
-    public void NoteMoved(TrackRowViewModel row, TrackRowViewModel? insertBefore) => NoteMoved([row], insertBefore);
-
-    // The same for several rows moved together, which land in the order given.
     public void NoteMoved(IReadOnlyList<TrackRowViewModel> rows, TrackRowViewModel? insertBefore)
     {
         var moving = rows.ToHashSet();

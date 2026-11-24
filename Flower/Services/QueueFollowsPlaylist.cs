@@ -46,19 +46,13 @@ public static class QueueFollowsPlaylist
     // copies in order, so its nth copy here is the nth copy there.
     public static List<Guid?> OriginsIn(IReadOnlyList<Track> queue, IReadOnlyList<PlaylistEntry> entries)
     {
-        var waiting = new Dictionary<Guid, Queue<Guid>>();
+        var waiting = new CopiesBySong<Guid>();
         foreach (var entry in entries)
-        {
-            if (entry.Track is not { } track)
-                continue;
-            if (!waiting.TryGetValue(track.Id, out var ids))
-                waiting[track.Id] = ids = new Queue<Guid>();
-            ids.Enqueue(entry.EntryId);
-        }
+            waiting.Add(entry.Track?.Id, entry.EntryId);
 
         var origins = new List<Guid?>(queue.Count);
         foreach (var track in queue)
-            origins.Add(waiting.TryGetValue(track.Id, out var ids) && ids.Count > 0 ? ids.Dequeue() : null);
+            origins.Add(waiting.TryTake(track.Id, out var id) ? id : null);
         return origins;
     }
 
@@ -242,20 +236,14 @@ public static class QueueFollowsPlaylist
         if (sharesIds)
             return sources;
 
-        var waiting = new Dictionary<Guid, Queue<int>>();
+        var waiting = new CopiesBySong<int>();
         for (var slot = 0; slot < before.Count; slot++)
-        {
-            if (before[slot].TrackId is not { } id)
-                continue;
-            if (!waiting.TryGetValue(id, out var slots))
-                waiting[id] = slots = new Queue<int>();
-            slots.Enqueue(slot);
-        }
+            waiting.Add(before[slot].TrackId, slot);
 
         for (var slot = 0; slot < after.Count; slot++)
         {
-            if (after[slot].TrackId is { } id && waiting.TryGetValue(id, out var slots) && slots.Count > 0)
-                sources[slot] = slots.Dequeue();
+            if (waiting.TryTake(after[slot].TrackId, out var source))
+                sources[slot] = source;
         }
         return sources;
     }

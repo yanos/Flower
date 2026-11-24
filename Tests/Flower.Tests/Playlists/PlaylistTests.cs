@@ -113,7 +113,7 @@ public class PlaylistTests
         var before = DateTimeOffset.UtcNow.AddMinutes(-5);
         var playlist = new Playlist(Guid.NewGuid(), "p", new List<Track> { a, b, c }, before);
 
-        Assert.True(playlist.MoveEntry(2, 0));
+        Assert.True(playlist.MoveEntries([2], 0));
 
         Assert.Equal(new[] { "C", "A", "B" }, playlist.Tracks.Select(t => t.Title));
         Assert.True(playlist.UpdatedAt > before);
@@ -128,7 +128,7 @@ public class PlaylistTests
         var before = DateTimeOffset.UtcNow.AddMinutes(-5);
         var playlist = new Playlist(Guid.NewGuid(), "p", new List<Track> { a, b }, before);
 
-        Assert.True(playlist.MoveEntry(0, 2));
+        Assert.True(playlist.MoveEntries([0], 2));
 
         Assert.Equal(new[] { "B", "A" }, playlist.Tracks.Select(t => t.Title));
         Assert.True(playlist.UpdatedAt > before);
@@ -147,7 +147,7 @@ public class PlaylistTests
         var playlist = new Playlist("p", tracks);
         var before = playlist.UpdatedAt;
 
-        var moved = playlist.MoveEntry(from, insertBefore);
+        var moved = playlist.MoveEntries([from], insertBefore);
 
         Assert.False(moved);
         Assert.Equal(new[] { "A", "B", "C" }, playlist.Tracks.Select(t => t.Title));
@@ -160,7 +160,7 @@ public class PlaylistTests
         var playlist = new Playlist("p", new List<Track> { T("A") });
         var before = playlist.UpdatedAt;
 
-        Assert.False(playlist.MoveEntry(1, 1 + 1));
+        Assert.False(playlist.MoveEntries([1], 1 + 1));
 
         Assert.Equal(before, playlist.UpdatedAt);
     }
@@ -183,7 +183,7 @@ public class PlaylistTests
         var (a, b, c) = (T("A"), T("B"), T("C"));
         var playlist = new Playlist("p", new List<Track> { a, b, c, a });
 
-        Assert.True(playlist.MoveEntry(3, 1));
+        Assert.True(playlist.MoveEntries([3], 1));
 
         Assert.Equal(new[] { "A", "A", "B", "C" }, playlist.Tracks.Select(t => t.Title));
     }

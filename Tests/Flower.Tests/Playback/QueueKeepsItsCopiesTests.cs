@@ -81,7 +81,7 @@ public class QueueKeepsItsCopiesTests : PinnedDataDirectory
     {
         var (vm, playlist, _) = Playing([_a, _b, _a], slot: 2);
 
-        playlist.MoveEntry(0, 3);
+        playlist.MoveEntries([0], 3);
 
         Assert.Equal(["B", "A", "A"], Titles(vm));
         Assert.Equal(1, vm.QueueIndex);
@@ -92,7 +92,7 @@ public class QueueKeepsItsCopiesTests : PinnedDataDirectory
     {
         var (vm, playlist, _) = Playing([_a, _a, _b], slot: 0);
 
-        playlist.MoveEntry(0, 2);
+        playlist.MoveEntries([0], 2);
 
         Assert.Equal(1, vm.QueueIndex);
     }

@@ -159,7 +159,7 @@ public class PlaylistConvergenceTests : PinnedDataDirectory
                     break;
                 }
                 case 4 when playlist is { Entries.Count: > 1 }:
-                    playlist.MoveEntry(random.Next(playlist.Entries.Count), random.Next(playlist.Entries.Count + 1));
+                    playlist.MoveEntries([random.Next(playlist.Entries.Count)], random.Next(playlist.Entries.Count + 1));
                     log.Add($"{device.Name} reordered {playlist.Name}");
                     break;
                 case 5 when playlist != null:

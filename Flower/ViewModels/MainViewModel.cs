@@ -2791,26 +2791,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // By row, because a playlist can hold one song twice and the row is what
     // says which copy was meant (PlaylistRowSlots). A null insertBefore is the
     // end of the playlist.
-    public Task ReorderPlaylistRow(Playlist playlist, TrackRowViewModel dragged, TrackRowViewModel? insertBefore)
-    {
-        var entries = playlist.Tracks;
-        if (PlaylistRowSlots.SlotsOf(entries, Rows, [dragged]) is not [var from])
-            return Task.CompletedTask;
-
-        if (insertBefore == null)
-            return Playlists.ReorderEntry(playlist, from, entries.Count);
-
-        return PlaylistRowSlots.SlotsOf(entries, Rows, [insertBefore]) is [var before]
-            ? Playlists.ReorderEntry(playlist, from, before)
-            : Task.CompletedTask;
-    }
-
-    // Several rows dragged together, by the same rule.
     public Task ReorderPlaylistRows(Playlist playlist, IReadOnlyList<TrackRowViewModel> dragged, TrackRowViewModel? insertBefore)
     {
-        if (dragged.Count == 1)
-            return ReorderPlaylistRow(playlist, dragged[0], insertBefore);
-
         var entries = playlist.Tracks;
         var slots = PlaylistRowSlots.SlotsOf(entries, Rows, dragged);
         if (slots.Count == 0)

@@ -286,7 +286,7 @@ public class LibraryPlaylistTests
                 playlist.RemoveEntriesAt([playlist.Tracks.ToList().IndexOf(a)]);
                 break;
             case "reorder":
-                playlist.MoveEntry(playlist.Tracks.ToList().IndexOf(b), playlist.Tracks.ToList().IndexOf(a));
+                playlist.MoveEntries([playlist.Tracks.ToList().IndexOf(b)], playlist.Tracks.ToList().IndexOf(a));
                 break;
         }
 
