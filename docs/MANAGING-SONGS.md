@@ -90,7 +90,7 @@ A playlist can also say **"2 songs unavailable"**. Those songs are still in it, 
 
 | Setup | What happens |
 |---|---|
-| On its own | The song leaves your library. The file stays on disk unless you tick **Also move the files to the Trash**. A rescan won't add it back. |
+| On its own | The song leaves your library. The file stays on disk unless you tick **Also move the files to the Trash**. A rescan won't add it back, but dragging the file onto the window does. |
 | Owner's device | If the song is on the server, it's **removed for everyone**. Tick **Also delete the files, here and on the server** to delete the files too. |
 | Listener's device | You can only remove your own songs. The menu doesn't offer it for the server's songs, so ask the owner. |
 
@@ -114,6 +114,7 @@ waits in **Settings → Library → Removed Songs** (on computers and on the
 server, not on phones):
 
 - **Restore** puts the song back, with its plays, star and playlists. On the server, it comes back for everyone.
+- **Dragging the file onto the window again** also puts it back, on a computer that isn't paired to a server. Flower says so when it does.
 - **Delete Files…** deletes the files for good. Nothing else in Flower ever deletes a file you own.
 
 ---

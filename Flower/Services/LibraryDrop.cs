@@ -89,15 +89,17 @@ public sealed class LibraryDrop(IReadOnlyList<string> libraryRoots, ILogger logg
     }
 
     // What a drop says once it is done: the songs that did not go in (a copy
-    // that failed, a file that is not a song after all). Null when every song
-    // went in.
-    public static string? Outcome(int notAdded) =>
-        notAdded switch
-        {
-            0 => null,
-            1 => "1 song could not be added",
-            _ => $"{notAdded:N0} songs could not be added",
-        };
+    // that failed, a file that is not a song after all) and the ones that had
+    // been removed and came back. Null when every song went in as asked.
+    public static string? Outcome(int notAdded, int restored)
+    {
+        var parts = new List<string>();
+        if (notAdded > 0)
+            parts.Add(notAdded == 1 ? "1 song could not be added" : $"{notAdded:N0} songs could not be added");
+        if (restored > 0)
+            parts.Add(restored == 1 ? "1 removed song is back in the library" : $"{restored:N0} removed songs are back in the library");
+        return parts.Count == 0 ? null : string.Join(". ", parts);
+    }
 
     private static IEnumerable<string> SongsAt(string path)
     {

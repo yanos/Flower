@@ -153,10 +153,11 @@ public class LibraryDropTests : IDisposable
     }
 
     [Fact]
-    public void A_drop_says_what_did_not_go_in()
+    public void A_drop_says_what_did_not_go_in_and_what_came_back()
     {
-        Assert.Null(LibraryDrop.Outcome(0));
-        Assert.Equal("2 songs could not be added", LibraryDrop.Outcome(2));
+        Assert.Null(LibraryDrop.Outcome(0, 0));
+        Assert.Equal("2 songs could not be added", LibraryDrop.Outcome(2, 0));
+        Assert.Equal("1 song could not be added. 1 removed song is back in the library", LibraryDrop.Outcome(1, 1));
     }
 
     [Fact]

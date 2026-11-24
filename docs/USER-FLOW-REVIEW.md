@@ -4,8 +4,8 @@ Bugs a person using Flower would hit: data lost, the wrong thing done, a dead
 end, or behaviour that misleads. The `user-flow-review` skill finds them and
 keeps this list; `/release` treats every open **P0** here as blocking the tag.
 
-**Status:** 4 open (0 P0, 0 fix-now, 4 later), UF-12 to UF-15, all from the review of
-`ef6695fb` on 2026-11-22.
+**Status:** none open. The last, UF-12 to UF-16 from the review of `ef6695fb`
+on 2026-11-22, were fixed on 2026-11-24.
 
 Severities are the ones in `.claude/skills/release/REVIEW.md`. **Reproduced**
 means a throwaway test against an export of that commit went red on the bug, or,
@@ -23,7 +23,4 @@ None open.
 
 ## Later: confusing, or impossible to do
 
-**UF-12. Dragging a removed song back in silently does nothing.** *Read.*
-The only way back is Settings' Removed Songs, and nothing says so.
-`Flower.Core/Services/LibraryFolderWatcher.cs:351`.
-*Direction:* an explicit drop restores the song.
+None open.

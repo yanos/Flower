@@ -3091,11 +3091,19 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             _logger.LogInformation("Dropped songs: {Count} to add, {Copied} copied into {Root}, {Failed} could not be copied",
                 result.Files.Count, result.Copied, roots[0], result.Failed);
 
+            var restored = 0;
             IReadOnlyList<string> unreadable = [];
             if (result.Files.Count > 0 && FolderWatcher != null)
-                unreadable = (await FolderWatcher.AddFilesAsync(result.Files, busy.CountingSongs("Adding to the library"))).Unreadable;
+            {
+                var added = await FolderWatcher.AddFilesAsync(result.Files, busy.CountingSongs("Adding to the library"));
+                (restored, unreadable) = (added.Restored, added.Unreadable);
+            }
             else if (result.Files.Count > 0)
+            {
+                // A drop is as explicit as Settings' Restore (UF-12).
+                restored = Library.RestoreExcludedPaths(result.Files);
                 await RescanLibraryAsync();
+            }
             foreach (var file in unreadable)
                 _logger.LogWarning("Dropped file {File} could not be read as a song", file);
 
@@ -3105,7 +3113,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             // library back without them.
             if (result.Files.Count > 0)
                 FollowScanFolders();
-            outcome = LibraryDrop.Outcome(result.Failed + unreadable.Count);
+            outcome = LibraryDrop.Outcome(result.Failed + unreadable.Count, restored);
         }
 
         // Said where the drop was made, for long enough to read, rather than
