@@ -3358,7 +3358,7 @@ namespace Flower.Models
                 // server reported it applied.
                 if (!ReferenceEquals(a[i], b[i])
                     && (!SameRows(a[i].Entries, b[i].Entries)
-                        || PlaylistVersion.Of(PlaylistSyncMapper.ToDto(a[i])) != PlaylistVersion.Of(PlaylistSyncMapper.ToDto(b[i]))))
+                        || PlaylistVersion.Of(a[i]) != PlaylistVersion.Of(b[i])))
                 {
                     return false;
                 }

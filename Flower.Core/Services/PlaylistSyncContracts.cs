@@ -23,7 +23,12 @@ namespace Flower.Services;
 // EntryId is the playlist row this is (PlaylistEntry). Null where a song is sent
 // without being a row of anything, as Vibe's ranked songs are.
 public sealed record PlaylistSyncTrackDto(
-    string? Title, string? Artists, string? Album, int DurationSeconds, string? Id = null, Guid? EntryId = null);
+    string? Title, string? Artists, string? Album, int DurationSeconds, string? Id = null, Guid? EntryId = null)
+{
+    // Which song this is, as text: the origin's id, else its tags' SyncKey.
+    [JsonIgnore]
+    public string SongKey => Id is { Length: > 0 } id ? id : Track.BuildSyncKey(Title, Artists, Album, DurationSeconds);
+}
 
 public sealed record PlaylistSyncPlaylistDto(
     Guid Id,

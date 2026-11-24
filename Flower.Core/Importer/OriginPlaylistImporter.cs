@@ -13,12 +13,12 @@ namespace Flower.Importer;
 // The browser head's playlists: the origin server's, read once per rescan
 // alongside its catalog.
 //
-// Read-only, and one-way on purpose. PlaylistSyncService - the peer-to-peer
-// path a desktop uses - is a negotiation: the two sides elect an initiator,
-// compare UpdatedAt, raise conflicts for a human to resolve, and push the
-// merged result back. None of that fits a tab. A tab has no durable identity
-// to be a party to a merge (its whole database lives in a sandbox that a
-// refresh may reset), no second device to elect against, and nothing of its
+// Read-only, and one-way on purpose. PlaylistSyncService - the path a desktop
+// uses - is a negotiation: it plans against the copies it last agreed with the
+// server, merges, raises conflicts for a human to resolve, and pushes the
+// result back. None of that fits a tab. A tab has no durable identity to be a
+// party to a merge (its whole database lives in a sandbox that a refresh may
+// reset), and nothing of its
 // own to contribute - its playlists *are* the server's. So this reads them and
 // stops, which is honest about what a tab is rather than pretending it is a
 // third peer.

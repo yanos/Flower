@@ -59,7 +59,7 @@ public sealed class OriginPlaylistWriter(
         {
             _origin = origin.Playlists.ToDictionary(
                 p => p.Id,
-                p => (origin.Revisions.GetValueOrDefault(p.Id), PlaylistVersion.Of(PlaylistSyncMapper.ToDto(p))));
+                p => (origin.Revisions.GetValueOrDefault(p.Id), PlaylistVersion.Of(p)));
         }
     }
 

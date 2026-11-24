@@ -18,7 +18,7 @@ public interface IPlaylistImporter
 {
     // Resolved against the library that was just imported, because a playlist
     // on the wire is a list of track *descriptions* rather than references
-    // (see PlaylistSyncMapper.ResolveTracks and Track.SyncKey - a Path means
+    // (see PlaylistTrackIndex.Find and Track.SyncKey - a Path means
     // nothing on another device). Anything the origin has that this head's
     // library does not is silently dropped, exactly as it is for a peer sync.
     Task<OriginPlaylists> ImportAsync(IReadOnlyList<Track> library);

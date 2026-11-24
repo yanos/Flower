@@ -215,7 +215,7 @@ public static class PlaylistSyncPlanner
     // This device's copy is not the one it agreed on - or exists where it
     // agreed to a deletion.
     private static bool Changed(Playlist local, PlaylistAgreement agreed) =>
-        agreed.Copy == null || !PlaylistVersion.Same(PlaylistSyncMapper.ToDto(local), agreed.Copy);
+        agreed.Copy == null || PlaylistVersion.Of(local) != PlaylistVersion.Of(agreed.Copy);
 
     // The same playlist, read the way each kind is decided: a smart playlist
     // on its rules and a Vibe Playlist on its sentence, never on their songs,
@@ -255,11 +255,8 @@ public static class PlaylistSyncPlanner
     }
 
     private static string SongOf(PlaylistEntry entry) =>
-        entry.Track?.Id.ToKey() ?? SongOf(entry.ToWire());
+        entry.Track?.Id.ToKey() ?? entry.ToWire().SongKey;
 
     private static string SongOf(PlaylistSyncTrackDto row, PlaylistTrackIndex index) =>
-        index.Find(row)?.Id.ToKey() ?? SongOf(row);
-
-    private static string SongOf(PlaylistSyncTrackDto row) =>
-        row.Id is { Length: > 0 } id ? id : Track.BuildSyncKey(row.Title, row.Artists, row.Album, row.DurationSeconds);
+        index.Find(row)?.Id.ToKey() ?? row.SongKey;
 }

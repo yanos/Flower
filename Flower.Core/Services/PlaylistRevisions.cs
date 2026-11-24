@@ -95,7 +95,7 @@ public sealed class PlaylistRevisions
             {
                 var key = (playlist.Listener, playlist.Id);
                 present.Add(key);
-                var version = PlaylistVersion.Of(PlaylistSyncMapper.ToDto(playlist));
+                var version = PlaylistVersion.Of(playlist);
                 if (Latest(key) is { Deleted: false } latest && latest.Version == version)
                     continue;
 
@@ -339,11 +339,13 @@ public static class PlaylistVersion
         if (playlist.Rules == null && playlist.VibePrompt == null && !playlist.IsFolder)
         {
             foreach (var row in playlist.Tracks)
-                Field(text, row.EntryId?.ToString("N") ?? row.Id ?? Track.BuildSyncKey(row.Title, row.Artists, row.Album, row.DurationSeconds));
+                Field(text, row.EntryId?.ToString("N") ?? row.SongKey);
         }
 
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text.ToString())))[..32];
     }
+
+    public static string Of(Playlist playlist) => Of(PlaylistSyncMapper.ToDto(playlist));
 
     public static bool Same(PlaylistSyncPlaylistDto a, PlaylistSyncPlaylistDto b) => Of(a) == Of(b);
 

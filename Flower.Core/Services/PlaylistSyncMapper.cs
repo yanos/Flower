@@ -30,14 +30,6 @@ public static class PlaylistSyncMapper
         new(track.Title, track.Artists, track.Album, Track.RoundedSeconds(track.Duration),
             track.OriginTrackId ?? track.Id.ToKey());
 
-    // Matches each wire track against the local library - by its origin id
-    // first, then by SyncKey (see Track.BuildSyncKey). For the songs of a smart
-    // or Vibe playlist, and Vibe's ranked answers: what this library lacks
-    // simply is not listed. A hand-picked playlist's rows are ToPlaylist's.
-    public static List<Track> ResolveTracks(
-        IEnumerable<PlaylistSyncTrackDto> tracks, IReadOnlyList<Track> localLibrary, out List<PlaylistSyncTrackDto> unmatched) =>
-        new PlaylistTrackIndex(localLibrary).Resolve(tracks, out unmatched);
-
     // A smart playlist arrives carrying both its rules and whatever the peer
     // had materialized from them. Both are kept: the tracks so the playlist is
     // not empty for the moment before it is evaluated here (and permanently,

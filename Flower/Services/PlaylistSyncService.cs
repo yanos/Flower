@@ -447,7 +447,7 @@ public class PlaylistSyncService
             case PlaylistSyncDecisionKind.Conflict:
             case PlaylistSyncDecisionKind.ConfirmDeletion:
                 var question = new Question(
-                    decision.Local!, PlaylistVersion.Of(PlaylistSyncMapper.ToDto(decision.Local!)), decision.Remote, decision.Deletion);
+                    decision.Local!, PlaylistVersion.Of(decision.Local!), decision.Remote, decision.Deletion);
                 if (_putOff.GetValueOrDefault(decision.PlaylistId) != (question.LocalVersion, question.RemoteRevision))
                     questions[decision.PlaylistId] = question;
                 return decision.Local;
@@ -568,7 +568,7 @@ public class PlaylistSyncService
             foreach (var playlist in current)
             {
                 var asked = answers.FirstOrDefault(a => a.Question.Local.Id == playlist.Id)?.Question;
-                if (asked != null && asked.LocalVersion == PlaylistVersion.Of(PlaylistSyncMapper.ToDto(playlist)))
+                if (asked != null && asked.LocalVersion == PlaylistVersion.Of(playlist))
                 {
                     unchanged.Add(playlist.Id);
                     if (taken.TryGetValue(playlist.Id, out var theirs))

@@ -90,7 +90,7 @@ public class OriginPlaylistImporterTests
     [Fact]
     public async Task A_track_this_head_does_not_have_drops_out_instead_of_becoming_an_unplayable_row()
     {
-        // The same rule a peer sync follows (PlaylistSyncMapper.ResolveTracks).
+        // The same rule a peer sync follows (PlaylistTrackIndex.Find).
         // Worth pinning here because the browser reaches it by a different road:
         // its library is the origin's own catalog, so the two normally agree
         // exactly, and a disagreement means a rescan caught the server mid-edit.
