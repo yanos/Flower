@@ -642,14 +642,11 @@ namespace Flower.Models
         // Returns whether the contents actually changed, so a recomputation
         // pass over every smart playlist can persist only the ones that moved.
         //
-        // Not Touch()ing is the invariant the whole design rests on, and it is
-        // the same one RebindTracks above relies on: PlaylistSyncPlanner decides
-        // "did this side change?" purely from UpdatedAt against a per-peer
-        // baseline, and a re-evaluation is not a user edit - the songs changed
-        // because the library did. Bumping UpdatedAt here would manufacture a
-        // sync-visible edit on both devices out of a rescan, every rescan, and
-        // make a content conflict reachable for a playlist that has no content
-        // of its own to conflict over.
+        // Not Touch()ing, for the reason RebindTracks above is not: a
+        // re-evaluation is not a user edit - the songs changed because the
+        // library did. Nor is it a change sync carries: PlaylistVersion leaves
+        // a smart or Vibe playlist's songs out, so only its rules or sentence
+        // can conflict, never what each device worked out from them.
         //
         // Public, unlike RebindTracks, because the recomputation pass that
         // drives it is not Library - see SMART-PLAYLIST-PLAN.md phase 3. A
