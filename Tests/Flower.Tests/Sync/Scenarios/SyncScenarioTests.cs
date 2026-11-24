@@ -908,6 +908,51 @@ public class SyncScenarioTests : PinnedDataDirectory
         Assert.Equal(["Server name"], asked);
     }
 
+    // The server's edit and one made here while the session read it combine:
+    // the session plans against the playlist as it is when it installs, so
+    // the edit made meanwhile is merged rather than replaced.
+    [Fact]
+    public async Task An_edit_made_here_while_a_session_takes_the_servers_edit_keeps_both()
+    {
+        var (server, client) = await MixAgreedAsync();
+        using var owned = server;
+
+        server.Library.Playlists.Single(p => p.Name == "Mix").Name = "Mix on server";
+        server.AfterNextPlaylistsGet = () => client.Playlist("Mix").AppendTrack(client.Single("B"));
+        await client.SyncPlaylistsAsync(server);
+
+        Assert.Equal(["A", "B"], Titles(client.Playlist("Mix on server")));
+        Assert.Equal(["A", "B"], Titles(server.Library.Playlists.Single(p => p.Name == "Mix on server")));
+    }
+
+    // UF-23: a rename on one device and a song added on another are both
+    // kept, and nobody is asked which version to keep.
+    [Fact]
+    public async Task Edits_on_two_devices_that_do_not_overlap_are_both_kept_without_asking()
+    {
+        var (server, phone, tablet) = await TwoDevicesAgreedAsync();
+        using var owned = server;
+        var asked = 0;
+        foreach (var device in new[] { phone, tablet })
+        {
+            device.PlaylistSync.ConflictDetected += (_, e) =>
+            {
+                asked++;
+                e.Resolution.SetResult(PlaylistConflictChoice.Later);
+            };
+        }
+
+        phone.Playlist("Mix").Name = "Road trip";
+        tablet.Playlist("Mix").AppendTrack(tablet.Single("B"));
+        await phone.SyncPlaylistsAsync(server);
+        await tablet.SyncPlaylistsAsync(server);
+        await phone.SyncPlaylistsAsync(server);
+
+        Assert.Equal(0, asked);
+        foreach (var playlist in new[] { server.Library.Playlists.Single(p => p.Id == phone.Playlist("Road trip").Id), phone.Playlist("Road trip"), tablet.Playlist("Road trip") })
+            Assert.Equal(["A", "B"], Titles(playlist));
+    }
+
     // "Mix" made on the client and agreed with the server.
     private async Task<(SimulatedFlowerServer Server, Client Client)> MixAgreedAsync()
     {
@@ -936,15 +981,15 @@ public class SyncScenarioTests : PinnedDataDirectory
 
     // UF-19: a session no longer holds what it read while a prompt is open.
     // The phone sends its edit of "Mix" before asking about "Contested"; the
-    // tablet's edit of "Mix", made while that prompt is open, does not go over
-    // it unasked - the tablet is asked instead.
+    // tablet's edit of "Mix", made while that prompt is open, is merged with
+    // it rather than written over it.
     [Fact]
-    public async Task An_edit_made_elsewhere_while_a_prompt_is_open_overwrites_nothing_unasked()
+    public async Task An_edit_made_elsewhere_while_a_prompt_is_open_overwrites_nothing()
     {
         var (server, phone, tablet) = await TwoDevicesAgreedAsync();
         using var owned = server;
         phone.Playlist("Mix").AppendTrack(phone.Single("B"));
-        phone.Playlist("Contested").AppendTrack(phone.Single("B"));
+        phone.Playlist("Contested").Name = "Contested on phone";
         server.Library.Playlists.Single(p => p.Name == "Contested").Name = "Contested on server";
 
         var tabletAsked = new List<string>();
@@ -961,20 +1006,20 @@ public class SyncScenarioTests : PinnedDataDirectory
         });
         await phone.SyncPlaylistsAsync(server);
 
-        Assert.Equal(["A", "B"], Titles(server.Library.Playlists.Single(p => p.Name == "Mix")));
-        Assert.Equal(["A", "C"], Titles(tablet.Playlist("Mix")));
-        Assert.Equal(["Mix"], tabletAsked);
+        Assert.Equal(["A", "B", "C"], Titles(server.Library.Playlists.Single(p => p.Name == "Mix")));
+        Assert.Equal(["A", "B", "C"], Titles(tablet.Playlist("Mix")));
+        Assert.Empty(tabletAsked);
     }
 
     // A change another device wrote between this session's read and its own
     // write is not written over: the server answers Stale with its copy, and
-    // the session plans again from that.
+    // the session plans again from that - here, two renames, so it asks.
     [Fact]
     public async Task A_change_that_lands_first_elsewhere_is_planned_against_not_written_over()
     {
         var (server, client) = await MixAgreedAsync();
         using var owned = server;
-        client.Playlist("Mix").AppendTrack(client.Single("B"));
+        client.Playlist("Mix").Name = "Renamed here";
         var asked = new List<string>();
         client.PlaylistSync.ConflictDetected += (_, e) =>
         {
@@ -990,8 +1035,35 @@ public class SyncScenarioTests : PinnedDataDirectory
         await client.SyncPlaylistsAsync(server);
 
         Assert.Equal("Renamed elsewhere", server.Library.Playlists.Single().Name);
-        Assert.Equal(["A"], Titles(server.Library.Playlists.Single()));
         Assert.Equal(["Renamed elsewhere"], asked);
+    }
+
+    // The same, where the two edits combine: planned again, merged, and sent
+    // over the revision the other write made.
+    [Fact]
+    public async Task A_change_that_lands_first_elsewhere_and_combines_is_merged_with_it()
+    {
+        var (server, client) = await MixAgreedAsync();
+        using var owned = server;
+        client.Playlist("Mix").AppendTrack(client.Single("B"));
+        var asked = 0;
+        client.PlaylistSync.ConflictDetected += (_, e) =>
+        {
+            asked++;
+            e.Resolution.SetResult(PlaylistConflictChoice.Later);
+        };
+
+        server.BeforeNextChanges = () =>
+        {
+            server.Library.Playlists.Single().Name = "Renamed elsewhere";
+            return Task.CompletedTask;
+        };
+        await client.SyncPlaylistsAsync(server);
+
+        Assert.Equal(0, asked);
+        Assert.Equal("Renamed elsewhere", server.Library.Playlists.Single().Name);
+        Assert.Equal(["A", "B"], Titles(server.Library.Playlists.Single()));
+        Assert.Equal(["A", "B"], Titles(client.Playlist("Renamed elsewhere")));
     }
 
     // The same, where the other write was the same edit: nothing to ask.
@@ -1374,14 +1446,13 @@ public class SyncScenarioTests : PinnedDataDirectory
         await client.PullLibraryAsync(server);
         await client.SyncPlaylistsAsync(server);
 
-        client.Playlist("Mix").AppendTrack(client.Single("B")); // phone edits first
+        client.Playlist("Mix").Name = "Mine";                    // phone edits first
         await Task.Delay(5);
         server.Library.Playlists.Single().Name = "Renamed";      // then the desktop
         client.PlaylistSync.ConflictDetected += (_, e) => e.Resolution.SetResult(PlaylistConflictChoice.KeepLocal);
         await client.SyncPlaylistsAsync(server);
 
-        Assert.Equal("Mix", server.Library.Playlists.Single().Name);
-        Assert.Equal(["A", "B"], Titles(server.Library.Playlists.Single()));
+        Assert.Equal("Mine", server.Library.Playlists.Single().Name);
     }
 
     // UF-6: a server restored from a backup is missing what was made since,
@@ -1455,7 +1526,7 @@ public class SyncScenarioTests : PinnedDataDirectory
         var client = NewClient();
         await client.PullLibraryAsync(server);
         await client.SyncPlaylistsAsync(server);
-        client.Playlist("Mix").AppendTrack(client.Single("B"));
+        client.Playlist("Mix").Name = "Phone name";
         await Task.Delay(5, TestContext.Current.CancellationToken);
         server.Library.Playlists.Single().Name = "Renamed";
         return (server, client);
@@ -1470,10 +1541,8 @@ public class SyncScenarioTests : PinnedDataDirectory
         {
             await client.SyncPlaylistsAsync(server);
 
-            Assert.Equal(["A", "B"], Titles(client.Playlist("Mix")));
-            var held = Assert.Single(server.Library.Playlists);
-            Assert.Equal("Renamed", held.Name);
-            Assert.Equal(["A"], Titles(held));
+            Assert.Equal(["A"], Titles(client.Playlist("Phone name")));
+            Assert.Equal("Renamed", Assert.Single(server.Library.Playlists).Name);
 
             var asked = 0;
             client.PlaylistSync.ConflictDetected += (_, e) =>
@@ -1505,11 +1574,11 @@ public class SyncScenarioTests : PinnedDataDirectory
             await client.SyncPlaylistsAsync(server);
 
             Assert.Equal(1, asked);
-            Assert.Equal(["A", "B"], Titles(client.Playlist("Mix")));
+            Assert.Single(client.Library.Playlists, p => p.Name == "Phone name");
             Assert.Equal("Renamed", server.Library.Playlists.Single().Name);
 
             await Task.Delay(5, TestContext.Current.CancellationToken);
-            client.Playlist("Mix").Name = "Mine";
+            client.Playlist("Phone name").Name = "Mine";
             await client.SyncPlaylistsAsync(server);
 
             Assert.Equal(2, asked);

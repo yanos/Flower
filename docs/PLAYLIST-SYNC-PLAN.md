@@ -4,9 +4,8 @@ Make a playlist edit impossible to lose, and stop asking people to settle
 conflicts that are not conflicts. It replaces how playlists are identified,
 versioned and merged between devices and `Flower.Server`.
 
-**Status (November 2026): phases 1 and 2 are built.** Phase 1 fixed UF-18,
-UF-20 and UF-24; phase 2 fixes UF-19, UF-21 and UF-22. What is left is phase 3,
-UF-23 in [USER-FLOW-REVIEW.md](USER-FLOW-REVIEW.md).
+**Status (November 2026): built.** Phase 1 fixed UF-18, UF-20 and UF-24,
+phase 2 UF-19, UF-21 and UF-22, and phase 3 UF-23. Nothing in this plan is left.
 
 ## Why patching stops working
 
@@ -215,13 +214,29 @@ What building it changed from the above:
   in the middle of a session, so the old "edited while the session takes the
   server's edit keeps both" scenario is phase 3's (UF-23).
 
-### Phase 3: merge by default (UF-23)
+### Phase 3: merge by default (UF-23) - built
 
-- The planner merges wherever the table says to, and asks only about a real
-  disagreement. The desktop window and phone sheet stay, with fewer reasons to appear.
+The planner merges from the agreed copy wherever the table says "Merge"
+(`PlaylistSyncDecisionKind.Merge`), and asks only about a real disagreement. The
+desktop window and phone sheet stay, with fewer reasons to appear.
 
-**Deleted:** `PlaylistSessionOverlay`, once merging against the current playlists
-covers edits made during a session.
+**Deleted:** `PlaylistSessionOverlay`, `PlannedPlaylist` and the session's held-back
+and merged-mid-session paths.
+
+What building it changed from the above:
+
+- **A session plans inside the library's lock**, against the playlists as they
+  are at the install (`Library.ReplacePlaylists`' compose), rather than planning
+  from a read and laying the result over what changed since. An edit made while
+  the session read the server is then just this device's copy, merged or asked
+  about like any other, which is what made the overlay unnecessary.
+- **`PlaylistThreeWayMerge` takes the agreed copy as a playlist** and merges
+  every kind: smart rules and a Vibe sentence field by field, with the newer
+  edit winning when both changed, their songs coming with the query kept, and a
+  folder's name and place. A playlist that changed kind does not combine. When
+  the merge cannot combine a smart or Vibe Playlist, the newer edit still wins
+  without a prompt, as before.
+- **A merge that comes out as the server's copy is adopted**, with nothing sent.
 
 ## Testing
 
@@ -247,7 +262,8 @@ covers edits made during a session.
 
 `API.md` (routes), `SYNC-PLAN.md` (playlist sync), `SECURITY.md` (the new write
 route's listener check), `USER-FLOW-REVIEW.md` (each fixed finding leaves), and
-`MANAGING-SONGS.md` and `GETTING-STARTED.md` (the "songs unavailable" line).
+`MANAGING-SONGS.md` and `GETTING-STARTED.md` (the "songs unavailable" line). All
+done.
 
 ## Decisions
 

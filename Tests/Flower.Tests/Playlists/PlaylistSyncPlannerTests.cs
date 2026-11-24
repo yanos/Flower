@@ -161,6 +161,34 @@ public class PlaylistSyncPlannerTests
         Assert.Equal(PlaylistSyncDecisionKind.Conflict, decision.Kind);
     }
 
+    // UF-23: renamed here, a song added there. Merged from the agreed copy,
+    // and sent over the server's revision, with nobody asked.
+    [Fact]
+    public void Changed_on_both_sides_in_ways_that_combine_is_merged()
+    {
+        var (local, agreed) = Agreed("Favorites", "A");
+        local.Name = "Road Trip";
+        var theirs = MovedOn(agreed.Copy! with { Tracks = [.. agreed.Copy!.Tracks, Dto("B")] });
+
+        var decision = PlanOne(local, theirs, agreed);
+
+        Assert.Equal((PlaylistSyncDecisionKind.Merge, 20L), (decision.Kind, decision.BaseRevision));
+        Assert.Equal("Road Trip", decision.Merged!.Name);
+        Assert.Equal(["A", "B"], decision.Merged.Entries.Select(e => e.Track?.Title ?? e.Song!.Title));
+    }
+
+    // This device's edit is already in the server's: there is nothing to send.
+    [Fact]
+    public void A_merge_that_comes_out_as_the_servers_copy_is_adopted()
+    {
+        var (local, agreed) = Agreed("Favorites", "A");
+        local.AppendTrack(T("B"));
+        var mine = PlaylistSyncMapper.ToDto(local);
+        var theirs = MovedOn(mine with { Tracks = [.. mine.Tracks, Dto("C")], Revision = 10 });
+
+        Assert.Equal(PlaylistSyncDecisionKind.AdoptRemote, PlanOne(local, theirs, agreed).Kind);
+    }
+
     // The same edit made on both sides, or this device's own change whose
     // answer never came back.
     [Fact]

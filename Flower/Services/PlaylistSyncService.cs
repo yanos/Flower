@@ -256,103 +256,39 @@ public class PlaylistSyncService
         HashSet<Guid>? only,
         Dictionary<Guid, Question> questions)
     {
-        var decisions = PlaylistSyncPlanner.Plan(
-            _library.Playlists, remote.Values.ToList(), deleted.Values.ToList(), agreements, index, only);
-
-        // What the plan was worked out from, so it can be laid over whatever
-        // the user did before it is installed - see PlaylistSessionOverlay.
-        // Taken now: the playlists are edited in place, so a later read would
-        // see those edits as the version planned from.
-        var planned = decisions.Where(d => d.Local != null).ToDictionary(d => d.PlaylistId, d => PlannedPlaylist.Of(d.Local!));
-        var decided = new List<Playlist>();
+        // Planned under the library's lock, against the playlists as they are
+        // at that moment, and installed in the same breath: an edit made here
+        // while the session read the server is simply this device's copy,
+        // merged or asked about like any other, and none can land between the
+        // plan and the install.
+        IReadOnlyList<PlaylistSyncDecision> decisions = [];
         var agreed = new Dictionary<Guid, PlaylistAgreement?>();
-
-        foreach (var decision in decisions)
-        {
-            var name = decision.Local?.Name ?? decision.Remote?.Name ?? "?";
-            _logger.LogTrace(
-                "Playlist sync with {Alias}: \"{Name}\" ({PlaylistId}) -> {Decision} (agreed {Agreed}, server {Server}, over {Base})",
-                device.Alias, name, decision.PlaylistId, decision.Kind,
-                agreements.GetValueOrDefault(decision.PlaylistId)?.Revision, decision.Remote?.Revision ?? decision.Deletion?.Revision,
-                decision.BaseRevision);
-            questions.Remove(decision.PlaylistId);
-
-            switch (decision.Kind)
-            {
-                case PlaylistSyncDecisionKind.NoChange:
-                    // The same sentence on both sides: the server's songs are
-                    // the answer to it, installed without moving UpdatedAt, as a
-                    // smart playlist's own re-evaluation is.
-                    if (decision.Local!.IsVibe)
-                        decision.Local.Materialize(index.Resolve(decision.Remote!.Tracks, out _));
-                    decided.Add(decision.Local);
-                    agreed[decision.PlaylistId] = new PlaylistAgreement(decision.Remote!.Revision, decision.Remote);
-                    break;
-                case PlaylistSyncDecisionKind.AdoptRemote:
-                    decided.Add(PlaylistSyncMapper.ToPlaylist(decision.Remote!, index, _logger));
-                    agreed[decision.PlaylistId] = new PlaylistAgreement(decision.Remote!.Revision, decision.Remote);
-                    break;
-                case PlaylistSyncDecisionKind.Push:
-                    decided.Add(decision.Local!);
-                    break;
-                case PlaylistSyncDecisionKind.DeleteHere:
-                    _logger.LogInformation("Playlist sync with {Alias}: \"{Name}\" was deleted on the server, deleting it here", device.Alias, name);
-                    agreed[decision.PlaylistId] = null;
-                    break;
-                case PlaylistSyncDecisionKind.Forget:
-                    agreed[decision.PlaylistId] = null;
-                    break;
-                case PlaylistSyncDecisionKind.PushDelete:
-                    break;
-                case PlaylistSyncDecisionKind.Conflict:
-                case PlaylistSyncDecisionKind.ConfirmDeletion:
-                    decided.Add(decision.Local!);
-                    var question = new Question(
-                        decision.Local!, PlaylistVersion.Of(PlaylistSyncMapper.ToDto(decision.Local!)), decision.Remote, decision.Deletion);
-                    if (_putOff.GetValueOrDefault(decision.PlaylistId) != (question.LocalVersion, question.RemoteRevision))
-                        questions[decision.PlaylistId] = question;
-                    break;
-            }
-        }
-
-        // Copies holding the same songs under different row ids become one set
-        // of rows, this device taking the server's. No edit, so nothing to push.
         var tookRowIds = false;
-        foreach (var decision in decisions)
+        var installed = _library.ReplacePlaylists(current =>
         {
-            if (decision is { Kind: PlaylistSyncDecisionKind.NoChange, Local.IsOrdinary: true, Remote: not null })
-                tookRowIds |= decision.Local.TakeEntryIdsFrom(planned[decision.PlaylistId].Entries, decision.Remote.Tracks);
-        }
+            decisions = PlaylistSyncPlanner.Plan(current, remote.Values.ToList(), deleted.Values.ToList(), agreements, index, only);
+            agreed.Clear();
+            tookRowIds = false;
+            var decided = new Dictionary<Guid, Playlist?>();
+            foreach (var decision in decisions)
+                decided[decision.PlaylistId] = Decide(device, decision, agreements, index, agreed, questions, ref tookRowIds);
 
-        // Laid over what the user did while this round ran - see
-        // PlaylistSessionOverlay. Persisted by Library.PlaylistsChanged.
-        PlaylistSessionResult result = null!;
-        _library.ReplacePlaylists(current =>
-        {
-            result = PlaylistSessionOverlay.Apply(decided, planned, current);
-            return result.Installed;
-        });
+            // In the library's own order, so the sidebar does not move; what
+            // the server brought goes at the end.
+            var next = new List<Playlist>();
+            foreach (var playlist in current)
+            {
+                if (!decided.TryGetValue(playlist.Id, out var mine))
+                    next.Add(playlist);
+                else if (mine != null)
+                    next.Add(mine);
+            }
+            var here = current.Select(p => p.Id).ToHashSet();
+            next.AddRange(decided.Values.Where(p => p != null && !here.Contains(p.Id))!);
+            return next;
+        }).ToDictionary(p => p.Id);
         if (tookRowIds)
             _library.NotePlaylistRowsRenamed();
-        var installed = result.Installed.ToDictionary(p => p.Id);
-
-        // Edited here mid-round and combined with the server's edit: a new
-        // version over the server's, for the push below. Edited and not
-        // combinable: kept, not agreed and not pushed, so the next session
-        // finds both sides changed and asks.
-        foreach (var id in result.Merged.Concat(result.HeldBack))
-            agreed.Remove(id);
-        foreach (var id in result.HeldBack)
-        {
-            _logger.LogInformation(
-                "Playlist sync with {Alias}: \"{Name}\" was edited here while the session ran and cannot be combined with the server's edit - left for the next session to ask about",
-                device.Alias, installed[id].Name);
-        }
-
-        // Deleted there and edited here meanwhile: the edit is kept, and its
-        // agreement too, so the next session reads it as an edit to send.
-        foreach (var id in agreed.Where(e => e.Value == null && installed.ContainsKey(e.Key)).Select(e => e.Key).ToList())
-            agreed.Remove(id);
 
         // After the install, never before - see PlaylistAgreementRepository.
         Save(device, agreements, agreed);
@@ -360,8 +296,8 @@ public class PlaylistSyncService
         var changes = new List<PlaylistChangeDto>();
         foreach (var decision in decisions)
         {
-            if (decision.Kind == PlaylistSyncDecisionKind.Push && installed.TryGetValue(decision.PlaylistId, out var mine)
-                && !result.HeldBack.Contains(decision.PlaylistId))
+            if (decision.Kind is PlaylistSyncDecisionKind.Push or PlaylistSyncDecisionKind.Merge
+                && installed.TryGetValue(decision.PlaylistId, out var mine))
             {
                 changes.Add(new PlaylistChangeDto(decision.PlaylistId, decision.BaseRevision, PlaylistSyncMapper.ToDto(mine)));
             }
@@ -370,8 +306,6 @@ public class PlaylistSyncService
                 changes.Add(new PlaylistChangeDto(decision.PlaylistId, decision.BaseRevision, Delete: true));
             }
         }
-        foreach (var id in result.Merged)
-            changes.Add(new PlaylistChangeDto(id, remote[id].Revision, PlaylistSyncMapper.ToDto(installed[id])));
 
         if (changes.Count == 0)
             return [];
@@ -445,6 +379,81 @@ public class PlaylistSyncService
                 agreements.Remove(id);
             else
                 agreements[id] = agreement;
+        }
+    }
+
+    private void LogDecision(DiscoveredDevice device, PlaylistSyncDecision decision, Dictionary<Guid, PlaylistAgreement> agreements) =>
+        _logger.LogTrace(
+            "Playlist sync with {Alias}: \"{Name}\" ({PlaylistId}) -> {Decision} (agreed {Agreed}, server {Server}, over {Base})",
+            device.Alias, decision.Local?.Name ?? decision.Remote?.Name ?? "?", decision.PlaylistId, decision.Kind,
+            agreements.GetValueOrDefault(decision.PlaylistId)?.Revision, decision.Remote?.Revision ?? decision.Deletion?.Revision,
+            decision.BaseRevision);
+
+    // What this device holds once one decision is carried out, or null for
+    // nothing; records what it agrees on and what it must ask. Runs under the
+    // library's lock (see RoundAsync), so it only computes: neither Materialize
+    // nor TakeEntryIdsFrom raises anything.
+    private Playlist? Decide(
+        DiscoveredDevice device,
+        PlaylistSyncDecision decision,
+        Dictionary<Guid, PlaylistAgreement> agreements,
+        PlaylistTrackIndex index,
+        Dictionary<Guid, PlaylistAgreement?> agreed,
+        Dictionary<Guid, Question> questions,
+        ref bool tookRowIds)
+    {
+        LogDecision(device, decision, agreements);
+        questions.Remove(decision.PlaylistId);
+
+        switch (decision.Kind)
+        {
+            case PlaylistSyncDecisionKind.NoChange:
+                // The same sentence on both sides: the server's songs are the
+                // answer to it, installed without moving UpdatedAt, as a
+                // smart playlist's own re-evaluation is.
+                if (decision.Local!.IsVibe)
+                    decision.Local.Materialize(index.Resolve(decision.Remote!.Tracks, out _));
+                // Copies holding the same songs under different row ids become
+                // one set of rows, this device taking the server's. No edit,
+                // so nothing to push.
+                if (decision.Local.IsOrdinary)
+                    tookRowIds |= decision.Local.TakeEntryIdsFrom(decision.Local.Entries, decision.Remote!.Tracks);
+                agreed[decision.PlaylistId] = new PlaylistAgreement(decision.Remote!.Revision, decision.Remote);
+                return decision.Local;
+
+            case PlaylistSyncDecisionKind.AdoptRemote:
+                agreed[decision.PlaylistId] = new PlaylistAgreement(decision.Remote!.Revision, decision.Remote);
+                return PlaylistSyncMapper.ToPlaylist(decision.Remote, index, _logger);
+
+            case PlaylistSyncDecisionKind.Push:
+                return decision.Local;
+
+            case PlaylistSyncDecisionKind.Merge:
+                _logger.LogInformation(
+                    "Playlist sync with {Alias}: \"{Name}\" was edited here and on the server, and the two edits combine",
+                    device.Alias, decision.Merged!.Name);
+                return decision.Merged;
+
+            case PlaylistSyncDecisionKind.DeleteHere:
+                _logger.LogInformation("Playlist sync with {Alias}: \"{Name}\" was deleted on the server, deleting it here",
+                    device.Alias, decision.Local!.Name);
+                agreed[decision.PlaylistId] = null;
+                return null;
+
+            case PlaylistSyncDecisionKind.Forget:
+                agreed[decision.PlaylistId] = null;
+                return null;
+
+            case PlaylistSyncDecisionKind.Conflict:
+            case PlaylistSyncDecisionKind.ConfirmDeletion:
+                var question = new Question(
+                    decision.Local!, PlaylistVersion.Of(PlaylistSyncMapper.ToDto(decision.Local!)), decision.Remote, decision.Deletion);
+                if (_putOff.GetValueOrDefault(decision.PlaylistId) != (question.LocalVersion, question.RemoteRevision))
+                    questions[decision.PlaylistId] = question;
+                return decision.Local;
+
+            default:
+                return decision.Local;
         }
     }
 

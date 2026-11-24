@@ -9,9 +9,9 @@ using Xunit;
 
 namespace Flower.Tests.Playlists;
 
-// Two edits of one playlist made from the same version - here while a sync
-// session ran, and on the other side before it - combined, or refused when
-// both cannot be kept (PlaylistThreeWayMerge).
+// Two edits of one playlist made from the copy both sides last agreed on -
+// this device's and the server's - combined, or refused when both cannot be
+// kept, which is when sync asks (PlaylistThreeWayMerge).
 public class PlaylistThreeWayMergeTests
 {
     private static readonly Dictionary<string, Track> Songs =
@@ -26,7 +26,7 @@ public class PlaylistThreeWayMergeTests
         new(Id, name, Tracks(titles), Then.AddMinutes(minutesLater));
 
     private static string? Merge(string before, string ours, string theirs) =>
-        PlaylistThreeWayMerge.Merge(PlannedPlaylist.Of(Version(before)), Version(ours, minutesLater: 1), Version(theirs, minutesLater: 2)) is { } merged
+        PlaylistThreeWayMerge.Merge(Version(before), Version(ours, minutesLater: 1), Version(theirs, minutesLater: 2)) is { } merged
             ? string.Concat(merged.Tracks.Select(t => t.Title))
             : null;
 
@@ -63,7 +63,7 @@ public class PlaylistThreeWayMergeTests
         var ours = Version("ABC", minutesLater: 1);
         ours.ParentId = folder;
 
-        var merged = PlaylistThreeWayMerge.Merge(PlannedPlaylist.Of(Version("ABC")), ours, Version("ABCD", minutesLater: 2));
+        var merged = PlaylistThreeWayMerge.Merge(Version("ABC"), ours, Version("ABCD", minutesLater: 2));
 
         Assert.NotNull(merged);
         Assert.Equal(folder, merged.ParentId);
@@ -76,7 +76,7 @@ public class PlaylistThreeWayMergeTests
         var ours = Version("ABC", minutesLater: 1);
         ours.SortKey = 3;
 
-        var merged = PlaylistThreeWayMerge.Merge(PlannedPlaylist.Of(Version("ABC")), ours, Version("ABCD", minutesLater: 2));
+        var merged = PlaylistThreeWayMerge.Merge(Version("ABC"), ours, Version("ABCD", minutesLater: 2));
 
         Assert.Equal(3, merged?.SortKey);
         Assert.Equal("ABCD", string.Concat(merged!.Tracks.Select(t => t.Title)));
@@ -90,7 +90,7 @@ public class PlaylistThreeWayMergeTests
         var theirs = Version("ABC", minutesLater: 2);
         theirs.ParentId = Guid.NewGuid();
 
-        Assert.Null(PlaylistThreeWayMerge.Merge(PlannedPlaylist.Of(Version("ABC")), ours, theirs));
+        Assert.Null(PlaylistThreeWayMerge.Merge(Version("ABC"), ours, theirs));
     }
 
     [Fact]
@@ -110,7 +110,7 @@ public class PlaylistThreeWayMergeTests
     [Fact]
     public void A_rename_on_one_side_is_kept_and_two_different_renames_are_not_combined()
     {
-        var before = PlannedPlaylist.Of(Version("AB"));
+        var before = Version("AB");
 
         var renamedHere = PlaylistThreeWayMerge.Merge(before, Version("AB", "Road trip", 1), Version("ABC", minutesLater: 2));
         Assert.Equal("Road trip", renamedHere!.Name);
@@ -126,24 +126,71 @@ public class PlaylistThreeWayMergeTests
         var ours = Version("ABD", minutesLater: 1);
         var theirs = Version("ABCE", minutesLater: 2);
 
-        var merged = PlaylistThreeWayMerge.Merge(PlannedPlaylist.Of(Version("ABC")), ours, theirs)!;
+        var merged = PlaylistThreeWayMerge.Merge(Version("ABC"), ours, theirs)!;
 
         Assert.True(merged.UpdatedAt > ours.UpdatedAt);
         Assert.True(merged.UpdatedAt > theirs.UpdatedAt);
         Assert.Equal(Id, merged.Id);
     }
 
-    [Fact]
-    public void Smart_playlists_are_never_combined()
-    {
-        var rules = new SmartPlaylistRules(
-            MatchMode.All,
-            [new SmartCondition(SmartField.Genre, SmartOperator.Is, new SmartValue.Text("Jazz"))],
-            null,
-            LiveUpdating: true);
-        var smart = new Playlist(Id, "Mix", Tracks("ABD"), Then.AddMinutes(1), rules: rules);
+    private static SmartPlaylistRules Genre(string genre) => new(
+        MatchMode.All,
+        [new SmartCondition(SmartField.Genre, SmartOperator.Is, new SmartValue.Text(genre))],
+        null,
+        LiveUpdating: true);
 
-        Assert.Null(PlaylistThreeWayMerge.Merge(PlannedPlaylist.Of(Version("ABC")), smart, Version("ABCE", minutesLater: 2)));
+    private static Playlist Smart(string genre, string name = "Mix", int minutesLater = 0) =>
+        new(Id, name, Tracks("AB"), Then.AddMinutes(minutesLater), rules: Genre(genre));
+
+    [Fact]
+    public void A_smart_playlist_renamed_on_one_side_and_given_new_rules_on_the_other_keeps_both()
+    {
+        var merged = PlaylistThreeWayMerge.Merge(Smart("Jazz"), Smart("Jazz", "Evening", 1), Smart("Blues", minutesLater: 2));
+
+        Assert.Equal("Evening", merged!.Name);
+        Assert.True(SmartPlaylistRules.Equivalent(Genre("Blues"), merged.Rules));
+    }
+
+    // No hand-built list is at stake, so nobody is asked: the newer rules win.
+    [Fact]
+    public void Rules_changed_on_both_sides_keep_the_newer()
+    {
+        var merged = PlaylistThreeWayMerge.Merge(Smart("Jazz"), Smart("Blues", minutesLater: 2), Smart("Soul", minutesLater: 1));
+
+        Assert.True(SmartPlaylistRules.Equivalent(Genre("Blues"), merged!.Rules));
+    }
+
+    [Fact]
+    public void A_vibe_playlists_sentence_and_name_combine_the_same_way()
+    {
+        Playlist Vibe(string prompt, string name = "Mix", int minutesLater = 0) =>
+            new(Id, name, Tracks("AB"), Then.AddMinutes(minutesLater), vibePrompt: prompt);
+
+        var merged = PlaylistThreeWayMerge.Merge(Vibe("rain"), Vibe("rain", "Grey day", 1), Vibe("rain at night", minutesLater: 2));
+
+        Assert.Equal(("Grey day", "rain at night"), (merged!.Name, merged.VibePrompt));
+    }
+
+    [Fact]
+    public void A_folder_renamed_on_one_side_and_moved_on_the_other_keeps_both()
+    {
+        var parent = Guid.NewGuid();
+        Playlist Folder(string name, Guid? parentId, int minutesLater) =>
+            new(Id, name, [], Then.AddMinutes(minutesLater), isFolder: true, parentId: parentId);
+
+        var merged = PlaylistThreeWayMerge.Merge(Folder("Moods", null, 0), Folder("Feelings", null, 1), Folder("Moods", parent, 2));
+
+        Assert.Equal(("Feelings", (Guid?)parent), (merged!.Name, merged.ParentId));
+    }
+
+    // Rules added on one side make it another kind of playlist, with no rows
+    // to combine with the other side's.
+    [Fact]
+    public void A_playlist_that_became_smart_on_one_side_is_not_combined()
+    {
+        var smart = new Playlist(Id, "Mix", Tracks("ABD"), Then.AddMinutes(1), rules: Genre("Jazz"));
+
+        Assert.Null(PlaylistThreeWayMerge.Merge(Version("ABC"), smart, Version("ABCE", minutesLater: 2)));
     }
 
     // UF-24: which copy left is known, not counted.
@@ -156,7 +203,7 @@ public class PlaylistThreeWayMergeTests
         ours.RemoveEntriesAt([0]);
         theirs.InsertTrack(1, Songs["C"]);
 
-        var merged = PlaylistThreeWayMerge.Merge(PlannedPlaylist.Of(original), ours, theirs);
+        var merged = PlaylistThreeWayMerge.Merge(original, ours, theirs);
 
         Assert.Equal("CAB", string.Concat(merged!.Tracks.Select(t => t.Title)));
     }

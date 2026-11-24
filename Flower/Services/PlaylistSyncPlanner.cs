@@ -27,7 +27,12 @@ public enum PlaylistSyncDecisionKind
     // Gone on both sides: only the agreement is left to drop.
     Forget,
 
-    // Both sides changed it, differently - only a person can say which to keep.
+    // Both sides changed it in ways that combine (PlaylistThreeWayMerge):
+    // Merged is installed here and goes to the server over BaseRevision.
+    Merge,
+
+    // Both sides changed it in ways that do not combine - only a person can
+    // say which to keep.
     Conflict,
 
     // The server records it deleted, and this device cannot tell whether its
@@ -41,7 +46,8 @@ public sealed record PlaylistSyncDecision(
     Playlist? Local,
     PlaylistSyncPlaylistDto? Remote,
     PlaylistDeletionDto? Deletion = null,
-    long BaseRevision = 0);
+    long BaseRevision = 0,
+    Playlist? Merged = null);
 
 // Pure merge logic for playlist sync, kept free of I/O (HTTP, disk) so it's unit
 // testable on its own. PlaylistSyncService is the shell that feeds it and
@@ -122,7 +128,26 @@ public static class PlaylistSyncPlanner
             return new(id, PlaylistSyncDecisionKind.AdoptRemote, l, r);
         if (SameContent(l, r, index))
             return new(id, PlaylistSyncDecisionKind.NoChange, l, r);
-        return BothChanged(id, l, r);
+        return Combined(id, l, r, agreed, index) ?? BothChanged(id, l, r);
+    }
+
+    // Both sides changed it since the copy they agreed on: the two edits
+    // merged from that copy, when they combine. A merge that comes out as the
+    // server's copy - this device's edit was already part of it - is that
+    // copy, with nothing to send.
+    private static PlaylistSyncDecision? Combined(
+        Guid id, Playlist l, PlaylistSyncPlaylistDto r, PlaylistAgreement agreed, PlaylistTrackIndex index)
+    {
+        if (agreed.Copy == null)
+            return null;
+
+        var before = PlaylistSyncMapper.ToPlaylist(agreed.Copy, index);
+        if (PlaylistThreeWayMerge.Merge(before, l, PlaylistSyncMapper.ToPlaylist(r, index)) is not { } merged)
+            return null;
+
+        return SameContent(merged, r, index)
+            ? new(id, PlaylistSyncDecisionKind.AdoptRemote, l, r)
+            : new(id, PlaylistSyncDecisionKind.Merge, l, r, BaseRevision: r.Revision, Merged: merged);
     }
 
     // No agreed copy, or one older than every version the server remembers:

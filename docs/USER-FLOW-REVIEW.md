@@ -4,10 +4,8 @@ Bugs a person using Flower would hit: data lost, the wrong thing done, a dead
 end, or behaviour that misleads. The `user-flow-review` skill finds them and
 keeps this list; `/release` treats every open **P0** here as blocking the tag.
 
-**Status:** 6 open (0 P0, 0 fix-now, 6 later). UF-12 to UF-16 are from the
-review of `ef6695fb` on 2026-11-22. UF-23 is from a run of paired devices
-against a real `Flower.Server` at `99c0173d` on 2026-11-23, and
-[PLAYLIST-SYNC-PLAN.md](PLAYLIST-SYNC-PLAN.md) phase 3 is its fix.
+**Status:** 5 open (0 P0, 0 fix-now, 5 later), UF-12 to UF-16, all from the
+review of `ef6695fb` on 2026-11-22.
 
 Severities are the ones in `.claude/skills/release/REVIEW.md`. **Reproduced**
 means a throwaway test against an export of that commit went red on the bug, or,
@@ -49,12 +47,3 @@ one playlist onto another. `Flower/Controls/MusicListView.axaml.cs:579`.
 Adding 5,000 songs took 22 seconds, because each one rewrites every playlist on
 the UI thread. `Flower/ViewModels/PlaylistManagementViewModel.cs:538`.
 *Direction:* append the batch as one edit.
-
-**UF-23. Edits that do not overlap still ask which version to keep.** *Reproduced.*
-A rename on one device and a song added on another raise a conflict, because a
-device remembers when it last agreed and not what it agreed on, so it has nothing
-to merge from. `Flower/Services/PlaylistSyncPlanner.cs:202`.
-*Direction:* keep the agreed copy and merge from it (plan, phase 3). Phase 2
-keeps the agreed copy, so what is left is merging from it: as of phase 2 a
-device that edited a playlist while another device's edit of it reached the
-server is asked, and neither edit is lost.

@@ -3181,14 +3181,12 @@ namespace Flower.Models
         // every single poll even when nothing actually changed.
         public void ReplacePlaylists(List<Playlist> playlists) => ReplacePlaylists(_ => playlists);
 
-        // The same, for a set worked out from an earlier read of this one:
-        // compose is handed the set as it is now, under the lock, and returns
-        // the set to install. A sync session plans, may wait on a conflict
-        // prompt, and can run off the UI thread altogether, so what the user
-        // did in between has to be laid over its merge at the moment of the
-        // swap rather than overwritten by it - see PlaylistSessionOverlay.
-        // Swapping the merge in wholesale is how a deleted playlist came
-        // straight back.
+        // The same, for a set worked out from this one: compose is handed the
+        // set as it is now, under the lock, and returns the set to install. A
+        // sync session plans inside it (PlaylistSyncService), so what the user
+        // did while the session read the server is planned from rather than
+        // overwritten. Swapping in a merge planned from an earlier read is how
+        // a deleted playlist once came straight back.
         //
         // compose runs under the lock: it must only compute, never touch the
         // library or raise anything. Returns the set installed.

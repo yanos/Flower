@@ -241,7 +241,7 @@ git show be0c4c79:docs/CODE-REVIEW.md
 | **D5** | The retired review documents still existed. They are deleted, and indexed above. |
 | **E** | Comments still described LibVLC, OpenSubsonic and client/server roles, and `CLAUDE.md` still named `library.json`. All corrected. |
 | **F.1–F.7** | The test gaps behind B1, B2, A1, A2, C1 and D1 have been written. |
-| **F.8** | `PlaylistSessionOverlay.Apply` and `CrashReportScanner` had no tests. `PlaylistSessionOverlayTests` and `CrashReportScannerTests` (Linux and macOS; the Windows event log cannot be filled from a test). |
+| **F.8** | `PlaylistSessionOverlay.Apply` and `CrashReportScanner` had no tests. `PlaylistSessionOverlayTests` and `CrashReportScannerTests` (Linux and macOS; the Windows event log cannot be filled from a test). The overlay and its tests went in playlist sync phase 3, when a session began planning under the library's lock (`docs/PLAYLIST-SYNC-PLAN.md`). |
 | **Denied peers** | Dead since peer-to-peer went. Removed, `denied-peers.json` included. |
 
 ### Checked and sound

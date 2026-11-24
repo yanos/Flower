@@ -212,8 +212,12 @@ public class SmartPlaylistSyncTests
             Remote(id, "Played", theirs, older.AddMinutes(10), Dto("B")),
             agreed);
 
+        // Mine is the newer edit and goes up: merged from the agreed copy when
+        // there is one, keeping my rules.
         Assert.NotEqual(PlaylistSyncDecisionKind.Conflict, decision.Kind);
-        Assert.Equal(PlaylistSyncDecisionKind.Push, decision.Kind);
+        Assert.Equal(withAgreedCopy ? PlaylistSyncDecisionKind.Merge : PlaylistSyncDecisionKind.Push, decision.Kind);
+        if (withAgreedCopy)
+            Assert.True(SmartPlaylistRules.Equivalent(mine, decision.Merged!.Rules));
     }
 
     [Fact]
