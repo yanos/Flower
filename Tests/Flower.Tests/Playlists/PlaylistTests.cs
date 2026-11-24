@@ -269,4 +269,43 @@ public class PlaylistTests
         Assert.Equal(1000, playlist.Entries.Count);
         Assert.Equal(1000, playlist.Entries.Select(e => e.EntryId).Distinct().Count());
     }
+
+    private static string Order(Playlist playlist) => string.Concat(playlist.Tracks.Select(t => t.Title));
+
+    // UF-15: a selection dragged as one lands together, in its own order, as
+    // one edit.
+    [Fact]
+    public void Several_entries_move_together_before_the_one_dropped_on()
+    {
+        var playlist = new Playlist("Mix", "ABCDE".Select(c => T(c.ToString())).ToList());
+        var before = playlist.UpdatedAt;
+
+        Assert.True(playlist.MoveEntries([0, 2], 4));
+
+        Assert.Equal("BDACE", Order(playlist));
+        Assert.True(playlist.UpdatedAt > before);
+    }
+
+    [Fact]
+    public void Several_entries_move_together_to_the_end()
+    {
+        var playlist = new Playlist("Mix", "ABCDE".Select(c => T(c.ToString())).ToList());
+
+        Assert.True(playlist.MoveEntries([3, 1], 5));
+
+        Assert.Equal("ACEBD", Order(playlist));
+    }
+
+    // Dropped where they already are: no edit, so nothing to sync.
+    [Fact]
+    public void Entries_dropped_where_they_already_stand_are_no_edit()
+    {
+        var playlist = new Playlist("Mix", "ABCDE".Select(c => T(c.ToString())).ToList());
+        var before = playlist.UpdatedAt;
+
+        Assert.False(playlist.MoveEntries([1, 2], 3));
+
+        Assert.Equal("ABCDE", Order(playlist));
+        Assert.Equal(before, playlist.UpdatedAt);
+    }
 }

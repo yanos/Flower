@@ -2805,6 +2805,25 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             : Task.CompletedTask;
     }
 
+    // Several rows dragged together, by the same rule.
+    public Task ReorderPlaylistRows(Playlist playlist, IReadOnlyList<TrackRowViewModel> dragged, TrackRowViewModel? insertBefore)
+    {
+        if (dragged.Count == 1)
+            return ReorderPlaylistRow(playlist, dragged[0], insertBefore);
+
+        var entries = playlist.Tracks;
+        var slots = PlaylistRowSlots.SlotsOf(entries, Rows, dragged);
+        if (slots.Count == 0)
+            return Task.CompletedTask;
+
+        if (insertBefore == null)
+            return Playlists.ReorderEntries(playlist, slots, entries.Count);
+
+        return PlaylistRowSlots.SlotsOf(entries, Rows, [insertBefore]) is [var before]
+            ? Playlists.ReorderEntries(playlist, slots, before)
+            : Task.CompletedTask;
+    }
+
     public Task RemoveRowsFromPlaylist(Playlist playlist, IReadOnlyCollection<TrackRowViewModel> rows) =>
         Playlists.RemoveEntries(playlist, PlaylistRowSlots.SlotsOf(playlist.Tracks, Rows, rows));
 

@@ -160,14 +160,18 @@ public sealed class TrackRowSelection
     /// another copy of its song it becomes a different occurrence, and the
     /// selection has to stay on the one that moved through the rebuild to come.
     /// </summary>
-    public void NoteMoved(TrackRowViewModel row, TrackRowViewModel? insertBefore)
+    public void NoteMoved(TrackRowViewModel row, TrackRowViewModel? insertBefore) => NoteMoved([row], insertBefore);
+
+    // The same for several rows moved together, which land in the order given.
+    public void NoteMoved(IReadOnlyList<TrackRowViewModel> rows, TrackRowViewModel? insertBefore)
     {
-        var order = _items.Where(r => !ReferenceEquals(r, row)).ToList();
+        var moving = rows.ToHashSet();
+        var order = _items.Where(r => !moving.Contains(r)).ToList();
         var at = insertBefore == null ? order.Count : order.IndexOf(insertBefore);
         if (at < 0)
             return;
 
-        order.Insert(at, row);
+        order.InsertRange(at, rows);
         Remember(order);
     }
 

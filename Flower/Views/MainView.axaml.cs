@@ -100,7 +100,8 @@ public partial class MainView : UserControl
         MusicList.RowDownloadRequested += OnRowDownloadRequested;
         MusicList.HeaderContextMenu += OnHeaderContextMenu;
         MusicList.SortRequested   += OnSortRequested;
-        MusicList.RowReordered    += OnRowReordered;
+        MusicList.RowsReordered   += OnRowsReordered;
+        MusicList.TrackDragAbandoned += (_, _) => ResetDragVisuals();
         MusicList.TrackDragMoved  += OnTrackDragMoved;
         MusicList.TrackDragEnded  += OnTrackDragEnded;
 
@@ -1451,7 +1452,10 @@ public partial class MainView : UserControl
             _viewModel?.AddToQueue(SelectedTracksInListOrder());
         else if (target?.PlaylistItem?.Playlist is { IsFolder: true } folder)
             _ = _viewModel?.CreatePlaylistWithTracks(e.tracks, folder);
-        else if (target?.PlaylistItem?.Playlist is { } playlist)
+        // A playlist's songs dragged out and dropped back on that playlist's
+        // own row are where they started (UF-15 lets a playlist's songs be
+        // dragged out at all).
+        else if (target?.PlaylistItem?.Playlist is { } playlist && playlist != _viewModel?.SelectedSidebarItem?.Playlist)
             _ = _viewModel?.AddTracksToPlaylist(e.tracks, playlist);
         else if (target?.CreateNew == true)
             _ = _viewModel?.CreatePlaylistWithTracks(e.tracks);
@@ -2814,7 +2818,7 @@ public partial class MainView : UserControl
 
     // ── Drag-to-reorder (playlist view only) ────────────────────────────────────
 
-    private async void OnRowReordered(object? sender, (TrackRowViewModel dragged, TrackRowViewModel? insertBefore) e)
+    private async void OnRowsReordered(object? sender, (IReadOnlyList<TrackRowViewModel> dragged, TrackRowViewModel? insertBefore) e)
     {
         if (_viewModel is not MainViewModel vm)
             return;
@@ -2826,7 +2830,7 @@ public partial class MainView : UserControl
         if (vm.SelectedSidebarItem?.Playlist is not Playlist playlist)
             return;
 
-        await vm.ReorderPlaylistRow(playlist, e.dragged, e.insertBefore);
+        await vm.ReorderPlaylistRows(playlist, e.dragged, e.insertBefore);
     }
 
     // ── Device detail: the selected server's own settings ──────────────────────

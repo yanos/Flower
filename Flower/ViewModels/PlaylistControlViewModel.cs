@@ -972,16 +972,16 @@ namespace Flower.ViewModels
         /// queue's length - both as slots in <see cref="CurrentPlaylist"/>, since
         /// a queue can hold one song twice. The song playing stays where it is,
         /// and nothing moves in front of it.</summary>
-        public void MoveQueueEntry(int from, int insertBefore)
+        public bool MoveQueueEntry(int from, int insertBefore)
         {
             var queue = new List<Track>(_currentPlaylist.Tracks);
             var index = QueueIndex;
             if (from < 0 || from >= queue.Count || from == index)
-                return;
+                return false;
             if (insertBefore <= index || insertBefore > queue.Count)
-                return;
+                return false;
             if (insertBefore == from || insertBefore == from + 1)
-                return;
+                return false;
 
             // The lined-up block keeps its own length as songs cross into or out
             // of it - see _linedUpCount.
@@ -1013,6 +1013,7 @@ namespace Flower.ViewModels
                 index--;
 
             ReplaceQueueKeepingPlace(queue, index);
+            return true;
         }
 
         /// <summary>Takes the entry at <paramref name="slot"/> out of the queue.

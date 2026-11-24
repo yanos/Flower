@@ -47,6 +47,33 @@ public class QueueFollowsItsSourceTests : PinnedDataDirectory
         return (parts, playlist);
     }
 
+    // UF-15: a selection dragged in a playlist lands together, in its own
+    // order, and the queue playing from it follows.
+    [AvaloniaFact]
+    public async Task Several_songs_dragged_together_in_the_playing_playlist_land_together()
+    {
+        var (parts, playlist) = await Playing(0, "A", "B", "C", "D", "E");
+
+        await parts.Main.ReorderPlaylistRows(playlist, [Row(parts, "B"), Row(parts, "D")], Row(parts, "E"));
+
+        Assert.Equal(new[] { "A", "C", "B", "D", "E" }, playlist.Tracks.Select(t => t.Title));
+        Assert.Equal(new[] { "A", "C", "B", "D", "E" }, Queue(parts));
+    }
+
+    // The same in the queue itself.
+    [AvaloniaFact]
+    public async Task Several_queue_rows_dragged_together_land_together()
+    {
+        var (parts, _) = await Playing(0, "A", "B", "C", "D", "E");
+        parts.Main.SelectedSidebarItem = parts.Main.SidebarItems.First(i => i.Kind == SidebarItemKind.Queue);
+        await UiWait.Until(() => parts.Main.Queue.Rows.Count == 5, "the queue page shows the queue");
+        TrackRowViewModel QueueRow(string title) => parts.Main.Queue.Rows.First(r => r.Track.Title == title);
+
+        parts.Main.Queue.Reorder([QueueRow("B"), QueueRow("D")], QueueRow("E"));
+
+        Assert.Equal(new[] { "A", "C", "B", "D", "E" }, Queue(parts));
+    }
+
     [AvaloniaFact]
     public async Task A_song_moved_up_the_playing_playlist_is_what_plays_next()
     {

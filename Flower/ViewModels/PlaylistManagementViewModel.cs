@@ -575,6 +575,21 @@ public sealed class PlaylistManagementViewModel
         return Task.CompletedTask;
     }
 
+    // A selection dragged as one (UF-15): the entries at these slots to just
+    // before the one at `insertBefore`, or to the end (Playlist.MoveEntries).
+    public Task ReorderEntries(Playlist playlist, IReadOnlyCollection<int> slots, int insertBefore)
+    {
+        // Refused for the same reason as ReorderEntry.
+        if (!playlist.IsOrdinary || !playlist.MoveEntries(slots, insertBefore))
+            return Task.CompletedTask;
+
+        if (_host.SelectedSidebarItem?.Playlist == playlist)
+            _host.PlaylistContentChanged();
+
+        _host.ScheduleContentSync();
+        return Task.CompletedTask;
+    }
+
     // The song menu's Remove from Playlist, on either head: the entries at
     // these slots (Playlist.RemoveEntriesAt). The songs stay in the library,
     // so nothing asks first. Refused for a smart playlist or a folder, like

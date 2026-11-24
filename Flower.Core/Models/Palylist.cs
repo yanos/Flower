@@ -572,6 +572,49 @@ namespace Flower.Models
             return true;
         }
 
+        // Several entries dragged together (UF-15): the ones at these slots
+        // move, in the order they stand, to sit just before the entry now at
+        // slot insertBefore - or at the end, for Tracks.Count. One edit, by
+        // slot for RemoveEntriesAt's reason. False, changing nothing (not even
+        // UpdatedAt, for MoveEntry's reason), when no slot is here, the place
+        // is one of those moving, or the order comes out as it was.
+        public bool MoveEntries(IReadOnlyCollection<int> slots, int insertBefore)
+        {
+            var moved = Edit(entries =>
+            {
+                var count = entries.Tracks.Count;
+                if (insertBefore < 0 || insertBefore > count)
+                    return null;
+                var places = slots.Where(slot => slot >= 0 && slot < count).Distinct().Order().Select(entries.PlaceOf).ToList();
+                if (places.Count == 0)
+                    return null;
+
+                var all = entries.All;
+                var moving = places.ToHashSet();
+                var rest = all.Where((_, place) => !moving.Contains(place)).ToList();
+                int at;
+                if (insertBefore == count)
+                {
+                    at = rest.Count;
+                }
+                else
+                {
+                    var before = entries.PlaceOf(insertBefore);
+                    if (moving.Contains(before))
+                        return null;
+                    at = rest.FindIndex(e => e.EntryId == all[before].EntryId);
+                }
+
+                rest.InsertRange(at, places.Select(place => all[place]));
+                return rest.Select(e => e.EntryId).SequenceEqual(all.Select(e => e.EntryId)) ? null : new EntryList(rest);
+            });
+            if (!moved)
+                return false;
+
+            Touch();
+            return true;
+        }
+
         // Swaps each entry for whichever Track instance now represents it,
         // without touching UpdatedAt - see Library.RebindPlaylistTracks, which
         // is the only caller and explains why. Not a mutation in the sense the

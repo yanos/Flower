@@ -132,9 +132,10 @@ public partial class MusicListView : UserControl
     public bool AllowReorder { get; set; }
 
     // Rows rather than tracks, because the queue can hold one song twice and
-    // a track cannot say which copy was dragged. A row whose CanBeDragged is
-    // false - the queue's song playing - stays put.
-    public event EventHandler<(TrackRowViewModel dragged, TrackRowViewModel? insertBefore)>? RowReordered;
+    // a track cannot say which copy was dragged. The whole selection when the
+    // row grabbed is in it, in the list's order (TrackRowDragGesture). A row
+    // whose CanBeDragged is false - the queue's song playing - stays put.
+    public event EventHandler<(IReadOnlyList<TrackRowViewModel> dragged, TrackRowViewModel? insertBefore)>? RowsReordered;
 
     private readonly Border _dropIndicator = new()
     {
@@ -145,10 +146,8 @@ public partial class MusicListView : UserControl
         VerticalAlignment   = VerticalAlignment.Top,
     };
 
-    private TrackRowViewModel? _draggedRow;
-    private Point _dragStartPoint;
-    private bool  _isDragging;
-    private const double DragThreshold = 4.0;
+    // Click, reorder or drag out - see TrackRowDragGesture.
+    private readonly TrackRowDragGesture _drag = new();
 
     // ── Column header drag-to-reorder ───────────────────────────────────────────
     private readonly Border _columnDropIndicator = new()
@@ -164,9 +163,9 @@ public partial class MusicListView : UserControl
     // into calls on it and draws the indicator.
     private readonly ColumnHeaderDrag _headerDrag;
 
-    // ── Drag-onto-playlist (enabled by the host everywhere except a playlist's own
-    // view, where AllowReorder already owns the drag gesture for reordering within
-    // it) - see MainView.axaml.cs's OnTrackDragMoved/OnTrackDragEnded for the
+    // ── Drag-onto-playlist, from any list: in a playlist or the queue once the
+    // pointer leaves the list, where a drag over it reorders instead (UF-15) -
+    // see MainView.axaml.cs's OnTrackDragMoved/OnTrackDragEnded for the
     // receiving end.
     //
     // Deliberately NOT built on Avalonia's native DragDrop.DoDragDrop: on macOS
@@ -181,13 +180,13 @@ public partial class MusicListView : UserControl
     // Pointer capture (same mechanism the reorder-within-playlist gesture above
     // already uses) never leaves Avalonia's own input pipeline, so this can't
     // leak into another application no matter where the pointer ends up.
-    private TrackRowViewModel? _crossDragRow;
-    private Point _crossDragStartPoint;
-    private bool  _isCrossDragging;
-    private IReadOnlyList<FlowerTrack>? _crossDragTracks; // snapshotted once, at threshold-crossing
+    private IReadOnlyList<FlowerTrack>? _dragOutTracks; // snapshotted once, when the drag first leaves
 
     public event EventHandler<(IReadOnlyList<FlowerTrack> tracks, Point position)>? TrackDragMoved;
     public event EventHandler<(IReadOnlyList<FlowerTrack> tracks, Point position)>? TrackDragEnded;
+    // A drag out that came back over the list, to reorder after all: whatever
+    // TrackDragMoved put up comes down.
+    public event EventHandler? TrackDragAbandoned;
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
@@ -582,77 +581,59 @@ public partial class MusicListView : UserControl
                 toggle: isLeft && e.KeyModifiers.HasFlag(PlatformShortcuts.Primary)))
             RaiseSelectedTrackChanged(_selection.Current?.Track);
 
-        if (AllowReorder && isLeft && row.CanBeDragged)
-        {
-            _draggedRow     = row;
-            _dragStartPoint = pt;
+        if (!isLeft)
+            return;
+
+        // Captured at once (unlike the old DragDrop-based version) so a normal
+        // click or double-tap still works below the threshold, and once it is
+        // crossed this control keeps hearing the pointer wherever it goes.
+        _drag.Press(row, pt, AllowReorder, _items.Where(r => r.IsSelected).ToList());
+        if (_drag.IsPressed)
             e.Pointer.Capture(_panel);
-        }
-        else if (isLeft && row.IsSelected)
-        {
-            // Not in a playlist view, so this press could become a drag-onto-a-
-            // sidebar-playlist gesture instead - see Panel_PointerMoved's threshold
-            // check below. Captured immediately (unlike the old DragDrop-based
-            // version) so a normal click/double-tap still works below threshold,
-            // and once the threshold is crossed this control keeps receiving
-            // move/release regardless of where the pointer physically ends up.
-            // Gated on row.IsSelected so a Ctrl+click that just deselected the
-            // last remaining row (leaving an empty selection) can't start a drag.
-            _crossDragRow        = row;
-            _crossDragStartPoint = pt;
-            e.Pointer.Capture(_panel);
-        }
     }
+
+    private bool OverList(PointerEventArgs e) => new Rect(Bounds.Size).Contains(e.GetPosition(this));
 
     private void Panel_PointerMoved(object? sender, PointerEventArgs e)
     {
-        if (_crossDragRow != null)
+        var was = _drag.Current;
+        var mode = _drag.Move(e.GetPosition(_panel), OverList(e));
+        if (was == TrackRowDragGesture.Mode.Out && mode != TrackRowDragGesture.Mode.Out)
+            TrackDragAbandoned?.Invoke(this, EventArgs.Empty);
+
+        _dropIndicator.IsVisible = mode == TrackRowDragGesture.Mode.Reorder;
+        switch (mode)
         {
-            var pt = e.GetPosition(_panel);
-            if (!_isCrossDragging)
-            {
-                var dx = pt.X - _crossDragStartPoint.X;
-                var dy = pt.Y - _crossDragStartPoint.Y;
-                if (dx * dx + dy * dy < DragThreshold * DragThreshold)
-                    return;
-                _isCrossDragging = true;
-                _crossDragTracks = SelectedTracks; // snapshot once selection is final for this press
-            }
-            TrackDragMoved?.Invoke(this, (_crossDragTracks!, e.GetPosition(this)));
-            return;
+            case TrackRowDragGesture.Mode.Reorder:
+                var index = InsertionIndexAt(e.GetPosition(_panel).Y);
+                _dropIndicator.Margin = new Thickness(0, Math.Max(0, _panel.RowTop(index) - 1), 0, 0);
+                break;
+            case TrackRowDragGesture.Mode.Out:
+                // Snapshotted the first time: the selection is final for this
+                // press by then.
+                _dragOutTracks ??= SelectedTracks;
+                TrackDragMoved?.Invoke(this, (_dragOutTracks, e.GetPosition(this)));
+                break;
         }
-
-        if (_draggedRow == null)
-            return;
-        var movedPt = e.GetPosition(_panel);
-
-        if (!_isDragging)
-        {
-            if (Math.Abs(movedPt.Y - _dragStartPoint.Y) < DragThreshold)
-                return;
-            _isDragging = true;
-            _dropIndicator.IsVisible = true;
-        }
-
-        int index = InsertionIndexAt(movedPt.Y);
-        _dropIndicator.Margin = new Thickness(0, Math.Max(0, _panel.RowTop(index) - 1), 0, 0);
     }
 
     private void Panel_PointerReleased(object? sender, PointerReleasedEventArgs e)
     {
-        if (_isCrossDragging && _crossDragTracks != null)
-            TrackDragEnded?.Invoke(this, (_crossDragTracks, e.GetPosition(this)));
-
-        if (_isDragging && _draggedRow != null)
+        var mode = _drag.Move(e.GetPosition(_panel), OverList(e));
+        var rows = _drag.Rows;
+        var insertBefore = _drag.InsertBefore(_items, InsertionIndexAt(e.GetPosition(_panel).Y));
+        // Ended before it is acted on, so losing the capture below is not
+        // taken for a drag out abandoned.
+        _drag.End();
+        switch (mode)
         {
-            var pt = e.GetPosition(_panel);
-            int index = InsertionIndexAt(pt.Y);
-            var insertBefore = index < _items.Count ? _items[index] : null;
-            if (insertBefore != _draggedRow)
-            {
-                _selection.NoteMoved(_draggedRow, insertBefore);
-                RowReordered?.Invoke(this, (_draggedRow, insertBefore));
-            }
+            case TrackRowDragGesture.Mode.Out:
+                TrackDragEnded?.Invoke(this, (_dragOutTracks ?? SelectedTracks, e.GetPosition(this)));
+                break;
+            case TrackRowDragGesture.Mode.Reorder:
+                _selection.NoteMoved(rows, insertBefore);
+                RowsReordered?.Invoke(this, (rows, insertBefore));
+                break;
         }
         e.Pointer.Capture(null);
         EndDrag();
@@ -660,12 +641,11 @@ public partial class MusicListView : UserControl
 
     private void EndDrag()
     {
-        _draggedRow = null;
-        _isDragging = false;
+        if (_drag.Current == TrackRowDragGesture.Mode.Out)
+            TrackDragAbandoned?.Invoke(this, EventArgs.Empty);
+        _drag.End();
         _dropIndicator.IsVisible = false;
-        _crossDragRow = null;
-        _isCrossDragging = false;
-        _crossDragTracks = null;
+        _dragOutTracks = null;
     }
 
     private int InsertionIndexAt(double panelY)
