@@ -28,7 +28,7 @@
   <Grid>
     <!-- Deliberately no backdrop-tap-to-dismiss, same reasoning as
          ConfirmPairServerView - a destructive, sometimes-unrecoverable action
-         (see IsRecoverableDownload) should not be dismissible by an
+         (see LocalFileDeletion.WarningMessage) should not be dismissible by an
          unattended tap; Cancel below is the only way out other than Delete. -->
     <Border Background="{DynamicResource AppScrimBrush}" />
 

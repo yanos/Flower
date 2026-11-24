@@ -1301,7 +1301,6 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             _actionTarget = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(ActionRow));
-            OnPropertyChanged(nameof(IsRecoverableDownload));
             OnPropertyChanged(nameof(ConfirmDeleteFileTitle));
             OnPropertyChanged(nameof(ConfirmDeleteFileMessage));
             OnPropertyChanged(nameof(SongActions));
@@ -1310,23 +1309,10 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
 
     // Any real local file can be deleted to free up space - a still-
     // undownloaded placeholder has no file yet to delete, so its menu has no
-    // Delete (ActionMenus, LocalFileDeletion.LocalFiles). Whether it's safe
-    // to get back later (see IsRecoverableDownload) is surfaced as a warning
-    // in the confirm sheet (ConfirmDeleteFileMessage) rather than gating the
-    // entry outright - a track this device only has a copy of because the
-    // user imported it directly (or a peer that once had it is no longer the
-    // paired Server) should still be deletable, just with eyes open.
-
-    // Whether ActionTarget's file, once deleted, would actually come back on
-    // its own - true only if the currently paired Server is the same device
-    // that last reported having a copy (OriginDeviceFingerprint). Null (no
-    // peer has ever reported holding this exact track - e.g. purely a local
-    // import) or a fingerprint that isn't the current pairing (a track from
-    // before a Server switch, or synced via ad-hoc peer browsing rather than
-    // bulk sync) both mean the same thing here: nothing will resync it back.
-    // For an album, only if every one of its files would come back.
-    public bool IsRecoverableDownload => DeleteTargets.Count > 0 && DeleteTargets.All(t =>
-        LocalFileDeletion.ServerHasCopy(t, Main.PairedServerFingerprint));
+    // Delete (ActionMenus, LocalFileDeletion.LocalFiles). Whether the song
+    // comes back is the confirm sheet's warning (ConfirmDeleteFileMessage),
+    // not a reason to refuse: a file the user imported, or one from a server
+    // this device has left, is still theirs to delete, with eyes open.
 
     // The album menu's Delete Local Files confirms through the same sheet as
     // a song's Delete, over every file of the album's on this device. Null
@@ -1348,17 +1334,10 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     // open and says so.
     private string? _deleteFileError;
 
-    public string ConfirmDeleteFileMessage => _deleteFileError ?? (_albumDeleteTargets != null, IsRecoverableDownload) switch
-    {
-        (false, true) => "This removes the downloaded copy from this device. Your paired server still has it, so you can download it again later.",
-        (false, false) => Main.PairedServerFingerprint == null
-            ? "This is your only copy. Deleting it will remove the file for good, and the song will leave your library."
-            : "Your currently paired server doesn't have this file, so it won't be synced back automatically. Deleting it now will remove your only copy, and the song will leave your library.",
-        (true, true) => "This removes the downloaded copies from this device. Your paired server still has them, so you can download them again later.",
-        (true, false) => Main.PairedServerFingerprint == null
-            ? "These are your only copies. Deleting them will remove the files for good, and the songs will leave your library."
-            : "Your currently paired server doesn't have some of these files, so they won't be synced back automatically. Deleting them now will remove your only copy, and those songs will leave your library.",
-    };
+    // The desktop's warning, worded for a phone with no trash
+    // (LocalFileDeletion.WarningMessage).
+    public string ConfirmDeleteFileMessage => _deleteFileError
+        ?? LocalFileDeletion.WarningMessage(DeleteTargets, Main.PairedServerFingerprint, LocalFileDeletion.Trash);
 
     // ── Remove from Library ───────────────────────────────────────────────
     //
@@ -1376,7 +1355,6 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         _albumDeleteTargets = albumFiles;
         _deleteTargetsName = of;
         _deleteFileError = null;
-        OnPropertyChanged(nameof(IsRecoverableDownload));
         OnPropertyChanged(nameof(ConfirmDeleteFileTitle));
         OnPropertyChanged(nameof(ConfirmDeleteFileMessage));
         ActiveSheet = MobileSheet.ConfirmDeleteFile;
@@ -2050,7 +2028,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         // Opens the confirm sheet (ConfirmDeleteFileCommand/CancelDeleteFileCommand
         // below actually do the deleting) rather than deleting immediately -
         // this is a destructive, sometimes-unrecoverable action (see
-        // IsRecoverableDownload/ConfirmDeleteFileMessage), so it always gets a
+        // ConfirmDeleteFileMessage), so it always gets a
         // confirmation with an explicit warning first.
         DeleteDownloadedFileCommand = new RelayCommand(() =>
         {

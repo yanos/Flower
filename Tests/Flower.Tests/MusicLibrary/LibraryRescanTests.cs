@@ -562,7 +562,7 @@ public class LibraryRescanTests
     // A track with no local file survives whatever its origin. Usually that is a
     // sync placeholder, but DeleteLocalFiles also produces one with no
     // origin at all (deleting the only copy of a purely local import - see its
-    // own comment, and MobileMainViewModel.IsRecoverableDownload, which warns
+    // own comment, and LocalFileDeletion.WarningMessage, which warns
     // about exactly that case rather than preventing it). Either way there is
     // nothing on disk for a scan to find, so a scan not finding it is not
     // evidence of anything.

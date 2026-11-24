@@ -44,4 +44,25 @@ public class LocalFileDeletionTests
 
         Assert.True(LocalFileDeletion.RequiresWarning([Download(Paired), imported], Paired));
     }
+
+    // The phone deletes outright, having no trash, and used to describe any
+    // file its server has as a download it could fetch again: an imported
+    // file included, which is the user's own. Both heads ask the same
+    // question now, with or without a trash.
+    [Theory]
+    [InlineData("Trash")]
+    [InlineData(null)]
+    public void An_imported_file_the_server_has_is_not_described_as_a_download(string? trash)
+    {
+        var imported = new Track
+        {
+            Path = "/music/imported.mp3",
+            OriginDeviceFingerprint = Paired,
+            IsLocallyDownloaded = false,
+        };
+
+        Assert.NotEqual(
+            LocalFileDeletion.WarningMessage([Download(Paired)], Paired, trash),
+            LocalFileDeletion.WarningMessage([imported], Paired, trash));
+    }
 }

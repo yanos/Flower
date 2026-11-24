@@ -31,7 +31,7 @@ internal static class LocalFileDeletionDialog
             var title = localFiles.Count == 1
                 ? $"Delete \"{localFiles[0].Title ?? "Local File"}\"?"
                 : $"Delete {localFiles.Count} Local Files?";
-            var message = LocalFileDeletion.WarningMessage(localFiles, paired);
+            var message = LocalFileDeletion.WarningMessage(localFiles, paired, LocalFileDeletion.Trash);
             var confirmed = await ConfirmDialogWindow.ShowAsync(owner, title, message, "Delete");
             if (!confirmed)
                 return;

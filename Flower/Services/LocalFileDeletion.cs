@@ -28,8 +28,14 @@ internal static class LocalFileDeletion
     public static bool RequiresWarning(IEnumerable<Track> tracks, string? pairedServerFingerprint) =>
         tracks.Any(track => !IsDisposable(track, pairedServerFingerprint));
 
-    // The desktop prompt, which always has a trash to name.
-    public static string WarningMessage(IReadOnlyList<Track> tracks, string? pairedServerFingerprint)
+    // What this device calls its trash, or null on a phone, which has none
+    // and deletes outright (LibraryRemoval.TrashOrDelete).
+    public static string? Trash => FileTrash.IsSupported ? FileTrash.Name : null;
+
+    // The confirmation's text, on every head: the desktop asks only when
+    // RequiresWarning, the phone always. trash is Trash, given so a test can
+    // ask for either.
+    public static string WarningMessage(IReadOnlyList<Track> tracks, string? pairedServerFingerprint, string? trash)
     {
         var one = tracks.Count == 1;
         if (tracks.Any(track => !ServerHasCopy(track, pairedServerFingerprint)))
@@ -37,17 +43,24 @@ internal static class LocalFileDeletion
             if (pairedServerFingerprint == null)
             {
                 return one
-                    ? $"This is your only copy. The file moves to the {FileTrash.Name} and the song leaves your library."
-                    : $"These are your only copies. The files move to the {FileTrash.Name} and the songs leave your library.";
+                    ? $"This is your only copy. {(trash != null ? $"The file moves to the {trash} and" : "The file is deleted for good, and")} the song leaves your library."
+                    : $"These are your only copies. {(trash != null ? $"The files move to the {trash} and" : "The files are deleted for good, and")} the songs leave your library.";
             }
 
             return one
-                ? $"Your server doesn't have this song, so this is your only copy. The file moves to the {FileTrash.Name} and the song leaves your library."
-                : $"Your server doesn't have some of these songs, so these are your only copies. Those files move to the {FileTrash.Name} and those songs leave your library.";
+                ? $"Your server doesn't have this song, so this is your only copy. {(trash != null ? $"The file moves to the {trash} and" : "The file is deleted for good, and")} the song leaves your library."
+                : $"Your server doesn't have some of these songs, so these are your only copies. {(trash != null ? $"Those files move to the {trash} and" : "Those files are deleted for good, and")} those songs leave your library.";
+        }
+
+        if (!RequiresWarning(tracks, pairedServerFingerprint))
+        {
+            return one
+                ? "This removes the downloaded copy from this device. Your server still has it, so you can download it again later."
+                : "This removes the downloaded copies from this device. Your server still has them, so you can download them again later.";
         }
 
         return one
-            ? $"This is your own file rather than a download. It moves to the {FileTrash.Name}, and the song keeps playing from your server."
-            : $"Some of these are your own files rather than downloads. They move to the {FileTrash.Name}, and the songs keep playing from your server.";
+            ? $"This is your own file rather than a download. {(trash != null ? $"It moves to the {trash}" : "It is deleted for good")}, and the song keeps playing from your server."
+            : $"Some of these are your own files rather than downloads. {(trash != null ? $"They move to the {trash}" : "They are deleted for good")}, and the songs keep playing from your server.";
     }
 }
