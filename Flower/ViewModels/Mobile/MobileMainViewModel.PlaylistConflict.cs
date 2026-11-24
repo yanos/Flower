@@ -17,13 +17,8 @@ public partial class MobileMainViewModel
 
     public bool IsShowingPlaylistConflict => ActiveSheet == MobileSheet.PlaylistConflict;
 
-    public string PlaylistConflictHeadline => _pendingConflict is { } c ? PlaylistConflictText.Headline(c) : "";
-    public string PlaylistConflictExplanation => _pendingConflict is { } c ? PlaylistConflictText.Explanation(c) : "";
-    public string PlaylistConflictLocalSummary => _pendingConflict is { } c ? PlaylistConflictText.LocalSummary(c) : "";
-    public string PlaylistConflictRemoteName => _pendingConflict?.RemoteAlias ?? "";
-    public string PlaylistConflictRemoteSummary => _pendingConflict is { } c ? PlaylistConflictText.RemoteSummary(c) : "";
-    public string PlaylistConflictKeepLocalText => _pendingConflict is { } c ? PlaylistConflictText.KeepLocal(c) : "";
-    public string PlaylistConflictKeepRemoteText => _pendingConflict is { } c ? PlaylistConflictText.KeepRemote(c) : "";
+    // What the sheet says, or null while it asks nothing.
+    public PlaylistConflictText? PlaylistConflict { get; private set; }
 
     private ICommand? _keepLocalPlaylist;
     public ICommand KeepLocalPlaylistCommand => _keepLocalPlaylist ??=
@@ -48,13 +43,8 @@ public partial class MobileMainViewModel
         }
 
         _pendingConflict = e;
-        OnPropertyChanged(nameof(PlaylistConflictHeadline));
-        OnPropertyChanged(nameof(PlaylistConflictLocalSummary));
-        OnPropertyChanged(nameof(PlaylistConflictRemoteName));
-        OnPropertyChanged(nameof(PlaylistConflictRemoteSummary));
-        OnPropertyChanged(nameof(PlaylistConflictExplanation));
-        OnPropertyChanged(nameof(PlaylistConflictKeepLocalText));
-        OnPropertyChanged(nameof(PlaylistConflictKeepRemoteText));
+        PlaylistConflict = PlaylistConflictText.Of(e);
+        OnPropertyChanged(nameof(PlaylistConflict));
         ActiveSheet = MobileSheet.PlaylistConflict;
     }
 

@@ -15,13 +15,14 @@ public partial class PlaylistConflictWindow : Window
     {
         InitializeComponent();
 
-        HeadlineText.Text = PlaylistConflictText.Headline(conflict);
-        ExplanationText.Text = PlaylistConflictText.Explanation(conflict);
-        LocalSummaryText.Text = PlaylistConflictText.LocalSummary(conflict);
-        RemoteHeaderText.Text = conflict.RemoteAlias;
-        RemoteSummaryText.Text = PlaylistConflictText.RemoteSummary(conflict);
-        KeepLocalButton.Content = PlaylistConflictText.KeepLocal(conflict);
-        KeepRemoteText.Text = PlaylistConflictText.KeepRemote(conflict);
+        var text = PlaylistConflictText.Of(conflict);
+        HeadlineText.Text = text.Headline;
+        ExplanationText.Text = text.Explanation;
+        LocalSummaryText.Text = text.LocalSummary;
+        RemoteHeaderText.Text = text.RemoteName;
+        RemoteSummaryText.Text = text.RemoteSummary;
+        KeepLocalButton.Content = text.KeepLocal;
+        KeepRemoteText.Text = text.KeepRemote;
         NativeMenuHelper.InheritFromMainWindow(this);
     }
 

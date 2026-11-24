@@ -37,26 +37,26 @@
       <StackPanel Spacing="14" Margin="{DynamicResource SheetBottomInset}">
         <StackPanel Orientation="Horizontal" Spacing="10">
           <materialIcons:MaterialIcon Kind="PlaylistEdit" Width="24" Height="24" />
-          <TextBlock Text="{Binding PlaylistConflictHeadline}"
+          <TextBlock Text="{Binding PlaylistConflict.Headline}"
                      FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"
                      TextTrimming="CharacterEllipsis" />
         </StackPanel>
 
-        <TextBlock Text="{Binding PlaylistConflictExplanation}"
+        <TextBlock Text="{Binding PlaylistConflict.Explanation}"
                    FontSize="14" Opacity="0.75" TextWrapping="Wrap" />
 
         <StackPanel Spacing="2">
           <TextBlock Text="This device" FontSize="14" FontWeight="SemiBold" />
-          <TextBlock Text="{Binding PlaylistConflictLocalSummary}" FontSize="14" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding PlaylistConflict.LocalSummary}" FontSize="14" TextWrapping="Wrap" />
         </StackPanel>
         <StackPanel Spacing="2">
-          <TextBlock Text="{Binding PlaylistConflictRemoteName}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-          <TextBlock Text="{Binding PlaylistConflictRemoteSummary}" FontSize="14" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding PlaylistConflict.RemoteName}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+          <TextBlock Text="{Binding PlaylistConflict.RemoteSummary}" FontSize="14" TextWrapping="Wrap" />
         </StackPanel>
 
-        <Button Classes="confirmAction primary" Content="{Binding PlaylistConflictKeepLocalText}" Command="{Binding KeepLocalPlaylistCommand}" />
+        <Button Classes="confirmAction primary" Content="{Binding PlaylistConflict.KeepLocal}" Command="{Binding KeepLocalPlaylistCommand}" />
         <Button Classes="confirmAction secondary" Command="{Binding KeepRemotePlaylistCommand}">
-          <TextBlock Text="{Binding PlaylistConflictKeepRemoteText}" TextTrimming="CharacterEllipsis" />
+          <TextBlock Text="{Binding PlaylistConflict.KeepRemote}" TextTrimming="CharacterEllipsis" />
         </Button>
         <Button Classes="confirmAction secondary" Content="Decide Later" Command="{Binding DecidePlaylistConflictLaterCommand}" />
       </StackPanel>
