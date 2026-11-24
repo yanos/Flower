@@ -3228,6 +3228,15 @@ namespace Flower.Models
         // queue following the playlist has to hear about.
         public void NotePlaylistRowsRenamed() => RaisePlaylistsChanged();
 
+        // A sync put its server's pool into a Vibe Playlist in place
+        // (Playlist.Materialize): other songs, so beyond saving it, the list
+        // on screen has to be rebuilt as for any playlist a sync installed.
+        public void NotePlaylistsRefilled()
+        {
+            PlaylistsUpdated?.Invoke(this, EventArgs.Empty);
+            RaisePlaylistsChanged();
+        }
+
         // Installs a new playlist list, moving the Playlist.Changed subscription
         // from the outgoing set to the incoming one. That subscription is what
         // makes an *in-place* edit - a rename, a track added, a drag-reorder -

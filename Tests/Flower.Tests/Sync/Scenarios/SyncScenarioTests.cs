@@ -757,6 +757,37 @@ public class SyncScenarioTests : PinnedDataDirectory
         Assert.Equal(2, server.Library.Playlists.Single().Tracks.Count);
     }
 
+    // A Vibe Playlist whose sentence nobody touched, re-ranked on the server.
+    // The session changes nothing else, and the new pool is installed in
+    // place, so the library has to be told: unsaved, it is gone at the next
+    // launch, and unannounced, the list on screen is the old pool.
+    [Fact]
+    public async Task A_vibe_playlist_reranked_on_the_server_is_saved_and_shown_here()
+    {
+        var a = ServerTrack("A");
+        var b = ServerTrack("B");
+        var c = ServerTrack("C");
+        using var server = new SimulatedFlowerServer([a, b, c]);
+        var vibe = new Playlist(Guid.NewGuid(), "Rainy", [a, b], DateTimeOffset.UtcNow, vibePrompt: "music for a rainy day");
+        server.Library.AddPlaylist(vibe);
+        var client = NewClient();
+        await client.PullLibraryAsync(server);
+        await client.SyncPlaylistsAsync(server);
+        Assert.Equal(["A", "B"], Titles(client.Playlist("Rainy")));
+
+        vibe.Materialize([c, a]);
+        server.Library.SavePlaylists();
+        var changed = 0;
+        var updated = 0;
+        client.Library.PlaylistsChanged += (_, _) => changed++;
+        client.Library.PlaylistsUpdated += (_, _) => updated++;
+        await client.SyncPlaylistsAsync(server);
+
+        Assert.Equal(["C", "A"], Titles(client.Playlist("Rainy")));
+        Assert.Equal(1, changed);
+        Assert.Equal(1, updated);
+    }
+
     // A playlist the server got from another client after this one read the
     // server's set and before it wrote its own back. The push replaces the
     // server's collection wholesale, so a push built from a stale read

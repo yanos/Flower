@@ -247,14 +247,16 @@ public class PlaylistSyncService
         IReadOnlyList<PlaylistSyncDecision> decisions = [];
         var agreed = new Dictionary<Guid, PlaylistAgreement?>();
         var tookRowIds = false;
+        var refilled = false;
         var installed = _library.ReplacePlaylists(current =>
         {
             decisions = PlaylistSyncPlanner.Plan(current, remote.Values.ToList(), deleted.Values.ToList(), agreements, index, only);
             agreed.Clear();
             tookRowIds = false;
+            refilled = false;
             var decided = new Dictionary<Guid, Playlist?>();
             foreach (var decision in decisions)
-                decided[decision.PlaylistId] = Decide(device, decision, agreements, index, agreed, questions, ref tookRowIds);
+                decided[decision.PlaylistId] = Decide(device, decision, agreements, index, agreed, questions, ref tookRowIds, ref refilled);
 
             // In the library's own order, so the sidebar does not move; what
             // the server brought goes at the end.
@@ -270,7 +272,10 @@ public class PlaylistSyncService
             next.AddRange(decided.Values.Where(p => p != null && !here.Contains(p.Id))!);
             return next;
         }).ToDictionary(p => p.Id);
-        if (tookRowIds)
+        // Both are changes made in place, which the install cannot see.
+        if (refilled)
+            _library.NotePlaylistsRefilled();
+        else if (tookRowIds)
             _library.NotePlaylistRowsRenamed();
 
         // After the install, never before - see PlaylistAgreementRepository.
@@ -383,7 +388,8 @@ public class PlaylistSyncService
         PlaylistTrackIndex index,
         Dictionary<Guid, PlaylistAgreement?> agreed,
         Dictionary<Guid, Question> questions,
-        ref bool tookRowIds)
+        ref bool tookRowIds,
+        ref bool refilled)
     {
         LogDecision(device, decision, agreements);
         questions.Remove(decision.PlaylistId);
@@ -393,9 +399,10 @@ public class PlaylistSyncService
             case PlaylistSyncDecisionKind.NoChange:
                 // The same sentence on both sides: the server's songs are the
                 // answer to it, installed without moving UpdatedAt, as a
-                // smart playlist's own re-evaluation is.
+                // smart playlist's own re-evaluation is. In place, so the
+                // install sees no change: refilled has it saved and shown.
                 if (decision.Local!.IsVibe)
-                    decision.Local.Materialize(index.Resolve(decision.Remote!.Tracks, out _));
+                    refilled |= decision.Local.Materialize(index.Resolve(decision.Remote!.Tracks, out _));
                 // Copies holding the same songs under different row ids become
                 // one set of rows, this device taking the server's. No edit,
                 // so nothing to push.
