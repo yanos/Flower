@@ -3094,19 +3094,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             _logger.LogInformation("Dropped songs: {Count} to add, {Copied} copied into {Root}, {Failed} could not be copied",
                 result.Files.Count, result.Copied, roots[0], result.Failed);
 
-            var restored = 0;
-            IReadOnlyList<string> unreadable = [];
-            if (result.Files.Count > 0 && FolderWatcher != null)
-            {
-                var added = await FolderWatcher.AddFilesAsync(result.Files, busy.CountingSongs("Adding to the library"));
-                (restored, unreadable) = (added.Restored, added.Unreadable);
-            }
-            else if (result.Files.Count > 0)
-            {
-                // A drop is as explicit as Settings' Restore (UF-12).
-                restored = Library.RestoreExcludedPaths(result.Files);
-                await RescanLibraryAsync();
-            }
+            var (restored, unreadable) = await LibraryDrop.AddAsync(
+                Library, FolderWatcher, RescanLibraryAsync, result.Files, busy.CountingSongs("Adding to the library"));
             foreach (var file in unreadable)
                 _logger.LogWarning("Dropped file {File} could not be read as a song", file);
 

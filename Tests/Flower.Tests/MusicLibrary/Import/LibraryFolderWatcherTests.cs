@@ -97,24 +97,8 @@ public class LibraryFolderWatcherTests : IDisposable
         Assert.Equal([new(0, 2), new(1, 2), new(2, 2)], progress.Reports);
     }
 
-    // UF-12: a song removed from the library on purpose, dropped in again.
-    // The drop is the person asking for it back, so it is.
-    [Fact]
-    public async Task A_removed_song_added_by_name_comes_back()
-    {
-        using var watcher = NewWatcher();
-        var path = Song("Artist/Album", "one.wav", "One");
-        await watcher.AddFilesAsync([path]);
-        _library.RemoveTracks(_library.Tracks.ToList(), [path]);
-
-        var added = await watcher.AddFilesAsync([path]);
-
-        Assert.Equal((1, 1), (added.Added, added.Restored));
-        Assert.Equal("One", Assert.Single(_library.Tracks).Title);
-        Assert.False(_library.IsExcludedPath(path));
-    }
-
-    // While a file merely changing stays out: only an explicit add restores.
+    // A song removed from the library on purpose stays out when its file
+    // merely changes: only a drop restores one (LibraryDropTests).
     [Fact]
     public async Task A_removed_song_whose_file_changes_stays_removed()
     {

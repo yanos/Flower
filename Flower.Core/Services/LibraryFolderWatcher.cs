@@ -309,20 +309,15 @@ public sealed class LibraryFolderWatcher : IDisposable
             Note(path);
     }
 
-    // What AddFilesAsync did: how many songs were added or updated, how many
-    // of them had been removed from the library and came back, and the files
-    // it could not read as songs.
-    public sealed record AddedFiles(int Added, int Restored, IReadOnlyList<string> Unreadable);
+    // What AddFilesAsync did: how many songs were added or updated, and the
+    // files it could not read as songs.
+    public sealed record AddedFiles(int Added, IReadOnlyList<string> Unreadable);
 
     // Reads each of these files into the library now, rather than waiting for
     // the watcher to see them - what a drop on the window does once it has
-    // copied them (LibraryDrop). progress hears each file read, of all those
-    // given.
-    //
-    // Asked for by name, so a file removed from the library on purpose comes
-    // back (UF-12): dropping a removed song in again is as explicit as
-    // Settings' Restore, which is the only other way back. A watcher event
-    // never restores one - that is a file changing, not a person asking.
+    // copied them (LibraryDrop.AddAsync). progress hears each file read, of
+    // all those given. A song removed from the library on purpose stays out,
+    // as it does from every scan; a drop takes it off that list first.
     public async Task<AddedFiles> AddFilesAsync(IReadOnlyCollection<string> files, IProgress<SongProgress>? progress = null)
     {
         await _passGate.WaitAsync();
@@ -331,10 +326,9 @@ public sealed class LibraryFolderWatcher : IDisposable
             await _scanInFlight();
             return await Task.Run(() =>
             {
-                var restored = _library.RestoreExcludedPaths(files);
                 var unreadable = new List<string>();
                 var added = AddFiles(files, progress, unreadable);
-                return new AddedFiles(added, restored, unreadable);
+                return new AddedFiles(added, unreadable);
             });
         }
         finally

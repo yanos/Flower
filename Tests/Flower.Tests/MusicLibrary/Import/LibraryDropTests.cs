@@ -54,6 +54,27 @@ public class LibraryDropTests : IDisposable
         return path;
     }
 
+    // UF-12: a song removed from the library on purpose, dropped in again.
+    // The drop is the person asking for it back, so it is.
+    [Fact]
+    public async Task A_removed_song_dropped_in_again_comes_back()
+    {
+        var library = new Models.Library([]);
+        using var watcher = new LibraryFolderWatcher(library, () => Task.CompletedTask,
+            NullLogger<LibraryFolderWatcher>.Instance, NullLogger<Importer.Importer>.Instance,
+            quietPeriod: null, scanInFlight: null, pollInterval: TimeSpan.Zero, listensForChanges: false);
+        watcher.Watch([Library]);
+        var path = Song(Path.Combine(Library, "Someone", "Album"), "One.wav", "Album", "Someone");
+        await LibraryDrop.AddAsync(library, watcher, () => Task.CompletedTask, [path]);
+        library.RemoveTracks(library.Tracks.ToList(), [path]);
+
+        var added = await LibraryDrop.AddAsync(library, watcher, () => Task.CompletedTask, [path]);
+
+        Assert.Equal(1, added.Restored);
+        Assert.Equal("One", Assert.Single(library.Tracks).Title);
+        Assert.False(library.IsExcludedPath(path));
+    }
+
     [Fact]
     public async Task A_song_from_outside_is_copied_in_under_its_album_artist_and_album()
     {

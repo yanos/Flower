@@ -88,6 +88,38 @@ public sealed class LibraryDrop(IReadOnlyList<string> libraryRoots, ILogger logg
         }
     }
 
+    // What AddAsync did: how many songs had been removed from the library
+    // and came back, and the files that could not be read as songs.
+    public sealed record Added(int Restored, IReadOnlyList<string> Unreadable);
+
+    // The drop's second half: the songs PrepareAsync found, read into the
+    // library now rather than when the watcher next notices them - or, with
+    // no watcher, by the rescan given.
+    //
+    // Asked for by name, so a song removed from the library on purpose comes
+    // back (UF-12): dropping it in again is as explicit as Settings' Restore,
+    // which is the only other way back. Taken off the removed list before
+    // anything reads it, and a scan that reads it first just adds it sooner. A
+    // file the watcher sees change is never restored: that is a file
+    // changing, not a person asking.
+    public static async Task<Added> AddAsync(
+        Library library, LibraryFolderWatcher? watcher, Func<Task> rescan,
+        IReadOnlyCollection<string> files, IProgress<SongProgress>? progress = null)
+    {
+        if (files.Count == 0)
+            return new Added(0, []);
+
+        var restored = library.RestoreExcludedPaths(files);
+        if (watcher == null)
+        {
+            await rescan();
+            return new Added(restored, []);
+        }
+
+        var added = await watcher.AddFilesAsync(files, progress);
+        return new Added(restored, added.Unreadable);
+    }
+
     // What a drop says once it is done: the songs that did not go in (a copy
     // that failed, a file that is not a song after all) and the ones that had
     // been removed and came back. Null when every song went in as asked.
