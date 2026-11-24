@@ -206,6 +206,10 @@ What building it changed from the above:
   without a prompt, and without trusting the unsigned answer.
 - **A browser tab writes each changed playlist over the revision it read**;
   a `Stale` answer is left for the next refresh, since a tab does not merge.
+- **`Library.ReplacePlaylists` compares content** when deciding a set is
+  unchanged. It compared the clock and the rows, so a rename installed at the
+  same `UpdatedAt` was skipped while the server answered it applied. The
+  convergence test found this.
 - **An edit made between a session's read and its plan is now a both-sides
   edit**, asked about rather than merged: the prompt no longer opens a window
   in the middle of a session, so the old "edited while the session takes the

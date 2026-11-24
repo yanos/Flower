@@ -3348,8 +3348,16 @@ namespace Flower.Models
             {
                 if (a[i].Id != b[i].Id || a[i].UpdatedAt != b[i].UpdatedAt)
                     return false;
-                if (!ReferenceEquals(a[i], b[i]) && !SameRows(a[i].Entries, b[i].Entries))
+                // The whole content, not the clock: a sync installs a copy
+                // with another name, folder or place at the same UpdatedAt,
+                // and skipping it as "unchanged" dropped that edit while the
+                // server reported it applied.
+                if (!ReferenceEquals(a[i], b[i])
+                    && (!SameRows(a[i].Entries, b[i].Entries)
+                        || PlaylistVersion.Of(PlaylistSyncMapper.ToDto(a[i])) != PlaylistVersion.Of(PlaylistSyncMapper.ToDto(b[i]))))
+                {
                     return false;
+                }
             }
 
             return true;

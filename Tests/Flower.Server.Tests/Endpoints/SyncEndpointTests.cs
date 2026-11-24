@@ -390,6 +390,35 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
         }
     }
 
+    // Timestamps decide nothing now, so a change with the same UpdatedAt as the
+    // copy it replaces - two devices' clocks, or one edit made right after
+    // another - is still a change, written and given a revision of its own.
+    [Fact]
+    public async Task A_change_at_the_same_UpdatedAt_is_still_written()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var library = server.Services.GetRequiredService<Library>();
+        using var device = await TrustedDeviceAsync(trustedPeers);
+
+        try
+        {
+            var playlist = new PlaylistSyncPlaylistDto(Guid.NewGuid(), "Mix", DateTimeOffset.UtcNow, [SeededRow()]);
+            var first = Assert.Single((await ChangeAsync(device, "10.0.2.4", Write(playlist, 0))).Answers);
+
+            var renamed = Assert.Single((await ChangeAsync(device, "10.0.2.4",
+                Write(playlist with { Name = "Renamed", ParentId = Guid.NewGuid() }, first.Revision))).Answers);
+
+            Assert.Equal(PlaylistChangeOutcome.Applied, renamed.Outcome);
+            Assert.True(renamed.Revision > first.Revision);
+            Assert.Equal("Renamed", Assert.Single((await PlaylistsAsync(device, "10.0.2.4")).Playlists).Name);
+        }
+        finally
+        {
+            library.ReplacePlaylists([]);
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
     // A device whose answer was lost sends the same thing again, which is no
     // new version.
     [Fact]
