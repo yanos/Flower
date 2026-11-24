@@ -91,20 +91,16 @@ public class ForceSyncNowTests : PinnedDataDirectory
         return parts;
     }
 
-    // Force sync is the user saying "sync with this one, now": it deliberately
-    // bypasses the initiator election every automatic playlist sync goes
-    // through, so a Client can pull from a Server that would otherwise have
-    // won the election.
+    // Force sync is the user saying "sync with this one, now".
     [AvaloniaFact]
-    public async Task Forcing_a_sync_makes_this_device_the_initiator()
+    public async Task Forcing_a_sync_syncs_playlists_with_the_paired_server()
     {
         using var parts = PairedWithADiscoveredServer();
 
         await parts.Main.Sync.ForceSyncNowAsync();
 
-        var (device, forceInitiator) = Assert.Single(parts.StubPlaylistSync!.SyncedWith);
+        var device = Assert.Single(parts.StubPlaylistSync!.SyncedWith);
         Assert.Equal(ServerFingerprint, device.Fingerprint);
-        Assert.True(forceInitiator);
     }
 
     // A successful sync is proof the server still trusts us, which is what

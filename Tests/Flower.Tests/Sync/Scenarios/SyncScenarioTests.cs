@@ -95,7 +95,7 @@ public class SyncScenarioTests : PinnedDataDirectory
         public Task SyncPlaylistsAsync(SimulatedFlowerServer server)
         {
             Enter();
-            return PlaylistSync.SyncWithAsync(server.Device, forceInitiator: true);
+            return PlaylistSync.SyncWithAsync(server.Device);
         }
 
         public Task<bool> PushTrackStateAsync(SimulatedFlowerServer server)
@@ -110,7 +110,7 @@ public class SyncScenarioTests : PinnedDataDirectory
         {
             Enter();
             await Task.WhenAll(
-                PlaylistSync.SyncWithAsync(server.Device, forceInitiator: true),
+                PlaylistSync.SyncWithAsync(server.Device),
                 LibrarySync.SyncWithAsync(server.Device));
         }
 

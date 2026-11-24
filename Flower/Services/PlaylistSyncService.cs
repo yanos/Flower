@@ -41,7 +41,7 @@ public sealed class PeerTrustRejectedEventArgs : EventArgs
 // Raised after a sync session, for each playlist only a person can decide: changed
 // on both this device and the server since they last agreed, or deleted on the
 // server while this device cannot tell whether its copy holds an edit (Remote
-// null, Deletion set). The UI asks and reports back through Resolution;
+// null). The UI asks and reports back through Resolution;
 // KeepRemote on a deletion is "delete it here too". The session itself never
 // waits on the answer (UF-19): it is applied afterwards as an ordinary edit on
 // top of the server's version, which the session that follows pushes.
@@ -49,7 +49,6 @@ public sealed class PlaylistConflictEventArgs : EventArgs
 {
     public required Playlist Local { get; init; }
     public PlaylistSyncPlaylistDto? Remote { get; init; }
-    public PlaylistDeletionDto? Deletion { get; init; }
     public required string RemoteAlias { get; init; }
     public required TaskCompletionSource<PlaylistConflictChoice> Resolution { get; init; }
 
@@ -78,7 +77,6 @@ public class PlaylistSyncService
     private const int AskRounds = 3;
 
     private readonly Library _library;
-    private readonly DeviceIdentity _deviceIdentity;
     private readonly IPeerCredentials _credentials;
     private readonly ILogger _logger;
     private readonly PlaylistAgreementRepository _agreements;
@@ -97,7 +95,6 @@ public class PlaylistSyncService
         ILogger<PlaylistSyncService> logger)
     {
         _library = library;
-        _deviceIdentity = deviceIdentity;
         // See LibrarySyncService's own note: built here from the three the
         // container already supplies, rather than injected separately.
         _credentials = new SignedDeviceCredentials(deviceIdentity, signingKey);
@@ -106,29 +103,15 @@ public class PlaylistSyncService
         _logger = logger;
     }
 
-    // forceInitiator is set by every PeerSyncCoordinator trigger. A device only
-    // ever syncs with its paired server, and the server never calls this, so
-    // the device must always be the initiator regardless of the ordinal
-    // comparison below, which would otherwise (for roughly half of all
-    // possible fingerprint pairs) decide it isn't and leave that pair
-    // permanently unsynced.
+    // Always this device's paired server: the server never calls this, so a
+    // device is always the side that starts a session.
     // Virtual for the same reason as LibrarySyncService.SyncWithAsync - see
     // its comment, and docs/ARCHITECTURE-REVIEW.md Tier 5.6.
-    public virtual async Task SyncWithAsync(DiscoveredDevice device, bool forceInitiator = false)
+    public virtual async Task SyncWithAsync(DiscoveredDevice device)
     {
         if (string.IsNullOrEmpty(device.Fingerprint))
         {
             _logger.LogTrace("Playlist sync skipped for {Alias}: no resolved fingerprint yet", device.Alias);
-            return;
-        }
-
-        // Exactly one side of a discovery pair initiates. Ordinal comparison is
-        // arbitrary but deterministic and identical on both devices. Skipped
-        // entirely when forceInitiator is set - see this method's doc comment.
-        if (!forceInitiator && string.CompareOrdinal(_deviceIdentity.Fingerprint, device.Fingerprint) >= 0)
-        {
-            _logger.LogDebug("Playlist sync with {Alias} ({Fingerprint}): not the initiator, waiting for their push instead",
-                device.Alias, device.Fingerprint);
             return;
         }
 
@@ -507,7 +490,6 @@ public class PlaylistSyncService
                 {
                     Local = question.Local,
                     Remote = question.Remote,
-                    Deletion = question.Deletion,
                     RemoteAlias = remoteAlias,
                     Resolution = tcs,
                 });

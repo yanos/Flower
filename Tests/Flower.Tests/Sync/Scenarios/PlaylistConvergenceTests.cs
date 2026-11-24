@@ -173,13 +173,13 @@ public class PlaylistConvergenceTests : PinnedDataDirectory
                     break;
                 case 7:
                     server.FailsPlaylistChanges = true;
-                    await device.Sync.SyncWithAsync(server.Device, forceInitiator: true);
+                    await device.Sync.SyncWithAsync(server.Device);
                     server.FailsPlaylistChanges = false;
                     log.Add($"{device.Name} synced, push failed");
                     break;
                 case 8:
                     server.LosesNextChangesAnswer = true;
-                    await device.Sync.SyncWithAsync(server.Device, forceInitiator: true);
+                    await device.Sync.SyncWithAsync(server.Device);
                     server.LosesNextChangesAnswer = false;
                     log.Add($"{device.Name} synced, answer lost");
                     break;
@@ -206,9 +206,9 @@ public class PlaylistConvergenceTests : PinnedDataDirectory
                             ledger.Added.Add((target.Id, song));
                             log.Add($"  meanwhile, {other.Name} added {song} to {target.Name} and synced");
                         }
-                        await other.Sync.SyncWithAsync(server.Device, forceInitiator: true);
+                        await other.Sync.SyncWithAsync(server.Device);
                     };
-                    await device.Sync.SyncWithAsync(server.Device, forceInitiator: true);
+                    await device.Sync.SyncWithAsync(server.Device);
                     server.BeforeNextChanges = null;
                     log.Add($"{device.Name} synced, with another device's sync landing first");
                     break;
@@ -222,12 +222,12 @@ public class PlaylistConvergenceTests : PinnedDataDirectory
                         ledger.Added.Add((playlist.Id, song));
                         log.Add($"  meanwhile, {song} added to {playlist.Name} on {device.Name}");
                     };
-                    await device.Sync.SyncWithAsync(server.Device, forceInitiator: true);
+                    await device.Sync.SyncWithAsync(server.Device);
                     server.AfterNextPlaylistsGet = null;
                     log.Add($"{device.Name} synced, with an edit landing mid-session");
                     break;
                 default:
-                    await device.Sync.SyncWithAsync(server.Device, forceInitiator: true);
+                    await device.Sync.SyncWithAsync(server.Device);
                     log.Add($"{device.Name} synced");
                     break;
             }
@@ -237,7 +237,7 @@ public class PlaylistConvergenceTests : PinnedDataDirectory
         for (var round = 0; round < 4; round++)
         {
             foreach (var device in devices)
-                await device.Sync.SyncWithAsync(server.Device, forceInitiator: true);
+                await device.Sync.SyncWithAsync(server.Device);
         }
 
         var trace = $"seed {seed}:\n  " + string.Join("\n  ", log);

@@ -192,11 +192,11 @@ public static class MainViewModelHarness
             : base(library, identity, key, appSettings, agreements, nicknames,
                    NullLogger<PlaylistSyncService>.Instance) { }
 
-        public List<(DiscoveredDevice Device, bool ForceInitiator)> SyncedWith { get; } = new();
+        public List<DiscoveredDevice> SyncedWith { get; } = new();
 
-        public override Task SyncWithAsync(DiscoveredDevice device, bool forceInitiator = false)
+        public override Task SyncWithAsync(DiscoveredDevice device)
         {
-            SyncedWith.Add((device, forceInitiator));
+            SyncedWith.Add(device);
             return Task.CompletedTask;
         }
     }

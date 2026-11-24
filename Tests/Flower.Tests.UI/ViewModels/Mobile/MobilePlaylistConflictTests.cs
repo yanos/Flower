@@ -66,7 +66,6 @@ public class MobilePlaylistConflictTests : PinnedDataDirectory
         var deletion = new PlaylistConflictEventArgs
         {
             Local = local,
-            Deletion = new PlaylistDeletionDto(local.Id, 20),
             RemoteAlias = "Attic",
             Resolution = new TaskCompletionSource<PlaylistConflictChoice>(),
         };

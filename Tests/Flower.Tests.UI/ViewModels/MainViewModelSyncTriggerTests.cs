@@ -303,7 +303,7 @@ public class MainViewModelSyncTriggerTests : PinnedDataDirectory
     }
 
     // ForceSyncNow's *reachable* path - the actual sync, the result strings,
-    // the trust confirmation, the deliberate bypass of the initiator election -
+    // the trust confirmation -
     // lives in ForceSyncNowTests, which drives the real discovery pipeline
     // (a FakeMdnsBackend announcement plus a fake /info handshake) to make the
     // paired server genuinely reachable, since PairedServerReachability reads
@@ -443,7 +443,6 @@ public class MainViewModelSyncTriggerTests : PinnedDataDirectory
         parts.Main.TriggerSyncIfPeerPlaylistsChanged(PeerWithPlaylists("pl-2"));
         PumpUntil(() => parts.StubPlaylistSync!.SyncedWith.Count == 1, 5000);
 
-        Assert.True(parts.StubPlaylistSync!.SyncedWith[0].ForceInitiator);
         Assert.Empty(parts.StubLibrarySync!.SyncedWith);
     }
 

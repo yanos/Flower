@@ -404,11 +404,8 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
 
         foreach (var device in devices)
         {
-            // forceInitiator: true - see TriggerSyncIfReady's identical
-            // reasoning; every device here is already this device's own
-            // paired server (MayRequestFrom above guarantees it).
             RunTrackedSyncs(
-                () => _playlistSyncService?.SyncWithAsync(device, forceInitiator: true) ?? Task.CompletedTask,
+                () => _playlistSyncService?.SyncWithAsync(device) ?? Task.CompletedTask,
                 () => SyncLibraryAndConfirmTrust(device));
         }
 
@@ -751,7 +748,7 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
 
         ConfirmServerTrust(device.Fingerprint);
         _syncedDeviceFingerprints.TryAdd(device.Fingerprint, 0);
-        await (_playlistSyncService?.SyncWithAsync(device, forceInitiator: true) ?? Task.CompletedTask);
+        await (_playlistSyncService?.SyncWithAsync(device) ?? Task.CompletedTask);
         await SyncLibraryAndConfirmTrust(device);
     }
 
@@ -836,7 +833,7 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         if (!result.Success || result.AddedCount <= 0 || _playlistSyncService == null)
             return;
 
-        await _playlistSyncService.SyncWithAsync(device, forceInitiator: true);
+        await _playlistSyncService.SyncWithAsync(device);
     }
 
     // How long to leave a peer alone after it says 429. One second longer than
@@ -1220,7 +1217,7 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
         {
             await ReportVanishedTracks(device);
 
-            var playlistTask = _playlistSyncService?.SyncWithAsync(device, forceInitiator: true) ?? Task.CompletedTask;
+            var playlistTask = _playlistSyncService?.SyncWithAsync(device) ?? Task.CompletedTask;
             var libraryTask = _librarySyncService?.SyncWithAsync(device) ?? Task.FromResult(new LibrarySyncResult(false, 0, 0));
             await Task.WhenAll(playlistTask, libraryTask);
 
@@ -1413,7 +1410,7 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
 
         _logger.LogInformation("{Alias} ({Fingerprint}) reports changed playlists ({Previous} -> {Current}), syncing",
             device.Alias, device.Fingerprint, previousToken, device.PlaylistsToken);
-        RunTrackedSync(() => _playlistSyncService?.SyncWithAsync(device, forceInitiator: true) ?? Task.CompletedTask);
+        RunTrackedSync(() => _playlistSyncService?.SyncWithAsync(device) ?? Task.CompletedTask);
     }
 
     // Runs a playlist sync session (Phase 2) and a library sync session
@@ -1437,15 +1434,8 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
 
         _logger.LogInformation("First contact with {Alias} ({Fingerprint}) this session, triggering initial sync",
             device.Alias, device.Fingerprint);
-        // forceInitiator: true - this is always this device's own paired
-        // server here (MayRequestFrom above already guarantees that), and a
-        // server never calls SyncWithAsync back (it does not dial out at all)
-        // - without this, PlaylistSyncService's ordinal-fingerprint election
-        // could decide this side isn't the initiator for roughly half of all
-        // possible fingerprint pairs, and since the server never reciprocates,
-        // that pair would permanently never sync playlists.
         RunTrackedSyncs(
-            () => _playlistSyncService?.SyncWithAsync(device, forceInitiator: true) ?? Task.CompletedTask,
+            () => _playlistSyncService?.SyncWithAsync(device) ?? Task.CompletedTask,
             () => SyncLibraryAndConfirmTrust(device));
     }
 
