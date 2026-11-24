@@ -58,6 +58,10 @@ public sealed class PlaylistRevisions
     private long _lastIssued;
     private bool _started;
 
+    // How many times Reconcile has run, so ApplyChanges can tell whether its
+    // install already ran one.
+    private long _reconciled;
+
     public PlaylistRevisions(Library library, IPlaylistRevisionStore store, Func<long>? now = null)
     {
         _library = library;
@@ -89,6 +93,7 @@ public sealed class PlaylistRevisions
     {
         lock (_gate)
         {
+            _reconciled++;
             var issued = new List<(string Listener, Guid Id, PlaylistRevision Revision)>();
             var present = new HashSet<(string, Guid)>();
             foreach (var playlist in _library.Playlists)
@@ -148,10 +153,11 @@ public sealed class PlaylistRevisions
             var answers = new Dictionary<Guid, PlaylistChangeAnswerDto>();
             var accepted = new List<PlaylistChangeDto>();
             var refused = new List<(Guid Id, long Base)>();
+            var seen = new HashSet<Guid>();
 
             foreach (var change in request.Changes)
             {
-                if (answers.ContainsKey(change.Id) || accepted.Any(c => c.Id == change.Id))
+                if (!seen.Add(change.Id))
                     continue;
                 if (!change.Delete && change.Playlist?.Id != change.Id)
                     continue;
@@ -179,6 +185,7 @@ public sealed class PlaylistRevisions
             if (accepted.Count > 0)
             {
                 var index = new PlaylistTrackIndex(_library.Tracks);
+                var reconciled = _reconciled;
                 var deleting = accepted.Where(c => c.Delete).Select(c => c.Id).ToHashSet();
                 var writing = accepted.Where(c => !c.Delete).ToDictionary(c => c.Id, c => c.Playlist!);
                 _library.ReplacePlaylists(now =>
@@ -199,13 +206,15 @@ public sealed class PlaylistRevisions
                 // Already run by PlaylistsChanged, unless the install changed
                 // nothing; and a deletion of a playlist the server does not
                 // hold is still recorded, so the devices that have it drop it.
-                Reconcile();
+                if (_reconciled == reconciled)
+                    Reconcile();
                 RecordDeletionsOfMissing(listener, deleting);
             }
 
+            var installed = _library.Playlists.ToDictionary(p => p.Id);
             foreach (var change in accepted)
             {
-                var (revision, _, _) = StateOf(listener, change.Id, _library.Playlists.FirstOrDefault(p => p.Id == change.Id));
+                var (revision, _, _) = StateOf(listener, change.Id, installed.GetValueOrDefault(change.Id));
                 answers[change.Id] = new PlaylistChangeAnswerDto(change.Id, PlaylistChangeOutcome.Applied, revision);
             }
 

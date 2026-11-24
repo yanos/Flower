@@ -52,8 +52,10 @@ namespace Flower.Persistence.Sql
 
             // A row whose song is not in the library right now is not gone: a
             // drive can be away for any number of launches. It is held in its
-            // place, so that saving this playlist does not delete it.
-            var index = new PlaylistTrackIndex(libraryTracks);
+            // place, so that saving this playlist does not delete it. The
+            // index is built only for such a row: on a normal launch every
+            // row's track id is in the library.
+            PlaylistTrackIndex? index = null;
             var membership = new Dictionary<Guid, List<PlaylistEntry>>();
             using (var command = connection.CreateCommand())
             {
@@ -74,7 +76,7 @@ namespace Flower.Persistence.Sql
                     if (!membership.TryGetValue(playlistId, out var entries))
                         membership[playlistId] = entries = [];
 
-                    var track = (trackId is { } id ? byId.GetValueOrDefault(id) : null) ?? index.Find(song);
+                    var track = (trackId is { } id ? byId.GetValueOrDefault(id) : null) ?? (index ??= new PlaylistTrackIndex(libraryTracks)).Find(song);
                     entries.Add(track != null
                         ? new PlaylistEntry(entryId, track)
                         : new PlaylistEntry(entryId, null, trackId, song));

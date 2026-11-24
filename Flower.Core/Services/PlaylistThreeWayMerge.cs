@@ -175,6 +175,7 @@ public static class PlaylistThreeWayMerge
 
         var result = skeleton.Where(e => !baseSet.Contains(e) || otherSet.Contains(e)).ToList();
         var inResult = result.ToHashSet();
+        var lastBase = other.FindLastIndex(baseSet.Contains);
         for (var i = 0; i < other.Count; i++)
         {
             var entry = other[i];
@@ -185,7 +186,7 @@ public static class PlaylistThreeWayMerge
             // always added - stays at the end. Otherwise after the nearest
             // entry before it on its own side that the result has; at the top
             // when there is none.
-            if (other.Skip(i + 1).All(e => !baseSet.Contains(e)))
+            if (i > lastBase)
             {
                 result.Add(entry);
                 inResult.Add(entry);

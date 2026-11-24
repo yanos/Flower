@@ -399,9 +399,14 @@ public class PlaylistSyncService
                 // Copies holding the same songs under different row ids become
                 // one set of rows, this device taking the server's. No edit,
                 // so nothing to push.
-                if (decision.Local.IsOrdinary)
-                    tookRowIds |= decision.Local.TakeEntryIdsFrom(decision.Local.Entries, decision.Remote!.Tracks);
-                agreed[decision.PlaylistId] = new PlaylistAgreement(decision.Remote!.Revision, decision.Remote);
+                var took = decision.Local.IsOrdinary
+                    && decision.Local.TakeEntryIdsFrom(decision.Local.Entries, decision.Remote!.Tracks);
+                tookRowIds |= took;
+                // Already agreed at this revision, the usual case for a
+                // playlist nobody touched, is left as stored rather than
+                // rewritten every session.
+                if (took || agreements.GetValueOrDefault(decision.PlaylistId)?.Revision != decision.Remote!.Revision)
+                    agreed[decision.PlaylistId] = new PlaylistAgreement(decision.Remote!.Revision, decision.Remote);
                 return decision.Local;
 
             case PlaylistSyncDecisionKind.AdoptRemote:
@@ -520,6 +525,7 @@ public class PlaylistSyncService
     {
         var agreed = new Dictionary<Guid, PlaylistAgreement?>();
         var taken = new Dictionary<Guid, Playlist?>();
+        PlaylistTrackIndex? index = null;
         foreach (var (question, choice) in answers)
         {
             var id = question.Local.Id;
@@ -533,7 +539,7 @@ public class PlaylistSyncService
                     _putOff.Remove(id);
                     taken[id] = question.Remote == null
                         ? null
-                        : PlaylistSyncMapper.ToPlaylist(question.Remote, _library.Tracks, _logger);
+                        : PlaylistSyncMapper.ToPlaylist(question.Remote, index ??= new PlaylistTrackIndex(_library.Tracks), _logger);
                     agreed[id] = question.Remote == null ? null : new PlaylistAgreement(question.RemoteRevision, question.Remote);
                     break;
                 case PlaylistConflictChoice.Later:
