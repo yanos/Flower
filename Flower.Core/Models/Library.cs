@@ -147,6 +147,7 @@ namespace Flower.Models
         // and drag-reorders too, which no call site can be relied on to
         // remember.
         private readonly IPlaylistStore? _playlistStore;
+        private readonly object _playlistSaveGate = new();
 
         // Files removed from the library on purpose and kept on disk, which no
         // rescan may bring back - see RemoveTracks. Keyed by PathRules, like
@@ -3275,7 +3276,12 @@ namespace Flower.Models
 
             try
             {
-                _playlistStore.Save(Playlists);
+                // One at a time, each reading the set once it holds the gate:
+                // saves come from the UI thread, a sync session and a large
+                // add in the background, and two side by side could commit
+                // the older set last.
+                lock (_playlistSaveGate)
+                    _playlistStore.Save(Playlists);
             }
             catch (Exception ex)
             {

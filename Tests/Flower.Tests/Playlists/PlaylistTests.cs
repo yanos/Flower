@@ -248,4 +248,25 @@ public class PlaylistTests
         Assert.True(playlist.IsSmart);
         Assert.True(playlist.UpdatedAt > before);
     }
+
+    // A large add runs off the UI thread (UF-16) while the UI thread can
+    // still edit the same playlist: neither edit may drop the other's rows.
+    [Fact]
+    public void Edits_from_two_threads_at_once_all_land()
+    {
+        var playlist = new Playlist("Mix", []);
+        var start = new System.Threading.Barrier(2);
+
+        void Add(string prefix)
+        {
+            start.SignalAndWait();
+            for (var i = 0; i < 500; i++)
+                playlist.AppendTrack(T($"{prefix}{i}"));
+        }
+
+        System.Threading.Tasks.Parallel.Invoke(() => Add("a"), () => Add("b"));
+
+        Assert.Equal(1000, playlist.Entries.Count);
+        Assert.Equal(1000, playlist.Entries.Select(e => e.EntryId).Distinct().Count());
+    }
 }

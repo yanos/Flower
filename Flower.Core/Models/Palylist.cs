@@ -285,9 +285,34 @@ namespace Flower.Models
 
         private void Touch(DateTimeOffset now)
         {
-            var next = UpdatedAt.AddMilliseconds(1);
-            UpdatedAt = now > next ? now : next;
+            lock (_clock)
+            {
+                var next = UpdatedAt.AddMilliseconds(1);
+                UpdatedAt = now > next ? now : next;
+            }
             Changed?.Invoke(this, EventArgs.Empty);
+        }
+
+        // Two edits on two threads each move the clock on, rather than one
+        // overwriting the other's step.
+        private readonly object _clock = new();
+
+        // Every change to the rows goes through here: worked out from the list
+        // as it is, and swapped in only if no other edit got there first -
+        // worked out again if one did. Rows change on the UI thread, in a sync
+        // session and in a large add running in the background (AppendTracks),
+        // and a plain read-then-write let one of them drop another's edit.
+        // False, changing nothing, when edit returns null.
+        private bool Edit(Func<EntryList, EntryList?> edit)
+        {
+            while (true)
+            {
+                var entries = Volatile.Read(ref _entries);
+                if (edit(entries) is not { } next)
+                    return false;
+                if (ReferenceEquals(Interlocked.CompareExchange(ref _entries, next, entries), entries))
+                    return true;
+            }
         }
 
         // Stamps this copy as an edit made after `other` - for a copy chosen
@@ -388,43 +413,59 @@ namespace Flower.Models
             if (!IsOrdinary || previous.UnavailableCount == 0)
                 return;
 
-            var mine = Entries.Select(e => e.EntryId).ToHashSet();
-            if (previous.Entries.Any(e => mine.Contains(e.EntryId)))
-                return;
-
-            var present = Tracks.Select(t => t.Id).ToHashSet();
-            var merged = Entries.ToList();
-            var at = 0;
-            foreach (var entry in previous.Entries)
+            Edit(entries =>
             {
-                if (entry.Track is { } track)
+                var mine = entries.All.Select(e => e.EntryId).ToHashSet();
+                if (previous.Entries.Any(e => mine.Contains(e.EntryId)))
+                    return null;
+
+                var present = entries.Tracks.Select(t => t.Id).ToHashSet();
+                var merged = entries.All.ToList();
+                var at = 0;
+                foreach (var entry in previous.Entries)
                 {
-                    var followed = merged.FindIndex(e => e.Track?.Id == track.Id);
-                    at = followed >= 0 ? followed + 1 : merged.Count;
-                    continue;
+                    if (entry.Track is { } track)
+                    {
+                        var followed = merged.FindIndex(e => e.Track?.Id == track.Id);
+                        at = followed >= 0 ? followed + 1 : merged.Count;
+                        continue;
+                    }
+
+                    if (entry.TrackId is { } id && present.Contains(id))
+                        continue;
+
+                    merged.Insert(at++, entry);
                 }
 
-                if (entry.TrackId is { } id && present.Contains(id))
-                    continue;
-
-                merged.Insert(at++, entry);
-            }
-
-            _entries = new EntryList(merged);
+                return new EntryList(merged);
+            });
         }
 
         public void InsertTrack(int index, Track track)
         {
-            var entries = _entries;
-            var next = entries.All.ToList();
-            next.Insert(entries.PlaceOf(index), PlaylistEntry.Of(track));
-            _entries = new EntryList(next);
+            var entry = PlaylistEntry.Of(track);
+            Edit(entries =>
+            {
+                var next = entries.All.ToList();
+                next.Insert(entries.PlaceOf(index), entry);
+                return new EntryList(next);
+            });
             Touch();
         }
 
-        public void AppendTrack(Track track)
+        public void AppendTrack(Track track) => AppendTracks([track]);
+
+        // Songs added at the end as one edit, however many: one UpdatedAt, one
+        // save and one PlaylistsChanged, where one edit per song rewrote every
+        // playlist once per song (UF-16). Safe to call off the UI thread, which
+        // is where PlaylistManagementViewModel.AddTracks runs a large one.
+        public void AppendTracks(IReadOnlyList<Track> tracks)
         {
-            _entries = new EntryList([.. _entries.All, PlaylistEntry.Of(track)]);
+            if (tracks.Count == 0)
+                return;
+
+            var added = tracks.Select(PlaylistEntry.Of).ToList();
+            Edit(entries => new EntryList([.. entries.All, .. added]));
             Touch();
         }
 
@@ -434,13 +475,17 @@ namespace Flower.Models
         // say which of the two was meant. Returns whether anything went.
         public bool RemoveEntriesAt(IReadOnlyCollection<int> slots)
         {
-            var entries = _entries;
-            var count = entries.Tracks.Count;
-            var doomed = slots.Where(slot => slot >= 0 && slot < count).Select(entries.PlaceOf).ToHashSet();
-            if (doomed.Count == 0)
+            var removed = Edit(entries =>
+            {
+                var count = entries.Tracks.Count;
+                var doomed = slots.Where(slot => slot >= 0 && slot < count).Select(entries.PlaceOf).ToHashSet();
+                return doomed.Count == 0
+                    ? null
+                    : new EntryList(entries.All.Where((_, place) => !doomed.Contains(place)).ToList());
+            });
+            if (!removed)
                 return false;
 
-            _entries = new EntryList(entries.All.Where((_, place) => !doomed.Contains(place)).ToList());
             Touch();
             return true;
         }
@@ -450,21 +495,18 @@ namespace Flower.Models
         // Library.RemoveTracks.
         public void RemoveTracks(IReadOnlySet<Guid> ids)
         {
-            var all = _entries.All;
             bool Leaves(PlaylistEntry entry) => entry.TrackId is { } id && ids.Contains(id);
-            if (!all.Any(Leaves))
+            if (!Edit(entries => entries.All.Any(Leaves) ? new EntryList(entries.All.Where(e => !Leaves(e)).ToList()) : null))
                 return;
 
-            _entries = new EntryList(all.Where(e => !Leaves(e)).ToList());
             Touch();
         }
 
         public void ReplaceAll(List<Track> tracks)
         {
-            var entries = _entries;
-            _entries = entries.HasEntries
+            Edit(entries => entries.HasEntries
                 ? new EntryList(KeepingEntryIds(entries.All, tracks))
-                : new EntryList(new List<Track>(tracks));
+                : new EntryList(new List<Track>(tracks)));
             Touch();
         }
 
@@ -506,22 +548,26 @@ namespace Flower.Models
         // drag-reorder ends.
         public bool MoveEntry(int from, int insertBefore)
         {
-            var entries = _entries;
-            var tracks = entries.Tracks;
-            if (from < 0 || from >= tracks.Count || insertBefore < 0 || insertBefore > tracks.Count)
+            var moved = Edit(entries =>
+            {
+                var tracks = entries.Tracks;
+                if (from < 0 || from >= tracks.Count || insertBefore < 0 || insertBefore > tracks.Count)
+                    return null;
+
+                var target = insertBefore > from ? insertBefore - 1 : insertBefore;
+                if (target == from)
+                    return null;
+
+                var next = entries.All.ToList();
+                var entry = next[entries.PlaceOf(from)];
+                var before = insertBefore == tracks.Count ? (Guid?)null : next[entries.PlaceOf(insertBefore)].EntryId;
+                next.RemoveAt(entries.PlaceOf(from));
+                next.Insert(before is { } id ? next.FindIndex(e => e.EntryId == id) : next.Count, entry);
+                return new EntryList(next);
+            });
+            if (!moved)
                 return false;
 
-            var target = insertBefore > from ? insertBefore - 1 : insertBefore;
-            if (target == from)
-                return false;
-
-            var next = entries.All.ToList();
-            var moved = next[entries.PlaceOf(from)];
-            var before = insertBefore == tracks.Count ? (Guid?)null : next[entries.PlaceOf(insertBefore)].EntryId;
-            next.RemoveAt(entries.PlaceOf(from));
-            next.Insert(before is { } id ? next.FindIndex(e => e.EntryId == id) : next.Count, moved);
-
-            _entries = new EntryList(next);
             Touch();
             return true;
         }
@@ -537,27 +583,26 @@ namespace Flower.Models
         internal void RebindTracks(
             Func<Track, Track?> current, Func<Guid, Track?> byId, Func<PlaylistSyncTrackDto, Track?> bySong)
         {
-            var entries = _entries;
-            if (!entries.HasEntries)
+            Edit(entries =>
             {
-                _entries = new EntryList(entries.Tracks.Select(t => current(t) ?? t).ToList());
-                return;
-            }
+                if (!entries.HasEntries)
+                    return new EntryList(entries.Tracks.Select(t => current(t) ?? t).ToList());
 
-            var next = new List<PlaylistEntry>(entries.All.Count);
-            foreach (var entry in entries.All)
-            {
-                if (entry.Track is { } track)
+                var next = new List<PlaylistEntry>(entries.All.Count);
+                foreach (var entry in entries.All)
                 {
-                    next.Add(entry with { Track = current(track) ?? track });
-                    continue;
-                }
+                    if (entry.Track is { } track)
+                    {
+                        next.Add(entry with { Track = current(track) ?? track });
+                        continue;
+                    }
 
-                var back = (entry.AwayTrackId is { } id ? byId(id) : null)
-                    ?? (entry.Song is { } song ? bySong(song) : null);
-                next.Add(back == null || !IsOrdinary ? entry : new PlaylistEntry(entry.EntryId, back));
-            }
-            _entries = new EntryList(next);
+                    var back = (entry.AwayTrackId is { } id ? byId(id) : null)
+                        ?? (entry.Song is { } song ? bySong(song) : null);
+                    next.Add(back == null || !IsOrdinary ? entry : new PlaylistEntry(entry.EntryId, back));
+                }
+                return new EntryList(next);
+            });
         }
 
         // This device's copy turned out to hold the same songs as the other
@@ -606,9 +651,8 @@ namespace Flower.Models
         // drives it is not Library - see SMART-PLAYLIST-PLAN.md phase 3. A
         // Vibe Playlist's pool is installed the same way and for the same
         // reason (VibePlaylistPools, and a paired device taking its server's).
-        public bool Materialize(IReadOnlyList<Track> tracks)
+        public bool Materialize(IReadOnlyList<Track> tracks) => Edit(entries =>
         {
-            var entries = _entries;
             var current = entries.Tracks;
             if (current.Count == tracks.Count)
             {
@@ -623,14 +667,13 @@ namespace Flower.Models
                 }
 
                 if (identical)
-                    return false;
+                    return null;
             }
 
-            _entries = entries.HasEntries
+            return entries.HasEntries
                 ? new EntryList(KeepingEntryIds(entries.All, tracks))
                 : new EntryList(new List<Track>(tracks));
-            return true;
-        }
+        });
 
         public Track? GetTrack(int index)
         {

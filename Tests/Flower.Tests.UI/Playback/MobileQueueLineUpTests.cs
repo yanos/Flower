@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 
 using Avalonia.Headless.XUnit;
 using Avalonia.Threading;
@@ -124,7 +125,7 @@ public class MobileQueueLineUpTests : PinnedDataDirectory
     }
 
     [AvaloniaFact]
-    public void A_playlists_menu_adds_it_to_another_playlist_in_its_own_order()
+    public async Task A_playlists_menu_adds_it_to_another_playlist_in_its_own_order()
     {
         using var scope = PhonePlaying("A", "B", "C");
         var mobile = scope.Mobile;
@@ -134,8 +135,9 @@ public class MobileQueueLineUpTests : PinnedDataDirectory
         mobile.OpenPlaylistActionsCommand.Execute(Mix(scope, "C", "A", "B"));
         mobile.AddAlbumActionTargetToPlaylistCommand.Execute(null);
         mobile.AddTrackToPlaylistCommand.Execute(new SidebarItem(SidebarItemKind.Playlist, target.Name, playlist: target));
-        Dispatcher.UIThread.RunJobs();
 
+        // The add runs off the UI thread (UF-16).
+        await UiWait.Until(() => target.Tracks.Count == 3, "the songs reach the playlist");
         Assert.Equal(new[] { "C", "A", "B" }, target.Tracks.Select(t => t.Title));
     }
 }

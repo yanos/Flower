@@ -4,8 +4,8 @@ Bugs a person using Flower would hit: data lost, the wrong thing done, a dead
 end, or behaviour that misleads. The `user-flow-review` skill finds them and
 keeps this list; `/release` treats every open **P0** here as blocking the tag.
 
-**Status:** 5 open (0 P0, 0 fix-now, 5 later), UF-12 to UF-16, all from the
-review of `ef6695fb` on 2026-11-22.
+**Status:** 4 open (0 P0, 0 fix-now, 4 later), UF-12 to UF-15, all from the review of
+`ef6695fb` on 2026-11-22.
 
 Severities are the ones in `.claude/skills/release/REVIEW.md`. **Reproduced**
 means a throwaway test against an export of that commit went red on the bug, or,
@@ -42,8 +42,3 @@ An empty box means "leave unchanged", so there is no way to say "make this empty
 A multi-selection moves only the grabbed row, and songs cannot be dragged from
 one playlist onto another. `Flower/Controls/MusicListView.axaml.cs:579`.
 *Direction:* move the whole selection, and tell a reorder from a drag to the sidebar.
-
-**UF-16. Adding a large selection freezes the app.** *Reproduced.*
-Adding 5,000 songs took 22 seconds, because each one rewrites every playlist on
-the UI thread. `Flower/ViewModels/PlaylistManagementViewModel.cs:538`.
-*Direction:* append the batch as one edit.

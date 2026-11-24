@@ -462,4 +462,31 @@ public class PlaylistManagementViewModelTests
         Assert.False(asked);
         Assert.Equal(2, playlist.Tracks.Count);
     }
+
+    private sealed class CountingPlaylistStore : IPlaylistStore
+    {
+        public int Saves;
+        public void Save(IEnumerable<Playlist> playlists) => Saves++;
+    }
+
+    // UF-16: a whole library added at once is one edit, saved once, where an
+    // edit per song rewrote every playlist once per song.
+    [Fact]
+    public async Task Adding_many_songs_is_one_edit_saved_once()
+    {
+        var store = new CountingPlaylistStore();
+        var library = new Library([], NullLogger<Library>.Instance, playlistStore: store);
+        var playlist = new Playlist("Everything", []);
+        library.AddPlaylist(playlist);
+        var vm = new PlaylistManagementViewModel(library, [], new Host());
+        var announced = 0;
+        library.PlaylistsChanged += (_, _) => announced++;
+        var savedBefore = store.Saves;
+
+        await vm.AddTracks(Enumerable.Range(0, 5000).Select(i => Song($"Song {i}")).ToList(), playlist);
+
+        Assert.Equal(5000, playlist.Tracks.Count);
+        Assert.Equal(1, store.Saves - savedBefore);
+        Assert.Equal(1, announced);
+    }
 }
