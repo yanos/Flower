@@ -2057,14 +2057,9 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             if (ActionTarget != null)
                 ConfirmDeleting(albumFiles: null);
         });
-        ConfirmDeleteFileCommand = new RelayCommand(async () =>
+        ConfirmDeleteFileCommand = new RelayCommand(() =>
         {
-            var failed = 0;
-            foreach (var track in DeleteTargets.ToList())
-            {
-                if (!await Main.DeleteDownloadedFileAsync(track))
-                    failed++;
-            }
+            var failed = Main.DeleteLocalFiles(DeleteTargets.ToList());
 
             if (failed > 0)
             {

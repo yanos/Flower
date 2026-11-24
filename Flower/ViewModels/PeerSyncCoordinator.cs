@@ -1462,9 +1462,10 @@ public sealed class PeerSyncCoordinator : ViewModelBase, IDisposable
     public Task<TrackDownloadResult> DownloadTrackAsync(Track track) =>
         _libraryDownloadService?.DownloadAsync(track, ResolvePeerForTrack(track)) ?? Task.FromResult(TrackDownloadResult.Failed);
 
-    // Counterpart to DownloadTrackAsync - see LibraryDownloadService.DeleteDownloadedFileAsync.
-    public Task<bool> DeleteDownloadedFileAsync(Track track) =>
-        _libraryDownloadService?.DeleteDownloadedFileAsync(track) ?? Task.FromResult(false);
+    // Counterpart to DownloadTrackAsync - see LibraryDownloadService.DeleteLocalFiles.
+    // How many could not be deleted: all of them, with no service to do it.
+    public int DeleteLocalFiles(IReadOnlyList<Track> tracks) =>
+        _libraryDownloadService?.DeleteLocalFiles(tracks) ?? tracks.Count;
 
     private readonly SubscriptionBag _subscriptions = new();
 

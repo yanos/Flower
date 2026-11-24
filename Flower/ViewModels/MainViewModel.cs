@@ -2711,7 +2711,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // SyncKey on demand - see DownloadAllAsync for why not by instance.
     public TrackDownloadRunner Downloads { get; private set; }
 
-    public Task<bool> DeleteDownloadedFileAsync(Track track) => Sync.DeleteDownloadedFileAsync(track);
+    public int DeleteLocalFiles(IReadOnlyList<Track> tracks) => Sync.DeleteLocalFiles(tracks);
 
     private TrackDownloadRunner CreateDownloadRunner() =>
         new(DownloadTrackAsync,

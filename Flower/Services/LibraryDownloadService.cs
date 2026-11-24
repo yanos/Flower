@@ -215,42 +215,54 @@ public class LibraryDownloadService
     //     record in Removed Songs. Left behind it would be a row with nothing
     //     to play and nowhere to get it from.
     //
-    // False when the file could not be removed, in which case the song is
-    // left exactly as it was.
-    public Task<bool> DeleteDownloadedFileAsync(Track track)
+    // The songs whose files went change as one library edit, however many,
+    // so an album is one rebuild rather than one per song. Returns how many
+    // files could not be removed; their songs are left exactly as they were.
+    public int DeleteLocalFiles(IReadOnlyList<Track> tracks)
     {
-        if (track.Path is not { } path)
-            return Task.FromResult(true);
-
         var paired = _appSettings.PairedServerFingerprint;
-        try
+        var streams = new List<Track>();
+        var leaving = new List<Track>();
+        var failed = 0;
+        foreach (var track in tracks)
         {
-            if (LocalFileDeletion.IsDisposable(track, paired))
-                File.Delete(path);
-            else if (File.Exists(path))
-                LibraryRemoval.TrashOrDelete(path);
-        }
-        catch (DirectoryNotFoundException)
-        {
-            // Its folder is gone, and the file with it.
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to delete local file for {Title} ({Path})", track.Title, LogPath.Short(path));
-            return Task.FromResult(false);
+            if (track.Path is not { } path)
+                continue;
+
+            try
+            {
+                if (LocalFileDeletion.IsDisposable(track, paired))
+                    File.Delete(path);
+                else if (File.Exists(path))
+                    LibraryRemoval.TrashOrDelete(path);
+            }
+            catch (DirectoryNotFoundException)
+            {
+                // Its folder is gone, and the file with it.
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to delete local file for {Title} ({Path})", track.Title, LogPath.Short(path));
+                failed++;
+                continue;
+            }
+
+            if (LocalFileDeletion.ServerHasCopy(track, paired))
+            {
+                track.Path = null;
+                track.IsLocallyDownloaded = false;
+                streams.Add(track);
+            }
+            else
+            {
+                leaving.Add(track);
+            }
         }
 
-        if (LocalFileDeletion.ServerHasCopy(track, paired))
-        {
-            track.Path = null;
-            track.IsLocallyDownloaded = false;
-            _library.NotifyTrackChanged(track, TrackChange.File);
-        }
-        else
-        {
-            _library.RemoveTracks([track], []);
-        }
-
-        return Task.FromResult(true);
+        if (streams.Count > 0)
+            _library.NotifyTracksChanged(streams, TrackChange.File);
+        if (leaving.Count > 0)
+            _library.RemoveTracks(leaving, []);
+        return failed;
     }
 }

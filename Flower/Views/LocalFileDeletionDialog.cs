@@ -37,12 +37,7 @@ internal static class LocalFileDeletionDialog
                 return;
         }
 
-        var failed = 0;
-        foreach (var track in localFiles)
-        {
-            if (!await viewModel.DeleteDownloadedFileAsync(track))
-                failed++;
-        }
+        var failed = viewModel.DeleteLocalFiles(localFiles);
 
         if (failed > 0 && topLevel is Window window)
         {

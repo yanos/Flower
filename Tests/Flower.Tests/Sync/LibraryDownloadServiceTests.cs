@@ -332,7 +332,7 @@ public class LibraryDownloadServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task DeleteDownloadedFileAsync_reverts_a_downloaded_track_to_a_placeholder_and_removes_the_file()
+    public async Task DeleteLocalFiles_reverts_a_downloaded_track_to_a_placeholder_and_removes_the_file()
     {
         var filePath = Path.Combine(_downloadFolder, "local.mp3");
         Directory.CreateDirectory(_downloadFolder);
@@ -340,20 +340,20 @@ public class LibraryDownloadServiceTests : IDisposable
         var track = Placeholder(path: filePath);
         var service = MakeService(track, out _);
 
-        await service.DeleteDownloadedFileAsync(track);
+        service.DeleteLocalFiles([track]);
 
         Assert.Null(track.Path);
         Assert.False(File.Exists(filePath));
     }
 
     [Fact]
-    public async Task DeleteDownloadedFileAsync_still_reverts_to_a_placeholder_if_the_file_is_already_gone()
+    public void DeleteLocalFiles_still_reverts_to_a_placeholder_if_the_file_is_already_gone()
     {
         var missingPath = Path.Combine(_downloadFolder, "already-gone.mp3");
         var track = Placeholder(path: missingPath);
         var service = MakeService(track, out _);
 
-        await service.DeleteDownloadedFileAsync(track);
+        service.DeleteLocalFiles([track]);
 
         Assert.Null(track.Path);
     }
@@ -373,7 +373,7 @@ public class LibraryDownloadServiceTests : IDisposable
         var trashedBefore = Directory.GetFiles(AssemblySetup.TestTrash).ToHashSet();
         var service = MakeService(track, out var library, pairedServer);
 
-        Assert.True(await service.DeleteDownloadedFileAsync(track));
+        Assert.Equal(0, service.DeleteLocalFiles([track]));
 
         Assert.False(File.Exists(filePath));
         Assert.Contains(Directory.GetFiles(AssemblySetup.TestTrash).Except(trashedBefore),
@@ -383,7 +383,7 @@ public class LibraryDownloadServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task A_file_that_cannot_be_deleted_leaves_the_song_as_it_was()
+    public void A_file_that_cannot_be_deleted_leaves_the_song_as_it_was()
     {
         // A directory where the file should be: File.Delete refuses it.
         var notAFile = Path.Combine(_tempHome, "held.mp3");
@@ -392,7 +392,7 @@ public class LibraryDownloadServiceTests : IDisposable
         track.IsLocallyDownloaded = true;
         var service = MakeService(track, out var library);
 
-        Assert.False(await service.DeleteDownloadedFileAsync(track));
+        Assert.Equal(1, service.DeleteLocalFiles([track]));
 
         Assert.Equal(notAFile, track.Path);
         Assert.True(track.IsLocallyDownloaded);

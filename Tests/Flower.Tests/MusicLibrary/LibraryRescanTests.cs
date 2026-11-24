@@ -275,7 +275,7 @@ public class LibraryRescanTests
     }
 
     // OriginTrackId is how a downloaded-then-deleted track gets re-fetched
-    // later (see LibraryDownloadService.DeleteDownloadedFileAsync, which leaves
+    // later (see LibraryDownloadService.DeleteLocalFiles, which leaves
     // the origin metadata in place on purpose), so it has to ride the same
     // carry-forward as the rest of it. A rescan re-reads a file's tags and
     // builds a brand new Track from them - nothing on disk carries the peer's
@@ -560,7 +560,7 @@ public class LibraryRescanTests
     }
 
     // A track with no local file survives whatever its origin. Usually that is a
-    // sync placeholder, but DeleteDownloadedFileAsync also produces one with no
+    // sync placeholder, but DeleteLocalFiles also produces one with no
     // origin at all (deleting the only copy of a purely local import - see its
     // own comment, and MobileMainViewModel.IsRecoverableDownload, which warns
     // about exactly that case rather than preventing it). Either way there is
