@@ -23,7 +23,7 @@ namespace Flower.SemanticAudio;
 // when it is done, since a pool is only ever made of the songs heard so far.
 // Like a smart playlist's recomputation, a rebuild does not move UpdatedAt:
 // it is not an edit. A paired device learns of it from /info's playlists
-// token, which counts a Vibe Playlist's songs (PlaylistSyncMapper.TokenOf).
+// token, which counts a Vibe Playlist's songs (PlaylistRevisions.TokenFor).
 public sealed class VibePlaylistPools : IDisposable
 {
     // The most songs a pool holds. Past it, the endless queue asks for more

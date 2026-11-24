@@ -134,6 +134,34 @@ public sealed class PlaylistRevisions
         }
     }
 
+    // /info's playlistsToken: moves whenever ManifestFor would answer this
+    // listener differently, so a device that stayed open knows to come back.
+    // Per listener, because a guest renaming its own playlist must not send
+    // the owner's devices off to re-sync theirs. By revision rather than
+    // UpdatedAt, which a sync can install unchanged under new content; and
+    // the id list covers a delete.
+    //
+    // A Vibe Playlist's pool counts too. The server ranks it (VibePlaylistPools)
+    // without issuing a revision, the way a smart playlist is recomputed, so
+    // without its songs in the token a device that saved a new sentence would
+    // never come back for the songs the server found for it.
+    public string TokenFor(string listener)
+    {
+        lock (_gate)
+        {
+            var text = string.Join("\n", PlaylistSyncMapper.For(_library.Playlists, listener)
+                .Select(p =>
+                {
+                    var revision = Latest((p.Listener, p.Id)) is { Deleted: false } latest ? latest.Revision : 0;
+                    return p.IsVibe
+                        ? $"{p.Id:N}:{revision}:{string.Join(",", p.Tracks.Select(t => t.Id.ToKey()))}"
+                        : $"{p.Id:N}:{revision}";
+                })
+                .Order(StringComparer.Ordinal));
+            return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text)))[..16];
+        }
+    }
+
     // POST /playlists/changes. Each change is applied only if the server's
     // version of that playlist is still the one it is based on; otherwise it
     // is answered Stale with what the server holds now, for the device to

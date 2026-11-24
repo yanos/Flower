@@ -61,7 +61,8 @@ public static class DiscoveryEndpoints
             HttpContext context, IOptionsMonitor<FlowerServerOptions> optionsMonitor,
             DeviceSigningKey signingKey, TrustedPeerStore trustedPeers, Library library,
             NonceReplayGuard replayGuard, IServer boundServer, PublicReachability publicReachability,
-            MdnsAdvertiser advertiser, RequestGate gate, ServerIconStore icons, SemanticAudioService vibe) =>
+            MdnsAdvertiser advertiser, RequestGate gate, ServerIconStore icons, SemanticAudioService vibe,
+            PlaylistRevisions playlistRevisions) =>
         {
             // Monitor, not IOptions, for the same reason Program.cs's LanGuard
             // gate uses one: both settings this reads - the alias and
@@ -210,9 +211,7 @@ public static class DiscoveryEndpoints
                 // to re-sync theirs. Verified callers only, like the address
                 // list: nobody else has playlists here to watch.
                 callerIsTrusted
-                    ? PlaylistSyncMapper.TokenOf(PlaylistSyncMapper.For(
-                        library.Playlists,
-                        Listeners.For(caller.Fingerprint!, trustedPeers.IsAdmin(caller.Fingerprint!))))
+                    ? playlistRevisions.TokenFor(Listeners.For(caller.Fingerprint!, trustedPeers.IsAdmin(caller.Fingerprint!)))
                     : null,
                 // Whether this server counts Music.app's plays itself, so an
                 // administrator's Mac does not count them a second time - see

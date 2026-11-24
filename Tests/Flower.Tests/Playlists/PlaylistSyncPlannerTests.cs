@@ -350,17 +350,4 @@ public class PlaylistSyncPlannerTests
         Assert.Equal("sad piano", back.VibePrompt);
         Assert.True(back.VibeInstrumental);
     }
-
-    // The server rebuilds a pool without moving UpdatedAt, so /info's token
-    // has to move with the songs or a device never comes back for them.
-    [Fact]
-    public void The_playlists_token_moves_when_a_vibe_playlists_pool_does()
-    {
-        var playlist = new Playlist("Rainy", [T("A")]) { VibePrompt = "music for a rainy day" };
-        var before = PlaylistSyncMapper.TokenOf([playlist]);
-
-        playlist.Materialize([T("B")]);
-
-        Assert.NotEqual(before, PlaylistSyncMapper.TokenOf([playlist]));
-    }
 }

@@ -83,27 +83,6 @@ public static class PlaylistSyncMapper
     // told about: one listener's playlists, never the server's whole set.
     public static List<Playlist> For(IEnumerable<Playlist> playlists, string listener) =>
         playlists.Where(p => p.Listener == listener).ToList();
-
-    // A token that moves whenever one listener's playlists change, for /info's
-    // playlistsToken. Derived from the playlists rather than counted, because
-    // the counter Library keeps (PlaylistsToken) moves for every listener's
-    // edits, and a guest renaming its own playlist must not send the owner's
-    // devices off to re-sync theirs. UpdatedAt moves on every edit a sync
-    // carries (see Playlist.Touch), and the id list covers a delete.
-    //
-    // A Vibe Playlist's pool counts too. The server ranks it (VibePlaylistPools)
-    // without moving UpdatedAt, the way a smart playlist is recomputed, so
-    // without its songs in the token a device that saved a new sentence would
-    // never come back for the songs the server found for it.
-    public static string TokenOf(IEnumerable<Playlist> playlists)
-    {
-        var text = string.Join("\n", playlists
-            .Select(p => p.IsVibe
-                ? $"{p.Id:N}:{p.UpdatedAt.UtcTicks}:{string.Join(",", p.Tracks.Select(t => t.Id.ToKey()))}"
-                : $"{p.Id:N}:{p.UpdatedAt.UtcTicks}")
-            .Order(StringComparer.Ordinal));
-        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text)))[..16];
-    }
 }
 
 // One library, indexed the ways a playlist entry can name a track in it: by
