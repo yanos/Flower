@@ -23,9 +23,9 @@ public interface ILibraryBrowseHost
     Playlist? CurrentPlaylist { get; }
     Track? CurrentlyPlayingTrack { get; }
 
-    // Which copy of CurrentlyPlayingTrack plays, for a list holding it more
-    // than once - see PlaylistControlViewModel.CurrentlyPlayingOccurrence.
-    int CurrentlyPlayingOccurrence => 0;
+    // The queue entry playing, which in a list made from a playlist is the
+    // entry its row came from - see PlaylistControlViewModel.CurrentlyPlayingEntryId.
+    Guid? CurrentlyPlayingEntryId => null;
 
     // Both feed TrackListBuilder's per-row availability marking - a track whose
     // origin peer is the paired server shows as streamable only while that
@@ -83,8 +83,14 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
     // ── What the page shows ───────────────────────────────────────────────
 
     private List<Track> _currentFilteredTracks = new();
+    private List<ListedTrack> _currentListing = new();
 
     public IReadOnlyList<Track> DisplayedTracks => _currentFilteredTracks;
+
+    // The same, each with the entry its row is in a playlist: what a queue
+    // made from this list is made of, so that it knows which entry each of
+    // its songs came from.
+    public IReadOnlyList<ListedTrack> DisplayedListing => _currentListing;
 
     // ── Sort state ────────────────────────────────────────────────────────
 
@@ -618,7 +624,16 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         };
     }
 
-    private List<Track> GetBaseTracksForFilter()
+    // A playlist's rows are its entries; a folder's are its playlists' songs,
+    // each once.
+    private List<ListedTrack> GetBaseTracksForFilter() => _host.CurrentKind switch
+    {
+        SidebarItemKind.Playlist when _host.CurrentPlaylist is { IsFolder: false } playlist
+            => playlist.ShownEntries.Select(ListedTrack.Of).ToList(),
+        _ => GetBaseSongsForFilter().Select(t => new ListedTrack(t)).ToList(),
+    };
+
+    private List<Track> GetBaseSongsForFilter()
     {
         return _host.CurrentKind switch
         {
@@ -812,6 +827,7 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
             // screen.
             MarkPlaying(cached.Rows);
             _currentFilteredTracks = cached.Tracks;
+            _currentListing = cached.Listing;
             IsRowsRebuildPending = false;
             _logger.LogTrace("Rows reused: {Rows} row(s) ({Kind})", cached.Rows.Count, _host.CurrentKind);
             PublishRows(cached.Rows);
@@ -848,10 +864,15 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         var rows = TrackRowMerge.Apply(cached?.Rows, plan, out var retired, _animationClock);
 
         var filteredTracks = new List<Track>(plan.Count);
+        var listing = new List<ListedTrack>(plan.Count);
         foreach (var entry in plan)
+        {
             filteredTracks.Add(entry.Track);
+            listing.Add(new ListedTrack(entry.Track, entry.EntryId));
+        }
         _currentFilteredTracks = filteredTracks;
-        RememberScope(new ScopeRows(scopeKey, signature, rows, filteredTracks));
+        _currentListing = listing;
+        RememberScope(new ScopeRows(scopeKey, signature, rows, filteredTracks, listing));
 
         // Only the rows that did *not* survive the merge are dropped on the
         // floor here, so anything they own that isn't purely managed memory has
@@ -917,7 +938,8 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
         string? PairedServerFingerprint,
         bool PairedServerReachable);
 
-    private sealed record ScopeRows(string Key, RowsSignature Signature, List<TrackRowViewModel> Rows, List<Track> Tracks);
+    private sealed record ScopeRows(
+        string Key, RowsSignature Signature, List<TrackRowViewModel> Rows, List<Track> Tracks, List<ListedTrack> Listing);
 
     // The same bound ScreenControlFactory keeps screens to, so every screen
     // mobile still holds can come back to its own rows. Most recent last.
@@ -983,29 +1005,26 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
     public void UpdatePlayingIndicators() => MarkPlaying(_rows);
 
     // One row lit, even where the list holds the playing song twice: the
-    // copy the queue is playing (CurrentlyPlayingOccurrence), counted down
-    // the list - or the first, when the list holds fewer copies than that,
-    // the song having been started from somewhere that held more.
+    // entry the queue is playing, when the queue was made from this list -
+    // or the song's first row, when it was started from somewhere else.
     private void MarkPlaying(IList<TrackRowViewModel> rows)
     {
-        var lit = PlayingRowIndex(rows.Select(r => r.Track).ToList(),
-            _host.CurrentlyPlayingTrack, _host.CurrentlyPlayingOccurrence);
+        var lit = PlayingRowIndex(rows, _host.CurrentlyPlayingTrack, _host.CurrentlyPlayingEntryId);
         for (var i = 0; i < rows.Count; i++)
             rows[i].IsCurrentlyPlaying = i == lit;
     }
 
-    // Which of tracks is the playing one, -1 for none - see MarkPlaying.
-    private static int PlayingRowIndex(IReadOnlyList<Track> tracks, Track? playing, int occurrence)
+    // Which of rows is the playing one, -1 for none - see MarkPlaying.
+    private static int PlayingRowIndex(IList<TrackRowViewModel> rows, Track? playing, Guid? entry)
     {
         if (playing == null)
             return -1;
         var first = -1;
-        var seen = 0;
-        for (var i = 0; i < tracks.Count; i++)
+        for (var i = 0; i < rows.Count; i++)
         {
-            if (tracks[i].Id != playing.Id)
+            if (rows[i].Track.Id != playing.Id)
                 continue;
-            if (seen++ == occurrence)
+            if (entry != null && rows[i].EntryId == entry)
                 return i;
             if (first < 0)
                 first = i;

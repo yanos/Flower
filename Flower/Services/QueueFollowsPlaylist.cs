@@ -23,76 +23,47 @@ namespace Flower.Services;
 // drive is not in Playlist.Tracks, and has not left.
 //
 // A song in the playlist twice is two entries, and an edit is to one of them.
-// So each queue row keeps its origin, the EntryId it came from (null for one
-// that is not the playlist's), and those ids say where each of them went,
-// whichever device made the edit. A copy with no ids in common has no history
-// with this one (from before rows had ids), and is paired by song.
+// So each of the queue's songs from the playlist is that playlist's entry,
+// under its id, and those ids say where each of them went, whichever device
+// made the edit; a song lined up by hand has an id the playlist never had. A
+// copy with no ids in common has no history with this one (a sync that gave
+// this device's rows the other side's ids), and is paired by song.
 public static class QueueFollowsPlaylist
 {
+    // Queue is the queue's entries afterwards, its songs from the playlist
+    // under the ids they have there now. Changed says whether its songs or
+    // their order did; Renamed, when they did not, whether those ids did.
     public readonly record struct Result(
-        List<Track> Queue, int Place, bool PlayingLeft, List<Guid?> Origins, bool Changed);
+        List<PlaylistEntry> Queue, int Place, bool PlayingLeft, bool Changed, bool Renamed = false);
 
-    private sealed class Entry(Track track, bool isPlaying, int origin)
+    private sealed class Entry(PlaylistEntry row, bool isPlaying, int origin)
     {
-        public Track Track { get; } = track;
+        public PlaylistEntry Row { get; } = row;
         public bool IsPlaying { get; } = isPlaying;
 
         // Its slot in the playlist as it is now, or -1.
         public int Origin { get; set; } = origin;
     }
 
-    // The entries a queue just made from a playlist came from: the queue was
-    // built from the playlist's rows, and a sort or filter keeps a song's
-    // copies in order, so its nth copy here is the nth copy there.
-    public static List<Guid?> OriginsIn(IReadOnlyList<Track> queue, IReadOnlyList<PlaylistEntry> entries)
-    {
-        var waiting = new CopiesBySong<Guid>();
-        foreach (var entry in entries)
-            waiting.Add(entry.Track?.Id, entry.EntryId);
-
-        var origins = new List<Guid?>(queue.Count);
-        foreach (var track in queue)
-            origins.Add(waiting.TryTake(track.Id, out var id) ? id : null);
-        return origins;
-    }
-
-    // Whether saved origins still describe this queue and these entries: each
-    // names a distinct entry holding the song in its row.
-    public static bool OriginsFit(
-        IReadOnlyList<Track> queue, IReadOnlyList<Guid?> origins, IReadOnlyList<PlaylistEntry> entries)
-    {
-        if (origins.Count != queue.Count)
-            return false;
-
-        var byId = new Dictionary<Guid, PlaylistEntry>(entries.Count);
-        foreach (var entry in entries)
-            byId[entry.EntryId] = entry;
-
-        var used = new HashSet<Guid>();
-        for (var i = 0; i < queue.Count; i++)
-        {
-            if (origins[i] is not { } origin)
-                continue;
-            if (!byId.TryGetValue(origin, out var entry) || entry.TrackId != queue[i].Id || !used.Add(origin))
-                return false;
-        }
-        return true;
-    }
-
     public static Result Apply(
-        IReadOnlyList<Track> queue, IReadOnlyList<Guid?> originIds, int playing, int linedUp, bool playingHasLeft,
+        IReadOnlyList<PlaylistEntry> queue, int playing, int linedUp, bool playingHasLeft,
         bool followsOrder, IReadOnlyList<PlaylistEntry> before, IReadOnlyList<PlaylistEntry> after)
     {
         var slotOf = new Dictionary<Guid, int>(before.Count);
         for (var slot = 0; slot < before.Count; slot++)
             slotOf[before[slot].EntryId] = slot;
 
-        var origins = originIds.Select(id => id is { } known && slotOf.TryGetValue(known, out var slot) ? slot : -1).ToList();
-        Guid? IdAfter(int slot) => slot >= 0 ? after[slot].EntryId : null;
+        var origins = queue.Select(row => slotOf.TryGetValue(row.EntryId, out var slot) ? slot : -1).ToList();
+        PlaylistEntry Named(PlaylistEntry row, int slot) =>
+            slot >= 0 && row.EntryId != after[slot].EntryId ? row with { EntryId = after[slot].EntryId } : row;
 
         var sources = Align(before, after, slotOf);
         if (IsSameOrder(sources, before.Count))
-            return new Result([.. queue], playing, playingHasLeft, origins.Select(IdAfter).ToList(), Changed: false);
+        {
+            var named = queue.Select((row, i) => Named(row, origins[i])).ToList();
+            var renamed = named.Where((row, i) => row.EntryId != queue[i].EntryId).Any();
+            return new Result(named, playing, playingHasLeft, Changed: false, Renamed: renamed);
+        }
 
         var movedTo = new int[before.Count];
         Array.Fill(movedTo, -1);
@@ -174,8 +145,7 @@ public static class QueueFollowsPlaylist
         var place = ordered.FindIndex(e => e.IsPlaying);
         if (place >= 0)
             ordered.InsertRange(place + 1, block);
-        return new Result(
-            ordered.Select(e => e.Track).ToList(), place, left, ordered.Select(e => IdAfter(e.Origin)).ToList(), Changed: true);
+        return new Result(ordered.Select(e => Named(e.Row, e.Origin)).ToList(), place, left, Changed: true);
     }
 
     private static List<Entry> Arrange(
@@ -195,9 +165,9 @@ public static class QueueFollowsPlaylist
                     arranged.Add(entry);
             }
             // Absent from the library right now: nothing to queue.
-            else if (after[slot].Track is { } track)
+            else if (after[slot].Track != null)
             {
-                arranged.Add(new Entry(track, isPlaying: false, slot));
+                arranged.Add(new Entry(after[slot], isPlaying: false, slot));
             }
         }
         return arranged;

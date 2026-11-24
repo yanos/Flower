@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -18,6 +19,11 @@ namespace Flower.Tests.Playback;
 [Collection("PlatformDataDirectory")]
 public class QueueAcrossRemovalsTests : PinnedDataDirectory
 {
+    // A queue played from the playlist is made of its entries, as
+    // MainViewModel.SetPlayQueue makes it.
+    private static Playlist QueueOf(Playlist playlist) =>
+        new(Guid.NewGuid(), "Now Playing Queue", [], DateTimeOffset.UtcNow, entries: playlist.ShownEntries);
+
     private static Track T(string title) => new() { Title = title, Album = title, Path = $"/music/{title}.mp3" };
 
     private static Track Placeholder(string title) => new()
@@ -101,7 +107,7 @@ public class QueueAcrossRemovalsTests : PinnedDataDirectory
         var playlist = new Playlist("Mix", new List<Track>(songs));
         library.AddPlaylist(playlist);
         var before = Control(library, out _);
-        before.SetCurrentPlaylist(new Playlist("Now Playing Queue", songs), playlist, followsOrder: true);
+        before.SetCurrentPlaylist(QueueOf(playlist), playlist, followsOrder: true);
         before.Play(songs[0], 0);
         before.SavePlaybackState();
         before.Dispose();
@@ -121,7 +127,7 @@ public class QueueAcrossRemovalsTests : PinnedDataDirectory
         var playlist = new Playlist("Mix", new List<Track>(songs));
         library.AddPlaylist(playlist);
         var before = Control(library, out _);
-        before.SetCurrentPlaylist(new Playlist("Now Playing Queue", songs), playlist, followsOrder: true);
+        before.SetCurrentPlaylist(QueueOf(playlist), playlist, followsOrder: true);
         before.Play(songs[1], 1);
         before.SavePlaybackState();
         before.Dispose();

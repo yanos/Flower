@@ -49,6 +49,16 @@ public class TrackRowViewModel : DownloadIndicatorViewModel, AlbumArtLoader.ISho
         init => _track = value;
     }
 
+    // The playlist or queue entry this row is, or null in a list that holds
+    // each song once (ListedTrack). Fixed for the row's life: a row is reused
+    // only for the same entry (TrackRowMerge).
+    public Guid? EntryId { get; init; }
+
+    // What tells this row from every other one in its list.
+    public Guid Key => EntryId ?? Track.Id;
+
+    public ListedTrack Listed => new(Track, EntryId);
+
     private bool _isFirstInAlbumGroup;
     public bool IsFirstInAlbumGroup
     {
@@ -67,6 +77,7 @@ public class TrackRowViewModel : DownloadIndicatorViewModel, AlbumArtLoader.ISho
     {
         Clock               = clock,
         Track               = plan.Track,
+        EntryId             = plan.EntryId,
         IsFirstInAlbumGroup = plan.IsFirstInAlbumGroup,
         AlbumGroupSize      = plan.AlbumGroupSize,
         IsCurrentlyPlaying  = plan.IsCurrentlyPlaying,

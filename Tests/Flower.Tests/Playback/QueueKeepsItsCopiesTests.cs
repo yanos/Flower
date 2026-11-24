@@ -18,6 +18,11 @@ namespace Flower.Tests.Playback;
 [Collection("PlatformDataDirectory")]
 public class QueueKeepsItsCopiesTests : PinnedDataDirectory
 {
+    // A queue played from the playlist is made of its entries, as
+    // MainViewModel.SetPlayQueue makes it.
+    private static Playlist QueueOf(Playlist playlist) =>
+        new(Guid.NewGuid(), "Now Playing Queue", [], DateTimeOffset.UtcNow, entries: playlist.ShownEntries);
+
     private readonly Track _a = new() { Title = "A", Album = "A", Path = "/music/A.mp3" };
     private readonly Track _b = new() { Title = "B", Album = "B", Path = "/music/B.mp3" };
     private readonly Track _c = new() { Title = "C", Album = "C", Path = "/music/C.mp3" };
@@ -40,7 +45,7 @@ public class QueueKeepsItsCopiesTests : PinnedDataDirectory
         var playlist = new Playlist("Mix", [.. entries]);
         library.AddPlaylist(playlist);
         var vm = Control(library);
-        vm.SetCurrentPlaylist(new Playlist("Now Playing Queue", [.. entries]), playlist, followsOrder: true);
+        vm.SetCurrentPlaylist(QueueOf(playlist), playlist, followsOrder: true);
         vm.Play(entries[slot], slot);
         return (vm, playlist, library);
     }
@@ -127,11 +132,11 @@ public class QueueKeepsItsCopiesTests : PinnedDataDirectory
     [Fact]
     public void The_copy_playing_is_named_after_its_twin_left_the_queue_by_hand()
     {
-        var (vm, _, _) = Playing([_a, _b, _a, _c], slot: 2);
+        var (vm, playlist, _) = Playing([_a, _b, _a, _c], slot: 2);
 
         vm.RemoveQueueEntry(0);
 
-        Assert.Equal(1, vm.CurrentlyPlayingOccurrence);
+        Assert.Equal(playlist.Entries[2].EntryId, vm.CurrentlyPlayingEntryId);
     }
 
     [Fact]

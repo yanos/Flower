@@ -631,7 +631,6 @@ public partial class MusicListView : UserControl
                 TrackDragEnded?.Invoke(this, (_dragOutTracks ?? SelectedTracks, e.GetPosition(this)));
                 break;
             case TrackRowDragGesture.Mode.Reorder:
-                _selection.NoteMoved(rows, insertBefore);
                 RowsReordered?.Invoke(this, (rows, insertBefore));
                 break;
         }

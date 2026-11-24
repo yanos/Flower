@@ -161,8 +161,16 @@ What building it changed from the above:
 
 - **Rows stay in the wire's `Tracks` field,** each with an `EntryId`, rather than
   moving to a new `Entries` field.
-- **`OriginsIn` and `OriginsFit` stay,** on `EntryId`. A queue is still built from
-  a list of songs, so which row each came from is worked out when it is made.
+- **`OriginsIn` and `OriginsFit` stayed at first,** on `EntryId`, while a queue
+  was still built from a list of songs. Since then rows carry their entry
+  (`ListedTrack`, `TrackRowViewModel.EntryId`), and a queue played from a
+  playlist is made of that playlist's entries under their own ids, so both are
+  gone, with the queue's parallel `Origins` list. Selection
+  (`TrackRowSelection`), row reuse (`TrackRowMerge`), a row's slot
+  (`PlaylistRowSlots`) and the row lit as playing all go by the entry rather
+  than by counting copies of a song. `CopiesBySong` is left only where two
+  lists share no ids: a list worked out again from songs (`ReplaceAll`,
+  `Materialize`), and a copy from another device with none in common.
 - **Copies from before rows had ids** hold the same songs under different ids. A
   device seeing the same songs takes the server's ids with no edit
   (`TakeEntryIdsFrom`). A copy sharing no ids is paired by song, and does not

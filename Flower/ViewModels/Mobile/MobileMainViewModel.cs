@@ -901,7 +901,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     {
         if (PlayVibeOnScreen())
             return;
-        Main.PlayTracks(Main.Rows.Select(r => r.Track).ToList(), shuffle);
+        Main.PlayListed(Main.Rows.Select(r => r.Listed).ToList(), shuffle);
     }
 
     // Re-anchors Next/Previous/auto-advance to whatever's actually on screen
@@ -913,7 +913,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
     // artist-album/Recently-Added drill-in, or a playlist) renders straight
     // from Main.Rows, whatever MainViewModel already narrowed it to.
     private void SyncPlayQueueToCurrentView() =>
-        Main.SetPlayQueue(CurrentTrackRows.Select(r => r.Track));
+        Main.SetPlayQueue(CurrentTrackRows.Select(r => r.Listed));
 
     // The rows a tapped song was tapped in: the smart playlist editor's
     // preview while it is up (it covers every screen), Search's own songs on

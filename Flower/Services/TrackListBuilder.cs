@@ -28,11 +28,40 @@ public static class TrackListBuilder
         return TrackRowMerge.Apply(null, plan, out _);
     }
 
+    // The same, over a playlist's or the queue's entries, each row the entry
+    // it shows.
+    public static List<TrackRowViewModel> Build(
+        IEnumerable<ListedTrack> listed,
+        string? filterText,
+        string sortColumn,
+        bool sortAscending,
+        Track? currentlyPlayingTrack = null,
+        string? pairedServerFingerprint = null,
+        bool pairedServerReachable = false)
+    {
+        var plan = Plan(listed, filterText, sortColumn, sortAscending, currentlyPlayingTrack,
+            pairedServerFingerprint: pairedServerFingerprint, pairedServerReachable: pairedServerReachable);
+
+        return TrackRowMerge.Apply(null, plan, out _);
+    }
+
+    public static List<TrackRowPlan> Plan(
+        IEnumerable<Track> tracks,
+        string? filterText,
+        string sortColumn,
+        bool sortAscending,
+        Track? currentlyPlayingTrack = null,
+        bool sortArtistAlbumsByYear = false,
+        string? pairedServerFingerprint = null,
+        bool pairedServerReachable = false) =>
+        Plan(tracks.Select(t => new ListedTrack(t)), filterText, sortColumn, sortAscending, currentlyPlayingTrack,
+            sortArtistAlbumsByYear, pairedServerFingerprint, pairedServerReachable);
+
     // The whole filter/sort/group pass, stopping just short of any view-model:
     // safe to run off the UI thread even while the rows it will be merged into
     // are live and bound, because it touches none of them.
     public static List<TrackRowPlan> Plan(
-        IEnumerable<Track> tracks,
+        IEnumerable<ListedTrack> tracks,
         string? filterText,
         string sortColumn,
         bool sortAscending,
@@ -47,11 +76,11 @@ public static class TrackListBuilder
         return PlanRows(sorted, currentlyPlayingTrack, pairedServerFingerprint, pairedServerReachable);
     }
 
-    private static IEnumerable<Track> Filter(IEnumerable<Track> tracks, string? text)
+    private static IEnumerable<ListedTrack> Filter(IEnumerable<ListedTrack> tracks, string? text)
     {
         if (string.IsNullOrWhiteSpace(text))
             return tracks;
-        return tracks.Where(t => Matches(t, text));
+        return tracks.Where(t => Matches(t.Track, text));
     }
 
     // What every list of songs finds a song by - Songs, an album's, a
@@ -78,7 +107,7 @@ public static class TrackListBuilder
     // `asc ? ordered : ordered.Reverse()`, and Enumerable.Reverse reverses ties
     // too - so sorting by Album descending also reversed disc/track order
     // within every album, listing each one back to front.
-    private static IEnumerable<Track> Sort(IEnumerable<Track> tracks, string col, bool asc, bool sortArtistAlbumsByYear) =>
+    private static IEnumerable<ListedTrack> Sort(IEnumerable<ListedTrack> tracks, string col, bool asc, bool sortArtistAlbumsByYear) =>
         SortBy(tracks, col, asc, sortArtistAlbumsByYear) ?? ByAlbum(tracks, asc);
 
     // Whether `columnId` names an order this knows - i.e. whether a column of
@@ -88,14 +117,14 @@ public static class TrackListBuilder
     public static bool CanSortBy(string columnId) =>
         SortBy([], columnId, true, false) is not null;
 
-    private static IEnumerable<Track>? SortBy(IEnumerable<Track> tracks, string col, bool asc, bool sortArtistAlbumsByYear) =>
+    private static IEnumerable<ListedTrack>? SortBy(IEnumerable<ListedTrack> tracks, string col, bool asc, bool sortArtistAlbumsByYear) =>
         col switch
         {
             "PlaylistOrder" => tracks,
-            "TrackNumber" => Order(tracks, t => SortKey(t.AlbumSortValue), asc).ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber),
+            "TrackNumber" => Order(tracks, t => SortKey(t.AlbumSortValue), asc).Then(t => t.DiscNumber).Then(t => t.TrackNumber),
             "Title"       => Order(tracks, t => SortKey(t.TitleSortValue), asc),
             "Artist"      => SortByArtist(tracks, asc, sortArtistAlbumsByYear),
-            "Album"       => Order(tracks, t => SortKey(t.AlbumSortValue), asc).ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber),
+            "Album"       => Order(tracks, t => SortKey(t.AlbumSortValue), asc).Then(t => t.DiscNumber).Then(t => t.TrackNumber),
             "Year"        => Order(tracks, t => SortKey(t.Year), asc),
             "Genre"       => Order(tracks, t => SortKey(t.Genre), asc),
             "DateAdded"   => Order(tracks, t => t.DateAdded, asc),
@@ -126,7 +155,7 @@ public static class TrackListBuilder
             // Disc sorts within the album it numbers - a bare disc number is
             // 1 for most of the library, so ordering by it alone would just
             // shuffle every album together.
-            "Disc"             => Order(tracks, t => t.DiscNumber, asc).ThenBy(t => SortKey(t.AlbumSortValue)).ThenBy(t => t.TrackNumber),
+            "Disc"             => Order(tracks, t => t.DiscNumber, asc).Then(t => SortKey(t.AlbumSortValue)).Then(t => t.TrackNumber),
             "Conductor"        => Order(tracks, t => SortKey(t.Conductor), asc),
             "RemixedBy"        => Order(tracks, t => SortKey(t.RemixedBy), asc),
             "Bpm"              => Order(tracks, t => t.BeatsPerMinute, asc),
@@ -150,20 +179,24 @@ public static class TrackListBuilder
 
     // What an unrecognised sort column falls back to, and what "TrackNumber"
     // and "Album" both mean in full: album, then disc, then track.
-    private static IEnumerable<Track> ByAlbum(IEnumerable<Track> tracks, bool asc) =>
-        Order(tracks, t => SortKey(t.AlbumSortValue), asc).ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber);
+    private static IEnumerable<ListedTrack> ByAlbum(IEnumerable<ListedTrack> tracks, bool asc) =>
+        Order(tracks, t => SortKey(t.AlbumSortValue), asc).Then(t => t.DiscNumber).Then(t => t.TrackNumber);
 
-    private static IOrderedEnumerable<Track> Order<TKey>(IEnumerable<Track> tracks, Func<Track, TKey> keySelector, bool ascending) =>
-        ascending ? tracks.OrderBy(keySelector) : tracks.OrderByDescending(keySelector);
+    // Every order is of songs, and each row keeps its entry through it.
+    private static IOrderedEnumerable<ListedTrack> Order<TKey>(IEnumerable<ListedTrack> tracks, Func<Track, TKey> keySelector, bool ascending) =>
+        ascending ? tracks.OrderBy(t => keySelector(t.Track)) : tracks.OrderByDescending(t => keySelector(t.Track));
+
+    private static IOrderedEnumerable<ListedTrack> Then<TKey>(this IOrderedEnumerable<ListedTrack> tracks, Func<Track, TKey> keySelector) =>
+        tracks.ThenBy(t => keySelector(t.Track));
 
     // Each artist's albums are ordered alphabetically by default; with the
     // option on, by year instead - falling back to alphabetical for albums
     // that share a year. Either way, disc/track number order still applies
     // within an album, and only the artist name flips on a descending sort.
-    private static IOrderedEnumerable<Track> SortByArtist(IEnumerable<Track> tracks, bool asc, bool sortAlbumsByYear) =>
+    private static IOrderedEnumerable<ListedTrack> SortByArtist(IEnumerable<ListedTrack> tracks, bool asc, bool sortAlbumsByYear) =>
         sortAlbumsByYear
-            ? Order(tracks, t => SortKey(t.ArtistsSortValue), asc).ThenBy(t => SortKey(t.Year)).ThenBy(t => SortKey(t.AlbumSortValue)).ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber)
-            : Order(tracks, t => SortKey(t.ArtistsSortValue), asc).ThenBy(t => SortKey(t.AlbumSortValue)).ThenBy(t => t.DiscNumber).ThenBy(t => t.TrackNumber);
+            ? Order(tracks, t => SortKey(t.ArtistsSortValue), asc).Then(t => SortKey(t.Year)).Then(t => SortKey(t.AlbumSortValue)).Then(t => t.DiscNumber).Then(t => t.TrackNumber)
+            : Order(tracks, t => SortKey(t.ArtistsSortValue), asc).Then(t => SortKey(t.AlbumSortValue)).Then(t => t.DiscNumber).Then(t => t.TrackNumber);
 
     // Strips everything but letters/digits before comparing, so punctuation,
     // symbols, and spacing differences (leading quotes/brackets, "&" vs
@@ -210,12 +243,15 @@ public static class TrackListBuilder
     // produced the adjacency (an explicit album sort, or another sort/column
     // whose secondary keys happen to keep an album's tracks together).
     private static List<TrackRowPlan> PlanRows(
-        List<Track> tracks,
+        List<ListedTrack> listed,
         Track? currentlyPlaying,
         string? pairedServerFingerprint,
         bool pairedServerReachable)
     {
-        var result = new List<TrackRowPlan>(tracks.Count);
+        var result = new List<TrackRowPlan>(listed.Count);
+        var tracks = new List<Track>(listed.Count);
+        foreach (var row in listed)
+            tracks.Add(row.Track);
 
         int i = 0;
         while (i < tracks.Count)
@@ -244,6 +280,7 @@ public static class TrackListBuilder
             {
                 result.Add(new TrackRowPlan(
                     Track: tracks[k],
+                    EntryId: listed[k].EntryId,
                     IsFirstInAlbumGroup: k == i,
                     AlbumGroupSize: groupSize,
                     // Compared by Track.Id, not by Path. Path is not an

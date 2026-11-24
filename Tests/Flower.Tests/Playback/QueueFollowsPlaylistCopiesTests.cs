@@ -18,16 +18,17 @@ public class QueueFollowsPlaylistCopiesTests
     private static readonly Track B = new() { Title = "B" };
     private static readonly Track C = new() { Title = "C" };
 
+    // The queue is the playlist's entries, as a queue played from it is.
     private static QueueFollowsPlaylist.Result Edit(Track[] before, int playing, int[] after)
     {
         var entries = before.Select(PlaylistEntry.Of).ToList();
         return QueueFollowsPlaylist.Apply(
-            before, entries.Select(e => (Guid?)e.EntryId).ToList(), playing, linedUp: 0, playingHasLeft: false,
+            entries, playing, linedUp: 0, playingHasLeft: false,
             followsOrder: true, entries, after.Select(slot => entries[slot]).ToList());
     }
 
     private static string[] Titles(QueueFollowsPlaylist.Result result) =>
-        result.Queue.Select(t => t.Title!).ToArray();
+        result.Queue.Select(e => e.Track!.Title!).ToArray();
 
     [Fact]
     public void Removing_the_other_copy_leaves_the_song_playing_alone()

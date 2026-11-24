@@ -226,19 +226,21 @@ public class TrackRowSelectionTests
     }
 
     // UF-8: a playlist or the queue can hold one song twice, and the row picked
-    // is the copy meant. A rebuild makes new rows for every copy but the first.
-    private static TrackRowViewModel CopyOf(Flower.Models.Track track) => new() { Track = track };
+    // is the copy meant. Each copy is an entry of its own, and a rebuild makes
+    // its row again under the same entry.
+    private static TrackRowViewModel CopyOf(Flower.Models.Track track, Guid entry) => new() { Track = track, EntryId = entry };
 
     [Fact]
     public void A_rebuild_keeps_only_the_copy_of_a_song_that_was_selected()
     {
         var (a, b) = (new Flower.Models.Track { Title = "A" }, new Flower.Models.Track { Title = "B" });
+        var (first, other, second) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
         var selection = new TrackRowSelection();
-        var before = new[] { CopyOf(a), CopyOf(b), CopyOf(a) };
+        var before = new[] { CopyOf(a, first), CopyOf(b, other), CopyOf(a, second) };
         selection.SetItems(before, null);
         selection.SelectOnly(before[2]);
 
-        var after = new[] { before[0], before[1], CopyOf(a) };
+        var after = new[] { CopyOf(a, first), CopyOf(b, other), CopyOf(a, second) };
         selection.SetItems(after, a);
 
         Assert.Same(after[2], Assert.Single(selection.Rows));
@@ -251,7 +253,7 @@ public class TrackRowSelectionTests
     {
         var (a, b, c) = (new Flower.Models.Track { Title = "A" }, new Flower.Models.Track { Title = "B" }, new Flower.Models.Track { Title = "C" });
         var selection = new TrackRowSelection();
-        var rows = new[] { CopyOf(a), CopyOf(b), CopyOf(a), CopyOf(c) };
+        var rows = new[] { CopyOf(a, Guid.NewGuid()), CopyOf(b, Guid.NewGuid()), CopyOf(a, Guid.NewGuid()), CopyOf(c, Guid.NewGuid()) };
         selection.SetItems(rows, null);
         selection.SelectOnly(rows[2]);
 
@@ -264,13 +266,13 @@ public class TrackRowSelectionTests
     public void A_copy_dragged_above_its_twin_stays_the_selected_one()
     {
         var (a, b) = (new Flower.Models.Track { Title = "A" }, new Flower.Models.Track { Title = "B" });
+        var (first, other, second) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
         var selection = new TrackRowSelection();
-        var before = new[] { CopyOf(a), CopyOf(b), CopyOf(a) };
+        var before = new[] { CopyOf(a, first), CopyOf(b, other), CopyOf(a, second) };
         selection.SetItems(before, null);
         selection.SelectOnly(before[2]);
 
-        selection.NoteMoved([before[2]], before[0]);
-        var after = new[] { before[0], CopyOf(a), before[1] };
+        var after = new[] { CopyOf(a, second), CopyOf(a, first), CopyOf(b, other) };
         selection.SetItems(after, a);
 
         Assert.Same(after[0], Assert.Single(selection.Rows));

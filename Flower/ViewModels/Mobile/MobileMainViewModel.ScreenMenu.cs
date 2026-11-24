@@ -137,6 +137,15 @@ public partial class MobileMainViewModel
     // albums; the artist and playlist lists are every song by the artists, or
     // in the playlists, listed. Search is every song the query finds, not
     // only the few its songs section has room for.
+    // A track list's rows are entries in a playlist, and shuffled as those.
+    private void ShuffleScreen(MobileNavigationFrame frame)
+    {
+        if (frame.ScreenKind == MobileScreenKind.TrackList)
+            Main.PlayListed(Main.Rows.Select(r => r.Listed).ToList(), shuffle: true);
+        else
+            Main.PlayTracks(TracksOnScreen(frame), shuffle: true);
+    }
+
     private IReadOnlyList<Track> TracksOnScreen(MobileNavigationFrame frame) => frame.ScreenKind switch
     {
         MobileScreenKind.TrackList => Main.Rows.Select(r => r.Track).ToList(),
@@ -239,7 +248,7 @@ public partial class MobileMainViewModel
         var isVibe = frame.IsPlaylistTrackList && PlaysAsVibe(CurrentPlaylist);
         if (TracksOnScreen(frame).Count > 0 && !isVibe)
             actions.Add(new ScreenMenuEntry("Shuffle", MaterialIconKind.Shuffle,
-                () => Main.PlayTracks(TracksOnScreen(frame), shuffle: true)));
+                () => ShuffleScreen(frame)));
         if (frame.IsTrackList && Main.Rows.Count > 0)
         {
             // The album or playlist on screen, in the order it shows.

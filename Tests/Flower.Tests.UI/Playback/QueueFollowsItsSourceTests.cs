@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Avalonia.Headless.XUnit;
 
 using Flower.Models;
+using Flower.Services;
 using Flower.ViewModels;
 using Flower.Tests.TestSupport;
 
@@ -127,9 +128,10 @@ public class QueueFollowsItsSourceTests : PinnedDataDirectory
     public async Task A_queue_in_another_order_than_the_playlist_is_left_alone()
     {
         var (parts, playlist) = await Playing(0, "A", "B", "C");
-        var sorted = playlist.Tracks.Reverse().ToList();
+        // As its rows, sorted by a column: each still the entry it is.
+        var sorted = playlist.ShownEntries.Reverse().Select(ListedTrack.Of).ToList();
         parts.Main.SetPlayQueue(sorted);
-        parts.PlaylistControl.Play(sorted[0], 0);
+        parts.PlaylistControl.Play(sorted[0].Track, 0);
 
         await parts.Main.ReorderPlaylistRows(playlist, [Row(parts, "C")], Row(parts, "A"));
 
@@ -268,9 +270,10 @@ public class QueueFollowsItsSourceTests : PinnedDataDirectory
     public async Task A_sorted_queue_takes_additions_and_removals_but_keeps_its_own_order()
     {
         var (parts, playlist) = await Playing(0, "A", "B", "C");
-        var sorted = playlist.Tracks.Reverse().ToList();
+        // As its rows, sorted by a column: each still the entry it is.
+        var sorted = playlist.ShownEntries.Reverse().Select(ListedTrack.Of).ToList();
         parts.Main.SetPlayQueue(sorted);
-        parts.PlaylistControl.Play(sorted[0], 0);
+        parts.PlaylistControl.Play(sorted[0].Track, 0);
 
         await parts.Main.RemoveRowsFromPlaylist(playlist, [Row(parts, "B")]);
         await parts.Main.AddTracksToPlaylist([T("X")], playlist);

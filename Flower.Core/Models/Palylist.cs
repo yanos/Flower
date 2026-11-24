@@ -253,6 +253,12 @@ namespace Flower.Models
 
             public int UnavailableCount => HasEntries ? All.Count - Tracks.Count : 0;
 
+            private IReadOnlyList<PlaylistEntry>? _shown;
+
+            // The entries of Tracks, slot for slot.
+            public IReadOnlyList<PlaylistEntry> Shown => LazyInitializer.EnsureInitialized(
+                ref _shown, () => _places == null ? All : _places.Select(place => All[place]).ToList())!;
+
             // Where in All the song at this slot of Tracks is, or the end for
             // the slot just past the last.
             public int PlaceOf(int slot) =>
@@ -392,6 +398,10 @@ namespace Flower.Models
 
         // Every entry in order, whether this device can play its song or not.
         public IReadOnlyList<PlaylistEntry> Entries => _entries.All;
+
+        // The entries this device can play, slot for slot with Tracks: which
+        // entry a row of the list is, and so which of two copies of a song.
+        public IReadOnlyList<PlaylistEntry> ShownEntries => _entries.Shown;
 
         // How many of them it cannot: hidden, and waiting for their song.
         public int UnavailableCount => _entries.UnavailableCount;

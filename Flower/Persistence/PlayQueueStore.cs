@@ -15,12 +15,12 @@ namespace Flower.Persistence
     // came back to an empty queue - see PlaylistControlViewModel.RestoreQueue.
     // SourcePlaylistId is the playlist whose edits it follows, if any, and
     // SourceFollowsOrder whether it takes that playlist's order too.
-    // SourceEntries is, row by row, the playlist entry each one came from (null
-    // for a song lined up by hand), so that a song in the playlist twice is
-    // still the right copy after a relaunch.
+    // EntryIds is, row by row, the queue's own entries: for a song from that
+    // playlist, the playlist's entry it came from, so that a song in the
+    // playlist twice is still the right copy after a relaunch.
     public sealed record PlayQueueState(
         List<Guid> TrackIds, int Index, long PositionMs, int LinedUpCount,
-        Guid? SourcePlaylistId = null, bool SourceFollowsOrder = false, List<Guid?>? SourceEntries = null);
+        Guid? SourcePlaylistId = null, bool SourceFollowsOrder = false, List<Guid>? EntryIds = null);
 
     // A file of its own, like AlbumProgressStore and for the same reason: it
     // is rewritten on every song change, which settings.json should not be.

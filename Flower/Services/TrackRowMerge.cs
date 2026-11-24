@@ -12,6 +12,7 @@ namespace Flower.Services;
 // TrackRowViewModels, on the UI thread where raising PropertyChanged is legal.
 public readonly record struct TrackRowPlan(
     Track Track,
+    Guid? EntryId,
     bool IsFirstInAlbumGroup,
     int AlbumGroupSize,
     bool IsCurrentlyPlaying,
@@ -39,6 +40,9 @@ public readonly record struct TrackRowPlan(
 // TrackRowViewModel.ApplyPlan); keeping the old one would leave the list
 // holding a different object graph than Library.Tracks, which is the same
 // defect as Tier 0.3's orphaned playlist tracks.
+//
+// And on the entry, in a playlist or the queue (ListedTrack.Key): each copy of
+// a song there two times is a row of its own, and keeps it.
 public static class TrackRowMerge
 {
     // retired: the previous rows that no longer appear, and are therefore the
@@ -62,18 +66,18 @@ public static class TrackRowMerge
             reusable = new Dictionary<Guid, TrackRowViewModel>(previous.Count);
             foreach (var row in previous)
             {
-                // A duplicate id means the same track appeared twice in the old
-                // list (a playlist may legitimately hold it twice). Only the
-                // first is a reuse candidate; the rest retire immediately
-                // rather than being dropped on the floor undisposed.
-                if (!reusable.TryAdd(row.Track.Id, row))
+                // A list that names one song twice without entries to tell
+                // the two apart: only the first is a reuse candidate, and the
+                // rest retire rather than being dropped on the floor
+                // undisposed.
+                if (!reusable.TryAdd(row.Key, row))
                     retired.Add(row);
             }
         }
 
         foreach (var entry in plan)
         {
-            if (reusable != null && reusable.Remove(entry.Track.Id, out var reused))
+            if (reusable != null && reusable.Remove(entry.EntryId ?? entry.Track.Id, out var reused))
             {
                 reused.ApplyPlan(entry);
                 result.Add(reused);

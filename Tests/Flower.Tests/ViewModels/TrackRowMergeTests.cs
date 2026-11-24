@@ -279,6 +279,24 @@ public class TrackRowMergeTests : IDisposable
         Assert.Same(first[1], Assert.Single(retired));
     }
 
+    // In a playlist each copy is an entry, and keeps its own row through a
+    // rebuild - the second copy's too, with whatever it was showing.
+    [Fact]
+    public void Each_copy_of_a_song_in_a_playlist_keeps_its_own_row()
+    {
+        var track = T("Song");
+        var entries = new[] { PlaylistEntry.Of(track), PlaylistEntry.Of(track) };
+        List<TrackRowPlan> Plan(params PlaylistEntry[] order) =>
+            TrackListBuilder.Plan(order.Select(ListedTrack.Of), null, "PlaylistOrder", true);
+        var first = TrackRowMerge.Apply(null, Plan(entries), out _);
+
+        var second = TrackRowMerge.Apply(first, Plan(entries[1], entries[0]), out var retired);
+
+        Assert.Same(first[1], second[0]);
+        Assert.Same(first[0], second[1]);
+        Assert.Empty(retired);
+    }
+
     // ── TryApplyInPlace ───────────────────────────────────────────────────
 
     private List<Track> Tracks(int count) =>

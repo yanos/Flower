@@ -336,11 +336,12 @@ public class PlaylistControlViewModelTests : IDisposable
         var b = T("B");
         var vm = MakeViewModel(new List<Track> { dup, b, dup }, out _);
 
+        var queue = vm.CurrentPlaylist.ShownEntries;
         vm.Play(dup, 2);
-        Assert.Equal(1, vm.CurrentlyPlayingOccurrence);
+        Assert.Equal(queue[2].EntryId, vm.CurrentlyPlayingEntryId);
 
         vm.Play(dup, 0);
-        Assert.Equal(0, vm.CurrentlyPlayingOccurrence);
+        Assert.Equal(queue[0].EntryId, vm.CurrentlyPlayingEntryId);
     }
 
     [Fact]

@@ -18,7 +18,8 @@ namespace Flower.ViewModels;
 // queue, and a drag rearranges what is to come, the way it does a playlist.
 //
 // Rows rather than tracks throughout, because the queue can hold one song
-// twice: each row knows its slot in CurrentPlaylist (SlotOf).
+// twice: each row is the queue entry it shows, and knows its slot in
+// CurrentPlaylist (SlotOf).
 //
 // Built only while something is showing it, like Home: every song that starts
 // moves the queue, and rebuilding a list nobody is looking at on every track
@@ -242,7 +243,7 @@ public sealed class QueueViewModel : ViewModelBase, IDisposable
     {
         _isStale = false;
 
-        var queue = _playback.CurrentPlaylist.Tracks;
+        var queue = _playback.CurrentPlaylist.ShownEntries;
         var playing = _playback.CurrentlyPlayingTrack;
         var current = _playback.QueueIndex;
 
@@ -281,12 +282,12 @@ public sealed class QueueViewModel : ViewModelBase, IDisposable
                 slots.Add(i);
         }
 
-        var tracks = new List<Track>(slots.Count);
+        var listed = new List<ListedTrack>(slots.Count);
         foreach (var slot in slots)
-            tracks.Add(queue[slot]);
+            listed.Add(ListedTrack.Of(queue[slot]));
 
         var (pairedServerFingerprint, reachable) = _availability();
-        var rows = TrackListBuilder.Build(tracks, null, "PlaylistOrder", true, playing,
+        var rows = TrackListBuilder.Build(listed, null, "PlaylistOrder", true, playing,
             pairedServerFingerprint: pairedServerFingerprint,
             pairedServerReachable: reachable);
 

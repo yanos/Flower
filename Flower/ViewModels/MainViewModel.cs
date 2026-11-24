@@ -907,7 +907,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
 
     SidebarItemKind? ILibraryBrowseHost.CurrentKind => _selectedSidebarItem?.Kind;
     Playlist? ILibraryBrowseHost.CurrentPlaylist    => _selectedSidebarItem?.Playlist;
-    int ILibraryBrowseHost.CurrentlyPlayingOccurrence => _playlistControlViewModel.CurrentlyPlayingOccurrence;
+    Guid? ILibraryBrowseHost.CurrentlyPlayingEntryId => _playlistControlViewModel.CurrentlyPlayingEntryId;
 
     void ILibraryBrowseHost.PersistSort(string column, bool ascending)
     {
@@ -2442,7 +2442,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         || _playlistControlViewModel.SelectedTrack != null
         || DisplayedTracks.Count > 0;
 
-    private void SyncPlayQueueToCurrentView() => SetPlayQueue(DisplayedTracks);
+    private void SyncPlayQueueToCurrentView() => SetPlayQueue(Browser.DisplayedListing);
 
     // Every song on screen from the top, or shuffled from a random one - the
     // Artists page header's play and shuffle circles, which are the phone's
@@ -2457,9 +2457,10 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             return;
         }
 
-        PlayTracks(IsShowingArtistPage
-            ? ArtistPage.AllTracks
-            : DisplayedTracks, shuffle);
+        if (IsShowingArtistPage)
+            PlayTracks(ArtistPage.AllTracks, shuffle);
+        else
+            PlayListed(Browser.DisplayedListing, shuffle);
     }
 
     // These songs as the queue, from the top or shuffled from a random one -
@@ -2479,47 +2480,68 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         _playlistControlViewModel.Play(tracks[index], index);
     }
 
+    // The same over rows, each the entry it is in a playlist.
+    public void PlayListed(IReadOnlyList<ListedTrack> listed, bool shuffle)
+    {
+        if (listed.Count == 0)
+            return;
+        if (_playlistControlViewModel.IsShuffleEnabled != shuffle)
+            _playlistControlViewModel.ToggleShuffle();
+
+        var index = shuffle ? Random.Shared.Next(listed.Count) : 0;
+        SetPlayQueue(listed);
+        _playlistControlViewModel.Play(listed[index].Track, index);
+    }
+
     // Re-anchors Next/Previous/auto-advance to a specific list of tracks.
     // Public because mobile needs the same thing over a different source: its
     // search results are a separate mirror of Rows rather than Rows itself, so
     // it cannot just call SyncPlayQueueToCurrentView above - which is what left
     // it with its own copy of this until now.
     //
-    // A queue of the shown playlist's songs (all of them, or the ones a filter
+    // A queue of the shown playlist's rows (all of them, or the ones a filter
     // left) follows that playlist's edits. One sorted by a column takes its
-    // additions and removals and keeps an order of its own.
+    // additions and removals and keeps an order of its own. Its songs are the
+    // rows' entries, so it knows which of two copies of a song each one is.
+    //
+    // Songs alone are a playlist's entries only when they are the whole
+    // playlist shown, in its order - its Play and Shuffle.
     public void SetPlayQueue(IEnumerable<Track> tracks)
     {
-        var queue = new List<Track>(tracks);
-        var source = _selectedSidebarItem?.Playlist is { IsOrdinary: true } shown && IsAllWithin(queue, shown.Tracks)
+        var queue = tracks as IReadOnlyList<Track> ?? tracks.ToList();
+        SetPlayQueue(_selectedSidebarItem?.Playlist is { IsOrdinary: true } shown && IsWhole(queue, shown)
+            ? shown.ShownEntries.Select(ListedTrack.Of)
+            : queue.Select(t => new ListedTrack(t)));
+    }
+
+    private static bool IsWhole(IReadOnlyList<Track> tracks, Playlist playlist) =>
+        tracks.Count == playlist.Tracks.Count && tracks.SequenceEqual(playlist.Tracks, ReferenceEqualityComparer.Instance);
+
+    public void SetPlayQueue(IEnumerable<ListedTrack> listed)
+    {
+        var queue = listed
+            .Select(row => row.EntryId is { } id ? new PlaylistEntry(id, row.Track) : PlaylistEntry.Of(row.Track))
+            .ToList();
+        var source = _selectedSidebarItem?.Playlist is { IsOrdinary: true } shown && IsAllWithin(queue, shown.ShownEntries)
             ? shown
             : null;
         _playlistControlViewModel.SetCurrentPlaylist(
-            new Playlist("Now Playing Queue", queue), source,
-            followsOrder: source != null && IsInOrderWithin(queue, source.Tracks));
+            new Playlist(Guid.NewGuid(), "Now Playing Queue", [], DateTimeOffset.UtcNow, entries: queue), source,
+            followsOrder: source != null && IsInOrderWithin(queue, source.ShownEntries));
     }
 
-    private static bool IsAllWithin(List<Track> queue, IReadOnlyList<Track> list)
+    private static bool IsAllWithin(List<PlaylistEntry> queue, IReadOnlyList<PlaylistEntry> entries)
     {
-        var available = new Dictionary<Guid, int>();
-        foreach (var track in list)
-            available[track.Id] = available.GetValueOrDefault(track.Id) + 1;
-
-        foreach (var track in queue)
-        {
-            if (available.GetValueOrDefault(track.Id) == 0)
-                return false;
-            available[track.Id]--;
-        }
-        return true;
+        var ids = entries.Select(e => e.EntryId).ToHashSet();
+        return queue.All(row => ids.Contains(row.EntryId));
     }
 
-    private static bool IsInOrderWithin(List<Track> queue, IReadOnlyList<Track> list)
+    private static bool IsInOrderWithin(List<PlaylistEntry> queue, IReadOnlyList<PlaylistEntry> entries)
     {
         var matched = 0;
-        foreach (var track in list)
+        foreach (var entry in entries)
         {
-            if (matched < queue.Count && queue[matched] == track)
+            if (matched < queue.Count && queue[matched].EntryId == entry.EntryId)
                 matched++;
         }
         return matched == queue.Count;
@@ -2793,21 +2815,20 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // end of the playlist.
     public Task ReorderPlaylistRows(Playlist playlist, IReadOnlyList<TrackRowViewModel> dragged, TrackRowViewModel? insertBefore)
     {
-        var entries = playlist.Tracks;
-        var slots = PlaylistRowSlots.SlotsOf(entries, Rows, dragged);
+        var slots = PlaylistRowSlots.SlotsOf(playlist, dragged);
         if (slots.Count == 0)
             return Task.CompletedTask;
 
         if (insertBefore == null)
-            return Playlists.ReorderEntries(playlist, slots, entries.Count);
+            return Playlists.ReorderEntries(playlist, slots, playlist.Tracks.Count);
 
-        return PlaylistRowSlots.SlotsOf(entries, Rows, [insertBefore]) is [var before]
+        return PlaylistRowSlots.SlotsOf(playlist, [insertBefore]) is [var before]
             ? Playlists.ReorderEntries(playlist, slots, before)
             : Task.CompletedTask;
     }
 
     public Task RemoveRowsFromPlaylist(Playlist playlist, IReadOnlyCollection<TrackRowViewModel> rows) =>
-        Playlists.RemoveEntries(playlist, PlaylistRowSlots.SlotsOf(playlist.Tracks, Rows, rows));
+        Playlists.RemoveEntries(playlist, PlaylistRowSlots.SlotsOf(playlist, rows));
 
     // ── Smart playlists ───────────────────────────────────────────────────
 
