@@ -515,26 +515,15 @@ public sealed class PlaylistManagementViewModel
         if (!playlist.IsOrdinary)
             return;
 
-        // Everything but the question and the refresh runs off the UI thread:
-        // an add can be a whole library, and the edit's save rewrites every
-        // playlist (UF-16: 5,000 songs, one edit each, froze the app for 22
-        // seconds). The playlist takes it as one edit, safely from any thread
-        // (Playlist.AppendTracks), and the library's listeners already expect
-        // a change from a sync session's thread.
-        //
         // A song already in the playlist is usually added again by mistake,
         // so it is asked about rather than taken on trust - here, so every
         // way in (the menus, the phone's sheet, a drop on the sidebar) asks.
         // No subscriber adds them all, as a delete proceeds unconfirmed.
         // Copied here, because what is passed can be a query over the UI's own
         // collections (a selection), which only the UI thread may read.
-        var given = tracks.ToList();
-        var (adding, there, alreadyThere) = await Task.Run(() =>
-        {
-            var all = given;
-            var held = playlist.Tracks.Select(t => t.Id).ToHashSet();
-            return (all, held, all.Where(t => held.Contains(t.Id)).ToList());
-        });
+        var adding = tracks.ToList();
+        var there = playlist.Tracks.Select(t => t.Id).ToHashSet();
+        var alreadyThere = adding.Where(t => there.Contains(t.Id)).ToList();
         if (alreadyThere.Count > 0 && DuplicateConfirmationRequested is { } handler)
         {
             var confirmed = new TaskCompletionSource<bool>();
@@ -548,6 +537,11 @@ public sealed class PlaylistManagementViewModel
         if (adding.Count == 0)
             return;
 
+        // Off the UI thread: an add can be a whole library, and the edit's
+        // save rewrites every playlist (UF-16: 5,000 songs, one edit each,
+        // froze the app for 22 seconds). The playlist takes it as one edit,
+        // safely from any thread (Playlist.AppendTracks), and the library's
+        // listeners already expect a change from a sync session's thread.
         await Task.Run(() => playlist.AppendTracks(adding));
         if (IsShowing(playlist))
             _host.PlaylistContentChanged();
