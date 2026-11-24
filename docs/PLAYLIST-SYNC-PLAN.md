@@ -229,9 +229,14 @@ covers edits made during a session.
   `Tests/Flower.Tests/Sync/Scenarios`, against `SimulatedFlowerServer`, which keeps
   calling the server's own apply rule.
 - **Randomised convergence, the main defence against new edge cases:** three
-  devices make seeded random edits, syncs, failed pushes, lost answers and restores.
-  Once all have synced, every device must hold the same playlist, and no entry may
-  be missing unless some device removed it. A failure prints its seed.
+  devices make seeded random edits, syncs, failed pushes, lost answers, restores,
+  another device's whole sync landing between a read and a write, and edits
+  landing mid-session (`PlaylistConvergenceTests`). Once all have synced, every
+  device must hold the server's playlists row for row, and no song may have left
+  a playlist unless some device removed it, deleted the playlist, or a person
+  picked the other version. A failure prints its seed and the run;
+  `FLOWER_CONVERGENCE_SEED` reruns one. Runs are not fully reproducible (the
+  interleaved sync runs on the server's thread), so loop a failing seed.
 - **Server:** revisions, stale writes and listener refusal in
   `Tests/Flower.Server.Tests/Endpoints/SyncEndpointTests.cs`.
 - **End to end:** two real devices against a throwaway server before each phase is
