@@ -129,6 +129,36 @@ public class LibraryDropTests : IDisposable
         Assert.Equal([Path.Combine(Path.GetDirectoryName(copy)!, "Intro 2.wav")], numbered.Files);
     }
 
+    // UF-13: the same song retagged since it was dropped is the same name and
+    // often the same size - the tag edit fits the file's padding - but not the
+    // same file, so it goes in rather than being taken for the old copy.
+    [Fact]
+    public async Task A_song_retagged_since_it_was_dropped_is_not_taken_for_the_old_copy()
+    {
+        var source = Song(Elsewhere, "Intro.wav", "Album", "Artist");
+        var drop = NewDrop();
+        var copy = (await drop.PrepareAsync([source])).Files.Single();
+        var size = new FileInfo(source).Length;
+        using (var file = TagLib.File.Create(source))
+        {
+            file.Tag.Title = "Outro";
+            file.Save();
+        }
+        Assert.Equal(size, new FileInfo(source).Length);
+
+        var again = await drop.PrepareAsync([source]);
+
+        Assert.Equal(1, again.Copied);
+        Assert.NotEqual([copy], again.Files);
+    }
+
+    [Fact]
+    public void A_drop_says_what_did_not_go_in()
+    {
+        Assert.Null(LibraryDrop.Outcome(0));
+        Assert.Equal("2 songs could not be added", LibraryDrop.Outcome(2));
+    }
+
     [Fact]
     public async Task A_dropped_folder_is_walked_for_its_songs_only()
     {

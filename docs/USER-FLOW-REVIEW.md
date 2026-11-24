@@ -27,8 +27,3 @@ None open.
 The only way back is Settings' Removed Songs, and nothing says so.
 `Flower.Core/Services/LibraryFolderWatcher.cs:351`.
 *Direction:* an explicit drop restores the song.
-
-**UF-13. A retagged song can be ignored when dropped.** *Read.*
-The same name and size counts as already there, and failed copies are only logged.
-`Flower/Services/LibraryDrop.cs:115`, `Flower/ViewModels/MainViewModel.cs:3003`.
-*Direction:* compare content, and report what was not added.

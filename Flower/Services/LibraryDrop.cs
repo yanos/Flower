@@ -88,6 +88,17 @@ public sealed class LibraryDrop(IReadOnlyList<string> libraryRoots, ILogger logg
         }
     }
 
+    // What a drop says once it is done: the songs that did not go in (a copy
+    // that failed, a file that is not a song after all). Null when every song
+    // went in.
+    public static string? Outcome(int notAdded) =>
+        notAdded switch
+        {
+            0 => null,
+            1 => "1 song could not be added",
+            _ => $"{notAdded:N0} songs could not be added",
+        };
+
     private static IEnumerable<string> SongsAt(string path)
     {
         if (File.Exists(path))
@@ -100,10 +111,14 @@ public sealed class LibraryDrop(IReadOnlyList<string> libraryRoots, ILogger logg
             .Order(StringComparer.OrdinalIgnoreCase);
     }
 
-    // Where a song from outside the library goes in it - or, when an
-    // identical file (same name, same size) is already there because it was
-    // dropped before, that file. A different file by the same name is
-    // numbered rather than overwritten.
+    // Where a song from outside the library goes in it - or, when the same
+    // file is already there because it was dropped before, that file. A
+    // different file by the same name is numbered rather than overwritten.
+    //
+    // The same file means the same bytes. Name and size alone took a song
+    // retagged since it was last dropped for the old copy, since a tag edit
+    // often fits the padding a file already has, and the drop silently added
+    // nothing (UF-13).
     private (string Path, bool AlreadyThere) Destination(string root, string source)
     {
         var folder = FolderFor(root, source);
@@ -112,11 +127,32 @@ public sealed class LibraryDrop(IReadOnlyList<string> libraryRoots, ILogger logg
         var candidate = Path.Combine(folder, name + extension);
         for (var n = 2; File.Exists(candidate); n++)
         {
-            if (new FileInfo(candidate).Length == new FileInfo(source).Length)
+            if (SameBytes(candidate, source))
                 return (candidate, true);
             candidate = Path.Combine(folder, $"{name} {n}{extension}");
         }
         return (candidate, false);
+    }
+
+    internal static bool SameBytes(string one, string other)
+    {
+        if (new FileInfo(one).Length != new FileInfo(other).Length)
+            return false;
+
+        using var a = File.OpenRead(one);
+        using var b = File.OpenRead(other);
+        var left = new byte[81920];
+        var right = new byte[81920];
+        while (true)
+        {
+            var read = a.ReadAtLeast(left, left.Length, throwOnEndOfStream: false);
+            if (b.ReadAtLeast(right.AsSpan(0, read), read, throwOnEndOfStream: false) != read)
+                return false;
+            if (read == 0)
+                return true;
+            if (!left.AsSpan(0, read).SequenceEqual(right.AsSpan(0, read)))
+                return false;
+        }
     }
 
     private string FolderFor(string root, string source)

@@ -309,17 +309,26 @@ public sealed class LibraryFolderWatcher : IDisposable
             Note(path);
     }
 
+    // What AddFilesAsync did: how many songs were added or updated, and the
+    // files it could not read as songs.
+    public sealed record AddedFiles(int Added, IReadOnlyList<string> Unreadable);
+
     // Reads each of these files into the library now, rather than waiting for
     // the watcher to see them - what a drop on the window does once it has
-    // copied them (LibraryDrop). Returns how many were added or updated.
-    // progress hears each file read, of all those given.
-    public async Task<int> AddFilesAsync(IReadOnlyCollection<string> files, IProgress<SongProgress>? progress = null)
+    // copied them (LibraryDrop). progress hears each file read, of all those
+    // given.
+    public async Task<AddedFiles> AddFilesAsync(IReadOnlyCollection<string> files, IProgress<SongProgress>? progress = null)
     {
         await _passGate.WaitAsync();
         try
         {
             await _scanInFlight();
-            return await Task.Run(() => AddFiles(files, progress));
+            return await Task.Run(() =>
+            {
+                var unreadable = new List<string>();
+                var added = AddFiles(files, progress, unreadable);
+                return new AddedFiles(added, unreadable);
+            });
         }
         finally
         {
@@ -327,15 +336,22 @@ public sealed class LibraryFolderWatcher : IDisposable
         }
     }
 
-    private int AddFiles(IEnumerable<string> files, IProgress<SongProgress>? progress = null)
+    private int AddFiles(IEnumerable<string> files, IProgress<SongProgress>? progress = null, List<string>? unreadable = null)
     {
         var added = 0;
         var distinct = files.Distinct(_library.PathRules).ToList();
         progress?.Report(new SongProgress(0, distinct.Count));
         for (var i = 0; i < distinct.Count; i++)
         {
-            if (AddFile(distinct[i]))
-                added++;
+            switch (AddFile(distinct[i]))
+            {
+                case true:
+                    added++;
+                    break;
+                case null:
+                    unreadable?.Add(distinct[i]);
+                    break;
+            }
             progress?.Report(new SongProgress(i + 1, distinct.Count));
         }
 
@@ -344,7 +360,9 @@ public sealed class LibraryFolderWatcher : IDisposable
         return added;
     }
 
-    private bool AddFile(string file)
+    // True when the file is in the library now, false when it is kept out on
+    // purpose, null when it could not be read as a song.
+    private bool? AddFile(string file)
     {
         // A song removed from the library on purpose stays out, whatever
         // happens to its file - see Library.RemoveTracks.
@@ -353,7 +371,7 @@ public sealed class LibraryFolderWatcher : IDisposable
         // Null for a file still being written, among other things: the
         // change that finishes it is noted again.
         if (_importer.ImportFile(file) is not { } track)
-            return false;
+            return null;
         _library.AddScannedTrack(track);
         return true;
     }

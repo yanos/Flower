@@ -47,6 +47,7 @@ What happens depends on which of these describes your device.
   - **On its own:** the first time you open Flower, it offers to add your Music.app library.
   - **Owner's device:** turn on **Settings → Library → Add songs from Music.app to Flower** to send the server songs from Music.app that it doesn't have yet.
 - **No library folder yet?** Dragging songs onto the window does nothing until you add one in Settings.
+- **A song that can't be added** (a copy that failed, or a file that isn't a song Flower can read) is counted in a short message where you dropped it.
 - **Paired devices can't pick library folders.** Songs come from drag and drop, downloads, and (for an owner's Mac) Music.app.
 
 ### On a phone

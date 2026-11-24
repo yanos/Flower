@@ -3084,23 +3084,37 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             return;
         }
 
-        using var busy = _busy.BeginScope("Adding songs…");
-        var result = await new LibraryDrop(roots, _logger).PrepareAsync(paths, busy.CountingSongs("Copying into the library"));
-        _logger.LogInformation("Dropped songs: {Count} to add, {Copied} copied into {Root}, {Failed} could not be copied",
-            result.Files.Count, result.Copied, roots[0], result.Failed);
-        if (result.Files.Count == 0)
-            return;
+        string? outcome;
+        using (var busy = _busy.BeginScope("Adding songs…"))
+        {
+            var result = await new LibraryDrop(roots, _logger).PrepareAsync(paths, busy.CountingSongs("Copying into the library"));
+            _logger.LogInformation("Dropped songs: {Count} to add, {Copied} copied into {Root}, {Failed} could not be copied",
+                result.Files.Count, result.Copied, roots[0], result.Failed);
 
-        if (FolderWatcher != null)
-            await FolderWatcher.AddFilesAsync(result.Files, busy.CountingSongs("Adding to the library"));
-        else
-            await RescanLibraryAsync();
+            IReadOnlyList<string> unreadable = [];
+            if (result.Files.Count > 0 && FolderWatcher != null)
+                unreadable = (await FolderWatcher.AddFilesAsync(result.Files, busy.CountingSongs("Adding to the library"))).Unreadable;
+            else if (result.Files.Count > 0)
+                await RescanLibraryAsync();
+            foreach (var file in unreadable)
+                _logger.LogWarning("Dropped file {File} could not be read as a song", file);
 
-        // The first drop on a paired device is what makes Flower's folder one
-        // this device scans. After the songs are in, not before: a rescan that
-        // read the folder ahead of the copy would write the library back
-        // without them.
-        FollowScanFolders();
+            // The first drop on a paired device is what makes Flower's folder
+            // one this device scans. After the songs are in, not before: a
+            // rescan that read the folder ahead of the copy would write the
+            // library back without them.
+            if (result.Files.Count > 0)
+                FollowScanFolders();
+            outcome = LibraryDrop.Outcome(result.Failed + unreadable.Count);
+        }
+
+        // Said where the drop was made, for long enough to read, rather than
+        // only logged (UF-13).
+        if (outcome != null)
+        {
+            using var notice = _busy.BeginScope(outcome);
+            await Task.Delay(TimeSpan.FromSeconds(4));
+        }
     }
 
     // ── Go to currently playing track (Cmd/Ctrl+L) ───────────────────────────

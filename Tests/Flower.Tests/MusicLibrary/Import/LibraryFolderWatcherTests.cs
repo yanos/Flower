@@ -93,8 +93,23 @@ public class LibraryFolderWatcherTests : IDisposable
 
         var added = await watcher.AddFilesAsync([one, two, one], progress);
 
-        Assert.Equal(2, added);
+        Assert.Equal(2, added.Added);
         Assert.Equal([new(0, 2), new(1, 2), new(2, 2)], progress.Reports);
+    }
+
+    // UF-13: a file that is not a song after all is reported, not just skipped.
+    [Fact]
+    public async Task A_file_that_cannot_be_read_as_a_song_is_reported()
+    {
+        using var watcher = NewWatcher();
+        var song = Song("Artist/Album", "one.wav", "One");
+        var broken = Path.Combine(_root, "Artist", "Album", "broken.mp3");
+        File.WriteAllText(broken, "not audio");
+
+        var added = await watcher.AddFilesAsync([song, broken]);
+
+        Assert.Equal(1, added.Added);
+        Assert.Equal([broken], added.Unreadable);
     }
 
     [Fact]
