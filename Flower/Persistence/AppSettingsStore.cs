@@ -156,11 +156,13 @@ namespace Flower.Persistence
         public double  LastScrollOffsetY  { get; set; }
 
         // Whether a desktop installed from a release looks for a newer one on
-        // its own, and when it last did - see AppUpdatesViewModel, which is
-        // the only thing that reads either. The date is what keeps a check to
-        // one a day across launches as well as within one.
+        // its own, when it last did, and which releases it takes (betas as
+        // well, or not) - see AppUpdatesViewModel, which is the only thing
+        // that reads them. The date is what keeps a check to one a day across
+        // launches as well as within one.
         public bool            CheckForUpdatesAutomatically { get; set; } = true;
         public DateTimeOffset? LastUpdateCheck              { get; set; }
+        public UpdateChannel   UpdateChannel                { get; set; } = UpdateChannel.Stable;
 
         // The playlist folders shown closed in the sidebar, by Playlist.Id's
         // key - see PlaylistManagementViewModel.SetFolderExpanded. A folder

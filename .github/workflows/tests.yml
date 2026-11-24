@@ -440,9 +440,9 @@ jobs:
         run: dotnet build Flower.Web/Flower.Web.csproj --configuration Release
 
   # The tag's GitHub release, with the three installers attached, and the
-  # Windows and Linux update feeds that installed copies read from the latest
-  # stable release (Flower.Desktop's VelopackUpdater; the Mac reads the
-  # release itself, GitHubReleaseUpdater). Only once the suite is green and
+  # Windows and Linux update feeds that installed copies read from the newest
+  # release their update channel offers (Flower.Desktop's ChannelGithubSource;
+  # the Mac reads the release itself, GitHubReleaseUpdater). Only once the suite is green and
   # all three installers were built, for the reason the image job below gives: a tag is
   # a claim about the whole commit.
   release:
@@ -561,19 +561,31 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # Whether this tag is the newest of the `latest` and `beta` channels,
+      # the same rule as the desktops' UpdateChannel: a fix to an older line
+      # tagged after a newer one takes neither, and a pre-release other than
+      # a beta takes no channel at all.
+      - name: Work out the channels
+        id: channels
+        env:
+          TAG: ${{ github.ref_name }}
+        run: git tag -l 'v*' | python3 scripts/image-channels.py "$TAG" | tee -a "$GITHUB_OUTPUT"
+
       - name: Generate image metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/yanos/flower-server
-          # A stable v1.2.3 tag publishes 1.2.3, 1.2, 1, and latest. A
-          # prerelease only publishes its full version; major-zero releases do
-          # not create a misleading floating `0` tag.
+          # A stable v1.2.3 tag publishes 1.2.3, 1.2, 1, and - when it is the
+          # newest - latest and beta. A beta publishes its full version and
+          # beta; any other prerelease only its full version. Major-zero
+          # releases do not create a misleading floating `0` tag.
           tags: |
             type=semver,pattern={{version}},priority=1000
             type=semver,pattern={{major}}.{{minor}},priority=900
             type=semver,pattern={{major}},priority=800,enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
-            type=raw,value=latest,priority=700,enable=${{ !contains(github.ref_name, '-') }}
+            type=raw,value=latest,priority=700,enable=${{ steps.channels.outputs.latest == 'true' }}
+            type=raw,value=beta,priority=600,enable=${{ steps.channels.outputs.beta == 'true' }}
           flavor: |
             latest=false
 

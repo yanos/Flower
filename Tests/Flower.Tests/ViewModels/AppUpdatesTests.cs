@@ -16,7 +16,8 @@ namespace Flower.Tests.ViewModels;
 // says - AppUpdatesViewModel. Where the update comes from is the head's
 // (Velopack, or GitHub for the dmg); this holds the shared half: once a day
 // across launches, never with the setting off, a failure tried again rather
-// than counted as a check, and an update found offered rather than installed.
+// than counted as a check, betas only when asked for, and an update found
+// offered rather than installed.
 public class AppUpdatesTests
 {
     private static readonly DateTimeOffset Now = new(2026, 10, 28, 12, 0, 0, TimeSpan.Zero);
@@ -39,10 +40,12 @@ public class AppUpdatesTests
         public AppUpdate? Next { get; set; }
         public Exception? Failure { get; set; }
         public int Checks { get; private set; }
+        public UpdateChannel? LastChannel { get; private set; }
 
-        public Task<AppUpdate?> FindAsync(CancellationToken ct = default)
+        public Task<AppUpdate?> FindAsync(UpdateChannel channel, CancellationToken ct = default)
         {
             Checks++;
+            LastChannel = channel;
             return Failure is { } failure ? Task.FromException<AppUpdate?>(failure) : Task.FromResult(Next);
         }
     }
@@ -149,5 +152,50 @@ public class AppUpdatesTests
 
         Assert.False(updates.ShowsBanner);
         Assert.NotNull(updates.Available);
+    }
+
+    [Fact]
+    public async Task Releases_only_until_betas_are_asked_for()
+    {
+        var updater = new FakeUpdater();
+        var settings = new AppSettings();
+
+        await Updates(updater, settings).CheckIfDueAsync();
+
+        Assert.Equal(UpdateChannel.Stable, updater.LastChannel);
+    }
+
+    [Fact]
+    public async Task Asking_for_betas_looks_for_one_there_and_then_and_every_check_after()
+    {
+        var updater = new FakeUpdater();
+        var settings = new AppSettings { LastUpdateCheck = Now.AddHours(-1) };
+        var updates = Updates(updater, settings);
+
+        // The switch starts its check without waiting on it; the fake answers
+        // at once, so it is over by the next line.
+        updates.GetsBetaReleases = true;
+
+        Assert.Equal(UpdateChannel.Beta, settings.UpdateChannel);
+        Assert.Equal(1, updater.Checks);
+        Assert.Equal(UpdateChannel.Beta, updater.LastChannel);
+
+        settings.LastUpdateCheck = Now.AddDays(-2);
+        await updates.CheckIfDueAsync();
+        Assert.Equal(2, updater.Checks);
+        Assert.Equal(UpdateChannel.Beta, updater.LastChannel);
+    }
+
+    [Fact]
+    public void Turning_betas_off_looks_again_for_releases_only()
+    {
+        var updater = new FakeUpdater();
+        var settings = new AppSettings { UpdateChannel = UpdateChannel.Beta, LastUpdateCheck = Now.AddHours(-1) };
+        var updates = Updates(updater, settings);
+
+        updates.GetsBetaReleases = false;
+
+        Assert.Equal(UpdateChannel.Stable, settings.UpdateChannel);
+        Assert.Equal(UpdateChannel.Stable, updater.LastChannel);
     }
 }

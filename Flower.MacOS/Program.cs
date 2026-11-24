@@ -67,7 +67,8 @@ class Program
         // construction.
         PlatformNowPlaying.Current = new AppleNowPlaying();
 
-        // A newer dmg, looked for on GitHub - only in the dmg itself (see
+        // A newer dmg, looked for on GitHub (a release, or a beta when
+        // Settings asks for them) - only in the dmg itself (see
         // FlowerReleaseBuild in the csproj). Velopack updates the other two
         // desktops in place; here it would need the app signed.
         if (IsReleaseBuild())

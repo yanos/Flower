@@ -629,6 +629,19 @@ only when you run `docker compose pull`, and a pre-release tag never takes
 `latest`. It means "the newest stable release as of the moment I asked", which
 is what you want for a server you update deliberately.
 
+To run betas, point the compose file at `beta` instead, by setting
+`FLOWER_IMAGE=ghcr.io/yanos/flower-server:beta` in a `.env` file beside it (or in
+the shell before `docker compose pull && docker compose up -d`). `beta` is
+whichever is newer of the latest release and the latest beta (`v1.3.0-beta.1`),
+so a beta server takes the release once it passes its betas. The desktops'
+"Get beta releases" setting follows the same rule. A pre-release tagged
+anything else (`-alpha`, `-rc`) never moves `beta` or `latest`. Neither tag ever
+moves backwards, either: a fix to an older line, released after a newer one,
+leaves both where they are. To leave betas, go back to `latest`. A beta's
+database may not open on the release before it, so a server leaving betas
+waits for the next release, or restores the backup taken before it moved to
+the beta.
+
 Pin a full version instead — `image: ghcr.io/yanos/flower-server:0.2.1` — if you
 want that moment written down in the file, and an exact tag to go back to when
 an update disagrees with a client you have not updated yet. That is worth doing
@@ -768,9 +781,11 @@ image to GitHub Container Registry for `linux/amd64` and `linux/arm64`:
 ghcr.io/yanos/flower-server:1.2.3
 ```
 
-Stable releases also update their `major.minor`, `major` (except major zero),
-and `latest` tags. Pre-release tags such as `v1.2.3-beta.1` publish only their
-full version, so they never replace `latest`. For a deployed server, pin the
+Stable releases also update their `major.minor` and `major` (except major
+zero) tags, and `latest` and `beta` when they are the newest. Beta tags such as
+`v1.2.3-beta.1` publish their full version and `beta`, and never replace
+`latest`. Any other pre-release (`v1.2.3-alpha.1`, `v1.2.3-rc.1`) publishes only
+its full version. For a deployed server, pin the
 compose `image:` to a full version before running `docker compose pull && docker
 compose up -d`; use `latest` only when automatic stable-release updates are
 intentional.

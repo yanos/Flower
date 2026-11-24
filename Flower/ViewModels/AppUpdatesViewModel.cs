@@ -19,7 +19,7 @@ namespace Flower.ViewModels;
 // in are the head's (IAppUpdater); this is
 // the part every head shares: at most one check a day, remembered across
 // launches (AppSettings.LastUpdateCheck), none at all with the setting off,
-// and an update found becomes a banner across the window that asks rather
+// betas only when asked for (AppSettings.UpdateChannel), and an update found becomes a banner across the window that asks rather
 // than acts - nothing restarts on its own while someone is listening.
 //
 // Only exists where there is an updater (MainViewModel.Updates is null
@@ -74,6 +74,24 @@ public sealed class AppUpdatesViewModel : ViewModelBase
             _settings.CheckForUpdatesAutomatically = value;
             _ = _saveSettings();
             OnPropertyChanged();
+        }
+    }
+
+    // Settings > General's beta switch (UpdateChannel). Turning it either way
+    // looks there and then, since what the last check said was about the
+    // other channel. Off again does not go back: a beta installed stays
+    // until a release passes it.
+    public bool GetsBetaReleases
+    {
+        get => _settings.UpdateChannel == UpdateChannel.Beta;
+        set
+        {
+            if (GetsBetaReleases == value)
+                return;
+            _settings.UpdateChannel = value ? UpdateChannel.Beta : UpdateChannel.Stable;
+            _ = _saveSettings();
+            OnPropertyChanged();
+            _ = CheckAsync(manual: true);
         }
     }
 
@@ -186,7 +204,7 @@ public sealed class AppUpdatesViewModel : ViewModelBase
         Status = "Checking for updates…";
         try
         {
-            var update = await _updater.FindAsync(ct);
+            var update = await _updater.FindAsync(_settings.UpdateChannel, ct);
             _settings.LastUpdateCheck = _clock.GetUtcNow();
             _ = _saveSettings();
             if (update != null)

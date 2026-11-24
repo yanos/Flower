@@ -45,6 +45,17 @@ namespace Flower.Services
             return leftIds.Length.CompareTo(rightIds.Length);
         }
 
+        // Whether `version` reads as one, and its pre-release label if it has
+        // one ("beta.2" in "v1.2.0-beta.2+abc"), null for a release.
+        public static bool TryGetPreRelease(string version, out string? preRelease)
+        {
+            preRelease = null;
+            if (Parse(version) is not { } parsed)
+                return false;
+            preRelease = parsed.PreRelease;
+            return true;
+        }
+
         // Numbers compare as numbers and come before words.
         private static int CompareIdentifier(string a, string b)
         {

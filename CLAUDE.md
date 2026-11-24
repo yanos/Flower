@@ -129,7 +129,10 @@ are: [Tests/README.md](Tests/README.md).
 Everything is `.github/workflows/tests.yml`. A `v*` tag also publishes the
 server image to GHCR and the desktop installers to a GitHub release, gated on
 every other job; keep the publish jobs in that file with every job in their
-`needs`. A tag is what every installed desktop is offered as an update.
+`needs`. A tag is what every installed desktop is offered as an update: a
+release to everyone, a `-beta.N` tag only to the beta channel (Settings' "Get
+beta releases", the `beta` image), and any other pre-release label to no one
+(`UpdateChannel`, `scripts/image-channels.py`).
 Details: Tests/README.md, "CI".
 
 ## Git & Style

@@ -5,19 +5,19 @@ using System.Threading.Tasks;
 using Flower.Services;
 
 using Velopack;
-using Velopack.Sources;
 
 namespace Flower.Desktop;
 
 // Updates for a Flower installed by Setup.exe or run from the AppImage, read
 // from the GitHub releases the `release` job in tests.yml publishes - each
 // carries this OS's feed (releases.win.json, releases.linux.json) and the
-// package it names. Stable releases only: a pre-release tag is never offered.
+// package it names. Which release is the update channel's choice
+// (ChannelGithubSource); a pre-release that is not a beta is never offered.
 //
 // The new version is downloaded before anyone is told about it, so the
 // banner's button restarts straight into it. Not pressing it costs nothing:
 // VelopackApp.Run applies a downloaded update at the next launch anyway.
-sealed class VelopackUpdater(UpdateManager manager) : IAppUpdater
+sealed class VelopackUpdater(UpdateManager manager, ChannelGithubSource source) : IAppUpdater
 {
     public const string RepositoryUrl = "https://github.com/" + GitHubReleaseUpdater.Repository;
 
@@ -25,13 +25,15 @@ sealed class VelopackUpdater(UpdateManager manager) : IAppUpdater
     // IDE, a publish folder - which has nothing to update in place.
     public static VelopackUpdater? ForThisInstall()
     {
-        var manager = new UpdateManager(new GithubSource(RepositoryUrl, accessToken: null, prerelease: false));
-        return manager.IsInstalled ? new VelopackUpdater(manager) : null;
+        var source = new ChannelGithubSource(GitHubReleaseUpdater.CreateClient());
+        var manager = new UpdateManager(source);
+        return manager.IsInstalled ? new VelopackUpdater(manager, source) : null;
     }
 
     // On the thread pool: the download hashes the whole package as it lands.
-    public Task<AppUpdate?> FindAsync(CancellationToken ct = default) => Task.Run<AppUpdate?>(async () =>
+    public Task<AppUpdate?> FindAsync(UpdateChannel channel, CancellationToken ct = default) => Task.Run<AppUpdate?>(async () =>
     {
+        source.Channel = channel;
         if (manager.UpdatePendingRestart is { } pending)
             return new DownloadedUpdate(manager, pending);
 

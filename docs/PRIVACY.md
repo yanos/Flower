@@ -126,8 +126,9 @@ None of these go to Flower's developer.
   place, go to Apple's iTunes Search, MusicBrainz with the Cover Art Archive,
   and Bandcamp.
 - **Update checks** (desktop installs from a release): once a day, GitHub is
-  asked for the latest release. Switch: Settings > General, "Check for updates
-  automatically".
+  asked for its list of releases. Switch: Settings > General, "Check for
+  updates automatically". "Get beta releases" changes which one is taken, not
+  what is sent.
 - **Vibe Playlists' model**, downloaded once from GitHub the first time Vibe
   Playlists analyse the library.
 - **A server's public address**, only with "Allow connections from the

@@ -188,6 +188,11 @@
             <TextBlock Text="Updates" FontWeight="SemiBold" Margin="0,20,0,8"/>
             <CheckBox Content="Check for updates automatically"
                       IsChecked="{Binding CheckAutomatically, Mode=TwoWay}"/>
+            <CheckBox Content="Get beta releases"
+                      Margin="0,8,0,0"
+                      IsChecked="{Binding GetsBetaReleases, Mode=TwoWay}"/>
+            <TextBlock Text="Betas come before a release, to try what is next. Off: only releases. Turning it off keeps a beta you have until a release replaces it."
+                       Margin="0,2,0,0" FontSize="11" Opacity="0.6" TextWrapping="Wrap"/>
             <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,8,0,0">
               <Button Classes="standard secondary" Content="Check now"
                       Command="{Binding CheckNowCommand}"

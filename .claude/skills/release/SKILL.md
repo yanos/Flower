@@ -24,8 +24,10 @@ report. Invoking the skill also authorizes the tag pushes and moves below.
   is unfinished work, never part of a release: stop and ask what to do with it.
 - `PREV=$(git describe --tags --abbrev=0)`; the release covers `$PREV..HEAD`.
 - Version: the argument if given, else propose one from the commits (0.x:
-  minor for any feature, patch for fixes only). A pre-release label
-  (`-beta.1`) makes a GitHub pre-release and keeps the image off `latest`.
+  minor for any feature, patch for fixes only). A pre-release label makes a
+  GitHub pre-release and keeps the image off `latest`. `-beta.N` reaches the
+  beta channel (desktops with "Get beta releases" on, the `beta` image); any
+  other label (`-alpha.1`, `-rc.1`) reaches no one's updates.
 
 Done when you hold `PREV`, the head sha and a proposed version.
 
@@ -122,8 +124,12 @@ Then put the notes on the release: `gh release edit vX.Y.Z --notes-file <notes>`
 - **Update feeds**: `gh release view vX.Y.Z` lists the dmg, the AppImage, the
   Setup.exe, both `-full.nupkg` and both `releases.*.json`; each
   `releases.*.json` names X.Y.Z; for a stable tag,
-  `gh api repos/yanos/Flower/releases/latest --jq .tag_name` is vX.Y.Z
-  (what `GitHubReleaseUpdater` reads on the Mac).
+  `gh api repos/yanos/Flower/releases/latest --jq .tag_name` is vX.Y.Z (what
+  GETTING-STARTED's download link opens). Both updaters read the release list
+  and take the newest their channel offers (`GitHubReleaseUpdater.Newest`).
+  For a stable or beta tag, the image job's "Work out the channels" step
+  printed `beta=true` (and `latest=true` for a stable one), unless a newer tag
+  of that channel already exists.
 - **Mac install over the old one**: quit Flower, back up the app data (below),
   download the dmg with `gh release download vX.Y.Z -p '*macos-arm64.dmg'`,
   mount it, replace `/Applications/Flower.app` with its app, launch it. Done
@@ -170,7 +176,8 @@ ssh lambda 'docker image prune -f --filter label=flower.image=server'
 ```
 
 Pre-release: `FLOWER_IMAGE=ghcr.io/yanos/flower-server:X.Y.Z-beta.1` before
-the compose commands. Never touch `~/torrents`.
+the compose commands (or `:beta`, which follows every later beta and
+release). Never touch `~/torrents`.
 
 Then check: `docker ps` shows `flower` Up (not Restarting) on
 `ghcr.io/yanos/flower-server`; `docker logs flower` shows

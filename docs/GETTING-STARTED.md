@@ -19,7 +19,7 @@ Running a server yourself is a different guide:
 
 | Device | Where |
 |---|---|
-| Mac, Windows, Linux | [The latest release](https://github.com/yanos/Flower/releases/latest): the `.dmg` for a Mac (Apple silicon), `Setup.exe` for Windows, the `.AppImage` for Linux. Flower updates itself after that. |
+| Mac, Windows, Linux | [The latest release](https://github.com/yanos/Flower/releases/latest): the `.dmg` for a Mac (Apple silicon), `Setup.exe` for Windows, the `.AppImage` for Linux. Flower updates itself after that; to get betas too, turn on Settings > General, "Get beta releases". |
 | iPhone, Android | Not in the App Store or Google Play yet. Ask whoever runs your server. |
 | A web browser | Nothing to install: whoever runs your server can send you a link that opens in the browser. |
 

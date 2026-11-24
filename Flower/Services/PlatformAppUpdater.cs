@@ -22,9 +22,11 @@ namespace Flower.Services
     // release would be telling a developer to downgrade.
     public interface IAppUpdater
     {
-        // A newer release, ready to install, or null when this build is the
-        // latest. Throws when it cannot tell - offline, GitHub refusing.
-        Task<AppUpdate?> FindAsync(CancellationToken ct = default);
+        // The newest release `channel` offers, ready to install, if it is
+        // newer than this build; null when it is not. Never a downgrade, so
+        // a beta moved back to Stable waits for the next release. Throws
+        // when it cannot tell - offline, GitHub refusing.
+        Task<AppUpdate?> FindAsync(UpdateChannel channel, CancellationToken ct = default);
     }
 
     public abstract class AppUpdate(string version)
