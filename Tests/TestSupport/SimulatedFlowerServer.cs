@@ -74,9 +74,10 @@ public sealed class SimulatedFlowerServer : IDisposable
     // TrustedPeerStore.IsAdmin answers on the real host.
     public bool CallerIsAdmin { get; set; } = true;
 
-    // Runs after GET /playlists has been answered and before the response is
-    // closed, once - the window in which another client's push can land
-    // between this client's read and its write.
+    // Runs once after GET /playlists captures its answer, before any bytes
+    // reach the client - the window in which another client's push can land
+    // between this client's read and its write. Closing the response after
+    // the hook is too late: Content-Length lets the client proceed earlier.
     public Action? AfterNextPlaylistsGet { get; set; }
 
     public List<string> Requests { get; } = new();
@@ -228,10 +229,11 @@ public sealed class SimulatedFlowerServer : IDisposable
                     await ServeListeningAsync(context);
                     return;
                 case ("GET", PlaylistsPath):
-                    await WriteJsonAsync(context, PlaylistRevisions.ManifestFor(ListenerOf(context), Fingerprint));
+                    var manifest = PlaylistRevisions.ManifestFor(ListenerOf(context), Fingerprint);
                     var after = AfterNextPlaylistsGet;
                     AfterNextPlaylistsGet = null;
                     after?.Invoke();
+                    await WriteJsonAsync(context, manifest);
                     return;
                 case ("POST", ChangesPath):
                 {
