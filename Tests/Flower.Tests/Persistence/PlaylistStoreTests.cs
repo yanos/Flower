@@ -497,4 +497,25 @@ public class PlaylistStoreTests : IsolatedHome
 
         Assert.Equal(["A"], Assert.Single(PlaylistRepo().Load([a, b])).Tracks.Select(t => t.Title));
     }
+
+    // A save leaves alone the rows of a playlist nothing changed, but a song
+    // retagged in place is a change to every row that holds it: the row is
+    // what says which song it was once the song is away.
+    [Fact]
+    public void A_song_retagged_in_place_is_saved_into_its_rows()
+    {
+        var (a, b) = (Song("A"), Song("B"));
+        var repository = PlaylistRepo();
+        var mix = new Playlist("Mix", [a, b]);
+        var other = new Playlist("Other", [b]);
+        repository.Save([mix, other]);
+
+        b.Title = "B (Remastered)";
+        mix.AppendTrack(a);
+        repository.Save([mix, other]);
+
+        var stored = PlaylistRepo().Load([a]).ToDictionary(p => p.Name);
+        Assert.Equal("B (Remastered)", stored["Mix"].Entries[1].ToWire().Title);
+        Assert.Equal("B (Remastered)", stored["Other"].Entries[0].ToWire().Title);
+    }
 }

@@ -15,6 +15,26 @@ namespace Flower.Persistence.Sql
     // one thing left to identify it while the library does not have it.
     public sealed class PlaylistRepository(FlowerDb db) : IPlaylistStore
     {
+        // Each playlist's rows as they were last read or written, column for
+        // column. A save rewrites a playlist's rows only when they differ,
+        // where it used to rewrite every playlist's on every edit to any of
+        // them. By value rather than by the list of entries: a song's title is
+        // set in place by a tag edit, and its row keeps it for when the song
+        // is away. Under _saveGate with the write itself, so it never
+        // describes rows another save has since replaced.
+        private readonly Dictionary<Guid, List<StoredRow>> _written = [];
+        private readonly object _saveGate = new();
+
+        private readonly record struct StoredRow(
+            Guid EntryId, Guid? TrackId, string? Title, string? Artists, string? Album, int Seconds, string? OriginId)
+        {
+            public static StoredRow Of(PlaylistEntry entry)
+            {
+                var song = entry.ToWire();
+                return new(entry.EntryId, entry.TrackId, song.Title, song.Artists, song.Album, song.DurationSeconds, song.Id);
+            }
+        }
+
         public List<Playlist> Load(IReadOnlyList<Track> libraryTracks)
         {
             var byId = new Dictionary<Guid, Track>(libraryTracks.Count);
@@ -57,6 +77,7 @@ namespace Flower.Persistence.Sql
             // row's track id is in the library.
             PlaylistTrackIndex? index = null;
             var membership = new Dictionary<Guid, List<PlaylistEntry>>();
+            var stored = new Dictionary<Guid, List<StoredRow>>();
             using (var command = connection.CreateCommand())
             {
                 command.CommandText = "SELECT playlist_id, entry_id, track_id, title, artists, album, seconds, origin_id FROM playlist_tracks ORDER BY playlist_id, position;";
@@ -75,6 +96,9 @@ namespace Flower.Persistence.Sql
 
                     if (!membership.TryGetValue(playlistId, out var entries))
                         membership[playlistId] = entries = [];
+                    if (!stored.TryGetValue(playlistId, out var rows))
+                        stored[playlistId] = rows = [];
+                    rows.Add(new StoredRow(entryId, trackId, song.Title, song.Artists, song.Album, song.DurationSeconds, song.Id));
 
                     var track = (trackId is { } id ? byId.GetValueOrDefault(id) : null) ?? (index ??= new PlaylistTrackIndex(libraryTracks)).Find(song);
                     entries.Add(track != null
@@ -84,6 +108,12 @@ namespace Flower.Persistence.Sql
             }
 
             var result = new List<Playlist>(playlists.Count);
+            lock (_saveGate)
+            {
+                _written.Clear();
+                foreach (var row in playlists)
+                    _written[row.Id] = stored.GetValueOrDefault(row.Id) ?? [];
+            }
             foreach (var row in playlists)
             {
                 // A smart playlist loads with its last materialized contents,
@@ -93,7 +123,7 @@ namespace Flower.Persistence.Sql
                 // A smart or Vibe playlist's songs are worked out again, so
                 // it holds no row for one it cannot find.
                 var entries = membership.GetValueOrDefault(row.Id) ?? [];
-                result.Add(new Playlist(
+                var playlist = new Playlist(
                     row.Id,
                     row.Name,
                     [],
@@ -110,7 +140,8 @@ namespace Flower.Persistence.Sql
                     row.VibeInstrumental,
                     row.Rules == null && row.VibePrompt == null && !row.IsFolder
                         ? entries
-                        : entries.Where(e => e.Track != null).ToList()));
+                        : entries.Where(e => e.Track != null).ToList());
+                result.Add(playlist);
             }
 
             return result;
@@ -138,6 +169,13 @@ namespace Flower.Persistence.Sql
         // produce the same rows.
         public void Save(IEnumerable<Playlist> playlists)
         {
+            lock (_saveGate)
+                SaveUnderGate(playlists);
+        }
+
+        private void SaveUnderGate(IEnumerable<Playlist> playlists)
+        {
+            var written = new Dictionary<Guid, List<StoredRow>>();
             using var connection = db.Open();
             using var transaction = connection.BeginTransaction();
 
@@ -232,6 +270,12 @@ namespace Flower.Persistence.Sql
                     upsertVibeInstrumental.Value = playlist.VibeInstrumental ? 1 : 0;
                     upsert.ExecuteNonQuery();
 
+                    var entries = playlist.Entries;
+                    var rows = entries.Select(StoredRow.Of).ToList();
+                    written[playlist.Id] = rows;
+                    if (_written.TryGetValue(playlist.Id, out var stored) && stored.SequenceEqual(rows))
+                        continue;
+
                     clearId.Value = id;
                     clear.ExecuteNonQuery();
 
@@ -240,18 +284,17 @@ namespace Flower.Persistence.Sql
                     // song for right now (PlaylistEntry), with what song each
                     // is, so that a row whose drive goes away can still say.
                     var position = 0;
-                    foreach (var entry in playlist.Entries)
+                    foreach (var row in rows)
                     {
-                        var song = entry.ToWire();
                         insertPlaylistId.Value = id;
                         insertPosition.Value = position++;
-                        insertEntryId.Value = entry.EntryId.ToKey();
-                        insertTrackId.Value = entry.TrackId is { } trackId ? trackId.ToKey() : DBNull.Value;
-                        insertTitle.Value = (object?)song.Title ?? DBNull.Value;
-                        insertArtists.Value = (object?)song.Artists ?? DBNull.Value;
-                        insertAlbum.Value = (object?)song.Album ?? DBNull.Value;
-                        insertSeconds.Value = song.DurationSeconds;
-                        insertOriginId.Value = (object?)song.Id ?? DBNull.Value;
+                        insertEntryId.Value = row.EntryId.ToKey();
+                        insertTrackId.Value = row.TrackId is { } trackId ? trackId.ToKey() : DBNull.Value;
+                        insertTitle.Value = (object?)row.Title ?? DBNull.Value;
+                        insertArtists.Value = (object?)row.Artists ?? DBNull.Value;
+                        insertAlbum.Value = (object?)row.Album ?? DBNull.Value;
+                        insertSeconds.Value = row.Seconds;
+                        insertOriginId.Value = (object?)row.OriginId ?? DBNull.Value;
                         insert.ExecuteNonQuery();
                     }
                 }
@@ -259,6 +302,10 @@ namespace Flower.Persistence.Sql
 
             DeletePlaylistsNotIn(connection, transaction, seen);
             transaction.Commit();
+
+            _written.Clear();
+            foreach (var (id, rows) in written)
+                _written[id] = rows;
         }
 
         private static void DeletePlaylistsNotIn(SqliteConnection connection, SqliteTransaction transaction, HashSet<Guid> keep)
