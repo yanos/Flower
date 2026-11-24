@@ -3208,6 +3208,10 @@ namespace Flower.Models
                 }
 
                 SwapPlaylists(new List<Playlist>(installed));
+                // A catalog pull may have finished since the sync resolved
+                // these rows. Bind under the same lock as catalog installs,
+                // so neither ordering leaves available songs hidden.
+                RebindPlaylistTracks();
             }
 
             // Outside the lock: both of these run arbitrary subscriber code

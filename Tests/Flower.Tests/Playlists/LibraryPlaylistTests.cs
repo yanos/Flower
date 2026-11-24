@@ -56,6 +56,26 @@ public class LibraryPlaylistTests
     }
 
     [Fact]
+    public void A_playlist_resolved_before_the_catalog_arrived_plays_the_songs_present_when_installed()
+    {
+        var track = new Track { Title = "A", Path = "/music/a.flac" };
+        var source = new Playlist("Mix", [track]);
+        var library = new Library([]);
+        var incoming = PlaylistSyncMapper.ToPlaylist(PlaylistSyncMapper.ToDto(source), library.Tracks);
+        Assert.Empty(incoming.Tracks);
+
+        // The catalog pull finishes after playlist resolution, before its
+        // install. Its earlier rebind could not see this incoming playlist.
+        library.UpdateTracks([track]);
+        library.ReplacePlaylists([incoming]);
+
+        var installed = Assert.Single(library.Playlists);
+        Assert.Same(track, Assert.Single(installed.Tracks));
+        Assert.Equal(source.Entries[0].EntryId, installed.Entries[0].EntryId);
+        Assert.Equal(source.UpdatedAt, installed.UpdatedAt);
+    }
+
+    [Fact]
     public void RemovePlaylist_for_a_playlist_not_in_the_library_is_a_no_op()
     {
         var library = new Library(new List<Track>());
