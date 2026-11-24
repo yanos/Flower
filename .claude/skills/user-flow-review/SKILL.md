@@ -21,7 +21,8 @@ through the app, from the golden path to the convoluted one. Every finding is a
 ## 1. Scope
 
 Read [docs/USER-FLOW-REVIEW.md](../../../docs/USER-FLOW-REVIEW.md), the ledger of
-open findings, and re-check each against `HEAD`: still open, or fixed.
+open findings, and re-check each against `HEAD`: still open, or fixed. No file
+means none are open: it is deleted when its last finding is fixed.
 
 Then pick the flows from [FLOWS.md](FLOWS.md):
 
@@ -82,7 +83,12 @@ read, and the direction of a fix. Rank data loss first.
 
 Unless `--report-only` was passed, update `docs/USER-FLOW-REVIEW.md`: add new
 findings under the next unused `UF-` id, remove fixed ones, and refresh its status
-line with the commit reviewed and the date.
+line with the commit reviewed and the date. Delete the file when no finding is
+left open. When there is no file and a finding stays open, create it with the
+header its last version had (`git log --diff-filter=D -1 -- docs/USER-FLOW-REVIEW.md`
+names the commit that deleted it; show its parent's copy). An id is never
+reused: the next one follows the highest in that file's history (`git log -p --
+docs/USER-FLOW-REVIEW.md`), UF-24 when it was deleted.
 
 Return the ranked findings, the ledger findings now fixed, the flows walked, and
 what was not checked (platforms, real UI). Done when every flow in scope is

@@ -50,7 +50,7 @@ Done when all three subagents and the user-flow review have reported and every
 inline check has run. Merge everything into one findings list, each tagged
 **P0** (blocks the tag), **fix-now** (cheap, do before tagging) or **later**.
 The findings still open in `docs/USER-FLOW-REVIEW.md` are on it, at their
-severity.
+severity; no such file means none are open.
 
 ## 3. Fix
 
@@ -59,7 +59,8 @@ each waiting for approval. Offer to file each **later** item as a GitHub
 issue. A P0 fix that changes behaviour waits for the user to test it, not
 just for approval of the diff. Keep `docs/USER-FLOW-REVIEW.md` current in those
 same diffs: a fixed finding leaves it, a new user-flow finding that stays open
-joins it.
+joins it (creating the file as the `user-flow-review` skill says), and the
+file goes when its last finding does.
 
 Done when no P0 is open, in the findings list or that file, and the user has
 said which fix-now items to drop.
