@@ -22,12 +22,11 @@ public interface IPlaylistWriter
     // before the fetched set is installed: installing it raises
     // Library.PlaylistsChanged exactly as a user's own edit does, and nothing
     // in that event says which of the two it was.
-    void NoteOriginState(IReadOnlyList<Playlist> playlists);
+    void NoteOriginState(OriginPlaylists origin);
 
-    // Queues the whole set to be pushed. Coalescing and ordering are the
-    // implementation's problem: a drag-reorder raises one change per move, and
-    // ten overlapping full-manifest POSTs can land in any order - the last one
-    // to arrive wins, which is not necessarily the last one sent.
+    // Queues the set, for whatever in it differs from the origin's to be
+    // pushed. Coalescing and ordering are the implementation's problem: a
+    // drag-reorder raises one change per move.
     void Schedule(IReadOnlyList<Playlist> playlists);
 
     // Completes when nothing scheduled is still in flight.

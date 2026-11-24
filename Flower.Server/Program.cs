@@ -224,7 +224,12 @@ builder.Services.AddSingleton<TrackRepository>();
 // registers both the same way. Loaded from the database at startup below, then
 // reconciled by each rescan.
 builder.Services.AddSingleton<PlaylistRepository>();
-builder.Services.AddSingleton<PlaylistDeletionRepository>();
+builder.Services.AddSingleton<PlaylistRevisionRepository>();
+// The server's versions of its playlists, issued for every change whatever made
+// it (see PlaylistRevisions). Started below, once the stored playlists are in.
+builder.Services.AddSingleton(services => new PlaylistRevisions(
+    services.GetRequiredService<Library>(),
+    services.GetRequiredService<PlaylistRevisionRepository>()));
 builder.Services.AddSingleton(services => new Library(
     services.GetRequiredService<TrackRepository>().LoadAll(),
     services.GetRequiredService<ILogger<Library>>(),
@@ -679,6 +684,7 @@ using (var scope = app.Services.CreateScope())
     // upgrade path but deleting flower.db (ARCHITECTURE-REVIEW Tier 2.5); a
     // schema change is now an appended script in Flower.Core's Schema.
     scope.ServiceProvider.GetRequiredService<LibraryImportService>().LoadStored();
+    scope.ServiceProvider.GetRequiredService<PlaylistRevisions>().Start();
 }
 
 // The rescan is started, not awaited, so the listener opens on the stored

@@ -38,7 +38,6 @@ namespace Flower.Persistence
     [JsonSerializable(typeof(PairingBackupRecord))]
     [JsonSerializable(typeof(IEnumerable<Track>), TypeInfoPropertyName = "TrackEnumerable")]
     [JsonSerializable(typeof(DeviceIdentity))]
-    [JsonSerializable(typeof(PlaylistSyncStateStore.SyncStateRecord))]
     [JsonSerializable(typeof(ServerStarBaselineStore.StarBaselineRecord))]
     [JsonSerializable(typeof(List<DeviceNickname>), TypeInfoPropertyName = "DeviceNicknameList")]
     [JsonSerializable(typeof(AlbumProgressState))]

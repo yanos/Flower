@@ -27,8 +27,9 @@ namespace Flower.Server.Endpoints;
 //   GET  /library         - the whole track catalog in one response
 //   GET  /listening       - the plays that moved since a token, for an
 //                           owner's device that already has the catalog
-//   GET  /playlists       - this server's playlists, for the merge
-//   POST /playlists/apply - the merged result the client resolved
+//   GET  /playlists       - this server's playlists, each at its revision
+//   POST /playlists/changes - a session's edits, each over the revision it
+//                           is based on
 //   POST /plays           - what a browser tab played, to count here
 //   POST /track-state     - what a paired device has played, starred and
 //                           configured, as its own current values
@@ -87,7 +88,7 @@ public static class SyncEndpoints
     // Set from what a 16,000-track library actually produces (measured by
     // serializing the real contracts, 2026-10-02), with a margin:
     //
-    //   - /playlists/apply and /track-state keep the process-wide 20 MB
+    //   - /playlists/changes and /track-state keep the process-wide 20 MB
     //     (Program.cs). A full track-state restatement is 5.3 MB at that size
     //     with every owner field set, so a tighter cap would refuse a large
     //     library's honest report, and every session after it.
@@ -102,7 +103,7 @@ public static class SyncEndpoints
 
     private static long MaxBodyFor(PathString path)
     {
-        if (path.Equals(GroupPrefix + "/playlists/apply", StringComparison.OrdinalIgnoreCase)
+        if (path.Equals(GroupPrefix + "/playlists/changes", StringComparison.OrdinalIgnoreCase)
             || path.Equals(GroupPrefix + "/track-state", StringComparison.OrdinalIgnoreCase))
         {
             return MaxBodyBytes;
@@ -198,9 +199,9 @@ public static class SyncEndpoints
         // Lambdas rather than method-group references purely so the logger
         // captured above reaches these three: a bare, non-generic ILogger is
         // not something the container can resolve as a handler parameter.
-        sync.MapPost("/playlists/apply",
-            (HttpContext context, Library library, TrustedPeerStore trustedPeers, PlaylistDeletionRepository deletions) =>
-                ApplyPlaylists(context, library, trustedPeers, deletions, logger));
+        sync.MapPost("/playlists/changes",
+            (HttpContext context, PlaylistRevisions revisions, TrustedPeerStore trustedPeers) =>
+                ApplyPlaylistChanges(context, revisions, trustedPeers, logger));
         sync.MapPost("/plays",
             (HttpContext context, PlayReportService plays, TrustedPeerStore trustedPeers) =>
                 ReportPlays(context, plays, trustedPeers, logger));
@@ -486,17 +487,13 @@ public static class SyncEndpoints
     // guest device sees the playlists it made; every admin device sees the
     // owner's.
     private static IResult GetPlaylists(
-        HttpContext context, Library library, DeviceSigningKey signingKey, TrustedPeerStore trustedPeers,
-        PlaylistDeletionRepository deletions)
+        HttpContext context, DeviceSigningKey signingKey, TrustedPeerStore trustedPeers, PlaylistRevisions revisions)
     {
         if (ListenerOf(context, trustedPeers) is not { } listener)
             return Problems.Of(StatusCodes.Status401Unauthorized, ProblemCodes.SignatureInvalid);
 
         return Results.Text(
-            JsonSerializer.Serialize(
-                PlaylistSyncMapper.ToManifest(
-                    signingKey.Fingerprint, PlaylistSyncMapper.For(library.Playlists, listener), deletions.DeletedFor(listener)),
-                JsonOptions),
+            JsonSerializer.Serialize(revisions.ManifestFor(listener, signingKey.Fingerprint), JsonOptions),
             "application/json");
     }
 
@@ -509,33 +506,31 @@ public static class SyncEndpoints
             ? Listeners.For(fingerprint, trustedPeers.IsAdmin(fingerprint))
             : null;
 
-    // The initiator resolved every conflict before POSTing here (see
-    // PlaylistSyncService), so no second merge runs on this end - but the push
-    // is not taken wholesale either: see PlaylistSyncMapper.ApplyPushedManifest
-    // for what is kept, and why.
-    //
-    // Applied to the caller's listener alone (see Listeners): a guest device
-    // pushing ids that belong to the owner gets them back in Refused, and the
-    // owner's playlists are untouched.
-    private static async Task<IResult> ApplyPlaylists(
-        HttpContext context, Library library, TrustedPeerStore trustedPeers, PlaylistDeletionRepository deletions, ILogger logger)
+    // Each change is written only over the revision it names, and answered
+    // on its own - see PlaylistRevisions.ApplyChanges, which also keeps a
+    // guest device off the owner's playlists (docs/SECURITY.md).
+    private static IResult ApplyPlaylistChanges(
+        HttpContext context, PlaylistRevisions revisions, TrustedPeerStore trustedPeers, ILogger logger)
     {
         if (ListenerOf(context, trustedPeers) is not { } listener)
             return Problems.Of(StatusCodes.Status401Unauthorized, ProblemCodes.SignatureInvalid);
 
-        var manifest = JsonSerializer.Deserialize<PlaylistSyncManifestDto>(RequestGate.BodyOf(context), JsonOptions);
-        if (manifest == null)
+        var request = JsonSerializer.Deserialize<PlaylistChangesRequestDto>(RequestGate.BodyOf(context), JsonOptions);
+        if (request?.Changes == null)
             return Problems.BadRequest();
 
         // Persists itself, through the same PlaylistRepository the client's
         // own Library writes through.
-        var result = PlaylistSyncMapper.ApplyPushedManifest(library, manifest, listener, deletions, logger);
+        var answer = revisions.ApplyChanges(request, listener, logger);
 
         logger.LogInformation(
-            "Applied {Count} playlist(s) pushed by {Fingerprint} for listener {Listener}",
-            result.Installed.Count, context.Items[AuthenticatedFingerprintKey], listener);
+            "Playlist changes from {Fingerprint} for listener {Listener}: {Applied} applied, {Stale} stale, {Refused} refused",
+            context.Items[AuthenticatedFingerprintKey], listener,
+            answer.Answers.Count(a => a.Outcome == PlaylistChangeOutcome.Applied),
+            answer.Answers.Count(a => a.Outcome == PlaylistChangeOutcome.Stale),
+            answer.Answers.Count(a => a.Outcome == PlaylistChangeOutcome.Refused));
 
-        return Results.Json(new PlaylistApplyResponseDto(result.Refused), JsonOptions);
+        return Results.Json(answer, JsonOptions);
     }
 
     // A browser tab's plays, counted here because there is nowhere else for

@@ -21,5 +21,9 @@ public interface IPlaylistImporter
     // (see PlaylistSyncMapper.ResolveTracks and Track.SyncKey - a Path means
     // nothing on another device). Anything the origin has that this head's
     // library does not is silently dropped, exactly as it is for a peer sync.
-    Task<List<Playlist>> ImportAsync(IReadOnlyList<Track> library);
+    Task<OriginPlaylists> ImportAsync(IReadOnlyList<Track> library);
 }
+
+// The origin's playlists, and the revision each was read at - which an edit
+// made in this head is written over (see IPlaylistWriter).
+public sealed record OriginPlaylists(List<Playlist> Playlists, IReadOnlyDictionary<System.Guid, long> Revisions);

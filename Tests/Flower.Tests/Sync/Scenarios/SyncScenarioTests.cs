@@ -77,7 +77,8 @@ public class SyncScenarioTests : PinnedDataDirectory
             NullLogger<Flower.Importer.Importer>.Instance);
             PlaylistSync = new PlaylistSyncService(
                 Library, identity, Key, new AppSettings(),
-                new PlaylistSyncStateStore(NullLogger<PlaylistSyncStateStore>.Instance),
+                new Flower.Persistence.Sql.PlaylistAgreementRepository(
+                    new Flower.Persistence.Sql.FlowerDb(System.IO.Path.Combine(_dataDirectory, "flower.db"))),
                 new DeviceNicknameStore(NullLogger<DeviceNicknameStore>.Instance),
                 NullLogger<PlaylistSyncService>.Instance);
         }
@@ -690,9 +691,9 @@ public class SyncScenarioTests : PinnedDataDirectory
         await client.PullLibraryAsync(server);
         client.Library.AddPlaylist(new Playlist("Shitty Cover", [client.Single("A")]));
 
-        server.FailsPlaylistApply = true;
+        server.FailsPlaylistChanges = true;
         await client.SyncPlaylistsAsync(server);
-        server.FailsPlaylistApply = false;
+        server.FailsPlaylistChanges = false;
         await client.SyncPlaylistsAsync(server);
 
         Assert.Equal(["A"], Titles(client.Playlist("Shitty Cover")));
@@ -710,9 +711,9 @@ public class SyncScenarioTests : PinnedDataDirectory
         await client.SyncPlaylistsAsync(server);
         client.Library.RemovePlaylist(client.Playlist("Old Mix"));
 
-        server.FailsPlaylistApply = true;
+        server.FailsPlaylistChanges = true;
         await client.SyncPlaylistsAsync(server);
-        server.FailsPlaylistApply = false;
+        server.FailsPlaylistChanges = false;
         await client.SyncPlaylistsAsync(server);
 
         Assert.Empty(client.Library.Playlists);
@@ -838,34 +839,21 @@ public class SyncScenarioTests : PinnedDataDirectory
         Assert.Empty(client.Library.Playlists);
     }
 
-    // A session plans from the playlists as they were when it began, and can
-    // be a while getting to its write - waiting on a conflict prompt, as
-    // here, or running off the UI thread while the user carries on. Writing
-    // its merge over the set wholesale put back a playlist deleted in the
-    // meantime, at once; and because it was back, the sync the delete had
-    // scheduled found nothing deleted to send, so it took a second delete.
+    // A session plans from the playlists as they were when it read the
+    // server, and installs a moment later - long enough, off the UI thread,
+    // for the user to carry on. Writing its merge over the set wholesale put
+    // back a playlist deleted in the meantime; and because it was back, the
+    // sync the delete had scheduled found nothing deleted to send.
     [Fact]
     public async Task A_playlist_deleted_while_a_session_is_merging_stays_deleted()
     {
-        var a = ServerTrack("A");
-        var b = ServerTrack("B");
-        using var server = new SimulatedFlowerServer([a, b]);
-        var client = NewClient();
-        await client.PullLibraryAsync(server);
+        var (server, client) = await MixAgreedAsync();
+        using var owned = server;
         client.Library.AddPlaylist(new Playlist("Doomed", [client.Single("A")]));
-        client.Library.AddPlaylist(new Playlist("Contested", [client.Single("A")]));
         await client.SyncPlaylistsAsync(server);
 
-        // Both sides edit "Contested", so the next session stops to ask - and
-        // while it waits for the answer, "Doomed" is deleted here.
-        await Task.Delay(5);
-        client.Playlist("Contested").AppendTrack(client.Single("B"));
-        server.Library.Playlists.Single(p => p.Name == "Contested").Name = "Contested on server";
-        client.PlaylistSync.ConflictDetected += (_, e) =>
-        {
-            client.Library.RemovePlaylist(client.Playlist("Doomed"));
-            e.Resolution.SetResult(PlaylistConflictChoice.KeepLocal);
-        };
+        server.Library.Playlists.Single(p => p.Name == "Mix").Name = "Mix on server";
+        server.AfterNextPlaylistsGet = () => client.Library.RemovePlaylist(client.Playlist("Doomed"));
         await client.SyncPlaylistsAsync(server);
 
         Assert.DoesNotContain(client.Library.Playlists, p => p.Name == "Doomed");
@@ -881,95 +869,299 @@ public class SyncScenarioTests : PinnedDataDirectory
     [Fact]
     public async Task A_playlist_created_while_a_session_is_merging_is_kept_and_sent_up()
     {
-        var a = ServerTrack("A");
-        var b = ServerTrack("B");
-        using var server = new SimulatedFlowerServer([a, b]);
-        var client = NewClient();
-        await client.PullLibraryAsync(server);
-        client.Library.AddPlaylist(new Playlist("Contested", [client.Single("A")]));
-        await client.SyncPlaylistsAsync(server);
+        var (server, client) = await MixAgreedAsync();
+        using var owned = server;
 
-        await Task.Delay(5);
-        client.Playlist("Contested").AppendTrack(client.Single("B"));
-        server.Library.Playlists.Single(p => p.Name == "Contested").Name = "Contested on server";
-        client.PlaylistSync.ConflictDetected += (_, e) =>
-        {
-            client.Library.AddPlaylist(new Playlist("Fresh", [client.Single("B")]));
-            e.Resolution.SetResult(PlaylistConflictChoice.KeepLocal);
-        };
+        server.Library.Playlists.Single(p => p.Name == "Mix").Name = "Mix on server";
+        server.AfterNextPlaylistsGet = () => client.Library.AddPlaylist(new Playlist("Fresh", [client.Single("B")]));
         await client.SyncPlaylistsAsync(server);
-
         Assert.Contains(client.Library.Playlists, p => p.Name == "Fresh");
+
+        await client.SyncPlaylistsAsync(server);
         Assert.Contains(server.Library.Playlists, p => p.Name == "Fresh");
     }
 
-    // A playlist edited on the server, which this session is taking - and
-    // edited here too while the session waits on another playlist. Taking
-    // the server's copy would throw the edit here away; the two are
-    // combined instead, on both sides.
-    [Fact]
-    public async Task A_playlist_edited_here_while_a_session_takes_the_servers_edit_keeps_both()
-    {
-        var (server, client) = await TwoPlaylistsAgreedAsync();
-        using var owned = server;
-
-        server.Library.Playlists.Single(p => p.Name == "Mix").AppendTrack(server.Library.Tracks.Single(t => t.Title == "C"));
-        client.PlaylistSync.ConflictDetected += (_, e) =>
-        {
-            client.Playlist("Mix").AppendTrack(client.Single("D"));
-            e.Resolution.SetResult(PlaylistConflictChoice.KeepLocal);
-        };
-        await client.SyncPlaylistsAsync(server);
-
-        Assert.Equal(["A", "C", "D"], Titles(client.Playlist("Mix")));
-        Assert.Equal(["A", "C", "D"], Titles(server.Library.Playlists.Single(p => p.Name == "Mix")));
-    }
-
-    // The same, with edits that cannot both be kept - renamed differently on
-    // each side. Nothing is decided for the user: this device keeps its own
-    // edit without pushing it, and the next session asks.
+    // Renamed differently on each side. Nothing is decided for the user: this
+    // device keeps its own edit without sending it, and the next session with
+    // someone to ask asks.
     [Fact]
     public async Task Edits_that_cannot_be_combined_are_left_for_the_next_session_to_ask_about()
     {
-        var (server, client) = await TwoPlaylistsAgreedAsync();
+        var (server, client) = await MixAgreedAsync();
         using var owned = server;
 
         server.Library.Playlists.Single(p => p.Name == "Mix").Name = "Server name";
-        var asked = new List<string>();
-        client.PlaylistSync.ConflictDetected += (_, e) =>
-        {
-            asked.Add(e.Remote.Name);
-            if (e.Local.Name == "Contested")
-                client.Playlist("Mix").Name = "Phone name";
-            e.Resolution.SetResult(PlaylistConflictChoice.KeepLocal);
-        };
+        server.AfterNextPlaylistsGet = () => client.Playlist("Mix").Name = "Phone name";
         await client.SyncPlaylistsAsync(server);
 
         Assert.Contains(client.Library.Playlists, p => p.Name == "Phone name");
         Assert.Contains(server.Library.Playlists, p => p.Name == "Server name");
 
-        asked.Clear();
+        var asked = new List<string>();
+        client.PlaylistSync.ConflictDetected += (_, e) =>
+        {
+            asked.Add(e.Remote!.Name);
+            e.Resolution.SetResult(PlaylistConflictChoice.Later);
+        };
         await client.SyncPlaylistsAsync(server);
 
         Assert.Equal(["Server name"], asked);
     }
 
-    // Two playlists both sides agree on, then "Contested" edited on both - so
-    // the next session stops to ask about it, which is the window the tests
-    // above make their edits in.
-    private async Task<(SimulatedFlowerServer Server, Client Client)> TwoPlaylistsAgreedAsync()
+    // "Mix" made on the client and agreed with the server.
+    private async Task<(SimulatedFlowerServer Server, Client Client)> MixAgreedAsync()
     {
         var server = new SimulatedFlowerServer(new[] { "A", "B", "C", "D" }.Select(t => ServerTrack(t)));
         var client = NewClient();
         await client.PullLibraryAsync(server);
         client.Library.AddPlaylist(new Playlist("Mix", [client.Single("A")]));
-        client.Library.AddPlaylist(new Playlist("Contested", [client.Single("A")]));
+        await client.SyncPlaylistsAsync(server);
+        return (server, client);
+    }
+
+    // Two devices and a server, all agreed on "Mix" and "Contested", both [A].
+    private async Task<(SimulatedFlowerServer Server, Client Phone, Client Tablet)> TwoDevicesAgreedAsync()
+    {
+        var server = new SimulatedFlowerServer(new[] { "A", "B", "C", "D" }.Select(t => ServerTrack(t)));
+        server.Library.AddPlaylist(new Playlist("Mix", [server.Library.Tracks.Single(t => t.Title == "A")]));
+        server.Library.AddPlaylist(new Playlist("Contested", [server.Library.Tracks.Single(t => t.Title == "A")]));
+        var (phone, tablet) = (NewClient(), NewClient());
+        foreach (var device in new[] { phone, tablet })
+        {
+            await device.PullLibraryAsync(server);
+            await device.SyncPlaylistsAsync(server);
+        }
+        return (server, phone, tablet);
+    }
+
+    // UF-19: a session no longer holds what it read while a prompt is open.
+    // The phone sends its edit of "Mix" before asking about "Contested"; the
+    // tablet's edit of "Mix", made while that prompt is open, does not go over
+    // it unasked - the tablet is asked instead.
+    [Fact]
+    public async Task An_edit_made_elsewhere_while_a_prompt_is_open_overwrites_nothing_unasked()
+    {
+        var (server, phone, tablet) = await TwoDevicesAgreedAsync();
+        using var owned = server;
+        phone.Playlist("Mix").AppendTrack(phone.Single("B"));
+        phone.Playlist("Contested").AppendTrack(phone.Single("B"));
+        server.Library.Playlists.Single(p => p.Name == "Contested").Name = "Contested on server";
+
+        var tabletAsked = new List<string>();
+        tablet.PlaylistSync.ConflictDetected += (_, e) =>
+        {
+            tabletAsked.Add(e.Local.Name);
+            e.Resolution.SetResult(PlaylistConflictChoice.Later);
+        };
+        phone.PlaylistSync.ConflictDetected += (_, e) => _ = Task.Run(async () =>
+        {
+            tablet.Playlist("Mix").AppendTrack(tablet.Single("C"));
+            await tablet.SyncPlaylistsAsync(server);
+            e.Resolution.SetResult(PlaylistConflictChoice.Later);
+        });
+        await phone.SyncPlaylistsAsync(server);
+
+        Assert.Equal(["A", "B"], Titles(server.Library.Playlists.Single(p => p.Name == "Mix")));
+        Assert.Equal(["A", "C"], Titles(tablet.Playlist("Mix")));
+        Assert.Equal(["Mix"], tabletAsked);
+    }
+
+    // A change another device wrote between this session's read and its own
+    // write is not written over: the server answers Stale with its copy, and
+    // the session plans again from that.
+    [Fact]
+    public async Task A_change_that_lands_first_elsewhere_is_planned_against_not_written_over()
+    {
+        var (server, client) = await MixAgreedAsync();
+        using var owned = server;
+        client.Playlist("Mix").AppendTrack(client.Single("B"));
+        var asked = new List<string>();
+        client.PlaylistSync.ConflictDetected += (_, e) =>
+        {
+            asked.Add(e.Remote!.Name);
+            e.Resolution.SetResult(PlaylistConflictChoice.Later);
+        };
+
+        server.BeforeNextChanges = () =>
+        {
+            server.Library.Playlists.Single().Name = "Renamed elsewhere";
+            return Task.CompletedTask;
+        };
         await client.SyncPlaylistsAsync(server);
 
-        await Task.Delay(5);
-        client.Playlist("Contested").AppendTrack(client.Single("B"));
-        server.Library.Playlists.Single(p => p.Name == "Contested").Name = "Contested on server";
-        return (server, client);
+        Assert.Equal("Renamed elsewhere", server.Library.Playlists.Single().Name);
+        Assert.Equal(["A"], Titles(server.Library.Playlists.Single()));
+        Assert.Equal(["Renamed elsewhere"], asked);
+    }
+
+    // The same, where the other write was the same edit: nothing to ask.
+    [Fact]
+    public async Task The_same_change_landing_first_elsewhere_is_simply_agreed_on()
+    {
+        var (server, client) = await MixAgreedAsync();
+        using var owned = server;
+        client.Playlist("Mix").Name = "Renamed";
+        var asked = 0;
+        client.PlaylistSync.ConflictDetected += (_, e) =>
+        {
+            asked++;
+            e.Resolution.SetResult(PlaylistConflictChoice.Later);
+        };
+
+        server.BeforeNextChanges = () =>
+        {
+            server.Library.Playlists.Single().Name = "Renamed";
+            return Task.CompletedTask;
+        };
+        await client.SyncPlaylistsAsync(server);
+        var changes = server.PlaylistChangesCount;
+        await client.SyncPlaylistsAsync(server);
+
+        Assert.Equal(0, asked);
+        Assert.Equal(changes, server.PlaylistChangesCount);
+    }
+
+    // An answer lost on the way back: the server took the change, and the next
+    // session finds its copy equal to this device's and records that.
+    [Fact]
+    public async Task A_lost_answer_is_settled_by_the_next_session_without_asking()
+    {
+        var (server, client) = await MixAgreedAsync();
+        using var owned = server;
+        var asked = 0;
+        client.PlaylistSync.ConflictDetected += (_, e) =>
+        {
+            asked++;
+            e.Resolution.SetResult(PlaylistConflictChoice.Later);
+        };
+        client.Playlist("Mix").AppendTrack(client.Single("B"));
+
+        server.LosesNextChangesAnswer = true;
+        await client.SyncPlaylistsAsync(server);
+        await client.SyncPlaylistsAsync(server);
+        var changes = server.PlaylistChangesCount;
+        await client.SyncPlaylistsAsync(server);
+
+        Assert.Equal(0, asked);
+        Assert.Equal(["A", "B"], Titles(server.Library.Playlists.Single()));
+        Assert.Equal(changes, server.PlaylistChangesCount);
+    }
+
+    // UF-22: adding a song and removing it again is no edit, and once the
+    // other device has the result its next edit is just an edit.
+    [Fact]
+    public async Task Undoing_an_edit_does_not_make_another_devices_next_edit_a_conflict()
+    {
+        var (server, phone, tablet) = await TwoDevicesAgreedAsync();
+        using var owned = server;
+        var asked = 0;
+        foreach (var device in new[] { phone, tablet })
+        {
+            device.PlaylistSync.ConflictDetected += (_, e) =>
+            {
+                asked++;
+                e.Resolution.SetResult(PlaylistConflictChoice.Later);
+            };
+        }
+
+        phone.Playlist("Mix").AppendTrack(phone.Single("B"));
+        await phone.SyncPlaylistsAsync(server);
+        phone.Playlist("Mix").RemoveEntriesAt([1]);
+        await phone.SyncPlaylistsAsync(server);
+        await tablet.SyncPlaylistsAsync(server);
+        tablet.Playlist("Mix").AppendTrack(tablet.Single("C"));
+        await tablet.SyncPlaylistsAsync(server);
+        await phone.SyncPlaylistsAsync(server);
+
+        Assert.Equal(0, asked);
+        Assert.Equal(["A", "C"], Titles(server.Library.Playlists.Single(p => p.Name == "Mix")));
+        Assert.Equal(["A", "C"], Titles(phone.Playlist("Mix")));
+    }
+
+    // UF-21: a device holding a playlist the server records as deleted, with
+    // no agreed copy of it, cannot tell whether it holds an edit - so it asks,
+    // once, and until it is answered the deletion stands.
+    [Theory]
+    [InlineData(PlaylistConflictChoice.KeepRemote)]
+    [InlineData(PlaylistConflictChoice.KeepLocal)]
+    public async Task A_playlist_deleted_on_the_server_is_asked_about_by_a_device_with_no_agreed_copy(PlaylistConflictChoice choice)
+    {
+        var a = ServerTrack("A");
+        using var server = new SimulatedFlowerServer([a]);
+        var doomed = new Playlist("Doomed", [a]);
+        server.Library.AddPlaylist(doomed);
+        var phone = NewClient();
+        await phone.PullLibraryAsync(server);
+        await phone.SyncPlaylistsAsync(server);
+        phone.Library.RemovePlaylist(phone.Playlist("Doomed"));
+        await phone.SyncPlaylistsAsync(server);
+
+        var stranger = NewClient();
+        await stranger.PullLibraryAsync(server);
+        stranger.Library.AddPlaylist(new Playlist(doomed.Id, "Doomed", [stranger.Single("A")], DateTimeOffset.UtcNow));
+
+        await stranger.SyncPlaylistsAsync(server);
+        Assert.Empty(server.Library.Playlists);
+
+        var asked = new List<bool>();
+        stranger.PlaylistSync.ConflictDetected += (_, e) =>
+        {
+            asked.Add(e.DeletedOnServer);
+            e.Resolution.SetResult(choice);
+        };
+        await stranger.SyncPlaylistsAsync(server);
+        await stranger.SyncPlaylistsAsync(server);
+
+        Assert.Equal([true], asked);
+        if (choice == PlaylistConflictChoice.KeepRemote)
+        {
+            Assert.Empty(stranger.Library.Playlists);
+            Assert.Empty(server.Library.Playlists);
+        }
+        else
+        {
+            Assert.Equal("Doomed", Assert.Single(server.Library.Playlists).Name);
+            await phone.SyncPlaylistsAsync(server);
+            Assert.Equal("Doomed", Assert.Single(phone.Library.Playlists).Name);
+        }
+    }
+
+    // Edit beats delete: deleted on one device, edited on another that had
+    // agreed on it, the edit comes back everywhere.
+    [Fact]
+    public async Task A_playlist_edited_on_one_device_and_deleted_on_another_survives_with_the_edit()
+    {
+        var (server, phone, tablet) = await TwoDevicesAgreedAsync();
+        using var owned = server;
+
+        phone.Library.RemovePlaylist(phone.Playlist("Mix"));
+        await phone.SyncPlaylistsAsync(server);
+        tablet.Playlist("Mix").AppendTrack(tablet.Single("B"));
+        await tablet.SyncPlaylistsAsync(server);
+        await phone.SyncPlaylistsAsync(server);
+
+        Assert.Equal(["A", "B"], Titles(server.Library.Playlists.Single(p => p.Name == "Mix")));
+        Assert.Equal(["A", "B"], Titles(phone.Playlist("Mix")));
+    }
+
+    // UF-6: restored from a backup taken before this device's last edit, the
+    // server holds an older version than the one agreed, and gets this
+    // device's back.
+    [Fact]
+    public async Task A_server_restored_to_an_older_version_of_a_playlist_gets_the_newer_one_back()
+    {
+        var (server, client) = await MixAgreedAsync();
+        using var owned = server;
+        var backup = server.TakeBackup();
+        client.Playlist("Mix").AppendTrack(client.Single("B"));
+        await client.SyncPlaylistsAsync(server);
+
+        server.Restore(backup);
+        Assert.Equal(["A"], Titles(server.Library.Playlists.Single()));
+        await client.SyncPlaylistsAsync(server);
+
+        Assert.Equal(["A", "B"], Titles(server.Library.Playlists.Single()));
+        Assert.Equal(["A", "B"], Titles(client.Playlist("Mix")));
     }
 
     // Two phones, one server. Each edits a different playlist; neither edit
@@ -1201,11 +1393,12 @@ public class SyncScenarioTests : PinnedDataDirectory
         using var server = new SimulatedFlowerServer([a]);
         var client = NewClient();
         await client.PullLibraryAsync(server);
+        var backup = server.TakeBackup();
         client.Library.AddPlaylist(new Playlist("Made since", [client.Single("A")]));
         await client.SyncPlaylistsAsync(server);
         Assert.Single(server.Library.Playlists);
 
-        server.Library.ReplacePlaylists([]);
+        server.Restore(backup);
         await client.SyncPlaylistsAsync(server);
 
         Assert.Equal(["A"], Titles(client.Playlist("Made since")));
@@ -1337,7 +1530,9 @@ public class SyncScenarioTests : PinnedDataDirectory
         var writer = new OriginPlaylistWriter(http, server.Device.Origin, new SignedDeviceCredentials(
             new DeviceIdentity { Fingerprint = key.Fingerprint, Alias = "Tab" }, key),
             NullLogger<OriginPlaylistWriter>.Instance);
-        writer.NoteOriginState(server.Library.Playlists);
+        writer.NoteOriginState(new OriginPlaylists(
+            server.Library.Playlists.ToList(),
+            server.PlaylistRevisions.ManifestFor(Listeners.Owner, server.Fingerprint).Playlists.ToDictionary(p => p.Id, p => p.Revision)));
 
         writer.Schedule(server.Library.Playlists.Where(p => p.Name == "Keep").ToList());
         await writer.InFlight;

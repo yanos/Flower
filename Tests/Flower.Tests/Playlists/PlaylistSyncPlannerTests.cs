@@ -3,10 +3,14 @@ using System.Collections.Generic;
 using System.Linq;
 
 using Flower.Models;
+using Flower.Persistence.Sql;
 using Flower.Services;
 
 namespace Flower.Tests.Playlists;
 
+// The planner on its own: each playlist read against the copy this device last
+// agreed with the server on, by the table in docs/PLAYLIST-SYNC-PLAN.md, "The
+// protocol". Played end to end against a server in SyncScenarioTests.
 public class PlaylistSyncPlannerTests
 {
     private static Track T(string title, int durationSeconds = 200) =>
@@ -15,337 +19,259 @@ public class PlaylistSyncPlannerTests
     private static PlaylistSyncTrackDto Dto(string title, int durationSeconds = 200) =>
         new PlaylistSyncTrackDto(title, "Artist", "Album", durationSeconds);
 
-    private static readonly Func<Guid, DateTimeOffset?> NoBaseline = _ => null;
+    private static readonly Dictionary<Guid, PlaylistAgreement> NothingAgreed = new();
+
+    private static PlaylistSyncDecision PlanOne(
+        Playlist? local, PlaylistSyncPlaylistDto? remote, PlaylistAgreement? agreed = null, PlaylistDeletionDto? deletion = null)
+    {
+        var id = local?.Id ?? remote?.Id ?? deletion!.Id;
+        var agreements = agreed == null ? NothingAgreed : new Dictionary<Guid, PlaylistAgreement> { [id] = agreed };
+        return Assert.Single(PlaylistSyncPlanner.Plan(
+            local == null ? [] : [local], remote == null ? [] : [remote], deletion == null ? [] : [deletion],
+            agreements, new PlaylistTrackIndex([])));
+    }
+
+    // A playlist this device holds, agreed with the server at revision 10.
+    private static (Playlist Local, PlaylistAgreement Agreed) Agreed(string name = "Favorites", params string[] titles)
+    {
+        var local = new Playlist(name, titles.Select(t => T(t)).ToList());
+        return (local, new PlaylistAgreement(10, PlaylistSyncMapper.ToDto(local) with { Revision = 10 }));
+    }
+
+    private static PlaylistSyncPlaylistDto MovedOn(PlaylistSyncPlaylistDto copy) => copy with { Revision = 20, History = [10] };
 
     [Fact]
-    public void Playlist_only_on_remote_is_adopted()
+    public void A_playlist_only_on_the_server_is_adopted()
     {
-        var id = Guid.NewGuid();
-        var remote = new PlaylistSyncPlaylistDto(id, "Road Trip", DateTimeOffset.UtcNow, new List<PlaylistSyncTrackDto> { Dto("A") });
+        var remote = new PlaylistSyncPlaylistDto(Guid.NewGuid(), "Road Trip", DateTimeOffset.UtcNow, [Dto("A")], Revision: 5);
 
-        var decisions = PlaylistSyncPlanner.Plan(new List<Playlist>(), new List<PlaylistSyncPlaylistDto> { remote }, NoBaseline);
+        Assert.Equal(PlaylistSyncDecisionKind.AdoptRemote, PlanOne(null, remote).Kind);
+    }
 
-        var decision = Assert.Single(decisions);
+    // New here, or lost by a server restored from a backup older than it: it
+    // goes up as new either way.
+    [Fact]
+    public void A_playlist_the_server_has_no_record_of_goes_up_as_new()
+    {
+        var (local, agreed) = Agreed("Road Trip", "A");
+
+        var fresh = PlanOne(local, null);
+        var lost = PlanOne(local, null, agreed);
+
+        Assert.Equal((PlaylistSyncDecisionKind.Push, 0L), (fresh.Kind, fresh.BaseRevision));
+        Assert.Equal((PlaylistSyncDecisionKind.Push, 0L), (lost.Kind, lost.BaseRevision));
+    }
+
+    [Fact]
+    public void The_same_content_with_nothing_agreed_is_agreed_on()
+    {
+        var local = new Playlist("Favorites", [T("A"), T("B")]);
+        var remote = PlaylistSyncMapper.ToDto(local) with { Revision = 5 };
+
+        Assert.Equal(PlaylistSyncDecisionKind.NoChange, PlanOne(local, remote).Kind);
+    }
+
+    [Fact]
+    public void Different_content_with_nothing_agreed_is_asked_about()
+    {
+        var local = new Playlist("Favorites (mine)", [T("A")]);
+        var remote = new PlaylistSyncPlaylistDto(local.Id, "Favorites (theirs)", DateTimeOffset.UtcNow, [Dto("B")], Revision: 5);
+
+        Assert.Equal(PlaylistSyncDecisionKind.Conflict, PlanOne(local, remote).Kind);
+    }
+
+    [Fact]
+    public void Unchanged_on_both_sides_is_no_change()
+    {
+        var (local, agreed) = Agreed("Favorites", "A");
+
+        Assert.Equal(PlaylistSyncDecisionKind.NoChange, PlanOne(local, agreed.Copy!).Kind);
+    }
+
+    [Fact]
+    public void Changed_here_only_goes_up_over_the_agreed_revision()
+    {
+        var (local, agreed) = Agreed("Favorites", "A");
+        local.AppendTrack(T("B"));
+
+        var decision = PlanOne(local, agreed.Copy!, agreed);
+
+        Assert.Equal((PlaylistSyncDecisionKind.Push, 10L), (decision.Kind, decision.BaseRevision));
+    }
+
+    // UF-22: what decides is the content, not the clock - an edit undone is
+    // no edit, whatever it did to UpdatedAt.
+    [Fact]
+    public void An_edit_and_its_undo_is_no_change()
+    {
+        var (local, agreed) = Agreed("Favorites", "A");
+        local.AppendTrack(T("B"));
+        local.RemoveEntriesAt([1]);
+
+        Assert.Equal(PlaylistSyncDecisionKind.NoChange, PlanOne(local, agreed.Copy!, agreed).Kind);
+    }
+
+    [Fact]
+    public void Changed_on_the_server_only_is_adopted()
+    {
+        var (local, agreed) = Agreed("Favorites", "A");
+
+        var decision = PlanOne(local, MovedOn(agreed.Copy! with { Name = "Favorites Renamed" }), agreed);
+
         Assert.Equal(PlaylistSyncDecisionKind.AdoptRemote, decision.Kind);
-        Assert.Equal(id, decision.PlaylistId);
     }
 
+    // Moving a playlist into a folder, or to a new place beside the others,
+    // changes nothing about its songs or its name, and has to read as an edit
+    // all the same or it never leaves the device it was made on.
     [Fact]
-    public void Playlist_only_on_local_is_kept()
+    public void A_playlist_moved_into_a_folder_or_a_new_place_is_a_change_to_carry()
     {
-        var id = Guid.NewGuid();
-        var local = new Playlist(id, "Road Trip", new List<Track> { T("A") }, DateTimeOffset.UtcNow);
+        var (local, agreed) = Agreed("Favorites", "A");
+        local.ParentId = Guid.NewGuid();
+        var (placed, placedAgreed) = Agreed("Other", "A");
+        placed.SortKey = 2.5;
 
-        var decisions = PlaylistSyncPlanner.Plan(new List<Playlist> { local }, new List<PlaylistSyncPlaylistDto>(), NoBaseline);
-
-        var decision = Assert.Single(decisions);
-        Assert.Equal(PlaylistSyncDecisionKind.KeepLocal, decision.Kind);
-    }
-
-    [Fact]
-    public void Identical_content_on_both_sides_is_NoChange_even_with_no_baseline()
-    {
-        var id = Guid.NewGuid();
-        var updatedAt = DateTimeOffset.UtcNow;
-        var local = new Playlist(id, "Favorites", new List<Track> { T("A"), T("B") }, updatedAt);
-        var remote = new PlaylistSyncPlaylistDto(id, "Favorites", updatedAt, new List<PlaylistSyncTrackDto> { Dto("A"), Dto("B") });
-
-        var decisions = PlaylistSyncPlanner.Plan(new List<Playlist> { local }, new List<PlaylistSyncPlaylistDto> { remote }, NoBaseline);
-
-        Assert.Equal(PlaylistSyncDecisionKind.NoChange, Assert.Single(decisions).Kind);
-    }
-
-    // Moving a playlist into a folder changes nothing about its songs or its
-    // name, and has to read as an edit all the same or it never leaves the
-    // device it was made on.
-    [Fact]
-    public void A_playlist_moved_into_a_folder_is_a_change_to_carry()
-    {
-        var id = Guid.NewGuid();
-        var baseline = DateTimeOffset.UtcNow.AddMinutes(-10);
-        var folder = Guid.NewGuid();
-        var local = new Playlist(id, "Favorites", new List<Track> { T("A") }, baseline);
-        var remote = new PlaylistSyncPlaylistDto(id, "Favorites", baseline.AddMinutes(5), new List<PlaylistSyncTrackDto> { Dto("A") }, ParentId: folder);
-
-        var decisions = PlaylistSyncPlanner.Plan(new List<Playlist> { local }, new List<PlaylistSyncPlaylistDto> { remote }, _ => baseline);
-
-        Assert.Equal(PlaylistSyncDecisionKind.AdoptRemote, Assert.Single(decisions).Kind);
-    }
-
-    // And so is dragging it to a new place among the playlists beside it.
-    [Fact]
-    public void A_playlist_moved_to_a_new_place_is_a_change_to_carry()
-    {
-        var id = Guid.NewGuid();
-        var baseline = DateTimeOffset.UtcNow.AddMinutes(-10);
-        var local = new Playlist(id, "Favorites", new List<Track> { T("A") }, baseline);
-        var remote = new PlaylistSyncPlaylistDto(id, "Favorites", baseline.AddMinutes(5), new List<PlaylistSyncTrackDto> { Dto("A") }, SortKey: 2.5);
-
-        var decisions = PlaylistSyncPlanner.Plan(new List<Playlist> { local }, new List<PlaylistSyncPlaylistDto> { remote }, _ => baseline);
-
-        Assert.Equal(PlaylistSyncDecisionKind.AdoptRemote, Assert.Single(decisions).Kind);
-        Assert.Equal(2.5, PlaylistSyncMapper.ToPlaylist(remote, new List<Track>()).SortKey);
-    }
-
-    // The same for a smart playlist, which is compared by name and rules
-    // rather than by songs.
-    [Fact]
-    public void A_smart_playlist_moved_into_a_folder_is_a_change_to_carry()
-    {
-        var id = Guid.NewGuid();
-        var then = DateTimeOffset.UtcNow.AddMinutes(-10);
-        var rules = SmartPlaylistRules.MatchAll(new SmartCondition(SmartField.Title, SmartOperator.IsNotEmpty, SmartValue.None.Instance));
-        var local = new Playlist(id, "Titled", new List<Track>(), then, rules: rules);
-        var remote = new PlaylistSyncPlaylistDto(id, "Titled", then.AddMinutes(5), new List<PlaylistSyncTrackDto>(), rules, ParentId: Guid.NewGuid());
-
-        var decisions = PlaylistSyncPlanner.Plan(new List<Playlist> { local }, new List<PlaylistSyncPlaylistDto> { remote }, _ => then);
-
-        Assert.Equal(PlaylistSyncDecisionKind.AdoptRemote, Assert.Single(decisions).Kind);
+        Assert.Equal(PlaylistSyncDecisionKind.Push, PlanOne(local, agreed.Copy!, agreed).Kind);
+        Assert.Equal(PlaylistSyncDecisionKind.Push, PlanOne(placed, placedAgreed.Copy!, placedAgreed).Kind);
     }
 
     [Fact]
     public void A_folder_and_where_a_playlist_sits_travel_and_come_back()
     {
         var folder = Playlist.NewFolder("Rock");
-        var inside = new Playlist("Live", new List<Track>()) { ParentId = folder.Id };
+        var inside = new Playlist("Live", new List<Track>()) { ParentId = folder.Id, SortKey = 2.5 };
 
         var folderBack = PlaylistSyncMapper.ToPlaylist(PlaylistSyncMapper.ToDto(folder), new List<Track>());
         var insideBack = PlaylistSyncMapper.ToPlaylist(PlaylistSyncMapper.ToDto(inside), new List<Track>());
 
         Assert.True(folderBack.IsFolder);
-        Assert.Equal(folder.Id, insideBack.ParentId);
+        Assert.Equal((folder.Id, 2.5), (insideBack.ParentId!.Value, insideBack.SortKey!.Value));
         Assert.Equal(inside.UpdatedAt, insideBack.UpdatedAt);
     }
 
     [Fact]
-    public void Only_local_changed_since_baseline_keeps_local()
+    public void Changed_on_both_sides_differently_is_asked_about()
     {
-        var id = Guid.NewGuid();
-        var baseline = DateTimeOffset.UtcNow.AddMinutes(-10);
-        var local = new Playlist(id, "Favorites", new List<Track> { T("A"), T("B") }, baseline.AddMinutes(5));
-        var remote = new PlaylistSyncPlaylistDto(id, "Favorites", baseline, new List<PlaylistSyncTrackDto> { Dto("A") });
+        var (local, agreed) = Agreed("Favorites", "A");
+        local.Name = "Favorites (mine)";
 
-        var decisions = PlaylistSyncPlanner.Plan(new List<Playlist> { local }, new List<PlaylistSyncPlaylistDto> { remote }, _ => baseline);
+        var decision = PlanOne(local, MovedOn(agreed.Copy! with { Name = "Favorites (theirs)" }), agreed);
 
-        Assert.Equal(PlaylistSyncDecisionKind.KeepLocal, Assert.Single(decisions).Kind);
+        Assert.Equal(PlaylistSyncDecisionKind.Conflict, decision.Kind);
     }
 
+    // The same edit made on both sides, or this device's own change whose
+    // answer never came back.
     [Fact]
-    public void Only_remote_changed_since_baseline_adopts_remote()
+    public void Changed_on_both_sides_to_the_same_content_is_agreed_on()
     {
-        var id = Guid.NewGuid();
-        var baseline = DateTimeOffset.UtcNow.AddMinutes(-10);
-        var local = new Playlist(id, "Favorites", new List<Track> { T("A") }, baseline);
-        var remote = new PlaylistSyncPlaylistDto(id, "Favorites Renamed", baseline.AddMinutes(5), new List<PlaylistSyncTrackDto> { Dto("A") });
+        var (local, agreed) = Agreed("Favorites", "A");
+        local.Name = "Renamed";
 
-        var decisions = PlaylistSyncPlanner.Plan(new List<Playlist> { local }, new List<PlaylistSyncPlaylistDto> { remote }, _ => baseline);
+        var decision = PlanOne(local, MovedOn(agreed.Copy! with { Name = "Renamed" }), agreed);
 
-        Assert.Equal(PlaylistSyncDecisionKind.AdoptRemote, Assert.Single(decisions).Kind);
-    }
-
-    [Fact]
-    public void Both_sides_changed_since_baseline_is_a_conflict()
-    {
-        var id = Guid.NewGuid();
-        var baseline = DateTimeOffset.UtcNow.AddMinutes(-10);
-        var local = new Playlist(id, "Favorites (mine)", new List<Track> { T("A") }, baseline.AddMinutes(3));
-        var remote = new PlaylistSyncPlaylistDto(id, "Favorites (theirs)", baseline.AddMinutes(5), new List<PlaylistSyncTrackDto> { Dto("A") });
-
-        var decisions = PlaylistSyncPlanner.Plan(new List<Playlist> { local }, new List<PlaylistSyncPlaylistDto> { remote }, _ => baseline);
-
-        Assert.Equal(PlaylistSyncDecisionKind.Conflict, Assert.Single(decisions).Kind);
-    }
-
-    // What an apply leaves behind when the receiving side cannot match every
-    // track: a shorter copy at the same UpdatedAt the two devices agreed on.
-    // Nobody edited anything, so there is nothing to ask the user about - this
-    // used to prompt on every sync after pairing with a server missing tracks.
-    [Fact]
-    public void Differing_content_with_neither_side_past_the_baseline_keeps_local_without_a_conflict()
-    {
-        var id = Guid.NewGuid();
-        var baseline = DateTimeOffset.UtcNow.AddMinutes(-10);
-        var local = new Playlist(id, "Favorites", new List<Track> { T("A"), T("B"), T("C") }, baseline);
-        var remote = new PlaylistSyncPlaylistDto(id, "Favorites", baseline, new List<PlaylistSyncTrackDto> { Dto("A") });
-
-        var decisions = PlaylistSyncPlanner.Plan(new List<Playlist> { local }, new List<PlaylistSyncPlaylistDto> { remote }, _ => baseline);
-
-        Assert.Equal(PlaylistSyncDecisionKind.KeepLocal, Assert.Single(decisions).Kind);
-    }
-
-    [Fact]
-    public void Differing_content_with_no_prior_baseline_is_a_conflict_not_an_automatic_pick()
-    {
-        var id = Guid.NewGuid();
-        var local = new Playlist(id, "Favorites (mine)", new List<Track> { T("A") }, DateTimeOffset.UtcNow);
-        var remote = new PlaylistSyncPlaylistDto(id, "Favorites (theirs)", DateTimeOffset.UtcNow, new List<PlaylistSyncTrackDto> { Dto("B") });
-
-        var decisions = PlaylistSyncPlanner.Plan(new List<Playlist> { local }, new List<PlaylistSyncPlaylistDto> { remote }, NoBaseline);
-
-        Assert.Equal(PlaylistSyncDecisionKind.Conflict, Assert.Single(decisions).Kind);
-    }
-
-    [Fact]
-    public void Renaming_a_playlist_does_not_change_its_identity_for_matching()
-    {
-        // Same Id, different Name on each side, but same track content and equal
-        // UpdatedAt - this exercises that Id (not Name) is what pairs local/remote.
-        var id = Guid.NewGuid();
-        var updatedAt = DateTimeOffset.UtcNow;
-        var local = new Playlist(id, "Old Name", new List<Track> { T("A") }, updatedAt);
-        var remote = new PlaylistSyncPlaylistDto(id, "Old Name", updatedAt, new List<PlaylistSyncTrackDto> { Dto("A") });
-
-        var decisions = PlaylistSyncPlanner.Plan(new List<Playlist> { local }, new List<PlaylistSyncPlaylistDto> { remote }, NoBaseline);
-
-        var decision = Assert.Single(decisions);
-        Assert.Equal(id, decision.PlaylistId);
         Assert.Equal(PlaylistSyncDecisionKind.NoChange, decision.Kind);
     }
 
+    // UF-6: a server restored from a backup older than what this device
+    // agreed. Whatever this device holds goes back up.
     [Fact]
-    public void Playlist_deleted_remotely_since_a_prior_baseline_is_deleted_not_kept()
+    public void A_server_behind_what_this_device_agreed_gets_this_devices_copy_back()
     {
-        // Regression test for the reported bug: deleting a playlist on one
-        // device never removed it from the other, even after a restart -
-        // Plan previously had no way to distinguish "remote never had this"
-        // from "remote deleted this", and treated both as KeepLocal.
-        var id = Guid.NewGuid();
-        var baseline = DateTimeOffset.UtcNow.AddMinutes(-10);
-        var local = new Playlist(id, "Road Trip", new List<Track> { T("A") }, baseline);
+        var (local, agreed) = Agreed("Favorites", "A");
+        var restored = agreed.Copy! with { Revision = 4, History = [1, 2, 3] };
 
-        var decisions = PlaylistSyncPlanner.Plan(
-            new List<Playlist> { local }, new List<PlaylistSyncPlaylistDto>(), _ => baseline, deletedRemotely: [id]);
+        var decision = PlanOne(local, restored, agreed);
 
-        Assert.Equal(PlaylistSyncDecisionKind.Delete, Assert.Single(decisions).Kind);
+        Assert.Equal((PlaylistSyncDecisionKind.Push, 4L), (decision.Kind, decision.BaseRevision));
     }
 
-    // UF-6: a server restored from a backup is missing whatever was made since,
-    // with no record of anyone deleting it.
+    // Older than every revision the server remembers: no history in common.
     [Fact]
-    public void A_playlist_missing_from_the_server_with_no_record_of_a_deletion_is_kept()
+    public void An_agreed_revision_the_server_no_longer_remembers_is_no_history_in_common()
     {
-        var id = Guid.NewGuid();
-        var baseline = DateTimeOffset.UtcNow.AddMinutes(-10);
-        var local = new Playlist(id, "Road Trip", new List<Track> { T("A") }, baseline);
+        var (local, agreed) = Agreed("Favorites", "A");
+        local.Name = "Mine";
 
-        var decisions = PlaylistSyncPlanner.Plan(
-            new List<Playlist> { local }, new List<PlaylistSyncPlaylistDto>(), _ => baseline);
+        var decision = PlanOne(local, agreed.Copy! with { Name = "Theirs", Revision = 90, History = [80] }, agreed);
 
-        Assert.Equal(PlaylistSyncDecisionKind.KeepLocal, Assert.Single(decisions).Kind);
+        Assert.Equal(PlaylistSyncDecisionKind.Conflict, decision.Kind);
     }
 
     [Fact]
-    public void Playlist_deleted_locally_since_a_prior_baseline_is_deleted_not_adopted()
+    public void Deleted_here_and_unchanged_on_the_server_is_deleted_there()
     {
-        var id = Guid.NewGuid();
-        var baseline = DateTimeOffset.UtcNow.AddMinutes(-10);
-        var remote = new PlaylistSyncPlaylistDto(id, "Road Trip", baseline, new List<PlaylistSyncTrackDto> { Dto("A") });
+        var (_, agreed) = Agreed("Road Trip", "A");
 
-        var decisions = PlaylistSyncPlanner.Plan(new List<Playlist>(), new List<PlaylistSyncPlaylistDto> { remote }, _ => baseline);
+        var decision = PlanOne(null, agreed.Copy!, agreed);
 
-        Assert.Equal(PlaylistSyncDecisionKind.Delete, Assert.Single(decisions).Kind);
+        Assert.Equal((PlaylistSyncDecisionKind.PushDelete, 10L), (decision.Kind, decision.BaseRevision));
+    }
+
+    // Edit beats delete.
+    [Fact]
+    public void Deleted_here_and_edited_on_the_server_comes_back()
+    {
+        var (_, agreed) = Agreed("Road Trip", "A");
+
+        var decision = PlanOne(null, MovedOn(agreed.Copy! with { Name = "Renamed" }), agreed);
+
+        Assert.Equal(PlaylistSyncDecisionKind.AdoptRemote, decision.Kind);
     }
 
     [Fact]
-    public void Playlist_only_on_remote_with_no_baseline_is_still_adopted_not_deleted()
+    public void Deleted_on_the_server_over_an_agreed_version_and_unchanged_here_is_deleted_here()
     {
-        // A genuinely new playlist (never agreed upon before) must not be
-        // mistaken for a deletion just because one side lacks it.
-        var id = Guid.NewGuid();
-        var remote = new PlaylistSyncPlaylistDto(id, "Road Trip", DateTimeOffset.UtcNow, new List<PlaylistSyncTrackDto> { Dto("A") });
+        var (local, agreed) = Agreed("Road Trip", "A");
 
-        var decisions = PlaylistSyncPlanner.Plan(new List<Playlist>(), new List<PlaylistSyncPlaylistDto> { remote }, NoBaseline);
+        var decision = PlanOne(local, null, agreed, new PlaylistDeletionDto(local.Id, 20, [10]));
 
-        Assert.Equal(PlaylistSyncDecisionKind.AdoptRemote, Assert.Single(decisions).Kind);
+        Assert.Equal(PlaylistSyncDecisionKind.DeleteHere, decision.Kind);
+    }
+
+    [Fact]
+    public void Deleted_on_the_server_and_edited_here_goes_back_up_over_the_deletion()
+    {
+        var (local, agreed) = Agreed("Road Trip", "A");
+        local.AppendTrack(T("B"));
+
+        var decision = PlanOne(local, null, agreed, new PlaylistDeletionDto(local.Id, 20, [10]));
+
+        Assert.Equal((PlaylistSyncDecisionKind.Push, 20L), (decision.Kind, decision.BaseRevision));
+    }
+
+    // UF-21: with nothing agreed, this device cannot tell whether its copy
+    // holds an edit, so it asks once rather than bringing the playlist back.
+    [Fact]
+    public void Deleted_on_the_server_with_nothing_agreed_here_is_asked_about()
+    {
+        var local = new Playlist("Road Trip", [T("A")]);
+
+        var decision = PlanOne(local, null, deletion: new PlaylistDeletionDto(local.Id, 20, [10]));
+
+        Assert.Equal(PlaylistSyncDecisionKind.ConfirmDeletion, decision.Kind);
+    }
+
+    [Fact]
+    public void Deleted_on_both_sides_leaves_only_the_agreement_to_forget()
+    {
+        var (local, agreed) = Agreed("Road Trip", "A");
+
+        Assert.Equal(PlaylistSyncDecisionKind.Forget, PlanOne(null, null, agreed, new PlaylistDeletionDto(local.Id, 20, [10])).Kind);
     }
 
     [Fact]
     public void Plan_produces_one_decision_per_distinct_playlist_id_across_both_sides()
     {
-        var sharedId   = Guid.NewGuid();
-        var localOnly  = Guid.NewGuid();
-        var remoteOnly = Guid.NewGuid();
-        var now = DateTimeOffset.UtcNow;
-
-        var local = new List<Playlist>
-        {
-            new Playlist(sharedId, "Shared", new List<Track> { T("A") }, now),
-            new Playlist(localOnly, "Mine", new List<Track> { T("B") }, now),
-        };
-        var remote = new List<PlaylistSyncPlaylistDto>
-        {
-            new PlaylistSyncPlaylistDto(sharedId, "Shared", now, new List<PlaylistSyncTrackDto> { Dto("A") }),
-            new PlaylistSyncPlaylistDto(remoteOnly, "Theirs", now, new List<PlaylistSyncTrackDto> { Dto("C") }),
-        };
-
-        var decisions = PlaylistSyncPlanner.Plan(local, remote, NoBaseline);
-
-        Assert.Equal(3, decisions.Count);
-        Assert.Equal(new[] { sharedId, localOnly, remoteOnly }.OrderBy(x => x),
-            decisions.Select(d => d.PlaylistId).OrderBy(x => x));
-    }
-
-    // ── Delete vs. edit ──────────────────────────────────────────────────────
-    //
-    // A previously-agreed playlist missing from one side is a deletion to
-    // propagate - but only if the surviving side hasn't ALSO changed it since
-    // that same baseline. It used to be an unconditional Delete, so editing a
-    // playlist offline while the peer deleted it silently discarded the edits
-    // with no conflict prompt, even though the edit-vs-edit case a few lines
-    // away in Plan already did exactly this baseline comparison.
-
-    [Fact]
-    public void Remote_deleted_while_local_edited_since_the_baseline_is_a_conflict()
-    {
-        var id = Guid.NewGuid();
-        var baseline = DateTimeOffset.UtcNow.AddHours(-1);
-        var local = new Playlist(id, "Road Trip", new List<Track> { T("A"), T("B") }, baseline.AddMinutes(30));
+        var shared = new Playlist("Shared", [T("A")]);
+        var mine = new Playlist("Mine", [T("B")]);
+        var theirs = new PlaylistSyncPlaylistDto(Guid.NewGuid(), "Theirs", DateTimeOffset.UtcNow, [Dto("C")], Revision: 3);
 
         var decisions = PlaylistSyncPlanner.Plan(
-            new List<Playlist> { local }, new List<PlaylistSyncPlaylistDto>(), _ => baseline, deletedRemotely: [id]);
+            [shared, mine], [PlaylistSyncMapper.ToDto(shared) with { Revision = 2 }, theirs], [], NothingAgreed, new PlaylistTrackIndex([]));
 
-        Assert.Equal(PlaylistSyncDecisionKind.Conflict, Assert.Single(decisions).Kind);
-    }
-
-    [Fact]
-    public void Remote_deleted_with_local_untouched_since_the_baseline_still_deletes()
-    {
-        var id = Guid.NewGuid();
-        var baseline = DateTimeOffset.UtcNow.AddHours(-1);
-        var local = new Playlist(id, "Road Trip", new List<Track> { T("A") }, baseline);
-
-        var decisions = PlaylistSyncPlanner.Plan(
-            new List<Playlist> { local }, new List<PlaylistSyncPlaylistDto>(), _ => baseline, deletedRemotely: [id]);
-
-        Assert.Equal(PlaylistSyncDecisionKind.Delete, Assert.Single(decisions).Kind);
-    }
-
-    [Fact]
-    public void Local_deleted_while_remote_edited_since_the_baseline_is_a_conflict()
-    {
-        var id = Guid.NewGuid();
-        var baseline = DateTimeOffset.UtcNow.AddHours(-1);
-        var remote = new PlaylistSyncPlaylistDto(
-            id, "Road Trip", baseline.AddMinutes(30), new List<PlaylistSyncTrackDto> { Dto("A"), Dto("B") });
-
-        var decisions = PlaylistSyncPlanner.Plan(
-            new List<Playlist>(), new List<PlaylistSyncPlaylistDto> { remote }, _ => baseline);
-
-        Assert.Equal(PlaylistSyncDecisionKind.Conflict, Assert.Single(decisions).Kind);
-    }
-
-    [Fact]
-    public void Local_deleted_with_remote_untouched_since_the_baseline_still_deletes()
-    {
-        var id = Guid.NewGuid();
-        var baseline = DateTimeOffset.UtcNow.AddHours(-1);
-        var remote = new PlaylistSyncPlaylistDto(
-            id, "Road Trip", baseline, new List<PlaylistSyncTrackDto> { Dto("A") });
-
-        var decisions = PlaylistSyncPlanner.Plan(
-            new List<Playlist>(), new List<PlaylistSyncPlaylistDto> { remote }, _ => baseline);
-
-        Assert.Equal(PlaylistSyncDecisionKind.Delete, Assert.Single(decisions).Kind);
+        Assert.Equal(new[] { shared.Id, mine.Id, theirs.Id }.Order(), decisions.Select(d => d.PlaylistId).Order());
     }
 
     // A Vibe Playlist is decided on its sentence: the songs are the server's
@@ -356,11 +282,9 @@ public class PlaylistSyncPlannerTests
         var id = Guid.NewGuid();
         var at = DateTimeOffset.UtcNow;
         var local = new Playlist(id, "Rainy", [T("A")], at, vibePrompt: "music for a rainy day");
-        var remote = new PlaylistSyncPlaylistDto(id, "Rainy", at, [Dto("B"), Dto("C")], VibePrompt: "music for a rainy day");
+        var remote = new PlaylistSyncPlaylistDto(id, "Rainy", at, [Dto("B"), Dto("C")], VibePrompt: "music for a rainy day", Revision: 4);
 
-        var decision = Assert.Single(PlaylistSyncPlanner.Plan([local], [remote], _ => at));
-
-        Assert.Equal(PlaylistSyncDecisionKind.NoChange, decision.Kind);
+        Assert.Equal(PlaylistSyncDecisionKind.NoChange, PlanOne(local, remote).Kind);
     }
 
     [Fact]
@@ -369,11 +293,11 @@ public class PlaylistSyncPlannerTests
         var id = Guid.NewGuid();
         var at = DateTimeOffset.UtcNow;
         var local = new Playlist(id, "Rainy", [], at, vibePrompt: "music for a rainy day");
-        var newerThere = new PlaylistSyncPlaylistDto(id, "Rainy", at.AddMinutes(1), [], VibePrompt: "rain on a tin roof");
+        var newerThere = new PlaylistSyncPlaylistDto(id, "Rainy", at.AddMinutes(1), [], VibePrompt: "rain on a tin roof", Revision: 4);
         var olderThere = newerThere with { UpdatedAt = at.AddMinutes(-1) };
 
-        Assert.Equal(PlaylistSyncDecisionKind.AdoptRemote, Assert.Single(PlaylistSyncPlanner.Plan([local], [newerThere], _ => at)).Kind);
-        Assert.Equal(PlaylistSyncDecisionKind.KeepLocal, Assert.Single(PlaylistSyncPlanner.Plan([local], [olderThere], _ => at)).Kind);
+        Assert.Equal(PlaylistSyncDecisionKind.AdoptRemote, PlanOne(local, newerThere).Kind);
+        Assert.Equal(PlaylistSyncDecisionKind.Push, PlanOne(local, olderThere).Kind);
     }
 
     // A playlist made ordinary, pushed, then turned into a Vibe Playlist by
@@ -381,13 +305,11 @@ public class PlaylistSyncPlannerTests
     [Fact]
     public void A_playlist_given_a_sentence_here_goes_up_over_the_ordinary_copy_there()
     {
-        var id = Guid.NewGuid();
-        var at = DateTimeOffset.UtcNow;
-        var local = new Playlist(id, "New Vibe Playlist", [], at);
-        var remote = PlaylistSyncMapper.ToDto(new Playlist(id, "New Vibe Playlist", [], at));
+        var local = new Playlist("New Vibe Playlist", []);
+        var agreed = new PlaylistAgreement(10, PlaylistSyncMapper.ToDto(local) with { Revision = 10 });
         local.VibePrompt = "music for a rainy day";
 
-        Assert.Equal(PlaylistSyncDecisionKind.KeepLocal, Assert.Single(PlaylistSyncPlanner.Plan([local], [remote], _ => at)).Kind);
+        Assert.Equal(PlaylistSyncDecisionKind.Push, PlanOne(local, agreed.Copy!, agreed).Kind);
     }
 
     [Fact]

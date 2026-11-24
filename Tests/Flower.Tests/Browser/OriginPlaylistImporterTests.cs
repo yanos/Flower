@@ -74,15 +74,17 @@ public class OriginPlaylistImporterTests
         var paths = new List<string>();
         using var server = Server(
             [new PlaylistSyncPlaylistDto(Guid.NewGuid(), "Evening", DateTimeOffset.UtcNow,
-                [Wire("One"), Wire("Two")])],
+                [Wire("One"), Wire("Two")], Revision: 42)],
             requestedPaths: paths);
 
-        var playlists = await Importer(server).ImportAsync([LocalTrack("One"), LocalTrack("Two")]);
+        var origin = await Importer(server).ImportAsync([LocalTrack("One"), LocalTrack("Two")]);
 
         Assert.Equal(OriginPlaylistImporter.PlaylistsPath, Assert.Single(paths));
-        var playlist = Assert.Single(playlists);
+        var playlist = Assert.Single(origin.Playlists);
         Assert.Equal("Evening", playlist.Name);
         Assert.Equal(["One", "Two"], playlist.Tracks.Select(t => t.Title));
+        // What an edit made in this tab is written over.
+        Assert.Equal(42, origin.Revisions[playlist.Id]);
     }
 
     [Fact]
@@ -96,9 +98,9 @@ public class OriginPlaylistImporterTests
             [new PlaylistSyncPlaylistDto(Guid.NewGuid(), "Evening", DateTimeOffset.UtcNow,
                 [Wire("One"), Wire("Missing"), Wire("Two")])]);
 
-        var playlists = await Importer(server).ImportAsync([LocalTrack("One"), LocalTrack("Two")]);
+        var origin = await Importer(server).ImportAsync([LocalTrack("One"), LocalTrack("Two")]);
 
-        Assert.Equal(["One", "Two"], Assert.Single(playlists).Tracks.Select(t => t.Title));
+        Assert.Equal(["One", "Two"], Assert.Single(origin.Playlists).Tracks.Select(t => t.Title));
     }
 
     [Fact]
@@ -120,7 +122,7 @@ public class OriginPlaylistImporterTests
     {
         using var server = Server([]);
 
-        Assert.Empty(await Importer(server).ImportAsync([LocalTrack("One")]));
+        Assert.Empty((await Importer(server).ImportAsync([LocalTrack("One")])).Playlists);
     }
 
     private sealed class NoCredentials : IPeerCredentials

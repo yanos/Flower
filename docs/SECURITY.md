@@ -213,6 +213,15 @@ above:
   (`IPlaylistDeletionLog`), so a restored backup cannot delete anything from a
   device. Deleting on the strength of an unsigned answer would have given
   anything on the path a new way to remove a playlist.
+- **Since playlist sync phase 2 (November 2026)** the route is
+  `POST /playlists/changes` (`PlaylistRevisions.ApplyChanges`), with the same
+  20 MB cap. A change is written only over the server revision it names, so an
+  `UpdatedAt` the caller chooses decides nothing. An id belonging to another
+  listener is answered `Refused` whatever its revision, and is recorded as
+  deleted for the caller's listener over the revision the change named. The
+  device still deletes nothing on the answer: its next `GET /playlists` shows
+  that deletion over a version it agreed on, and that is what drops its copy
+  (`docs/PLAYLIST-SYNC-PLAN.md`).
 - **Pushed logs are capped by size, not by 20,000 lines.** A phone's own
   archive runs to about 50 MB of these lines a week, which is a few hundred
   thousand lines, so 20,000 would have kept less than a day. The caps are

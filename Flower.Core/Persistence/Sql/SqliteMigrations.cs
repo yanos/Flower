@@ -171,6 +171,51 @@ namespace Flower.Persistence.Sql
             DROP TABLE playlist_tracks;
             ALTER TABLE playlist_tracks_new RENAME TO playlist_tracks;
             """,
+
+            // 19: a server's playlists have revisions, and a deletion is one of
+            // them - see PlaylistRevisions. Replaces deleted_playlists, whose
+            // rows become deletions at the millisecond they were recorded (the
+            // ticks of 1970-01-01 subtracted). The CREATE IF NOT EXISTS is for
+            // a database that already ran this once and has its version set
+            // back, which has no deleted_playlists left to read.
+            """
+            CREATE TABLE IF NOT EXISTS playlist_revisions (
+                listener    TEXT    NOT NULL,
+                playlist_id TEXT    NOT NULL,
+                revision    INTEGER NOT NULL,
+                deleted     INTEGER NOT NULL,
+                -- PlaylistVersion of the content, NULL for a deletion.
+                version     TEXT,
+
+                PRIMARY KEY (listener, playlist_id, revision)
+            );
+            CREATE TABLE IF NOT EXISTS deleted_playlists (
+                listener    TEXT    NOT NULL,
+                playlist_id TEXT    NOT NULL,
+                deleted_at  INTEGER NOT NULL,
+
+                PRIMARY KEY (listener, playlist_id)
+            );
+            INSERT OR IGNORE INTO playlist_revisions (listener, playlist_id, revision, deleted, version)
+                SELECT listener, playlist_id, (deleted_at - 621355968000000000) / 10000, 1, NULL FROM deleted_playlists;
+            DROP TABLE deleted_playlists;
+            """,
+
+            // 20: what a device last agreed with each server about each
+            // playlist - see PlaylistAgreementRepository. Replaces
+            // sync-state.json, which held only when it agreed, not on what.
+            // copy is the agreed version as PlaylistSyncPlaylistDto JSON, NULL
+            // for a deletion this device kept the playlist over.
+            """
+            CREATE TABLE IF NOT EXISTS playlist_agreements (
+                server      TEXT    NOT NULL,
+                playlist_id TEXT    NOT NULL,
+                revision    INTEGER NOT NULL,
+                copy        TEXT,
+
+                PRIMARY KEY (server, playlist_id)
+            );
+            """,
         ];
 
         public static int LatestVersion => BaselineVersion + Steps.Count;

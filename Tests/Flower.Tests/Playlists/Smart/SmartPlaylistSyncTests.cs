@@ -32,7 +32,6 @@ public class SmartPlaylistSyncTests
         SmartPlaylistRules.MatchAll(
             new SmartCondition(SmartField.PlayCount, SmartOperator.GreaterThan, new SmartValue.Number(0)));
 
-    private static readonly Func<Guid, DateTimeOffset?> NoBaseline = _ => null;
 
     // ---- SmartPlaylistRules.Equivalent -------------------------------------
 
@@ -143,8 +142,8 @@ public class SmartPlaylistSyncTests
             new SmartLimit(25, LimitUnit.Items, LimitSelector.LeastRecentlyPlayed),
             LiveUpdating: false);
 
-        var manifest = PlaylistSyncMapper.ToManifest(
-            "fingerprint", [new Playlist("Everything", [T("A")]) { Rules = rules }]);
+        var manifest = new PlaylistSyncManifestDto(
+            "fingerprint", [PlaylistSyncMapper.ToDto(new Playlist("Everything", [T("A")]) { Rules = rules })]);
 
         var back = JsonSerializer.Deserialize<PlaylistSyncManifestDto>(JsonSerializer.Serialize(manifest))!;
 
@@ -159,8 +158,19 @@ public class SmartPlaylistSyncTests
     private static PlaylistSyncPlaylistDto Remote(Guid id, string name, SmartPlaylistRules? rules, DateTimeOffset updatedAt, params PlaylistSyncTrackDto[] tracks) =>
         new(id, name, updatedAt, tracks.ToList(), rules);
 
-    private static PlaylistSyncDecision PlanOne(Playlist local, PlaylistSyncPlaylistDto remote, Func<Guid, DateTimeOffset?>? baseline = null) =>
-        Assert.Single(PlaylistSyncPlanner.Plan([local], [remote], baseline ?? NoBaseline));
+    // With no agreed copy, or with one that both sides have moved on from:
+    // the server's version one revision past the one this device agreed on.
+    private static PlaylistSyncDecision PlanOne(Playlist local, PlaylistSyncPlaylistDto remote, PlaylistSyncPlaylistDto? agreedCopy = null)
+    {
+        var agreements = new Dictionary<Guid, Flower.Persistence.Sql.PlaylistAgreement>();
+        if (agreedCopy != null)
+        {
+            agreements[local.Id] = new(1, agreedCopy);
+            remote = remote with { Revision = 2, History = [1] };
+        }
+
+        return Assert.Single(PlaylistSyncPlanner.Plan([local], [remote], [], agreements, new PlaylistTrackIndex([])));
+    }
 
     // The whole point of shipping rules rather than members: two devices
     // holding different music materialize the same query differently, and that
@@ -186,11 +196,11 @@ public class SmartPlaylistSyncTests
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public void Conflict_is_unreachable_for_a_playlist_that_is_smart_on_both_sides(bool withBaseline)
+    public void Conflict_is_unreachable_for_a_playlist_that_is_smart_on_both_sides(bool withAgreedCopy)
     {
         var id = Guid.NewGuid();
         var older = DateTimeOffset.UtcNow.AddHours(-2);
-        var baseline = withBaseline ? older.AddHours(-1) : (DateTimeOffset?)null;
+        var agreed = withAgreedCopy ? Remote(id, "Played", Played, older.AddHours(-1)) : null;
 
         // Both sides edited the rules since the baseline - the shape that is a
         // real conflict for an ordinary playlist.
@@ -200,10 +210,10 @@ public class SmartPlaylistSyncTests
         var decision = PlanOne(
             Local(id, "Played", mine, older.AddMinutes(30), T("A")),
             Remote(id, "Played", theirs, older.AddMinutes(10), Dto("B")),
-            _ => baseline);
+            agreed);
 
         Assert.NotEqual(PlaylistSyncDecisionKind.Conflict, decision.Kind);
-        Assert.Equal(PlaylistSyncDecisionKind.KeepLocal, decision.Kind);
+        Assert.Equal(PlaylistSyncDecisionKind.Push, decision.Kind);
     }
 
     [Fact]
@@ -218,7 +228,7 @@ public class SmartPlaylistSyncTests
             PlanOne(Local(id, "Played", Played, now.AddMinutes(-5)), Remote(id, "Played", edited, now)).Kind);
 
         Assert.Equal(
-            PlaylistSyncDecisionKind.KeepLocal,
+            PlaylistSyncDecisionKind.Push,
             PlanOne(Local(id, "Played", edited, now), Remote(id, "Played", Played, now.AddMinutes(-5))).Kind);
     }
 
@@ -256,7 +266,7 @@ public class SmartPlaylistSyncTests
         var keep = PlanOne(
             Local(madeSmart, "Played", null, now, T("A"), T("B")),
             Remote(madeSmart, "Played", Played, now.AddMinutes(-5), Dto("A")));
-        Assert.Equal(PlaylistSyncDecisionKind.KeepLocal, keep.Kind);
+        Assert.Equal(PlaylistSyncDecisionKind.Push, keep.Kind);
         Assert.Equal(2, keep.Local!.Tracks.Count);
     }
 
@@ -285,7 +295,7 @@ public class SmartPlaylistSyncTests
             Remote(id, "Downloaded", localHasTheRules ? null : Played, sameMoment, Dto("A"), Dto("B")));
 
         Assert.Equal(
-            localHasTheRules ? PlaylistSyncDecisionKind.KeepLocal : PlaylistSyncDecisionKind.AdoptRemote,
+            localHasTheRules ? PlaylistSyncDecisionKind.Push : PlaylistSyncDecisionKind.AdoptRemote,
             decision.Kind);
     }
 

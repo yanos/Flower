@@ -205,7 +205,7 @@ namespace Flower.Models
         // read-modify-write. Guarded by the same _lock, and - critically -
         // exposed as IReadOnlyList over a list that is never mutated in place,
         // so a reader enumerating Playlists (MainViewModel rebuilding the
-        // sidebar, PlaylistSyncMapper.ToManifest) can never have the collection
+        // sidebar, PlaylistRevisions.ManifestFor) can never have the collection
         // change underneath it. Locking the mutators alone would not have been
         // enough for that; it would only have moved the tear from lost updates
         // to InvalidOperationException in the reader.
@@ -411,7 +411,7 @@ namespace Flower.Models
         public event EventHandler<TrackChangedEventArgs>? TrackChanged;
 
         // Fired when a sync replaces the playlist set wholesale - PlaylistSyncService
-        // on the client, SyncEndpoints' /playlists/apply on the server. See
+        // on the client, PlaylistRevisions.ApplyChanges on the server. See
         // ReplacePlaylists. Local UI
         // actions (create/rename/add-track) manage sidebar state inline instead of
         // relying on this event, so this only needs to cover the sync path.

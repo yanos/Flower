@@ -19,16 +19,15 @@ using Xunit;
 namespace Flower.Tests.Browser;
 
 // The write half of the browser head's playlists - an edit made in a tab
-// reaching the server the tab borrowed those playlists from.
+// reaching the server the tab borrowed those playlists from, written over the
+// revision the tab read it at.
 //
 // Two behaviours here are not about HTTP at all and are the reason this class
 // exists rather than a single "it POSTs" test. The first is echo: installing
 // the fetched set raises the same Library event a user's own edit does, so
 // without NoteOriginState every rescan would hand the server its own playlists
-// back. The second is ordering: each push carries the whole manifest, so two
-// in flight at once means the *last to arrive* wins - and a burst (one change
-// per move of a drag-reorder) can easily arrive out of order and silently
-// revert what the user just did.
+// back. The second is ordering: a burst (one change per move of a
+// drag-reorder) collapses to its final state, one push at a time.
 public class OriginPlaylistWriterTests
 {
     private static readonly HttpClient Http = new();
@@ -50,34 +49,50 @@ public class OriginPlaylistWriterTests
     private static Playlist TestPlaylist(string name, params string[] titles) =>
         new(name, titles.Select(TestTrack).ToList());
 
-    private sealed record Capture(string Path, string? Credential, PlaylistSyncManifestDto? Manifest);
+    private static OriginPlaylists Fetched(long revision, params Playlist[] playlists) =>
+        new(playlists.ToList(), playlists.ToDictionary(p => p.Id, _ => revision));
 
+    private sealed record Capture(string Path, string? Credential, PlaylistChangesRequestDto? Request);
+
+    // Answers each change Applied at the next revision, the way the server
+    // does - unless status says otherwise.
     private static FakePeerHttpServer Server(
         List<Capture> captured,
         Func<Task>? gate = null,
-        HttpStatusCode status = HttpStatusCode.NoContent) =>
-        new(async context =>
+        HttpStatusCode status = HttpStatusCode.OK,
+        PlaylistChangeOutcome outcome = PlaylistChangeOutcome.Applied)
+    {
+        var revision = 100L;
+        return new(async context =>
         {
+            PlaylistChangesRequestDto? request;
             using (var reader = new StreamReader(context.Request.InputStream))
             {
-                captured.Add(new Capture(
-                    context.Request.Url!.AbsolutePath,
-                    context.Request.Headers["X-Test-Credential"],
-                    JsonSerializer.Deserialize(
-                        await reader.ReadToEndAsync(),
-                        PlaylistSyncJsonContext.Default.PlaylistSyncManifestDto)));
+                request = JsonSerializer.Deserialize(
+                    await reader.ReadToEndAsync(), PlaylistSyncJsonContext.Default.PlaylistChangesRequestDto);
+                captured.Add(new Capture(context.Request.Url!.AbsolutePath, context.Request.Headers["X-Test-Credential"], request));
             }
 
             if (gate != null)
                 await gate();
 
             context.Response.StatusCode = (int)status;
-            context.Response.ContentLength64 = 0;
+            var body = status == HttpStatusCode.OK
+                ? JsonSerializer.SerializeToUtf8Bytes(
+                    new PlaylistChangesResponseDto(request!.Changes
+                        .Select(c => new PlaylistChangeAnswerDto(c.Id, outcome, ++revision)).ToList()),
+                    PlaylistSyncJsonContext.Default.PlaylistChangesResponseDto)
+                : [];
+            context.Response.ContentLength64 = body.Length;
+            await context.Response.OutputStream.WriteAsync(body);
             context.Response.Close();
         });
+    }
+
+    private static List<string?> Titles(PlaylistChangeDto change) => change.Playlist!.Tracks.Select(t => t.Title).ToList();
 
     [Fact]
-    public async Task An_edit_made_in_a_tab_reaches_the_origin_as_the_whole_playlist_set()
+    public async Task A_playlist_made_in_a_tab_reaches_the_origin_as_new()
     {
         var captured = new List<Capture>();
         using var server = Server(captured);
@@ -87,14 +102,15 @@ public class OriginPlaylistWriterTests
         await writer.InFlight;
 
         var push = Assert.Single(captured);
-        Assert.Equal(OriginPlaylistWriter.ApplyPath, push.Path);
+        Assert.Equal(OriginPlaylistWriter.ChangesPath, push.Path);
         // The same gate GET /playlists sits behind - sending nothing here is a
         // 403 and an edit that silently never lands.
         Assert.Equal("session-token", push.Credential);
 
-        var playlist = Assert.Single(push.Manifest!.Playlists);
-        Assert.Equal("Evening", playlist.Name);
-        Assert.Equal(["One", "Two"], playlist.Tracks.Select(t => t.Title));
+        var change = Assert.Single(push.Request!.Changes);
+        Assert.Equal(0, change.BaseRevision);
+        Assert.Equal("Evening", change.Playlist!.Name);
+        Assert.Equal(["One", "Two"], Titles(change));
     }
 
     [Fact]
@@ -103,40 +119,60 @@ public class OriginPlaylistWriterTests
         var captured = new List<Capture>();
         using var server = Server(captured);
         var writer = Writer(server);
-        var fetched = new List<Playlist> { TestPlaylist("Evening", "One", "Two") };
+        var fetched = TestPlaylist("Evening", "One", "Two");
 
         // What the rescan does: note, then install - and installing raises
         // PlaylistsChanged, which is the subscription that calls Schedule.
-        writer.NoteOriginState(fetched);
-        writer.Schedule(fetched);
+        writer.NoteOriginState(Fetched(7, fetched));
+        writer.Schedule([fetched]);
         await writer.InFlight;
 
         Assert.Empty(captured);
     }
 
+    // The other side of the test above: suppression is per-content, not a
+    // one-shot mute that would swallow the user's first edit of a session -
+    // and the edit is written over the revision the tab read.
     [Fact]
-    public async Task A_real_edit_after_a_fetch_still_goes_out()
+    public async Task An_edit_after_a_fetch_goes_out_over_the_revision_it_was_read_at()
     {
-        // The other side of the test above: suppression is per-content, not a
-        // one-shot mute that would swallow the user's first edit of a session.
         var captured = new List<Capture>();
         using var server = Server(captured);
         var writer = Writer(server);
+        var evening = TestPlaylist("Evening", "One", "Two");
+        var morning = TestPlaylist("Morning", "Three");
+        writer.NoteOriginState(Fetched(7, evening, morning));
 
-        writer.NoteOriginState([TestPlaylist("Evening", "One", "Two")]);
-        writer.Schedule([TestPlaylist("Evening", "One")]);
+        evening.RemoveEntriesAt([1]);
+        writer.Schedule([evening, morning]);
         await writer.InFlight;
 
-        Assert.Equal(["One"], Assert.Single(captured).Manifest!.Playlists.Single().Tracks.Select(t => t.Title));
+        var change = Assert.Single(Assert.Single(captured).Request!.Changes);
+        Assert.Equal((evening.Id, 7L), (change.Id, change.BaseRevision));
+        Assert.Equal(["One"], Titles(change));
+    }
+
+    [Fact]
+    public async Task A_playlist_deleted_in_a_tab_is_named_as_deleted()
+    {
+        var captured = new List<Capture>();
+        using var server = Server(captured);
+        var writer = Writer(server);
+        var (kept, doomed) = (TestPlaylist("Kept", "One"), TestPlaylist("Doomed", "Two"));
+        writer.NoteOriginState(Fetched(7, kept, doomed));
+
+        writer.Schedule([kept]);
+        await writer.InFlight;
+
+        var change = Assert.Single(Assert.Single(captured).Request!.Changes);
+        Assert.Equal((doomed.Id, 7L, true), (change.Id, change.BaseRevision, change.Delete));
     }
 
     [Fact]
     public async Task A_burst_of_edits_collapses_to_one_push_carrying_the_final_state()
     {
         // A drag-reorder raises one change per move. Held the first response
-        // open so every later Schedule lands while a push is in flight, which
-        // is exactly the window that would otherwise produce a pile of
-        // overlapping full-manifest POSTs racing to be the last to arrive.
+        // open so every later Schedule lands while a push is in flight.
         var captured = new List<Capture>();
         var release = new TaskCompletionSource();
         var firstArrived = new TaskCompletionSource();
@@ -146,39 +182,65 @@ public class OriginPlaylistWriterTests
             await release.Task;
         });
         var writer = Writer(server);
+        var evening = TestPlaylist("Evening", "One");
 
-        writer.Schedule([TestPlaylist("Evening", "One")]);
+        writer.Schedule([evening]);
         await firstArrived.Task;
 
-        writer.Schedule([TestPlaylist("Evening", "One", "Two")]);
-        writer.Schedule([TestPlaylist("Evening", "One", "Two", "Three")]);
+        evening.AppendTrack(TestTrack("Two"));
+        writer.Schedule([evening]);
+        evening.AppendTrack(TestTrack("Three"));
+        writer.Schedule([evening]);
         release.SetResult();
         await writer.InFlight;
 
-        // Two pushes, not three: the middle state was overwritten while the
-        // first was still on the wire, and never needed to exist on the far
-        // side at all.
+        // Two pushes, not three, and the second over the revision the first
+        // was given.
         Assert.Equal(2, captured.Count);
-        Assert.Equal(["One"], captured[0].Manifest!.Playlists.Single().Tracks.Select(t => t.Title));
-        Assert.Equal(["One", "Two", "Three"], captured[1].Manifest!.Playlists.Single().Tracks.Select(t => t.Title));
+        Assert.Equal(["One"], Titles(Assert.Single(captured[0].Request!.Changes)));
+        var second = Assert.Single(captured[1].Request!.Changes);
+        Assert.Equal(["One", "Two", "Three"], Titles(second));
+        Assert.Equal(101, second.BaseRevision);
     }
 
+    // A rejected push must not be recorded as the origin's state, or the
+    // dedupe above would treat the server as holding an edit it never
+    // accepted.
     [Fact]
-    public async Task A_push_the_origin_refused_is_sent_again_with_the_next_edit()
+    public async Task A_push_the_origin_failed_is_sent_again_with_the_next_edit()
     {
-        // A rejected push must not be recorded as the origin's state, or the
-        // dedupe above would treat the server as holding an edit it never
-        // accepted and the next identical set would be suppressed.
         var captured = new List<Capture>();
         using var server = Server(captured, status: HttpStatusCode.InternalServerError);
         var writer = Writer(server);
+        var evening = TestPlaylist("Evening", "One");
 
-        writer.Schedule([TestPlaylist("Evening", "One")]);
+        writer.Schedule([evening]);
         await writer.InFlight;
-        writer.Schedule([TestPlaylist("Evening", "One")]);
+        writer.Schedule([evening]);
         await writer.InFlight;
 
         Assert.Equal(2, captured.Count);
+    }
+
+    // Another device wrote it first. The tab's copy is never written over the
+    // newer one: it goes again over the same old revision, and is refused
+    // again, until the next refresh shows the server's.
+    [Fact]
+    public async Task A_stale_change_is_never_sent_over_a_newer_revision()
+    {
+        var captured = new List<Capture>();
+        using var server = Server(captured, outcome: PlaylistChangeOutcome.Stale);
+        var writer = Writer(server);
+        var evening = TestPlaylist("Evening", "One");
+        writer.NoteOriginState(Fetched(7, evening));
+
+        evening.AppendTrack(TestTrack("Two"));
+        writer.Schedule([evening]);
+        await writer.InFlight;
+        writer.Schedule([evening]);
+        await writer.InFlight;
+
+        Assert.All(captured, c => Assert.Equal(7, Assert.Single(c.Request!.Changes).BaseRevision));
     }
 
     [Fact]

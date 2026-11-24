@@ -11,9 +11,8 @@ using Flower.Models;
 namespace Flower.Services;
 
 // Conversions between Flower.Models.Playlist and the sync wire DTOs, shared by
-// Flower.Server's SyncEndpoints (which answers GET /playlists and
-// POST /playlists/apply) and PlaylistSyncService (which drives a sync session
-// from the client side).
+// the server's side of playlist sync (PlaylistRevisions) and PlaylistSyncService,
+// which drives a sync session from the client side.
 public static class PlaylistSyncMapper
 {
     public static PlaylistSyncPlaylistDto ToDto(Playlist playlist) =>
@@ -30,10 +29,6 @@ public static class PlaylistSyncMapper
     public static PlaylistSyncTrackDto ToDto(Track track) =>
         new(track.Title, track.Artists, track.Album, Track.RoundedSeconds(track.Duration),
             track.OriginTrackId ?? track.Id.ToKey());
-
-    public static PlaylistSyncManifestDto ToManifest(
-        string deviceFingerprint, IEnumerable<Playlist> playlists, IEnumerable<Guid>? deleted = null) =>
-        new(deviceFingerprint, playlists.Select(ToDto).ToList(), deleted?.ToList() is { Count: > 0 } ids ? ids : null);
 
     // Matches each wire track against the local library - by its origin id
     // first, then by SyncKey (see Track.BuildSyncKey). For the songs of a smart
@@ -92,104 +87,6 @@ public static class PlaylistSyncMapper
             vibePrompt: dto.VibePrompt, vibeInstrumental: dto.VibeInstrumental, entries: entries);
     }
 
-    // What a server does with a manifest a device pushed to /playlists/apply,
-    // here rather than in SyncEndpoints so a test can stand a client up
-    // against the server's own rule instead of a copy of it. The initiator
-    // resolved every conflict before pushing (see PlaylistSyncService), so no
-    // second merge runs here - but neither is the push taken wholesale, which
-    // is what this used to do, because a pushed set is only as good as what
-    // the pushing device could see:
-    //
-    //   - A playlist the push leaves out is kept unless Deleted names it.
-    //     Wholesale replacement read "not in the push" as "deleted", so a
-    //     playlist another device added between this device's read and its
-    //     write was deleted by a push that had never heard of it.
-    //   - A pushed copy no newer than the one held is not taken. The pusher
-    //     did not edit it, so any difference is not a change to carry.
-    //     The one exception is the rules of a smart playlist at an equal
-    //     timestamp, which the planner hands to whichever side has them for
-    //     the same reason (see PlaylistSyncPlanner).
-    //
-    //
-    // And a push only ever speaks for one listener (see Listeners): the
-    // owner's, from an admin device, or a non-admin device's own. Every other
-    // listener's playlists pass through untouched, and a pushed or deleted id
-    // that belongs to one of them is refused rather than applied - a guest
-    // naming the owner's playlist, whether it kept a copy from before
-    // playlists were kept apart or is simply hostile, changes nothing.
-    //
-    // Returns the pushing listener's playlists as installed, and the ids
-    // refused.
-    public static PlaylistApplyResult ApplyPushedManifest(
-        Library library, PlaylistSyncManifestDto manifest, string listener, IPlaylistDeletionLog deletions, ILogger? logger = null)
-    {
-        var index = new PlaylistTrackIndex(library.Tracks);
-        var deleted = manifest.Deleted?.ToHashSet() ?? [];
-        var refused = new List<Guid>();
-        var removed = new List<Guid>();
-
-        var installed = library.ReplacePlaylists(current =>
-        {
-            var held = current.ToDictionary(p => p.Id);
-            var pushedIds = new HashSet<Guid>();
-            var result = new List<Playlist>();
-
-            foreach (var dto in manifest.Playlists)
-            {
-                if (!pushedIds.Add(dto.Id))
-                    continue;
-
-                if (held.TryGetValue(dto.Id, out var existing) && existing.Listener != listener)
-                {
-                    refused.Add(dto.Id);
-                    continue;
-                }
-
-                result.Add(existing != null && !Supersedes(dto, existing)
-                    ? existing
-                    : ToPlaylist(dto, index, logger, listener));
-            }
-
-            // Another listener's playlist is kept whatever the push said about
-            // it - including when the push named it, which is why this asks
-            // about the listener before it asks about pushedIds.
-            foreach (var playlist in current)
-            {
-                if (playlist.Listener != listener)
-                {
-                    if (deleted.Contains(playlist.Id) && !refused.Contains(playlist.Id))
-                        refused.Add(playlist.Id);
-                    result.Add(playlist);
-                }
-                else if (!pushedIds.Contains(playlist.Id))
-                {
-                    if (deleted.Contains(playlist.Id))
-                        removed.Add(playlist.Id);
-                    else
-                        result.Add(playlist);
-                }
-            }
-
-            return result;
-        });
-
-        // After the install: a crash between the two leaves a deletion
-        // unrecorded, which at worst brings the playlist back from a device
-        // that still has it. A refused id is recorded too, so that device's
-        // next session drops its copy (PlaylistApplyResponseDto).
-        deletions.Record(listener, [.. removed, .. refused]);
-        deletions.Forget(listener, installed.Where(p => p.Listener == listener).Select(p => p.Id).ToList());
-
-        if (refused.Count > 0)
-        {
-            logger?.LogWarning(
-                "Refused {Count} playlist(s) pushed for listener {Listener}: they belong to another listener ({PlaylistIds})",
-                refused.Count, listener, string.Join(", ", refused));
-        }
-
-        return new PlaylistApplyResult(installed.Where(p => p.Listener == listener).ToList(), refused);
-    }
-
     // What a GET /playlists answers with, and what a client's /info poll is
     // told about: one listener's playlists, never the server's whole set.
     public static List<Playlist> For(IEnumerable<Playlist> playlists, string listener) =>
@@ -215,10 +112,6 @@ public static class PlaylistSyncMapper
             .Order(StringComparer.Ordinal));
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text)))[..16];
     }
-
-    private static bool Supersedes(PlaylistSyncPlaylistDto pushed, Playlist held) =>
-        pushed.UpdatedAt > held.UpdatedAt
-        || (pushed.UpdatedAt == held.UpdatedAt && pushed.Rules != null && !held.IsSmart);
 }
 
 // One library, indexed the ways a playlist entry can name a track in it: by

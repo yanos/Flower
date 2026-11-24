@@ -15,6 +15,7 @@ using Flower.Logging;
 using Flower.Audio;
 using Flower.Models;
 using Flower.Persistence;
+using Flower.Persistence.Sql;
 using Flower.Services;
 using Flower.ViewModels;
 using Flower.ViewModels.Mobile;
@@ -187,8 +188,8 @@ public static class MainViewModelHarness
     public sealed class StubPlaylistSyncService : PlaylistSyncService
     {
         public StubPlaylistSyncService(Library library, DeviceIdentity identity, DeviceSigningKey key,
-            AppSettings appSettings, PlaylistSyncStateStore stateStore, DeviceNicknameStore nicknames)
-            : base(library, identity, key, appSettings, stateStore, nicknames,
+            AppSettings appSettings, PlaylistAgreementRepository agreements, DeviceNicknameStore nicknames)
+            : base(library, identity, key, appSettings, agreements, nicknames,
                    NullLogger<PlaylistSyncService>.Instance) { }
 
         public List<(DiscoveredDevice Device, bool ForceInitiator)> SyncedWith { get; } = new();
@@ -241,7 +242,7 @@ public static class MainViewModelHarness
             deviceIdentity, NullLogger<NetworkDiscoveryService>.Instance, mdnsBackend, discoveryHttpClient);
         var reachability = new PairedServerReachability(
             networkDiscovery, appSettings, appSettingsStore, NullLogger<PairedServerReachability>.Instance);
-        var syncStateStore = new PlaylistSyncStateStore(NullLogger<PlaylistSyncStateStore>.Instance);
+        var syncStateStore = new PlaylistAgreementRepository(FlowerDb.OpenDefault());
         var deviceNicknameStore = new DeviceNicknameStore(NullLogger<DeviceNicknameStore>.Instance);
         var stubPlaylistSync = stubSyncServices
             ? new StubPlaylistSyncService(library, deviceIdentity, signingKey, appSettings, syncStateStore, deviceNicknameStore)

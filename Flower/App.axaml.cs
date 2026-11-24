@@ -319,7 +319,10 @@ public partial class App : Application
             .AddSingleton<DeviceNicknameStore>()
             .AddSingleton<SidebarRenameService>()
             .AddSingleton<TrustedPeerStore>()
-            .AddSingleton<PlaylistSyncStateStore>()
+            // What this device last agreed with its server about each
+            // playlist, in flower.db beside the playlists - see
+            // PlaylistAgreementRepository.
+            .AddSingleton(sp => new PlaylistAgreementRepository(sp.GetRequiredService<FlowerDb>()))
             .AddSingleton<ServerStarBaselineStore>()
             .AddSingleton<AlbumProgressStore>()
             .AddSingleton<PlayQueueStore>()
@@ -1313,7 +1316,8 @@ public partial class App : Application
                 // normal case on every rescan after the first.
                 if (provider.GetService<Importer.IPlaylistImporter>() is { } playlistImporter)
                 {
-                    var remotePlaylists = await playlistImporter.ImportAsync(library.Tracks);
+                    var origin = await playlistImporter.ImportAsync(library.Tracks);
+                    var remotePlaylists = origin.Playlists;
                     // The same as the catalog's above, for a playlist called
                     // something its songs are not.
                     if (OperatingSystem.IsBrowser())
@@ -1328,7 +1332,7 @@ public partial class App : Application
                     // the writer below has no other way to tell the two apart -
                     // without this every rescan would push the server's own
                     // playlists straight back at it.
-                    playlistWriter?.NoteOriginState(remotePlaylists);
+                    playlistWriter?.NoteOriginState(origin);
                     library.ReplacePlaylists(remotePlaylists);
                     rescanLogger.LogInformation("Playlists refreshed from the remote catalog ({PlaylistCount})", remotePlaylists.Count);
                 }

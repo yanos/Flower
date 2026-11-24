@@ -243,8 +243,36 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
         }
     }
 
+    private async Task<PlaylistChangesResponseDto> ChangeAsync(
+        DeviceSigningKey device, string remoteIp, params PlaylistChangeDto[] changes)
+    {
+        var (status, body, _) = await SendAsync(device, "POST", "/api/flower/v1/playlists/changes", remoteIp,
+            body: JsonSerializer.Serialize(new PlaylistChangesRequestDto([.. changes])));
+        Assert.Equal(HttpStatusCode.OK, status);
+        return JsonSerializer.Deserialize<PlaylistChangesResponseDto>(body)!;
+    }
+
+    private async Task<PlaylistSyncManifestDto> PlaylistsAsync(DeviceSigningKey device, string remoteIp)
+    {
+        var (status, body, _) = await SendAsync(device, "GET", "/api/flower/v1/playlists", remoteIp);
+        Assert.Equal(HttpStatusCode.OK, status);
+        return JsonSerializer.Deserialize<PlaylistSyncManifestDto>(body)!;
+    }
+
+    private static PlaylistChangeDto Write(PlaylistSyncPlaylistDto playlist, long baseRevision) =>
+        new(playlist.Id, baseRevision, playlist);
+
+    private PlaylistSyncTrackDto SeededRow(int index = 0)
+    {
+        // Named by the tag/duration triple PlaylistSyncMapper resolves by - a
+        // track the server does not have would be held without a song, which
+        // would make a test pass for the wrong reason.
+        var track = server.Seeded[index];
+        return new PlaylistSyncTrackDto(track.Title, track.Artists, track.Album, Track.RoundedSeconds(track.Duration), EntryId: Guid.NewGuid());
+    }
+
     [Fact]
-    public async Task Playlists_round_trip_through_apply()
+    public async Task A_new_playlist_is_given_a_revision_that_the_server_then_serves()
     {
         var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
         var library = server.Services.GetRequiredService<Library>();
@@ -252,32 +280,17 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
 
         try
         {
-            // A playlist naming one seeded track by the tag/duration triple
-            // PlaylistSyncMapper resolves against the library by SyncKey - a
-            // track the server does not have would be held without a song,
-            // which would make this pass for the wrong reason.
-            var track = server.Seeded[0];
-            var pushed = new PlaylistSyncManifestDto(device.Fingerprint,
-            [
-                new PlaylistSyncPlaylistDto(Guid.NewGuid(), "From the phone", DateTimeOffset.UtcNow,
-                [
-                    new PlaylistSyncTrackDto(track.Title, track.Artists, track.Album, Track.RoundedSeconds(track.Duration)),
-                ]),
-            ]);
+            var row = SeededRow();
+            var made = new PlaylistSyncPlaylistDto(Guid.NewGuid(), "From the phone", DateTimeOffset.UtcNow, [row]);
 
-            var (applyStatus, applyBody, _) = await SendAsync(
-                device, "POST", "/api/flower/v1/playlists/apply", "10.0.2.4",
-                body: JsonSerializer.Serialize(pushed));
-            Assert.Equal(HttpStatusCode.OK, applyStatus);
-            Assert.Empty(JsonSerializer.Deserialize<PlaylistApplyResponseDto>(applyBody)!.Refused);
+            var answer = Assert.Single((await ChangeAsync(device, "10.0.2.4", Write(made, 0))).Answers);
 
-            var (getStatus, body, _) = await SendAsync(device, "GET", "/api/flower/v1/playlists", "10.0.2.4");
-            Assert.Equal(HttpStatusCode.OK, getStatus);
-
-            var served = JsonSerializer.Deserialize<PlaylistSyncManifestDto>(body)!;
-            var playlist = Assert.Single(served.Playlists);
-            Assert.Equal("From the phone", playlist.Name);
-            Assert.Equal(track.Title, Assert.Single(playlist.Tracks).Title);
+            Assert.Equal(PlaylistChangeOutcome.Applied, answer.Outcome);
+            Assert.True(answer.Revision > 0);
+            var served = Assert.Single((await PlaylistsAsync(device, "10.0.2.4")).Playlists);
+            Assert.Equal("From the phone", served.Name);
+            Assert.Equal(row.Title, Assert.Single(served.Tracks).Title);
+            Assert.Equal(answer.Revision, served.Revision);
         }
         finally
         {
@@ -289,7 +302,7 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
     // UF-18, UF-20: a row the server has no song for is held and served back,
     // under its own id, rather than dropped from everybody's copy.
     [Fact]
-    public async Task A_row_the_server_has_no_song_for_survives_apply()
+    public async Task A_row_the_server_has_no_song_for_survives_a_change()
     {
         var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
         var library = server.Services.GetRequiredService<Library>();
@@ -297,25 +310,13 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
 
         try
         {
-            var track = server.Seeded[0];
-            var (here, elsewhere) = (Guid.NewGuid(), Guid.NewGuid());
-            var pushed = new PlaylistSyncManifestDto(device.Fingerprint,
-            [
-                new PlaylistSyncPlaylistDto(Guid.NewGuid(), "From the phone", DateTimeOffset.UtcNow,
-                [
-                    new PlaylistSyncTrackDto(track.Title, track.Artists, track.Album, Track.RoundedSeconds(track.Duration), EntryId: here),
-                    new PlaylistSyncTrackDto("Only On The Phone", "Nobody", "Nothing", 123, "phone-only", elsewhere),
-                ]),
-            ]);
+            var here = SeededRow();
+            var elsewhere = new PlaylistSyncTrackDto("Only On The Phone", "Nobody", "Nothing", 123, "phone-only", Guid.NewGuid());
+            await ChangeAsync(device, "10.0.2.4",
+                Write(new PlaylistSyncPlaylistDto(Guid.NewGuid(), "From the phone", DateTimeOffset.UtcNow, [here, elsewhere]), 0));
 
-            var (applyStatus, _, _) = await SendAsync(
-                device, "POST", "/api/flower/v1/playlists/apply", "10.0.2.4",
-                body: JsonSerializer.Serialize(pushed));
-            Assert.Equal(HttpStatusCode.OK, applyStatus);
-
-            var (_, body, _) = await SendAsync(device, "GET", "/api/flower/v1/playlists", "10.0.2.4");
-            var rows = Assert.Single(JsonSerializer.Deserialize<PlaylistSyncManifestDto>(body)!.Playlists).Tracks;
-            Assert.Equal([here, elsewhere], rows.Select(r => r.EntryId!.Value));
+            var rows = Assert.Single((await PlaylistsAsync(device, "10.0.2.4")).Playlists).Tracks;
+            Assert.Equal([here.EntryId!.Value, elsewhere.EntryId!.Value], rows.Select(r => r.EntryId!.Value));
             Assert.Equal("Only On The Phone", rows[1].Title);
         }
         finally
@@ -325,37 +326,128 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
         }
     }
 
-    // UF-6: what makes a missing playlist a deletion is the server saying so.
+    // UF-19: a write based on a version the server has moved on from is
+    // refused, with what the server holds now, and changes nothing.
     [Fact]
-    public async Task A_deleted_playlist_is_named_to_its_listener_until_it_comes_back()
+    public async Task A_change_based_on_an_old_revision_is_stale_and_changes_nothing()
     {
         var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
         var library = server.Services.GetRequiredService<Library>();
         using var device = await TrustedDeviceAsync(trustedPeers);
-        var id = Guid.NewGuid();
-        var playlist = new PlaylistSyncPlaylistDto(id, "Doomed", DateTimeOffset.UtcNow, []);
-
-        async Task<PlaylistSyncManifestDto> ApplyThenGet(PlaylistSyncManifestDto push)
-        {
-            var (status, _, _) = await SendAsync(device, "POST", "/api/flower/v1/playlists/apply", "10.0.2.4",
-                body: JsonSerializer.Serialize(push));
-            Assert.Equal(HttpStatusCode.OK, status);
-            var (_, body, _) = await SendAsync(device, "GET", "/api/flower/v1/playlists", "10.0.2.4");
-            return JsonSerializer.Deserialize<PlaylistSyncManifestDto>(body)!;
-        }
 
         try
         {
-            var made = await ApplyThenGet(new PlaylistSyncManifestDto(device.Fingerprint, [playlist]));
-            Assert.Null(made.Deleted);
+            var id = Guid.NewGuid();
+            var first = Assert.Single((await ChangeAsync(device, "10.0.2.4",
+                Write(new PlaylistSyncPlaylistDto(id, "Mix", DateTimeOffset.UtcNow, [SeededRow(0)]), 0))).Answers);
+            var second = Assert.Single((await ChangeAsync(device, "10.0.2.4",
+                Write(new PlaylistSyncPlaylistDto(id, "Tablet's edit", DateTimeOffset.UtcNow, [SeededRow(0)]), first.Revision))).Answers);
 
-            var deleted = await ApplyThenGet(new PlaylistSyncManifestDto(device.Fingerprint, [], [id]));
-            Assert.Empty(deleted.Playlists);
-            Assert.Equal([id], deleted.Deleted);
+            var late = Assert.Single((await ChangeAsync(device, "10.0.2.4",
+                Write(new PlaylistSyncPlaylistDto(id, "Phone's edit", DateTimeOffset.UtcNow.AddYears(1), [SeededRow(1)]), first.Revision))).Answers);
 
-            var back = await ApplyThenGet(new PlaylistSyncManifestDto(device.Fingerprint, [playlist]));
-            Assert.Single(back.Playlists);
-            Assert.Null(back.Deleted);
+            Assert.Equal(PlaylistChangeOutcome.Applied, second.Outcome);
+            Assert.True(second.Revision > first.Revision);
+            Assert.Equal(PlaylistChangeOutcome.Stale, late.Outcome);
+            Assert.Equal("Tablet's edit", late.Current!.Name);
+            Assert.Equal(second.Revision, late.Current.Revision);
+            Assert.Contains(first.Revision, late.Current.History!);
+            Assert.Equal("Tablet's edit", Assert.Single((await PlaylistsAsync(device, "10.0.2.4")).Playlists).Name);
+        }
+        finally
+        {
+            library.ReplacePlaylists([]);
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    // A session sends all its changes at once, and one being stale does not
+    // hold the others back.
+    [Fact]
+    public async Task Each_change_in_a_request_succeeds_or_fails_on_its_own()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var library = server.Services.GetRequiredService<Library>();
+        using var device = await TrustedDeviceAsync(trustedPeers);
+
+        try
+        {
+            var existing = new PlaylistSyncPlaylistDto(Guid.NewGuid(), "Held", DateTimeOffset.UtcNow, []);
+            await ChangeAsync(device, "10.0.2.4", Write(existing, 0));
+            var fresh = new PlaylistSyncPlaylistDto(Guid.NewGuid(), "Fresh", DateTimeOffset.UtcNow, []);
+
+            var answers = (await ChangeAsync(device, "10.0.2.4",
+                Write(existing with { Name = "Written over nothing" }, 0), Write(fresh, 0))).Answers;
+
+            Assert.Equal(PlaylistChangeOutcome.Stale, answers.Single(a => a.Id == existing.Id).Outcome);
+            Assert.Equal(PlaylistChangeOutcome.Applied, answers.Single(a => a.Id == fresh.Id).Outcome);
+            Assert.Equal(["Fresh", "Held"], (await PlaylistsAsync(device, "10.0.2.4")).Playlists.Select(p => p.Name).Order());
+        }
+        finally
+        {
+            library.ReplacePlaylists([]);
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    // A device whose answer was lost sends the same thing again, which is no
+    // new version.
+    [Fact]
+    public async Task The_same_content_sent_again_is_applied_at_the_revision_it_already_has()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var library = server.Services.GetRequiredService<Library>();
+        using var device = await TrustedDeviceAsync(trustedPeers);
+
+        try
+        {
+            var playlist = new PlaylistSyncPlaylistDto(Guid.NewGuid(), "Mix", DateTimeOffset.UtcNow, [SeededRow()]);
+            var first = Assert.Single((await ChangeAsync(device, "10.0.2.4", Write(playlist, 0))).Answers);
+
+            var again = Assert.Single((await ChangeAsync(device, "10.0.2.4", Write(playlist, first.Revision))).Answers);
+
+            Assert.Equal(PlaylistChangeOutcome.Applied, again.Outcome);
+            Assert.Equal(first.Revision, again.Revision);
+        }
+        finally
+        {
+            library.ReplacePlaylists([]);
+            await trustedPeers.RevokeAsync(device.Fingerprint);
+        }
+    }
+
+    // UF-6, UF-21: a deletion is a version like any other - served with its
+    // revision and history, and written over only by a change based on it.
+    [Fact]
+    public async Task A_deletion_is_served_at_its_revision_until_a_change_based_on_it_brings_the_playlist_back()
+    {
+        var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
+        var library = server.Services.GetRequiredService<Library>();
+        using var device = await TrustedDeviceAsync(trustedPeers);
+        var playlist = new PlaylistSyncPlaylistDto(Guid.NewGuid(), "Doomed", DateTimeOffset.UtcNow, []);
+
+        try
+        {
+            var made = Assert.Single((await ChangeAsync(device, "10.0.2.4", Write(playlist, 0))).Answers);
+            Assert.Null((await PlaylistsAsync(device, "10.0.2.4")).Deleted);
+
+            var deleted = Assert.Single((await ChangeAsync(device, "10.0.2.4",
+                new PlaylistChangeDto(playlist.Id, made.Revision, Delete: true))).Answers);
+            var afterDelete = await PlaylistsAsync(device, "10.0.2.4");
+            Assert.Empty(afterDelete.Playlists);
+            var deletion = Assert.Single(afterDelete.Deleted!);
+            Assert.Equal((playlist.Id, deleted.Revision), (deletion.Id, deletion.Revision));
+            Assert.Contains(made.Revision, deletion.History!);
+
+            var overTheOldVersion = Assert.Single((await ChangeAsync(device, "10.0.2.4", Write(playlist, made.Revision))).Answers);
+            Assert.Equal(PlaylistChangeOutcome.Stale, overTheOldVersion.Outcome);
+            Assert.Equal(deleted.Revision, overTheOldVersion.CurrentDeletion!.Revision);
+
+            var back = Assert.Single((await ChangeAsync(device, "10.0.2.4", Write(playlist, deleted.Revision))).Answers);
+            Assert.Equal(PlaylistChangeOutcome.Applied, back.Outcome);
+            var afterBack = await PlaylistsAsync(device, "10.0.2.4");
+            Assert.Single(afterBack.Playlists);
+            Assert.Null(afterBack.Deleted);
         }
         finally
         {
@@ -366,9 +458,8 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
 
     // docs/SECURITY.md step 1: playlists belong to a listener. The
     // owner's devices share one set; a guest's phone has its own, and can
-    // neither see the owner's nor change them - not by pushing one of their
-    // ids, not by naming one as deleted, and not with an UpdatedAt from the
-    // far future that would win any comparison.
+    // neither see the owner's nor change them - not by writing one of their
+    // ids over any revision, and not by deleting one.
     [Fact]
     public async Task A_guest_device_can_neither_read_nor_change_the_owners_playlists()
     {
@@ -376,41 +467,36 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
         var library = server.Services.GetRequiredService<Library>();
         using var owner = await AdminDeviceAsync(trustedPeers);
         using var guest = await TrustedDeviceAsync(trustedPeers);
-        var track = server.Seeded[0];
-        var entry = new PlaylistSyncTrackDto(track.Title, track.Artists, track.Album, Track.RoundedSeconds(track.Duration));
         var ownersId = Guid.NewGuid();
         var anotherOfTheOwners = Guid.NewGuid();
 
         try
         {
-            var (ownerStatus, _, _) = await SendAsync(owner, "POST", "/api/flower/v1/playlists/apply", "10.0.2.20",
-                body: JsonSerializer.Serialize(new PlaylistSyncManifestDto(owner.Fingerprint,
-                [
-                    new PlaylistSyncPlaylistDto(ownersId, "The owner's", DateTimeOffset.UtcNow, [entry]),
-                    new PlaylistSyncPlaylistDto(anotherOfTheOwners, "Also the owner's", DateTimeOffset.UtcNow, [entry]),
-                ])));
-            Assert.Equal(HttpStatusCode.OK, ownerStatus);
+            var made = (await ChangeAsync(owner, "10.0.2.20",
+                Write(new PlaylistSyncPlaylistDto(ownersId, "The owner's", DateTimeOffset.UtcNow, [SeededRow()]), 0),
+                Write(new PlaylistSyncPlaylistDto(anotherOfTheOwners, "Also the owner's", DateTimeOffset.UtcNow, [SeededRow()]), 0))).Answers;
+            var revision = made.Single(a => a.Id == ownersId).Revision;
 
             // Not visible to the guest at all.
-            var (_, guestView, _) = await SendAsync(guest, "GET", "/api/flower/v1/playlists", "10.0.2.21");
-            Assert.Empty(JsonSerializer.Deserialize<PlaylistSyncManifestDto>(guestView)!.Playlists);
+            Assert.Empty((await PlaylistsAsync(guest, "10.0.2.21")).Playlists);
 
-            // A push naming the owner's id, newer than anything, and a delete
+            // A write naming the owner's id at its real revision, and a delete
             // of the other - both refused, both said so.
-            var (guestStatus, guestBody, _) = await SendAsync(guest, "POST", "/api/flower/v1/playlists/apply", "10.0.2.21",
-                body: JsonSerializer.Serialize(new PlaylistSyncManifestDto(guest.Fingerprint,
-                [
-                    new PlaylistSyncPlaylistDto(ownersId, "Renamed by a guest", DateTimeOffset.UtcNow.AddYears(50), []),
-                ], [anotherOfTheOwners])));
-            Assert.Equal(HttpStatusCode.OK, guestStatus);
-            var refused = JsonSerializer.Deserialize<PlaylistApplyResponseDto>(guestBody)!.Refused;
-            Assert.Equal(new[] { ownersId, anotherOfTheOwners }.Order(), refused.Order());
+            var answers = (await ChangeAsync(guest, "10.0.2.21",
+                Write(new PlaylistSyncPlaylistDto(ownersId, "Renamed by a guest", DateTimeOffset.UtcNow.AddYears(50), []), revision),
+                new PlaylistChangeDto(anotherOfTheOwners, made.Single(a => a.Id == anotherOfTheOwners).Revision, Delete: true))).Answers;
+            Assert.All(answers, a => Assert.Equal(PlaylistChangeOutcome.Refused, a.Outcome));
+
+            // Recorded as deleted for the guest, over the version it claimed,
+            // so the guest's copy goes the ordinary way.
+            var guestsDeletion = (await PlaylistsAsync(guest, "10.0.2.21")).Deleted!.Single(d => d.Id == ownersId);
+            Assert.Contains(revision, guestsDeletion.History!);
 
             // And the owner's devices still see both, untouched.
-            var (_, ownerView, _) = await SendAsync(owner, "GET", "/api/flower/v1/playlists", "10.0.2.20");
-            var served = JsonSerializer.Deserialize<PlaylistSyncManifestDto>(ownerView)!.Playlists;
-            Assert.Equal(["Also the owner's", "The owner's"], served.Select(p => p.Name).Order());
+            var served = (await PlaylistsAsync(owner, "10.0.2.20")).Playlists;
+            Assert.Equal("The owner's", served.Single(p => p.Id == ownersId).Name);
             Assert.Single(served.Single(p => p.Id == ownersId).Tracks);
+            Assert.Contains(served, p => p.Id == anotherOfTheOwners);
         }
         finally
         {
@@ -432,20 +518,12 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
 
         try
         {
-            var (status, _, _) = await SendAsync(guest, "POST", "/api/flower/v1/playlists/apply", "10.0.2.22",
-                body: JsonSerializer.Serialize(new PlaylistSyncManifestDto(guest.Fingerprint,
-                [
-                    new PlaylistSyncPlaylistDto(Guid.NewGuid(), "The guest's", DateTimeOffset.UtcNow, []),
-                ])));
-            Assert.Equal(HttpStatusCode.OK, status);
+            var guests = new PlaylistSyncPlaylistDto(Guid.NewGuid(), "The guest's", DateTimeOffset.UtcNow, []);
+            await ChangeAsync(guest, "10.0.2.22", Write(guests, 0));
 
             Assert.Equal(guest.Fingerprint, Assert.Single(library.Playlists).Listener);
-
-            var (_, guestView, _) = await SendAsync(guest, "GET", "/api/flower/v1/playlists", "10.0.2.22");
-            Assert.Equal("The guest's", Assert.Single(JsonSerializer.Deserialize<PlaylistSyncManifestDto>(guestView)!.Playlists).Name);
-
-            var (_, ownerView, _) = await SendAsync(owner, "GET", "/api/flower/v1/playlists", "10.0.2.23");
-            Assert.Empty(JsonSerializer.Deserialize<PlaylistSyncManifestDto>(ownerView)!.Playlists);
+            Assert.Equal("The guest's", Assert.Single((await PlaylistsAsync(guest, "10.0.2.22")).Playlists).Name);
+            Assert.DoesNotContain((await PlaylistsAsync(owner, "10.0.2.23")).Playlists, p => p.Id == guests.Id);
         }
         finally
         {
@@ -461,7 +539,7 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
     // survived the wire" is worth asserting against a real request rather than
     // against a round trip inside one serializer.
     [Fact]
-    public async Task A_smart_playlists_rules_are_served_and_come_back_through_apply()
+    public async Task A_smart_playlists_rules_are_served_and_come_back_through_a_change()
     {
         var trustedPeers = server.Services.GetRequiredService<TrustedPeerStore>();
         var library = server.Services.GetRequiredService<Library>();
@@ -480,26 +558,14 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
 
         try
         {
-            var pushed = new PlaylistSyncManifestDto(device.Fingerprint,
-            [
-                new PlaylistSyncPlaylistDto(Guid.NewGuid(), "Recent Jazz", DateTimeOffset.UtcNow, [], rules),
-            ]);
-
-            var (applyStatus, applyBody, _) = await SendAsync(
-                device, "POST", "/api/flower/v1/playlists/apply", "10.0.2.4",
-                body: JsonSerializer.Serialize(pushed));
-            Assert.Equal(HttpStatusCode.OK, applyStatus);
-            Assert.Empty(JsonSerializer.Deserialize<PlaylistApplyResponseDto>(applyBody)!.Refused);
+            var answer = Assert.Single((await ChangeAsync(device, "10.0.2.4",
+                Write(new PlaylistSyncPlaylistDto(Guid.NewGuid(), "Recent Jazz", DateTimeOffset.UtcNow, [], rules), 0))).Answers);
+            Assert.Equal(PlaylistChangeOutcome.Applied, answer.Outcome);
 
             // Stored as a smart playlist on this side, not flattened to the
             // (empty) track list it arrived with.
             Assert.True(Assert.Single(library.Playlists).IsSmart);
-
-            var (getStatus, body, _) = await SendAsync(device, "GET", "/api/flower/v1/playlists", "10.0.2.4");
-            Assert.Equal(HttpStatusCode.OK, getStatus);
-
-            var served = JsonSerializer.Deserialize<PlaylistSyncManifestDto>(body)!;
-            Assert.True(SmartPlaylistRules.Equivalent(rules, Assert.Single(served.Playlists).Rules));
+            Assert.True(SmartPlaylistRules.Equivalent(rules, Assert.Single((await PlaylistsAsync(device, "10.0.2.4")).Playlists).Rules));
         }
         finally
         {

@@ -269,20 +269,18 @@ public class BrowserDeviceAccessTests(FlowerServerFixture server) : IClassFixtur
             // against the library, not by path - a track this server does not
             // have would be dropped and this would pass for the wrong reason.
             var track = server.Seeded[0];
-            var pushed = JsonSerializer.Serialize(new PlaylistSyncManifestDto("browser",
+            var made = new PlaylistSyncPlaylistDto(Guid.NewGuid(), "Made in a tab", DateTimeOffset.UtcNow,
             [
-                new PlaylistSyncPlaylistDto(Guid.NewGuid(), "Made in a tab", DateTimeOffset.UtcNow,
-                [
-                    new PlaylistSyncTrackDto(track.Title, track.Artists, track.Album, Track.RoundedSeconds(track.Duration)),
-                ]),
-            ]));
+                new PlaylistSyncTrackDto(track.Title, track.Artists, track.Album, Track.RoundedSeconds(track.Duration)),
+            ]);
+            var pushed = JsonSerializer.Serialize(new PlaylistChangesRequestDto([new PlaylistChangeDto(made.Id, 0, made)]));
 
             var (refused, _) = await AsBrowserAsync(
-                null, "POST", "/api/flower/v1/playlists/apply", "10.0.9.7", body: pushed);
+                null, "POST", "/api/flower/v1/playlists/changes", "10.0.9.7", body: pushed);
             Assert.Equal(HttpStatusCode.Unauthorized, refused);
 
             var (applied, _) = await AsBrowserAsync(
-                device, "POST", "/api/flower/v1/playlists/apply", "10.0.9.7", body: pushed);
+                device, "POST", "/api/flower/v1/playlists/changes", "10.0.9.7", body: pushed);
             Assert.Equal(HttpStatusCode.OK, applied);
 
             var (read, body) = await AsBrowserAsync(device, "GET", "/api/flower/v1/playlists", "10.0.9.7");

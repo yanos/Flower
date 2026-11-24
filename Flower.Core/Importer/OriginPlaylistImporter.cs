@@ -24,8 +24,8 @@ namespace Flower.Importer;
 // third peer.
 //
 // Read-only here does not mean a tab's edits are stranded: they go back by the
-// other road, IPlaylistWriter, which POSTs the whole set to /playlists/apply.
-// That is still not a merge - it is the same "a tab's playlists are the
+// other road, IPlaylistWriter, which writes each one over the revision read
+// here. That is still not a merge - it is the same "a tab's playlists are the
 // server's" premise read in the other direction. The one coupling between the
 // two: this path's ReplacePlaylists raises the same event a user's own edit
 // does, so the writer is told what was fetched before it is installed, or every
@@ -38,7 +38,7 @@ public sealed class OriginPlaylistImporter(
 {
     public const string PlaylistsPath = "/api/flower/v1/playlists";
 
-    public async Task<List<Playlist>> ImportAsync(IReadOnlyList<Track> library)
+    public async Task<OriginPlaylists> ImportAsync(IReadOnlyList<Track> library)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, $"{baseUrl.TrimEnd('/')}{PlaylistsPath}");
         await request.AddPeerCredentialsAsync(credentials);
@@ -51,10 +51,14 @@ public sealed class OriginPlaylistImporter(
             PlaylistSyncJsonContext.Default.PlaylistSyncManifestDto);
 
         var playlists = new List<Playlist>();
+        var revisions = new Dictionary<System.Guid, long>();
         foreach (var dto in manifest?.Playlists ?? [])
+        {
             playlists.Add(PlaylistSyncMapper.ToPlaylist(dto, library, logger));
+            revisions[dto.Id] = dto.Revision;
+        }
 
         logger.LogInformation("Origin server at {BaseUrl}: fetched {PlaylistCount} playlist(s)", baseUrl, playlists.Count);
-        return playlists;
+        return new OriginPlaylists(playlists, revisions);
     }
 }

@@ -3,223 +3,216 @@ using System.Collections.Generic;
 using System.Linq;
 
 using Flower.Models;
+using Flower.Persistence.Sql;
 
 namespace Flower.Services;
 
 public enum PlaylistSyncDecisionKind
 {
-    // Both sides already agree (or one side simply doesn't have the playlist yet
-    // and isn't the source of truth for it) - nothing to ask the user about.
+    // Both sides hold the same version. The server's is recorded as agreed.
     NoChange,
-    AdoptRemote,
-    KeepLocal,
 
-    // Both sides changed the same playlist since the last time these two devices
-    // agreed on its state (or there's no record of ever agreeing and the content
-    // differs) - can't pick a winner automatically, see PlaylistSyncService.
+    // This device takes the server's copy.
+    AdoptRemote,
+
+    // This device's copy goes to the server, over BaseRevision.
+    Push,
+
+    // This device's deletion goes to the server, over BaseRevision.
+    PushDelete,
+
+    // The server's deletion reaches this device.
+    DeleteHere,
+
+    // Gone on both sides: only the agreement is left to drop.
+    Forget,
+
+    // Both sides changed it, differently - only a person can say which to keep.
     Conflict,
 
-    // A playlist the two devices previously agreed existed (see Plan's
-    // baselineFor check) was deleted on one side: gone from this device, or on
-    // the server's record of deletions. It is removed from the other side too
-    // rather than being treated as "adopt/keep the one side that still has it".
-    Delete
+    // The server records it deleted, and this device cannot tell whether its
+    // copy holds an edit: asked once, "Deleted on your server. Keep it?"
+    ConfirmDeletion,
 }
 
 public sealed record PlaylistSyncDecision(
     Guid PlaylistId,
     PlaylistSyncDecisionKind Kind,
     Playlist? Local,
-    PlaylistSyncPlaylistDto? Remote);
+    PlaylistSyncPlaylistDto? Remote,
+    PlaylistDeletionDto? Deletion = null,
+    long BaseRevision = 0);
 
 // Pure merge logic for playlist sync, kept free of I/O (HTTP, disk) so it's unit
-// testable on its own - see Flower.Tests. PlaylistSyncService is the thin shell that
-// feeds this real data and carries out its decisions.
+// testable on its own. PlaylistSyncService is the shell that feeds it and
+// carries out what it decides.
+//
+// Each playlist is read against the copy this device last agreed with the
+// server on (PlaylistAgreement) by the table in docs/PLAYLIST-SYNC-PLAN.md,
+// "The protocol": where the server's version stands against the agreed
+// revision says who changed it, and "did this device change it" is a
+// comparison of content with the agreed copy (PlaylistVersion), never of
+// clocks.
 public static class PlaylistSyncPlanner
 {
-    // baselineFor returns the UpdatedAt both sides agreed on the last time this pair
-    // of devices synced this playlist, or null if they never have (fresh pairing, or
-    // a playlist created since). See PlaylistSyncStateStore.
-    //
-    // index is this device's library, for reading the remote entries as the
-    // tracks they would become here. Without one, content is compared by
-    // SyncKey alone and a copy that lost entries is never recognised as such.
-    //
-    // deletedRemotely is the server's record of what was deleted there
-    // (IPlaylistDeletionLog).
+    // only limits the plan to these playlists - a session planning again with
+    // what a Stale answer said the server holds now.
     public static IReadOnlyList<PlaylistSyncDecision> Plan(
         IReadOnlyList<Playlist> local,
         IReadOnlyList<PlaylistSyncPlaylistDto> remote,
-        Func<Guid, DateTimeOffset?> baselineFor,
-        PlaylistTrackIndex? index = null,
-        IReadOnlyCollection<Guid>? deletedRemotely = null)
+        IReadOnlyList<PlaylistDeletionDto> deletedRemotely,
+        IReadOnlyDictionary<Guid, PlaylistAgreement> agreements,
+        PlaylistTrackIndex index,
+        IReadOnlySet<Guid>? only = null)
     {
-        var deletedThere = deletedRemotely?.ToHashSet() ?? [];
-        var localById  = local.ToDictionary(p => p.Id);
+        var localById = local.ToDictionary(p => p.Id);
         var remoteById = remote.ToDictionary(p => p.Id);
-        var allIds     = localById.Keys.Union(remoteById.Keys);
+        var deletedById = deletedRemotely.ToDictionary(d => d.Id);
+        var ids = localById.Keys.Union(remoteById.Keys).Union(deletedById.Keys).Union(agreements.Keys)
+            .Where(id => only == null || only.Contains(id));
 
         var decisions = new List<PlaylistSyncDecision>();
-        foreach (var id in allIds)
+        foreach (var id in ids)
         {
             localById.TryGetValue(id, out var l);
-            remoteById.TryGetValue(id, out var r);
-            var baseline = baselineFor(id);
-
-            // Missing from the server and not on its record of deletions: the
-            // server lost it rather than anyone deleting it - it was restored
-            // from a backup older than the playlist. Kept, and the push puts it
-            // back. Read as a deletion, this removed every playlist made since
-            // the backup from every device.
-            //
-            // Otherwise a missing side is only a deletion to propagate if the two devices
-            // previously agreed the playlist existed (a baseline) AND the side
-            // that still has it hasn't changed it since. Without that second
-            // check this was an unconditional Delete, so a playlist edited here
-            // while offline lost those edits outright the moment the peer
-            // happened to delete it - a real delete-vs-edit conflict silently
-            // resolved in favour of the deletion, and the only merge case in
-            // this method that didn't ask the user. The edit-vs-edit branch
-            // below has always made exactly this comparison.
-            if (r == null)
-            {
-                var localOnlyKind =
-                    baseline == null || !deletedThere.Contains(id) ? PlaylistSyncDecisionKind.KeepLocal
-                    : l != null && l.UpdatedAt > baseline ? PlaylistSyncDecisionKind.Conflict
-                    : PlaylistSyncDecisionKind.Delete;
-                decisions.Add(new PlaylistSyncDecision(id, localOnlyKind, l, null));
-                continue;
-            }
-            if (l == null)
-            {
-                var remoteOnlyKind =
-                    baseline == null              ? PlaylistSyncDecisionKind.AdoptRemote
-                    : r.UpdatedAt > baseline      ? PlaylistSyncDecisionKind.Conflict
-                    : PlaylistSyncDecisionKind.Delete;
-                decisions.Add(new PlaylistSyncDecision(id, remoteOnlyKind, null, r));
-                continue;
-            }
-
-            // A smart playlist is decided on its query, never on its contents.
-            // Two devices holding different music legitimately materialize the
-            // same rules into different track lists, so ContentEquals below
-            // would report a difference on every sync, and - since
-            // materialization deliberately does not bump UpdatedAt - neither
-            // side would look changed against the baseline, landing every smart
-            // playlist in Conflict forever.
-            //
-            // So: same query, same name, same folder, nothing to do. Otherwise someone
-            // really did edit the query (the only thing about a smart playlist
-            // that moves UpdatedAt) and the newer edit wins outright. No
-            // conflict window, because there is nothing of the user's to lose -
-            // a query replaced by a newer query, not a hand-built track list.
-            //
-            // The same branch covers smart on one side and manual on the other,
-            // for the same reason and with the same answer: newest wins,
-            // including the change of kind, and a manual playlist that wins
-            // brings its track list with it.
-            //
-            // A tie in UpdatedAt goes to whichever side actually has rules,
-            // rather than to local. Losing rules is never something a user did:
-            // the only way a playlist stops being smart is an edit, and an edit
-            // moves UpdatedAt. So equal timestamps with rules on one side only
-            // means the other side is a lossy copy of this same playlist - made
-            // by a peer that predates rules travelling at all, or that dropped
-            // them in transit. Handing the tie to local would let that copy win
-            // wherever it happens to be the local one, and then be pushed back
-            // over the good one at the end of the session: the query dies on
-            // every device rather than healing on the next sync.
-            // A Vibe Playlist is decided on its sentence the same way, and
-            // for a stronger version of the same reason: its songs are the
-            // server's ranking, which no device can reproduce. So the same
-            // sentence is no change at all, whatever the songs - and the
-            // session then takes the server's songs as they stand
-            // (PlaylistSyncService), the way a smart playlist re-evaluates its
-            // own. A newer sentence on either side wins outright.
-            if (l.IsVibe || r.VibePrompt != null)
-            {
-                var vibeKind =
-                    l.Name == r.Name && l.ParentId == r.ParentId && l.SortKey == r.SortKey
-                    && l.VibePrompt == r.VibePrompt && l.VibeInstrumental == r.VibeInstrumental
-                        ? PlaylistSyncDecisionKind.NoChange
-                    : l.UpdatedAt >= r.UpdatedAt
-                        ? PlaylistSyncDecisionKind.KeepLocal
-                        : PlaylistSyncDecisionKind.AdoptRemote;
-                decisions.Add(new PlaylistSyncDecision(id, vibeKind, l, r));
-                continue;
-            }
-
-            if (l.IsSmart || r.Rules != null)
-            {
-                var smartKind =
-                    l.Name == r.Name && l.ParentId == r.ParentId && l.SortKey == r.SortKey && SmartPlaylistRules.Equivalent(l.Rules, r.Rules)
-                        ? PlaylistSyncDecisionKind.NoChange
-                    : l.UpdatedAt != r.UpdatedAt
-                        ? l.UpdatedAt > r.UpdatedAt
-                            ? PlaylistSyncDecisionKind.KeepLocal
-                            : PlaylistSyncDecisionKind.AdoptRemote
-                    : l.IsSmart
-                        ? PlaylistSyncDecisionKind.KeepLocal
-                        : PlaylistSyncDecisionKind.AdoptRemote;
-                decisions.Add(new PlaylistSyncDecision(id, smartKind, l, r));
-                continue;
-            }
-
-            if (ContentEquals(l, r, index))
-            {
-                decisions.Add(new PlaylistSyncDecision(id, PlaylistSyncDecisionKind.NoChange, l, r));
-                continue;
-            }
-
-            var localChanged  = baseline == null || l.UpdatedAt > baseline;
-            var remoteChanged = baseline == null || r.UpdatedAt > baseline;
-
-            // Different content with neither side moved past the baseline is
-            // not two edits: nobody edited anything. It is a copy from before
-            // rows were kept without their song, which is shorter at the same
-            // timestamp. Reporting that as a conflict asked the user to pick
-            // between versions they never made. Local wins, and the server
-            // keeps its own copy of an unedited playlist whatever is pushed
-            // (PlaylistSyncMapper.ApplyPushedManifest).
-            //
-            // Unless the remote copy holds every row local has and more, when
-            // this is the shorter one, and nothing would ever have moved either
-            // timestamp to make it look again.
-            var kind = (localChanged, remoteChanged) switch
-            {
-                (true, false)  => PlaylistSyncDecisionKind.KeepLocal,
-                (false, true)  => PlaylistSyncDecisionKind.AdoptRemote,
-                (false, false) => index != null && HoldsAllAndMore(r.Tracks, l.Entries, index)
-                    ? PlaylistSyncDecisionKind.AdoptRemote
-                    : PlaylistSyncDecisionKind.KeepLocal,
-                _              => PlaylistSyncDecisionKind.Conflict,
-            };
-            decisions.Add(new PlaylistSyncDecision(id, kind, l, r));
+            agreements.TryGetValue(id, out var agreed);
+            var decision =
+                remoteById.TryGetValue(id, out var r) ? AgainstPlaylist(id, l, r, agreed, index)
+                : deletedById.TryGetValue(id, out var d) ? AgainstDeletion(id, l, d, agreed)
+                : AgainstNothing(id, l, agreed);
+            if (decision != null)
+                decisions.Add(decision);
         }
 
         return decisions;
     }
 
-    // Row by row, the ones this device cannot play included: a row it lacks is
-    // a difference now, since it can hold one without having the song.
-    private static bool ContentEquals(Playlist local, PlaylistSyncPlaylistDto remote, PlaylistTrackIndex? index)
+    // The server holds the playlist.
+    private static PlaylistSyncDecision AgainstPlaylist(
+        Guid id, Playlist? l, PlaylistSyncPlaylistDto r, PlaylistAgreement? agreed, PlaylistTrackIndex index)
     {
-        if (local.Name != remote.Name || local.ParentId != remote.ParentId || local.SortKey != remote.SortKey)
-            return false;
+        if (agreed == null)
+            return NoHistoryInCommon(id, l, r, index);
 
-        if (index != null)
-            return SameRows(local.Entries, remote.Tracks, index);
-        if (local.Tracks.Count != remote.Tracks.Count)
-            return false;
-
-        for (var i = 0; i < local.Tracks.Count; i++)
+        // Unchanged on the server since this device agreed.
+        if (agreed.Revision == r.Revision)
         {
-            var remoteKey = Track.BuildSyncKey(remote.Tracks[i].Title, remote.Tracks[i].Artists, remote.Tracks[i].Album, remote.Tracks[i].DurationSeconds);
-            if (local.Tracks[i].SyncKey != remoteKey)
-                return false;
+            if (l == null)
+                return new(id, PlaylistSyncDecisionKind.PushDelete, null, r, BaseRevision: r.Revision);
+            return Changed(l, agreed)
+                ? new(id, PlaylistSyncDecisionKind.Push, l, r, BaseRevision: r.Revision)
+                : new(id, PlaylistSyncDecisionKind.NoChange, l, r);
         }
 
-        return true;
+        // Newer than the server's: it was restored from a backup older than
+        // what this device agreed, and this device's copy goes back up.
+        if (agreed.Revision > r.Revision)
+        {
+            return l == null
+                ? new(id, PlaylistSyncDecisionKind.PushDelete, null, r, BaseRevision: r.Revision)
+                : new(id, PlaylistSyncDecisionKind.Push, l, r, BaseRevision: r.Revision);
+        }
+
+        // Older than every version the server remembers.
+        if (!Contains(r.History, agreed.Revision))
+            return NoHistoryInCommon(id, l, r, index);
+
+        // The server moved on. An edit there beats a deletion here.
+        if (l == null || !Changed(l, agreed))
+            return new(id, PlaylistSyncDecisionKind.AdoptRemote, l, r);
+        if (SameContent(l, r, index))
+            return new(id, PlaylistSyncDecisionKind.NoChange, l, r);
+        return BothChanged(id, l, r);
+    }
+
+    // No agreed copy, or one older than every version the server remembers:
+    // nothing says which side changed what.
+    private static PlaylistSyncDecision NoHistoryInCommon(Guid id, Playlist? l, PlaylistSyncPlaylistDto r, PlaylistTrackIndex index)
+    {
+        if (l == null)
+            return new(id, PlaylistSyncDecisionKind.AdoptRemote, null, r);
+        if (SameContent(l, r, index))
+            return new(id, PlaylistSyncDecisionKind.NoChange, l, r);
+        return BothChanged(id, l, r);
+    }
+
+    // A smart playlist's rules or a Vibe Playlist's sentence changed on both
+    // sides: the newer edit wins with no prompt, since no hand-built list is
+    // at stake. A tie goes to whichever side has rules - losing them is never
+    // an edit, since an edit moves UpdatedAt. Anything else is a person's to
+    // decide.
+    private static PlaylistSyncDecision BothChanged(Guid id, Playlist l, PlaylistSyncPlaylistDto r)
+    {
+        if (!l.IsSmart && r.Rules == null && !l.IsVibe && r.VibePrompt == null)
+            return new(id, PlaylistSyncDecisionKind.Conflict, l, r);
+
+        var localWins = l.UpdatedAt != r.UpdatedAt ? l.UpdatedAt > r.UpdatedAt : l.IsSmart || l.IsVibe;
+        return localWins
+            ? new(id, PlaylistSyncDecisionKind.Push, l, r, BaseRevision: r.Revision)
+            : new(id, PlaylistSyncDecisionKind.AdoptRemote, l, r);
+    }
+
+    // The server records the playlist as deleted.
+    private static PlaylistSyncDecision? AgainstDeletion(Guid id, Playlist? l, PlaylistDeletionDto d, PlaylistAgreement? agreed)
+    {
+        if (l == null)
+            return agreed != null ? new(id, PlaylistSyncDecisionKind.Forget, null, null, d) : null;
+        if (agreed == null)
+            return new(id, PlaylistSyncDecisionKind.ConfirmDeletion, l, null, d);
+
+        // Deleted over a version this device agreed: unchanged here, the
+        // deletion stands; changed here, the edit beats it.
+        if (agreed.Revision == d.Revision || Contains(d.History, agreed.Revision))
+        {
+            return Changed(l, agreed)
+                ? new(id, PlaylistSyncDecisionKind.Push, l, null, d, d.Revision)
+                : new(id, PlaylistSyncDecisionKind.DeleteHere, l, null, d);
+        }
+
+        // Restored from a backup older than what this device agreed.
+        if (agreed.Revision > d.Revision)
+            return new(id, PlaylistSyncDecisionKind.Push, l, null, d, d.Revision);
+
+        return new(id, PlaylistSyncDecisionKind.ConfirmDeletion, l, null, d);
+    }
+
+    // The server holds nothing and records no deletion: it lost the playlist
+    // (a restored backup older than it), and this device's copy goes back up.
+    private static PlaylistSyncDecision? AgainstNothing(Guid id, Playlist? l, PlaylistAgreement? agreed)
+    {
+        if (l == null)
+            return agreed != null ? new(id, PlaylistSyncDecisionKind.Forget, null, null) : null;
+        return new(id, PlaylistSyncDecisionKind.Push, l, null, BaseRevision: 0);
+    }
+
+    private static bool Contains(List<long>? history, long revision) => history?.Contains(revision) == true;
+
+    // This device's copy is not the one it agreed on - or exists where it
+    // agreed to a deletion.
+    private static bool Changed(Playlist local, PlaylistAgreement agreed) =>
+        agreed.Copy == null || !PlaylistVersion.Same(PlaylistSyncMapper.ToDto(local), agreed.Copy);
+
+    // The same playlist, read the way each kind is decided: a smart playlist
+    // on its rules and a Vibe Playlist on its sentence, never on their songs,
+    // which each device works out (or takes from the server) for itself; an
+    // ordinary one row by row, a row matching by its id or, for copies made
+    // before rows had ids, by its song.
+    private static bool SameContent(Playlist local, PlaylistSyncPlaylistDto remote, PlaylistTrackIndex index)
+    {
+        if (local.Name != remote.Name || local.ParentId != remote.ParentId || local.SortKey != remote.SortKey
+            || local.IsFolder != remote.IsFolder)
+        {
+            return false;
+        }
+
+        if (local.IsVibe || remote.VibePrompt != null)
+            return local.VibePrompt == remote.VibePrompt && local.VibeInstrumental == remote.VibeInstrumental;
+        if (local.IsSmart || remote.Rules != null)
+            return SmartPlaylistRules.Equivalent(local.Rules, remote.Rules);
+        if (local.IsFolder)
+            return true;
+
+        return SameRows(local.Entries, remote.Tracks, index);
     }
 
     private static bool SameRows(
@@ -232,25 +225,6 @@ public static class PlaylistSyncPlanner
         {
             if (entries[i].EntryId != rows[i].EntryId && SongOf(entries[i]) != SongOf(rows[i], index))
                 return false;
-        }
-        return true;
-    }
-
-    // Every local row (counting repeats) is among the remote ones, and there
-    // are more of those.
-    private static bool HoldsAllAndMore(
-        IReadOnlyList<PlaylistSyncTrackDto> rows, IReadOnlyList<PlaylistEntry> entries, PlaylistTrackIndex index)
-    {
-        if (rows.Count <= entries.Count)
-            return false;
-
-        var remaining = rows.GroupBy(row => SongOf(row, index)).ToDictionary(g => g.Key, g => g.Count());
-        foreach (var entry in entries)
-        {
-            var song = SongOf(entry);
-            if (remaining.GetValueOrDefault(song) == 0)
-                return false;
-            remaining[song]--;
         }
         return true;
     }

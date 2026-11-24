@@ -11,7 +11,7 @@ namespace Flower.Persistence
     // Remembers, per server (keyed by its fingerprint), which of its tracks it
     // and this device last agreed were starred - the baseline Library.MergeStar
     // three-way-merges a pulled star against. The same idea as
-    // PlaylistSyncStateStore, for the same reason: without a baseline, "the
+    // PlaylistAgreementRepository, for the same reason: without a baseline, "the
     // server starred this" and "this device unstarred it" are the same
     // difference, and whichever way that is settled loses somebody's change.
     //

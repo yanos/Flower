@@ -17,14 +17,13 @@ namespace Flower.Importer;
 // lent it the playlists in the first place - the write half of
 // OriginPlaylistImporter, and the end of "every browser path is read-only".
 //
-// Still not the peer-to-peer merge PlaylistSyncService runs, and deliberately
-// so. A tab has no durable identity to be a party to a merge and nothing of
-// its own to contribute: its playlists *are* the server's, so an edit made in
-// a tab is an edit to the server's set and the honest way to send it is the
-// whole set, plus the ids it no longer holds - POST /playlists/apply keeps a
-// playlist a push leaves out, so a deletion has to be named (the peer path
-// resolves every conflict on the initiator and posts the result; here the tab
-// is the only editor, so there is nothing to resolve).
+// Still not the merge PlaylistSyncService runs, and deliberately so. A tab has
+// no durable identity to be a party to a merge and nothing of its own to
+// contribute: its playlists *are* the server's, so an edit made in a tab is
+// written over the revision the tab read it at, and a deletion is named. A
+// change the server answers Stale (another device wrote it first) is not
+// written, and is left for the next refresh to replace with the server's -
+// the server never takes a write over a version it has moved on from.
 //
 // Two things this has to get right that a single fire-and-forget POST would
 // not:
@@ -33,46 +32,34 @@ namespace Flower.Importer;
 //   as a user's own edit does, so without NoteOriginState every rescan would
 //   push the server's own playlists back at it.
 //
-//   Ordering. A drag-reorder raises one change per move. Ten full-manifest
-//   POSTs in flight at once can land in any order, and the last to *arrive*
-//   wins - so an early, stale manifest landing last silently reverts the
-//   edit. One push at a time, and the burst collapses to its final state.
+//   Ordering. A drag-reorder raises one change per move. One push at a time,
+//   and the burst collapses to its final state.
 public sealed class OriginPlaylistWriter(
     HttpClient http,
     string baseUrl,
     IPeerCredentials credentials,
     ILogger<OriginPlaylistWriter> logger) : IPlaylistWriter
 {
-    public const string ApplyPath = "/api/flower/v1/playlists/apply";
-
-    // Inert: ApplyPlaylists reads the manifest's playlists and ignores whose
-    // they claim to be (it identifies the caller from the request's own
-    // credentials instead, which is the only version of that question with an
-    // answer worth trusting). Named rather than left empty so a manifest
-    // captured off the wire says where it came from.
-    private const string BrowserFingerprint = "browser";
+    public const string ChangesPath = "/api/flower/v1/playlists/changes";
 
     private readonly object _gate = new();
 
-    // The manifest the origin is believed to hold. Set from a successful push
-    // and from NoteOriginState, compared against before every send.
-    private string? _originState;
-
-    // The playlists the origin is believed to hold, by id - what a push has to
-    // name as deleted, since the server keeps whatever a push leaves out (see
-    // PlaylistSyncMapper.ApplyPushedManifest).
-    private HashSet<Guid> _originIds = [];
+    // What the origin is believed to hold, by playlist: its revision and which
+    // content it is (PlaylistVersion). Set from NoteOriginState and from each
+    // change the origin applied.
+    private Dictionary<Guid, (long Revision, string Version)> _origin = [];
 
     private IReadOnlyList<Playlist>? _pending;
 
     public Task InFlight { get; private set; } = Task.CompletedTask;
 
-    public void NoteOriginState(IReadOnlyList<Playlist> playlists)
+    public void NoteOriginState(OriginPlaylists origin)
     {
         lock (_gate)
         {
-            _originState = Serialize(playlists);
-            _originIds = playlists.Select(p => p.Id).ToHashSet();
+            _origin = origin.Playlists.ToDictionary(
+                p => p.Id,
+                p => (origin.Revisions.GetValueOrDefault(p.Id), PlaylistVersion.Of(PlaylistSyncMapper.ToDto(p))));
         }
     }
 
@@ -82,7 +69,7 @@ public sealed class OriginPlaylistWriter(
         {
             // Latest wins. The pump below re-reads this after every send, so a
             // change arriving mid-push is not lost - it just replaces whatever
-            // else was waiting, since each push carries the whole set anyway.
+            // else was waiting, since each is worked out from the whole set.
             _pending = playlists;
             if (!InFlight.IsCompleted)
                 return;
@@ -111,21 +98,36 @@ public sealed class OriginPlaylistWriter(
 
     private async Task PushAsync(IReadOnlyList<Playlist> playlists)
     {
-        var json = Serialize(playlists);
-        List<Guid> deleted;
+        var changes = new List<PlaylistChangeDto>();
+        var versions = new Dictionary<Guid, string>();
         lock (_gate)
         {
-            if (json == _originState)
-                return;
+            foreach (var playlist in playlists)
+            {
+                var dto = PlaylistSyncMapper.ToDto(playlist);
+                var version = PlaylistVersion.Of(dto);
+                var known = _origin.TryGetValue(playlist.Id, out var held);
+                if (known && held.Version == version)
+                    continue;
 
-            deleted = _originIds.Except(playlists.Select(p => p.Id)).ToList();
+                versions[playlist.Id] = version;
+                changes.Add(new PlaylistChangeDto(playlist.Id, known ? held.Revision : 0, dto));
+            }
+
+            var ids = playlists.Select(p => p.Id).ToHashSet();
+            changes.AddRange(_origin.Where(e => !ids.Contains(e.Key))
+                .Select(e => new PlaylistChangeDto(e.Key, e.Value.Revision, Delete: true)));
         }
+
+        if (changes.Count == 0)
+            return;
 
         try
         {
-            var body = Encoding.UTF8.GetBytes(Serialize(playlists, deleted));
+            var body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(
+                new PlaylistChangesRequestDto(changes), PlaylistSyncJsonContext.Default.PlaylistChangesRequestDto));
 
-            using var request = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl.TrimEnd('/')}{ApplyPath}")
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl.TrimEnd('/')}{ChangesPath}")
             {
                 Content = new ByteArrayContent(body),
             };
@@ -134,19 +136,38 @@ public sealed class OriginPlaylistWriter(
 
             using var response = await http.SendAsync(request);
             response.EnsureSuccessStatusCode();
+            var answer = JsonSerializer.Deserialize(
+                await response.Content.ReadAsStringAsync(), PlaylistSyncJsonContext.Default.PlaylistChangesResponseDto);
 
             lock (_gate)
             {
-                _originState = json;
-                _originIds = playlists.Select(p => p.Id).ToHashSet();
+                foreach (var applied in answer?.Answers ?? [])
+                {
+                    if (applied.Outcome != PlaylistChangeOutcome.Applied)
+                    {
+                        // Left as the origin last said: the next push is based
+                        // on that same old revision and is refused again, so a
+                        // stale copy in this tab can never be written over a
+                        // newer one. The next refresh shows the server's.
+                        logger.LogWarning(
+                            "The origin server at {BaseUrl} did not take this tab's change to playlist {PlaylistId}: {Outcome}",
+                            baseUrl, applied.Id, applied.Outcome);
+                        continue;
+                    }
+
+                    if (versions.TryGetValue(applied.Id, out var version))
+                        _origin[applied.Id] = (applied.Revision, version);
+                    else
+                        _origin.Remove(applied.Id);
+                }
             }
 
             logger.LogInformation(
-                "Pushed {PlaylistCount} playlist(s) to the origin server at {BaseUrl}", playlists.Count, baseUrl);
+                "Pushed {ChangeCount} playlist change(s) to the origin server at {BaseUrl}", changes.Count, baseUrl);
         }
         catch (Exception ex)
         {
-            // _originState deliberately left alone, so the next edit re-sends
+            // _origin deliberately left alone, so the next edit re-sends
             // rather than assuming this one landed. Nothing is retried on its
             // own: a tab that cannot reach its origin has bigger problems
             // showing on screen already, and the edit is still in front of the
@@ -154,9 +175,4 @@ public sealed class OriginPlaylistWriter(
             logger.LogError(ex, "Could not push playlists to the origin server at {BaseUrl}", baseUrl);
         }
     }
-
-    private static string Serialize(IReadOnlyList<Playlist> playlists, IReadOnlyList<Guid>? deleted = null) =>
-        JsonSerializer.Serialize(
-            PlaylistSyncMapper.ToManifest(BrowserFingerprint, playlists, deleted),
-            PlaylistSyncJsonContext.Default.PlaylistSyncManifestDto);
 }

@@ -15,21 +15,22 @@ namespace Flower.Tests.TestSupport;
 
 // A Flower.Server's sync surface over a real socket, backed by a real Library
 // and answering through the same code the server's SyncEndpoints does -
-// LibraryDtoMapper for the catalog, PlaylistSyncMapper.ApplyPushedManifest for
-// a pushed playlist set, Library.MergeReportedTrackState for track state. What
+// LibraryDtoMapper for the catalog, PlaylistRevisions for playlists and their
+// revisions, Library.MergeReportedTrackState for track state. What
 // it leaves out is the trust boundary (no signature is checked), which
 // Flower.Server.Tests covers against the real host; what it adds is the one
 // thing that host cannot give a client test, which is a port LibrarySyncService
 // and PlaylistSyncService can actually dial.
 //
 // Everything a scenario might want to do to the server between two syncs -
-// retag, delete, rescan, edit a playlist - is done to Library directly.
+// retag, delete, rescan, edit a playlist - is done to Library directly. A
+// playlist edited there is given a revision, as the real server's would be.
 public sealed class SimulatedFlowerServer : IDisposable
 {
     public const string LibraryPath = "/api/flower/v1/library";
     public const string ListeningPath = "/api/flower/v1/listening";
     public const string PlaylistsPath = "/api/flower/v1/playlists";
-    public const string ApplyPath = "/api/flower/v1/playlists/apply";
+    public const string ChangesPath = "/api/flower/v1/playlists/changes";
     public const string TrackStatePath = "/api/flower/v1/track-state";
     public const string RemoveFromLibraryPath = "/api/admin/library/remove";
     public const string UploadsPath = "/api/admin/library/uploads";
@@ -58,9 +59,16 @@ public sealed class SimulatedFlowerServer : IDisposable
     public Library Library { get; }
     public string Fingerprint { get; }
 
-    // The server's record of deleted playlists. A scenario restoring a backup
-    // leaves it as the backup had it.
-    public InMemoryPlaylistDeletionLog PlaylistDeletions { get; } = new();
+    // The server's playlist revisions, deletions included.
+    public PlaylistRevisions PlaylistRevisions { get; }
+    private readonly InMemoryPlaylistRevisionStore _revisionStore = new();
+
+    // How far this server's clock has moved past the real one - by an hour at
+    // every Restore. A restore takes far longer than a millisecond, and the
+    // revision clock relies on that: a scenario restoring in the same
+    // millisecond as its last writes would be handed back numbers already
+    // issued for other versions.
+    private long _clockAhead;
 
     // Whether the device dialling in is one the server made an admin - what
     // TrustedPeerStore.IsAdmin answers on the real host.
@@ -72,11 +80,20 @@ public sealed class SimulatedFlowerServer : IDisposable
     public Action? AfterNextPlaylistsGet { get; set; }
 
     public List<string> Requests { get; } = new();
-    public int PlaylistApplyCount { get; private set; }
+    public int PlaylistChangesCount { get; private set; }
 
-    // True makes POST /playlists/apply fail with a 500, taking nothing - the
+    // True makes POST /playlists/changes fail with a 500, taking nothing - the
     // way a server a release behind answers a playlist it cannot read.
-    public bool FailsPlaylistApply { get; set; }
+    public bool FailsPlaylistChanges { get; set; }
+
+    // True makes the next POST /playlists/changes take every change and then
+    // answer 500, as if the answer were lost on the way back.
+    public bool LosesNextChangesAnswer { get; set; }
+
+    // Runs as the next POST /playlists/changes arrives, and is awaited before
+    // the change is applied - the window in which another device's change,
+    // or its whole sync, lands first.
+    public Func<Task>? BeforeNextChanges { get; set; }
 
     // Where this server keeps its music, when a test gives it somewhere - the
     // folder an upload lands in (LibraryIngest) and the one RelativePath is
@@ -89,6 +106,9 @@ public sealed class SimulatedFlowerServer : IDisposable
     public SimulatedFlowerServer(IEnumerable<Track> tracks, string fingerprint = "server-fp", string? musicFolder = null)
     {
         Library = new Library(tracks.ToList());
+        PlaylistRevisions = new PlaylistRevisions(
+            Library, _revisionStore, () => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + _clockAhead);
+        PlaylistRevisions.Start();
         Fingerprint = fingerprint;
         MusicFolder = musicFolder;
         if (musicFolder != null)
@@ -152,6 +172,31 @@ public sealed class SimulatedFlowerServer : IDisposable
         return true;
     }
 
+    // The playlists and their revisions as they stand, for Restore to put
+    // back - a backup of the server's flower.db, in effect.
+    public ServerBackup TakeBackup() => new(
+        Library.Playlists.Select(PlaylistSyncMapper.ToDto).ToList(),
+        Library.Playlists.ToDictionary(p => p.Id, p => p.Listener),
+        _revisionStore.Load());
+
+    // The server restored from that backup: everything since is gone, with
+    // no record of anyone deleting it.
+    public void Restore(ServerBackup backup)
+    {
+        var index = new PlaylistTrackIndex(Library.Tracks);
+        _revisionStore.Replace(backup.Revisions);
+        Library.ResetPlaylists(backup.Playlists
+            .Select(dto => PlaylistSyncMapper.ToPlaylist(dto, index, listener: backup.Listeners[dto.Id]))
+            .ToList());
+        _clockAhead += 3_600_000;
+        PlaylistRevisions.Start();
+    }
+
+    public sealed record ServerBackup(
+        List<PlaylistSyncPlaylistDto> Playlists,
+        Dictionary<Guid, string> Listeners,
+        Dictionary<(string Listener, Guid Id), List<PlaylistRevision>> Revisions);
+
     public DiscoveredDevice Device => new()
     {
         InstanceName = "server",
@@ -183,24 +228,32 @@ public sealed class SimulatedFlowerServer : IDisposable
                     await ServeListeningAsync(context);
                     return;
                 case ("GET", PlaylistsPath):
-                    await WriteJsonAsync(context, PlaylistSyncMapper.ToManifest(
-                        Fingerprint, PlaylistSyncMapper.For(Library.Playlists, ListenerOf(context)),
-                        PlaylistDeletions.DeletedFor(ListenerOf(context))));
+                    await WriteJsonAsync(context, PlaylistRevisions.ManifestFor(ListenerOf(context), Fingerprint));
                     var after = AfterNextPlaylistsGet;
                     AfterNextPlaylistsGet = null;
                     after?.Invoke();
                     return;
-                case ("POST", ApplyPath):
+                case ("POST", ChangesPath):
                 {
-                    if (FailsPlaylistApply)
+                    if (FailsPlaylistChanges)
                     {
                         context.Response.StatusCode = 500;
                         return;
                     }
-                    var manifest = await ReadJsonAsync<PlaylistSyncManifestDto>(context);
-                    var applied = PlaylistSyncMapper.ApplyPushedManifest(Library, manifest!, ListenerOf(context), PlaylistDeletions);
-                    PlaylistApplyCount++;
-                    await WriteJsonAsync(context, new PlaylistApplyResponseDto(applied.Refused));
+                    var before = BeforeNextChanges;
+                    BeforeNextChanges = null;
+                    if (before != null)
+                        await before();
+                    var request = await ReadJsonAsync<PlaylistChangesRequestDto>(context);
+                    var answer = PlaylistRevisions.ApplyChanges(request!, ListenerOf(context));
+                    PlaylistChangesCount++;
+                    if (LosesNextChangesAnswer)
+                    {
+                        LosesNextChangesAnswer = false;
+                        context.Response.StatusCode = 500;
+                        return;
+                    }
+                    await WriteJsonAsync(context, answer);
                     return;
                 }
                 case ("POST", TrackStatePath):

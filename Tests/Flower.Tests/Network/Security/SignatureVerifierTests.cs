@@ -32,11 +32,11 @@ public class SignatureVerifierTests
     {
         var (signer, publicKeyBase64) = MakeSigner();
         var body = "{\"hello\":\"world\"}"u8.ToArray();
-        var (signature, timestamp, nonce) = signer.Sign("POST", "/api/flower/v1/playlists/apply", [], body);
+        var (signature, timestamp, nonce) = signer.Sign("POST", "/api/flower/v1/playlists/changes", [], body);
         var guard = new NonceReplayGuard();
 
         var ok = SignatureVerifier.Verify(
-            "POST", "/api/flower/v1/playlists/apply", [], body,
+            "POST", "/api/flower/v1/playlists/changes", [], body,
             timestamp, nonce, signature, publicKeyBase64,
             DateTimeOffset.UtcNow, guard, "fp-1");
 

@@ -50,7 +50,7 @@ listening. `X-Forwarded-For` is believed only from `Flower:TrustedProxies`.
 
 **Body size.** 20 MB process-wide (Kestrel). On the device routes each
 route states its own cap, checked against `Content-Length` before anything is
-read: 20 MB for `/playlists/apply` and `/track-state`, 4 MB for `/log/report`,
+read: 20 MB for `/playlists/changes` and `/track-state`, 4 MB for `/log/report`,
 256 KB for everything else. Over it is a `413`. The admin routes keep the
 20 MB ceiling, and `pair-redeem` caps at 4 KB.
 
@@ -338,7 +338,7 @@ PascalCase JSON.
 |---|---|---|
 | GET | `/library` | The whole catalog |
 | GET | `/playlists` | The caller's listener's playlists |
-| POST | `/playlists/apply` | A merged playlist set, pushed back |
+| POST | `/playlists/changes` | A session's playlist edits, each over the revision it is based on |
 | GET | `/listening?since=` | The plays that moved since a listening token (admin devices) |
 | POST | `/plays` | Play events from a head with no storage (a browser tab) |
 | POST | `/track-state` | Plays, stars and options from a head with storage |
@@ -401,32 +401,50 @@ copy that the server's is newer.
 copy only for a song *named* here, never for one merely absent from `Songs` — a
 music folder that failed to mount lists nothing at all.
 
-### `GET /playlists` and `POST /playlists/apply`
+### `GET /playlists` and `POST /playlists/changes`
 
-Both carry `PlaylistSyncManifestDto`: `DeviceFingerprint`, `Playlists`
-(`Id`, `Name`, `UpdatedAt`, `Tracks`, optional `Rules` for a smart playlist,
-optional `VibePrompt` and `VibeInstrumental` for a Vibe Playlist), and
-optional `Deleted` ids. A track entry is `Title`/`Artists`/`Album`/
-`DurationSeconds`, the catalog `Id` when the sender has one, and `EntryId`, the
-row's own id, which stays with it through moves and across devices. A row whose
-song the receiver does not have is kept and sent back, never dropped.
+`GET` answers `PlaylistSyncManifestDto`: `DeviceFingerprint`, `Playlists` and
+optional `Deleted`. A playlist is `Id`, `Name`, `UpdatedAt`, `Tracks`, optional
+`Rules` for a smart playlist, optional `VibePrompt` and `VibeInstrumental` for a
+Vibe Playlist, `IsFolder`, `ParentId`, `SortKey`, and the server's `Revision`
+with `History`, the revisions it held before (oldest first, at most 63). A
+track entry is `Title`/`Artists`/`Album`/`DurationSeconds`, the catalog `Id`
+when the sender has one, and `EntryId`, the row's own id, which stays with it
+through moves and across devices. A row whose song the receiver does not have
+is kept and sent back, never dropped.
 
-On a `GET`, `Deleted` is the server's record of the playlists deleted for this
-listener. It is the only thing that makes a missing playlist a deletion: a
-playlist that is simply absent, as after restoring a backup, is pushed back.
+Only the server issues revisions: `max(last issued + 1, its UTC
+milliseconds)`, for every change to a playlist's content however it was made.
+`UpdatedAt` is for display and decides nothing. `Deleted` lists the playlists
+deleted for this listener, each `{Id, Revision, History}`; it is the only thing
+that makes a missing playlist a deletion. A playlist that is simply absent, as
+after restoring a backup, is pushed back.
+
+`POST /playlists/changes` takes every change a session has, in one request:
+
+```json
+{"Changes": [
+  {"Id": "…", "BaseRevision": 1763990000123, "Playlist": { … }},
+  {"Id": "…", "BaseRevision": 1763990000456, "Delete": true}
+]}
+```
+
+`BaseRevision` is the server's revision the change is based on, `0` for a
+playlist the device has no version of. Each change succeeds or fails on its
+own, and the answer is `200` with one entry per change:
+
+| `Outcome` | Meaning |
+|---|---|
+| `Applied` | Written, at `Revision` |
+| `Stale` | Not written: the server's revision is no longer `BaseRevision`. `Current` (a playlist) or `CurrentDeletion` is what it holds now, both absent when it holds nothing |
+| `Refused` | The id is another listener's. Never applied |
 
 Playlists belong to a **listener** (`Listeners`): every admin device shares
 the owner's set, and each other device has a set of its own. `GET` returns the
-caller's listener's playlists only, and a push only ever writes them.
-
-The caller pulls, merges locally, and pushes the result; the server runs no
-conflict resolution of its own. It does not take the push wholesale either: a
-playlist missing from it is kept unless `Deleted` names it, and a pushed copy
-no newer than the one held is ignored. A pushed or deleted id that belongs to
-another listener is not applied. The answer is `200` with
-`{"Refused": [ids]}` naming those ids; it is empty for an honest push. The
-client only logs it. The server records those ids in that listener's `Deleted`,
-so the client's next sync drops them the ordinary way.
+caller's listener's playlists only, and a change only ever writes them. A
+refused id is recorded as deleted for the caller's listener over the
+`BaseRevision` it named, so the device's next sync drops its copy the ordinary
+way rather than on the strength of the answer.
 
 ### `GET /listening?since=`
 

@@ -8,6 +8,7 @@ using Flower.Logging;
 using Flower.Audio;
 using Flower.Models;
 using Flower.Persistence;
+using Flower.Persistence.Sql;
 using Flower.Services;
 using Flower.Tests.TestSupport;
 using Flower.ViewModels;
@@ -75,7 +76,7 @@ public class CompositionRootTests : PinnedDataDirectory
         {
             typeof(LibraryStore), typeof(AppSettingsStore), typeof(PlaylistStore),
             typeof(DeviceKeyStore), typeof(DeviceIdentityStore), typeof(DeviceNicknameStore),
-            typeof(TrustedPeerStore), typeof(PlaylistSyncStateStore), typeof(ServerStarBaselineStore),
+            typeof(TrustedPeerStore), typeof(PlaylistAgreementRepository), typeof(ServerStarBaselineStore),
             typeof(InMemoryLogStore),
             typeof(AppSettings), typeof(Library), typeof(MainPlaylist),
             typeof(Importer.IMusicImporter), typeof(ColumnManager), typeof(AlbumArtLoader),

@@ -94,7 +94,7 @@ public static class PlaylistSessionOverlay
                 installed.Add(playlist);
             // Deleted on the other side, and edited here while the session
             // ran. An edit beats a delete everywhere else (see
-            // PlaylistSyncService.ResolveConflictAsync), so it does here too:
+            // PlaylistSyncPlanner), so it does here too:
             // kept, with no baseline, and the next session sends it back up.
             else if (playlist.UpdatedAt != before.UpdatedAt)
                 installed.Add(playlist);

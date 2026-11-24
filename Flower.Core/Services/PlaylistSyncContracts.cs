@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
 
 using Flower.Models;
 
@@ -50,49 +51,58 @@ public sealed record PlaylistSyncPlaylistDto(
     // comes from the server, which ranked the pool - a paired device never
     // ranks anything (docs/VIBE-PLAYLIST-PLAN.md, "Model of a playlist").
     string? VibePrompt = null,
-    bool VibeInstrumental = false);
+    bool VibeInstrumental = false,
+    // The server's version of this playlist, and the versions it held before
+    // (oldest first, the current one not among them) - see PlaylistRevisions.
+    // Only the server issues a revision, so a device's clock decides nothing.
+    // Sent by the server and ignored in a push: a device says which version
+    // its change is based on in PlaylistChangeDto.BaseRevision instead.
+    long Revision = 0,
+    List<long>? History = null);
 
-// GET /api/flower/v1/playlists returns one of these describing the responding
-// device's current playlists. POST /api/flower/v1/playlists/apply sends one back:
-// by the time a POST happens the initiator has already resolved every conflict, so
-// the receiving side runs no conflict resolution of its own. It does not replace its
-// collection wholesale, though - see PlaylistSyncMapper.ApplyPushedManifest: a
-// playlist missing from the push is kept unless Deleted names it, and a pushed copy
-// no newer than the one held is not taken.
-//
-// On a GET, Deleted is the server's record of what was deleted for this
-// listener (IPlaylistDeletionLog). It is the only thing that makes a playlist
-// missing from the answer a deletion: a server restored from a backup is
-// missing everything made since, and that must come back up rather than be
-// deleted from every device.
+// A playlist the server records as deleted, at the revision the deletion was
+// given and with the versions it had before. A playlist merely missing from
+// the server is not one of these: a server restored from a backup is missing
+// everything made since, and that comes back up rather than being deleted from
+// every device.
+public sealed record PlaylistDeletionDto(Guid Id, long Revision, List<long>? History = null);
+
+// GET /api/flower/v1/playlists: the caller's listener's playlists and recorded
+// deletions, each at its revision.
 public sealed record PlaylistSyncManifestDto(
-    string DeviceFingerprint, List<PlaylistSyncPlaylistDto> Playlists, List<Guid>? Deleted = null);
+    string DeviceFingerprint, List<PlaylistSyncPlaylistDto> Playlists, List<PlaylistDeletionDto>? Deleted = null);
 
-// The answer to POST /api/flower/v1/playlists/apply. Refused names the pushed
-// or deleted ids the server did not apply because they belong to another
-// listener (see Listeners) - the owner's playlists, pushed by a guest device
-// that kept copies from before playlists were kept apart. Empty, never null,
-// from an honest push.
-//
-// Said rather than silently dropped so the refusal shows in the pushing
-// device's log. The device deletes nothing on the strength of it: the server
-// records those ids as deleted for this listener, which they are as far as it
-// is concerned, and the device's next session reads that record and drops them
-// the ordinary way (see PlaylistSyncPlanner) - so a forged answer cannot remove
-// a playlist that the server still has for this device.
-public sealed record PlaylistApplyResponseDto(List<Guid> Refused);
+// One change in a POST /api/flower/v1/playlists/changes: this playlist, or its
+// deletion, written over the server's version BaseRevision. 0 is a playlist the
+// device has no version of: new, or one the server lost.
+public sealed record PlaylistChangeDto(Guid Id, long BaseRevision, PlaylistSyncPlaylistDto? Playlist = null, bool Delete = false);
 
-// A server's record of the playlists deleted from it, per listener. Kept
-// because a playlist's absence proves nothing: see PlaylistSyncManifestDto.
-public interface IPlaylistDeletionLog
+// Every change a session has, in one request - the bulk budget is 60 a minute.
+public sealed record PlaylistChangesRequestDto(List<PlaylistChangeDto> Changes);
+
+[JsonConverter(typeof(JsonStringEnumConverter<PlaylistChangeOutcome>))]
+public enum PlaylistChangeOutcome
 {
-    IReadOnlySet<Guid> DeletedFor(string listener);
-    void Record(string listener, IReadOnlyCollection<Guid> playlistIds);
+    // Written, at Revision.
+    Applied,
 
-    // These exist again: pushed back by a device that kept an edit of them.
-    void Forget(string listener, IReadOnlyCollection<Guid> playlistIds);
+    // Not written: the server's version is no longer BaseRevision. Current
+    // (or CurrentDeletion) is what it holds now, both null when it holds
+    // nothing, for the device to merge with and send again.
+    Stale,
+
+    // Not written, and never will be: the id is another listener's (see
+    // Listeners). The server records it as deleted for this listener over
+    // BaseRevision, so the device's next session drops it the ordinary way.
+    Refused,
 }
 
-// What ApplyPushedManifest did: the pushing listener's playlists as now
-// installed, and what it refused.
-public sealed record PlaylistApplyResult(List<Playlist> Installed, List<Guid> Refused);
+// Each change succeeds or fails on its own.
+public sealed record PlaylistChangeAnswerDto(
+    Guid Id,
+    PlaylistChangeOutcome Outcome,
+    long Revision = 0,
+    PlaylistSyncPlaylistDto? Current = null,
+    PlaylistDeletionDto? CurrentDeletion = null);
+
+public sealed record PlaylistChangesResponseDto(List<PlaylistChangeAnswerDto> Answers);

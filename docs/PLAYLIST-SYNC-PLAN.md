@@ -4,10 +4,9 @@ Make a playlist edit impossible to lose, and stop asking people to settle
 conflicts that are not conflicts. It replaces how playlists are identified,
 versioned and merged between devices and `Flower.Server`.
 
-**Status (November 2026): phase 1 is built** and has fixed UF-18, UF-20 and
-UF-24. What is left is UF-19, UF-21, UF-22 and UF-23 in
-[USER-FLOW-REVIEW.md](USER-FLOW-REVIEW.md). UF-19 is P0, so phase 2 blocks the
-next release.
+**Status (November 2026): phases 1 and 2 are built.** Phase 1 fixed UF-18,
+UF-20 and UF-24; phase 2 fixes UF-19, UF-21 and UF-22. What is left is phase 3,
+UF-23 in [USER-FLOW-REVIEW.md](USER-FLOW-REVIEW.md).
 
 ## Why patching stops working
 
@@ -171,14 +170,46 @@ What building it changed from the above:
   remove rows it could not have known about (`KeepUnavailableFrom`).
 - **Both sides adding the same song** during a session is one addition, as it was.
 
-### Phase 2: revisions (UF-19, UF-21, UF-22)
+### Phase 2: revisions (UF-19, UF-21, UF-22) - built
 
-- Server revisions, history, revisioned deletions and `/playlists/changes`.
-- The agreed copy in `flower.db`, and the read table above in the planner.
-- The session stops holding a read across a prompt.
+Server revisions with history and revisioned deletions (`PlaylistRevisions`,
+`PlaylistRevisionRepository`), `POST /playlists/changes`, the agreed copy in
+`flower.db` (`PlaylistAgreementRepository`), the read table in
+`PlaylistSyncPlanner`, and a session that never waits on a prompt.
 
-**Deleted:** `PlaylistSyncStateStore`, `Supersedes`, `HoldsAllAndMore`, the
-planner's "neither side moved" branch, `/playlists/apply`.
+**Deleted:** `PlaylistSyncStateStore` (`sync-state.json`), `Supersedes`,
+`ApplyPushedManifest`, `HoldsAllAndMore`, the "neither side moved" branch,
+`/playlists/apply`, `PlaylistDeletionRepository` (`deleted_playlists`).
+
+What building it changed from the above:
+
+- **The server issues a revision whenever a playlist's content changes**, by
+  listening to `Library.PlaylistsChanged` and comparing with the version it
+  last issued (`PlaylistVersion`: name, folder, place, rules, sentence, and the
+  rows by `EntryId`; not `UpdatedAt`, nor a smart or Vibe playlist's songs).
+  `/changes` is the only writer today, but an edit that reached the library
+  without a revision would be overwritten by the next device to write over
+  the old one. Started after the stored playlists load, which also mends a
+  crash between saving a playlist and recording its revision.
+- **The agreed copy is saved after the install, not in its transaction.** In
+  that order a crash leaves a playlist that already matches the server against
+  an older agreement, which the next session reads as the same content and
+  agrees on. The other order would read as an edit and push it.
+- **A session's questions are asked after it ends.** An answer is applied as
+  an edit over the server's revision the question showed (keeping this copy
+  agrees on the server's; keeping the server's installs it), only if this
+  device's copy is still the one asked about, and a follow-up session sends it.
+  "Keep it" over a deletion agrees on the deletion, as a copy-less agreement.
+- **A refused change is recorded as deleted for the caller's listener over the
+  revision it named**, and the device agrees at that revision. Its next `GET`
+  then shows a deletion over a version it agreed on, which drops its copy
+  without a prompt, and without trusting the unsigned answer.
+- **A browser tab writes each changed playlist over the revision it read**;
+  a `Stale` answer is left for the next refresh, since a tab does not merge.
+- **An edit made between a session's read and its plan is now a both-sides
+  edit**, asked about rather than merged: the prompt no longer opens a window
+  in the middle of a session, so the old "edited while the session takes the
+  server's edit keeps both" scenario is phase 3's (UF-23).
 
 ### Phase 3: merge by default (UF-23)
 
