@@ -81,6 +81,25 @@ public class LibraryFolderWatcherTests : IDisposable
         Assert.Equal(0, _rescans);
     }
 
+    // On a disk that respects case these are two songs, and noting both in
+    // one quiet period must add both rather than fold one into the other.
+    [Fact]
+    public async Task Two_songs_whose_names_differ_only_in_case_are_both_added()
+    {
+        var upper = Song("Artist/Album", "Song.wav", "Upper");
+        if (File.Exists(Path.Combine(Path.GetDirectoryName(upper)!, "song.wav")))
+            Assert.Skip("This filesystem ignores case.");
+        var lower = Song("Artist/Album", "song.wav", "Lower");
+        _library.UsePathRules(PathRules.For([_root]));
+        using var watcher = NewWatcher();
+
+        watcher.Note(upper);
+        watcher.Note(lower);
+        await watcher.FlushAsync();
+
+        Assert.Equal(["Lower", "Upper"], _library.Tracks.Select(t => t.Title).Order());
+    }
+
     // A drop's second half: the songs it copied in, read straight into the
     // library, counted for the status bar. A file named twice is read once.
     [Fact]

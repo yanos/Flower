@@ -18,6 +18,7 @@ public sealed record ServerSettingsDto(
     bool TrustTailscaleRange,
     List<string> AllowedCidrs,
     List<string> LibraryPaths,
+    PathPolicyDto PathPolicy,
     bool IntegrateWithITunes,
     bool SyncPlayCountFromITunes,
     bool SyncDateAddedFromITunes,

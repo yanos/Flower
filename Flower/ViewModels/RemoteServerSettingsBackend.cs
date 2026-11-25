@@ -57,6 +57,7 @@ public sealed class RemoteServerSettingsBackend(ServerAdminClient client, Server
             IconEmoji = settings.IconEmoji,
             HasIconPicture = settings.IconToken != null,
             LibraryPaths = settings.LibraryPaths,
+            Paths = PathRules.FromDto(settings.PathPolicy),
             IntegrateWithITunes = settings.IntegrateWithITunes,
             SyncPlayCountFromITunes = settings.SyncPlayCountFromITunes,
             SyncDateAddedFromITunes = settings.SyncDateAddedFromITunes,

@@ -52,6 +52,7 @@ public sealed class LocalSettingsBackend(MainViewModel viewModel, Flower.Control
     {
         Alias = ViewModel.DeviceAlias,
         LibraryPaths = ViewModel.LibraryPaths.ToList(),
+        Paths = PathRules.For(ViewModel.LibraryPaths),
         SyncPlayCountFromITunes = ViewModel.SyncPlayCountFromITunes,
         SyncDateAddedFromITunes = ViewModel.SyncDateAddedFromITunes,
         ITunesLibraryDescription = ITunesIntegration.DescribeSource(),

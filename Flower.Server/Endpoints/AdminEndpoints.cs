@@ -1059,6 +1059,7 @@ public static class AdminEndpoints
             options.TrustTailscaleRange,
             options.AllowedCidrs.ToList(),
             options.LibraryPaths.ToList(),
+            PathRules.For(options.LibraryPaths).ToDto(),
             options.IntegrateWithITunes,
             options.SyncPlayCountFromITunes,
             options.SyncDateAddedFromITunes,

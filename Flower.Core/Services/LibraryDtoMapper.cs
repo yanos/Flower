@@ -185,7 +185,7 @@ public static class LibraryDtoMapper
         if (track.Path is not { } path)
             return null;
 
-        var relative = paths?.RootOf(path) is { } root ? path[(root.Length + 1)..] : Path.GetFileName(path);
+        var relative = paths?.RootOf(path) is { } root ? path[root.Length..].TrimStart('/', '\\') : Path.GetFileName(path);
         return relative.Replace('\\', '/');
     }
 

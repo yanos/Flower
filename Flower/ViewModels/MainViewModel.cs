@@ -3008,8 +3008,9 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     // it calls RescanLibraryAsync separately, unawaited, after closing.
     public async Task SaveLibraryPathsAsync(List<string> paths)
     {
-        var added = paths.Except(_appSettings.LibraryPaths, StringComparer.OrdinalIgnoreCase).ToList();
-        var removed = _appSettings.LibraryPaths.Except(paths, StringComparer.OrdinalIgnoreCase).ToList();
+        var folders = PathRules.For(paths.Concat(_appSettings.LibraryPaths)).RootComparer;
+        var added = paths.Except(_appSettings.LibraryPaths, folders).ToList();
+        var removed = _appSettings.LibraryPaths.Except(paths, folders).ToList();
         if (added.Count > 0 || removed.Count > 0)
             _logger.LogInformation("Library folders changed - added: [{Added}], removed: [{Removed}]",
                 string.Join(", ", added), string.Join(", ", removed));
@@ -3035,7 +3036,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             return;
 
         var folders = DeviceLibraryFolders.ScanPaths(_appSettings);
-        if (folders.SequenceEqual(scanned, StringComparer.OrdinalIgnoreCase))
+        if (PathRules.SameRoots(folders, scanned))
             return;
 
         _logger.LogInformation("The folders this device scans changed to [{Folders}] - rescanning", string.Join(", ", folders));
@@ -3076,7 +3077,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
                 return;
             }
 
-            roots = [flower, .. roots.Where(r => !string.Equals(r, flower, StringComparison.OrdinalIgnoreCase))];
+            var sameFolder = PathRules.For([flower, .. roots]).RootComparer;
+            roots = [flower, .. roots.Where(r => !sameFolder.Equals(r, flower))];
         }
 
         if (roots.Count == 0)

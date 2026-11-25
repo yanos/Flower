@@ -95,7 +95,7 @@ public class AdminJsonContractTests
             """
             {"alias":"Basement","advertisedHost":"nas.local","advertiseOnLan":true,
              "trustTailscaleRange":false,"allowedCidrs":["10.0.0.0/8"],
-             "libraryPaths":["/music"],"integrateWithITunes":true,"syncPlayCountFromITunes":false,
+             "libraryPaths":["/music"],"pathPolicy":{"defaultIgnoresCase":false,"roots":[{"root":"/music","ignoresCase":false}],"rootParents":[{"root":"/","ignoresCase":false}]},"integrateWithITunes":true,"syncPlayCountFromITunes":false,
              "syncDateAddedFromITunes":true,"appleMusicFolder":"/Users/x/Music/Music/Media.localized",
              "iTunesLibraryDescription":"Exports a fresh copy from Music.app each launch",
              "dataDirectory":"/data","version":"1.2.3","allowPublicAccess":true,

@@ -716,9 +716,15 @@ Editable: `alias`, `iconEmoji`, `advertisedHost`, `advertiseOnLan`,
 `aiFeaturesEnabled`, `vibeEnabled`, `endlessPlayEnabled`, `vibeClipsPerSong`. Every field is optional and an absent one is left alone. Read-only alongside
 them: `dataDirectory`, `version`, `addresses`, `publicAddress`, `publicOrigin`,
 `publicReachability`, `fingerprint`, `advertisedAs`, `appleMusicFolder`,
-`iTunesLibraryDescription`, `iconToken`, and `overridden` — settings pinned by
+`iTunesLibraryDescription`, `iconToken`, `pathPolicy`, and `overridden` — settings pinned by
 the environment or command line, each with what sets it. A write to an
 overridden setting is silently skipped.
+
+`pathPolicy` describes the server’s filesystem comparisons: `defaultIgnoresCase`,
+`roots` and `rootParents`, the latter two lists of `{root, ignoresCase}`. Remote
+settings use `rootParents` when comparing folder names, including a mount point
+whose containing filesystem differs from the mounted filesystem. Clients do not
+probe server paths on their own filesystem.
 
 `iconEmoji` keeps the first character a reader would count as one, an emoji of
 several code points included; empty removes it. A non-empty one removes the

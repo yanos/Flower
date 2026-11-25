@@ -65,7 +65,7 @@ public static class ITunesLibraryOffer
 
         settings.SyncPlayCountFromITunes = answer.SyncPlayCount;
         settings.SyncDateAddedFromITunes = answer.SyncDateAdded;
-        if (!settings.LibraryPaths.Contains(folder, StringComparer.OrdinalIgnoreCase))
+        if (!settings.LibraryPaths.Contains(folder, Flower.Services.PathRules.For(settings.LibraryPaths.Append(folder)).RootComparer))
             settings.LibraryPaths.Add(folder);
     }
 

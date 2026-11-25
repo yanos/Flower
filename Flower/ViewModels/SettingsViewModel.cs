@@ -646,7 +646,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
             // Reordering never happens (Add always appends, Remove just removes),
             // so a set comparison against what this screen opened with is enough
             // to answer "does this need a rescan".
-            var pathsChanged = !_paths.ToHashSet(StringComparer.OrdinalIgnoreCase)
+            var pathsChanged = !_paths.ToHashSet(PathsFor(_paths).RootComparer)
                 .SetEquals(_originalPaths);
 
             StatusMessage = await _backend.SaveAsync(new SettingsDraft
@@ -685,9 +685,12 @@ public sealed partial class SettingsViewModel : ViewModelBase
         }
     }
 
+    private PathRules PathsFor(IEnumerable<string> paths) =>
+        IsOwnSettings ? PathRules.For(paths) : _snapshot.Paths;
+
     public void AddLibraryPath(string path)
     {
-        if (_paths.Contains(path, StringComparer.OrdinalIgnoreCase))
+        if (_paths.Contains(path, PathsFor(_paths.Append(path)).RootComparer))
             return;
 
         _paths.Add(path);
@@ -700,7 +703,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
         if (row == null)
             return;
 
-        _paths.RemoveAll(p => string.Equals(p, row.Path, StringComparison.OrdinalIgnoreCase));
+        _paths.RemoveAll(p => PathsFor(_paths).RootComparer.Equals(p, row.Path));
         RefreshPathRows();
     }
 
@@ -1136,7 +1139,7 @@ public sealed partial class SettingsViewModel : ViewModelBase
         if (!IsLoaded || !IntegrateWithITunes || _snapshot.AppleMusicFolder is not { } folder)
             return;
 
-        if (_paths.Contains(folder, StringComparer.OrdinalIgnoreCase))
+        if (_paths.Contains(folder, PathsFor(_paths.Append(folder)).RootComparer))
             return;
 
         _paths.Add(folder);

@@ -97,6 +97,7 @@ public sealed record SettingsSnapshot
     public string IconEmoji { get; init; } = "";
     public bool HasIconPicture { get; init; }
     public IReadOnlyList<string> LibraryPaths { get; init; } = [];
+    public PathRules Paths { get; init; } = PathRules.Default;
     // A server's only - see SettingsCapabilities.ITunesMasterSwitch. The app's
     // own backend leaves it unset here and ignores it in the draft.
     public bool IntegrateWithITunes { get; init; }

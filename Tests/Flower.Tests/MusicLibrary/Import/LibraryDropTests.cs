@@ -39,6 +39,23 @@ public class LibraryDropTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task Distinct_case_sensitive_roots_and_dropped_files_are_both_kept()
+    {
+        var upper = Path.Combine(Library, "A");
+        var lower = Path.Combine(Library, "a");
+        Directory.CreateDirectory(upper);
+        if (Directory.Exists(lower))
+            Assert.Skip("This filesystem ignores case.");
+        Directory.CreateDirectory(lower);
+        var first = Song(upper, "song.wav", "Upper", "Artist");
+        var second = Song(lower, "song.wav", "Lower", "Artist");
+        Assert.Equal(2, Flower.Importer.Importer.ScanRoots([upper, lower]).Count);
+        var prepared = await NewDrop().PrepareAsync([first, second]);
+        Assert.Equal(2, prepared.Files.Count);
+        Assert.Equal(0, prepared.Failed);
+    }
+
     private LibraryDrop NewDrop() => new([Library], NullLogger.Instance);
 
     private static string Song(string folder, string fileName, string? album, string? albumArtist, int seconds = 1)

@@ -30,8 +30,12 @@ public class SettingsITunesGatingTests
 
         public Task<SettingsSnapshot> LoadAsync(CancellationToken ct = default) => Task.FromResult(snapshot);
 
-        public Task<string?> SaveAsync(SettingsDraft draft, CancellationToken ct = default) =>
-            Task.FromResult<string?>(null);
+        public SettingsDraft? Saved { get; private set; }
+        public Task<string?> SaveAsync(SettingsDraft draft, CancellationToken ct = default)
+        {
+            Saved = draft;
+            return Task.FromResult<string?>(null);
+        }
 
         public int CountSongsUnder(string folder) => -1;
 
@@ -59,6 +63,26 @@ public class SettingsITunesGatingTests
 
         public Task<IReadOnlyList<InMemoryLogEntry>?> LoadDeviceLogAsync(string fingerprint, int limit, CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<InMemoryLogEntry>?>([]);
+    }
+
+    [Theory]
+    [InlineData(false, 2)]
+    [InlineData(true, 1)]
+    public async Task Remote_folder_add_remove_and_rescan_detection_follow_the_servers_filesystem(bool ignoresCase, int count)
+    {
+        var paths = Flower.Services.PathRules.FromDto(new Flower.Services.PathPolicyDto(ignoresCase,
+            [new("/music", ignoresCase)], [new("/", ignoresCase)]));
+        var backend = new StubBackend(ServerCapabilities, new SettingsSnapshot { LibraryPaths = ["/music/A"], Paths = paths });
+        var vm = new SettingsViewModel(backend);
+        await vm.LoadAsync(TestContext.Current.CancellationToken);
+        vm.AddLibraryPath("/music/a");
+        Assert.Equal(count, vm.LibraryPaths.Count);
+        Assert.True(await vm.SaveAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(!ignoresCase, backend.Saved!.LibraryPathsChanged);
+        vm.RemoveLibraryPathCommand.Execute(vm.LibraryPaths[0]);
+        Assert.Equal(count - 1, vm.LibraryPaths.Count);
+        Assert.True(await vm.SaveAsync(TestContext.Current.CancellationToken));
+        Assert.True(backend.Saved!.LibraryPathsChanged);
     }
 
     // The server's capability set (see RemoteServerSettingsBackend), which now

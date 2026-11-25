@@ -70,7 +70,9 @@ public sealed class LibraryFolderWatcher : IDisposable
     private readonly object _lock = new();
     private readonly List<FileSystemWatcher> _watchers = [];
     private List<string> _roots = [];
-    private HashSet<string> _pending = new(StringComparer.OrdinalIgnoreCase);
+    // Keyed by the library's PathRules, so "Song.flac" and "song.flac" on a
+    // disk that respects case are two changes, not one.
+    private HashSet<string> _pending;
     private bool _pendingRescan;
     private DateTime? _firstPendingAt;
     private readonly Timer _flushTimer;
@@ -103,6 +105,7 @@ public sealed class LibraryFolderWatcher : IDisposable
     {
         _listensForChanges = listensForChanges;
         _library = library;
+        _pending = new HashSet<string>(library.PathRules);
         _importer = new Importer.Importer(importerLogger);
         _rescanAll = rescanAll;
         _scanInFlight = scanInFlight ?? (() => Task.CompletedTask);
@@ -122,7 +125,7 @@ public sealed class LibraryFolderWatcher : IDisposable
         var roots = Importer.Importer.ScanRoots(libraryPaths);
         lock (_lock)
         {
-            if (roots.SequenceEqual(_roots, StringComparer.OrdinalIgnoreCase) && _watchers.Count > 0)
+            if (_watchers.Count > 0 && PathRules.SameRoots(roots, _roots))
                 return;
 
             StopWatching();
@@ -231,7 +234,7 @@ public sealed class LibraryFolderWatcher : IDisposable
         {
             paths = _pending;
             rescan = _pendingRescan;
-            _pending = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            _pending = new HashSet<string>(_library.PathRules);
             _pendingRescan = false;
             _firstPendingAt = null;
         }

@@ -38,7 +38,9 @@ public sealed class LibraryDrop(IReadOnlyList<string> libraryRoots, ILogger logg
     {
         var files = new List<string>();
         int copied = 0, failed = 0;
-        var sources = dropped.SelectMany(SongsAt).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var paths = dropped.ToList();
+        var roots = paths.Select(p => Directory.Exists(p) ? p : Path.GetDirectoryName(p)).OfType<string>();
+        var sources = paths.SelectMany(SongsAt).Distinct(PathRules.For(roots)).ToList();
         progress?.Report(new SongProgress(0, sources.Count));
         for (var i = 0; i < sources.Count; i++)
         {

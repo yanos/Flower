@@ -85,10 +85,8 @@ namespace Flower.Importer
         // these (see LibraryMirrorService).
         public static List<string> ScanRoots(IEnumerable<string>? libraryPaths)
         {
-            var configured = libraryPaths?
-                .Where(p => !string.IsNullOrWhiteSpace(p) && Directory.Exists(p))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            var roots = libraryPaths?.Where(p => !string.IsNullOrWhiteSpace(p) && Directory.Exists(p)).ToList() ?? [];
+            var configured = roots.Distinct(PathRules.For(roots).RootComparer).ToList();
             // No configured folders means an empty library, not "guess the
             // user's music folder". The folder list (Settings > Library) is the
             // whole of what the user has asked Flower to scan, so emptying it -

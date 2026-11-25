@@ -40,6 +40,52 @@ public class PathCaseTests
         return library;
     }
 
+    [Theory]
+    [InlineData(false, 2)]
+    [InlineData(true, 1)]
+    public void Root_deduplication_uses_the_servers_policy_even_on_a_different_client_filesystem(bool ignoresCase, int expected)
+    {
+        var server = new PathRules([("/music", ignoresCase)], defaultIgnoresCase: ignoresCase);
+        var remote = PathRules.FromDto(server.ToDto());
+        var paths = new[] { "/music/A", "/music/a/" }.Distinct(remote.RootComparer).ToList();
+        Assert.Equal(expected, paths.Count);
+    }
+
+    // Probed for real, so whichever filesystem the suite runs on: a folder
+    // list differing only in case is the same list exactly when that disk
+    // ignores case.
+    [Fact]
+    public void Folder_lists_that_differ_only_in_case_are_the_same_only_where_the_disk_ignores_case()
+    {
+        var parent = Directory.CreateTempSubdirectory("flower-same-roots").FullName;
+        try
+        {
+            var upper = Path.Combine(parent, "Music");
+            var lower = Path.Combine(parent, "music");
+            Directory.CreateDirectory(upper);
+            var ignoresCase = Directory.Exists(lower);
+            if (!ignoresCase)
+                Directory.CreateDirectory(lower);
+
+            Assert.Equal(ignoresCase, PathRules.SameRoots([upper], [lower]));
+            Assert.True(PathRules.SameRoots([upper], [upper]));
+            Assert.False(PathRules.SameRoots([upper], [upper, lower]));
+        }
+        finally
+        {
+            Directory.Delete(parent, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Distinct_mount_names_are_not_collapsed_when_the_mounts_ignore_case()
+    {
+        var remote = PathRules.FromDto(new PathPolicyDto(false,
+            [new("/music/A", true), new("/music/a", true)], [new("/music", false)]));
+        Assert.Equal(2, new[] { "/music/A", "/music/a" }.Distinct(remote.RootComparer).Count());
+        Assert.True(remote.Equals("/music/A/Song.flac", "/music/A/song.flac"));
+    }
+
     [Fact]
     public void Where_case_is_respected_two_spellings_keep_their_own_identity_across_a_rescan()
     {

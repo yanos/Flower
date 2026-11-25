@@ -43,7 +43,7 @@ public static class ITunesIntegration
         if (Importer.TryResolveAppleMusicFolder(logger) is not { } folder)
             return null;
 
-        return settings.LibraryPaths.Contains(folder, StringComparer.OrdinalIgnoreCase) ? null : folder;
+        return settings.LibraryPaths.Contains(folder, Flower.Services.PathRules.For(settings.LibraryPaths.Append(folder)).RootComparer) ? null : folder;
     }
 
     // Runs whichever of the two imports the settings ask for, over tracks the

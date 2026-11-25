@@ -137,7 +137,7 @@ public class LibraryDownloadService
         if (File.Exists(destination)
             || _library.Tracks.Any(t => !ReferenceEquals(t, track)
                 && t.Path != null
-                && string.Equals(t.Path, destination, StringComparison.OrdinalIgnoreCase)))
+                && _library.PathRules.Equals(t.Path, destination)))
         {
             return fallback;
         }
