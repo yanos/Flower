@@ -43,7 +43,7 @@ namespace Flower.ViewModels
             get => _settings.PreampDb;
             set
             {
-                _settings.PreampDb = value;
+                _settings.PreampDb = Math.Clamp(value, Equalizer.MinGainDb, Equalizer.MaxGainDb);
                 OnPropertyChanged();
                 ApplyAndSave();
             }
@@ -62,6 +62,9 @@ namespace Flower.ViewModels
             var settings = appSettings.EqualizerSettings ?? new EqualizerSettings();
             if (settings.BandGainsDb.Length != Equalizer.BandCount)
                 settings.BandGainsDb = new double[Equalizer.BandCount];
+            settings.PreampDb = Math.Clamp(settings.PreampDb, Equalizer.MinGainDb, Equalizer.MaxGainDb);
+            for (var i = 0; i < settings.BandGainsDb.Length; i++)
+                settings.BandGainsDb[i] = Math.Clamp(settings.BandGainsDb[i], Equalizer.MinGainDb, Equalizer.MaxGainDb);
             appSettings.EqualizerSettings = settings;
             _settings = settings;
 
@@ -88,7 +91,7 @@ namespace Flower.ViewModels
 
         internal void SetBandGainDb(int index, double value)
         {
-            _settings.BandGainsDb[index] = value;
+            _settings.BandGainsDb[index] = Math.Clamp(value, Equalizer.MinGainDb, Equalizer.MaxGainDb);
             ApplyAndSave();
         }
 

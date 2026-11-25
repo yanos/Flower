@@ -21,7 +21,8 @@ namespace Flower.Audio
         public static readonly double[] CenterFrequenciesHz =
             { 31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000 };
 
-        private const double MaxGainDb = 12.0;
+        public const double MaxGainDb = 12.0;
+        public const double MinGainDb = -MaxGainDb;
         private const double QFactor = 1.41; // ~1 octave bandwidth per band, matches the spacing above
 
         // A band is left out when its centre is this close to Nyquist. At or
@@ -48,11 +49,11 @@ namespace Flower.Audio
             var coefficients = new BiquadCoefficients[UsableBandCount(sampleRateHz)];
             for (var i = 0; i < coefficients.Length; i++)
             {
-                var gainDb = Math.Clamp(settings.BandGainsDb[i], -MaxGainDb, MaxGainDb);
+                var gainDb = Math.Clamp(settings.BandGainsDb[i], MinGainDb, MaxGainDb);
                 coefficients[i] = BiquadCoefficients.PeakingEq(CenterFrequenciesHz[i], QFactor, gainDb, sampleRateHz);
             }
 
-            return new Equalizer(coefficients, Math.Clamp(settings.PreampDb, -MaxGainDb, MaxGainDb));
+            return new Equalizer(coefficients, Math.Clamp(settings.PreampDb, MinGainDb, MaxGainDb));
         }
 
         // The bands are in ascending order, so the usable ones are a prefix.

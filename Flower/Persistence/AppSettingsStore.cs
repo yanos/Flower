@@ -123,9 +123,9 @@ namespace Flower.Persistence
         // HomeViewModel. Continue Playing is capped at so many albums, Recently
         // Played at so many songs, Recently Added at so many months back. Zero
         // hides that shelf.
-        public int HomeContinuePlayingLimit { get; set; } = 6;
-        public int HomeRecentlyPlayedLimit  { get; set; } = 8;
-        public int HomeRecentlyAddedMonths  { get; set; } = 3;
+        public int HomeContinuePlayingLimit { get; set; } = HomeDefaults.ContinuePlayingLimit;
+        public int HomeRecentlyPlayedLimit  { get; set; } = HomeDefaults.RecentlyPlayedLimit;
+        public int HomeRecentlyAddedMonths  { get; set; } = HomeDefaults.RecentlyAddedMonths;
 
         // Where Track Info puts a cover it changes: into the songs' files, or
         // into their album's folder (ArtworkPlacement). Set in Settings on

@@ -132,21 +132,21 @@ public sealed class HomeViewModel : ViewModelBase, IDisposable
     public bool ShowsNothingYet => IsEmpty && _filter == null;
     public bool ShowsNoMatches => IsEmpty && _filter != null;
 
-    private int _continuePlayingLimit = 6;
+    private int _continuePlayingLimit = HomeDefaults.ContinuePlayingLimit;
     public int ContinuePlayingLimit
     {
         get => _continuePlayingLimit;
         set => SetSetting(ref _continuePlayingLimit, Math.Clamp(value, 0, MaxAlbumsPerShelf));
     }
 
-    private int _recentlyPlayedLimit = 8;
+    private int _recentlyPlayedLimit = HomeDefaults.RecentlyPlayedLimit;
     public int RecentlyPlayedLimit
     {
         get => _recentlyPlayedLimit;
         set => SetSetting(ref _recentlyPlayedLimit, Math.Clamp(value, 0, MaxAlbumsPerShelf));
     }
 
-    private int _recentlyAddedMonths = 3;
+    private int _recentlyAddedMonths = HomeDefaults.RecentlyAddedMonths;
     public int RecentlyAddedMonths
     {
         get => _recentlyAddedMonths;

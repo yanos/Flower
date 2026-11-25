@@ -28,6 +28,22 @@ public class EqualizerViewModelTests : PinnedDataDirectory
                                       new AppSettingsStore(NullLogger<AppSettingsStore>.Instance));
     }
 
+    [Fact]
+    public void Restored_and_edited_gains_stay_within_the_DSP_limits()
+    {
+        var settings = new AppSettings { EqualizerSettings = new EqualizerSettings
+        {
+            PreampDb = 100, BandGainsDb = Enumerable.Repeat(-100d, Equalizer.BandCount).ToArray(),
+        } };
+        var vm = Make(out _, settings);
+        Assert.Equal(Equalizer.MaxGainDb, vm.PreampDb);
+        Assert.All(vm.Bands, b => Assert.Equal(Equalizer.MinGainDb, b.GainDb));
+        vm.PreampDb = -100;
+        vm.Bands[0].GainDb = 100;
+        Assert.Equal(Equalizer.MinGainDb, vm.PreampDb);
+        Assert.Equal(Equalizer.MaxGainDb, vm.Bands[0].GainDb);
+    }
+
     // Reset flattens the curve and the preamp, applies that once, and leaves
     // the equalizer on or off as it was.
     [Fact]

@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:Flower.ViewModels"
+        xmlns:audio="using:Flower.Audio"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d" d:DesignWidth="720" d:DesignHeight="500"
@@ -50,7 +51,7 @@
           ColumnDefinitions="64,*,72" ColumnSpacing="16" Margin="0,20,0,0">
       <TextBlock Grid.Column="0" Text="Preamp" FontWeight="Medium" VerticalAlignment="Center"/>
       <Slider Grid.Column="1" Classes="control"
-              Minimum="-12" Maximum="12" TickFrequency="1"
+              Minimum="{x:Static audio:Equalizer.MinGainDb}" Maximum="{x:Static audio:Equalizer.MaxGainDb}" TickFrequency="1"
               Value="{Binding PreampDb, Mode=TwoWay}"
               VerticalAlignment="Center"/>
       <TextBlock Grid.Column="2" Text="{Binding PreampDb, StringFormat={}{0:0.0} dB}"
@@ -69,9 +70,9 @@
       <Grid ColumnDefinitions="36,*,20" ColumnSpacing="8">
         <!-- The scale, level with the sliders' ends and middle. -->
         <Grid Grid.Column="0" RowDefinitions="26,*,*,32" Height="258" VerticalAlignment="Top">
-          <TextBlock Grid.Row="1" Classes="scale" Text="+12" VerticalAlignment="Top" Margin="0,0,0,0"/>
+          <TextBlock Grid.Row="1" Classes="scale" Text="{Binding Source={x:Static audio:Equalizer.MaxGainDb}, StringFormat=+{0}}" VerticalAlignment="Top" Margin="0,0,0,0"/>
           <TextBlock Grid.Row="1" Classes="scale" Text="0" VerticalAlignment="Bottom" Margin="0,0,0,-7"/>
-          <TextBlock Grid.Row="2" Classes="scale" Text="−12" VerticalAlignment="Bottom"/>
+          <TextBlock Grid.Row="2" Classes="scale" Text="{Binding Source={x:Static audio:Equalizer.MinGainDb}, StringFormat={}{0}}" VerticalAlignment="Bottom"/>
         </Grid>
 
         <Panel Grid.Column="1">
@@ -110,7 +111,7 @@
                              HorizontalAlignment="Center"/>
                   <Slider Orientation="Vertical" Classes="control"
                           Height="200"
-                          Minimum="-12" Maximum="12" TickFrequency="1"
+                          Minimum="{x:Static audio:Equalizer.MinGainDb}" Maximum="{x:Static audio:Equalizer.MaxGainDb}" TickFrequency="1"
                           Value="{Binding GainDb, Mode=TwoWay}"
                           HorizontalAlignment="Center"/>
                   <TextBlock Text="{Binding FrequencyLabel}"
