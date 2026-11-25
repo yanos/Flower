@@ -1,5 +1,8 @@
 # Streaming Services (Spotify, Bandcamp, Apple Music) — Integration Plan
 
+> Development plan and implementation history. Some sections describe earlier
+> designs. For current usage and setup, see the [user guides](README.md).
+
 Investigation into streaming Spotify/Apple Music/Bandcamp from Flower given valid credentials.
 
 **Bottom line: credentials aren't the gating factor — DRM is.** `IAudioManager.Play(Track)` hands `track.Path` — a filesystem path or a URL — straight to the decoder, which decodes anything it is given (this is also how a paired device plays a server's song, from a signed `/api/flower/v1/stream` URL). So the deciding question per service is: **can we get a raw, DRM-free stream URL?**

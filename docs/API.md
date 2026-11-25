@@ -1,16 +1,17 @@
-# The Flower API
+# Flower HTTP API
 
-What `Flower.Server` answers over HTTP, and what a caller has to send to be
-answered. A reference, written from the code as it stood in October 2026, after
-the trust-boundary work in `SECURITY.md`. `Flower.Server/Endpoints/`
-is the authority, and each section names the file it was read from.
-`SYNC-PLAN.md` holds the reasoning behind most of it; `SELF-HOSTING.md` is the
-operator's side; `SECURITY.md` is why the budgets, refusals and
-signed answers are shaped the way they are.
+Reference for clients integrating with `Flower.Server`. Routes require a paired
+device unless noted. Flower uses its own protocol; Subsonic clients aren't
+supported. The API can change between early releases.
 
-There is one protocol and one server. A client never serves, there is no
-OpenSubsonic surface any more, and nothing here is versioned for compatibility:
-the `v1` in the paths is a name, not a promise (see CLAUDE.md, "No Users Yet").
+For server installation, use [Self-hosting](SELF-HOSTING.md). For the trust
+model, see [Security](SECURITY.md). The implementation is in
+[`Flower.Server/Endpoints/`](../Flower.Server/Endpoints/).
+
+[Routes](#the-surface-at-a-glance) · [Limits](#before-any-route-runs) ·
+[Authentication](#authentication-a-signed-request) · [Discovery](#discovery) ·
+[Pairing](#pairing) · [Device API](#the-device-surface--apiflowerv1) ·
+[Admin API](#the-admin-surface--apiadmin) · [Change tokens](#change-tokens)
 
 ## The surface at a glance
 
@@ -23,11 +24,10 @@ the `v1` in the paths is a name, not a promise (see CLAUDE.md, "No Users Yet").
 | `/api/admin/*` | Devices, settings, library writes, logs | Paired devices flagged admin | camelCase |
 | `GET /licences` | `NOTICE` and the licence texts, as `text/plain` (`OpenSourceNotices`); the browser UI's "Open-Source Licences" link | Anyone the network gate admits | — |
 
-The casing split is real and easy to trip over. The sync group writes whatever
-the client's source-generated context writes — no naming policy, so `Songs`,
-`DeviceFingerprint`, `Ids` — and reads case-insensitively. Everything else is
-camelCase. Nulls are omitted everywhere except `/info`, which writes them — a
-`null` there is an answer (`trustsCaller`), not an absence.
+**Check JSON casing when implementing a client.** The device API writes
+PascalCase (`Songs`, `DeviceFingerprint`, `Ids`) and reads case-insensitively.
+Other endpoints write camelCase. Nulls are omitted except in `/info`, where
+`null` can represent an unknown trust state.
 
 Anything else under `/api` is a `404` (`not-found`) from the single-page
 fallback (`WebUiHosting`), which matches every method. That includes `HEAD` on the media
@@ -45,8 +45,7 @@ client validates it against the key it pinned rather than against an authority.
 `Flower:AllowPublicAccess` is on, a request whose source address is not
 loopback, link-local, RFC1918, ULA, in `AllowedCidrs`, or (with
 `TrustTailscaleRange`) in `100.64.0.0/10` has its connection **aborted** — no
-status, no body. A refusal is still a reply, and a reply confirms something is
-listening. `X-Forwarded-For` is believed only from `Flower:TrustedProxies`.
+status, no body. `X-Forwarded-For` is believed only from `Flower:TrustedProxies`.
 
 **Body size.** 20 MB process-wide (Kestrel). On the device routes each
 route states its own cap, checked against `Content-Length` before anything is
@@ -81,25 +80,23 @@ A request over any of these is refused `429 rate-limited` with
 `Retry-After: 60`. A request a stream ticket admitted is charged to the media
 budget of the device that minted the ticket.
 
-The order matters. A stranger is refused before its body is read, since that
-costs a lookup rather than a buffer and an ECDSA verify. A known device whose
-signature fails is counted per address *and* fingerprint, so someone who knows
-a device's fingerprint cannot lock that device out by failing on its behalf
-from elsewhere. The planes are separate so that spending one cannot spend
-another — a cover-art burst sharing a budget with audio is how an album once
-stopped playing (`CITED-DECISIONS.md` #2b).
+Unknown devices are rejected before body buffering. Failed signatures are
+counted by address and fingerprint, so failures from another address don't
+spend the real device's budget. Each budget is separate: artwork requests,
+for example, don't consume the playback allowance.
 
 ## Authentication: a signed request
 
-There are no passwords, sessions or bearer tokens. A device holds a P-256
-keypair and signs every request; the server holds the public key it captured
-when the device paired. A browser tab is not an exception — it holds a
-non-extractable WebCrypto key and signs the same way (`BrowserPeerCredentials`).
+Devices authenticate with P-256 signatures, without passwords or login
+sessions. The server stores the device's public key at pairing. Browser clients
+use a non-extractable WebCrypto key and the same signatures
+(`BrowserPeerCredentials`). Browser audio is the exception: `/stream` and
+`/download` can accept a temporary bearer ticket.
 
 Source: `Flower.Core/Services/` — `SignedRequestCanonicalizer`,
 `SignatureVerifier`, `PeerSignatureAuth`, `DeviceSigningKey`, `NonceReplayGuard`.
 
-### What travels
+### Request headers
 
 | Name | Value |
 |---|---|
@@ -189,7 +186,7 @@ DHCP lease. The browser head reads `trustsCaller` without this check. It only
 decides whether to show the pairing screen, and a tab's code comes from that
 same origin anyway.
 
-### How a refusal reads
+### Errors
 
 Every refusal under `/api` is an RFC 9457 problem document,
 `application/problem+json`, with one member of Flower's own: `code`
@@ -233,21 +230,21 @@ timestamp after a laptop slept is `clock-skew`, and must never unpair anything. 
 reads `serverTime` off a `clock-skew` refusal and signs with the corrected clock
 from then on. The media path, which signs its own requests, retries once at
 once. A route that left with a bare status is given a problem by its status in
-a fallback (`Problems.FillEmptyRefusalAsync`). A test walks the routing table to
-hold every route to this.
+a fallback (`Problems.FillEmptyRefusalAsync`).
 
 ## Discovery
 
 `DiscoveryEndpoints.cs`, `SyncProtocol.cs`.
 
-The server advertises `_flowersync._tcp` over mDNS. That says only that
-something is listening; the handshake says what.
+The server advertises `_flowersync._tcp` over mDNS. Use the identity handshake
+to identify and authenticate the discovered server.
 
 ### `GET /api/localsend/v2/info`
 
-Ungated, and optionally signed. Unsigned it answers a stranger with the
-server's identity, on the address's anonymous budget; signed by a paired
-device it answers more, on that device's budget, and the answer is signed back.
+Authentication is optional; the network allow-list and rate limits still apply.
+Unsigned requests return public identity fields. Verified requests return
+paired-only fields and consume the device's budget. Responses to requests
+with a nonce are signed.
 
 ```json
 {
@@ -298,8 +295,9 @@ signed back (see "What the server signs back"); a client unpairs on
 An admin issues a code; a new device redeems it. Codes are five characters from
 `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`, live ten minutes, are single-use, and are
 kept in memory only — a restart drops them. Case, spaces and dashes are ignored
-on the way in. The first code is printed to the console at startup
-(`--pairing-code` forces one), never logged.
+on the way in. The first code is printed to standard output at startup
+(`--pairing-code` forces one). It isn't written through the application logger;
+container runtimes can still capture standard output in their logs.
 
 A code reaches a device in one of three renderings:
 
@@ -340,8 +338,8 @@ PascalCase JSON.
 | GET | `/playlists` | The caller's listener's playlists |
 | POST | `/playlists/changes` | A session's playlist edits, each over the revision it is based on |
 | GET | `/listening?since=` | The plays that moved since a listening token (admin devices) |
-| POST | `/plays` | Play events from a head with no storage (a browser tab) |
-| POST | `/track-state` | Plays, stars and options from a head with storage |
+| POST | `/plays` | Play events from a client without durable counters, such as a browser |
+| POST | `/track-state` | Play totals, stars and options from a client with storage |
 | POST | `/album-progress` | Exchange the Continue Playing shelf |
 | POST | `/log/report` | Push this device's recent log lines |
 | GET | `/log/watermark` | What the server already holds of them |
@@ -379,8 +377,8 @@ anyone else's listening. See `SECURITY.md`.
 
 The response's `ETag` is the library change token — the same value `/info`
 reports as `libraryToken`. Send it back as `If-None-Match` for a `304` with no
-body. At a real library size this is megabytes; the serialized body is cached
-per token pair and audience (the owner's, or one guest's).
+body. Large catalogs can be several megabytes. Responses are cached per catalog /
+listening token pair and audience (owner or individual guest).
 
 The `ETag` names the catalog, not the listening in it: a play does not move
 it, so a `304` can stand in front of play counts that have moved since. An
@@ -464,11 +462,8 @@ same fields (`PlayCounts`, `ImportedPlayCount`, `SkipCounts`,
 applies together with the resume position. `Token` is where the answer leaves
 the device. Ask from it next time.
 
-A `since` this server cannot count from, one from before a restart or one it
-never issued, is a `409 conflict`, and the device pulls `GET /library`
-instead. Every play used to move the catalog token, so every other device
-pulled the whole catalog to learn one count. This route exists so a play costs
-a few songs instead.
+An unknown or expired `since` token, including one from before a server restart,
+returns `409 conflict`. Fetch `GET /library` to establish a new baseline.
 
 ### `POST /plays`
 
@@ -508,9 +503,8 @@ raises it, to the highest any admin device reports, so two Macs sharing one
 Music.app history count it once. `ImportedSkipCount` is Music.app's skip
 count, by the same rule.
 
-The response headers exist to break a loop: reporting a play moves a token,
-and a client that did not recognise its own echo would fetch back what it had
-just said, once for every play.
+Store the returned tokens so the next poll doesn't fetch changes the client
+just reported.
 
 ### `POST /album-progress`
 
@@ -578,17 +572,13 @@ int32 count
 count × { int32 idBytes, id (UTF-8), int32 blobBytes, blob }
 ```
 
-A zero-length blob means the server has no picture for that id. The response
-stops at 8 MB: ids that did not fit are simply absent, and the caller asks
-again for those. The two cases are distinguishable only because a found-nothing
-id is still present.
+A zero-length blob means the server has no picture for that id. The response stops at 8 MB. An absent id didn't fit: request it again.
+A present id with an empty blob has no artwork.
 
 ### `POST /vibe/preview` and `POST /vibe-playlists/{id}/extend`
 
-Vibe Playlists (`VibeEndpoints`, `docs/VIBE-PLAYLIST-PLAN.md`), for every
-paired device, admin or not, on a budget of their own: the one thing a
-listener can spend here is the server's CPU, a text encode per sentence it
-has not seen.
+Available to every paired device, on the separate Vibe request budget.
+Implementation: `VibeEndpoints`.
 
 - `/vibe/preview` takes `{"Prompt": "...", "Instrumental": false}` (a
   sentence of at most 500 characters, else `400`) and answers
@@ -621,8 +611,8 @@ empty. Any paired device may ask, on the Vibe budget. `409`
 
 ### `GET /artist-image?artist=`
 
-A picture of an artist, from Deezer, looked up by the server on the caller's
-behalf (`OnlineMetadataEngine`, `docs/ONLINE-METADATA-PLAN.md`). `artist` is
+Returns an artist picture looked up through Deezer by the server
+(`OnlineMetadataEngine`). `artist` is
 the name as the catalog's `artists` field has it, compared without case.
 
 - The image bytes with their own MIME type: a 1000×1000 JPEG, as Deezer has it.
@@ -632,8 +622,8 @@ the name as the catalog's `artists` field has it, compared without case.
   Deezer's artists of that name has an album or song the library has by them.
   A client may remember this for a while; the
   app does for a day.
-- `503` `unavailable` when there may be one but it could not be found out
-  just now — the server has no way out, or Deezer refused. Ask again later.
+- `503 unavailable` for a temporary lookup failure, such as a connection
+  failure or refusal from Deezer. Retry later.
 
 Found pictures and misses are kept under the data directory
 (`ArtistPictures/`), a miss for 30 days. Many devices asking for one artist at
@@ -672,12 +662,11 @@ request it issues, so the tab signs this instead:
   "url": "/api/flower/v1/stream?id=…&ticket=…" }
 ```
 
-A ticket is a bearer token by necessity, so it is narrow: one track id, the
-track's length plus fifteen minutes (an id the library does not know gets the
-fifteen minutes alone; a length over twelve hours counts as twelve), in memory only, and revoked with the device that minted it. It is
-deliberately **not** single-use — a media element makes a probe and then a
-range request per seek. A device holds at most 32; minting another drops its
-oldest. Because it rides in the query string, a ticket appears in full in any
+The ticket is a bearer token for one track. It expires after the track's
+length plus fifteen minutes, capped at twelve hours of track length; unknown
+tracks get fifteen minutes. Tickets live in memory and are revoked with the
+issuing device. They allow repeated requests for probing and seeking. A device
+can hold 32; issuing another evicts the oldest. Because it rides in the query string, a ticket appears in full in any
 log that records request URLs; the shipped configuration does not log them
 (`Microsoft.*` at Warning), and raising that to Information does. `400` without an id or with one over 64 characters; an authentication
 failure is the same `401` and code as anywhere else.
@@ -800,9 +789,7 @@ is still listing the folders. An administering device polls them into its status
 bar after a rescan it started.
 
 `unwritableFolders` is the library folders the last scan could not create a
-file in. It is a statement rather than an error — a read-only mount is a
-legitimate deployment — and what it warns of is the upload and tag routes below
-being refused.
+file in. Read-only mounts are supported, but uploads and file edits require write access.
 
 Removal takes a song out of the library and, without `deleteFiles`, leaves the
 file on disk and excluded from scans. `/removed/delete` is the only route that
@@ -830,8 +817,8 @@ cover file, and its songs get the picture in their files as without it.
 All of these answer `503` while a library scan is running, and a client waits
 for the library token to move before resuming.
 
-**Upload.** A file goes up in pieces, because a signed body is buffered whole
-before its signature is checked.
+**Upload.** Send the file in chunks. Each chunk is buffered and its signature
+verified before writing.
 
 1. `POST /library/uploads` with
    `{relativePath, length, sha256, dateAdded, replacesTrackId?}` — the path
@@ -843,9 +830,8 @@ before its signature is checked.
 3. The piece that completes the file answers with `uploadId` absent and
    `{trackId, dateAdded, libraryToken, tagsEditedAt?, artEditedAt?, fileReplacedAt?}`.
 
-`offset` in every answer is where the *server* got to. A piece sent at any
-other offset is not an error: it is answered with the server's offset and
-nothing is written, which is how a dropped connection resumes. Pieces are
+Use the server's returned `offset` for the next chunk. Sending another offset
+returns the expected offset without writing, allowing interrupted uploads to resume. Pieces are
 staged on disk under the file's hash for seven days, so a restarted server
 picks an upload back up after a fresh step 1.
 
@@ -862,7 +848,7 @@ the song keeps its id.
 | `503 scanning` | A library scan is running | Pause; resume when the token moves |
 | `503 cannot-write` | The music folder is read-only, or there is none | Stop the whole batch, and tell the owner — a proxy in front of a server that is down also answers `503`, so only this code means the folder needs fixing |
 
-**Move.** `POST /library/move` with `{trackId, relativePath}` → 
+**Move.** `POST /library/move` with `{trackId, relativePath}` →
 `{relativePath, libraryToken}`. Sent only for a recorded move, never inferred
 from comparing layouts. Same refusals as an upload.
 
@@ -883,24 +869,25 @@ like a body is.
 `&to=folder` keeps it in the album's folder rather than the files, as for
 `/cover-art` above: the device sends it wherever it keeps the cover itself.
 
-Every `libraryToken` handed back is the token the caller's own change produced,
-for the reason `/track-state` returns one: so a device does not mistake its own
-write for news.
+Store each returned `libraryToken` so the client doesn't fetch its own write
+as a new remote change.
 
 ## Change tokens
 
-Three opaque strings drive when a client talks to the server at all:
+Clients use separate tokens to fetch only the data that changed:
 
 - `libraryToken` — on `/info`, as `ETag` on `GET /library`, and echoed by every
   write that moves it.
 - `playlistsToken` — on `/info`. It moves with a Vibe Playlist's songs as
   well as with every edit, since the server rebuilds a pool without one.
+- `listeningToken` — administrator-only, on `/info`; use `GET /listening?since=`
+  for play counts, last-played dates and resume positions that changed.
 - A log watermark — per device, from the two `/log` routes.
 
 A paired client polls `/info`, compares tokens, and opens a sync session only
-when one has moved. A session is roughly: `GET /library` (conditional), a
-playlist pull and push, a `/track-state` report, an `/album-progress` exchange,
-a `/log/report`. A client that is refused with `429` backs off for a full
+when one has moved. A session can include a conditional `GET /library`, a listening delta,
+playlist changes, a `/track-state` report, an `/album-progress` exchange and
+a `/log/report`, according to what changed. A client that is refused with `429` backs off for a full
 window rather than retrying into it.
 
 ## Where to read next
@@ -911,4 +898,5 @@ window rather than retrying into it.
 | A wire shape | `Flower.Core/Services/*Contracts.cs`, `LibraryContracts.cs`, `TrackTags.cs` |
 | Signing, from the calling side | `Flower/Services/SignedDeviceCredentials.cs`, `BrowserPeerCredentials.cs`, `Flower.Core/Services/PeerCredentialsHandler.cs` |
 | The routes exercised end to end | `Tests/Flower.Server.Tests/` |
-| Why it is shaped this way | `docs/SYNC-PLAN.md`, `docs/CITED-DECISIONS.md` |
+| Access controls and trust model | [Security](SECURITY.md) |
+| Design history | [Development notes](README.md#development) |

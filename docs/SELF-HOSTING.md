@@ -1,1612 +1,268 @@
-# Self-hosting Flower.Server
+# Self-hosting Flower
 
-A guide for running your own Flower server and reaching it from your phone,
-laptop, or a browser — including from outside your house, without forwarding a
-port.
+Run a Flower server on a computer or NAS to share your music across devices
+and with friends or family. It includes a browser player, so listeners don't
+have to install an app.
 
-Unlike everything else in `docs/`, this is a user-facing guide rather than a
-design record. The reasoning behind these choices lives in `SYNC-PLAN.md`.
+[Install](#running-it-in-docker) · [Pair](#pair-your-first-device) ·
+[Add music](#adding-music-to-the-servers-folder) · [Invite people](#adding-devices-later) ·
+[Back up](#backups) · [Troubleshoot](#troubleshooting)
 
----
+## Before you start
 
-## What the server is
+You'll need a music folder and a machine that stays on while people listen.
+Docker is the simplest server install; running from source is also supported.
 
-`Flower.Server` is a headless music server: it scans folders you point it at,
-serves that library to Flower clients over Flower's own sync protocol, and
-serves a full browser UI of its own that plays music in a tab.
+Flower streams the original music files without converting them. Large
+lossless files use more upload bandwidth and mobile data.
+
+## Running it in Docker
+
+### Linux
+
+Install Docker with Compose, then download the repository to get its Compose
+files. You don't need .NET or FFmpeg on the host.
 
 ```bash
+git clone https://github.com/yanos/Flower.git
+cd Flower/docker
+```
+
+Create a `.env` file in this directory with the full path to your music folder:
+
+```dotenv
+FLOWER_MUSIC=/srv/music
+```
+
+Start the server and read its setup links:
+
+```bash
+docker compose up -d
+docker compose logs flower
+```
+
+Run the Docker commands in this guide from `Flower/docker`.
+
+### macOS or Windows
+
+Use the same `.env` file, with your music folder's path, and start with the
+additional Compose file:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.non-linux.yml up -d
+docker compose logs flower
+```
+
+When using `up`, `stop`, `restart`, `create` or `run`, keep both `-f` options.
+Other devices won't discover this container automatically. Add your computer's
+LAN address to `.env` so setup links point to it:
+
+```dotenv
+FLOWER_ADVERTISED_HOST=192.168.1.40
+```
+
+Replace the example with your computer's address, then run the `up` command
+again. Use a reserved LAN address or a DNS name your devices can resolve;
+avoid `.local` names. See [Docker networking](SERVER-REFERENCE.md#docker-networking)
+for remote-access limitations on these hosts.
+
+## Running without Docker
+
+Install the .NET 10 SDK, clone the repository, and run from its root:
+
+```bash
+dotnet workload install wasm-tools
 dotnet run --project Flower.Server
 ```
 
-It listens on `http://0.0.0.0:4533` by default and keeps everything it owns —
-the database, its device key, its trusted-device list, logs, and an
-operator-editable settings file — in one directory:
+The workload is needed to build the browser UI. See
+[Building Flower](BUILDING.md) for other build options.
 
-| OS | Data directory |
+After pairing, add a music folder in the server's **Settings → Library**.
+You can also set `LibraryPaths` in
+[the settings file](SERVER-REFERENCE.md#settings).
+
+## Pair your first device
+
+On first launch, the server prints a code and links. **This first invite grants
+administrator access.** It works once and expires after ten minutes.
+
+Choose one:
+
+- **App:** open the printed `flower://pair` link on a device with Flower installed,
+  or paste it into **Settings → Servers → Pairing code or link** on desktop.
+- **Browser on the server:** open the printed `http://localhost:4533` setup link.
+- **Browser on another computer:** open the printed HTTPS setup link, usually
+  `https://192.168.1.40:4534/#pair=…&page=settings`.
+
+The built-in HTTPS certificate causes a browser warning. Confirm the address
+is your server before continuing. A warning can return after a restart;
+[remote access setup](REMOTE-SETUP.md) covers trusted HTTPS addresses.
+Plain HTTP at a LAN IP cannot pair a browser.
+
+Once paired, the app or browser remembers its access. Bookmark the plain server
+address for later visits. Clearing browser site data removes that browser's access.
+
+## Adding music to the server's folder
+
+Copy files into the folder you set as `FLOWER_MUSIC`, or one listed in the
+server's **Settings → Library**. Songs appear automatically:
+
+- **Local disk:** usually within seconds.
+- **Network drive:** within five minutes by default. Use **Rescan files** to
+  check sooner; `LibraryListingMinutes` changes the interval.
+
+Administrators can also drag songs into their desktop app to upload them.
+Their tag edits, covers and library removals sync to everyone.
+
+**Removing a server song affects every listener.** Deleting files from a
+library folder retained on an admin device from before pairing can also remove
+songs from the server. See [Managing songs](MANAGING-SONGS.md) before moving or
+removing a collection.
+
+The Docker music mount is writable by default. Uploads, file edits and file
+deletion require write access for the server's user (`1654`). To prevent the
+server from changing files, add `:ro` to the `/music` mount in
+`docker-compose.yml`. Streaming, playlists and play counts still work.
+[Permissions help](SERVER-REFERENCE.md#docker-file-permissions).
+
+## Adding devices later
+
+On a device already paired as an administrator:
+
+1. Select the server in the desktop sidebar, open phone **Settings**, or open
+   **Server Settings → Devices** in the browser.
+2. Leave **Administrator** unchecked for a listener. Check it only for a device
+   that should manage the server.
+3. Choose **Generate Pairing Code** and send the app invite or browser link.
+
+Each invite is valid for ten minutes and one device. Prefer the app link to a
+bare code: the link checks the server's identity before pairing.
+
+| Access | Permissions |
 |---|---|
-| macOS | `~/Library/Application Support/Flower/Server` |
-| Linux | `~/.local/share/Flower/Server` |
-| Windows | `%LOCALAPPDATA%\Flower\Server` |
+| Listener | Play and download the library; manage their own playlists |
+| Administrator | Also edit the shared library and server settings, invite devices and revoke other devices |
 
-Point it somewhere else with `--Flower:DataDirectory=/srv/flower`.
+The owner's administrator devices share playlists. Each listener device has
+its own playlists. Pair your own second device as an administrator if it should
+share the owner's collection and controls.
 
-Server logs are under `logs/`. Logs pushed by paired clients are kept for seven
-days as daily JSON Lines files in `logs/devices/<alias>--<fingerprint>/`, for
-example `2026-08-28T00-00-00Z.logs.jsonl`.
+Remove a lost or unwanted device from the server's device list. Revocation
+stops future server access; it can't erase files already copied to that device.
 
-On first run it prints a pairing code and browser links to the terminal,
-because no device can administer it yet:
+## Optional AI features
 
+In the server's **Settings → AI Features**, enable **AI Features** to download
+the model and analyse your library. This is off by default and can take hours
+of CPU time for a large collection.
+
+- **Vibe Playlists:** make playlists from a description of the sound or mood.
+- **Endless Play:** continue a finished queue with similar songs. Enable it on
+  the server and on each device that wants it.
+
+Music analysis and prompts run on your server. Paired devices don't download
+the model. You can pause analysis in Settings; turning off all server AI
+features deletes the model and analysis. See [Privacy](PRIVACY.md).
+
+## Listen away from home
+
+Choose an option in [Remote access setup](REMOTE-SETUP.md):
+
+| Option | Best fit |
+|---|---|
+| Tailscale | Your own devices, or listeners willing to install Tailscale |
+| Port forwarding | App access without a VPN; add a trusted certificate for browsers |
+| Cloudflare Tunnel | No router port to open; check the provider's media-use terms |
+
+Keep **Allow connections from the internet** off for a Tailscale-only setup.
+Public port forwarding and tunnels require it on. A proxy also needs
+`TrustedProxies` configured.
+
+## Settings
+
+Use **Server Settings** from an administrator device for everyday changes.
+For deployment settings, edit `flower-server.json` in the server's data folder.
+Environment variables and command-line options override that file.
+
+See the [server reference](SERVER-REFERENCE.md) for file locations, settings,
+certificates and Docker permissions.
+
+## Backups
+
+**Back up your music and server data separately.** The data folder contains the
+database, playlists, device identity and paired-device list. Losing it means
+pairing every device again.
+
+For Docker, stop the server while copying its data for a consistent backup:
+
+```bash
+docker compose stop flower
+docker compose cp flower:/data ./flower-backup
+docker compose up -d
 ```
-  No device can administer this server yet.
-  Pair one with this code (valid until 14:32:07): G6RJR
-  Or open: flower://pair?host=192.168.1.20:4533&code=G6RJR&fp=...
 
-  Or set it up in a browser (same code, valid just as long):
-  https://192.168.1.20:4534/#pair=G6RJR&page=settings
-  http://localhost:4533/#pair=G6RJR&page=settings (on this machine)
-  (An https address uses this server's own certificate, so the browser warns once - continue past it.)
+Use a fresh backup destination each time. Keep backups private: they include
+server keys and diagnostic logs. For a server outside Docker, stop it and copy
+[its data folder](SERVER-REFERENCE.md#data-and-logs).
+
+`docker compose down` preserves the data volume. **`docker compose down -v`
+deletes it.** See [Restoring a backup](SERVER-REFERENCE.md#restoring-a-backup)
+when moving or recovering a server.
+
+## Updating
+
+Back up first, then run:
+
+```bash
+docker compose pull
+docker compose up -d
 ```
 
-There is one https link per address the machine holds - an `AdvertisedHost`
-first, when one is set - so on a headless server, which is most of them, open
-the LAN one from any computer on the network. Every start also logs where the
-web interface is, whether or not a code is being printed:
+Use the same Compose files you used to start the server. The `latest` image
+tracks stable releases and changes only when you pull it. For betas or a pinned
+version, see [Image versions](SERVER-REFERENCE.md#image-versions).
 
-```
-Web interface: https://192.168.1.20:4534, http://localhost:4533 (on this machine) - https uses this server's own certificate, so a browser warns once
-```
+Update apps alongside the server while Flower is in early development;
+protocols and stored data can change between releases.
 
-One code, two ways to spend it. Enter it in a Flower client's **Pairing code**
-box and that device becomes an admin; or open the browser link, and the tab
-pairs *itself* — it generates its own keypair, spends the code on it, and gets
-the settings page. Whichever gets there first is the device that pairs, because
-the code is single-use. Lost the moment? Restart with `--pairing-code` to issue
-a fresh one — see "Getting back in, with no admin device left" below, which is
-the same flag and the Docker form of it.
+## Getting back in, with no admin device left
 
-A browser tab is a device like any other from then on: it appears in the device
-list, it is revoked on its own, and it does not need a link with anything in it
-ever again — just the plain address. The key lives in that browser profile, so
-each browser pairs separately, and clearing site data un-pairs it.
+Restart the server with `--pairing-code` to print a new administrator invite.
+Existing devices stay paired.
 
-> **The browser UI needs HTTPS or `localhost`.** The key is generated by
-> WebCrypto, which browsers only expose in a secure context. `http://localhost`
-> on the machine running the server counts; `http://192.168.1.20:4533` from
-> another machine does not, and a tab opened there will say so and show an empty
-> library. Which is why the links above are the server's own TLS port,
-> `https://192.168.1.20:4534`: its certificate is self-signed, so the browser
-> warns once that it does not know who issued it, and past that warning the tab
-> is a secure context and pairs normally. The remote-access options below serve
-> a real certificate and skip the warning. With TLS turned off
-> (`Flower:HttpsPort` = 0) only a browser on the server itself can pair. Flower
-> *clients* are unaffected — they hold their own keys and never needed a
-> browser.
-
-### Adding devices later
-
-The first code makes an admin. Every code after that is issued by one, from
-whichever screen is already open:
-
-- **The browser UI** — settings page → **Generate Pairing Code**.
-- **The Flower desktop app**, if it is paired with the server as an admin —
-  click the server in the sidebar and press **Generate Pairing Code**. The code
-  appears under the button.
-- **The Flower phone app**, same condition — Settings → **Generate Pairing
-  Code**.
-
-#### What a pairing gives away
-
-Worth reading once before handing one out, because it is more than "can
-listen":
-
-- **Any paired device** plays the whole library, and its plays are added to
-  this server's counts. Its playlists are its listener's own: it can add,
-  change and remove those, and never sees or touches anyone else's. There is
-  no read-only pairing.
-- **An administrator** can also change the server's settings — including which
-  folders the library is read from, which is how music is added to or removed
-  from it — star tracks for everyone, and add and remove devices, including
-  other administrators.
-
-That distinction is the **Administrator** checkbox beside the button, which is
-off every time the screen is opened. Adding somebody's phone is the common
-case, and a box left ticked from an hour ago would quietly make the next guest
-an administrator. More than one device may be an administrator: your own
-desktop and your own phone both being one is the expected shape, not a
-workaround.
-
-An app that is paired but is *not* an admin does not show the button at all:
-the server reports whether the caller is one of its administrators on the same
-handshake the client already polls, so this is known without asking, and a
-control whose every press returns a refusal reads as broken rather than as
-forbidden. (**Server Settings…** next to it is still shown to everyone —
-opening a page you cannot read costs one trip that says so.)
-
-#### Send the link, not the code
-
-Every screen hands out the same pairing two ways: a five-character **code**,
-and a **`flower://pair?...` link** printed underneath it, each with a **Copy**
-button. Both are good for ten minutes and one device, and whichever is used
-first is the device that pairs. They are not, however, equally safe, and the
-difference is not a nicety:
-
-- **The link is checked.** It carries the server's fingerprint, so the app
-  knows which server it is allowed to end up trusting *before* it sends
-  anything. A device given a link refuses to pair with anything but the server
-  that issued it, and says so.
-- **The code is trust-on-first-use.** It proves to the *server* that you
-  authorized this device. It tells the *device* nothing about what it just
-  handed its key to, so the app pins whatever answered at that address. If
-  something on the network is answering in the server's place, a code pairs you
-  to it and nothing objects.
-
-So the link is the way to add a device, and the code is the fallback for when
-the only channel you have is your own voice. Send the link in a message:
-opening it on the device — tapping it — opens Flower and asks to pair, and it
-carries every address the server can be reached at, so it works away from home
-too when public access is on. Either box ("Pairing code or link") takes both,
-so there is no setting to get wrong — only a habit worth having. Copy the link
-into whatever you would have typed the code into.
-
-A refusal says *"This is not the server that invite came from"* and names both
-fingerprints. The dull explanation is that the link was for a different server,
-or the server was rebuilt onto a new key. The other explanation is that
-something is answering in its place, so don't retry until you know which.
-
-### Checking a pairing afterwards
-
-A device paired from a link verified the server before it trusted anything, and
-needs no second look. A device paired from a bare code verified nothing — so
-the check has to be made by hand, and it is only worth what the person making
-it is: an eye that skims two strings of hex and calls them equal has checked
-nothing. Read them.
-
-Both halves are on screen:
-
-- **On the device**, click the server in the sidebar. Under its name is
-  **Verified as `<fingerprint>`** — the identity that device actually pinned,
-  and what every later connection is checked against.
-- **On the server**, the settings page's General tab shows **This server's
-  identity**.
-
-Read the server's from the server's own screen, not from the app that just
-paired: if something answered in its place, the app is quoting the impostor and
-will agree with itself.
-
-They should be the same string. If they differ, that device is talking to
-something that is not this server, and the fix is to unpair it and pair again
-with the link. This is SSH's model — the check is worth making late if it was
-not made early, and worth not needing at all, which is what the link buys.
-
-### Getting back in, with no admin device left
-
-Every code after the first is issued by an administrator, so the one situation
-with no way forward is having lost all of them at once — a browser profile
-cleared, a phone replaced, a device key regenerated underneath the app. Nothing
-can reach `/api/admin` to mint a code, and the code is what `/api/admin`
-requires.
-
-The way back in is a flag on the server process:
+From source:
 
 ```bash
 dotnet run --project Flower.Server -- --pairing-code
 ```
 
-That prints exactly what a first run prints — a code, a `flower://pair?...`
-link, and a browser link — even though an admin is already on file, and the
-code it prints grants admin like the first one did. Existing devices are
-untouched; this adds an administrator rather than replacing anybody.
-
-It has to be a flag on the process, not a command against a running one, and
-that is not an oversight: outstanding codes live only in `PairingCodeService`'s
-memory, so the process that prints a code is the only process that can honour
-the redeem. Which also means a restart mid-pairing throws the code away — spend
-it, or issue another.
-
-In Docker the image's entrypoint is the server itself, so anything you pass the
-container arrives as an argument to it. The awkward part is that the container
-printing the code must also be the one holding the port, since a second one
-would print a code nothing can redeem against:
+With Docker, stop the regular container, then run a temporary one:
 
 ```bash
 docker compose stop flower
-docker compose run --rm flower --pairing-code   # prints the code, and keeps serving
-# redeem it against this container, then Ctrl-C and:
-docker compose up -d
+docker compose run --rm --service-ports flower --pairing-code
 ```
 
-Under the non-Linux override, `run` publishes no ports by default — add
-`--service-ports` so the container you are pairing against is reachable.
-
-If you would rather not juggle containers, add the flag to the service:
-
-```yaml
-    command: ["--pairing-code"]
-```
-
-then `docker compose up -d`, read `docker compose logs flower`, and **take the
-line out again** once you are back in. Left in, every restart prints a live
-admin-granting credential into a log that is ordinarily safe to paste into a
-bug report.
-
-The alternative, if you want to know what the flag saves you from: editing
-`trusted-peers.json` in the data directory by hand to remove the last admin, so
-that the server's own first-run check fires again on the next boot.
-
-### Settings
-
-Edit `flower-server.json` in the data directory — it is seeded with a commented
-description of every knob. Anything there overrides the `appsettings.json` next
-to the binary and survives redeploying it. Environment variables
-(`Flower__Alias=Basement`) and command-line switches (`--Flower:Alias=Basement`)
-still win over both.
-
-A release version of the server sends its crashes, anonymised, to Flower's
-developer: the exception's type and the methods on its stack, with no names
-of people, songs, folders or servers. Set `"SendCrashReports": false` to stop
-it (read at startup). Each device has the same switch in Settings.
-[PRIVACY.md](PRIVACY.md) lists exactly what a report contains.
-
-### Adding music to the server's folder
-
-Copy songs into the music folder and they appear in the library on their own —
-there is no need to restart the server or press Rescan. A song copied onto a
-disk the server's machine has itself shows up within seconds; one deleted or
-moved there starts a rescan, so that a moved song keeps its plays and stars.
-
-A network share is the exception: it does not tell the server about changes
-made from another machine, so for a NAS mount the server also lists its folders
-every five minutes and catches up then. `LibraryListingMinutes` in
-`flower-server.json` sets how often (`0` turns the listing off). Only file names
-are read for it, so it stays cheap on a large library.
-
----
-
-## Running it in Docker
-
-The repository's `docker/` directory holds a `Dockerfile` and a
-`docker-compose.yml`, plus three override files: two for the remote-access
-paths that need an extra container, and one for bridge networking (required on
-macOS and Windows). Nothing has to be installed on the host first — no .NET
-runtime, no SQLite, no ffmpeg. The server does not decode audio to play it
-(streaming sends the original file, and the client decodes it); the one time it
-decodes is Vibe Playlists' listening, through the FFmpeg the image already
-carries.
-
-Tell it where your music is, and start it:
-
-```bash
-cd docker
-echo "FLOWER_MUSIC=/srv/music" > .env
-docker compose up -d
-docker compose logs flower
-```
-
-That is the whole install. Nothing to create first, no ownership to fix, no
-`sudo` — the compose file pulls the published image and keeps the server's data
-in a named volume, which Docker creates with the right owner on its own.
-
-The log carries the first pairing code, exactly as it does when the server is
-run directly. Spend it as described above.
-
-Every `docker compose` command in this document runs from that `docker/`
-directory, the same as these three. That is where compose looks for the
-`.env`, and what the relative paths in the override files are relative to.
-
-If you would rather edit the file than keep a `.env`, replace the left-hand side
-of the `/music` line in `docker-compose.yml` with your path. What you cannot do
-is leave it unset: the compose file gives it no default and refuses to start
-without one, because a default that was wrong would be created as an empty
-directory and the server would come up healthy, pair devices, and serve a
-library of nothing.
-
-Prefer the `.env` file over exporting the variable in your shell, for a reason
-that shows up later: *every* compose command interpolates it, so a shell without
-it set cannot run `docker compose down` or `docker compose logs` either. A file
-beside the compose file is always there. (The two override files below take
-`FLOWER_HOSTNAME` and `TUNNEL_TOKEN` the same way, and belong in the same
-place — it is gitignored, which matters for the token.)
-
-Two directories matter:
-
-| In the container | What it is |
-|---|---|
-| `/data` | Everything the server owns: `flower.db`, the device key, the trusted-device list, the logs, `flower-server.json`. Back this up — lose it and every paired device unpairs. |
-| `/music` | Your library. The server scans and streams it, and — for the admin actions below — writes to it. |
-
-`/music` is mounted writable, and four things an admin can do need that: editing
-album art, **uploads** and the moves and re-tags that follow them (see "Songs
-that start on a device" below), **Remove from Library** with "also delete the
-files" ticked, and cleaning up removed songs. The server runs as uid `1654`, so
-that user needs write access to the folder — `sudo chown -R 1654 /srv/music`, or
-the `user:` line in `docker-compose.yml`. Where it can't write, nothing breaks:
-an upload is refused before anything is sent and the device says so in its log,
-and a removed song still leaves the library with its file left where it was.
-
-If you would rather the server never touch your files, append `:ro` to the
-`/music` line. Everything read-only still works — scanning, streaming, pairing,
-playlists, play counts — and the four things above don't.
-
-Either way the server tells you which it is. When it cannot write to a music
-folder it logs one warning naming the folder, at startup and again whenever
-that changes, and an administrator's browser page carries a banner saying the
-same. On a server that is read-only on purpose the banner is only confirming
-what you chose: close it, and it stays closed until the page is next loaded.
-
-A file the server deletes on **Remove from Library** isn't gone for good: it
-goes to `/music/.Trash-1654/`, which is the freedesktop.org trash for that
-drive, and a scan never looks inside it. To restore a file, move it back out of
-`files/` in that folder; to free the space, empty the folder.
-
-### Songs that start on a device
-
-The server's music folder isn't the only way music gets into the library. A
-device you made an **admin** keeps the server's files in step with its own:
-
-- **A song it has that the server doesn't is uploaded**, to the same place under
-  the server's music folder that it has under the device's own —
-  `Artist/Album/01 Song.flac` there is `Artist/Album/01 Song.flac` here. With
-  several library folders configured, uploads go into the first one. If the
-  server already has a *different* file by that name, the upload is refused and
-  both files stay as they were.
-- **A file it moves or renames is moved on the server**, and then on every other
-  device whose copy was filed the same way — downloads always are. Only a change
-  travels: a device that has always filed an album differently from the server
-  doesn't reorganise the server by pairing with it, and isn't reorganised by it.
-- **A tag or a cover it edits reaches everyone.** Edit a song's tags or artwork
-  in Track Info on any admin device — a desktop or a phone, whether the song is
-  a file there, a download, or one it only streams — and the edit goes to the
-  server, is written into the server's file, and from there into every other
-  device's library *and* its copy of the file, if it has one. That includes a
-  listener's devices. The newest edit wins.
-- **A file it changes some other way is sent again** — a re-rip, tags edited in
-  another program — and replaces the server's copy and then every other copy:
-  each device that has the song as a file, downloaded or its own, fetches the
-  new one. The song keeps its plays, its star and its place in playlists.
-- **A song deleted from its disk is removed from the library — everywhere.** The
-  server stops serving it, and every other device drops it on its next sync,
-  including another admin device that has its own copy. Nothing is deleted from
-  any disk by this: the server's file, and any other device's own copy, stay
-  where they are, set aside from the library and from scans, and show up under
-  **Removed Songs** in that machine's settings. A copy a device had merely
-  *downloaded* from the server is the exception — that one is deleted, since it
-  was the server's song on loan.
-- **Date Added is the oldest any of your admin devices knows.** A library that
-  has lived on a desktop for years keeps its dates when the server first scans
-  the same files.
-
-A deletion is only passed on when the device's music folder is still there with
-other files in it. A drive that isn't plugged in, or a folder taken out of the
-device's settings, removes nothing — those songs simply turn into ones the
-device streams from the server.
-
-**Files only travel on your own network** unless you say otherwise. Away from
-home — over a tailnet, a forwarded port, a phone's cellular connection — a
-device still sends and receives deletions, moves, tag edits and covers, which
-are small, but holds its uploads, and the fetching of replaced files, until it
-is back. *Transfer songs when away from home* in the device's settings (off by
-default) lifts that.
-
-A listener's device sends none of this: its files stay its own, deleting one
-changes nothing on the server, and it can't edit the tags or artwork of the
-server's songs at all — only of songs that are purely its own, which stay on
-that device. It still *receives* everything an admin does.
-
-#### Removed Songs, and cleaning up
-
-**Settings → Library → Removed Songs** lists every file that is no longer in the
-library but is still on that machine's disk — on the server (open *Server
-Settings* from an admin device) and on each desktop. Two things can be done with
-them:
-
-- **Restore** puts a song back. On the server, that puts it back for everyone.
-- **Delete Files…** deletes them from disk for good. This is the only thing that
-  ever does: nothing a sync does deletes a file you own. It asks twice.
-
-The server also keeps a record of every song that leaves its library — removed
-by you, or simply no longer found by a scan. If the song comes back (restored
-from Removed Songs, the drive mounted again, a device uploading it), it comes
-back as the same song: same Date Added, same play counts, same star, still in
-the playlists it was in, and back on the other devices that had set their copies
-aside. The record lives in `flower.db` and is kept indefinitely, whether or not
-the file was deleted.
-
-Uploads are staged in `/data/uploads` until every byte has arrived and been
-checked, so an interrupted upload resumes rather than restarting, and a
-half-sent file never appears in your music folder.
-
-### Why `/data` is a named volume
-
-The server runs as uid `1654` — the non-root user the .NET base images ship —
-and that one fact decides how `/data` is mounted.
-
-A bind mount (`./data:/data`) to a path that does not exist yet is created by
-the Docker daemon as **root**. The server then starts, finds its data directory
-already there, and dies on the first write to `flower.db`. That is why this used
-to open with a `mkdir` and a `sudo chown 1654:1654`, and why forgetting them
-failed in a way that read like a bug.
-
-Docker treats a *named* volume differently: a fresh one is initialised from the
-image's own `/data`, ownership included, and the `Dockerfile` has already
-chowned that to `1654`. So the volume arrives writable by the process that has
-to write it, without anyone being told to make it so.
-
-It is still a plain directory on the host — `docker volume inspect` prints
-where, under `/var/lib/docker/volumes`. Two things to know about reaching it:
-
-```bash
-docker compose cp flower:/data ./flower-backup          # back it up
-docker compose cp flower:/data/flower-server.json .     # edit the settings file
-docker compose cp ./flower-server.json flower:/data/    # …and put it back
-docker compose restart flower
-```
-
-Editing that file by hand is the third way to change a setting, behind the
-settings page and the compose `environment:` block, and it is the one that got
-slightly less convenient in the trade. `docker compose down` leaves the volume
-alone; only `down -v` destroys it, and that unpairs every device.
-
-If your music sits somewhere uid `1654` cannot read — a home directory that is
-not world-readable, typically — you have two ways out, and making the music
-readable is the cheaper one. The other is to uncomment `user:` in the compose
-file and give the server a uid that can read it, which costs a one-time step:
-Docker initialises the data volume from the image, owned by `1654`, whatever
-`user:` says and even on the first `up`. So the new uid cannot write `flower.db`
-until the volume is handed over:
-
-```bash
-docker compose run --rm --user root --entrypoint chown flower -R 1000:1000 /data
-```
-
-### Host networking, and why a bridge is only for other OSes
-
-`docker-compose.yml` uses `network_mode: host` instead of mapping ports, and
-which one you want follows from where your listeners are rather than from
-preference. What it decides is discovery, not reachability.
-
-The server announces itself over mDNS, which is multicast, and Docker's default
-bridge network drops multicast. On a bridge the server starts, serves the
-browser UI, pairs devices and streams music to anything
-given its address — it is fully reachable — and simply never appears in the
-sidebar of a Flower client on the same LAN. There is no error to find; the row
-is not there. That silence is the reason to choose deliberately: a LAN
-deployment on a bridge looks broken in a way nothing explains.
-
-So **host networking, for a server and listeners on the same LAN** — the
-announcement is what spares anyone having to know an IP address, which is most
-of the point of running this at home.
-
-On Linux that is the answer whoever the listeners are. A server reached only
-through Tailscale, a tunnel or a reverse proxy gets nothing from mDNS — link-local
-multicast crosses neither a tailnet nor a tunnel, and those clients follow the
-server's reported addresses instead (`PairedServerReachability`) — but it loses
-nothing to host networking either, and the caddy and cloudflared overrides both
-assume it. Port forwarding is the same: the router forwards to the machine, and a
-host-networked server is already listening there.
-
-Where host networking cannot work at all — macOS and Windows, see below — there
-is an override that swaps it for a bridge with published ports:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.non-linux.yml up -d
-```
-
-It publishes `4533`/`4534` (remap with `FLOWER_HTTP_PORT`/`FLOWER_HTTPS_PORT`),
-sets `Flower__AdvertiseOnLan=false` so the server stops trying to announce what
-cannot leave, and passes `FLOWER_ADVERTISED_HOST` through.
-
-**Set that last one for anything another device pairs with**, though it is a
-smaller deal than it looks. Behind a bridge, what the server can see of itself
-is the container's own `172.x` address, and that is what it reports in the
-`/info` handshake. A client persists those and probes them forever, and none of
-them will ever answer.
-
-That is not how a device gets home, though. An address you typed at pairing time
-is kept separately as a *manual* address, and `PairedServerReachability` unions
-the two — manual entries are never withdrawn on the server's say-so, because
-"they are not this server's to withdraw". So a device pointed at a real address
-keeps working on a bridge; it just carries some dead entries it retries for
-nothing.
-
-What `AdvertisedHost` buys is **self-healing**. A host-networked server that
-changes address reports the new one and every paired device follows it. A
-bridged server cannot, so its devices stay pinned to whatever was typed, and
-someone retypes it by hand the day DHCP moves the box.
-
-```bash
-echo "FLOWER_ADVERTISED_HOST=192.168.1.40" >> .env
-```
-
-### Handing the container its own LAN address
-
-Typing an IP into a file is the thing most likely to go stale, so compute it
-instead. The container cannot work this out for itself — behind a bridge it can
-see only its own `172.x` interface, and `host.docker.internal` resolves to the
-Docker gateway, which is a private address that means nothing to a phone. It has
-to be handed in from outside:
-
-```bash
-# Linux
-echo "FLOWER_ADVERTISED_HOST=$(hostname -I | awk '{print $1}')" >> .env
-
-# macOS (en0 is usually Wi-Fi; en1/en2 for wired)
-echo "FLOWER_ADVERTISED_HOST=$(ipconfig getifaddr en0)" >> .env
-```
-
-**Do not reach for `$(hostname).local` here**, tempting as it is — an `.mdns`
-name looks like the value that survives a DHCP change, and it is the one that
-fails on a phone. A client resolves a remembered address with
-`Dns.GetHostAddressesAsync` (`NetworkDiscoveryService`), and when that comes
-back empty the address is discarded before it is ever dialled. On iOS a `.local`
-name resolves through mDNSResponder rather than through that path, so the entry
-is silently dropped and the server is marked unreachable with every candidate
-exhausted. The failure is one `Could not resolve remembered address` line in the
-client's log and nothing at all on the server.
-
-A name is still better than an IP where it genuinely resolves for every client —
-a tailnet name, or something your router's DNS serves. `.local` is not that, and
-a plain LAN IP is the safe answer.
-
-### Host networking is a Linux feature
-
-On macOS and Windows — Docker Desktop, colima, Rancher, Podman Desktop — the
-containers run inside a Linux VM, and "host" means *that* VM. So
-`network_mode: host` binds to the VM's network stack rather than your machine's,
-and publishes nothing for the VM to forward outward: the server comes up, and
-nothing on your desktop can reach it, not even `localhost`.
-
-That is also why the mDNS announcement cannot work there. It is emitted onto the
-VM's network, and your LAN is on the other side of a NAT the multicast will not
-cross.
-
-For a real deployment, run the server directly on those machines, or put it on a
-Linux box. For **trying it out**, the non-Linux override is the way — published
-ports are forwarded out of the VM to your `localhost`, so the browser UI and
-pairing both work:
-
-```bash
-cd docker
-echo "FLOWER_MUSIC=$HOME/Music" > .env
-docker compose -f docker-compose.yml -f docker-compose.non-linux.yml up -d
-docker compose logs flower
-open http://localhost:4533
-```
-
-`http://localhost` counts as a secure context, so the browser UI can generate
-its key and pair normally. What you cannot test this way is LAN discovery.
-
-> **Don't forward a router port straight at a bridge on a VM runtime.** Those
-> runtimes relay every request through the VM's proxy, so it arrives from the
-> Docker gateway and the original address is lost. Three things are keyed on
-> that address: the LAN allow-list (`172.16.0.0/12` reads as local, so it admits
-> whatever can reach the port), the rate-limit bucket (shared by everyone — the
-> failure in `docs/CITED-DECISIONS.md` #2b), and the per-address pairing
-> throttle. A device signature is still required on every route, so this is the
-> second layer going quiet rather than the door opening — but it goes quiet
-> without saying so. Use the Caddy or Cloudflare override, which put a proxy
-> in front that sets `X-Forwarded-For`, with a matching `TrustedProxies`.
-
-### Settings, and updating
-
-Anything in `appsettings.json` can be set as an environment variable, a double
-underscore per level — `Flower__HttpsPort=0` to turn the TLS listener off.
-Settings that are yours rather than the deployment's are better left in
-`flower-server.json` on the data volume, which survives every rebuild; the
-compose file's `environment:` block still wins over it.
-
-Updating is `docker compose pull && docker compose up -d`, or
-`docker compose up -d --build` if you switched the compose file to its `build:`
-block.
-The data volume is untouched either way, so the server comes back with the same
-identity and the same paired devices.
-
-Each update leaves the image it replaced on disk, about 440 MB a release, and a
-`--build` update also leaves its build cache, about a gigabyte each time.
-Neither is ever cleaned up on its own, and a disk that fills up stops the
-server: it can no longer open its database. Clear them after updating:
-
-```bash
-docker image prune -f --filter label=flower.image=server   # the replaced server image
-docker builder prune -f --max-used-space 5GB               # only if you build: trims the build cache
-```
-
-Images from 0.10.1 and earlier carry no `flower.image=server` label, so the
-first prune after updating from one leaves it behind. Remove it once by hand:
-`docker images ghcr.io/yanos/flower-server` lists it, `docker image rm <id>`
-removes it.
-
-The first removes only Flower's untagged images. Images you pinned by version
-(`flower-server:0.2.1`) keep their tag and are left alone, so you can still go
-back to one. The second applies to all of Docker's build cache on the machine,
-not only Flower's. It caps the cache at about 8 GB and keeps what the next
-build reuses, so that build is still quick.
-
-The shipped compose file tracks `ghcr.io/yanos/flower-server:latest`, which is
-less alarming than it sounds: nothing re-pulls on its own, so the image moves
-only when you run `docker compose pull`, and a pre-release tag never takes
-`latest`. It means "the newest stable release as of the moment I asked", which
-is what you want for a server you update deliberately.
-
-To run betas, point the compose file at `beta` instead, by setting
-`FLOWER_IMAGE=ghcr.io/yanos/flower-server:beta` in a `.env` file beside it (or in
-the shell before `docker compose pull && docker compose up -d`). `beta` is
-whichever is newer of the latest release and the latest beta (`v1.3.0-beta.1`),
-so a beta server takes the release once it passes its betas. The desktops'
-"Get beta releases" setting follows the same rule. A pre-release tagged
-anything else (`-alpha`, `-rc`) never moves `beta` or `latest`. Neither tag ever
-moves backwards, either: a fix to an older line, released after a newer one,
-leaves both where they are. To leave betas, go back to `latest`. A beta's
-database may not open on the release before it, so a server leaving betas
-waits for the next release, or restores the backup taken before it moved to
-the beta.
-
-Pin a full version instead — `image: ghcr.io/yanos/flower-server:0.2.1` — if you
-want that moment written down in the file, and an exact tag to go back to when
-an update disagrees with a client you have not updated yet. That is worth doing
-while Flower's protocol is still changing between releases: the server updates
-when you pull, the phone app updates when its store says so, and pinning is what
-keeps those two from moving independently.
-
-### Reaching it from outside, without a second compose file
-
-The three remote-access options further down are not three deployments. The
-server is configured the same way in all of them; what differs is whether
-something else has to run beside it. So `docker-compose.yml` stays the one
-description of the server, and each path that needs a sidecar adds an override
-on top of it rather than a copy of it:
-
-| Path | Command |
-|---|---|
-| Tailscale | `docker compose up -d` — no override at all |
-| Port forwarding, paired Flower apps only | `docker compose up -d` — no override at all |
-| Port forwarding, with a browser among the listeners | `docker compose -f docker-compose.yml -f docker-compose.caddy.yml up -d` |
-| Cloudflare Tunnel | `docker compose -f docker-compose.yml -f docker-compose.cloudflared.yml up -d` |
-
-`docker-compose.non-linux.yml` is not in this table, because it answers a different
-question. These four are about who carries traffic from outside; that one is
-about whether the container shares your machine's network stack, which is
-decided by the OS you are on rather than by where your listeners are. It
-composes with any row here — add it as a third `-f` — and it is required on
-macOS and Windows, where host networking cannot work at all.
-
-Two of the four need nothing added, for unrelated reasons.
-
-**Port forwarding needs no override when every listener is a paired Flower app**,
-because the port you forward is then `4534` — the server's own TLS port, whose
-certificate those clients validate against a key they already hold. No proxy, so
-nothing to run beside the server and no `TrustedProxies`. Forward 4534 to the
-same port, turn on **Allow connections from the internet** in Network, and
-that is the whole of it: with `AdvertisedHost` empty, the server looks up its own
-public IP, tells paired devices `https://<that IP>:4534`, looks again every
-fifteen minutes so a changed address follows, and dials itself there to check the
-forward leads back to it. The Network tab shows the result under the public
-address — a check mark, or a warning naming what went wrong. A warning can be a
-false alarm on a router that does not loop connections back to itself, so the
-address is advertised either way; a phone with Wi-Fi off is the real test.
-
-**For listeners behind a proxy that only lets port 443 through** — a work,
-school or hotel network, which the app reports as a proxy refusing the port —
-serve TLS on 443 itself, and forward the router's 443 to the server's 443:
-
-```json
-{ "Flower": { "HttpsPort": 443 } }
-```
-
-The server then advertises `https://<public IP>:443`, still looked up and still
-checked. It has to be able to bind 443, which on Linux a process that is not
-root cannot do by default — and the container runs as a user of its own, on the
-host's network, so neither `cap_add` nor a compose `sysctls:` reaches it. Lower
-the host's privileged-port floor instead, once:
-
-```bash
-echo 'net.ipv4.ip_unprivileged_port_start=443' | sudo tee /etc/sysctl.d/99-flower-443.conf && sudo sysctl --system
-```
-
-`HttpsPort` is read at startup, so restart the container after changing it.
-Devices away from home that last saw the server at `:4534` know no other public
-address; forwarding the router's 4534 to the server's 443 as well keeps them
-connected until their next `/info` tells them the new one. Check first that the
-router has nothing of its own on 443 — some offer remote administration or a
-file-sharing service there. This gets past a proxy that filters by port. One
-that also inspects TLS replaces the certificate, which a paired app refuses on
-any port; that network needs the Cloudflare Tunnel below.
-
-Set `AdvertisedHost` only to use a name instead (dynamic DNS), or when the
-outside port is not the one the server listens on. It then replaces the
-looked-up address entirely:
-
-```json
-{ "Flower": { "AdvertisedHost": "https://music.example.com:4534" } }
-```
-
-A name from dynamic DNS or a bare public IP both work there, because nothing in
-that path asks a certificate authority for anything. A paired device learns a
-new address only while it can still reach the server, so after the public IP
-changes, a phone that was away from home the whole time needs one visit to the
-LAN before it can reach the server from outside again. The moment a browser is one
-of the listeners that stops being true — it cannot pin, sees a self-signed
-certificate for the wrong name, and warns — which is what the Caddy override is
-for, and why it insists on a real hostname: Let's Encrypt will not issue for an
-IP address, so a Caddy with no name to serve cannot do the one thing it is there
-to do.
-
-**Tailscale needs nothing either**, which is part of why it is the one to prefer.
-Install it on the host, and `network_mode: host` means the container is already
-on the tailnet — a tailnet address is in `100.64.0.0/10`, which the allow-list
-admits, so there is no setting to change either. The exception is
-`tailscale serve`: that is a proxy on loopback, so it wants `TrustedProxies` the
-same way the other two do.
-
-The two override files expect the public name in the environment, and refuse to
-start without it rather than coming up with a wrong one — a wrong
-`AdvertisedHost` is baked into pairing invites and found days later:
-
-```bash
-export FLOWER_HOSTNAME=music.example.com
-export TUNNEL_TOKEN=…                      # cloudflared only
-```
-
-The Caddy override binds two more directories beside the server's volume —
-`docker/caddy-data` and `docker/caddy-config`, for its certificates and ACME
-account keys. Caddy runs as root, so those are ordinary bind mounts that Docker
-creates and Caddy can write — the uid problem that decided the server's own
-volume does not arise. Keeping them matters: lose `caddy-data` and Caddy re-issues on every
-restart, which Let's Encrypt rate-limits after a handful of attempts. Both are
-gitignored, as is the `.env` these variables belong in, being a running
-deployment's state rather than the repository's.
-
-Each sets `TrustedProxies` and `AdvertisedHost`, which belong to the deployment.
-Neither sets **`AllowPublicAccess`**, which this deployment does need on — and
-the omission is deliberate. It is the one setting that is also a switch on the
-settings page, the page persists it to `flower-server.json` on the data volume,
-and the compose `environment:` outranks that file. Set it in the override and the
-switch still moves and still does nothing. So turn it on from the settings page,
-and it stays yours:
-
-```json
-{ "Flower": { "AllowPublicAccess": true } }
-```
-
-Until it is on, every listener from outside is refused with the proxy or tunnel
-working perfectly. The startup log says which state you are in.
-
-### Published images
-
-Every pushed semantic-version tag (`v1.2.3`) publishes a multi-architecture
-image to GitHub Container Registry for `linux/amd64` and `linux/arm64`:
-
-```text
-ghcr.io/yanos/flower-server:1.2.3
-```
-
-Stable releases also update their `major.minor` and `major` (except major
-zero) tags, and `latest` and `beta` when they are the newest. Beta tags such as
-`v1.2.3-beta.1` publish their full version and `beta`, and never replace
-`latest`. Any other pre-release (`v1.2.3-alpha.1`, `v1.2.3-rc.1`) publishes only
-its full version. For a deployed server, pin the
-compose `image:` to a full version before running `docker compose pull && docker
-compose up -d`; use `latest` only when automatic stable-release updates are
-intentional.
-
-### Building the image
-
-`docker build -f docker/Dockerfile .`, from the repository root, is enough —
-the context is the root because the build needs the source — provided `docker
-build` is BuildKit. Wherever the buildx plugin is missing it is still the
-legacy builder, which fails on the Dockerfile's first line with `failed to parse
-platform : "" is an invalid OS component`: the legacy builder does not define
-`$BUILDPLATFORM`. Docker Desktop ships buildx; a CLI assembled from packages may
-not (on MacPorts it is `sudo port install docker-buildx-plugin`). Building
-through compose works either way, since compose carries its own BuildKit
-client.
-
-That `$BUILDPLATFORM` is not given a default to make the legacy builder happy,
-because a default wins over the value BuildKit supplies — every build would then
-run the SDK stage as amd64, under emulation on an arm64 host.
-
-Two things the build does are worth knowing:
-
-- **The version comes from the git tags.** `.git` is deliberately left in the
-  build context so MinVer can read it; without it every image would claim
-  `0.1.0-alpha.0` and not mention that it was guessing. Building from a shallow
-  clone or an exported tarball, pass `--build-arg VERSION=1.2.3`.
-- **The browser UI is built in.** That costs a `wasm-tools` workload install in
-  the build stage — several minutes the first time, none of it in the finished
-  image. `--build-arg INCLUDE_WEB_UI=false` skips it, and the server then still
-  serves its API but shows a placeholder where the browser settings page would
-  be.
-
-Multi-architecture images are cheap to build, because the published payload is
-architecture-neutral and only the runtime base image differs — the SDK stage
-runs natively even when the target is arm64, rather than under emulation:
-
-```bash
-docker buildx build --platform linux/amd64,linux/arm64 -t flower-server -f docker/Dockerfile .
-```
-
----
-
-## HTTPS, without setting anything up
-
-The server serves **two ports**: `4533` in the clear, and `4534` over TLS. Both
-are on by default and you do not have to do anything to get the second one.
-
-It works without a certificate authority because of what the certificate is made
-of. The server mints one on startup from the same keypair it already uses to
-identify itself — the key whose fingerprint appears in every pairing invite. A
-Flower app that has paired with this server therefore *already holds* the key
-that validates the certificate, so it can check it against something it has
-rather than against an authority nobody set up. No domain, no Let's Encrypt, no
-warning to click through, nothing in `flower-server.json`.
-
-Paired Flower clients move over to `4534` on their own: the server lists both
-origins when a paired device asks where it can be reached, and the client prefers
-the encrypted one. If it cannot validate the certificate for any reason it
-falls back to the plain port rather than failing.
-
-`4533` stays exactly as it was, because one kind of caller cannot do any of the
-above: **a browser**, which meets arbitrary servers for a living and so cannot
-assume it knows which one it means. It shows an interstitial for a self-signed
-certificate — see "Reaching it from a browser" below. (There used to be a second:
-third-party OpenSubsonic clients, which had no idea what a Flower pairing is.
-That surface has been removed — see `SYNC-PLAN.md`.)
-
-Two things this does *not* do, stated plainly:
-
-- **It is not a reason to skip the sections below.** A self-signed certificate
-  encrypts the LAN; it does not publish the server, punch through NAT, or give
-  a browser a usable address. Tailscale, Cloudflare Tunnel and port forwarding
-  are all still exactly as necessary as they were.
-- **It does not help a browser tab.** A tab has nothing to pin with: under
-  WebAssembly the certificate is the browser's business and the validation
-  callback cannot even be set (`PeerHttpClient.Create`). So a tab gets an
-  interstitial, and clicking through it is trust-on-first-click — it cannot
-  tell this server from anything else presenting a self-signed certificate.
-  Because the certificate is minted fresh on every start, it asks again after
-  each restart. A tab reached from outside the LAN wants a real certificate,
-  below.
-
-Audio is *not* an exception to the pin, though it used to be. Playback reads
-through `SeekableHttpStream` on `PeerHttpClient.CreateSigned`, so a stream is
-validated by the same pin as the catalog and signed per request on top of it —
-see `FfmpegTrackDecoder.AudioHttpClient`. The gap that existed while the media
-stack did its own TLS closed when FFmpeg became the only decoder; a browser tab
-remains the one caller streaming without a pin.
-
-**At a bare IP address, the app accepts only the server's own key** — even a
-certificate a public authority signed is refused there. What answers at an
-address with its own TLS is a Flower server, whose certificate is the
-self-signed one above, so an authority-signed one at that address belongs to
-whoever holds the address instead: a relay in front of the server, the company
-renting you that relay, or anyone who has taken it over — and Let's Encrypt
-issues certificates for IP addresses now. A proxy that terminates TLS (Caddy,
-Cloudflare, `tailscale serve`) is reached by a name and keeps the ordinary rule.
-The one setup this rules out is a Flower app pointed at a bare IP behind such a
-proxy, like the `tls internal` example under "Reaching it from a browser": give
-the app the server's own port instead, or a name. A relay that forwards TCP
-without decrypting it (rathole, frp, an `nginx stream` block) is unaffected,
-since what arrives through it is the server's own certificate. With a real
-certificate of your own (below), the app reaches the server by that
-certificate's name, as it already had to: a certificate for a name never
-matched a bare IP.
-
-### Using a real certificate instead
-
-Point the server at a PEM pair and it serves that instead of the self-signed
-one. This is what satisfies browsers and third-party clients, and it is the
-right move for anything reachable from outside:
-
-```json
-{
-  "Flower": {
-    "CertificatePath": "/etc/flower/fullchain.pem",
-    "CertificateKeyPath": "/etc/flower/privkey.pem"
-  }
-}
-```
-
-Both must be set together; naming only one stops the server at startup rather
-than quietly serving the self-signed certificate to callers that will reject it.
-
-Where to get the pair, cheapest first:
-
-- **`tailscale cert basement.tail1234.ts.net`** — free and needs no domain of
-  your own, because Tailscale runs the `ts.net` zone and completes the ACME
-  challenge in it for you. If you followed the Tailscale section you already
-  have everything it needs. Two caveats: the name resolves only inside your
-  tailnet, so this does **not** serve a port-forwarded deployment, and "renews
-  itself" is the certificate, not the server — re-running it is a timer you own,
-  and the server reads the pair at startup.
-- **Let's Encrypt over DNS-01**, against a free subdomain (DuckDNS and friends).
-  Proves ownership through a TXT record, so the name may point at `192.168.1.40`
-  and the certificate still issues — publicly trusted, no open ports, and unlike
-  `tailscale cert` the name resolves from anywhere, which makes this the one to
-  use with a forwarded port. Renewal is certbot's, and restarting the server
-  afterwards is yours.
-- **A domain you own**, through certbot or your provider.
-
-You can also skip this entirely and let a reverse proxy terminate TLS, which is
-what the Tailscale, Cloudflare and Caddy sections below each do. Then set
-`"HttpsPort": 0` to turn the server's own TLS listener off — the proxy is
-already doing the job, and one listener is one less thing to reason about.
-
----
-
-## Who is allowed to connect
-
-Every request is checked against an allow-list before anything else looks at it.
-Private, loopback and link-local addresses are allowed, plus `100.64.0.0/10` —
-the range Tailscale hands out. Everything else is **dropped without a reply**,
-whether or not it has a valid credential: the connection closes with nothing
-written to it, because a `403` would still tell a scanner there is something
-here worth coming back to.
-
-This matters for the rest of this guide. A directly-exposed music server gets
-found by scanners within hours, and the allow-list is what stands between "on my
-LAN" and "on the internet". Three ways to reach the server from outside follow,
-and they are in preference order for a reason:
-
-1. **Tailscale** — goes around the problem instead of punching through it. The
-   server never becomes reachable from the internet at all, and the allow-list
-   stays on. Best for your own devices; asks each listener to install a VPN.
-2. **Cloudflare Tunnel** — no open port, nothing for a listener to install, but
-   a third party terminates your TLS and their terms restrict this use.
-3. **Port forwarding** — you publish the server yourself. Most control, no third
-   party, and the only one where a mistake is your mistake. It needs the most
-   care, which is why it is last.
-
-The last two require turning the allow-list off, which is a deliberate setting.
-
-Three settings change it, and they answer different questions:
-
-- **`AllowedCidrs`** — *who else is allowed in*. Extra networks to admit, e.g. a
-  VPN subnet of your own. Editable from the settings page, applies immediately.
-- **`TrustedProxies`** — *who is allowed to tell the server who someone else
-  is*. See below. Deployment-shaped, so it is read once at startup.
-- **`AllowPublicAccess`** — *turn the allow-list off entirely*. For a server
-  deliberately published to the internet, through a tunnel or a mapped port. Off
-  by default. On the settings page it is **Allow connections from the
-  internet**, in Network, with the server's own addresses shown
-  above it; it applies immediately, in both directions.
-
-Both CIDR lists use the same network parser. Host bits are ignored:
-`203.0.113.5/24` matches the same network as `203.0.113.0/24`. Settings refuses
-an entry that is not a network; one written into `flower-server.json` by hand is
-ignored, and the log says so when the server starts.
-
-Turning that last one on is the single most consequential thing you can do to
-this server, so it says so in the log every time it starts. It removes a layer
-rather than weakening one.
-
-**What the allow-list is actually worth.** With it on, a request from a
-non-private address is dropped with no reply at all — not a `403`, which would
-confirm something is listening, but nothing. A scanner sweeping your IP for open
-ports learns that there is no service here. With it off, every one of those
-reaches the authentication layer, and an attacker can then do the things that
-precede an attack rather than being one: find the port, fingerprint the server
-and its version, watch how it answers malformed input, and retry anything
-unauthenticated for as long as they care to. None of that is stopped by the
-signature check, because none of it is a request the signature check refuses —
-it is reconnaissance against everything *around* the check, including TLS
-termination and the HTTP stack.
-
-What holds the door afterwards is real: **every route that matters requires a
-paired device's signature**, and unsigned callers get a `401` whether they came
-from your sofa or from a botnet. Since the OpenSubsonic adapter was removed
-there is no password anywhere in Flower, so there is nothing guessable left
-except a pairing code during the ten minutes one is outstanding. The allow-list
-was the belt. That is the braces — and with `AllowPublicAccess` on, you are
-wearing only the braces.
-
-**Tailscale avoids the trade entirely.** A tailnet address is in `100.64.0.0/10`,
-which the allow-list already admits, so a Tailscale-reachable server keeps both
-layers and stays invisible to a port scan — it has no open port to find. That is
-why it is first in the list above, and why this switch should stay off unless
-you are forwarding a port, running a tunnel, or sitting behind a proxy.
-
----
-
-## Remote access with Tailscale
-
-[Tailscale](https://tailscale.com) is a mesh WireGuard VPN. Your devices join a
-private network — a *tailnet* — and talk to each other directly wherever they
-are. No port forwarding, no public DNS name, no certificate to renew, and the
-server never becomes reachable from the open internet.
-
-It also solves TLS for free, which is why it is the recommended path rather than
-just a convenient one.
-
-### 1. Install Tailscale on the server and on every device
-
-Follow [tailscale.com/download](https://tailscale.com/download), then on the
-server:
-
-```bash
-sudo tailscale up
-```
-
-Log in on your phone and laptop with the same account. Each device gets a
-`100.x.y.z` address and a name like `basement.tail1234.ts.net`.
-
-At this point the server is already reachable at `http://basement.tail1234.ts.net:4533`
-from anywhere — the allow-list already admits the tailnet range. That is enough
-for Flower's own apps, which hold their own keys. It is *not* enough for the
-browser UI; do the next step if you want that.
-
-### 2. Put HTTPS in front of it
-
-WireGuard already encrypts the traffic, so this is not about secrecy. It is
-about the browser UI. A tab authenticates with a WebCrypto keypair of its own,
-and browsers only expose WebCrypto in a secure context — so over plain `http://`
-to anything but `localhost`, a tab cannot pair and shows an empty library. A
-real `https://` address also avoids a class of mixed-content surprises that are
-tedious to debug.
-
-First, one thing that has to be enabled in the tailnet before the command below
-will work. In the [Tailscale admin console](https://login.tailscale.com/admin/dns),
-under **DNS**, turn on **MagicDNS** and then **HTTPS Certificates**. Both are
-free, and without the second, `tailscale serve` has no certificate to serve and
-fails.
-
-```bash
-sudo tailscale serve --bg 4533
-```
-
-That is the whole step. Tailscale provisions and renews a real Let's Encrypt
-certificate for your MagicDNS name, terminates TLS itself, and proxies to
-Flower on `4533`. The server keeps speaking plain HTTP on localhost. Your
-library is now at `https://basement.tail1234.ts.net`.
-
-`tailscale serve status` shows what is proxied; `sudo tailscale serve --bg
-off` undoes it.
-
-> Do **not** use `tailscale funnel`, which publishes the same thing to the
-> entire internet. That is exactly the exposure the allow-list exists to
-> prevent, and it will be refused — funnel traffic does not arrive from a
-> tailnet address.
-
-### 3. Tell the server it is behind a proxy
-
-**Do this whenever you use `tailscale serve`.** With a proxy in front, every
-request reaches Flower from `127.0.0.1`, because that is genuinely who delivered
-it. The real client address is in the `X-Forwarded-For` header, and the server
-ignores that header unless you have said which hop is allowed to write it.
-
-In `flower-server.json`:
-
-```json
-{
-  "Flower": {
-    "TrustedProxies": ["127.0.0.1/32"]
-  }
-}
-```
-
-Restart the server. The log will confirm it:
-
-```
-Believing X-Forwarded-For from 1 configured proxy network(s): 127.0.0.1/32
-```
-
-Skipping this breaks nothing you can see. What breaks is per-device accounting:
-every device on your tailnet arrives as the same address, so they share one
-rate-limit bucket — five bad pairing attempts from one phone then lock out every
-other device for a minute, and the logs attribute all of it to `127.0.0.1`. It
-also means the allow-list is admitting the proxy rather than the caller, so the
-network-level check underneath authentication is no longer checking anything.
-
-Because none of that is visible, the server says so itself. If a request arrives
-with an `X-Forwarded-For` from an address `TrustedProxies` does not cover, it
-logs a warning naming that address, at most once every five minutes:
-
-```
-An X-Forwarded-For arrived from 127.0.0.1 but Flower:TrustedProxies is empty, so
-it is being ignored. If you are running a tunnel or reverse proxy, name it there
-```
-
-That is the one signal available — a tunnel dials *out*, so nothing at startup
-can tell the server it is behind one. If you see it, the address it names is
-almost certainly what belongs in `TrustedProxies`.
-
-The empty default is deliberate. `X-Forwarded-For` is written by whoever sent
-the request, so a server that believed it from anyone would let any caller
-choose its own source address — past the allow-list, and out of any bucket it
-had exhausted. Naming the proxy is what makes the header evidence rather than a
-suggestion.
-
-Note that the allow-list still applies to the *forwarded* address. That is the
-point: putting a proxy in front of Flower does not turn the gate off, it just
-moves it to the address that actually matters. On a tailnet that is exactly what
-you want, because a `100.x` address is already on the allow-list — which is why
-this path, unlike the two below, never needs `AllowPublicAccess`.
-
-### Tuning for a tailnet
-
-Two settings worth changing on a tailnet-only deployment:
-
-- **`AdvertiseOnLan: false`** — stops the mDNS announcement. On a server only
-  ever reached over the tailnet, the multicast announcement is noise no client
-  that matters can hear.
-- **`AdvertisedHost: "https://basement.tail1234.ts.net"`** — the address put
-  into pairing invites and handed to paired clients to remember.
-
-  **Include the `https://`.** A bare host here inherits the scheme and port the
-  server itself listens on, so `"basement.tail1234.ts.net"` becomes
-  `http://basement.tail1234.ts.net:4533` — which bypasses `tailscale serve`
-  entirely and is not what you set it up for. A value with its own scheme is
-  taken as-is, port and all, which is right: what terminates TLS is not this
-  listener.
-
-### Sharing with someone who is not you
-
-A listener does not need an account on your tailnet. In the admin console, open
-the server's machine, choose **Share…**, and send the invite link. They install
-Tailscale, accept, and the server appears on their tailnet as a single shared
-machine — they get no access to anything else of yours, and you get none to
-theirs.
-
-That is still an app install on their phone, which is the whole reason the next
-two options exist.
-
-### Pairing a device over the tailnet
-
-**Pair on your home Wi-Fi first, before you travel.** Open the settings page,
-press **Generate Pairing Code**, and paste the `flower://pair?...` link into the
-client's **Pairing code or link** box.
-
-This is the one step where the link matters more than anywhere else, because
-first contact on the LAN happens over plain HTTP — the client dials
-`http://<ip>:4533` from an mDNS announcement, and mDNS authenticates nothing.
-The link's fingerprint is the only part of that exchange that did not travel
-over the wire, so it is what stops a device on your network from answering in
-the server's place and being pinned forever after. Once the pin is recorded,
-every later connection — including every remote one over HTTPS — is checked
-against it.
-
-The Flower app finds servers by mDNS, which is a local-network protocol — it does
-not reach into a tailnet. So a client that has never shared a network with this
-server cannot see it to pair with it. Pairing at home once is the whole setup;
-after that the server tells the client every address it can be reached on,
-including its tailnet one, and the client uses whichever works from wherever it
-is.
-
-The **browser UI** has no discovery constraint — it talks to whatever host you
-opened it on, so `https://basement.tail1234.ts.net` reaches the server from
-anywhere. It still has to pair once, with a code, exactly like an app does; what
-it does not need is to have ever shared a network with the server. See "Reaching
-it from a browser" below.
-
----
-
-## Cloudflare Tunnel — reaching the server without a VPN or an open port
-
-Tailscale is the better answer for your own devices, but it asks every listener
-to install a VPN. [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)
-asks them for nothing: `cloudflared` runs beside the server, dials *out* to
-Cloudflare, and a hostname you own starts serving your library over HTTPS. No
-port is opened, no router is touched, and your home IP address is never
-published.
-
-Read both of these before you set it up.
-
-> **Cloudflare's terms restrict this use.** Their CDN terms reserve the right to
-> "disable or limit your access to or use of the CDN … if you use or are
-> suspected of using the CDN without such Paid Services to serve video or a
-> disproportionate percentage of pictures, audio files, or other large files."
-> A music library streaming through a tunnel is squarely that. Cloudflare has
-> said as much about self-hosted media servers specifically. Nothing here will
-> break the day you turn it on, but this is a path that can be limited or shut
-> off at Cloudflare's discretion, and you should not build your listening on it
-> without knowing that.
-
-> **Cloudflare terminates TLS at their edge**, so your traffic is decrypted on
-> someone else's machine. That is a materially different trust boundary from
-> Tailscale, where nothing between your devices can read anything. Reasonable
-> for sharing with a friend; a poor default for your own library.
-
-### 1. What you need first
-
-A domain whose DNS is on Cloudflare — a free plan is enough, and a cheap domain
-is fine. Cloudflare has to be your nameserver, because the tunnel is published
-by writing a DNS record it controls.
-
-### 2. Install and authenticate `cloudflared`
-
-```bash
-brew install cloudflared          # macOS; see Cloudflare's docs for Linux packages
-cloudflared tunnel login
-```
-
-The login opens a browser, asks which domain to authorise, and writes a
-certificate to `~/.cloudflared/cert.pem`.
-
-### 3. Create the tunnel and point a hostname at it
-
-```bash
-cloudflared tunnel create flower
-cloudflared tunnel route dns flower music.example.com
-```
-
-The first prints a tunnel UUID and writes credentials to
-`~/.cloudflared/<UUID>.json`. The second creates the DNS record.
-
-Then write `~/.cloudflared/config.yml`:
-
-```yaml
-tunnel: <UUID>
-credentials-file: /Users/you/.cloudflared/<UUID>.json
-
-ingress:
-  - hostname: music.example.com
-    service: http://localhost:4533
-  - service: http_status:404
-```
-
-`localhost:4533` is the point worth noticing: the server keeps speaking plain
-HTTP, bound where it always was. The tunnel is the only thing facing outward.
-
-### 4. Tell the server what changed
-
-Two settings, and neither is optional:
-
-```json
-{
-  "Flower": {
-    "AllowPublicAccess": true,
-    "TrustedProxies": [ "127.0.0.1/32" ],
-    "AdvertisedHost": "https://music.example.com",
-    "AdvertiseOnLan": true
-  }
-}
-```
-
-- **`AllowPublicAccess`** — without it, every listener is dropped. `cloudflared`
-  delivers over loopback, so the allow-list would admit the *tunnel* — but with
-  `TrustedProxies` set the server correctly sees the real client's public
-  address instead, and refuses it. The two settings only make sense together.
-- **`TrustedProxies: ["127.0.0.1/32"]`** — where `cloudflared` delivers from.
-  Without it every remote listener arrives as `127.0.0.1`, sharing one identity
-  and therefore **one rate-limit bucket**, so one busy listener locks out the
-  rest. If `cloudflared` runs on another machine, name that address instead.
-- **`AdvertisedHost`** — the origin put into pairing invites and reported to
-  paired clients as an address to remember. It carries its own scheme, so
-  `https://` here is what tells clients to reach the tunnel over TLS rather than
-  guessing `http`.
-- **`AdvertiseOnLan`** — leave it on if you still listen at home; the tunnel is
-  an *extra* way in, not a replacement. Clients rank a LAN address ahead of it
-  and only fall back to the tunnel from outside.
-
-Restart the server after editing: `TrustedProxies` is read once at startup.
-(`AllowPublicAccess` is not — it applies immediately, and can also be switched
-from the settings page — but you are editing the file for both here.)
-
-### 5. Run it
-
-```bash
-cloudflared tunnel run flower
-```
-
-Once it works, install it as a service so it survives a reboot —
-`sudo cloudflared service install` on macOS and Linux.
-
-If the server runs in Docker, `docker-compose.cloudflared.yml` does this instead
-— a remotely-managed tunnel, so the ingress rule lives in the Cloudflare
-dashboard rather than in `config.yml`, pointed at `http://localhost:4533`. See
-*Reaching it from outside* above.
-
-### 6. Check you got it right
-
-The failure this setup produces is quiet, so look for it deliberately:
-
-1. Open `https://music.example.com` in a browser. You should get the Flower UI,
-   and — because it is now a secure context — a tab that can pair.
-2. Watch the server log during that first request. `An X-Forwarded-For arrived
-   from … so it is being ignored` means `TrustedProxies` names the wrong
-   address, and you are in the one-bucket-for-everyone state described above.
-3. Check the startup log says `Flower:AllowPublicAccess is on`. If it warns that
-   `TrustedProxies` is empty, step 4 did not take effect.
-
-### 7. Give a listener access
-
-Settings page → **Generate Pairing Code** → read them the code (or press the
-same button
-in a Flower app you administer the server from — see *Adding devices later*).
-They open
-`https://music.example.com`, paste it, and their browser is a paired device from
-then on — or they enter it in the Flower app's **Pairing code** box.
-
-Nothing about a listener's setup involves Cloudflare, a VPN, or an address to
-remember. That is the whole reason this option exists.
-
----
-
-## Port forwarding — publishing the server yourself
-
-The most direct option, and the one with no third party in it: a port on your
-router points at the server, a name in DNS points at your router, and listeners
-reach it over the public internet. No VPN for them to install, no company able
-to read your traffic or decide your library is the wrong sort of content.
-
-It is also the one where a mistake is entirely yours, so read this part before
-the steps.
-
-> **Do not forward port 4533 to the server and stop there.** That port is the
-> plain one, and unencrypted on the open internet two things leak that matter:
-> a browser tab has no pin to fall back on, and everything it sends — including
-> the pairing code it was paired with — crosses in the clear. That is not fine across
-> the internet.
->
-> The server's own TLS port (`4534`, above) is a real answer for *paired Flower
-> clients*, which validate it against a key they already hold — better than a
-> certificate authority, not worse. What it does not satisfy is the one caller
-> that cannot pin: a browser, which sees a self-signed certificate for the wrong
-> name and warns. Nor does Flower obtain or renew a certificate of its own.
->
-> So unless every listener is a paired Flower app, **terminate TLS in front of
-> the server.** The steps below do that with Caddy, which gets a certificate on
-> its own and renews it without being asked. Pointing the server at a PEM pair
-> instead works (see "Using a real certificate instead") but leaves the 90-day
-> renewal, and the restart it needs, yours to automate.
-
-### 1. Give the server a fixed address on your LAN
-
-In your router's DHCP settings, reserve an address for the server's MAC — most
-routers call it "DHCP reservation" or "static lease". A forwarded port that
-points at an address the server no longer holds is the most common way this
-setup breaks silently, weeks later.
-
-### 2. Get a name that points at your router
-
-If your ISP gives you a static IP, just create an `A` record for
-`music.example.com` at your DNS provider.
-
-Most home connections do not. Use a dynamic DNS provider (many routers have one
-built in, under "DDNS"), which keeps the record pointing at your current address
-as it changes. Whatever you use, the outcome is one hostname that resolves to
-your router.
-
-Check what you actually have first — if `curl -s ifconfig.me` returns an address
-in `100.64.0.0/10`, you are behind carrier-grade NAT and **port forwarding
-cannot work at all**. There is no port to forward; your ISP shares that address
-across many customers. Ask them for a public IP, or use one of the two options
-above.
-
-### 3. Put Caddy in front of the server
-
-On the server machine:
-
-```bash
-brew install caddy        # or your distro's package
-```
-
-`/etc/caddy/Caddyfile` (or `/opt/homebrew/etc/Caddyfile`):
-
-```
-music.example.com {
-    reverse_proxy localhost:4533
-}
-```
-
-That is the entire configuration. Caddy obtains a Let's Encrypt certificate for
-the name, renews it, redirects HTTP to HTTPS, and proxies to Flower — which goes
-on speaking plain HTTP on loopback, exactly as it does behind `tailscale serve`.
-
-```bash
-sudo caddy run --config /etc/caddy/Caddyfile      # to try it
-sudo brew services start caddy                     # once it works
-```
-
-If the server runs in Docker, skip all of this and use
-`docker-compose.caddy.yml` instead — it brings up Caddy beside the server with
-this same configuration, from `docker/Caddyfile`. See *Reaching it from outside*
-above.
-
-### 4. Forward the ports on the router
-
-Forward **443 → the server's reserved address, port 443**, and **80 → port 80**.
-Both, and 80 is not optional: Let's Encrypt validates over it, so without it
-Caddy cannot get the certificate in the first place.
-
-Do **not** forward 4533. Nothing outside needs to reach Flower directly, and a
-forwarded 4533 is precisely the unencrypted exposure the warning above is about.
-
-### 5. Tell the server what changed
-
-```json
-{
-  "Flower": {
-    "AllowPublicAccess": true,
-    "TrustedProxies": [ "127.0.0.1/32" ],
-    "AdvertisedHost": "https://music.example.com",
-    "AdvertiseOnLan": true
-  }
-}
-```
-
-Identical to the tunnel setup, and for identical reasons — Caddy is a proxy on
-loopback the same way `cloudflared` is. `AllowPublicAccess` is what stops the
-allow-list refusing every listener once `TrustedProxies` correctly resolves them
-to their real public address. Restart the server: `TrustedProxies` is read at
-startup (`AllowPublicAccess` applies at once).
-
-### 6. Check you got it right
-
-From a phone on cellular, with Wi-Fi off — testing from inside your own network
-proves nothing, because many routers do not loop a forwarded port back:
-
-1. `https://music.example.com` serves the Flower UI, with a valid certificate.
-2. `http://music.example.com` redirects to HTTPS rather than serving anything.
-3. The startup log says `Flower:AllowPublicAccess is on` and does **not** warn
-   that `TrustedProxies` is empty.
-4. The log shows no `An X-Forwarded-For arrived from …` warning during that
-   request. If it does, it names the address that belongs in `TrustedProxies`.
-
-### What you are now responsible for
-
-Being on the internet on purpose is fine; being on it without knowing what holds
-the door is not. What does:
-
-- **Every route that matters requires a paired device's signature.** An unsigned
-  caller reaches the handshake endpoint and nothing else. This is the same check
-  that has always done the real work — the allow-list was a second line, and you
-  have just removed it deliberately.
-- **Rate limits are per caller**, which is what `TrustedProxies` buys you. Get
-  that wrong and every listener shares one budget, so one of them can lock out
-  the rest.
-- **Pairing codes are single-use and short-lived**, and the device list is the
-  revocation surface. Check it occasionally; anything in it you do not recognise
-  should be revoked.
-
-Keep the server updated, and prefer Tailscale for your own devices even with
-this set up — the two coexist, and clients rank a LAN or tailnet address ahead
-of the public one anyway.
-
-> **Automatic port mapping (UPnP / NAT-PMP) is not implemented.** Flower will
-> not open a port on your router for you, by design — the mapping above is one
-> you made deliberately and can see in your router's UI. See
-> `docs/REMOTE-TRANSPORT-PLAN.md` if you are curious about where that might go.
-
----
-
-## Reaching it from a browser
-
-The server serves a full Flower UI of its own, which plays music in a tab and
-needs nothing installed. Over `tailscale serve` it lives at
-`https://basement.tail1234.ts.net`.
-
-A tab is a device, with a keypair of its own that never leaves the browser (see
-"Pairing" above). Pair it once with a code and it keeps working at the plain
-address afterwards, indefinitely, until you revoke it in the device list or
-clear the browser's site data.
-
-The one constraint is the one already noted: the page has to be served over
-HTTPS or `localhost`, because that is the only place browsers expose the
-cryptography the key depends on.
-
-The server's own TLS port does not fully solve this, and it is worth being clear
-about why. A browser will not accept the self-signed certificate the way a paired
-Flower client does — it has no pairing to appeal to — so `https://192.168.1.40:4534`
-shows an interstitial. Clicking through it does yield a secure context and a
-working page, which is fine for your own machine and unpleasant to ask of anyone
-else. The good answers are the ones above: a real certificate, or a proxy that
-terminates TLS for you (`tailscale serve`, Cloudflare, Caddy). On the machine
-running the server, `http://localhost:4533` remains the simplest option of all.
-
-### A LAN-only server, no warning
-
-A real certificate needs a name, not an open port, so a server nobody reaches
-from outside can still have one. Two ways, both with Caddy in front as in
-"Port forwarding" but with nothing forwarded and **AllowPublicAccess** left off
-(with `TrustedProxies` set, each listener arrives with its real LAN address,
-which the allow-list already admits):
-
-- **A name you control, issued over DNS-01.** Point a domain — or a free DuckDNS
-  subdomain — at the server's LAN address. DNS-01 proves ownership through a TXT
-  record rather than an inbound connection, so the certificate issues for a name
-  that resolves to `192.168.1.40`. Stock Caddy does not speak DNS-01; it needs a
-  build carrying your DNS provider's module (`xcaddy build --with
-  github.com/caddy-dns/<provider>`, or a prebuilt image that includes it).
-- **No name at all: `tls internal`.** Caddy runs its own certificate authority:
-
-  ```
-  192.168.1.40 {
-      tls internal
-      reverse_proxy localhost:4533
-  }
-  ```
-
-  Browsers trust it only once Caddy's root CA is installed on the device.
-  `caddy trust` does that for the server machine itself; every other device that
-  will browse needs the root (`/data/caddy/pki/authorities/local/root.crt` in the
-  container, under Caddy's data directory otherwise) installed by hand. One step
-  per device, and no warning afterwards.
-
-## Not yet covered
-
-- **Certificates the server obtains for itself**, via LettuceEncrypt, so a
-  port-forwarded deployment needs no reverse proxy in front of it. The server
-  now *serves* TLS on its own (see "HTTPS, without setting anything up") and
-  will load a PEM pair you point it at, but it does not go and get one. Until
-  it does, `tailscale cert`, certbot, or Caddy above are the answer and work
-  fine.
-- **A pinned stream in a browser tab.** Everywhere else this is done: playback
-  reads through `SeekableHttpStream` on Flower's own pinned, per-request-signed
-  client, which is what electing FFmpeg as the only decoder bought. A tab cannot
-  join in — WebAssembly has no TLS stack to configure — so a browser streaming
-  over a self-signed certificate is encrypted but not authenticated. A real
-  certificate is the answer there, not more code.
-- **Automatic port mapping** (UPnP / NAT-PMP). See the note at the end of the
-  port-forwarding section.
-- **A `.deb`, and an APT repository behind it.** A self-contained publish plus a
-  systemd unit would package cleanly, but a `.deb` on its own only installs; the
-  `apt upgrade` half needs a signed repository hosted somewhere, which is the
-  part with ongoing upkeep. Docker covers the same ground today.
-
----
+Redeem the invite while this container is running. Then press Ctrl+C and run
+`docker compose up -d`. On macOS or Windows, include both Compose files in the
+`stop`, `run` and `up` commands.
 
 ## Troubleshooting
 
-**Every request hangs or the connection is refused, with nothing in reply.**
-That is the allow-list dropping the caller — it is what "dropped without a
-reply" looks like from the outside. Check the address it actually arrives from;
-if there is a proxy in front, that is the proxy's address unless
-`TrustedProxies` names it. Run the server at `Debug` level to see each drop
-logged with the address it came from.
+| Problem | Check |
+|---|---|
+| Empty library | The music path, mount and read permissions. Docker uses `/music` inside the container. |
+| Uploads or edits fail | The server needs write access to the music folder. Look for a read-only warning in Settings or the logs. |
+| Server missing from the app | Discovery works only on the same local network. Use an invite link; Linux Docker needs host networking for discovery. |
+| Invite expired | Generate another. Restarting the server also cancels unused invites. |
+| Browser won't pair | Use HTTPS, or `http://localhost:4533` on the server itself. |
+| Works at home but not away | Check [remote access](REMOTE-SETUP.md#checking-the-connection), including the public-access switch and proxy settings. |
+| Requests get no reply | The network allow-list may be dropping them. Check the caller's address and `TrustedProxies`. |
+| Too many requests (`429`) | Wait a minute. Behind a proxy, check `TrustedProxies`; anonymous and failed requests use address-based limits. |
+| No administrator left | Use the recovery command above. |
 
-**Only one device gets nothing back.** It is not on the tailnet, or
-`TrustTailscaleRange` has been turned off.
-
-**Every listener through a tunnel is dropped, but the browser on the server
-works fine.** `AllowPublicAccess` is off while `TrustedProxies` is set — so the server
-correctly resolves each caller to their real public address and then turns it
-away. Both settings, or neither.
-
-**Nothing reaches a port-forwarded server from outside.** Test from cellular
-with Wi-Fi off — many routers do not loop a forwarded port back, so testing from
-inside your own network proves nothing either way. Then check, in order: that
-`curl -s ifconfig.me` is not in `100.64.0.0/10` (carrier-grade NAT, in which
-case no port forwarding can work), that the server still holds the LAN address
-the forward points at, and that both 80 and 443 are forwarded.
-
-**Caddy will not get a certificate.** Port 80 is not forwarded, or DNS does not
-yet point at your router. Let's Encrypt validates over HTTP on 80, so 443 alone
-is not enough.
-
-**A browser tab says it cannot be paired.** The page is not in a secure context.
-Over a tunnel or `tailscale serve` it should be `https://`; on the server itself
-use `http://localhost`. A LAN address over plain `http://` cannot work, and the
-message says which of the two you are hitting.
-
-**A device is getting 429s it did not earn.** A signed request is budgeted per
-device, so one listener cannot spend another's. What is budgeted by the address
-a request arrived from is everything that has not proved who it is: strangers,
-failed authentications, anonymous `/info` and pairing. If `TrustedProxies` is not
-set, that address is the proxy's, and every device behind it shares those
-budgets. See step 3, and check the log for the
-`X-Forwarded-For arrived from ...` warning.
-
-Failed authentications are narrower than the rest: that budget only ever gates
-requests that failed to prove who they were. A paired Flower device signs every
-request, so a working device is never locked out by someone else's failures.
-
-**The server does not appear in a client's sidebar.** mDNS does not cross
-subnets and does not reach into a tailnet, so a client only ever *discovers* a
-server it shares a network with. Pair at home once; after that the client
-remembers how to reach it. If you are at home and it is still missing, check
-`AdvertiseOnLan` — and, if the server runs in Docker, that the container is on
-host networking. A bridged container cannot send link-local multicast, so it
-advertises into nothing and everything else about it keeps working.
-
-**A client paired at home cannot reach the server while away.** Check that both
-ends are on the tailnet (`tailscale status`), and that the server's tailnet
-address has not changed since the client last synced at home.
-
-**The settings page has no Generate Pairing Code button, and no device can
-administer the server.** Nothing paired is an administrator any more. Restart
-the server with `--pairing-code` — see "Getting back in, with no admin device
-left".
-
-**Two servers fight over one name in the sidebar.** Two instances are running
-and advertising. Stop one, and give the survivor a distinct `Alias`.
+For more help, use **Report an Issue** in Flower or
+[GitHub Issues](https://github.com/yanos/Flower/issues). Review logs before
+posting: they can include file names and network addresses. Release servers
+send crash reports by default; see [Privacy](PRIVACY.md) to turn them off.

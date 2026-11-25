@@ -1,136 +1,151 @@
 # Privacy
 
-What Flower sends off your devices and your server, to whom, and how to turn
-it off. Flower has no accounts of its own and no analytics: the only data
-that goes to Flower's developer is crash reports, described first and in
-full.
+Flower has no central account service or usage analytics. Your music stays on
+your devices and, if you use one, your own Flower server. Release builds send
+crash reports and a small sample of performance timings to the developer by
+default. Both use the same opt-out switch.
 
-## Crash reports
+## At a glance
 
-When Flower crashes, or hits an error that means Flower itself did
-something wrong, it sends a report to Flower's developer so it can be fixed.
-Reports go to [Sentry](https://sentry.io), a crash-reporting service, in the
-developer's account; nobody else receives them.
+| Connection | Recipient | Control |
+|---|---|---|
+| Crash reports and sampled timings | Flower developer's Sentry account | **Send anonymous crash reports** in Settings; on by default |
+| Diagnostic logs from a paired device | Your Flower server and its owner | **Send diagnostic logs to server** in Settings; on by default |
+| Artist pictures | Deezer | Automatic; no switch |
+| Online cover search | Apple iTunes Search, MusicBrainz / Cover Art Archive, Bandcamp | Only when you choose **Find online** |
+| Desktop update checks | GitHub | **Check for updates automatically** in Settings; on by default |
+| AI model download | GitHub | Only when server AI features are enabled |
+| Public IP lookup | ipify and Cloudflare | When public access is on, or the server's Network page is open |
 
-### When
+## Crash reports and performance timings
 
-- **Release versions only.** A pre-release (a beta, or any build made from
-  source without a release tag) never sends anything, and nor does a debug
-  build. The one exception: if a pre-release dies so abruptly that nothing
-  records its version, a release launched later can report that crash, marked
-  as being of unknown version.
-- **On by default, and a switch.** In the app: Settings, "Send anonymous
-  crash reports" (desktop: Settings > General; phone: near the bottom of
-  Settings). It takes effect at once. The first time a release runs, a
-  notice says reporting is on, links here, and has a "Turn Off" button. On a server: set
-  `"SendCrashReports": false` in `flower-server.json` and restart.
-- **Never from the browser tab**, which has no crash to report.
+Reports go to [Sentry](https://sentry.io), in the Flower developer's account,
+to help diagnose bugs. They can include caught errors as well as crashes.
+The browser player doesn't send these reports.
 
-### What a report contains
+### Turn reporting off
 
-- **What went wrong:** the exception's type (`System.IO.IOException`), its
-  message with names removed (below), and the names of the methods on the
-  stack with their source file names and line numbers
-  (`Flower.Playback.Player.Open`, `Player.cs`, line 42).
-- **Which build:** the version of Flower that crashed, whether it is the app or the server
-  (in the rare case a crash report doesn't say, it is marked unknown, with the
-  version that found it), and the name and version of each library it had loaded (Avalonia,
-  FFAudio.NET, .NET's own).
-- **What it ran on:** the operating system and its version, the .NET runtime,
-  the processor architecture, and the time zone.
-- **How often:** how many times this problem happened on this install since
-  it last reported it (see "How often", below).
-- **A random install number,** made up by Flower the first time it sends a
-  report. It says nothing about you, your device or your server; its only use
-  is counting how many installs a problem reaches. Turning the switch off
-  deletes it, so turning it back on starts a new one with nothing linking the
-  two.
-- **How long startup took**, for one launch in a hundred, and on a server how
-  long one request in a hundred took, by route (`GET
-  /api/flower/v1/stream`, never a query string).
-- **For a crash in native code** (audio output, decoding): the kind of fault
-  (`SIGSEGV`), the memory address it touched, and the libraries and functions
-  it happened in. On a computer it is sent moments after the crash, by a small
-  helper process that waits beside Flower, or at the next launch if there is
-  no network. On a Mac this comes from the
-  crash report macOS itself writes; Flower reads only those parts of it,
-  never the report's other contents (your Mac's model, its crash-reporter
-  ID, the folder Flower ran from). On Windows it comes from the event Windows
-  logs for the crash, and on Linux from .NET's own crash report, with paths
-  removed like everything else. On an iPhone it comes from Apple's own
-  crash diagnostics (MetricKit), which iOS hands over up to a day after
-  the crash: the fault and the names of the libraries on the stack, with
-  offsets into them. On Android, from Sentry's Android SDK, under the same
-  removal rules as everything else.
+- **Desktop:** **Settings → General → Send anonymous crash reports**.
+- **Phone:** **Send anonymous crash reports**, near the bottom of Settings.
+- **Server:** set `"SendCrashReports": false` inside the `Flower` object in
+  `flower-server.json`, then restart the server.
 
-### What is removed before a report leaves
+The app switch takes effect immediately. On first launch of a release, a
+notice explains that reporting is on and offers a **Turn Off** button.
 
-- **Names.** File and folder paths are replaced by `<path>` (keeping only the
-  extension: `<path>.flac`); anything in quotes in a message becomes `'…'`;
-  web addresses become `<url>`. So "Could not open /Music/Some Artist/01
-  Song.flac" arrives as "Could not open `<path>.flac`".
-- **Who and where.** No account, user name or e-mail; no device, computer or
-  server name; no IP address (Sentry does not store it, and is not given one
-  to work out a location from); no device boot time; none of the permanent
-  device identifiers Sentry's phone SDKs would otherwise add.
-- **On a server:** a request's query string (where stream tickets travel),
-  headers, cookies and body.
-- **Never sent at all:** log files or log lines, your library, playlists,
-  settings, play history, and anything about your paired devices or server.
+### What is included
 
-The removal happens on your device, before sending, and Sentry scrubs again
+| Data | Details |
+|---|---|
+| Error | Exception type, cleaned message, method names, source file names and line numbers |
+| Build | Flower version, app or server, and loaded library names and versions |
+| System | Operating system and version, .NET runtime, processor architecture and time zone |
+| Frequency | How often the same problem occurred on this installation |
+| Install ID | A random number used to count affected installations |
+| Performance | Startup timing for about 1 in 100 launches; server request timing for about 1 in 100 requests, by route without query strings |
+| Native crash | Fault type, faulting address, and library / function names or offsets |
+
+The random install ID contains no device or account information. Turning
+reporting off deletes it; turning reporting back on creates a new ID.
+Repeated errors are reported at most once an hour per installation, with a
+count of repeats included in the next report.
+
+### What is removed
+
+Before sending, Flower removes or replaces:
+
+- **File paths, quoted names and web addresses.** Paths become `<path>` with
+  the extension retained; quoted text becomes `'…'`; addresses become `<url>`.
+- **Personal and device details:** account, user and email names; device,
+  computer and server names; permanent device identifiers; device boot time.
+- **Server request contents:** query strings, headers, cookies and bodies.
+
+Flower doesn't attach logs, your library, playlists, settings, listening
+history or paired-device details. Sentry is configured not to store IP
+addresses or derive location from them, and applies additional scrubbing
 on arrival.
 
-### How often
+For example, a message about `/Music/Artist/Song.flac` contains
+`<path>.flac` after cleaning.
 
-A problem is reported at most once an hour per install. Repeats inside the
-hour are counted, and the count goes with the next report, so how often a
-problem happens is known without one install sending hundreds of reports.
+### Which builds send reports
 
-### Errors Flower catches
+Only release versions in Release builds send reports. Debug builds, tests,
+betas and untagged source builds don't report. A later release also skips a
+saved crash identified as coming from a pre-release.
 
-Some errors don't crash Flower but still mean a bug - a decoder that refused a
-valid file, say. Flower can report those in the same way, under the same
-rules and the same switch, tagged with where they happened.
+If a crash ended too abruptly to record its version, a later release may send
+it marked as an unknown version, together with the version that found it.
+
+<details>
+<summary>Native crash collection by platform</summary>
+
+| Platform | Source and timing |
+|---|---|
+| macOS | Selected fields from the OS crash report; excludes the Mac model, crash-reporter ID and app folder |
+| Windows | The OS crash event, with paths removed |
+| Linux | .NET's crash report, with paths removed |
+| iOS | Apple's MetricKit diagnostics, sometimes delivered up to a day later; fault and library names with stack offsets |
+| Android | Sentry's Android SDK, under the same removal rules |
+
+On desktop, a helper can send the report shortly after a crash. If the network
+is unavailable, it can be sent at the next launch.
+
+</details>
+
+## Diagnostic logs sent to your server
+
+A paired device sends logs to its Flower server when **Send diagnostic logs to
+server** is enabled. The owner can use them to diagnose connection and playback
+problems. These logs do **not** go to Flower's developer or accompany crash reports.
+
+Logs can include song and file names, full paths, errors and network addresses.
+At startup and when networks change, they record IP addresses and routers, so
+the owner can see which networks the device used and when.
+
+Turn the switch off in Settings to stop future uploads. The server retains
+uploaded logs for up to seven days, capped at 128 MB per device.
 
 ## Reporting an issue on GitHub
 
-"Report an Issue" (About box, phone Settings) and, with crash reports off, the
-banner after a crash open a new GitHub issue in your browser with the details
-written in: the version, your operating system and, after a crash, the error
-and its stack, with your home folder written as `~`. **Nothing is sent unless
-you submit it**, and you can read and edit everything first. GitHub issues
-are public. Your log file is not attached; the issue says where it is, and it
-contains the names of your songs and folders.
+**Report an Issue** opens a draft in your browser. It includes the Flower
+version and operating system; after a crash it also includes the error and
+stack, with your home directory replaced by `~`.
 
-## Logs to your own server
+**Nothing is submitted until you send it.** Read and edit the draft first:
+GitHub issues are public. A log file isn't attached automatically. If you add
+one, review it for song names, folders and network addresses.
 
-A device paired to a server sends its log to that server, for the server's
-owner to diagnose problems ("Send diagnostic logs to server", on by default).
-It goes only to your own server, never to Flower's developer. It contains file
-names, and the device's network addresses: at startup, and each time the device
-moves between networks (Wi-Fi to cellular, one Wi-Fi to another), the log notes
-its IP addresses and routers, so whoever runs the server can see
-which networks the device was on, and when. Crash reports carry no log lines.
+## Artwork, updates and other connections
 
-## Other connections Flower makes
+### Artist pictures and cover searches
 
-None of these go to Flower's developer.
+For artist pictures, Flower sends the artist's name to Deezer. If the name is
+ambiguous, it can also send a few song titles to find the right artist. The
+server makes requests for its songs; a device makes requests for local songs.
+Artist lookups have no off switch.
 
-- **Artist pictures** from Deezer: Flower sends an artist's name, and when
-  the artist's albums don't settle which artist it is, the artist's name with
-  a few of their song titles. Whoever holds the song does the asking: a server
-  for the songs it serves, a device for the songs on it. There is no switch.
-- **Find album art online**, only when you ask for it: the album and artist
-  names (or a song's title and artist), or whatever words you type in their
-  place, go to Apple's iTunes Search, MusicBrainz with the Cover Art Archive,
-  and Bandcamp.
-- **Update checks** (desktop installs from a release): once a day, GitHub is
-  asked for its list of releases. Switch: Settings > General, "Check for
-  updates automatically". "Get beta releases" changes which one is taken, not
-  what is sent.
-- **Vibe Playlists' model**, downloaded once from GitHub the first time Vibe
-  Playlists analyse the library.
-- **A server's public address**, only with "Allow connections from the
-  internet" on or its network page open: the server asks ipify and Cloudflare
-  what its public IP address is.
+**Find online** sends the album and artist, title and artist, or your edited
+search words to Apple's iTunes Search, MusicBrainz / Cover Art Archive and
+Bandcamp. This happens only when you request a search.
+
+### Updates
+
+Desktop release installations check GitHub's release list once a day.
+**Settings → General → Check for updates automatically** disables automatic
+checks. **Get beta releases** changes which release is offered, not the
+information sent.
+
+### Vibe Playlists and Endless Play
+
+Enabling server AI features downloads the model from GitHub. Music analysis
+and playlist prompts are processed on your Flower server; songs and prompts
+aren't sent to an AI provider. Paired devices send prompts to that server and
+don't download the model themselves. Turning off all server AI features
+deletes the model and stored analysis.
+
+### Public address lookup
+
+When **Allow connections from the internet** is on, or the server's Network
+page is open, the server asks ipify and Cloudflare for its public IP address.
+This helps it display and advertise a reachable address.

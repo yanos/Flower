@@ -1,4 +1,7 @@
-# Reaching your own server from anywhere
+# Remote access: implementation notes
+
+> Development notes. For setup instructions, see
+> [Listening away from home](REMOTE-SETUP.md).
 
 This document explains how a Flower client finds and keeps hold of its paired
 server when the two are not on the same network. It is the client-side half of

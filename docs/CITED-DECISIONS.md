@@ -1,4 +1,7 @@
-# Cited decisions
+# Archived review references
+
+> Contributor reference for review IDs cited in source comments.
+> For using Flower, start with the [user guides](README.md).
 
 Three documents were retired in September 2026 once they had no open items
 left: `ARCHITECTURE-REVIEW.md`, `OPEN-INTERNET-REVIEW.md` and

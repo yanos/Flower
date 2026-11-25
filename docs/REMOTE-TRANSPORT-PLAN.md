@@ -1,4 +1,7 @@
-# Getting to the server without installing a VPN on the phone
+# Remote transport: development plan
+
+> Development plan and implementation history. Some sections describe earlier
+> designs. For current usage and setup, see the [user guides](README.md).
 
 `REMOTE-ACCESS.md` answered *which address to dial* once a path exists.
 This one asks the question underneath it: **who provides the path at all**, when

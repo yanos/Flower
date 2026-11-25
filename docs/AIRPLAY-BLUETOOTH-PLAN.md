@@ -1,5 +1,8 @@
 # Bluetooth (all platforms) + AirPlay (macOS/iOS) — Output Routing Plan
 
+> Development plan and implementation history. Some sections describe earlier
+> designs. For current usage and setup, see the [user guides](README.md).
+
 Scope: **Bluetooth output** on Windows, macOS, Linux, Android (iOS gets it as a side effect of Phase 2). Phase 1's desktop picker and Phase 2's iOS/macOS route pickers are **built**, and Phase 2 has been heard routing to a real AirPlay receiver from both a Mac and an iPhone (November 2026) — see below. What is left is hardware verification of Phase 1 and of losing the output device, and Phase 3's Android smoke test. **AirPlay sender** on macOS/iOS only — Windows/Linux have no viable AirPlay sender path (no first-party access; third-party reverse-engineered senders like `pyatv`/`shairplay` are stuck on legacy AirPlay 1/RAOP and don't work against AirPlay 2 receivers), dropped from scope by decision.
 
 ## Key findings

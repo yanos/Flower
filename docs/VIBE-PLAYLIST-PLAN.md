@@ -1,5 +1,8 @@
 # Vibe Playlist Plan
 
+> Development plan and implementation history. Some sections describe earlier
+> designs. For current usage and setup, see the [user guides](README.md).
+
 A playlist made from a sentence: "music for a rainy day", "music to go
 jogging", "sad piano without singing". It never runs out. Pressing play starts
 an endless queue of the library's songs that *sound* like the sentence, and

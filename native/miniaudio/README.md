@@ -1,12 +1,17 @@
-# Vendored natives: miniaudio (Android/iOS) and libflowerbridge (everywhere)
+# Building the native audio libraries
 
-Desktop already gets `libminiaudio` via the community `Miniaudio-CS` NuGet package (`~/.nuget/packages/miniaudio-cs/`). That package ships no `android-*`/`ios-*` binaries at all, so mobile is built here instead - no NuGet, no hosting, just compiled binaries checked directly into `Flower.Android/libs/` and `Flower.iOS/Frameworks/`.
+Contributor instructions for rebuilding miniaudio and Flower's render-thread
+bridge. The binaries are checked in: running Flower from source doesn't
+require a native toolchain.
 
-Flower's render-thread bridge is a library of its own, `libflowerbridge`, on
-every platform: built beside miniaudio by the two phone scripts, and for the six
-desktop RIDs by `desktop/build.sh` into `desktop/runtimes/<rid>/native/`. All of
-it is checked in, so every head runs from a clean clone with no native
-toolchain.
+| Library | Platforms | Source |
+|---|---|---|
+| miniaudio | Desktop | Supplied by the `Miniaudio-CS` NuGet package |
+| miniaudio | Android / iOS | Built here; copied into `Flower.Android/libs/` and `Flower.iOS/Frameworks/` |
+| `libflowerbridge` | All installed apps | Built here; desktop binaries go in `desktop/runtimes/<rid>/native/` |
+
+[Desktop](#desktop-libflowerbridge-only) · [Android](#android) · [iOS](#ios) ·
+[Verification](#verification)
 
 ## Flower's own C in here
 
@@ -53,9 +58,15 @@ why `MiniaudioSink` probes for them rather than assuming a platform. The
 bridge is probed the same way, and a platform with no build of it cannot play:
 `MiniaudioSink` refuses to open a device without one.
 
-## Why this exact miniaudio commit
+## Pinned miniaudio version
 
-`vendor/miniaudio.h` is pinned to commit `350784a9467a79d0fa65802132668e5afbcf3777` (tag `0.11.22`) - **not** the latest miniaudio release. This is the exact commit `Miniaudio-CS` 1.0.4's own C# bindings were generated against (confirmed via `Miniaudio-CS`'s own pinned git submodule at its published commit `9c64a8fb404c965a538584bf76a691f0d4ffccd6`, and cross-checked against the version string embedded in the desktop `libminiaudio.dylib`). Building a different miniaudio version here would risk a silent ABI mismatch (`ma_context`/`ma_device` struct layout, enum values) against the existing C# struct definitions - do not bump this without also verifying `Miniaudio-CS` itself was rebuilt against the same newer commit.
+`vendor/miniaudio.h` is pinned to **0.11.22**, commit
+`350784a9467a79d0fa65802132668e5afbcf3777`. This matches the source used to
+generate `Miniaudio-CS` 1.0.4's C# bindings, verified against its submodule at
+`9c64a8fb404c965a538584bf76a691f0d4ffccd6` and the desktop binary's version.
+
+Keep the native source and bindings on the same version. A mismatch can change
+struct layouts (`ma_context`, `ma_device`) or enum values without a build error.
 
 ## Desktop (libflowerbridge only)
 

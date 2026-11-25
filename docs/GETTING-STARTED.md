@@ -1,119 +1,139 @@
 # Getting started
 
-Flower plays music in one of two ways, and you can switch later:
+Flower can play music already on your device or stream from a Flower server.
+You don't need to run a server to use it.
 
-- **From someone's server.** A friend or family member runs a Flower server
-  with their music on it and sends you a link. You open it, and their whole
-  library is in your app, at home or away. Start at
-  [Listening to a server](#listening-to-a-server).
-- **On its own.** Flower plays music that is already on your computer or
-  phone. Nothing else is needed. Start at
-  [Using Flower on its own](#using-flower-on-its-own).
-
-Running a server yourself is a different guide:
-[SELF-HOSTING.md](SELF-HOSTING.md).
-
----
+[Get the app](#get-the-app) · [Join a server](#listening-to-a-server) ·
+[Play your own files](#using-flower-on-its-own) ·
+[Playback and playlists](#playback-and-playlists) · [Get help](#troubleshooting)
 
 ## Get the app
 
-| Device | Where |
+| Device | Install |
 |---|---|
-| Mac, Windows, Linux | [The latest release](https://github.com/yanos/Flower/releases/latest): the `.dmg` for a Mac (Apple silicon), `Setup.exe` for Windows, the `.AppImage` for Linux. Flower updates itself after that; to get betas too, turn on Settings > General, "Get beta releases". |
-| iPhone, Android | Not in the App Store or Google Play yet. Ask whoever runs your server. |
-| A web browser | Nothing to install: whoever runs your server can send you a link that opens in the browser. |
+| Mac (Apple silicon) | Download the `.dmg` from the [latest release](https://github.com/yanos/Flower/releases/latest), open it and copy Flower to Applications. |
+| Windows (x64) | Download and run `Setup.exe` from the [latest release](https://github.com/yanos/Flower/releases/latest). |
+| Linux (x64) | Download the `.AppImage` from the [latest release](https://github.com/yanos/Flower/releases/latest), make it executable and open it. |
+| iPhone / Android | The apps aren't in the stores yet. Ask your server owner about installation, or see [Building Flower](BUILDING.md#phone-apps). |
+| Browser | No installation needed. Ask your server owner for a browser link. |
 
----
+Desktop builds aren't signed with a publisher certificate yet. macOS may need
+**System Settings → Privacy & Security → Open Anyway** after the first launch
+attempt. Windows may show **More info → Run anyway**. Continue only for a
+download from the project's release page. [Apple's instructions](https://support.apple.com/en-us/102445)
+explain the macOS prompt.
+
+Desktop installations check for updates automatically. To include betas, turn
+on **Settings → General → Get beta releases**.
+
+The browser player supports the formats your browser can play. For the widest
+format support, gapless playback, an equalizer and offline copies, use the app.
+
+### Supported files
+
+The installed apps play MP3, AAC / ALAC (`.m4a`), FLAC, WAV, AIFF, Ogg Vorbis,
+Opus, Monkey's Audio (`.ape`) and DSF. DSF audio is converted to PCM for playback.
+Protected subscription downloads aren't supported.
 
 ## Listening to a server
 
-### 1. Get a link
+### 1. Ask for an invite
 
-Ask whoever runs the server. They make one in Flower's settings and send it
-to you in a message. It starts with `flower://pair`.
+The server owner can send you an app link starting with `flower://pair`, or an
+HTTPS link for listening in a browser. Each invite works on **one device** and
+expires after **ten minutes**. Ask for another invite for each device you add.
 
-- **A link works once, on one device, for ten minutes.** If it expires, or you
-  want Flower on a second device too, ask for another one.
-- **Sometimes it's a five-character code instead** (`G6RJR`). That works too.
-  A link is safer, because it can only pair you with the server that made it.
+An app link also checks the server's identity. Use it in preference to a plain
+five-character code.
 
-### 2. Open it
+### 2. Connect
 
-Tap or click the link on the device you want to listen on. Flower opens and
-asks **Pair With "…"?**, naming the server. Tap **Pair**.
+**In the app:** open the `flower://pair` link on the device where you installed
+Flower. Check the server name, then choose **Pair**.
 
-That's it. The server's songs fill your library within a few seconds.
+If your messaging app won't open the link, copy and paste it into Flower:
 
-**If tapping the link does nothing** (some messaging apps won't open it),
-copy it and paste it into Flower instead:
-
-| Device | Where to paste it |
+| Device | Where to paste |
 |---|---|
-| Computer | **Settings → Servers**, into **Pairing code or link**, then **Pair**. |
-| Phone | **Settings → Add Server**, then **Add**. |
+| Computer | **Settings → Servers → Pairing code or link**, then **Pair** |
+| Phone | **Settings → Add Server**, then **Add** |
 
-**With a code instead of a link:**
+**In a browser:** open the HTTPS invite from the server owner. It pairs that
+browser automatically. Bookmark the server's address for next time. A different
+browser or a cleared browser profile needs a new invite.
 
-| Device | How |
-|---|---|
-| Computer | Click the server in the sidebar (it's listed when you're on the same Wi-Fi), type the code into **Pairing code or link**, and press Enter. |
-| Phone | **Settings**, under **Nearby servers**, tap **Pair** next to the server, then type the code. |
+**Only have a code?** On the same Wi-Fi as the server, select it in the desktop
+sidebar, or use **Settings → Nearby servers → Pair** on your phone. Enter the
+code in **Pairing code or link**. Away from home, ask for a link instead.
 
-The server only appears in that list when you're on the same Wi-Fi as it. If
-you're not, ask for a link.
+### 3. Play and download music
 
-### 3. What changes
+The server's songs appear in your library, ready to stream. Your existing
+music files stay on your device.
 
-- **Your library shows the server's music** instead of your device's own.
-  Everything on it plays straight away, streamed. Music files already on your
-  device are not deleted.
-- **To listen offline**, choose **Download** (or **Download Album**) from a
-  song's or album's menu, or at the top of a playlist, and Flower keeps a
-  copy on your device.
-- **Away from home**, Flower carries on with nothing to set up, as long as
-  whoever runs the server has made it reachable from outside. If it only
-  works at home, tell them.
-- **Your playlists are your own**: nobody else on the server sees them, and
-  you don't see theirs. Your plays count towards its play counts.
-- **"2 songs unavailable" under a playlist** means those songs can't be played
-  from this device right now, usually because the server doesn't have them or
-  its drive is away. They aren't lost, and they come back by themselves.
+- **Listen offline:** open a song, album or playlist menu and choose
+  **Download** or **Download Album**. Downloads need the installed app.
+- **Free up space:** choose **Delete Local File** to remove a downloaded copy.
+  A song still on the server remains available to stream.
+- **Use playlists:** listeners have their own playlists. The owner's
+  administrator devices share the owner's playlists.
+- **Listen away from home:** the server owner needs to set up
+  [remote access](REMOTE-SETUP.md). Your app then uses the available connection.
 
-### If something goes wrong
-
-| What you see | What to do |
-|---|---|
-| The code or link is wrong or has expired | Ask for a new one. Each one works once, for ten minutes. |
-| "This is not the server that invite came from" | Don't try again yet. Tell whoever runs the server: either the link was for a different server, or something else is answering in its place. |
-| No servers found on this Wi-Fi | Use a link instead of a code. |
-| It worked at home but not outside | Whoever runs the server has to make it reachable from outside ([SELF-HOSTING.md](SELF-HOSTING.md#remote-access-with-tailscale)). |
-| In a browser: an empty library, or a warning about the certificate | Open the link exactly as it was sent (it starts with `https://`). A warning that the browser doesn't know who issued the certificate is expected the first time. Continue past it. |
-
----
+If a playlist says **“2 songs unavailable”**, those entries are still saved.
+They return when Flower can find the songs again.
 
 ## Using Flower on its own
 
-Add music once, and Flower notices new songs in those places by itself from
-then on.
-
-| Device | How |
+| Device | Add your music |
 |---|---|
-| Mac, Windows, Linux | **Settings → Library → Add folder…**, and pick the folder your music is in. You can also drag songs onto the window once a folder is added. |
-| Mac with Music.app | The first time Flower opens, it offers to bring in your Music.app library, with its play counts. |
-| iPhone, iPad | Plug it into a computer, select it in Finder (iTunes on Windows) → **Files**, and drag songs onto **Flower**. Or, in the Files app: **On My iPhone → Flower**. |
-| Android | Allow music access when Flower asks. It plays the songs other music apps on the phone see. |
+| Computer | Open **Settings → Library → Add folder…** and choose your music folder. Flower notices new songs there automatically. You can also drag songs onto the window after adding a folder. |
+| Computer with Music.app | On first launch, Flower offers to import the Music.app library, including play counts. |
+| iPhone / iPad | In Finder (iTunes on Windows), select the device → **Files** and drag songs onto **Flower**. You can also copy files into **On My iPhone → Flower** in the Files app. |
+| Android | Allow music access when prompted. Flower reads the music files available to other music apps on your phone. |
 
-More on adding, removing, editing and replacing songs:
-[MANAGING-SONGS.md](MANAGING-SONGS.md).
+See [Managing songs](MANAGING-SONGS.md) for editing, replacing and removing files.
+To share your collection across devices, follow [Self-hosting](SELF-HOSTING.md).
 
----
+## Playback and playlists
 
-## Good to know
+| To… | Do this |
+|---|---|
+| Play a song | Double-click it on a computer, or tap it on a phone. Use an album's **Play** button to play the album. |
+| Choose what plays next | Open a song or album menu and choose **Play Next** or **Add to Queue**. Right-click on a computer; long-press a song on a phone. |
+| Create a playlist | Use **+ → New Playlist** beside Playlists on desktop, or **New Playlist** in the phone's Playlists tab. Add songs with **Add to Playlist** from their menus. |
+| Make a playlist from rules | Choose **New Smart Playlist…**, then set the rules for the songs to include. |
+| Make a playlist for a mood | When the server offers it, choose **New Vibe Playlist…**, describe the sound and preview the songs before saving. English descriptions of sound or mood work best. |
 
-- **Crash reports.** When Flower crashes, it sends an anonymous report to its
-  developer, so the crash gets fixed. It says so the first time you open it,
-  with a button to turn it off. What is sent, in full:
-  [PRIVACY.md](PRIVACY.md).
-- **Keyboard shortcuts on a computer:** `Space` play/pause, `Enter` play the
-  selected song, `L` jump to what's playing, Cmd/Ctrl+`I` song info,
-  Cmd/Ctrl+`,` settings.
+## Keyboard shortcuts
+
+On a computer, use **Cmd** on macOS and **Ctrl** on Windows or Linux.
+
+| Action | Shortcut |
+|---|---|
+| Play / pause | `Space` |
+| Play the selected song | `Enter` |
+| Jump to the playing song | `L` |
+| Open Track Info | `Cmd/Ctrl+I` |
+| Open Settings | `Cmd/Ctrl+,` |
+
+## Troubleshooting
+
+| Problem | Try this |
+|---|---|
+| Invite expired or already used | Ask the server owner for a new one. |
+| “This is not the server that invite came from” | Stop pairing and tell the owner. They should check the server's identity before sending a new link. |
+| No nearby servers | Check that you're on the same Wi-Fi, or use an invite link. |
+| Music works at home but not away | Ask the owner to check [remote access](REMOTE-SETUP.md). |
+| Browser won't pair | Use the owner's HTTPS link. Plain HTTP works only at `localhost` on the server itself. |
+| Browser shows a certificate warning | Ask the owner to confirm the address. A server using its built-in certificate can show this warning again after a restart; a trusted HTTPS address avoids it. |
+
+For other problems, use **Report an Issue** in Flower or
+[open an issue on GitHub](https://github.com/yanos/Flower/issues).
+
+## Privacy settings
+
+Release builds send crash reports to Flower's developer by default. Turn off
+**Send anonymous crash reports** in Settings if you prefer. Paired devices also
+have a separate **Send diagnostic logs to server** switch.
+[Privacy](PRIVACY.md) explains what each report includes and who receives it.
