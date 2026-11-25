@@ -165,7 +165,11 @@ in parallel; the Mono runtime and runner settings are unchanged.
 The Linux job first checks that the checked-in bridge binaries were built from
 the bridge source in the tree: `native/miniaudio/{desktop,android,ios}/build.sh`
 each write `flowerbridge-source.sha256` beside what they build, so a change to
-`flower_audio_bridge.{c,h}` without all three rebuilds fails there. The desktop
+`flower_audio_bridge.{c,h}` without all three rebuilds fails there. It then runs
+`scripts/test-image-channels.py`, which holds the server image's release
+channels (`scripts/image-channels.py`) to the same `Tests/ReleasePolicyVectors.json`
+the desktop's `ReleasePolicyConformanceTests` read, so the two implementations
+of the release policy cannot disagree about a tag. The desktop
 jobs then run those binaries through the output stage's tests on Linux,
 Windows and macOS.
 

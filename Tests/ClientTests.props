@@ -38,6 +38,7 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <EmbeddedResource Include="$(MSBuildThisFileDirectory)ReleasePolicyVectors.json" LogicalName="ReleasePolicyVectors.json" />
   </ItemGroup>
 
   <ItemGroup>

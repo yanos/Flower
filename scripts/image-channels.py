@@ -19,15 +19,18 @@ fix to an older line, tagged after a newer one, never moves either back.
 import re
 import sys
 
-VERSION = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$")
+VERSION = re.compile(r"[vV]?([0-9]+(?:\.[0-9]+){0,2})(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?")
 
 
 def parse(tag):
-    match = VERSION.match(tag.strip())
+    match = VERSION.fullmatch(tag.strip())
     if not match:
         return None
-    major, minor, patch, pre = match.groups()
-    return (int(major), int(minor), int(patch)), pre
+    text, pre = match.groups()
+    core = tuple(int(part) for part in text.split("."))
+    if any(part > 2147483647 for part in core):
+        return None
+    return core + (0,) * (3 - len(core)), pre
 
 
 def channel(pre):

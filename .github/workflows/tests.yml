@@ -47,6 +47,9 @@ jobs:
               || { echo "::error::$stamp was built from a different flower_audio_bridge.{c,h}; rerun its build.sh"; exit 1; }
           done
 
+      - name: Check image release policy
+        run: python3 scripts/test-image-channels.py
+
       # Build the shared test graph once. Browser publishing has its own job.
       - name: Build test suites
         run: dotnet build Tests/Flower.Desktop.Tests.slnf --configuration Release -p:IncludeWebUi=false

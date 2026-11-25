@@ -1,0 +1,141 @@
+{
+  "versions": [
+    {
+      "tag": "v1.2.3",
+      "valid": true,
+      "stable": true,
+      "beta": true
+    },
+    {
+      "tag": " V1.2+abc ",
+      "valid": true,
+      "stable": true,
+      "beta": true
+    },
+    {
+      "tag": "1",
+      "valid": true,
+      "stable": true,
+      "beta": true
+    },
+    {
+      "tag": "v1.2.3-beta",
+      "valid": true,
+      "stable": false,
+      "beta": true
+    },
+    {
+      "tag": "v1.2.3-BETA.10",
+      "valid": true,
+      "stable": false,
+      "beta": true
+    },
+    {
+      "tag": "v1.2.3-betamax",
+      "valid": true,
+      "stable": false,
+      "beta": false
+    },
+    {
+      "tag": "v1.2.3-rc.1",
+      "valid": true,
+      "stable": false,
+      "beta": false
+    },
+    {
+      "tag": "1.2.3-beta.184467440737095516160",
+      "valid": true,
+      "stable": false,
+      "beta": true
+    },
+    {
+      "tag": "nightly",
+      "valid": false,
+      "stable": false,
+      "beta": false
+    },
+    {
+      "tag": "1.2.3.4",
+      "valid": false,
+      "stable": false,
+      "beta": false
+    },
+    {
+      "tag": "1.2.3-",
+      "valid": false,
+      "stable": false,
+      "beta": false
+    },
+    {
+      "tag": "1.2.3-beta..2",
+      "valid": false,
+      "stable": false,
+      "beta": false
+    },
+    {
+      "tag": "1.2.3+",
+      "valid": false,
+      "stable": false,
+      "beta": false
+    },
+    {
+      "tag": "1.2.3-\u03b2",
+      "valid": false,
+      "stable": false,
+      "beta": false
+    },
+    {
+      "tag": "2147483648.0.0",
+      "valid": false,
+      "stable": false,
+      "beta": false
+    }
+  ],
+  "comparisons": [
+    {
+      "left": "v1.2",
+      "right": "1.2.0+abc",
+      "result": 0
+    },
+    {
+      "left": "V1.3",
+      "right": "v1.2.99",
+      "result": 1
+    },
+    {
+      "left": "1.2.3-beta.10",
+      "right": "1.2.3-beta.9",
+      "result": 1
+    },
+    {
+      "left": "1.2.3-beta",
+      "right": "1.2.3",
+      "result": -1
+    },
+    {
+      "left": "1.2.3-beta",
+      "right": "1.2.3-beta.1",
+      "result": -1
+    },
+    {
+      "left": "1.2.3-1",
+      "right": "1.2.3-a",
+      "result": -1
+    },
+    {
+      "left": "1.2.3-beta.184467440737095516160",
+      "right": "1.2.3-beta.184467440737095516159",
+      "result": 1
+    },
+    {
+      "left": "1.2.3-001",
+      "right": "1.2.3-1",
+      "result": 0
+    },
+    {
+      "left": "invalid",
+      "right": "1.2.3",
+      "result": null
+    }
+  ]
+}

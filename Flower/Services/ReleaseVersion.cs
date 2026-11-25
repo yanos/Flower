@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using System.Text.RegularExpressions;
 
 namespace Flower.Services
 {
@@ -59,43 +60,46 @@ namespace Flower.Services
         // Numbers compare as numbers and come before words.
         private static int CompareIdentifier(string a, string b)
         {
-            var aIsNumber = ulong.TryParse(a, NumberStyles.None, CultureInfo.InvariantCulture, out var aNumber);
-            var bIsNumber = ulong.TryParse(b, NumberStyles.None, CultureInfo.InvariantCulture, out var bNumber);
+            var aIsNumber = IsNumber(a);
+            var bIsNumber = IsNumber(b);
             if (aIsNumber && bIsNumber)
-                return aNumber.CompareTo(bNumber);
+            {
+                a = a.TrimStart('0');
+                b = b.TrimStart('0');
+                return a.Length != b.Length ? a.Length.CompareTo(b.Length) : string.CompareOrdinal(a, b);
+            }
             if (aIsNumber != bIsNumber)
                 return aIsNumber ? -1 : 1;
             return string.CompareOrdinal(a, b);
         }
 
+        private static bool IsNumber(string value)
+        {
+            foreach (var c in value)
+            {
+                if (c is < '0' or > '9')
+                    return false;
+            }
+            return value.Length > 0;
+        }
+
+        private static readonly Regex VersionPattern = new(
+            @"^[vV]?([0-9]+(?:\.[0-9]+){0,2})(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$",
+            RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
+
         private static (int[] Core, string? PreRelease)? Parse(string version)
         {
-            var text = AppVersion.StripBuildMetadata(version.Trim());
-            if (text.StartsWith('v') || text.StartsWith('V'))
-                text = text[1..];
-
-            string? preRelease = null;
-            var dash = text.IndexOf('-');
-            if (dash >= 0)
-            {
-                preRelease = text[(dash + 1)..];
-                text = text[..dash];
-                if (preRelease.Length == 0)
-                    return null;
-            }
-
-            var parts = text.Split('.');
-            if (parts.Length is < 1 or > 3)
+            var match = VersionPattern.Match(version.Trim());
+            if (!match.Success)
                 return null;
-
+            var parts = match.Groups[1].Value.Split('.');
             var core = new int[3];
             for (var i = 0; i < parts.Length; i++)
             {
                 if (!int.TryParse(parts[i], NumberStyles.None, CultureInfo.InvariantCulture, out core[i]))
                     return null;
             }
-
-            return (core, preRelease);
+            return (core, match.Groups[2].Success ? match.Groups[2].Value : null);
         }
     }
 }
