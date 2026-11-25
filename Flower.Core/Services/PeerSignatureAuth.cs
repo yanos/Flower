@@ -81,8 +81,8 @@ public static class PeerSignatureAuth
     // verified fingerprint, or null on any failure.
     public static string? VerifySelfSigned(SignedRequest request, NonceReplayGuard replayGuard, DateTimeOffset now)
     {
-        var fingerprint = request.Identity("X-Flower-Fingerprint");
-        var publicKeyBase64 = request.Identity("X-Flower-PublicKey");
+        var fingerprint = request.Identity(SignedIdentity.FingerprintHeader);
+        var publicKeyBase64 = request.Identity(SignedIdentity.PublicKeyHeader);
         if (string.IsNullOrEmpty(fingerprint) || string.IsNullOrEmpty(publicKeyBase64))
             return null;
 
@@ -130,7 +130,7 @@ public static class PeerSignatureAuth
     // this one request, is 401, and means nothing more than "try again."
     public static PeerAuthResult AuthenticateTrustedPeer(SignedRequest request, Func<string, string?> publicKeyForFingerprint, NonceReplayGuard replayGuard, DateTimeOffset now)
     {
-        var fingerprint = request.Identity("X-Flower-Fingerprint");
+        var fingerprint = request.Identity(SignedIdentity.FingerprintHeader);
         if (string.IsNullOrEmpty(fingerprint))
             return new PeerAuthResult(null, PeerAuthFailure.NotTrusted);
 
@@ -150,8 +150,8 @@ public static class PeerSignatureAuth
     private static SignatureCheck Check(SignedRequest request, string publicKeyBase64, string fingerprint, NonceReplayGuard replayGuard, DateTimeOffset now) =>
         SignatureVerifier.Check(
             request.Method, request.Path, request.Query, request.Body,
-            request.Identity("X-Flower-Timestamp"), request.Identity("X-Flower-Nonce"),
-            request.Identity("X-Flower-Signature"), publicKeyBase64,
+            request.Identity(SignedIdentity.TimestampHeader), request.Identity(SignedIdentity.NonceHeader),
+            request.Identity(SignedIdentity.SignatureHeader), publicKeyBase64,
             now, replayGuard, fingerprint);
 }
 

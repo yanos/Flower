@@ -36,7 +36,7 @@ public static class Problems
     public static IResult Signed(HttpContext http, int status, string contentType, string content)
     {
         var bytes = Utf8.GetBytes(content);
-        if (DeviceSignatureAuth.GetIdentityValue(http.Request, "X-Flower-Nonce") is { Length: > 0 } nonce)
+        if (DeviceSignatureAuth.GetIdentityValue(http.Request, SignedIdentity.NonceHeader) is { Length: > 0 } nonce)
         {
             var key = http.RequestServices.GetRequiredService<DeviceSigningKey>();
             var (signature, timestamp) = key.SignResponse(http.Request.Path.Value ?? "/", status, bytes, nonce);

@@ -67,11 +67,8 @@ public static class PeerCredentialsExtensions
         this HttpRequestMessage request, IPeerCredentials credentials, byte[]? body = null)
     {
         var uri = request.RequestUri!;
-        foreach (var (key, value) in await credentials.AuthorizeAsync(
-                     request.Method.Method, uri.AbsolutePath, ParseQuery(uri.Query), body ?? []))
-        {
-            request.Headers.TryAddWithoutValidation(key, IdentityHeaderEncoding.Encode(value));
-        }
+        SignedIdentity.AddHeaders(request, await credentials.AuthorizeAsync(
+            request.Method.Method, uri.AbsolutePath, ParseQuery(uri.Query), body ?? []));
     }
 
     // The canonical form signs the *decoded* key and value, which is what the

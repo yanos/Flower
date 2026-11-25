@@ -124,7 +124,7 @@ public sealed class RequestGate(TrustedPeerStore trustedPeers, NonceReplayGuard 
         if (request.ContentLength > maxBody)
             return new Result(Outcome.TooLarge, null, []);
 
-        var claimed = DeviceSignatureAuth.GetIdentityValue(request, "X-Flower-Fingerprint");
+        var claimed = DeviceSignatureAuth.GetIdentityValue(request, SignedIdentity.FingerprintHeader);
         if (string.IsNullOrEmpty(claimed) || trustedPeers.GetPublicKey(claimed) == null)
         {
             if (!_strangers.TryAcquire(address, now))

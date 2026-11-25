@@ -102,13 +102,13 @@ public static class ServerResponseSignature
     // header-else-query rule the server reads it by.
     private static string? RequestNonce(HttpRequestMessage request)
     {
-        if (request.Headers.TryGetValues("X-Flower-Nonce", out var values) && values.FirstOrDefault() is { Length: > 0 } header)
+        if (request.Headers.TryGetValues(SignedIdentity.NonceHeader, out var values) && values.FirstOrDefault() is { Length: > 0 } header)
             return IdentityHeaderEncoding.Decode(header);
 
         foreach (var pair in request.RequestUri!.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
         {
             var separator = pair.IndexOf('=');
-            if (separator > 0 && Uri.UnescapeDataString(pair[..separator]) == "X-Flower-Nonce")
+            if (separator > 0 && Uri.UnescapeDataString(pair[..separator]) == SignedIdentity.NonceHeader)
                 return Uri.UnescapeDataString(pair[(separator + 1)..]);
         }
 

@@ -46,21 +46,9 @@ public class PeerPairingService
     {
         try
         {
-            const string path = "/api/flower/v1/pair-redeem";
-            var (signature, timestamp, nonce) = _signingKey.Sign("POST", path, [], body: []);
-
-            using var request = new HttpRequestMessage(HttpMethod.Post, device.Url(path));
-            // Percent-encoded, as on every header-transport call - see
-            // IdentityHeaderEncoding. This is the first request a device ever
-            // makes to its server, so an alias with an accent in it failed at
-            // the one point where there is nothing yet to fall back on.
-            request.Headers.Add("X-Flower-Fingerprint", IdentityHeaderEncoding.Encode(_deviceIdentity.Fingerprint));
-            request.Headers.Add("X-Flower-Alias", IdentityHeaderEncoding.Encode(_deviceIdentity.Alias));
-            request.Headers.Add("X-Flower-PublicKey", IdentityHeaderEncoding.Encode(_signingKey.PublicKeyBase64));
-            request.Headers.Add("X-Flower-PairingCode", IdentityHeaderEncoding.Encode(code));
-            request.Headers.Add("X-Flower-Signature", IdentityHeaderEncoding.Encode(signature));
-            request.Headers.Add("X-Flower-Timestamp", IdentityHeaderEncoding.Encode(timestamp));
-            request.Headers.Add("X-Flower-Nonce", IdentityHeaderEncoding.Encode(nonce));
+            var credentials = new SignedDeviceCredentials(_deviceIdentity, _signingKey);
+            using var request = SignedIdentity.PairingRequest(device.BaseUri, code,
+                await credentials.AuthorizeAsync("POST", SignedIdentity.PairingPath, [], []));
             request.Headers.ConnectionClose = true;
 
             using var response = await Http.SendAsync(request);

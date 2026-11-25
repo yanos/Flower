@@ -86,10 +86,10 @@ public static class DiscoveryEndpoints
             // address's anonymous budget, and a signed one is checked like any
             // other and then charged to its own device.
             var now = DateTimeOffset.UtcNow;
-            var claimed = DeviceSignatureAuth.GetIdentityValue(context.Request, "X-Flower-Fingerprint");
+            var claimed = DeviceSignatureAuth.GetIdentityValue(context.Request, SignedIdentity.FingerprintHeader);
             var signed = !string.IsNullOrEmpty(claimed)
                 && trustedPeers.GetPublicKey(claimed) != null
-                && !string.IsNullOrEmpty(DeviceSignatureAuth.GetIdentityValue(context.Request, "X-Flower-Signature"));
+                && !string.IsNullOrEmpty(DeviceSignatureAuth.GetIdentityValue(context.Request, SignedIdentity.SignatureHeader));
 
             if (!signed && !gate.AdmitAnonymousInfo(context, now))
                 return RateLimitResponse.TooManyRequests(context);
@@ -110,7 +110,7 @@ public static class DiscoveryEndpoints
             // with NotTrusted, but a probe that claimed no identity has not been
             // rejected and must not be told it was.
             var callerClaimedIdentity = !string.IsNullOrEmpty(
-                DeviceSignatureAuth.GetIdentityValue(context.Request, "X-Flower-Fingerprint"));
+                DeviceSignatureAuth.GetIdentityValue(context.Request, SignedIdentity.FingerprintHeader));
 
             // The one thing this handshake learns about the caller rather than
             // about itself. Every signed request carries the sender's current
@@ -129,7 +129,7 @@ public static class DiscoveryEndpoints
             // Cleaned first (DeviceAlias), so the log line below names what was
             // stored rather than whatever text the device sent.
             if (callerIsTrusted &&
-                DeviceAlias.Clean(DeviceSignatureAuth.GetIdentityValue(context.Request, "X-Flower-Alias")) is { } claimedAlias &&
+                DeviceAlias.Clean(DeviceSignatureAuth.GetIdentityValue(context.Request, SignedIdentity.AliasHeader)) is { } claimedAlias &&
                 await trustedPeers.RenameAsync(caller.Fingerprint!, claimedAlias) is { } previousAlias)
             {
                 // Information, on the same footing as PairingEndpoints' line

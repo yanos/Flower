@@ -98,13 +98,9 @@ public class PeerMediaClient
         if (_credentials == null)
             return;
 
-        // Percent-encoded, same as every other header-transport call site -
-        // see IdentityHeaderEncoding. BuildSignedUrlAsync above sends the identical
-        // params as query params and escapes them itself; this is the half
-        // that would otherwise throw on a device whose alias has an accent in
-        // it.
-        foreach (var header in await _credentials.AuthorizeAsync(method, path, parameters, []))
-            request.Headers.Add(header.Key, IdentityHeaderEncoding.Encode(header.Value));
+        // The header half; BuildSignedUrlAsync above sends the identical
+        // params in the query and escapes them itself.
+        SignedIdentity.AddHeaders(request, await _credentials.AuthorizeAsync(method, path, parameters, []));
         request.Headers.ConnectionClose = true;
     }
 

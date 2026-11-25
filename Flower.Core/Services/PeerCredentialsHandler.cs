@@ -78,7 +78,7 @@ public sealed class PeerCredentialsHandler(Func<IPeerCredentials?> credentials) 
     }
 
     private static bool IsCredential(string header) =>
-        header.StartsWith("X-Flower-", StringComparison.OrdinalIgnoreCase);
+        header.StartsWith(SignedIdentity.HeaderPrefix, StringComparison.OrdinalIgnoreCase);
 
     // Drops any credential set the URL was built with before signing it again.
     //
@@ -96,12 +96,12 @@ public sealed class PeerCredentialsHandler(Func<IPeerCredentials?> credentials) 
     // signed query on both sides.
     internal static Uri WithoutIdentityParams(Uri uri)
     {
-        if (!uri.Query.Contains("X-Flower-", StringComparison.OrdinalIgnoreCase))
+        if (!uri.Query.Contains(SignedIdentity.HeaderPrefix, StringComparison.OrdinalIgnoreCase))
             return uri;
 
         var kept = uri.Query.TrimStart('?')
             .Split('&', StringSplitOptions.RemoveEmptyEntries)
-            .Where(pair => !pair.StartsWith("X-Flower-", StringComparison.OrdinalIgnoreCase));
+            .Where(pair => !pair.StartsWith(SignedIdentity.HeaderPrefix, StringComparison.OrdinalIgnoreCase));
 
         return new UriBuilder(uri) { Query = string.Join("&", kept) }.Uri;
     }

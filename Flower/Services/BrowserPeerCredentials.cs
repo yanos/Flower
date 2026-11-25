@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Net.Http;
 using System.Runtime.InteropServices.JavaScript;
 using System.Security.Cryptography;
@@ -106,7 +105,7 @@ public sealed partial class BrowserSigningKey
 public sealed class BrowserPeerCredentials(
     HttpClient http, Uri origin, string? pairingCode, ILogger<BrowserPeerCredentials> logger) : IPeerCredentials
 {
-    private const string RedeemPath = "/api/flower/v1/pair-redeem";
+    private const string RedeemPath = SignedIdentity.PairingPath;
 
     // Started once and awaited by every caller. Lazy rather than done at
     // startup because it is a database open, a possible key generation and
@@ -141,27 +140,13 @@ public sealed class BrowserPeerCredentials(
             return [];
         }
 
-        var identityParams = new List<(string Key, string Value)>
-        {
-            ("X-Flower-Fingerprint", key.Fingerprint),
-            ("X-Flower-Alias", key.Alias),
-            // A tab is a listener, never a host: it has no library of its own to
-            // serve and nothing can sync *from* it. See SyncRolePolicy for what
-            // the other heads make of this.
-            ("X-Flower-PublicKey", key.PublicKeyBase64),
-        };
-
-        var (signature, timestamp, nonce) = await key.SignAsync(
-            method, absolutePath, query.Concat(identityParams), body);
-
-        return
-        [
-            .. identityParams,
-            ("X-Flower-Signature", signature),
-            ("X-Flower-Timestamp", timestamp),
-            ("X-Flower-Nonce", nonce),
-        ];
+        return await AuthorizeWithKeyAsync(key, method, absolutePath, query, body);
     }
+
+    private static async Task<IReadOnlyList<(string Key, string Value)>> AuthorizeWithKeyAsync(
+        BrowserSigningKey key, string method, string path, IEnumerable<(string Key, string Value)> query, byte[] body) =>
+        SignedIdentity.Create(key.Fingerprint, key.Alias, key.PublicKeyBase64,
+            await key.SignAsync(method, path, query, body));
 
     private async Task<BrowserSigningKey?> EstablishAsync()
     {
@@ -234,20 +219,8 @@ public sealed class BrowserPeerCredentials(
     {
         try
         {
-            var (signature, timestamp, nonce) = await key.SignAsync("POST", RedeemPath, [], body: []);
-
-            using var request = new HttpRequestMessage(HttpMethod.Post, new Uri(origin, RedeemPath));
-            // Percent-encoded, as everywhere else these travel as headers -
-            // see IdentityHeaderEncoding. fetch() is stricter than HttpClient
-            // rather than looser: a non-ASCII header value throws a TypeError
-            // there too.
-            request.Headers.TryAddWithoutValidation("X-Flower-Fingerprint", IdentityHeaderEncoding.Encode(key.Fingerprint));
-            request.Headers.TryAddWithoutValidation("X-Flower-Alias", IdentityHeaderEncoding.Encode(key.Alias));
-            request.Headers.TryAddWithoutValidation("X-Flower-PublicKey", IdentityHeaderEncoding.Encode(key.PublicKeyBase64));
-            request.Headers.TryAddWithoutValidation("X-Flower-PairingCode", IdentityHeaderEncoding.Encode(code));
-            request.Headers.TryAddWithoutValidation("X-Flower-Signature", IdentityHeaderEncoding.Encode(signature));
-            request.Headers.TryAddWithoutValidation("X-Flower-Timestamp", IdentityHeaderEncoding.Encode(timestamp));
-            request.Headers.TryAddWithoutValidation("X-Flower-Nonce", IdentityHeaderEncoding.Encode(nonce));
+            using var request = SignedIdentity.PairingRequest(origin, code,
+                await AuthorizeWithKeyAsync(key, "POST", RedeemPath, [], []));
 
             using var response = await http.SendAsync(request);
             if (response.IsSuccessStatusCode)

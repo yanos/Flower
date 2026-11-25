@@ -33,7 +33,7 @@ public static class SignedRequestCanonicalizer
     // an unsigned X-Flower-PublicKey is checked against the fingerprint it
     // hashes to (VerifySelfSigned) - swapping either just fails the check.
     private static bool IsTransportParam(string key) =>
-        key.StartsWith("X-Flower-", StringComparison.OrdinalIgnoreCase);
+        key.StartsWith(SignedIdentity.HeaderPrefix, StringComparison.OrdinalIgnoreCase);
 
     public static byte[] Build(
         string method, string absolutePath, IEnumerable<(string Key, string Value)> query, byte[] body,

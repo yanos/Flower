@@ -680,12 +680,7 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
             }
             else
             {
-                // Percent-encoded like every other header-transport site (see
-                // IdentityHeaderEncoding) - the alias is user-typed, and an
-                // un-encoded accent throws in HttpClient before this request
-                // is ever sent, which arrives here as "unreachable".
-                request.Headers.Add("X-Flower-Fingerprint", IdentityHeaderEncoding.Encode(_deviceIdentity.Fingerprint));
-                request.Headers.Add("X-Flower-Alias", IdentityHeaderEncoding.Encode(_deviceIdentity.Alias));
+                SignedIdentity.AddClaim(request, _deviceIdentity.Fingerprint, _deviceIdentity.Alias);
             }
             var startedAt = Stopwatch.GetTimestamp();
             using var response = await _http.SendAsync(request);

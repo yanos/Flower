@@ -66,7 +66,7 @@ public static class PairingEndpoints
             if (fingerprint == null)
                 return Problems.Of(StatusCodes.Status401Unauthorized, ProblemCodes.SignatureInvalid);
 
-            var code = DeviceSignatureAuth.GetIdentityValue(request, "X-Flower-PairingCode");
+            var code = DeviceSignatureAuth.GetIdentityValue(request, SignedIdentity.PairingCodeHeader);
             // grantsAdmin comes back from the code itself, not from anything
             // the redeeming device said: a device asking to be an admin is not
             // evidence that it should be one. See PairingCodeService.
@@ -95,10 +95,10 @@ public static class PairingEndpoints
                 return Problems.Of(StatusCodes.Status400BadRequest, ProblemCodes.PairingCodeInvalid);
             }
 
-            var publicKeyBase64 = DeviceSignatureAuth.GetIdentityValue(request, "X-Flower-PublicKey")!;
+            var publicKeyBase64 = DeviceSignatureAuth.GetIdentityValue(request, SignedIdentity.PublicKeyHeader)!;
             // Cleaned before the log line below as well as in the store: it is
             // the caller's own text - see DeviceAlias.
-            var alias = DeviceAlias.Clean(DeviceSignatureAuth.GetIdentityValue(request, "X-Flower-Alias"))
+            var alias = DeviceAlias.Clean(DeviceSignatureAuth.GetIdentityValue(request, SignedIdentity.AliasHeader))
                 ?? fingerprint;
 
             await trustedPeerStore.ApproveAsync(fingerprint, alias, publicKeyBase64, grantsAdmin);

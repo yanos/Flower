@@ -132,7 +132,7 @@ public static class DeviceSignatureAuth
     // placeholder rather than an empty field so "claimed nothing at all" and
     // "claimed something unknown" read differently.
     private static string Claimed(HttpRequest request) =>
-        ToSignedRequest(request, []).Identity("X-Flower-Fingerprint") is { Length: > 0 } claimed
+        ToSignedRequest(request, []).Identity(SignedIdentity.FingerprintHeader) is { Length: > 0 } claimed
             ? claimed
             : "(no fingerprint)";
 
