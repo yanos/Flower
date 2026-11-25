@@ -22,26 +22,11 @@ namespace Flower.Services;
 // release; LibraryDtoMapperTests is what holds each of them down.
 public static class LibraryDtoMapper
 {
-    private static readonly Dictionary<string, string> ContentTypesBySuffix = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["mp3"] = "audio/mpeg",
-        ["m4a"] = "audio/mp4",
-        ["wav"] = "audio/wav",
-        ["flac"] = "audio/flac",
-        ["alac"] = "audio/mp4",
-        ["ogg"] = "audio/ogg",
-        ["opus"] = "audio/ogg",
-        ["aiff"] = "audio/aiff",
-        ["aif"] = "audio/aiff",
-        ["ape"] = "audio/x-ape",
-        ["dsf"] = "audio/x-dsf",
-    };
-
     public static string SuffixOf(Track track) =>
         track.Path is null ? "" : Path.GetExtension(track.Path).TrimStart('.').ToLowerInvariant();
 
     public static string ContentTypeOf(Track track) =>
-        ContentTypesBySuffix.GetValueOrDefault(SuffixOf(track), "application/octet-stream");
+        AudioFormats.ContentType(SuffixOf(track));
 
     // selfFingerprint is this server's own DeviceIdentity.Fingerprint, and is
     // what makes the PlayCounts field below meaningful - it names whose tally

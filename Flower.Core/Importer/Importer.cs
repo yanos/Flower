@@ -16,18 +16,11 @@ namespace Flower.Importer
     public class Importer : IMusicImporter
     {
         private readonly ILogger<Importer> _logger;
-        private static readonly HashSet<string> ValidExtensions =
-            new(StringComparer.OrdinalIgnoreCase)
-            {
-                ".mp3", ".m4a", ".wav", ".flac", ".alac",
-                ".ogg", ".opus", ".aiff", ".aif", ".ape", ".dsf",
-            };
-
         // Whether a scan would take this file at all, by its name alone - the
         // same question an upload has to answer before accepting one (see
         // LibraryIngest), so that nothing lands in a library folder that the
         // next scan would walk straight past.
-        public static bool IsImportable(string fileName) => ValidExtensions.Contains(Path.GetExtension(fileName));
+        public static bool IsImportable(string fileName) => AudioFormats.SupportsExtension(Path.GetExtension(fileName));
 
         public Importer(ILogger<Importer> logger)
         {
