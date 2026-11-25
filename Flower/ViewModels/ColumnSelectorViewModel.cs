@@ -21,19 +21,6 @@ namespace Flower.ViewModels;
 // that outlives its window is exactly the leak MusicListView once had.
 public sealed class ColumnSelectorViewModel : ViewModelBase, IDisposable
 {
-    // The board's grouping, in the board's order. A column missing from every
-    // group lands in "Other" rather than vanishing from the window, so adding
-    // one to ColumnManager.BuildDefaults never makes it unreachable here.
-    private static readonly (string Name, string[] Ids)[] GroupLayout =
-    [
-        ("Essentials", ["TrackNumber", "Title", "Artist", "Album", "AlbumArtist", "Duration", "Year", "Genre", "Disc"]),
-        ("Listening",  ["PlayCount", "DateAdded", "LastPlayed", "Starred", "VolumeAdjustment", "ResumePosition", "RememberPosition", "SkipInShuffle", "Compilation"]),
-        ("Credits",    ["Composer", "Conductor", "RemixedBy", "Publisher", "Copyright", "Grouping"]),
-        ("Details",    ["Subtitle", "Description", "Comment", "Bpm", "InitialKey", "Isrc"]),
-        ("Sorting",    ["SortTitle", "SortArtist", "SortAlbum", "SortComposer"]),
-        ("File",       ["Codec", "Encoding", "Bitrate", "SampleRate", "BitDepth", "Channels", "Location", ColumnManager.FileNameId]),
-    ];
-
     private readonly ColumnManager _columns;
     private readonly Func<bool> _getSortByYear;
     private readonly Action<bool> _setSortByYear;
@@ -134,14 +121,10 @@ public sealed class ColumnSelectorViewModel : ViewModelBase, IDisposable
     private static IReadOnlyList<ColumnGroup> BuildGroups(ColumnManager columns)
     {
         var byId = columns.Columns.ToDictionary(c => c.Id);
-        var groups = GroupLayout
-            .Select(g => new ColumnGroup(g.Name, g.Ids.Where(byId.ContainsKey).Select(id => new ColumnOption(byId[id])).ToList()))
+        var groups = Flower.Services.TrackColumns.All.GroupBy(c => c.Group).OrderBy(g => g.Key)
+            .Select(g => new ColumnGroup(g.Key.ToString(), g.OrderBy(c => c.SelectorOrder)
+                .Where(c => byId.ContainsKey(c.Id)).Select(c => new ColumnOption(byId[c.Id])).ToList()))
             .ToList();
-
-        var placed = GroupLayout.SelectMany(g => g.Ids).ToHashSet();
-        var other = columns.Columns.Where(c => !placed.Contains(c.Id)).Select(c => new ColumnOption(c)).ToList();
-        if (other.Count > 0)
-            groups.Add(new ColumnGroup("Other", other));
 
         return groups.Where(g => g.Items.Count > 0).ToList();
     }

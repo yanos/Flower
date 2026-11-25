@@ -291,58 +291,8 @@ public partial class TrackRowControl : UserControl
         return tb;
     }
 
-    // What each column's cell shows. Internal and separate from the cell it
-    // feeds so the tests can hold every column ColumnManager offers to it: a
-    // column with no entry here renders an empty cell forever, which is the
-    // kind of thing only noticed once someone turns that column on. Static
-    // lambdas, so each is one delegate for the life of the process.
     internal static Func<TrackRowViewModel, string?>? CellTextFor(string columnId) =>
-        columnId switch
-        {
-            "Title"            => static row => row.Track.Title,
-            "TrackNumber"      => static row => row.TrackNumberDisplay,
-            "Artist"           => static row => row.Track.Artists,
-            "Album"            => static row => row.Track.Album,
-            "Year"             => static row => row.Track.Year,
-            "Genre"            => static row => row.Track.Genre,
-            "Duration"         => static row => row.DurationDisplay,
-            "PlayCount"        => static row => row.PlayCountDisplay,
-            "DateAdded"        => static row => row.DateAddedDisplay,
-            "LastPlayed"       => static row => row.LastPlayedDisplay,
-            "Composer"         => static row => row.Track.Composers,
-            "Encoding"         => static row => row.Track.EncoderProfile,
-            "SortTitle"        => static row => row.Track.TitleSort,
-            "SortArtist"       => static row => row.Track.ArtistsSort,
-            "SortAlbum"        => static row => row.Track.AlbumSort,
-            "SortComposer"     => static row => row.Track.ComposersSort,
-            "Compilation"      => static row => row.CompilationDisplay,
-            "RememberPosition" => static row => row.RememberPositionDisplay,
-            "ResumePosition"   => static row => row.ResumePositionDisplay,
-            "SkipInShuffle"    => static row => row.SkipInShuffleDisplay,
-            "VolumeAdjustment" => static row => row.VolumeAdjustmentDisplay,
-            "AlbumArtist"      => static row => row.Track.AlbumArtists,
-            "Subtitle"         => static row => row.Track.Subtitle,
-            "Disc"             => static row => row.DiscDisplay,
-            "Conductor"        => static row => row.Track.Conductor,
-            "RemixedBy"        => static row => row.Track.RemixedBy,
-            "Bpm"              => static row => row.BpmDisplay,
-            "InitialKey"       => static row => row.Track.InitialKey,
-            "Grouping"         => static row => row.Track.Grouping,
-            "Publisher"        => static row => row.Track.Publisher,
-            "Isrc"             => static row => row.Track.ISRC,
-            "Comment"          => static row => row.Track.Comment,
-            "Description"      => static row => row.Track.Description,
-            "Copyright"        => static row => row.Track.Copyright,
-            "Starred"          => static row => row.StarredDisplay,
-            "Codec"            => static row => row.Track.Codec,
-            "Bitrate"          => static row => row.BitrateDisplay,
-            "SampleRate"       => static row => row.SampleRateDisplay,
-            "Channels"         => static row => row.ChannelsDisplay,
-            "BitDepth"         => static row => row.BitDepthDisplay,
-            "Location"         => static row => row.Track.Path,
-            ColumnManager.FileNameId => static row => Flower.Services.DuplicateSongs.FileNameOf(row.Track),
-            _ => null,
-        };
+        Flower.Services.TrackColumns.Find(columnId)?.CellText;
 
     private static RowText MakeText() => new()
     {

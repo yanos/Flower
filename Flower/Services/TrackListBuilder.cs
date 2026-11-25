@@ -118,64 +118,7 @@ public static class TrackListBuilder
         SortBy([], columnId, true, false) is not null;
 
     private static IEnumerable<ListedTrack>? SortBy(IEnumerable<ListedTrack> tracks, string col, bool asc, bool sortArtistAlbumsByYear) =>
-        col switch
-        {
-            "PlaylistOrder" => tracks,
-            "TrackNumber" => Order(tracks, t => SortKey(t.AlbumSortValue), asc).Then(t => t.DiscNumber).Then(t => t.TrackNumber),
-            "Title"       => Order(tracks, t => SortKey(t.TitleSortValue), asc),
-            "Artist"      => SortByArtist(tracks, asc, sortArtistAlbumsByYear),
-            "Album"       => Order(tracks, t => SortKey(t.AlbumSortValue), asc).Then(t => t.DiscNumber).Then(t => t.TrackNumber),
-            "Year"        => Order(tracks, t => SortKey(t.Year), asc),
-            "Genre"       => Order(tracks, t => SortKey(t.Genre), asc),
-            "DateAdded"   => Order(tracks, t => t.DateAdded, asc),
-            "LastPlayed"  => Order(tracks, t => t.LastPlayedAt, asc),
-            "Duration"    => Order(tracks, t => t.Duration, asc),
-            // Sort by the same combined total the column displays (see
-            // Track.TotalPlayCount/TrackRowViewModel.PlayCountDisplay), not just
-            // Flower's own count.
-            "PlayCount"   => Order(tracks, t => t.TotalPlayCount, asc),
-            // The off-by-default columns (see ColumnManager.BuildDefaults) -
-            // sortable like any other, since a column that cannot be sorted on
-            // is half a column. The four "sort as" ones sort on the override
-            // itself rather than on SortAs: the point of showing that column is
-            // to see which tracks carry an override and group the ones that do.
-            "Composer"         => Order(tracks, t => SortKey(t.Composers), asc),
-            "Encoding"         => Order(tracks, t => SortKey(t.EncoderProfile), asc),
-            "SortTitle"        => Order(tracks, t => SortKey(t.TitleSort), asc),
-            "SortArtist"       => Order(tracks, t => SortKey(t.ArtistsSort), asc),
-            "SortAlbum"        => Order(tracks, t => SortKey(t.AlbumSort), asc),
-            "SortComposer"     => Order(tracks, t => SortKey(t.ComposersSort), asc),
-            "Compilation"      => Order(tracks, t => t.IsCompilation, asc),
-            "RememberPosition" => Order(tracks, t => t.RememberPlaybackPosition, asc),
-            "ResumePosition"   => Order(tracks, t => t.ResumePosition ?? TimeSpan.Zero, asc),
-            "SkipInShuffle"    => Order(tracks, t => t.IgnoreWhenShuffling, asc),
-            "VolumeAdjustment" => Order(tracks, t => t.VolumeAdjustment, asc),
-            "AlbumArtist"      => Order(tracks, t => SortKey(t.AlbumArtists), asc),
-            "Subtitle"         => Order(tracks, t => SortKey(t.Subtitle), asc),
-            // Disc sorts within the album it numbers - a bare disc number is
-            // 1 for most of the library, so ordering by it alone would just
-            // shuffle every album together.
-            "Disc"             => Order(tracks, t => t.DiscNumber, asc).Then(t => SortKey(t.AlbumSortValue)).Then(t => t.TrackNumber),
-            "Conductor"        => Order(tracks, t => SortKey(t.Conductor), asc),
-            "RemixedBy"        => Order(tracks, t => SortKey(t.RemixedBy), asc),
-            "Bpm"              => Order(tracks, t => t.BeatsPerMinute, asc),
-            "InitialKey"       => Order(tracks, t => SortKey(t.InitialKey), asc),
-            "Grouping"         => Order(tracks, t => SortKey(t.Grouping), asc),
-            "Publisher"        => Order(tracks, t => SortKey(t.Publisher), asc),
-            "Isrc"             => Order(tracks, t => SortKey(t.ISRC), asc),
-            "Comment"          => Order(tracks, t => SortKey(t.Comment), asc),
-            "Description"      => Order(tracks, t => SortKey(t.Description), asc),
-            "Copyright"        => Order(tracks, t => SortKey(t.Copyright), asc),
-            "Starred"          => Order(tracks, t => t.Starred, asc),
-            "Codec"            => Order(tracks, t => SortKey(t.Codec), asc),
-            "Bitrate"          => Order(tracks, t => t.Bitrate, asc),
-            "SampleRate"       => Order(tracks, t => t.SampleRate, asc),
-            "Channels"         => Order(tracks, t => t.Channels, asc),
-            "BitDepth"         => Order(tracks, t => t.BitsPerSample, asc),
-            "Location"         => Order(tracks, t => SortKey(t.Path), asc),
-            Controls.ColumnManager.FileNameId => Order(tracks, t => SortKey(DuplicateSongs.FileNameOf(t)), asc),
-            _             => null,
-        };
+        col == "PlaylistOrder" ? tracks : TrackColumns.Find(col)?.Sort(tracks, asc, sortArtistAlbumsByYear);
 
     // What an unrecognised sort column falls back to, and what "TrackNumber"
     // and "Album" both mean in full: album, then disc, then track.
@@ -183,17 +126,17 @@ public static class TrackListBuilder
         Order(tracks, t => SortKey(t.AlbumSortValue), asc).Then(t => t.DiscNumber).Then(t => t.TrackNumber);
 
     // Every order is of songs, and each row keeps its entry through it.
-    private static IOrderedEnumerable<ListedTrack> Order<TKey>(IEnumerable<ListedTrack> tracks, Func<Track, TKey> keySelector, bool ascending) =>
+    internal static IOrderedEnumerable<ListedTrack> Order<TKey>(IEnumerable<ListedTrack> tracks, Func<Track, TKey> keySelector, bool ascending) =>
         ascending ? tracks.OrderBy(t => keySelector(t.Track)) : tracks.OrderByDescending(t => keySelector(t.Track));
 
-    private static IOrderedEnumerable<ListedTrack> Then<TKey>(this IOrderedEnumerable<ListedTrack> tracks, Func<Track, TKey> keySelector) =>
+    internal static IOrderedEnumerable<ListedTrack> Then<TKey>(this IOrderedEnumerable<ListedTrack> tracks, Func<Track, TKey> keySelector) =>
         tracks.ThenBy(t => keySelector(t.Track));
 
     // Each artist's albums are ordered alphabetically by default; with the
     // option on, by year instead - falling back to alphabetical for albums
     // that share a year. Either way, disc/track number order still applies
     // within an album, and only the artist name flips on a descending sort.
-    private static IOrderedEnumerable<ListedTrack> SortByArtist(IEnumerable<ListedTrack> tracks, bool asc, bool sortAlbumsByYear) =>
+    internal static IOrderedEnumerable<ListedTrack> SortByArtist(IEnumerable<ListedTrack> tracks, bool asc, bool sortAlbumsByYear) =>
         sortAlbumsByYear
             ? Order(tracks, t => SortKey(t.ArtistsSortValue), asc).Then(t => SortKey(t.Year)).Then(t => SortKey(t.AlbumSortValue)).Then(t => t.DiscNumber).Then(t => t.TrackNumber)
             : Order(tracks, t => SortKey(t.ArtistsSortValue), asc).Then(t => SortKey(t.AlbumSortValue)).Then(t => t.DiscNumber).Then(t => t.TrackNumber);

@@ -321,58 +321,5 @@ public class ColumnManager : INotifyPropertyChanged
             .ToList();
 
     private static List<MusicColumnDefinition> BuildDefaults() =>
-    [
-        new("TrackNumber", "#",        40,  30, true, 0),
-        new("Title",       "Title",   240,  60, true, 1),
-        new("Artist",      "Artist",  180,  60, true, 2),
-        new("Album",       "Album",   180,  60, true, 3),
-        new("Year",        "Year",     60,  40, true, 4),
-        new("Genre",       "Genre",   100,  60, true, 5),
-        new("Duration",    "Duration", 80,  50, true, 6),
-        new("PlayCount",   "Plays",    55,  40, true, 7),
-        new("DateAdded",   "Added",   100,  70, true, 8),
-        new("LastPlayed",  "Last Played", 100, 70, true, 9),
-
-        // Hidden by default, and that is the only thing separating them from
-        // the ten above: a column nobody asked for should not push Title off
-        // the right edge on first launch, but every field Track Info shows
-        // should be *available* here (right-click the header) rather than
-        // visible only one track at a time.
-        new("Composer",         "Composer",         140, 60, false, 10),
-        new("Encoding",         "Encoding",         160, 60, false, 11),
-        new("SortTitle",        "Sort Title",       140, 60, false, 12),
-        new("SortArtist",       "Sort Artist",      140, 60, false, 13),
-        new("SortAlbum",        "Sort Album",       140, 60, false, 14),
-        new("SortComposer",     "Sort Composer",    140, 60, false, 15),
-        new("Compilation",      "Compilation",       90, 50, false, 16),
-        new("RememberPosition", "Remembers",         80, 50, false, 17),
-        new("ResumePosition",   "Resume At",         80, 50, false, 18),
-        new("SkipInShuffle",    "Skip in Shuffle",   90, 50, false, 19),
-        new("VolumeAdjustment", "Volume",            70, 50, false, 20),
-
-        // The rest of Track Info, on the same terms: every field that window
-        // shows one track at a time is a column here, hidden until asked for.
-        // Lyrics is the single exception - a whole song's words is not a cell.
-        new("AlbumArtist",  "Album Artist", 160, 60, false, 21),
-        new("Subtitle",     "Subtitle",     140, 60, false, 22),
-        new("Disc",         "Disc",          50, 40, false, 23),
-        new("Conductor",    "Conductor",    140, 60, false, 24),
-        new("RemixedBy",    "Remixed By",   140, 60, false, 25),
-        new("Bpm",          "BPM",           55, 40, false, 26),
-        new("InitialKey",   "Key",           50, 40, false, 27),
-        new("Grouping",     "Grouping",     120, 60, false, 28),
-        new("Publisher",    "Publisher",    140, 60, false, 29),
-        new("Isrc",         "ISRC",         120, 60, false, 30),
-        new("Comment",      "Comment",      200, 60, false, 31),
-        new("Description",  "Description",  200, 60, false, 32),
-        new("Copyright",    "Copyright",    160, 60, false, 33),
-        new("Starred",      "Rating",        60, 40, false, 34),
-        new("Codec",        "Codec",         80, 50, false, 35),
-        new("Bitrate",      "Bit Rate",      80, 50, false, 36),
-        new("SampleRate",   "Sample Rate",   90, 50, false, 37),
-        new("Channels",     "Channels",      70, 50, false, 38),
-        new("BitDepth",     "Bit Depth",     70, 50, false, 39),
-        new("Location",     "Location",     300, 80, false, 40),
-        new(FileNameId,     "File Name",    240, 80, false, 41),
-    ];
+        Flower.Services.TrackColumns.All.Select(c => c.CreateColumn()).ToList();
 }
