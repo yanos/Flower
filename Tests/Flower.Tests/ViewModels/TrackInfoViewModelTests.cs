@@ -209,7 +209,7 @@ public class TrackInfoViewModelTests : PinnedDataDirectory
         var songs = new[] { Song("Debaser"), Song("Tame") };
         var library = new Library([.. songs]);
         var info = Open(library, songs);
-        library.SetStarred(StarTarget.Song, songs[0].Id.ToString(), true);
+        library.SetStarred(songs[0].Id.ToString(), true);
         info.Load(songs);
 
         Assert.True(info.IsAnyStarred);

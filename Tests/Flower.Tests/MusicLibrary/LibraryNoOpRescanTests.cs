@@ -20,7 +20,7 @@ public class LibraryNoOpRescanTests
         public int ReplaceAllCount { get; private set; }
 
         public void UpdateStats(Track track) { }
-        public void SetStarred(StarTarget target, string value, bool starred) { }
+        public void SetStarred(IReadOnlyCollection<Guid> ids, bool starred) { }
         public void Upsert(Track track) { }
         public void UpsertMany(IReadOnlyCollection<Track> tracks) { }
         public void ReplaceAll(IEnumerable<Track> tracks) => ReplaceAllCount++;
@@ -50,7 +50,7 @@ public class LibraryNoOpRescanTests
         var (library, store) = Scanned(Scan(("Pirsomnia", "/music/a.flac"), ("Luciférine", "/music/b.flac")));
         // What only the library knows, which a rescan carries forward.
         library.IncrementPlayCount(library.Tracks[0]);
-        library.SetStarred(StarTarget.Song, library.Tracks[1].Id.ToString(), starred: true);
+        library.SetStarred(library.Tracks[1].Id.ToString(), starred: true);
         var token = library.ChangeToken;
         var writes = store.ReplaceAllCount;
 

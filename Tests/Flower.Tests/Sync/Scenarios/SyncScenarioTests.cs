@@ -421,7 +421,7 @@ public class SyncScenarioTests : PinnedDataDirectory
         var client = NewClient();
         await client.PullLibraryAsync(oldServer);
         client.Library.AddPlaylist(new Playlist("Mix", [client.Single("A"), client.Single("B")]));
-        client.Library.SetStarred(StarTarget.Song, client.Single("A").Id.ToString(), true);
+        client.Library.SetStarred(client.Single("A").Id.ToString(), true);
         var ids = client.Library.Tracks.Select(t => t.Id).OrderBy(i => i).ToList();
 
         using var newServer = new SimulatedFlowerServer([ServerTrack("A"), ServerTrack("B")], fingerprint: "new-fp");
@@ -569,7 +569,7 @@ public class SyncScenarioTests : PinnedDataDirectory
         using var server = new SimulatedFlowerServer([ServerTrack("Fave")]) { CallerIsAdmin = false };
         var client = NewClient();
         await client.PullLibraryAsync(server);
-        client.Library.SetStarred(StarTarget.Song, client.Single("Fave").Id.ToString(), true);
+        client.Library.SetStarred(client.Single("Fave").Id.ToString(), true);
         await client.PushTrackStateAsync(server);
 
         server.Library.NotifyLibraryChanged();
@@ -591,7 +591,7 @@ public class SyncScenarioTests : PinnedDataDirectory
         await phone.PullLibraryAsync(server);
         await desktop.PullLibraryAsync(server);
 
-        phone.Library.SetStarred(StarTarget.Song, phone.Single("Fave").Id.ToString(), true);
+        phone.Library.SetStarred(phone.Single("Fave").Id.ToString(), true);
         await phone.PushTrackStateAsync(server);
         await desktop.PushTrackStateAsync(server); // the desktop's own tick, before its pull
         await desktop.PullLibraryAsync(server);

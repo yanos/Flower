@@ -75,7 +75,7 @@ public class SqliteMigrationTests : IDisposable
 
     // A column added by editing the baseline in place reaches a fresh database and no
     // existing one, while user_version says there is nothing to do. On a phone
-    // that was album_artist - LibraryStore caught the "no such column", logged
+    // that was album_artist (since retired) - LibraryStore caught the "no such column", logged
     // it, and started with an empty library, and every save after it failed the
     // same way. An empty library reads as a sync fault, so the search starts in
     // the wrong place entirely.
@@ -88,12 +88,12 @@ public class SqliteMigrationTests : IDisposable
     {
         using var connection = OpenNew("folded.db");
         SqliteMigrations.Apply(connection);
-        Execute(connection, "ALTER TABLE tracks DROP COLUMN album_artist;");
-        Assert.DoesNotContain("album_artist", ColumnsOf(connection, "tracks"));
+        Execute(connection, "ALTER TABLE tracks DROP COLUMN is_compilation;");
+        Assert.DoesNotContain("is_compilation", ColumnsOf(connection, "tracks"));
 
         SqliteMigrations.Apply(connection);
 
-        Assert.Contains("album_artist", ColumnsOf(connection, "tracks"));
+        Assert.Contains("is_compilation", ColumnsOf(connection, "tracks"));
         Assert.Equal(SqliteMigrations.LatestVersion, SqliteMigrations.ReadVersion(connection));
     }
 
@@ -121,7 +121,7 @@ public class SqliteMigrationTests : IDisposable
     }
 
     // And it has to survive the round trip that matters: the repaired column is
-    // NOT NULL DEFAULT '', so an ALTER that got the default wrong would add it
+    // NOT NULL DEFAULT 0, so an ALTER that got the default wrong would add it
     // and then fail on the first insert - which is the same silent-empty-library
     // failure one step further along.
     [Fact]
@@ -129,14 +129,14 @@ public class SqliteMigrationTests : IDisposable
     {
         using var connection = OpenNew("repaired.db");
         SqliteMigrations.Apply(connection);
-        Execute(connection, "ALTER TABLE tracks DROP COLUMN album_artist;");
+        Execute(connection, "ALTER TABLE tracks DROP COLUMN is_compilation;");
 
         SqliteMigrations.Apply(connection);
 
         Execute(connection, "INSERT INTO tracks (id, path, title, date_added) VALUES ('t1', '/music/a.mp3', 'A', 0);");
         using var read = connection.CreateCommand();
-        read.CommandText = "SELECT album_artist FROM tracks WHERE id = 't1';";
-        Assert.Equal(string.Empty, read.ExecuteScalar());
+        read.CommandText = "SELECT is_compilation FROM tracks WHERE id = 't1';";
+        Assert.Equal(0L, read.ExecuteScalar());
     }
 
     // Step 12. A database the baseline built at version 11 keyed excluded_paths
@@ -152,6 +152,9 @@ public class SqliteMigrationTests : IDisposable
             CREATE TABLE excluded_paths (path TEXT NOT NULL PRIMARY KEY COLLATE NOCASE, excluded_at INTEGER NOT NULL);
             INSERT INTO excluded_paths (path, excluded_at) VALUES ('/music/Song.flac', 5);
             ALTER TABLE tracks ADD COLUMN starred_at INTEGER;
+            ALTER TABLE tracks ADD COLUMN album_artist TEXT NOT NULL DEFAULT '';
+            ALTER TABLE tracks ADD COLUMN artist_id TEXT NOT NULL DEFAULT '';
+            ALTER TABLE tracks ADD COLUMN album_id TEXT NOT NULL DEFAULT '';
             PRAGMA user_version = 11;
             """);
 
@@ -175,6 +178,9 @@ public class SqliteMigrationTests : IDisposable
         Execute(connection, """
             ALTER TABLE tracks ADD COLUMN starred_at INTEGER;
             INSERT INTO tracks (id, path, title, date_added, starred, starred_at) VALUES ('t1', '/music/a.mp3', 'A', 0, 1, 7);
+            ALTER TABLE tracks ADD COLUMN album_artist TEXT NOT NULL DEFAULT '';
+            ALTER TABLE tracks ADD COLUMN artist_id TEXT NOT NULL DEFAULT '';
+            ALTER TABLE tracks ADD COLUMN album_id TEXT NOT NULL DEFAULT '';
             PRAGMA user_version = 12;
             """);
 
@@ -201,6 +207,9 @@ public class SqliteMigrationTests : IDisposable
             );
             INSERT INTO playlists (id, name, updated_at) VALUES ('p1', 'Mix', 0);
             INSERT INTO playlist_tracks (playlist_id, position, track_id) VALUES ('p1', 0, 't1'), ('p1', 1, 't2'), ('p1', 2, 't1');
+            ALTER TABLE tracks ADD COLUMN album_artist TEXT NOT NULL DEFAULT '';
+            ALTER TABLE tracks ADD COLUMN artist_id TEXT NOT NULL DEFAULT '';
+            ALTER TABLE tracks ADD COLUMN album_id TEXT NOT NULL DEFAULT '';
             PRAGMA user_version = 17;
             """);
 
@@ -215,6 +224,31 @@ public class SqliteMigrationTests : IDisposable
         Assert.Equal(["t1", "t2", "t1"], rows.Select(r => r.Track));
         Assert.Equal(3, rows.Select(r => r.Entry).Distinct().Count());
         Assert.All(rows, r => Guid.ParseExact(r.Entry, "N"));
+    }
+
+    [Fact]
+    public void Retired_catalog_projections_are_dropped_without_losing_songs_or_stars()
+    {
+        using var connection = OpenNew("projections.db");
+        SqliteMigrations.Apply(connection);
+        Execute(connection, """
+            ALTER TABLE tracks ADD COLUMN album_artist TEXT NOT NULL DEFAULT '';
+            ALTER TABLE tracks ADD COLUMN artist_id TEXT NOT NULL DEFAULT '';
+            ALTER TABLE tracks ADD COLUMN album_id TEXT NOT NULL DEFAULT '';
+            CREATE INDEX ix_tracks_album_id ON tracks (album_id);
+            CREATE INDEX ix_tracks_path ON tracks (path);
+            INSERT INTO tracks (id, title, date_added, starred) VALUES ('song', 'Still here', 0, 1);
+            PRAGMA user_version = 20;
+            """);
+        SqliteMigrations.Apply(connection);
+        Assert.DoesNotContain("album_artist", ColumnsOf(connection, "tracks"));
+        Assert.DoesNotContain("artist_id", ColumnsOf(connection, "tracks"));
+        Assert.DoesNotContain("album_id", ColumnsOf(connection, "tracks"));
+        using var read = connection.CreateCommand();
+        read.CommandText = "SELECT title FROM tracks WHERE starred = 1;";
+        Assert.Equal("Still here", read.ExecuteScalar());
+        read.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name LIKE 'ix_tracks_%';";
+        Assert.Equal(0L, read.ExecuteScalar());
     }
 
     // Applying twice is what every startup after the first one does.
@@ -265,6 +299,6 @@ public class SqliteMigrationTests : IDisposable
         Assert.True(File.Exists(FlowerDb.CorruptPath(path)));
         using var connection = db.Open();
         Assert.Equal(SqliteMigrations.LatestVersion, SqliteMigrations.ReadVersion(connection));
-        Assert.Contains("album_artist", ColumnsOf(connection, "tracks"));
+        Assert.Contains("is_compilation", ColumnsOf(connection, "tracks"));
     }
 }

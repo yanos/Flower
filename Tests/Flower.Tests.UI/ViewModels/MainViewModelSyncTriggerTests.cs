@@ -763,7 +763,7 @@ public class MainViewModelSyncTriggerTests : PinnedDataDirectory
         parts.Library.NotifyTrackChanged(track, TrackChange.Tags);
         Assert.Null(sync.TakeTrackStateCandidates());
 
-        parts.Library.SetStarred(StarTarget.Song, track.Id.ToString(), starred: true);
+        parts.Library.SetStarred(track.Id.ToString(), starred: true);
 
         var candidates = sync.TakeTrackStateCandidates();
         Assert.NotNull(candidates);

@@ -2875,54 +2875,22 @@ namespace Flower.Models
             return moved | TrackChange.LastPlayed;
         }
 
-        // Stars or unstars every track behind one id - a song, or every
-        // track on an album or by an album artist - and hands back the tracks
-        // it touched so the caller can persist them and report a count.
-        //
-        // Resolved through Snapshot rather than a scan: an album or artist id
-        // is already a key in those indexes. Mutation is in place on the Track
-        // objects, so the snapshot itself does not have to be rebuilt - Starred
-        // is not part of what it indexes.
-        //
-        // Returns how many tracks were affected, so a caller can tell
-        // "starred nothing" (a bad id) from a real change.
-        public int SetStarred(StarTarget target, string value, bool starred)
+        public int SetStarred(string value, bool starred)
         {
-            var snapshot = Snapshot;
-            var matches = target switch
-            {
-                StarTarget.Song => Find(value) is { } track ? (IReadOnlyList<Track>)[track] : [],
-                StarTarget.Album => snapshot.AlbumTracks(value),
-                _ => snapshot.ArtistTracks(value),
-            };
-
-            if (matches.Count == 0)
+            if (Find(value) is not { } track)
                 return 0;
 
             lock (_lock)
             {
-                foreach (var track in matches)
-                    track.Starred = starred;
-
+                track.Starred = starred;
                 BumpChangeToken();
             }
 
-            // One indexed UPDATE over the matching rows rather than one per
-            // track: the in-memory mutation is what reads will see, and the
-            // database only has to end up agreeing.
-            //
-            // For a song, the store is told the id of the track that was
-            // actually matched rather than the string the caller passed:
-            // EntityId.FromWire accepts a dashed Guid, the id column holds
-            // EntityId.ToKey's hex, and forwarding the caller's spelling would
-            // resolve in memory and then update no row at all. Album and
-            // artist ids are content-derived hashes with a single spelling, so
-            // they pass through unchanged.
-            var stored = target == StarTarget.Song ? matches[0].Id.ToKey() : value;
-            Persist(() => _store!.SetStarred(target, stored, starred));
-
-            RaiseTrackChanged(matches, TrackChange.Starred);
-            return matches.Count;
+            // Persist the identity actually resolved in memory, irrespective
+            // of the wire spelling used by the caller.
+            Persist(() => _store!.SetStarred([track.Id], starred));
+            RaiseTrackChanged([track], TrackChange.Starred);
+            return 1;
         }
 
         // The write half of a mutation, and the one part of it allowed to

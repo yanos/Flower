@@ -5,7 +5,7 @@ namespace Flower.Models
 {
     // The durability half of a library mutation, as Library sees it.
     //
-    // Library owns what a change *means* - which tracks an album id stars,
+    // Library owns what a change *means* - which song id a star names,
     // that a scrobble is a count bump plus a played-at stamp - and this is the
     // one thing it cannot decide for itself: whether that change is written on
     // the spot. Flower.Server hands one in (TrackRepository implements it
@@ -27,7 +27,7 @@ namespace Flower.Models
     {
         void UpdateStats(Track track);
 
-        void SetStarred(StarTarget target, string value, bool starred);
+        void SetStarred(IReadOnlyCollection<Guid> ids, bool starred);
 
         void Upsert(Track track);
 

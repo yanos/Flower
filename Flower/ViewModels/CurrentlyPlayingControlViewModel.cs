@@ -79,7 +79,7 @@ namespace Flower.ViewModels
         {
             if (CurrentlyPlayingTrack is not { } track)
                 return;
-            _library.SetStarred(StarTarget.Song, track.Id.ToString(), !track.Starred);
+            _library.SetStarred(track.Id.ToString(), !track.Starred);
             OnPropertyChanged(nameof(IsStarred));
         }
 

@@ -106,7 +106,7 @@ public class LibraryChangeEventTests
         var events  = new List<TrackChangedEventArgs>();
         library.TrackChanged += (_, e) => events.Add(e);
 
-        library.SetStarred(StarTarget.Song, track.Id.ToString(), starred: true);
+        library.SetStarred(track.Id.ToString(), starred: true);
 
         var changed = Assert.Single(events);
         Assert.Same(track, Assert.Single(changed.Tracks));
@@ -281,7 +281,7 @@ public class LibraryChangeEventTests
         library.NotifyTrackChanged(track, TrackChange.File);
         Assert.True(seen.Add(library.ChangeToken), "A download landing must move the token");
 
-        library.SetStarred(StarTarget.Song, track.Id.ToString(), starred: true);
+        library.SetStarred(track.Id.ToString(), starred: true);
         Assert.True(seen.Add(library.ChangeToken), "A star rides along in the manifest");
 
         track.VolumeAdjustment = 5;

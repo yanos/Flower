@@ -216,6 +216,19 @@ namespace Flower.Persistence.Sql
                 PRIMARY KEY (server, playlist_id)
             );
             """,
+            // 21: browsing and membership are resolved by LibrarySnapshot.
+            // Only song ids reach the store; these projections and scan-era
+            // indexes no longer serve any query.
+            """
+            DROP INDEX IF EXISTS ix_tracks_path;
+            DROP INDEX IF EXISTS ix_tracks_date_added;
+            DROP INDEX IF EXISTS ix_tracks_album;
+            DROP INDEX IF EXISTS ix_tracks_artist_id;
+            DROP INDEX IF EXISTS ix_tracks_album_id;
+            ALTER TABLE tracks DROP COLUMN album_artist;
+            ALTER TABLE tracks DROP COLUMN artist_id;
+            ALTER TABLE tracks DROP COLUMN album_id;
+            """,
         ];
 
         public static int LatestVersion => BaselineVersion + Steps.Count;

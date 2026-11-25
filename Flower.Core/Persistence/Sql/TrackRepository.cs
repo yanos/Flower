@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -19,24 +20,77 @@ namespace Flower.Persistence.Sql
         // upsert so the two cannot drift apart in ordering.
         // Public so Flower.Server can load through the same column list and
         // row mapper instead of keeping a second copy of both.
-        public const string Columns = """
-            id, path, title, subtitle, artists, album_artists, is_compilation,
-            album, album_sort, year, track_number, track_count, disc_number, disc_count,
-            composers, conductor, remixed_by,
-            genre, beats_per_minute, initial_key, grouping, publisher, isrc,
-            comment, description, copyright, lyrics,
-            duration_ticks, bitrate, sample_rate, channels, bits_per_sample, codec,
-            origin_device_fingerprint, origin_track_id, origin_file_extension, origin_album_art_id,
-            play_count, imported_play_count, last_played_at, date_added,
-            album_artist, artist_id, album_id, starred,
-            is_locally_downloaded, origin_relative_path,
-            title_sort, artists_sort, composers_sort,
-            remember_playback_position, resume_position_ticks, ignore_when_shuffling, volume_adjustment,
-            encoder_profile, withdrawn_by_origin, moved_from_path, origin_file_stamp, tags_edited_at, art_edited_at, file_replaced_at,
-            art_width, art_height, art_hash,
-            skip_count, imported_skip_count,
-            tag_fields_edited, tag_fields_to_send
-            """;
+        private enum Column
+        {
+            id,
+            path,
+            title,
+            subtitle,
+            artists,
+            album_artists,
+            is_compilation,
+            album,
+            album_sort,
+            year,
+            track_number,
+            track_count,
+            disc_number,
+            disc_count,
+            composers,
+            conductor,
+            remixed_by,
+            genre,
+            beats_per_minute,
+            initial_key,
+            grouping,
+            publisher,
+            isrc,
+            comment,
+            description,
+            copyright,
+            lyrics,
+            duration_ticks,
+            bitrate,
+            sample_rate,
+            channels,
+            bits_per_sample,
+            codec,
+            origin_device_fingerprint,
+            origin_track_id,
+            origin_file_extension,
+            origin_album_art_id,
+            play_count,
+            imported_play_count,
+            last_played_at,
+            date_added,
+            starred,
+            is_locally_downloaded,
+            origin_relative_path,
+            title_sort,
+            artists_sort,
+            composers_sort,
+            remember_playback_position,
+            resume_position_ticks,
+            ignore_when_shuffling,
+            volume_adjustment,
+            encoder_profile,
+            withdrawn_by_origin,
+            moved_from_path,
+            origin_file_stamp,
+            tags_edited_at,
+            art_edited_at,
+            file_replaced_at,
+            art_width,
+            art_height,
+            art_hash,
+            skip_count,
+            imported_skip_count,
+            tag_fields_edited,
+            tag_fields_to_send,
+        }
+
+        private static readonly string[] ColumnNames = Enum.GetNames<Column>();
+        public static readonly string Columns = string.Join(", ", ColumnNames);
 
         public List<Track> LoadAll()
         {
@@ -149,32 +203,21 @@ namespace Flower.Persistence.Sql
             command.ExecuteNonQuery();
         }
 
-        // Star or unstar every track matching one Subsonic id - a song, or
-        // every track on an album or by an album artist. One indexed UPDATE
-        // rather than a loop of single-row writes, which is why it lives here
-        // and not in UpdateStats' shape.
-        //
-        // The caller is expected to have already applied the same change to
-        // the in-memory Track objects; this is the durability half, reached
-        // through ITrackStore from Library.SetStarred.
-        public void SetStarred(StarTarget target, string value, bool starred)
+        public void SetStarred(IReadOnlyCollection<Guid> ids, bool starred)
         {
-            // The column is chosen from the enum, never interpolated from user
-            // input - SQLite cannot bind an identifier. All three are indexed.
-            var column = target switch
-            {
-                StarTarget.Song => "id",
-                StarTarget.Album => "album_id",
-                _ => "artist_id",
-            };
-
             using var connection = db.Open();
+            using var transaction = connection.BeginTransaction();
             using var command = connection.CreateCommand();
-            command.CommandText =
-                $"UPDATE tracks SET starred = $starred WHERE {column} = $value;";
+            command.Transaction = transaction;
+            command.CommandText = "UPDATE tracks SET starred = $starred WHERE id = $id;";
             command.Parameters.AddWithValue("$starred", starred ? 1 : 0);
-            command.Parameters.AddWithValue("$value", value);
-            command.ExecuteNonQuery();
+            var idParameter = command.Parameters.Add("$id", SqliteType.Text);
+            foreach (var id in ids)
+            {
+                idParameter.Value = id.ToKey();
+                command.ExecuteNonQuery();
+            }
+            transaction.Commit();
         }
 
         // Upsert of a single track, for an in-place mutation that is not a
@@ -473,139 +516,17 @@ namespace Flower.Persistence.Sql
             }
         }
 
-        private const string UpsertSql = """
-            INSERT INTO tracks (
-                id, path, title, subtitle, artists, album_artists, is_compilation,
-                album, album_sort, year, track_number, track_count, disc_number, disc_count,
-                composers, conductor, remixed_by,
-                genre, beats_per_minute, initial_key, grouping, publisher, isrc,
-                comment, description, copyright, lyrics,
-                duration_ticks, bitrate, sample_rate, channels, bits_per_sample, codec,
-                origin_device_fingerprint, origin_track_id, origin_file_extension, origin_album_art_id,
-                play_count, imported_play_count, last_played_at, date_added,
-                album_artist, artist_id, album_id, starred,
-                is_locally_downloaded, origin_relative_path,
-                title_sort, artists_sort, composers_sort,
-                remember_playback_position, resume_position_ticks, ignore_when_shuffling, volume_adjustment,
-                encoder_profile, withdrawn_by_origin, moved_from_path, origin_file_stamp, tags_edited_at, art_edited_at, file_replaced_at,
-            art_width, art_height, art_hash,
-                skip_count, imported_skip_count,
-                tag_fields_edited, tag_fields_to_send
-            ) VALUES (
-                $id, $path, $title, $subtitle, $artists, $album_artists, $is_compilation,
-                $album, $album_sort, $year, $track_number, $track_count, $disc_number, $disc_count,
-                $composers, $conductor, $remixed_by,
-                $genre, $beats_per_minute, $initial_key, $grouping, $publisher, $isrc,
-                $comment, $description, $copyright, $lyrics,
-                $duration_ticks, $bitrate, $sample_rate, $channels, $bits_per_sample, $codec,
-                $origin_device_fingerprint, $origin_track_id, $origin_file_extension, $origin_album_art_id,
-                $play_count, $imported_play_count, $last_played_at, $date_added,
-                $album_artist, $artist_id, $album_id, $starred,
-                $is_locally_downloaded, $origin_relative_path,
-                $title_sort, $artists_sort, $composers_sort,
-                $remember_playback_position, $resume_position_ticks, $ignore_when_shuffling, $volume_adjustment,
-                $encoder_profile, $withdrawn_by_origin, $moved_from_path, $origin_file_stamp, $tags_edited_at, $art_edited_at, $file_replaced_at,
-                $art_width, $art_height, $art_hash,
-                $skip_count, $imported_skip_count,
-                $tag_fields_edited, $tag_fields_to_send
-            )
-            ON CONFLICT (id) DO UPDATE SET
-                path = excluded.path,
-                title = excluded.title,
-                subtitle = excluded.subtitle,
-                artists = excluded.artists,
-                album_artists = excluded.album_artists,
-                is_compilation = excluded.is_compilation,
-                album = excluded.album,
-                album_sort = excluded.album_sort,
-                year = excluded.year,
-                track_number = excluded.track_number,
-                track_count = excluded.track_count,
-                disc_number = excluded.disc_number,
-                disc_count = excluded.disc_count,
-                composers = excluded.composers,
-                conductor = excluded.conductor,
-                remixed_by = excluded.remixed_by,
-                genre = excluded.genre,
-                beats_per_minute = excluded.beats_per_minute,
-                initial_key = excluded.initial_key,
-                grouping = excluded.grouping,
-                publisher = excluded.publisher,
-                isrc = excluded.isrc,
-                comment = excluded.comment,
-                description = excluded.description,
-                copyright = excluded.copyright,
-                lyrics = excluded.lyrics,
-                duration_ticks = excluded.duration_ticks,
-                bitrate = excluded.bitrate,
-                sample_rate = excluded.sample_rate,
-                channels = excluded.channels,
-                bits_per_sample = excluded.bits_per_sample,
-                codec = excluded.codec,
-                origin_device_fingerprint = excluded.origin_device_fingerprint,
-                origin_track_id = excluded.origin_track_id,
-                origin_file_extension = excluded.origin_file_extension,
-                origin_album_art_id = excluded.origin_album_art_id,
-                play_count = excluded.play_count,
-                imported_play_count = excluded.imported_play_count,
-                last_played_at = excluded.last_played_at,
-                date_added = excluded.date_added,
-                album_artist = excluded.album_artist,
-                artist_id = excluded.artist_id,
-                album_id = excluded.album_id,
-                starred = excluded.starred,
-                is_locally_downloaded = excluded.is_locally_downloaded,
-                origin_relative_path = excluded.origin_relative_path,
-                title_sort = excluded.title_sort,
-                artists_sort = excluded.artists_sort,
-                composers_sort = excluded.composers_sort,
-                remember_playback_position = excluded.remember_playback_position,
-                resume_position_ticks = excluded.resume_position_ticks,
-                ignore_when_shuffling = excluded.ignore_when_shuffling,
-                volume_adjustment = excluded.volume_adjustment,
-                encoder_profile = excluded.encoder_profile,
-                withdrawn_by_origin = excluded.withdrawn_by_origin,
-                moved_from_path = excluded.moved_from_path,
-                origin_file_stamp = excluded.origin_file_stamp,
-                tags_edited_at = excluded.tags_edited_at,
-                art_edited_at = excluded.art_edited_at,
-                file_replaced_at = excluded.file_replaced_at,
-                art_width = excluded.art_width,
-                art_height = excluded.art_height,
-                art_hash = excluded.art_hash,
-                skip_count = excluded.skip_count,
-                imported_skip_count = excluded.imported_skip_count,
-                tag_fields_edited = excluded.tag_fields_edited,
-                tag_fields_to_send = excluded.tag_fields_to_send;
-            """;
-
-        private static readonly string[] UpsertParameterNames =
-        [
-            "$id", "$path", "$title", "$subtitle", "$artists", "$album_artists", "$is_compilation",
-            "$album", "$album_sort", "$year", "$track_number", "$track_count", "$disc_number", "$disc_count",
-            "$composers", "$conductor", "$remixed_by",
-            "$genre", "$beats_per_minute", "$initial_key", "$grouping", "$publisher", "$isrc",
-            "$comment", "$description", "$copyright", "$lyrics",
-            "$duration_ticks", "$bitrate", "$sample_rate", "$channels", "$bits_per_sample", "$codec",
-            "$origin_device_fingerprint", "$origin_track_id", "$origin_file_extension", "$origin_album_art_id",
-            "$play_count", "$imported_play_count", "$last_played_at", "$date_added",
-            "$album_artist", "$artist_id", "$album_id", "$starred",
-            "$is_locally_downloaded", "$origin_relative_path",
-            "$title_sort", "$artists_sort", "$composers_sort",
-            "$remember_playback_position", "$resume_position_ticks", "$ignore_when_shuffling", "$volume_adjustment",
-            "$encoder_profile", "$withdrawn_by_origin", "$moved_from_path", "$origin_file_stamp", "$tags_edited_at", "$art_edited_at", "$file_replaced_at",
-            "$art_width", "$art_height", "$art_hash",
-            "$skip_count", "$imported_skip_count",
-            "$tag_fields_edited", "$tag_fields_to_send",
-        ];
+        private static readonly string UpsertSql =
+            $"INSERT INTO tracks ({Columns}) VALUES ({string.Join(", ", ColumnNames.Select(c => "$" + c))}) "
+            + $"ON CONFLICT (id) DO UPDATE SET {string.Join(", ", ColumnNames.Skip(1).Select(c => $"{c} = excluded.{c}"))};";
 
         // Parameters are added once and then only have their Value reassigned
         // per row, so the statement is prepared a single time for the whole
         // transaction rather than re-planned 16,000 times.
         private static void PrepareUpsertParameters(SqliteCommand command)
         {
-            foreach (var name in UpsertParameterNames)
-                command.Parameters.Add(name, SqliteType.Text);
+            foreach (var name in ColumnNames)
+                command.Parameters.Add("$" + name, SqliteType.Text);
 
             command.Prepare();
         }
@@ -613,155 +534,142 @@ namespace Flower.Persistence.Sql
         private static void BindUpsert(SqliteCommand command, Track track)
         {
             var p = command.Parameters;
-            p["$id"].Value = track.Id.ToKey();
-            p["$path"].Value = Nullable(track.Path);
-            p["$title"].Value = Nullable(track.Title);
-            p["$subtitle"].Value = Nullable(track.Subtitle);
-            p["$artists"].Value = Nullable(track.Artists);
-            p["$album_artists"].Value = Nullable(track.AlbumArtists);
-            p["$is_compilation"].Value = track.IsCompilation ? 1 : 0;
-            p["$album"].Value = Nullable(track.Album);
-            p["$album_sort"].Value = Nullable(track.AlbumSort);
-            p["$year"].Value = Nullable(track.Year);
-            p["$track_number"].Value = track.TrackNumber;
-            p["$track_count"].Value = track.TrackCount;
-            p["$disc_number"].Value = track.DiscNumber;
-            p["$disc_count"].Value = track.DiscCount;
-            p["$composers"].Value = Nullable(track.Composers);
-            p["$conductor"].Value = Nullable(track.Conductor);
-            p["$remixed_by"].Value = Nullable(track.RemixedBy);
-            p["$genre"].Value = Nullable(track.Genre);
-            p["$beats_per_minute"].Value = track.BeatsPerMinute;
-            p["$initial_key"].Value = Nullable(track.InitialKey);
-            p["$grouping"].Value = Nullable(track.Grouping);
-            p["$publisher"].Value = Nullable(track.Publisher);
-            p["$isrc"].Value = Nullable(track.ISRC);
-            p["$comment"].Value = Nullable(track.Comment);
-            p["$description"].Value = Nullable(track.Description);
-            p["$copyright"].Value = Nullable(track.Copyright);
-            p["$lyrics"].Value = Nullable(track.Lyrics);
-            p["$duration_ticks"].Value = track.Duration.Ticks;
-            p["$bitrate"].Value = track.Bitrate;
-            p["$sample_rate"].Value = track.SampleRate;
-            p["$channels"].Value = track.Channels;
-            p["$bits_per_sample"].Value = track.BitsPerSample;
-            p["$codec"].Value = Nullable(track.Codec);
-            p["$encoder_profile"].Value = Nullable(track.EncoderProfile);
-            p["$origin_device_fingerprint"].Value = Nullable(track.OriginDeviceFingerprint);
-            p["$origin_track_id"].Value = Nullable(track.OriginTrackId);
-            p["$origin_file_extension"].Value = Nullable(track.OriginFileExtension);
-            p["$origin_album_art_id"].Value = Nullable(track.OriginAlbumArtId);
-            p["$play_count"].Value = track.PlayCount;
-            p["$imported_play_count"].Value = track.ImportedPlayCount;
-            p["$last_played_at"].Value = (object?)track.LastPlayedAt?.UtcTicks ?? DBNull.Value;
-            p["$date_added"].Value = track.DateAdded.UtcTicks;
-            // Derived on write, never read back into a Track: these exist so
-            // Flower.Server can filter and index on them (see Schema.Baseline).
-            // Recomputing here rather than storing whatever a caller passed
-            // means they cannot go stale against a retagged album.
-            var albumArtist = track.EffectiveAlbumArtist;
-            p["$album_artist"].Value = albumArtist;
-            p["$artist_id"].Value = CatalogIdentity.ArtistId(albumArtist);
-            p["$album_id"].Value = CatalogIdentity.AlbumId(albumArtist, track.Album);
-            p["$starred"].Value = track.Starred ? 1 : 0;
-            p["$is_locally_downloaded"].Value = track.IsLocallyDownloaded ? 1 : 0;
-            p["$origin_relative_path"].Value = Nullable(track.OriginRelativePath);
-            p["$title_sort"].Value = Nullable(track.TitleSort);
-            p["$artists_sort"].Value = Nullable(track.ArtistsSort);
-            p["$composers_sort"].Value = Nullable(track.ComposersSort);
-            p["$remember_playback_position"].Value = track.RememberPlaybackPosition ? 1 : 0;
-            p["$resume_position_ticks"].Value = (object?)track.ResumePosition?.Ticks ?? DBNull.Value;
-            p["$ignore_when_shuffling"].Value = track.IgnoreWhenShuffling ? 1 : 0;
-            p["$volume_adjustment"].Value = track.VolumeAdjustment;
-            p["$withdrawn_by_origin"].Value = track.WithdrawnByOrigin ? 1 : 0;
-            p["$moved_from_path"].Value = Nullable(track.MovedFromPath);
-            p["$origin_file_stamp"].Value = Nullable(track.OriginFileStamp);
-            p["$tags_edited_at"].Value = (object?)track.TagsEditedAt?.UtcTicks ?? DBNull.Value;
-            p["$art_edited_at"].Value = (object?)track.ArtEditedAt?.UtcTicks ?? DBNull.Value;
-            p["$file_replaced_at"].Value = (object?)track.FileReplacedAt?.UtcTicks ?? DBNull.Value;
-            p["$art_width"].Value = track.ArtWidth;
-            p["$art_height"].Value = track.ArtHeight;
-            p["$art_hash"].Value = Nullable(track.ArtHash);
-            p["$skip_count"].Value = track.SkipCount;
-            p["$imported_skip_count"].Value = track.ImportedSkipCount;
-            p["$tag_fields_edited"].Value = (long)(uint)track.TagFieldsEdited;
-            p["$tag_fields_to_send"].Value = (long)(uint)track.TagFieldsToSend;
+            p[(int)Column.id].Value = track.Id.ToKey();
+            p[(int)Column.path].Value = Nullable(track.Path);
+            p[(int)Column.title].Value = Nullable(track.Title);
+            p[(int)Column.subtitle].Value = Nullable(track.Subtitle);
+            p[(int)Column.artists].Value = Nullable(track.Artists);
+            p[(int)Column.album_artists].Value = Nullable(track.AlbumArtists);
+            p[(int)Column.is_compilation].Value = track.IsCompilation ? 1 : 0;
+            p[(int)Column.album].Value = Nullable(track.Album);
+            p[(int)Column.album_sort].Value = Nullable(track.AlbumSort);
+            p[(int)Column.year].Value = Nullable(track.Year);
+            p[(int)Column.track_number].Value = track.TrackNumber;
+            p[(int)Column.track_count].Value = track.TrackCount;
+            p[(int)Column.disc_number].Value = track.DiscNumber;
+            p[(int)Column.disc_count].Value = track.DiscCount;
+            p[(int)Column.composers].Value = Nullable(track.Composers);
+            p[(int)Column.conductor].Value = Nullable(track.Conductor);
+            p[(int)Column.remixed_by].Value = Nullable(track.RemixedBy);
+            p[(int)Column.genre].Value = Nullable(track.Genre);
+            p[(int)Column.beats_per_minute].Value = track.BeatsPerMinute;
+            p[(int)Column.initial_key].Value = Nullable(track.InitialKey);
+            p[(int)Column.grouping].Value = Nullable(track.Grouping);
+            p[(int)Column.publisher].Value = Nullable(track.Publisher);
+            p[(int)Column.isrc].Value = Nullable(track.ISRC);
+            p[(int)Column.comment].Value = Nullable(track.Comment);
+            p[(int)Column.description].Value = Nullable(track.Description);
+            p[(int)Column.copyright].Value = Nullable(track.Copyright);
+            p[(int)Column.lyrics].Value = Nullable(track.Lyrics);
+            p[(int)Column.duration_ticks].Value = track.Duration.Ticks;
+            p[(int)Column.bitrate].Value = track.Bitrate;
+            p[(int)Column.sample_rate].Value = track.SampleRate;
+            p[(int)Column.channels].Value = track.Channels;
+            p[(int)Column.bits_per_sample].Value = track.BitsPerSample;
+            p[(int)Column.codec].Value = Nullable(track.Codec);
+            p[(int)Column.encoder_profile].Value = Nullable(track.EncoderProfile);
+            p[(int)Column.origin_device_fingerprint].Value = Nullable(track.OriginDeviceFingerprint);
+            p[(int)Column.origin_track_id].Value = Nullable(track.OriginTrackId);
+            p[(int)Column.origin_file_extension].Value = Nullable(track.OriginFileExtension);
+            p[(int)Column.origin_album_art_id].Value = Nullable(track.OriginAlbumArtId);
+            p[(int)Column.play_count].Value = track.PlayCount;
+            p[(int)Column.imported_play_count].Value = track.ImportedPlayCount;
+            p[(int)Column.last_played_at].Value = (object?)track.LastPlayedAt?.UtcTicks ?? DBNull.Value;
+            p[(int)Column.date_added].Value = track.DateAdded.UtcTicks;
+            p[(int)Column.starred].Value = track.Starred ? 1 : 0;
+            p[(int)Column.is_locally_downloaded].Value = track.IsLocallyDownloaded ? 1 : 0;
+            p[(int)Column.origin_relative_path].Value = Nullable(track.OriginRelativePath);
+            p[(int)Column.title_sort].Value = Nullable(track.TitleSort);
+            p[(int)Column.artists_sort].Value = Nullable(track.ArtistsSort);
+            p[(int)Column.composers_sort].Value = Nullable(track.ComposersSort);
+            p[(int)Column.remember_playback_position].Value = track.RememberPlaybackPosition ? 1 : 0;
+            p[(int)Column.resume_position_ticks].Value = (object?)track.ResumePosition?.Ticks ?? DBNull.Value;
+            p[(int)Column.ignore_when_shuffling].Value = track.IgnoreWhenShuffling ? 1 : 0;
+            p[(int)Column.volume_adjustment].Value = track.VolumeAdjustment;
+            p[(int)Column.withdrawn_by_origin].Value = track.WithdrawnByOrigin ? 1 : 0;
+            p[(int)Column.moved_from_path].Value = Nullable(track.MovedFromPath);
+            p[(int)Column.origin_file_stamp].Value = Nullable(track.OriginFileStamp);
+            p[(int)Column.tags_edited_at].Value = (object?)track.TagsEditedAt?.UtcTicks ?? DBNull.Value;
+            p[(int)Column.art_edited_at].Value = (object?)track.ArtEditedAt?.UtcTicks ?? DBNull.Value;
+            p[(int)Column.file_replaced_at].Value = (object?)track.FileReplacedAt?.UtcTicks ?? DBNull.Value;
+            p[(int)Column.art_width].Value = track.ArtWidth;
+            p[(int)Column.art_height].Value = track.ArtHeight;
+            p[(int)Column.art_hash].Value = Nullable(track.ArtHash);
+            p[(int)Column.skip_count].Value = track.SkipCount;
+            p[(int)Column.imported_skip_count].Value = track.ImportedSkipCount;
+            p[(int)Column.tag_fields_edited].Value = (long)(uint)track.TagFieldsEdited;
+            p[(int)Column.tag_fields_to_send].Value = (long)(uint)track.TagFieldsToSend;
         }
 
         private static object Nullable(string? value) => (object?)value ?? DBNull.Value;
 
         public static Track ReadTrack(SqliteDataReader reader) => new()
         {
-            Id = EntityId.FromKey(reader.GetString(0)),
-            Path = Text(reader, 1),
-            Title = Text(reader, 2),
-            Subtitle = Text(reader, 3),
-            Artists = Text(reader, 4),
-            AlbumArtists = Text(reader, 5),
-            IsCompilation = reader.GetInt64(6) != 0,
-            Album = Text(reader, 7),
-            AlbumSort = Text(reader, 8),
-            Year = Text(reader, 9),
-            TrackNumber = (uint)reader.GetInt64(10),
-            TrackCount = (uint)reader.GetInt64(11),
-            DiscNumber = (uint)reader.GetInt64(12),
-            DiscCount = (uint)reader.GetInt64(13),
-            Composers = Text(reader, 14),
-            Conductor = Text(reader, 15),
-            RemixedBy = Text(reader, 16),
-            Genre = Text(reader, 17),
-            BeatsPerMinute = (uint)reader.GetInt64(18),
-            InitialKey = Text(reader, 19),
-            Grouping = Text(reader, 20),
-            Publisher = Text(reader, 21),
-            ISRC = Text(reader, 22),
-            Comment = Text(reader, 23),
-            Description = Text(reader, 24),
-            Copyright = Text(reader, 25),
-            Lyrics = Text(reader, 26),
-            Duration = TimeSpan.FromTicks(reader.GetInt64(27)),
-            Bitrate = (int)reader.GetInt64(28),
-            SampleRate = (int)reader.GetInt64(29),
-            Channels = (int)reader.GetInt64(30),
-            BitsPerSample = (int)reader.GetInt64(31),
-            Codec = Text(reader, 32),
-            OriginDeviceFingerprint = Text(reader, 33),
-            OriginTrackId = Text(reader, 34),
-            OriginFileExtension = Text(reader, 35),
-            OriginAlbumArtId = Text(reader, 36),
-            PlayCount = (int)reader.GetInt64(37),
-            ImportedPlayCount = (int)reader.GetInt64(38),
-            LastPlayedAt = reader.IsDBNull(39) ? null : new DateTimeOffset(reader.GetInt64(39), TimeSpan.Zero),
-            DateAdded = new DateTimeOffset(reader.GetInt64(40), TimeSpan.Zero),
-            // 41 (album_artist), 42 (artist_id) and 43 (album_id) are
-            // deliberately not read back: all three are derived from the tag
-            // columns on write (Track.EffectiveAlbumArtist and CatalogIdentity)
-            // and exist only so the server can group, index and filter on them.
-            // See Schema.Baseline.
-            Starred = reader.GetInt64(44) != 0,
-            IsLocallyDownloaded = reader.GetInt64(45) != 0,
-            OriginRelativePath = Text(reader, 46),
-            TitleSort = Text(reader, 47),
-            ArtistsSort = Text(reader, 48),
-            ComposersSort = Text(reader, 49),
-            RememberPlaybackPosition = reader.GetInt64(50) != 0,
-            ResumePosition = reader.IsDBNull(51) ? null : TimeSpan.FromTicks(reader.GetInt64(51)),
-            IgnoreWhenShuffling = reader.GetInt64(52) != 0,
-            VolumeAdjustment = (int)reader.GetInt64(53),
-            EncoderProfile = Text(reader, 54),
-            WithdrawnByOrigin = reader.GetInt64(55) != 0,
-            MovedFromPath = Text(reader, 56),
-            OriginFileStamp = Text(reader, 57),
-            TagsEditedAt = reader.IsDBNull(58) ? null : new DateTimeOffset(reader.GetInt64(58), TimeSpan.Zero),
-            ArtEditedAt = reader.IsDBNull(59) ? null : new DateTimeOffset(reader.GetInt64(59), TimeSpan.Zero),
-            FileReplacedAt = reader.IsDBNull(60) ? null : new DateTimeOffset(reader.GetInt64(60), TimeSpan.Zero),
-            ArtWidth = (int)reader.GetInt64(61),
-            ArtHeight = (int)reader.GetInt64(62),
-            ArtHash = Text(reader, 63),
-            SkipCount = (int)reader.GetInt64(64),
-            ImportedSkipCount = (int)reader.GetInt64(65),
-            TagFieldsEdited = (Flower.Services.TrackTagFieldSet)(uint)reader.GetInt64(66),
-            TagFieldsToSend = (Flower.Services.TrackTagFieldSet)(uint)reader.GetInt64(67),
+            Id = EntityId.FromKey(reader.GetString((int)Column.id)),
+            Path = Text(reader, (int)Column.path),
+            Title = Text(reader, (int)Column.title),
+            Subtitle = Text(reader, (int)Column.subtitle),
+            Artists = Text(reader, (int)Column.artists),
+            AlbumArtists = Text(reader, (int)Column.album_artists),
+            IsCompilation = reader.GetInt64((int)Column.is_compilation) != 0,
+            Album = Text(reader, (int)Column.album),
+            AlbumSort = Text(reader, (int)Column.album_sort),
+            Year = Text(reader, (int)Column.year),
+            TrackNumber = (uint)reader.GetInt64((int)Column.track_number),
+            TrackCount = (uint)reader.GetInt64((int)Column.track_count),
+            DiscNumber = (uint)reader.GetInt64((int)Column.disc_number),
+            DiscCount = (uint)reader.GetInt64((int)Column.disc_count),
+            Composers = Text(reader, (int)Column.composers),
+            Conductor = Text(reader, (int)Column.conductor),
+            RemixedBy = Text(reader, (int)Column.remixed_by),
+            Genre = Text(reader, (int)Column.genre),
+            BeatsPerMinute = (uint)reader.GetInt64((int)Column.beats_per_minute),
+            InitialKey = Text(reader, (int)Column.initial_key),
+            Grouping = Text(reader, (int)Column.grouping),
+            Publisher = Text(reader, (int)Column.publisher),
+            ISRC = Text(reader, (int)Column.isrc),
+            Comment = Text(reader, (int)Column.comment),
+            Description = Text(reader, (int)Column.description),
+            Copyright = Text(reader, (int)Column.copyright),
+            Lyrics = Text(reader, (int)Column.lyrics),
+            Duration = TimeSpan.FromTicks(reader.GetInt64((int)Column.duration_ticks)),
+            Bitrate = (int)reader.GetInt64((int)Column.bitrate),
+            SampleRate = (int)reader.GetInt64((int)Column.sample_rate),
+            Channels = (int)reader.GetInt64((int)Column.channels),
+            BitsPerSample = (int)reader.GetInt64((int)Column.bits_per_sample),
+            Codec = Text(reader, (int)Column.codec),
+            OriginDeviceFingerprint = Text(reader, (int)Column.origin_device_fingerprint),
+            OriginTrackId = Text(reader, (int)Column.origin_track_id),
+            OriginFileExtension = Text(reader, (int)Column.origin_file_extension),
+            OriginAlbumArtId = Text(reader, (int)Column.origin_album_art_id),
+            PlayCount = (int)reader.GetInt64((int)Column.play_count),
+            ImportedPlayCount = (int)reader.GetInt64((int)Column.imported_play_count),
+            LastPlayedAt = reader.IsDBNull((int)Column.last_played_at) ? null : new DateTimeOffset(reader.GetInt64((int)Column.last_played_at), TimeSpan.Zero),
+            DateAdded = new DateTimeOffset(reader.GetInt64((int)Column.date_added), TimeSpan.Zero),
+            Starred = reader.GetInt64((int)Column.starred) != 0,
+            IsLocallyDownloaded = reader.GetInt64((int)Column.is_locally_downloaded) != 0,
+            OriginRelativePath = Text(reader, (int)Column.origin_relative_path),
+            TitleSort = Text(reader, (int)Column.title_sort),
+            ArtistsSort = Text(reader, (int)Column.artists_sort),
+            ComposersSort = Text(reader, (int)Column.composers_sort),
+            RememberPlaybackPosition = reader.GetInt64((int)Column.remember_playback_position) != 0,
+            ResumePosition = reader.IsDBNull((int)Column.resume_position_ticks) ? null : TimeSpan.FromTicks(reader.GetInt64((int)Column.resume_position_ticks)),
+            IgnoreWhenShuffling = reader.GetInt64((int)Column.ignore_when_shuffling) != 0,
+            VolumeAdjustment = (int)reader.GetInt64((int)Column.volume_adjustment),
+            EncoderProfile = Text(reader, (int)Column.encoder_profile),
+            WithdrawnByOrigin = reader.GetInt64((int)Column.withdrawn_by_origin) != 0,
+            MovedFromPath = Text(reader, (int)Column.moved_from_path),
+            OriginFileStamp = Text(reader, (int)Column.origin_file_stamp),
+            TagsEditedAt = reader.IsDBNull((int)Column.tags_edited_at) ? null : new DateTimeOffset(reader.GetInt64((int)Column.tags_edited_at), TimeSpan.Zero),
+            ArtEditedAt = reader.IsDBNull((int)Column.art_edited_at) ? null : new DateTimeOffset(reader.GetInt64((int)Column.art_edited_at), TimeSpan.Zero),
+            FileReplacedAt = reader.IsDBNull((int)Column.file_replaced_at) ? null : new DateTimeOffset(reader.GetInt64((int)Column.file_replaced_at), TimeSpan.Zero),
+            ArtWidth = (int)reader.GetInt64((int)Column.art_width),
+            ArtHeight = (int)reader.GetInt64((int)Column.art_height),
+            ArtHash = Text(reader, (int)Column.art_hash),
+            SkipCount = (int)reader.GetInt64((int)Column.skip_count),
+            ImportedSkipCount = (int)reader.GetInt64((int)Column.imported_skip_count),
+            TagFieldsEdited = (Flower.Services.TrackTagFieldSet)(uint)reader.GetInt64((int)Column.tag_fields_edited),
+            TagFieldsToSend = (Flower.Services.TrackTagFieldSet)(uint)reader.GetInt64((int)Column.tag_fields_to_send),
         };
 
         private static string? Text(SqliteDataReader reader, int ordinal) =>

@@ -239,7 +239,7 @@ public class SmartPlaylistRefresherTests
         using var refresher = Started(library);
         Assert.Empty(playlist.Tracks);
 
-        library.SetStarred(StarTarget.Song, track.Id.ToString(), starred: true);
+        library.SetStarred(track.Id.ToString(), starred: true);
 
         await Eventually(() => playlist.Tracks.Count == 1);
     }

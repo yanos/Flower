@@ -126,8 +126,7 @@ public sealed class FlowerServerFixture : WebApplicationFactory<Program>, IAsync
     // AlbumSummaries is actually exercised rather than trivially satisfied.
     // Seeded through the same TrackRepository.ReplaceAll the real rescan uses,
     // over the same FlowerDb the app resolved - so these tests exercise the
-    // production write path, including the derived album_artist/artist_id/
-    // album_id columns every browse query groups by. Writing rows by hand
+    // production write path and the same persisted track fields. Writing rows by hand
     // would let a test pass against columns the app never actually fills.
     public Track[] Seeded { get; private set; } = [];
 

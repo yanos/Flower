@@ -63,7 +63,7 @@ public class CurrentlyPlayingDispatcherTests : PinnedDataDirectory
 
         var raised = new List<string?>();
         vm.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
-        library.SetStarred(StarTarget.Song, track.Id.ToString(), false);
+        library.SetStarred(track.Id.ToString(), false);
         Dispatcher.UIThread.RunJobs();
 
         Assert.False(vm.IsStarred);

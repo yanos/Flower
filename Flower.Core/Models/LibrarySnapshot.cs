@@ -7,19 +7,8 @@ using Flower.Services;
 
 namespace Flower.Models;
 
-// What a star applies to - a song, an album or an artist. Lives
-// beside the snapshot rather than in the repository because both halves need
-// it: Library.SetStarred resolves it against these indexes, and
-// TrackRepository.SetStarred maps it to the matching indexed column.
-public enum StarTarget
-{
-    Song,
-    Album,
-    Artist,
-}
-
 // One immutable view of the whole library, plus the indexes the server's
-// routes read through - grouped albums, tracks by id, tracks by album artist.
+// routes read through: grouped albums and tracks by id.
 //
 // Owned by Library, which rebuilds it lazily after any change to Tracks, and
 // used wherever a request has to be answered out of it. It exists
@@ -46,13 +35,9 @@ public sealed class LibrarySnapshot
     // Public only because `required` forbids an initializer less visible than
     // its type; reads go through the accessors below, not these directly.
     public required IReadOnlyDictionary<string, AlbumEntry> AlbumsById { get; init; }
-    public required IReadOnlyDictionary<string, ImmutableArray<Track>> TracksByArtistId { get; init; }
 
     public IReadOnlyList<Track> AlbumTracks(string albumId) =>
         AlbumsById.TryGetValue(albumId, out var album) ? album.Tracks : [];
-
-    public IReadOnlyList<Track> ArtistTracks(string artistId) =>
-        TracksByArtistId.TryGetValue(artistId, out var tracks) ? tracks : [];
 
     public AlbumEntry? Album(string albumId) => AlbumsById.GetValueOrDefault(albumId);
 
@@ -77,9 +62,6 @@ public sealed class LibrarySnapshot
             ById = tracks.GroupBy(t => t.Id).ToDictionary(g => g.Key, g => g.Last()),
             Albums = albums,
             AlbumsById = albums.ToDictionary(a => a.Id),
-            TracksByArtistId = tracks
-                .GroupBy(t => CatalogIdentity.ArtistId(t.EffectiveAlbumArtist))
-                .ToDictionary(g => g.Key, g => g.ToImmutableArray()),
         };
     }
 }

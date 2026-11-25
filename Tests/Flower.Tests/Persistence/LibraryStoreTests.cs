@@ -12,6 +12,7 @@ using Flower.Importer;
 using Flower.Models;
 using Flower.Persistence;
 using Flower.Persistence.Sql;
+using Flower.Services;
 using Flower.Tests.TestSupport;
 using Flower.ViewModels;
 
@@ -27,6 +28,22 @@ public class LibraryStoreTests : IsolatedHome
 {
     private static TrackRepository Repo() => new(FlowerDb.OpenDefault());
     private static TrackRepository Repo(FlowerDb db) => new(db);
+
+    [Fact]
+    public void Starring_a_dashed_wire_id_persists_only_the_resolved_song()
+    {
+        var db = FlowerDb.OpenDefault();
+        var repository = new TrackRepository(db);
+        var first = new Track { Title = "First", Album = "Same album" };
+        var second = new Track { Title = "Second", Album = "Same album" };
+        repository.ReplaceAll([first, second]);
+        var library = new Library([first, second], NullLogger<Library>.Instance, store: repository);
+        Assert.Equal(1, library.SetStarred(first.Id.ToString("D"), true));
+        Assert.Equal(first.Id, Assert.Single(repository.LoadAll(), t => t.Starred).Id);
+        Assert.Equal(0, library.SetStarred("unknown", true));
+        Assert.Equal(1, library.SetStarred(first.Id.ToKey(), false));
+        Assert.DoesNotContain(repository.LoadAll(), t => t.Starred);
+    }
 
     [Fact]
     public async Task LibraryStore_round_trips_tracks_including_duration()

@@ -149,7 +149,7 @@ public class StarSyncTests : IDisposable
 
         await MakeService(library, key).SyncWithAsync(server.Device);
         var track = library.Tracks.Single();
-        library.SetStarred(StarTarget.Song, track.Id.ToString(), true);
+        library.SetStarred(track.Id.ToString(), true);
 
         await MakeService(library, key).SyncWithAsync(server.Device); // a fresh process
 
@@ -168,7 +168,7 @@ public class StarSyncTests : IDisposable
         var service = MakeService(library, key);
 
         await service.SyncWithAsync(server.Device);
-        library.SetStarred(StarTarget.Song, library.Tracks.Single().Id.ToString(), true);
+        library.SetStarred(library.Tracks.Single().Id.ToString(), true);
         service.MarkTrackStateChanged(library.Tracks); // PeerSyncCoordinator's job in the app
         await service.PushTrackStateAsync(server.Device);
         Assert.Contains(server.Reports, r => r.Starred);

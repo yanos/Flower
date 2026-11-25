@@ -324,7 +324,7 @@ public sealed class TrackInfoViewModel : ViewModelBase
 
         var star = !IsAllStarred;
         foreach (var track in Tracks)
-            _library.SetStarred(StarTarget.Song, track.Id.ToString(), star);
+            _library.SetStarred(track.Id.ToString(), star);
 
         OnPropertyChanged(nameof(IsAllStarred));
         OnPropertyChanged(nameof(IsAnyStarred));

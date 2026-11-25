@@ -42,7 +42,7 @@ public class TrackChangedViewTests : PinnedDataDirectory
         var raised = new List<string?>();
         rows.Single(r => r.Track == a).PropertyChanged += (_, e) => raised.Add(e.PropertyName);
 
-        library.SetStarred(StarTarget.Song, a.Id.ToString(), starred: true);
+        library.SetStarred(a.Id.ToString(), starred: true);
         Dispatcher.UIThread.RunJobs();
 
         Assert.Contains(nameof(TrackRowViewModel.StarredDisplay), raised);

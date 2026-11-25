@@ -522,7 +522,7 @@ public class LibraryMirrorScenarioTests : PinnedDataDirectory
         await desktop.SyncAsync(server);
 
         var id = server.Library.Tracks.Single(t => t.Title == "Song").Id;
-        server.Library.SetStarred(StarTarget.Song, id.ToKey(), starred: true);
+        server.Library.SetStarred(id.ToKey(), starred: true);
         server.Library.MergeReportedTrackState("phone", [new TrackStateDto(id.ToKey(), 12)], callerIsAdmin: false);
 
         File.Delete(desktop.PathOf("song.wav"));
@@ -917,7 +917,7 @@ public class LibraryMirrorScenarioTests : PinnedDataDirectory
         desktop.Scan();
         await desktop.SyncAsync(server);
         var id = server.Library.Tracks.Single().Id;
-        server.Library.SetStarred(StarTarget.Song, id.ToKey(), starred: true);
+        server.Library.SetStarred(id.ToKey(), starred: true);
         var phone = NewDevice();
         server.CallerIsAdmin = false;
         await phone.SyncAsync(server);

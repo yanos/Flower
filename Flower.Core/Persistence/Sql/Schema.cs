@@ -30,14 +30,7 @@ namespace Flower.Persistence.Sql
                 album_artists             TEXT,
                 is_compilation            INTEGER NOT NULL DEFAULT 0,
 
-                -- Track.EffectiveAlbumArtist, materialized. Not the same thing
-                -- as album_artists above: that is the raw tag, and the
-                -- effective value is a three-way fallback through the
-                -- compilation flag to the track artist. Reproducing that
-                -- expression in SQL is exactly the kind of second copy
-                -- CatalogIdentity's own comment records going wrong, and it
-                -- has to agree with artist_id/album_id below, which are
-                -- computed from it. Written by the same code, at the same time.
+                -- Dropped by SqliteMigrations' step 21.
                 album_artist              TEXT    NOT NULL DEFAULT '',
 
                 album                     TEXT,
@@ -86,13 +79,7 @@ namespace Flower.Persistence.Sql
                 skip_count                INTEGER NOT NULL DEFAULT 0,
                 imported_skip_count       INTEGER NOT NULL DEFAULT 0,
 
-                -- Stored, not computed on read, even though both are a pure
-                -- function of album_artist/album via CatalogIdentity. The
-                -- server looks tracks up *by* them - getArtist, getAlbum,
-                -- getCoverArt and star are all "WHERE artist_id = ?" - and a
-                -- hash computed in C# is not something SQLite can index or
-                -- filter on. TrackRepository recomputes both on every write,
-                -- so they cannot drift from the tags they derive from.
+                -- Both dropped by SqliteMigrations' step 21.
                 artist_id                 TEXT    NOT NULL DEFAULT '',
                 album_id                  TEXT    NOT NULL DEFAULT '',
 
@@ -136,20 +123,11 @@ namespace Flower.Persistence.Sql
                 file_replaced_at          INTEGER
             );
 
-            -- Not unique: two library entries for one path is not supposed to
-            -- happen, but Library.BuildPathIndex already documents tolerating
-            -- it (first match wins) rather than throwing, and a UNIQUE
-            -- constraint here would turn that into a failed rescan.
+            -- All five dropped by SqliteMigrations' step 21: the library is
+            -- browsed, grouped and sorted in memory (LibrarySnapshot).
             CREATE INDEX ix_tracks_path ON tracks (path);
-
-            -- Recently Added sorts on this, over the whole library, every time
-            -- that view is opened.
             CREATE INDEX ix_tracks_date_added ON tracks (date_added);
-
-            -- Album grouping (see TrackListBuilder / AlbumGridBuilder).
             CREATE INDEX ix_tracks_album ON tracks (album);
-
-            -- The server's browse surface filters on these two directly.
             CREATE INDEX ix_tracks_artist_id ON tracks (artist_id);
             CREATE INDEX ix_tracks_album_id  ON tracks (album_id);
 
