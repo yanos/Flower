@@ -288,7 +288,7 @@ public static class DiscoveryEndpoints
         // says so by writing the scheme into AdvertisedHost itself, which
         // LocalAddresses honours over the one passed here.
         origins.AddRange(LocalAddresses.Reachable(
-            MdnsAdvertiser.AdvertisablePort(bound, Uri.UriSchemeHttp) ?? SyncProtocol.DefaultPort,
+            MdnsAdvertiser.AdvertisablePort(bound, Uri.UriSchemeHttp) ?? SyncProtocol.HttpPort,
             options.AdvertisedHost, logger: logger));
 
         if (publicOrigin != null && !origins.Contains(publicOrigin, StringComparer.OrdinalIgnoreCase))

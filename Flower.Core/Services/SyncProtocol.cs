@@ -14,10 +14,8 @@ public static class SyncProtocol
     // server advertises itself as, and the client browses for.
     public const string ServiceType = "_flowersync._tcp";
 
-    // LocalSend's own default, kept for the protocol lineage. Discovery never
-    // assumes it - the real port arrives in the mDNS SRV record - and
-    // Flower.Server binds its own port (4533) rather than this one.
-    public const int DefaultPort = 53317;
+    public const int HttpPort = 4533;
+    public const int HttpsPort = 4534;
 
     // LocalSend's identity handshake, which this protocol borrows wholesale.
     // A peer is not usable until this resolves - see ResolveAliasAsync.

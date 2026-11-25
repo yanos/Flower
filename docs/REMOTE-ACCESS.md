@@ -158,10 +158,9 @@ the client's probes at hosts of its choosing.
 5. **Manual add, as the bootstrap case only** — a server the client has never
    shared a LAN with. One text box and an Add button, in
    `Flower/Views/Mobile/SettingsView.axaml` above the `AvailableServers` list and
-   in `Flower/Views/ServerPickerView.axaml`. Port defaults to **4533**,
-   `Flower.Server`'s port — not `SyncProtocol.DefaultPort` (53317), which is the
-   app-to-app one — for an address on this network; an address outside it with no
-   scheme written is dialled over https, on 4534 unless a port is written, since
+   in `Flower/Views/ServerPickerView.axaml`. Port defaults to **4533**
+   (`SyncProtocol.HttpPort`) for an address on this network; an address outside it with no
+   scheme written is dialled over https, on 4534 (`SyncProtocol.HttpsPort`) unless a port is written, since
    plain http is never dialled there (`CleartextOrigins`). Once added, the server
    pairs through the existing per-row Pair button. A failure says why
    (`DiscoveredDevice.LastFailure`, `NetworkDiscoveryService.ExplainUnreachable`):

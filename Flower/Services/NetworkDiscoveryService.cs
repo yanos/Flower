@@ -1439,10 +1439,7 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
     // "https://name" or "http://1.2.3.4:4533".
     //
     // Two defaults, and they differ on purpose. Without a scheme this is a
-    // hand-typed LAN address, so it means http on Flower.Server's port - not
-    // SyncProtocol.DefaultPort (53317), which is the app-to-app one, because
-    // what a user types an address for is overwhelmingly the headless server
-    // they cannot discover. *With* a scheme, the scheme's own default port
+    // hand-typed LAN address, so it means http on Flower.Server's port. *With* a scheme, the scheme's own default port
     // applies, so "https://music.example.com" means 443 and needs no ":443"
     // spelled out - that address came from a tunnel or a certificate, where the
     // standard port is the expected one.
@@ -1465,7 +1462,7 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
         // and only the former gets Flower.Server's port - a scheme the user
         // spelled out keeps its own default instead.
         var baseUri = !HasScheme(trimmed) && uri.IsDefaultPort
-            ? new UriBuilder(uri) { Port = FlowerServerPort }.Uri
+            ? new UriBuilder(uri) { Port = SyncProtocol.HttpPort }.Uri
             : uri;
 
         var host = uri.Host.Trim('[', ']');
@@ -1500,7 +1497,7 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
             baseUri = new UriBuilder(baseUri)
             {
                 Scheme = Uri.UriSchemeHttps,
-                Port = uri.IsDefaultPort ? FlowerServerHttpsPort : uri.Port,
+                Port = uri.IsDefaultPort ? SyncProtocol.HttpsPort : uri.Port,
             }.Uri;
         }
 
@@ -1526,7 +1523,7 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
             return $"\"{trimmed}\" is not an address. Write it as host:port, or paste the server's pairing link.";
         if (trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
             return $"Either no address could be found for {uri.Host}, or it is outside your own network, where plain "
-                   + $"http is never used. Try https://{uri.Host}:{FlowerServerHttpsPort}, or the server's pairing link.";
+                   + $"http is never used. Try https://{uri.Host}:{SyncProtocol.HttpsPort}, or the server's pairing link.";
         return $"No address could be found for {uri.Host}.";
     }
 
@@ -1539,15 +1536,6 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
     // app-to-app server does not serve TLS.
     internal static Uri HttpOrigin(IPEndPoint endPoint) =>
         new($"http://{endPoint}");
-
-    // Flower.Server's default listening port - deliberately not
-    // SyncProtocol.DefaultPort (53317), which is what the app-to-app listener
-    // used to bind before it was removed.
-    private const int FlowerServerPort = 4533;
-
-    // Its https listener, FlowerServerOptions.HttpsPort's default: what an
-    // address outside this network is dialled on when none is written.
-    private const int FlowerServerHttpsPort = 4534;
 
     private static bool IsOurServiceType(string instanceName) =>
         instanceName.EndsWith($"{ServiceType}.local", StringComparison.OrdinalIgnoreCase);

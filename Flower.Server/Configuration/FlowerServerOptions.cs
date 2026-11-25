@@ -123,7 +123,7 @@ public sealed class FlowerServerOptions : MusicLibrarySettings
     // authority, no domain and no operator action at all - a paired client
     // already holds the key that validates it. See ServerTls and
     // DeviceCertificate.
-    public int HttpsPort { get; set; } = 4534;
+    public int HttpsPort { get; set; } = Flower.Services.SyncProtocol.HttpsPort;
 
     // A real certificate to serve instead of the self-signed one, as a PEM
     // pair. Empty means self-signed, which is right for every client that

@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Collections.Concurrent;
 using System.Net;
 
 using Makaretu.Dns;
@@ -40,6 +41,7 @@ public sealed class MakaretuMdnsBackend : IMdnsBackend
     // send it on - and a multicast query nobody hears is simply lost, with no
     // error to retry on.
     private string? _browsing;
+    private readonly ConcurrentDictionary<DomainName, byte> _unresolved = new();
 
     public event EventHandler<MdnsInstanceFound>? InstanceFound;
     public event EventHandler<string>? InstanceLost;
@@ -49,18 +51,29 @@ public sealed class MakaretuMdnsBackend : IMdnsBackend
         _serviceDiscovery = new ServiceDiscovery(_mdns);
         _serviceDiscovery.ServiceInstanceDiscovered += (_, e) =>
         {
-            var name = InstanceNameOf(e.ServiceInstanceName);
-
-            // No separate resolve round-trip needed: the discovery answer already
-            // carries the sender's real address (RemoteEndPoint) and, per DNS-SD
-            // convention, the SRV record with the service port in AdditionalRecords.
-            var srv = e.Message.AdditionalRecords.OfType<SRVRecord>().FirstOrDefault();
-            var port = srv?.Port ?? (ushort)SyncProtocol.DefaultPort;
-            var endpoint = new IPEndPoint(e.RemoteEndPoint.Address, port);
-            InstanceFound?.Invoke(this, new MdnsInstanceFound { InstanceName = name, EndPoint = endpoint });
+            var srv = e.Message.Answers.Concat(e.Message.AdditionalRecords)
+                .OfType<SRVRecord>().FirstOrDefault(r => r.Name == e.ServiceInstanceName);
+            if (srv is { Port: > 0 })
+                Found(srv, e.RemoteEndPoint.Address);
+            else
+            {
+                _unresolved.TryAdd(e.ServiceInstanceName, 0);
+                _mdns.SendQuery(e.ServiceInstanceName, type: DnsType.SRV);
+            }
+        };
+        _mdns.AnswerReceived += (_, e) =>
+        {
+            foreach (var srv in e.Message.Answers.Concat(e.Message.AdditionalRecords).OfType<SRVRecord>())
+            {
+                if (srv.Port > 0 && _unresolved.TryRemove(srv.Name, out var ignored))
+                    Found(srv, e.RemoteEndPoint.Address);
+            }
         };
         _serviceDiscovery.ServiceInstanceShutdown += (_, e) =>
+        {
+            _unresolved.TryRemove(e.ServiceInstanceName, out var ignored);
             InstanceLost?.Invoke(this, InstanceNameOf(e.ServiceInstanceName));
+        };
 
         _mdns.NetworkInterfaceDiscovered += (_, _) =>
         {
@@ -69,6 +82,13 @@ public sealed class MakaretuMdnsBackend : IMdnsBackend
                 _serviceDiscovery.QueryServiceInstances(serviceType);
         };
     }
+
+    private void Found(SRVRecord srv, IPAddress address) =>
+        InstanceFound?.Invoke(this, new MdnsInstanceFound
+        {
+            InstanceName = InstanceNameOf(srv.Name),
+            EndPoint = new IPEndPoint(address, srv.Port),
+        });
 
     // The instance name as the peer actually spelled it, which is not what
     // DomainName.ToString() gives. DNS-SD instance labels are UTF-8 (RFC 6763
@@ -133,6 +153,7 @@ public sealed class MakaretuMdnsBackend : IMdnsBackend
         if (_stopped)
             return;
         _stopped = true;
+        _unresolved.Clear();
 
         _browsing = null;
         _serviceDiscovery.Unadvertise();

@@ -141,6 +141,11 @@ var bootstrapLogging = new Serilog.Extensions.Logging.SerilogLoggerFactory(serve
 var (deviceKey, devicePublicKeyRaw) = new DeviceKeyStore(
     bootstrapLogging.CreateLogger<DeviceKeyStore>()).Load();
 
+// Keep the default in SyncProtocol alongside the client's address handling.
+// Deployment URL configuration still takes precedence.
+if (builder.Configuration["Urls"] == null)
+    builder.WebHost.UseUrls($"http://0.0.0.0:{SyncProtocol.HttpPort}");
+
 // TLS, alongside the plain listener rather than instead of it.
 //
 // The reason this needs no configuration is DeviceCertificate: the certificate
@@ -157,7 +162,7 @@ var (deviceKey, devicePublicKeyRaw) = new DeviceKeyStore(
 // address. Adding a URL to the list keeps every existing way of configuring
 // the http listener working untouched.
 {
-    var httpsPort = builder.Configuration.GetValue($"{FlowerServerOptions.SectionName}:HttpsPort", 4534);
+    var httpsPort = builder.Configuration.GetValue($"{FlowerServerOptions.SectionName}:HttpsPort", SyncProtocol.HttpsPort);
     var certificatePath = builder.Configuration[$"{FlowerServerOptions.SectionName}:CertificatePath"] ?? "";
     var certificateKeyPath = builder.Configuration[$"{FlowerServerOptions.SectionName}:CertificateKeyPath"] ?? "";
 
@@ -184,7 +189,7 @@ var (deviceKey, devicePublicKeyRaw) = new DeviceKeyStore(
         // deliberately bound one interface does not get a second listener
         // quietly opened on all of them.
         var httpsHost = ResolveBindHost(builder.Configuration["Urls"]) ?? "0.0.0.0";
-        var urls = (builder.Configuration["Urls"] ?? "http://0.0.0.0:4533")
+        var urls = (builder.Configuration["Urls"] ?? $"http://0.0.0.0:{SyncProtocol.HttpPort}")
             .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         builder.WebHost.UseUrls([.. urls, $"https://{httpsHost}:{httpsPort}"]);
         builder.WebHost.ConfigureKestrel(kestrel =>
@@ -376,7 +381,7 @@ app.Logger.LogInformation("Logging to: {LogFile}", logFile);
     var serverOptions = app.Services.GetRequiredService<IOptions<FlowerServerOptions>>().Value;
     if (WebUiHosting.Resolve(app.Environment, serverOptions) != null)
     {
-        var origins = WebUiHosting.BrowserOrigins(serverOptions, LocalOrigin(builder.Configuration["Urls"], "localhost:4533"));
+        var origins = WebUiHosting.BrowserOrigins(serverOptions, LocalOrigin(builder.Configuration["Urls"], $"localhost:{SyncProtocol.HttpPort}"));
         app.Logger.LogInformation(
             "Web interface: {WebUiAddresses}{CertificateNote}",
             string.Join(", ", origins.Select(origin => origin + OnThisMachine(origin))),
@@ -448,7 +453,7 @@ app.Logger.LogInformation("Logging to: {LogFile}", logFile);
         // ones from another machine. This used to be the localhost link alone,
         // which is the one address nobody can open on a headless server - and
         // a headless server is what this mostly runs on.
-        var browserOrigins = WebUiHosting.BrowserOrigins(serverOptions, LocalOrigin(builder.Configuration["Urls"], "localhost:4533"));
+        var browserOrigins = WebUiHosting.BrowserOrigins(serverOptions, LocalOrigin(builder.Configuration["Urls"], $"localhost:{SyncProtocol.HttpPort}"));
         Console.WriteLine();
         Console.WriteLine("  Or set it up in a browser (same code, valid just as long):");
         foreach (var origin in browserOrigins)
@@ -744,7 +749,7 @@ app.Run();
 static string LanHost(string? configuredUrls)
 {
     var first = configuredUrls?.Split(';', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
-    var port = first != null && Uri.TryCreate(first.Trim(), UriKind.Absolute, out var uri) ? uri.Port : 4533;
+    var port = first != null && Uri.TryCreate(first.Trim(), UriKind.Absolute, out var uri) ? uri.Port : SyncProtocol.HttpPort;
     var address = LocalAddresses.Own()
         .OrderBy(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6 ? 1 : 0)
         .FirstOrDefault();
