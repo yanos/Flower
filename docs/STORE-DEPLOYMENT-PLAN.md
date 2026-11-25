@@ -1,5 +1,8 @@
 # App Store / Play Store Deployment Plan
 
+> Development plan and implementation history. Some sections describe earlier
+> designs. For current usage and setup, see the [user guides](README.md).
+
 Goal: get `Flower.iOS`/`Flower.Android` from runnable to submitted and approved. Getting them runnable in the first place was `MOBILE-PLAN.md`, which finished and was deleted; what it had left over is Phase 3 below.
 
 ## Key findings

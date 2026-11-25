@@ -1,203 +1,139 @@
-# Adding, removing and changing songs
+# Managing songs
 
-Find your question in the table, then read that section only.
+How to add, edit, move, remove and restore songs. Some steps depend on whether you use Flower locally or connect to a server.
 
-| I want to… | Go to |
+[Add music](#adding-songs) · [Delete a download](#deleting-a-copy-vs-removing-a-song) · [Remove or restore](#removing-songs) · [Edit tags and covers](#editing-tags-and-covers) · [Move or replace files](#renaming-and-moving-files)
+
+## Local files and server access
+
+| How you use Flower | What you can change |
 |---|---|
-| Know which setup I have | [Your setup](#your-setup) |
-| Add songs | [Adding songs](#adding-songs) |
-| Free up space on a phone | [Deleting a copy vs removing a song](#deleting-a-copy-vs-removing-a-song) |
-| Get rid of a song | [Removing songs](#removing-songs) |
-| Get a removed song back | [Removed Songs: undo or clean up](#removed-songs-undo-or-clean-up) |
-| Fix a title, artist, album or cover | [Editing tags and covers](#editing-tags-and-covers) |
-| Rename or move a file | [Renaming and moving files](#renaming-and-moving-files) |
-| Swap a song for a better file | [Replacing a file](#replacing-a-file) |
-| Find songs I have twice | [Duplicate songs](#duplicate-songs) |
-| Know how Flower tells songs apart | [How Flower recognises a song](#how-flower-recognises-a-song) |
+| **Local only** (not paired) | Your files and library |
+| **Server administrator** | Your files, the shared server library, and server settings—changes can affect everyone |
+| **Listener** | Your own files and playlists; server songs are read-only |
 
----
-
-## Your setup
-
-What happens depends on which of these describes your device.
-
-| Setup | What it means |
-|---|---|
-| **On its own** | Not paired to a server. Your library is the folders you picked. |
-| **Owner's device** | Paired to a server as an **administrator**. What you change reaches the server, and from there everyone. |
-| **Listener's device** | Paired to a server as a listener. You can play everything on the server, but you can't change the server's songs. |
-
-> The server's owner chooses whether a device is an administrator when they
-> pair it.
-
----
+The server owner grants administrator access when pairing a device. Below, **owner's device** means a paired administrator device.
 
 ## Adding songs
 
 ### On a computer
 
-| Setup | How |
+| Setup | How to add music |
 |---|---|
-| On its own | **Settings → Library → Add folder…**, or drag songs onto the Flower window. Dragged songs are **copied** into your first library folder (as `Album Artist/Album/`). The originals stay where they were. |
-| Owner's device | Drag songs onto the window. They're copied into Flower's folder (`Music/Flower`) and **uploaded to the server**, so everyone gets them. |
-| Listener's device | Drag songs onto the window. They stay on this computer only. The server never gets them. |
+| **Local only** | Choose **Settings → Library → Add folder…**. After that, drag songs into Flower to copy them to your first library folder; the originals remain in place. |
+| **Owner's device** | Drag songs into Flower. They're copied to `Music/Flower` and uploaded to the server. |
+| **Listener's device** | Drag songs into Flower. They're stored locally and not uploaded. |
 
-- **New files in a library folder** show up by themselves. You don't need to press anything.
-- **Mac + Music.app:**
-  - **On its own:** the first time you open Flower, it offers to add your Music.app library.
-  - **Owner's device:** turn on **Settings → Library → Add songs from Music.app to Flower** to send the server songs from Music.app that it doesn't have yet.
-- **No library folder yet?** Dragging songs onto the window does nothing until you add one in Settings.
-- **A song that can't be added** (a copy that failed, or a file that isn't a song Flower can read) is counted in a short message where you dropped it.
-- **Paired devices can't pick library folders.** Songs come from drag and drop, downloads, and (for an owner's Mac) Music.app.
+Flower detects new songs in its music folders automatically. On a local-only computer, add a folder before using drag and drop. Paired devices use Flower's own folder and downloads instead of user-selected library folders.
+
+Flower offers to import **Music.app** on first launch. On an owner's device, **Settings → Library → Add songs from Music.app to Flower** also uploads any songs missing from the server.
 
 ### On a phone
 
-| Phone | How |
+| Device | How to add music |
 |---|---|
-| iPhone / iPad | Plug it into a computer, select it in Finder (or iTunes on Windows) → **Files**, and drag songs onto **Flower**. Or use the Files app: **On My iPhone → Flower**. |
-| Android | Flower plays the songs in your phone's music library, the same ones other music apps see. Allow music access when Flower asks. |
+| iPhone / iPad | In Finder (iTunes on Windows), select your device → **Files** and drag songs into **Flower**. Or copy files into **On My iPhone → Flower** in the Files app. |
+| Android | Allow music access when prompted; Flower reads your phone's music library. |
 
-### From the server
+### From a server
 
-On a paired device, every song on the server is already in your library, ready
-to stream. Tap **Download** to keep a copy for listening offline.
+Songs from a paired server appear automatically. To keep offline copies in an installed app, use **Download** or **Download Album** from a song, album, or playlist menu.
 
-### Onto the server directly (owners)
-
-Copy files into the server's music folder and they show up on their own. On a
-network drive (NAS) that can take up to 5 minutes. See
-[SELF-HOSTING.md](SELF-HOSTING.md#adding-music-to-the-servers-folder).
-
----
+Owners can also copy files into the server's music folder. Local changes usually appear within seconds; changes on network drives can take up to five minutes. See [Self-hosting](SELF-HOSTING.md#adding-music-to-the-servers-folder).
 
 ## Deleting a copy vs removing a song
 
-These are different menu items.
+These commands have different effects:
 
-| Menu item | What it does |
+| Action | Result |
 |---|---|
-| **Delete Local File** | Deletes the file **from this device only**. If your paired server has the song, it stays in your library as a stream and you can download it again later. If this is your only copy, Flower warns you first, the file goes to the Trash (a phone has none, so there it is deleted for good), and the song leaves your library. |
-| **Remove from Library** | Takes the song out of your library **and every playlist**. See below. |
-| **Remove from Playlist** | Offered on a playlist's own songs (long-press one on a phone). Takes the song out of **that playlist only**; it stays in your library. |
+| **Delete Local File** | Removes the copy on this device. If the server still has it, you can stream or download it again. |
+| **Remove from Library** | Removes the song from the library and playlists. The file remains unless you also choose to delete it. |
+| **Remove from Playlist** | Removes it from that playlist only. |
 
-A playlist can also say **"2 songs unavailable"**. Those songs are still in it, hidden because this device can neither play nor stream them: the server doesn't have them, or a drive is away. They keep their place and return by themselves when the song is back.
+If **Delete Local File** would remove your only copy, Flower warns you first. Deleted files go to the Trash on computers; **phone deletions are permanent**.
 
----
+Songs temporarily unavailable from a server remain in your playlists until they're available again.
 
 ## Removing songs
 
-### With "Remove from Library"
+### With “Remove from Library”
 
 | Setup | What happens |
 |---|---|
-| On its own | The song leaves your library. The file stays on disk unless you tick **Also move the files to the Trash**. A rescan won't add it back, but dragging the file onto the window does. |
-| Owner's device | If the song is on the server, it's **removed for everyone**. Tick **Also delete the files, here and on the server** to delete the files too. |
-| Listener's device | You can only remove your own songs. The menu doesn't offer it for the server's songs, so ask the owner. |
+| Local only | The song disappears from your library, including after a rescan. To remove the file too, select **Also move the files to the Trash**. |
+| Owner's device | Removing a server song **removes it for everyone**. To delete the files too, select **Also delete the files, here and on the server**. |
+| Listener's device | You can remove your own songs; only an administrator can remove server songs. |
 
-### By deleting the file yourself (Finder, Explorer, Files)
+### By deleting a file outside Flower
 
-| Setup | What happens |
+| File location | What happens |
 |---|---|
-| On its own | The song leaves your library at the next scan. If the file comes back, the song comes back with its plays and star. |
-| Owner's device, file in **Flower's folder** or **Music.app** | The song leaves this device only. It stays on the server and streams from there. |
-| Owner's device, file in a **folder you had before pairing** | The song is **removed from the server, for everyone**. |
-| Listener's device | The song leaves this device only. |
+| Local-only device | The song disappears on the next scan. Its history returns if the file comes back. |
+| Owner's device: Flower folder or Music.app | Only this device's copy disappears; the song stays on the server. |
+| Owner's device: an older library folder retained from before pairing | **The song is removed from the server for everyone.** Other independently owned files stay on disk; downloaded copies are removed. |
+| Listener's device | Only the local copy disappears. |
 
-> **An unplugged drive removes nothing.** If a whole music folder is missing
-> or empty, Flower assumes the drive is just disconnected, not that you deleted
-> everything.
+Flower treats a missing or empty library folder as a disconnected drive instead of immediately removing its songs. Back up your music before moving large numbers of files.
 
 ### Removed Songs: undo or clean up
 
-Removing a song doesn't delete its file unless you ticked the box. The file
-waits in **Settings → Library → Removed Songs** (on computers and on the
-server, not on phones):
+On desktop, open **Settings → Library → Removed Songs**. Administrators can also use the server settings. This page isn't available on phones.
 
-- **Restore** puts the song back, with its plays, star and playlists. On the server, it comes back for everyone.
-- **Dragging the file onto the window again** also puts it back, on a computer that isn't paired to a server. Flower says so when it does.
-- **Delete Files…** deletes the files for good. Nothing else in Flower ever deletes a file you own.
-
----
+- **Restore** brings back the song, play history, and playlist entries. Restoring a server song affects everyone.
+- **Delete Files…** permanently deletes remaining files after confirmation.
+- On a local-only computer, dragging a removed file back into Flower also restores it.
 
 ## Changing songs
 
 ### Editing tags and covers
 
-Open **Track Info** (`Cmd+I` / `Ctrl+I`, or from the song's menu) and edit.
-Flower saves the change **into the song file**.
+Open **Track Info** from a song menu, or press `Cmd/Ctrl+I` on desktop. Edit the title, artist, album, other metadata, or cover art. Changes are written to the music file.
 
-| Setup | What happens |
+| Setup | Where edits apply |
 |---|---|
-| On its own | Saved into the file. |
-| Owner's device | Saved, sent to the server, and passed on to **every device**, listeners included. It works for songs you only stream too, and over any connection. If two devices edit the same song, the latest edit wins. |
-| Listener's device | You can only edit your own songs. The server's songs are read-only. |
+| Local only | Your local file |
+| Owner's device | The server and other paired devices, including downloaded copies. You can edit streamed songs; the latest edit wins. |
+| Listener's device | Your own files only |
 
-- **Covers** are saved inside each song file by default. To save one image file in the album's folder instead, turn on **Save covers in the album's folder**.
-- **Find online** searches for a cover using the song's album and artist. If it finds nothing, you can change the words and search again. That doesn't change the song's tags.
-- **In a web browser**, you can't edit tags yet.
+- Artwork is stored in songs by default. Turn on **Save covers in the album's folder** to save a separate image instead.
+- **Find online** looks for artwork. You can adjust search words without changing song information.
+- You can't edit tags in the browser player yet.
 
 ### Editing in another program
 
-Flower reads the new tags on its next scan, and the song stays the same song.
-On an **owner's device**, the changed file is uploaded and replaces the copy on
-the server, on the owner's other devices and every download. A listener's own
-copy of a song, added from their own files, is never replaced.
+Flower detects changed tags on its next scan. On an owner's device, the edited file replaces the server's copy and copies on other devices. A listener's separately added files are never replaced by the owner's edits.
 
 ### Renaming and moving files
 
-Flower **never renames files** when you edit tags. If you rename or move a file
-yourself:
+Editing a song in Flower **does not rename its file**.
 
-| What you did | Result |
+| Change outside Flower | Result |
 |---|---|
-| Renamed or moved it, tags unchanged | **Same song.** Plays, star and playlists are kept. On an owner's device, the server's copy moves too. |
-| Renamed it **and** changed its title, artist or album at the same time | **Treated as a new song.** Plays, star and playlists start over. On an owner's device, the server gets it as a duplicate. |
-| Renamed a file with no title, artist or album | **Treated as a new song.** |
+| Move or rename a file without changing its tags | Play history and playlists stay linked. Moves on an owner's device also sync to the server. |
+| Move a file and change its title, artist, or album at the same time | Flower may see it as a new song, breaking the link to its history and creating a duplicate on a server. |
+| Rename a file without title, artist, or album tags | Flower treats it as a new song. |
 
-> **Tip:** do it in two steps. Rename, let Flower see it (**Rescan files** in
-> Settings → Library), then edit the tags.
->
-> Watch out for **Music.app** with *Keep Music Media folder organised* turned
-> on. Editing an album there renames its files, which is the "both at once"
-> case above.
+To keep the song's history, move the file, run **Settings → Library → Rescan files**, and *then* edit its tags. Music.app's *Keep Music Media folder organised* can perform both changes together, so be careful when editing there.
 
 ### Replacing a file
 
 | Replacement | What to do |
 |---|---|
-| Same format (for example a better MP3 rip) | Overwrite the old file, keeping the same name. The song keeps its history. On an owner's device, the server, your other devices and every download are updated. |
-| Different format (MP3 → FLAC), **on its own** | Delete the old file and add the new one. It's the same song only if the title, artist, album and length (to the second) all match. Otherwise it's a new song. |
-| Different format, **paired device** | **Not supported yet.** A *Replace File…* command is planned. |
+| Same format, such as a better MP3 rip | Replace the file at the same path and name. Its history stays; on an owner's device, the new file syncs to the server and other devices. |
+| Different format on a local-only device, such as MP3 to FLAC | Replace the old file. To keep its history, the title, artist, album, and duration (to the second) must match. |
+| Different format on a paired device | Not supported yet. |
 
-> **Files only travel on your home network.** Uploads and updated files wait
-> until you're home. Tag edits, covers and removals go over any connection. To
-> send files over cellular or remote connections too, turn on **Transfer songs
-> when away from home**.
-
----
+**By default, automatic uploads and replacement downloads wait until you're home.** Enable **Transfer songs when away from home** to allow them over remote or cellular connections. Tag edits, artwork, moves, and removals sync on any connection. Streaming and manual downloads already work remotely.
 
 ## Duplicate songs
 
-When two files have the same title, artist, album and length (to the second),
-Flower keeps both and tells you once with a banner. **Show Duplicates** opens
-the **Duplicates** page, which names each copy's file so you can tell them
-apart. For as long as there are any, the page stays in the sidebar on a
-computer and in the **Home** screen's menu on a phone. To clear one, remove the
-copy you don't want ([Removing songs](#removing-songs)).
+Flower flags songs with the same **title, artist, album, and duration to the second**. Select **Show Duplicates** in the banner to compare file paths and remove unwanted copies.
 
-Only a device on its own or an owner's device sees this. A listener can't
-change the server's songs, so Flower doesn't mention them there.
-
----
+While duplicates exist, the **Duplicates** page appears in the desktop sidebar or phone **Home** menu. It's available to local-only and administrator devices, not listeners.
 
 ## How Flower recognises a song
 
-| Flower checks | When |
-|---|---|
-| **Where the file is** (its folder and name) | First, always. |
-| **Title + artist + album + length** (to the second) | When the file isn't where it used to be, and when matching your songs with the server's. |
+Flower first checks the file path. For a moved file or a match against the server, it compares **title, artist, album, and duration to the second**. File format, artwork, genre, and year don't affect the match.
 
-- **These don't count:** file name, format, cover, genre, year or other tags.
-- **Two copies of the same album in two folders** are two separate songs.
-- **Flower remembers every song it removes, forever.** When the file returns at the same place, or with the same title, artist, album and length, the song comes back as it was: same **Date Added**, plays, star and playlists.
-- **Between your devices**, plays and stars are shared, and **Date Added** is the earliest any of the owner's devices knows.
+Copies in different folders can remain separate library entries. Flower also keeps records of removed songs, so a returning file may recover its original **Date Added**, play counts, star rating, and playlist entries. On administrator devices, plays and stars sync; **Date Added** uses the earliest known date.

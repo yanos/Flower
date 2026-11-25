@@ -1,4 +1,7 @@
-# Audio quality: fix the render path, prove it with PCM-level tests, build the audiophile features
+# Audio quality: development plan
+
+> Development plan and implementation history. Some sections describe earlier
+> designs. For current usage and setup, see the [user guides](README.md).
 
 One plan for how Flower sounds. It used to be two, and is now two parts. The
 first is the render path: the defects behind clicks, loops and truncated

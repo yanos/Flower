@@ -1,18 +1,12 @@
-# Cited decisions
+# Archived review references
 
-Three documents were retired in September 2026 once they had no open items
-left: `ARCHITECTURE-REVIEW.md`, `OPEN-INTERNET-REVIEW.md` and
-`SMART-PLAYLIST-PLAN.md`. Between them they were cited by roughly 140 source
-comments — almost always as *"see Tier 2.3"* or *"see #2b"*, standing in for the
-reasoning behind the code the comment sits on.
+> Reference for review IDs cited in source comments. For installation and playback, see the [Flower guides](README.md).
 
-**This file is what those citations resolve against.** One line per numbered
-item: what the problem was, and what was done about it. It is an index, not a
-summary — the arguments, the measurements and the rejected alternatives are not
-here.
+Three completed review documents—`ARCHITECTURE-REVIEW.md`, `OPEN-INTERNET-REVIEW.md`, and `SMART-PLAYLIST-PLAN.md`—were retired in September–October 2026. About 140 source comments still cite their numbered findings (for example, *Tier 2.3* or *#2b*). This file preserves the meaning of those references.
 
-**The full text is in git**, and it is worth reading when an entry below is not
-enough:
+Each entry lists an issue and its outcome. This is an index, not a design guide. For detailed reasoning, measurements, and rejected alternatives, read the archived versions in Git.
+
+**Original reviews in Git:**
 
 ```bash
 git show 070c2ca:docs/ARCHITECTURE-REVIEW.md
@@ -24,8 +18,7 @@ git show ad337e7:docs/SMART-PLAYLIST-PLAN.md
 when the third was deleted, and went in October 2026. `070c2ca` is the last
 commit that has them.)
 
-Everything listed here is **done**, or was looked at and deliberately left
-as it is. Nothing in this file is a backlog.
+**Status:** Every entry was either resolved or explicitly accepted as-is. This is not a backlog.
 
 ---
 

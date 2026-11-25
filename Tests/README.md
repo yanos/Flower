@@ -1,61 +1,48 @@
 # Tests
 
-Tests are implemented once and grouped by subject. Platform projects contain
-native integrations or provide the runner needed to execute shared tests on a
-phone runtime.
+Run commands from the repository root. For a quick check without FFmpeg:
 
-| Project | Purpose |
-| --- | --- |
-| `Flower.Tests` | Shared unit and integration behavior: library, import, playlists, sync, persistence, networking, and audio/playback using fakes |
-| `Flower.Tests.UI` | Headless views, controls, app-shell view models, input/binding behavior, and platform/dispatcher wiring |
-| `Flower.Tests.Decoding` | Decoder, HTTP streaming, PCM validation, and playback integration with real decoding |
-| `Flower.Server.Tests` | In-process server/API, security, and configuration tests |
-| `Flower.Tests.macOS` | Native macOS Trash and Music/iTunes export discovery |
-| `Flower.Tests.Windows` | Native Windows Recycle Bin, and junctions in a library folder |
-| `Flower.Tests.Decoding.Scenarios` | Portable decoding scenarios, fixtures, and sample comparisons, without a test framework; shared by desktop and phone runners. Also `OutputStageHarness`, which drives the C output stage in `libflowerbridge` with no device, and `OutputStageChecks`, the phone runners' checks of it |
-| `Flower.Tests.Decoding.iOS` | Focused decoding and native-output-stage runner; NativeAOT by default through the script, matching the shipped iOS runtime |
-| `Flower.Tests.Decoding.Android` | Focused decoding and native-output-stage runner for an emulator or device |
-| `Flower.Tests.iOS` | Existing Mono/xUnit iOS runner; runtime and build settings retained pending upstream NativeAOT support |
-| `Flower.Tests.iOS.Suite` | Execution bundle for the Mono runner; compiles shared/UI/decoding sources into one assembly, with no copied test implementations |
+```sh
+dotnet test Tests/Flower.Tests/Flower.Tests.csproj
+```
 
-`TestSupport/` contains linked sources compiled into each client suite through
-`ClientTests.props`. Assembly attributes, xUnit collection definitions, data/trash
-redirects, and timer guards belong to each executing test assembly. In particular,
-the directory-isolation checks run in every suite. The iOS execution bundle keeps
-one headless session and one dispatcher, as the original combined suite did.
-Test namespaces generally retain their existing names to keep method filters
-stable; select a subject by its project.
+[Run all suites](#running-tests) · [Shared state](#shared-test-state) ·
+[CI](#ci) · [Phone runners](#why-the-runners-are-built-this-way)
 
-Use `Flower.Tests` for ordinary unit tests that can call production logic
-without a window, dispatcher pumping, or `MainViewModelHarness`. This includes
-mobile album metadata, search history and suggestions, tab editing, filter
-models, browser filtering and sorting, artist icon metadata, navigation history,
-selection/gesture state machines, menu construction, sync-result wording,
-Home shelf rules, settings models and current-track metadata. Keep input, focus, bindings,
-virtualization, and command/navigation integration in `Flower.Tests.UI`.
-Both projects currently import the common headless infrastructure; placing a
-unit test in the shared project does not require removing those shared packages.
-Playback and queue rules belong in the shared project even when their types
-are named `ViewModel`. Its playback pipeline integration tests use fake decoders
-and sinks; some retain a headless dispatcher for real event delivery. That is
-integration coverage, distinct from ordinary unit tests and UI input/binding
-checks. The UI project retains focused tests of backend events reaching the
-dispatcher and real queue views accepting input.
-All ordinary Fact/Theory methods now live in the shared project. Mixed fixtures
-are split so UI-specific tests keep their window, control or dispatcher setup.
-Shared integration tests may still use scratch storage, timers or headless
-platform services; project placement alone does not make a test a unit test.
-The browser model tests await rebuilds directly without a dispatcher; their
-debounce regression also waits for the scheduled grid publication. Recently
-Played's row reuse and layout tests construct Home directly, while playback
-and settings forwarding remain in the UI suite.
+## Choose a project
 
-Tests specific to one desktop OS live in its platform project. Those projects
-exclude native test sources on other hosts, so the desktop solution filter can
-be built anywhere without executing unsupported native calls. POSIX permission
-checks remain shared because they apply to several platforms; they report skips
-when unsupported or when the process can bypass read-only permissions. Desktop
-folder watching and empty-folder import behavior also report explicit iOS skips.
+Tests are grouped by behaviour. Platform projects contain native integrations
+or run shared tests on a phone runtime.
+
+| Project | Use for |
+|---|---|
+| `Flower.Tests` | Library, import, playlists, sync, persistence, networking and playback with fakes |
+| `Flower.Tests.UI` | Input, focus, bindings, navigation and Avalonia dispatcher integration |
+| `Flower.Tests.Decoding` | Real decoding, HTTP streaming and PCM validation; requires FFmpeg |
+| `Flower.Server.Tests` | Server endpoints, security and configuration |
+| `Flower.Tests.macOS` | Native macOS Trash and Music.app discovery |
+| `Flower.Tests.Windows` | Native Recycle Bin and filesystem junctions |
+| `Flower.Tests.Decoding.Scenarios` | Shared decoding fixtures, sample checks and native output-stage harness; no test framework |
+| `Flower.Tests.Decoding.iOS` | Focused decoding and native output checks on NativeAOT by default |
+| `Flower.Tests.Decoding.Android` | Focused decoding and native output checks on an emulator or device |
+| `Flower.Tests.iOS` | Mono/xUnit runner for the full iOS suite |
+| `Flower.Tests.iOS.Suite` | Shared, UI and decoding sources compiled into one execution bundle |
+
+Put logic tests in `Flower.Tests`, including view-model rules that don't need
+UI input or a dispatcher. Use `Flower.Tests.UI` when the behaviour depends on
+a real control, binding, focus or dispatcher delivery. Shared integration
+tests may use scratch storage, timers and platform fakes; the project name
+alone doesn't make them unit tests.
+
+**Test behaviour, not appearance.** Don't assert colours, fonts, sizes,
+spacing, bounds or layout arithmetic. Full conventions are in
+[CLAUDE.md](../CLAUDE.md#tests).
+
+`TestSupport/` contains sources linked into client suites by
+`ClientTests.props`. Each executing assembly owns its isolation attributes,
+collections and timer guards. Platform projects exclude unsupported native
+tests on other hosts. Shared POSIX permission tests skip where permissions
+can't be enforced; folder-watching tests also report explicit iOS skips.
 
 ## Running tests
 

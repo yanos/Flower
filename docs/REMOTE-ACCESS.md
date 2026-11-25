@@ -1,23 +1,16 @@
-# Reaching your own server from anywhere
+# Remote access: implementation notes
 
-This document explains how a Flower client finds and keeps hold of its paired
-server when the two are not on the same network. It is the client-side half of
-the remote-access design; the server half is described in `SYNC-PLAN.md`, and
-the user-facing setup guide is `SELF-HOSTING.md`.
+> **Implementation history for contributors.** This describes the design and earlier failure modes, not the current setup steps. For configuration, see [Listening away from home](REMOTE-SETUP.md).
 
-## The problem this exists to fix
+This note explains how a client discovers and remembers addresses for its paired server across local and remote networks. It covers the client-side design; related server work is in `SYNC-PLAN.md`. For practical setup, use [Remote access](REMOTE-SETUP.md) or [Self-hosting](SELF-HOSTING.md).
 
-The server side of remote access has been done for a while. `LanGuard` admits
-Tailscale's `100.64.0.0/10`, stream tickets are bound to a track and a
-fingerprint rather than to an IP, `/api/flower/v1/stream` does range requests so
-seeking works over a tunnel, and `TrustedProxies` handles the loopback hop that
-`tailscale serve` introduces. The audio path is ready too: `TrackDecoder.
-EnsureMedia` branched on `path.Contains("://")` and handed the decoder a network
-location, so a placeholder row streams on desktop and on a phone alike.
+## Previous limitation
 
-None of that mattered, because of one thing:
+The server already supported remote transport: `LanGuard` allowed Tailscale's `100.64.0.0/10` range; stream tickets were tied to a track and device fingerprint, not an IP; ranged `/api/flower/v1/stream` requests supported seeking; and `TrustedProxies` handled connections through `tailscale serve`. The audio path also supported network URLs through `TrackDecoder.EnsureMedia` and `path.Contains("://")`.
 
-**Reachability was defined as "mDNS can see it right now."**
+Remote playback still failed because of how the client checked reachability:
+
+**The client considered a server reachable only while mDNS could discover it.**
 
 - `PairedServerReachability.Recompute` resolved the paired server by looking its
   fingerprint up in `NetworkDiscoveryService.KnownDevices`.
@@ -28,28 +21,19 @@ None of that mattered, because of one thing:
   returned nothing, and `PlaylistControlViewModel` logged "no stream URL could be
   built" and refused to play.
 
-Nothing persisted an address either — `AppSettings` held
-`PairedServerFingerprint` and a display-only alias, no host and no port — so
-there was nothing to fall back to. `DiscoveredDevice.EndPoint` was a hard-typed
-`IPEndPoint`, so the type system could not even hold a hostname.
+The app did not retain connection addresses: `AppSettings` stored `PairedServerFingerprint` and a display alias, but no host or port. `DiscoveredDevice.EndPoint` was an `IPEndPoint`, which could not represent a hostname.
 
-An earlier revision of `SELF-HOSTING.md` told the reader to "add the server by
-address instead". No such feature existed. That line described this document's
-subject as though it were already built.
+An earlier self-hosting guide suggested adding a server by address, although that feature did not yet exist. The work described here implemented it as a fallback.
 
-## The shape of the fix: let the server say where it lives
+## Server-advertised addresses
 
-The instinct to reach for first is a text box: let the user type the tailnet
-address. That is the wrong primary path. The server already knows every address
-it can be reached on, and the client already talks to it — so the address should
-travel by itself, and typing one should be the bootstrap case only.
+Manually entering a server address is useful as a fallback, but it shouldn't be the primary connection method. The server can advertise its reachable addresses over an existing connection, so the client should learn and update them automatically.
 
-Every peer already performs an `/info` handshake before it is usable at all
+Clients already used an `/info` handshake before accepting a peer
 (`SyncProtocol.InfoPath`, `NetworkDiscoveryService.ResolveAliasAsync`), and
 `SyncInfoResponseDto` already carries the fingerprint and `TrustsCaller` (and,
 at the time, an `IsServer` flag - dropped once a Flower app stopped answering
-this handshake at all). It gains one more field: the addresses the server
-believes it can be reached on.
+this handshake at all). The change added a list of addresses advertised by the server.
 
 ```
 GET /api/localsend/v2/info
@@ -65,30 +49,18 @@ Sources, in order: the configured `AdvertisedHost` if there is one; then every
 non-loopback, non-link-local unicast address on an up interface, with the bound
 port.
 
-**No Tailscale integration is involved, and deliberately so.** The server does
-not shell out to the `tailscale` binary or read its state — it enumerates its own
-interfaces with `NetworkInterface.GetAllNetworkInterfaces`, and a tailnet address
-is simply the one that lands in `100.64.0.0/10`, the range `LanGuard` already
-recognises. `SYNC-PLAN.md`'s "document, don't automate" decision stands
-untouched; this is the server reporting its own network configuration, which it
-is entitled to know.
+**Tailscale-specific integration is not required.** The server enumerates its own interfaces with `NetworkInterface.GetAllNetworkInterfaces`; an address in `100.64.0.0/10` is treated as another candidate. Flower does not execute Tailscale commands or inspect Tailscale state. This preserves the decision in `SYNC-PLAN.md` to document VPN configuration rather than automate it.
 
-Noise is tolerable. A Docker bridge on `172.17.x` will be reported and will never
-answer, and a candidate that does not answer is simply skipped.
+The address list can contain unusable candidates, such as a Docker bridge address in `172.17.x`. The client skips candidates that do not respond.
 
-### The client learns and remembers
+### Updating stored addresses
 
 On every **successful** `/info` against the paired server, the client replaces
-its stored candidate list for that server. Three consequences worth stating
-plainly, because they are the whole point:
+its stored candidate list for that server. This provides three behaviours:
 
-- **Pair once at home and the tailnet address arrives on its own.** The user
-  types nothing.
-- **It self-heals.** Install Tailscale on the server a week after pairing, and
-  the next sync at home teaches the phone the new address. A DHCP change on the
-  LAN corrects itself the same way.
-- **Replaced, not merged.** An address the server has stopped reporting is
-  dropped, so a stale entry cannot linger being probed forever.
+- **Pairing at home also stores the tailnet address.** No manual entry is needed.
+- **Addresses update automatically.** A later Tailscale installation or LAN address change is picked up on a successful sync.
+- **Old candidates are removed.** Each successful update replaces, rather than merges with, the previous list.
 
 ### LAN ↔ tailnet: rank and race
 

@@ -1,5 +1,8 @@
 # Playlist Sync Plan
 
+> Development plan and implementation history. Some sections describe earlier
+> designs. For current usage and setup, see the [user guides](README.md).
+
 Make a playlist edit impossible to lose, and stop asking people to settle
 conflicts that are not conflicts. It replaces how playlists are identified,
 versioned and merged between devices and `Flower.Server`.

@@ -1,5 +1,8 @@
 # Media Key / OS "Now Playing" Integration Plan
 
+> Development plan and implementation history. Some sections describe earlier
+> designs. For current usage and setup, see the [user guides](README.md).
+
 Hardware media-key (play/pause/next/previous) support + OS "Now Playing"/lock-screen integration, across all five platforms. **iOS, macOS, Windows and Linux are built (November 2026); Android is not started.** iOS has been used on a real phone, and macOS has been tested by hand; Windows and Linux still need manual verification (see "What is left"). Each head sets an `IPlatformNowPlaying` (the seam below), which `NowPlayingIntegrationService` drives from `PlaylistControlViewModel` and `IAudioManager`:
 
 | Head | Implementation | Where |

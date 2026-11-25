@@ -1,4 +1,7 @@
-# Sync & Self-Hosting — Investigation & Plan
+# Library sync: development plan
+
+> Development plan and implementation history. Some sections describe earlier
+> designs. For current usage and setup, see the [user guides](README.md).
 
 ## Goal
 

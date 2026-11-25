@@ -1,5 +1,8 @@
 # Online Metadata Plan
 
+> Development plan and implementation history. Some sections describe earlier
+> designs. For current usage and setup, see the [user guides](README.md).
+
 Lyrics, a picture of each artist, and which songs on an album are the popular
 ones — looked up on the internet for a library that does not carry them. It
 builds beside `Flower/Services/OnlineCoverArt.cs` (Track Info's Find Online,

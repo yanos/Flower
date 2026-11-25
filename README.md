@@ -1,103 +1,54 @@
 # Flower
 
-A music player for Windows, macOS, Linux, iOS and Android, plus a small server
-for your library. Plex, but only for music: one owner runs the server, a
-handful of friends or family listen, at home or away.
+Flower is a free music player for files you already own. Play music on your device, or run Flower Server to stream your collection from a computer or NAS. Neither requires an account, subscription, or hosted music service.
 
-Pre-release (v0.x). Desktop builds are on GitHub; the phone apps aren't in the
-stores yet.
+[Download Flower](https://github.com/yanos/Flower/releases/latest) · [Installation instructions](GETTING-STARTED.md#get-the-app)
 
-## Get it
+## Features
 
-| | |
+- Play local music files, including MP3, FLAC, ALAC, Ogg Vorbis, Opus, and more.
+- Browse albums, edit song information and artwork, and create playlists.
+- Use gapless playback and an equalizer in the installed apps.
+- Stream music from your own server to Flower apps or a browser, including for people you invite.
+- Download songs from your server for offline listening in the installed apps.
+- Optionally enable Vibe Playlists and Endless Play. Song analysis runs on your server.
+
+## Guides
+
+| Task | Guide |
 |---|---|
-| **Desktop** | [Latest release](https://github.com/yanos/Flower/releases/latest): macOS (Apple silicon) `.dmg`, Windows x64 `Setup.exe`, Linux x64 `.AppImage`. Updates itself. |
-| **Server** | `ghcr.io/yanos/flower-server:latest` (amd64 + arm64), or `dotnet run --project Flower.Server` |
-| **Browser** | Served by the server; nothing to install |
-| **iPhone / Android** | Build from source (below) |
+| Install Flower and play local files | [Getting started](GETTING-STARTED.md) |
+| Connect to someone else's server | [Connect to a server](GETTING-STARTED.md#listening-to-a-server) |
+| Add, edit, move, or remove songs | [Managing songs](MANAGING-SONGS.md) |
+| Run a server and invite listeners | [Self-hosting](SELF-HOSTING.md) |
+| Stream away from home | [Remote access](REMOTE-SETUP.md) |
+| Check external connections and data reporting | [Privacy](PRIVACY.md) |
 
-Without a server, the app plays the folders you give it. With a server, every
-device sees the same library and can keep copies for offline listening.
+Local playback and self-hosted streaming don't need an outside music provider. Flower does contact external services for some features, including artist images and update checks. Crash reporting is enabled by default in release builds and can be turned off. See [Privacy](PRIVACY.md).
 
-**Just listening?** Someone sent you a link, or you want to play your own
-music: [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md) is the plain-language
-guide. The rest of this page is for running a server and building Flower.
+## Technical reference
 
-## Run a server
+[Server settings](SERVER-REFERENCE.md) · [Security](SECURITY.md) · [Build from source](BUILDING.md) · [HTTP API](API.md) · [Tests](../Tests/README.md) · [Architecture](../CLAUDE.md)
 
-```bash
-cd docker
-echo "FLOWER_MUSIC=/srv/music" > .env   # your music, mounted read-only
-docker compose up -d
-docker compose logs flower              # prints a pairing code and link
-```
+<details>
+<summary>Design notes and implementation history</summary>
 
-- **macOS/Windows host:** add `-f docker-compose.yml -f docker-compose.non-linux.yml`.
-- **Pair:** send the `flower://pair?...` link, not the bare code. The link
-  carries the server's fingerprint. A code works once, on one device, for ten
-  minutes, and makes that device an **admin**.
-- **More devices:** Settings → **Generate Pairing Code**, from any admin device.
-- **Back up the `/data` volume.** If you lose it, every device is unpaired.
-- **Update:** `docker compose pull && docker compose up -d`
+These files contain design notes, plans and completed reviews. Use the guides above for current setup instructions.
 
-Ports: **4533** plain HTTP, **4534** TLS (its certificate is pinned by paired
-apps).
+- [Audio quality](AUDIO-QUALITY-PLAN.md)
+- [AirPlay and Bluetooth](AIRPLAY-BLUETOOTH-PLAN.md)
+- [Media keys](MEDIA-KEYS-PLAN.md)
+- [Library sync](SYNC-PLAN.md)
+- [Playlist sync](PLAYLIST-SYNC-PLAN.md)
+- [Vibe Playlists and Endless Play](VIBE-PLAYLIST-PLAN.md)
+- [Online metadata](ONLINE-METADATA-PLAN.md)
+- [Remote-access implementation](REMOTE-ACCESS.md)
+- [Remote transport options](REMOTE-TRANSPORT-PLAN.md)
+- [Native security review](NATIVE-SECURITY-PLAN.md)
+- [Server security review](SECURITY-REVIEW.md)
+- [Store deployment](STORE-DEPLOYMENT-PLAN.md)
+- [Performance tracking](PERFORMANCE-TRACKING-PLAN.md)
+- [Streaming-service research](STREAMING-SERVICES-PLAN.md)
+- [Archived review references](CITED-DECISIONS.md)
 
-## Reach it from outside
-
-| Option | What to do |
-|---|---|
-| **Tailscale** (easiest) | Install it on the server. Nothing else. |
-| **Port forward** | Forward **4534**, never 4533, and set `AllowPublicAccess: true`. Leave `AdvertisedHost` empty: the server looks up its public IP and follows it when it changes. Set it only for a DNS name (`"https://music.example.com:4534"`, scheme and port included, never a `.local` name). |
-| **Behind a proxy/tunnel** | Set `TrustedProxies`, or every listener counts as one caller. |
-
-A browser on another machine needs HTTPS (port 4534, which shows a
-self-signed warning) or a real certificate. The apps need neither.
-Full guide: [docs/SELF-HOSTING.md](docs/SELF-HOSTING.md).
-
-**Locked out (no admin device left):**
-`dotnet run --project Flower.Server -- --pairing-code`. For Docker, see
-SELF-HOSTING.md.
-
-## What it does
-
-- Gapless, float32 pipeline, EQ, hi-res output; decodes anything FFmpeg can
-- Output picker, AirPlay and Bluetooth routes (macOS/iOS)
-- Listener accounts with per-device pairing; only admins change the library
-- Admin devices push adds, tag edits, moves and removals to the server
-- Vibe Playlists and Endless Play (CLAP embeddings, run by the server)
-- Artist pictures; on desktop, imports an existing Music.app library
-
-## Build from source
-
-.NET 10. Every head runs from a clean clone with no setup.
-
-```bash
-dotnet run --project Flower.Desktop                    # Windows/Linux
-dotnet run --project Flower.MacOS/Flower.MacOS.csproj  # macOS (macos workload)
-dotnet run --project Flower.Server                     # server + browser UI (wasm-tools workload)
-scripts/deploy-ios-device.sh                           # plugged-in iPhone
-dotnet test Tests/Flower.Tests/Flower.Tests.csproj     # fast tests
-```
-
-Architecture and conventions: [CLAUDE.md](CLAUDE.md). Tests and CI:
-[Tests/README.md](Tests/README.md).
-
-## Docs
-
-| Question | Read |
-|---|---|
-| Installing, pairing with a server, adding music | [GETTING-STARTED](docs/GETTING-STARTED.md) |
-| Running and exposing a server | [SELF-HOSTING](docs/SELF-HOSTING.md) |
-| Adding, removing, editing songs | [MANAGING-SONGS](docs/MANAGING-SONGS.md) |
-| What leaves my device | [PRIVACY](docs/PRIVACY.md) |
-| Server trust boundary | [SECURITY](docs/SECURITY.md) |
-| HTTP API | [API](docs/API.md) |
-| How a device reaches its server away from home | [REMOTE-ACCESS](docs/REMOTE-ACCESS.md) |
-| A source comment citing an old review finding | [CITED-DECISIONS](docs/CITED-DECISIONS.md) |
-| Anything else | `docs/*-PLAN.md`, one per initiative, each with its status |
-
-## License
-
-Apache 2.0 ([LICENSE](LICENSE)). FFmpeg is LGPL-2.1; third-party notices are in
-[NOTICE](NOTICE).
+</details>

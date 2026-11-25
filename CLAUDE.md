@@ -38,12 +38,17 @@ removed; `docs/SYNC-PLAN.md`, "OpenSubsonic, built and removed").
 `docs/` holds one file per initiative, each recording its own status and what
 is left. Read the relevant one before touching that area.
 
+- `README.md` — documentation index, with user guides first and development notes separate. User guides describe current behaviour in plain language; keep implementation history in the plans.
+- `BUILDING.md` — prerequisites and source build/run commands for each platform.
+- `REMOTE-SETUP.md` — user-facing remote access instructions: Tailscale, direct HTTPS, Caddy and Cloudflare Tunnel.
+- `SERVER-REFERENCE.md` — deployment settings, data locations, Docker permissions, certificates and backup restoration.
 - `GETTING-STARTED.md` — user-facing, for listeners: installing, pairing from a link or code, using Flower on its own. Keep its UI labels in step with the views.
 - `SELF-HOSTING.md` — user-facing: running a server and reaching it remotely.
 - `MANAGING-SONGS.md` — user-facing: adding, removing, editing and replacing songs per setup (unpaired, owner, listener), and how a song is recognised.
 - `API.md` — HTTP reference for `Flower.Server`; update it when a route in `Flower.Server/Endpoints/` changes.
 - `PRIVACY.md` — user-facing: what leaves a device or server, to whom, and its switch; crash reports (`CrashReporting`, `CrashScrubber`) in full. Update it when either changes.
 - `SECURITY.md` — the server trust boundary: per-listener playlists, per-device budgets, `FlowerProblem` refusals, `ServerResponseSignature`.
+- `SECURITY-REVIEW.md` — implementation history for the numbered security steps still cited by source comments.
 - `REMOTE-ACCESS.md` — client side of remote access: candidate addresses, LAN↔tailnet handover, `CleartextOrigins`.
 - `REMOTE-TRANSPORT-PLAN.md` — Tailscale vs Cloudflare Tunnel vs `tsnet`.
 - `CITED-DECISIONS.md` — resolves source comments citing a retired review's tier or finding number, including every finding of the September and October 2026 code reviews (all closed).

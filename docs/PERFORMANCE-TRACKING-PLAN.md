@@ -1,5 +1,8 @@
 # Performance Tracking Plan
 
+> Development plan and implementation history. Some sections describe earlier
+> designs. For current usage and setup, see the [user guides](README.md).
+
 Two complementary halves: (A) CI benchmark regression tracking, catching a PR that silently slows a hot path, and (B) runtime/production performance signal for real user libraries.
 
 ## Key decisions

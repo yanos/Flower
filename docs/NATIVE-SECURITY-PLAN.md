@@ -1,5 +1,8 @@
 # Native Security Plan
 
+> Development plan and implementation history. Some sections describe earlier
+> designs. For current usage and setup, see the [user guides](README.md).
+
 A memory-safety review of Flower's own native code: `libflowerbridge`
 (`native/miniaudio/flower_audio_bridge.c/.h`), `native/miniaudio/impl.c` (the
 iOS CoreAudio diagnostics), the Flower patches in
