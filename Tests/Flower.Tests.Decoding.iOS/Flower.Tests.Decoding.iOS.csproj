@@ -64,7 +64,7 @@
        different binary would be checking the wrong thing. Without it
        AvailableDecoders finds nothing loadable and every check is skipped. -->
   <ItemGroup>
-    <PackageReference Include="FFAudio.NET.iOS" Version="$(FFAudioPackageVersion)" />
+    <PackageReference Include="FFAudio.NET.iOS" />
   </ItemGroup>
 
   <!-- And the miniaudio and flowerbridge Flower.iOS ships: this runner never

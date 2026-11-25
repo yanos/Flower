@@ -66,24 +66,24 @@
     <!-- Flows in from Flower.Tests with buildTransitive targets that demand an
          app host and generate a Main of their own, which collides with this
          one. The assemblies are wanted; the targets are not. -->
-    <PackageReference Include="xunit.v3.core.mtp-off" Version="3.2.2" ExcludeAssets="buildTransitive" />
+    <PackageReference Include="xunit.v3.core.mtp-off" ExcludeAssets="buildTransitive" />
 
     <!-- The VSTest host and adapter `dotnet test` drives Flower.Tests through.
          This app runs xunit in-process and never loads them, and
          Microsoft.VisualStudio.TestPlatform.Common does not AOT-compile - it
          references a DoesNotReturnAttribute in an assembly that has none. -->
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.11.0" ExcludeAssets="all" />
-    <PackageReference Include="Microsoft.TestPlatform.TestHost" Version="18.11.0" ExcludeAssets="all" />
-    <PackageReference Include="Microsoft.TestPlatform.ObjectModel" Version="18.11.0" ExcludeAssets="all" />
-    <PackageReference Include="Microsoft.CodeCoverage" Version="18.11.0" ExcludeAssets="all" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" ExcludeAssets="all" />
-    <PackageReference Include="coverlet.collector" Version="10.1.0" ExcludeAssets="all" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" ExcludeAssets="all" />
+    <PackageReference Include="Microsoft.TestPlatform.TestHost" ExcludeAssets="all" />
+    <PackageReference Include="Microsoft.TestPlatform.ObjectModel" ExcludeAssets="all" />
+    <PackageReference Include="Microsoft.CodeCoverage" ExcludeAssets="all" />
+    <PackageReference Include="xunit.runner.visualstudio" ExcludeAssets="all" />
+    <PackageReference Include="coverlet.collector" ExcludeAssets="all" />
 
     <!-- The iOS builds of the native libraries Flower.iOS ships, which the
          desktop suite reaches through host packages: the ffaudio façade, and
          Skia for the Avalonia.Headless tests. -->
-    <PackageReference Include="FFAudio.NET.iOS" Version="$(FFAudioPackageVersion)" />
-    <PackageReference Include="SkiaSharp.NativeAssets.iOS" Version="3.119.4" />
+    <PackageReference Include="FFAudio.NET.iOS" />
+    <PackageReference Include="SkiaSharp.NativeAssets.iOS" />
   </ItemGroup>
 
   <!-- And miniaudio and flowerbridge, from where Flower.iOS ships them - see

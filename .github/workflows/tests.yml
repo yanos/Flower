@@ -31,6 +31,7 @@ jobs:
           cache-dependency-path: |
             **/*.csproj
             Directory.Build.props
+            Directory.Packages.props
             Tests/ClientTests.props
 
       # libflowerbridge is checked in, built per platform by three scripts
@@ -134,6 +135,7 @@ jobs:
           cache-dependency-path: |
             **/*.csproj
             Directory.Build.props
+            Directory.Packages.props
             Tests/ClientTests.props
 
       # Build the shared test graph once. Browser publishing has its own job.
@@ -195,6 +197,7 @@ jobs:
           cache-dependency-path: |
             **/*.csproj
             Directory.Build.props
+            Directory.Packages.props
             Tests/ClientTests.props
 
       # Pinned to the SDK installed above, for the workload below: with no
@@ -269,6 +272,7 @@ jobs:
           cache-dependency-path: |
             **/*.csproj
             Directory.Build.props
+            Directory.Packages.props
             Tests/ClientTests.props
 
       # Pinned to the SDK installed above, for the workload below: with no
@@ -314,6 +318,7 @@ jobs:
           cache-dependency-path: |
             **/*.csproj
             Directory.Build.props
+            Directory.Packages.props
             Tests/ClientTests.props
 
       # Pinned to the SDK installed above, for the workload below: with no
@@ -365,6 +370,7 @@ jobs:
           cache-dependency-path: |
             **/*.csproj
             Directory.Build.props
+            Directory.Packages.props
             Tests/ClientTests.props
 
       # Pinned to the SDK installed above, for the workload below: with no
@@ -422,6 +428,7 @@ jobs:
           cache-dependency-path: |
             **/*.csproj
             Directory.Build.props
+            Directory.Packages.props
             Tests/ClientTests.props
 
       # Some ubuntu-24.04 images carry a .NET 11 SDK, which with no

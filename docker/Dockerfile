@@ -30,7 +30,7 @@ RUN if [ "$INCLUDE_WEB_UI" = "true" ]; then \
     fi
 
 # Restore from project files alone, so a source edit doesn't re-download packages.
-COPY Directory.Build.props Directory.Build.targets ./
+COPY Directory.Build.props Directory.Build.targets Directory.Packages.props ./
 COPY Flower.Core/Flower.Core.csproj Flower.Core/
 COPY Flower.Server/Flower.Server.csproj Flower.Server/
 COPY Flower.SemanticAudio.Onnx/Flower.SemanticAudio.Onnx.csproj Flower.SemanticAudio.Onnx/

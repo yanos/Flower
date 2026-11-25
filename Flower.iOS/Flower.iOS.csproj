@@ -53,7 +53,7 @@
     <AppIcon>AppIcon</AppIcon>
 
     <!-- IL2104: trim-analysis warnings from third-party dependencies
-         (Avalonia.Controls.DataGrid, Avalonia.Diagnostics,
+         (Avalonia.Diagnostics,
          Avalonia.DesignerSupport, Common.Logging, Serilog, TagLibSharp) that
          aren't annotated for trimming themselves - nothing to fix on our
          side short of dropping the dependency. -->
@@ -69,7 +69,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Avalonia.iOS" Version="12.1.5" />
+    <PackageReference Include="Avalonia.iOS" />
     <!-- SkiaSharp's own nuspec only declares its NativeAssets.iOS dependency
          under a net10.0-ios26.2 group - NuGet's platform-version compatibility
          check requires the group's version to be <= the project's own TFM
@@ -80,7 +80,7 @@
          group on its own, so the reference is belt-and-braces rather than the
          workaround it was - but it is also what makes the bundling independent
          of the TFM, which has moved twice. -->
-    <PackageReference Include="SkiaSharp.NativeAssets.iOS" Version="3.119.4" />
+    <PackageReference Include="SkiaSharp.NativeAssets.iOS" />
   </ItemGroup>
 
   <ItemGroup>
@@ -156,6 +156,6 @@
        device or simulator framework off the RuntimeIdentifier - the same
        arrangement as miniaudio above, done by the package. -->
   <ItemGroup>
-    <PackageReference Include="FFAudio.NET.iOS" Version="$(FFAudioPackageVersion)" />
+    <PackageReference Include="FFAudio.NET.iOS" />
   </ItemGroup>
 </Project>

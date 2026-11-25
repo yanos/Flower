@@ -33,8 +33,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Avalonia.Android" Version="12.1.5" />
-    <PackageReference Include="Xamarin.AndroidX.Core.SplashScreen" Version="1.2.0.3" />
+    <PackageReference Include="Avalonia.Android" />
+    <PackageReference Include="Xamarin.AndroidX.Core.SplashScreen" />
 
     <!-- Xamarin.AndroidX.Core.SplashScreen and Avalonia.Android pull skewed
          transitive versions of Xamarin.AndroidX.Core (1.19.0.1) vs
@@ -43,19 +43,19 @@
          AnimatorKt$addListener$2) defined in both AARs and fails dexing.
          These two bindings track the same underlying androidx-core release
          in lockstep, so pin both to the same version explicitly. -->
-    <PackageReference Include="Xamarin.AndroidX.Core" Version="1.19.1" />
-    <PackageReference Include="Xamarin.AndroidX.Core.Core.Ktx" Version="1.19.1" />
+    <PackageReference Include="Xamarin.AndroidX.Core" />
+    <PackageReference Include="Xamarin.AndroidX.Core.Core.Ktx" />
 
     <!-- The same skew, one layer down. Core 1.19.1 brings the 2.11
          Lifecycle libraries, while Avalonia.Android's lifecycle packages come
          in at 2.9-2.10 and cap their dependencies below 2.11 (NU1608). Pinned
          to 2.11 with the rest of the family, so that all of AndroidX
          Lifecycle is one release. -->
-    <PackageReference Include="Xamarin.AndroidX.Lifecycle.Common.Java8" Version="2.11.0.1" />
-    <PackageReference Include="Xamarin.AndroidX.Lifecycle.LiveData.Core" Version="2.11.0.1" />
-    <PackageReference Include="Xamarin.AndroidX.Lifecycle.Process" Version="2.11.0.1" />
-    <PackageReference Include="Xamarin.AndroidX.Lifecycle.ViewModelSavedState" Version="2.11.0.1" />
-    <PackageReference Include="Xamarin.AndroidX.Lifecycle.ViewModelSavedState.Android" Version="2.11.0.1" />
+    <PackageReference Include="Xamarin.AndroidX.Lifecycle.Common.Java8" />
+    <PackageReference Include="Xamarin.AndroidX.Lifecycle.LiveData.Core" />
+    <PackageReference Include="Xamarin.AndroidX.Lifecycle.Process" />
+    <PackageReference Include="Xamarin.AndroidX.Lifecycle.ViewModelSavedState" />
+    <PackageReference Include="Xamarin.AndroidX.Lifecycle.ViewModelSavedState.Android" />
   </ItemGroup>
 
   <ItemGroup>
@@ -87,7 +87,7 @@
        package this project already gets transitively, does let NuGet
        override the asset flags for this project's own resolution. -->
   <ItemGroup>
-    <PackageReference Include="Miniaudio-CS" Version="1.0.4" ExcludeAssets="native" />
+    <PackageReference Include="Miniaudio-CS" ExcludeAssets="native" />
   </ItemGroup>
 
   <!-- The same trap, for the decoder. Flower.csproj picks a desktop ffaudio
@@ -98,9 +98,9 @@
        an x86_64 emulator. Only Linux collides today, but each host's payload is
        excluded, with Flower.csproj's own conditions, so none of them can. -->
   <ItemGroup>
-    <PackageReference Include="FFAudio.NET.macOS" Version="$(FFAudioPackageVersion)" ExcludeAssets="native" Condition="$([MSBuild]::IsOSPlatform('OSX'))" />
-    <PackageReference Include="FFAudio.NET.Linux" Version="$(FFAudioPackageVersion)" ExcludeAssets="native" Condition="$([MSBuild]::IsOSPlatform('Linux'))" />
-    <PackageReference Include="FFAudio.NET.Windows" Version="$(FFAudioPackageVersion)" ExcludeAssets="native" Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
+    <PackageReference Include="FFAudio.NET.macOS" ExcludeAssets="native" Condition="$([MSBuild]::IsOSPlatform('OSX'))" />
+    <PackageReference Include="FFAudio.NET.Linux" ExcludeAssets="native" Condition="$([MSBuild]::IsOSPlatform('Linux'))" />
+    <PackageReference Include="FFAudio.NET.Windows" ExcludeAssets="native" Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
   </ItemGroup>
 
   <!-- ffaudio comes from FFAudio.NET.Android, whose own targets file adds
@@ -114,6 +114,6 @@
        libs/<abi>/*.so and reads the ABI off the directory name, so naming
        them again packages them twice (XA4301). -->
   <ItemGroup>
-    <PackageReference Include="FFAudio.NET.Android" Version="$(FFAudioPackageVersion)" />
+    <PackageReference Include="FFAudio.NET.Android" />
   </ItemGroup>
 </Project>

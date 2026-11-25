@@ -51,7 +51,7 @@
        Bionic process, and a clash with the real one. Flower.Android carries
        the same exclusion for the same reason, with the fuller story. -->
   <ItemGroup>
-    <PackageReference Include="Miniaudio-CS" Version="1.0.4" ExcludeAssets="native" />
+    <PackageReference Include="Miniaudio-CS" ExcludeAssets="native" />
     <AndroidNativeLibrary Include="..\..\Flower.Android\libs\*\libminiaudio.so" />
     <AndroidNativeLibrary Include="..\..\Flower.Android\libs\*\libflowerbridge.so" />
   </ItemGroup>
@@ -64,16 +64,16 @@
        property of the hardware: arm64-v8a on Apple silicon, x86_64 on a CI
        runner. -->
   <ItemGroup>
-    <PackageReference Include="FFAudio.NET.Android" Version="$(FFAudioPackageVersion)" />
+    <PackageReference Include="FFAudio.NET.Android" />
   </ItemGroup>
 
   <!-- And not the host's desktop payload, which arrives through Flower.csproj
        and on a Linux runner would take lib/x86_64/ from the one above (XA4301).
        Flower.Android carries the same exclusion, with the fuller story. -->
   <ItemGroup>
-    <PackageReference Include="FFAudio.NET.macOS" Version="$(FFAudioPackageVersion)" ExcludeAssets="native" Condition="$([MSBuild]::IsOSPlatform('OSX'))" />
-    <PackageReference Include="FFAudio.NET.Linux" Version="$(FFAudioPackageVersion)" ExcludeAssets="native" Condition="$([MSBuild]::IsOSPlatform('Linux'))" />
-    <PackageReference Include="FFAudio.NET.Windows" Version="$(FFAudioPackageVersion)" ExcludeAssets="native" Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
+    <PackageReference Include="FFAudio.NET.macOS" ExcludeAssets="native" Condition="$([MSBuild]::IsOSPlatform('OSX'))" />
+    <PackageReference Include="FFAudio.NET.Linux" ExcludeAssets="native" Condition="$([MSBuild]::IsOSPlatform('Linux'))" />
+    <PackageReference Include="FFAudio.NET.Windows" ExcludeAssets="native" Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
   </ItemGroup>
 
 </Project>

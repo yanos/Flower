@@ -1,0 +1,70 @@
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <AvaloniaPackageVersion>12.1.5</AvaloniaPackageVersion>
+    <SkiaSharpPackageVersion>3.119.4</SkiaSharpPackageVersion>
+    <DotNetPackageVersion>10.0.14</DotNetPackageVersion>
+    <TestPlatformPackageVersion>18.11.0</TestPlatformPackageVersion>
+    <XunitPackageVersion>3.2.2</XunitPackageVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageVersion Include="Avalonia" Version="$(AvaloniaPackageVersion)" />
+    <PackageVersion Include="Avalonia.Android" Version="$(AvaloniaPackageVersion)" />
+    <PackageVersion Include="Avalonia.AvaloniaEdit" Version="12.0.0" />
+    <PackageVersion Include="Avalonia.Browser" Version="$(AvaloniaPackageVersion)" />
+    <PackageVersion Include="Avalonia.Desktop" Version="$(AvaloniaPackageVersion)" />
+    <PackageVersion Include="Avalonia.Fonts.Inter" Version="$(AvaloniaPackageVersion)" />
+    <PackageVersion Include="Avalonia.Headless" Version="$(AvaloniaPackageVersion)" />
+    <PackageVersion Include="Avalonia.Headless.XUnit" Version="$(AvaloniaPackageVersion)" />
+    <PackageVersion Include="Avalonia.Skia" Version="$(AvaloniaPackageVersion)" />
+    <PackageVersion Include="Avalonia.Themes.Fluent" Version="$(AvaloniaPackageVersion)" />
+    <PackageVersion Include="Avalonia.iOS" Version="$(AvaloniaPackageVersion)" />
+    <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageVersion Include="FFAudio.NET" Version="$(FFAudioPackageVersion)" />
+    <PackageVersion Include="FFAudio.NET.Android" Version="$(FFAudioPackageVersion)" />
+    <PackageVersion Include="FFAudio.NET.Linux" Version="$(FFAudioPackageVersion)" />
+    <PackageVersion Include="FFAudio.NET.Windows" Version="$(FFAudioPackageVersion)" />
+    <PackageVersion Include="FFAudio.NET.iOS" Version="$(FFAudioPackageVersion)" />
+    <PackageVersion Include="FFAudio.NET.macOS" Version="$(FFAudioPackageVersion)" />
+    <PackageVersion Include="Makaretu.Dns.Multicast.New" Version="0.38.0" />
+    <PackageVersion Include="Material.Icons.Avalonia" Version="3.0.2" />
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="$(DotNetPackageVersion)" />
+    <PackageVersion Include="Microsoft.CodeCoverage" Version="$(TestPlatformPackageVersion)" />
+    <PackageVersion Include="Microsoft.Data.Sqlite" Version="$(DotNetPackageVersion)" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="$(DotNetPackageVersion)" />
+    <PackageVersion Include="Microsoft.Extensions.Logging" Version="$(DotNetPackageVersion)" />
+    <PackageVersion Include="Microsoft.ML.OnnxRuntime" Version="1.31.1" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="$(TestPlatformPackageVersion)" />
+    <PackageVersion Include="Microsoft.TestPlatform.ObjectModel" Version="$(TestPlatformPackageVersion)" />
+    <PackageVersion Include="Microsoft.TestPlatform.TestHost" Version="$(TestPlatformPackageVersion)" />
+    <PackageVersion Include="MinVer" Version="8.0.0" />
+    <PackageVersion Include="Miniaudio-CS" Version="1.0.4" />
+    <PackageVersion Include="Sentry" Version="6.13.0" />
+    <PackageVersion Include="Sentry.AspNetCore" Version="6.13.0" />
+    <PackageVersion Include="Serilog" Version="4.4.0" />
+    <PackageVersion Include="Serilog.Extensions.Logging" Version="10.0.0" />
+    <PackageVersion Include="Serilog.Sinks.Console" Version="6.1.1" />
+    <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
+    <PackageVersion Include="SkiaSharp" Version="$(SkiaSharpPackageVersion)" />
+    <PackageVersion Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="$(SkiaSharpPackageVersion)" />
+    <PackageVersion Include="SkiaSharp.NativeAssets.iOS" Version="$(SkiaSharpPackageVersion)" />
+    <PackageVersion Include="System.Diagnostics.EventLog" Version="$(DotNetPackageVersion)" />
+    <PackageVersion Include="System.Numerics.Tensors" Version="$(DotNetPackageVersion)" />
+    <PackageVersion Include="TagLibSharp" Version="2.3.0" />
+    <PackageVersion Include="Tmds.DBus.Protocol" Version="0.94.1" />
+    <PackageVersion Include="Velopack" Version="1.2.161" />
+    <PackageVersion Include="Xamarin.AndroidX.Core" Version="1.19.1" />
+    <PackageVersion Include="Xamarin.AndroidX.Core.Core.Ktx" Version="1.19.1" />
+    <PackageVersion Include="Xamarin.AndroidX.Core.SplashScreen" Version="1.2.0.3" />
+    <PackageVersion Include="Xamarin.AndroidX.Lifecycle.Common.Java8" Version="2.11.0.1" />
+    <PackageVersion Include="Xamarin.AndroidX.Lifecycle.LiveData.Core" Version="2.11.0.1" />
+    <PackageVersion Include="Xamarin.AndroidX.Lifecycle.Process" Version="2.11.0.1" />
+    <PackageVersion Include="Xamarin.AndroidX.Lifecycle.ViewModelSavedState" Version="2.11.0.1" />
+    <PackageVersion Include="Xamarin.AndroidX.Lifecycle.ViewModelSavedState.Android" Version="2.11.0.1" />
+    <PackageVersion Include="coverlet.collector" Version="10.1.0" />
+    <PackageVersion Include="plist-cil" Version="2.3.1" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <PackageVersion Include="xunit.v3.core.mtp-off" Version="$(XunitPackageVersion)" />
+    <PackageVersion Include="xunit.v3.mtp-off" Version="$(XunitPackageVersion)" />
+  </ItemGroup>
+</Project>

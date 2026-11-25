@@ -76,6 +76,9 @@ scripts/deploy-ios-device.sh                                                    
   Run button). Keep it that way: fix the project file, never add an IDE run
   config (`.idea/`, `.vscode/` are gitignored). `Flower.MacOS.csproj` pins
   `_AppBundleName` for this; its comment says why.
+- **Package versions** live in `Directory.Packages.props`; platform asset
+  exclusions stay in the project that needs them. FFAudio’s local override is
+  still imported by `Directory.Build.props`.
 - **Browser UI** (`Flower.Web`) is published by building `Flower.Server`
   (needs the `wasm-tools` workload); `-p:IncludeWebUi=false` skips it.
 - **iOS device deploy** takes no device id and runs

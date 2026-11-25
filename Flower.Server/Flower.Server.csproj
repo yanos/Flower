@@ -57,9 +57,9 @@
        linux-x64 only for now, and an arm64 image has no decoder (the engine
        says so on the settings page rather than failing every song). -->
   <ItemGroup>
-    <PackageReference Include="FFAudio.NET.macOS" Version="$(FFAudioPackageVersion)" Condition="$([MSBuild]::IsOSPlatform('OSX'))" />
-    <PackageReference Include="FFAudio.NET.Linux" Version="$(FFAudioPackageVersion)" Condition="$([MSBuild]::IsOSPlatform('Linux'))" />
-    <PackageReference Include="FFAudio.NET.Windows" Version="$(FFAudioPackageVersion)" Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
+    <PackageReference Include="FFAudio.NET.macOS" Condition="$([MSBuild]::IsOSPlatform('OSX'))" />
+    <PackageReference Include="FFAudio.NET.Linux" Condition="$([MSBuild]::IsOSPlatform('Linux'))" />
+    <PackageReference Include="FFAudio.NET.Windows" Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
   </ItemGroup>
 
   <!-- Skia, to shrink cover art for a song list's rows (CoverArtThumbnail) -
@@ -69,9 +69,9 @@
        the aspnet runtime image does not have and a server drawing no text
        does not need. -->
   <ItemGroup>
-    <PackageReference Include="Sentry.AspNetCore" Version="6.13.0" />
-    <PackageReference Include="SkiaSharp" Version="3.119.4" />
-    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="3.119.4" />
+    <PackageReference Include="Sentry.AspNetCore" />
+    <PackageReference Include="SkiaSharp" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" />
   </ItemGroup>
 
   <!-- Those packages carry a libSkiaSharp for every flavour of Linux there is
