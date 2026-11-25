@@ -17,10 +17,10 @@ namespace Flower.Tests.Sync;
 public class ServerRescanWatchTests
 {
     private static AdminLibraryStatusDto Scanning(int? done, int? total) =>
-        new(Rescanning: true, TrackCount: 0, LastCompletedAt: null, LastError: null, SongsScanned: done, SongsToScan: total);
+        new(Rescanning: true, TrackCount: 0, LastCompletedAt: null, LastError: null, UnwritableFolders: [], SongsScanned: done, SongsToScan: total);
 
     private static readonly AdminLibraryStatusDto Idle =
-        new(Rescanning: false, TrackCount: 0, LastCompletedAt: null, LastError: null);
+        new(Rescanning: false, TrackCount: 0, LastCompletedAt: null, LastError: null, UnwritableFolders: [], SongsScanned: null, SongsToScan: null);
 
     // Answers in turn, the last one for every call after.
     private static Func<CancellationToken, Task<AdminLibraryStatusDto>> Answers(params AdminLibraryStatusDto[] answers)

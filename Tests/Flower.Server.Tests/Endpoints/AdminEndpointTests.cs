@@ -637,7 +637,7 @@ public class AdminEndpointTests(FlowerServerFixture server) : IClassFixture<Flow
             Assert.Equal(StatusCodes.Status200OK, status.Response.StatusCode);
             // Answered as soon as the scan *starts*, so this deliberately asserts
             // nothing about whether it has finished - only that the route reports.
-            Assert.Null((await ReadAsync<LibraryStatusResponse>(status)).LastError);
+            Assert.Null((await ReadAsync<AdminLibraryStatusDto>(status)).LastError);
         }
         finally
         {
@@ -659,14 +659,14 @@ public class AdminEndpointTests(FlowerServerFixture server) : IClassFixture<Flow
         try
         {
             writeAccess.Check([]);
-            var writable = await ReadAsync<LibraryStatusResponse>(await SignedAsync(admin, "GET", "/api/admin/library"));
+            var writable = await ReadAsync<AdminLibraryStatusDto>(await SignedAsync(admin, "GET", "/api/admin/library"));
             Assert.NotNull(writable.UnwritableFolders);
             Assert.Empty(writable.UnwritableFolders);
 
             Assert.SkipWhen(readOnly == null, "Requires enforced POSIX folder permissions; unsupported on Windows or when this process can bypass read-only permissions.");
 
             writeAccess.Check([readOnly]);
-            var refused = await ReadAsync<LibraryStatusResponse>(await SignedAsync(admin, "GET", "/api/admin/library"));
+            var refused = await ReadAsync<AdminLibraryStatusDto>(await SignedAsync(admin, "GET", "/api/admin/library"));
             Assert.Equal([readOnly], refused.UnwritableFolders);
         }
         finally
@@ -690,7 +690,7 @@ public class AdminEndpointTests(FlowerServerFixture server) : IClassFixture<Flow
             Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
             // The server logs its data directory and its startup scan before any
             // test can run, so there is always something here.
-            var slice = await ReadAsync<LogSliceResponse>(context);
+            var slice = await ReadAsync<AdminLogSliceDto>(context);
             Assert.NotEmpty(slice.Entries);
 
             // Asking again from the cursor the first read handed back is what
@@ -700,7 +700,7 @@ public class AdminEndpointTests(FlowerServerFixture server) : IClassFixture<Flow
                 admin, "GET", "/api/admin/logs", query: $"limit=50&after={slice.LastSequence}");
 
             Assert.Equal(StatusCodes.Status200OK, followUp.Response.StatusCode);
-            Assert.Empty((await ReadAsync<LogSliceResponse>(followUp)).Entries);
+            Assert.Empty((await ReadAsync<AdminLogSliceDto>(followUp)).Entries);
         }
         finally
         {
@@ -724,7 +724,7 @@ public class AdminEndpointTests(FlowerServerFixture server) : IClassFixture<Flow
             var context = await SignedAsync(admin, "GET", "/api/admin/devices/fp-phone/logs", query: "limit=50");
 
             Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
-            var log = await ReadAsync<DeviceLogResponse>(context);
+            var log = await ReadAsync<AdminDeviceLogDto>(context);
             Assert.Equal("Kitchen iPad", log.Alias);
             Assert.Equal("it went wrong", Assert.Single(log.Entries).Message);
         }
@@ -752,7 +752,7 @@ public class AdminEndpointTests(FlowerServerFixture server) : IClassFixture<Flow
             var context = await SignedAsync(admin, "GET", "/api/admin/devices");
 
             Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
-            var devices = await ReadAsync<List<TrustedDeviceResponse>>(context);
+            var devices = await ReadAsync<List<AdminDeviceDto>>(context);
             var self = devices.Single(d => d.Fingerprint == admin.Fingerprint);
             Assert.NotNull(self.LastSeenAt);
             Assert.False(self.HasLog);
@@ -906,7 +906,7 @@ public class AdminEndpointTests(FlowerServerFixture server) : IClassFixture<Flow
             remoteIp: "127.0.0.1", host: "192.168.1.40:4533");
 
         Assert.Equal(200, context.Response.StatusCode);
-        var pairing = await ReadAsync<PairingCodeResponse>(context);
+        var pairing = await ReadAsync<AdminPairingCodeDto>(context);
         Assert.StartsWith("http://localhost:4533/#pair=", pairing.BrowserUrl);
     }
 
@@ -924,7 +924,7 @@ public class AdminEndpointTests(FlowerServerFixture server) : IClassFixture<Flow
             remoteIp: "10.0.0.77", host: "192.168.1.40:4533");
 
         Assert.Equal(200, context.Response.StatusCode);
-        var pairing = await ReadAsync<PairingCodeResponse>(context);
+        var pairing = await ReadAsync<AdminPairingCodeDto>(context);
         Assert.StartsWith("http://192.168.1.40:4533/#pair=", pairing.BrowserUrl);
     }
 
@@ -940,7 +940,7 @@ public class AdminEndpointTests(FlowerServerFixture server) : IClassFixture<Flow
             admin, "POST", "/api/admin/pairing-codes",
             remoteIp: "10.0.0.77", host: "192.168.1.40:4533");
 
-        var invite = PairingInvite.TryParse((await ReadAsync<PairingCodeResponse>(context)).Invite);
+        var invite = PairingInvite.TryParse((await ReadAsync<AdminPairingCodeDto>(context)).Invite);
         Assert.NotNull(invite);
         Assert.Equal("http://192.168.1.40:4533", invite.Hosts[0]);
     }

@@ -15,43 +15,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Flower.Services;
 
-// Wire shapes for Flower.Server's /api/admin surface (see
-// Flower.Server/Endpoints/AdminEndpoints.cs). Written here rather than shared
-// from Flower.Server: the server project references this one, not the other way
-// round, and the browser head has no business taking a dependency on Kestrel to
-// name a DTO. The server therefore declares its own matching records - except
-// for the settings pair, which is the one shape both sides had started *editing*
-// in step with each other, and which now lives in Flower.Core beside the other
-// contracts both hosts share (Services/ServerAdminContracts.cs).
-public sealed record AdminDeviceDto(
-    string Fingerprint, string Alias, DateTimeOffset ApprovedAt, bool IsAdmin, DateTimeOffset? LastSeenAt, bool HasLog);
-public sealed record AdminPairingCodeDto(string Code, DateTimeOffset ExpiresAt, bool GrantsAdmin, string Invite, string BrowserUrl);
-// UnwritableFolders: the library folders the server found it cannot write to at
-// its last scan (LibraryWriteAccess). Null from a server that predates the field.
-// SongsScanned of SongsToScan: how far the scan in flight has got, both null
-// while none runs or one is still listing its folders.
-public sealed record AdminLibraryStatusDto(
-    bool Rescanning, int TrackCount, DateTimeOffset? LastCompletedAt, string? LastError,
-    List<string>? UnwritableFolders = null, int? SongsScanned = null, int? SongsToScan = null);
-public sealed record AdminLogEntryDto(DateTimeOffset Timestamp, string Level, string? SourceContext, string Message, string? Exception);
-
-// One device's pushed log snapshot. ReceivedAt is load-bearing rather than
-// decoration: these lines are as old as that device's last sync, and a reader
-// who does not know that will misread a stale snapshot as a live tail.
-public sealed record AdminDeviceLogDto(
-    string Fingerprint, string Alias, DateTimeOffset ReceivedAt, List<AdminLogEntryDto> Entries);
-
-// The server's own log as a delta plus the cursor to resume from - see
-// InMemoryLogStore.SnapshotAfter, and the Logs tab's polling loop
-// (SettingsViewModel.SetLogTabActive), which is the only caller that passes a
-// cursor other than "everything".
-public sealed record AdminLogSliceDto(long LastSequence, List<AdminLogEntryDto> Entries);
-
-// How many of the files behind an art id the server managed to rewrite, out of
-// how many it found. Written can be smaller than Total without the call having
-// failed - see AdminEndpoints.WriteCoverArt on why a partial success is a 200.
-public sealed record CoverArtWriteDto(int Written, int Total);
-
 // Raised for any non-success response, so callers can surface the server's own
 // message instead of a bare status code - "A device cannot revoke itself." is
 // worth showing verbatim.

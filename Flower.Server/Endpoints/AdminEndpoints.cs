@@ -18,34 +18,6 @@ using Flower.Services;
 
 namespace Flower.Server.Endpoints;
 
-public sealed record PairingCodeResponse(string Code, DateTimeOffset ExpiresAt, bool GrantsAdmin, string Invite, string BrowserUrl);
-public sealed record TrustedDeviceResponse(
-    string Fingerprint, string Alias, DateTimeOffset ApprovedAt, bool IsAdmin, DateTimeOffset? LastSeenAt, bool HasLog);
-public sealed record CoverArtWriteResponse(int Written, int Total);
-// UnwritableFolders is the library folders the last scan could not write to -
-// see LibraryWriteAccess. Empty on a server that can write to all of them.
-// SongsScanned of SongsToScan is how far the scan in flight has got, both null
-// while none runs or one is still listing the folders.
-public sealed record LibraryStatusResponse(
-    bool Rescanning, int TrackCount, DateTimeOffset? LastCompletedAt, string? LastError,
-    IReadOnlyList<string> UnwritableFolders, int? SongsScanned, int? SongsToScan);
-public sealed record LogEntryResponse(DateTimeOffset Timestamp, string Level, string? SourceContext, string Message, string? Exception);
-
-// A device's pushed log, plus when it arrived - the timestamp matters here in
-// a way it does not for the server's own live log: these lines are as old as
-// that device's last sync, and a reader who does not know that will misread a
-// stale snapshot as a current one.
-public sealed record DeviceLogResponse(
-    string Fingerprint, string Alias, DateTimeOffset ReceivedAt, IReadOnlyList<LogEntryResponse> Entries);
-
-// The server's own log, read as a delta: the entries after whatever sequence
-// the caller last saw, plus the sequence to hand back next time. A reader
-// watching the tail asks every couple of seconds, and re-sending the whole
-// buffer each time to append two lines to it is the thing this avoids - see
-// InMemoryLogStore.SnapshotAfter for why LastSequence is the store's own
-// high-water mark rather than the last entry returned.
-public sealed record LogSliceResponse(long LastSequence, IReadOnlyList<LogEntryResponse> Entries);
-
 // The admin API: issuing pairing codes, listing and revoking devices, and - for
 // the browser settings page - reading and writing this server's own
 // configuration, triggering a rescan and reading its log.
@@ -212,13 +184,13 @@ public static class AdminEndpoints
                 context.Items[AdminFingerprintKey], grantsAdmin, expiresAt);
 
             return Results.Json(
-                new PairingCodeResponse(code, expiresAt, grantsAdmin, invite.ToString(), browserUrl), jsonOptions);
+                new AdminPairingCodeDto(code, expiresAt, grantsAdmin, invite.ToString(), browserUrl), jsonOptions);
         });
 
         authenticated.MapGet("/devices", (TrustedPeerStore store, ClientLogStore logs) =>
         {
             var devices = store.Load()
-                .Select(p => new TrustedDeviceResponse(
+                .Select(p => new AdminDeviceDto(
                     p.Fingerprint, p.Alias, p.ApprovedAt, p.IsAdmin, p.LastSeenAt, logs.Has(p.Fingerprint)))
                 .ToList();
             return Results.Json(devices, jsonOptions);
@@ -908,9 +880,9 @@ public static class AdminEndpoints
             var take = Math.Clamp(limit ?? 500, 1, snapshot.Entries.Count == 0 ? 1 : snapshot.Entries.Count);
             var lines = snapshot.Entries
                 .Skip(Math.Max(0, snapshot.Entries.Count - take))
-                .Select(e => new LogEntryResponse(e.Timestamp, e.Level, e.SourceContext, e.Message, e.Exception))
+                .Select(e => new AdminLogEntryDto(e.Timestamp, e.Level, e.SourceContext, e.Message, e.Exception))
                 .ToList();
-            return Results.Json(new DeviceLogResponse(snapshot.Fingerprint, snapshot.Alias, snapshot.ReceivedAt, lines), jsonOptions);
+            return Results.Json(new AdminDeviceLogDto(snapshot.Fingerprint, snapshot.Alias, snapshot.ReceivedAt, lines), jsonOptions);
         });
 
         // This server's own log, from this host's in-memory buffer (Program.cs
@@ -926,9 +898,9 @@ public static class AdminEndpoints
             var take = Math.Max(1, limit ?? 500);
             var lines = slice.Entries
                 .Skip(Math.Max(0, slice.Entries.Count - take))
-                .Select(e => new LogEntryResponse(e.Timestamp, e.Level, e.SourceContext, e.Message, e.Exception))
+                .Select(e => new AdminLogEntryDto(e.Timestamp, e.Level, e.SourceContext, e.Message, e.Exception))
                 .ToList();
-            return Results.Json(new LogSliceResponse(slice.LastSequence, lines), jsonOptions);
+            return Results.Json(new AdminLogSliceDto(slice.LastSequence, lines), jsonOptions);
         });
     }
 
@@ -985,7 +957,7 @@ public static class AdminEndpoints
         // song's, and AlbumArtWriter.Apply has already logged that write.
         logger.LogInformation("Album art for {Id} changed on {Written} of {Total} song(s).",
             id, written, candidates.Count);
-        return Results.Json(new CoverArtWriteResponse(written, candidates.Count), jsonOptions);
+        return Results.Json(new CoverArtWriteDto(written, candidates.Count), jsonOptions);
     }
 
     // Each refusal as the status that says what to do about it: 400 and 409
@@ -1050,11 +1022,11 @@ public static class AdminEndpoints
         return array;
     }
 
-    private static LibraryStatusResponse DescribeLibrary(LibraryRescanCoordinator rescans, LibraryWriteAccess writeAccess) =>
+    private static AdminLibraryStatusDto DescribeLibrary(LibraryRescanCoordinator rescans, LibraryWriteAccess writeAccess) =>
         rescans.Progress is { } progress
-            ? new(rescans.IsRunning, rescans.TrackCount, rescans.LastCompletedAt, rescans.LastError, writeAccess.UnwritableFolders,
+            ? new(rescans.IsRunning, rescans.TrackCount, rescans.LastCompletedAt, rescans.LastError, writeAccess.UnwritableFolders.ToList(),
                 progress.Done, progress.Total)
-            : new(rescans.IsRunning, rescans.TrackCount, rescans.LastCompletedAt, rescans.LastError, writeAccess.UnwritableFolders,
+            : new(rescans.IsRunning, rescans.TrackCount, rescans.LastCompletedAt, rescans.LastError, writeAccess.UnwritableFolders.ToList(),
                 null, null);
 
     // The operator-editable half of FlowerServerOptions, as the shared wire

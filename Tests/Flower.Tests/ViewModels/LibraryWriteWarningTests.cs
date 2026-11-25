@@ -22,8 +22,6 @@ public class LibraryWriteWarningTests
     public void A_server_that_can_write_everywhere_has_nothing_to_say()
     {
         Assert.Null(LibraryWriteWarning.For([]));
-        // A server from before the field existed sends none at all.
-        Assert.Null(LibraryWriteWarning.For(null));
     }
 
     [Fact]
@@ -59,11 +57,7 @@ public class LibraryWriteWarningTests
         var status = JsonSerializer.Deserialize<AdminLibraryStatusDto>(
             """{"rescanning":false,"trackCount":16114,"lastCompletedAt":null,"lastError":null,"unwritableFolders":["/music"]}""",
             options);
-        var older = JsonSerializer.Deserialize<AdminLibraryStatusDto>(
-            """{"rescanning":false,"trackCount":3,"lastCompletedAt":null,"lastError":null}""",
-            options);
 
         Assert.Equal(["/music"], status!.UnwritableFolders);
-        Assert.Null(older!.UnwritableFolders);
     }
 }

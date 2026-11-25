@@ -1,20 +1,11 @@
+using System;
 using System.Collections.Generic;
 
 using Flower.SemanticAudio;
 
 namespace Flower.Services;
 
-// The settings half of Flower.Server's /api/admin wire shape, declared once for
-// both ends of it: Flower.Server answers with these (AdminEndpoints' GET and PUT
-// /settings) and ServerAdminClient reads them, the same way LibrarySyncContracts
-// is shared by the sync endpoint and its client.
-//
-// The rest of that surface is still a matching pair of records - the server's own
-// in AdminEndpoints, the client's in ServerAdminClient - because neither side has
-// had to touch them in step with the other. These two are different: every
-// operator-editable setting is a field in both, so a setting added to the server
-// is a field added twice, and the browser page that renders them is built from
-// the *client's* copy. Sharing them makes that one edit again.
+// Shared wire contracts for the server admin API.
 //
 // Nullable on the update means "leave this one alone" (AdminEndpoints tests each
 // with `is { }`), which is why every field there is optional and none of them
@@ -252,3 +243,32 @@ public sealed record DeleteRemovedFilesRequestDto(List<string> Paths);
 // the outcome is the one asked for). NotDeleted are still there and still on
 // the list.
 public sealed record DeleteRemovedFilesResponseDto(int Deleted, int NotDeleted);
+
+public sealed record AdminDeviceDto(
+    string Fingerprint, string Alias, DateTimeOffset ApprovedAt, bool IsAdmin, DateTimeOffset? LastSeenAt, bool HasLog);
+public sealed record AdminPairingCodeDto(string Code, DateTimeOffset ExpiresAt, bool GrantsAdmin, string Invite, string BrowserUrl);
+// UnwritableFolders: the library folders the server found it cannot write to at
+// its last scan (LibraryWriteAccess).
+// SongsScanned of SongsToScan: how far the scan in flight has got, both null
+// while none runs or one is still listing its folders.
+public sealed record AdminLibraryStatusDto(
+    bool Rescanning, int TrackCount, DateTimeOffset? LastCompletedAt, string? LastError,
+    List<string> UnwritableFolders, int? SongsScanned, int? SongsToScan);
+public sealed record AdminLogEntryDto(DateTimeOffset Timestamp, string Level, string? SourceContext, string Message, string? Exception);
+
+// One device's pushed log snapshot. ReceivedAt is load-bearing rather than
+// decoration: these lines are as old as that device's last sync, and a reader
+// who does not know that will misread a stale snapshot as a live tail.
+public sealed record AdminDeviceLogDto(
+    string Fingerprint, string Alias, DateTimeOffset ReceivedAt, List<AdminLogEntryDto> Entries);
+
+// The server's own log as a delta plus the cursor to resume from - see
+// InMemoryLogStore.SnapshotAfter, and the Logs tab's polling loop
+// (SettingsViewModel.SetLogTabActive), which is the only caller that passes a
+// cursor other than "everything".
+public sealed record AdminLogSliceDto(long LastSequence, List<AdminLogEntryDto> Entries);
+
+// How many of the files behind an art id the server managed to rewrite, out of
+// how many it found. Written can be smaller than Total without the call having
+// failed - see AdminEndpoints.WriteCoverArt on why a partial success is a 200.
+public sealed record CoverArtWriteDto(int Written, int Total);

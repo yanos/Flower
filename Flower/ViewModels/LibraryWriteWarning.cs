@@ -17,9 +17,9 @@ public static class LibraryWriteWarning
 {
     // Null when there is nothing to say - every folder is writable, or the
     // server is too old to report it.
-    public static string? For(IReadOnlyList<string>? unwritableFolders)
+    public static string? For(IReadOnlyList<string> unwritableFolders)
     {
-        if (unwritableFolders is not { Count: > 0 })
+        if (unwritableFolders.Count == 0)
             return null;
 
         var where = unwritableFolders.Count == 1
