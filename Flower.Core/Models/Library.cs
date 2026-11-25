@@ -3317,11 +3317,6 @@ namespace Flower.Models
             }
         }
 
-        // The playlist a wire id names, or null - the playlist half of
-        // Find above.
-        public Playlist? FindPlaylist(string? id) =>
-            EntityId.FromWire(id) is { } parsed ? Playlists.FirstOrDefault(p => p.Id == parsed) : null;
-
         // Wire track ids -> the live Tracks they name, for a playlist built or
         // edited over the protocol. The only place ids are converted in bulk,
         // and deliberately so: past this point everything - Library, the

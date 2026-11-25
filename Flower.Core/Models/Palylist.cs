@@ -676,9 +676,5 @@ namespace Flower.Models
                 : new EntryList(new List<Track>(tracks));
         });
 
-        public Track? GetTrack(int index)
-        {
-            return Tracks.ElementAtOrDefault(index);
-        }
     }
 }
