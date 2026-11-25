@@ -971,6 +971,11 @@ Three settings change it, and they answer different questions:
   internet**, in Network, with the server's own addresses shown
   above it; it applies immediately, in both directions.
 
+Both CIDR lists use the same network parser. Host bits are ignored:
+`203.0.113.5/24` matches the same network as `203.0.113.0/24`. Settings refuses
+an entry that is not a network; one written into `flower-server.json` by hand is
+ignored, and the log says so when the server starts.
+
 Turning that last one on is the single most consequential thing you can do to
 this server, so it says so in the log every time it starts. It removes a layer
 rather than weakening one.

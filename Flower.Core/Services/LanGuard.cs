@@ -58,36 +58,12 @@ public static class LanGuard
     // above - e.g. a reverse proxy on its own subnet. Malformed entries are
     // skipped rather than throwing, since a typo in config should degrade to
     // "that entry doesn't match," not crash request handling.
-    private static bool IsInCidr(IPAddress address, string cidr)
-    {
-        var parts = cidr.Split('/', 2);
-        if (parts.Length != 2)
-            return false;
-        if (!IPAddress.TryParse(parts[0].Trim(), out var network))
-            return false;
-        if (!int.TryParse(parts[1].Trim(), out var prefixLength))
-            return false;
-        if (address.AddressFamily != network.AddressFamily)
-            return false;
+    private static bool IsInCidr(IPAddress address, string cidr) =>
+        IPNetwork.TryParse(cidr, out var network) && network.Contains(address);
 
-        var addressBytes = address.GetAddressBytes();
-        var networkBytes = network.GetAddressBytes();
-        if (prefixLength < 0 || prefixLength > addressBytes.Length * 8)
-            return false;
-
-        var fullBytes = prefixLength / 8;
-        var remainingBits = prefixLength % 8;
-
-        for (var i = 0; i < fullBytes; i++)
-        {
-            if (addressBytes[i] != networkBytes[i])
-                return false;
-        }
-
-        if (remainingBits == 0)
-            return true;
-
-        var mask = (byte)(0xFF << (8 - remainingBits));
-        return (addressBytes[fullBytes] & mask) == (networkBytes[fullBytes] & mask);
-    }
+    // The entries IsInCidr would skip without a word - for the settings page
+    // to refuse, and the server to warn about at startup, so an owner who
+    // mistyped a network is told it admits no one.
+    public static IEnumerable<string> UnreadableCidrs(IEnumerable<string> cidrs) =>
+        cidrs.Where(cidr => !IPNetwork.TryParse(cidr, out _));
 }

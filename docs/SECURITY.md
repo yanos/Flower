@@ -590,3 +590,8 @@ Sources for the comparisons:
 - [Jellyfin users](https://jellyfin.org/docs/general/server/users/)
 - [Home Assistant http integration](https://git.jeena.net/jeena/home-assistant.github.io/src/branch/rc/source/_components/http.markdown)
 - [AWS error codes (Zenko reference)](https://zenko.readthedocs.io/en/2.3.2/reference/error_codes/aws_error_codes.html)
+
+`AllowedCidrs` and `TrustedProxies` both use `System.Net.IPNetwork`: entries
+with host bits match the containing network; malformed entries do not match.
+The settings route refuses a malformed `AllowedCidrs` entry, and startup logs
+one found in the config file.

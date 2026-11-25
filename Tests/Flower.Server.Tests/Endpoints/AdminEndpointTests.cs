@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 using Flower.Persistence;
 using Flower.Persistence.Sql;
@@ -402,6 +403,28 @@ public class AdminEndpointTests(FlowerServerFixture server) : IClassFixture<Flow
         // Offline here, so the download is what fails, and the page is told.
         var status = await WaitForVibeAsync(isolated, admin, s => s.State == nameof(SemanticAudioState.Failed));
         Assert.StartsWith("Couldn't download the model", status.Error);
+    }
+
+    // A mistyped network would otherwise be saved and then admit no one,
+    // with nothing to say why.
+    [Fact]
+    public async Task An_allowed_network_that_is_not_a_network_is_refused_and_nothing_is_saved()
+    {
+        using var admin = await NewAdminAsync();
+        var options = server.Services.GetRequiredService<IOptionsMonitor<FlowerServerOptions>>();
+        var before = options.CurrentValue.AllowedCidrs.ToList();
+        try
+        {
+            var context = await SignedAsync(admin, "PUT", "/api/admin/settings",
+                body: """{"allowedCidrs":["10.8.0.0/24","10.0.0.0/ 8"]}""");
+
+            Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+            Assert.Equal(before, options.CurrentValue.AllowedCidrs);
+        }
+        finally
+        {
+            await server.Services.GetRequiredService<TrustedPeerStore>().RevokeAsync(admin.Fingerprint);
+        }
     }
 
     [Fact]

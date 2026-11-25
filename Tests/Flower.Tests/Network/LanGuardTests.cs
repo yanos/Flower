@@ -75,4 +75,22 @@ public class LanGuardTests
 
         Assert.False(LanGuard.IsPrivateOrLoopback(address, ["not-a-cidr", "203.0.113.0"]));
     }
+    [Theory]
+    [InlineData("203.0.113.0/33")]
+    [InlineData("203.0.113.0/-1")]
+    public void Invalid_prefixes_do_not_widen_the_allow_list(string cidr)
+    {
+        Assert.False(LanGuard.IsPrivateOrLoopback(IPAddress.Parse("203.0.113.42"), [cidr]));
+        Assert.False(LanGuard.IsPrivateOrLoopback(IPAddress.Parse("2001:db8::42"), [cidr]));
+    }
+
+    [Theory]
+    [InlineData("203.0.113.42", "203.0.113.5/24")]
+    [InlineData("::ffff:203.0.113.42", "203.0.113.5/24")]
+    [InlineData("2001:db8::42", "2001:db8::1/32")]
+    public void Host_bits_name_the_containing_network(string address, string cidr)
+    {
+        Assert.True(LanGuard.IsPrivateOrLoopback(IPAddress.Parse(address), [cidr]));
+    }
+
 }

@@ -485,16 +485,19 @@ var trustedProxies = app.Services.GetRequiredService<IOptions<FlowerServerOption
 var trustedProxyNetworks = new List<System.Net.IPNetwork>();
 foreach (var cidr in trustedProxies)
 {
-    // System.Net's parser is strict about the address being the network's
-    // base one, so 192.168.1.5/24 is rejected rather than quietly read as
-    // 192.168.1.0/24 - hence the warning naming both ways this can fail.
+    // Same parser and containment policy as LanGuard's AllowedCidrs. Host
+    // bits are ignored by IPNetwork; malformed entries never grant trust.
     if (System.Net.IPNetwork.TryParse(cidr, out var parsed))
         trustedProxyNetworks.Add(parsed);
     else
         app.Logger.LogWarning(
-            "Ignoring {Cidr} in TrustedProxies: not a CIDR, or not written as the network's base address (192.168.1.0/24, not 192.168.1.5/24). Nothing forwarded by it will be believed",
+            "Ignoring {Cidr} in TrustedProxies: not a valid CIDR. Nothing forwarded by it will be believed",
             cidr);
 }
+
+// The settings page refuses these; flower-server.json written by hand does not.
+foreach (var cidr in LanGuard.UnreadableCidrs(app.Services.GetRequiredService<IOptions<FlowerServerOptions>>().Value.AllowedCidrs))
+    app.Logger.LogWarning("Ignoring {Cidr} in AllowedCidrs: not a valid CIDR. It admits no one", cidr);
 
 if (trustedProxyNetworks.Count > 0)
 {

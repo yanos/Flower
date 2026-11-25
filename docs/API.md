@@ -734,7 +734,9 @@ from the bytes, as for `/cover-art`; a client sends a square PNG of at most 256
 pixels (`ServerIconPicture`).
 
 Changes are written to `flower-server.json` in the data directory.
-`allowPublicAccess` and `allowedCidrs` take effect on the next request.
+`allowPublicAccess` and `allowedCidrs` take effect on the next request. An
+`allowedCidrs` entry that is not a network (`10.8.0.0/24`) is `400`, and
+nothing is saved.
 Changing an iTunes switch starts a rescan; changing `libraryPaths` does not —
 call `/library/rescan`.
 

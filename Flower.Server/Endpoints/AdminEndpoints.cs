@@ -281,6 +281,8 @@ public static class AdminEndpoints
                 return Problems.BadRequest("A settings body is required.");
             if (update.VibeClipsPerSong is { } requestedClips && !ClipGrid.Settings.Contains(requestedClips))
                 return Problems.BadRequest($"Clips per song is one of {string.Join(", ", ClipGrid.Settings)} (0 for the whole song).");
+            if (update.AllowedCidrs is { } requestedCidrs && LanGuard.UnreadableCidrs(Normalize(requestedCidrs)).FirstOrDefault() is { } unreadable)
+                return Problems.BadRequest($"\"{unreadable}\" is not a network. Write an address and a prefix length, like 10.8.0.0/24.");
 
             var before = options.CurrentValue;
             var values = new Dictionary<string, JsonNode?>(StringComparer.Ordinal);
