@@ -47,6 +47,47 @@ inline checks:
 - **Issues**: `gh issue list --state open --label bug`; read each, flag any
   that is a P0 (definition in REVIEW.md).
 - **Dependencies**: `dotnet list Flower.sln package --vulnerable --include-transitive`.
+- **Build warnings**: read them from CI, not a local build, since only CI
+  builds every head (the NativeAOT iOS job, Android, Windows, the browser
+  UI). Take the newest green run on `master`, which, after step 1, is the
+  run for HEAD or close to it, and fold the same warning from every job and
+  OS into one line:
+
+  ```bash
+  RUN=$(gh run list --branch master --workflow tests.yml --status success --limit 1 --json databaseId --jq '.[0].databaseId')
+  gh run view $RUN --log | cut -f3- | grep -E 'warning [A-Za-z]+[0-9]+:' \
+    | sed -E 's/^[^ ]+ //; s/^##\[warning\]//; s/ \[[^]]*\]$//; s#\\#/#g; s#^(/home/runner|/Users/runner)/work/Flower/Flower/##; s#^D:/a/Flower/Flower/##' \
+    | sort | uniq -c | sort -rn
+  ```
+
+  The tree built with no warnings as of November 2026, so every line here
+  is new since then. Look at each one at the line it names, and say what it
+  would do on the platform that raises it. Each ends up in one of three
+  places:
+  - **Fixed in the code.** A warning that predicts a failure on one platform
+    is a **P0** when the failure is reachable in a shipped head: trim or AOT
+    analysis (IL2xxx, IL3xxx), which works in Debug and fails only in the
+    trimmed build; platform reachability (CA1416, CA1422); a
+    known-vulnerable package (NU1901-NU1904). An obsolete API, or
+    nullability in app code, is **fix-now**, as is anything in a test
+    project (xUnit's analyzers included). Fix each at its cause, never with
+    a `!` or a cast that only hides it; in a test, a `!` that states what
+    the test already assumes is fine. A dependency version conflict (NU1608)
+    is fixed by pinning the whole family to one release, as
+    `Flower.Android.csproj` does for AndroidX Core and Lifecycle. A fix to a
+    platform call needs testing on that platform (step 3).
+  - **Suppressed, with the reason.** A false positive, or one that comes
+    from the SDK or a dependency with nothing to change on our side: as
+    narrowly as it goes (`UnconditionalSuppressMessage` on the one member,
+    else a `NoWarn` in the one project). Put a comment beside it saying why
+    it is safe, as for IL2104 and IL2037 in `Flower.iOS.csproj` and WASM0001
+    in `Flower.Web.csproj`. Never suppress a code across the repo, and never
+    in `Directory.Build.props`.
+  - **Left for later.** A third-party warning that only a dependency's own
+    release can fix: tag it **later** and offer an issue.
+
+  A fix that changes the code ships only after a green run (step 4), like
+  every other fix.
 
 Done when all three subagents and the user-flow review have reported and every
 inline check has run. Merge everything into one findings list, each tagged
