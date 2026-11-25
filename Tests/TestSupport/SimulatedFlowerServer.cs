@@ -422,6 +422,7 @@ public sealed class SimulatedFlowerServer : IDisposable
             .SelectMany(album => album.Tracks.Select(track => (Track: track, Album: album)))
             .Where(song => song.Track.Path != null)
             .Select(song => LibraryDtoMapper.ToTrackDto(song.Track, Fingerprint, paths, song.Album))
+            .Select(song => CallerIsAdmin ? song : LibraryDtoMapper.ForGuest(song, context.Request.Headers["X-Flower-Fingerprint"] ?? ""))
             .ToList();
         var removed = Library.RemovedTracks.Where(r => r.Deliberate).Select(r => r.Track.Id.ToKey()).ToList();
         await WriteJsonAsync(context, new LibrarySyncManifestDto(Fingerprint, songs, removed, CallerIsAdmin ? listening : null));

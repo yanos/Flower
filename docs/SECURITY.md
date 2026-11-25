@@ -173,7 +173,7 @@ because the guest's own app is the legitimate recipient. Now there are two
 catalogs. The owner's devices get all of it, because merging it is how their
 libraries agree. A guest's device gets the songs and its own entries in
 `PlayCounts` and `SkipCounts`, with `LastPlayed`, `ResumePositionSeconds`,
-`ImportedPlayCount` and `ImportedSkipCount` left out (`SyncEndpoints.ForGuest`). Stars are still
+`ImportedPlayCount` and `ImportedSkipCount` left out (`LibraryDtoMapper.ForGuest`). Stars are still
 served: they are the owner's curation of the library, not a record of
 listening.
 

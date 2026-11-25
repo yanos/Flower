@@ -39,7 +39,7 @@ public sealed record LibrarySyncManifestDto(
 // where this leaves the device, and what it sends as `since` next time.
 //
 // Owner's devices only. A guest's catalog carries its own count and nobody
-// else's listening (SyncEndpoints.ForGuest), and its own count is one it
+// else's listening (LibraryDtoMapper.ForGuest), and its own count is one it
 // reported itself, so a guest has nothing to follow here - and telling it
 // which songs somebody else just played is exactly what ForGuest withholds.
 public sealed record ListeningChangesDto(string Token, List<TrackListeningDto> Songs);

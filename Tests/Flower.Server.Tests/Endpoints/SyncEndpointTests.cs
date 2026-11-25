@@ -655,11 +655,15 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
         using var owner = await AdminDeviceAsync(trustedPeers);
         var track = library.Tracks.First(t => t.Title == "Second Song");
         var serverFingerprint = server.Services.GetRequiredService<DeviceSigningKey>().Fingerprint;
+        var (importedPlays, importedSkips) = (track.ImportedPlayCount, track.ImportedSkipCount);
 
         try
         {
             track.LastPlayedAt = DateTimeOffset.UtcNow;
             track.ResumePosition = TimeSpan.FromSeconds(42);
+            track.ImportedPlayCount = 8;
+            track.ImportedSkipCount = 2;
+            track.RemoteSkipCounts["someone-elses-phone"] = 1;
             // Through the library, so the listening token moves and neither
             // fetch is served a body cached before these plays.
             library.RecordPlayFor(track.Id.ToKey(), guest.Fingerprint);
@@ -667,17 +671,25 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
             library.RecordPlayFor(track.Id.ToKey(), "someone-elses-phone");
 
             var (_, guestBody, _) = await SendAsync(guest, "GET", "/api/flower/v1/library", "10.0.2.40");
-            var asGuest = JsonSerializer.Deserialize<LibrarySyncManifestDto>(guestBody)!
-                .Songs.Single(s => s.Id == track.Id.ToKey());
+            var guestCatalog = JsonSerializer.Deserialize<LibrarySyncManifestDto>(guestBody)!;
+            var asGuest = guestCatalog.Songs.Single(s => s.Id == track.Id.ToKey());
 
             Assert.Equal(new Dictionary<string, int> { [guest.Fingerprint] = 1 }, asGuest.PlayCounts);
+            Assert.False(asGuest.SkipCounts?.ContainsKey("someone-elses-phone") ?? false);
             Assert.Null(asGuest.LastPlayed);
             Assert.Null(asGuest.ResumePositionSeconds);
+            Assert.Null(asGuest.ImportedPlayCount);
+            Assert.Null(asGuest.ImportedSkipCount);
+            Assert.Null(guestCatalog.ListeningToken);
 
             var (_, ownerBody, _) = await SendAsync(owner, "GET", "/api/flower/v1/library", "10.0.2.41");
-            var asOwner = JsonSerializer.Deserialize<LibrarySyncManifestDto>(ownerBody)!
-                .Songs.Single(s => s.Id == track.Id.ToKey());
+            var ownerCatalog = JsonSerializer.Deserialize<LibrarySyncManifestDto>(ownerBody)!;
+            var asOwner = ownerCatalog.Songs.Single(s => s.Id == track.Id.ToKey());
 
+            Assert.Equal(8, asOwner.ImportedPlayCount);
+            Assert.Equal(2, asOwner.ImportedSkipCount);
+            Assert.Equal(1, asOwner.SkipCounts!["someone-elses-phone"]);
+            Assert.NotNull(ownerCatalog.ListeningToken);
             Assert.Equal(2, asOwner.PlayCounts!["someone-elses-phone"]);
             Assert.Equal(1, asOwner.PlayCounts[guest.Fingerprint]);
             Assert.True(asOwner.PlayCounts.ContainsKey(serverFingerprint));
@@ -688,6 +700,9 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
         {
             track.RemotePlayCounts.Remove(guest.Fingerprint);
             track.RemotePlayCounts.Remove("someone-elses-phone");
+            track.RemoteSkipCounts.Remove("someone-elses-phone");
+            track.ImportedPlayCount = importedPlays;
+            track.ImportedSkipCount = importedSkips;
             track.LastPlayedAt = null;
             track.ResumePosition = null;
             await trustedPeers.RevokeAsync(guest.Fingerprint);

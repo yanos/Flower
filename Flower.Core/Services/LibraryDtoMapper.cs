@@ -22,6 +22,21 @@ namespace Flower.Services;
 // release; LibraryDtoMapperTests is what holds each of them down.
 public static class LibraryDtoMapper
 {
+    // A song as a guest's device sees it - see GetLibrary.
+    public static TrackDto ForGuest(TrackDto song, string guestFingerprint) => song with
+    {
+        PlayCounts = song.PlayCounts?.TryGetValue(guestFingerprint, out var own) == true
+            ? new Dictionary<string, int> { [guestFingerprint] = own }
+            : null,
+        ImportedPlayCount = null,
+        SkipCounts = song.SkipCounts?.TryGetValue(guestFingerprint, out var ownSkips) == true
+            ? new Dictionary<string, int> { [guestFingerprint] = ownSkips }
+            : null,
+        ImportedSkipCount = null,
+        LastPlayed = null,
+        ResumePositionSeconds = null,
+    };
+
     public static string SuffixOf(Track track) =>
         track.Path is null ? "" : Path.GetExtension(track.Path).TrimStart('.').ToLowerInvariant();
 

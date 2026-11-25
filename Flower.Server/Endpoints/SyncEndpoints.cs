@@ -421,7 +421,7 @@ public static class SyncEndpoints
                 // than its own - see Track.RemotePlayCounts. Each song's cover
                 // named against its album's (AlbumCover.CoverArtId).
                 .Select(song => LibraryDtoMapper.ToTrackDto(song.Track, signingKey.Fingerprint, library.PathRules, song.Album))
-                .Select(song => isOwner ? song : ForGuest(song, caller))
+                .Select(song => isOwner ? song : LibraryDtoMapper.ForGuest(song, caller))
                 .ToList();
             // What was removed on purpose, so a device holding its own copy of
             // one drops it too - see LibrarySyncManifestDto.Removed.
@@ -467,21 +467,6 @@ public static class SyncEndpoints
 
         return Results.Json(new ListeningChangesDto(token, songs), JsonOptions);
     }
-
-    // A song as a guest's device sees it - see GetLibrary.
-    internal static TrackDto ForGuest(TrackDto song, string guestFingerprint) => song with
-    {
-        PlayCounts = song.PlayCounts?.TryGetValue(guestFingerprint, out var own) == true
-            ? new Dictionary<string, int> { [guestFingerprint] = own }
-            : null,
-        ImportedPlayCount = null,
-        SkipCounts = song.SkipCounts?.TryGetValue(guestFingerprint, out var ownSkips) == true
-            ? new Dictionary<string, int> { [guestFingerprint] = ownSkips }
-            : null,
-        ImportedSkipCount = null,
-        LastPlayed = null,
-        ResumePositionSeconds = null,
-    };
 
     // The caller's listener's playlists and nobody else's - see Listeners. A
     // guest device sees the playlists it made; every admin device sees the
