@@ -45,9 +45,8 @@ public class LibraryDropTests : IDisposable
         var upper = Path.Combine(Library, "A");
         var lower = Path.Combine(Library, "a");
         Directory.CreateDirectory(upper);
-        if (Directory.Exists(lower))
+        if (Directory.Exists(lower) || !Creates(() => Directory.CreateDirectory(lower)))
             Assert.Skip("This filesystem ignores case.");
-        Directory.CreateDirectory(lower);
         var first = Song(upper, "song.wav", "Upper", "Artist");
         var second = Song(lower, "song.wav", "Lower", "Artist");
         Assert.Equal(2, Flower.Importer.Importer.ScanRoots([upper, lower]).Count);
@@ -57,6 +56,21 @@ public class LibraryDropTests : IDisposable
     }
 
     private LibraryDrop NewDrop() => new([Library], NullLogger.Instance);
+
+    // Asked by creating, not by Exists: the iOS Simulator answers Exists for
+    // the other spelling with false on a disk that then refuses to create it.
+    private static bool Creates(Action create)
+    {
+        try
+        {
+            create();
+            return true;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+    }
 
     private static string Song(string folder, string fileName, string? album, string? albumArtist, int seconds = 1)
     {

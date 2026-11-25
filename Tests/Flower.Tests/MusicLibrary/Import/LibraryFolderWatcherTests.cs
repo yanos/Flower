@@ -87,9 +87,21 @@ public class LibraryFolderWatcherTests : IDisposable
     public async Task Two_songs_whose_names_differ_only_in_case_are_both_added()
     {
         var upper = Song("Artist/Album", "Song.wav", "Upper");
-        if (File.Exists(Path.Combine(Path.GetDirectoryName(upper)!, "song.wav")))
+        // Asked by creating, not by Exists alone: the iOS Simulator answers
+        // Exists for the other spelling with false on a disk that then
+        // refuses to create it.
+        string lower;
+        try
+        {
+            if (File.Exists(Path.Combine(Path.GetDirectoryName(upper)!, "song.wav")))
+                Assert.Skip("This filesystem ignores case.");
+            lower = Song("Artist/Album", "song.wav", "Lower");
+        }
+        catch (IOException)
+        {
             Assert.Skip("This filesystem ignores case.");
-        var lower = Song("Artist/Album", "song.wav", "Lower");
+            return;
+        }
         _library.UsePathRules(PathRules.For([_root]));
         using var watcher = NewWatcher();
 
