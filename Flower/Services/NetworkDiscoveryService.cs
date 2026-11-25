@@ -7,7 +7,6 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
 using System.Security.Authentication;
-using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -630,21 +629,6 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
     // ServerResponseSignature. The key must hash to the fingerprint the same
     // answer names; whether that is the server this device paired with is
     // PeerSyncCoordinator's question, since it holds the pin.
-    private static bool SignedByOwnKey(HttpResponseMessage response, byte[] body, string json)
-    {
-        try
-        {
-            using var doc = JsonDocument.Parse(json);
-            return doc.RootElement.TryGetProperty("publicKey", out var key) && key.ValueKind == JsonValueKind.String
-                && doc.RootElement.TryGetProperty("fingerprint", out var fingerprint) && fingerprint.ValueKind == JsonValueKind.String
-                && ServerResponseSignature.IsSignedBy(response, body, key.GetString(), fingerprint.GetString());
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
-    }
-
     // Fetches the peer's real alias and fingerprint via the /info handshake
     // (Flower.Server's DiscoveryEndpoints), replacing the raw mDNS name shown until this
     // resolves. Best-effort: a peer that is not yet listening, or never will be,
@@ -656,8 +640,8 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
     // refresh even when nothing did.
     private async Task ResolveAliasAsync(DiscoveredDevice device)
     {
-        string json;
-        var signedAnswer = false;
+        byte[] bytes;
+        HttpResponseMessage response;
         try
         {
             // Signed the same way every gated endpoint's calls are, even though
@@ -683,17 +667,23 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
                 SignedIdentity.AddClaim(request, _deviceIdentity.Fingerprint, _deviceIdentity.Alias);
             }
             var startedAt = Stopwatch.GetTimestamp();
-            using var response = await _http.SendAsync(request);
+            response = await _http.SendAsync(request);
             NoteSlowAnswer(device, Stopwatch.GetElapsedTime(startedAt));
             // Not EnsureSuccessStatusCode: /info is open to anyone and a Flower
             // server never refuses it, so a refusal here that is not a problem
             // document is something else answering in the server's place - a
             // proxy, a captive portal - and ExplainUnreachable needs to know
             // which of the two it was.
-            await response.EnsureSuccessAsync();
-            var bytes = await response.Content.ReadAsByteArrayAsync();
-            json = Encoding.UTF8.GetString(bytes);
-            signedAnswer = SignedByOwnKey(response, bytes, json);
+            try
+            {
+                await response.EnsureSuccessAsync();
+                bytes = await response.Content.ReadAsByteArrayAsync();
+            }
+            catch
+            {
+                response.Dispose();
+                throw;
+            }
         }
         catch (Exception ex)
         {
@@ -711,24 +701,24 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
             _consecutiveResolveFailures.TryRemove(device.InstanceName, out _);
             _retries.RecordSuccess(device.InstanceName);
             device.LastFailure = null;
-            using var doc = JsonDocument.Parse(json);
+            using var answer = response;
+            var info = JsonSerializer.Deserialize(bytes, SyncProtocolJsonContext.Default.SyncInfoResponseDto)
+                ?? throw new JsonException("Empty discovery response.");
+            var signedAnswer = ServerResponseSignature.IsSignedBy(response, bytes, info.PublicKey, info.Fingerprint);
             var changed = false;
-            if (doc.RootElement.TryGetProperty("alias", out var aliasProp) &&
-                aliasProp.GetString() is { } alias && alias != device.Alias)
+            if (info.Alias is { } alias && alias != device.Alias)
             {
                 device.Alias = alias;
                 changed = true;
             }
-            if (doc.RootElement.TryGetProperty("fingerprint", out var fpProp) &&
-                fpProp.GetString() is { } fingerprint && fingerprint != device.Fingerprint)
+            if (info.Fingerprint is { } fingerprint && fingerprint != device.Fingerprint)
             {
                 device.Fingerprint = fingerprint;
                 changed = true;
             }
             // The key this device pins the peer's TLS certificate against once
             // pairing records it - see DiscoveredDevice.PublicKey.
-            if (doc.RootElement.TryGetProperty("publicKey", out var keyProp) &&
-                keyProp.GetString() is { } publicKey && publicKey != device.PublicKey)
+            if (info.PublicKey is { } publicKey && publicKey != device.PublicKey)
             {
                 device.PublicKey = publicKey;
                 changed = true;
@@ -736,8 +726,7 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
             // What kind of peer this is, straight from the handshake's
             // deviceType field. Only "server" answers now that clients no
             // longer advertise - see DiscoveredDevice.DeviceType.
-            if (doc.RootElement.TryGetProperty("deviceType", out var deviceTypeProp) &&
-                deviceTypeProp.GetString() is { } deviceType && deviceType != device.DeviceType)
+            if (info.DeviceType is { } deviceType && deviceType != device.DeviceType)
             {
                 device.DeviceType = deviceType;
                 changed = true;
@@ -748,7 +737,7 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
             // rejection - see DiscoveredDevice.TrustsUs.
             //
             // And a "no" only when the answer is signed by the key it names
-            // (SignedByOwnKey). A no is what ends a pairing (see
+            // (ServerResponseSignature). A no is what ends a pairing (see
             // PeerSyncCoordinator.HandlePeerTrustChanged), and an unsigned one
             // is something anything answering at this address could say - a
             // device that took the server's old DHCP lease, a captive portal.
@@ -756,11 +745,9 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
             // compares with the one it pinned, so the pair of checks means
             // "the paired server, and nobody else, said so". A yes needs no
             // such care: it is not the half that ends anything.
-            if (doc.RootElement.TryGetProperty("trustsCaller", out var trustsCallerProp) &&
-                trustsCallerProp.ValueKind is JsonValueKind.True or JsonValueKind.False &&
-                (trustsCallerProp.ValueKind == JsonValueKind.True || signedAnswer))
+            if (info.TrustsCaller is { } trustsUs &&
+                (trustsUs || signedAnswer))
             {
-                var trustsUs = trustsCallerProp.ValueKind == JsonValueKind.True;
                 if (trustsUs != device.TrustsUs)
                 {
                     device.TrustsUs = trustsUs;
@@ -770,34 +757,25 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
             // Same present-and-boolean-only treatment as trustsCaller, with the
             // opposite resting state: absent or null leaves WeAreAdmin as it
             // was, which starts out false.
-            if (doc.RootElement.TryGetProperty("callerIsAdmin", out var adminProp) &&
-                adminProp.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            if (info.CallerIsAdmin is { } weAreAdmin)
             {
-                var weAreAdmin = adminProp.ValueKind == JsonValueKind.True;
                 if (weAreAdmin != device.WeAreAdmin)
                 {
                     device.WeAreAdmin = weAreAdmin;
                     changed = true;
                 }
             }
-            if (doc.RootElement.TryGetProperty("importsMusicAppPlays", out var musicAppProp) &&
-                musicAppProp.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            if (info.ImportsMusicAppPlays is { } importsMusicAppPlays)
             {
-                var importsMusicAppPlays = musicAppProp.ValueKind == JsonValueKind.True;
                 if (importsMusicAppPlays != device.ServerImportsMusicAppPlays)
                 {
                     device.ServerImportsMusicAppPlays = importsMusicAppPlays;
                     changed = true;
                 }
             }
-            if (doc.RootElement.TryGetProperty("vibePlaylists", out var vibeProp) &&
-                vibeProp.ValueKind == JsonValueKind.String &&
-                vibeProp.GetString() is { } vibePlaylists)
+            if (info.VibePlaylists is { } vibePlaylists)
             {
-                int? vibePercent = doc.RootElement.TryGetProperty("vibePercent", out var percentProp) &&
-                    percentProp.ValueKind == JsonValueKind.Number && percentProp.TryGetInt32(out var percent)
-                        ? percent
-                        : null;
+                var vibePercent = info.VibePercent;
                 if (vibePlaylists != device.ServerVibePlaylists || vibePercent != device.ServerVibePercent)
                 {
                     device.ServerVibePlaylists = vibePlaylists;
@@ -805,40 +783,30 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
                     changed = true;
                 }
             }
-            if (doc.RootElement.TryGetProperty("endlessPlay", out var endlessProp) &&
-                endlessProp.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            if (info.EndlessPlay is { } endlessPlay)
             {
-                var endlessPlay = endlessProp.ValueKind == JsonValueKind.True;
                 if (endlessPlay != device.ServerEndlessPlay)
                 {
                     device.ServerEndlessPlay = endlessPlay;
                     changed = true;
                 }
             }
-            if (doc.RootElement.TryGetProperty("libraryToken", out var tokenProp) &&
-                tokenProp.GetString() is { } libraryToken && libraryToken != device.LibraryToken)
+            if (info.LibraryToken is { } libraryToken && libraryToken != device.LibraryToken)
             {
                 device.LibraryToken = libraryToken;
                 changed = true;
             }
-            if (doc.RootElement.TryGetProperty("listeningToken", out var listeningTokenProp) &&
-                listeningTokenProp.ValueKind == JsonValueKind.String &&
-                listeningTokenProp.GetString() is { } listeningToken && listeningToken != device.ListeningToken)
+            if (info.ListeningToken is { } listeningToken && listeningToken != device.ListeningToken)
             {
                 device.ListeningToken = listeningToken;
                 changed = true;
             }
-            if (doc.RootElement.TryGetProperty("playlistsToken", out var playlistsTokenProp) &&
-                playlistsTokenProp.ValueKind == JsonValueKind.String &&
-                playlistsTokenProp.GetString() is { } playlistsToken && playlistsToken != device.PlaylistsToken)
+            if (info.PlaylistsToken is { } playlistsToken && playlistsToken != device.PlaylistsToken)
             {
                 device.PlaylistsToken = playlistsToken;
                 changed = true;
             }
-            var iconEmoji = doc.RootElement.TryGetProperty("iconEmoji", out var emojiProp) &&
-                            emojiProp.ValueKind == JsonValueKind.String
-                ? ServerIcon.CleanEmoji(emojiProp.GetString())
-                : "";
+            var iconEmoji = ServerIcon.CleanEmoji(info.IconEmoji);
             if (iconEmoji != device.IconEmoji)
             {
                 device.IconEmoji = iconEmoji;
@@ -847,12 +815,8 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
             // Only from an answer that says it trusts us: the token is told to
             // nobody else, so its absence from any other answer - one whose
             // signature did not verify, say - says nothing about the picture.
-            var iconToken = doc.RootElement.TryGetProperty("iconToken", out var iconTokenProp) &&
-                            iconTokenProp.ValueKind == JsonValueKind.String
-                ? iconTokenProp.GetString() ?? ""
-                : "";
-            if (doc.RootElement.TryGetProperty("trustsCaller", out var trustedProp) &&
-                trustedProp.ValueKind == JsonValueKind.True &&
+            var iconToken = info.IconToken ?? "";
+            if (info.TrustsCaller == true &&
                 iconToken != device.IconToken)
             {
                 device.IconToken = iconToken;
@@ -863,14 +827,9 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
             // no longer has, and merging would leave a client probing a stale
             // one forever. Absent (an older peer) leaves what we had, since
             // "didn't say" is not "no longer reachable there".
-            if (doc.RootElement.TryGetProperty("addresses", out var addressesProp) &&
-                addressesProp.ValueKind == JsonValueKind.Array)
+            if (info.Addresses is { } reportedAddresses)
             {
-                var addresses = addressesProp.EnumerateArray()
-                    .Select(a => a.GetString())
-                    .Where(a => !string.IsNullOrWhiteSpace(a))
-                    .Select(a => a!)
-                    .ToList();
+                var addresses = reportedAddresses.Where(a => !string.IsNullOrWhiteSpace(a)).ToList();
                 if (!addresses.SequenceEqual(device.Addresses))
                 {
                     device.Addresses = addresses;

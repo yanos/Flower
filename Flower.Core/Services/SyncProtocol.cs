@@ -23,9 +23,7 @@ public static class SyncProtocol
 }
 
 // Wire shape for the InfoPath response - camelCase field names come from the
-// serializer context's naming policy on each side. NetworkDiscoveryService also
-// reads this JSON by raw lowercase property name (e.g. "alias"/"trustsCaller"),
-// so the casing is load-bearing, not cosmetic.
+// serializer context's naming policy shared by both ends.
 //
 // TrustsCaller is null rather than false when the caller did not identify
 // itself, so a plain unauthenticated probe cannot be misread as a rejection.

@@ -6,8 +6,7 @@ namespace Flower.Services;
 // handshake (SyncProtocol.InfoPath). Public and in Flower.Core because it is a
 // shape both ends have to agree on: Flower.Server's /info endpoint writes it,
 // and the client reads it. The camelCase policy is the wire format, not a
-// preference - NetworkDiscoveryService reads the response by raw property
-// name.
+// preference; NetworkDiscoveryService deserializes through this context.
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     PropertyNameCaseInsensitive = true,
