@@ -34,19 +34,9 @@ namespace Flower.Controls;
 //
 // Rows are kept attached once made and handed the next item to show, as
 // UniformRowPanel's are; see there for why.
-public sealed class ShelfRowPanel : VirtualizingPanel
+public sealed class ShelfRowPanel : RetainedRowPanel
 {
     private const int BufferRows = 2;
-
-    private sealed class Row(Control container, object? recycleKey)
-    {
-        public readonly Control Container = container;
-        public readonly object? RecycleKey = recycleKey;
-        public int Index;
-    }
-
-    private readonly List<Row> _rows = new();
-    private readonly List<Row> _spare = new();
 
     // Each kind's height at _measuredWidth, and the rows taller than theirs.
     private readonly Dictionary<Type, double> _kindHeights = new();
@@ -100,7 +90,7 @@ public sealed class ShelfRowPanel : VirtualizingPanel
             {
                 LayOut(count);
                 (_first, _last) = WindowFor(count, availableSize.Height);
-                Recycle(keep: r => (r.Index >= _first && r.Index <= _last) || _tall.ContainsKey(Items[r.Index]!));
+                RecycleWhere(keep: r => (r.Index >= _first && r.Index <= _last) || _tall.ContainsKey(Items[r.Index]!));
                 for (var index = _first; index <= _last; index++)
                 {
                     if (RowAt(index) == null)
@@ -114,7 +104,7 @@ public sealed class ShelfRowPanel : VirtualizingPanel
                 if (_scrollingTo >= 0 && _scrollingTo < count && RowAt(_scrollingTo) == null)
                     Realize(_scrollingTo);
 
-                foreach (var row in _rows)
+                foreach (var row in Rows)
                     row.Container.Measure(new Size(width, double.PositiveInfinity));
 
                 if (!NoteHeights())
@@ -132,7 +122,7 @@ public sealed class ShelfRowPanel : VirtualizingPanel
 
     protected override Size ArrangeOverride(Size finalSize)
     {
-        foreach (var row in _rows)
+        foreach (var row in Rows)
         {
             if (row.Index + 1 < _tops.Length)
                 row.Container.Arrange(new Rect(0, _tops[row.Index], finalSize.Width, _tops[row.Index + 1] - _tops[row.Index]));
@@ -182,7 +172,7 @@ public sealed class ShelfRowPanel : VirtualizingPanel
     private bool NoteHeights()
     {
         var changed = false;
-        foreach (var row in _rows)
+        foreach (var row in Rows)
         {
             var kind = KindOf(Items[row.Index]);
             var height = Math.Max(1, row.Container.DesiredSize.Height);
@@ -193,7 +183,7 @@ public sealed class ShelfRowPanel : VirtualizingPanel
             }
         }
 
-        foreach (var row in _rows)
+        foreach (var row in Rows)
         {
             var item = Items[row.Index]!;
             var height = Math.Max(1, row.Container.DesiredSize.Height);
@@ -289,42 +279,6 @@ public sealed class ShelfRowPanel : VirtualizingPanel
             InvalidateMeasure();
     }
 
-    private Row Realize(int index)
-    {
-        var generator = ItemContainerGenerator!;
-        var item = Items[index];
-        Row row;
-
-        if (!generator.NeedsContainer(item, index, out var recycleKey))
-        {
-            var control = (Control)item!;
-            row = new Row(control, null);
-            generator.PrepareItemContainer(control, control, index);
-            AddInternalChild(control);
-            generator.ItemContainerPrepared(control, item, index);
-        }
-        else if (TakeSpare(recycleKey) is { } spare)
-        {
-            row = spare;
-            generator.PrepareItemContainer(row.Container, item, index);
-            row.Container.SetCurrentValue(IsVisibleProperty, true);
-            generator.ItemContainerPrepared(row.Container, item, index);
-            InvalidateDownTo(row.Container);
-        }
-        else
-        {
-            var container = generator.CreateContainer(item, index, recycleKey);
-            row = new Row(container, recycleKey);
-            generator.PrepareItemContainer(container, item, index);
-            AddInternalChild(container);
-            generator.ItemContainerPrepared(container, item, index);
-        }
-
-        row.Index = index;
-        _rows.Add(row);
-        return row;
-    }
-
     // A spare comes back with the size it last measured to, and a change deep
     // inside it as it is handed its new item - an album card opening for an
     // open album's row - leaves only that control needing a measure: its
@@ -349,46 +303,9 @@ public sealed class ShelfRowPanel : VirtualizingPanel
         }
     }
 
-    private Row? TakeSpare(object? recycleKey)
-    {
-        for (var i = _spare.Count - 1; i >= 0; i--)
-        {
-            var row = _spare[i];
-            if (Equals(row.RecycleKey, recycleKey))
-            {
-                _spare.RemoveAt(i);
-                return row;
-            }
-        }
-        return null;
-    }
+    protected override void OnContainerReused(Control container) => InvalidateDownTo(container);
 
-    private void Recycle(Func<Row, bool> keep)
-    {
-        for (var i = _rows.Count - 1; i >= 0; i--)
-        {
-            var row = _rows[i];
-            if (keep(row))
-                continue;
-            _rows.RemoveAt(i);
-            Recycle(row);
-        }
-    }
-
-    private void RecycleAll() => Recycle(keep: _ => false);
-
-    private void Recycle(Row row)
-    {
-        if (row.RecycleKey == null)
-        {
-            RemoveInternalChild(row.Container);
-            return;
-        }
-
-        ItemContainerGenerator?.ClearItemContainer(row.Container);
-        row.Container.SetCurrentValue(IsVisibleProperty, false);
-        _spare.Add(row);
-    }
+    private void RecycleAll() => RecycleWhere(keep: _ => false);
 
     // Home hands the list a new collection on every rebuild; anything else is
     // treated the same way. Every row goes back to the spares and the next
@@ -403,39 +320,11 @@ public sealed class ShelfRowPanel : VirtualizingPanel
     protected override void OnItemsControlChanged(ItemsControl? oldValue)
     {
         base.OnItemsControlChanged(oldValue);
-        _rows.Clear();
-        _spare.Clear();
         _tall.Clear();
         _kindHeights.Clear();
-        Children.Clear();
         _measuredWidth = double.NaN;
         _tops = [0];
     }
-
-    private Row? RowAt(int index)
-    {
-        foreach (var row in _rows)
-        {
-            if (row.Index == index)
-                return row;
-        }
-        return null;
-    }
-
-    protected override Control? ContainerFromIndex(int index) => RowAt(index)?.Container;
-
-    protected override int IndexFromContainer(Control container)
-    {
-        foreach (var row in _rows)
-        {
-            if (ReferenceEquals(row.Container, container))
-                return row.Index;
-        }
-        return -1;
-    }
-
-    protected override IEnumerable<Control>? GetRealizedContainers() =>
-        _rows.OrderBy(r => r.Index).Select(r => r.Container);
 
     protected override Control? ScrollIntoView(int index)
     {

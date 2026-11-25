@@ -38,7 +38,7 @@ namespace Flower.Controls;
 // the height it had when it was last on screen - its album may close while it
 // is out of view. A list of several kinds of row, each its own height - the
 // desktop's Home - wants ShelfRowPanel.
-public sealed class UniformRowPanel : VirtualizingPanel
+public sealed class UniformRowPanel : RetainedRowPanel
 {
     // Whether any row may be taller than the rest - see above.
     public bool HasTallRows { get; set; }
@@ -51,15 +51,6 @@ public sealed class UniformRowPanel : VirtualizingPanel
     // on screen has already been handed its item a frame or two before.
     private const int BufferRows = 2;
 
-    private sealed class Row(Control container, object? recycleKey)
-    {
-        public readonly Control Container = container;
-        public readonly object? RecycleKey = recycleKey;
-        public int Index;
-    }
-
-    private readonly List<Row> _rows = new();
-    private readonly List<Row> _spare = new();
     private Rect _viewport;
     private bool _hasViewport;
     private double _rowHeight = double.NaN;
@@ -112,7 +103,7 @@ public sealed class UniformRowPanel : VirtualizingPanel
 
                 Row? top = null;
                 var shortest = double.PositiveInfinity;
-                foreach (var row in _rows)
+                foreach (var row in Rows)
                 {
                     row.Container.Measure(new Size(width, double.PositiveInfinity));
                     if (top == null || row.Index < top.Index)
@@ -131,7 +122,7 @@ public sealed class UniformRowPanel : VirtualizingPanel
                     break;
             }
 
-            var desiredWidth = double.IsInfinity(width) && _rows.Count > 0 ? _rows.Max(r => r.Container.DesiredSize.Width) : width;
+            var desiredWidth = double.IsInfinity(width) && Rows.Count > 0 ? Rows.Max(r => r.Container.DesiredSize.Width) : width;
             if (double.IsInfinity(desiredWidth))
                 desiredWidth = 0;
             return new Size(desiredWidth, RowTop(count));
@@ -147,7 +138,7 @@ public sealed class UniformRowPanel : VirtualizingPanel
     private bool NoteTallRows()
     {
         var changed = false;
-        foreach (var row in _rows)
+        foreach (var row in Rows)
         {
             var height = row.Container.DesiredSize.Height;
             var at = TallAt(row.Index);
@@ -223,7 +214,7 @@ public sealed class UniformRowPanel : VirtualizingPanel
 
     protected override Size ArrangeOverride(Size finalSize)
     {
-        foreach (var row in _rows)
+        foreach (var row in Rows)
             row.Container.Arrange(new Rect(0, RowTop(row.Index), finalSize.Width, RowHeightOf(row.Index)));
         return finalSize;
     }
@@ -232,7 +223,7 @@ public sealed class UniformRowPanel : VirtualizingPanel
     // one height, so a realized one if there is one and the first item if not.
     private void MeasureRowHeight(double width, int count)
     {
-        var row = _rows.Count > 0 ? _rows[0] : Realize(Math.Clamp(_first, 0, count - 1));
+        var row = Rows.Count > 0 ? Rows[0] : Realize(Math.Clamp(_first, 0, count - 1));
         row.Container.Measure(new Size(width, double.PositiveInfinity));
         _rowHeight = Math.Max(1, row.Container.DesiredSize.Height);
         _measuredWidth = width;
@@ -279,86 +270,11 @@ public sealed class UniformRowPanel : VirtualizingPanel
             InvalidateMeasure();
     }
 
-    private Row Realize(int index)
-    {
-        var generator = ItemContainerGenerator!;
-        var item = Items[index];
-        Row row;
-
-        if (!generator.NeedsContainer(item, index, out var recycleKey))
-        {
-            // The item is a control already: it is its own row, and only ever
-            // shows itself.
-            var control = (Control)item!;
-            row = new Row(control, null);
-            generator.PrepareItemContainer(control, control, index);
-            AddInternalChild(control);
-            generator.ItemContainerPrepared(control, item, index);
-        }
-        else if (TakeSpare(recycleKey) is { } spare)
-        {
-            row = spare;
-            generator.PrepareItemContainer(row.Container, item, index);
-            row.Container.SetCurrentValue(IsVisibleProperty, true);
-            generator.ItemContainerPrepared(row.Container, item, index);
-        }
-        else
-        {
-            var container = generator.CreateContainer(item, index, recycleKey);
-            row = new Row(container, recycleKey);
-            generator.PrepareItemContainer(container, item, index);
-            AddInternalChild(container);
-            generator.ItemContainerPrepared(container, item, index);
-        }
-
-        row.Index = index;
-        _rows.Add(row);
-        return row;
-    }
-
-    private Row? TakeSpare(object? recycleKey)
-    {
-        for (var i = _spare.Count - 1; i >= 0; i--)
-        {
-            var row = _spare[i];
-            if (Equals(row.RecycleKey, recycleKey))
-            {
-                _spare.RemoveAt(i);
-                return row;
-            }
-        }
-        return null;
-    }
-
     // Every row outside [first, last] goes back to the spares: cleared of its
     // item and hidden, but left where it is in the tree for the next item that
     // needs one.
-    private void RecycleOutside(int first, int last)
-    {
-        for (var i = _rows.Count - 1; i >= 0; i--)
-        {
-            var row = _rows[i];
-            if ((row.Index >= first && row.Index <= last) || (last >= first && TallAt(row.Index) >= 0))
-                continue;
-            _rows.RemoveAt(i);
-            Recycle(row);
-        }
-    }
-
-    private void Recycle(Row row)
-    {
-        if (row.RecycleKey == null)
-        {
-            // Its own container: there is nothing to hand it, and nobody else
-            // can use it.
-            RemoveInternalChild(row.Container);
-            return;
-        }
-
-        ItemContainerGenerator?.ClearItemContainer(row.Container);
-        row.Container.SetCurrentValue(IsVisibleProperty, false);
-        _spare.Add(row);
-    }
+    private void RecycleOutside(int first, int last) =>
+        RecycleWhere(row => (row.Index >= first && row.Index <= last) || (last >= first && TallAt(row.Index) >= 0));
 
     protected override void OnItemsChanged(IReadOnlyList<object?> items, NotifyCollectionChangedEventArgs e)
     {
@@ -387,18 +303,6 @@ public sealed class UniformRowPanel : VirtualizingPanel
         InvalidateMeasure();
     }
 
-    private void RecycleRange(int start, int count)
-    {
-        for (var i = _rows.Count - 1; i >= 0; i--)
-        {
-            var row = _rows[i];
-            if (row.Index < start || row.Index >= start + count)
-                continue;
-            _rows.RemoveAt(i);
-            Recycle(row);
-        }
-    }
-
     // A row that is no longer there adds nothing; one that is will say what
     // it adds when it is measured.
     private void ForgetTall(int start, int count)
@@ -419,50 +323,15 @@ public sealed class UniformRowPanel : VirtualizingPanel
                 _tall[i] = (_tall[i].Index + by, _tall[i].Height);
         }
 
-        foreach (var row in _rows)
-        {
-            if (row.Index < from)
-                continue;
-            var old = row.Index;
-            row.Index += by;
-            ItemContainerGenerator?.ItemContainerIndexChanged(row.Container, old, row.Index);
-        }
+        ShiftRows(from, by);
     }
 
     protected override void OnItemsControlChanged(ItemsControl? oldValue)
     {
         base.OnItemsControlChanged(oldValue);
-        _rows.Clear();
-        _spare.Clear();
         _tall.Clear();
-        Children.Clear();
         _rowHeight = double.NaN;
     }
-
-    private Row? RowAt(int index)
-    {
-        foreach (var row in _rows)
-        {
-            if (row.Index == index)
-                return row;
-        }
-        return null;
-    }
-
-    protected override Control? ContainerFromIndex(int index) => RowAt(index)?.Container;
-
-    protected override int IndexFromContainer(Control container)
-    {
-        foreach (var row in _rows)
-        {
-            if (ReferenceEquals(row.Container, container))
-                return row.Index;
-        }
-        return -1;
-    }
-
-    protected override IEnumerable<Control>? GetRealizedContainers() =>
-        _rows.OrderBy(r => r.Index).Select(r => r.Container);
 
     // Where row N goes is known before it exists, so this is: realize it,
     // ask the scroller for its slot, and let the layout that follows settle
