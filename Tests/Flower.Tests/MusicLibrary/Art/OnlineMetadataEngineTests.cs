@@ -83,11 +83,11 @@ public sealed class OnlineMetadataEngineTests : IDisposable
     {
         var deezer = new FakeDeezer();
 
-        Assert.Equal(Picture, await Engine(deezer).ArtistPictureAsync("Radiohead", TheirAlbums, TheirSongs));
+        Assert.Equal(Picture, await Engine(deezer).ArtistPictureAsync("Radiohead", TheirAlbums, TheirSongs, TestContext.Current.CancellationToken));
         var asked = deezer.Requests;
 
         // A new engine, as after a restart: the picture is on disk.
-        Assert.Equal(Picture, await Engine(deezer).ArtistPictureAsync("radiohead", TheirAlbums, TheirSongs));
+        Assert.Equal(Picture, await Engine(deezer).ArtistPictureAsync("radiohead", TheirAlbums, TheirSongs, TestContext.Current.CancellationToken));
         Assert.Equal(asked, deezer.Requests);
     }
 
@@ -98,12 +98,12 @@ public sealed class OnlineMetadataEngineTests : IDisposable
         var clock = new Clock();
         var engine = Engine(deezer, clock: clock);
 
-        Assert.Empty((await engine.ArtistPictureAsync("Nobody Knows Them", [], []))!);
-        Assert.Empty((await engine.ArtistPictureAsync("Nobody Knows Them", [], []))!);
+        Assert.Empty((await engine.ArtistPictureAsync("Nobody Knows Them", [], [], TestContext.Current.CancellationToken))!);
+        Assert.Empty((await engine.ArtistPictureAsync("Nobody Knows Them", [], [], TestContext.Current.CancellationToken))!);
         Assert.Equal(1, deezer.Requests);
 
         clock.Now += OnlineMetadataEngine.MissLifetime + TimeSpan.FromDays(1);
-        await engine.ArtistPictureAsync("Nobody Knows Them", [], []);
+        await engine.ArtistPictureAsync("Nobody Knows Them", [], [], TestContext.Current.CancellationToken);
         Assert.Equal(2, deezer.Requests);
     }
 
@@ -118,9 +118,9 @@ public sealed class OnlineMetadataEngineTests : IDisposable
         };
         var engine = Engine(deezer);
 
-        Assert.Empty((await engine.ArtistPictureAsync("Radiohead", TheirAlbums, TheirSongs))!);
+        Assert.Empty((await engine.ArtistPictureAsync("Radiohead", TheirAlbums, TheirSongs, TestContext.Current.CancellationToken))!);
         var asked = deezer.Requests;
-        Assert.Empty((await engine.ArtistPictureAsync("Radiohead", TheirAlbums, TheirSongs))!);
+        Assert.Empty((await engine.ArtistPictureAsync("Radiohead", TheirAlbums, TheirSongs, TestContext.Current.CancellationToken))!);
         Assert.Equal(asked, deezer.Requests);
     }
 
@@ -135,7 +135,7 @@ public sealed class OnlineMetadataEngineTests : IDisposable
             Songs = """{"data":[{"title":"Karma Police","artist":{"id":399,"name":"Radiohead"}}]}""",
         };
 
-        Assert.Equal(Picture, await Engine(deezer).ArtistPictureAsync("Radiohead", ["Kill Bill Volume 1"], TheirSongs));
+        Assert.Equal(Picture, await Engine(deezer).ArtistPictureAsync("Radiohead", ["Kill Bill Volume 1"], TheirSongs, TestContext.Current.CancellationToken));
         // The first song settled it; the second was never searched for.
         Assert.Equal(1, deezer.SongSearches);
     }
@@ -146,10 +146,10 @@ public sealed class OnlineMetadataEngineTests : IDisposable
         var deezer = new FakeDeezer { Refuse = true };
         var engine = Engine(deezer);
 
-        Assert.Null(await engine.ArtistPictureAsync("Radiohead", TheirAlbums, TheirSongs));
+        Assert.Null(await engine.ArtistPictureAsync("Radiohead", TheirAlbums, TheirSongs, TestContext.Current.CancellationToken));
 
         deezer.Refuse = false;
-        Assert.Equal(Picture, await engine.ArtistPictureAsync("Radiohead", TheirAlbums, TheirSongs));
+        Assert.Equal(Picture, await engine.ArtistPictureAsync("Radiohead", TheirAlbums, TheirSongs, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -159,8 +159,8 @@ public sealed class OnlineMetadataEngineTests : IDisposable
         var engine = Engine(deezer);
 
         var both = await Task.WhenAll(
-            engine.ArtistPictureAsync("Radiohead", TheirAlbums, TheirSongs),
-            engine.ArtistPictureAsync("Radiohead", TheirAlbums, TheirSongs));
+            engine.ArtistPictureAsync("Radiohead", TheirAlbums, TheirSongs, TestContext.Current.CancellationToken),
+            engine.ArtistPictureAsync("Radiohead", TheirAlbums, TheirSongs, TestContext.Current.CancellationToken));
 
         Assert.All(both, picture => Assert.Equal(Picture, picture));
         // One search, one artist's albums, one picture.

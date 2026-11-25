@@ -978,9 +978,9 @@ public class NetworkDiscoveryService : IPeerEndpointResolver, IDisposable
             // The one met in practice is a proxy that only tunnels to port 443
             // - "403 CONNECT not allowed" - which no amount of checking the
             // server's own settings will explain.
-            PeerRefusedException { Problem: null } refused =>
+            PeerRefusedException { Problem: null, StatusCode: { } status } =>
                 $"Something on this network answered in the server's place and refused the connection "
-                + $"({(int)refused.StatusCode}). That is usually a proxy{ProxyPortHint(baseUri)}",
+                + $"({(int)status}). That is usually a proxy{ProxyPortHint(baseUri)}",
             HttpRequestException { HttpRequestError: HttpRequestError.ProxyTunnelError } =>
                 $"A proxy on this network refused to connect to {at}{ProxyPortHint(baseUri)}",
             PeerRefusedException { Problem: { } problem } =>

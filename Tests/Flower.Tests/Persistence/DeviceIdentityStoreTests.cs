@@ -88,6 +88,7 @@ public class DeviceIdentityStoreTests : IsolatedHome
         if (OperatingSystem.IsWindows())
         {
             Assert.Skip("POSIX file modes are unavailable on Windows, where the key relies on the user profile directory ACL.");
+            return; // Skip throws; this is for the platform analyzer, which cannot tell
         }
 
         // The key sits in plaintext JSON (no OS keychain - see DeviceKeyStore's

@@ -134,7 +134,7 @@ public sealed class AppleNativeTextFieldFactory : INativeTextFieldFactory
         }
 
         protected UIFont Font =>
-            UIFont.SystemFontOfSize((nfloat)Look.FontSize, WeightOf(Look.FontWeight)) ?? UIFont.SystemFontOfSize((nfloat)Look.FontSize);
+            UIFont.SystemFontOfSize((nfloat)Look.FontSize, WeightOf(Look.FontWeight)) ?? UIFont.SystemFontOfSize((nfloat)Look.FontSize)!;
 
         protected static UIColor ColorOf(Color c) =>
             UIColor.FromRGBA(c.R / 255f, c.G / 255f, c.B / 255f, c.A / 255f);

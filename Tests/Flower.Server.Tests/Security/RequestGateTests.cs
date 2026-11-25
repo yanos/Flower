@@ -210,7 +210,7 @@ public class RequestGateTests(FlowerServerFixture server) : IClassFixture<Flower
             c.Request.Headers.TransferEncoding = "chunked";
             c.Request.Body = new MemoryStream(body);
             c.Features.Set<IHttpRequestBodyDetectionFeature>(new HasBody());
-        });
+        }, TestContext.Current.CancellationToken);
 
         Assert.Equal(StatusCodes.Status411LengthRequired, context.Response.StatusCode);
     }
@@ -250,7 +250,7 @@ public class RefusalContractTests(FlowerServerFixture server) : IClassFixture<Fl
                 c.Request.Path = path;
                 c.Request.QueryString = new QueryString("?id=x");
                 c.Connection.RemoteIpAddress = IPAddress.Parse($"10.0.9.{100 + address}");
-            });
+            }, TestContext.Current.CancellationToken);
             address++;
 
             var status = context.Response.StatusCode;
@@ -262,7 +262,7 @@ public class RefusalContractTests(FlowerServerFixture server) : IClassFixture<Fl
 
             Assert.True(status >= 400, $"{method} {path} answered {status} to a stranger");
             using var reader = new StreamReader(context.Response.Body);
-            var body = await reader.ReadToEndAsync();
+            var body = await reader.ReadToEndAsync(TestContext.Current.CancellationToken);
             Assert.True(FlowerProblem.ContentType == context.Response.ContentType?.Split(';')[0],
                 $"{method} {path} answered {status} as {context.Response.ContentType}: {body}");
             var problem = FlowerProblem.TryRead(body);
@@ -298,11 +298,11 @@ public class RefusalContractTests(FlowerServerFixture server) : IClassFixture<Fl
             c.Request.Headers["X-Flower-Signature"] = signature;
             c.Request.Headers["X-Flower-Timestamp"] = timestamp;
             c.Request.Headers["X-Flower-Nonce"] = nonce;
-        });
+        }, TestContext.Current.CancellationToken);
 
         Assert.Equal(expectedStatus, context.Response.StatusCode);
         using var buffer = new MemoryStream();
-        await context.Response.Body.CopyToAsync(buffer);
+        await context.Response.Body.CopyToAsync(buffer, TestContext.Current.CancellationToken);
         var body = buffer.ToArray();
         var serverKey = server.Services.GetRequiredService<DeviceSigningKey>();
         var signed = context.Response.Headers[ServerResponseSignature.SignatureHeader].ToString();
@@ -325,11 +325,11 @@ public class RefusalContractTests(FlowerServerFixture server) : IClassFixture<Fl
             c.Request.Method = "GET";
             c.Request.Path = "/api/flower/v1/no-such-route";
             c.Connection.RemoteIpAddress = IPAddress.Parse("10.0.9.99");
-        });
+        }, TestContext.Current.CancellationToken);
 
         Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
         using var reader = new StreamReader(context.Response.Body);
-        Assert.Equal(ProblemCodes.NotFound, FlowerProblem.TryRead(await reader.ReadToEndAsync())?.Code);
+        Assert.Equal(ProblemCodes.NotFound, FlowerProblem.TryRead(await reader.ReadToEndAsync(TestContext.Current.CancellationToken))?.Code);
     }
 }
 
@@ -374,7 +374,7 @@ public class StreamLogTests(FlowerServerFixture server) : IClassFixture<FlowerSe
                 c.Request.QueryString = new QueryString($"?id={trackId}&ticket={ticket}&u=someone-else");
                 c.Connection.RemoteIpAddress = IPAddress.Parse("10.0.9.97");
                 c.Request.Headers["X-Flower-Fingerprint"] = "forged-fingerprint";
-            });
+            }, TestContext.Current.CancellationToken);
 
             var line = log.SnapshotAfter(before).Entries
                 .Select(e => e.Message)

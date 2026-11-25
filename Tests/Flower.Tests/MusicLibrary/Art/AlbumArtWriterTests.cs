@@ -180,7 +180,7 @@ public class AlbumArtWriterTests
         var results = AlbumArtWriter.Apply(library, [songs[0]], new LocalAlbumArt(Png, "image/png"), ArtworkPlacement.Folder);
 
         Assert.Equal(songs[0].Path, Assert.Single(results).Track.Path);
-        Assert.False(Directory.EnumerateFiles(folder).Any(LocalAlbumArtReader.IsCoverFile));
+        Assert.DoesNotContain(Directory.EnumerateFiles(folder), LocalAlbumArtReader.IsCoverFile);
         Assert.Equal(Png, LocalAlbumArtReader.EmbeddedIn(songs[0].Path!)!.Bytes);
         Assert.Equal(Gif, LocalAlbumArtReader.EmbeddedIn(songs[1].Path!)!.Bytes);
     }

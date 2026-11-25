@@ -204,7 +204,7 @@ public class TrackRowSelectionTests
         PrimaryClick(s, items, 4);
         s.SetItems(Rows(6, placeholders: true), null);
 
-        Assert.Equal(["Track 2", "Track 4"], s.Tracks.Select(t => t.Title).Order().ToArray());
+        Assert.Equal(["Track 2", "Track 4"], s.Tracks.Select(t => t.Title!).Order().ToArray());
     }
 
     // Anything filtered out of the new rows drops out of the selection for

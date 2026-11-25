@@ -637,7 +637,7 @@ public class SeekableHttpStreamTests
         server.Refusals = int.MaxValue;
 
         var read = Task.Run(() => stream.Read(new byte[1024]));
-        await Task.Delay(300);
+        await Task.Delay(300, TestContext.Current.CancellationToken);
         var cancelledAt = System.Diagnostics.Stopwatch.StartNew();
         stream.Cancel();
 
@@ -688,7 +688,8 @@ public class SeekableHttpStreamTests
         var (stream, server) = await OpenAsync(content, s => s.StallsFirstBody = true);
         stream.StallTimeout = TimeSpan.FromMilliseconds(200);
 
-        var read = await Task.Run(() => ReadFully(stream, 20_000)).WaitAsync(TimeSpan.FromSeconds(10));
+        var read = await Task.Run(() => ReadFully(stream, 20_000), TestContext.Current.CancellationToken)
+            .WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
 
         Assert.Equal(content, read);
     }

@@ -85,10 +85,10 @@ public class MobileRecentSearchesTests : PinnedDataDirectory
 
         box.Text = "rad";
         UiWait.Settle(() => Row(window, "radiohead") != null, "the suggestion never showed");
-        var row = Row(window, "radiohead");
+        var row = Row(window, "radiohead")!;
         Assert.Null(Row(window, "bjork"));
 
-        var centre = row!.TranslatePoint(new Point(row.Bounds.Width / 2, row.Bounds.Height / 2), window)!.Value;
+        var centre = row.TranslatePoint(new Point(row.Bounds.Width / 2, row.Bounds.Height / 2), window)!.Value;
         window.MouseDown(centre, MouseButton.Left);
         window.MouseUp(centre, MouseButton.Left);
         Pump(100);

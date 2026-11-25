@@ -70,7 +70,7 @@ public class ImageHeaderTests
         using var bitmap = new SKBitmap(300, 200);
         bitmap.Erase(new SKColor(0xC0, 0x40, 0x80));
         using var pixels = bitmap.PeekPixels();
-        using var data = pixels.Encode(new SKWebpEncoderOptions(compression, 90));
+        using var data = pixels.Encode(new SKWebpEncoderOptions(compression, 90))!;
         var webp = data.ToArray();
 
         Assert.Equal(chunk, System.Text.Encoding.ASCII.GetString(webp, 12, 4));

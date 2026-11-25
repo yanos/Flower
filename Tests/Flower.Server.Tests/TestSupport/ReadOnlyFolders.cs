@@ -14,7 +14,7 @@ internal static class ReadOnlyFolders
             return null;
 
         var folder = Directory.CreateDirectory(Path.Combine(parent, name)).FullName;
-        File.SetUnixFileMode(folder, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        MakeReadOnly(folder);
         if (LibraryFolders.CanWriteIn(folder))
         {
             MakeWritable(folder);
@@ -24,6 +24,17 @@ internal static class ReadOnlyFolders
         return folder;
     }
 
-    public static void MakeWritable(string folder) =>
-        File.SetUnixFileMode(folder, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+    // Neither does anything on Windows, where Create never makes a folder
+    // read-only and there are no mode bits to set.
+    public static void MakeReadOnly(string folder)
+    {
+        if (!OperatingSystem.IsWindows())
+            File.SetUnixFileMode(folder, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+    }
+
+    public static void MakeWritable(string folder)
+    {
+        if (!OperatingSystem.IsWindows())
+            File.SetUnixFileMode(folder, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+    }
 }

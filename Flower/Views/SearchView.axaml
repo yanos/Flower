@@ -87,7 +87,7 @@
                        FilterMode="None"
                        MinimumPrefixLength="1"
                        Classes="searchBox"
-                       Watermark="Artists, albums, songs"
+                       PlaceholderText="Artists, albums, songs"
                        FontSize="14"
                        Width="300"
                        KeyDown="Box_KeyDown"

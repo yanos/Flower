@@ -844,7 +844,7 @@ public class SyncScenarioTests : PinnedDataDirectory
         await client.SyncPlaylistsAsync(server);
 
         client.Library.RemovePlaylist(client.Playlist("Old Name"));
-        await Task.Delay(5);
+        await Task.Delay(5, TestContext.Current.CancellationToken);
         server.Library.Playlists.Single().Name = "New Name";
         await client.SyncPlaylistsAsync(server);
 
@@ -1285,7 +1285,7 @@ public class SyncScenarioTests : PinnedDataDirectory
             await c.SyncPlaylistsAsync(server);
         }
 
-        await Task.Delay(5);
+        await Task.Delay(5, TestContext.Current.CancellationToken);
         phone.Playlist("One").AppendTrack(phone.Single("B"));
         tablet.Playlist("Two").AppendTrack(tablet.Single("B"));
         await phone.SyncPlaylistsAsync(server);
@@ -1478,7 +1478,7 @@ public class SyncScenarioTests : PinnedDataDirectory
         await client.SyncPlaylistsAsync(server);
 
         client.Playlist("Mix").Name = "Mine";                    // phone edits first
-        await Task.Delay(5);
+        await Task.Delay(5, TestContext.Current.CancellationToken);
         server.Library.Playlists.Single().Name = "Renamed";      // then the desktop
         client.PlaylistSync.ConflictDetected += (_, e) => e.Resolution.SetResult(PlaylistConflictChoice.KeepLocal);
         await client.SyncPlaylistsAsync(server);

@@ -31,7 +31,7 @@ public class LibrarySnapshotRaceTests
             {
                 while (!stop.IsCancellationRequested)
                     _ = library.Snapshot;
-            });
+            }, TestContext.Current.CancellationToken);
 
             var replacement = Album($"Round {round}", 4000);
             library.Reset(replacement);

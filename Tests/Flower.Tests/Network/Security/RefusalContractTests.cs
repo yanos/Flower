@@ -266,14 +266,14 @@ public class RefusalContractTests : IDisposable
         // Listener setup can perform a slow machine-name DNS lookup. Measure
         // the expected correction after setup, against the time in the reply.
         var expectedOffset = serverTime - DateTimeOffset.UtcNow;
-        using var response = await http.GetAsync($"http://127.0.0.1:{peer.Port}/api/flower/v1/library");
+        using var response = await http.GetAsync($"http://127.0.0.1:{peer.Port}/api/flower/v1/library", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.True((SignatureClock.Offset - expectedOffset).Duration() < TimeSpan.FromSeconds(5));
         Assert.True((SignatureClock.UtcNow - serverTime).Duration() < TimeSpan.FromSeconds(5));
 
         // And the refusal is still there for the caller to read.
-        Assert.Equal(ProblemCodes.ClockSkew, FlowerProblem.TryRead(await response.Content.ReadAsStringAsync())?.Code);
+        Assert.Equal(ProblemCodes.ClockSkew, FlowerProblem.TryRead(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken))?.Code);
     }
 
     // The media path signs its own requests, so it can send one again at once
@@ -297,7 +297,7 @@ public class RefusalContractTests : IDisposable
         var credentials = new SignedDeviceCredentials(new DeviceIdentity { Fingerprint = key.Fingerprint, Alias = "Client" }, key);
         using var http = new HttpClient(new PeerCredentialsHandler(() => credentials, new HttpClientHandler()));
 
-        using var response = await http.GetAsync($"http://127.0.0.1:{peer.Port}/api/flower/v1/stream?id=abc");
+        using var response = await http.GetAsync($"http://127.0.0.1:{peer.Port}/api/flower/v1/stream?id=abc", TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(2, requests);

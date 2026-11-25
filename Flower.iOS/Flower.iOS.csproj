@@ -58,6 +58,14 @@
          aren't annotated for trimming themselves - nothing to fix on our
          side short of dropping the dependency. -->
     <NoWarn>$(NoWarn);IL2104</NoWarn>
+
+    <!-- IL2037: the iOS SDK's registrar asks the trimmer to keep the members
+         behind Avalonia.iOS's Objective-C protocols by name
+         (IAvaloniaAppDelegate.Activated, IUITextInput.MarkedTextRange, ...),
+         and Avalonia implements those explicitly, under names the request
+         does not match. Between the SDK and Avalonia; nothing here asks for
+         them. -->
+    <NoWarn>$(NoWarn);IL2037</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

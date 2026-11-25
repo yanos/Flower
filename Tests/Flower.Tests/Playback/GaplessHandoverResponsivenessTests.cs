@@ -103,7 +103,7 @@ public class GaplessHandoverResponsivenessTests
     }
 
     [Fact]
-    public void A_song_picked_during_a_handover_starts_at_once_and_the_finished_decoder_is_released()
+    public async Task A_song_picked_during_a_handover_starts_at_once_and_the_finished_decoder_is_released()
     {
         // Nothing reads the shared ring: playback is what paces the drain,
         // and a ring nobody reads is a drain that never ends on its own.
@@ -126,7 +126,7 @@ public class GaplessHandoverResponsivenessTests
         WaitFor(() => shared.AvailableBytes == SharedBytes && first!.Joined.Task.IsCompleted,
             "the handover never started, or the finished decoder was never retired");
 
-        Assert.True(first!.Joined.Task.Result, "the finished decoder's thread was still busy with the handover when its retire joined it");
+        Assert.True(await first!.Joined.Task, "the finished decoder's thread was still busy with the handover when its retire joined it");
 
         // On a thread of its own rather than Task.Run: what is under test is
         // whether Play waits for the drain, not whether the pool has a thread

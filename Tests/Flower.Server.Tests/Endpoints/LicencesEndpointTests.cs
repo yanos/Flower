@@ -23,10 +23,10 @@ public class LicencesEndpointTests(FlowerServerFixture server) : IClassFixture<F
             c.Request.Method = HttpMethods.Get;
             c.Request.Path = OpenSourceNotices.ServerPath;
             c.Connection.RemoteIpAddress = IPAddress.Loopback;
-        });
+        }, TestContext.Current.CancellationToken);
 
         using var reader = new StreamReader(context.Response.Body);
-        var body = await reader.ReadToEndAsync();
+        var body = await reader.ReadToEndAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
         Assert.StartsWith("text/plain", context.Response.ContentType);

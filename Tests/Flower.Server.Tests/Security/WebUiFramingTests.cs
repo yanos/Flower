@@ -60,7 +60,7 @@ public class WebUiFramingTests(WebUiServerFixture server) : IClassFixture<WebUiS
             c.Request.Method = HttpMethods.Get;
             c.Request.Path = path;
             c.Connection.RemoteIpAddress = IPAddress.Loopback;
-        });
+        }, TestContext.Current.CancellationToken);
 
         Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
         Assert.Equal("frame-ancestors 'none'", context.Response.Headers.ContentSecurityPolicy.ToString());

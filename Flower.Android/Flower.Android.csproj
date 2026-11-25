@@ -44,6 +44,17 @@
          in lockstep, so pin both to the same version explicitly. -->
     <PackageReference Include="Xamarin.AndroidX.Core" Version="1.19.1" />
     <PackageReference Include="Xamarin.AndroidX.Core.Core.Ktx" Version="1.19.1" />
+
+    <!-- The same skew, one layer down. Core 1.19.1 brings the 2.11
+         Lifecycle libraries, while Avalonia.Android's lifecycle packages come
+         in at 2.9-2.10 and cap their dependencies below 2.11 (NU1608). Pinned
+         to 2.11 with the rest of the family, so that all of AndroidX
+         Lifecycle is one release. -->
+    <PackageReference Include="Xamarin.AndroidX.Lifecycle.Common.Java8" Version="2.11.0.1" />
+    <PackageReference Include="Xamarin.AndroidX.Lifecycle.LiveData.Core" Version="2.11.0.1" />
+    <PackageReference Include="Xamarin.AndroidX.Lifecycle.Process" Version="2.11.0.1" />
+    <PackageReference Include="Xamarin.AndroidX.Lifecycle.ViewModelSavedState" Version="2.11.0.1" />
+    <PackageReference Include="Xamarin.AndroidX.Lifecycle.ViewModelSavedState.Android" Version="2.11.0.1" />
   </ItemGroup>
 
   <ItemGroup>

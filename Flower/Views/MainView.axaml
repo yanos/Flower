@@ -1430,7 +1430,7 @@
             <Grid ColumnDefinitions="*,Auto">
               <TextBox x:Name="BrowserPairingCodeBox"
                        Text="{Binding Code}"
-                       Watermark="Pairing code"
+                       PlaceholderText="Pairing code"
                        FontSize="18"
                        IsEnabled="{Binding !IsPairing}">
                 <TextBox.KeyBindings>

@@ -22,11 +22,12 @@ public class RetargetableRingWriterTests
     // and waited on with a timeout, never inline: the bug being covered is
     // a deadlock, and calling into it directly would hang the whole test
     // run instead of failing this one test.
-    private static void AssertCompletes(Action action, string because)
-    {
-        var task = Task.Run(action);
-        Assert.True(task.Wait(TimeSpan.FromSeconds(5)), because);
-    }
+    private static void AssertCompletes(Action action, string because) =>
+        AssertEnds(Task.Run(action), because);
+
+    // The same, for a task already running.
+    private static void AssertEnds(Task task, string because) =>
+        Assert.True(task.Wait(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken), because);
 
     // The other half of the same rule, for a write the test started itself:
     // a parked write is asserted on by waiting a bounded time for it, never
@@ -296,7 +297,7 @@ public class RetargetableRingWriterTests
         AssertCompletes(writer.ResetTarget, "ResetTarget waited for the promotion's drain");
 
         shared.Reset();
-        Assert.True(drain.Wait(TimeSpan.FromSeconds(5)), "the drain did not stop when its destination was reset");
+        AssertEnds(drain, "the drain did not stop when its destination was reset");
     }
 
     [Fact]
@@ -308,7 +309,7 @@ public class RetargetableRingWriterTests
         // whatever plays next, and the rest of the backlog must not follow.
         shared.Reset();
 
-        Assert.True(drain.Wait(TimeSpan.FromSeconds(5)), "the drain did not stop when its destination was reset");
+        AssertEnds(drain, "the drain did not stop when its destination was reset");
         Assert.Equal(0, shared.AvailableBytes);
         Assert.Same(shared, writer.Target);
 

@@ -107,7 +107,7 @@ public class LibraryWriteAccessTests : IDisposable
         Assert.Empty(access.UnwritableFolders);
         Assert.Equal([LogLevel.Warning, LogLevel.Information], logger.Entries.Select(e => e.Level));
 
-        File.SetUnixFileMode(folder, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+        ReadOnlyFolders.MakeReadOnly(folder);
         access.Check([folder]);
 
         Assert.Equal([LogLevel.Warning, LogLevel.Information, LogLevel.Warning], logger.Entries.Select(e => e.Level));

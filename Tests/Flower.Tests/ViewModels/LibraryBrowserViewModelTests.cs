@@ -130,7 +130,7 @@ public class LibraryBrowserViewModelTests
         vm.Repopulate();
         await vm.RebuildRowsImmediatelyAsync();
 
-        Assert.Equal(new[] { AlbumGroup.KeyOf(a) }, vm.SelectedSubItems);
+        Assert.Equal(new[] { AlbumGroup.KeyOf(a)! }, vm.SelectedSubItems);
         Assert.Equal(new[] { "a", "b" }, vm.Rows.Select(r => r.Track.Title).Order());
     }
 
@@ -393,7 +393,7 @@ public class LibraryBrowserViewModelTests
 
         vm.MoveToAlbum(two);
 
-        Assert.Equal([two.AlbumGroupKey], vm.SelectedSubItems);
+        Assert.Equal([two.AlbumGroupKey!], vm.SelectedSubItems);
         Assert.Equal("Two", vm.ExpandedAlbumName);
         Assert.Equal(["b"], vm.ExpandedAlbumTracks.Select(t => t.Title));
     }
@@ -407,7 +407,7 @@ public class LibraryBrowserViewModelTests
         var two = vm.AlbumGridTiles.Single(t => t.Name == "Two");
         vm.MoveToAlbum(two);
 
-        Assert.Equal([two.AlbumGroupKey], vm.SelectedSubItems);
+        Assert.Equal([two.AlbumGroupKey!], vm.SelectedSubItems);
         Assert.Null(vm.ExpandedAlbumName);
     }
 

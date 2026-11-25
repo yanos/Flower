@@ -145,7 +145,7 @@ public class AlbumArtEditorTests
 
         Assert.Null(await editor.WriteAsync(Png, "image/png"));
 
-        Assert.Empty(Directory.EnumerateFiles(folder).Where(LocalAlbumArtReader.IsCoverFile));
+        Assert.DoesNotContain(Directory.EnumerateFiles(folder), LocalAlbumArtReader.IsCoverFile);
         Assert.Equal(Png, LocalAlbumArtReader.EmbeddedIn(songs[0].Path!)!.Bytes);
         Assert.Null(LocalAlbumArtReader.ForFile(songs[1].Path));
     }

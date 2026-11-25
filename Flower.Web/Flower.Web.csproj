@@ -12,6 +12,14 @@
          build warning). Requires the wasm-tools SDK workload's native toolchain
          (Emscripten) to actually build, not just restore. -->
     <WasmBuildNative>true</WasmBuildNative>
+
+    <!-- WASM0001: the native build lists every P/Invoke in every assembly,
+         called or not, and warns about the ones WASM cannot make: SQLite's
+         varargs sqlite3_config/sqlite3_db_config, and miniaudio's job_init.
+         Neither is called here. Microsoft.Data.Sqlite calls
+         sqlite3_db_config only to load an extension, which Flower never does,
+         and nothing calls job_init. -->
+    <NoWarn>$(NoWarn);WASM0001</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

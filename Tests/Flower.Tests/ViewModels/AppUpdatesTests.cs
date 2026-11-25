@@ -59,7 +59,7 @@ public class AppUpdatesTests
         var updater = new FakeUpdater();
         var settings = new AppSettings();
 
-        await Updates(updater, settings).CheckIfDueAsync();
+        await Updates(updater, settings).CheckIfDueAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(1, updater.Checks);
         Assert.Equal(Now, settings.LastUpdateCheck);
@@ -71,11 +71,11 @@ public class AppUpdatesTests
         var updater = new FakeUpdater();
         var settings = new AppSettings { LastUpdateCheck = Now.AddHours(-23) };
 
-        await Updates(updater, settings).CheckIfDueAsync();
+        await Updates(updater, settings).CheckIfDueAsync(TestContext.Current.CancellationToken);
         Assert.Equal(0, updater.Checks);
 
         settings.LastUpdateCheck = Now.AddHours(-24);
-        await Updates(updater, settings).CheckIfDueAsync();
+        await Updates(updater, settings).CheckIfDueAsync(TestContext.Current.CancellationToken);
         Assert.Equal(1, updater.Checks);
     }
 
@@ -85,7 +85,7 @@ public class AppUpdatesTests
         var updater = new FakeUpdater();
         var updates = Updates(updater, new AppSettings { CheckForUpdatesAutomatically = false });
 
-        await updates.CheckIfDueAsync();
+        await updates.CheckIfDueAsync(TestContext.Current.CancellationToken);
         Assert.Equal(0, updater.Checks);
 
         await ((CommunityToolkit.Mvvm.Input.IAsyncRelayCommand)updates.CheckNowCommand).ExecuteAsync(null);
@@ -99,7 +99,7 @@ public class AppUpdatesTests
         var settings = new AppSettings { LastUpdateCheck = Now.AddDays(-2) };
         var updates = Updates(updater, settings);
 
-        await updates.CheckIfDueAsync();
+        await updates.CheckIfDueAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(Now.AddDays(-2), settings.LastUpdateCheck);
         Assert.True(updates.IsDue);
@@ -112,7 +112,7 @@ public class AppUpdatesTests
         var updater = new FakeUpdater { Failure = new System.Net.Http.HttpRequestException("offline") };
         var updates = Updates(updater, new AppSettings());
 
-        await updates.CheckIfDueAsync();
+        await updates.CheckIfDueAsync(TestContext.Current.CancellationToken);
         Assert.DoesNotContain("offline", updates.Status);
 
         await ((CommunityToolkit.Mvvm.Input.IAsyncRelayCommand)updates.CheckNowCommand).ExecuteAsync(null);
@@ -127,14 +127,14 @@ public class AppUpdatesTests
         var settings = new AppSettings();
         var updates = Updates(updater, settings);
 
-        await updates.CheckIfDueAsync();
+        await updates.CheckIfDueAsync(TestContext.Current.CancellationToken);
 
         Assert.Same(update, updates.Available);
         Assert.True(updates.ShowsBanner);
         Assert.Equal(0, update.Installs);
 
         settings.LastUpdateCheck = Now.AddDays(-2);
-        await updates.CheckIfDueAsync();
+        await updates.CheckIfDueAsync(TestContext.Current.CancellationToken);
         await ((CommunityToolkit.Mvvm.Input.IAsyncRelayCommand)updates.CheckNowCommand).ExecuteAsync(null);
         Assert.Equal(1, updater.Checks);
 
@@ -146,7 +146,7 @@ public class AppUpdatesTests
     public async Task Dismissing_the_banner_leaves_the_update_on_offer_in_settings()
     {
         var updates = Updates(new FakeUpdater { Next = new FakeUpdate("0.5.0") }, new AppSettings());
-        await updates.CheckIfDueAsync();
+        await updates.CheckIfDueAsync(TestContext.Current.CancellationToken);
 
         updates.DismissCommand.Execute(null);
 
@@ -160,7 +160,7 @@ public class AppUpdatesTests
         var updater = new FakeUpdater();
         var settings = new AppSettings();
 
-        await Updates(updater, settings).CheckIfDueAsync();
+        await Updates(updater, settings).CheckIfDueAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(UpdateChannel.Stable, updater.LastChannel);
     }
@@ -181,7 +181,7 @@ public class AppUpdatesTests
         Assert.Equal(UpdateChannel.Beta, updater.LastChannel);
 
         settings.LastUpdateCheck = Now.AddDays(-2);
-        await updates.CheckIfDueAsync();
+        await updates.CheckIfDueAsync(TestContext.Current.CancellationToken);
         Assert.Equal(2, updater.Checks);
         Assert.Equal(UpdateChannel.Beta, updater.LastChannel);
     }

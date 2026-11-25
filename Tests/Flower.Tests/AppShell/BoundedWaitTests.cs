@@ -17,7 +17,7 @@ public class BoundedWaitTests
     {
         var watch = Stopwatch.StartNew();
 
-        Assert.True(BoundedWait.ForAll(TimeSpan.FromSeconds(10), Task.Delay(50), Task.Delay(100)));
+        Assert.True(BoundedWait.ForAll(TimeSpan.FromSeconds(10), Task.Delay(50, TestContext.Current.CancellationToken), Task.Delay(100, TestContext.Current.CancellationToken)));
         Assert.True(watch.Elapsed < TimeSpan.FromSeconds(5));
     }
 

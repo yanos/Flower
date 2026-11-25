@@ -429,7 +429,7 @@ namespace Flower.Tests.Audio
             ring.TryWrite(Ramp(1024));
             feeder.Start();
             feeder.Resume();
-            Assert.True(entered.Wait(TimeSpan.FromSeconds(5)), "the feeder never reached the bridge");
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken), "the feeder never reached the bridge");
 
             Assert.False(feeder.Stop());
 

@@ -29,15 +29,13 @@ class Program
         // would open Flower's window instead. A no-op for a run that is not
         // one of those, a plain `dotnet run` included.
         //
-        // Uninstalling also takes the flower:// handler back out, if it is
-        // still this install's - see UrlSchemeRegistration.
-        VelopackApp.Build()
-            .OnBeforeUninstallFastCallback(_ =>
-            {
-                if (OperatingSystem.IsWindows())
-                    UrlSchemeRegistration.UnregisterOnWindows();
-            })
-            .Run();
+        // Uninstalling on Windows also takes the flower:// handler back out,
+        // if it is still this install's - see UrlSchemeRegistration. Velopack
+        // calls that hook on no other OS.
+        var velopack = VelopackApp.Build();
+        if (OperatingSystem.IsWindows())
+            velopack.OnBeforeUninstallFastCallback(_ => UrlSchemeRegistration.UnregisterOnWindows());
+        velopack.Run();
 
         if (CrashReportRelaunch.RelaunchIfNeeded(args, AppSettingsStore.ReadSendCrashReports))
             return;

@@ -267,7 +267,7 @@ public class LibraryFolderWatcherTests : IDisposable
 
         watcher.Note(path);
         var pass = watcher.FlushAsync();
-        await Task.Delay(100);
+        await Task.Delay(100, TestContext.Current.CancellationToken);
         Assert.Empty(_library.Tracks);
 
         // The scan's own write, which knew nothing of the song.
@@ -325,13 +325,13 @@ public class LibraryFolderWatcherTests : IDisposable
         Assert.SkipWhen(OperatingSystem.IsIOS(), "FileSystemWatcher is unavailable on iOS; automatic folder watching runs on desktop and server only.");
         using var watcher = NewWatcher(listensForChanges: true);
         // Give the watcher a moment to be listening before the file lands.
-        await Task.Delay(300);
+        await Task.Delay(300, TestContext.Current.CancellationToken);
 
         Song("Artist/Album", "one.wav", "One");
 
         var clock = Stopwatch.StartNew();
         while (_library.Tracks.Count == 0 && clock.Elapsed < TimeSpan.FromSeconds(15))
-            await Task.Delay(100);
+            await Task.Delay(100, TestContext.Current.CancellationToken);
 
         Assert.Equal("One", Assert.Single(_library.Tracks).Title);
     }

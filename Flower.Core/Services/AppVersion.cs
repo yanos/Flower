@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 
 namespace Flower.Services;
@@ -49,6 +50,11 @@ public static class AppVersion
 
     private static readonly (string Assembly, DateTimeOffset Date)? Stamp = FindStamp();
 
+    // The iOS trimmer strips AssemblyMetadataAttribute instances, which is
+    // what IL2045 warns about - but only those keyed Serviceable,
+    // PreferInbox, RepositoryUrl, SourceCommitUrl, CommitHash or IsTrimmable
+    // (the SDK's TrimAttributes.LinkDescription.xml). BuildDate is kept.
+    [UnconditionalSuppressMessage("Trimming", "IL2045", Justification = "Only metadata under other keys is removed; BuildDate survives trimming.")]
     private static (string, DateTimeOffset)? FindStamp()
     {
         foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())

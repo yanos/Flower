@@ -1,12 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
-using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Data;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
@@ -433,12 +433,6 @@ public partial class MusicListView : UserControl
         _columnDropIndicator.IsVisible = false;
     }
 
-    // MusicListView.axaml sets x:CompileBindings="False" - its columns are
-    // built and rebound dynamically from ColumnManager's runtime-configurable
-    // definitions, so a compile-time binding path isn't available here. The
-    // path used (col.Width) is a real property on MusicColumnDefinition, kept
-    // alive by direct references elsewhere, so trimming it away isn't a risk.
-    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Binding path is a real property on MusicColumnDefinition, kept alive by direct references elsewhere in the codebase.")]
     private Control MakeHeaderCell(MusicColumnDefinition col)
     {
         // Sort arrow
@@ -491,7 +485,9 @@ public partial class MusicListView : UserControl
             // text glyphs - is hit-test visible for the sort click below.
             Background = Brushes.Transparent,
         };
-        outer.Bind(WidthProperty, new Avalonia.Data.Binding(nameof(col.Width)) { Source = col });
+        // Compiled, not a reflection Binding: that one reads the property by
+        // name at runtime, which NativeAOT cannot compile (IL3050).
+        outer.Bind(WidthProperty, CompiledBinding.Create((MusicColumnDefinition c) => c.Width, source: col));
         outer.Children.Add(labelArea);
         outer.Children.Add(handle);
 

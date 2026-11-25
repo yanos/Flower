@@ -119,7 +119,7 @@ public class LibraryRemovalEndpointTests(FlowerServerFixture server) : IClassFix
         using var admin = await DeviceAsync(isAdmin: true);
         var song = SeededTrack("Second Song");
         var file = Path.Combine(Path.GetTempPath(), $"flower-remove-{Guid.NewGuid():N}.mp3");
-        await File.WriteAllBytesAsync(file, [1, 2, 3]);
+        await File.WriteAllBytesAsync(file, [1, 2, 3], TestContext.Current.CancellationToken);
         song.Path = file;
 
         var (status, body) = await RemoveAsync(admin, [song.Id.ToKey()], deleteFiles: true);
@@ -199,7 +199,7 @@ public class RemovedSongsEndpointTests(FlowerServerFixture server) : IClassFixtu
         // The rescan that brings a restored file back was started.
         var deadline = DateTime.UtcNow.AddSeconds(10);
         while (rescans.LastCompletedAt == before && DateTime.UtcNow < deadline)
-            await Task.Delay(20);
+            await Task.Delay(20, TestContext.Current.CancellationToken);
         Assert.NotEqual(before, rescans.LastCompletedAt);
     }
 }

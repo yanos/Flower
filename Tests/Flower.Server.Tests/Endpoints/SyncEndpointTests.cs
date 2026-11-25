@@ -1611,7 +1611,7 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
                 c.Request.Headers["X-Flower-Signature"] = signature;
                 c.Request.Headers["X-Flower-Timestamp"] = timestamp;
                 c.Request.Headers["X-Flower-Nonce"] = nonce;
-            });
+            }, TestContext.Current.CancellationToken);
 
             Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
         }
@@ -1866,7 +1866,7 @@ public class SyncEndpointTests(FlowerServerFixture server) : IClassFixture<Flowe
             c.Connection.RemoteIpAddress = IPAddress.Parse("10.0.4.7");
             c.Request.ContentType = "application/json";
             c.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(AlbumExchange()));
-        });
+        }, TestContext.Current.CancellationToken);
 
         Assert.Equal(StatusCodes.Status401Unauthorized, context.Response.StatusCode);
     }
