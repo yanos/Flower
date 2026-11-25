@@ -29,6 +29,9 @@ public sealed class ITunesImportCoordinator
     private readonly BusyState _busy;
     private readonly ILogger _logger;
 
+    private readonly object _snapshotGate = new();
+    private Task<ITunesSnapshot?>? _snapshot;
+
     private DateTimeOffset? _lastPlayCountSyncAt;
     private DateTimeOffset? _lastDateAddedSyncAt;
 
@@ -48,15 +51,15 @@ public sealed class ITunesImportCoordinator
     // spinner either way.
     public Task SyncPlayCountAsync() =>
         RunAsync(ref _lastPlayCountSyncAt, "play count", "Syncing play counts from Music.app…",
-            tracks => ITunesPlayCountImporter.Apply(tracks, _logger));
+            (tracks, snapshot) => ITunesPlayCountImporter.Apply(tracks, snapshot, _logger));
 
     // Same shape as SyncPlayCountAsync above, but for Track.DateAdded via
     // ITunesDateAddedImporter - see that class for the oldest-wins conflict rule.
     public Task SyncDateAddedAsync() =>
         RunAsync(ref _lastDateAddedSyncAt, "date added", "Syncing date added from Music.app…",
-            tracks => ITunesDateAddedImporter.Apply(tracks, _logger));
+            (tracks, snapshot) => ITunesDateAddedImporter.Apply(tracks, snapshot, _logger));
 
-    private Task RunAsync(ref DateTimeOffset? lastRunAt, string what, string busyMessage, Func<System.Collections.Generic.IEnumerable<Track>, bool> apply)
+    private Task RunAsync(ref DateTimeOffset? lastRunAt, string what, string busyMessage, Func<System.Collections.Generic.IEnumerable<Track>, ITunesSnapshot, bool> apply)
     {
         if (lastRunAt is { } last && DateTimeOffset.UtcNow - last < Cooldown)
         {
@@ -68,13 +71,14 @@ public sealed class ITunesImportCoordinator
         return ApplyAsync(busyMessage, apply);
     }
 
-    private async Task ApplyAsync(string busyMessage, Func<System.Collections.Generic.IEnumerable<Track>, bool> apply)
+    private async Task ApplyAsync(string busyMessage, Func<System.Collections.Generic.IEnumerable<Track>, ITunesSnapshot, bool> apply)
     {
         using var _ = _busy.BeginScope(busyMessage);
         // Most launches find exactly the numbers the last one left, and
         // announcing that anyway cost a whole-table rewrite and a rebuild of
         // every list, twice per launch (October C1.3).
-        if (!await Task.Run(() => apply(_library.Tracks)))
+        var snapshot = await SnapshotAsync();
+        if (snapshot == null || !await Task.Run(() => apply(_library.Tracks, snapshot)))
             return;
 
         // Same list, same Track instances mutated in place, all of them - so the
@@ -86,5 +90,43 @@ public sealed class ITunesImportCoordinator
         // top of their copy already sitting in the argument. It also issues
         // the whole-table rewrite this needs - see Library's ITrackStore.
         _library.NotifyLibraryChanged();
+    }
+
+    // One export serves both imports when they run together, as they do at
+    // launch. It is let go a cooldown after it was read: a parsed library can
+    // be tens of megabytes, and the next import wants a fresh export anyway.
+    // A failed one is kept as long, so a refused automation prompt is not
+    // asked again straight away.
+    private Task<ITunesSnapshot?> SnapshotAsync()
+    {
+        lock (_snapshotGate)
+        {
+            if (_snapshot is { } shared)
+                return shared;
+
+            var load = Task.Run(() => ITunesSnapshot.Load(_logger));
+            _snapshot = load;
+            _ = ReleaseAfterCooldownAsync(load);
+            return load;
+        }
+    }
+
+    private async Task ReleaseAfterCooldownAsync(Task<ITunesSnapshot?> load)
+    {
+        try
+        {
+            await load;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Reading Music.app's library failed");
+        }
+
+        await Task.Delay(Cooldown);
+        lock (_snapshotGate)
+        {
+            if (ReferenceEquals(_snapshot, load))
+                _snapshot = null;
+        }
     }
 }

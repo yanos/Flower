@@ -47,6 +47,21 @@ public class ITunesDateAddedImporterTests
     }
 
     [Fact]
+    public void One_snapshot_supplies_both_imports_even_if_the_export_is_replaced_between_them()
+    {
+        var entry = TrackEntry(1, "Song", "Artist", null, 75023, "2010-01-01T00:00:00Z")
+            .Replace("</dict>", "<key>Play Count</key><integer>7</integer></dict>");
+        var path = WriteLibraryXml(entry);
+        var snapshot = ITunesSnapshot.FromXmlFile(path)!;
+        var song = new Track { Title = "Song", Artists = "Artist", Duration = TimeSpan.FromMilliseconds(75023), DateAdded = DateTimeOffset.UtcNow };
+        Assert.True(ITunesPlayCountImporter.Apply([song], snapshot));
+        File.WriteAllText(path, "replaced");
+        Assert.True(ITunesDateAddedImporter.Apply([song], snapshot));
+        Assert.Equal(7, song.ImportedPlayCount);
+        Assert.Equal(new DateTimeOffset(2010, 1, 1, 0, 0, 0, TimeSpan.Zero), song.DateAdded);
+    }
+
+    [Fact]
     public void ApplyFromXmlFile_adopts_an_older_iTunes_date_than_the_tracks_current_DateAdded()
     {
         var xmlPath = WriteLibraryXml(TrackEntry(1, "The Little Drummer Boy", "Deerhoof", null, 75023, "2010-01-01T00:00:00Z"));

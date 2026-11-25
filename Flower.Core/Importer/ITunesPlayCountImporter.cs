@@ -1,264 +1,58 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
-using System.Linq;
-
-using Claunia.PropertyList;
-
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-
 using Flower.Models;
-using Flower.Persistence;
 
 namespace Flower.Importer;
 
-// Reads per-track "Play Count" from Music.app and applies it to
-// Track.ImportedPlayCount, "Skip Count" to Track.ImportedSkipCount, and "Play Date UTC" - when Music.app last played it
-// - to Track.LastPlayedAt where that is later than Flower's own. Deliberately
-// leaves Track.PlayCount (Flower's own count, incremented by
-// PlaylistControlViewModel) untouched -
-// TrackRowViewModel.PlayCountDisplay is what sums the two for display, so
-// re-running (or disabling) this import can never lose plays Flower itself
-// recorded.
-//
-// Primary mechanism: Music.app's AppleScript dictionary exposes a genuine
-// "export" command ("tell application \"Music\" to export source 1 as XML
-// to ...", confirmed present in its .sdef and tested against a real, large
-// library in ~5 seconds) that generates a fresh XML snapshot on demand -
-// written to Flower's own app-data folder, not the user's Music folder.
-// First use triggers a one-time macOS "Flower wants to control Music.app"
-// automation permission prompt. Falls back to ResolveLibraryXmlPath's static
-// detection (a pre-existing file from a previous manual "File > Library >
-// Export Library..." or, on some machines, a much older classic-iTunes
-// export) if the live export fails - Music.app not installed, automation
-// permission denied, etc.
-//
-// Matches by Track.SyncKey (Title/Artist/Album/duration - the same identity
-// key already used to match tracks across devices in the WiFi sync feature),
-// not file path: confirmed against a real, years-old classic-iTunes export
-// that its "Location" paths pointed at the old ~/Music/iTunes/iTunes Music/...
-// layout, while the same files had long since moved to Music.app's
-// ~/Music/Music/Media.localized/... after Apple's iTunes-to-Music.app
-// migration - identical files, completely different paths, so path matching
-// alone silently matched nothing for anyone in that (very common) situation.
+// Applies Music.app play counts; snapshot acquisition and matching are shared.
 public static class ITunesPlayCountImporter
 {
-    private static string LiveExportPath => Path.Combine(AppDataDirectory.Path, "itunes-library-export.xml");
+    public static bool ApplyFromXmlFile(IEnumerable<Track> tracks, string xmlPath, ILogger? logger = null) =>
+        ITunesSnapshot.FromXmlFile(xmlPath, logger) is { } snapshot && Apply(tracks, snapshot, logger);
 
-    // A static class can't take constructor-injected ILogger<T> the way the
-    // rest of the app does (see AppLogging.CreateTypedLogger's callers) - this
-    // is the equivalent for a static entry point: the caller's own already-
-    // DI-injected logger flows in as a parameter (see MainViewModel.SyncITunesPlayCountAsync)
-    // instead of a static field resolved from a global. Optional/defaulting to
-    // a no-op logger purely so the many test call sites that don't care about
-    // log output don't all need updating.
-    //
-    // Returns whether any track's count or date actually moved, so a caller
-    // publishes a change only when there is one (ITunesImportCoordinator,
-    // ITunesIntegration.ApplyImports): the import runs on every launch, and
-    // most launches find exactly the numbers the last one left.
-    public static bool Apply(IEnumerable<Track> tracks, ILogger? logger = null)
+    public static bool Apply(IEnumerable<Track> tracks, ITunesSnapshot snapshot, ILogger? logger = null)
     {
         logger ??= NullLogger.Instance;
-
-        if (!OperatingSystem.IsMacOS())
-            return false;
-
-        var usedLiveExport = TryExportFreshLibraryXml(logger);
-        var xmlPath = usedLiveExport ? LiveExportPath : ResolveLibraryXmlPath();
-        if (xmlPath == null)
+        var matchedCount = 0;
+        var changedCount = 0;
+        foreach (var track in tracks)
         {
-            logger.LogInformation("iTunes play count sync skipped: no library export available (Music.app not installed, automation denied, or no static export found)");
-            return false;
-        }
+            var plays = snapshot.Plays.Find(track);
 
-        logger.LogInformation("Syncing play counts from {Source}: {XmlPath}", usedLiveExport ? "live Music.app export" : "static library export", xmlPath);
-        return ApplyFromXmlFile(tracks, xmlPath, logger);
-    }
+            if (plays is not { } value)
+                continue;
 
-    // The actual parse-and-match logic, split out from Apply() so tests can
-    // exercise it against a specific synthetic XML file without the live
-    // export (which runs first in Apply() and wins on any machine that
-    // actually has Music.app installed, including the one this was developed
-    // on) getting in the way. Returns what Apply does.
-    public static bool ApplyFromXmlFile(IEnumerable<Track> tracks, string xmlPath, ILogger? logger = null)
-    {
-        logger ??= NullLogger.Instance;
-
-        try
-        {
-            if (PropertyListParser.Parse(xmlPath) is not NSDictionary root ||
-                !root.TryGetValue("Tracks", out var tracksNode) ||
-                tracksNode is not NSDictionary iTunesTracks)
+            // Upwards only, as everywhere else these two are kept
+            // (Library.ApplyReportedOwnerState, Library.MergeListening):
+            // the library holds the highest count any of the owner's Macs
+            // read, so a Mac whose Music.app has fewer - or only skips,
+            // which reads as no plays - must not walk it back.
+            var playCount = Math.Max(track.ImportedPlayCount, value.Count);
+            var skipCount = Math.Max(track.ImportedSkipCount, value.Skips);
+            var changed = track.ImportedPlayCount != playCount || track.ImportedSkipCount != skipCount;
+            track.ImportedPlayCount = playCount;
+            track.ImportedSkipCount = skipCount;
+            // Later only: LastPlayedAt is a high-water mark everywhere it
+            // is kept (Library.ApplyReportedOwnerState), so Music.app's
+            // date fills in a song Flower has never played and moves one
+            // that Music.app played since, and never walks back a listen
+            // Flower recorded. Moved here, it goes to the server as owner
+            // state the way the count does.
+            if (value.LastPlayedAt is { } musicAppPlayed && (track.LastPlayedAt is not { } flowerPlayed || musicAppPlayed > flowerPlayed))
             {
-                logger.LogWarning("iTunes library export at {XmlPath} did not have the expected shape (missing/malformed Tracks dictionary)", xmlPath);
-                return false;
+                track.LastPlayedAt = musicAppPlayed;
+                changed = true;
             }
-
-            var playsBySyncKey = new Dictionary<string, MusicAppPlays>();
-            // Highest-priority match - see ITunesLocations for why the file,
-            // when it can be found, beats metadata entirely.
-            var playsByLocation = new ITunesLocations<MusicAppPlays>(MusicAppPlays.Combine);
-            // Fallback for when BuildSyncKey finds nothing - see Track.
-            // BuildLooseKey's own doc comment. Tracks how many *distinct* full
-            // sync keys (i.e. distinct durations) share a loose key - two raw
-            // XML entries for the same file at the same duration (already
-            // summed above) don't make a loose key ambiguous, only two
-            // genuinely different durations do.
-            var looseSyncKeys = new Dictionary<string, HashSet<string>>();
-            foreach (var entry in iTunesTracks.Values)
-            {
-                if (entry is not NSDictionary iTunesTrack)
-                    continue;
-                // Music.app leaves out a count that is zero, so a song only ever
-                // skipped has a Skip Count and no Play Count, and one never
-                // touched has neither - and is left out here as it always was.
-                var playCount = iTunesTrack.TryGetValue("Play Count", out var playCountNode) && playCountNode is NSNumber playNumber ? playNumber.ToInt() : (int?)null;
-                var skipCount = iTunesTrack.TryGetValue("Skip Count", out var skipCountNode) && skipCountNode is NSNumber skipNumber ? skipNumber.ToInt() : (int?)null;
-                if (iTunesTrack.TryGetValue("Name", out var nameNode) &&
-                    iTunesTrack.TryGetValue("Total Time", out var totalTimeNode) &&
-                    totalTimeNode is NSNumber totalTimeMs &&
-                    (playCount != null || skipCount != null))
-                {
-                    iTunesTrack.TryGetValue("Artist", out var artistNode);
-                    iTunesTrack.TryGetValue("Album", out var albumNode);
-
-                    // Track.RoundedSeconds, not a separate inline Math.Round - see
-                    // its own doc comment for the real-world boundary case
-                    // (171.96s vs 172.01s) this fixes; both sides of the match
-                    // must round the same way.
-                    var syncKey = Track.BuildSyncKey(
-                        nameNode.ToString(),
-                        artistNode?.ToString(),
-                        albumNode?.ToString(),
-                        Track.RoundedSeconds(totalTimeMs.ToInt() / 1000.0));
-                    var looseKey = Track.BuildLooseKey(nameNode.ToString(), artistNode?.ToString(), albumNode?.ToString());
-
-                    iTunesTrack.TryGetValue("Play Date UTC", out var playDateNode);
-                    var plays = new MusicAppPlays(playCount ?? 0, playDateNode is NSDate playDate ? Utc(playDate.Date) : null, skipCount ?? 0);
-
-                    // Sum rather than overwrite: a library that's been through a
-                    // merge/duplicate-import can have more than one Music.app
-                    // entry for the exact same file (confirmed against a real
-                    // library - two "Wishwanderer" entries, same Location, play
-                    // counts 19 and 1) - all of them collapse to the same
-                    // SyncKey since Flower only keeps one Track per file, so
-                    // overwriting silently discarded whichever entry's play
-                    // count didn't happen to be enumerated last.
-                    playsBySyncKey[syncKey] = playsBySyncKey.TryGetValue(syncKey, out var existing)
-                        ? MusicAppPlays.Combine(existing, plays)
-                        : plays;
-
-                    if (!looseSyncKeys.TryGetValue(looseKey, out var syncKeys))
-                        looseSyncKeys[looseKey] = syncKeys = new HashSet<string>();
-                    syncKeys.Add(syncKey);
-
-                    iTunesTrack.TryGetValue("Location", out var locationNode);
-                    playsByLocation.Add(locationNode?.ToString(), plays);
-                }
-            }
-
-            var matchedCount = 0;
-            var changedCount = 0;
-            foreach (var track in tracks)
-            {
-                MusicAppPlays? plays = null;
-                if (playsByLocation.TryFind(track, out var byLocation))
-                    plays = byLocation;
-                else if (playsBySyncKey.TryGetValue(track.SyncKey, out var exact))
-                    plays = exact;
-                else if (looseSyncKeys.TryGetValue(Track.BuildLooseKey(track.Title, track.Artists, track.Album), out var syncKeys) && syncKeys.Count == 1)
-                    plays = playsBySyncKey[syncKeys.Single()];
-
-                if (plays is not { } value)
-                    continue;
-
-                // Upwards only, as everywhere else these two are kept
-                // (Library.ApplyReportedOwnerState, Library.MergeListening):
-                // the library holds the highest count any of the owner's Macs
-                // read, so a Mac whose Music.app has fewer - or only skips,
-                // which reads as no plays - must not walk it back.
-                var playCount = Math.Max(track.ImportedPlayCount, value.Count);
-                var skipCount = Math.Max(track.ImportedSkipCount, value.Skips);
-                var changed = track.ImportedPlayCount != playCount || track.ImportedSkipCount != skipCount;
-                track.ImportedPlayCount = playCount;
-                track.ImportedSkipCount = skipCount;
-                // Later only: LastPlayedAt is a high-water mark everywhere it
-                // is kept (Library.ApplyReportedOwnerState), so Music.app's
-                // date fills in a song Flower has never played and moves one
-                // that Music.app played since, and never walks back a listen
-                // Flower recorded. Moved here, it goes to the server as owner
-                // state the way the count does.
-                if (value.LastPlayedAt is { } musicAppPlayed && (track.LastPlayedAt is not { } flowerPlayed || musicAppPlayed > flowerPlayed))
-                {
-                    track.LastPlayedAt = musicAppPlayed;
-                    changed = true;
-                }
-                matchedCount++;
-                if (changed)
-                    changedCount++;
-            }
-
-            logger.LogInformation("iTunes play count sync matched {MatchedCount} of {ExportedCount} exported tracks, {ChangedCount} changed", matchedCount, playsBySyncKey.Count, changedCount);
-            return changedCount > 0;
+            matchedCount++;
+            if (changed)
+                changedCount++;
         }
-        catch (Exception ex)
-        {
-            // Corrupt/unreadable/unexpected-shape XML - leave ImportedPlayCount
-            // and LastPlayedAt as they are rather than blocking startup over an
-            // optional enrichment step.
-            logger.LogWarning(ex, "Failed to parse iTunes library export at {XmlPath}; play counts left unchanged", xmlPath);
-            return false;
-        }
-    }
 
-    // One Music.app record's listening: how often, and when last. Two records
-    // for one file are summed, and keep the later date - see the duplicate-entry
-    // note where they are built.
-    private readonly record struct MusicAppPlays(int Count, DateTimeOffset? LastPlayedAt, int Skips)
-    {
-        public static MusicAppPlays Combine(MusicAppPlays a, MusicAppPlays b) =>
-            new(a.Count + b.Count, a.LastPlayedAt is null || b.LastPlayedAt > a.LastPlayedAt ? b.LastPlayedAt : a.LastPlayedAt, a.Skips + b.Skips);
-    }
-
-    // The plist parser hands back a DateTime that may arrive Unspecified, which
-    // for Music.app's "... UTC" keys means UTC - the same reading
-    // ITunesDateAddedImporter gives "Date Added".
-    private static DateTimeOffset Utc(DateTime raw) =>
-        new(raw.Kind == DateTimeKind.Unspecified ? DateTime.SpecifyKind(raw, DateTimeKind.Utc) : raw.ToUniversalTime());
-
-    // Runs synchronously (this is always called from a background Task.Run at
-    // both its call sites - App.axaml.cs's startup rescan and
-    // MainViewModel.SyncPlayCountFromITunes's apply-immediately-on-toggle - so
-    // blocking here doesn't freeze the UI). A generous timeout covers large
-    // libraries without hanging forever if Music.app is unresponsive.
-    private static bool TryExportFreshLibraryXml(ILogger logger)
-    {
-        try
-        {
-            Directory.CreateDirectory(AppDataDirectory.Path);
-            var script = $"tell application \"Music\" to export source 1 as XML to (POSIX file \"{LiveExportPath}\")";
-            var psi = new ProcessStartInfo
-            {
-                FileName = "osascript",
-                ArgumentList = { "-e", script },
-                UseShellExecute = false,
-            };
-            using var process = Process.Start(psi);
-            if (process == null)
-                return false;
-            return process.WaitForExit(60_000) && process.ExitCode == 0 && File.Exists(LiveExportPath);
-        }
-        catch (Exception ex)
-        {
-            // Expected/handled - Apply() falls back to a static export if one
-            // exists. Debug rather than Warning since this is routine on a
-            // machine without Music.app or without automation permission granted.
-            logger.LogDebug(ex, "Live Music.app export failed; will fall back to a static export if one exists");
-            return false;
-        }
+        logger.LogInformation("iTunes play count sync matched {MatchedCount} of {ExportedCount} exported tracks, {ChangedCount} changed", matchedCount, snapshot.Plays.Count, changedCount);
+        return changedCount > 0;
     }
 
     // Fallback for when the live AppleScript export isn't available (Music.app

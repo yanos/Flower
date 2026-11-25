@@ -1,190 +1,33 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
-using System.Linq;
-
-using Claunia.PropertyList;
-
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-
 using Flower.Models;
-using Flower.Persistence;
 
 namespace Flower.Importer;
 
-// Reads per-track "Date Added" from Music.app and applies it to Track.DateAdded
-// - the counterpart to ITunesPlayCountImporter (same live-export/static-fallback
-// mechanism, same Track.SyncKey matching - see that class's doc comment for why
-// either of those work the way they do), but for the "Added" column instead of
-// play counts, and independently toggleable (AppSettings.SyncDateAddedFromITunes).
-//
-// Conflict rule: the OLDER of the two dates wins, never the newer. Flower's own
-// Track.DateAdded already means "the earliest point this file is known to have
-// entered any library this device has seen" (see Library.UpdateTracks, which
-// carries it forward across rescans) - a later iTunes date is never more correct
-// than that, but an earlier one usually means Music.app's own record predates
-// whatever first triggered Flower's own DateAdded (a fresh install, a library
-// path added after the fact, etc.) and should win.
+// Applies Music.app dates added; snapshot acquisition and matching are shared.
 public static class ITunesDateAddedImporter
 {
-    // Deliberately the same file ITunesPlayCountImporter exports to - both
-    // importers read the one Music.app export, just different fields out of it.
-    // Each does its own independent live-export attempt rather than sharing one
-    // in-flight result, since the two sync toggles are independent and either
-    // can run without the other - a modest, accepted duplicate-export cost
-    // (~5s) on the rare launch where both happen to be enabled.
-    private static string LiveExportPath => Path.Combine(AppDataDirectory.Path, "itunes-library-export.xml");
+    public static bool ApplyFromXmlFile(IEnumerable<Track> tracks, string xmlPath, ILogger? logger = null) =>
+        ITunesSnapshot.FromXmlFile(xmlPath, logger) is { } snapshot && Apply(tracks, snapshot, logger);
 
-    // Returns whether any track's date moved - see ITunesPlayCountImporter.Apply.
-    public static bool Apply(IEnumerable<Track> tracks, ILogger? logger = null)
+    public static bool Apply(IEnumerable<Track> tracks, ITunesSnapshot snapshot, ILogger? logger = null)
     {
         logger ??= NullLogger.Instance;
-
-        if (!OperatingSystem.IsMacOS())
-            return false;
-
-        var usedLiveExport = TryExportFreshLibraryXml(logger);
-        var xmlPath = usedLiveExport ? LiveExportPath : ITunesPlayCountImporter.ResolveLibraryXmlPath();
-        if (xmlPath == null)
+        var matchedCount = 0;
+        foreach (var track in tracks)
         {
-            logger.LogInformation("iTunes date added sync skipped: no library export available (Music.app not installed, automation denied, or no static export found)");
-            return false;
-        }
+            var candidate = snapshot.Dates.Find(track);
 
-        logger.LogInformation("Syncing date added from {Source}: {XmlPath}", usedLiveExport ? "live Music.app export" : "static library export", xmlPath);
-        return ApplyFromXmlFile(tracks, xmlPath, logger);
-    }
-
-    // Split out from Apply() so tests can exercise it against a specific
-    // synthetic XML file - see ITunesPlayCountImporter.ApplyFromXmlFile for why.
-    public static bool ApplyFromXmlFile(IEnumerable<Track> tracks, string xmlPath, ILogger? logger = null)
-    {
-        logger ??= NullLogger.Instance;
-
-        try
-        {
-            if (PropertyListParser.Parse(xmlPath) is not NSDictionary root ||
-                !root.TryGetValue("Tracks", out var tracksNode) ||
-                tracksNode is not NSDictionary iTunesTracks)
+            if (candidate is { } value && value < track.DateAdded)
             {
-                logger.LogWarning("iTunes library export at {XmlPath} did not have the expected shape (missing/malformed Tracks dictionary)", xmlPath);
-                return false;
+                track.DateAdded = value;
+                matchedCount++;
             }
-
-            var dateAddedBySyncKey = new Dictionary<string, DateTimeOffset>();
-            // Highest-priority match - see ITunesLocations for why the file,
-            // when it can be found, beats metadata entirely. Oldest wins, as
-            // it does below.
-            var dateAddedByLocation = new ITunesLocations<DateTimeOffset>((a, b) => a < b ? a : b);
-            // Fallback for when BuildSyncKey finds nothing - see Track.
-            // BuildLooseKey's own doc comment. Tracks how many *distinct* full
-            // sync keys (i.e. distinct durations) share a loose key - two raw
-            // XML entries for the same file at the same duration (already
-            // merged above) don't make a loose key ambiguous, only two
-            // genuinely different durations do.
-            var looseSyncKeys = new Dictionary<string, HashSet<string>>();
-            foreach (var entry in iTunesTracks.Values)
-            {
-                if (entry is not NSDictionary iTunesTrack)
-                    continue;
-                if (iTunesTrack.TryGetValue("Name", out var nameNode) &&
-                    iTunesTrack.TryGetValue("Total Time", out var totalTimeNode) &&
-                    totalTimeNode is NSNumber totalTimeMs &&
-                    iTunesTrack.TryGetValue("Date Added", out var dateAddedNode) &&
-                    dateAddedNode is NSDate dateAdded)
-                {
-                    iTunesTrack.TryGetValue("Artist", out var artistNode);
-                    iTunesTrack.TryGetValue("Album", out var albumNode);
-
-                    // Track.RoundedSeconds, not a separate inline Math.Round - see
-                    // its own doc comment for the real-world boundary case
-                    // (171.96s vs 172.01s) this fixes; both sides of the match
-                    // must round the same way.
-                    var syncKey = Track.BuildSyncKey(
-                        nameNode.ToString(),
-                        artistNode?.ToString(),
-                        albumNode?.ToString(),
-                        Track.RoundedSeconds(totalTimeMs.ToInt() / 1000.0));
-                    var looseKey = Track.BuildLooseKey(nameNode.ToString(), artistNode?.ToString(), albumNode?.ToString());
-
-                    var raw = dateAdded.Date;
-                    var candidate = new DateTimeOffset(raw.Kind == DateTimeKind.Unspecified
-                        ? DateTime.SpecifyKind(raw, DateTimeKind.Utc)
-                        : raw.ToUniversalTime());
-
-                    // Oldest wins here too, same as the final merge against each
-                    // Track's existing DateAdded below - a library that's been
-                    // through a merge/duplicate-import can have more than one
-                    // Music.app entry for the same file (see
-                    // ITunesPlayCountImporter's identical duplicate-entry note),
-                    // and the earliest of those is the correct "first added" date.
-                    if (!dateAddedBySyncKey.TryGetValue(syncKey, out var existing) || candidate < existing)
-                        dateAddedBySyncKey[syncKey] = candidate;
-
-                    if (!looseSyncKeys.TryGetValue(looseKey, out var syncKeys))
-                        looseSyncKeys[looseKey] = syncKeys = new HashSet<string>();
-                    syncKeys.Add(syncKey);
-
-                    iTunesTrack.TryGetValue("Location", out var locationNode);
-                    dateAddedByLocation.Add(locationNode?.ToString(), candidate);
-                }
-            }
-
-            var matchedCount = 0;
-            foreach (var track in tracks)
-            {
-                DateTimeOffset? candidate = null;
-                if (dateAddedByLocation.TryFind(track, out var byLocation))
-                    candidate = byLocation;
-                else if (dateAddedBySyncKey.TryGetValue(track.SyncKey, out var exact))
-                    candidate = exact;
-                else if (looseSyncKeys.TryGetValue(Track.BuildLooseKey(track.Title, track.Artists, track.Album), out var syncKeys) && syncKeys.Count == 1)
-                    candidate = dateAddedBySyncKey[syncKeys.Single()];
-
-                if (candidate is { } value && value < track.DateAdded)
-                {
-                    track.DateAdded = value;
-                    matchedCount++;
-                }
-            }
-
-            logger.LogInformation("iTunes date added sync updated {MatchedCount} of {ExportedCount} exported tracks to an older date", matchedCount, dateAddedBySyncKey.Count);
-            return matchedCount > 0;
         }
-        catch (Exception ex)
-        {
-            // Corrupt/unreadable/unexpected-shape XML - leave DateAdded as-is
-            // rather than blocking startup over an optional enrichment step.
-            logger.LogWarning(ex, "Failed to parse iTunes library export at {XmlPath}; date added left unchanged", xmlPath);
-            return false;
-        }
-    }
 
-    // Same mechanism as ITunesPlayCountImporter.TryExportFreshLibraryXml - see
-    // its own doc comment for the AppleScript/timeout details, identical here.
-    private static bool TryExportFreshLibraryXml(ILogger logger)
-    {
-        try
-        {
-            Directory.CreateDirectory(AppDataDirectory.Path);
-            var script = $"tell application \"Music\" to export source 1 as XML to (POSIX file \"{LiveExportPath}\")";
-            var psi = new ProcessStartInfo
-            {
-                FileName = "osascript",
-                ArgumentList = { "-e", script },
-                UseShellExecute = false,
-            };
-            using var process = Process.Start(psi);
-            if (process == null)
-                return false;
-            return process.WaitForExit(60_000) && process.ExitCode == 0 && File.Exists(LiveExportPath);
-        }
-        catch (Exception ex)
-        {
-            logger.LogDebug(ex, "Live Music.app export failed; will fall back to a static export if one exists");
-            return false;
-        }
+        logger.LogInformation("iTunes date added sync updated {MatchedCount} of {ExportedCount} exported tracks to an older date", matchedCount, snapshot.Dates.Count);
+        return matchedCount > 0;
     }
 }

@@ -25,8 +25,7 @@ namespace Flower.Importer;
 // Static rather than a service: every method is a pure function of the settings
 // it is handed plus what is on disk, and its callers reach it from places with
 // no container to resolve out of (a scan on its own scope). Loggers come in as
-// parameters for the same reason - see ITunesPlayCountImporter.Apply's own note
-// on this.
+// parameters for the same reason.
 public static class ITunesIntegration
 {
     // Music.app's configured media folder, when the folder exists and is not
@@ -55,18 +54,19 @@ public static class ITunesIntegration
     // entirely rather than issuing a whole-table rewrite for two imports that
     // found the numbers the last one left - which is most of them.
     //
-    // The app does not come through here: each of its imports is a
-    // cooldown-guarded, busy-scoped job with its own status message
-    // (ITunesImportCoordinator), started from two different places.
+    // The app's ITunesImportCoordinator also shares a snapshot between its
+    // cooldown-guarded jobs, which can start from different settings toggles.
     public static bool ApplyImports(
         MusicLibrarySettings settings, IEnumerable<Track> tracks, ILogger? logger = null)
     {
+        if ((!settings.SyncPlayCountFromITunes && !settings.SyncDateAddedFromITunes) || ITunesSnapshot.Load(logger) is not { } snapshot)
+            return false;
+        var songs = tracks.ToList();
         var changed = false;
-
         if (settings.SyncPlayCountFromITunes)
-            changed |= ITunesPlayCountImporter.Apply(tracks, logger);
+            changed |= ITunesPlayCountImporter.Apply(songs, snapshot, logger);
         if (settings.SyncDateAddedFromITunes)
-            changed |= ITunesDateAddedImporter.Apply(tracks, logger);
+            changed |= ITunesDateAddedImporter.Apply(songs, snapshot, logger);
 
         return changed;
     }
