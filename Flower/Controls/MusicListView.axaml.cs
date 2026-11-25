@@ -476,9 +476,22 @@ public partial class MusicListView : UserControl
         };
         SetupResizeHandle(handle, col);
 
-        // No rule between header cells: the band is one shape, as the rows
-        // under it are; the resize handle at each cell's edge still shows its
-        // cursor.
+        // A short rule at each cell's edge, so the band still looks like one
+        // shape, as the rows under it are, while showing where a column can be
+        // resized. A cursor alone told nobody until they happened on it. It
+        // brightens while the pointer is over the handle.
+        var rule = new Border
+        {
+            Width               = 1,
+            Height              = 12,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment   = VerticalAlignment.Center,
+            IsHitTestVisible    = false,
+        };
+        rule[!Border.BackgroundProperty] = new DynamicResourceExtension("AppDividerBrush");
+        handle.PointerEntered += (_, _) => rule[!Border.BackgroundProperty] = new DynamicResourceExtension("AppTextSecondaryBrush");
+        handle.PointerExited  += (_, _) => rule[!Border.BackgroundProperty] = new DynamicResourceExtension("AppDividerBrush");
+
         var outer = new Grid
         {
             // Transparent (not null) background so the whole cell - not just the
@@ -489,6 +502,7 @@ public partial class MusicListView : UserControl
         // name at runtime, which NativeAOT cannot compile (IL3050).
         outer.Bind(WidthProperty, CompiledBinding.Create((MusicColumnDefinition c) => c.Width, source: col));
         outer.Children.Add(labelArea);
+        outer.Children.Add(rule);
         outer.Children.Add(handle);
 
         // Press-and-drag a header cell horizontally to reorder columns; a plain
