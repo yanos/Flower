@@ -67,7 +67,8 @@ public class ITunesLibraryOfferTests : PinnedDataDirectory
     [Fact]
     public void Yes_does_not_list_a_folder_twice()
     {
-        var settings = new AppSettings { LibraryPaths = [Folder.ToUpperInvariant()] };
+        // The same folder on every disk, whatever it does with case.
+        var settings = new AppSettings { LibraryPaths = [Folder.TrimEnd('/')] };
         ITunesLibraryOffer.Arm(settings);
 
         ITunesLibraryOffer.Apply(settings, Folder, new ITunesLibraryOfferAnswer(true, true));
