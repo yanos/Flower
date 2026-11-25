@@ -63,7 +63,7 @@ public sealed class TrackTagsTests : IDisposable
     }
 
     // Every field, because each is its own line in three lists that have to
-    // agree: what is compared, what is merged and what is written.
+    // agree: what is compared, what is applied to a song and what is written.
     [Fact]
     public void Writing_one_field_changes_that_field_and_no_other()
     {
@@ -87,7 +87,10 @@ public sealed class TrackTagsTests : IDisposable
 
             var read = TrackTags.Of(importer.ImportFile(path)!);
             Assert.Equal(field, TrackTags.Differences(Everything, read));
-            Assert.Equal(read, TrackTags.Merge(Everything, other, field));
+            var song = new Track();
+            TrackTags.ApplyTo(song, Everything);
+            TrackTags.ApplyTo(song, other, field);
+            Assert.Equal(read, TrackTags.Of(song));
         }
     }
 
@@ -144,6 +147,23 @@ public sealed class TrackTagsTests : IDisposable
         Assert.Equal([track.Id.ToKey()], response.NotWritten);
         Assert.Equal("Before", track.Title);
         Assert.Null(track.TagsEditedAt);
+    }
+
+    // An edit to one tag arriving from a device leaves the server's other
+    // values as its file has them - lyrics ending in a newline included.
+    [Fact]
+    public void A_server_applying_one_edited_tag_leaves_the_others_exactly_as_they_were()
+    {
+        var path = TaggedAudioFile.Create(_root, "song.wav", "Before");
+        var track = new Track { Title = "Before", Path = path, Lyrics = "La la\n", Comment = " spaced " };
+        var library = new Library([track]);
+
+        TrackTags.ApplyEdits(library,
+            [new TrackTagEditDto(track.Id.ToKey(), DateTimeOffset.UtcNow, Everything, TrackTagFieldSet.Title)], NullLogger.Instance);
+
+        Assert.Equal("Title", track.Title);
+        Assert.Equal("La la\n", track.Lyrics);
+        Assert.Equal(" spaced ", track.Comment);
     }
 
     // ── Whose tags a device ends up with ─────────────────────────────────
@@ -365,7 +385,7 @@ public sealed class TrackTagsTests : IDisposable
         TrackChangedEventArgs? raised = null;
         library.TrackChanged += (_, e) => raised = e;
 
-        library.ApplySyncedTags([(track, Everything, at, null, TrackTagFieldSet.All)]);
+        library.ApplySyncedTags([(track, Everything, TrackTagFieldSet.All, at, null, TrackTagFieldSet.All)]);
 
         Assert.Equal(ChangeSource.Remote, raised!.Source);
         Assert.Equal(at, track.TagsEditedAt);

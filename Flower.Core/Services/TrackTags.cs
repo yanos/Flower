@@ -119,37 +119,71 @@ public static class TrackTags
         Blank(track.TitleSort), Blank(track.ArtistsSort), Blank(track.AlbumSort), Blank(track.ComposersSort),
         track.IsCompilation);
 
-    public static void ApplyTo(Track track, TrackTagsDto tags)
+    public static void ApplyTo(Track track, TrackTagsDto tags) => ApplyTo(track, tags, TrackTagFieldSet.All);
+
+    // Only the named fields: a song whose Title alone was edited keeps every
+    // other value exactly as it was, untrimmed, so it still matches its file.
+    public static void ApplyTo(Track track, TrackTagsDto tags, TrackTagFieldSet fields)
     {
-        track.Title = tags.Title;
-        track.Artists = tags.Artists;
-        track.Album = tags.Album;
-        track.AlbumArtists = tags.AlbumArtists;
-        track.TrackNumber = tags.TrackNumber;
-        track.TrackCount = tags.TrackCount;
-        track.DiscNumber = tags.DiscNumber;
-        track.DiscCount = tags.DiscCount;
-        track.Year = tags.Year;
-        track.Genre = tags.Genre;
-        track.BeatsPerMinute = tags.BeatsPerMinute;
-        track.InitialKey = tags.InitialKey;
-        track.Grouping = tags.Grouping;
-        track.Composers = tags.Composers;
-        track.Conductor = tags.Conductor;
-        track.RemixedBy = tags.RemixedBy;
-        track.Subtitle = tags.Subtitle;
-        track.Description = tags.Description;
-        track.Comment = tags.Comment;
-        track.Publisher = tags.Publisher;
-        track.Copyright = tags.Copyright;
-        track.ISRC = tags.Isrc;
-        track.Lyrics = tags.Lyrics;
-        track.TitleSort = tags.TitleSort;
-        track.ArtistsSort = tags.ArtistsSort;
-        track.AlbumSort = tags.AlbumSort;
-        track.ComposersSort = tags.ComposersSort;
-        track.IsCompilation = tags.IsCompilation;
+        if (fields.HasFlag(TrackTagFieldSet.Title))
+            track.Title = tags.Title;
+        if (fields.HasFlag(TrackTagFieldSet.Artists))
+            track.Artists = tags.Artists;
+        if (fields.HasFlag(TrackTagFieldSet.Album))
+            track.Album = tags.Album;
+        if (fields.HasFlag(TrackTagFieldSet.AlbumArtists))
+            track.AlbumArtists = tags.AlbumArtists;
+        if (fields.HasFlag(TrackTagFieldSet.TrackNumber))
+            track.TrackNumber = tags.TrackNumber;
+        if (fields.HasFlag(TrackTagFieldSet.TrackCount))
+            track.TrackCount = tags.TrackCount;
+        if (fields.HasFlag(TrackTagFieldSet.DiscNumber))
+            track.DiscNumber = tags.DiscNumber;
+        if (fields.HasFlag(TrackTagFieldSet.DiscCount))
+            track.DiscCount = tags.DiscCount;
+        if (fields.HasFlag(TrackTagFieldSet.Year))
+            track.Year = tags.Year;
+        if (fields.HasFlag(TrackTagFieldSet.Genre))
+            track.Genre = tags.Genre;
+        if (fields.HasFlag(TrackTagFieldSet.BeatsPerMinute))
+            track.BeatsPerMinute = tags.BeatsPerMinute;
+        if (fields.HasFlag(TrackTagFieldSet.InitialKey))
+            track.InitialKey = tags.InitialKey;
+        if (fields.HasFlag(TrackTagFieldSet.Grouping))
+            track.Grouping = tags.Grouping;
+        if (fields.HasFlag(TrackTagFieldSet.Composers))
+            track.Composers = tags.Composers;
+        if (fields.HasFlag(TrackTagFieldSet.Conductor))
+            track.Conductor = tags.Conductor;
+        if (fields.HasFlag(TrackTagFieldSet.RemixedBy))
+            track.RemixedBy = tags.RemixedBy;
+        if (fields.HasFlag(TrackTagFieldSet.Subtitle))
+            track.Subtitle = tags.Subtitle;
+        if (fields.HasFlag(TrackTagFieldSet.Description))
+            track.Description = tags.Description;
+        if (fields.HasFlag(TrackTagFieldSet.Comment))
+            track.Comment = tags.Comment;
+        if (fields.HasFlag(TrackTagFieldSet.Publisher))
+            track.Publisher = tags.Publisher;
+        if (fields.HasFlag(TrackTagFieldSet.Copyright))
+            track.Copyright = tags.Copyright;
+        if (fields.HasFlag(TrackTagFieldSet.Isrc))
+            track.ISRC = tags.Isrc;
+        if (fields.HasFlag(TrackTagFieldSet.Lyrics))
+            track.Lyrics = tags.Lyrics;
+        if (fields.HasFlag(TrackTagFieldSet.TitleSort))
+            track.TitleSort = tags.TitleSort;
+        if (fields.HasFlag(TrackTagFieldSet.ArtistsSort))
+            track.ArtistsSort = tags.ArtistsSort;
+        if (fields.HasFlag(TrackTagFieldSet.AlbumSort))
+            track.AlbumSort = tags.AlbumSort;
+        if (fields.HasFlag(TrackTagFieldSet.ComposersSort))
+            track.ComposersSort = tags.ComposersSort;
+        if (fields.HasFlag(TrackTagFieldSet.IsCompilation))
+            track.IsCompilation = tags.IsCompilation;
     }
+
+    public static uint ParseUnsigned(string? text) => uint.TryParse(text?.Trim(), out var value) ? value : 0;
 
     // Which fields of the two differ.
     public static TrackTagFieldSet Differences(TrackTagsDto a, TrackTagsDto b) =>
@@ -183,37 +217,6 @@ public static class TrackTags
         | (a.ComposersSort != b.ComposersSort ? TrackTagFieldSet.ComposersSort : TrackTagFieldSet.None)
         | (a.IsCompilation != b.IsCompilation ? TrackTagFieldSet.IsCompilation : TrackTagFieldSet.None);
 
-    // current, with the named fields taken from edit.
-    public static TrackTagsDto Merge(TrackTagsDto current, TrackTagsDto edit, TrackTagFieldSet fields) => new(
-        fields.HasFlag(TrackTagFieldSet.Title) ? edit.Title : current.Title,
-        fields.HasFlag(TrackTagFieldSet.Artists) ? edit.Artists : current.Artists,
-        fields.HasFlag(TrackTagFieldSet.Album) ? edit.Album : current.Album,
-        fields.HasFlag(TrackTagFieldSet.AlbumArtists) ? edit.AlbumArtists : current.AlbumArtists,
-        fields.HasFlag(TrackTagFieldSet.TrackNumber) ? edit.TrackNumber : current.TrackNumber,
-        fields.HasFlag(TrackTagFieldSet.TrackCount) ? edit.TrackCount : current.TrackCount,
-        fields.HasFlag(TrackTagFieldSet.DiscNumber) ? edit.DiscNumber : current.DiscNumber,
-        fields.HasFlag(TrackTagFieldSet.DiscCount) ? edit.DiscCount : current.DiscCount,
-        fields.HasFlag(TrackTagFieldSet.Year) ? edit.Year : current.Year,
-        fields.HasFlag(TrackTagFieldSet.Genre) ? edit.Genre : current.Genre,
-        fields.HasFlag(TrackTagFieldSet.BeatsPerMinute) ? edit.BeatsPerMinute : current.BeatsPerMinute,
-        fields.HasFlag(TrackTagFieldSet.InitialKey) ? edit.InitialKey : current.InitialKey,
-        fields.HasFlag(TrackTagFieldSet.Grouping) ? edit.Grouping : current.Grouping,
-        fields.HasFlag(TrackTagFieldSet.Composers) ? edit.Composers : current.Composers,
-        fields.HasFlag(TrackTagFieldSet.Conductor) ? edit.Conductor : current.Conductor,
-        fields.HasFlag(TrackTagFieldSet.RemixedBy) ? edit.RemixedBy : current.RemixedBy,
-        fields.HasFlag(TrackTagFieldSet.Subtitle) ? edit.Subtitle : current.Subtitle,
-        fields.HasFlag(TrackTagFieldSet.Description) ? edit.Description : current.Description,
-        fields.HasFlag(TrackTagFieldSet.Comment) ? edit.Comment : current.Comment,
-        fields.HasFlag(TrackTagFieldSet.Publisher) ? edit.Publisher : current.Publisher,
-        fields.HasFlag(TrackTagFieldSet.Copyright) ? edit.Copyright : current.Copyright,
-        fields.HasFlag(TrackTagFieldSet.Isrc) ? edit.Isrc : current.Isrc,
-        fields.HasFlag(TrackTagFieldSet.Lyrics) ? edit.Lyrics : current.Lyrics,
-        fields.HasFlag(TrackTagFieldSet.TitleSort) ? edit.TitleSort : current.TitleSort,
-        fields.HasFlag(TrackTagFieldSet.ArtistsSort) ? edit.ArtistsSort : current.ArtistsSort,
-        fields.HasFlag(TrackTagFieldSet.AlbumSort) ? edit.AlbumSort : current.AlbumSort,
-        fields.HasFlag(TrackTagFieldSet.ComposersSort) ? edit.ComposersSort : current.ComposersSort,
-        fields.HasFlag(TrackTagFieldSet.IsCompilation) ? edit.IsCompilation : current.IsCompilation);
-
     // Into the file, through the same TagLib# the importer reads with, so a
     // scan of the file afterwards reads back what was applied. Only the named
     // fields: whatever else the file holds (a second genre, a tag Flower does
@@ -222,7 +225,7 @@ public static class TrackTags
     public static void WriteToFile(string path, TrackTagsDto tags, TrackTagFieldSet fields = TrackTagFieldSet.All) =>
         TagFileSave.Edit(path, file => Write(file, tags, fields));
 
-    private static void Write(TagLib.File file, TrackTagsDto tags, TrackTagFieldSet fields)
+    public static void Write(TagLib.File file, TrackTagsDto tags, TrackTagFieldSet fields)
     {
         var tag = file.Tag;
         if (fields.HasFlag(TrackTagFieldSet.Title))
@@ -243,7 +246,7 @@ public static class TrackTags
             tag.DiscCount = tags.DiscCount;
         // Track.Year is the raw string; a tag's year is a number.
         if (fields.HasFlag(TrackTagFieldSet.Year))
-            tag.Year = uint.TryParse(tags.Year?.Trim(), out var year) ? year : 0;
+            tag.Year = ParseUnsigned(tags.Year);
         if (fields.HasFlag(TrackTagFieldSet.Genre))
             tag.Genres = tags.Genre is { } genre ? [genre] : [];
         if (fields.HasFlag(TrackTagFieldSet.BeatsPerMinute))
@@ -298,7 +301,7 @@ public static class TrackTags
     // newer tags back on its next pull.
     public static LibraryTagEditsResponseDto ApplyEdits(Library library, IReadOnlyList<TrackTagEditDto> edits, ILogger logger)
     {
-        var applied = new List<(Track Track, TrackTagsDto Tags, DateTimeOffset EditedAt, string? FileStamp, TrackTagFieldSet EditedFields)>();
+        var applied = new List<(Track Track, TrackTagsDto Tags, TrackTagFieldSet Fields, DateTimeOffset EditedAt, string? FileStamp, TrackTagFieldSet EditedFields)>();
         var notWritten = new List<string>();
         foreach (var edit in edits)
         {
@@ -312,7 +315,7 @@ public static class TrackTags
             try
             {
                 WriteToFile(path, edit.Tags, edit.Fields);
-                applied.Add((track, Merge(Of(track), edit.Tags, edit.Fields), edit.EditedAt, null, track.TagFieldsEdited | edit.Fields));
+                applied.Add((track, edit.Tags, edit.Fields, edit.EditedAt, null, track.TagFieldsEdited | edit.Fields));
             }
             catch (Exception ex)
             {
@@ -325,7 +328,7 @@ public static class TrackTags
         return new LibraryTagEditsResponseDto(applied.Count, notWritten, library.ChangeToken);
     }
 
-    private static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    public static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     // The way the importer joins them, undone: "A, B" is two performers.
     private static string[] Split(string? value) =>

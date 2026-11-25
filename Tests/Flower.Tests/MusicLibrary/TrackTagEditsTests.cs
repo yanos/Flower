@@ -38,6 +38,48 @@ public class TrackTagEditsTests : IDisposable
         Assert.Equal("New", file.Tag.Title);
     }
 
+    [Fact]
+    public void Local_and_synced_masked_edits_write_the_same_tags_and_preserve_unedited_fields()
+    {
+        var local = SyntheticWav.CreateFile(_root, "local.wav", TimeSpan.FromSeconds(1), SyntheticWav.Marker(1));
+        var remote = Path.Combine(_root, "remote.wav");
+        File.Copy(local, remote);
+        foreach (var path in new[] { local, remote })
+            TrackTags.WriteToFile(path, new TrackTagsDto(Album: "Kept", Genre: "Kept genre"));
+        var song = new Track { Path = local, Album = "Kept", Genre = "Kept genre" };
+        TrackTagEdits.Apply([song], [(TrackTagFields.Title, "  Song  "), (TrackTagFields.Artists, " A, B "),
+            (TrackTagFields.Year, " nonsense "), (TrackTagFields.Comment, "  "), (TrackTagFields.TrackNumber, " 2 ")],
+            _ => true, NullLogger.Instance);
+        var fields = TrackTagFieldSet.Title | TrackTagFieldSet.Artists | TrackTagFieldSet.Year | TrackTagFieldSet.Comment | TrackTagFieldSet.TrackNumber;
+        TrackTags.WriteToFile(remote, TrackTags.Of(song), fields);
+        using var a = TagLib.File.Create(local);
+        using var b = TagLib.File.Create(remote);
+        Assert.Equal("Song", a.Tag.Title);
+        Assert.Equal(new[] { "A", "B" }, a.Tag.Performers);
+        Assert.Equal(0u, a.Tag.Year);
+        Assert.Equal(2u, a.Tag.Track);
+        Assert.Equal("Kept", a.Tag.Album);
+        Assert.Equal("Kept genre", Assert.Single(a.Tag.Genres));
+        Assert.Equal((a.Tag.Title, a.Tag.Year, a.Tag.Track, a.Tag.Comment, a.Tag.Album),
+            (b.Tag.Title, b.Tag.Year, b.Tag.Track, b.Tag.Comment, b.Tag.Album));
+        Assert.Equal(a.Tag.Performers, b.Tag.Performers);
+    }
+
+    // Lyrics read from a file often end in a newline; editing the Title must
+    // not trim them in the library while the file keeps them.
+    [Fact]
+    public void An_edit_leaves_the_songs_other_values_exactly_as_they_were()
+    {
+        var path = SyntheticWav.CreateFile(_root, "song.wav", TimeSpan.FromSeconds(1), SyntheticWav.Marker(1));
+        var song = new Track { Title = "Old", Path = path, Lyrics = "La la\n", Comment = " spaced " };
+
+        TrackTagEdits.Apply([song], [(TrackTagFields.Title, "New")], _ => true, NullLogger.Instance);
+
+        Assert.Equal("New", song.Title);
+        Assert.Equal("La la\n", song.Lyrics);
+        Assert.Equal(" spaced ", song.Comment);
+    }
+
     // The file is written first, so a song whose file refused the edit keeps
     // what it had rather than showing an edit its file does not have.
     [Fact]

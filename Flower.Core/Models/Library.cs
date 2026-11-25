@@ -3033,8 +3033,11 @@ namespace Flower.Models
         // FileStamp is what the file looks like now that the tags are in it,
         // for a file whose changes this device uploads (Track.OriginFileStamp):
         // the write changed the file, and it is still the same as the server's.
+        //
+        // Fields are the tags the edit changes, and only those are applied: a
+        // song keeps every other value exactly as its file has it.
         public void ApplySyncedTags(
-            IReadOnlyList<(Track Track, TrackTagsDto Tags, DateTimeOffset EditedAt, string? FileStamp, TrackTagFieldSet EditedFields)> edits)
+            IReadOnlyList<(Track Track, TrackTagsDto Tags, TrackTagFieldSet Fields, DateTimeOffset EditedAt, string? FileStamp, TrackTagFieldSet EditedFields)> edits)
         {
             if (edits.Count == 0)
                 return;
@@ -3042,10 +3045,10 @@ namespace Flower.Models
             var changed = new List<Track>(edits.Count);
             lock (_lock)
             {
-                foreach (var (track, tags, editedAt, fileStamp, editedFields) in edits)
+                foreach (var (track, tags, fields, editedAt, fileStamp, editedFields) in edits)
                 {
                     var current = ResolveCurrent(track);
-                    TrackTags.ApplyTo(current, tags);
+                    TrackTags.ApplyTo(current, tags, fields);
                     current.TagsEditedAt = editedAt;
                     current.TagFieldsEdited = editedFields;
                     current.TagFieldsToSend = TrackTagFieldSet.None;

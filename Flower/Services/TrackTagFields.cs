@@ -8,93 +8,45 @@ using Flower.Models;
 
 namespace Flower.Services;
 
-// One tag Track Info edits: how a song shows it as text in a box, and how text
-// typed there is applied - to the song, and to the TagLib tag of its file. The
-// two Track Info screens, the desktop window and the phone's sheet, edit the
-// same tags the same way from this one list rather than each spelling out
-// two dozen read-and-write pairs of its own.
-public sealed class TrackTagField(TrackTagFieldSet set, Func<Track, string> display, Action<Track, TagLib.Tag, string?> apply)
+// Track Info supplies text; parsing produces a masked draft shared by the
+// local save and sync paths. Field application belongs to TrackTags in Core.
+public sealed class TrackTagField(
+    TrackTagFieldSet set, Func<Track, string> display, Func<TrackTagsDto, string?, TrackTagsDto> edit)
 {
-    // Which tag this is, for saying what an edit changed.
     public TrackTagFieldSet Set { get; } = set;
     public Func<Track, string> Display { get; } = display;
-    public Action<Track, TagLib.Tag, string?> Apply { get; } = apply;
+    public Func<TrackTagsDto, string?, TrackTagsDto> Edit { get; } = edit;
 }
 
 public static class TrackTagFields
 {
-    private static TrackTagField Text(TrackTagFieldSet set, Func<Track, string?> get, Action<Track, string?> setTrack, Action<TagLib.Tag, string?> setTag) =>
-        new(set, t => get(t) ?? "", (t, tag, v) =>
-        {
-            var value = NullIfEmpty(v);
-            setTrack(t, value);
-            setTag(tag, value);
-        });
-
-    // Several names in one box, comma-separated, as the importer joins them -
-    // written to the tag as separate values.
-    private static TrackTagField Names(TrackTagFieldSet set, Func<Track, string?> get, Action<Track, string?> setTrack, Action<TagLib.Tag, string[]> setTag) =>
-        new(set, t => get(t) ?? "", (t, tag, v) =>
-        {
-            setTrack(t, NullIfEmpty(v));
-            setTag(tag, SplitNames(v));
-        });
-
-    private static TrackTagField Number(TrackTagFieldSet set, Func<Track, uint> get, Action<Track, uint> setTrack, Action<TagLib.Tag, uint> setTag) =>
-        new(set, t => get(t) > 0 ? get(t).ToString() : "", (t, tag, v) =>
-        {
-            var value = ParseUInt(v);
-            setTrack(t, value);
-            setTag(tag, value);
-        });
-
-    public static readonly TrackTagField Title = Text(TrackTagFieldSet.Title, t => t.Title, (t, v) => t.Title = v, (tag, v) => tag.Title = v);
-    public static readonly TrackTagField Artists = Names(TrackTagFieldSet.Artists, t => t.Artists, (t, v) => t.Artists = v, (tag, v) => tag.Performers = v);
-    public static readonly TrackTagField Album = Text(TrackTagFieldSet.Album, t => t.Album, (t, v) => t.Album = v, (tag, v) => tag.Album = v);
-    public static readonly TrackTagField AlbumArtists = Names(TrackTagFieldSet.AlbumArtists, t => t.AlbumArtists, (t, v) => t.AlbumArtists = v, (tag, v) => tag.AlbumArtists = v);
-
-    public static readonly TrackTagField TrackNumber = Number(TrackTagFieldSet.TrackNumber, t => t.TrackNumber, (t, v) => t.TrackNumber = v, (tag, v) => tag.Track = v);
-    public static readonly TrackTagField TrackCount = Number(TrackTagFieldSet.TrackCount, t => t.TrackCount, (t, v) => t.TrackCount = v, (tag, v) => tag.TrackCount = v);
-    public static readonly TrackTagField DiscNumber = Number(TrackTagFieldSet.DiscNumber, t => t.DiscNumber, (t, v) => t.DiscNumber = v, (tag, v) => tag.Disc = v);
-    public static readonly TrackTagField DiscCount = Number(TrackTagFieldSet.DiscCount, t => t.DiscCount, (t, v) => t.DiscCount = v, (tag, v) => tag.DiscCount = v);
-
-    // Track.Year stays the text typed while the tag's is a number - an
-    // asymmetry kept from before this list existed.
-    public static readonly TrackTagField Year = new(TrackTagFieldSet.Year, t => t.Year ?? "", (t, tag, v) =>
-    {
-        t.Year = NullIfEmpty(v);
-        tag.Year = ParseUInt(v);
-    });
-
-    public static readonly TrackTagField Genre = new(TrackTagFieldSet.Genre, t => t.Genre ?? "", (t, tag, v) =>
-    {
-        var genre = NullIfEmpty(v);
-        t.Genre = genre;
-        tag.Genres = genre is { } g ? [g] : [];
-    });
-
-    public static readonly TrackTagField BeatsPerMinute = Number(TrackTagFieldSet.BeatsPerMinute, t => t.BeatsPerMinute, (t, v) => t.BeatsPerMinute = v, (tag, v) => tag.BeatsPerMinute = v);
-    public static readonly TrackTagField InitialKey = Text(TrackTagFieldSet.InitialKey, t => t.InitialKey, (t, v) => t.InitialKey = v, (tag, v) => tag.InitialKey = v);
-    public static readonly TrackTagField Grouping = Text(TrackTagFieldSet.Grouping, t => t.Grouping, (t, v) => t.Grouping = v, (tag, v) => tag.Grouping = v);
-
-    public static readonly TrackTagField Composers = Names(TrackTagFieldSet.Composers, t => t.Composers, (t, v) => t.Composers = v, (tag, v) => tag.Composers = v);
-    public static readonly TrackTagField Conductor = Text(TrackTagFieldSet.Conductor, t => t.Conductor, (t, v) => t.Conductor = v, (tag, v) => tag.Conductor = v);
-    public static readonly TrackTagField RemixedBy = Text(TrackTagFieldSet.RemixedBy, t => t.RemixedBy, (t, v) => t.RemixedBy = v, (tag, v) => tag.RemixedBy = v);
-
-    public static readonly TrackTagField Subtitle = Text(TrackTagFieldSet.Subtitle, t => t.Subtitle, (t, v) => t.Subtitle = v, (tag, v) => tag.Subtitle = v);
-    public static readonly TrackTagField Description = Text(TrackTagFieldSet.Description, t => t.Description, (t, v) => t.Description = v, (tag, v) => tag.Description = v);
-    public static readonly TrackTagField Comment = Text(TrackTagFieldSet.Comment, t => t.Comment, (t, v) => t.Comment = v, (tag, v) => tag.Comment = v);
-    public static readonly TrackTagField Publisher = Text(TrackTagFieldSet.Publisher, t => t.Publisher, (t, v) => t.Publisher = v, (tag, v) => tag.Publisher = v);
-    public static readonly TrackTagField Copyright = Text(TrackTagFieldSet.Copyright, t => t.Copyright, (t, v) => t.Copyright = v, (tag, v) => tag.Copyright = v);
-    public static readonly TrackTagField ISRC = Text(TrackTagFieldSet.Isrc, t => t.ISRC, (t, v) => t.ISRC = v, (tag, v) => tag.ISRC = v);
-    public static readonly TrackTagField Lyrics = Text(TrackTagFieldSet.Lyrics, t => t.Lyrics, (t, v) => t.Lyrics = v, (tag, v) => tag.Lyrics = v);
-
-    // The sort tags - TSOT/TSOP/TSOA/TSOC and their MP4 and Xiph equivalents,
-    // which TagLib exposes on the generic Tag.
-    public static readonly TrackTagField TitleSort = Text(TrackTagFieldSet.TitleSort, t => t.TitleSort, (t, v) => t.TitleSort = v, (tag, v) => tag.TitleSort = v);
-    public static readonly TrackTagField ArtistsSort = Names(TrackTagFieldSet.ArtistsSort, t => t.ArtistsSort, (t, v) => t.ArtistsSort = v, (tag, v) => tag.PerformersSort = v);
-    public static readonly TrackTagField AlbumSort = Text(TrackTagFieldSet.AlbumSort, t => t.AlbumSort, (t, v) => t.AlbumSort = v, (tag, v) => tag.AlbumSort = v);
-    public static readonly TrackTagField ComposersSort = Names(TrackTagFieldSet.ComposersSort, t => t.ComposersSort, (t, v) => t.ComposersSort = v, (tag, v) => tag.ComposersSort = v);
+    public static readonly TrackTagField Title = new(TrackTagFieldSet.Title, t => t.Title ?? "", (draft, v) => draft with { Title = TrackTags.Blank(v) });
+    public static readonly TrackTagField Artists = new(TrackTagFieldSet.Artists, t => t.Artists ?? "", (draft, v) => draft with { Artists = TrackTags.Blank(v) });
+    public static readonly TrackTagField Album = new(TrackTagFieldSet.Album, t => t.Album ?? "", (draft, v) => draft with { Album = TrackTags.Blank(v) });
+    public static readonly TrackTagField AlbumArtists = new(TrackTagFieldSet.AlbumArtists, t => t.AlbumArtists ?? "", (draft, v) => draft with { AlbumArtists = TrackTags.Blank(v) });
+    public static readonly TrackTagField TrackNumber = new(TrackTagFieldSet.TrackNumber, t => t.TrackNumber > 0 ? t.TrackNumber.ToString() : "", (draft, v) => draft with { TrackNumber = TrackTags.ParseUnsigned(v) });
+    public static readonly TrackTagField TrackCount = new(TrackTagFieldSet.TrackCount, t => t.TrackCount > 0 ? t.TrackCount.ToString() : "", (draft, v) => draft with { TrackCount = TrackTags.ParseUnsigned(v) });
+    public static readonly TrackTagField DiscNumber = new(TrackTagFieldSet.DiscNumber, t => t.DiscNumber > 0 ? t.DiscNumber.ToString() : "", (draft, v) => draft with { DiscNumber = TrackTags.ParseUnsigned(v) });
+    public static readonly TrackTagField DiscCount = new(TrackTagFieldSet.DiscCount, t => t.DiscCount > 0 ? t.DiscCount.ToString() : "", (draft, v) => draft with { DiscCount = TrackTags.ParseUnsigned(v) });
+    public static readonly TrackTagField Year = new(TrackTagFieldSet.Year, t => t.Year ?? "", (draft, v) => draft with { Year = TrackTags.Blank(v) });
+    public static readonly TrackTagField Genre = new(TrackTagFieldSet.Genre, t => t.Genre ?? "", (draft, v) => draft with { Genre = TrackTags.Blank(v) });
+    public static readonly TrackTagField BeatsPerMinute = new(TrackTagFieldSet.BeatsPerMinute, t => t.BeatsPerMinute > 0 ? t.BeatsPerMinute.ToString() : "", (draft, v) => draft with { BeatsPerMinute = TrackTags.ParseUnsigned(v) });
+    public static readonly TrackTagField InitialKey = new(TrackTagFieldSet.InitialKey, t => t.InitialKey ?? "", (draft, v) => draft with { InitialKey = TrackTags.Blank(v) });
+    public static readonly TrackTagField Grouping = new(TrackTagFieldSet.Grouping, t => t.Grouping ?? "", (draft, v) => draft with { Grouping = TrackTags.Blank(v) });
+    public static readonly TrackTagField Composers = new(TrackTagFieldSet.Composers, t => t.Composers ?? "", (draft, v) => draft with { Composers = TrackTags.Blank(v) });
+    public static readonly TrackTagField Conductor = new(TrackTagFieldSet.Conductor, t => t.Conductor ?? "", (draft, v) => draft with { Conductor = TrackTags.Blank(v) });
+    public static readonly TrackTagField RemixedBy = new(TrackTagFieldSet.RemixedBy, t => t.RemixedBy ?? "", (draft, v) => draft with { RemixedBy = TrackTags.Blank(v) });
+    public static readonly TrackTagField Subtitle = new(TrackTagFieldSet.Subtitle, t => t.Subtitle ?? "", (draft, v) => draft with { Subtitle = TrackTags.Blank(v) });
+    public static readonly TrackTagField Description = new(TrackTagFieldSet.Description, t => t.Description ?? "", (draft, v) => draft with { Description = TrackTags.Blank(v) });
+    public static readonly TrackTagField Comment = new(TrackTagFieldSet.Comment, t => t.Comment ?? "", (draft, v) => draft with { Comment = TrackTags.Blank(v) });
+    public static readonly TrackTagField Publisher = new(TrackTagFieldSet.Publisher, t => t.Publisher ?? "", (draft, v) => draft with { Publisher = TrackTags.Blank(v) });
+    public static readonly TrackTagField Copyright = new(TrackTagFieldSet.Copyright, t => t.Copyright ?? "", (draft, v) => draft with { Copyright = TrackTags.Blank(v) });
+    public static readonly TrackTagField ISRC = new(TrackTagFieldSet.Isrc, t => t.ISRC ?? "", (draft, v) => draft with { Isrc = TrackTags.Blank(v) });
+    public static readonly TrackTagField Lyrics = new(TrackTagFieldSet.Lyrics, t => t.Lyrics ?? "", (draft, v) => draft with { Lyrics = TrackTags.Blank(v) });
+    public static readonly TrackTagField TitleSort = new(TrackTagFieldSet.TitleSort, t => t.TitleSort ?? "", (draft, v) => draft with { TitleSort = TrackTags.Blank(v) });
+    public static readonly TrackTagField ArtistsSort = new(TrackTagFieldSet.ArtistsSort, t => t.ArtistsSort ?? "", (draft, v) => draft with { ArtistsSort = TrackTags.Blank(v) });
+    public static readonly TrackTagField AlbumSort = new(TrackTagFieldSet.AlbumSort, t => t.AlbumSort ?? "", (draft, v) => draft with { AlbumSort = TrackTags.Blank(v) });
+    public static readonly TrackTagField ComposersSort = new(TrackTagFieldSet.ComposersSort, t => t.ComposersSort ?? "", (draft, v) => draft with { ComposersSort = TrackTags.Blank(v) });
 
     // What a box shows for several songs at once: their one value, or null
     // when they differ - the box is then left empty, saying "Multiple values",
@@ -105,16 +57,6 @@ public static class TrackTagFields
         return values.Count == 1 ? values[0] : null;
     }
 
-    public static string? NullIfEmpty(string? s) =>
-        string.IsNullOrWhiteSpace(s) ? null : s.Trim();
-
-    public static string[] SplitNames(string? s) =>
-        string.IsNullOrWhiteSpace(s)
-            ? []
-            : [.. s.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
-
-    public static uint ParseUInt(string? s) =>
-        uint.TryParse(s?.Trim(), out var n) ? n : 0;
 }
 
 // The save half of Track Info, the same on both screens: the edited fields
@@ -143,6 +85,14 @@ public static class TrackTagEdits
         Action<Track>? afterFile = null,
         ICollection<Track>? failed = null)
     {
+        var draft = new TrackTagsDto();
+        var fields = TrackTagFieldSet.None;
+        foreach (var (field, text) in edits)
+        {
+            draft = field.Edit(draft, text);
+            fields |= field.Set;
+        }
+
         var edited = new List<Track>();
         foreach (var track in tracks)
         {
@@ -155,11 +105,7 @@ public static class TrackTagEdits
                 {
                     var extraTook = WhileNotHeld(() => TagFileSave.Edit(path, file =>
                     {
-                        // The fields apply to a song and a tag together; here the
-                        // song is a stand-in nobody reads, so only the tag moves.
-                        var standIn = new Track();
-                        foreach (var (field, text) in edits)
-                            field.Apply(standIn, file.Tag, text);
+                        TrackTags.Write(file, draft, fields);
                         return (true, perFile?.Invoke(file, track) ?? true);
                     }));
                     if (extraTook)
@@ -177,9 +123,7 @@ public static class TrackTagEdits
                 afterFile?.Invoke(track);
             }
 
-            var nowhere = new TagLib.Id3v2.Tag();
-            foreach (var (field, text) in edits)
-                field.Apply(track, nowhere, text);
+            TrackTags.ApplyTo(track, draft, fields);
             edited.Add(track);
         }
 

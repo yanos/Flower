@@ -801,7 +801,7 @@ public class LibrarySyncService
         if (newer.Count == 0)
             return;
 
-        var applied = new List<(Track Track, TrackTagsDto Tags, DateTimeOffset EditedAt, string? FileStamp, TrackTagFieldSet EditedFields)>();
+        var applied = new List<(Track Track, TrackTagsDto Tags, TrackTagFieldSet Fields, DateTimeOffset EditedAt, string? FileStamp, TrackTagFieldSet EditedFields)>();
         foreach (var (local, remote) in newer)
         {
             if (local.Path is not { } path || remote.TagsEditedAt is not { } editedAt)
@@ -822,7 +822,7 @@ public class LibrarySyncService
 
                 // What the file looks like now. Writing tags into it changed
                 // it, and it has not thereby become something to upload.
-                applied.Add((local, TrackTags.Merge(mine, tags, fields), editedAt, LibraryMirrorService.StampOf(path), remote.TagFieldsEdited));
+                applied.Add((local, tags, fields, editedAt, LibraryMirrorService.StampOf(path), remote.TagFieldsEdited));
             }
             catch (Exception ex)
             {
