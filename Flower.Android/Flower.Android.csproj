@@ -2,11 +2,12 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0-android</TargetFramework>
-    <!-- 23 (not 21) because Avalonia 12's transitive Xamarin.AndroidX.Lifecycle.*
-         dependencies now require API 23+ - a manifest merge error otherwise
-         (uses-sdk:minSdkVersion 21 cannot be smaller than version 23 declared
-         in androidx.lifecycle.lifecycle-runtime-android.aar). -->
-    <SupportedOSPlatformVersion>23</SupportedOSPlatformVersion>
+    <!-- 24 (Android 7.0): AndroidNetworkChange follows the default network
+         with ConnectivityManager.RegisterDefaultNetworkCallback, which API 24
+         added, and builds it at startup, so on 23 the app died at launch
+         (CA1416 said so). Avalonia 12's Xamarin.AndroidX.Lifecycle.*
+         dependencies need 23 at least either way. -->
+    <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
     <Nullable>enable</Nullable>
     <ApplicationId>com.yanos.flower</ApplicationId>
     <!-- ApplicationVersion (versionCode) is a plain, strictly-increasing
