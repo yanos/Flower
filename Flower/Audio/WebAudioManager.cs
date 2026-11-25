@@ -65,7 +65,22 @@ namespace Flower.Audio
             public static partial bool GetEnded();
         }
 
-        private readonly Timer _positionTimer;
+        private sealed class BrowserAudioElement : IWebAudioElement
+        {
+            public void SetSrc(string url) => Interop.SetSrc(url);
+            public void Play() => Interop.Play();
+            public void Pause() => Interop.Pause();
+            public void Stop() => Interop.Stop();
+            public void Seek(double seconds) => Interop.Seek(seconds);
+            public void SetVolume(double volume) => Interop.SetVolume(volume);
+            public double GetCurrentTime() => Interop.GetCurrentTime();
+            public double GetDuration() => Interop.GetDuration();
+            public bool GetPaused() => Interop.GetPaused();
+            public bool GetEnded() => Interop.GetEnded();
+        }
+
+        private readonly IWebAudioElement _element;
+        private readonly Timer? _positionTimer;
         private int _volume = 100;
         private bool _isPlaying;
         private bool _endReachedFired;
@@ -97,11 +112,17 @@ namespace Flower.Audio
         public event EventHandler? PlayedOut;
 #pragma warning restore CS0067
 
-        public WebAudioManager()
+        public WebAudioManager() : this(new BrowserAudioElement()) { }
+
+        internal WebAudioManager(IWebAudioElement element, bool poll = true)
         {
-            _positionTimer = new Timer(250);
-            _positionTimer.Elapsed += (_, _) => Poll();
-            _positionTimer.Start();
+            _element = element;
+            if (poll)
+            {
+                _positionTimer = new Timer(250);
+                _positionTimer.Elapsed += (_, _) => Poll();
+                _positionTimer.Start();
+            }
         }
 
         // See the class remarks: one <audio> element, no decode-ahead, no
@@ -138,7 +159,7 @@ namespace Flower.Audio
             }
         }
 
-        private void ApplyVolume() => Interop.SetVolume(Math.Clamp(_volume + _volumeOffset, 0, 100) / 100.0);
+        private void ApplyVolume() => _element.SetVolume(VolumeCurve.GainForPercent(VolumeCurve.EffectivePercent(_volume, _volumeOffset)));
 
         public float Position
         {
@@ -151,22 +172,22 @@ namespace Flower.Audio
             {
                 var length = Length;
                 if (length > 0)
-                    Interop.Seek(value * length / 1000.0);
+                    _element.Seek(value * length / 1000.0);
             }
         }
 
-        public long Time => (long)(Interop.GetCurrentTime() * 1000);
+        public long Time => (long)(_element.GetCurrentTime() * 1000);
 
-        public long Length => (long)(Interop.GetDuration() * 1000);
+        public long Length => (long)(_element.GetDuration() * 1000);
 
         // immediate is ignored: the <audio> element has no buffered tail of
         // its own to preserve - see IAudioManager.Play.
         public void Play(Track track, bool immediate = true)
         {
             _endReachedFired = false;
-            Interop.SetSrc(track.Path ?? string.Empty);
-            Interop.SetVolume(_volume / 100.0);
-            Interop.Play();
+            _element.SetSrc(track.Path ?? string.Empty);
+            ApplyVolume();
+            _element.Play();
             _isPlaying = true;
             Playing?.Invoke(this, EventArgs.Empty);
         }
@@ -181,21 +202,21 @@ namespace Flower.Audio
 
         public void Resume()
         {
-            Interop.Play();
+            _element.Play();
             _isPlaying = true;
             Playing?.Invoke(this, EventArgs.Empty);
         }
 
         public void Pause()
         {
-            Interop.Pause();
+            _element.Pause();
             _isPlaying = false;
             Paused?.Invoke(this, EventArgs.Empty);
         }
 
         public void Stop()
         {
-            Interop.Stop();
+            _element.Stop();
             _isPlaying = false;
             Stopped?.Invoke(this, EventArgs.Empty);
         }
@@ -225,10 +246,10 @@ namespace Flower.Audio
 
         private void Poll()
         {
-            _isPlaying = !Interop.GetPaused();
+            _isPlaying = !_element.GetPaused();
             PositionChanged?.Invoke(this, EventArgs.Empty);
 
-            if (!_endReachedFired && Interop.GetEnded())
+            if (!_endReachedFired && _element.GetEnded())
             {
                 _endReachedFired = true;
                 _isPlaying = false;
@@ -238,7 +259,24 @@ namespace Flower.Audio
 
         public void Dispose()
         {
-            _positionTimer.Dispose();
+            _positionTimer?.Dispose();
         }
+    }
+}
+
+namespace Flower.Audio
+{
+    internal interface IWebAudioElement
+    {
+        void SetSrc(string url);
+        void Play();
+        void Pause();
+        void Stop();
+        void Seek(double seconds);
+        void SetVolume(double volume);
+        double GetCurrentTime();
+        double GetDuration();
+        bool GetPaused();
+        bool GetEnded();
     }
 }

@@ -15,5 +15,11 @@ namespace Flower.Audio
             var normalized = Math.Clamp(percent, 0, 100) / 100f;
             return normalized * normalized * normalized;
         }
+
+        // The slider's own volume moved by a track's adjustment
+        // (IAudioManager.VolumeOffset), on the same 0-100 scale. Every
+        // player asks this, then the curve above - native in its sink, the
+        // browser in Web Audio - so the two cannot drift apart again.
+        public static int EffectivePercent(int volume, int offset) => Math.Clamp(volume + offset, 0, 100);
     }
 }

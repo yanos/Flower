@@ -218,7 +218,7 @@ namespace Flower.Audio
             }
         }
 
-        private void ApplyVolume() => _sink.Volume = Math.Clamp(_userVolume + _volumeOffset, 0, 100);
+        private void ApplyVolume() => _sink.Volume = VolumeCurve.EffectivePercent(_userVolume, _volumeOffset);
 
         public float Position
         {
