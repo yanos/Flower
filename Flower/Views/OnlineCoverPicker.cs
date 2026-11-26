@@ -39,8 +39,8 @@ internal static class OnlineCoverPicker
     /// <summary>
     /// Downloads what <paramref name="found"/> names and steps through it on
     /// <paramref name="viewer"/>, already open, until a cover is taken - which
-    /// <paramref name="use"/> writes, under <paramref name="updatingFiles"/>'s
-    /// count - or the viewer is closed. Returns what to say under the cover
+    /// <paramref name="use"/> writes or stages, under <paramref name="busyText"/>
+    /// - or the viewer is closed. Returns what to say under the cover
     /// when nothing could be downloaded, having closed the viewer; null
     /// otherwise.
     /// </summary>
@@ -49,7 +49,7 @@ internal static class OnlineCoverPicker
         OnlineCoverArt finder,
         IReadOnlyList<OnlineCoverArt.Candidate> found,
         Func<byte[], string, Task> use,
-        Func<string> updatingFiles,
+        Func<string> busyText,
         CancellationToken ct)
     {
         viewer.SetPosition(0, 1);
@@ -118,7 +118,7 @@ internal static class OnlineCoverPicker
         {
             if (picked is not { } bytes)
                 return;
-            viewer.SetBusy(true, updatingFiles());
+            viewer.SetBusy(true, busyText());
             await use(bytes, LocalAlbumArtReader.MimeTypeForBytes(bytes) ?? "image/jpeg");
             viewer.Close();
         };

@@ -56,6 +56,11 @@ public partial class TrackInfoWindow : Window
     // to show - see AlbumArtLoader.ShareOneCover.
     private bool _multipleArt;
 
+    // A cover chosen but not yet written - see "Artwork tab" below - and
+    // whether Save is writing one now.
+    private StagedArt? _staged;
+    private bool _writingArt;
+
     // A Find Online still searching or downloading, and the covers it found
     // while they are on show - both dropped on Prev/Next and on closing.
     private CancellationTokenSource? _findArt;
@@ -115,10 +120,12 @@ public partial class TrackInfoWindow : Window
         // before the pages are there - Details is the one showing by default.
         if (DetailsPage is null)
             return;
-        Control[] pages = [DetailsPage, ExtraPage, SortingPage, LyricsPage, ArtworkPage, FilePage];
+        var pages = TabPagesInOrder;
         for (var i = 0; i < pages.Length; i++)
             pages[i].IsVisible = i == Tabs.SelectedIndex;
     }
+
+    private Control[] TabPagesInOrder => [DetailsPage, ExtraPage, SortingPage, LyricsPage, ArtworkPage, FilePage];
 
     private void PrevButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => Navigate(-1);
     private void NextButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => Navigate(+1);
@@ -130,14 +137,13 @@ public partial class TrackInfoWindow : Window
     }
 
     // Saved before moving on: stepping to the next song is not leaving, so
-    // what was typed for this one is kept.
-    private void Navigate(int delta)
+    // what was typed for this one, and a cover chosen for it, are kept.
+    private async void Navigate(int delta)
     {
         var next = _index + delta;
         if (next < 0 || next >= _tracks.Count)
             return;
-        _info.Save();
-        if (_info.SaveError != null)
+        if (!await SaveAsync())
             return;
 
         _index = next;
@@ -150,6 +156,7 @@ public partial class TrackInfoWindow : Window
     {
         StopFindingArt();
         ArtSearchRow.IsVisible = false;
+        _staged = null;
         _info.Load(tracks);
         GenreMenuButton.IsVisible = _info.IsEditable && _info.GenreSuggestions.Count > 0;
         _ = LoadAlbumArtAsync();
@@ -220,11 +227,22 @@ public partial class TrackInfoWindow : Window
         UpdateArtworkTab();
     }
 
-    private void OkButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private async void OkButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (await SaveAsync())
+            Close();
+    }
+
+    // The tags, as they always were, then a cover chosen since Load. False
+    // when either did not reach every file, leaving the window open to say
+    // why and to try again.
+    private async Task<bool> SaveAsync()
     {
         _info.Save();
-        if (_info.SaveError == null)
-            Close();
+        if (_info.SaveError != null)
+            return false;
+
+        return await WriteStagedArtAsync();
     }
 
     private void CancelButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -234,15 +252,14 @@ public partial class TrackInfoWindow : Window
 
     // ── Artwork tab ────────────────────────────────────────────────────────
     //
-    // Unlike every other field in this window, artwork is not staged and
-    // applied on Save: a change here writes the picture into the tag immediately
-    // (AlbumArtEditor). Two reasons. The tag write is a whole-file rewrite
-    // of megabytes, not a string assignment, so batching it behind Save would make
-    // Cancel look free while the expensive part still had to happen; and the
-    // preview the user is looking at *is* the file's art once it is written, so
-    // there is nothing left for Save to confirm. Cancel therefore does not undo an
-    // artwork change - which is why the buttons name actions ("Choose
-    // File…", "Remove") rather than reading as pending edits.
+    // Like every other field in this window, a new cover waits for Save:
+    // dropping, choosing, pasting, finding one online or removing it only
+    // changes what is shown (StageArtAsync), and Cancel leaves the files as
+    // they were. Save writes it (WriteStagedArtAsync, through AlbumArtEditor)
+    // after the tags, under a spinner and the count of files, since it is a
+    // whole-file rewrite of every song edited - longer still for songs the
+    // server rewrites. The window stays open until it is done, and says why
+    // when it is not.
     //
     // "The file" is not always one of this device's: a track that only exists on
     // the paired server is written by asking that server to do it - see
@@ -253,12 +270,17 @@ public partial class TrackInfoWindow : Window
     // it holds nothing but the list it is given.
     private AlbumArtEditor ArtEditor() => _main.ArtEditorFor(_editTracks, _logger);
 
+    // Two drop targets for one cover: the Artwork tab's frame, and the
+    // header's thumbnail, which is there whichever tab is showing.
     private void SetUpArtworkDropTarget()
     {
         Closed += (_, _) => StopFindingArt();
-        DragDrop.SetAllowDrop(ArtDropTarget, true);
-        ArtDropTarget.AddHandler(DragDrop.DragOverEvent, ArtDropTarget_DragOver);
-        ArtDropTarget.AddHandler(DragDrop.DropEvent, ArtDropTarget_Drop);
+        foreach (var target in new Control[] { ArtDropTarget, HeaderArtDropTarget })
+        {
+            DragDrop.SetAllowDrop(target, true);
+            target.AddHandler(DragDrop.DragOverEvent, ArtDropTarget_DragOver);
+            target.AddHandler(DragDrop.DropEvent, ArtDropTarget_Drop);
+        }
     }
 
     // The dropped file's path, but only if it is an image format the read side
@@ -272,18 +294,51 @@ public partial class TrackInfoWindow : Window
         return LocalAlbumArtReader.MimeTypeForExtension(Path.GetExtension(path)) != null ? path : null;
     }
 
+    // An image file, or a picture with no file behind it - one dragged out of
+    // a browser or Photos, which the platform hands over as a bitmap.
+    private static bool HoldsImage(IDataTransfer data) =>
+        DroppedImagePath(data) != null || data.Contains(DataFormat.Bitmap);
+
     private void ArtDropTarget_DragOver(object? sender, DragEventArgs e)
     {
-        var accepted = ArtEditor().LocalTargets().Count > 0 && DroppedImagePath(e.DataTransfer) != null;
+        var accepted = !_writingArt && ArtEditor().CanWrite && HoldsImage(e.DataTransfer);
         e.DragEffects = accepted ? DragDropEffects.Copy : DragDropEffects.None;
         e.Handled = true;
     }
 
+    // A drop on the header from another tab that is refused shows the
+    // Artwork tab, since that is where it says why.
     private async void ArtDropTarget_Drop(object? sender, DragEventArgs e)
     {
         e.Handled = true;
+        if (_writingArt || !ArtEditor().CanWrite)
+            return;
+
+        bool applied;
         if (DroppedImagePath(e.DataTransfer) is string path)
-            await ApplyArtFromFileAsync(path);
+        {
+            applied = await StageArtFromFileAsync(path);
+        }
+        else if (e.DataTransfer.Contains(DataFormat.Bitmap))
+        {
+            using var bitmap = e.DataTransfer.TryGetBitmap();
+            if (ClipboardArt.EncodePng(bitmap) is { } png)
+            {
+                applied = await StageArtAsync(png, ClipboardArt.MimeType);
+            }
+            else
+            {
+                ArtworkInfoText.Text = "That image couldn't be read.";
+                applied = false;
+            }
+        }
+        else
+        {
+            return;
+        }
+
+        if (!applied && sender == HeaderArtDropTarget)
+            Tabs.SelectedIndex = Array.IndexOf(TabPagesInOrder, ArtworkPage);
     }
 
     private async void ChangeArtButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -307,15 +362,17 @@ public partial class TrackInfoWindow : Window
         });
 
         if (files.FirstOrDefault()?.TryGetLocalPath() is string path)
-            await ApplyArtFromFileAsync(path);
+            await StageArtFromFileAsync(path);
     }
 
-    private async Task ApplyArtFromFileAsync(string path)
+    // These return whether the picture was taken, and say why on the
+    // Artwork tab when it was not.
+    private async Task<bool> StageArtFromFileAsync(string path)
     {
         if (LocalAlbumArtReader.MimeTypeForExtension(Path.GetExtension(path)) is not string mimeType)
         {
             ArtworkInfoText.Text = "That file isn't an image format Flower can read.";
-            return;
+            return false;
         }
 
         byte[] bytes;
@@ -327,48 +384,109 @@ public partial class TrackInfoWindow : Window
         {
             _logger.LogWarning(ex, "Could not read the picked album art file {Path}", path);
             ArtworkInfoText.Text = "That file couldn't be read.";
-            return;
+            return false;
         }
 
-        await WriteArtAsync(bytes, mimeType);
+        return await StageArtAsync(bytes, mimeType);
     }
 
-    private Task WriteArtAsync(byte[] bytes, string mimeType) =>
-        ApplyArtChangeAsync(editor => editor.WriteAsync(bytes, mimeType));
+    // Not a confirmation-guarded action even though it destroys data: like
+    // every other change of cover it is only shown until Save, and Cancel
+    // takes it back.
+    private Task<bool> RemoveArtAsync() => StageArtAsync(null, null);
 
-    // Not a confirmation-guarded action even though it destroys data, for the
-    // same reason Change is not - it is one explicit click on a button that
-    // says what it does, on a file the user is already editing the tags of,
-    // and the way back is to drop the old image in again (which is why Open
-    // Full Size and dragging the art out both exist before this button does).
-    private Task RemoveArtAsync() =>
-        ApplyArtChangeAsync(editor => editor.RemoveAsync());
-
-    private async Task ApplyArtChangeAsync(Func<AlbumArtEditor, Task<string?>> change)
+    // Every way of changing the cover ends here: the picture, or null for
+    // none, shown in place of the cover until Save writes it. Decoded first,
+    // so a file that only looks like an image is refused now rather than
+    // written. Counts as a load of its own (_artRequestId), so one still
+    // running from before cannot paint the old cover over it.
+    private async Task<bool> StageArtAsync(byte[]? bytes, string? mimeType)
     {
-        var editor = ArtEditor();
-        if (!editor.CanWrite)
-            return;
+        if (_writingArt || !ArtEditor().CanWrite)
+            return false;
 
-        ChangeArtButton.IsEnabled = false;
-        PasteArtButton.IsEnabled = false;
-        FindArtButton.IsEnabled = false;
-        RemoveArtButton.IsEnabled = false;
         // A cover chosen some other way leaves nothing to search for again.
         ArtSearchRow.IsVisible = false;
+        var requestId = ++_artRequestId;
+        var decoded = bytes is null ? null : await Task.Run(() => ArtworkViewer.DecodeForScreen(bytes));
+        if (requestId != _artRequestId)
+            return false;
+        if (bytes is not null && decoded is null)
+        {
+            ArtworkInfoText.Text = "That image couldn't be read.";
+            return false;
+        }
 
-        var message = await change(editor);
-        await LoadAlbumArtAsync();
+        _staged = new StagedArt(bytes, mimeType);
+        _art = bytes is null ? null : new LocalAlbumArt(bytes, mimeType!);
+        _artPixelSize = decoded?.Size;
+        _multipleArt = false;
+        AlbumArtView.AlbumArt = decoded?.Bitmap;
+        ArtworkLargeView.AlbumArt = decoded?.Bitmap;
+        UpdateArtworkTab();
+        return true;
+    }
+
+    // Kept staged when it fails, so Save tries again; writing the songs that
+    // took it a second time changes nothing.
+    private async Task<bool> WriteStagedArtAsync()
+    {
+        if (_staged is not { } staged)
+            return true;
+
+        var editor = ArtEditor();
+        SetArtBusy(true);
+        ArtworkInfoText.Text = UpdatingFilesText();
+        string? message;
+        try
+        {
+            message = staged.Bytes is { } bytes
+                ? await editor.WriteAsync(bytes, staged.MimeType!)
+                : await editor.RemoveAsync();
+        }
+        finally
+        {
+            SetArtBusy(false);
+        }
 
         if (message != null)
+        {
             ArtworkInfoText.Text = message;
+            Tabs.SelectedIndex = Array.IndexOf(TabPagesInOrder, ArtworkPage);
+            return false;
+        }
+
+        _staged = null;
+        return true;
+    }
+
+    // The cover dims under a spinner, in the header and on the Artwork tab,
+    // and nothing that would change it, save again or leave can be pressed
+    // until the files are written.
+    private void SetArtBusy(bool busy)
+    {
+        _writingArt = busy;
+        HeaderArtBusy.IsVisible = busy;
+        ArtBusy.IsVisible = busy;
+        OkButton.IsEnabled = !busy;
+        CancelButton.IsEnabled = !busy;
+        if (busy)
+        {
+            PrevButton.IsEnabled = false;
+            NextButton.IsEnabled = false;
+        }
+        else
+        {
+            UpdateNavButtons();
+        }
+        UpdateArtworkTab();
     }
 
     private async void RemoveArtButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
         await RemoveArtAsync();
 
     // The clipboard's image - a screenshot, one copied from a browser - as
-    // the cover, written at once like Change. See ClipboardArt.
+    // the cover, staged like Change. See ClipboardArt.
     private async void PasteArtButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (await ClipboardArt.TryReadPngAsync(Clipboard) is not { } png)
@@ -376,14 +494,14 @@ public partial class TrackInfoWindow : Window
             ArtworkInfoText.Text = "There's no image on the clipboard.";
             return;
         }
-        await WriteArtAsync(png, ClipboardArt.MimeType);
+        await StageArtAsync(png, ClipboardArt.MimeType);
     }
 
     // A cover found online for the album the Details tab's boxes name - the
     // boxes rather than the song, so a misspelt album can be corrected and
     // searched again before Save. Chosen over the whole window
-    // (OnlineCoverPicker, shared with the phone's sheet), and written at once
-    // like Change, once Use This Cover is pressed.
+    // (OnlineCoverPicker, shared with the phone's sheet), and staged like
+    // Change once Use This Cover is pressed.
     private async void FindArtButton_Click(object? sender, RoutedEventArgs e)
     {
         if (_editTracks.Count == 0)
@@ -462,8 +580,8 @@ public partial class TrackInfoWindow : Window
         };
         viewer.Open(this);
         var message = await OnlineCoverPicker.ChooseAsync(viewer, finder, found!,
-            WriteArtAsync,
-            UpdatingFilesText,
+            StageArtAsync,
+            () => "Using this cover\u2026",
             find.Token);
         if (message is not null && !find.IsCancellationRequested)
             ArtworkInfoText.Text = message;
@@ -649,16 +767,22 @@ public partial class TrackInfoWindow : Window
         var canWrite = writable > 0 || serverTargets > 0;
         var hasArt = _art?.Bytes is { Length: > 0 };
 
-        ArtDropHint.IsVisible = !hasArt && canWrite && !_multipleArt;
+        var changeable = canWrite && !_writingArt;
+
+        ArtDropHint.IsVisible = !hasArt && changeable && !_multipleArt;
         MultipleArtLabel.IsVisible = _multipleArt;
         MultipleArtLargeLabel.IsVisible = _multipleArt;
         AlbumArtView.Classes.Set("multipleArt", _multipleArt);
-        ChangeArtButton.IsEnabled = canWrite;
-        PasteArtButton.IsEnabled = canWrite;
-        FindArtButton.IsEnabled = canWrite;
-        RemoveArtButton.IsEnabled = canWrite && (hasArt || _multipleArt);
+        ChangeArtButton.IsEnabled = changeable;
+        PasteArtButton.IsEnabled = changeable;
+        FindArtButton.IsEnabled = changeable;
+        RemoveArtButton.IsEnabled = changeable && (hasArt || _multipleArt);
         OpenArtButton.IsEnabled = hasArt;
 
-        ArtworkInfoText.Text = _info.DescribeArtwork(_art, _artPixelSize, writable, serverTargets, _multipleArt);
+        ArtworkInfoText.Text = _info.DescribeArtwork(_art, _artPixelSize, writable, serverTargets, _multipleArt,
+            unsaved: _staged != null);
     }
+
+    // Bytes null for taking the cover out.
+    private sealed record StagedArt(byte[]? Bytes, string? MimeType);
 }

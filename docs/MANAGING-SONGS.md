@@ -98,6 +98,7 @@ Open **Track Info** from a song menu, or press `Cmd/Ctrl+I` on desktop. Edit the
 
 - Artwork is stored in songs by default. Turn on **Save covers in the album's folder** to save a separate image instead.
 - **Find online** looks for artwork. You can adjust search words without changing song information.
+- On desktop, you can drop an image onto the cover at the top of Track Info or onto the **Artwork** tab. A new or removed cover is written when you click **Save**, like the other fields; **Cancel** leaves the files unchanged.
 - You can't edit tags in the browser player yet.
 
 ### Editing in another program

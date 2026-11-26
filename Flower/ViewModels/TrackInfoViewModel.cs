@@ -477,8 +477,10 @@ public sealed class TrackInfoViewModel : ViewModelBase
     // can be changed - or why it cannot. writable is how many songs have a
     // file here to write into, serverTargets how many of the paired server's
     // albums or songs its administrator could have the server write instead, and
-    // multiple that the songs do not share one cover (AlbumArtLoader.ShareOneCover).
-    public string DescribeArtwork(LocalAlbumArt? art, PixelSize? size, int writable, int serverTargets, bool multiple)
+    // multiple that the songs do not share one cover (AlbumArtLoader.ShareOneCover),
+    // and unsaved that the cover described is one chosen since, which Save writes.
+    public string DescribeArtwork(LocalAlbumArt? art, PixelSize? size, int writable, int serverTargets, bool multiple,
+        bool unsaved = false)
     {
         if (Tracks.Count == 0)
             return "";
@@ -510,7 +512,7 @@ public sealed class TrackInfoViewModel : ViewModelBase
             parts.Add("No artwork");
         }
 
-        parts.Add("Drop an image or choose a file");
+        parts.Add(unsaved ? "Not saved yet" : "Drop an image or choose a file");
         return string.Join("  ·  ", parts);
     }
 

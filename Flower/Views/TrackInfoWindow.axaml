@@ -191,21 +191,33 @@
            image yet (still loading, or the track has no art at all) so the
            box doesn't collapse to zero width before art loads. A glance-level
            "which track am I editing" cue: the Artwork tab is where the art is
-           actually looked at (and replaced) at size. -->
-      <Panel Grid.Column="0" Margin="0,0,18,0" VerticalAlignment="Top">
+           actually looked at (and replaced) at size. A drop target like
+           the Artwork tab's frame, so a cover can be dropped from any tab;
+           Background makes the letterbox around narrow art take it too. -->
+      <Panel x:Name="HeaderArtDropTarget" Grid.Column="0" Margin="0,0,18,0" VerticalAlignment="Top"
+             Background="Transparent">
         <controls:AlbumArtView x:Name="AlbumArtView"
                 Height="88" MinWidth="88"
                 Stretch="Uniform"
                 DoubleTapped="Artwork_DoubleTapped"/>
         <TextBlock x:Name="MultipleArtLabel" Classes="multipleArt" FontSize="12" Margin="8,0" IsVisible="False"/>
+        <!-- While Save writes a new cover: dimmed under a spinner, here and
+             on the Artwork tab (SetArtBusy). -->
+        <Border x:Name="HeaderArtBusy"
+                CornerRadius="{x:Static controls:AlbumArtView.CoverCornerRadius}"
+                Background="#80000000"
+                IsVisible="False">
+          <materialIcons:MaterialIcon Classes="spinning" Kind="Loading"
+                                      Width="28" Height="28" Foreground="White"/>
+        </Border>
       </Panel>
 
       <StackPanel x:Name="TitleStack" Grid.Column="1" VerticalAlignment="Center" Spacing="4">
         <!-- The star beside the name: Flower's own record rather than a tag,
              kept per track in the library rather than in the file (see
              Track's "Stats" region), which is why it writes immediately
-             instead of waiting for Save, like the artwork and the playback
-             options, and unlike every tag field. One star, on or off, because
+             instead of waiting for Save, like the playback options, and
+             unlike every tag field and the artwork. One star, on or off, because
              that is what a rating is in Flower and on the server it syncs
              with. -->
         <Grid ColumnDefinitions="Auto,Auto">
@@ -482,14 +494,13 @@
 
       <!-- ── Artwork ──
            The art at a size worth looking at, plus the ways to move a picture
-           in and out of it: drop a file on it or pick one to replace it, find
-           one online (chosen over the whole window - OnlineCoverPicker), drag
-           it off to anywhere that takes a file to get a full-size copy,
+           in and out of it: drop an image on it (or on the header's cover)
+           or pick a file to replace it, find one online (chosen over the
+           whole window - OnlineCoverPicker), drag it off to anywhere that
+           takes a file to get a full-size copy,
            double-click to open it at its own size, Remove to take it out of the
-           tag. Every one of those writes straight into the file's own tag -
-           there is no pending state here and Save/Cancel do not apply to it,
-           which is why the buttons say what they do rather than staging an edit
-           like every other field in this window. -->
+           tag. Like every other field in this window, a change shows here and
+           is written by Save; Cancel leaves the files as they were. -->
       <Panel x:Name="ArtworkPage" IsVisible="False">
         <StackPanel Margin="24,20,24,20" Spacing="8" HorizontalAlignment="Center">
           <!-- Background is what makes the whole framed area a drop target:
@@ -517,6 +528,10 @@
                          IsVisible="False"
                          HorizontalAlignment="Center"
                          VerticalAlignment="Center"/>
+              <Border x:Name="ArtBusy" Background="#80000000" IsVisible="False">
+                <materialIcons:MaterialIcon Classes="spinning" Kind="Loading"
+                                            Width="48" Height="48" Foreground="White"/>
+              </Border>
             </Panel>
           </Border>
 
