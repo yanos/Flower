@@ -29,22 +29,22 @@ namespace Flower.Services;
 // keying one server differently. This has no such dependency.
 public static class SearchText
 {
-    // True if value contains query, ignoring case and accents.
+    // True if value contains query, ignoring case, accents, and spaces and
+    // punctuation the query leaves out: "me mom" finds "Me, Mom". Punctuation
+    // the query has must be there, so "(Live)" stays the live versions.
     //
     // The fold is per-character and allocation-free: most libraries are mostly
     // ASCII, and this runs over every field of every track on each keystroke.
     public static bool Contains(string? value, string? query)
     {
-        if (string.IsNullOrEmpty(query))
-            return false;
-        if (string.IsNullOrEmpty(value) || value.Length < query.Length)
+        if (!HasText(query) || string.IsNullOrEmpty(value))
             return false;
 
         // Ordinal is the right comparison *after* folding, because folding is
         // what the culture-sensitive comparison would have been doing.
-        for (var start = 0; start <= value.Length - query.Length; start++)
+        for (var start = 0; start < value.Length; start++)
         {
-            if (MatchesAt(value, query, start))
+            if (!char.IsWhiteSpace(value[start]) && MatchesAt(value, query!, start))
                 return true;
         }
 
@@ -58,30 +58,57 @@ public static class SearchText
     // it is being typed in (SearchSuggestions) is ranked by this.
     public static int WordStartMatch(string? value, string? query)
     {
-        if (string.IsNullOrEmpty(query) || string.IsNullOrEmpty(value) || value.Length < query.Length)
+        if (!HasText(query) || string.IsNullOrEmpty(value))
             return -1;
-        if (MatchesAt(value, query, 0))
+        // A name opening on a bracket does not begin with the word after it.
+        if ((char.IsLetterOrDigit(value[0]) || Fold(value[0]) == Fold(query!.TrimStart()[0])) && MatchesAt(value, query!, 0))
             return 0;
 
-        for (var start = 1; start <= value.Length - query.Length; start++)
+        for (var start = 1; start < value.Length; start++)
         {
-            if (!char.IsLetterOrDigit(value[start - 1]) && char.IsLetterOrDigit(value[start]) && MatchesAt(value, query, start))
+            if (!char.IsLetterOrDigit(value[start - 1]) && char.IsLetterOrDigit(value[start]) && MatchesAt(value, query!, start))
                 return 1;
         }
 
         return -1;
     }
 
+    // Spaces alone are no query.
+    private static bool HasText(string? query)
+    {
+        if (query is null)
+            return false;
+        foreach (var c in query)
+        {
+            if (!char.IsWhiteSpace(c))
+                return true;
+        }
+        return false;
+    }
+
+    // Skips spaces in both and punctuation in value, but a mark in query
+    // must meet the same mark. Never backtracks: only non-letters are skipped.
     private static bool MatchesAt(string value, string query, int start)
     {
-        for (var i = 0; i < query.Length; i++)
+        var v = start;
+        foreach (var q in query)
         {
-            if (Fold(value[start + i]) != Fold(query[i]))
+            if (char.IsWhiteSpace(q))
+                continue;
+
+            var wanted = Fold(q);
+            var mark = char.IsPunctuation(q);
+            while (v < value.Length && Skippable(value[v]) && !(mark && Fold(value[v]) == wanted))
+                v++;
+            if (v >= value.Length || Fold(value[v]) != wanted)
                 return false;
+            v++;
         }
 
         return true;
     }
+
+    private static bool Skippable(char c) => char.IsWhiteSpace(c) || char.IsPunctuation(c);
 
     // One character, lowercased and stripped of its accent.
     //
@@ -126,6 +153,9 @@ public static class SearchText
             'ź' or 'ż' or 'ž' => 'z',
             'ð' => 'd',
             'þ' => 't',
+            // Curly quotes match straight ones.
+            '\u2018' or '\u2019' or '\u02bc' => '\'',
+            '\u201c' or '\u201d' => '"',
             _ => lower,
         };
     }

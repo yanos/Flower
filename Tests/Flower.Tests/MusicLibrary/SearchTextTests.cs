@@ -91,6 +91,37 @@ public class SearchTextTests
         Assert.True(SearchText.Contains("Live at the Café de Paris", "café"));
     }
 
+    // A query without punctuation ignores the name's.
+    [Theory]
+    [InlineData("Me, Mom", "me mom")]
+    [InlineData("AC/DC", "acdc")]
+    [InlineData("AC/DC", "ac dc")]
+    [InlineData("Guns N’ Roses", "guns n roses")]
+    [InlineData("Simon & Garfunkel", "simon garfunkel")]
+    [InlineData("Sgt. Pepper's Lonely Hearts Club Band", "sgt peppers")]
+    [InlineData("Don't Stop Me Now", "dont stop")]
+    public void A_query_without_punctuation_finds_a_name_with_some(string value, string query) =>
+        Assert.True(SearchText.Contains(value, query));
+
+    // Typed punctuation must be there; curly and straight quotes match.
+    [Theory]
+    [InlineData("Sgt. Pepper's Lonely Hearts Club Band", "sgt pepper's", true)]
+    [InlineData("Don't Stop Me Now", "don\u2019t", true)]
+    [InlineData("Don\u2019t Stop Me Now", "don't", true)]
+    [InlineData("Live Forever", "(live)", false)]
+    [InlineData("Wonderwall (Live)", "(live)", true)]
+    [InlineData("Me Mom", "me, mom", false)]
+    [InlineData("Me, Mom", "me, mom", true)]
+    public void Punctuation_typed_in_the_query_has_to_be_there(string value, string query, bool expected) =>
+        Assert.Equal(expected, SearchText.Contains(value, query));
+
+    // Ignoring spaces is not ignoring letters.
+    [Theory]
+    [InlineData("Me, Mom", "me dad")]
+    [InlineData("Me, Mom", "mom me")]
+    public void A_query_without_punctuation_still_needs_its_letters_in_order(string value, string query) =>
+        Assert.False(SearchText.Contains(value, query));
+
     // A suggestion is something being typed out, so it matches from the
     // start of the name or of one of its words, never the middle of a word.
     [Theory]
@@ -100,6 +131,9 @@ public class SearchTextTests
     [InlineData("Björk", "bjo", 0)]
     [InlineData("Sigur Rós", "ros", 1)]
     [InlineData("(What's the Story) Morning Glory?", "what", 1)]
+    [InlineData("Me, Mom", "me mom", 0)]
+    [InlineData("Talk to Me, Mom", "me mom", 1)]
+    [InlineData("AC/DC", "acdc", 0)]
     public void Word_start_matches_rank_the_start_of_the_name_first(string value, string query, int expected) =>
         Assert.Equal(expected, SearchText.WordStartMatch(value, query));
 }
