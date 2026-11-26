@@ -81,6 +81,12 @@ public sealed record MobileNavigationFrame(
                     ? (SidebarItem?.Name ?? Tab.ToString())
                     : Tab.ToString();
 
+    // The title a long press copies (CopyText): a name, never a tab's.
+    public string? CopyableTitle =>
+        Title.Length > 0 && (HasDrilledIn || (Tab == MobileTab.Artists && SelectedArtistName != null))
+            ? Title
+            : null;
+
     // The Search tab's own always-visible box replaces the title there - see
     // MobileMainViewModel.IsShowingSearchTabBox's own former doc comment.
     public bool IsSearchScreen => ScreenKind == MobileScreenKind.SearchResults;

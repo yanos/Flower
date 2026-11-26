@@ -176,6 +176,48 @@ public class PlatformContextMenuTests : IDisposable
         window.Close();
     }
 
+    // Selectable text copies its selection, or all of it when there is none.
+    [AvaloniaTheory]
+    [InlineData(0, 0, "Add N to (X)")]
+    [InlineData(0, 3, "Add")]
+    public async System.Threading.Tasks.Task Selectable_text_copies_through_the_platforms_menu(int start, int end, string copied)
+    {
+        var native = new Recorder();
+        PlatformContextMenu.Current = native;
+        var text = new SelectableTextBlock { Text = "Add N to (X)" };
+        var window = Show(text, out _);
+        text.SelectionStart = start;
+        text.SelectionEnd = end;
+
+        text.RaiseEvent(new ContextRequestedEventArgs());
+        Dispatcher.UIThread.RunJobs();
+
+        var entry = Assert.Single(Assert.Single(native.Shown));
+        Assert.Equal("Copy", entry.Title);
+        Assert.False(text.ContextFlyout?.IsOpen ?? false);
+        entry.Activate!();
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(copied, await Avalonia.Input.Platform.ClipboardExtensions.TryGetTextAsync(window.Clipboard!));
+        window.Close();
+    }
+
+    // A link's Copy (CopyText) is handed over too.
+    [AvaloniaFact]
+    public void A_links_copy_menu_is_handed_over()
+    {
+        var native = new Recorder();
+        PlatformContextMenu.Current = native;
+        var link = new Button { Content = new TextBlock { Text = "Broadcast" } };
+        Flower.Controls.CopyText.SetText(link, "Broadcast");
+        var window = Show(link, out _);
+
+        ((TextBlock)link.Content).RaiseEvent(new ContextRequestedEventArgs());
+        Dispatcher.UIThread.RunJobs();
+
+        Assert.Equal("Copy", Assert.Single(Assert.Single(native.Shown)).Title);
+        window.Close();
+    }
+
     private sealed class TileData(Action resume)
     {
         public ICommand Resume { get; } = new RelayCommand(resume);

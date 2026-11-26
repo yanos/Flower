@@ -14,7 +14,7 @@
        serif, as on the phone's Now Playing, where a song's title is the
        subject of the screen; who it is by; and the album - and the song's
        star beside them (CurrentlyPlayingControlViewModel.IsStarred). The seek
-       bar is under the transport now (MainView). -->
+       bar is under the transport now (MainView). The lines select. -->
   <Grid ColumnDefinitions="Auto,Auto,Auto" ColumnSpacing="16">
 
     <controls:AlbumArtView Grid.Column="0"
@@ -23,16 +23,16 @@
                            AlbumArt="{Binding AlbumArt}"/>
 
     <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
-      <TextBlock Text="{Binding Title}"
+      <SelectableTextBlock Text="{Binding Title}"
                  FontFamily="{DynamicResource AppDisplayTextFontFamily}"
                  FontSize="18"
                  FontWeight="SemiBold"
                  TextTrimming="CharacterEllipsis"/>
-      <TextBlock Text="{Binding ArtistLine}"
+      <SelectableTextBlock Text="{Binding ArtistLine}"
                  FontSize="13"
                  Foreground="{DynamicResource AppTextValueBrush}"
                  TextTrimming="CharacterEllipsis"/>
-      <TextBlock Text="{Binding AlbumLine}"
+      <SelectableTextBlock Text="{Binding AlbumLine}"
                  IsVisible="{Binding CurrentlyPlayingTrack, Converter={x:Static ObjectConverters.IsNotNull}}"
                  FontSize="12"
                  Foreground="{DynamicResource AppTextSecondaryBrush}"

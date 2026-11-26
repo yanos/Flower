@@ -74,9 +74,11 @@
            tile among many: white on an album, whose screen is washed in its
            cover's colour as Now Playing is (TrackListScreenView), every
            page title's colour on a playlist's plain page (AppChromeBrush). An album's year follows its name
-           (AlbumTileViewModel.Heading). -->
+           (AlbumTileViewModel.Heading). A long press copies it (CopyText). -->
       <TextBlock Classes="albumName"
                  Text="{Binding Heading}"
+                 controls:CopyText.Text="{Binding Name}"
+                 Background="Transparent"
                  IsVisible="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).CurrentPlaylistItem.IsEditing, Converter={x:Static BoolConverters.Not}, FallbackValue=True}"
                  FontFamily="{DynamicResource AppDisplayFontFamily}"
                  FontSize="28" FontWeight="SemiBold"
@@ -90,6 +92,7 @@
            would otherwise stand between them and (Button.albumArtist, in
            TrackListScreenView). -->
       <Button Classes="albumArtist"
+              controls:CopyText.Text="{Binding Artist}"
               Command="{Binding $parent[screens:TrackListScreenView].((vm:MobileMainViewModel)DataContext).GoToArtistCommand}"
               CommandParameter="{Binding ArtistPage}"
               IsHitTestVisible="{Binding ArtistPage, Converter={x:Static ObjectConverters.IsNotNull}}">

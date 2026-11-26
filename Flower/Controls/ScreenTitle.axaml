@@ -57,8 +57,11 @@
     <!-- The name alone: the tab bar already says which tab this is, and
          the same icon again before the title only repeated it. -->
     <StackPanel Orientation="Horizontal" Spacing="10">
+      <!-- A name is copied on a long press (CopyText). -->
       <TextBlock Classes="screenTitle"
                  Text="{Binding $parent[controls:ScreenSlot].Frame.Title}"
+                 controls:CopyText.Text="{Binding $parent[controls:ScreenSlot].Frame.CopyableTitle}"
+                 Background="Transparent"
                  VerticalAlignment="Center"
                  FontSize="38" />
     </StackPanel>

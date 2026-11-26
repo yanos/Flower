@@ -202,7 +202,7 @@
              under it is. Each sets its own size. -->
         <!-- A desktop page's name, at the head of the page: the display
              serif's large cut, set tight. -->
-        <Style Selector="TextBlock.pageTitle">
+        <Style Selector=":is(TextBlock).pageTitle">
             <Setter Property="FontFamily" Value="{DynamicResource AppDisplayFontFamily}"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="FontSize" Value="56"/>

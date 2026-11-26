@@ -241,7 +241,10 @@
              this screen the song is the subject, not one row among many. Cormorant's small
              x-height is why it is 28 where Inter would be 22. -->
         <StackPanel x:Name="Names" Grid.Row="0" Spacing="2" HorizontalAlignment="Center">
+          <!-- Each line is copied on a long press (CopyText). -->
           <TextBlock Text="{Binding CurrentlyPlaying.CurrentlyPlayingTrack.Title}"
+                     layout:CopyText.Text="{Binding CurrentlyPlaying.CurrentlyPlayingTrack.Title}"
+                     Background="Transparent"
                      FontFamily="{DynamicResource AppDisplayFontFamily}"
                      FontSize="28"
                      FontWeight="SemiBold"
@@ -253,12 +256,14 @@
                cover above is the album's too. A line too long for the screen
                scrolls round slowly rather than losing its end (MarqueeText). -->
           <Button Classes="nowPlayingLink"
+                  layout:CopyText.Text="{Binding CurrentlyPlaying.CurrentlyPlayingTrack.Artists}"
                   Command="{Binding GoToCurrentlyPlayingArtistCommand}">
             <layout:MarqueeText Text="{Binding CurrentlyPlaying.CurrentlyPlayingTrack.Artists}"
                                 FontSize="16"
                                 Opacity="0.65" />
           </Button>
           <Button Classes="nowPlayingLink"
+                  layout:CopyText.Text="{Binding CurrentlyPlaying.CurrentlyPlayingTrack.Album}"
                   Command="{Binding GoToCurrentlyPlayingAlbumCommand}">
             <layout:MarqueeText Text="{Binding CurrentlyPlaying.AlbumLine}"
                                 FontSize="16"

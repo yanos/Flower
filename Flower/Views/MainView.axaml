@@ -685,7 +685,8 @@
           ColumnSpacing="20"
           Margin="24,40,40,24">
       <StackPanel Grid.Column="0" Spacing="8">
-        <TextBlock Classes="pageTitle" Text="{Binding PageTitle}"/>
+        <!-- Selectable, to copy the name. -->
+        <SelectableTextBlock Classes="pageTitle" Text="{Binding PageTitle}"/>
         <TextBlock Text="{Binding PageSubtitle}"
                    IsVisible="{Binding ShowsPageSubtitle}"
                    FontSize="14"
@@ -928,9 +929,9 @@
                 <!-- The buttons go under the name when it would not fit
                      beside them. -->
                 <controls:TitleToolbarPanel Spacing="16">
-                <TextBlock Classes="pageTitle"
-                           Text="{Binding ArtistPage.Header.Name}"
-                           VerticalAlignment="Center"/>
+                <SelectableTextBlock Classes="pageTitle"
+                                     Text="{Binding ArtistPage.Header.Name}"
+                                     VerticalAlignment="Center"/>
                 <!-- Play, Shuffle and Download by the name, Sort and the
                      filter at the right edge, under the name or beside it. -->
                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" VerticalAlignment="Center">

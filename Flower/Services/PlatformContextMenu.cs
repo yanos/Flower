@@ -7,6 +7,8 @@ using System.Runtime.CompilerServices;
 
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -105,6 +107,26 @@ public static class PlatformContextMenu
                 menu.Opening += OnDeclaredMenuOpening;
             }
         });
+        Control.ContextRequestedEvent.AddClassHandler<SelectableTextBlock>(OnSelectableTextContextRequested);
+    }
+
+    // Selectable text's Copy is the theme's flyout, not a ContextMenu, so it
+    // is replaced here. It copies the selection, or the whole text when there
+    // is none, read when picked: a right click can clear the selection after.
+    private static void OnSelectableTextContextRequested(SelectableTextBlock text, ContextRequestedEventArgs e)
+    {
+        if (e.Handled || text.ContextMenu != null || _current is not { } native)
+            return;
+
+        var copy = new MenuItem { Header = "Copy" };
+        copy.Click += (_, _) =>
+        {
+            var chosen = text.SelectedText is { Length: > 0 } selected ? selected : text.Text;
+            if (!string.IsNullOrEmpty(chosen))
+                _ = TopLevel.GetTopLevel(text)?.Clipboard?.SetTextAsync(chosen);
+        };
+        if (native.TryShow(ContextMenuEntry.From([copy]), text))
+            e.Handled = true;
     }
 
     private static void OnDeclaredMenuOpening(object? sender, CancelEventArgs e)
