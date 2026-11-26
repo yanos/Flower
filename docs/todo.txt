@@ -7,24 +7,5 @@ other streaming platform integration if possible
 setting for directory structure 
 replacing files
 extract ios gesture emulation to a nuget
-
-
-Audit:
-
-analyse recent logs for errors.
-
-potential race conditions
-
-Audit the entire first-party repository for simplification, duplicated business rules, competing sources of truth, unnecessary indirection, and obsolete compatibility paths. Read CLAUDE.md and relevant domain docs. Maintain explicit coverage by subsystem and review cross-subsystem ownership. Distinguish intentional caches and platform differences from problematic duplication. For each finding, provide file locations, evidence, consequence, smallest proposed change, confidence, and verification needed. Report findings without editing code.
-
-Audit the whole codebase for:
-1. Multiple sources of truth: the same state, config, constants, types or business rules defined or derived in more than one place
-2. Code duplication: copy-pasted logic, near-identical functions or components
-3. Simplification: dead code, needless layers, over-generic code, hand-rolled helpers that duplicate the standard library or a framework
-
-For each finding, give the file:line references, why it's a problem, the suggested fix and a rough effort. Rank them by impact. Don't change any code yet.
-
-- /engineering:tech-debt: designed for a codebase-wide audit. It finds, categorizes and prioritizes debt, which overlaps a lot with what you want.
-- /code-review high <path>: accepts a path, so it can cover a whole directory, not just a diff. It mainly hunts for bugs, though, so it won't focus on duplication.
-
+choose jpg for playlist icon, or emoji
 
