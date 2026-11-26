@@ -32,10 +32,14 @@
          rule runs under, cover and all, a little past it at each end so
          nothing sits flush with its edge, and rounded as a picked row on the desktop is
          (TrackRowControl) - rather than reaching to the screen's edges. Its
-         colour is the styles' to give; none otherwise. -->
+         left edge starts 8 ahead of the cover, which is 8 from the screen's
+         edge where there is no drag handle (Button.trackRow's Padding of 16),
+         and its right edge stops at the row's padding, 8 from the other edge:
+         the same gap on each side. Its colour is the styles' to give; none
+         otherwise. -->
     <Border x:Name="PlayingWash"
             Grid.Column="1" Grid.ColumnSpan="5"
-            Margin="-8,0,-6,0"
+            Margin="-8,0,0,0"
             CornerRadius="8"
             IsHitTestVisible="False" />
     <!-- Pointer wiring for drag-to-reorder is not here: the hosting screen
