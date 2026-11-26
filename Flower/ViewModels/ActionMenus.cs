@@ -14,6 +14,7 @@ namespace Flower.ViewModels;
 public enum MenuAction
 {
     Play,
+    Resume,
     Shuffle,
     PlayNext,
     AddToQueue,
@@ -40,12 +41,12 @@ public enum MenuAction
 }
 
 // One line of a menu, as both heads draw it. IsDestructive draws its words in
-// the danger colour; IsPrimary is the album menu's Play, which the phone
-// rings.
+// the danger colour; IsPrimary is the album menu's Play (Resume on Continue
+// Playing), which the phone rings.
 public sealed record ActionMenuEntry(
     MenuAction Action, string Title, MaterialIconKind Icon, bool IsDestructive = false, bool IsEnabled = true)
 {
-    public bool IsPrimary => Action == MenuAction.Play;
+    public bool IsPrimary => Action is MenuAction.Play or MenuAction.Resume;
 }
 
 // What about a set of songs decides which entries appear, worked out once by
@@ -75,6 +76,9 @@ public static class ActionMenus
     // has a file here to show, which one streamed from the server does not.
     // canRemoveFromPlaylist: opened over songs listed as an ordinary
     // playlist's - not a smart one's, which its rules decide, nor a folder's.
+    // There it is the way to take them away, so neither Add to Playlist nor
+    // Remove from Library sits beside it: the second is too easily taken
+    // for it, and takes the songs out of the library altogether.
     // isRecentlyPlayed: opened over a song on Home's Recently Played.
     // canGoToAlbum, canGoToArtist: every song is from the one album, or by the
     // one artist (MainViewModel.ShareAlbum/ShareArtist), and the menu is not
@@ -95,8 +99,9 @@ public static class ActionMenus
         {
             new(MenuAction.PlayNext, "Play Next", MaterialIconKind.PlaylistPlay, IsEnabled: hasSongs),
             new(MenuAction.AddToQueue, "Add to Queue", MaterialIconKind.PlaylistMusicOutline, IsEnabled: hasSongs),
-            new(MenuAction.AddToPlaylist, "Add to Playlist", MaterialIconKind.PlaylistPlus, IsEnabled: hasSongs),
         };
+        if (!canRemoveFromPlaylist)
+            where.Add(new(MenuAction.AddToPlaylist, "Add to Playlist", MaterialIconKind.PlaylistPlus, IsEnabled: hasSongs));
         if (canRemoveFromQueue)
             where.Add(new(MenuAction.RemoveFromQueue, "Remove from Queue", MaterialIconKind.PlaylistRemove));
         if (canRemoveFromPlaylist)
@@ -111,11 +116,13 @@ public static class ActionMenus
         if (isRecentlyPlayed)
             what.Add(new(MenuAction.HideFromRecentlyPlayed, "Remove from Recently Played", MaterialIconKind.PlaylistRemove));
 
-        return Groups(from, where, what, Removals(facts));
+        return Groups(from, where, what, Removals(facts, offerRemoval: !canRemoveFromPlaylist));
     }
 
     // isContinuing: the menu was raised on Home's Continue Playing shelf -
-    // not merely over an album that is also on it.
+    // not merely over an album that is also on it. Resume picks it up where
+    // it was left in place of Play, Go to Album opens it, and nothing puts it
+    // anywhere else: the shelf is for carrying on with an album.
     // isPlaylist: the phone's playlist row opens this same menu, since play,
     // shuffle and putting the songs somewhere are the same questions of a
     // different pile of songs; the playlist adds its own two.
@@ -137,6 +144,8 @@ public static class ActionMenus
         bool canGoToArtist = false, bool isVibe = false)
     {
         var from = new List<ActionMenuEntry>();
+        if (isContinuing)
+            from.Add(new(MenuAction.GoToAlbum, "Go to Album", MaterialIconKind.Album));
         if (canGoToArtist)
             from.Add(new(MenuAction.GoToArtist, "Go to Artist", MaterialIconKind.AccountMusicOutline));
 
@@ -144,13 +153,18 @@ public static class ActionMenus
         var hasSongs = facts.Songs > 0;
         var where = new List<ActionMenuEntry>
         {
-            new(MenuAction.Play, "Play", MaterialIconKind.Play, IsEnabled: hasSongs),
-            new(MenuAction.PlayNext, "Play Next", MaterialIconKind.PlaylistPlay, IsEnabled: hasSongs),
-            new(MenuAction.AddToQueue, "Add to Queue", MaterialIconKind.PlaylistMusicOutline, IsEnabled: hasSongs),
-            new(MenuAction.AddToPlaylist, "Add to Playlist", MaterialIconKind.PlaylistPlus, IsEnabled: hasSongs),
+            isContinuing
+                ? new(MenuAction.Resume, "Resume", MaterialIconKind.Play, IsEnabled: hasSongs)
+                : new(MenuAction.Play, "Play", MaterialIconKind.Play, IsEnabled: hasSongs),
         };
         if (!isVibe)
-            where.Insert(1, new(MenuAction.Shuffle, "Shuffle", MaterialIconKind.Shuffle, IsEnabled: hasSongs));
+            where.Add(new(MenuAction.Shuffle, "Shuffle", MaterialIconKind.Shuffle, IsEnabled: hasSongs));
+        if (!isContinuing)
+        {
+            where.Add(new(MenuAction.PlayNext, "Play Next", MaterialIconKind.PlaylistPlay, IsEnabled: hasSongs));
+            where.Add(new(MenuAction.AddToQueue, "Add to Queue", MaterialIconKind.PlaylistMusicOutline, IsEnabled: hasSongs));
+            where.Add(new(MenuAction.AddToPlaylist, "Add to Playlist", MaterialIconKind.PlaylistPlus, IsEnabled: hasSongs));
+        }
 
         var what = new List<ActionMenuEntry>();
         // Every song of the album at once. Not over a playlist, whose songs

@@ -957,6 +957,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
                 ActionTarget = null;
                 AlbumActionTarget = null;
                 PlaylistActionTarget = null;
+                _continuingTarget = null;
                 _moving = null;
                 _playlistTargets = null;
                 _albumDeleteTargets = null;
@@ -1155,13 +1156,17 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
         }
     }
 
-    // Shown for an album whose menu was raised on Home's Continue Playing
-    // shelf: the one way to take it off without playing it to the end. Not
-    // for the same album met anywhere else, whose menu is not the shelf's.
-    private bool _isActingOnContinuing;
+    // The shelf item an album's menu was raised on, when that was Home's
+    // Continue Playing: its menu resumes the album rather than playing it
+    // from the top, and is the one way to take it off without playing it to
+    // the end. Null for the same album met anywhere else, whose menu is not
+    // the shelf's.
+    private ContinuePlayingItemViewModel? _continuingTarget;
 
     public bool CanForgetAlbumActionTargetProgress =>
-        _isActingOnContinuing && AlbumActionTarget is { } tile && Main.Home.IsContinuing(tile);
+        _continuingTarget != null && AlbumActionTarget is { } tile && Main.Home.IsContinuing(tile);
+
+    public ICommand ResumeAlbumActionTargetCommand { get; private set; } = null!;
 
     public ICommand ForgetAlbumActionTargetProgressCommand { get; private set; } = null!;
 
@@ -1776,7 +1781,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             _playlistTargets = null;
             ActionTarget = null;
             _isActingOnAnArtist = false;
-            _isActingOnContinuing = continuing != null;
+            _continuingTarget = continuing;
             AlbumActionTarget = tile;
             ActiveSheet = MobileSheet.AlbumActions;
         });
@@ -1790,7 +1795,7 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
             _playlistTargets = null;
             ActionTarget = null;
             _isActingOnAnArtist = false;
-            _isActingOnContinuing = false;
+            _continuingTarget = null;
             AlbumActionTarget = BuildPlaylistHeader(playlist);
             PlaylistActionTarget = item;
             ActiveSheet = MobileSheet.AlbumActions;
@@ -1909,6 +1914,15 @@ public partial class MobileMainViewModel : ViewModelBase, IDisposable
                 Removal.Ask(tile.Tracks.ToList());
         });
         InitializeQueueCommands();
+        // Where Home's own tap on the cover would pick it up. Over the album
+        // already playing that tap pauses, which Resume must not.
+        ResumeAlbumActionTargetCommand = new RelayCommand(() =>
+        {
+            var item = _continuingTarget;
+            ActiveSheet = MobileSheet.None;
+            if (item is { IsPlaying: false })
+                Main.Home.ResumeCommand.Execute(item);
+        });
         ForgetAlbumActionTargetProgressCommand = new RelayCommand(() =>
         {
             var tile = AlbumActionTarget;

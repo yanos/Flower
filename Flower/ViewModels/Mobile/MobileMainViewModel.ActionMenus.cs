@@ -94,6 +94,7 @@ public partial class MobileMainViewModel
         var command = entry?.Action switch
         {
             MenuAction.Play => PlayAlbumActionTargetCommand,
+            MenuAction.Resume => ResumeAlbumActionTargetCommand,
             MenuAction.Shuffle => ShuffleAlbumActionTargetCommand,
             MenuAction.PlayNext => PlayNextAlbumActionTargetCommand,
             MenuAction.AddToQueue => AddAlbumActionTargetToQueueCommand,
@@ -113,7 +114,9 @@ public partial class MobileMainViewModel
             MenuAction.DeletePlaylist => DeletePlaylistActionTargetCommand,
             _ => null,
         };
-        if (entry?.Action == MenuAction.GoToArtist)
+        if (entry?.Action == MenuAction.GoToAlbum)
+            GoToAlbumAsync(AlbumActionTarget?.AlbumGroupKey).Forget(_logger, "Going to a Continue Playing album");
+        else if (entry?.Action == MenuAction.GoToArtist)
             GoToArtist(AlbumActionTargetArtist());
         else
             command?.Execute(null);

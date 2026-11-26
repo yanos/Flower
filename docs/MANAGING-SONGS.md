@@ -48,7 +48,7 @@ These commands have different effects:
 | Action | Result |
 |---|---|
 | **Delete Local File** | Removes the copy on this device. If the server still has it, you can stream or download it again. |
-| **Remove from Library** | Removes the song from the library and playlists. The file remains unless you also choose to delete it. |
+| **Remove from Library** | Removes the song from the library and playlists. The file remains unless you also choose to delete it. Not offered on a song in a playlist you made, where **Remove from Playlist** is; use the album or the Songs list instead. |
 | **Remove from Playlist** | Removes it from that playlist only. |
 
 If **Delete Local File** would remove your only copy, Flower warns you first. Deleted files go to the Trash on computers; **phone deletions are permanent**.

@@ -67,6 +67,45 @@ public class MobileActionMenuTests : PinnedDataDirectory
         Assert.Empty(parts.Parts.PlaylistControl.AlbumProgress.Entries);
     }
 
+    // Resume on the shelf's sheet picks the album up where it was left, as
+    // tapping its cover does, not from its first song.
+    [AvaloniaFact]
+    public void Resume_on_the_continue_playing_sheet_picks_the_album_up_where_it_was_left()
+    {
+        var tracks = Album();
+        using var parts = MainViewModelHarness.BuildMobile(new Library(tracks), new MainPlaylist([]));
+        var vm = parts.Mobile;
+        parts.Parts.PlaylistControl.AlbumProgress.MergeRemote(
+            [new AlbumProgressEntry(AlbumProgressTracker.AlbumIdOf(tracks[0])!, tracks[1].Id, TimeSpan.Zero, DateTimeOffset.UtcNow)],
+            []);
+        vm.Main.Home.Rebuild();
+
+        vm.OpenAlbumActionsCommand.Execute(vm.Main.Home.ContinuePlaying.Single());
+        vm.RunAlbumActionCommand.Execute(vm.AlbumActions.Single(e => e.Action == MenuAction.Resume));
+
+        Assert.Equal(MobileSheet.None, vm.ActiveSheet);
+        Assert.Equal(tracks[1], parts.Parts.PlaylistControl.CurrentlyPlayingTrack);
+    }
+
+    [AvaloniaFact]
+    public void Go_to_Album_on_the_continue_playing_sheet_opens_the_album()
+    {
+        var tracks = Album();
+        using var parts = MainViewModelHarness.BuildMobile(new Library(tracks), new MainPlaylist(tracks));
+        var vm = parts.Mobile;
+        parts.Parts.PlaylistControl.AlbumProgress.MergeRemote(
+            [new AlbumProgressEntry(AlbumProgressTracker.AlbumIdOf(tracks[0])!, tracks[1].Id, TimeSpan.Zero, DateTimeOffset.UtcNow)],
+            []);
+        vm.Main.Home.Rebuild();
+
+        vm.OpenAlbumActionsCommand.Execute(vm.Main.Home.ContinuePlaying.Single());
+        vm.RunAlbumActionCommand.Execute(vm.AlbumActions.Single(e => e.Action == MenuAction.GoToAlbum));
+        MainViewModelHarness.WaitForTheDrillIn(vm, "Avant Hard");
+
+        Assert.Equal(MobileSheet.None, vm.ActiveSheet);
+        Assert.Equal("Avant Hard", vm.CurrentAlbumHeader?.Name);
+    }
+
     // The desktop's Go to Album and Go to Artist, on the song sheet: where the
     // song is from, first, and not where the sheet was raised already.
     [AvaloniaFact]

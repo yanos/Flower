@@ -154,6 +154,37 @@ public class ActionMenusTests
         Assert.Equal(MenuAction.Play, entries[0].Action);
     }
 
+    // The shelf is for carrying on with an album: Resume where Play would be,
+    // the album itself one tap away, and nothing that puts it anywhere else.
+    [Fact]
+    public void A_Continue_Playing_album_resumes_and_goes_to_its_album_instead_of_queueing()
+    {
+        var entries = ActionMenus.Flat(ActionMenus.ForAlbum(Nothing, isContinuing: true));
+
+        Assert.Equal(MenuAction.Resume, entries[0].Action);
+        Assert.True(entries[0].IsPrimary);
+        Assert.Contains(entries, e => e.Action == MenuAction.GoToAlbum);
+        Assert.DoesNotContain(entries, e => e.Action is MenuAction.Play or MenuAction.PlayNext
+            or MenuAction.AddToQueue or MenuAction.AddToPlaylist);
+    }
+
+    // Remove from Playlist is how a playlist's song goes away there, so
+    // Remove from Library, too easily taken for it, is not beside it.
+    [Fact]
+    public void A_song_in_a_playlist_offers_neither_Add_to_Playlist_nor_Remove_from_Library()
+    {
+        var facts = Nothing with { Removable = 1 };
+
+        var inPlaylist = ActionMenus.Flat(ActionMenus.ForSongs(facts, canRemoveFromQueue: false, canLocateFiles: false,
+            canRemoveFromPlaylist: true));
+        var elsewhere = ActionMenus.Flat(ActionMenus.ForSongs(facts, canRemoveFromQueue: false, canLocateFiles: false));
+
+        Assert.DoesNotContain(inPlaylist, e => e.Action is MenuAction.AddToPlaylist or MenuAction.RemoveFromLibrary);
+        Assert.Contains(inPlaylist, e => e.Action == MenuAction.RemoveFromPlaylist);
+        Assert.Contains(elsewhere, e => e.Action == MenuAction.AddToPlaylist);
+        Assert.Contains(elsewhere, e => e.Action == MenuAction.RemoveFromLibrary);
+    }
+
     [Fact]
     public void A_selection_goes_to_an_album_or_artist_only_when_it_shares_one()
     {
