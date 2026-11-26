@@ -170,7 +170,8 @@
         </Border>
       </StackPanel>
       <Border Classes="floating" Width="40" HorizontalAlignment="Left">
-        <Button Classes="pill"
+        <Button x:Name="CancelButton"
+                Classes="pill"
                 Click="Cancel_Click"
                 HorizontalAlignment="Center">
           <materialIcons:MaterialIcon Kind="ChevronDown" Width="22" Height="22" />
@@ -204,18 +205,13 @@
              change it: a photo from the phone, the clipboard's image
              (ClipboardArt), or one found online for the album named in the
              boxes below.
-             Each writes at once, like the desktop Artwork tab's buttons,
-             rather than waiting for Save: a picture goes into the file, not
-             into a box. Tapping the cover shows it on the whole screen. -->
+             Each change waits for Save. Tapping the cover shows it full
+             screen. -->
         <Border Classes="card">
           <Grid ColumnDefinitions="128,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="14">
             <StackPanel Grid.Column="0" Spacing="6" VerticalAlignment="Top">
-              <!-- While a cover is being written, the cover dims under a
-                   spinner (ArtBusy), and the line under the card says how
-                   many files are being rewritten. The bin in its corner takes
-                   the cover out of the songs, at once, as the desktop
-                   window's Remove does - shown only over a cover there is,
-                   on songs this phone may change. -->
+              <!-- Dimmed under a spinner while Save writes a cover (ArtBusy).
+                   The bin removes the cover on Save. -->
               <Panel Width="128" Height="128">
                 <controls:AlbumArtView x:Name="ArtView"
                                        Tapped="Art_Tapped" />

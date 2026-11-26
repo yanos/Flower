@@ -54,6 +54,9 @@ public partial class TrackInfoView : UserControl
     private ArtworkViewer? _viewer;
     // A Find Online still searching or downloading, dropped with the sheet.
     private CancellationTokenSource? _findArt;
+    // A cover chosen but not yet saved, and whether Save is writing it.
+    private StagedArt? _staged;
+    private bool _writingArt;
 
     // The library's own spellings, offered under a box as it is typed in.
     private readonly List<TagSuggestions> _suggestions = [];
@@ -85,11 +88,13 @@ public partial class TrackInfoView : UserControl
         if (e.PropertyName is nameof(MobileMainViewModel.TrackInfoTracks) or nameof(MobileMainViewModel.ActiveSheet))
         {
             // The full-screen cover sits above the sheet rather than in it, so
-            // it would outlive a sheet closed under it (Android's back).
+            // it would outlive a sheet closed under it (Android's back). An
+            // unsaved cover goes with the sheet.
             if (!vm.IsShowingTrackInfo)
             {
                 _findArt?.Cancel();
                 CloseArtwork();
+                _populatedFrom = null;
             }
 
             if (vm.IsShowingTrackInfo && vm.TrackInfoTracks.Count > 0 && !ReferenceEquals(vm.TrackInfoTracks, _populatedFrom))
@@ -125,6 +130,7 @@ public partial class TrackInfoView : UserControl
         // write it (AlbumArtEditor.CanWrite).
         _findArt?.Cancel();
         CloseArtwork();
+        _staged = null;
         ArtButtons.IsVisible = ArtEditor() is { CanWrite: true };
         SetArtBusy(false);
         ArtMessage.IsVisible = false;
@@ -142,6 +148,10 @@ public partial class TrackInfoView : UserControl
             : null;
 
     // ── Cover ──────────────────────────────────────────────────────────────
+    //
+    // As on the desktop, a new cover is only shown (StageArtAsync) until Save
+    // or Previous/Next writes it (WriteStagedArtAsync). Closing the sheet
+    // leaves the files alone.
 
     // A picture from the phone: the photo library on iOS, which Avalonia opens
     // for a picker asking for images alone, and the system picker narrowed to
@@ -149,7 +159,7 @@ public partial class TrackInfoView : UserControl
     // Android content URI does not have.
     private async void ChoosePhoto_Click(object? sender, RoutedEventArgs e)
     {
-        if (_track is not { } track || TopLevel.GetTopLevel(this)?.StorageProvider is not { CanOpen: true } storage)
+        if (_track is null || TopLevel.GetTopLevel(this)?.StorageProvider is not { CanOpen: true } storage)
             return;
 
         ArtMessage.IsVisible = false;
@@ -184,19 +194,17 @@ public partial class TrackInfoView : UserControl
         // A format the tags have a name for goes in as it is; anything else
         // Skia can still decode goes in as PNG.
         if (LocalAlbumArtReader.MimeTypeForBytes(bytes) is { } mimeType)
-            await WriteArtAsync(track, bytes, mimeType);
+            await StageArtAsync(bytes, mimeType);
         else if (await Task.Run(() => ReencodeAsPng(bytes)) is { } png)
-            await WriteArtAsync(track, png, ClipboardArt.MimeType);
+            await StageArtAsync(png, ClipboardArt.MimeType);
         else
             ShowArtMessage("That photo isn't in a format Flower can read.");
     }
 
-    // The clipboard's image, as the song's cover - written straight into the
-    // file (or by the server, for one of its songs), and the card's cover
-    // redrawn from it.
+    // The clipboard's image, as the cover.
     private async void PasteArt_Click(object? sender, RoutedEventArgs e)
     {
-        if (_track is not { } track)
+        if (_track is null)
             return;
 
         ArtMessage.IsVisible = false;
@@ -207,7 +215,7 @@ public partial class TrackInfoView : UserControl
             return;
         }
 
-        await WriteArtAsync(track, png, ClipboardArt.MimeType);
+        await StageArtAsync(png, ClipboardArt.MimeType);
     }
 
     // A cover found online for the album the boxes name (OnlineCoverArt),
@@ -288,66 +296,116 @@ public partial class TrackInfoView : UserControl
         var viewer = OpenArtwork(offersChoice: true);
         viewer.Closed += (_, _) => find.Cancel();
         var message = await OnlineCoverPicker.ChooseAsync(viewer, finder, found!,
-            (bytes, mimeType) => WriteArtAsync(track, bytes, mimeType),
-            () => UpdatingFilesText(),
+            (bytes, mimeType) => _track == track ? StageArtAsync(bytes, mimeType) : Task.CompletedTask,
+            () => "Using this cover\u2026",
             find.Token);
         if (message is not null && _track == track)
             ShowArtMessage(message);
     }
 
-    private Task WriteArtAsync(Track track, byte[] bytes, string mimeType) =>
-        ChangeArtAsync(track, editor => editor.WriteAsync(bytes, mimeType));
+    // The bin on the cover. Not confirmed: closing the sheet undoes it.
+    private async void RemoveArt_Click(object? sender, RoutedEventArgs e) =>
+        await StageArtAsync(null, null);
 
-    // The bin on the cover: the picture taken out of every song being edited.
-    private async void RemoveArt_Click(object? sender, RoutedEventArgs e)
+    // Every way of changing the cover ends here; null bytes for none.
+    // Decoded first, so an unreadable picture is refused now, not on Save.
+    // Bumps _artRequestId so an older load cannot paint over it.
+    private async Task StageArtAsync(byte[]? bytes, string? mimeType)
     {
-        if (_track is { } track)
-            await ChangeArtAsync(track, editor => editor.RemoveAsync());
-    }
-
-    // Every way of changing the cover ends here: written into every song
-    // being edited, and the card's cover read back from what was written.
-    // Rewriting the files - or the server rewriting its own - takes a while
-    // for an album, so the cover spins under the count of files until it is
-    // done, and nothing else that would change it can be pressed meanwhile.
-    private async Task ChangeArtAsync(Track track, Func<AlbumArtEditor, Task<string?>> change)
-    {
-        if (ArtEditor() is not { CanWrite: true } editor)
+        if (_writingArt || ArtEditor() is not { CanWrite: true })
             return;
 
-        SetArtBusy(true);
         // A cover chosen some other way leaves nothing to search for again.
         ArtSearchRow.IsVisible = false;
+        var requestId = ++_artRequestId;
+        var decoded = bytes is null ? null : await Task.Run(() => ArtworkViewer.DecodeForScreen(bytes));
+        if (requestId != _artRequestId)
+            return;
+        if (bytes is not null && decoded is null)
+        {
+            ShowArtMessage("That picture couldn't be read.");
+            return;
+        }
+
+        _staged = new StagedArt(bytes, mimeType);
+        _artBytes = bytes;
+        ShowMultipleArt(false);
+        ArtView.AlbumArt = decoded?.Bitmap;
+        DescribeArt(decoded?.Size, bytes);
+        RemoveArtPill.IsVisible = bytes is not null;
+        // Save may be hidden for tags this phone cannot edit.
+        SaveButton.IsVisible = true;
+        ShowArtMessage("Not saved yet");
+    }
+
+    // The tags, then the staged cover. False, scrolled to the error, when
+    // either fails; the cover stays staged so Save can retry.
+    private async Task<bool> SaveAsync()
+    {
+        if (_writingArt || _info is not { } info)
+            return false;
+
+        info.Save();
+        if (info.SaveError != null || !await WriteStagedArtAsync())
+        {
+            Body.ScrollToHome();
+            return false;
+        }
+        return true;
+    }
+
+    private async Task<bool> WriteStagedArtAsync()
+    {
+        if (_staged is not { } staged || ArtEditor() is not { CanWrite: true } editor)
+            return true;
+
+        var sheet = _populatedFrom;
+        SetArtBusy(true);
         ShowArtMessage(UpdatingFilesText(editor));
         string? message;
         try
         {
-            message = await change(editor);
+            message = staged.Bytes is { } bytes
+                ? await editor.WriteAsync(bytes, staged.MimeType!)
+                : await editor.RemoveAsync();
         }
         finally
         {
-            SetArtBusy(false);
+            // The sheet was closed and refilled meanwhile; leave it be.
+            if (_populatedFrom == sheet)
+                SetArtBusy(false);
+        }
+        if (_populatedFrom != sheet)
+            return false;
+
+        if (message != null)
+        {
+            ShowArtMessage(message);
+            return false;
         }
 
-        if (message is not null)
-            ShowArtMessage(message);
-        else
-            ArtMessage.IsVisible = false;
-        if (_track == track)
-            await LoadAlbumArtAsync(track);
+        _staged = null;
+        ArtMessage.IsVisible = false;
+        return true;
     }
 
     // "Updating 12 files…": how many songs will have the picture rewritten
     // into them (AlbumArtEditor.FileCount).
-    private string UpdatingFilesText(AlbumArtEditor? editor = null)
+    private static string UpdatingFilesText(AlbumArtEditor editor)
     {
-        var count = (editor ?? ArtEditor())?.FileCount ?? _tracks.Count;
+        var count = editor.FileCount;
         return count == 1 ? "Updating 1 file\u2026" : $"Updating {count} files\u2026";
     }
 
+    // A spinner over the cover, and nothing to change it or leave by.
     private void SetArtBusy(bool busy)
     {
+        _writingArt = busy;
         ArtBusy.IsVisible = busy;
+        SaveButton.IsEnabled = !busy;
+        CancelButton.IsEnabled = !busy;
+        PreviousSongButton.IsEnabled = !busy;
+        NextSongButton.IsEnabled = !busy;
         ChoosePhotoButton.IsEnabled = !busy;
         FindArtButton.IsEnabled = !busy;
         ArtSearchButton.IsEnabled = !busy;
@@ -396,6 +454,12 @@ public partial class TrackInfoView : UserControl
 
         ArtView.AlbumArt = bitmap;
         _artBytes = bytes;
+        DescribeArt(size, bytes);
+        RemoveArtPill.IsVisible = bitmap is not null && ArtButtons.IsVisible;
+    }
+
+    private void DescribeArt(PixelSize? size, byte[]? bytes)
+    {
         var described = string.Join(" · ", new[]
         {
             size is { } pixels ? TrackInfoViewModel.Resolution(pixels) : null,
@@ -403,7 +467,6 @@ public partial class TrackInfoView : UserControl
         }.Where(part => part != null));
         ArtResolution.Text = described;
         ArtResolution.IsVisible = described.Length > 0;
-        RemoveArtPill.IsVisible = bitmap is not null && ArtButtons.IsVisible;
     }
 
     private void ShowMultipleArt(bool multiple)
@@ -487,36 +550,25 @@ public partial class TrackInfoView : UserControl
         (DataContext as MobileMainViewModel)?.CloseSheetCommand.Execute(null);
     }
 
-    private void Save_Click(object? sender, RoutedEventArgs e)
+    private async void Save_Click(object? sender, RoutedEventArgs e)
     {
-        _info?.Save();
-        if (_info?.SaveError != null)
-        {
-            // The message is at the top of the sheet.
-            Body.ScrollToHome();
-            return;
-        }
-
-        (DataContext as MobileMainViewModel)?.CloseSheetCommand.Execute(null);
+        if (await SaveAsync())
+            (DataContext as MobileMainViewModel)?.CloseSheetCommand.Execute(null);
     }
 
     private void Previous_Click(object? sender, RoutedEventArgs e) => Step(-1);
     private void Next_Click(object? sender, RoutedEventArgs e) => Step(+1);
 
     // Saved before moving on, as the desktop window's Prev/Next do: stepping
-    // to the next song is not leaving, so what was typed for this one is kept.
-    private void Step(int delta)
+    // to the next song is not leaving, so what was typed and chosen is kept.
+    private async void Step(int delta)
     {
-        _info?.Save();
-        if (_info?.SaveError != null)
-        {
-            // The message is at the top of the sheet.
-            Body.ScrollToHome();
-            return;
-        }
-
-        (DataContext as MobileMainViewModel)?.StepTrackInfo(delta);
+        if (await SaveAsync())
+            (DataContext as MobileMainViewModel)?.StepTrackInfo(delta);
     }
+
+    // Bytes null for taking the cover out.
+    private sealed record StagedArt(byte[]? Bytes, string? MimeType);
 
     // The library's own spellings under a box, as it is typed in: names
     // starting with the text, then names containing it (TagSuggestionSource
