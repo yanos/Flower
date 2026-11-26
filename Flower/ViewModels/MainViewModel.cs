@@ -1824,6 +1824,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             appSettings.SortColumn ?? "TrackNumber",
             appSettings.SortColumn is null || appSettings.SortAscending,
             appSettings.SortArtistAlbumsByYear);
+        Browser.LastSelectedArtist = appSettings.LastArtistName;
 
         // The browser owns the state; these re-raise it on this ViewModel,
         // which is what every binding actually watches - along with the page
@@ -2663,6 +2664,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         _appSettings.LastPlaylistName = _selectedSidebarItem?.Kind == SidebarItemKind.Playlist
             ? _selectedSidebarItem.Playlist?.Name
             : null;
+        _appSettings.LastArtistName = Browser.LastSelectedArtist;
         _appSettings.LastScrollOffsetY = scrollOffsetY;
         _appSettingsStore?.Save(_appSettings);
     }

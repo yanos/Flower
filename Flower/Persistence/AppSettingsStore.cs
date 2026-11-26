@@ -150,9 +150,11 @@ namespace Flower.Persistence
         // MainView.axaml.cs's SaveCurrentViewState/RestoreInitialViewState.
         // LastSidebarKind is SidebarItemKind's own name ("Songs", "Albums",
         // "Playlist", etc.), not a raw int, so a future enum reorder can't
-        // silently restore the wrong view.
+        // silently restore the wrong view. LastArtistName is the Artists
+        // page's last pick.
         public string? LastSidebarKind    { get; set; }
         public string? LastPlaylistName   { get; set; }
+        public string? LastArtistName     { get; set; }
         public double  LastScrollOffsetY  { get; set; }
 
         // Whether a desktop installed from a release looks for a newer one on

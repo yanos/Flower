@@ -5,6 +5,7 @@ using System.Linq;
 using Avalonia.Headless.XUnit;
 
 using Flower.Models;
+using Flower.Persistence;
 using Flower.Tests.TestSupport;
 using Flower.ViewModels;
 using Flower.Views;
@@ -48,6 +49,29 @@ public class ArtistPageTests : PinnedDataDirectory
 
     private static string[] Songs(MainViewModel vm, string album) =>
         vm.ArtistPage.Albums.Single(a => a.Tile.Name == album).ExpandedTracks.Select(t => t.Title!).ToArray();
+
+    // A relaunch reopens the last artist, not the first in the column.
+    [AvaloniaFact]
+    public void A_relaunch_comes_back_on_the_artist_picked_last()
+    {
+        var settings = new AppSettings();
+        var library = new Library(new List<Track>
+        {
+            T("Blackened", "Metallica", "...And Justice for All", 1, "1988"),
+            T("Hit Vibes", "SAINT PEPSI", "Hit Vibes", 1, "2013"),
+        });
+        var before = Own(MainViewModelHarness.Build(library, new MainPlaylist(library.Tracks), settings)).Main;
+        before.Browser.Repopulate();
+        before.SelectedSidebarItem = before.SidebarItems.Single(i => i.Kind == SidebarItemKind.Artists);
+        before.SetSelectedSubItems(["SAINT PEPSI"]);
+        before.SaveLastView(0);
+
+        var after = Own(MainViewModelHarness.Build(library, new MainPlaylist(library.Tracks), settings)).Main;
+        after.Browser.Repopulate();
+
+        Assert.Equal(SidebarItemKind.Artists, after.SelectedSidebarItem?.Kind);
+        Assert.Equal("SAINT PEPSI", after.Browser.InitialSubItemForCurrentView());
+    }
 
     // The header's picture is the artist's one icon (ArtistIcons), the
     // same one the Artists column, Search and the phone draw.

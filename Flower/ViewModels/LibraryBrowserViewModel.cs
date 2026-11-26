@@ -402,6 +402,13 @@ public sealed class LibraryBrowserViewModel : ViewModelBase
 
     private string? _selectedSubItem;
     private string? _lastSelectedArtist;
+
+    // The last artist picked, saved across launches (MainViewModel.SaveLastView).
+    public string? LastSelectedArtist
+    {
+        get => _lastSelectedArtist;
+        set => _lastSelectedArtist = value;
+    }
     private HashSet<string> _selectedSubItems = new();
 
     // The songs of the albums or artists picked, as of the pick or the last
