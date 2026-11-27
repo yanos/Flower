@@ -119,6 +119,34 @@ public class LibrarySyncMergeTests
         Assert.Equal("Beatles, The", merged.ArtistsSort);
     }
 
+    // A placeholder left with a picture hash but no size - stamped by Track
+    // Info on a song the server then failed to write - was taken as its
+    // album's cover song, though it has no picture. A pull clears it.
+    [Fact]
+    public void A_pull_clears_a_placeholders_stale_picture_hash()
+    {
+        Track Song(string title, uint number, int size, string? hash) => new()
+        {
+            Title = title, Artists = "Nick Cave and the Bad Seeds", Album = "The Lyre Of Orpheus",
+            DiscNumber = 2, TrackNumber = number, Duration = TimeSpan.FromSeconds(200), Path = null,
+            OriginDeviceFingerprint = "peer-1", OriginTrackId = title,
+            ArtWidth = size, ArtHeight = size, ArtHash = hash,
+        };
+        var library = new Library(new List<Track>
+        {
+            Song("The Lyre Of Orpheus", 1, 0, "47cca4590b9e8a73"),
+            Song("Breathless", 2, 1200, "47cca4590b9e8a73"),
+        });
+
+        library.MergeSyncedTracks("peer-1", new List<Track>
+        {
+            Song("The Lyre Of Orpheus", 1, 0, null),
+            Song("Breathless", 2, 1200, null),
+        });
+
+        Assert.Equal("Breathless", AlbumCover.TrackOf(library.Tracks)?.Title);
+    }
+
     // The per-track playback options are not tags, so nothing on this device
     // can re-derive them: sync is the only way they ever arrive. They apply to
     // a real local file too, which is the point - the phone usually has the

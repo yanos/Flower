@@ -2108,6 +2108,9 @@ namespace Flower.Models
             existing.EncoderProfile = remote.EncoderProfile;
             existing.ArtWidth = remote.ArtWidth;
             existing.ArtHeight = remote.ArtHeight;
+            // Never a placeholder's (Track.ArtHash). Cleared for one an older
+            // Track Info stamped, which outlived the size the catalog corrected.
+            existing.ArtHash = null;
             existing.TitleSort = remote.TitleSort;
             existing.ArtistsSort = remote.ArtistsSort;
             existing.AlbumSort = remote.AlbumSort;
@@ -2286,7 +2289,7 @@ namespace Flower.Models
             TrackTagsDto? PlaceholderTags, TimeSpan Duration, int Bitrate, int SampleRate, int Channels,
             int BitsPerSample, string? Codec, string? EncoderProfile,
             DateTimeOffset? TagsEditedAt, DateTimeOffset? ArtEditedAt, DateTimeOffset? FileReplacedAt,
-            int ArtWidth, int ArtHeight)
+            int ArtWidth, int ArtHeight, string? ArtHash)
         {
             public static MergedTrackState Of(Track track)
             {
@@ -2309,7 +2312,7 @@ namespace Flower.Models
                     track.Path == null ? TrackTags.Of(track) : null, track.Duration, track.Bitrate, track.SampleRate,
                     track.Channels, track.BitsPerSample, track.Codec, track.EncoderProfile,
                     track.TagsEditedAt, track.ArtEditedAt, track.FileReplacedAt,
-                    track.ArtWidth, track.ArtHeight);
+                    track.ArtWidth, track.ArtHeight, track.ArtHash);
             }
 
             // Which kinds of change separate this state from `after`; zero for
@@ -2338,7 +2341,7 @@ namespace Flower.Models
                     || (Duration, Bitrate, SampleRate, Channels, BitsPerSample, Codec, EncoderProfile, TagsEditedAt, FileReplacedAt)
                     != (after.Duration, after.Bitrate, after.SampleRate, after.Channels, after.BitsPerSample, after.Codec, after.EncoderProfile, after.TagsEditedAt, after.FileReplacedAt))
                     change |= TrackChange.Tags;
-                if ((ArtEditedAt, ArtWidth, ArtHeight) != (after.ArtEditedAt, after.ArtWidth, after.ArtHeight))
+                if ((ArtEditedAt, ArtWidth, ArtHeight, ArtHash) != (after.ArtEditedAt, after.ArtWidth, after.ArtHeight, after.ArtHash))
                     change |= TrackChange.Artwork;
                 return change;
             }

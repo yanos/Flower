@@ -144,7 +144,10 @@ public sealed class AlbumArtEditor(
     // this device can tell without its file: the picture sent, which goes into
     // the tag and so is the one drawn, or none for a removal - where a cover
     // file beside the server's copy would still be found, and the next pull's
-    // catalog says so (TrackDto.ArtWidth).
+    // catalog says so (TrackDto.ArtWidth). Its size only: a song with no file
+    // here has no ArtHash, and one left on a song the server failed to write
+    // made AlbumCover.TrackOf pick it as its album's cover once the catalog
+    // said it had none.
     private async Task<string?> ApplyAsync(
         LocalAlbumArt? art,
         Func<ServerAdminClient, string, ArtworkPlacement, Task<CoverArtWriteDto>> writeServer,
@@ -196,7 +199,7 @@ public sealed class AlbumArtEditor(
             if (written > 0)
             {
                 foreach (var track in tracks)
-                    serverArtwork.ApplyTo(track);
+                    (serverArtwork with { Hash = null }).ApplyTo(track);
             }
         }
 
