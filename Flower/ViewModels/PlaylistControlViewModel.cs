@@ -1113,6 +1113,19 @@ namespace Flower.ViewModels
         // and leaves with the next move.
         private bool _playingHasLeft;
 
+        // A smart playlist too: a song that stops matching its rules has left
+        // it as surely as one removed by hand, and kept playing in shuffle it
+        // contradicts the list on screen. A Vibe Playlist has its own source.
+        public static bool CanFollow(Playlist playlist) => playlist.IsOrdinary || playlist.IsSmart;
+
+        // A recompute is not a PlaylistsChanged (Library.SavePlaylists), so
+        // the smart playlists it moved are handed in by MainViewModel.
+        public void SourcesRecomputed(IReadOnlyCollection<Playlist> changed) => OnUiThread(() =>
+        {
+            if (_queueSource is { } followed && changed.Any(p => p.Id == followed.Id))
+                FollowSource();
+        });
+
         // One path for every edit, wherever it was made: a drag, a menu, or
         // another device's arriving by sync. See QueueFollowsPlaylist.
         private void FollowSource()
@@ -1121,7 +1134,7 @@ namespace Flower.ViewModels
                 return;
 
             // Deleted: the queue carries on as a list of its own.
-            if (_library.Playlists.FirstOrDefault(p => p.Id == followed.Id) is not { IsOrdinary: true } source)
+            if (_library.Playlists.FirstOrDefault(p => p.Id == followed.Id) is not { } source || !CanFollow(source))
             {
                 _queueSource = null;
                 return;
@@ -2223,7 +2236,7 @@ namespace Flower.ViewModels
 
             _currentPlaylist = QueueOf(queue);
             _queueSource = state.SourcePlaylistId is { } sourceId
-                && _library.Playlists.FirstOrDefault(p => p.Id == sourceId) is { IsOrdinary: true } source
+                && _library.Playlists.FirstOrDefault(p => p.Id == sourceId) is { } source && CanFollow(source)
                     ? new QueueSource(source.Id, state.SourceFollowsOrder, source.Entries)
                     : null;
             _linedUpCount = linedUp;

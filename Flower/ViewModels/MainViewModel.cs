@@ -1949,6 +1949,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
             _subscriptions.Add<EventHandler<SmartPlaylistsRefreshedEventArgs>>(
                 (_, e) =>
                 {
+                    _playlistControlViewModel.SourcesRecomputed(e.Changed);
                     if (_selectedSidebarItem?.Playlist is not { } shown || !e.Changed.Contains(shown))
                         return;
 
@@ -2510,7 +2511,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
     public void SetPlayQueue(IEnumerable<Track> tracks)
     {
         var queue = tracks as IReadOnlyList<Track> ?? tracks.ToList();
-        SetPlayQueue(_selectedSidebarItem?.Playlist is { IsOrdinary: true } shown && IsWhole(queue, shown)
+        SetPlayQueue(_selectedSidebarItem?.Playlist is { } shown && PlaylistControlViewModel.CanFollow(shown) && IsWhole(queue, shown)
             ? shown.ShownEntries.Select(ListedTrack.Of)
             : queue.Select(t => new ListedTrack(t)));
     }
@@ -2523,7 +2524,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable, IDeviceSidebarH
         var queue = listed
             .Select(row => row.EntryId is { } id ? new PlaylistEntry(id, row.Track) : PlaylistEntry.Of(row.Track))
             .ToList();
-        var source = _selectedSidebarItem?.Playlist is { IsOrdinary: true } shown && IsAllWithin(queue, shown.ShownEntries)
+        var source = _selectedSidebarItem?.Playlist is { } shown && PlaylistControlViewModel.CanFollow(shown) && IsAllWithin(queue, shown.ShownEntries)
             ? shown
             : null;
         _playlistControlViewModel.SetCurrentPlaylist(

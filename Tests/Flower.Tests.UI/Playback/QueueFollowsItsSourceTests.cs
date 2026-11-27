@@ -5,6 +5,8 @@ using System.Threading.Tasks;
 
 using Avalonia.Headless.XUnit;
 
+using Microsoft.Extensions.Logging.Abstractions;
+
 using Flower.Models;
 using Flower.Services;
 using Flower.ViewModels;
@@ -328,5 +330,38 @@ public class QueueFollowsItsSourceTests : PinnedDataDirectory
 
         Assert.Equal(new[] { "A", "B" }, Queue(parts));
         Assert.Equal("B", parts.Audio.LastUpcoming?.Title);
+    }
+
+    // A smart playlist moves by itself: a song given a cover leaves "Has
+    // Artwork is No", and it leaves the queue playing that list too, rather
+    // than coming up later in shuffle.
+    [AvaloniaFact]
+    public async Task A_song_that_stops_matching_the_playing_smart_playlist_leaves_the_queue()
+    {
+        var tracks = new[] { "A", "B", "C" }.Select(T).ToList();
+        var library = new Library(tracks);
+        var playlist = new Playlist("No Cover Art", new List<Track>())
+        {
+            Rules = SmartPlaylistRules.MatchAll(
+                new SmartCondition(SmartField.HasArtwork, SmartOperator.Is, new SmartValue.Flag(false))),
+        };
+        library.AddPlaylist(playlist);
+        using var refresher = new SmartPlaylistRefresher(library, NullLogger<SmartPlaylistRefresher>.Instance);
+        refresher.Refresh();
+
+        var parts = Own(MainViewModelHarness.BuildParts(library, new MainPlaylist(library.Tracks), smartPlaylists: refresher));
+        parts.PlaylistControl.OnUiThread = work => work();
+        parts.PlaylistControl.OffPlaybackThread = work => work();
+        parts.Main.SelectedSidebarItem = parts.Main.SidebarItems.Single(i => i.Playlist == playlist);
+        await parts.Main.RebuildRowsImmediatelyAsync();
+        parts.Main.PlayTrack(tracks[0], 0);
+
+        var covered = Song(playlist, "B");
+        covered.ArtWidth = covered.ArtHeight = 600;
+        library.NotifyTracksChanged([covered], TrackChange.Artwork);
+        refresher.Refresh();
+
+        Assert.Equal(new[] { "A", "C" }, Queue(parts));
+        Assert.Equal("C", parts.Audio.LastUpcoming?.Title);
     }
 }
