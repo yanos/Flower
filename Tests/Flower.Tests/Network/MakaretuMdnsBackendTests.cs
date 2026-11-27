@@ -1,6 +1,9 @@
 using System;
+using System.Linq;
 
 using Flower.Services;
+
+using Makaretu.Dns;
 
 using Xunit;
 
@@ -50,6 +53,31 @@ public class MakaretuMdnsBackendTests
         backend.Browse(SyncProtocol.ServiceType);
         backend.Advertise("flower-test-instance", SyncProtocol.ServiceType, 45999);
         backend.Stop();
+    }
+
+    [Fact]
+    public void Advertising_does_not_answer_reverse_lookups_for_the_hosts_addresses()
+    {
+        // The host's mDNS responder (Avahi) owns these PTR records. Answering
+        // them too made Avahi see a conflict on every probe and rename the
+        // whole machine: lambda.local became lambda-1427.local.
+        using var backend = new MakaretuMdnsBackend();
+        var address = MulticastService.GetLinkLocalAddresses().First();
+
+        backend.Advertise("flower-test-instance", SyncProtocol.ServiceType, 45999);
+        var reverse = backend.Answer(Query(address.GetArpaName(), DnsType.PTR));
+        var service = backend.Answer(Query($"flower-test-instance.{SyncProtocol.ServiceType}.local", DnsType.SRV));
+        backend.Stop();
+
+        Assert.Empty(reverse.Answers);
+        Assert.Single(service.Answers.OfType<SRVRecord>());
+    }
+
+    private static Message Query(DomainName name, DnsType type)
+    {
+        var query = new Message();
+        query.Questions.Add(new Question { Name = name, Type = type });
+        return query;
     }
 
     [Fact]

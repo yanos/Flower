@@ -117,6 +117,7 @@ public sealed class MakaretuMdnsBackend : IMdnsBackend
         _stopped = false;
         var profile = new ServiceProfile(instanceName, serviceType, (ushort)port);
         _serviceDiscovery.Advertise(profile);
+        RemoveReverseLookupRecords();
 
         // Advertise() before Start() is the order Makaretu wants: starting the
         // service is what sends the profile's unsolicited announcement. If it is
@@ -124,6 +125,26 @@ public sealed class MakaretuMdnsBackend : IMdnsBackend
         if (!EnsureStarted())
             _serviceDiscovery.Announce(profile);
     }
+
+    // Makaretu's Advertise() adds a PTR for every address on the machine, but
+    // those belong to the host's own responder. Avahi saw ours as a conflict on
+    // each probe and renamed the host (lambda.local became lambda-1427.local),
+    // so Finder could no longer reach it. Clients find us by SRV, not PTR.
+    private void RemoveReverseLookupRecords()
+    {
+        var catalog = _serviceDiscovery.NameServer.Catalog;
+        foreach (var name in catalog.Keys)
+        {
+            var text = name.ToString();
+            if (text.EndsWith(".in-addr.arpa", StringComparison.OrdinalIgnoreCase)
+                || text.EndsWith(".ip6.arpa", StringComparison.OrdinalIgnoreCase))
+                catalog.TryRemove(name, out _);
+        }
+    }
+
+    // What this backend would reply to a query from the network: OnQuery in
+    // Makaretu's ServiceDiscovery resolves against the same name server.
+    internal Message Answer(Message query) => _serviceDiscovery.NameServer.ResolveAsync(query).Result;
 
     public void Browse(string serviceType)
     {
