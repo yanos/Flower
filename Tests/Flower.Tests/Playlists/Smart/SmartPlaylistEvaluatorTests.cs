@@ -333,19 +333,15 @@ public class SmartPlaylistEvaluatorTests
         Assert.Equivalent(new[] { "Small", "Bare" }, Evaluate(SmartPlaylistRules.MatchAny(small, bare), tracks).Select(t => t.Title));
     }
 
-    // A song with no picture of its own is drawn with its album's - the first
-    // song on the album that has one, as the cover-art route serves it - so it
-    // has artwork, of that size, as far as anyone looking at it can tell.
-    // "Has Artwork is No" listing songs shown everywhere with a cover was the
-    // bug.
+    // A song's own file, never its album: one drawn with its album's cover
+    // still has none, and "Has Artwork is No" is how it is found and fixed.
     [Fact]
-    public void A_song_with_no_picture_has_its_albums()
+    public void A_song_with_no_picture_is_bare_though_its_album_has_one()
     {
         var tracks = new List<Track>
         {
             WithArt("Covered", 300, 300, album: "Moon Pix"),
             WithArt("Peking Saint", 0, 0, album: "Moon Pix"),
-            WithArt("Alone", 0, 0, album: "Elsewhere"),
         };
 
         var bare = Evaluate(SmartPlaylistRules.MatchAll(
@@ -353,28 +349,8 @@ public class SmartPlaylistEvaluatorTests
         var small = Evaluate(SmartPlaylistRules.MatchAll(
             new SmartCondition(SmartField.ArtworkSize, SmartOperator.LessThan, new SmartValue.Number(500))), tracks);
 
-        Assert.Equal("Alone", Assert.Single(bare).Title);
-        Assert.Equal(["Covered", "Peking Saint"], small.Select(t => t.Title));
-    }
-
-    // An album is its album artist's: the same title by someone else lends
-    // nothing, and neither does a song with no album at all, which the app
-    // draws by its folder rather than by any album.
-    [Fact]
-    public void Only_the_same_album_lends_a_picture()
-    {
-        var covered = WithArt("Covered", 600, 600, album: "Greatest Hits");
-        var otherArtist = WithArt("Theirs", 0, 0, album: "Greatest Hits");
-        otherArtist.Artists = "Someone Else";
-        var noAlbum = T(title: "Loose", album: null);
-        var coveredLoose = WithArt("Also Loose", 600, 600);
-        coveredLoose.Album = null;
-
-        var bare = Evaluate(SmartPlaylistRules.MatchAll(
-            new SmartCondition(SmartField.HasArtwork, SmartOperator.Is, new SmartValue.Flag(false))),
-            [covered, otherArtist, noAlbum, coveredLoose]);
-
-        Assert.Equivalent(new[] { "Theirs", "Loose" }, bare.Select(t => t.Title));
+        Assert.Equal("Peking Saint", Assert.Single(bare).Title);
+        Assert.Equal("Covered", Assert.Single(small).Title);
     }
 
     // --- Match modes ------------------------------------------------------

@@ -24,20 +24,11 @@ public static class SmartPlaylistEvaluator
         IReadOnlyList<Track> tracks,
         SmartPlaylistContext context)
     {
-        ArgumentNullException.ThrowIfNull(tracks);
-        return Evaluate(rules, tracks, context, new AlbumArt(tracks));
-    }
-
-    private static List<Track> Evaluate(
-        SmartPlaylistRules rules,
-        IReadOnlyList<Track> tracks,
-        SmartPlaylistContext context,
-        AlbumArt albumArt)
-    {
         ArgumentNullException.ThrowIfNull(rules);
+        ArgumentNullException.ThrowIfNull(tracks);
         ArgumentNullException.ThrowIfNull(context);
 
-        var matched = InAlbumOrder(tracks.Where(track => Matches(track, rules, context, albumArt)));
+        var matched = InAlbumOrder(tracks.Where(track => Matches(track, rules, context)));
         return rules.Limit is { } limit ? Apply(limit, matched, context) : matched;
     }
 
@@ -79,7 +70,6 @@ public static class SmartPlaylistEvaluator
 
         var results = new Dictionary<Guid, List<Track>>(smart.Count);
         var memberIds = new Dictionary<Guid, IReadOnlySet<Guid>>(smart.Count);
-        var albumArt = new AlbumArt(library);
 
         IReadOnlySet<Guid>? Membership(Guid id) =>
             memberIds.TryGetValue(id, out var members) ? members : ordinaryMembership?.Invoke(id);
@@ -97,7 +87,7 @@ public static class SmartPlaylistEvaluator
             // An explicit Random still wins, for tests that want a fixed draw.
             var context = new SmartPlaylistContext(now, Membership, random ?? SeededFor(id));
 
-            var tracks = Evaluate(smart[id], library, context, albumArt);
+            var tracks = Evaluate(smart[id], library, context);
             results[id] = tracks;
             memberIds[id] = tracks.Select(t => t.Id).ToHashSet();
         }
@@ -114,10 +104,7 @@ public static class SmartPlaylistEvaluator
         return new Random(BitConverter.ToInt32(bytes) ^ BitConverter.ToInt32(bytes[4..]));
     }
 
-    // Without albumArt, the artwork fields read the song's own picture only:
-    // a song alone has no album to borrow one from.
-    public static bool Matches(
-        Track track, SmartPlaylistRules rules, SmartPlaylistContext context, AlbumArt? albumArt = null)
+    public static bool Matches(Track track, SmartPlaylistRules rules, SmartPlaylistContext context)
     {
         // No conditions is "the whole library", not "nothing" - the state a
         // freshly created smart playlist is in before its first rule is typed,
@@ -126,12 +113,11 @@ public static class SmartPlaylistEvaluator
             return true;
 
         return rules.Mode == MatchMode.All
-            ? rules.Conditions.All(condition => Matches(track, condition, context, albumArt))
-            : rules.Conditions.Any(condition => Matches(track, condition, context, albumArt));
+            ? rules.Conditions.All(condition => Matches(track, condition, context))
+            : rules.Conditions.Any(condition => Matches(track, condition, context));
     }
 
-    public static bool Matches(
-        Track track, SmartCondition condition, SmartPlaylistContext context, AlbumArt? albumArt = null)
+    public static bool Matches(Track track, SmartCondition condition, SmartPlaylistContext context)
     {
         var descriptor = SmartPlaylistFields.For(condition.Field);
         if (!SmartPlaylistFields.Supports(condition.Field, condition.Operator))
@@ -146,9 +132,6 @@ public static class SmartPlaylistEvaluator
         // Validate, which checks conditions against a blank track, saw nothing
         // wrong with it either.
         EnsureValueFits(condition, descriptor.Kind);
-
-        if (descriptor.ReadsAlbumArt && albumArt != null)
-            track = albumArt.DrawnFor(track);
 
         return descriptor.Kind switch
         {
@@ -508,37 +491,6 @@ public static class SmartPlaylistEvaluator
 
         return problems;
     }
-}
-
-// The song whose picture the app draws for a song: its own, or - for a song
-// with none - the first song on its album that has one. That is the picture
-// the cover-art route serves for the album (MediaEndpoints.CoverArtCandidates)
-// and so the one every list, grid and Track Info shows; a song in an album
-// whose other files carry the cover is shown with it everywhere, and a "Has
-// Artwork is No" playlist that listed it anyway looked plain wrong.
-//
-// Built on first need, so a playlist that never asks about artwork never
-// groups the library into albums. A song with no Album has no album to borrow
-// from: the app draws such a song by its folder, not by its album artist.
-public sealed class AlbumArt(IReadOnlyList<Track> tracks)
-{
-    private Dictionary<string, Track>? _covers;
-
-    public Track DrawnFor(Track track)
-    {
-        if (HasOwn(track) || string.IsNullOrEmpty(track.Album))
-            return track;
-
-        // The album's cover song, as every album is drawn (AlbumCover.TrackOf).
-        _covers ??= tracks
-            .Where(t => !string.IsNullOrEmpty(t.Album))
-            .GroupBy(CatalogIdentity.AlbumIdFor)
-            .ToDictionary(album => album.Key, album => AlbumCover.TrackOf(album)!);
-
-        return _covers.GetValueOrDefault(CatalogIdentity.AlbumIdFor(track)) is { } cover && HasOwn(cover) ? cover : track;
-    }
-
-    private static bool HasOwn(Track track) => track.ArtWidth > 0 && track.ArtHeight > 0;
 }
 
 // What a smart playlist needs to know that is not in the rules or the library:
