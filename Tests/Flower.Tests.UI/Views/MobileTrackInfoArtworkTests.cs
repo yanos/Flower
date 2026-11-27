@@ -96,7 +96,7 @@ public class MobileTrackInfoArtworkTests : PinnedDataDirectory
             using var bitmap = new Bitmap(new MemoryStream(png));
             await _window.Clipboard!.SetBitmapAsync(bitmap);
             Click("PasteArtButton");
-            await UiWait.Until(() => Sheet.FindControl<TextBlock>("ArtMessage")!.Text == "Not saved yet",
+            await UiWait.Until(() => Sheet.FindControl<Border>("RemoveArtPill")!.IsVisible,
                 "the pasted cover is taken, to be written on Save");
         }
 

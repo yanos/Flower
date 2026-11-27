@@ -335,7 +335,7 @@ public partial class TrackInfoView : UserControl
         RemoveArtPill.IsVisible = bytes is not null;
         // Save may be hidden for tags this phone cannot edit.
         SaveButton.IsVisible = true;
-        ShowArtMessage("Not saved yet");
+        ArtMessage.IsVisible = false;
     }
 
     // The tags, then the staged cover. False, scrolled to the error, when
@@ -360,14 +360,22 @@ public partial class TrackInfoView : UserControl
             return true;
 
         var sheet = _populatedFrom;
+        var total = editor.FileCount;
+        // A report can land after the sheet was refilled for another song.
+        var progress = new Progress<int>(done =>
+        {
+            if (_populatedFrom == sheet)
+                ArtProgress.Text = TrackInfoViewModel.FilesWritten(done, total);
+        });
+        ArtProgress.Text = TrackInfoViewModel.FilesWritten(0, total);
+        ArtMessage.IsVisible = false;
         SetArtBusy(true);
-        ShowArtMessage(UpdatingFilesText(editor));
         string? message;
         try
         {
             message = staged.Bytes is { } bytes
-                ? await editor.WriteAsync(bytes, staged.MimeType!)
-                : await editor.RemoveAsync();
+                ? await editor.WriteAsync(bytes, staged.MimeType!, progress)
+                : await editor.RemoveAsync(progress);
         }
         finally
         {
@@ -387,14 +395,6 @@ public partial class TrackInfoView : UserControl
         _staged = null;
         ArtMessage.IsVisible = false;
         return true;
-    }
-
-    // "Updating 12 files…": how many songs will have the picture rewritten
-    // into them (AlbumArtEditor.FileCount).
-    private static string UpdatingFilesText(AlbumArtEditor editor)
-    {
-        var count = editor.FileCount;
-        return count == 1 ? "Updating 1 file\u2026" : $"Updating {count} files\u2026";
     }
 
     // A spinner over the cover, and nothing to change it or leave by.

@@ -14,6 +14,7 @@ using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 
+using Flower.Controls;
 using Flower.Models;
 using Flower.Services;
 using Flower.Tests.TestSupport;
@@ -113,7 +114,7 @@ public class TrackInfoArtworkDropTests : PinnedDataDirectory
 
     // The picture is decoded before it is taken, off the UI thread.
     private static Task UntilStaged(Window window) =>
-        UiWait.Until(() => window.FindControl<TextBlock>("ArtworkInfoText")!.Text?.Contains("Not saved yet") == true,
+        UiWait.Until(() => window.FindControl<AlbumArtView>("ArtworkLargeView")!.AlbumArt != null,
             "the dropped cover is taken, to be written on Save");
 
     private static void Click(Window window, string button) =>

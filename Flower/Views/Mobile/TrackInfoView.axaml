@@ -230,10 +230,17 @@
                         CornerRadius="12"
                         Background="#80000000"
                         IsVisible="False">
-                  <materialIcons:MaterialIcon Classes="spinning"
-                                              Kind="Loading"
-                                              Width="36" Height="36"
-                                              Foreground="White" />
+                  <StackPanel Spacing="6" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <materialIcons:MaterialIcon Classes="spinning"
+                                                Kind="Loading"
+                                                Width="36" Height="36"
+                                                Foreground="White" />
+                    <!-- "3/9 files" (TrackInfoViewModel.FilesWritten). -->
+                    <TextBlock x:Name="ArtProgress"
+                               FontSize="12"
+                               Foreground="White"
+                               HorizontalAlignment="Center" />
+                  </StackPanel>
                 </Border>
                 <Border x:Name="RemoveArtPill"
                         Classes="floating"

@@ -122,20 +122,23 @@ public sealed class AlbumArtEditor(
     // (AlbumArtWriter is the shared implementation of the write itself, so the
     // two paths cannot disagree about how a picture goes into a tag). Null when
     // it all went through, or what to tell the user when it did not.
-    public Task<string?> WriteAsync(byte[] bytes, string mimeType) =>
+    // progress hears how many of FileCount's files are done so far.
+    public Task<string?> WriteAsync(byte[] bytes, string mimeType, IProgress<int>? progress = null) =>
         ApplyAsync(
             new LocalAlbumArt(bytes, mimeType),
             (client, artId, placement) => client.SetCoverArtAsync(artId, bytes, mimeType, placement),
             ArtworkDimensions.Of(bytes),
-            "The artwork couldn't be written to");
+            "The artwork couldn't be written to",
+            progress);
 
     // The counterpart: takes the picture back out.
-    public Task<string?> RemoveAsync() =>
+    public Task<string?> RemoveAsync(IProgress<int>? progress = null) =>
         ApplyAsync(
             art: null,
             (client, artId, placement) => client.RemoveCoverArtAsync(artId, placement),
             ArtworkDimensions.None,
-            "The artwork couldn't be removed from");
+            "The artwork couldn't be removed from",
+            progress);
 
     // serverArtwork is what a song the server rewrote now measures, as far as
     // this device can tell without its file: the picture sent, which goes into
@@ -146,7 +149,8 @@ public sealed class AlbumArtEditor(
         LocalAlbumArt? art,
         Func<ServerAdminClient, string, ArtworkPlacement, Task<CoverArtWriteDto>> writeServer,
         ArtworkDimensions serverArtwork,
-        string failureVerb)
+        string failureVerb,
+        IProgress<int>? progress)
     {
         var targets = LocalTargets();
         var artIds = ServerArtIds();
@@ -164,8 +168,15 @@ public sealed class AlbumArtEditor(
             {
                 var picked = targets.ToHashSet();
                 var toFolder = targets.ToLookup(t => ToFolder(picked, t));
-                var applied = AlbumArtWriter.Apply(library, [.. toFolder[true]], art, ArtworkPlacement.Folder, logger)
-                    .Concat(AlbumArtWriter.Apply(library, [.. toFolder[false]], art, ArtworkPlacement.Files, logger))
+                // A folder's cover reaches its other songs too; only the picked count.
+                var done = 0;
+                void Done(Track song)
+                {
+                    if (picked.Contains(song))
+                        progress?.Report(++done);
+                }
+                var applied = AlbumArtWriter.Apply(library, [.. toFolder[true]], art, ArtworkPlacement.Folder, logger, Done)
+                    .Concat(AlbumArtWriter.Apply(library, [.. toFolder[false]], art, ArtworkPlacement.Files, logger, Done))
                     .ToList();
                 foreach (var (track, _) in applied)
                     ArtworkDimensions.OfFile(track.Path!).ApplyTo(track);
@@ -180,7 +191,7 @@ public sealed class AlbumArtEditor(
         }
         else
         {
-            var (written, error) = await ApplyServerArtAsync(artIds, writeServer);
+            var (written, error) = await ApplyServerArtAsync(artIds, writeServer, progress);
             message = error ?? (written == 0 ? "The server didn't change any files." : null);
             if (written > 0)
             {
@@ -202,9 +213,11 @@ public sealed class AlbumArtEditor(
     // Runs one admin call per album (or song) the change covers, and reports how many
     // files the server said it rewrote. A ServerAdminException carries the
     // server's own words ("This device is paired, but is not an administrator
-    // of that server.") which is exactly what to show.
+    // of that server.") which is exactly what to show. An album sent whole
+    // moves progress on by all its songs at once.
     private async Task<(int Written, string? Error)> ApplyServerArtAsync(
-        IReadOnlyList<(string Id, ArtworkPlacement Placement)> artIds, Func<ServerAdminClient, string, ArtworkPlacement, Task<CoverArtWriteDto>> apply)
+        IReadOnlyList<(string Id, ArtworkPlacement Placement)> artIds, Func<ServerAdminClient, string, ArtworkPlacement, Task<CoverArtWriteDto>> apply,
+        IProgress<int>? progress)
     {
         var device = peerTrackResolver?.Resolve(tracks[0]);
         var credentials = peerCredentials;
@@ -224,6 +237,7 @@ public sealed class AlbumArtEditor(
             try
             {
                 written += (await apply(client, artId, placement)).Written;
+                progress?.Report(Math.Min(written, tracks.Count));
             }
             catch (Exception ex)
             {

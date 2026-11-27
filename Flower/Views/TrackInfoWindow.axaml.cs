@@ -435,14 +435,18 @@ public partial class TrackInfoWindow : Window
             return true;
 
         var editor = ArtEditor();
+        var total = editor.FileCount;
+        void ShowProgress(int done) =>
+            HeaderArtProgress.Text = ArtProgress.Text = TrackInfoViewModel.FilesWritten(done, total);
+        ShowProgress(0);
         SetArtBusy(true);
-        ArtworkInfoText.Text = UpdatingFilesText();
+        var progress = new Progress<int>(ShowProgress);
         string? message;
         try
         {
             message = staged.Bytes is { } bytes
-                ? await editor.WriteAsync(bytes, staged.MimeType!)
-                : await editor.RemoveAsync();
+                ? await editor.WriteAsync(bytes, staged.MimeType!, progress)
+                : await editor.RemoveAsync(progress);
         }
         finally
         {
@@ -592,14 +596,6 @@ public partial class TrackInfoWindow : Window
         _findArt?.Cancel();
         _findArt = null;
         _viewer?.Close();
-    }
-
-    // "Updating 12 files…": how many songs will have the picture rewritten
-    // into them (AlbumArtEditor.FileCount).
-    private string UpdatingFilesText()
-    {
-        var count = ArtEditor().FileCount;
-        return count == 1 ? "Updating 1 file\u2026" : $"Updating {count} files\u2026";
     }
 
     private void OpenArtButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) =>
@@ -779,8 +775,7 @@ public partial class TrackInfoWindow : Window
         RemoveArtButton.IsEnabled = changeable && (hasArt || _multipleArt);
         OpenArtButton.IsEnabled = hasArt;
 
-        ArtworkInfoText.Text = _info.DescribeArtwork(_art, _artPixelSize, writable, serverTargets, _multipleArt,
-            unsaved: _staged != null);
+        ArtworkInfoText.Text = _info.DescribeArtwork(_art, _artPixelSize, writable, serverTargets, _multipleArt);
     }
 
     // Bytes null for taking the cover out.

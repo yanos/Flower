@@ -43,8 +43,11 @@ public static class AlbumArtWriter
     // the cover when every song in it is from these songs' albums: a folder of
     // loose songs from several albums would lend one album's cover to them
     // all, so those songs get theirs in their files instead.
+    //
+    // done hears of each song as its result comes in, for a progress count.
     public static List<(Track Track, bool Written)> Apply(
-        Library library, IReadOnlyList<Track> tracks, LocalAlbumArt? art, ArtworkPlacement placement, ILogger? logger = null)
+        Library library, IReadOnlyList<Track> tracks, LocalAlbumArt? art, ArtworkPlacement placement, ILogger? logger = null,
+        Action<Track>? done = null)
     {
         var results = new List<(Track Track, bool Written)>();
         var handled = new HashSet<string>(StringComparer.Ordinal);
@@ -82,6 +85,7 @@ public static class AlbumArtWriter
                 {
                     results.Add((song, folderWritten && TryRemove(song.Path!, logger)));
                     handled.Add(song.Path!);
+                    done?.Invoke(song);
                 }
             }
         }
@@ -92,6 +96,7 @@ public static class AlbumArtWriter
                 continue;
 
             results.Add((track, art != null ? TryWrite(path, art.Bytes, art.MimeType, logger) : TryRemove(path, logger)));
+            done?.Invoke(track);
         }
 
         return results;

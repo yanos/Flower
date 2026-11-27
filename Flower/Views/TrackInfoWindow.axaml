@@ -207,8 +207,11 @@
                 CornerRadius="{x:Static controls:AlbumArtView.CoverCornerRadius}"
                 Background="#80000000"
                 IsVisible="False">
-          <materialIcons:MaterialIcon Classes="spinning" Kind="Loading"
-                                      Width="28" Height="28" Foreground="White"/>
+          <StackPanel Spacing="4" HorizontalAlignment="Center" VerticalAlignment="Center">
+            <materialIcons:MaterialIcon Classes="spinning" Kind="Loading"
+                                        Width="28" Height="28" Foreground="White"/>
+            <TextBlock x:Name="HeaderArtProgress" FontSize="11" Foreground="White" HorizontalAlignment="Center"/>
+          </StackPanel>
         </Border>
       </Panel>
 
@@ -529,8 +532,12 @@
                          HorizontalAlignment="Center"
                          VerticalAlignment="Center"/>
               <Border x:Name="ArtBusy" Background="#80000000" IsVisible="False">
-                <materialIcons:MaterialIcon Classes="spinning" Kind="Loading"
-                                            Width="48" Height="48" Foreground="White"/>
+                <StackPanel Spacing="8" HorizontalAlignment="Center" VerticalAlignment="Center">
+                  <materialIcons:MaterialIcon Classes="spinning" Kind="Loading"
+                                              Width="48" Height="48" Foreground="White"/>
+                  <!-- "3/9 files" (TrackInfoViewModel.FilesWritten). -->
+                  <TextBlock x:Name="ArtProgress" FontSize="13" Foreground="White" HorizontalAlignment="Center"/>
+                </StackPanel>
               </Border>
             </Panel>
           </Border>

@@ -119,6 +119,40 @@ public class AlbumArtEditorTests
         Assert.Equal(songs.Take(2), changed!.Tracks.OrderBy(t => t.Title));
     }
 
+    // Track Info's "3/9 files" under the spinner: one step per picked song.
+    [Fact]
+    public async Task Progress_counts_each_picked_file_up_to_the_file_count()
+    {
+        var (library, songs) = Album(3);
+        var editor = new AlbumArtEditor([songs[0], songs[2]], library, new AppSettings(), null, null, NullLogger.Instance);
+        var reports = new List<int>();
+
+        await editor.WriteAsync(Png, "image/png", new InlineProgress(reports.Add));
+
+        Assert.Equal([1, 2], reports);
+        Assert.Equal(editor.FileCount, reports[^1]);
+    }
+
+    // An album picked whole gets one cover file, still counted song by song.
+    [Fact]
+    public async Task Progress_counts_the_songs_a_folder_cover_reaches()
+    {
+        var (library, songs, _) = AlbumInOneFolder(3);
+        var settings = new AppSettings { ArtworkPlacement = ArtworkPlacement.Folder };
+        var editor = new AlbumArtEditor(songs, library, settings, null, null, NullLogger.Instance);
+        var reports = new List<int>();
+
+        await editor.WriteAsync(Png, "image/png", new InlineProgress(reports.Add));
+
+        Assert.Equal([1, 2, 3], reports);
+    }
+
+    // Progress<T> posts to a context; this reports where it is called.
+    private sealed class InlineProgress(Action<int> report) : IProgress<int>
+    {
+        public void Report(int value) => report(value);
+    }
+
     [Fact]
     public async Task Removing_a_cover_takes_it_off_the_picked_songs_alone()
     {

@@ -473,14 +473,16 @@ public sealed class TrackInfoViewModel : ViewModelBase
     public static string Resolution(PixelSize size) =>
         $"{size.Width.ToString(CultureInfo.CurrentCulture)} × {size.Height.ToString(CultureInfo.CurrentCulture)}";
 
+    // "3/9 files" under the spinner while Save writes a cover, on both heads.
+    public static string FilesWritten(int done, int total) =>
+        $"{done.ToString(CultureInfo.CurrentCulture)}/{total.ToString(CultureInfo.CurrentCulture)} {(total == 1 ? "file" : "files")}";
+
     // The line under the desktop's Artwork tab: what the cover is, and how it
     // can be changed - or why it cannot. writable is how many songs have a
     // file here to write into, serverTargets how many of the paired server's
     // albums or songs its administrator could have the server write instead, and
-    // multiple that the songs do not share one cover (AlbumArtLoader.ShareOneCover),
-    // and unsaved that the cover described is one chosen since, which Save writes.
-    public string DescribeArtwork(LocalAlbumArt? art, PixelSize? size, int writable, int serverTargets, bool multiple,
-        bool unsaved = false)
+    // multiple that the songs do not share one cover (AlbumArtLoader.ShareOneCover).
+    public string DescribeArtwork(LocalAlbumArt? art, PixelSize? size, int writable, int serverTargets, bool multiple)
     {
         if (Tracks.Count == 0)
             return "";
@@ -512,7 +514,7 @@ public sealed class TrackInfoViewModel : ViewModelBase
             parts.Add("No artwork");
         }
 
-        parts.Add(unsaved ? "Not saved yet" : "Drop an image or choose a file");
+        parts.Add("Drop an image or choose a file");
         return string.Join("  ·  ", parts);
     }
 
