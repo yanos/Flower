@@ -54,6 +54,11 @@
          CI runner's three cores, mostly spent on the one object that holds
          every assembly's generic instances (aot-instances.dll). -->
     <MtouchUseLlvm>false</MtouchUseLlvm>
+
+    <!-- The test code interpreted, everything it tests still compiled ahead
+         of time: the tests' own assemblies are a large share of what the AOT
+         compiler and clang chew through, and little of the run's time. -->
+    <MtouchInterpreter>Flower.Tests.iOS.Suite,Flower.Tests.Decoding.Scenarios</MtouchInterpreter>
   </PropertyGroup>
 
   <ItemGroup>
