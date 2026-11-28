@@ -12,7 +12,7 @@ ios_simulator_duration() {
   printf '%dm%02ds' $(( $1 / 60 )) $(( $1 % 60 ))
 }
 
-# Sets IOS_SIMULATOR to a simulator's UDID and boots it: the newest iPhone,
+# Sets IOS_SIMULATOR to a simulator's UDID and starts booting it: the newest iPhone,
 # or the one named by the argument, on the newest iOS runtime - or, when
 # IOS_SIMULATOR_RUNTIME is set (a major version, "26"), on the newest runtime of
 # that version, failing rather than falling back when there is none.
@@ -49,9 +49,14 @@ ios_simulator_boot() {
   IOS_SIMULATOR="${chosen%%$'\t'*}"
   echo "==> Simulator: ${chosen#*$'\t'}"
 
-  # Booting an already-booted simulator is an error, not a no-op.
-  xcrun simctl boot "$IOS_SIMULATOR" 2>/dev/null || true
-  xcrun simctl bootstatus "$IOS_SIMULATOR" -b >/dev/null
+  # In the background, so the boot overlaps the build (about two minutes on a
+  # CI runner); ios_simulator_run waits for it. Booting an already-booted
+  # simulator is an error, not a no-op.
+  {
+    xcrun simctl boot "$IOS_SIMULATOR" 2>/dev/null || true
+    xcrun simctl bootstatus "$IOS_SIMULATOR" -b >/dev/null
+  } &
+  IOS_SIMULATOR_BOOTING=$!
 }
 
 # Builds a runner from clean, in Release: ios_simulator_build <project> <dir to clean>...
@@ -106,6 +111,13 @@ ios_simulator_build() {
 # SIMCTL_CHILD_<NAME> reaches the app as <NAME>.
 ios_simulator_run() {
   local app="$1" bundle_id="$2" transcript="$3" tally_prefix="$4" timeout="$5" summarize="${6:-cat}"
+
+  local waited=$SECONDS
+  if ! wait "$IOS_SIMULATOR_BOOTING"; then
+    echo "==> The simulator did not boot"
+    exit 1
+  fi
+  echo "==> Booted after waiting $(ios_simulator_duration $(( SECONDS - waited ))) more"
 
   echo "==> Installing"
   xcrun simctl install "$IOS_SIMULATOR" "$app"
