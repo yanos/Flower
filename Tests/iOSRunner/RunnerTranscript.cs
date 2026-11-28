@@ -28,8 +28,10 @@ public static class RunnerTranscript
     private static readonly StringBuilder Text = new();
     private static string? _path;
 
-    // Raised with the whole transcript so far, from whichever thread wrote.
-    public static event Action<string>? Changed;
+    // Raised from whichever thread wrote. Without the text: copying a verbose
+    // run's whole transcript once per line, under the lock every test writes
+    // through, cost more than the screen that wanted it.
+    public static event Action? Changed;
 
     public static string Snapshot
     {
@@ -56,11 +58,9 @@ public static class RunnerTranscript
     {
         Console.WriteLine(line);
 
-        string snapshot;
         lock (Gate)
         {
             Text.AppendLine(line);
-            snapshot = Text.ToString();
 
             try
             {
@@ -73,7 +73,7 @@ public static class RunnerTranscript
             }
         }
 
-        Changed?.Invoke(snapshot);
+        Changed?.Invoke();
     }
 
     // For code that reports through a TextWriter - xunit's runner does.

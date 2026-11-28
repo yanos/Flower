@@ -43,16 +43,24 @@ public class RunnerSceneDelegate : UIWindowSceneDelegate
         Window.RootViewController = root;
         Window.MakeKeyAndVisible();
 
-        RunnerTranscript.Changed += _ => ScheduleRefresh();
+        RunnerTranscript.Changed += ScheduleRefresh;
         ScheduleRefresh();
     }
 
-    // Coalesced: a verbose test run writes thousands of lines, and setting the
-    // whole text once per line would spend the main thread on layout.
+    // At most once a second: a verbose run writes thousands of lines, and
+    // laying out the whole text for each would keep a core busy that the
+    // tests need.
     private void ScheduleRefresh()
     {
         if (System.Threading.Interlocked.Exchange(ref _refreshPending, 1) == 1)
             return;
+
+        _ = RefreshSoon();
+    }
+
+    private async System.Threading.Tasks.Task RefreshSoon()
+    {
+        await System.Threading.Tasks.Task.Delay(1000);
 
         _log?.BeginInvokeOnMainThread(() =>
         {
