@@ -11,7 +11,7 @@ Some features connect to external services. Release builds also send crash repor
 | Crash and performance reporting | Developer's Sentry account | On by default in release builds; can be disabled |
 | Device diagnostics | Your own Flower server | On by default when paired; can be disabled |
 | Artist photos | Deezer | Automatically, when looking up artist images |
-| Online artwork search | Apple iTunes Search, MusicBrainz / Cover Art Archive, Bandcamp | Only when you select **Find online** |
+| Online artwork search | Apple iTunes Search, MusicBrainz / Cover Art Archive, Bandcamp, Deezer | Only when you select **Find online** |
 | Update checks | GitHub | On by default on desktop; can be disabled |
 | AI model download | GitHub | Only if server AI features are enabled |
 | Public IP lookup | ipify and Cloudflare | When public access is enabled or the server Network page is open |
@@ -126,8 +126,9 @@ server makes requests for its songs; a device makes requests for local songs.
 There is currently no setting to disable artist lookups.
 
 **Find online** sends the album and artist, title and artist, or your edited
-search words to Apple's iTunes Search, MusicBrainz / Cover Art Archive and
-Bandcamp. This happens only when you start an artwork search.
+search words to Apple's iTunes Search, MusicBrainz / Cover Art Archive,
+Bandcamp and Deezer. Apple and Deezer are also sent the album name on its own.
+This happens only when you start an artwork search.
 
 ### Updates
 

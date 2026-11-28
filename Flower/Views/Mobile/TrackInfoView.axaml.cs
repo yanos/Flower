@@ -254,6 +254,7 @@ public partial class TrackInfoView : UserControl
             return;
 
         var title = OnlineCoverPicker.FirstNonBlank(_info?.Title.Text, track.Title);
+        var year = OnlineCoverPicker.FirstNonBlank(_info?.Year.Text, track.Year);
 
         _findArt?.Cancel();
         var find = _findArt = new CancellationTokenSource();
@@ -266,7 +267,7 @@ public partial class TrackInfoView : UserControl
         IReadOnlyList<OnlineCoverArt.Candidate>? found;
         try
         {
-            found = await finder.SearchAsync(album, artist, title, find.Token);
+            found = await finder.SearchAsync(album, artist, title, year, find.Token);
         }
         catch (OperationCanceledException)
         {
