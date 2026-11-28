@@ -258,9 +258,18 @@ jobs:
           path: artifacts/installers/*
           if-no-files-found: error
 
+  # Two shards, each building its own runner: the run is mostly one serial
+  # chain (the headless UI tests share a dispatcher), so halving the classes
+  # halves it, and on a public repo a second runner costs nothing. Building
+  # in each is quicker than one build handed on as an artifact, because the
+  # simulator boots during the build.
   ios-tests:
-    name: iOS tests (Mono)
+    name: iOS tests (Mono, ${{ matrix.shard }}/2)
     runs-on: xcode-27
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       # MinVer needs full history and tags to stamp the build correctly.
       - uses: actions/checkout@v4
@@ -302,6 +311,7 @@ jobs:
       - name: Run shared, UI and decoding tests on a simulator
         env:
           IOS_SIMULATOR_RUNTIME: '27'
+          FLOWER_TEST_SHARD: ${{ matrix.shard }}/2
         run: scripts/ios-tests.sh
 
   ios-nativeaot:

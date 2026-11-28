@@ -1,5 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -11,6 +14,7 @@ using UIKit;
 
 using Xunit.Runner.Common;
 using Xunit.Runner.InProc.SystemConsole;
+using Xunit.v3;
 
 namespace Flower.Tests.iOS;
 
@@ -76,8 +80,43 @@ public class AppDelegate : UIApplicationDelegate
 
         var extra = Environment.GetEnvironmentVariable("FLOWER_TEST_ARGS");
         return string.IsNullOrWhiteSpace(extra)
-            ? [.. verbose, .. excluded]
-            : [.. verbose, .. excluded, .. extra.Split(' ', StringSplitOptions.RemoveEmptyEntries)];
+            ? [.. verbose, .. excluded, .. ShardArguments()]
+            : [.. verbose, .. excluded, .. ShardArguments(), .. extra.Split(' ', StringSplitOptions.RemoveEmptyEntries)];
+    }
+
+    // FLOWER_TEST_SHARD="2/3" runs the test classes whose names hash to the
+    // second of three shards, so CI can split the suite across simulators. By
+    // hash rather than in turn, so a class added moves no other class.
+    private static string[] ShardArguments()
+    {
+        var shard = Environment.GetEnvironmentVariable("FLOWER_TEST_SHARD");
+        if (string.IsNullOrWhiteSpace(shard))
+            return [];
+
+        var parts = shard.Split('/');
+        if (parts.Length != 2 || !int.TryParse(parts[0], out var index) || !int.TryParse(parts[1], out var count)
+            || count < 1 || index < 1 || index > count)
+            throw new ArgumentException($"FLOWER_TEST_SHARD is \"{shard}\", not \"<shard>/<count>\"");
+
+        return [.. TestClasses()
+            .Where(name => Fnv1a(name) % (uint)count == index - 1)
+            .SelectMany(name => new[] { "-class", name })];
+    }
+
+    private static IEnumerable<string> TestClasses() =>
+        typeof(Flower.Tests.TestSupport.PlaybackWait).Assembly.GetTypes()
+            .Where(type => type is { IsClass: true, IsAbstract: false }
+                && type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static)
+                    .Any(method => method.GetCustomAttributes(inherit: true).OfType<IFactAttribute>().Any()))
+            .Select(type => type.FullName!);
+
+    // Stable across runs and runtimes, which string.GetHashCode is not.
+    private static uint Fnv1a(string text)
+    {
+        var hash = 2166136261u;
+        foreach (var b in System.Text.Encoding.UTF8.GetBytes(text))
+            hash = (hash ^ b) * 16777619u;
+        return hash;
     }
 
     // ConsoleRunner.EntryPoint - what xunit's generated Main calls - minus the

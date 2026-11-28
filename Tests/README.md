@@ -88,6 +88,7 @@ Switches, all environment variables:
 | `FLOWER_REQUIRE_CLAP_MODEL=1` | A missing model fails rather than skips (CI's Linux leg only) |
 | `FLOWER_TEST_SEED=<n>` | Runs a client suite in a seeded random order (`ShuffleOrderer`), to check that shared state is not order-dependent |
 | `FLOWER_TEST_ARGS` | xUnit `-class`/`-method` filters for the full iOS runner |
+| `FLOWER_TEST_SHARD` | `<shard>/<count>`: the full iOS runner runs only that shard's test classes |
 
 Run on phone runtimes using the existing local SDK/workload prerequisites:
 
@@ -147,7 +148,8 @@ running tests also avoids running timing-sensitive tests alongside compilation.
 CI has seven explicitly named jobs: **Linux**, **Windows**, **macOS**,
 **iOS tests (Mono)**, **iOS build and decoding (NativeAOT)**, **Android**, and
 **Web**. The two iOS jobs remain separate temporarily so their long builds run
-in parallel; the Mono runtime and runner settings are unchanged.
+in parallel; the Mono runtime and runner settings are unchanged. **iOS tests
+(Mono)** runs as two shards, **1/2** and **2/2**, each on its own runner.
 
 The Linux job first checks that the checked-in bridge binaries were built from
 the bridge source in the tree: `native/miniaudio/{desktop,android,ios}/build.sh`
@@ -170,7 +172,10 @@ from the repo's release (cached on `SemanticAudioModelManifest.cs`) and sets
 
 The iOS jobs pin the workload (`--version 10.0.402`) and `Xcode_27.0`, because
 a newer workload set can demand a newer Xcode (`NETSDK1140`); move workload,
-TFMs and Xcode together. **iOS tests (Mono)** runs `scripts/ios-tests.sh`;
+TFMs and Xcode together. **iOS tests (Mono)** runs `scripts/ios-tests.sh`
+with `FLOWER_TEST_SHARD` set, which splits the test classes by a hash of their
+names: the run is mostly one serial chain, the headless UI tests sharing a
+dispatcher, so a shard takes about half as long;
 **iOS build and decoding (NativeAOT)** builds `Flower.iOS` as it ships
 (`FlowerNativeAot`, `_IsPublishing`, ad hoc signing) and runs
 `scripts/ios-decoding-tests.sh`. **Android** builds the head, then runs the

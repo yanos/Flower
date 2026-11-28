@@ -9,8 +9,11 @@
 #   scripts/ios-tests.sh "iPhone 17 Pro"           # by name
 #   IOS_SIMULATOR_RUNTIME=26 scripts/ios-tests.sh  # newest iPhone on iOS 26
 #   FLOWER_TEST_ARGS="-class Flower.Tests.Playlists.PlaylistTests" scripts/ios-tests.sh
+#   FLOWER_TEST_SHARD=1/2 scripts/ios-tests.sh     # half the test classes
 #
 # FLOWER_TEST_ARGS is passed to xunit as extra command-line arguments.
+# FLOWER_TEST_SHARD picks the classes whose names hash to one shard of several
+# (AppDelegate.ShardArguments); CI runs each shard on its own runner.
 #
 # The app always reports verbosely - every test's start and finish - so that a
 # run which hangs can name the test that never came back. What is printed here
@@ -43,6 +46,7 @@ summarize() {
 # not load makes DecodeScenariosTests check nothing and pass.
 export SIMCTL_CHILD_FLOWER_REQUIRE_DECODERS=FFmpeg
 export SIMCTL_CHILD_FLOWER_TEST_ARGS="${FLOWER_TEST_ARGS:-}"
+export SIMCTL_CHILD_FLOWER_TEST_SHARD="${FLOWER_TEST_SHARD:-}"
 
 # About two minutes of tests on an Apple Silicon Mac. The ceiling is for a
 # CI runner, which is slower, and is there to turn a hang into a failure rather
