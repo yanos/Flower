@@ -48,7 +48,8 @@ public class PlaylistAddOffUiThreadTests : PinnedDataDirectory
 
         Assert.Equal([false], store.OnUiThread);
         Assert.Equal(2000, playlist.Tracks.Count);
-        // The page's rows are rebuilt in the background too.
-        await UiWait.Until(() => parts.Main.PageSubtitle.Contains("2,000 songs"), "the page shows the songs added");
+        // The page's rows are rebuilt in the background too. The count is in
+        // the current culture's digits, as the page writes it.
+        await UiWait.Until(() => parts.Main.PageSubtitle.Contains($"{2000:N0} songs"), "the page shows the songs added");
     }
 }
