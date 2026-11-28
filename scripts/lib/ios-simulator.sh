@@ -88,14 +88,20 @@ ios_simulator_build() {
   log=$(mktemp)
   # Split on spaces on purpose: it is a list of arguments.
   # shellcheck disable=SC2086
-  if ! dotnet build "$project" -c Release -r iossimulator-arm64 ${IOS_SIMULATOR_BUILD_ARGS:-} >"$log" 2>&1; then
+  if ! dotnet build "$project" -c Release -r iossimulator-arm64 -clp:PerformanceSummary ${IOS_SIMULATOR_BUILD_ARGS:-} >"$log" 2>&1; then
     cat "$log"
     rm -f "$log"
     echo "==> Build failed after $(ios_simulator_duration $(( SECONDS - started )))"
     exit 1
   fi
-  rm -f "$log"
   echo "==> Built in $(ios_simulator_duration $(( SECONDS - started )))"
+
+  # Where the time went, and whether the machine ran out of memory doing it:
+  # a CI runner builds this 8 to 15 times slower than an Apple Silicon Mac.
+  echo "==> Slowest build tasks:"
+  awk '/Task Performance Summary/ { tasks = 1; next } tasks && / ms / { print }' "$log" | sort -rn | head -10
+  echo "==> Swap after the build: $(sysctl -n vm.swapusage)"
+  rm -f "$log"
 }
 
 # Installs and launches a runner, waits for its tally, prints the transcript,
